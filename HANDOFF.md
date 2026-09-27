@@ -2,7 +2,8 @@
 
 ## 2026-09-28 campaign revalidation、trusted handoff 与 producer lifecycle matrix checkpoint
 
-最新已提交并推送的提交为 `1579d43`、`7a008e7`、`f4a788b`、`4db6a97`。本轮继续保持
+最新已提交并推送的提交为 `91ba125`、`e13b375`、`1579d43`、`7a008e7`、`f4a788b`、
+`4db6a97`。本轮继续保持
 provider-free：没有创建真实 campaign、调用 provider、启动外部 producer、运行 WebAgent，
 也没有消耗 Feature 139 的唯一旧槽（preparation **1/1**、primary/joint **0/1**）。
 
@@ -21,6 +22,12 @@ PID/PGID、self-digest，并能重新绑定 launch、descriptor、intent、attes
 把过程、请求 broker、HTTP transport、trusted bootstrap、尝试终态、replay、gate failure、
 recovery 等证据与实际 fixture 对齐，并明确 `offline-verified`、`supporting-only` 和
 `integration-open` 的区别；矩阵不会把本地 fixture 晋级为真实模型验收。
+
+新增 provider-free single-attempt gate（`91ba125`）：只有未篡改的 revalidation `ready`
+结果才能创建一次性的 `attempt-started.json`；该文件使用 create-only、`0600`、fsync，绑定
+admission、root/parent inode 和摘要，并明确 `provider_started=false`、
+`provider_call_made=false`。重复 claim、伪造 admission 或缺少 ready gate 均拒绝；这一步仍
+没有启动 provider 或发起模型请求。
 
 本轮验证结果：
 
