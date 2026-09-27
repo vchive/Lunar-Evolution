@@ -319,6 +319,7 @@ def revalidate_acceptance_campaign(
         if remote_commit != first["head_commit"] or first["origin_commit"] != remote_commit:
             _fail("remote_main_mismatch")
         manifest = parse_acceptance_registration(_read_regular(manifest_file).decode("utf-8"))
+        seal = parse_registration_seal(_read_regular(seal_file).decode("utf-8"))
         root = parent / manifest["campaign_root"]
         admission_raw = _read_regular(root / "admission.json", MAX_PRODUCT_FILE_BYTES)
         admission = None
@@ -354,10 +355,17 @@ def revalidate_acceptance_campaign(
         for key in ("registration_id", "campaign_id", "attempt_id", "campaign_root", "registration_sha256", "product_commit"):
             if admission.get(key) != manifest.get(key):
                 _fail("campaign_admission_incomplete")
+        if admission.get("seal_sha256") != seal.get("seal_sha256"):
+            _fail("campaign_admission_incomplete")
         info = os.stat(root, follow_symlinks=False)
         if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
             _fail("campaign_admission_incomplete")
         if (admission.get("root_device"), admission.get("root_inode")) != (info.st_dev, info.st_ino):
+            _fail("campaign_admission_incomplete")
+        parent_info = os.stat(parent, follow_symlinks=False)
+        if (admission.get("parent_device"), admission.get("parent_inode")) != (
+            parent_info.st_dev, parent_info.st_ino,
+        ):
             _fail("campaign_admission_incomplete")
         files = admission.get("files")
         if not isinstance(files, list) or not files:
@@ -385,6 +393,13 @@ def revalidate_acceptance_campaign(
         expected_root = {"materials", "admission.json", *(p for p in expected if "/" not in p)}
         with os.scandir(root) as entries:
             if {e.name for e in entries} != expected_root:
+                _fail("campaign_admission_incomplete")
+        expected_materials = {p.split("/", 1)[1] for p in expected if p.startswith("materials/")}
+        with os.scandir(root / "materials") as entries:
+            material_entries = list(entries)
+            if {e.name for e in material_entries} != expected_materials:
+                _fail("campaign_admission_incomplete")
+            if any(e.is_dir(follow_symlinks=False) for e in material_entries):
                 _fail("campaign_admission_incomplete")
         for item in files:
             path = item["path"]
