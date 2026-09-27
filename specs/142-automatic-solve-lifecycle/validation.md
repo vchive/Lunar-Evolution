@@ -1,5 +1,24 @@
 # Validation
 
+## Fresh real-acceptance materials and preflight (2026-09-27)
+
+The new Feature 142 case builder and 20 committed material files retain the prior effective
+`openai-compatible` / `glm-5.2` / `chat_completions` request identity, exact task and
+`{"limit":3}\n` input, independent evaluator/profile criteria, and eight actual probe snapshots
+with expected judgments. The task and input SHA-256 values match the historical record. Criteria
+digests are preregistration identities; the generated Python evaluator/profile must receive
+separate runtime digests and an independent comparison during preparation.
+
+The read-only registration preflight now checks all four primary and sixteen holdout materials
+against tracked, regular Git blobs and the current bytes. Product files and materials have an
+8 MiB limit; manifest/seal remain 128 KiB. It pins one HEAD for blob comparisons and rechecks
+the checkout after reading. Focused registration/case tests **78 passed**, including committed-symlink
+masking and checkout-change tests. The native offline E2E profile again passed **224/224**, with
+zero failures/errors/skips; old protected pytest temporary snapshots emitted 2817 cleanup warnings.
+Ruff, compileall, SDD prerequisites and diff checks pass. This preflight still trusts the local
+`origin/main` ref. A real launch runner must independently verify the remote commit and atomically
+claim the new root before any provider call. No fresh registration, root or real attempt exists yet.
+
 ## Repeatable offline native E2E (2026-09-27)
 
 `tools/run_tests.py --suite native-e2e --junit-dir ...` now selects seven current-product suites

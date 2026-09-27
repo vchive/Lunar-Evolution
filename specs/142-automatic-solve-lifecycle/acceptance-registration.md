@@ -22,10 +22,23 @@ product source/configuration files. These entries are checked against both the p
 commit and the checkout during preflight; registration and seal files cannot be listed as product
 files.
 
-Task, input, evaluator and evaluator-profile materials are each declared as
+Task, input, independent evaluator criteria and profile criteria are each declared as
 `{path,size,sha256}`. Paths are relative, bounded, and free of traversal, control characters,
 backslashes and colons. The declared material digest must equal its corresponding top-level task,
-input, evaluator or profile digest. Material paths are unique.
+input, evaluator or profile digest. Material paths are unique. The existing JSON field names
+`evaluator_material`, `evaluator_profile_material`, `evaluator_sha256`, and
+`evaluator_profile_sha256` refer to these **preregistered criteria**, not the Python evaluator
+or bundle profile generated during native preparation. The criteria describe the required result,
+score, source-file count and probe behavior; they cannot be substituted for executable artifacts.
+
+The historical case used `openai-compatible`, requested model `glm-5.2`, and native wire API
+`chat_completions`. Its task SHA-256 is
+`2c015edee8cac2c0a36a02acb9de86cc741e2bce60e340f5dfd4c3f1e67b3028`; its input bytes
+are exactly `{"limit":3}\n`, SHA-256
+`a87f29f60db7ebd0d5269a34a8be49b964bb77e62ee38f77987aced80accb5c7`. The actual eight
+historical probes, in order as `(limit, value)`, are `(1,-1)`, `(1,0)`, `(1,1)`, `(1,2)`,
+`(3,0)`, `(3,2)`, `(3,3)`, `(3,4)`. The shortened list in the old manifest is not the executed
+probe set. These facts identify the case; they do not reuse the old campaign root or evidence.
 
 `holdout_pins` contains exactly eight ordered entries. Each entry has a unique safe `holdout_id`,
 its integer `ordinal`, nested `input` and `expected` material declarations, and
@@ -48,11 +61,21 @@ circular dependency. The manifest and seal must be committed before launch prefl
 ## Read-only preflight boundary
 
 The filesystem/Git preflight reads the committed manifest and seal with no-follow regular-file
-access, verifies their exact tracked bytes, checks the registration product material against the
-pinned product checkpoint, requires a clean checkout whose `HEAD` equals the verified
+access, verifies their exact tracked bytes, checks product files against both the pinned product
+checkpoint and `HEAD`, and checks all four primary materials and sixteen holdout materials against
+their declared bytes and committed `HEAD` blobs. Material and product files may be up to 8 MiB;
+the manifest and seal remain limited to 128 KiB. It requires a clean checkout whose `HEAD` equals the verified
 `origin/main`, and confirms the campaign root is absent. It rejects symlinks, FIFOs, dirty or
-unpushed checkouts, missing/untracked registration files, product-byte drift, reused identities,
-and a pre-existing root. It does not create the root or write a report as an admission side effect.
+unpushed checkouts, missing/untracked material files, byte drift, reused identities, and a
+pre-existing root. It does not create the root or write a report as an admission side effect.
+
+The separate observation manifest's `evaluator_sha256` continues to mean the **runtime-generated
+Python evaluator harness digest**. The existing semantic auditor compares that digest to the
+prepared bundle profile. A future launch runner must retain both identities and prove that the
+generated evaluator/profile implement the preregistered criteria before the attempt can claim
+preparation or scoring success. A mismatch is a failed/unknown preparation boundary, never a
+reason to rewrite the registration. This two-layer binding does not exist merely because the
+registration preflight returns `ready`.
 
 A `ready` observation permits a separate caller to retain the preflight record and then launch the
 sole attempt. The API itself never launches, retries, resumes, repairs, increments acceptance

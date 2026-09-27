@@ -1,5 +1,19 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-27 新真实验收材料与预检加固
+
+用户确定沿用历史实际 `openai-compatible` / `glm-5.2` / `chat_completions` 模型及任务。
+Feature 142 新增 20 份独立验收材料：原任务/输入精确字节、独立 evaluator/profile 判据、八组
+实际 probe 的输入及预期结果。登记中的 evaluator 摘要是预登记判据，不是 preparation 现场
+生成的 Python evaluator；未来 runner 必须同时绑定两层身份并独立核验。
+
+登记预检现核对全部材料的工作区字节、摘要、大小与单一已提交 HEAD 的普通 Git blob，
+拒绝 Git symlink 模式和预检期间提交/工作区变化；产品/材料上限 8 MiB，manifest/seal
+仍为 128 KiB。专项 **78 passed**，原生离线 E2E **224 passed / 0 skipped**；Ruff、
+compileall、SDD 前置与 diff 检查通过。真实启动仍缺远端 main 实际提交核验、
+新 root 原子独占、runner、运行时评分器绑定及独立 postrun 审计。当前开发分支不满足
+clean `HEAD == origin/main` 门槛；本轮没有启动 provider、campaign 或 WebAgent。
+
 ## 2026-09-27 原生自动多文件 E2E 回归入口与剩余发布工作
 
 现可用 `.venv/bin/python tools/run_tests.py --suite native-e2e --junit-dir

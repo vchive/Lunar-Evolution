@@ -14,10 +14,13 @@ import re
 import stat
 import subprocess
 from collections.abc import Mapping, Sequence
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
+from ._candidate_workspace_io import DirectoryChain
 from .acceptance_observer import DEFAULT_ACCEPTANCE_BUDGETS
+from .candidate_workspace_plan import CandidateWorkspaceError
 from .holdout_audit import MAX_DURATION_MS, MAX_HOLDOUTS
 
 SCHEMA_VERSION = "1"
@@ -335,33 +338,49 @@ def _frozen_ids(value: Sequence[str] | None) -> set[str]:
     return result
 
 
-def _read_regular(path: Path) -> bytes:
+def _fingerprint(info: os.stat_result) -> tuple[int, ...]:
+    return (
+        info.st_dev, info.st_ino, info.st_mode, info.st_size,
+        info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def _read_regular(path: Path, maximum: int = MAX_REGISTRATION_BYTES) -> bytes:
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        with ExitStack() as stack:
+            chain = DirectoryChain(path.parent, "preflight_file_changed")
+            stack.callback(chain.close)
+            before = os.stat(path.name, dir_fd=chain.fd, follow_symlinks=False)
+            if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
+                _fail("preflight_file_invalid")
+            descriptor = os.open(
+                path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK,
+                dir_fd=chain.fd,
+            )
+            stack.callback(os.close, descriptor)
+            if _fingerprint(before) != _fingerprint(os.fstat(descriptor)):
+                _fail("preflight_file_changed")
+            chunks = []
+            remaining = maximum + 1
+            while remaining:
+                chunk = os.read(descriptor, min(remaining, 65536))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            content = b"".join(chunks)
+            after = os.fstat(descriptor)
+            named = os.stat(path.name, dir_fd=chain.fd, follow_symlinks=False)
+            if (len(content) != before.st_size or len(content) > maximum
+                    or _fingerprint(before) != _fingerprint(after)
+                    or _fingerprint(after) != _fingerprint(named)):
+                _fail("preflight_file_changed")
+            chain.check()
+            return content
+    except CandidateWorkspaceError:
+        _fail("preflight_file_changed")
     except OSError:
         _fail("preflight_file_unavailable")
-    try:
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_REGISTRATION_BYTES:
-            _fail("preflight_file_invalid")
-        content = os.read(descriptor, MAX_REGISTRATION_BYTES + 1)
-        if len(content) != info.st_size or len(content) > MAX_REGISTRATION_BYTES:
-            _fail("preflight_file_changed")
-        return content
-    finally:
-        os.close(descriptor)
-
-
-def _check_no_follow_ancestors(root: Path, relative: str) -> None:
-    current = root
-    for part in relative.split("/"):
-        current /= part
-        try:
-            info = os.lstat(current)
-        except OSError:
-            _fail("preflight_file_unavailable")
-        if stat.S_ISLNK(info.st_mode):
-            _fail("preflight_file_invalid")
 
 
 def _git(checkout: Path, *args: str, check: bool = True) -> bytes | tuple[int, bytes]:
@@ -376,6 +395,24 @@ def _git(checkout: Path, *args: str, check: bool = True) -> bytes | tuple[int, b
     if check:
         return result.stdout
     return result.returncode, result.stdout
+
+
+def _committed_regular(checkout: Path, revision: str, path: str) -> bool:
+    code, listing = _git(
+        checkout, "--literal-pathspecs", "ls-tree", "-z", revision, "--", path,
+        check=False,
+    )
+    if code:
+        _fail("preflight_git_invalid")
+    entries = listing.split(b"\x00")
+    if len(entries) != 2 or entries[1] or b"\t" not in entries[0]:
+        return False
+    descriptor, listed_path = entries[0].split(b"\t", 1)
+    fields = descriptor.split(b" ")
+    return (
+        listed_path == path.encode("utf-8") and len(fields) == 3
+        and fields[0] in {b"100644", b"100755"} and fields[1] == b"blob"
+    )
 
 
 def preflight_acceptance_registration(
@@ -403,8 +440,6 @@ def preflight_acceptance_registration(
         _fail("preflight_path_invalid")
     _relative(manifest_rel, "preflight_path_invalid")
     _relative(seal_rel, "preflight_path_invalid")
-    _check_no_follow_ancestors(checkout, manifest_rel)
-    _check_no_follow_ancestors(checkout, seal_rel)
     manifest_bytes = _read_regular(manifest_path)
     seal_bytes = _read_regular(seal_file)
     try:
@@ -426,27 +461,47 @@ def preflight_acceptance_registration(
         _fail("checkout_not_pushed")
     if status:
         _fail("checkout_dirty")
+    pinned_head = head.decode("ascii")
+    materials = [manifest[key] for key in (
+        "task_material", "input_material", "evaluator_material", "evaluator_profile_material",
+    )]
+    materials.extend(pin[key] for pin in manifest["holdout_pins"] for key in ("input", "expected"))
     tracked_code, _tracked = _git(
-        checkout, "ls-files", "--error-unmatch", "--", manifest_rel, seal_rel,
-        *(item["path"] for item in manifest["product_files"]), check=False,
+        checkout, "--literal-pathspecs", "ls-files", "--error-unmatch", "--",
+        manifest_rel, seal_rel,
+        *(item["path"] for item in (*manifest["product_files"], *materials)), check=False,
     )
     if tracked_code:
         _fail("registration_files_untracked")
-    if _git(checkout, "show", f"HEAD:{manifest_rel}") != manifest_bytes or _git(checkout, "show", f"HEAD:{seal_rel}") != seal_bytes:
+    if not all(_committed_regular(checkout, pinned_head, path) for path in (manifest_rel, seal_rel)):
+        _fail("registration_bytes_not_tracked")
+    if _git(checkout, "show", f"{pinned_head}:{manifest_rel}") != manifest_bytes or _git(checkout, "show", f"{pinned_head}:{seal_rel}") != seal_bytes:
         _fail("registration_bytes_not_tracked")
     ancestor_code, _ancestor = _git(
         checkout, "merge-base", "--is-ancestor", manifest["product_commit"], head, check=False,
     )
     if ancestor_code:
         _fail("product_commit_invalid")
-    for item in manifest["product_files"]:
-        _check_no_follow_ancestors(checkout, item["path"])
-        path = checkout / item["path"]
-        content = _read_regular(path)
-        if len(content) != item["size"] or hashlib.sha256(content).hexdigest() != item["sha256"]:
-            _fail("product_file_drift")
-        if _git(checkout, "cat-file", "blob", f"{manifest['product_commit']}:{item['path']}") != content:
-            _fail("product_file_drift")
+    for pins, code, revisions in (
+        (manifest["product_files"], "product_file_drift", (manifest["product_commit"], pinned_head)),
+        (materials, "material_file_drift", (pinned_head,)),
+    ):
+        for item in pins:
+            content = _read_regular(checkout / item["path"], MAX_PRODUCT_FILE_BYTES)
+            if len(content) != item["size"] or hashlib.sha256(content).hexdigest() != item["sha256"]:
+                _fail(code)
+            for revision in revisions:
+                if not _committed_regular(checkout, revision, item["path"]):
+                    _fail(code)
+                blob_code, blob = _git(
+                    checkout, "cat-file", "blob", f"{revision}:{item['path']}", check=False,
+                )
+                if blob_code or blob != content:
+                    _fail(code)
+    if (_git(checkout, "rev-parse", "HEAD").strip() != head
+            or _git(checkout, "rev-parse", "--verify", origin_ref).strip() != origin
+            or _git(checkout, "status", "--porcelain", "--untracked-files=all")):
+        _fail("checkout_changed_during_preflight")
     root = parent / manifest["campaign_root"]
     if root.parent != parent or root.name != manifest["campaign_root"] or os.path.lexists(root):
         _fail("campaign_root_not_fresh")
@@ -454,6 +509,7 @@ def preflight_acceptance_registration(
         "product_commit": True, "head_equals_origin": True, "worktree_clean": True,
         "registration_tracked": True, "seal_tracked": True, "manifest_canonical": True,
         "product_files_unchanged": True, "campaign_root_absent": True, "identity_fresh": True,
+        "materials_tracked": True, "material_files_unchanged": True,
     }
     return {"schema_version": SCHEMA_VERSION, "scope": PREFLIGHT_SCOPE, "registration_sha256": manifest["registration_sha256"], "status": "ready", "checks": checks, "first_problem": None, "head_commit": head.decode("ascii"), "origin_commit": origin.decode("ascii"), "manifest_path": manifest_rel, "seal_path": seal_rel}
 

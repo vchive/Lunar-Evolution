@@ -115,3 +115,18 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
       retain a separate JUnit report.
 - [x] T035 Record current remaining release/producer work, document the reusable command, and
       commit/push the verified offline change without claiming real-model success.
+
+## Fresh real-acceptance preparation
+
+- [x] T036 Reconstruct the prior effective provider/model/native API mode and byte-exact task and
+      input; freeze independent criteria and the eight actual historical holdout probes in new,
+      separately tracked Feature 142 materials. Keep generated evaluator/profile digests distinct.
+- [x] T037 Check all registered material bytes against committed Git blobs, reject non-regular
+      committed file modes, use one pinned HEAD during the read, and recheck checkout stability.
+- [ ] T038 Implement a launch runner that verifies the actual remote `main` commit, enforces the
+      clean `HEAD == origin/main` gate, atomically claims one fresh campaign root, and retains the
+      preregistration/preflight evidence before the sole provider attempt.
+- [ ] T039 Bind the native preparation-generated evaluator/profile to the preregistered independent
+      criteria and the observation manifest; add provider-free mismatch and interruption tests.
+- [ ] T040 Run the new one-slot real attempt and independent postrun six-stage/holdout audit.
+      Preserve Feature 139's closed evidence and report `0/1` honestly if a stage fails.

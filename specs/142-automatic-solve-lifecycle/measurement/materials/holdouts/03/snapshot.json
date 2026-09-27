@@ -1,0 +1,1 @@
+{"constraint_id":"valid-value","expected_validity":0,"files":[{"content":"{\"limit\":1}\n","path":"data/raw/limit.json"},{"content":"{\"value\":2}\n","path":"output/result.json"}],"name":"limit-1-value-2"}

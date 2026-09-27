@@ -5,8 +5,11 @@
 **Related SDD**: [spec.md](spec.md), [plan.md](plan.md), [validation.md](validation.md)
 
 2026-09-27 decision: the next fresh registration retains the previous real acceptance's model
-and supported task. Freeze their exact provider/model/API-mode and task/input/evaluator material
-bytes in the new manifest after verifying the historical record. This is a new identity, root and
+and supported task. The historical effective request was `openai-compatible` / `glm-5.2` /
+`chat_completions`; the configured `responses` mode and `gpt-6-astra` label were not the native
+request identity. Freeze exact task/input and independent evaluation criteria bytes in the new
+manifest. Native preparation generates a separate Python evaluator/profile whose observed bytes
+must be retained and independently checked against those criteria. This is a new identity, root and
 single attempt; it does not reopen or add requests to Feature 139. The registered Feature 142
 budgets and six-stage evidence requirements below remain unchanged. No provider request was made
 by recording this decision.
@@ -113,11 +116,13 @@ preflight failure.
 
 ## Fixed run conditions
 
-The task and evaluator may reuse Feature 139's supported fixture so that the acceptance measures
-the new lifecycle rather than changing task difficulty: `limit.json` input, an `output/result.json`
-result, and at least two Python source files. The evaluator and its eight deterministic holdouts
-are copied and hashed into the new campaign; the old evidence is read-only and is not referenced
-as runtime state.
+The task may reuse Feature 139's supported fixture so that the acceptance measures the new
+lifecycle rather than changing task difficulty: `limit.json` input, an `output/result.json`
+result, and at least two Python source files. The independent criteria and eight deterministic
+holdouts are fixed before launch; the generated runtime evaluator/profile are separately hashed
+and retained in the new campaign. The old evidence is read-only and is not referenced as runtime
+state. The eight actual historical `(limit,value)` probes are `(1,-1)`, `(1,0)`, `(1,1)`,
+`(1,2)`, `(3,0)`, `(3,2)`, `(3,3)`, `(3,4)`; the old manifest's abbreviated list is not authoritative.
 
 The following values are frozen in the new manifest unless a separate SDD explicitly supersedes
 them before registration:
@@ -156,8 +161,10 @@ and SHA-256 digests of private artifacts. Missing, duplicated, conflicting, out-
 unbound receipts are failure or unknown and cannot be repaired from a later artifact.
 
 1. **Contract and preparation.** Validate the task/input, compile and independently audit the
-   evaluator/profile, and freeze the eight holdouts. Preparation succeeds only with a verified
-   contract, evaluator/profile, and holdout declaration.
+   generated evaluator/profile against the preregistered criteria, and freeze the eight holdouts.
+   The observation manifest binds the generated evaluator digest, while the registration binds
+   the earlier criteria digest; these distinct SHA-256 values are never assumed equal.
+   Preparation succeeds only with verified contract, evaluator/profile and holdout evidence.
 2. **Candidate generation.** Admit a candidate only when the native parser accepts a non-empty
    complete source bundle and the completion diagnostic is `completed`, with matching event/run/
    task/budget/candidate identities and retained source digest. A timeout, tool-budget stop,

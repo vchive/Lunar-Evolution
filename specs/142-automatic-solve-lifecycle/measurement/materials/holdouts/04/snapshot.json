@@ -1,0 +1,1 @@
+{"constraint_id":null,"expected_validity":1,"files":[{"content":"{\"limit\":3}\n","path":"data/raw/limit.json"},{"content":"{\"value\":0}\n","path":"output/result.json"}],"name":"limit-3-value-0"}
