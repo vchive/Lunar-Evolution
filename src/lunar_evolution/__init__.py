@@ -1,5 +1,9 @@
 """Standalone local Hermes-inspired agent controller."""
 
+from .acceptance_attempt_gate import (
+    AcceptanceAttemptGateError,
+    claim_acceptance_attempt,
+)
 from .acceptance_audit import (
     AcceptanceAuditError,
     audit_acceptance_artifacts,
@@ -612,6 +616,7 @@ __all__ = [
     "TRUSTED_BOOTSTRAP_SCHEMA_VERSION",
     "WORKSPACE_PLAN_PROTOCOL",
     "WORKSPACE_PLAN_SCHEMA_VERSION",
+    "AcceptanceAttemptGateError",
     "AcceptanceAuditError",
     "AcceptanceCampaignError",
     "AcceptanceHoldoutError",
@@ -902,6 +907,7 @@ __all__ = [
     "candidate_file_table_sha256",
     "candidate_output_contract_sha256",
     "canonical_profile_json",
+    "claim_acceptance_attempt",
     "commit_producer_bundle_publication",
     "compile_evaluator_bundle",
     "compute_archive_prefix_digest",

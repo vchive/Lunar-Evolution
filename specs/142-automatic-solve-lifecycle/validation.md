@@ -449,3 +449,11 @@ policy restoration, once-only answer acceptance, exclusive worker ownership, lau
 stale-worker recovery, and foreground/background equivalence with live cancellation. A separately
 scoped real acceptance also remains outstanding; this checkpoint does not claim the whole feature
 or system release is complete.
+
+## Single-attempt claim slice (2026-09-28)
+
+The provider-free `acceptance_attempt_gate` adds the last local create-only boundary after
+campaign revalidation. Three focused tests pass: a ready admission creates one canonical
+`attempt-started.json` and rejects a second claim; a forged admission is rejected; and a caller
+without the revalidation result is rejected. The receipt explicitly records that no provider call
+has happened. No model, provider, WebAgent, evaluator, or real campaign was run by this slice.

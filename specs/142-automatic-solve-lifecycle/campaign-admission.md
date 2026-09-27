@@ -32,3 +32,20 @@ call refuses it rather than repairing or granting a fresh slot. The future runne
 incomplete admission as failed/unknown under the one-slot protocol. The admission does not
 establish that remote main or the checkout can never change later; the future runner must recheck
 its identities immediately before invocation, with code imports bound to the committed product.
+
+## Provider-free single-attempt claim
+
+`claim_acceptance_attempt(revalidated, campaign_parent=...)` is the narrow handoff between
+launch-time revalidation and a future native runner. The caller must supply an unchanged
+`status=ready`, `launch_allowed=true` result from `revalidate_acceptance_campaign`. The helper
+rereads the canonical `admission.json`, checks its digest, campaign-root and parent device/inode,
+and compares the persisted admission to that result. It then publishes
+`attempt-started.json` with a create-only `O_EXCL` write, mode `0600`, fsync and post-write
+inode checks. A second claim, forged admission, missing revalidation, or existing claim fails
+without replacement or repair.
+
+The receipt is a local claim boundary only. It records `attempt_claimed=true`,
+`provider_started=false`, and `provider_call_made=false`; the helper does not invoke a provider,
+model, evaluator, candidate, or network endpoint. A future runner must consume this receipt and
+perform the actual single provider attempt with the existing lifecycle, runtime-binding and
+observation evidence gates. This slice therefore does not close T040 or claim real acceptance.
