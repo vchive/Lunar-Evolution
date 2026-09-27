@@ -423,6 +423,7 @@ def preflight_acceptance_registration(
     campaign_parent: str | os.PathLike[str],
     frozen_identities: Sequence[str] | None = None,
     origin_ref: str = "origin/main",
+    allow_existing_root: bool = False,
 ) -> dict[str, Any]:
     """Read-only preflight over committed registration/seal and checkout state."""
     checkout = Path(checkout_root).expanduser().absolute()
@@ -503,7 +504,9 @@ def preflight_acceptance_registration(
             or _git(checkout, "status", "--porcelain", "--untracked-files=all")):
         _fail("checkout_changed_during_preflight")
     root = parent / manifest["campaign_root"]
-    if root.parent != parent or root.name != manifest["campaign_root"] or os.path.lexists(root):
+    if root.parent != parent or root.name != manifest["campaign_root"]:
+        _fail("campaign_root_not_fresh")
+    if os.path.lexists(root) and not allow_existing_root:
         _fail("campaign_root_not_fresh")
     checks = {
         "product_commit": True, "head_equals_origin": True, "worktree_clean": True,
@@ -511,6 +514,8 @@ def preflight_acceptance_registration(
         "product_files_unchanged": True, "campaign_root_absent": True, "identity_fresh": True,
         "materials_tracked": True, "material_files_unchanged": True,
     }
+    if allow_existing_root:
+        checks["campaign_root_absent"] = False
     return {"schema_version": SCHEMA_VERSION, "scope": PREFLIGHT_SCOPE, "registration_sha256": manifest["registration_sha256"], "status": "ready", "checks": checks, "first_problem": None, "head_commit": head.decode("ascii"), "origin_commit": origin.decode("ascii"), "manifest_path": manifest_rel, "seal_path": seal_rel}
 
 

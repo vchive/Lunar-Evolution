@@ -7,7 +7,11 @@ from .acceptance_audit import (
     parse_acceptance_audit_request,
 )
 from .acceptance_holdouts import AcceptanceHoldoutError, run_acceptance_holdouts
-from .acceptance_launch import AcceptanceCampaignError, prepare_acceptance_campaign
+from .acceptance_launch import (
+    AcceptanceCampaignError,
+    prepare_acceptance_campaign,
+    revalidate_acceptance_campaign,
+)
 from .acceptance_observation_binding import (
     AcceptanceObservationBindingError,
     inspect_acceptance_observation_binding,
@@ -978,6 +982,7 @@ __all__ = [
     "remote_sync",
     "resolve_candidate_integrity_authority",
     "resume_producer_bundle_publication",
+    "revalidate_acceptance_campaign",
     "run_acceptance_holdouts",
     "run_acceptance_snapshot_probe",
     "run_candidate_execution",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import stat
@@ -293,4 +294,83 @@ def prepare_acceptance_campaign(
         raise AcceptanceCampaignError("campaign_admission_unavailable") from None
 
 
-__all__ = ["AcceptanceCampaignError", "prepare_acceptance_campaign"]
+
+def revalidate_acceptance_campaign(
+    registration_path: str | os.PathLike[str],
+    seal_path: str | os.PathLike[str],
+    *,
+    checkout_root: str | os.PathLike[str],
+    campaign_parent: str | os.PathLike[str],
+) -> dict[str, Any]:
+    """Recheck one admitted campaign immediately before a future invocation.
+
+    This is intentionally provider-free: it only validates the committed checkout, remote
+    ``main`` and the retained admission evidence.  A true result is a launch gate, never a
+    provider call or a claim that an attempt started.
+    """
+    try:
+        checkout, parent = absolute_path(checkout_root), absolute_path(campaign_parent)
+        manifest_file, seal_file = absolute_path(registration_path), absolute_path(seal_path)
+        first = preflight_acceptance_registration(
+            manifest_file, seal_file, checkout_root=checkout, campaign_parent=parent,
+            allow_existing_root=True,
+        )
+        remote_commit = _remote_main(checkout)
+        if remote_commit != first["head_commit"] or first["origin_commit"] != remote_commit:
+            _fail("remote_main_mismatch")
+        manifest = parse_acceptance_registration(_read_regular(manifest_file).decode("utf-8"))
+        root = parent / manifest["campaign_root"]
+        admission_raw = _read_regular(root / "admission.json", MAX_PRODUCT_FILE_BYTES)
+        admission = None
+        try:
+            admission = json.loads(admission_raw)
+        except (TypeError, ValueError, UnicodeDecodeError):
+            _fail("campaign_admission_incomplete")
+        if not isinstance(admission, dict) or admission.get("scope") != "acceptance_campaign_admission" or admission.get("status") != "prepared" or admission.get("provider_started") is not False:
+            _fail("campaign_admission_incomplete")
+        digest = admission.get("admission_sha256")
+        if type(digest) is not str or hashlib.sha256(_canonical({k: v for k, v in admission.items() if k != "admission_sha256"})).hexdigest() != digest:
+            _fail("campaign_admission_incomplete")
+        for key in ("registration_id", "campaign_id", "attempt_id", "campaign_root", "registration_sha256", "product_commit"):
+            if admission.get(key) != manifest.get(key):
+                _fail("campaign_admission_incomplete")
+        info = os.stat(root, follow_symlinks=False)
+        if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700 or info.st_nlink != 1:
+            _fail("campaign_admission_incomplete")
+        if (admission.get("root_device"), admission.get("root_inode")) != (info.st_dev, info.st_ino):
+            _fail("campaign_admission_incomplete")
+        files = admission.get("files")
+        if not isinstance(files, list) or not files:
+            _fail("campaign_admission_incomplete")
+        expected = {item.get("path") for item in files if isinstance(item, dict)}
+        if len(expected) != len(files) or any(not isinstance(item, dict) or type(item.get("path")) is not str for item in files):
+            _fail("campaign_admission_incomplete")
+        expected.discard("admission.json")
+        expected_root = {"materials", "admission.json", *(p for p in expected if "/" not in p)}
+        with os.scandir(root) as entries:
+            if {e.name for e in entries} != expected_root:
+                _fail("campaign_admission_incomplete")
+        for item in files:
+            path = item["path"]
+            target = root / path
+            raw = _read_regular(target, MAX_PRODUCT_FILE_BYTES)
+            if len(raw) != item.get("size") or hashlib.sha256(raw).hexdigest() != item.get("sha256"):
+                _fail("campaign_admission_incomplete")
+            named = os.stat(target, follow_symlinks=False)
+            if named.st_nlink != 1 or stat.S_IMODE(named.st_mode) != 0o600:
+                _fail("campaign_admission_incomplete")
+        if _remote_main(checkout) != remote_commit:
+            _fail("remote_main_mismatch")
+        final = preflight_acceptance_registration(
+            manifest_file, seal_file, checkout_root=checkout, campaign_parent=parent,
+            allow_existing_root=True,
+        )
+        if final != first or final["head_commit"] != remote_commit:
+            _fail("checkout_changed_during_admission")
+        return {"status": "ready", "launch_allowed": True, "admission": admission, "preflight": final, "remote_commit": remote_commit}
+    except AcceptanceCampaignError:
+        raise
+    except (AcceptanceRegistrationError, BenchmarkFileError, OSError, UnicodeError, ValueError, TypeError):
+        raise AcceptanceCampaignError("campaign_admission_incomplete") from None
+
+__all__ = ["AcceptanceCampaignError", "prepare_acceptance_campaign", "revalidate_acceptance_campaign"]
