@@ -540,6 +540,12 @@ from .staged_workflow import (
     StagedWorkflowRunner,
     StagePolicy,
 )
+from .trusted_bootstrap_handoff import (
+    TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL,
+    TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION,
+    TrustedBootstrapHandoffError,
+    build_trusted_bootstrap_process_registration_handoff,
+)
 from .workers import WorkerService
 from .workflow_checkpoint import (
     AggregateUsage,
@@ -589,6 +595,8 @@ __all__ = [
     "PRODUCER_PROCESS_PROTOCOL",
     "PRODUCER_REQUEST_EVIDENCE_PROTOCOL",
     "PRODUCER_REQUEST_EVIDENCE_SCHEMA_VERSION",
+    "TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL",
+    "TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION",
     "TRUSTED_BOOTSTRAP_PROTOCOL",
     "TRUSTED_BOOTSTRAP_SCHEMA_VERSION",
     "WORKSPACE_PLAN_PROTOCOL",
@@ -807,6 +815,7 @@ __all__ = [
     "TrialSuite",
     "TrustedBootstrapDescriptor",
     "TrustedBootstrapEvidence",
+    "TrustedBootstrapHandoffError",
     "TrustedBootstrapLaunch",
     "TrustedBootstrapRegistration",
     "TrustedBootstrapSession",
@@ -876,6 +885,7 @@ __all__ = [
     "build_round_feedback",
     "build_strategy",
     "build_trusted_bootstrap_launch",
+    "build_trusted_bootstrap_process_registration_handoff",
     "build_trusted_bootstrap_registration",
     "candidate_file_table_sha256",
     "candidate_output_contract_sha256",
