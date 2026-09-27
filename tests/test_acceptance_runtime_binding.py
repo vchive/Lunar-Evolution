@@ -21,7 +21,9 @@ from lunar_evolution.candidate_execution import CandidateExecutionInput
 from lunar_evolution.config import Config
 from lunar_evolution.controller import LocalController
 from lunar_evolution.conversational import build_algorithm_plan
-from lunar_evolution.evaluator_bundle import FrozenEvaluatorBundle
+from lunar_evolution.data_profile import build_private_input_profile, profile_sha256
+from lunar_evolution.evaluator_bundle import FrozenEvaluatorBundle, load_evaluator_bundle
+from lunar_evolution.evolution import CandidateInputArtifact
 
 
 def _contract() -> AlgorithmProblemContract:
@@ -198,7 +200,10 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     root = tmp_path / "bundle"
     root.mkdir()
     (root / "evaluator.py").write_bytes(harness.read_bytes())
-    bundle = FrozenEvaluatorBundle(root, "e" * 64, contract.digest(), "f" * 64, 2, "snapshot")
+    input_profile = build_private_input_profile(tmp_path, contract, (
+        CandidateInputArtifact("data/raw/limit.json", len(input_bytes), hashlib.sha256(input_bytes).hexdigest()),
+    ))
+    bundle = FrozenEvaluatorBundle(root, "e" * 64, contract.digest(), profile_sha256(input_profile), 2, "snapshot")
     monkeypatch.setattr(binding, "load_evaluator_bundle", lambda *args, **kwargs: bundle)
     return registration, task, input_bytes, evaluator, profile_criteria, contract, pipeline, bundle, profile, materials
 
@@ -309,6 +314,42 @@ def test_runtime_binding_rejects_staged_input_drift(tmp_path, monkeypatch):
         _bind(fixture)
 
 
+@pytest.mark.parametrize("change", ["whitespace", "duplicate_key", "input_size_float", "harness_size_float"])
+def test_runtime_binding_requires_canonical_typed_runtime_profile(tmp_path, monkeypatch, change):
+    fixture = list(_fixture(tmp_path, monkeypatch))
+    profile = json.loads(fixture[8])
+    if change == "whitespace":
+        raw = json.dumps(profile, indent=2).encode()
+    elif change == "duplicate_key":
+        raw = fixture[8][:-1] + b',"schema_version":"1"}'
+    else:
+        if change == "input_size_float":
+            profile["inputs"][0]["size"] = float(profile["inputs"][0]["size"])
+        else:
+            profile["evaluator"]["harness_size"] = float(profile["evaluator"]["harness_size"])
+        raw = canonical_json(profile)
+    fixture[8] = raw
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="profile_(invalid|noncanonical|binding_mismatch)"):
+        _bind(fixture)
+
+
+def test_runtime_binding_passes_rebuilt_input_profile_to_bundle_loader(tmp_path, monkeypatch):
+    fixture = _fixture(tmp_path, monkeypatch)
+    observed = []
+
+    def load(*_args, **kwargs):
+        observed.append(kwargs["input_profile"])
+        return fixture[7]
+
+    monkeypatch.setattr(binding, "load_evaluator_bundle", load)
+    receipt = _bind(fixture)
+    expected = build_private_input_profile(tmp_path, fixture[5], (
+        CandidateInputArtifact("data/raw/limit.json", len(fixture[2]), hashlib.sha256(fixture[2]).hexdigest()),
+    ))
+    assert observed == [expected]
+    assert receipt["runtime_input_profile_sha256"] == profile_sha256(expected)
+
+
 def test_runtime_binding_requires_holdouts(tmp_path, monkeypatch):
     fixture = _fixture(tmp_path, monkeypatch)
     with pytest.raises(binding.AcceptanceRuntimeBindingError, match="probe_results_missing"):
@@ -385,6 +426,38 @@ def test_real_native_preparation_and_fixed_holdouts_bind(tmp_path):
     assert (tmp_path / "holdouts/binding-receipt.json").read_bytes() == canonical_json(receipt, maximum=256 * 1024)
     payload = {key: value for key, value in receipt.items() if key != "binding_sha256"}
     assert hashlib.sha256(canonical_json(payload, maximum=256 * 1024)).hexdigest() == receipt["binding_sha256"]
+
+
+def test_low_level_binding_rejects_valid_bundle_profile_for_different_input(tmp_path):
+    from lunar_evolution.bundle_evolution import load_bundle_pipeline
+
+    _, parent, contract, registration, materials = _native_fixture(tmp_path)
+    pipeline = load_bundle_pipeline(parent.workspace / "bundle-profile.json")
+    bundle_root = parent.workspace / "evaluator-bundle"
+    profile_path = bundle_root / "input-profile.json"
+    manifest_path = bundle_root / "manifest.json"
+    input_profile = json.loads(profile_path.read_bytes())
+    input_profile["files"][0]["sha256"] = hashlib.sha256(b'{"limit":4}\n').hexdigest()
+    profile_bytes = canonical_json(input_profile)
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["input_profile_sha256"] = hashlib.sha256(profile_bytes).hexdigest()
+    manifest["bundle_sha256"] = hashlib.sha256(canonical_json({
+        key: value for key, value in manifest.items() if key != "bundle_sha256"
+    })).hexdigest()
+    for path, content in ((profile_path, profile_bytes), (manifest_path, canonical_json(manifest))):
+        path.chmod(0o644)
+        path.write_bytes(content)
+        path.chmod(0o444)
+    changed_bundle = load_evaluator_bundle(bundle_root, contract, timeout=3, invocation="snapshot")
+    fixture = (
+        registration, materials[registration["task_material"]["path"]],
+        materials[registration["input_material"]["path"]],
+        materials[registration["evaluator_material"]["path"]],
+        materials[registration["evaluator_profile_material"]["path"]],
+        contract, pipeline, changed_bundle, (parent.workspace / "bundle-profile.json").read_bytes(), materials,
+    )
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="input_profile_binding_mismatch"):
+        _bind(fixture)
 
 
 def test_wrapper_rejects_retained_evidence_changed_after_probe(tmp_path, monkeypatch):

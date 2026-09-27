@@ -27,3 +27,26 @@ timeouts, exits and actual cleanup observations must be retained. Missing/unknow
 be upgraded to passed. Re-read the preparation and all registered material bytes after execution
 before publishing a complete binding. No model call, source candidate execution, automatic retry
 or repair is performed by this layer.
+
+## Retained observation publication
+
+`inspect_acceptance_observation_binding` reopens the completed binding workspace without
+executing probes. It checks all eight retained snapshot/expected/projection/evidence sets,
+reconstructs the binding through the native preparation and low-level verifier, and requires
+byte-for-byte equality with the persisted parent-bound receipt. Preparation and retained files
+are checked again before return; symlinks, replacements, missing evidence and identity drift
+fail with bounded codes. No caller-provided success flag is accepted.
+
+The resulting observation manifest uses contract, input-descriptor-table and actual harness
+digests. Registration IDs, campaign root, product commit, provider/model/runtime and budgets
+come from the independently parsed registration. A separate observation binding links its
+manifest digest, the runtime binding digest and the prepared parent; its status is
+`criteria_bound`, never a successful acceptance counter.
+
+`publish_acceptance_observation_binding` reserves the fixed `observation` child of the retained
+binding workspace, then writes `manifest.json` and `binding.json` create-only with fsync. The
+binding is published last, after reinspection; all published bytes and identities are checked
+before returning. Cancellation/deadline and interruption leave the reserved child in place and
+prevent reuse, including incomplete publication. This publication does not consume a campaign
+slot or perform any provider request. T038 must call it inside the admitted campaign and wire
+it to the actual solve; the six-stage audit and real attempt remain T040.

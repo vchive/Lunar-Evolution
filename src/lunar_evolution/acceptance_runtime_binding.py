@@ -22,10 +22,15 @@ from ._candidate_workspace_io import DirectoryChain
 from .acceptance_registration import AcceptanceRegistrationError, parse_acceptance_registration
 from .algorithm import AlgorithmProblemContract
 from .bundle_evolution import MultiFileCandidatePipeline
-from .candidate_evaluation_spec import canonical_json, parse_candidate_evaluation_report
+from .candidate_evaluation_spec import (
+    canonical_json,
+    parse_candidate_evaluation_report,
+    strict_json,
+)
 from .candidate_execution import CandidateExecutionInput
+from .data_profile import DataProfileError, build_private_input_profile, profile_sha256
 from .evaluator_bundle import EvaluatorBundleError, FrozenEvaluatorBundle, load_evaluator_bundle
-from .evolution import EvolutionError
+from .evolution import CandidateInputArtifact, EvolutionError
 
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -380,10 +385,14 @@ def bind_acceptance_runtime(
     input_table_sha256 = hashlib.sha256(canonical_json(list(table))).hexdigest()
     if not isinstance(profile_bytes, bytes):
         _fail("profile_invalid")
-    profile_sha256 = hashlib.sha256(profile_bytes).hexdigest()
+    runtime_profile_sha256 = hashlib.sha256(profile_bytes).hexdigest()
     try:
-        runtime_profile = json.loads(profile_bytes)
-    except (TypeError, ValueError, UnicodeDecodeError, RecursionError):
+        runtime_profile = strict_json(profile_bytes)
+        if canonical_json(runtime_profile) != profile_bytes:
+            _fail("profile_noncanonical")
+    except AcceptanceRuntimeBindingError:
+        raise
+    except (TypeError, ValueError, UnicodeError, RecursionError):
         _fail("profile_invalid")
     profile_keys = {
         "schema_version", "protocol", "evaluator", "harness_path", "input_root", "inputs",
@@ -395,18 +404,15 @@ def bind_acceptance_runtime(
             or runtime_profile.get("protocol") != "lunar-bundle-pipeline-v1"):
         _fail("profile_invalid")
     try:
-        if (runtime_profile["harness_path"] != "evaluator-bundle/evaluator.py"
-                or runtime_profile["input_root"] != "data/raw"
-                or runtime_profile["inputs"] != list(table)
-                or tuple(runtime_profile["command"]) != tuple(pipeline.command)
-                or runtime_profile["environment"] != dict(pipeline.environment)
-                or runtime_profile["timeout_seconds"] != pipeline.timeout_seconds
-                or runtime_profile["max_output_bytes"] != pipeline.max_output_bytes
-                or runtime_profile["dependency_sha256"] != pipeline.dependency_sha256
-                or runtime_profile["environment_sha256"] != pipeline.environment_sha256):
-            _fail("profile_binding_mismatch")
-        runtime_evaluator = runtime_profile["evaluator"]
-        if not isinstance(runtime_evaluator, Mapping) or runtime_evaluator != pipeline.evaluator.to_dict():
+        expected_profile = {
+            "schema_version": "1", "protocol": "lunar-bundle-pipeline-v1",
+            "harness_path": "evaluator-bundle/evaluator.py", "input_root": "data/raw",
+            "inputs": list(table), "command": list(pipeline.command),
+            "environment": dict(pipeline.environment), "timeout_seconds": pipeline.timeout_seconds,
+            "max_output_bytes": pipeline.max_output_bytes, "dependency_sha256": pipeline.dependency_sha256,
+            "environment_sha256": pipeline.environment_sha256, "evaluator": pipeline.evaluator.to_dict(),
+        }
+        if profile_bytes != canonical_json(expected_profile):
             _fail("profile_binding_mismatch")
     except (KeyError, TypeError, ValueError):
         _fail("profile_binding_mismatch")
@@ -428,15 +434,30 @@ def bind_acceptance_runtime(
         pipeline.preflight()
     except (EvolutionError, AttributeError, OSError, TypeError, ValueError):
         _fail("staged_input_mismatch")
+    try:
+        input_root = Path(pipeline.input_root)
+        workspace_root = input_root.parent.parent
+        if input_root != workspace_root / "data/raw":
+            _fail("input_profile_binding_mismatch")
+        input_profile = build_private_input_profile(workspace_root, contract, tuple(
+            CandidateInputArtifact("data/raw/" + row["target"], row["size"], row["sha256"])
+            for row in table
+        ))
+        input_profile_sha256 = profile_sha256(input_profile)
+    except (DataProfileError, EvolutionError, AttributeError, OSError, TypeError, ValueError, RecursionError):
+        _fail("input_profile_binding_mismatch")
+    if bundle.input_profile_sha256 != input_profile_sha256:
+        _fail("input_profile_binding_mismatch")
     if bundle.contract_sha256 != contract.digest() or bundle.invocation != "snapshot":
         _fail("bundle_binding_mismatch")
     try:
         verified = load_evaluator_bundle(
-            bundle.root, contract, timeout=bundle.timeout_seconds, invocation="snapshot",
+            bundle.root, contract, input_profile=input_profile,
+            timeout=bundle.timeout_seconds, invocation="snapshot",
         )
     except (EvaluatorBundleError, OSError, TypeError, ValueError, RecursionError):
         _fail("bundle_binding_mismatch")
-    if verified.fingerprint != bundle.fingerprint:
+    if verified.fingerprint != bundle.fingerprint or verified.input_profile_sha256 != input_profile_sha256:
         _fail("bundle_binding_mismatch")
     probes = _probe_summary(probe_results, reg["holdout_pins"], materials, harness_sha256)
     receipt = {
@@ -449,7 +470,8 @@ def bind_acceptance_runtime(
         "evaluator_criteria_sha256": reg["evaluator_sha256"],
         "profile_criteria_sha256": reg["evaluator_profile_sha256"],
         "contract_sha256": contract.digest(), "input_table_sha256": input_table_sha256,
-        "runtime_profile_sha256": profile_sha256, "harness_sha256": harness_sha256,
+        "runtime_profile_sha256": runtime_profile_sha256, "harness_sha256": harness_sha256,
+        "runtime_input_profile_sha256": input_profile_sha256,
         "evaluator_bundle_sha256": bundle.fingerprint, "probe_summary": probes,
         "criteria_profile_sha256": hashlib.sha256(canonical_json(profile_criteria)).hexdigest(),
     }
