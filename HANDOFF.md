@@ -1,5 +1,29 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-27 新真实验收的离线准入入口
+
+Feature 142 T038a 已实现并验证。`prepare_acceptance_campaign` 对真实远端 main 做有界、
+非交互核验，和 clean HEAD/本地 origin/main 对齐后，再次核验 20 份登记材料并原子独占新
+campaign root。它保留登记、seal、preflight、远端观测和材料快照；回执发布前后重读文件，
+核对字节、inode、模式、链接数和精确目录清单。根目录一旦创建，即使写入或同步失败也
+保留并拒绝重试。此入口不调用 provider，不执行 solve，也不建立真实成功计数。
+
+临时裸 Git origin 的准入专项 **30 passed**；登记/材料/准入合计 **108 passed**，相关
+审计兼容 **161 passed**，原生离线 E2E **224 passed / 0 skipped**。Ruff、compileall、
+SDD 前置与 diff 检查通过。后续 T038 runner 仍需在执行前复查远端和留存证据；T039 需将
+预登记判据与 preparation 实际生成的合同、evaluator/profile 和八项 probe 结果分别绑定；
+T040 才是唯一真实 attempt 与独立六阶段审计。现未生成新登记/真实 campaign、未调用
+provider 或 WebAgent。外部 producer 的 Feature 156/157/158 生产接线仍开放。
+
+T039 的身份映射必须独立保留：登记 task SHA 是原文，观察 manifest 的 task SHA 是生成
+合同；登记 input SHA 是 limit.json 字节，观察 input SHA 是规范化 CandidateExecutionInput
+数组；登记 evaluator/profile SHA 是判据，观察/prepared event SHA 是实际 harness/profile。
+不能复制字段或削弱现有审计器来让它们相等。先用 validate_automatic_solve_bundle 核验
+真实 prepared artifacts，再检验合同的唯一 input/output、两条 independent hard constraints、
+source python_file_count minimum=2、maximize/no metrics/no soft/execution constraints/population，
+并独立运行八项固定 probes。现 _snapshot_probe 只返回 report，缺少可持久复核的双 exit/
+cleanup 证据，必须补真实观测后才能发布 passed holdout receipt，不得虚构 cleanup=verified。
+
 ## 2026-09-27 新真实验收材料与预检加固
 
 用户确定沿用历史实际 `openai-compatible` / `glm-5.2` / `chat_completions` 模型及任务。

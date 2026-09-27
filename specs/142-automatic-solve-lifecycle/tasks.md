@@ -126,6 +126,8 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
 - [ ] T038 Implement a launch runner that verifies the actual remote `main` commit, enforces the
       clean `HEAD == origin/main` gate, atomically claims one fresh campaign root, and retains the
       preregistration/preflight evidence before the sole provider attempt.
+- [x] T038a Implement and verify the provider-free remote/root/evidence admission slice described
+      in [campaign-admission.md](campaign-admission.md); it does not itself launch an attempt.
 - [ ] T039 Bind the native preparation-generated evaluator/profile to the preregistered independent
       criteria and the observation manifest; add provider-free mismatch and interruption tests.
 - [ ] T040 Run the new one-slot real attempt and independent postrun six-stage/holdout audit.

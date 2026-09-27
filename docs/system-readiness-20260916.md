@@ -2,6 +2,12 @@
 
 ## 2026-09-27 当前判断
 
+新增真实验收的离线准入入口：会查询实际远端 `main`，核对登记材料、独占新 campaign
+目录并保留可核验的文件与回执。30 项准入专项通过；它没有启动模型或自动 solve。
+Feature 142 T038a 已完成，仍须完成 T038 的真实执行 runner、T039 的运行时评分器
+与预登记判据绑定、T040 的唯一真实 attempt 和独立执行后审计。外部 producer 的
+可信 bootstrap、网络/凭据隔离及完整控制器接线也仍开放，因此下方发布判断不变。
+
 **原生自动多文件链路现在可以端到端回归。** 本轮统一离线入口的 **224 项全部通过**，
 没有失败、错误或跳过：合同准备、候选生成、本地执行、独立评分、选优、父任务交付，以及
 前后台一致性、等待输入、answer/resume、取消、真实超时进程与后代清理、强杀恢复和仓库外
@@ -23,7 +29,7 @@ Feature 157 现在已有真实 controller-owned HTTP POST worker：请求经 bro
 
 | 优先级/范围 | 仍需完成 | 验收终点 |
 | --- | --- | --- |
-| P0：原生链路发布 | 新真实验收 runner 和 task/input/evaluator/profile/8 项 holdout 材料，固定产品/模型/预算，独立新登记与唯一 attempt | 新真实模型生成、执行、独立评分、选优和父交付全部有绑定证据，cleanup 与 postrun 独立审计通过；139 历史 preparation 1/1、primary/joint 0/1 不变 |
+| P0：原生链路发布 | 准入和20份独立材料已完成；仍缺实际 runner、运行时评分器绑定、固定产品/模型/预算的独立新登记与唯一 attempt | 新真实模型生成、执行、独立评分、选优和父交付全部有绑定证据，cleanup 与 postrun 独立审计通过；139 历史 preparation 1/1、primary/joint 0/1 不变 |
 | P1：外部 producer 生命周期 | 原生可信 bootstrap artifact、bootstrap/target 执行字节 handoff、Feature 156 共享登记/单一 deadline/清理/恢复及完整矩阵 | T158-04 与 T156 整体生命周期关闭；Python bootstrap fixture 不能替代生产入口 |
 | P1：外部 producer 请求边界 | 完整出口覆盖、credential 隔离、受保护生产 journal、Feature 156 与崩溃恢复接线 | T157-05/06 与 T156-14 关闭，绕过 broker 和控制器崩溃均有实证 |
 | 后续外部集成 | producer 输出自动进入 admission → execution/evaluation → population/archive → parent delivery，及真实框架 campaign | 新登记的外部 producer 全链路完成；已实现 staged publication 等局部能力不重复开发 |

@@ -6,6 +6,7 @@ from .acceptance_audit import (
     build_acceptance_audit_request,
     parse_acceptance_audit_request,
 )
+from .acceptance_launch import AcceptanceCampaignError, prepare_acceptance_campaign
 from .acceptance_observer import (
     DEFAULT_ACCEPTANCE_BUDGETS,
     AcceptanceObservationError,
@@ -582,6 +583,7 @@ __all__ = [
     "WORKSPACE_PLAN_PROTOCOL",
     "WORKSPACE_PLAN_SCHEMA_VERSION",
     "AcceptanceAuditError",
+    "AcceptanceCampaignError",
     "AcceptanceObservationError",
     "AcceptanceRegistrationError",
     "AdmittedBenchmarkComparison",
@@ -921,6 +923,7 @@ __all__ = [
     "preflight_acceptance_registration",
     "preflight_producer_bundle_publication",
     "preflight_producer_launch",
+    "prepare_acceptance_campaign",
     "prepare_producer_bundle_drafts",
     "prepare_producer_bundle_manifest",
     "prepare_producer_seed_manifest",

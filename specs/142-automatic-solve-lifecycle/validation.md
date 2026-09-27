@@ -1,5 +1,26 @@
 # Validation
 
+## Fresh campaign admission (2026-09-27)
+
+The provider-free `prepare_acceptance_campaign` entry now checks the actual remote
+`refs/heads/main` commit against clean local HEAD and `origin/main`, rereads the twenty
+registered materials, and atomically reserves the exact fresh campaign root. It retains the
+registration, seal, preflight, remote observation, and material bytes, then publishes a
+digest-bound admission receipt. Before and after receipt publication, it checks retained file
+bytes, inode/metadata fingerprints, modes, link counts, directory identities and exact inventory.
+Failure after root creation leaves the root reserved and refuses retry; no provider is started.
+
+The 30 new admission tests passed against temporary Git checkouts and actual local bare origins,
+including forged tracking refs, malformed/unavailable remote observations, concurrent admissions,
+write/sync failures, and retained-evidence tampering. Registration/case/admission focused tests
+passed **108**, audit compatibility tests **161**, native offline E2E **224/224** with zero skips.
+Ruff, compileall, SDD prerequisites and diff check passed. These results close only T038a, not
+T038's launch runner, T039's generated evaluator binding or T040's real attempt/postrun audit.
+No new actual registration or campaign was created, and no real provider was called.
+Reports are retained separately under `.lunar-evolution/test-results/admission-20260927/` as
+`focused.xml`, `audit.xml`, and `native-e2e.xml`. The current working tree is based on `eb7ed56`;
+the prior three-stage release result below is a separate earlier checkpoint.
+
 ## Fresh real-acceptance materials and preflight (2026-09-27)
 
 The new Feature 142 case builder and 20 committed material files retain the prior effective
