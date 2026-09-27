@@ -140,8 +140,10 @@ def _read_probe_rows(reg: Mapping[str, Any], materials: Mapping[str, bytes], wor
             expected_raw = read_regular_file(item / "expected.json", pin["expected"]["size"], exact_size=True)
             actual = read_regular_file(item / "actual.json", _MAX_JSON, exact_size=False)
             evidence_raw = read_regular_file(item / "evidence.json", _MAX_JSON, exact_size=False)
-        except Exception as exc:
+        except FileNotFoundError as exc:
             raise AcceptanceObservationBindingError("retained_probe_missing") from exc
+        except Exception as exc:
+            raise AcceptanceObservationBindingError("retained_probe_mismatch") from exc
         if (not isinstance(pin.get("input"), Mapping) or not isinstance(pin.get("expected"), Mapping)
                 or hashlib.sha256(snapshot).hexdigest() != pin["input"].get("sha256")
                 or hashlib.sha256(expected_raw).hexdigest() != pin["expected"].get("sha256")):
@@ -177,7 +179,7 @@ def _check_tree(workspace: Path) -> None:
         root = os.stat(workspace, follow_symlinks=False)
         if not stat.S_ISDIR(root.st_mode):
             _fail("binding_workspace_invalid")
-        expected_root = {*(f"{n:02d}" for n in range(8)), "binding-receipt.json"}
+        expected_root = {*(f"{n:02d}" for n in range(8)), "binding-receipt.json", "observation"}
         with os.scandir(workspace) as entries:
             seen = set()
             for entry in entries:
@@ -188,6 +190,18 @@ def _check_tree(workspace: Path) -> None:
                 if entry.name == "binding-receipt.json":
                     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                         _fail("retained_tree_changed")
+                elif entry.name == "observation":
+                    if not stat.S_ISDIR(info.st_mode):
+                        _fail("retained_tree_changed")
+                    with os.scandir(workspace / "observation") as child_entries:
+                        child_seen = set()
+                        for child in child_entries:
+                            if child.name not in {"manifest.json", "binding.json"} or child.name in child_seen:
+                                _fail("retained_tree_changed")
+                            child_seen.add(child.name)
+                            child_info = child.stat(follow_symlinks=False)
+                            if not stat.S_ISREG(child_info.st_mode) or child_info.st_nlink != 1:
+                                _fail("retained_tree_changed")
                 elif not stat.S_ISDIR(info.st_mode):
                     _fail("retained_tree_changed")
     except AcceptanceObservationBindingError:
@@ -319,12 +333,6 @@ def publish_acceptance_observation_binding(
     )
     root = absolute_path(workspace)
     try:
-        if check_active is not None:
-            check_active()
-        if remaining_timeout is not None:
-            value = remaining_timeout("observation-publish")
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-                _fail("observation_deadline_exceeded")
         parent_chain = DirectoryChain(root, "observation_workspace_changed")
         try:
             try:
@@ -334,6 +342,12 @@ def publish_acceptance_observation_binding(
             except OSError as exc:
                 raise AcceptanceObservationBindingError("observation_publish_failed") from exc
             os.fsync(parent_chain.fd)
+            if check_active is not None:
+                check_active()
+            if remaining_timeout is not None:
+                value = remaining_timeout("observation-publish")
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                    _fail("observation_deadline_exceeded")
             child = DirectoryChain(root / "observation", "observation_workspace_changed")
             try:
                 _write_create_only(child.fd, "manifest.json", _json_bytes(result["manifest"]))
