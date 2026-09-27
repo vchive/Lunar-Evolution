@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from ._benchmark_files import absolute_path, read_regular_file
+from ._benchmark_files import BenchmarkFileError, absolute_path, read_regular_file
 from ._candidate_workspace_io import DirectoryChain
 from .acceptance_runtime_binding import (
     _canonical,
@@ -140,8 +140,9 @@ def _read_probe_rows(reg: Mapping[str, Any], materials: Mapping[str, bytes], wor
             expected_raw = read_regular_file(item / "expected.json", pin["expected"]["size"], exact_size=True)
             actual = read_regular_file(item / "actual.json", _MAX_JSON, exact_size=False)
             evidence_raw = read_regular_file(item / "evidence.json", _MAX_JSON, exact_size=False)
-        except FileNotFoundError as exc:
-            raise AcceptanceObservationBindingError("retained_probe_missing") from exc
+        except BenchmarkFileError as exc:
+            code = "retained_probe_missing" if exc.reason == "missing" else "retained_probe_mismatch"
+            raise AcceptanceObservationBindingError(code) from exc
         except Exception as exc:
             raise AcceptanceObservationBindingError("retained_probe_mismatch") from exc
         if (not isinstance(pin.get("input"), Mapping) or not isinstance(pin.get("expected"), Mapping)
@@ -188,10 +189,11 @@ def _check_tree(workspace: Path) -> None:
                 seen.add(entry.name)
                 info = entry.stat(follow_symlinks=False)
                 if entry.name == "binding-receipt.json":
-                    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                            or stat.S_IMODE(info.st_mode) != 0o600):
                         _fail("retained_tree_changed")
                 elif entry.name == "observation":
-                    if not stat.S_ISDIR(info.st_mode):
+                    if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
                         _fail("retained_tree_changed")
                     with os.scandir(workspace / "observation") as child_entries:
                         child_seen = set()
@@ -200,7 +202,8 @@ def _check_tree(workspace: Path) -> None:
                                 _fail("retained_tree_changed")
                             child_seen.add(child.name)
                             child_info = child.stat(follow_symlinks=False)
-                            if not stat.S_ISREG(child_info.st_mode) or child_info.st_nlink != 1:
+                            if (not stat.S_ISREG(child_info.st_mode) or child_info.st_nlink != 1
+                                    or stat.S_IMODE(child_info.st_mode) != 0o600):
                                 _fail("retained_tree_changed")
                 elif not stat.S_ISDIR(info.st_mode):
                     _fail("retained_tree_changed")
