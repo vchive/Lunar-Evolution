@@ -1,5 +1,21 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-28 observation binding and native E2E checkpoint
+
+已提交并推送 `9a0bbe8`、`06ddf34`、`b50ab43`。新增可信 bootstrap 到 Feature 156 的
+provider-free handoff receipt，并将八项 holdout 的 runtime binding 接入 retained observation
+manifest：重新读取 parent、prepared event、bundle/profile、binding receipt 和全部 probe
+文件，生成 `criteria_bound` manifest/binding；发布使用 `observation/` 子目录、create-only
+文件、fsync、目录链复核，失败或 deadline 后保留现场且禁止复用。新增 observation 专项
+5 项通过；acceptance/registration/audit/runtime/holdout/probe/bootstrap 组合回归通过。
+
+在文件稳定后重新运行原生离线 E2E：**224 passed / 0 failed / 0 skipped**，JUnit 位于
+`.lunar-evolution/test-results/native-e2e-20260928-final/native-e2e.xml`，提交为
+`9a0bbe85b324ca2a5f0e6c270e5da9319d66ae67`。这是本地 provider-free 回归，不是模型验收。
+当前仍未创建新 campaign、未调用 provider、外部 producer 或 WebAgent。T038 正式 launch
+runner、T040 唯一真实 attempt/postrun audit，以及 Feature 156/157/158 生产生命周期接线
+仍未完成；Feature 139 保持 preparation **1/1**、primary/joint **0/1**。
+
 ## 2026-09-27 `15b8113` native holdout/runtime-binding hardening
 
 本轮已提交并推送 `15b8113`。准备绑定现在读取完整登记、实际 prepared parent、contract、

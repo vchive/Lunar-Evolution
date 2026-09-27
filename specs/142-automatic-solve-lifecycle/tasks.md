@@ -135,8 +135,9 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
   and generated identities distinct, executes the eight fixed native holdouts once, and retains
   their reports, projections, actual harness digest, exits, cleanup and a create-only binding
   receipt. Strict criteria/material, drift, cancellation, deadline and directory-swap regressions
-  pass. T039 remains open: the receipt is not yet connected to the observation manifest, campaign
-  discovery or the formal launch runner.
+  pass. Follow-up `b50ab43` now reconnects the retained receipt to a `criteria_bound` observation
+  manifest/binding and create-only `observation/` publication. T039 remains open only for wiring
+  this publication into campaign discovery and the formal launch runner.
 
 - [ ] T040 Run the new one-slot real attempt and independent postrun six-stage/holdout audit.
       Preserve Feature 139's closed evidence and report `0/1` honestly if a stage fails.

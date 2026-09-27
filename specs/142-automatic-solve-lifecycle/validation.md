@@ -426,6 +426,11 @@ Each relative path, size and SHA-256 matches its retained `postrun/evidence.json
 historical SQLite mutation. The product diff contains no Feature 139 source/evidence change.
 No provider, real campaign, retained generated program, or WebAgent was executed.
 
+After the retained observation publication changes stabilized, the native offline E2E suite
+collected 224 tests and passed **224/224**, with zero skips or failures. JUnit is retained at
+`.lunar-evolution/test-results/native-e2e-20260928-final/native-e2e.xml`. This is provider-free
+regression evidence and does not establish real-model acceptance.
+
 ## Release boundary
 
 The 2026-09-21 readiness audit additionally checked the pushed product `65d9ae2` on
