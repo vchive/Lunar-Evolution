@@ -130,5 +130,13 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
       in [campaign-admission.md](campaign-admission.md); it does not itself launch an attempt.
 - [ ] T039 Bind the native preparation-generated evaluator/profile to the preregistered independent
       criteria and the observation manifest; add provider-free mismatch and interruption tests.
+
+  The `15b8113` supporting slice validates a complete prepared parent, keeps all preregistered
+  and generated identities distinct, executes the eight fixed native holdouts once, and retains
+  their reports, projections, actual harness digest, exits, cleanup and a create-only binding
+  receipt. Strict criteria/material, drift, cancellation, deadline and directory-swap regressions
+  pass. T039 remains open: the receipt is not yet connected to the observation manifest, campaign
+  discovery or the formal launch runner.
+
 - [ ] T040 Run the new one-slot real attempt and independent postrun six-stage/holdout audit.
       Preserve Feature 139's closed evidence and report `0/1` honestly if a stage fails.

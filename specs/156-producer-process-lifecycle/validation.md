@@ -1,5 +1,24 @@
 # Feature 156 validation
 
+## Native bootstrap isolation supporting checkpoint (`15b8113`, 2026-09-27)
+
+The Feature 158 native bootstrap now has an actual Darwin pre-exec sandbox integration test.
+After the one-byte gate closes, the compiled target starts and exits zero, writes the declared
+workspace, and receives an OS permission denial for an outside write, controller-secret read
+and direct network connection. A live loopback listener with an unsandboxed positive control
+ensures the network denial is not merely a closed port. The C `execve` uses the verified target
+path independently of `argv[0]`. The sandbox grants dyld access to the root directory itself,
+not its subtree, so startup can complete without granting controller-file access.
+
+The five acceptance/native-isolation suites at this checkpoint pass **82 tests**, with no
+failures/errors/skips; the report is
+`.lunar-evolution/test-results/checkpoint-15b8113-focused/focused.xml`. Feature 158's specific
+coverage and scope are recorded in its [validation](../158-trusted-producer-bootstrap/validation.md).
+These are local controlled executables, not an external producer acceptance. No Feature 156
+production runner, attestation consumption, formal registration, shared deadline, request broker,
+cleanup/recovery or scheduler path is added by this supporting increment. Its open lifecycle
+tasks therefore remain open.
+
 ## Post-crash cleanup acceptance (2026-09-26)
 
 Explicit recovery cleanup is a separate operation from read-only inspection. The runner and

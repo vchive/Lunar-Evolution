@@ -16,3 +16,11 @@
 - [ ] T156-12 Define and attest a Lunar-owned producer bootstrap protocol; reject arbitrary direct executables that cannot prove no work occurred before registration-gate release.
 - [x] T156-13 Add capture/read and signal/cleanup fault-injection fixtures, including child exit before gate and broken gate delivery; preserve terminal unknown/recovery evidence.
 - [ ] T156-14 Integrate Feature 157 only after controller-owned request evidence is host-observed and recovery-safe; producer-declared files remain diagnostics.
+
+The `15b8113` supporting checkpoint adds a compiled native trusted bootstrap and a real Darwin
+bootstrap → isolated target test. The target can write its declared workspace while outside
+writes, controller-secret reads and direct network connections are denied. C execution uses the
+verified `target_path`; a differing `argv[0]` cannot select unverified executable bytes. This is
+not a Feature 156 runner entry point. T156-05/06/09/11/12/14 remain open until formal registration,
+the shared deadline, broker/credential/journal boundaries, cleanup and recovery are connected to
+that native path and accepted together.

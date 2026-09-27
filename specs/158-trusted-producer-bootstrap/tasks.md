@@ -1,7 +1,7 @@
 # Tasks
 
 - [x] T158-01 Define canonical trusted-bootstrap descriptor, protocol version, launch record, and bounded handshake/evidence DTOs.
-- [x] T158-02 Define exact-byte/bootstrap allowlisting and platform execution modes without papering over Feature 156 T156-11. The current allowlist is fixture-only; platform-bound production execution remains deferred.
+- [x] T158-02 Define exact-byte/bootstrap allowlisting and platform execution modes without papering over Feature 156 T156-11. A native artifact build/allowlist supporting slice is now implemented; production lifecycle integration remains deferred.
 - [x] T158-03 Specify and implement the ready/block/release/target-start state machine in a trusted bootstrap runtime fixture.
 - [ ] T158-04 Bind bootstrap and target identities to Feature 156 registration, cleanup, recovery, and one monotonic attempt.
 
@@ -10,6 +10,12 @@
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This
   does not close T158-04: the Feature 156 runner still owns registration-before-release, consumed
   attestation, shared deadline, cleanup, recovery, and scheduler integration.
+
+  At `15b8113`, a real Darwin bootstrap-to-target subprocess test also verifies isolation is
+  applied before exec: the target starts, writes its declared workspace, and receives OS denials
+  for outside writes, controller-secret reads and network connections. C executes the verified
+  `target_path`, independently of `argv[0]`. These are supporting tests; the formal Feature 156
+  registration/deadline/cleanup/recovery and Feature 157 broker boundary are still unconnected.
 
   The current increment adds `build_trusted_bootstrap_launch`, an identity-only adapter from a
   verified Feature 154 intent/attestation. It binds all launch identities, target executable
@@ -29,7 +35,9 @@ target still emits `bootstrap_ready` and only reports `target_start_failed` afte
 Post-release target identity failures, including a hard-linked target, also emit the fixed
 `target_start_failed` frame rather than falling through to an unclassified early EOF.
 
-T158-04 remains open at the lifecycle-integration level.  The provider-free
+The following paragraphs retain earlier supporting checkpoints; the `15b8113` entry above is
+the current native artifact status. T158-04 remains open at the lifecycle-integration level.
+The provider-free
 `TrustedBootstrapRegistration` DTO now covers the narrow identity boundary: it carries the
 launch/journal/run/parent/task, intent, attestation, bootstrap descriptor, target identity, and
 gate protocol from `TrustedBootstrapLaunch`, adds the registered bootstrap PID/PGID, and binds

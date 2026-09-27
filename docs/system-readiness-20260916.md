@@ -2,11 +2,18 @@
 
 ## 2026-09-27 当前判断
 
+`15b8113` 已补齐准备产物与预登记判据的本地绑定、固定八项 native holdout 的实际执行与
+持久证据，并拒绝材料/目录漂移、取消和 deadline 后的绑定发布。五套相关专项 **82 passed /
+0 skipped**，报告为 `.lunar-evolution/test-results/checkpoint-15b8113-focused/focused.xml`。
+这仍是 offline 支持链路；Feature 142 T039 保持开放，剩余工作是把 binding receipt 接到
+observation manifest、campaign discovery 和正式 runner。T038 的真实执行 runner、T040 的
+唯一真实 attempt 和独立执行后审计仍未完成，没有增加真实模型成功样本。
+
 新增真实验收的离线准入入口：会查询实际远端 `main`，核对登记材料、独占新 campaign
 目录并保留可核验的文件与回执。30 项准入专项通过；它没有启动模型或自动 solve。
-Feature 142 T038a 已完成，仍须完成 T038 的真实执行 runner、T039 的运行时评分器
-与预登记判据绑定、T040 的唯一真实 attempt 和独立执行后审计。外部 producer 的
-可信 bootstrap、网络/凭据隔离及完整控制器接线也仍开放，因此下方发布判断不变。
+Feature 142 T038a 已完成。外部 producer 的原生 bootstrap 已实现并通过 Darwin 隔离后
+真实执行目标的测试，允许 workspace 写入并拒绝外部写入、controller secret 读取和直接网络
+连接；正式生命周期、完整网络/凭据隔离和控制器接线仍开放，因此下方发布判断不变。
 
 **原生自动多文件链路现在可以端到端回归。** 本轮统一离线入口的 **224 项全部通过**，
 没有失败、错误或跳过：合同准备、候选生成、本地执行、独立评分、选优、父任务交付，以及
@@ -17,9 +24,12 @@ Feature 142 T038a 已完成，仍须完成 T038 的真实执行 runner、T039 �
 
 可重复入口见 [142 quickstart](../specs/142-automatic-solve-lifecycle/quickstart.md)，本轮报告为
 `.lunar-evolution/test-results/native-e2e-20260927-final/{native-e2e,runner}.xml`；runner 的
-**46 项测试通过**。该入口只运行当前原生集成范围；本轮默认完整三阶段也已通过：当前
-**7586 passed / 7 skipped**，历史 **2294 passed**，原始登记 **24 passed**，全部 0 失败/错误。
-报告位于 `.lunar-evolution/test-results/native-e2e-release-20260927/`。
+**46 项测试通过**。该入口只运行当前原生集成范围。后续基于 `7168c71` 的工作区检查点
+再次通过 native E2E **224/224** 和完整三阶段：当前 **7713 passed / 7 skipped**，历史
+**2294 passed**，原始登记 **24 passed**，全部 0 失败/错误。报告位于
+`.lunar-evolution/test-results/native-e2e-20260927-runtime-binding/` 与
+`.lunar-evolution/test-results/release-20260927-runtime-binding/`。该完整回归早于 `15b8113`
+最后的硬化改动，不替代该提交之后的完整发布回归。
 
 Feature 157 现在已有真实 controller-owned HTTP POST worker：请求经 broker 登记后使用
 独立进程、同一绝对 deadline 和有界 IPC；只有确认终止并回收后才报告宿主超时执行成功。
@@ -29,8 +39,8 @@ Feature 157 现在已有真实 controller-owned HTTP POST worker：请求经 bro
 
 | 优先级/范围 | 仍需完成 | 验收终点 |
 | --- | --- | --- |
-| P0：原生链路发布 | 准入和20份独立材料已完成；仍缺实际 runner、运行时评分器绑定、固定产品/模型/预算的独立新登记与唯一 attempt | 新真实模型生成、执行、独立评分、选优和父交付全部有绑定证据，cleanup 与 postrun 独立审计通过；139 历史 preparation 1/1、primary/joint 0/1 不变 |
-| P1：外部 producer 生命周期 | 原生可信 bootstrap artifact、bootstrap/target 执行字节 handoff、Feature 156 共享登记/单一 deadline/清理/恢复及完整矩阵 | T158-04 与 T156 整体生命周期关闭；Python bootstrap fixture 不能替代生产入口 |
+| P0：原生链路发布 | 准入、20份材料、运行时判据绑定与8项 holdout 支持链路已完成；仍缺 observation manifest/campaign 接线、正式 runner、固定产品/模型/预算的新登记与唯一 attempt | 新真实模型生成、执行、独立评分、选优和父交付全部有绑定证据，cleanup 与 postrun 独立审计通过；139 历史 preparation 1/1、primary/joint 0/1 不变 |
+| P1：外部 producer 生命周期 | 原生可信 bootstrap artifact 和 Darwin 隔离执行已有支持实现；仍缺正式 bootstrap/target 字节 handoff、Feature 156 共享登记/单一 deadline/清理/恢复及完整矩阵 | T158-04 与 T156 整体生命周期关闭；Python bootstrap fixture 不能替代生产入口 |
 | P1：外部 producer 请求边界 | 完整出口覆盖、credential 隔离、受保护生产 journal、Feature 156 与崩溃恢复接线 | T157-05/06 与 T156-14 关闭，绕过 broker 和控制器崩溃均有实证 |
 | 后续外部集成 | producer 输出自动进入 admission → execution/evaluation → population/archive → parent delivery，及真实框架 campaign | 新登记的外部 producer 全链路完成；已实现 staged publication 等局部能力不重复开发 |
 | 可选扩展 | automatic solve 接入通用 WorkerService/递归 Worker API、更复杂输入和跨文件依赖、远端执行 | 先确定发布范围，再给相应用户入口与独立验收；这些不是当前原生 E2E 的前置条件 |

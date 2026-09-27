@@ -1,5 +1,43 @@
 # Validation
 
+## Native runtime binding and fixed holdouts (`15b8113`, 2026-09-27)
+
+The provider-free preparation wrapper validates the actual native prepared parent, its exact
+registered task bytes and complete prepared event. It checks the independent criteria against
+the generated contract, pipeline, staged input, frozen evaluator bundle and runtime profile.
+Preregistered task/input/criteria digests remain separate from contract/input-table/harness/profile
+digests; the binding receipt records both sets without weakening the existing native validator.
+
+The holdout runner validates all sixteen raw holdout material pins before creating its root, then
+executes the fixed eight `(limit,value)` pairs once through the native snapshot evaluator. Each
+fresh ordinal retains the raw registered snapshot and expectation, typed report, canonical actual
+projection, actual copied harness digest, bounded duration, independent process/native exits and
+observed PID/PGID release evidence. Passed evidence requires matching projection and verified
+cleanup; unknown cleanup is not upgraded. Directory chains are held and rechecked around callbacks
+and execution, and any created failed/interrupted root remains reserved. After the batch, the
+wrapper rereads preparation and retained evidence, checks active/deadline state, and publishes a
+create-only, fsynced receipt whose bytes and inode/metadata are reverified.
+
+At committed checkpoint `15b8113`, the holdout, binding, probe, native-bootstrap and isolation
+suites passed **82 tests**, **0 failures/errors/skips**, in **5.33s**. The JUnit report is
+`.lunar-evolution/test-results/checkpoint-15b8113-focused/focused.xml`. Coverage includes an actual
+local native preparation and all eight evaluator subprocesses using controlled compiler/auditor
+responses, plus wrong criteria, crossed material/harness identities, staged-input/task drift,
+retained-evidence tampering, cancellation, deadline exhaustion and replaced directory rejection.
+This is offline execution evidence, not a real model preparation or acceptance result.
+
+An earlier working-tree checkpoint based on `7168c71` passed native E2E **224/224**, with zero
+skips, and the three-stage release runner: current **7713 passed / 7 skipped**, archived **2294
+passed**, frozen registration **24 passed**, no failures/errors. Reports are retained in
+`.lunar-evolution/test-results/native-e2e-20260927-runtime-binding/` and
+`.lunar-evolution/test-results/release-20260927-runtime-binding/`. Those full results predate the
+last hardening edits in `15b8113`; they are not a final full-regression claim for that commit.
+
+This completes the local binding/holdout supporting slice only. T039 stays open for observation
+manifest and campaign integration; T038 still needs the formal launch runner, and T040 needs the
+new real attempt and independent postrun audit. No actual registration, new campaign or provider
+request was launched. Feature 139 remains preparation **1/1**, primary/joint **0/1**.
+
 ## Fresh campaign admission (2026-09-27)
 
 The provider-free `prepare_acceptance_campaign` entry now checks the actual remote

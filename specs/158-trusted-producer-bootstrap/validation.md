@@ -1,6 +1,27 @@
 # Validation
 
-The native artifact increment is provider-free. On the current Darwin host:
+## Native bootstrap and isolation checkpoint (`15b8113`, 2026-09-27)
+
+The checked-in C bootstrap now has a real Darwin bootstrap-to-isolated-target integration test.
+After the exact one-byte gate closes, the compiled target starts and exits zero, writes its
+declared workspace, and receives an OS permission denial for an outside write, controller-secret
+read and direct network connection. A live loopback listener with an unsandboxed positive control
+ensures the network denial is not merely a closed port. The C path executes the verified
+`target_path` independently of `argv[0]`. Darwin's policy grants dyld access to the root directory
+itself while retaining the deny-by-default subtree boundary.
+
+At this checkpoint the five acceptance/native-isolation suites pass **82 tests**, with zero
+failures/errors/skips. The retained JUnit report is
+`.lunar-evolution/test-results/checkpoint-15b8113-focused/focused.xml`. This is a local,
+provider-free controlled executable test, not an external producer or real campaign acceptance.
+
+The same report contains **6 native-bootstrap tests** and **4 producer-isolation tests**. Their
+coverage includes canonical frames, target-marker absence before release, duplicate gate token
+rejection, installation-byte replacement, target argv binding and actual pre-exec isolation.
+
+## Earlier native artifact checkpoint
+
+The earlier native artifact increment was provider-free. On the Darwin host:
 
 - `tests/test_native_bootstrap.py`: 3 passed. A compiled native bootstrap emits canonical frames,
   waits for release before target work, rejects duplicate gate tokens, and rejects changed
@@ -13,4 +34,6 @@ The native artifact increment is provider-free. On the current Darwin host:
 
 The native child is not yet a Feature 156 production lifecycle entry point. The tests do not
 consume user attestations, launch external producers or provider calls, establish a Linux runtime
-result on this Darwin machine, or close T158-04.
+result on this Darwin machine, or close T158-04. Formal registration-before-release, target FD/
+snapshot handoff, one shared deadline, cleanup/recovery receipts, brokered egress and scheduler
+integration remain open.

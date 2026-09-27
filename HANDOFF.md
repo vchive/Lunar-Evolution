@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-27 `15b8113` native holdout/runtime-binding hardening
+
+本轮已提交并推送 `15b8113`。准备绑定现在读取完整登记、实际 prepared parent、contract、
+pipeline、冻结 evaluator bundle/profile 与准备事件，严格保持预登记 criteria/material
+身份和现场生成的 contract/input-table/harness/profile 身份分离。它在独立 retained workspace
+中一次执行固定八项 native snapshot holdout，保留原始 snapshot/expected、typed report、
+canonical projection、实际 harness 摘要、双 exit、PID/PGID observer/release 与 cleanup
+证据；cleanup 不确定不能晋级 passed。所有材料在创建 root 前校验；parent/root/ordinal/probe
+目录由 no-follow DirectoryChain 持有并在 callback、执行前后复核，交换、symlink、取消、
+deadline 或失败后的 root 均 fail-closed 且保留现场。绑定 receipt 为 create-only、fsync、
+字节/inode/mode/link-count 可复核文件。
+
+该提交的 holdout、runtime-binding、probe、native-bootstrap、isolation 五套专项共
+**82 passed / 0 skipped**，耗时 5.33 秒；JUnit 为
+`.lunar-evolution/test-results/checkpoint-15b8113-focused/focused.xml`。它包含真实本地
+preparation 加八项 evaluator subprocess，以及 criteria/material/harness/input/task 漂移、
+retained evidence 篡改、取消、deadline 和目录替换回归。该结果是 provider-free offline
+证据，不是模型 acceptance。
+
+本轮同时固化了 Darwin native bootstrap → isolated target supporting slice：目标在 gate
+释放后执行，允许 workspace 写入，拒绝 workspace 外写入、controller secret 读取和网络
+连接；C 端按验证过的 target path 执行，不能用不同 argv[0] 选取未验证字节。它仍未接入
+Feature 156 正式 registration/attestation/deadline/cleanup/recovery 或 Feature 157 broker。
+
+Feature 142 T039 仍开放：binding receipt 尚未接入 observation manifest/campaign discovery；
+T038 仍需正式 launch runner，T040 仍需唯一真实 attempt 与独立 postrun 六阶段/holdout audit。
+旧 Feature 139 槽保持 preparation **1/1**、primary/joint **0/1**，本轮未创建新 registration、
+campaign，未调用 provider、外部 producer 或 WebAgent。15b8113 之前的 native E2E 224/224 与
+三阶段回归报告继续保留，但不作为 15b8113 之后完整回归的声明。
+
 ## 2026-09-27 新真实验收的离线准入入口
 
 Feature 142 T038a 已实现并验证。`prepare_acceptance_campaign` 对真实远端 main 做有界、
