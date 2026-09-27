@@ -1,5 +1,41 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-28 campaign revalidation、trusted handoff 与 producer lifecycle matrix checkpoint
+
+最新已提交并推送的提交为 `1579d43`、`7a008e7`、`f4a788b`、`4db6a97`。本轮继续保持
+provider-free：没有创建真实 campaign、调用 provider、启动外部 producer、运行 WebAgent，
+也没有消耗 Feature 139 的唯一旧槽（preparation **1/1**、primary/joint **0/1**）。
+
+`revalidate_acceptance_campaign` 现在要求 admission JSON 使用 canonical 字节、无重复键、
+无额外或缺失字段，并严格校验 registration/seal/root/parent/remote 绑定；文件 pin 只接受
+规范的 `path/size/sha256`，拒绝 traversal、控制字符、`.git`、重复路径、symlink、hardlink、
+非普通文件、非 `0600` retained 文件以及非私有 `materials/` 目录。既有 campaign root 只能
+用于这次只读 revalidation，不能作为新 campaign 复用。
+
+新增 trusted bootstrap process-registration handoff 的 strict parser/verifier：拒绝重复键、
+非 canonical JSON、未知字段、字节或身份绑定漂移，校验 bootstrap/target 独立执行绑定、
+PID/PGID、self-digest，并能重新绑定 launch、descriptor、intent、attestation、consumption
+和 registration 源记录。该 handoff 仍是 provider-free 的持久证据边界，尚未授予生产运行权限。
+
+新增 Feature 156/157/158 provider-free acceptance matrix 和 producer lifecycle attempt matrix，
+把过程、请求 broker、HTTP transport、trusted bootstrap、尝试终态、replay、gate failure、
+recovery 等证据与实际 fixture 对齐，并明确 `offline-verified`、`supporting-only` 和
+`integration-open` 的区别；矩阵不会把本地 fixture 晋级为真实模型验收。
+
+本轮验证结果：
+
+- acceptance launch + trusted bootstrap handoff + producer process lifecycle matrix + lifecycle
+  matrix：**54 passed / 0 failed / 0 skipped**（JUnit：`/tmp/lunar-handoff-junit-2026092802.xml`）；
+- producer process 全套：**69 passed / 0 failed / 2 skipped**（共 71 项；JUnit：
+  `/tmp/lunar-producer-process-2026092803.xml`）；
+- 目标文件 Ruff 与 `git diff --check` 通过。
+
+仍开放且不能宣称已完成：Feature 142 T038 正式唯一 launch runner、T039 runtime/observation
+binding 与 campaign discovery 的正式接线、T040 唯一真实 model attempt 及独立六阶段
+postrun/holdout audit；Feature 156 T156-05/06/09/12/14；Feature 157 T157-05/T157-06；
+Feature 158 T158-04。后续真实验收仍必须从新的 registration、材料冻结、clean `origin/main`
+准入和新的 campaign root 开始，并继续遵守一次 attempt、不可 replay/fallback/repair 的约束。
+
 ## 2026-09-28 observation binding and native E2E checkpoint
 
 已提交并推送 `9a0bbe8`、`06ddf34`、`b50ab43`。新增可信 bootstrap 到 Feature 156 的
