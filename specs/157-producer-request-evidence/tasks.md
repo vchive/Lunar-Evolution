@@ -12,6 +12,7 @@ T157-05 progress: `transport-design.md` specifies the controller-owned broker bo
 and `ControllerOwnedRequestBroker` now requires a controlled handle with explicit cancellation
 and a confirmed `cancelled` terminal before claiming enforced timeout. Ledger and journal
 state transitions are serialized for concurrent broker calls. `HostRequestJournal` records
-identity-bound, append-only, fsynced events and read-only crash recovery. A real outbound
-transport, complete egress coverage, protected production journal ownership, and Feature 156
-integration are still required.
+identity-bound, append-only, fsynced events and read-only crash recovery. A POSIX HTTP worker
+now supplies real brokered POST I/O, bounded IPC, process-backed cancellation, and an
+in-memory response result. Complete egress coverage, protected production journal ownership,
+and Feature 156 integration are still required.

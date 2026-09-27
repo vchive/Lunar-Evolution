@@ -15,7 +15,7 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Generic, Protocol, TypeVar
 
 from .producer_request_transport import (
     HostRequestEvent,
@@ -25,6 +25,7 @@ from .producer_request_transport import (
 
 _MAX_CANCEL_GRACE_SECONDS = 60.0
 _TERMINAL = frozenset({"completed", "failed", "cancelled"})
+_ResponseT_co = TypeVar("_ResponseT_co", covariant=True)
 
 
 class ControllerRequestBrokerError(ValueError):
@@ -36,7 +37,7 @@ class ControllerRequestBrokerError(ValueError):
         super().__init__(code)
 
 
-class ControllerRequestHandle(Protocol):
+class ControllerRequestHandle(Protocol[_ResponseT_co]):
     """Controlled transport handle with host-visible cancellation."""
 
     def wait(self, timeout_seconds: float) -> str | None:
@@ -45,16 +46,21 @@ class ControllerRequestHandle(Protocol):
     def cancel(self) -> bool:
         """Request cancellation and report whether the transport accepted it."""
 
+    def result(self) -> _ResponseT_co:
+        """Return the local response after completion, without further I/O."""
 
-class ControllerRequestTransport(Protocol):
+
+class ControllerRequestTransport(Protocol[_ResponseT_co]):
     """Transport owned by the controller, not by the producer process."""
 
-    def start(self, admission: RequestAdmission, payload: object) -> ControllerRequestHandle:
+    def start(
+        self, admission: RequestAdmission, payload: object,
+    ) -> ControllerRequestHandle[_ResponseT_co]:
         """Return a valid handle after admission; clean up partial I/O on failure."""
 
 
 @dataclass(frozen=True, slots=True)
-class BrokerRequestResult:
+class BrokerRequestResult(Generic[_ResponseT_co]):
     """Controller observation for one request handled by a controlled transport."""
 
     admission: RequestAdmission
@@ -62,9 +68,10 @@ class BrokerRequestResult:
     cancellation_requested: bool
     cancellation_acknowledged: bool
     host_timeout_enforced: bool
+    response: _ResponseT_co | None = None
 
 
-class ControllerOwnedRequestBroker:
+class ControllerOwnedRequestBroker(Generic[_ResponseT_co]):
     """Run requests through a transport that exposes cancellation semantics.
 
     The broker never stores ``payload``.  A transport that cannot acknowledge
@@ -75,7 +82,7 @@ class ControllerOwnedRequestBroker:
     def __init__(
         self,
         ledger: HostRequestLedger,
-        transport: ControllerRequestTransport,
+        transport: ControllerRequestTransport[_ResponseT_co],
         *,
         monotonic_ns: Callable[[], int] = time.monotonic_ns,
         cancel_grace_seconds: float = 0.1,
@@ -97,7 +104,7 @@ class ControllerOwnedRequestBroker:
         self._clock = monotonic_ns
         self._cancel_grace_seconds = cancel_grace_seconds
 
-    def execute(self, request_id: str, payload: object) -> BrokerRequestResult:
+    def execute(self, request_id: str, payload: object) -> BrokerRequestResult[_ResponseT_co]:
         """Admit, run, and finish one controller-owned request.
 
         The transport receives the exact controller-issued admission, including
@@ -141,8 +148,20 @@ class ControllerOwnedRequestBroker:
                 "producer_request_broker_wait_failed", event=event,
             ) from exc
         if type(status) is str and status in _TERMINAL:
+            response = None
+            if status == "completed":
+                try:
+                    response = handle.result()
+                except Exception as exc:
+                    event = self._finish(admission, "failed")
+                    raise ControllerRequestBrokerError(
+                        "producer_request_broker_result_failed", event=event,
+                    ) from exc
             event = self._finish(admission, status)
-            return BrokerRequestResult(admission, event, False, False, False)
+            return BrokerRequestResult(
+                admission, event, False, False, False,
+                response if event.status == "completed" else None,
+            )
         if status is not None:
             event = self._abort_unreliable_handle(admission, handle)
             raise ControllerRequestBrokerError(
@@ -205,7 +224,7 @@ class ControllerOwnedRequestBroker:
         return max(0.0, (admission.deadline_ns - now) / 1_000_000_000)
 
     def _abort_unreliable_handle(
-        self, admission: RequestAdmission, handle: ControllerRequestHandle,
+        self, admission: RequestAdmission, handle: ControllerRequestHandle[_ResponseT_co],
     ) -> HostRequestEvent | None:
         terminal: object = None
         try:

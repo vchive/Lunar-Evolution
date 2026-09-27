@@ -39,6 +39,19 @@ synchronous cleanup after a partial startup failure. The broker cannot interrupt
 transport that ignores those requirements, so these declarations are not production proof.
 The broker never stores request payloads and does not expose a producer-side transport path.
 
+`ControllerHttpTransport` is a concrete POSIX transport for brokered HTTP POST requests.
+It starts one trusted, standard-library worker per admission, keeps request and response
+bytes in bounded anonymous IPC, and applies the admission's absolute monotonic deadline
+to parent-side IPC and worker HTTP I/O. Its handle returns a typed `TransportResponse`
+only after an on-time completed exchange; `BrokerRequestResult.response` exposes that
+value to the controller without writing it to the host journal. Failure and timeout
+results carry no response. Cancellation reports success only after the exact worker has
+received a kill signal and been reaped. A startup or IPC failure that cannot confirm
+worker termination leaves the admission uncertain. If the worker exited before a cancellation
+signal, its unparsed outcome cannot be upgraded to a confirmed timeout. Process creation and
+OS scheduling are not hard-real-time bounded, so this is an exercised local I/O boundary rather than
+proof of a production-wide request deadline.
+
 ## Required production integration
 
 1. The controller must own the actual request transport. Only its broker can call the
@@ -59,7 +72,7 @@ The broker never stores request payloads and does not expose a producer-side tra
    one that crashes the controller after admission. Until then, retain the existing
    declaration-only and process-wall-time semantics.
 
-The current implementation completes bounded host accounting and a fixture-level durable
-journal. It does not supply a real provider transport, enforce producer egress isolation, own a
-protected production journal directory, or integrate with Feature 156, so T157-05 and T157-06
-remain open.
+The current implementation completes bounded host accounting, a fixture-level durable
+journal, and a real HTTP worker for requests explicitly routed through the broker. It does
+not prove complete provider egress coverage, own a protected production journal directory,
+or integrate with Feature 156, so T157-05 and T157-06 remain open.

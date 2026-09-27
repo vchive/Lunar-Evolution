@@ -29,8 +29,9 @@ class Clock:
 
 
 class ImmediateHandle:
-    def __init__(self, status: str = "completed") -> None:
+    def __init__(self, status: str = "completed", response: object = None) -> None:
         self.status = status
+        self.response = response
         self.waits: list[float] = []
         self.cancelled = False
 
@@ -41,6 +42,9 @@ class ImmediateHandle:
     def cancel(self) -> bool:
         self.cancelled = True
         return True
+
+    def result(self) -> object:
+        return self.response
 
 
 class CancelOnDeadlineHandle:
@@ -465,7 +469,8 @@ def test_concurrent_journal_appends_preserve_ordinal_and_hash_chain(tmp_path, mo
 
 def test_controller_broker_admits_before_transport_and_forwards_deadline():
     clock = Clock()
-    handle = ImmediateHandle()
+    response = object()
+    handle = ImmediateHandle(response=response)
     transport = RecordingTransport(lambda: handle)
     ledger = HostRequestLedger(request_timeout_seconds=2, max_requests=1, monotonic_ns=clock)
     result = ControllerOwnedRequestBroker(
@@ -475,7 +480,73 @@ def test_controller_broker_admits_before_transport_and_forwards_deadline():
     assert transport.admissions[0].deadline_ns == clock.value + 2_000_000_000
     assert handle.waits == [2.0]
     assert result.event.status == "completed"
+    assert result.response is response
     assert not result.host_timeout_enforced
+
+
+def test_controller_broker_keeps_response_out_of_host_journal(tmp_path):
+    clock = Clock()
+    identity = _identity()
+    path = tmp_path / "requests.log"
+    response = b"private-provider-response"
+    with HostRequestJournal.create(path, identity) as journal:
+        ledger = HostRequestLedger(
+            request_timeout_seconds=1, max_requests=2, monotonic_ns=clock, journal=journal,
+        )
+        result = ControllerOwnedRequestBroker(
+            ledger, RecordingTransport(lambda: ImmediateHandle(response=response)),
+            monotonic_ns=clock,
+        ).execute("request-001", b"private-provider-payload")
+    assert result.response is response
+    assert b"private-provider" not in path.read_bytes()
+    assert read_host_request_journal(path, expected_identity=identity).uncertain_request_ids == ()
+
+
+def test_controller_broker_rejects_response_access_failure():
+    class FailedResult(ImmediateHandle):
+        def result(self) -> object:
+            raise RuntimeError("private-provider-error")
+
+    clock = Clock()
+    ledger = HostRequestLedger(request_timeout_seconds=1, max_requests=1, monotonic_ns=clock)
+    with pytest.raises(ControllerRequestBrokerError) as exc:
+        ControllerOwnedRequestBroker(
+            ledger, RecordingTransport(FailedResult), monotonic_ns=clock,
+        ).execute("request-001", None)
+    assert exc.value.code == "producer_request_broker_result_failed"
+    assert exc.value.event is not None and exc.value.event.status == "failed"
+    assert ledger.snapshot().active_count == 0
+
+
+def test_controller_broker_discards_response_when_result_crosses_deadline():
+    class LateResult(ImmediateHandle):
+        def result(self) -> object:
+            clock.value += 1_000_000_000
+            return b"late-response"
+
+    clock = Clock()
+    ledger = HostRequestLedger(request_timeout_seconds=1, max_requests=1, monotonic_ns=clock)
+    result = ControllerOwnedRequestBroker(
+        ledger, RecordingTransport(LateResult), monotonic_ns=clock,
+    ).execute("request-001", None)
+    assert result.event.status == "timed_out"
+    assert result.response is None
+    assert not result.host_timeout_enforced
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled"])
+def test_controller_broker_does_not_read_response_without_completion(status):
+    class UnexpectedResult(ImmediateHandle):
+        def result(self) -> object:
+            raise AssertionError("response is not available")
+
+    clock = Clock()
+    ledger = HostRequestLedger(request_timeout_seconds=1, max_requests=1, monotonic_ns=clock)
+    result = ControllerOwnedRequestBroker(
+        ledger, RecordingTransport(lambda: UnexpectedResult(status)), monotonic_ns=clock,
+    ).execute("request-001", None)
+    assert result.event.status == status
+    assert result.response is None
 
 
 def test_controller_broker_requires_cancel_ack_and_terminal_confirmation():
@@ -489,6 +560,7 @@ def test_controller_broker_requires_cancel_ack_and_terminal_confirmation():
     assert result.event.status == "timed_out"
     assert result.cancellation_requested and result.cancellation_acknowledged
     assert result.host_timeout_enforced
+    assert result.response is None
     assert ledger.snapshot().active_count == 0
 
 

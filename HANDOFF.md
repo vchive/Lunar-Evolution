@@ -1,5 +1,22 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-27 Feature 157 brokered HTTP worker
+
+新增 controller-owned 的 POSIX HTTP POST transport。每个 admission 使用独立的已有标准库
+HTTP worker；父进程以 admission 的绝对 monotonic deadline 限制匿名 IPC 和等待，worker 的
+网络调用共享该截止时间。输入和输出均有界，取消仅在对应 worker 收到 KILL 且完成回收后
+确认。若 worker 在取消前已退出而终态尚未解析，保留不确定状态，不伪造已受控超时。
+broker 的结果现在显式返回成功的本地响应；失败或超时不返回响应，payload 与 response
+均不进入宿主 journal。新增 loopback HTTP、阻塞 headers/body、启动及 stdin 卡住、并发、
+超大输出、取消回收与迟到解析专项。
+
+这仅覆盖主动经过 broker 的 POST 请求。producer 仍可绕开 broker；生产 journal 目录
+隔离、Feature 156 正式接线和真实 provider/campaign 验收未完成，T157-05/T157-06
+仍开放，不能将 `request_timeout_enforced` 晋级为生产保证。
+本轮全仓离线 pytest 通过（6 项平台相关测试跳过）；Feature 157 与 HTTP/进程相关
+组合回归、Ruff、compileall 和 diff check 通过。未运行真实 provider、外部 producer、
+WebAgent 或 campaign。
+
 ## 2026-09-27 Feature 157 broker 取消与并发账本加固
 
 收紧 `ControllerOwnedRequestBroker`：只有取消被接受且 handle 返回 `cancelled`，才能标记

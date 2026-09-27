@@ -181,6 +181,11 @@ from .candidate_workspace import (
     parse_candidate_workspace_plan,
     validate_candidate_workspace_plan,
 )
+from .controller_http_transport import (
+    ControllerHttpHandle,
+    ControllerHttpRequest,
+    ControllerHttpTransport,
+)
 from .controller_request_broker import (
     BrokerRequestResult,
     ControllerOwnedRequestBroker,
@@ -655,6 +660,9 @@ __all__ = [
     "ContractCandidateRunner",
     "ContractCompilationError",
     "ContractCompiler",
+    "ControllerHttpHandle",
+    "ControllerHttpRequest",
+    "ControllerHttpTransport",
     "ControllerOwnedRequestBroker",
     "ControllerRequestBrokerError",
     "ControllerRequestHandle",
