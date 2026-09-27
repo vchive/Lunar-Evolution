@@ -243,53 +243,58 @@ def run_acceptance_holdouts(
         check_active()
 
     rows: list[dict[str, Any]] = []
-    for ordinal, pin in enumerate(pins):
-        ordinal, holdout_id, snapshot_raw, expected_raw, snapshot, expected, duration = prepared[ordinal]
-        _check_root(root_fd, root)
-        _remaining(remaining_timeout, f"holdout-{ordinal:02d}-before")
-        if check_active is not None:
-            check_active()
-        try:
-            os.mkdir(f"{ordinal:02d}", 0o700, dir_fd=root_fd)
-            item_fd = os.open(f"{ordinal:02d}", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root_fd)
-            os.fsync(root_fd)
-        except OSError as exc:
-            raise AcceptanceHoldoutError("holdout_workspace_create_failed") from exc
-        item_path = root / f"{ordinal:02d}"
-        try:
-            _write_new(item_fd, "snapshot.bin", snapshot_raw)
-            _write_new(item_fd, "expected.json", expected_raw)
+    try:
+        for ordinal, pin in enumerate(pins):
+            ordinal, holdout_id, snapshot_raw, expected_raw, snapshot, expected, duration = prepared[ordinal]
+            _check_root(root_fd, root)
+            _remaining(remaining_timeout, f"holdout-{ordinal:02d}-before")
             if check_active is not None:
                 check_active()
-            remaining = _remaining(remaining_timeout, f"holdout-{ordinal:02d}-run")
-            timeout = duration / 1000
-            if remaining is not None:
-                timeout = min(timeout, remaining)
-            evidence: AcceptanceSnapshotEvidence = run_acceptance_snapshot_probe(
-                evaluator, snapshot, contract, item_path,
-                expected=expected, timeout_seconds=timeout, check_active=check_active,
-            )
-            actual_bytes = evidence.actual_output_bytes
-            evidence_bytes = _canonical(evidence.to_dict())
-            _write_new(item_fd, "actual.json", actual_bytes)
-            _write_new(item_fd, "evidence.json", evidence_bytes)
-            os.fsync(item_fd)
-        finally:
-            os.close(item_fd)
-        _check_root(root_fd, root)
-        _remaining(remaining_timeout, f"holdout-{ordinal:02d}-after")
-        outcome = "passed" if evidence.passed else ("failed" if evidence.reason not in {"cancelled", "timeout", "exception", "cleanup_unknown"} else "unknown")
-        rows.append({
-            "ordinal": ordinal,
-            "holdout_id": holdout_id,
-            "outcome": outcome,
-            "input_sha256": _sha(snapshot_raw),
-            "expected_output_sha256": _sha(expected_raw),
-            "actual_output_sha256": _sha(evidence.actual_output_bytes),
-            "evidence": evidence.to_dict(),
-        })
-    os.close(root_fd)
-    os.close(parent_fd)
+            item_fd = -1
+            try:
+                os.mkdir(f"{ordinal:02d}", 0o700, dir_fd=root_fd)
+                item_fd = os.open(f"{ordinal:02d}", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root_fd)
+                os.fsync(root_fd)
+            except OSError as exc:
+                raise AcceptanceHoldoutError("holdout_workspace_create_failed") from exc
+            item_path = root / f"{ordinal:02d}"
+            try:
+                os.mkdir("probe", 0o700, dir_fd=item_fd)
+                _write_new(item_fd, "snapshot.bin", snapshot_raw)
+                _write_new(item_fd, "expected.json", expected_raw)
+                if check_active is not None:
+                    check_active()
+                remaining = _remaining(remaining_timeout, f"holdout-{ordinal:02d}-run")
+                timeout = duration / 1000
+                if remaining is not None:
+                    timeout = min(timeout, remaining)
+                evidence: AcceptanceSnapshotEvidence = run_acceptance_snapshot_probe(
+                    evaluator, snapshot, contract, item_path / "probe",
+                    expected=expected, timeout_seconds=timeout, check_active=check_active,
+                )
+                actual_bytes = evidence.actual_output_bytes
+                evidence_bytes = _canonical(evidence.to_dict())
+                _write_new(item_fd, "actual.json", actual_bytes)
+                _write_new(item_fd, "evidence.json", evidence_bytes)
+                os.fsync(item_fd)
+            finally:
+                if item_fd >= 0:
+                    os.close(item_fd)
+            _check_root(root_fd, root)
+            _remaining(remaining_timeout, f"holdout-{ordinal:02d}-after")
+            outcome = "passed" if evidence.passed else ("failed" if evidence.reason not in {"cancelled", "timeout", "exception", "cleanup_unknown"} else "unknown")
+            rows.append({
+                "ordinal": ordinal,
+                "holdout_id": holdout_id,
+                "outcome": outcome,
+                "input_sha256": _sha(snapshot_raw),
+                "expected_output_sha256": _sha(expected_raw),
+                "actual_output_sha256": _sha(evidence.actual_output_bytes),
+                "evidence": evidence.to_dict(),
+            })
+    finally:
+        os.close(root_fd)
+        os.close(parent_fd)
     return tuple(rows)
 
 

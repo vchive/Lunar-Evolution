@@ -32,7 +32,11 @@ from .acceptance_registration import (
     parse_registration_seal,
     preflight_acceptance_registration,
 )
-from .acceptance_runtime_binding import AcceptanceRuntimeBindingError, bind_acceptance_runtime
+from .acceptance_runtime_binding import (
+    AcceptanceRuntimeBindingError,
+    bind_acceptance_runtime,
+    prepare_acceptance_runtime_binding,
+)
 from .agent_evolution import (
     AgentCandidateEvaluator,
     AgentCandidateGenerator,
@@ -936,6 +940,7 @@ __all__ = [
     "preflight_producer_bundle_publication",
     "preflight_producer_launch",
     "prepare_acceptance_campaign",
+    "prepare_acceptance_runtime_binding",
     "prepare_producer_bundle_drafts",
     "prepare_producer_bundle_manifest",
     "prepare_producer_seed_manifest",

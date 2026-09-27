@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any
 from .acceptance_registration import AcceptanceRegistrationError, parse_acceptance_registration
 from .algorithm import AlgorithmProblemContract
 from .bundle_evolution import MultiFileCandidatePipeline
-from .candidate_evaluation_spec import canonical_json
+from .candidate_evaluation_spec import canonical_json, parse_candidate_evaluation_report
 from .candidate_execution import CandidateExecutionInput
 from .evaluator_bundle import EvaluatorBundleError, FrozenEvaluatorBundle, load_evaluator_bundle
 
@@ -89,15 +90,10 @@ def _registration(registration: Mapping[str, Any]) -> dict[str, Any]:
     for key in ("provider", "model", "api_mode"):
         if type(registration[key]) is not str or not registration[key] or len(registration[key]) > 256:
             _fail("registration_runtime_invalid")
-    result = dict(registration)
-    # A full acceptance manifest is canonical and digest-bound.  Keep the small fixture
-    # shape useful for local unit tests, but never silently downgrade a production manifest.
-    if "holdout_pins" in result:
-        try:
-            result = parse_acceptance_registration(result)
-        except (AcceptanceRegistrationError, TypeError, ValueError):
-            _fail("registration_invalid")
-    return result
+    try:
+        return parse_acceptance_registration(registration)
+    except (AcceptanceRegistrationError, TypeError, ValueError):
+        _fail("registration_invalid")
 
 
 def _criteria(evaluator_bytes: bytes, profile_bytes: bytes, registration: Mapping[str, Any]) -> tuple[dict, dict]:
@@ -221,6 +217,8 @@ def _probe_summary(
         duration = evidence.get("duration_ms")
         if isinstance(duration, bool) or not isinstance(duration, int) or duration < 0:
             _fail("probe_result_invalid")
+        if pins is not None and duration > pins[index].get("max_duration_ms", 0):
+            _fail("probe_timeout_invalid")
         for key in (
             "input_sha256", "expected_output_sha256", "actual_output_sha256",
             "report_sha256", "projection_sha256",
@@ -245,10 +243,19 @@ def _probe_summary(
             _fail("probe_report_invalid")
         try:
             report_bytes = canonical_json(dict(report))
+            parsed_report = parse_candidate_evaluation_report(report_bytes, evaluator_id="compiled-bundle")
         except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError):
             _fail("probe_report_invalid")
         if hashlib.sha256(report_bytes).hexdigest() != evidence["report_sha256"]:
             _fail("probe_report_invalid")
+        report_projection = {
+            "validity": parsed_report.validity,
+            "quality": parsed_report.quality,
+            "combined_score": parsed_report.combined_score,
+            "constraint_code": parsed_report.error_info[0]["code"] if parsed_report.error_info else None,
+        }
+        if report_projection != dict(projection):
+            _fail("probe_projection_mismatch")
         if item.get("outcome", "passed") != "passed":
             _fail("probe_result_incomplete")
         if pins is not None:
@@ -375,4 +382,95 @@ def bind_acceptance_runtime(
     return receipt
 
 
-__all__ = ["AcceptanceRuntimeBindingError", "bind_acceptance_runtime"]
+def prepare_acceptance_runtime_binding(
+    registration: Mapping[str, Any],
+    *,
+    store: Any,
+    parent_id: str,
+    materials: Mapping[str, bytes],
+    contract: AlgorithmProblemContract,
+    workspace: Path,
+    check_active: Any = None,
+    remaining_timeout: Any = None,
+) -> dict[str, Any]:
+    """Validate a prepared parent, run the fixed holdouts once, and bind their receipt.
+
+    The wrapper is provider-free.  Preparation is re-read before and after the holdout batch;
+    the low-level binder then verifies the generated runtime identities and all detached evidence.
+    ``workspace`` is create-only and is retained for later campaign publication/audit.
+    """
+    from .acceptance_holdouts import run_acceptance_holdouts
+    from .automatic_solve_bundle import _parent, _read_preparation, validate_automatic_solve_bundle
+
+    reg = _registration(registration)
+    if not isinstance(materials, Mapping) or not isinstance(parent_id, str):
+        _fail("binding_wrapper_invalid")
+    if not isinstance(workspace, Path):
+        _fail("binding_wrapper_invalid")
+    try:
+        validate_automatic_solve_bundle(store, parent_id)
+        parent, prepared_contract = _parent(store, parent_id)
+        if prepared_contract is None or prepared_contract.digest() != contract.digest():
+            _fail("prepared_contract_mismatch")
+        pipeline, bundle, profile_raw, _ = _read_preparation(store, parent, contract)
+        pins = {
+            "task": reg["task_sha256"], "input": reg["input_sha256"],
+            "evaluator": reg["evaluator_sha256"], "profile": reg["evaluator_profile_sha256"],
+        }
+        def material(key: str, pin_key: str) -> bytes:
+            descriptor = reg[pin_key]
+            if not isinstance(descriptor, Mapping):
+                _fail("material_binding_invalid")
+            path = descriptor.get("path")
+            value = materials.get(path) if isinstance(path, str) else None
+            if not isinstance(value, bytes) or len(value) != descriptor.get("size"):
+                _fail("material_binding_invalid")
+            if hashlib.sha256(value).hexdigest() != pins[key]:
+                _fail("material_binding_mismatch")
+            return value
+        task = material("task", "task_material")
+        input_bytes = material("input", "input_material")
+        evaluator_criteria = material("evaluator", "evaluator_material")
+        profile_criteria = material("profile", "evaluator_profile_material")
+        rows = run_acceptance_holdouts(
+            reg, materials=materials, evaluator=bundle.root / "evaluator.py", contract=contract,
+            workspace=workspace, check_active=check_active, remaining_timeout=remaining_timeout,
+        )
+        validate_automatic_solve_bundle(store, parent_id)
+        receipt = bind_acceptance_runtime(
+            reg, task_bytes=task, input_bytes=input_bytes,
+            evaluator_criteria_bytes=evaluator_criteria, profile_criteria_bytes=profile_criteria,
+            contract=contract, pipeline=pipeline, bundle=bundle, profile_bytes=profile_raw,
+            probe_results=rows,
+        )
+        events = [item for item in store.list_events(parent_id) if item.get("type") == "bundle_profile_prepared"]
+        if len(events) != 1:
+            _fail("prepared_event_invalid")
+        receipt = {
+            **receipt, "parent_run_id": parent_id,
+            "prepared_event_sha256": hashlib.sha256(_canonical(events[0]["payload"])).hexdigest(),
+        }
+        receipt["binding_sha256"] = hashlib.sha256(_canonical(receipt)).hexdigest()
+        workspace_fd = os.open(workspace, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            fd = os.open("binding-receipt.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         0o600, dir_fd=workspace_fd)
+            try:
+                content = _canonical(receipt)
+                os.write(fd, content)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.fsync(workspace_fd)
+        finally:
+            os.close(workspace_fd)
+        return receipt
+    except AcceptanceRuntimeBindingError:
+        raise
+    except (AttributeError, KeyError, OSError, TypeError, ValueError, RecursionError):
+        _fail("binding_wrapper_failed")
+
+
+__all__ = [
+    "AcceptanceRuntimeBindingError", "bind_acceptance_runtime", "prepare_acceptance_runtime_binding",
+]

@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
+import json
 import stat
 import sys
 from pathlib import Path
 
 import pytest
+from test_frozen_evaluator_bundle import BundleRuntime
 
 import lunar_evolution.acceptance_runtime_binding as binding
+from lunar_evolution.acceptance_observer import DEFAULT_ACCEPTANCE_BUDGETS
+from lunar_evolution.acceptance_registration import build_acceptance_registration
 from lunar_evolution.algorithm import AlgorithmProblemContract
+from lunar_evolution.automatic_solve_bundle import prepare_automatic_solve_bundle
 from lunar_evolution.bundle_evolution import MultiFileCandidatePipeline
 from lunar_evolution.candidate_evaluation_spec import CandidateEvaluationSpec, canonical_json
 from lunar_evolution.candidate_execution import CandidateExecutionInput
+from lunar_evolution.config import Config
+from lunar_evolution.controller import LocalController
+from lunar_evolution.conversational import build_algorithm_plan
 from lunar_evolution.evaluator_bundle import FrozenEvaluatorBundle
 
 
@@ -54,14 +63,33 @@ def _criteria(contract: AlgorithmProblemContract) -> tuple[bytes, bytes]:
 
 
 def _registration(task: bytes, input_bytes: bytes, evaluator: bytes, profile: bytes) -> dict[str, object]:
-    return {
-        "registration_id": "reg-1", "campaign_id": "camp-1", "attempt_id": "attempt-1",
-        "registration_sha256": "a" * 64, "product_commit": "b" * 40,
-        "task_sha256": hashlib.sha256(task).hexdigest(), "input_sha256": hashlib.sha256(input_bytes).hexdigest(),
-        "evaluator_sha256": hashlib.sha256(evaluator).hexdigest(),
-        "evaluator_profile_sha256": hashlib.sha256(profile).hexdigest(),
-        "provider": "openai-compatible", "model": "glm-5.2", "api_mode": "chat_completions",
-    }
+    expected_projection = {"validity": 1, "quality": 1, "combined_score": 1, "constraint_code": None}
+    expected_digest = hashlib.sha256(canonical_json(expected_projection)).hexdigest()
+    holdout = [{
+        "holdout_id": f"holdout-{index:02d}", "ordinal": index,
+        "input": {"path": f"holdout/{index:02d}.json", "size": 1, "sha256": "1" * 64},
+        "expected": {"path": f"expected/{index:02d}.json", "size": 1, "sha256": expected_digest},
+        "max_duration_ms": 5000,
+    } for index in range(8)]
+    frozen = {"registration_id": ["old-reg"], "campaign_id": ["old-camp"], "campaign_root": ["old-root"]}
+    frozen_digest = hashlib.sha256(canonical_json(frozen)).hexdigest()
+    return build_acceptance_registration({
+        "schema_version": "1", "scope": "acceptance_registration",
+        "registration_id": "reg-1", "campaign_id": "camp-1", "attempt_id": "attempt-001",
+        "product_commit": "b" * 40,
+        "product_files": [{"path": "src/main.py", "size": 1, "sha256": "9" * 64}],
+        "task_material": {"path": "task.bin", "size": len(task), "sha256": hashlib.sha256(task).hexdigest()},
+        "input_material": {"path": "input.bin", "size": len(input_bytes), "sha256": hashlib.sha256(input_bytes).hexdigest()},
+        "evaluator_material": {"path": "evaluator.bin", "size": len(evaluator), "sha256": hashlib.sha256(evaluator).hexdigest()},
+        "evaluator_profile_material": {"path": "profile-criteria.bin", "size": len(profile), "sha256": hashlib.sha256(profile).hexdigest()},
+        "campaign_root": "camp-root", "task_sha256": hashlib.sha256(task).hexdigest(),
+        "input_sha256": hashlib.sha256(input_bytes).hexdigest(), "evaluator_sha256": hashlib.sha256(evaluator).hexdigest(),
+        "evaluator_profile_sha256": hashlib.sha256(profile).hexdigest(), "provider": "openai-compatible",
+        "model": "glm-5.2", "runtime": "python", "api_mode": "chat_completions", "entrypoint": "src/main.py",
+        "budgets": dict(DEFAULT_ACCEPTANCE_BUDGETS), "islands": 1, "population_size": 1,
+        "offspring_count": 1, "rounds": 1, "candidate_tool_steps": 12,
+        "holdout_pins": holdout, "frozen_identities": frozen, "frozen_identities_sha256": frozen_digest,
+    })
 
 
 def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -104,7 +132,7 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return registration, task, input_bytes, evaluator, profile_criteria, contract, pipeline, bundle, profile
 
 
-def _probe(index: int = 0) -> dict[str, object]:
+def _probe(index: int = 0, holdout_id: str | None = None) -> dict[str, object]:
     projection = {"validity": 1, "quality": 1, "combined_score": 1, "constraint_code": None}
     report = {"schema_version": "1", "evaluator_id": "compiled-bundle", "validity": 1,
               "quality": 1, "combined_score": 1, "detailed_scores": {}, "error_info": []}
@@ -113,7 +141,9 @@ def _probe(index: int = 0) -> dict[str, object]:
     report_bytes = canonical_json(report)
     digest = "1" * 64
     return {
-        "ordinal": index, "outcome": "passed", "evidence": {
+        "ordinal": index, "holdout_id": holdout_id or f"holdout-{index:02d}",
+        "input_sha256": "1" * 64, "expected_output_sha256": hashlib.sha256(expected_bytes).hexdigest(),
+        "actual_output_sha256": hashlib.sha256(projection_bytes).hexdigest(), "outcome": "passed", "evidence": {
             "report": report, "projection": projection, "expected": projection, "passed": True,
             "reason": "passed", "duration_ms": 2, "process_exit_code": 0, "native_exit_code": 0,
             "cleanup": "verified", "observer_identity": [10, 10], "release_identity": [10, 10],
@@ -166,3 +196,73 @@ def test_runtime_binding_requires_holdouts(tmp_path, monkeypatch):
     fixture = _fixture(tmp_path, monkeypatch)
     with pytest.raises(binding.AcceptanceRuntimeBindingError, match="probe_results_missing"):
         _bind(fixture, None)
+
+
+_SOURCE = '''import json
+from pathlib import Path
+
+
+def main():
+    limit = json.loads(Path("inputs/limit.json").read_text())["limit"]
+    value = json.loads(Path("output/result.json").read_text())["value"]
+    valid = type(limit) is int and type(value) is int and 0 <= value <= limit
+    print(json.dumps({"schema_version": "1", "evaluator_id": "compiled-bundle",
+        "validity": int(valid), "quality": value if valid else None,
+        "combined_score": value if valid else 0, "detailed_scores": {},
+        "error_info": [] if valid else [{"code": "valid-value", "message": "invalid"}]}))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def _native_fixture(root):
+    case_path = Path(__file__).resolve().parents[1] / "specs/142-automatic-solve-lifecycle/measurement/case.py"
+    spec = importlib.util.spec_from_file_location("binding_case", case_path)
+    assert spec is not None and spec.loader is not None
+    case = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(case)
+    raw_materials = case.build_case_materials()
+    materials = {case.MATERIAL_ROOT + "/" + name: raw for name, raw in raw_materials.items()}
+    pins = case.build_case_pins()
+    contract = _contract()
+    envelope = {
+        "schema_version": "1", "objective": "maximize valid value", "evaluator_source": _SOURCE,
+        "constraint_coverage": ["valid-value"],
+        "probes": [json.loads(raw_materials[f"holdouts/{index:02d}/snapshot.json"]) for index in (1, 2, 0)],
+        "score_order": [{"better": "limit-1-value-1", "worse": "limit-1-value-0"}],
+    }
+    runtime = BundleRuntime(envelope)
+    controller = LocalController(Config(root / "home"), runtime)
+    parent = controller.create_conversational_run(case.TASK_BYTES.decode(), workspace=root / "parent")
+    task = controller.store.list_tasks(parent.id)[0]
+    attempt = controller.store.claim_task(task.id, "fixture")
+    controller.store.finish_task(task.id, attempt.id, True)
+    controller.store.attach_plan_to_run(parent.id, build_algorithm_plan(parent.goal, contract))
+    input_path = parent.workspace / "data/raw/limit.json"
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    input_path.write_bytes(case.INPUT_BYTES)
+    controller.store.add_artifact(
+        parent.id, task.id, "data/raw/limit.json", hashlib.sha256(case.INPUT_BYTES).hexdigest(),
+        len(case.INPUT_BYTES), "input_data",
+    )
+    prepare_automatic_solve_bundle(controller, parent.id, contract, timeout_seconds=3)
+    registration = _registration(case.TASK_BYTES, case.INPUT_BYTES,
+                                 raw_materials["reference/evaluator-criteria.json"],
+                                 raw_materials["reference/profile-criteria.json"])
+    payload = {key: value for key, value in registration.items() if key != "registration_sha256"}
+    payload.update(pins)
+    registration = build_acceptance_registration(payload)
+    return controller, parent, contract, registration, materials
+
+
+def test_real_native_preparation_and_fixed_holdouts_bind(tmp_path):
+    controller, parent, contract, registration, materials = _native_fixture(tmp_path)
+    receipt = binding.prepare_acceptance_runtime_binding(
+        registration, store=controller.store, parent_id=parent.id, materials=materials,
+        contract=contract, workspace=tmp_path / "holdouts",
+    )
+    assert receipt["parent_run_id"] == parent.id
+    assert receipt["probe_summary"]["status"] == "passed"
+    assert (tmp_path / "holdouts/binding-receipt.json").read_bytes() == canonical_json(receipt, maximum=256 * 1024)
