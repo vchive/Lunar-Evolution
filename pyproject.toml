@@ -27,6 +27,9 @@ lunar-evolution = "lunar_evolution.cli:main"
 where = ["src"]
 include = ["lunar_evolution", "lunar_evolution.*"]
 
+[tool.setuptools.package-data]
+lunar_evolution = ["*.c", "*.h"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

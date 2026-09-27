@@ -500,11 +500,14 @@ def compile_evaluator_bundle(
     continuation_guard: Callable[[], None] | None = None,
     process_observer: Callable[[int, int | None], None] | None = None,
     process_released: Callable[[int, int | None], None] | None = None,
+    process_exit_observed: Callable[[int | None], None] | None = None,
+    process_result_observed: Callable[[str, int | None, str | None], None] | None = None,
 ) -> FrozenEvaluatorBundle:
     """Compile and preflight a bundle, or verify and reuse an existing frozen bundle."""
     if not isinstance(contract, AlgorithmProblemContract):
         raise TypeError("contract must be an AlgorithmProblemContract")
-    process_options = _process_options(process_observer, process_released)
+    process_options = _process_options(process_observer, process_released, process_exit_observed,
+                                       process_result_observed)
     timeout = _timeout(timeout)
     request_timeout = timeout if preparation_request_timeout is None else _timeout(preparation_request_timeout)
     _preparation_timeout(timeout, preparation_remaining_timeout, "preparation")
@@ -1139,10 +1142,14 @@ def _snapshot_invocation_prompt() -> str:
     )
 
 
-def _process_options(process_observer, process_released):
+def _process_options(process_observer, process_released, process_exit_observed=None,
+                     process_result_observed=None):
     """Keep operational process ownership separate from frozen evaluator identity."""
     options = {}
-    for name, callback in (("process_observer", process_observer), ("process_released", process_released)):
+    for name, callback in (("process_observer", process_observer),
+                           ("process_released", process_released),
+                           ("process_exit_observed", process_exit_observed),
+                           ("process_result_observed", process_result_observed)):
         if callback is not None:
             if not callable(callback):
                 raise TypeError(f"{name} must be callable or None")
@@ -1151,7 +1158,8 @@ def _process_options(process_observer, process_released):
 
 
 def _snapshot_probe(evaluator, probe, contract, workspace, timeout, *, preparation_remaining_timeout=None,
-                    stage="compiler_preflight", process_observer=None, process_released=None):
+                    stage="compiler_preflight", process_observer=None, process_released=None,
+                    process_exit_observed=None, process_result_observed=None):
     """Run the actual 108 harness interface on synthetic data, without an execution record."""
     from .algorithm import MAX_REPORT_BYTES
     from .candidate_evaluation import (
@@ -1221,12 +1229,14 @@ def _snapshot_probe(evaluator, probe, contract, workspace, timeout, *, preparati
             stack.callback(executable.close)
             process_timeout = _preparation_timeout(timeout, preparation_remaining_timeout, stage)
             try:
-                stdout, _, status, _, _ = _bounded_process_bytes(
+                stdout, _, status, exit_code, process_reason = _bounded_process_bytes(
                     [*spec.command, "evaluator.py", "request.json"], cwd=str(workspace),
                     environment=dict(spec.environment), timeout=process_timeout,
                     output_limit=MAX_REPORT_BYTES, capture_limit=MAX_REPORT_BYTES,
-                    **_process_options(process_observer, process_released),
+                    **_process_options(process_observer, process_released, process_exit_observed),
                 )
+                if process_result_observed is not None:
+                    process_result_observed(status, exit_code, process_reason)
             except (SolveExecutionBudgetExceeded, SolveExecutionCancelled):
                 raise
             except OSError as exc:
@@ -1265,13 +1275,16 @@ def _preflight(
     preparation_remaining_timeout: Callable[[str], float] | None = None,
     process_observer: Callable[[int, int | None], None] | None = None,
     process_released: Callable[[int, int | None], None] | None = None,
+    process_exit_observed: Callable[[int | None], None] | None = None,
+    process_result_observed: Callable[[str, int | None, str | None], None] | None = None,
 ) -> None:
     stage = "auditor_preflight" if label == "audit" else "compiler_preflight"
     try:
         _preflight_suite(evaluator, suite, contract, staging, timeout, label=label,
                          invocation=invocation, stage=stage,
                          preparation_remaining_timeout=preparation_remaining_timeout,
-                         **_process_options(process_observer, process_released))
+                         **_process_options(process_observer, process_released, process_exit_observed,
+                                            process_result_observed))
     except (SolveExecutionBudgetExceeded, SolveExecutionCancelled,
             EvaluatorPreparationError, EvaluatorPreparationWallTimeout):
         raise
@@ -1280,7 +1293,8 @@ def _preflight(
 
 
 def _preflight_suite(evaluator, suite, contract, staging, timeout, *, label, invocation, stage,
-                     preparation_remaining_timeout=None, process_observer=None, process_released=None):
+                     preparation_remaining_timeout=None, process_observer=None, process_released=None,
+                     process_exit_observed=None, process_result_observed=None):
     # Admit the whole suite before executing even its first probe. This is creation-time
     # validation only; loading an existing frozen bundle never replays its probes.
     for probe_index, probe in enumerate(suite.probes, 1):
@@ -1304,7 +1318,8 @@ def _preflight_suite(evaluator, suite, contract, staging, timeout, *, label, inv
             try:
                 options = ({"preparation_remaining_timeout": preparation_remaining_timeout, "stage": stage}
                            if preparation_remaining_timeout is not None else {})
-                options.update(_process_options(process_observer, process_released))
+                options.update(_process_options(process_observer, process_released, process_exit_observed,
+                                                process_result_observed))
                 report = _snapshot_probe(evaluator, probe, contract, workspace, timeout, **options)
             except _ProbeFailure as exc:
                 raise _local_failure(str(exc), stage, exc.reason, probe_index=probe_index) from exc

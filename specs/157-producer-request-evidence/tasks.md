@@ -7,6 +7,8 @@
 - [ ] T157-05 Specify and implement a controller-owned evidence transport or controlled producer SDK.
 - [ ] T157-06 Integrate Feature 156 only after transport evidence is host-observed and recovery-safe.
 
+T157-05 progress: A native producer isolation policy and C boundary are now available for trusted-bootstrap integration: Darwin deny-default SBPL denies network and grants exact declared paths; Linux requires Landlock + no-new-privileges seccomp and fails closed when unsupported. The boundary runs post-gate/pre-exec and retains a policy digest. This is still not complete egress coverage.
+
 T157-05 progress: `transport-design.md` specifies the controller-owned broker boundary;
 `HostRequestLedger` implements bounded host-side admission, count, and monotonic timing,
 and `ControllerOwnedRequestBroker` now requires a controlled handle with explicit cancellation

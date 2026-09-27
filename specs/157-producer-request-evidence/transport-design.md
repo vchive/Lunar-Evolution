@@ -76,3 +76,21 @@ The current implementation completes bounded host accounting, a fixture-level du
 journal, and a real HTTP worker for requests explicitly routed through the broker. It does
 not prove complete provider egress coverage, own a protected production journal directory,
 or integrate with Feature 156, so T157-05 and T157-06 remain open.
+
+## Native producer isolation boundary
+
+The controller may attach a `ProducerIsolationPolicy` to a trusted bootstrap launch.  The
+policy is canonical JSON containing a platform profile, exact canonical read paths, exact
+write directories, and a self digest.  The native bootstrap applies it after the release gate
+and before target `exec`; the target cannot select or broaden the policy.  On Darwin the profile
+is deny-default SBPL and denies all network operations while granting only the pinned executable,
+its declared work/output directories, and required read files.  On Linux the native boundary
+requires Landlock and a no-new-privileges seccomp filter that denies network and process escape
+syscalls.  Kernels without the required interfaces fail before target exec.
+
+This boundary is evidence for the target process that actually passes through the trusted
+bootstrap.  It does not isolate a process started outside that bootstrap, and it does not prove
+that a controller owns every provider request until all provider egress is routed through the
+controller broker.  The policy digest and native isolation result must be retained with the
+bootstrap registration; a missing or failed result is unknown and cannot be upgraded by a
+producer-written receipt.

@@ -6,6 +6,7 @@ from .acceptance_audit import (
     build_acceptance_audit_request,
     parse_acceptance_audit_request,
 )
+from .acceptance_holdouts import AcceptanceHoldoutError, run_acceptance_holdouts
 from .acceptance_launch import AcceptanceCampaignError, prepare_acceptance_campaign
 from .acceptance_observer import (
     DEFAULT_ACCEPTANCE_BUDGETS,
@@ -18,6 +19,11 @@ from .acceptance_observer import (
 from .acceptance_observer import (
     STAGES as ACCEPTANCE_STAGES,
 )
+from .acceptance_probes import (
+    AcceptanceProbeError,
+    AcceptanceSnapshotEvidence,
+    run_acceptance_snapshot_probe,
+)
 from .acceptance_registration import (
     AcceptanceRegistrationError,
     build_acceptance_registration,
@@ -26,6 +32,7 @@ from .acceptance_registration import (
     parse_registration_seal,
     preflight_acceptance_registration,
 )
+from .acceptance_runtime_binding import AcceptanceRuntimeBindingError, bind_acceptance_runtime
 from .agent_evolution import (
     AgentCandidateEvaluator,
     AgentCandidateGenerator,
@@ -584,8 +591,12 @@ __all__ = [
     "WORKSPACE_PLAN_SCHEMA_VERSION",
     "AcceptanceAuditError",
     "AcceptanceCampaignError",
+    "AcceptanceHoldoutError",
     "AcceptanceObservationError",
+    "AcceptanceProbeError",
     "AcceptanceRegistrationError",
+    "AcceptanceRuntimeBindingError",
+    "AcceptanceSnapshotEvidence",
     "AdmittedBenchmarkComparison",
     "AdmittedBenchmarkTask",
     "AdmittedSeed",
@@ -834,6 +845,7 @@ __all__ = [
     "audit_candidate_execution_cleanup",
     "audit_holdout_receipts",
     "benchmark_case_content_digest",
+    "bind_acceptance_runtime",
     "bind_benchmark_comparison_result_evidence",
     "build_acceptance_audit_request",
     "build_acceptance_manifest",
@@ -943,6 +955,8 @@ __all__ = [
     "remote_sync",
     "resolve_candidate_integrity_authority",
     "resume_producer_bundle_publication",
+    "run_acceptance_holdouts",
+    "run_acceptance_snapshot_probe",
     "run_candidate_execution",
     "run_candidate_execution_recorded",
     "run_effect_preflight",

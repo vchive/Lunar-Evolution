@@ -83,6 +83,23 @@ target FD into a child, releases the gate, or performs recovery. T158-04 remains
 Publication can fail before a snapshot object is returned; a remaining role path is then
 reported as cleanup-unknown and retained because its inode is not owned by the preparer.
 The formal runner must hold exclusive batch ownership across preparation and publication.
+
+## Native artifact increment
+
+`src/lunar_evolution/native_bootstrap.c` is a checked-in source artifact for a Lunar-owned
+bootstrap binary. `build_native_bootstrap_artifact` compiles it into a fresh private installation
+directory and derives the descriptor from the resulting regular-file bytes and stat identity;
+`load_native_bootstrap_artifact` rechecks those pins before a caller can spawn it. The binary
+accepts a bounded private `LNB1` control record, emits the canonical trusted-bootstrap handshake,
+waits for exactly one `b"1"` followed by EOF, rehashes the target after release, and reports
+post-`exec` success through a close-on-exec pipe. Linux callers may pass the sealed target FD for
+`fexecve`; Darwin callers must pass the immutable target snapshot prepared by the binding helper.
+The child can apply the installation-generated isolation policy through
+`native_producer_isolation.h` immediately before target `exec`.
+
+This increment supplies an exact native artifact and bounded handoff protocol. It does not wire
+Feature 156 registration, attestation consumption, gate publication, cleanup, recovery, or a
+scheduler entry point. Those remain T158-04 obligations.
 The shared Darwin snapshot publisher now uses an atomic create-only hard link for all three
 roles, followed by removal of its temporary name before immutable verification. A conflicting
 role path cannot be overwritten even if it appears after the preparer's initial absence check.

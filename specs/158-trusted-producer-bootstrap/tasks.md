@@ -5,6 +5,12 @@
 - [x] T158-03 Specify and implement the ready/block/release/target-start state machine in a trusted bootstrap runtime fixture.
 - [ ] T158-04 Bind bootstrap and target identities to Feature 156 registration, cleanup, recovery, and one monotonic attempt.
 
+  Native artifact increment (supporting slice): checked-in C source, private build/allowlist
+  loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
+  and isolation-policy call are implemented and covered by provider-free subprocess tests. This
+  does not close T158-04: the Feature 156 runner still owns registration-before-release, consumed
+  attestation, shared deadline, cleanup, recovery, and scheduler integration.
+
   The current increment adds `build_trusted_bootstrap_launch`, an identity-only adapter from a
   verified Feature 154 intent/attestation. It binds all launch identities, target executable
   digest, bootstrap descriptor digest, and the single gate nonce. `fixture-only` and platform
