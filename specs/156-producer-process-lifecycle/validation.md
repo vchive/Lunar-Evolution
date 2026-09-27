@@ -1,5 +1,15 @@
 # Feature 156 validation
 
+## Cross-feature lifecycle acceptance matrix (`2026-09-28`)
+
+The provider-free lifecycle evidence is now indexed in the [acceptance matrix](acceptance-matrix.md).
+It ties each Feature 156 process, capture, cleanup, receipt, and recovery case to an actual fixture,
+and records the supporting Feature 157 broker and Feature 158 bootstrap boundaries separately from
+the still-open production integration rows. `tests/test_lifecycle_acceptance_matrix.py` parses the
+matrix and fails when a claimed fixture file or test function is removed. This is a traceability
+and regression guard; it does not close T156-09, T156-14, T157-05/T157-06, or T158-04 and does not
+authorize a provider or external campaign.
+
 ## Native bootstrap isolation supporting checkpoint (`15b8113`, 2026-09-27)
 
 The Feature 158 native bootstrap now has an actual Darwin pre-exec sandbox integration test.
