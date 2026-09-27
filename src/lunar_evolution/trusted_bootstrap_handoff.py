@@ -31,6 +31,13 @@ from .producer_launcher import (
 TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL = "lunar-trusted-producer-bootstrap-handoff-v1"
 TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION = "1"
 _MAX_HANDOFF_BYTES = 256 * 1024
+_HANDOFF_FIELDS = frozenset({
+    "schema_version", "protocol", "launch_sha256", "descriptor_sha256", "intent_sha256",
+    "attestation_sha256", "consumption_sha256", "registration_sha256", "pid", "pgid",
+    "bootstrap_execution_binding", "bootstrap_snapshot_relative_path", "bootstrap_snapshot_sha256",
+    "bootstrap_snapshot_size", "target_execution_binding", "target_snapshot_relative_path",
+    "target_snapshot_sha256", "target_snapshot_size", "handoff_sha256",
+})
 
 
 class TrustedBootstrapHandoffError(ValueError):
@@ -85,6 +92,46 @@ def _mapping(value: object, code: str) -> Mapping[str, object]:
     return value
 
 
+def _pairs(items: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, item in items:
+        if key in result:
+            _fail("trusted_bootstrap_handoff_duplicate_key")
+        result[key] = item
+    return result
+
+
+def _strict_json(value: object) -> object:
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = bytes(value).decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise TrustedBootstrapHandoffError("trusted_bootstrap_handoff_json_invalid") from exc
+    if not isinstance(value, str):
+        _fail("trusted_bootstrap_handoff_json_invalid")
+    try:
+        if len(value.encode("utf-8")) > _MAX_HANDOFF_BYTES:
+            _fail("trusted_bootstrap_handoff_too_large")
+    except UnicodeEncodeError as exc:
+        raise TrustedBootstrapHandoffError("trusted_bootstrap_handoff_json_invalid") from exc
+    try:
+        return json.loads(
+            value,
+            object_pairs_hook=_pairs,
+            parse_constant=lambda _: _fail("trusted_bootstrap_handoff_json_invalid"),
+        )
+    except TrustedBootstrapHandoffError:
+        raise
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise TrustedBootstrapHandoffError("trusted_bootstrap_handoff_json_invalid") from exc
+
+
+def _object(value: object, code: str) -> dict[str, object]:
+    if not isinstance(value, dict) or set(value) != _HANDOFF_FIELDS:
+        _fail(code)
+    return value
+
+
 def _handoff_payload(
     *,
     launch: TrustedBootstrapLaunch,
@@ -115,6 +162,57 @@ def _handoff_payload(
         "target_snapshot_sha256": registration["target_execution_snapshot_sha256"],
         "target_snapshot_size": registration["target_execution_snapshot_size"],
     }
+
+
+def parse_trusted_bootstrap_process_registration_handoff(
+    value: Mapping[str, object] | str | bytes | bytearray,
+) -> dict[str, object]:
+    """Parse one detached handoff receipt without granting runtime authority.
+
+    String and byte input must be canonical JSON. Mapping input is detached through a
+    canonical round-trip so later caller mutation cannot alter the returned receipt. The
+    parser validates the exact field set, all identity digests, platform binding labels,
+    and the self-digest; it does not inspect a process or the filesystem.
+    """
+    encoded: bytes | None = None
+    if isinstance(value, (str, bytes, bytearray)):
+        encoded = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+        parsed = _strict_json(encoded)
+    else:
+        if isinstance(value, Mapping) and not isinstance(value, dict):
+            try:
+                parsed = json.loads(_canonical(dict(value)))
+            except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+                raise TrustedBootstrapHandoffError("trusted_bootstrap_handoff_schema_invalid") from exc
+        else:
+            parsed = value
+    raw = _object(parsed, "trusted_bootstrap_handoff_schema_invalid")
+    if encoded is not None and _canonical(raw) != encoded:
+        _fail("trusted_bootstrap_handoff_noncanonical")
+    if raw["schema_version"] != TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION or raw["protocol"] != TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL:
+        _fail("trusted_bootstrap_handoff_schema_invalid")
+    for field in (
+        "launch_sha256", "descriptor_sha256", "intent_sha256", "attestation_sha256",
+        "consumption_sha256", "registration_sha256", "bootstrap_snapshot_sha256",
+        "target_snapshot_sha256", "handoff_sha256",
+    ):
+        _sha(raw[field], "trusted_bootstrap_handoff_digest_invalid")
+    for field in ("pid", "pgid", "bootstrap_snapshot_size", "target_snapshot_size"):
+        _int(raw[field], "trusted_bootstrap_handoff_binding_invalid")
+    if raw["pid"] != raw["pgid"]:
+        _fail("trusted_bootstrap_handoff_process_identity_invalid")
+    if raw["bootstrap_execution_binding"] not in {"darwin-immutable-snapshot", "linux-sealed-memfd"}:
+        _fail("trusted_bootstrap_handoff_binding_invalid")
+    if raw["target_execution_binding"] != raw["bootstrap_execution_binding"]:
+        _fail("trusted_bootstrap_handoff_binding_invalid")
+    expected_path = ".producer-snapshots/bootstrap" if raw["bootstrap_execution_binding"] == "darwin-immutable-snapshot" else None
+    expected_target_path = ".producer-snapshots/target" if raw["target_execution_binding"] == "darwin-immutable-snapshot" else None
+    if raw["bootstrap_snapshot_relative_path"] != expected_path or raw["target_snapshot_relative_path"] != expected_target_path:
+        _fail("trusted_bootstrap_handoff_binding_invalid")
+    if raw["handoff_sha256"] != _digest({key: raw[key] for key in raw if key != "handoff_sha256"}):
+        _fail("trusted_bootstrap_handoff_digest_mismatch")
+    # Detach nested caller containers and normalize insertion order for future persistence.
+    return json.loads(_canonical(raw))
 
 
 def build_trusted_bootstrap_process_registration_handoff(
@@ -190,9 +288,36 @@ def build_trusted_bootstrap_process_registration_handoff(
     return payload
 
 
+def verify_trusted_bootstrap_process_registration_handoff(
+    value: Mapping[str, object] | str | bytes | bytearray,
+    *,
+    launch: TrustedBootstrapLaunch,
+    descriptor: TrustedBootstrapDescriptor,
+    intent: ProducerLaunchIntent | object,
+    attestation: ProducerLaunchAttestation | object,
+    consumption: Mapping[str, object] | object,
+    registration: Mapping[str, object] | object,
+) -> dict[str, object]:
+    """Verify a persisted handoff receipt against all source records.
+
+    This is the production runner's read-only binding check before it publishes or resumes
+    Feature 156 lifecycle state. It performs no process, provider, clock, or filesystem work.
+    """
+    parsed = parse_trusted_bootstrap_process_registration_handoff(value)
+    expected = build_trusted_bootstrap_process_registration_handoff(
+        launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
+        consumption=consumption, registration=registration,
+    )
+    if parsed != expected:
+        _fail("trusted_bootstrap_handoff_binding_mismatch")
+    return parsed
+
+
 __all__ = [
     "TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL",
     "TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION",
     "TrustedBootstrapHandoffError",
     "build_trusted_bootstrap_process_registration_handoff",
+    "parse_trusted_bootstrap_process_registration_handoff",
+    "verify_trusted_bootstrap_process_registration_handoff",
 ]

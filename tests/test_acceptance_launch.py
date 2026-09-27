@@ -14,7 +14,10 @@ import pytest
 from test_acceptance_registration import _checkout, _git
 
 from lunar_evolution import AcceptanceRegistrationError, acceptance_launch
-from lunar_evolution.acceptance_launch import prepare_acceptance_campaign
+from lunar_evolution.acceptance_launch import (
+    prepare_acceptance_campaign,
+    revalidate_acceptance_campaign,
+)
 
 
 def _canonical(value: dict) -> bytes:
@@ -33,6 +36,13 @@ def _registered_origin(tmp_path: Path) -> tuple[Path, Path, dict, Path, Path, Pa
 def _prepare(fixture: tuple[Path, Path, dict, Path, Path, Path]) -> dict:
     checkout, parent, _, registration_path, seal_path, _ = fixture
     return prepare_acceptance_campaign(
+        registration_path, seal_path, checkout_root=checkout, campaign_parent=parent,
+    )
+
+
+def _revalidate(fixture: tuple[Path, Path, dict, Path, Path, Path]) -> dict:
+    checkout, parent, _, registration_path, seal_path, _ = fixture
+    return revalidate_acceptance_campaign(
         registration_path, seal_path, checkout_root=checkout, campaign_parent=parent,
     )
 
@@ -490,3 +500,81 @@ def test_old_evidence_changed_after_admission_write_never_returns_success_or_ret
         _prepare(fixture)
     assert (root.stat().st_dev, root.stat().st_ino) == identity
     assert files_before == {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+
+
+def test_revalidation_accepts_one_unchanged_admission(tmp_path: Path) -> None:
+    fixture = _registered_origin(tmp_path)
+    prepared = _prepare(fixture)
+    result = _revalidate(fixture)
+    assert result["status"] == "ready"
+    assert result["launch_allowed"] is True
+    assert result["admission"] == prepared
+    assert result["remote_commit"] == prepared["remote_commit"]
+
+
+@pytest.mark.parametrize("mutation", ["duplicate", "extra", "missing", "noncanonical"])
+def test_revalidation_rejects_admission_shape_drift(tmp_path: Path, mutation: str) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    _, parent, manifest, _, _, _ = fixture
+    path = parent / manifest["campaign_root"] / "admission.json"
+    admission = json.loads(path.read_bytes())
+    if mutation == "duplicate":
+        raw = path.read_bytes().replace(
+            b'"status":"prepared"', b'"status":"prepared","status":"prepared"', 1,
+        )
+    else:
+        if mutation == "extra":
+            admission["unexpected"] = True
+        elif mutation == "missing":
+            del admission["remote_commit"]
+        raw = json.dumps(admission, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        if mutation == "noncanonical":
+            raw = json.dumps(admission, indent=2).encode()
+    path.write_bytes(raw)
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+
+
+def test_revalidation_rejects_file_pin_drift_and_symlink(tmp_path: Path) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    _, parent, manifest, _, _, _ = fixture
+    root = parent / manifest["campaign_root"]
+    target = root / "preflight.json"
+    original = target.read_bytes()
+    target.write_bytes(b"x" * len(original))
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+    target.write_bytes(original)
+    target.unlink()
+    target.symlink_to(root / "remote-main.json")
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+
+
+def test_revalidation_rejects_hardlink_and_materials_permission_drift(tmp_path: Path) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    _, parent, manifest, _, _, _ = fixture
+    root = parent / manifest["campaign_root"]
+    alias = parent / "preflight-alias"
+    os.link(root / "preflight.json", alias)
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+    alias.unlink()
+    os.chmod(root / "materials", 0o755)
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+
+
+def test_revalidation_rejects_remote_drift(tmp_path: Path) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    remote_main = acceptance_launch._remote_main
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(acceptance_launch, "_remote_main", lambda checkout: "f" * 40)
+    with pytest.raises(AcceptanceRegistrationError, match="^remote_main_mismatch$"):
+        _revalidate(fixture)
+    monkeypatch.undo()
+    assert acceptance_launch._remote_main is remote_main

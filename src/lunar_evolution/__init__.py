@@ -554,6 +554,8 @@ from .trusted_bootstrap_handoff import (
     TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION,
     TrustedBootstrapHandoffError,
     build_trusted_bootstrap_process_registration_handoff,
+    parse_trusted_bootstrap_process_registration_handoff,
+    verify_trusted_bootstrap_process_registration_handoff,
 )
 from .workers import WorkerService
 from .workflow_checkpoint import (
@@ -956,6 +958,7 @@ __all__ = [
     "parse_registration_seal",
     "parse_seed_manifest",
     "parse_trusted_bootstrap_evidence",
+    "parse_trusted_bootstrap_process_registration_handoff",
     "parse_trusted_bootstrap_registration",
     "preflight_acceptance_registration",
     "preflight_producer_bundle_publication",
@@ -1005,5 +1008,6 @@ __all__ = [
     "verify_producer_launch_attestation",
     "verify_trusted_bootstrap_attempt",
     "verify_trusted_bootstrap_process_registration",
+    "verify_trusted_bootstrap_process_registration_handoff",
     "verify_trusted_bootstrap_registration",
 ]

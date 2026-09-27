@@ -322,11 +322,31 @@ def revalidate_acceptance_campaign(
         root = parent / manifest["campaign_root"]
         admission_raw = _read_regular(root / "admission.json", MAX_PRODUCT_FILE_BYTES)
         admission = None
+        def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
+            parsed: dict[str, Any] = {}
+            for key, value in items:
+                if key in parsed:
+                    _fail("campaign_admission_incomplete")
+                parsed[key] = value
+            return parsed
+
         try:
-            admission = json.loads(admission_raw)
+            admission = json.loads(admission_raw, object_pairs_hook=pairs)
         except (TypeError, ValueError, UnicodeDecodeError):
             _fail("campaign_admission_incomplete")
-        if not isinstance(admission, dict) or admission.get("scope") != "acceptance_campaign_admission" or admission.get("status") != "prepared" or admission.get("provider_started") is not False:
+        if (not isinstance(admission, dict)
+                or _canonical(admission) != admission_raw
+                or set(admission) != {
+                    "schema_version", "scope", "status", "provider_started", "registration_id",
+                    "campaign_id", "attempt_id", "campaign_root", "registration_sha256",
+                    "product_commit", "seal_sha256", "head_commit", "remote_commit",
+                    "root_device", "root_inode", "parent_device", "parent_inode", "files",
+                    "admission_sha256",
+                }
+                or admission.get("schema_version") != "1"
+                or admission.get("scope") != "acceptance_campaign_admission"
+                or admission.get("status") != "prepared"
+                or admission.get("provider_started") is not False):
             _fail("campaign_admission_incomplete")
         digest = admission.get("admission_sha256")
         if type(digest) is not str or hashlib.sha256(_canonical({k: v for k, v in admission.items() if k != "admission_sha256"})).hexdigest() != digest:
@@ -335,17 +355,33 @@ def revalidate_acceptance_campaign(
             if admission.get(key) != manifest.get(key):
                 _fail("campaign_admission_incomplete")
         info = os.stat(root, follow_symlinks=False)
-        if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700 or info.st_nlink != 1:
+        if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
             _fail("campaign_admission_incomplete")
         if (admission.get("root_device"), admission.get("root_inode")) != (info.st_dev, info.st_ino):
             _fail("campaign_admission_incomplete")
         files = admission.get("files")
         if not isinstance(files, list) or not files:
             _fail("campaign_admission_incomplete")
-        expected = {item.get("path") for item in files if isinstance(item, dict)}
-        if len(expected) != len(files) or any(not isinstance(item, dict) or type(item.get("path")) is not str for item in files):
+        expected = set()
+        for item in files:
+            if (not isinstance(item, dict) or set(item) != {"path", "size", "sha256"}
+                    or type(item.get("size")) is not int or item["size"] < 0
+                    or type(item.get("sha256")) is not str
+                    or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])):
+                _fail("campaign_admission_incomplete")
+            try:
+                relative = item["path"]
+                if not isinstance(relative, str):
+                    _fail("campaign_admission_incomplete")
+                parts = relative.split("/")
+                if (not relative or any(part in {"", ".", "..", ".git"} for part in parts)
+                        or any(ord(char) < 32 or ord(char) == 127 for char in relative)):
+                    _fail("campaign_admission_incomplete")
+            except (TypeError, ValueError):
+                _fail("campaign_admission_incomplete")
+            expected.add(relative)
+        if len(expected) != len(files) or "admission.json" in expected:
             _fail("campaign_admission_incomplete")
-        expected.discard("admission.json")
         expected_root = {"materials", "admission.json", *(p for p in expected if "/" not in p)}
         with os.scandir(root) as entries:
             if {e.name for e in entries} != expected_root:
@@ -357,8 +393,13 @@ def revalidate_acceptance_campaign(
             if len(raw) != item.get("size") or hashlib.sha256(raw).hexdigest() != item.get("sha256"):
                 _fail("campaign_admission_incomplete")
             named = os.stat(target, follow_symlinks=False)
-            if named.st_nlink != 1 or stat.S_IMODE(named.st_mode) != 0o600:
+            if (not stat.S_ISREG(named.st_mode) or named.st_nlink != 1
+                    or stat.S_IMODE(named.st_mode) != 0o600):
                 _fail("campaign_admission_incomplete")
+        materials_info = os.stat(root / "materials", follow_symlinks=False)
+        if (not stat.S_ISDIR(materials_info.st_mode)
+                or stat.S_IMODE(materials_info.st_mode) != 0o700):
+            _fail("campaign_admission_incomplete")
         if _remote_main(checkout) != remote_commit:
             _fail("remote_main_mismatch")
         final = preflight_acceptance_registration(

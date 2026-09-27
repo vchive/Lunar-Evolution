@@ -11,6 +11,8 @@ from lunar_evolution.trusted_bootstrap_handoff import (
     TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL,
     TrustedBootstrapHandoffError,
     build_trusted_bootstrap_process_registration_handoff,
+    parse_trusted_bootstrap_process_registration_handoff,
+    verify_trusted_bootstrap_process_registration_handoff,
 )
 
 
@@ -86,3 +88,64 @@ def test_handoff_is_provider_free_and_does_not_touch_filesystem(tmp_path: Path, 
     )
     assert receipt.get("status", "detached")
     assert before == sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*"))
+
+
+def test_handoff_parser_requires_canonical_exact_self_digest(tmp_path: Path):
+    launch, descriptor, intent, attestation, claim, registration, _ = _records(tmp_path)
+    receipt = build_trusted_bootstrap_process_registration_handoff(
+        launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
+        consumption=claim, registration=registration,
+    )
+    encoded = json.dumps(receipt, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    parsed = parse_trusted_bootstrap_process_registration_handoff(encoded)
+    assert parsed == receipt
+    with pytest.raises(TrustedBootstrapHandoffError) as failure:
+        parse_trusted_bootstrap_process_registration_handoff(json.dumps(receipt))
+    assert failure.value.code == "trusted_bootstrap_handoff_noncanonical"
+    duplicate = encoded.replace(b'"protocol":"lunar-trusted-producer-bootstrap-handoff-v1"', b'"protocol":"lunar-trusted-producer-bootstrap-handoff-v1","protocol":"lunar-trusted-producer-bootstrap-handoff-v1"', 1)
+    with pytest.raises(TrustedBootstrapHandoffError) as failure:
+        parse_trusted_bootstrap_process_registration_handoff(duplicate)
+    assert failure.value.code == "trusted_bootstrap_handoff_duplicate_key"
+
+    forged = dict(receipt)
+    forged["target_snapshot_size"] = int(forged["target_snapshot_size"]) + 1
+    forged["handoff_sha256"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in forged.items() if key != "handoff_sha256"},
+            sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    parsed_forged = parse_trusted_bootstrap_process_registration_handoff(forged)
+    assert parsed_forged["target_snapshot_size"] == receipt["target_snapshot_size"] + 1
+    with pytest.raises(TrustedBootstrapHandoffError) as failure:
+        verify_trusted_bootstrap_process_registration_handoff(
+            parsed_forged, launch=launch, descriptor=descriptor, intent=intent,
+            attestation=attestation, consumption=claim, registration=registration,
+        )
+    assert failure.value.code == "trusted_bootstrap_handoff_binding_mismatch"
+
+
+def test_handoff_verifier_rebinds_all_source_records(tmp_path: Path):
+    launch, descriptor, intent, attestation, claim, registration, _ = _records(tmp_path)
+    receipt = build_trusted_bootstrap_process_registration_handoff(
+        launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
+        consumption=claim, registration=registration,
+    )
+    assert verify_trusted_bootstrap_process_registration_handoff(
+        receipt, launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
+        consumption=claim, registration=registration,
+    ) == receipt
+    forged = dict(receipt)
+    forged["consumption_sha256"] = "e" * 64
+    forged["handoff_sha256"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in forged.items() if key != "handoff_sha256"},
+            sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    with pytest.raises(TrustedBootstrapHandoffError) as failure:
+        verify_trusted_bootstrap_process_registration_handoff(
+            forged, launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
+            consumption=claim, registration=registration,
+        )
+    assert failure.value.code == "trusted_bootstrap_handoff_binding_mismatch"
