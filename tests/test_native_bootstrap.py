@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import os
 import select
+import socket
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -70,6 +72,14 @@ def _read_frame(fd: int, timeout: float = 5.0):
     line = os.read(fd, 8192)
     assert line.endswith(b"\n")
     return parse_bootstrap_handshake_frame(line[:-1])
+
+
+def _read_remaining_frames(fd: int):
+    data = bytearray()
+    while chunk := os.read(fd, 8192):
+        data.extend(chunk)
+        assert len(data) < 32768
+    return [parse_bootstrap_handshake_frame(line) for line in data.splitlines()]
 
 
 @pytest.mark.skipif(__import__("sys").platform not in {"darwin", "linux"}, reason="native bootstrap platform")
@@ -142,3 +152,77 @@ def test_control_binds_controller_isolation_policy(tmp_path: Path):
     assert policy.profile.encode() in control
     assert str(work).encode() in control
     assert str(target).encode() in control
+    if sys.platform == "darwin":
+        assert '(allow file-read-data (literal "/"))' in policy.profile
+        assert '(allow file-read* (subpath "/"))' not in policy.profile
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Darwin sandbox fixture")
+def test_native_bootstrap_execs_isolated_target_with_denied_egress_and_outside_io(tmp_path: Path):
+    """Exercise sandbox application *before exec*, including dyld initialization."""
+    work = tmp_path / "work"
+    work.mkdir()
+    secret = tmp_path / "controller-secret"
+    secret.write_text("controller-only", encoding="utf-8")
+    allowed = work / "allowed"
+    outside = tmp_path / "outside"
+    target_source = tmp_path / "target.c"
+    target = tmp_path / "target"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        # An unsandboxed connection can reach this listener; rejection cannot
+        # pass merely because the chosen port is closed.
+        with socket.create_connection(("127.0.0.1", port), timeout=2):
+            accepted, _ = listener.accept()
+            accepted.close()
+        target_source.write_text(
+            '#include <errno.h>\n#include <fcntl.h>\n#include <netinet/in.h>\n'
+            '#include <sys/socket.h>\n#include <unistd.h>\n'
+            'int main(void) { '
+            f'int fd = open("{allowed}", O_CREAT | O_WRONLY, 0600); '
+            'if (fd < 0) return 2; if (write(fd, "ok", 2) != 2) return 3; close(fd); '
+            f'fd = open("{outside}", O_CREAT | O_WRONLY, 0600); '
+            'if (fd >= 0) { close(fd); return 4; } if (errno != EPERM && errno != EACCES) return 5; '
+            f'fd = open("{secret}", O_RDONLY); '
+            'if (fd >= 0) { close(fd); return 6; } if (errno != EPERM && errno != EACCES) return 7; '
+            'int s = socket(AF_INET, SOCK_STREAM, 0); if (s < 0) { '
+            'if (errno == EPERM || errno == EACCES) return 0; return 8; } '
+            'struct sockaddr_in addr = {0}; addr.sin_family = AF_INET; '
+            f'addr.sin_port = htons({port}); addr.sin_addr.s_addr = htonl(0x7f000001); '
+            'int rc = connect(s, (struct sockaddr *)&addr, sizeof(addr)); int err = errno; close(s); '
+            'if (rc == 0) return 9; if (err != EPERM && err != EACCES) return 10; return 0; }\n',
+            encoding="utf-8",
+        )
+        subprocess.run(
+            ["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(target_source), "-o", str(target)],
+            check=True, capture_output=True,
+        )
+        policy = build_producer_isolation_policy(read_paths=[target], write_dirs=[work])
+        process, gate_w, frame_r, _marker, _artifact = _start(
+            tmp_path, target=target, isolation_policy=policy, prepare_target=False,
+        )
+        try:
+            assert _read_frame(frame_r).kind == "bootstrap_ready"
+            assert not allowed.exists()
+            os.write(gate_w, b"1")
+            os.close(gate_w)
+            gate_w = -1
+            code = process.wait(timeout=5)
+            frames = _read_remaining_frames(frame_r)
+            assert [frame.kind for frame in frames] == ["target_started", "terminal"]
+            assert code == 0, process.stderr.read()
+            assert allowed.read_bytes() == b"ok"
+            assert not outside.exists()
+            listener.settimeout(0.1)
+            with pytest.raises(TimeoutError):
+                listener.accept()
+        finally:
+            if gate_w >= 0:
+                os.close(gate_w)
+            os.close(frame_r)
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            process.stderr.close()

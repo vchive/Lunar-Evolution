@@ -286,10 +286,10 @@ int main(int argc, char **argv) {
 #if defined(__linux__)
             fexecve(c.target_fd, c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
 #else
-            execve(c.argv[0], c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
+            execve(c.target_path, c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
 #endif
         } else {
-            execve(c.argv[0], c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
+            execve(c.target_path, c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
         }
         int e=errno; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(75);
     }

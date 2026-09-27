@@ -43,6 +43,7 @@ class AcceptanceSnapshotEvidence:
     actual_output_bytes: bytes
     report_sha256: str | None
     projection_sha256: str | None
+    harness_sha256: str | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,6 +63,7 @@ class AcceptanceSnapshotEvidence:
             "actual_output_sha256": hashlib.sha256(self.actual_output_bytes).hexdigest(),
             "report_sha256": self.report_sha256,
             "projection_sha256": self.projection_sha256,
+            "harness_sha256": self.harness_sha256,
         }
 
 
@@ -158,6 +160,9 @@ def run_acceptance_snapshot_probe(
     def result_observed(status: str, exit_code: int | None, process_reason: str | None) -> None:
         captured.update(status=status, exit=exit_code, reason=process_reason)
 
+    def source_observed(source: bytes) -> None:
+        captured["harness_sha256"] = hashlib.sha256(source).hexdigest()
+
     started = time.monotonic()
     report_dict: dict[str, Any] | None = None
     projection: dict[str, Any] | None = None
@@ -171,6 +176,7 @@ def run_acceptance_snapshot_probe(
             process_released=release,
             process_exit_observed=lambda code: exits.append(code),
             process_result_observed=result_observed,
+            evaluator_source_observed=source_observed,
         )
         report_dict = report.to_dict()
         projection = _projection(report)
@@ -217,6 +223,7 @@ def run_acceptance_snapshot_probe(
         actual_output_bytes=actual_bytes,
         report_sha256=hashlib.sha256(report_bytes).hexdigest() if report_bytes is not None else None,
         projection_sha256=hashlib.sha256(actual_bytes).hexdigest() if projection is not None else None,
+        harness_sha256=captured.get("harness_sha256"),
     )
 
 

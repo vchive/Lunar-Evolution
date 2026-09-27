@@ -1159,7 +1159,7 @@ def _process_options(process_observer, process_released, process_exit_observed=N
 
 def _snapshot_probe(evaluator, probe, contract, workspace, timeout, *, preparation_remaining_timeout=None,
                     stage="compiler_preflight", process_observer=None, process_released=None,
-                    process_exit_observed=None, process_result_observed=None):
+                    process_exit_observed=None, process_result_observed=None, evaluator_source_observed=None):
     """Run the actual 108 harness interface on synthetic data, without an execution record."""
     from .algorithm import MAX_REPORT_BYTES
     from .candidate_evaluation import (
@@ -1180,6 +1180,8 @@ def _snapshot_probe(evaluator, probe, contract, workspace, timeout, *, preparati
 
     try:
         source = evaluator.read_bytes()
+        if evaluator_source_observed is not None:
+            evaluator_source_observed(source)
         spec = _snapshot_spec(source, timeout)
         supplied = {item.path: item.content.encode("utf-8") for item in probe.files}
         declared = {"data/raw/" + item.path for item in contract.inputs} | {item.path for item in contract.outputs}

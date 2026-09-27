@@ -9,19 +9,35 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import stat
 from collections.abc import Mapping
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
+from ._benchmark_files import BenchmarkFileError, absolute_path
+from ._candidate_workspace_io import DirectoryChain
 from .acceptance_probes import AcceptanceSnapshotEvidence, _expected, run_acceptance_snapshot_probe
 from .algorithm import AlgorithmProblemContract
+from .candidate_workspace_plan import CandidateWorkspaceError
 from .evaluator_bundle import EvaluatorProbe, ProbeFile
 
 
 class AcceptanceHoldoutError(ValueError):
     """A fixed malformed holdout batch or material failure."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)
+
+
+_FIXED_HOLDOUT_PAIRS = ((1, -1), (1, 0), (1, 1), (1, 2), (3, 0), (3, 2), (3, 3), (3, 4))
+
+
+def _fixed_holdout_name(limit: int, value: int) -> str:
+    return f"limit-{limit}-value-{'minus-' if value < 0 else ''}{abs(value)}"
 
 
 def _sha(value: bytes) -> str:
@@ -44,12 +60,15 @@ def _json(raw: bytes, code: str) -> dict[str, Any]:
     return value
 
 
-def _material(materials: Mapping[str, bytes], pin: Mapping[str, Any], code: str) -> bytes:
+def _material(materials: Mapping[str, bytes], pin: object, code: str) -> bytes:
+    if not isinstance(pin, Mapping) or set(pin) != {"path", "size", "sha256"}:
+        raise AcceptanceHoldoutError(code)
     path = pin.get("path")
     if type(path) is not str or path not in materials or not isinstance(materials[path], bytes):
         raise AcceptanceHoldoutError(code)
     raw = materials[path]
-    if pin.get("size") != len(raw) or pin.get("sha256") != _sha(raw):
+    if (type(pin.get("size")) is not int or not 0 < pin["size"] <= 512 * 1024
+            or pin["size"] != len(raw) or pin.get("sha256") != _sha(raw)):
         raise AcceptanceHoldoutError(code)
     return raw
 
@@ -78,8 +97,13 @@ def _probe(raw: bytes, code: str) -> EvaluatorProbe:
     return EvaluatorProbe(value["name"], value["constraint_id"], value["expected_validity"], tuple(parsed))
 
 
-def _validate_fixed_pair(snapshot: EvaluatorProbe, expected: Mapping[str, Any], code: str) -> None:
+def _validate_fixed_pair(ordinal: int, snapshot: EvaluatorProbe, expected: Mapping[str, Any], code: str) -> None:
     """Require the registered snapshot/expected pair to describe one fixed integer judgment."""
+    if ordinal < 0 or ordinal >= len(_FIXED_HOLDOUT_PAIRS):
+        raise AcceptanceHoldoutError(code)
+    limit, value = _FIXED_HOLDOUT_PAIRS[ordinal]
+    if snapshot.name != _fixed_holdout_name(limit, value):
+        raise AcceptanceHoldoutError(code)
     files = {item.path: item.content for item in snapshot.files}
     if set(files) != {"data/raw/limit.json", "output/result.json"}:
         raise AcceptanceHoldoutError(code)
@@ -93,14 +117,21 @@ def _validate_fixed_pair(snapshot: EvaluatorProbe, expected: Mapping[str, Any], 
             or not isinstance(value_raw, dict) or set(value_raw) != {"value"}
             or type(value_raw["value"]) is not int):
         raise AcceptanceHoldoutError(code)
-    limit, value = limit_raw["limit"], value_raw["value"]
+    if (limit_raw["limit"], value_raw["value"]) != (limit, value):
+        raise AcceptanceHoldoutError(code)
     valid = 0 <= value <= limit
     derived = {
         "validity": int(valid), "quality": value if valid else None,
         "combined_score": value if valid else 0,
         "constraint_code": None if valid else "valid-value",
     }
-    if dict(expected) != derived or snapshot.expected_validity != int(valid):
+    if (_canonical(dict(expected)) != _canonical(derived)
+            or snapshot.expected_validity != int(valid)
+            or snapshot.constraint_id != derived["constraint_code"]
+            or snapshot.files != (
+                ProbeFile("data/raw/limit.json", f'{{"limit":{limit}}}\n'),
+                ProbeFile("output/result.json", f'{{"value":{value}}}\n'),
+            )):
         raise AcceptanceHoldoutError(code)
 
 
@@ -148,20 +179,62 @@ def _remaining(callback: Any, stage: str) -> float | None:
         value = callback(stage)
     except Exception as exc:
         raise AcceptanceHoldoutError("holdout_deadline_exceeded") from exc
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value <= 0):
         raise AcceptanceHoldoutError("holdout_deadline_exceeded")
     return float(value)
 
 
-def _check_root(root_fd: int, root: Path) -> None:
+def _check_directories(*chains: DirectoryChain) -> None:
     try:
-        named = os.stat(root, follow_symlinks=False)
-        held = os.fstat(root_fd)
-    except OSError as exc:
+        for chain in chains:
+            chain.check()
+    except (CandidateWorkspaceError, OSError) as exc:
         raise AcceptanceHoldoutError("holdout_workspace_changed") from exc
-    if (not stat.S_ISDIR(named.st_mode) or stat.S_IMODE(named.st_mode) != 0o700
-            or (named.st_dev, named.st_ino) != (held.st_dev, held.st_ino)):
-        raise AcceptanceHoldoutError("holdout_workspace_changed")
+
+
+def _active(check_active: Any, *chains: DirectoryChain) -> None:
+    _check_directories(*chains)
+    try:
+        if check_active is not None:
+            check_active()
+    finally:
+        _check_directories(*chains)
+
+
+def _new_directory(parent: DirectoryChain, path: Path, stack: ExitStack) -> DirectoryChain:
+    _check_directories(parent)
+    try:
+        os.mkdir(path.name, 0o700, dir_fd=parent.fd)
+    except FileExistsError as exc:
+        raise AcceptanceHoldoutError("holdout_workspace_exists") from exc
+    except OSError as exc:
+        raise AcceptanceHoldoutError("holdout_workspace_create_failed") from exc
+    try:
+        before = os.stat(path.name, dir_fd=parent.fd, follow_symlinks=False)
+        child = DirectoryChain(path, "holdout_workspace_changed")
+        stack.callback(child.close)
+        opened = os.fstat(child.fd)
+        if (not stat.S_ISDIR(before.st_mode)
+                or (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino)):
+            raise AcceptanceHoldoutError("holdout_workspace_changed")
+        os.fchmod(child.fd, 0o700)
+        os.fsync(child.fd)
+        os.fsync(parent.fd)
+        _check_directories(parent, child)
+        return child
+    except (CandidateWorkspaceError, OSError) as exc:
+        raise AcceptanceHoldoutError("holdout_workspace_changed") from exc
+
+
+def _contract_inputs_outputs(contract: AlgorithmProblemContract) -> None:
+    if len(contract.inputs) != 1 or len(contract.outputs) != 1:
+        raise AcceptanceHoldoutError("holdout_contract_mismatch")
+    source, output = contract.inputs[0], contract.outputs[0]
+    if (source.path != "limit.json" or source.format != "json" or set(source.fields) != {"limit"}
+            or output.path != "output/result.json" or output.format != "json"
+            or output.fields != ("value",) or output.required is not True):
+        raise AcceptanceHoldoutError("holdout_contract_mismatch")
 
 
 def run_acceptance_holdouts(
@@ -184,6 +257,7 @@ def run_acceptance_holdouts(
         raise AcceptanceHoldoutError("path_invalid")
     if not isinstance(contract, AlgorithmProblemContract):
         raise AcceptanceHoldoutError("contract_invalid")
+    _contract_inputs_outputs(contract)
     if check_active is not None and not callable(check_active):
         raise AcceptanceHoldoutError("check_active_invalid")
     if remaining_timeout is not None and not callable(remaining_timeout):
@@ -196,14 +270,14 @@ def run_acceptance_holdouts(
     for ordinal, pin in enumerate(pins):
         if not isinstance(pin, Mapping) or set(pin) != {"ordinal", "holdout_id", "input", "expected", "max_duration_ms"}:
             raise AcceptanceHoldoutError("holdout_schema_invalid")
-        if pin.get("ordinal") != ordinal:
+        if type(pin.get("ordinal")) is not int or pin["ordinal"] != ordinal:
             raise AcceptanceHoldoutError("holdout_order_invalid")
         holdout_id = pin.get("holdout_id")
         if type(holdout_id) is not str or not holdout_id or holdout_id in seen_ids:
             raise AcceptanceHoldoutError("holdout_identity_invalid")
         seen_ids.add(holdout_id)
         duration = pin.get("max_duration_ms")
-        if type(duration) is not int or duration <= 0:
+        if type(duration) is not int or not 1 <= duration <= 5000:
             raise AcceptanceHoldoutError("holdout_duration_invalid")
         snapshot_raw = _material(materials, pin.get("input", {}), "holdout_input_invalid")
         expected_raw = _material(materials, pin.get("expected", {}), "holdout_expected_invalid")
@@ -217,84 +291,60 @@ def run_acceptance_holdouts(
             expected = _expected(expected)
         except Exception as exc:
             raise AcceptanceHoldoutError("holdout_expected_invalid") from exc
-        _validate_fixed_pair(snapshot, expected, "holdout_pair_invalid")
+        _validate_fixed_pair(ordinal, snapshot, expected, "holdout_pair_invalid")
         prepared.append((ordinal, holdout_id, snapshot_raw, expected_raw, snapshot, expected, duration))
 
-    root = Path(workspace)
-    if root.exists() or root.is_symlink():
-        raise AcceptanceHoldoutError("holdout_workspace_exists")
-    parent_fd = -1
-    root_fd = -1
     try:
-        parent_fd = os.open(root.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
-        os.mkdir(root.name, 0o700, dir_fd=parent_fd)
-        root_fd = os.open(root.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent_fd)
-        os.fchmod(root_fd, 0o700)
-        os.fsync(root_fd)
-        os.fsync(parent_fd)
-    except OSError as exc:
-        if root_fd >= 0:
-            os.close(root_fd)
-        if parent_fd >= 0:
-            os.close(parent_fd)
-        raise AcceptanceHoldoutError("holdout_workspace_create_failed") from exc
-
-    if check_active is not None:
-        check_active()
-
+        root = absolute_path(workspace)
+    except BenchmarkFileError as exc:
+        raise AcceptanceHoldoutError("path_invalid") from exc
     rows: list[dict[str, Any]] = []
-    try:
-        for ordinal, pin in enumerate(pins):
-            ordinal, holdout_id, snapshot_raw, expected_raw, snapshot, expected, duration = prepared[ordinal]
-            _check_root(root_fd, root)
+    with ExitStack() as stack:
+        try:
+            parent_chain = DirectoryChain(root.parent, "holdout_parent_invalid")
+            stack.callback(parent_chain.close)
+        except (CandidateWorkspaceError, OSError) as exc:
+            raise AcceptanceHoldoutError("holdout_parent_invalid") from exc
+        root_chain = _new_directory(parent_chain, root, stack)
+        _active(check_active, parent_chain, root_chain)
+        for ordinal, holdout_id, snapshot_raw, expected_raw, snapshot, expected, duration in prepared:
             _remaining(remaining_timeout, f"holdout-{ordinal:02d}-before")
-            if check_active is not None:
-                check_active()
-            item_fd = -1
-            try:
-                os.mkdir(f"{ordinal:02d}", 0o700, dir_fd=root_fd)
-                item_fd = os.open(f"{ordinal:02d}", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root_fd)
-                os.fsync(root_fd)
-            except OSError as exc:
-                raise AcceptanceHoldoutError("holdout_workspace_create_failed") from exc
+            _active(check_active, parent_chain, root_chain)
             item_path = root / f"{ordinal:02d}"
-            try:
-                os.mkdir("probe", 0o700, dir_fd=item_fd)
-                _write_new(item_fd, "snapshot.bin", snapshot_raw)
-                _write_new(item_fd, "expected.json", expected_raw)
-                if check_active is not None:
-                    check_active()
+            with ExitStack() as item_stack:
+                item_chain = _new_directory(root_chain, item_path, item_stack)
+                probe_chain = _new_directory(item_chain, item_path / "probe", item_stack)
+                chains = (parent_chain, root_chain, item_chain, probe_chain)
+                _write_new(item_chain.fd, "snapshot.bin", snapshot_raw)
+                _write_new(item_chain.fd, "expected.json", expected_raw)
+                os.fsync(item_chain.fd)
+                _active(check_active, *chains)
                 remaining = _remaining(remaining_timeout, f"holdout-{ordinal:02d}-run")
-                timeout = duration / 1000
-                if remaining is not None:
-                    timeout = min(timeout, remaining)
-                evidence: AcceptanceSnapshotEvidence = run_acceptance_snapshot_probe(
-                    evaluator, snapshot, contract, item_path / "probe",
-                    expected=expected, timeout_seconds=timeout, check_active=check_active,
-                )
-                actual_bytes = evidence.actual_output_bytes
-                evidence_bytes = _canonical(evidence.to_dict())
-                _write_new(item_fd, "actual.json", actual_bytes)
-                _write_new(item_fd, "evidence.json", evidence_bytes)
-                os.fsync(item_fd)
-            finally:
-                if item_fd >= 0:
-                    os.close(item_fd)
-            _check_root(root_fd, root)
+                timeout = duration / 1000 if remaining is None else min(duration / 1000, remaining)
+                _check_directories(*chains)
+
+                def guarded_active(held_chains=chains) -> None:
+                    _active(check_active, *held_chains)
+
+                try:
+                    evidence: AcceptanceSnapshotEvidence = run_acceptance_snapshot_probe(
+                        evaluator, snapshot, contract, item_path / "probe", expected=expected,
+                        timeout_seconds=timeout, check_active=guarded_active,
+                    )
+                finally:
+                    _check_directories(*chains)
+                _write_new(item_chain.fd, "actual.json", evidence.actual_output_bytes)
+                _write_new(item_chain.fd, "evidence.json", _canonical(evidence.to_dict()))
+                os.fsync(item_chain.fd)
+                _active(check_active, *chains)
             _remaining(remaining_timeout, f"holdout-{ordinal:02d}-after")
+            _check_directories(parent_chain, root_chain)
             outcome = "passed" if evidence.passed else ("failed" if evidence.reason not in {"cancelled", "timeout", "exception", "cleanup_unknown"} else "unknown")
             rows.append({
-                "ordinal": ordinal,
-                "holdout_id": holdout_id,
-                "outcome": outcome,
-                "input_sha256": _sha(snapshot_raw),
-                "expected_output_sha256": _sha(expected_raw),
-                "actual_output_sha256": _sha(evidence.actual_output_bytes),
-                "evidence": evidence.to_dict(),
+                "ordinal": ordinal, "holdout_id": holdout_id, "outcome": outcome,
+                "input_sha256": _sha(snapshot_raw), "expected_output_sha256": _sha(expected_raw),
+                "actual_output_sha256": _sha(evidence.actual_output_bytes), "evidence": evidence.to_dict(),
             })
-    finally:
-        os.close(root_fd)
-        os.close(parent_fd)
     return tuple(rows)
 
 

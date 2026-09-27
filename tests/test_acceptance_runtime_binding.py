@@ -47,19 +47,78 @@ def _contract() -> AlgorithmProblemContract:
 
 def _criteria(contract: AlgorithmProblemContract) -> tuple[bytes, bytes]:
     del contract
-    evaluator = {
-        "kind": "independent_evaluator_criteria", "hard_constraints": ["valid-value", "python-files"],
-        "input": {"path": "limit.json", "format": "json", "field": "limit"},
-        "output": {"path": "output/result.json", "format": "json", "field": "value"},
-        "objective": "maximize", "source_check": {"kind": "python_file_count", "minimum": 2},
-    }
-    evaluator_bytes = canonical_json(evaluator)
-    profile = {
-        "kind": "independent_evaluator_profile_criteria",
-        "evaluator_criteria_sha256": hashlib.sha256(evaluator_bytes).hexdigest(),
-        "holdout_count": 8, "invocation": "snapshot", "independent_audit": True,
-    }
-    return evaluator_bytes, canonical_json(profile)
+    root = Path(__file__).resolve().parents[1] / "specs/142-automatic-solve-lifecycle/measurement/materials/reference"
+    return (root / "evaluator-criteria.json").read_bytes(), (root / "profile-criteria.json").read_bytes()
+
+
+def test_binding_accepts_complete_frozen_criteria_materials():
+    evaluator, profile = _criteria(_contract())
+    registration = _registration(b"task", b'{"limit":3}\n', evaluator, profile)
+    actual_evaluator, actual_profile = binding._criteria(evaluator, profile, registration)
+    assert canonical_json(actual_evaluator) == evaluator
+    assert canonical_json(actual_profile) == profile
+    binding._verify_contract(_contract(), actual_evaluator)
+
+
+@pytest.mark.parametrize("target", ["evaluator", "profile"])
+@pytest.mark.parametrize("change", ["unknown_field", "missing_field", "noncanonical", "duplicate_key"])
+def test_binding_rejects_nonexact_criteria_json(target, change):
+    evaluator, profile = _criteria(_contract())
+    values = {"evaluator": json.loads(evaluator), "profile": json.loads(profile)}
+    value = values[target]
+    if change == "unknown_field":
+        value["unused"] = "ignored"
+    elif change == "missing_field":
+        del value["schema_version"]
+    raw = canonical_json(value)
+    if change == "noncanonical":
+        raw = json.dumps(value, indent=2).encode()
+    elif change == "duplicate_key":
+        raw = raw[:-1] + b',"schema_version":"1"}'
+    if target == "evaluator":
+        evaluator = raw
+        values["profile"]["evaluator_criteria_sha256"] = hashlib.sha256(evaluator).hexdigest()
+        profile = canonical_json(values["profile"])
+    else:
+        profile = raw
+    registration = _registration(b"task", b'{"limit":3}\n', evaluator, profile)
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="criteria_(noncanonical|semantics_mismatch)"):
+        binding._criteria(evaluator, profile, registration)
+
+
+@pytest.mark.parametrize("change", [
+    "generated_bundle_false", "audit_false", "holdout_float", "input_type", "source_paths",
+    "valid_range", "valid_judgment", "invalid_judgment", "source_only_false", "boolean_validity",
+])
+def test_binding_rejects_changed_criteria_semantics(change):
+    evaluator, profile = _criteria(_contract())
+    ev, pr = json.loads(evaluator), json.loads(profile)
+    if change == "generated_bundle_false":
+        pr["generated_bundle_required"] = False
+    elif change == "audit_false":
+        pr["independent_audit"] = False
+    elif change == "holdout_float":
+        pr["holdout_count"] = 8.0
+    elif change == "input_type":
+        ev["input"]["type"] = "string"
+    elif change == "source_paths":
+        ev["source_paths"] = "zero_files"
+    elif change == "valid_range":
+        ev["valid_range"] = "unbounded"
+    elif change == "valid_judgment":
+        ev["valid_judgment"]["combined_score"] = 0
+    elif change == "invalid_judgment":
+        ev["invalid_judgment"]["constraint_code"] = None
+    elif change == "source_only_false":
+        ev["source_path_check_only"] = False
+    else:
+        ev["valid_judgment"]["validity"] = True
+    evaluator = canonical_json(ev)
+    pr["evaluator_criteria_sha256"] = hashlib.sha256(evaluator).hexdigest()
+    profile = canonical_json(pr)
+    registration = _registration(b"task", b'{"limit":3}\n', evaluator, profile)
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="criteria_semantics_mismatch"):
+        binding._criteria(evaluator, profile, registration)
 
 
 def _registration(task: bytes, input_bytes: bytes, evaluator: bytes, profile: bytes) -> dict[str, object]:
@@ -98,6 +157,17 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     input_bytes = b'{"limit":3}\n'
     evaluator, profile_criteria = _criteria(contract)
     registration = _registration(task, input_bytes, evaluator, profile_criteria)
+    case_path = Path(__file__).resolve().parents[1] / "specs/142-automatic-solve-lifecycle/measurement/case.py"
+    case_spec = importlib.util.spec_from_file_location("binding_case_fixture", case_path)
+    assert case_spec is not None and case_spec.loader is not None
+    case = importlib.util.module_from_spec(case_spec)
+    case_spec.loader.exec_module(case)
+    case_materials = case.build_case_materials()
+    materials = {case.MATERIAL_ROOT + "/" + name: raw for name, raw in case_materials.items()}
+    pins = case.build_case_pins()
+    registration_payload = {key: value for key, value in registration.items() if key != "registration_sha256"}
+    registration_payload["holdout_pins"] = pins["holdout_pins"]
+    registration = build_acceptance_registration(registration_payload)
     (tmp_path / "evaluator-bundle").mkdir()
     harness = tmp_path / "evaluator-bundle" / "evaluator.py"
     harness.write_text("print('ok')\n", encoding="utf-8")
@@ -110,7 +180,7 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     input_root.mkdir(parents=True)
     (input_root / "limit.json").write_bytes(input_bytes)
     pipeline = MultiFileCandidatePipeline(
-        evaluator=spec, harness_path=harness, input_root=tmp_path / "inputs",
+        evaluator=spec, harness_path=harness, input_root=input_root,
         inputs=(CandidateExecutionInput(
             "limit.json", "parent-input", len(input_bytes), hashlib.sha256(input_bytes).hexdigest(),
         ),),
@@ -127,22 +197,28 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     })
     root = tmp_path / "bundle"
     root.mkdir()
+    (root / "evaluator.py").write_bytes(harness.read_bytes())
     bundle = FrozenEvaluatorBundle(root, "e" * 64, contract.digest(), "f" * 64, 2, "snapshot")
     monkeypatch.setattr(binding, "load_evaluator_bundle", lambda *args, **kwargs: bundle)
-    return registration, task, input_bytes, evaluator, profile_criteria, contract, pipeline, bundle, profile
+    return registration, task, input_bytes, evaluator, profile_criteria, contract, pipeline, bundle, profile, materials
 
 
 def _probe(index: int = 0, holdout_id: str | None = None) -> dict[str, object]:
-    projection = {"validity": 1, "quality": 1, "combined_score": 1, "constraint_code": None}
-    report = {"schema_version": "1", "evaluator_id": "compiled-bundle", "validity": 1,
-              "quality": 1, "combined_score": 1, "detailed_scores": {}, "error_info": []}
+    material_root = Path(__file__).resolve().parents[1] / "specs/142-automatic-solve-lifecycle/measurement/materials"
+    snapshot = (material_root / f"holdouts/{index:02d}/snapshot.json").read_bytes()
+    expected_bytes = (material_root / f"holdouts/{index:02d}/expected.json").read_bytes()
+    declaration = json.loads(snapshot)
+    projection = json.loads(expected_bytes)
+    report = {"schema_version": "1", "evaluator_id": "compiled-bundle", "validity": projection["validity"],
+              "quality": projection["quality"], "combined_score": projection["combined_score"], "detailed_scores": {},
+              "error_info": [{"code": "valid-value", "message": "invalid"}] if not projection["validity"] else []}
     projection_bytes = canonical_json(projection)
-    expected_bytes = canonical_json(projection)
     report_bytes = canonical_json(report)
-    digest = "1" * 64
+    raw_input = next(item["content"].encode() for item in declaration["files"] if item["path"] == "data/raw/limit.json")
+    digest = hashlib.sha256(raw_input).hexdigest()
     return {
-        "ordinal": index, "holdout_id": holdout_id or f"holdout-{index:02d}",
-        "input_sha256": "1" * 64, "expected_output_sha256": hashlib.sha256(expected_bytes).hexdigest(),
+        "ordinal": index, "holdout_id": holdout_id or declaration["name"],
+        "input_sha256": hashlib.sha256(snapshot).hexdigest(), "expected_output_sha256": hashlib.sha256(expected_bytes).hexdigest(),
         "actual_output_sha256": hashlib.sha256(projection_bytes).hexdigest(), "outcome": "passed", "evidence": {
             "report": report, "projection": projection, "expected": projection, "passed": True,
             "reason": "passed", "duration_ms": 2, "process_exit_code": 0, "native_exit_code": 0,
@@ -151,6 +227,7 @@ def _probe(index: int = 0, holdout_id: str | None = None) -> dict[str, object]:
             "actual_output_sha256": hashlib.sha256(projection_bytes).hexdigest(),
             "report_sha256": hashlib.sha256(report_bytes).hexdigest(),
             "projection_sha256": hashlib.sha256(projection_bytes).hexdigest(),
+            "harness_sha256": "0" * 64,
         },
     }
 
@@ -159,12 +236,19 @@ _DEFAULT = object()
 
 
 def _bind(fixture, probes=_DEFAULT):
-    registration, task, input_bytes, evaluator, profile_criteria, contract, pipeline, bundle, profile = fixture
+    registration, task, input_bytes, evaluator, profile_criteria, contract, pipeline, bundle, profile, materials = fixture
+    selected = [_probe(index) for index in range(8)] if probes is _DEFAULT else probes
+    harness_sha = hashlib.sha256(Path(pipeline.harness_path).read_bytes()).hexdigest()
+    if selected is not None:
+        for row in selected:
+            if row["evidence"]["harness_sha256"] == "0" * 64:
+                row["evidence"]["harness_sha256"] = harness_sha
     return binding.bind_acceptance_runtime(
         registration, task_bytes=task, input_bytes=input_bytes,
         evaluator_criteria_bytes=evaluator, profile_criteria_bytes=profile_criteria,
         contract=contract, pipeline=pipeline, bundle=bundle, profile_bytes=profile,
-        probe_results=[_probe(index) for index in range(8)] if probes is _DEFAULT else probes,
+        materials=materials,
+        probe_results=selected,
     )
 
 
@@ -190,6 +274,39 @@ def test_runtime_binding_rejects_probe_evidence_drift(tmp_path, monkeypatch, cha
         evidence["report_sha256"] = "2" * 64
     with pytest.raises(binding.AcceptanceRuntimeBindingError):
         _bind(fixture, probes)
+
+
+@pytest.mark.parametrize("change", ["nested_input", "harness", "snapshot", "expected"])
+def test_runtime_binding_rejects_cross_material_probe_identity(tmp_path, monkeypatch, change):
+    fixture = _fixture(tmp_path, monkeypatch)
+    registration, *_, materials = fixture
+    probes = [_probe(index) for index in range(8)]
+    if change == "nested_input":
+        probes[0]["evidence"]["input_sha256"] = "f" * 64
+    elif change == "harness":
+        probes[0]["evidence"]["harness_sha256"] = "f" * 64
+    elif change == "snapshot":
+        materials[registration["holdout_pins"][0]["input"]["path"]] = b"{}"
+    else:
+        materials[registration["holdout_pins"][0]["expected"]["path"]] = b"{}"
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="probe_(material_mismatch|harness_mismatch)"):
+        _bind(fixture, probes)
+
+
+def test_runtime_binding_rejects_different_bundle_harness(tmp_path, monkeypatch):
+    fixture = _fixture(tmp_path, monkeypatch)
+    bundle = fixture[7]
+    (bundle.root / "evaluator.py").write_bytes(b"print('different')\n")
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="bundle_harness_mismatch"):
+        _bind(fixture)
+
+
+def test_runtime_binding_rejects_staged_input_drift(tmp_path, monkeypatch):
+    fixture = _fixture(tmp_path, monkeypatch)
+    pipeline = fixture[6]
+    (pipeline.input_root / "limit.json").write_bytes(b'{"limit":4}\n')
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="staged_input_mismatch"):
+        _bind(fixture)
 
 
 def test_runtime_binding_requires_holdouts(tmp_path, monkeypatch):
@@ -266,3 +383,57 @@ def test_real_native_preparation_and_fixed_holdouts_bind(tmp_path):
     assert receipt["parent_run_id"] == parent.id
     assert receipt["probe_summary"]["status"] == "passed"
     assert (tmp_path / "holdouts/binding-receipt.json").read_bytes() == canonical_json(receipt, maximum=256 * 1024)
+    payload = {key: value for key, value in receipt.items() if key != "binding_sha256"}
+    assert hashlib.sha256(canonical_json(payload, maximum=256 * 1024)).hexdigest() == receipt["binding_sha256"]
+
+
+def test_wrapper_rejects_retained_evidence_changed_after_probe(tmp_path, monkeypatch):
+    import lunar_evolution.acceptance_holdouts as holdouts
+
+    controller, parent, contract, registration, materials = _native_fixture(tmp_path)
+    original = holdouts.run_acceptance_holdouts
+
+    def corrupt(*args, **kwargs):
+        rows = original(*args, **kwargs)
+        (kwargs["workspace"] / "00" / "actual.json").write_bytes(b"{}")
+        return rows
+
+    monkeypatch.setattr(holdouts, "run_acceptance_holdouts", corrupt)
+    with pytest.raises(binding.AcceptanceRuntimeBindingError):
+        binding.prepare_acceptance_runtime_binding(
+            registration, store=controller.store, parent_id=parent.id, materials=materials,
+            contract=contract, workspace=tmp_path / "holdouts",
+        )
+    assert not (tmp_path / "holdouts" / "binding-receipt.json").exists()
+
+
+def test_wrapper_checks_deadline_after_holdouts_before_publication(tmp_path):
+    controller, parent, contract, registration, materials = _native_fixture(tmp_path)
+
+    def remaining(stage):
+        return 0 if stage == "binding-publish" else 60
+
+    with pytest.raises(binding.AcceptanceRuntimeBindingError):
+        binding.prepare_acceptance_runtime_binding(
+            registration, store=controller.store, parent_id=parent.id, materials=materials,
+            contract=contract, workspace=tmp_path / "holdouts", remaining_timeout=remaining,
+        )
+    assert (tmp_path / "holdouts" / "07" / "evidence.json").exists()
+    assert not (tmp_path / "holdouts" / "binding-receipt.json").exists()
+
+
+def test_real_preparation_rejects_other_registered_parent_task_before_holdouts(tmp_path):
+    controller, parent, contract, registration, materials = _native_fixture(tmp_path)
+    changed = b"A different task with the same generated contract"
+    payload = {key: value for key, value in registration.items() if key != "registration_sha256"}
+    digest = hashlib.sha256(changed).hexdigest()
+    payload["task_material"] = {**payload["task_material"], "size": len(changed), "sha256": digest}
+    payload["task_sha256"] = digest
+    materials[payload["task_material"]["path"]] = changed
+    registration = build_acceptance_registration(payload)
+    with pytest.raises(binding.AcceptanceRuntimeBindingError, match="parent_task_material_mismatch"):
+        binding.prepare_acceptance_runtime_binding(
+            registration, store=controller.store, parent_id=parent.id, materials=materials,
+            contract=contract, workspace=tmp_path / "holdouts",
+        )
+    assert not (tmp_path / "holdouts").exists()

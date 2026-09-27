@@ -126,6 +126,10 @@ def build_producer_isolation_policy(
         writes = tuple(sorted({_path(item, directory=True) for item in write_dirs}))
         lines = ["(version 1)", "(deny default)",
                  "(allow signal)", "(allow sysctl-read)",
+                 # Darwin dyld's ignition loader opens the root directory while
+                 # discovering the shared cache.  This literal grants only the
+                 # root directory itself, never reads of arbitrary descendants.
+                 "(allow file-read-data (literal \"/\"))",
                  # System runtime objects needed by dyld and shebang interpreters.
                  # They contain no producer credentials and remain read-only.
                  "(allow file-read* (subpath \"/usr/lib\"))",
