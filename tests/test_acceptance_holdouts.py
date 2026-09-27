@@ -39,7 +39,7 @@ def materials() -> tuple[dict[str, bytes], dict[str, object]]:
     out: dict[str, bytes] = {}
     pins = []
     for ordinal, (limit, value) in enumerate(values):
-        holdout_id = f"p-{limit}-{value}"
+        holdout_id = f"limit-{limit}-value-{'minus-' if value < 0 else ''}{abs(value)}"
         snapshot = json.dumps({"name": holdout_id, "constraint_id": None if 0 <= value <= limit else "valid-value", "expected_validity": int(0 <= value <= limit), "files": [{"path": "data/raw/limit.json", "content": f'{{"limit":{limit}}}\n'}, {"path": "output/result.json", "content": f'{{"value":{value}}}\n'}]}, sort_keys=True, separators=(",", ":")).encode()
         valid = 0 <= value <= limit
         expected = json.dumps({"validity": int(valid), "quality": value if valid else None, "combined_score": value if valid else 0, "constraint_code": None if valid else "valid-value"}, sort_keys=True, separators=(",", ":")).encode()
@@ -82,6 +82,19 @@ def test_runs_all_eight_once_and_retains_raw_projection_evidence(tmp_path: Path,
         assert json.loads((item / "actual.json").read_bytes()) == row["evidence"]["projection"]
         assert json.loads((item / "evidence.json").read_bytes()) == row["evidence"]
         assert hashlib.sha256(row["evidence"]["actual_output_sha256"].encode()).digest()  # bounded shape
+
+
+def test_real_frozen_evaluator_runs_all_eight_materialized_probes(tmp_path: Path):
+    """Exercise the actual snapshot subprocess once per registered eight-pair batch."""
+    raw, registration = materials()
+    rows = run_acceptance_holdouts(
+        registration, materials=raw, evaluator=evaluator(tmp_path), contract=contract(),
+        workspace=tmp_path / "holdouts",
+    )
+    assert len(rows) == 8
+    assert [row["ordinal"] for row in rows] == list(range(8))
+    assert all(row["outcome"] == "passed" for row in rows)
+    assert all((tmp_path / "holdouts" / f"{index:02d}" / "probe").is_dir() for index in range(8))
 
 
 def test_materials_are_validated_before_root_creation(tmp_path: Path):
