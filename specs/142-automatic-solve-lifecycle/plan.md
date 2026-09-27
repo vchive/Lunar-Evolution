@@ -174,6 +174,15 @@ it; an implementation must not silently re-label old authority as a new profile.
 - **Recovery**: never broaden existing preparation or child recovery admission. Terminal success,
   cancellation, and solve exhaustion remain non-executing on continuation.
 
+## Offline E2E runner extension (2026-09-27)
+
+Extend `tools/run_tests.py` with `--suite {all,native-e2e}`, defaulting to `all`. Reuse its current
+import verification, controlled pytest environment, collection and JUnit validation helpers.
+Keep the native selection explicit and separate from archive/registration setup. Exercise the
+actual profile against the existing subprocess integration suites and verify the routing,
+collection and failure propagation boundaries in `tests/test_regression_runner.py`. Document the
+command and report in the quickstart and README, with an explicit offline scope.
+
 ## Verification and release
 
 Use deterministic clocks, fake provider transports, and fresh repository-owned local candidate/

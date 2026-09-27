@@ -221,6 +221,23 @@ check arrives later. Status and terminal continuation never start work to fill m
    sets, sizes, and hashes remain unchanged. Existing Feature 139 measurement artifacts and
    registration conditions are not rewritten by this product feature.
 
+## Repeatable offline E2E regression (2026-09-27)
+
+The existing regression runner shall expose `--suite native-e2e` for a fixed selection of
+current-product automatic multi-file, foreground/background lifecycle, cancellation/deadline,
+and installed-package integration tests. These tests use fresh local workspaces and fixture
+runtimes; they do not register or launch a real-model acceptance campaign. The runner shall
+verify that imports resolve to this checkout, collect the selected tests before execution, and
+require the JUnit result to account for that exact collection with no failures or errors.
+Platform skips remain visible and do not count as executed successes.
+
+This profile shall not restore archived checkouts or require the historical regression
+installer. It shall retain a separate `native-e2e.xml` report and label its output as offline
+native integration evidence. User pytest selection and plugin environment settings must not
+silently narrow the suite. Omitting `--suite` shall continue to run all three existing release
+regression phases; the focused E2E profile does not replace that release gate or real-model
+acceptance.
+
 ## Non-goals
 
 No cumulative cross-continuation budget, remote cancellation promise, new provider request/token/

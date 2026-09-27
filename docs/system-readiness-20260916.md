@@ -1,5 +1,40 @@
 # Lunar Evolution 当前能力、剩余工作与终态验收
 
+## 2026-09-27 当前判断
+
+**原生自动多文件链路现在可以端到端回归。** 本轮统一离线入口的 **224 项全部通过**，
+没有失败、错误或跳过：合同准备、候选生成、本地执行、独立评分、选优、父任务交付，以及
+前后台一致性、等待输入、answer/resume、取消、真实超时进程与后代清理、强杀恢复和仓库外
+安装。独立 CLI quickstart 的四候选得分为 1/2/6/7，交付 7 分候选，终态 resume 没有重复
+请求或执行。以上使用 mock/subprocess/loopback 夹具，不增加真实模型成功样本。
+后续新的真实验收沿用此前模型和支持的任务，由新登记绑定其精确材料；不复用旧槽。
+
+可重复入口见 [142 quickstart](../specs/142-automatic-solve-lifecycle/quickstart.md)，本轮报告为
+`.lunar-evolution/test-results/native-e2e-20260927-final/{native-e2e,runner}.xml`；runner 的
+**46 项测试通过**。该入口只运行当前原生集成范围；本轮默认完整三阶段也已通过：当前
+**7586 passed / 7 skipped**，历史 **2294 passed**，原始登记 **24 passed**，全部 0 失败/错误。
+报告位于 `.lunar-evolution/test-results/native-e2e-release-20260927/`。
+
+Feature 157 现在已有真实 controller-owned HTTP POST worker：请求经 broker 登记后使用
+独立进程、同一绝对 deadline 和有界 IPC；只有确认终止并回收后才报告宿主超时执行成功。
+成功响应可返回调用方，payload/response 不进入宿主 journal。它只覆盖主动经过 broker 的
+请求，仍缺 producer 出口/credential 隔离、生产 journal 保护和 Feature 156 正式接线。
+下方 9/25–9/26 的“尚无实际 transport”等表述是历史状态。
+
+| 优先级/范围 | 仍需完成 | 验收终点 |
+| --- | --- | --- |
+| P0：原生链路发布 | 新真实验收 runner 和 task/input/evaluator/profile/8 项 holdout 材料，固定产品/模型/预算，独立新登记与唯一 attempt | 新真实模型生成、执行、独立评分、选优和父交付全部有绑定证据，cleanup 与 postrun 独立审计通过；139 历史 preparation 1/1、primary/joint 0/1 不变 |
+| P1：外部 producer 生命周期 | 原生可信 bootstrap artifact、bootstrap/target 执行字节 handoff、Feature 156 共享登记/单一 deadline/清理/恢复及完整矩阵 | T158-04 与 T156 整体生命周期关闭；Python bootstrap fixture 不能替代生产入口 |
+| P1：外部 producer 请求边界 | 完整出口覆盖、credential 隔离、受保护生产 journal、Feature 156 与崩溃恢复接线 | T157-05/06 与 T156-14 关闭，绕过 broker 和控制器崩溃均有实证 |
+| 后续外部集成 | producer 输出自动进入 admission → execution/evaluation → population/archive → parent delivery，及真实框架 campaign | 新登记的外部 producer 全链路完成；已实现 staged publication 等局部能力不重复开发 |
+| 可选扩展 | automatic solve 接入通用 WorkerService/递归 Worker API、更复杂输入和跨文件依赖、远端执行 | 先确定发布范围，再给相应用户入口与独立验收；这些不是当前原生 E2E 的前置条件 |
+
+因此，当前可以验证和使用原生离线完整链路；**真实模型完整交付和外部 producer 生产链路
+尚未完成验收，不能宣布全部功能生产可用**。以下保留各日期的历史记录；当前剩余项以本节
+和 [156](../specs/156-producer-process-lifecycle/tasks.md)、
+[157](../specs/157-producer-request-evidence/tasks.md)、
+[158](../specs/158-trusted-producer-bootstrap/tasks.md) 的开放任务为准。
+
 2026-09-26 补充：Feature 158 新增拟议正式 bootstrap 登记的只读跨记录校验，fixture
 登记已改用独立文件名，fixture 清理也核对 OS 进程启动身份。这些改动收紧证据和清理边界，
 尚未使 Feature 156 runner 启动平台字节绑定的 bootstrap，也未连通共享终态证据与恢复。

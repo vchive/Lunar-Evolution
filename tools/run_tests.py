@@ -1,4 +1,4 @@
-"""Run current product, archived historical, and original registration regressions.
+"""Run release regressions or the focused offline native E2E suite.
 
 Historical files are restored from fixed Git commits outside the current checkout. Their
 bytes and exact test inventories remain unchanged; no provider or campaign is invoked.
@@ -34,6 +34,15 @@ ARCHIVE_EXECUTION_COUNT = 2294
 REGISTRATION_COUNT = 24
 ARCHIVE_COLLECTION_SHA256 = "1f5259be4ab980b16b60dfef08e7c8842f3562ecc7e3974b002f863cbc249001"
 UV_VERSION = "0.11.8"
+NATIVE_E2E_SELECTION = (
+    "tests/test_automatic_detach_phase_c.py",
+    "tests/test_conversational_automatic_bundle.py",
+    "tests/test_automatic_solve_bundle.py",
+    "tests/test_automatic_cancel_phase_b.py",
+    "tests/test_automatic_solve_deadline_integration.py",
+    "tests/test_automatic_runtime_processes.py",
+    "tests/test_identity_installation.py",
+)
 
 
 class RegressionError(RuntimeError):
@@ -260,6 +269,28 @@ def _pytest_phase(root, selections, report, *, expected_count, frozen=False, pyt
     return summary
 
 
+def run_native_e2e(repo, junit_dir):
+    repo, junit_dir = repo.resolve(), junit_dir.resolve()
+    junit_dir.mkdir(parents=True, exist_ok=True)
+    report = junit_dir / "native-e2e.xml"
+    report.unlink(missing_ok=True)
+    origins = _verify_imports(repo)
+    nodes = _collect(repo, NATIVE_E2E_SELECTION)
+    if {node.split("::", 1)[0] for node in nodes} != set(NATIVE_E2E_SELECTION):
+        raise RegressionError("native E2E collection must include every selected test file")
+    version = {
+        "suite": "native-e2e", "offline": True,
+        "commit": _git(repo, "rev-parse", "HEAD"), "working_tree": True,
+        "imports": origins, "selection": NATIVE_E2E_SELECTION,
+        "collected": len(nodes), "python": sys.executable,
+    }
+    print(json.dumps(version, sort_keys=True), flush=True)
+    result = _pytest_phase(repo, NATIVE_E2E_SELECTION, report,
+                           expected_count=len(nodes))
+    print(json.dumps({**version, **result}, sort_keys=True), flush=True)
+    return result["exit_code"]
+
+
 def run(repo, junit_dir):
     repo, junit_dir = repo.resolve(), junit_dir.resolve()
     junit_dir.mkdir(parents=True, exist_ok=True)
@@ -319,8 +350,11 @@ def run(repo, junit_dir):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--junit-dir", type=Path, required=True)
+    parser.add_argument("--suite", choices=("all", "native-e2e"), default="all")
     arguments = parser.parse_args(argv)
     try:
+        if arguments.suite == "native-e2e":
+            return run_native_e2e(REPO, arguments.junit_dir)
         return run(REPO, arguments.junit_dir)
     except (RegressionError, OSError, ValueError) as exc:
         print(f"regression runner failed: {exc}", file=sys.stderr)

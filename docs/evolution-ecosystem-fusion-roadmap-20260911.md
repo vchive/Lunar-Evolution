@@ -2,6 +2,21 @@
 
 当前整体现状与版本完成标准见 [2026-09-16 系统评估](system-readiness-20260916.md)。
 
+## 当前路线状态（2026-09-27）
+
+原生自动多文件的统一离线端到端入口已实现并实跑 **224 项通过**，覆盖实际前后台 CLI
+进程、准备/生成/执行/评分/交付、answer/resume、取消/超时清理、强杀恢复与仓库外安装。
+这关闭重复回归入口的使用缺口，不替代真实模型成功样本或完整三阶段发布回归。命令和证据
+见 [142 quickstart](../specs/142-automatic-solve-lifecycle/quickstart.md) 与
+[142 validation](../specs/142-automatic-solve-lifecycle/validation.md)。
+
+当前 P0 仍是新登记下的原生真实模型完整交付：补齐 launch runner、材料、固定预算、唯一
+attempt 与独立 postrun 审计。外部 producer 开发线已完成 byte-bound 执行准备、受控恢复清理
+和真实 broker-owned HTTP worker 等局部实现，仍需可信 bootstrap 生产接线、完整出口与
+credential/journal 隔离，以及输出到 admission/evaluation/population/archive/delivery 的自动
+接线。143/146 的通用 worker API 接入 automatic solve 是可选发布范围，不阻塞当前原生
+链路；9/23 的后续排序保留作历史，不将其强制纳入原生发布前置条件。
+
 ## 当前路线状态（2026-09-23）
 
 146 的递归 worker 生命周期、147 的离线验收证据观察器、148 的 artifact/lifecycle 与 holdout

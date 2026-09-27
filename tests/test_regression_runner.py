@@ -281,3 +281,102 @@ def test_real_pytest_phase_requires_exact_count_and_no_historical_skips(tmp_path
     assert result["exit_code"] == expected
     assert result["tests"] == 1
     assert report.is_file()
+
+
+@pytest.mark.parametrize("suite", [None, "all", "native-e2e"])
+def test_cli_routes_native_suite_without_changing_default_release_path(tmp_path, monkeypatch, suite):
+    calls = []
+    monkeypatch.setattr(runner, "run", lambda *args: (calls.append(("all", args)) or 3))
+    monkeypatch.setattr(runner, "run_native_e2e", lambda *args: (
+        calls.append(("native-e2e", args)) or 2
+    ))
+    arguments = ["--junit-dir", str(tmp_path)]
+    if suite is not None:
+        arguments.extend(("--suite", suite))
+    native = suite == "native-e2e"
+    assert runner.main(arguments) == (2 if native else 3)
+    assert calls == [("native-e2e" if native else "all", (runner.REPO, tmp_path))]
+
+
+@pytest.mark.parametrize("exit_code", [0, 1, 2])
+def test_native_e2e_checks_imports_and_exact_collection_without_archive_setup(
+    tmp_path, monkeypatch, capsys, exit_code,
+):
+    imports = ["checkout/__init__.py", "checkout/evaluator_bundle.py"]
+    nodes = tuple(f"{name}::test_integration" for name in runner.NATIVE_E2E_SELECTION)
+    calls = []
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native E2E must not load archived regression state")
+
+    def phase(root, selections, report, **kwargs):
+        calls.append((root, selections, report, kwargs))
+        return {"exit_code": exit_code, "tests": len(nodes), "skipped": 0}
+
+    for name in ("_load_index", "_snapshot", "_archive_python"):
+        monkeypatch.setattr(runner, name, forbidden)
+    monkeypatch.setattr(runner, "_verify_imports", lambda root: imports)
+    monkeypatch.setattr(runner, "_collect", lambda root, selection: (
+        calls.append((root, selection)) or nodes
+    ))
+    monkeypatch.setattr(runner, "_git", lambda *_args: "product-revision")
+    monkeypatch.setattr(runner, "_pytest_phase", phase)
+    report_dir = tmp_path / "reports"
+    assert runner.run_native_e2e(tmp_path, report_dir) == exit_code
+    assert calls == [
+        (tmp_path, runner.NATIVE_E2E_SELECTION),
+        (tmp_path, runner.NATIVE_E2E_SELECTION, report_dir / "native-e2e.xml",
+         {"expected_count": len(nodes)}),
+    ]
+    summary = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert summary["suite"] == "native-e2e" and summary["offline"] is True
+    assert summary["commit"] == "product-revision" and summary["working_tree"] is True
+    assert summary["imports"] == imports and summary["collected"] == len(nodes)
+    assert summary["exit_code"] == exit_code and summary["skipped"] == 0
+
+
+@pytest.mark.parametrize("mutation", ["missing", "unexpected"])
+def test_native_e2e_rejects_incomplete_or_unexpected_file_coverage(tmp_path, monkeypatch, mutation):
+    nodes = tuple(f"{name}::test_integration" for name in runner.NATIVE_E2E_SELECTION)
+    nodes = nodes[:-1] if mutation == "missing" else (*nodes, "tests/test_other.py::test_other")
+    monkeypatch.setattr(runner, "_verify_imports", lambda _: [])
+    monkeypatch.setattr(runner, "_collect", lambda *_args: nodes)
+    monkeypatch.setattr(runner, "_pytest_phase", lambda *_args, **_kwargs: pytest.fail(
+        "incomplete E2E selection must not execute"
+    ))
+    with pytest.raises(runner.RegressionError, match="every selected test file"):
+        runner.run_native_e2e(tmp_path, tmp_path / "reports")
+
+
+def test_native_e2e_preflight_failure_removes_stale_success_report(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    report = reports / "native-e2e.xml"
+    report.write_text("old successful run")
+
+    def reject(_root):
+        raise runner.RegressionError("checkout import mismatch")
+
+    monkeypatch.setattr(runner, "_verify_imports", reject)
+    with pytest.raises(runner.RegressionError, match="checkout import mismatch"):
+        runner.run_native_e2e(tmp_path, reports)
+    assert not report.exists()
+
+
+@pytest.mark.parametrize("output", ["", "tests/test_one.py::test_one\ntests/test_one.py::test_one"])
+def test_collection_refuses_empty_or_duplicate_test_inventory(tmp_path, monkeypatch, output):
+    monkeypatch.setattr(runner, "_capture", lambda *_args, **_kwargs: output)
+    with pytest.raises(runner.RegressionError, match="empty or contained duplicate"):
+        runner._collect(tmp_path, ("tests",))
+
+
+def test_native_junit_validation_keeps_platform_skips_visible(tmp_path):
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_fixture.py").write_text(
+        "import pytest\ndef test_platform():\n    pytest.skip('unsupported platform')\n"
+    )
+    result = runner._pytest_phase(tmp_path, ("tests",), tmp_path / "native-e2e.xml", expected_count=1)
+    assert result["exit_code"] == 0
+    assert result["tests"] == result["skipped"] == 1
+    assert result["failures"] == result["errors"] == 0

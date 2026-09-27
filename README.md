@@ -1927,6 +1927,20 @@ checkouts afterward. See the [historical archive](docs/history-archive.md) for t
 Use `python -m pytest tests/<file>.py` for focused current-product tests. These regressions do not
 run model campaigns or call providers.
 
+For the focused native automatic multi-file end-to-end regression:
+
+```bash
+.venv/bin/python tools/run_tests.py --suite native-e2e \
+  --junit-dir .lunar-evolution/test-results/native-e2e
+```
+
+This offline suite covers foreground/background delivery, input/answer/resume, cancellation,
+deadline cleanup, killed-worker recovery and installation outside the checkout. It uses fixture
+runtimes and local HTTP, retains `native-e2e.xml`, and does not load historical checkouts. It needs
+`uv` and cached build dependencies for wheel installation. It does not replace all three release
+regression phases or establish real-model success. See the
+[automatic solve quickstart](specs/142-automatic-solve-lifecycle/quickstart.md).
+
 See the [quickstart](specs/001-standalone-local-agent/quickstart.md) for the recovery scenario and
 the [runtime contract](specs/001-standalone-local-agent/contracts/runtime-adapter.md) before adding
 an adapter.

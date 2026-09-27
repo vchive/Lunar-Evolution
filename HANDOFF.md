@@ -1,5 +1,34 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-27 原生自动多文件 E2E 回归入口与剩余发布工作
+
+现可用 `.venv/bin/python tools/run_tests.py --suite native-e2e --junit-dir
+.lunar-evolution/test-results/native-e2e` 重复验证原生自动多文件的完整离线链路。
+新入口基于现有 runner，固定七个集成套件，核对当前 checkout 导入和精确收集/JUnit 数量，
+覆盖前后台 CLI、loopback HTTP、合同准备、生成、执行、独立评分、父交付、answer/resume、
+取消/真实超时与后代清理、强杀恢复和仓库外 wheel 安装。不会加载历史 worktree，默认
+无 `--suite` 仍运行三阶段发布回归；跳过项单独报告，预检失败不会留下旧成功 JUnit。
+
+本轮 native-e2e **224 passed / 0 failed / 0 skipped**，runner **46 passed**。独立
+Feature 112 CLI quickstart 四候选得分 **1/2/6/7**，交付 **7**，终态 resume 没有重复调用。
+完整三阶段发布回归 exit 0：当前 **7586 passed / 7 skipped**，归档历史 **2294 passed**，
+冻结登记 **24 passed**，三阶段均 0 failed/errors。报告分别位于
+`.lunar-evolution/test-results/native-e2e-20260927-final/` 与
+`.lunar-evolution/test-results/native-e2e-release-20260927/`。Ruff、compileall、Specify
+prerequisites、diff check 通过；见 Feature 142 validation 与系统 readiness 顶部。
+
+剩余发布重点：新的原生真实模型成功交付样本。Feature 139 唯一旧槽仍是 preparation 1/1、
+primary/joint 0/1，不得重开。新样本需独立 task/input/evaluator/profile/8 holdout 材料、
+launch runner、新 manifest/seal/唯一 campaign root、clean origin/main preflight、真实 attempt
+及 postrun 审计。当前开发分支的离线通过不满足该真实登记门槛。
+用户已确定新验收沿用之前的模型和任务；具体 provider/model/API-mode 与材料字节仍需在
+新 manifest 中从历史记录核定和冻结，不能直接运行旧 campaign。
+外部 producer 线仍缺
+T158-04 可信原生 bootstrap 的正式 handoff/共享生命周期、T157-05/06 的完整出口/credential
+隔离和生产 journal 保护、T156-14 正式接线，以及产物进入 admission/evaluation/archive/
+delivery 的自动链路。AgentLoop/递归 Worker API 接入 automatic solve 属于可选扩展，
+不阻塞原生 E2E。本轮未调用真实 provider、外部 producer、WebAgent 或 campaign。
+
 ## 2026-09-27 Feature 157 brokered HTTP worker
 
 新增 controller-owned 的 POSIX HTTP POST transport。每个 admission 使用独立的已有标准库

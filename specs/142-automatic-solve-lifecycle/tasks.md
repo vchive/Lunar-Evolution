@@ -104,3 +104,14 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
       read-only acceptance/slot auditor integration. Keep old three-file records compatible but
       cleanup-unknown, and do not authorize a provider until its focused and related regressions
       pass.
+
+## Repeatable offline E2E regression
+
+- [x] T033 Add an explicit `native-e2e` suite to the existing regression runner, preserving the
+      default three-stage release gate, checkout import checks, controlled collection and exact
+      JUnit count validation without archive setup in the focused path.
+- [x] T034 Verify routing and failure/count boundaries, run the actual foreground/background,
+      automatic multi-file, cancellation/deadline and installed-package E2E selection, and
+      retain a separate JUnit report.
+- [x] T035 Record current remaining release/producer work, document the reusable command, and
+      commit/push the verified offline change without claiming real-model success.

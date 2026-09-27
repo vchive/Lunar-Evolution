@@ -8,13 +8,26 @@ continuations. Install the repository with `uv sync --extra dev` first.
 From the repository root, run:
 
 ```sh
-.venv/bin/python -m pytest -q tests/test_automatic_detach_phase_c.py
+.venv/bin/python tools/run_tests.py --suite native-e2e \
+  --junit-dir .lunar-evolution/test-results/native-e2e
 ```
 
 This creates fresh temporary workspaces and a loopback-only model fixture. It launches actual
 Python coordinators, compiles a fixture evaluator, executes generated fixture candidates,
 independently scores them, and verifies parent delivery. No model credentials or remote service
-are needed. The scenarios also cover waiting for input, explicit continuation and cancellation.
+are needed. The scenarios also cover waiting for input, explicit continuation, cancellation,
+deadline cleanup, recovery, terminal idempotency and wheel installation outside the checkout.
+The runner verifies checkout imports and the selected test count, isolates pytest settings and
+writes `native-e2e.xml` with failures, errors and platform skips visible. This focused suite does
+not require historical checkouts or the fixed historical installer version; the installation
+tests still require `uv` and cached build dependencies. It does not replace the full three-stage
+release regression or registered real-model acceptance.
+
+For just the actual foreground/background coordinator scenarios, run:
+
+```sh
+.venv/bin/python -m pytest -q tests/test_automatic_detach_phase_c.py
+```
 
 ## Use with a configured runtime
 

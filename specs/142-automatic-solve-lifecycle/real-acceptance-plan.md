@@ -4,6 +4,13 @@
 **Status**: Preregistration plan; no provider request has been made
 **Related SDD**: [spec.md](spec.md), [plan.md](plan.md), [validation.md](validation.md)
 
+2026-09-27 decision: the next fresh registration retains the previous real acceptance's model
+and supported task. Freeze their exact provider/model/API-mode and task/input/evaluator material
+bytes in the new manifest after verifying the historical record. This is a new identity, root and
+single attempt; it does not reopen or add requests to Feature 139. The registered Feature 142
+budgets and six-stage evidence requirements below remain unchanged. No provider request was made
+by recording this decision.
+
 ## Purpose and scope
 
 This plan defines the next single real-model acceptance attempt after Feature 142 Phase B's

@@ -1,5 +1,55 @@
 # Validation
 
+## Repeatable offline native E2E (2026-09-27)
+
+`tools/run_tests.py --suite native-e2e --junit-dir ...` now selects seven current-product suites
+without archive/index/environment setup. Default and explicit `--suite all` retain the original
+three-stage release path. The focused path verifies this checkout's imports, isolates pytest
+selection/plugin settings, collects a nonempty unique inventory, requires every selected file to
+contribute tests, and checks exact JUnit accounting. It clears a stale profile report before
+preflight so import/collection failure cannot leave an old success report as current evidence.
+Skips remain separately visible and are not executed successes.
+
+The final seven-suite profile passed **224 tests**, **0 failures/errors/skips**, in **85.21s**.
+Coverage includes actual foreground/background CLI coordinators and loopback HTTP, automatic
+multi-file preparation/generation/execution/scoring/parent delivery, waiting input/answer/resume,
+cancel/deadline terminal precedence, real runtime/tool timeout and descendant cleanup, killed
+worker recovery, and wheel installation outside the checkout. The complete runner suite passed
+**46 tests** in **6.09s**, including 12 added routing/collection/report/skip boundary cases and
+existing archive/frozen identity checks. No `src/` product bytes changed in this runner extension.
+Reports are retained in `.lunar-evolution/test-results/native-e2e-20260927-final/` as
+`native-e2e.xml` and `runner.xml`; the tested working tree was based on `0f1a221`.
+
+The standalone `specs/112-automatic-bundle-evaluator/quickstart.py` also passed: four independently
+scored candidates **1/2/6/7**, selected and delivered **7**, one delivery copy, and unchanged
+contract/compiler/auditor/generation/execution counts after terminal resume. Its inspectable
+workspace is `/private/var/folders/kt/ygjlhpbx6sq1mk2912c3fzt80000gn/T/lunar-auto-bundle112-janfj58p`.
+The Phase C fixtures separately use 1/2/999-invalid/9; their delivery checks select 9. These are
+different offline fixtures, not model quality measurements.
+
+The first 187-test invocation and final default-temporary-directory runs reported 2780 pytest
+garbage-removal warnings from old immutable producer snapshots retained by earlier fault tests;
+the selected suites passed and did not create those snapshots. A separate 187-test native profile
+in a fresh temporary root passed without warnings in **84.92s**. The complete runner suite first
+reported **45 passed / 1 failed** under that longer custom `TMPDIR`; its immutable historical
+console identity check rejected the installed launcher. The unchanged check passed in the default
+environment, followed by the final **46 passed** suite. No historical guard or evidence was
+modified. These intermediate observations remain distinct from the final results.
+
+The complete three-stage release runner returned **exit 0** against this working tree:
+current **7586 passed / 7 skipped**, archived **2294 passed**, frozen registration **24 passed**;
+all stages report **0 failures/errors**. Its separate reports are
+`.lunar-evolution/test-results/native-e2e-release-20260927/{current,archived,frozen123}.xml`.
+The historical runner verified its fixed collection/hash and manifest pins before and after the
+tests. The skip count and pytest warnings from old protected temporary snapshots remain visible;
+they do not turn into passing tests. No historical files or registrations were changed.
+
+Ruff for `src`, `tests` and `tools`, compile checks, Specify prerequisites and whitespace checks
+pass. This is offline implementation evidence only: no real provider, external producer, WebAgent
+or campaign was run.
+Fresh real-model materials, launch runner, committed registration and independent postrun audit
+remain required; Feature 139 stays preparation **1/1**, primary/joint **0/1**.
+
 ## Provider-free registration preparation (2026-09-22)
 
 The new canonical registration manifest/seal contract is implemented in
