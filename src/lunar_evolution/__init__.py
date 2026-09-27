@@ -8,6 +8,11 @@ from .acceptance_audit import (
 )
 from .acceptance_holdouts import AcceptanceHoldoutError, run_acceptance_holdouts
 from .acceptance_launch import AcceptanceCampaignError, prepare_acceptance_campaign
+from .acceptance_observation_binding import (
+    AcceptanceObservationBindingError,
+    inspect_acceptance_observation_binding,
+    publish_acceptance_observation_binding,
+)
 from .acceptance_observer import (
     DEFAULT_ACCEPTANCE_BUDGETS,
     AcceptanceObservationError,
@@ -604,6 +609,7 @@ __all__ = [
     "AcceptanceAuditError",
     "AcceptanceCampaignError",
     "AcceptanceHoldoutError",
+    "AcceptanceObservationBindingError",
     "AcceptanceObservationError",
     "AcceptanceProbeError",
     "AcceptanceRegistrationError",
@@ -905,6 +911,7 @@ __all__ = [
     "execute_producer_process",
     "export_shinka_envelope",
     "export_shinka_result",
+    "inspect_acceptance_observation_binding",
     "inspect_bundle_delivery",
     "inspect_candidate_evaluation",
     "inspect_candidate_execution_record",
@@ -956,6 +963,7 @@ __all__ = [
     "prepare_producer_seed_manifest",
     "producer_bundle_dependency_sha256",
     "profile_sha256",
+    "publish_acceptance_observation_binding",
     "publish_producer_bundle_publication",
     "read_bundle_delivery_materials",
     "read_candidate_source_files",
