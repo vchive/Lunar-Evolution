@@ -46,12 +46,20 @@ def main() -> None:
     parser.add_argument("--campaign-id", required=True)
     parser.add_argument("--campaign-root", required=True)
     parser.add_argument("--product-commit", required=True)
+    parser.add_argument("--registration-file", required=True)
+    parser.add_argument("--seal-file", required=True)
     args = parser.parse_args()
 
-    if _git("status", "--porcelain", "--untracked-files=all") != "?? tools/prepare_acceptance_registration.py":
-        raise SystemExit("registration checkout must contain only this untracked generator")
+    if _git("status", "--porcelain", "--untracked-files=all"):
+        raise SystemExit("registration checkout must be clean")
     if _git("rev-parse", "HEAD") != args.product_commit:
         raise SystemExit("product commit must equal the prepared checkout")
+    names = (args.registration_file, args.seal_file)
+    if (len(set(names)) != 2 or any(
+        Path(name).name != name or name in {".", ".."} or not name.endswith(".json")
+        for name in names
+    )):
+        raise SystemExit("registration output names must be distinct JSON basenames")
 
     sources = sorted((ROOT / "src/lunar_evolution").glob("*.py"))
     product_files = [_pin(path) for path in sources]
@@ -93,9 +101,9 @@ def main() -> None:
     seal = build_registration_seal(registration)
     parse_acceptance_registration(_canonical(registration).decode("utf-8"))
     parse_registration_seal(_canonical(seal).decode("utf-8"))
-    with (OUTPUT / "registration.json").open("xb") as target:
+    with (OUTPUT / args.registration_file).open("xb") as target:
         target.write(_canonical(registration))
-    with (OUTPUT / "registration-seal.json").open("xb") as target:
+    with (OUTPUT / args.seal_file).open("xb") as target:
         target.write(_canonical(seal))
     print(json.dumps({"registration_sha256": registration["registration_sha256"],
                       "product_files": len(product_files), "materials": 20}, sort_keys=True))
