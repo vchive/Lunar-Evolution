@@ -303,6 +303,10 @@ class ProducerBundlePublicationArtifact:
     publication_receipt_sha256: str | None = None
     execution_receipt: Mapping[str, object] | None = None
     evaluation_receipt: Mapping[str, object] | None = None
+    # Native bundle publication needs to materialize the exact manifest that was used for the
+    # retained attempt.  Generic producer artifacts may omit it and keep the historical shape.
+    bundle_manifest: Mapping[str, object] | None = None
+    retained_evidence: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.candidate_id, str) or not self.candidate_id:
@@ -315,6 +319,19 @@ class ProducerBundlePublicationArtifact:
                             (self.evaluation_receipt, "producer_bundle_publication_evaluation_receipt_invalid")):
             if value is not None and not isinstance(value, Mapping):
                 _fail(code)
+        if self.bundle_manifest is not None and not isinstance(self.bundle_manifest, Mapping):
+            _fail("producer_bundle_publication_bundle_manifest_invalid")
+        if self.retained_evidence is not None and not isinstance(self.retained_evidence, Mapping):
+            _fail("producer_bundle_publication_evidence_invalid")
+        if self.retained_evidence is not None:
+            from .producer_bundle_receipts import _validate_retained_evidence
+
+            try:
+                object.__setattr__(self, "retained_evidence", _validate_retained_evidence(self.retained_evidence))
+            except Exception as exc:
+                if isinstance(exc, ProducerBundlePublicationStagingError):
+                    raise
+                raise ProducerBundlePublicationStagingError("producer_bundle_publication_evidence_invalid") from exc
         for value, code in ((self.execution_receipt_sha256, "producer_bundle_publication_execution_receipt_invalid"),
                             (self.evaluation_receipt_sha256, "producer_bundle_publication_evaluation_receipt_invalid"),
                             (self.publication_receipt_sha256, "producer_bundle_publication_publication_receipt_invalid")):
@@ -322,7 +339,7 @@ class ProducerBundlePublicationArtifact:
                 _fail(code)
         for name, content in self.source_files.items():
             _safe_relative(name, "producer_bundle_publication_source_path_invalid")
-            if name in {"record.json", "receipt.json", "execution-receipt.json", "evaluation-receipt.json"}:
+            if name in {"record.json", "receipt.json", "execution-receipt.json", "evaluation-receipt.json", "native-evidence.json"}:
                 _fail("producer_bundle_publication_source_path_invalid")
             if isinstance(content, str):
                 encoded = content.encode("utf-8")
@@ -340,10 +357,32 @@ class ProducerBundlePublicationArtifact:
                                     (self.evaluation_receipt, self.evaluation_receipt_sha256,
                                      "producer_bundle_publication_evaluation_receipt_invalid")):
             if value is not None:
-                declared = value.get("receipt_sha256")
-                expected = declared if isinstance(declared, str) else _sha(_canonical(dict(value)))
+                # Known native receipt protocols carry a digest over their payload (excluding
+                # the digest field).  Parse them here so a caller cannot self-declare an
+                # arbitrary sidecar digest.  Unknown producer protocols remain opaque.
+                expected = value.get("receipt_sha256")
+                protocol = value.get("protocol")
+                if protocol == "lunar-producer-bundle-execution-receipt-v1":
+                    from .producer_bundle_receipts import ProducerBundleExecutionReceipt
+
+                    expected = ProducerBundleExecutionReceipt.from_dict(dict(value)).digest()
+                elif protocol == "lunar-producer-bundle-evaluation-receipt-v1":
+                    from .producer_bundle_receipts import ProducerBundleEvaluationReceipt
+
+                    expected = ProducerBundleEvaluationReceipt.from_dict(dict(value)).digest()
+                elif not isinstance(expected, str):
+                    expected = _sha(_canonical(dict(value)))
                 if digest != expected:
                     _fail(code)
+        if self.bundle_manifest is not None:
+            try:
+                from .candidate_bundle import parse_candidate_source_bundle
+
+                parse_candidate_source_bundle(dict(self.bundle_manifest))
+            except Exception as exc:
+                raise ProducerBundlePublicationStagingError(
+                    "producer_bundle_publication_bundle_manifest_invalid"
+                ) from exc
 
     def source_bytes(self) -> dict[str, bytes]:
         return {name: value.encode("utf-8") if isinstance(value, str) else value for name, value in self.source_files.items()}
@@ -429,6 +468,124 @@ def _load_marker(path: Path) -> tuple[dict[str, object], bytes]:
     return value, content
 
 
+def _validate_native_artifact(
+    artifact: ProducerBundlePublicationArtifact,
+    candidate: ProducerBundlePublicationCandidate,
+    journal: ProducerBundlePublicationJournal,
+) -> None:
+    """Cross-check a native record and its portable evidence before staging bytes.
+
+    The publication layer intentionally accepts opaque producer records for compatibility.  A
+    native record advertises ``bundle_evidence`` and therefore has enough structure to validate
+    its final source paths, lineage, source manifest, and retained receipt projections here.
+    """
+    record = artifact.record
+    receipt = artifact.receipt
+    if record.get("candidate_id") is not None and record.get("candidate_id") != artifact.candidate_id:
+        _fail("producer_bundle_publication_candidate_invalid")
+    if receipt.get("candidate_id") is not None and receipt.get("candidate_id") != artifact.candidate_id:
+        _fail("producer_bundle_publication_candidate_invalid")
+    evidence = record.get("bundle_evidence")
+    if evidence is None:
+        return
+    if not isinstance(evidence, Mapping) or artifact.bundle_manifest is None:
+        _fail("producer_bundle_publication_evidence_invalid")
+    try:
+        from .bundle_evolution import validate_bundle_evidence_shape
+        from .candidate_bundle import parse_candidate_source_bundle
+        from .evolution import Candidate, CandidateReceipt
+        from .producer_bundle_receipts import (
+            ProducerBundleEvaluationReceipt,
+            ProducerBundleExecutionReceipt,
+        )
+
+        normalized_evidence = validate_bundle_evidence_shape(dict(evidence))
+        if normalized_evidence["bundle_sha256"] != candidate.bundle_sha256:
+            _fail("producer_bundle_publication_evidence_invalid")
+        bundle = parse_candidate_source_bundle(dict(artifact.bundle_manifest))
+        if bundle.digest() != candidate.bundle_sha256:
+            _fail("producer_bundle_publication_evidence_invalid")
+        if normalized_evidence["bundle_path"] != normalized_evidence["source_root"] + "/bundle-manifest.json":
+            _fail("producer_bundle_publication_evidence_invalid")
+        expected_root = f"evolution/candidates/{artifact.candidate_id}"
+        if normalized_evidence["source_root"] != expected_root:
+            _fail("producer_bundle_publication_evidence_invalid")
+        code_path = record.get("code_path")
+        if code_path != expected_root + "/" + bundle.entrypoint:
+            _fail("producer_bundle_publication_evidence_invalid")
+        declared = {item.path: item for item in bundle.files}
+        if set(artifact.source_files) != set(declared):
+            _fail("producer_bundle_publication_source_invalid")
+        for path, declaration in declared.items():
+            value = artifact.source_files[path]
+            content = value.encode("utf-8") if isinstance(value, str) else value
+            if not isinstance(content, bytes) or len(content) != declaration.size or _sha(content) != declaration.sha256:
+                _fail("producer_bundle_publication_source_invalid")
+        entrypoint_bytes = artifact.source_files[bundle.entrypoint]
+        entrypoint_bytes = entrypoint_bytes.encode("utf-8") if isinstance(entrypoint_bytes, str) else entrypoint_bytes
+        source_sha256 = _sha(entrypoint_bytes)
+
+        # Candidate and ordinary receipt constructors re-check canonical digests, report shape,
+        # and the complete evidence projection before the publication transaction can proceed.
+        native_candidate = Candidate.from_dict(dict(record))
+        native_receipt = CandidateReceipt.from_dict(dict(receipt))
+        authority_fields = (
+            "contract_sha256", "evaluator_kind", "evaluator_fingerprint", "runner_fingerprint",
+            "dependency_sha256", "environment_sha256",
+        )
+        integrity = native_candidate.integrity
+        if (
+            native_candidate.strategy != journal.strategy
+            or native_candidate.candidate_id != artifact.candidate_id
+            or native_candidate.bundle_evidence != normalized_evidence
+            or native_candidate.source_sha256 != source_sha256
+            or native_candidate.receipt_sha256 != native_receipt.receipt_sha256
+            or native_receipt.candidate_id != artifact.candidate_id
+            or native_receipt.source_sha256 != source_sha256
+            or native_receipt.bundle_evidence != normalized_evidence
+            or native_candidate.parent_id != candidate.parent_id
+            or native_candidate.generation != candidate.generation
+            or native_candidate.iteration != candidate.iteration
+            or native_candidate.island_id != candidate.island_id
+            or any(getattr(native_receipt, field) != getattr(journal, field) for field in authority_fields)
+            or not isinstance(integrity, Mapping)
+            or any(integrity.get(field) != getattr(journal, field) for field in authority_fields)
+            or integrity.get("source_sha256") != source_sha256
+            or integrity.get("receipt_sha256") != native_candidate.receipt_sha256
+            or integrity.get("bundle_evidence_sha256") != _sha(_canonical(normalized_evidence))
+            or native_receipt.evaluation_report().to_dict() != native_candidate.evaluation.to_dict()
+        ):
+            _fail("producer_bundle_publication_evidence_invalid")
+
+        if artifact.execution_receipt is None or artifact.evaluation_receipt is None:
+            _fail("producer_bundle_publication_receipt_sequence_invalid")
+        execution = ProducerBundleExecutionReceipt.from_dict(dict(artifact.execution_receipt))
+        evaluation = ProducerBundleEvaluationReceipt.from_dict(dict(artifact.evaluation_receipt))
+        if (
+            execution.candidate_id != artifact.candidate_id
+            or execution.bundle_sha256 != normalized_evidence["bundle_sha256"]
+            or execution.plan_sha256 != normalized_evidence["plan_sha256"]
+            or execution.admission_sha256 != normalized_evidence["admission_sha256"]
+            or execution.completion_sha256 != normalized_evidence["completion_sha256"]
+            or evaluation.candidate_id != artifact.candidate_id
+            or evaluation.bundle_sha256 != normalized_evidence["bundle_sha256"]
+            or evaluation.plan_sha256 != normalized_evidence["plan_sha256"]
+            or evaluation.admission_sha256 != normalized_evidence["admission_sha256"]
+            or evaluation.completion_sha256 != normalized_evidence["completion_sha256"]
+            or evaluation.evaluation_sha256 != normalized_evidence["evaluation_sha256"]
+            or evaluation.report != native_candidate.evaluation.to_dict()
+            or artifact.execution_receipt_sha256 != execution.digest()
+            or artifact.evaluation_receipt_sha256 != evaluation.digest()
+        ):
+            _fail("producer_bundle_publication_evidence_invalid")
+    except ProducerBundlePublicationStagingError:
+        raise
+    except Exception as exc:
+        raise ProducerBundlePublicationStagingError(
+            "producer_bundle_publication_evidence_invalid"
+        ) from exc
+
+
 def _journal_for_stage(journal: ProducerBundlePublicationJournal, artifacts: Sequence[ProducerBundlePublicationArtifact], rejected_candidate_ids: Sequence[str] = ()) -> ProducerBundlePublicationJournal:
     by_id = {item.candidate_id: item for item in artifacts}
     rejected = tuple(rejected_candidate_ids)
@@ -456,6 +613,7 @@ def _journal_for_stage(journal: ProducerBundlePublicationJournal, artifacts: Seq
             continue
         if artifact is None:
             _fail("producer_bundle_publication_adjudication_missing")
+        _validate_native_artifact(artifact, candidate, journal)
         execution = artifact.execution_receipt_sha256 or candidate.execution_receipt_sha256
         evaluation = artifact.evaluation_receipt_sha256 or candidate.evaluation_receipt_sha256
         publication = artifact.receipt_digest()
@@ -481,7 +639,105 @@ def _file_descriptor(path: Path, relative: str, content: bytes) -> dict[str, obj
             "device": info.st_dev, "inode": info.st_ino,
             "mtime_ns": info.st_mtime_ns, "ctime_ns": info.st_ctime_ns}
 
-def _artifact_entry(batch: Path, artifact: ProducerBundlePublicationArtifact) -> dict[str, object]:
+def verify_native_publication_intent(
+    workspace: Path,
+    journal: ProducerBundlePublicationJournal,
+    candidate_id: str,
+    retained_evidence: object,
+    *,
+    record: Mapping[str, object] | None = None,
+) -> dict[str, Any] | None:
+    """Bind retained native drafts to this publication's complete prepared request.
+
+    Generic artifacts and older native artifacts without producer provenance keep their
+    historical evidence contract. Native producer records and batches with a prepared intent
+    must retain both the fixed draft binding and prepared journal; omitting their descriptor
+    cannot downgrade them to that legacy contract. This checks host-retained evidence, not
+    signatures against a caller able to rewrite every journal and artifact consistently.
+    """
+    from .candidate_evaluation_spec import strict_json
+    from .producer_bundle_receipts import verify_native_retained_evidence
+
+    code = "producer_bundle_publication_prepared_intent_mismatch"
+    prefix = f"evolution/producer-batches/{journal.journal_id}"
+    intent_relative = prefix + "/journal.prepared.json"
+    binding_relative = prefix + f"/native-drafts/{candidate_id}/draft-binding.json"
+    metadata = record.get("metadata") if isinstance(record, Mapping) else None
+    required = _present(_confined(workspace, intent_relative)) or (
+        isinstance(record, Mapping)
+        and record.get("bundle_evidence") is not None
+        and isinstance(metadata, Mapping)
+        and "producer_bundle" in metadata
+    )
+    if retained_evidence is None:
+        if required:
+            _fail(code)
+        return None
+    evidence = verify_native_retained_evidence(workspace, retained_evidence)
+    entries = {item["path"]: item for item in evidence["entries"]}
+    bindings: dict[str, dict[str, Any]] = {}
+    for relative, entry in entries.items():
+        parts = Path(relative).parts
+        if (len(parts) != 6 or parts[:2] != ("evolution", "producer-batches")
+                or parts[3] != "native-drafts" or parts[5] != "draft-binding.json"):
+            continue
+        if entry["kind"] != "file":
+            _fail(code)
+        binding = strict_json(_read(_confined(workspace, relative), 16 * 1024), maximum=16 * 1024)
+        if not isinstance(binding, dict):
+            _fail(code)
+        bindings[relative] = binding
+        if "journal_sha256" in binding:
+            required = True
+    if not required:
+        return evidence
+    if (set(bindings) != {binding_relative}
+            or intent_relative not in entries
+            or entries[intent_relative]["kind"] != "file"):
+        _fail(code)
+    try:
+        from .producer_bundle_intent import verify_producer_bundle_prepared_intent
+
+        prepared = replace(
+            journal,
+            candidates=tuple(replace(
+                item, status="planned", execution_receipt_sha256=None,
+                evaluation_receipt_sha256=None, publication_receipt_sha256=None,
+            ) for item in journal.candidates),
+            state="prepared", publication_phase="preflight", terminal_marker_sha256=None,
+            archive_after_sha256=None, state_after_sha256=None, journal_sha256=None,
+        )
+        verify_producer_bundle_prepared_intent(workspace, prepared)
+        binding = bindings[binding_relative]
+        ordinal = binding.get("ordinal")
+        if type(ordinal) is not int or not 0 <= ordinal < len(prepared.candidates):
+            _fail(code)
+        candidate = prepared.candidates[ordinal]
+        if (binding.get("protocol") != "lunar-native-draft-binding-v1"
+                or binding.get("journal_sha256") != prepared.digest()
+                or binding.get("journal_id") != prepared.journal_id
+                or candidate.candidate_id != candidate_id
+                or any(binding.get(field) != getattr(candidate, field) for field in (
+                    "candidate_id", "bundle_id", "bundle_sha256", "parent_id",
+                    "generation", "iteration", "island_id",
+                ))):
+            _fail(code)
+    except ProducerBundlePublicationStagingError:
+        raise
+    except Exception as exc:
+        raise ProducerBundlePublicationStagingError(code) from exc
+    return evidence
+
+
+def _artifact_entry(
+    batch: Path,
+    artifact: ProducerBundlePublicationArtifact,
+    journal: ProducerBundlePublicationJournal,
+) -> dict[str, object]:
+    evidence = verify_native_publication_intent(
+        batch.parents[2], journal, artifact.candidate_id, artifact.retained_evidence,
+        record=artifact.record,
+    )
     paths: list[dict[str, object]] = []
     candidate_root = batch / _STAGE_NAME / "candidates" / artifact.candidate_id
     if _present(candidate_root):
@@ -495,6 +751,11 @@ def _artifact_entry(batch: Path, artifact: ProducerBundlePublicationArtifact) ->
                            code="producer_bundle_publication_source_path_invalid")
         _write_new(target, content, maximum=_MAX_SOURCE_BYTES)
         paths.append(_file_descriptor(target, relative, content))
+    if artifact.bundle_manifest is not None:
+        manifest_bytes = _pretty(dict(artifact.bundle_manifest), MAX_ARCHIVE_LINE_BYTES)
+        manifest_path = candidate_root / "bundle-manifest.json"
+        _write_new(manifest_path, manifest_bytes, maximum=MAX_ARCHIVE_LINE_BYTES)
+        paths.append(_file_descriptor(manifest_path, "bundle-manifest.json", manifest_bytes))
     record_bytes = _pretty(dict(artifact.record), MAX_ARCHIVE_LINE_BYTES)
     receipt_bytes = _pretty(dict(artifact.receipt), MAX_ARCHIVE_LINE_BYTES)
     sidecar_relative = ""
@@ -526,8 +787,122 @@ def _artifact_entry(batch: Path, artifact: ProducerBundlePublicationArtifact) ->
         target = evidence_root / name
         _write_new(target, content, maximum=MAX_ARCHIVE_LINE_BYTES)
         paths.append(_file_descriptor(target, str(target.relative_to(candidate_root)), content))
-    return {"candidate_id": artifact.candidate_id, "paths": paths,
-            "record_sha256": _sha(record_bytes), "receipt_sha256": _sha(receipt_bytes)}
+    result: dict[str, object] = {"candidate_id": artifact.candidate_id, "paths": paths,
+                                 "record_sha256": _sha(record_bytes), "receipt_sha256": _sha(receipt_bytes)}
+    if evidence is not None:
+        evidence_bytes = _pretty(evidence, MAX_ARCHIVE_LINE_BYTES)
+        evidence_target = evidence_root / "native-evidence.json"
+        _write_new(evidence_target, evidence_bytes, maximum=MAX_ARCHIVE_LINE_BYTES)
+        paths.append(_file_descriptor(evidence_target, str(evidence_target.relative_to(candidate_root)), evidence_bytes))
+        result["retained_evidence"] = {
+            "path": str(evidence_target.relative_to(candidate_root)),
+            "sha256": _sha(evidence_bytes),
+            "evidence_sha256": evidence["evidence_sha256"],
+        }
+    return result
+
+
+def _validate_native_state_after(
+    base_state: bytes,
+    state_after: Mapping[str, object],
+    journal: ProducerBundlePublicationJournal,
+    archive_after: bytes,
+) -> None:
+    """Validate a native population projection against the staged archive.
+
+    The older producer-only path only changed ``active_ids``.  Native publication also advances
+    the population watermark, best candidate, stagnation and integrity digest, so those fields
+    are checked against the exact archive bytes assembled in ``stage/archive.jsonl``.
+    """
+    try:
+        before = json.loads(base_state.decode("utf-8"))
+        after = json.loads(_canonical(dict(state_after), MAX_STATE_BYTES).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, RecursionError) as exc:
+        raise ProducerBundlePublicationStagingError(
+            "producer_bundle_publication_state_invalid"
+        ) from exc
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        _fail("producer_bundle_publication_state_invalid")
+    if before.get("strategy") != journal.strategy or after.get("strategy") != journal.strategy:
+        _fail("producer_bundle_publication_state_invalid")
+    before_config = before.get("config")
+    after_config = after.get("config")
+    if not isinstance(before_config, dict) or not isinstance(after_config, dict):
+        _fail("producer_bundle_publication_state_invalid")
+    if before_config != after_config or before_config.get("strategy") != journal.strategy:
+        _fail("producer_bundle_publication_state_invalid")
+    if before_config.get("num_islands") != journal.num_islands:
+        _fail("producer_bundle_publication_state_invalid")
+    before_active = before.get("active_ids")
+    after_active = after.get("active_ids")
+    if not isinstance(before_active, dict) or not isinstance(after_active, dict):
+        _fail("producer_bundle_publication_state_invalid")
+    admitted = tuple(item for item in journal.candidates if item.status == "admitted")
+    if set(after_active) != set(before_active) or any(
+        not isinstance(value, list) or any(not isinstance(item, str) for item in value)
+        for value in after_active.values()
+    ):
+        _fail("producer_bundle_publication_state_invalid")
+    admitted_ids = {item.candidate_id for item in admitted}
+    active_ids = [item for values in after_active.values() for item in values]
+    if len(active_ids) != len(set(active_ids)):
+        _fail("producer_bundle_publication_state_invalid")
+    config_population_size = before_config.get("population_size")
+    if (
+        isinstance(config_population_size, int)
+        and not isinstance(config_population_size, bool)
+        and len(active_ids) > config_population_size
+    ):
+        _fail("producer_bundle_publication_state_invalid")
+
+    # Native state is required to carry the complete marker group.  Recompute its digest from
+    # the exact staged archive rather than trusting a caller-provided value.
+    marker_fields = {
+        "candidate_integrity_schema_version",
+        "candidate_integrity_authority",
+        "candidate_archive_sha256",
+    }
+    if marker_fields <= set(after):
+        if after.get("candidate_integrity_schema_version") != "1":
+            _fail("producer_bundle_publication_state_invalid")
+        try:
+            from .evolution import Candidate, CandidateIntegrityAuthority
+            if len(archive_after) > MAX_ARCHIVE_BYTES:
+                _fail("producer_bundle_publication_archive_too_large")
+            lines = archive_after.splitlines()
+            records = [Candidate.from_dict(json.loads(line.decode("utf-8"))) for line in lines if line]
+            ordinary = [item for item in records if "seed_handoff" not in item.metadata]
+            archive_digest = _sha(_canonical([item.to_dict() for item in ordinary]))
+            authority = CandidateIntegrityAuthority.from_dict(after.get("candidate_integrity_authority"))
+        except Exception as exc:
+            raise ProducerBundlePublicationStagingError(
+                "producer_bundle_publication_state_invalid"
+            ) from exc
+        if after.get("candidate_archive_sha256") != archive_digest:
+            _fail("producer_bundle_publication_state_invalid")
+        if any(
+            getattr(authority, name) != getattr(journal, name)
+            for name in (
+                "contract_sha256", "evaluator_kind", "evaluator_fingerprint",
+                "runner_fingerprint", "dependency_sha256", "environment_sha256",
+            )
+        ):
+            _fail("producer_bundle_publication_state_invalid")
+        known_ids = {item.candidate_id for item in records}
+        if not admitted_ids <= known_ids or any(item not in known_ids for item in active_ids):
+            _fail("producer_bundle_publication_state_invalid")
+    elif marker_fields & set(after):
+        _fail("producer_bundle_publication_state_invalid")
+
+    # Immutable authority/config fields cannot drift during publication.  Other state fields are
+    # intentionally dynamic and are checked by the transaction's deterministic derivation.
+    if after.get("contract_sha256") != before.get("contract_sha256"):
+        _fail("producer_bundle_publication_state_invalid")
+    if set(before) <= set(after) and any(
+        key in {"strategy", "config", "contract_sha256"} and after.get(key) != before.get(key)
+        for key in before
+    ):
+        _fail("producer_bundle_publication_state_invalid")
 
 
 def stage_producer_bundle_publication(
@@ -596,10 +971,14 @@ def stage_producer_bundle_publication(
             _fail("producer_bundle_publication_preflight_mismatch")
         if _present(evolution / _MARKER_NAME):
             _fail("producer_bundle_publication_recovery_required")
+        for item in values:
+            verify_native_publication_intent(
+                root, journal, item.candidate_id, item.retained_evidence, record=item.record,
+            )
         stage.mkdir(mode=0o700)
         (stage / "candidates").mkdir(mode=0o700)
         try:
-            entries = tuple(_artifact_entry(batch, item) for item in values)
+            entries = tuple(_artifact_entry(batch, item, journal) for item in values)
             lines = []
             for item in values:
                 encoded = json.dumps(dict(item.record), ensure_ascii=False, sort_keys=True, allow_nan=False).encode("utf-8")
@@ -609,6 +988,8 @@ def stage_producer_bundle_publication(
             archive_after = archive + b"".join(lines)
             if len(archive_after) > MAX_ARCHIVE_BYTES:
                 _fail("producer_bundle_publication_archive_too_large")
+            if any(item.bundle_manifest is not None or item.retained_evidence is not None for item in values):
+                _validate_native_state_after(state, state_after, staged_journal, archive_after)
             state_after_bytes = _pretty(dict(state_after), MAX_STATE_BYTES)
             _write_new(stage / "archive.jsonl", archive_after, maximum=MAX_ARCHIVE_BYTES)
             _write_new(stage / "state.json", state_after_bytes, maximum=MAX_STATE_BYTES)
@@ -654,7 +1035,10 @@ def _load_manifest(batch: Path) -> ProducerBundlePublicationManifest:
         raise ProducerBundlePublicationStagingError("producer_bundle_publication_manifest_invalid") from exc
 
 
-def _verify_stage(batch: Path, manifest: ProducerBundlePublicationManifest) -> None:
+def _verify_stage(
+    batch: Path, manifest: ProducerBundlePublicationManifest,
+    journal: ProducerBundlePublicationJournal,
+) -> None:
     stage = batch / _STAGE_NAME
     _directory(stage)
     archive = _read(stage / "archive.jsonl", MAX_ARCHIVE_BYTES)
@@ -663,12 +1047,13 @@ def _verify_stage(batch: Path, manifest: ProducerBundlePublicationManifest) -> N
         _fail("producer_bundle_publication_after_digest_mismatch")
     seen: set[str] = set()
     for entry in manifest.files:
-        if not isinstance(entry, dict) or set(entry) != {"candidate_id", "paths", "record_sha256", "receipt_sha256"}:
+        if not isinstance(entry, dict) or not set(entry) <= {"candidate_id", "paths", "record_sha256", "receipt_sha256", "retained_evidence"} or not {"candidate_id", "paths", "record_sha256", "receipt_sha256"} <= set(entry):
             _fail("producer_bundle_publication_manifest_invalid")
         candidate_id = entry["candidate_id"]
         if candidate_id not in manifest.candidate_ids or candidate_id in seen or not isinstance(entry["paths"], list):
             _fail("producer_bundle_publication_manifest_invalid")
         seen.add(candidate_id)
+        record = None
         for descriptor in entry["paths"]:
             if not isinstance(descriptor, dict) or set(descriptor) not in ({"path", "size", "sha256"}, {"path", "size", "sha256", "device", "inode", "mtime_ns", "ctime_ns"}):
                 _fail("producer_bundle_publication_manifest_invalid")
@@ -679,6 +1064,12 @@ def _verify_stage(batch: Path, manifest: ProducerBundlePublicationManifest) -> N
                     else _confined(batch / _STAGE_NAME / "candidates" / candidate_id, raw_path))
             before = _regular(path)
             content = _read(path, _MAX_SOURCE_BYTES)
+            if Path(raw_path).name == "record.json":
+                from .candidate_evaluation_spec import strict_json
+
+                record = strict_json(content, maximum=MAX_ARCHIVE_LINE_BYTES)
+                if not isinstance(record, dict):
+                    _fail("producer_bundle_publication_evidence_invalid")
             after = _regular(path)
             if descriptor["size"] != len(content) or descriptor["sha256"] != _sha(content):
                 _fail("producer_bundle_publication_evidence_invalid")
@@ -688,6 +1079,28 @@ def _verify_stage(batch: Path, manifest: ProducerBundlePublicationManifest) -> N
                 or (before.st_dev, before.st_ino, before.st_mtime_ns, before.st_ctime_ns) != (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns)
             ):
                 _fail("producer_bundle_publication_evidence_changed")
+        retained = entry.get("retained_evidence")
+        evidence = None
+        if retained is not None:
+            if (not isinstance(retained, dict)
+                    or set(retained) != {"path", "sha256", "evidence_sha256"}
+                    or not isinstance(retained["path"], str)
+                    or not isinstance(retained["sha256"], str)
+                    or not isinstance(retained["evidence_sha256"], str)):
+                _fail("producer_bundle_publication_manifest_invalid")
+            evidence_path = _confined(batch / _STAGE_NAME / "candidates" / candidate_id, retained["path"])
+            evidence_bytes = _read(evidence_path, MAX_ARCHIVE_LINE_BYTES)
+            if _sha(evidence_bytes) != retained["sha256"]:
+                _fail("producer_bundle_publication_evidence_invalid")
+            try:
+                evidence = json.loads(evidence_bytes.decode("utf-8"))
+            except Exception as exc:
+                raise ProducerBundlePublicationStagingError("producer_bundle_publication_evidence_invalid") from exc
+            if not isinstance(evidence, dict) or evidence.get("evidence_sha256") != retained["evidence_sha256"]:
+                _fail("producer_bundle_publication_evidence_invalid")
+        verify_native_publication_intent(
+            batch.parents[2], journal, candidate_id, evidence, record=record,
+        )
     if seen != set(manifest.candidate_ids):
         _fail("producer_bundle_publication_manifest_invalid")
 
@@ -707,7 +1120,7 @@ def commit_producer_bundle_publication(workspace: str | Path, journal: ProducerB
             raise ProducerBundlePublicationStagingError("producer_bundle_publication_journal_invalid") from exc
         if staged_journal.journal_id != journal.journal_id or manifest.journal_sha256 != staged_journal.digest():
             _fail("producer_bundle_publication_manifest_invalid")
-        _verify_stage(batch, manifest)
+        _verify_stage(batch, manifest, staged_journal)
         # Once the first target is moved, all failures are unknown and marker status is durable.
         unknown_marker = marker_payload(journal_id=journal.journal_id, journal_sha256=manifest.journal_sha256,
                                          manifest_sha256=manifest.digest(), status="unknown")

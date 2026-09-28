@@ -232,7 +232,9 @@ def _manifest(
     paths: list[str] = []
     by_id: dict[str, object] = {}
     for item in files:
-        if not isinstance(item, dict) or set(item) != {"candidate_id", "paths", "record_sha256", "receipt_sha256"}:
+        if not isinstance(item, dict) or not set(item) <= {
+            "candidate_id", "paths", "record_sha256", "receipt_sha256", "retained_evidence",
+        } or not {"candidate_id", "paths", "record_sha256", "receipt_sha256"} <= set(item):
             _fail("producer_bundle_recovery_manifest_files_invalid")
         cid = _identifier(item["candidate_id"])
         if cid in by_id or cid not in ids:
@@ -259,13 +261,34 @@ def _manifest(
                                         for name in ("device", "inode", "mtime_ns", "ctime_ns")):
                 _fail("producer_bundle_recovery_manifest_paths_invalid")
             paths.append(path)
+        retained = item.get("retained_evidence")
+        if retained is not None:
+            if (
+                not isinstance(retained, dict)
+                or set(retained) != {"path", "sha256", "evidence_sha256"}
+                or not isinstance(retained["path"], str)
+            ):
+                _fail("producer_bundle_recovery_manifest_files_invalid")
+            retained_path = _relative(retained["path"])
+            _digest(retained["sha256"], "producer_bundle_recovery_manifest_digest_invalid")
+            _digest(retained["evidence_sha256"], "producer_bundle_recovery_manifest_digest_invalid")
+            if retained_path not in [
+                descriptor.get("path") for descriptor in declared
+                if isinstance(descriptor, dict)
+            ]:
+                _fail("producer_bundle_recovery_manifest_files_invalid")
     if tuple(by_id) != tuple(ids) or len(set(paths)) != len(paths):
         _fail("producer_bundle_recovery_manifest_files_invalid")
     manifest_sha = _self_digest(value, "manifest_sha256", "producer_bundle_recovery_manifest_digest_mismatch")
     return manifest_sha, tuple(ids), tuple(paths), by_id
 
 
-def _verify_manifest_files(root: Path, batch: Path, manifest_files: dict[str, object], journal_candidates=()) -> tuple[str, ...]:
+def _verify_manifest_files(
+    root: Path,
+    batch: Path,
+    manifest_files: dict[str, object],
+    journal: ProducerBundlePublicationJournal,
+) -> tuple[str, ...]:
     checked: list[str] = []
     for cid, item in manifest_files.items():
         assert isinstance(item, dict)
@@ -295,7 +318,7 @@ def _verify_manifest_files(root: Path, batch: Path, manifest_files: dict[str, ob
         if (hashlib.sha256(record).hexdigest() != item["record_sha256"]
                 or hashlib.sha256(receipt).hexdigest() != item["receipt_sha256"]):  # type: ignore[index]
             _fail("producer_bundle_recovery_evidence_mismatch")
-        candidate = next((entry for entry in journal_candidates if entry.candidate_id == cid), None)
+        candidate = next((entry for entry in journal.candidates if entry.candidate_id == cid), None)
         if candidate is not None and candidate.publication_receipt_sha256 is not None:
             try:
                 receipt_value = strict_json(receipt, 64 * 1024)
@@ -321,6 +344,36 @@ def _verify_manifest_files(root: Path, batch: Path, manifest_files: dict[str, ob
                 except OSError as exc:
                     raise ProducerBundleRecoveryError("producer_bundle_recovery_evidence_invalid") from exc
             checked.append(str(raw_path))
+        retained = item.get("retained_evidence")
+        evidence = None
+        if retained is not None:
+            assert isinstance(retained, dict)
+            retained_path = retained["path"]
+            if not isinstance(retained_path, str):
+                _fail("producer_bundle_recovery_manifest_files_invalid")
+            evidence_path = _path(root, retained_path, directory=candidate_root)
+            evidence_bytes = _read(evidence_path, 64 * 1024)
+            if hashlib.sha256(evidence_bytes).hexdigest() != retained["sha256"]:
+                _fail("producer_bundle_recovery_evidence_mismatch")
+            try:
+                evidence = strict_json(evidence_bytes, 64 * 1024)
+            except Exception as exc:
+                raise ProducerBundleRecoveryError("producer_bundle_recovery_evidence_invalid") from exc
+            if not isinstance(evidence, dict) or evidence.get("evidence_sha256") != retained["evidence_sha256"]:
+                _fail("producer_bundle_recovery_evidence_mismatch")
+        try:
+            from .producer_bundle_staging import verify_native_publication_intent
+
+            record_value = strict_json(record, 64 * 1024)
+            if not isinstance(record_value, dict):
+                _fail("producer_bundle_recovery_evidence_invalid")
+            verify_native_publication_intent(
+                root, journal, cid, evidence, record=record_value,
+            )
+        except ProducerBundleRecoveryError:
+            raise
+        except Exception as exc:
+            raise ProducerBundleRecoveryError("producer_bundle_recovery_evidence_changed") from exc
     return tuple(sorted(checked))
 
 
@@ -443,10 +496,11 @@ def resume_producer_bundle_publication(
     staged_journal = parse_producer_bundle_publication_journal(staged_path)
     preflight_sha = _check_preflight(preflight_raw, staged_journal, plan)
     manifest_raw = _read_json(_path(root, "manifest.json", directory=batch), 256 * 1024)
-    manifest_sha, ids, paths, files = _manifest(manifest_raw, staged_journal, preflight_sha)
+    manifest_sha, ids, _paths, files = _manifest(manifest_raw, staged_journal, preflight_sha)
+    checked = _verify_manifest_files(root, batch, files, durable)
     if durable.state == "published":
         _terminal(root, batch, durable, manifest_sha)
-        return ProducerBundleRecoveryResult("published", durable.journal_sha256, manifest_sha, preflight_sha, ids, tuple(sorted(paths)))
+        return ProducerBundleRecoveryResult("published", durable.journal_sha256, manifest_sha, preflight_sha, ids, checked)
     if durable.state not in {"executing", "publishing", "failed"}:
         _fail("producer_bundle_recovery_journal_state_invalid")
     stage_archive = _read(_path(root, "stage/archive.jsonl", directory=batch), _MAX_FILE_BYTES)
@@ -454,7 +508,6 @@ def resume_producer_bundle_publication(
     if (hashlib.sha256(stage_archive).hexdigest() != manifest_raw["archive_after_sha256"]
             or hashlib.sha256(stage_state).hexdigest() != manifest_raw["state_after_sha256"]):
         _fail("producer_bundle_recovery_after_digest_mismatch")
-    checked = _verify_manifest_files(root, batch, files, durable.candidates)
     if durable.state == "failed" and any(item.status == "unknown" for item in durable.candidates):
         _fail("producer_bundle_recovery_unknown_terminal")
     return ProducerBundleRecoveryResult("resume", durable.journal_sha256, manifest_sha, preflight_sha, ids, checked)

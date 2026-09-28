@@ -1,6 +1,9 @@
 # Feature 153: producer bundle publication transaction
 
-**Status**: Provider-free journal, preflight, staging and commit available; draft evaluation integration pending
+**Status**: Offline imported Shinka material can pass native draft evaluation, retained-evidence
+publication, population read-back/resume, and delivery verification in the initial population
+window. Shared transaction deadline, unknown-result recovery, and durable all-rejected terminal
+journaling remain open; no launcher, scheduler, remote service, or real campaign is included.
 
 ## Problem
 
@@ -14,15 +17,20 @@ with an unrelated archive state.
 
 Define a separate, durable batch journal for producer bundle publication. The journal binds one
 Feature 152 plan digest to the contract, execution authority, archive prefix, candidate order,
-per-candidate receipts, and a terminal publication state. A later implementation will use the
-journal to publish a complete native multi-file batch atomically and to resume only when every
-independent byte and authority pin matches.
+per-candidate receipts, and a terminal publication state. The implemented offline path connects
+an imported Shinka `programs.sqlite` export to native local evaluation and atomic publication of
+the admitted subset. The contract below remains the full target; the remaining implementation
+limits are listed under Integration boundary.
 
 ## Contract
 
 - A journal is created from one `ProducerBundleAdmissionPlan`, one run/task identity, and one
   canonical archive-prefix digest. The plan digest, run identity, and prefix digest are immutable
   for the lifetime of the batch.
+- Before the first native draft evaluation, the complete prepared journal is durably written to
+  `journal.prepared.json`. It remains distinct from the adjudicated publication journal. An exact
+  pre-publication retry checks the original prepared bytes; changed task, plan, budget, prefix,
+  authority, or candidate mapping cannot adopt an already-started run.
 - The archive prefix covers append-order archive records, the current `state.json`, strategy
   configuration, active island assignments, and any seed-commit marker. A digest that omits state
   or reorders records is not a valid prefix authority.
@@ -70,40 +78,51 @@ effectiveness.
 
 ## Integration boundary
 
-The provider-free preflight, stage and commit APIs consume already adjudicated local evidence.
-They do not execute a producer or candidate. The current `MultiFileCandidatePipeline.persist()`
-cannot feed that transaction directly: it allocates a sequential candidate ID, writes source
-bytes and the candidate record into the live archive during evaluation, and retains execution
-evidence under `evolution/bundle-attempts`. That violates the zero-write archive prefix and
-deterministic candidate-ID requirements above. Until the native pipeline can evaluate drafts
-under a private batch source/stage tree with the journal's fixed IDs, and bind its complete
-original execution/evaluation evidence into the staged transaction, external producer results remain
-unpublishable through this path. A fixture that calls stage/commit with hand-built artifacts
-does not close this integration or authorize a real external campaign.
+The preflight, stage and commit APIs remain provider-free and consume adjudicated local evidence.
+`run_native_producer_bundle_publication_transaction()` now connects them to
+`MultiFileCandidatePipeline.evaluate_draft_non_publishing()`. Imported Shinka SQLite material
+passes explicit bundle grouping and the Feature 152 admission plan, then executes and is
+independently evaluated locally under deterministic candidate IDs. The transaction freezes the
+draft batch, verifies the live strategy configuration and authority against the existing state,
+and records the immutable prepared journal before the first execution. It does not invoke the
+normal per-candidate publisher or sequential ID allocator.
 
 The native bundle-evidence parser currently requires `run_root` under
 `evolution/bundle-attempts/.bundle-run-<24-hex>` and verifies the original execution and
 evaluation paths. Therefore the first integration keeps each retained run at its allocated
-path in the destination workspace while using a private batch source/stage tree. Before launch,
-the run is durably bound to one journal and planned candidate ID. It is not a published archive
-candidate, and it is never moved or reused. Copying a scratch archive or rewriting a record's
-candidate ID, evidence path, digest, or inode identity after execution is not valid evidence.
+path in the destination workspace while using a private batch source/stage tree. Before candidate
+execution, the run is durably bound to the prepared journal digest and planned candidate ID. It
+is not a published archive candidate and its evidence is never moved. An exact pre-stage retry
+can inspect completed retained evidence without executing or evaluating it again. Copying a
+scratch archive or rewriting candidate IDs, evidence paths, digests, or inode identities after
+execution is not valid evidence.
 
-An execution-only native path must accept the planned ID and frozen lineage/island mapping,
-revalidate the verified source bundle, and run the existing native executor and independent
-evaluator under the batch deadline. It must leave destination `archive.jsonl`, `state.json`,
-and final `evolution/candidates/<id>` trees unchanged until the transaction commits. Only
-after independent evidence inspection may it prepare a canonical native record and archive
-receipt for the planned final source path. The publication manifest must bind the full retained
-plan/admission, workspace/input, attempt/completion/cleanup, and evaluation evidence as well as
-the source and portable receipts. A portable digest alone does not establish that the native
-evidence still exists or belongs to this candidate.
+The non-publishing native path accepts the planned ID and frozen lineage/island mapping,
+revalidates the source bundle, and uses the existing executor and independent evaluator. It
+leaves destination `archive.jsonl`, `state.json`, and final `evolution/candidates/<id>` trees
+unchanged until commit. Independent evidence inspection prepares canonical native records and
+receipts for the planned final source paths. Staging binds and rechecks the retained prepared
+intent, source, plan/admission, workspace/input, attempt/completion/cleanup, and evaluation evidence
+alongside portable receipts. A portable digest alone does not establish retained evidence.
 
-`state_after` is derived from the frozen population state and all adjudications; it contains
-only prior active IDs and admitted planned IDs with their fixed lineage/island mapping. The
-publication lock checks the original archive/state prefix and complete evidence before changing
-any final candidate, archive, or active-state byte. After commit, normal read-only archive
-integrity checks, population restoration, and delivery must succeed from the committed state.
+The supported entry point requires an initialized population with `iteration=0` and
+`status=running`, no offspring history, no seed admissions, and no previous producer admissions.
+Evolved and terminal populations are rejected before evaluation. `state_after` is derived from
+the frozen archive and admitted candidate records using native ranking, island capacities, best
+candidate and stagnation rules. Admission to the archive does not guarantee active membership:
+the active population remains bounded. The publication lock checks the original archive/state
+prefix and retained evidence before any final candidate, archive, or active-state change.
+
+After commit, the transaction checks native archive integrity and the complete state/population
+projection. Offline coverage also verifies `PopulationStrategy.resume()` and delivery publication
+and inspection through the existing delivery APIs. Delivery verification does not introduce a
+new automatic delivery orchestrator or establish real Shinka campaign acceptance.
+
+Remaining work includes one shared preparation/execution/evaluation wall-clock budget, the full
+unknown/interruption recovery matrix, and a durable terminal journal for an all-rejected batch.
+The current all-rejected result leaves archive/state unchanged and retains prepared intent and
+native evidence. Launcher/scheduler integration, remote execution, and real OpenEvolve/Shinka
+campaigns are separate work.
 
 ## Acceptance
 

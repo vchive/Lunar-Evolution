@@ -208,3 +208,7 @@ def test_published_resume_uses_terminal_and_final_journal(tmp_path: Path):
     (batch / "journal.published.json").write_text(json.dumps(final.to_dict(), sort_keys=True), encoding="utf-8")
     result = resume_producer_bundle_publication(root, plan, final)
     assert result.status == "published"
+
+    (final_root / "record.json").write_bytes(b'{"candidate_id":"tampered"}\n')
+    with pytest.raises(ProducerBundleRecoveryError, match="^producer_bundle_recovery_evidence_mismatch$"):
+        resume_producer_bundle_publication(root, plan, final)
