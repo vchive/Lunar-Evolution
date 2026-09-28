@@ -49,3 +49,13 @@ The receipt is a local claim boundary only. It records `attempt_claimed=true`,
 model, evaluator, candidate, or network endpoint. A future runner must consume this receipt and
 perform the actual single provider attempt with the existing lifecycle, runtime-binding and
 observation evidence gates. This slice therefore does not close T040 or claim real acceptance.
+
+`stage_acceptance_attempt(registration_path, seal_path, checkout_root=...,
+campaign_parent=...)` is the controller-owned provider-free composition of fresh admission,
+launch-time revalidation, and the create-only claim. It compares the revalidated admission
+to the receipt returned by this admission before claiming, then verifies the complete
+post-claim inventory before returning. A failed preflight leaves no new campaign root; a
+failure after reservation leaves the root untouched and unavailable for another launch. A
+successful return is the persisted `attempt-started.json` claim, still with
+`provider_started=false` and `provider_call_made=false`. The native solve invocation,
+shared deadline, request broker, recovery and postrun audit remain separate T038/T040 work.

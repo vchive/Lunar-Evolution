@@ -11,19 +11,34 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import stat
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from ._benchmark_files import BenchmarkFileError, absolute_path, read_regular_file
+from ._candidate_workspace_io import DirectoryChain
 from .acceptance_registration import MAX_PRODUCT_FILE_BYTES, _canonical
+from .candidate_workspace_plan import CandidateWorkspaceError
 
 _MAX_RECEIPT_BYTES = 128 * 1024
 _SCHEMA = "1"
 _SCOPE = "acceptance_attempt_claim"
 _ADMISSION_SCOPE = "acceptance_campaign_admission"
 _CLAIM_FILE = "attempt-started.json"
+_ROOT_FILES = frozenset({"registration.json", "registration-seal.json", "preflight.json", "remote-main.json"})
+_MATERIAL_FILES = frozenset({
+    "task.bin", "input.bin", "evaluator-criteria.bin", "profile-criteria.bin",
+    *(f"holdout-{ordinal:02d}-{kind}.bin" for ordinal in range(8) for kind in ("input", "expected")),
+})
+_CLAIM_FIELDS = frozenset({
+    "schema_version", "scope", "status", "attempt_claimed", "provider_started",
+    "provider_call_made", "registration_id", "campaign_id", "attempt_id",
+    "campaign_root", "registration_sha256", "admission_sha256", "product_commit",
+    "remote_commit", "root_device", "root_inode", "parent_device", "parent_inode",
+    "admission_bytes_sha256", "attempt_claim_sha256",
+})
 
 
 class AcceptanceAttemptGateError(ValueError):
@@ -229,4 +244,110 @@ def claim_acceptance_attempt(
         raise AcceptanceAttemptGateError("attempt_claim_unavailable") from exc
 
 
-__all__ = ["AcceptanceAttemptGateError", "claim_acceptance_attempt"]
+def verify_acceptance_attempt_claim(
+    expected_claim: Mapping[str, Any], *, campaign_parent: str | os.PathLike[str],
+) -> dict[str, Any]:
+    """Reinspect the claim and admitted bytes after the create-only claim.
+
+    Launch-time campaign revalidation requires the pre-claim inventory, so it cannot run
+    after ``attempt-started.json`` exists. This check binds the post-claim inventory to
+    the caller's exact claim without granting execution or provider authority.
+    """
+    try:
+        if not isinstance(expected_claim, Mapping) or set(expected_claim) != _CLAIM_FIELDS:
+            _fail("attempt_claim_invalid")
+        root_name = expected_claim.get("campaign_root")
+        if type(root_name) is not str or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", root_name) is None:
+            _fail("attempt_claim_invalid")
+        parent = absolute_path(campaign_parent)
+        parent_chain = DirectoryChain(parent, "attempt_claim_changed")
+        try:
+            root = parent / root_name
+            root_chain = DirectoryChain(root, "attempt_claim_changed")
+            try:
+                parent_info, root_info = os.fstat(parent_chain.fd), os.fstat(root_chain.fd)
+                if (stat.S_IMODE(root_info.st_mode) != 0o700
+                        or (parent_info.st_dev, parent_info.st_ino) != _identity(
+                            [expected_claim["parent_device"], expected_claim["parent_inode"]],
+                            "attempt_claim_invalid",
+                        )
+                        or (root_info.st_dev, root_info.st_ino) != _identity(
+                            [expected_claim["root_device"], expected_claim["root_inode"]],
+                            "attempt_claim_invalid",
+                        )):
+                    _fail("attempt_claim_changed")
+                admission, admission_raw = _read_admission(root)
+                if expected_claim.get("admission_sha256") != admission["admission_sha256"]:
+                    _fail("attempt_claim_changed")
+                if expected_claim.get("admission_bytes_sha256") != hashlib.sha256(admission_raw).hexdigest():
+                    _fail("attempt_claim_changed")
+                for key in (
+                    "registration_id", "campaign_id", "attempt_id", "campaign_root",
+                    "registration_sha256", "product_commit", "remote_commit",
+                    "root_device", "root_inode", "parent_device", "parent_inode",
+                ):
+                    if expected_claim.get(key) != admission.get(key):
+                        _fail("attempt_claim_changed")
+                raw = read_regular_file(root / _CLAIM_FILE, _MAX_RECEIPT_BYTES)
+                claim = _parse_canonical_object(raw, "attempt_claim_invalid")
+                if (set(claim) != _CLAIM_FIELDS or claim != dict(expected_claim)
+                        or claim.get("schema_version") != _SCHEMA or claim.get("scope") != _SCOPE
+                        or claim.get("status") != "attempt_started"
+                        or claim.get("attempt_claimed") is not True
+                        or claim.get("provider_started") is not False
+                        or claim.get("provider_call_made") is not False):
+                    _fail("attempt_claim_invalid")
+                digest = _sha(claim["attempt_claim_sha256"], "attempt_claim_invalid")
+                if hashlib.sha256(_canonical_bounded({k: v for k, v in claim.items()
+                                                       if k != "attempt_claim_sha256"})).hexdigest() != digest:
+                    _fail("attempt_claim_invalid")
+                expected_files = {"materials", "admission.json", _CLAIM_FILE, *_ROOT_FILES}
+                with os.scandir(root_chain.fd) as entries:
+                    if {entry.name for entry in entries} != expected_files:
+                        _fail("attempt_inventory_changed")
+                material_dir = root / "materials"
+                materials = DirectoryChain(material_dir, "attempt_inventory_changed")
+                try:
+                    if stat.S_IMODE(os.fstat(materials.fd).st_mode) != 0o700:
+                        _fail("attempt_inventory_changed")
+                    with os.scandir(materials.fd) as entries:
+                        if {entry.name for entry in entries} != _MATERIAL_FILES:
+                            _fail("attempt_inventory_changed")
+                    pins = admission["files"]
+                    if (len(pins) != len(_ROOT_FILES) + len(_MATERIAL_FILES)
+                            or {item.get("path") for item in pins if isinstance(item, dict)}
+                            != _ROOT_FILES | {f"materials/{name}" for name in _MATERIAL_FILES}):
+                        _fail("attempt_admission_invalid")
+                    for item in pins:
+                        if (not isinstance(item, dict) or set(item) != {"path", "size", "sha256"}
+                                or type(item["size"]) is not int or not 0 <= item["size"] <= MAX_PRODUCT_FILE_BYTES):
+                            _fail("attempt_admission_invalid")
+                        _sha(item["sha256"], "attempt_admission_invalid")
+                        path = root / item["path"]
+                        content = read_regular_file(path, MAX_PRODUCT_FILE_BYTES)
+                        info = os.stat(path, follow_symlinks=False)
+                        if (len(content) != item["size"]
+                                or hashlib.sha256(content).hexdigest() != item["sha256"]
+                                or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600):
+                            _fail("attempt_inventory_changed")
+                    for path in (root / "admission.json", root / _CLAIM_FILE):
+                        info = os.stat(path, follow_symlinks=False)
+                        if info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600:
+                            _fail("attempt_inventory_changed")
+                    materials.check()
+                finally:
+                    materials.close()
+                root_chain.check()
+                parent_chain.check()
+                return claim
+            finally:
+                root_chain.close()
+        finally:
+            parent_chain.close()
+    except AcceptanceAttemptGateError:
+        raise
+    except (BenchmarkFileError, CandidateWorkspaceError, OSError, TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        raise AcceptanceAttemptGateError("attempt_claim_unavailable") from exc
+
+
+__all__ = ["AcceptanceAttemptGateError", "claim_acceptance_attempt", "verify_acceptance_attempt_claim"]

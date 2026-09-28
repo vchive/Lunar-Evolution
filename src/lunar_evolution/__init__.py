@@ -16,6 +16,7 @@ from .acceptance_launch import (
     prepare_acceptance_campaign,
     revalidate_acceptance_campaign,
 )
+from .acceptance_launch_stage import stage_acceptance_attempt
 from .acceptance_observation_binding import (
     AcceptanceObservationBindingError,
     inspect_acceptance_observation_binding,
@@ -1002,6 +1003,7 @@ __all__ = [
     "run_subject_adapter",
     "sealed_linux_executable",
     "source_only_dependency_sha256",
+    "stage_acceptance_attempt",
     "stage_candidate_execution_inputs",
     "stage_candidate_inputs",
     "stage_producer_bundle_publication",
