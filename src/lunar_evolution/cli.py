@@ -3186,6 +3186,10 @@ def _solve_evolution_impl(
             # The preparation ledger retains this failure; callers emit the ordinary parent
             # payload and a nonzero result without creating a child or discarding the contract.
             return {"run": controller.store.get_run(parent.id) or parent}
+        if (acceptance_hook := getattr(args, "_acceptance_preparation_hook", None)) is not None:
+            if solve_control is None:
+                raise EvolutionError("acceptance_solve_control_required")
+            acceptance_hook(controller.store, parent.id, contract, solve_control)
     bundle_pipeline = getattr(args, "_bundle_pipeline", None)
     if (observation := getattr(args, "_solve_observation", None)) is not None:
         observation.observe("candidate_generation")
@@ -5915,9 +5919,18 @@ def _candidate_bundle_inspect_evaluation(args: argparse.Namespace) -> dict[str, 
     return {**result.to_dict(), "evaluation_path": str(result.evaluation_path)}
 
 
-def main(argv: list[str] | None = None, *, _automatic_owner=None) -> int:
+def main(argv: list[str] | None = None, *, _automatic_owner=None,
+         _acceptance_preparation_hook=None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if _acceptance_preparation_hook is not None:
+            if not callable(_acceptance_preparation_hook) or not (
+                args.command == "solve" and args.evolve and args.multi_file
+                and not args.resume and not args.detach
+                and args.solve_wall_timeout is not None
+            ):
+                raise ValueError("invalid acceptance preparation hook")
+            args._acceptance_preparation_hook = _acceptance_preparation_hook
         if _automatic_owner is not None:
             if not (
                 args.command == "solve" and args.resume

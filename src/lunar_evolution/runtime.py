@@ -663,7 +663,20 @@ class OpenAICompatibleRuntime:
         """Request one model turn, preserving structured tool calls for the agent loop."""
         if timeout is not None:
             validate_timeout(timeout)
-        return self._complete(messages, tools, timeout, bounded=timeout is not None)
+        from .acceptance_request_budget import active_request_budget
+
+        budget = active_request_budget()
+        if budget is not None:
+            budget.begin()
+        try:
+            turn = self._complete(messages, tools, timeout, bounded=timeout is not None)
+        except BaseException:
+            if budget is not None:
+                budget.fail()
+            raise
+        if budget is not None:
+            budget.finish(turn.usage)
+        return turn
 
     def _complete_direct(self, messages, tools=(), timeout=None) -> ModelTurn:
         """Explicit same-process seam for deterministic transport/exception contract tests."""

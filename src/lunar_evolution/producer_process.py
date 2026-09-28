@@ -689,6 +689,7 @@ class ProducerExecutionReceipt:
     receipt_sha256: str | None = None
     schema_version: str = "1"
     protocol: str = _PROTOCOL
+    trusted_execution: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != "1" or self.protocol != _PROTOCOL:
@@ -757,6 +758,8 @@ class ProducerExecutionReceipt:
         }
         if include_receipt_sha256:
             value["receipt_sha256"] = self.receipt_sha256
+        if self.trusted_execution is not None:
+            value["trusted_execution"] = dict(self.trusted_execution)
         return value
 
     def digest(self) -> str:

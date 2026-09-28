@@ -580,6 +580,37 @@ def test_automatic_solve_delivers_scored_bundle_and_resumes_without_compilation(
     assert cli._status_payload(Config(tmp_path / "home"), first["run_id"])["evolution"]["linked"]["materialization"] == delivery
 
 
+def test_acceptance_hook_observes_preparation_before_generation(tmp_path, monkeypatch, capsys):
+    runtime, args = automatic_setup(tmp_path, monkeypatch)
+    seen = []
+
+    def observe(store, parent_id, contract, control):
+        assert len([event for event in store.list_events(parent_id)
+                    if event["type"] == "bundle_profile_prepared"]) == 1
+        assert contract.digest()
+        assert control.check("preparation") > 0
+        assert runtime.generator_calls == 0
+        seen.append(parent_id)
+
+    assert cli.main([*args, "--solve-wall-timeout", "3000"],
+                    _acceptance_preparation_hook=observe) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert seen == [result["run_id"]]
+    assert runtime.generator_calls == 4
+
+
+def test_acceptance_hook_failure_stops_before_generation(tmp_path, monkeypatch, capsys):
+    runtime, args = automatic_setup(tmp_path, monkeypatch)
+
+    def reject(*_args):
+        raise ValueError("acceptance_binding_failed")
+
+    assert cli.main([*args, "--solve-wall-timeout", "3000"],
+                    _acceptance_preparation_hook=reject) == 2
+    assert json.loads(capsys.readouterr().err)["error"] == "acceptance_binding_failed"
+    assert runtime.generator_calls == 0
+
+
 def test_automatic_preparation_timeout_is_separate_from_candidate_execution(
     tmp_path, monkeypatch, capsys,
 ):

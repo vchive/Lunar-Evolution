@@ -91,6 +91,7 @@ class HostRequestJournalIdentity:
     intent_sha256: str
     request_timeout_seconds: int
     max_requests: int
+    wall_deadline_ns: int | None = None
 
     def __post_init__(self) -> None:
         for value in (
@@ -104,9 +105,13 @@ class HostRequestJournalIdentity:
             _fail("producer_request_transport_timeout_invalid")
         if type(self.max_requests) is not int or not 1 <= self.max_requests <= MAX_REQUEST_EVENTS:
             _fail("producer_request_transport_budget_invalid")
+        if self.wall_deadline_ns is not None and (
+            type(self.wall_deadline_ns) is not int or not 0 < self.wall_deadline_ns < 2**63
+        ):
+            _fail("producer_request_transport_deadline_invalid")
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        value = {
             "launch_id": self.launch_id,
             "journal_id": self.journal_id,
             "run_id": self.run_id,
@@ -116,6 +121,9 @@ class HostRequestJournalIdentity:
             "request_timeout_seconds": self.request_timeout_seconds,
             "max_requests": self.max_requests,
         }
+        if self.wall_deadline_ns is not None:
+            value["wall_deadline_ns"] = self.wall_deadline_ns
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -400,7 +408,10 @@ def read_host_request_journal(
                     or request_id in used_ids or type(started) is not int
                     or not last_timestamp <= started <= (2**63 - 1) - _MAX_NS
                     or type(deadline) is not int
-                    or deadline != started + expected_identity.request_timeout_seconds * 1_000_000_000):
+                    or deadline != min(
+                        started + expected_identity.request_timeout_seconds * 1_000_000_000,
+                        expected_identity.wall_deadline_ns or 2**63 - 1,
+                    ) or deadline <= started):
                 _fail("producer_request_transport_journal_invalid")
             admitted += 1
             used_ids.add(request_id)
@@ -481,6 +492,7 @@ class HostRequestLedger:
         self._clock = monotonic_ns
         self._last_ns: int | None = None
         self._journal = journal
+        self._wall_deadline_ns = journal.identity.wall_deadline_ns if journal else None
         self._used_ids: set[str] = set()
         self._active: dict[RequestAdmission, None] = {}
         self._events: dict[int, HostRequestEvent] = {}
@@ -510,13 +522,16 @@ class HostRequestLedger:
         if self._admitted >= self.max_requests:
             _fail("producer_request_transport_budget_exceeded")
         started = self._now()
+        if self._wall_deadline_ns is not None and started >= self._wall_deadline_ns:
+            _fail("producer_request_transport_wall_timeout")
         if started > (2**63 - 1) - _MAX_NS:
             _fail("producer_request_transport_clock_invalid")
         admission = RequestAdmission(
             sequence=self._admitted + 1,
             request_id=request_id,
             started_ns=started,
-            deadline_ns=started + self.request_timeout_seconds * 1_000_000_000,
+            deadline_ns=min(started + self.request_timeout_seconds * 1_000_000_000,
+                            self._wall_deadline_ns or 2**63 - 1),
         )
         if self._journal is not None:
             self._journal.record_admission(admission)

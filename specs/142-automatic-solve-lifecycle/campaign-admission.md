@@ -35,6 +35,22 @@ its identities immediately before invocation, with code imports bound to the com
 
 ## Provider-free single-attempt claim
 
+### Formal native invocation, 2026-09-28
+
+The public runner starts one fresh isolated Python interpreter. Before importing product
+modules, it reads every registered Python source with no-follow regular-file checks, verifies
+the complete package inventory and each size/digest, and installs a loader that compiles those
+verified bytes (never a cached bytecode file or another installed package). The child repeats
+the clean checkout/remote/material admission and claims the only attempt. Unknown package
+imports fail closed. A changed checkout never causes a fallback to an installed version.
+
+The preparation callback publishes the runtime/observation binding before candidate generation.
+All provider exchanges share one request/token ledger; failed or unknown exchanges prohibit
+continuation. An independent postrun audit, not the CLI status, owns the acceptance counts.
+Failure after claim retains bounded failure evidence and never launches a replacement attempt.
+`python tools/run_acceptance.py --help` is the explicit entry point; importing the runner does
+not run a campaign. Provider credentials remain in the child environment only.
+
 `claim_acceptance_attempt(revalidated, campaign_parent=...)` is the narrow handoff between
 launch-time revalidation and a future native runner. The caller must supply an unchanged
 `status=ready`, `launch_allowed=true` result from `revalidate_acceptance_campaign`. The helper

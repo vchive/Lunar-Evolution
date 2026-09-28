@@ -275,6 +275,19 @@ int main(int argc, char **argv) {
         }
         /* The control and gate descriptors are always private to the bootstrap. */
         close(frame_fd);
+        /* Only anonymous broker descriptors are forwarded; never the controller
+           environment, endpoint, headers, secrets, or journal descriptors. */
+        char broker_read[80], broker_write[80];
+        char *target_env[] = {"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL, NULL, NULL};
+        const char *rpc_read = getenv("LUNAR_PRODUCER_RESPONSE_FD");
+        const char *rpc_write = getenv("LUNAR_PRODUCER_REQUEST_FD");
+        if (rpc_read || rpc_write) {
+            int r, w;
+            if (!rpc_read || !rpc_write || parse_fd_arg(rpc_read, &r) || parse_fd_arg(rpc_write, &w)) _exit(73);
+            snprintf(broker_read, sizeof(broker_read), "LUNAR_PRODUCER_RESPONSE_FD=%d", r);
+            snprintf(broker_write, sizeof(broker_write), "LUNAR_PRODUCER_REQUEST_FD=%d", w);
+            target_env[3] = broker_read; target_env[4] = broker_write;
+        }
         if (target_fd != c.target_fd) close(target_fd);
         if (strcmp(c.profile, "fixture-none") != 0) {
             int isolation = lunar_apply_isolation(c.profile, (const char *const *)c.read_paths, c.read_count,
@@ -284,12 +297,12 @@ int main(int argc, char **argv) {
         if (chdir(c.cwd) != 0) { int e=errno; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(74); }
         if (c.target_fd >= 0) {
 #if defined(__linux__)
-            fexecve(c.target_fd, c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
+            fexecve(c.target_fd, c.argv, target_env);
 #else
-            execve(c.target_path, c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
+            execve(c.target_path, c.argv, target_env);
 #endif
         } else {
-            execve(c.target_path, c.argv, (char *const[]){"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL});
+            execve(c.target_path, c.argv, target_env);
         }
         int e=errno; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(75);
     }

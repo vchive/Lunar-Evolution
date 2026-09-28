@@ -125,7 +125,7 @@ def build_producer_isolation_policy(
         read = tuple(sorted({_path(item) for item in read_paths}))
         writes = tuple(sorted({_path(item, directory=True) for item in write_dirs}))
         lines = ["(version 1)", "(deny default)",
-                 "(allow signal)", "(allow sysctl-read)",
+                 "(allow signal (target self))", "(allow sysctl-read)",
                  # Darwin dyld's ignition loader opens the root directory while
                  # discovering the shared cache.  This literal grants only the
                  # root directory itself, never reads of arbitrary descendants.

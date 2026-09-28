@@ -5,6 +5,14 @@
 - [x] T158-03 Specify and implement the ready/block/release/target-start state machine in a trusted bootstrap runtime fixture.
 - [ ] T158-04 Bind bootstrap and target identities to Feature 156 registration, cleanup, recovery, and one monotonic attempt.
 
+  The formal pre-gate registration publisher now reads matching durable batch/nonce claims,
+  validates the observed native ready frame and live PID/PGID owner, checks both byte-binding
+  records and the active recovery-lock inode, and publishes the Feature 156 registration plus
+  cross-record handoff before returning. It receives a blocked child from its caller and does
+  not release the gate. The production runner must still consume the attestation, spawn the
+  native artifact with inherited bindings, pass one deadline through cleanup/receipt/recovery,
+  and connect the broker before T158-04 can close.
+
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This
