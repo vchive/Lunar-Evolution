@@ -226,9 +226,12 @@ def test_all_rejected_shinka_batch_leaves_native_archive_and_state_unchanged(tmp
     archive_after, state_after, records_after = _archive_projection(context.workspace)
     assert (archive_after, state_after, records_after) == (archive_before, state_before, records_before)
     assert not (context.workspace / "evolution" / "producer-publication.json").exists()
-    assert not (
+    assert result.terminal_journal is not None
+    terminal = json.loads((
         context.workspace / "evolution" / "producer-batches" / journal_id / "journal.json"
-    ).exists()
+    ).read_bytes())
+    assert terminal["state"] == "all_rejected"
+    assert terminal["archive_after_sha256"] == terminal["base_archive_sha256"]
 
 
 def test_evolved_population_is_rejected_before_draft_evaluation_or_publication(tmp_path: Path) -> None:
@@ -361,7 +364,8 @@ def test_interrupted_transaction_pins_intent_and_exact_retry_reuses_completed_ev
     assert json.loads(bindings[0].read_bytes())["journal_sha256"]
     for field, value in (("run_id", "changed-run"), ("parent_task_id", "changed-parent"),
                          ("task_id", "changed-task"), ("budget_sha256", "f" * 64)):
-        with pytest.raises(NativeProducerBundleTransactionError, match="prepared_intent_mismatch"):
+        code = "budget_mismatch" if field == "budget_sha256" else "prepared_intent_mismatch"
+        with pytest.raises(NativeProducerBundleTransactionError, match=code):
             run_native_producer_bundle_publication_transaction(
                 context.workspace, strategy, drafts, plan, journal_id=journal_id, **{field: value},
             )

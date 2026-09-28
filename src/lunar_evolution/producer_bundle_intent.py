@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Callable
 from pathlib import Path
 
 from ._candidate_workspace_io import DirectoryChain
+from .automatic_solve_lifecycle import SolveExecutionBudgetExceeded, SolveExecutionCancelled
 from .producer_bundle_publication import (
     MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES,
     ProducerBundlePublicationJournal,
@@ -30,7 +32,7 @@ from .producer_bundle_staging import (
 _INTENT_NAME = "journal.prepared.json"
 _STARTED_NAMES = (
     "native-drafts", "stage", "journal.json", "journal.staged.json", "preflight.json",
-    "manifest.json", "terminal.json", "journal.published.json",
+    "manifest.json", "terminal.json", "journal.published.json", "rejections", "rejections.json",
 )
 
 
@@ -128,6 +130,7 @@ def _write_exclusive(chain: DirectoryChain, content: bytes) -> None:
 def persist_producer_bundle_prepared_intent(
     workspace: str | Path,
     journal: ProducerBundlePublicationJournal,
+    *, checkpoint: Callable[[str], object] | None = None,
 ) -> str:
     """Durably create the prepared full journal, or require a byte-identical retry.
 
@@ -140,8 +143,10 @@ def persist_producer_bundle_prepared_intent(
     chain = None
     try:
         chain = DirectoryChain(batch, "producer_bundle_prepared_intent_path_invalid")
-        with _locked(root):
+        with _locked(root, checkpoint=checkpoint):
             chain.check()
+            if checkpoint is not None:
+                checkpoint("producer_prepared_intent_locked")
             path = batch / _INTENT_NAME
             if _present(path):
                 _verify_existing(path, content)
@@ -151,7 +156,7 @@ def persist_producer_bundle_prepared_intent(
                 _write_exclusive(chain, content)
                 _verify_existing(path, content)
             chain.check()
-    except ProducerBundlePreparedIntentError:
+    except (ProducerBundlePreparedIntentError, SolveExecutionBudgetExceeded, SolveExecutionCancelled):
         raise
     except Exception as exc:
         raise ProducerBundlePreparedIntentError(

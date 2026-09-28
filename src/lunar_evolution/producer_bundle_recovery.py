@@ -144,22 +144,32 @@ def _self_digest(payload: dict[str, object], field: str, code: str) -> str:
 class ProducerBundleRecoveryResult:
     """A verified read-only decision for one durable publication attempt."""
 
-    status: str  # ``resume`` or ``published``
+    status: str  # ``resume``, ``published``, or ``all_rejected``
     journal_sha256: str
     manifest_sha256: str
     preflight_sha256: str
     candidate_ids: tuple[str, ...]
     verified_paths: tuple[str, ...]
+    rejected_candidate_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.status not in {"resume", "published"}:
+        if self.status not in {"resume", "published", "all_rejected"}:
             _fail("producer_bundle_recovery_status_invalid")
         _digest(self.journal_sha256)
         _digest(self.manifest_sha256)
         _digest(self.preflight_sha256)
-        if not self.candidate_ids or len(set(self.candidate_ids)) != len(self.candidate_ids):
+        if ((self.status != "all_rejected" and not self.candidate_ids)
+                or len(set(self.candidate_ids)) != len(self.candidate_ids)):
             _fail("producer_bundle_recovery_candidates_invalid")
         if any(_IDENTIFIER.fullmatch(value) is None for value in self.candidate_ids):
+            _fail("producer_bundle_recovery_candidates_invalid")
+        if self.status == "all_rejected":
+            if (self.candidate_ids or not self.rejected_candidate_ids
+                    or len(set(self.rejected_candidate_ids)) != len(self.rejected_candidate_ids)
+                    or any(not isinstance(value, str) or _IDENTIFIER.fullmatch(value) is None
+                           for value in self.rejected_candidate_ids)):
+                _fail("producer_bundle_recovery_candidates_invalid")
+        elif self.rejected_candidate_ids:
             _fail("producer_bundle_recovery_candidates_invalid")
         if any(not isinstance(value, str) for value in self.verified_paths):
             _fail("producer_bundle_recovery_paths_invalid")
@@ -431,7 +441,7 @@ def resume_producer_bundle_publication(
     plan: ProducerBundleAdmissionPlan,
     journal: ProducerBundlePublicationJournal | None = None,
 ) -> ProducerBundleRecoveryResult:
-    """Validate an exact staged attempt and return ``resume`` or ``published``.
+    """Validate exact durable evidence and return its recovery or terminal decision.
 
     The supplied plan and journal are compared to their durable canonical files.  Unknown
     publication markers, stale receipts, source changes, and any digest drift fail closed.
@@ -482,6 +492,30 @@ def resume_producer_bundle_publication(
             _fail("producer_bundle_recovery_journal_mismatch")
     if durable.admission_sha256 != plan.digest():
         _fail("producer_bundle_recovery_plan_mismatch")
+    if durable.state == "all_rejected":
+        try:
+            from .producer_bundle_rejection import inspect_producer_bundle_all_rejected
+
+            inspected = inspect_producer_bundle_all_rejected(root, journal)
+            if inspected != durable:
+                _fail("producer_bundle_recovery_terminal_mismatch")
+            manifest = _read_json(_path(root, "rejections.json", directory=batch))
+            marker_sha = _self_digest(
+                manifest, "terminal_marker_sha256", "producer_bundle_recovery_terminal_digest_mismatch",
+            )
+            if marker_sha != durable.terminal_marker_sha256:
+                _fail("producer_bundle_recovery_terminal_mismatch")
+            preflight_sha = _check_preflight(manifest["preflight"], durable, plan)
+            checked = tuple(entry["path"] for entry in manifest["entries"])
+            return ProducerBundleRecoveryResult(
+                "all_rejected", durable.digest(), marker_sha, preflight_sha, (),
+                ("journal.prepared.json", "journal.json", "rejections.json", *checked),
+                tuple(item.candidate_id for item in durable.candidates),
+            )
+        except ProducerBundleRecoveryError:
+            raise
+        except Exception as exc:
+            raise ProducerBundleRecoveryError("producer_bundle_recovery_evidence_changed") from exc
     if durable.state == "unknown":
         _fail("producer_bundle_recovery_unknown_terminal")
     # ``prepared`` means preflight has not begun staging.  It is not a recoverable

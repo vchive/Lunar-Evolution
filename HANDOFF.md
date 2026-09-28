@@ -1,5 +1,27 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-29 Shinka 共享运行预算与全拒绝终态
+
+在独立分支 `codex/shinka-native-publication` 继续 Feature 153，不扩展或提交 RSI。
+事务新增 caller-owned `SolveExecutionControl`，复用同一个运行时钟，组合更紧的父级预算，
+在候选、暂存、获得发布锁及提交前检查。锁等待支持取消/到期退出；超时、取消保留明确类型。
+提交越过持久 unknown marker 后完成原有提交协议，避免已发布却被误报超时。
+预算摘要由实际执行/评估/墙钟限额生成，重试不能通过省略 control 或复制旧摘要来放宽政策。
+
+全拒绝批次现在写入独立拒绝收据及 `all_rejected/committed` 终态 journal，archive/state
+保持原字节。只读检查从原始 native evidence 重建完整收据，拒绝仅重算便携摘要的篡改。
+精确重试只检查终态，不再运行候选或评分；部分落盘或证据缺失保留现场并要求恢复。
+该终态目前覆盖执行成功后本地评估 validity=0，不把未知/超时/非零执行当作已完成拒绝。
+
+隔离树最终组合回归 **510 passed / 0 failed / 0 skipped**，JUnit 位于
+`/tmp/lunar-shinka-20260929-controls.xml`；全树 Ruff、compileall、diff check 通过。
+未运行真实模型、WebAgent、远程 evaluator 或真实 OpenEvolve/Shinka campaign。
+
+仍开放：跨进程剩余墙钟持久化、运行中子进程即时取消、完整 unknown/中断恢复、演化后/有 seed/
+多次 producer 导入、launcher/scheduler 接线、真实 producer campaign 和全量三阶段 release
+runner。P1 完整生产验收尚未完成。主工作区继续保留并行 RSI 改动；选择性同步本轮 Shinka
+文件，不要用整目录覆盖或 `git add .`。
+
 ## 2026-09-29 Shinka 原生离线发布链路
 
 继续现有 Feature 153，保留并行 RSI 工作，未扩展其实现。Shinka SQLite fixture 已打通

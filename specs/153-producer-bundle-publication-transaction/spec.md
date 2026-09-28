@@ -2,8 +2,9 @@
 
 **Status**: Offline imported Shinka material can pass native draft evaluation, retained-evidence
 publication, population read-back/resume, and delivery verification in the initial population
-window. Shared transaction deadline, unknown-result recovery, and durable all-rejected terminal
-journaling remain open; no launcher, scheduler, remote service, or real campaign is included.
+window. Caller-owned active deadline/cancellation and durable all-rejected terminal inspection
+are implemented. Cross-process deadline restoration and full unknown-result recovery remain open;
+no launcher, scheduler, remote service, or real campaign is included.
 
 ## Problem
 
@@ -49,7 +50,8 @@ limits are listed under Integration boundary.
   that profile.
 - Every item is adjudicated before publication. Known local invalid items are recorded as
   rejected, while the admitted subset is published all-or-nothing. An empty admitted subset
-  fails closed without changing the archive or active state.
+  is recorded as a durable `all_rejected/committed` terminal without changing the archive or
+  active state. Execution and evaluation receipts remain bound to their original retained evidence.
 - For the admitted subset, the archive, candidate source trees, sidecars, state snapshot, and
   journal terminal marker must agree before success is exposed.
 - A failed pre-publication attempt may be resumed only from the exact journal and exact plan.
@@ -118,11 +120,35 @@ projection. Offline coverage also verifies `PopulationStrategy.resume()` and del
 and inspection through the existing delivery APIs. Delivery verification does not introduce a
 new automatic delivery orchestrator or establish real Shinka campaign acceptance.
 
-Remaining work includes one shared preparation/execution/evaluation wall-clock budget, the full
-unknown/interruption recovery matrix, and a durable terminal journal for an all-rejected batch.
-The current all-rejected result leaves archive/state unchanged and retains prepared intent and
-native evidence. Launcher/scheduler integration, remote execution, and real OpenEvolve/Shinka
-campaigns are separate work.
+The optional `execution_control` accepts a caller-owned `SolveExecutionControl` created before
+preparation. It shares one fixed active deadline across preparation, every candidate, adjudication,
+publication lock acquisition, staging, and commit admission. Existing tighter parent controls are
+preserved and hooks are restored on exit. Every invocation derives its budget digest from actual
+native execution/evaluation limits, zero preparation provider requests, and the declared wall
+allowance (`null` when omitted). An explicit digest only checks that policy; it cannot replace it.
+An exact retry cannot remove the control or change limits while preserving a controlled intent.
+The caller must retain the same control for in-process retry; this API does not persist elapsed
+time or prevent a caller from constructing a fresh control with the same allowance after restart.
+
+Cancellation and expiry stop admission to subsequent stages and bounded lock waits. Native
+subprocesses receive their remaining timeout at launch; cancellation during execution is observed
+at the next stage boundary, not by an immediate process watcher. File IO and cleanup are not a hard
+host-wide timeout. Commit checks again after acquiring the lock and verifying the staged evidence.
+After writing the durable unknown marker it completes the existing commit protocol, without a
+new timeout check that could create partial publication or misreport an already published batch.
+
+A successful local execution with independently evaluated `validity=0` can be finalized as
+all-rejected. The separate `rejections/` receipts and `rejections.json` manifest bind every original
+native source/run/evaluation and prepared intent; `journal.json` is written last. Inspection
+rebuilds the complete receipts from retained evidence, verifies bytes and identities, and checks
+unchanged archive/state digests. Exact transaction retries return the terminal journal with no
+evaluation calls. Missing or partial terminal evidence requires recovery and is never silently
+repaired or replayed. Nonzero execution, timeout, and other unknown draft outcomes are still
+outside this completed terminal slice.
+
+Remaining work includes durable deadline restoration, active-process cancellation, and the full
+unknown/interruption recovery matrix. Launcher/scheduler integration, remote execution, and real
+OpenEvolve/Shinka campaigns are separate work.
 
 ## Acceptance
 

@@ -1091,9 +1091,11 @@ Shinka SQLite material to non-publishing native local evaluation, retained prepa
 receipts, and atomic stage/commit of the admitted subset. The transaction checks archive integrity
 and active population read-back; offline coverage also verifies native resume and delivery through
 the existing delivery APIs. Entry is limited to an initialized iteration-zero running population
-with no offspring history, seed admission, or prior producer admission. Shared transaction deadline,
-full unknown/interruption recovery, durable all-rejected terminal journaling, and the external
-launcher/scheduler/remote campaign connection remain open.
+with no offspring history, seed admission, or prior producer admission. The transaction supports
+a caller-owned active deadline/cancellation control, durable all-rejected terminal journaling
+with exact no-evaluation retry, and bounded publication-lock waiting. Cross-process deadline
+restoration, full unknown/interruption recovery, and the external launcher/scheduler/remote
+campaign connection remain open.
 
 For a native Shinka result directory, `lunar_evolution.export_shinka_result(...)` is a read-only, offline
 exporter. It opens `programs.sqlite` (with an explicit legacy `evolution_db.sqlite` fallback) in
@@ -1490,9 +1492,10 @@ relative WebAgent performance. Active-process cancellation orchestration and the
 Shinka launcher, scheduler, remote and real-campaign connection remain future work. Features 150–152
 supply verified grouping, native draft projection and the local-authority admission plan.
 Feature 153 now covers the bounded offline imported-material transaction described above, including
-native execution, retained intent/evidence, archive publication, population read-back/resume and
-existing delivery API verification. Shared transaction deadline, full unknown-result recovery and
-durable all-rejected terminal journaling remain open. No real producer campaign is implied.
+native execution, retained intent/evidence, caller-owned active deadline/cancellation, durable
+all-rejected terminal state, archive publication, population read-back/resume and existing delivery
+API verification. Cross-process deadline restoration and full unknown-result recovery remain open.
+No real producer campaign is implied.
 
 Feature 114 fixes the confirmed intake integration problem: contract compilation uses a stateless
 protocol call when supported and receives explicit JSON field/type guidance. Ordinary solving

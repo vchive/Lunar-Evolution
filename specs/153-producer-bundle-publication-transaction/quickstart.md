@@ -24,11 +24,14 @@ Constructing a strategy object alone does not initialize that state. This exampl
 hook for a caller that already owns it; it does not use private initialization methods.
 
 ```python
+from lunar_evolution.automatic_solve_lifecycle import SolveExecutionControl
 from lunar_evolution.producer_bundle_transaction import (
     run_native_producer_bundle_publication_transaction,
 )
 
-# strategy, drafts and admission_plan are already prepared for this workspace.
+# Create this once before preparation, and keep it for any in-process retry.
+control = SolveExecutionControl(300)
+# strategy, drafts and admission_plan are prepared under the same caller-owned control.
 workspace = strategy.context.workspace
 journal_id = "shinka-import-001"
 batch = workspace / "evolution" / "producer-batches" / journal_id
@@ -43,6 +46,7 @@ result = run_native_producer_bundle_publication_transaction(
     run_id="local-import-001",
     parent_task_id="population-task",
     task_id="shinka-import",
+    execution_control=control,
 )
 print(result.publication_status)
 print(result.admitted_candidate_ids, result.rejected_candidate_ids)
@@ -66,8 +70,17 @@ ranking and island capacities determine active membership. The transaction check
 and the full committed state/population; offline tests also publish and inspect the selected
 candidate's material through existing delivery APIs.
 
-`all_rejected` leaves archive/state unchanged and retains prepared intent and native evidence.
-Its durable terminal journal is still pending. Shared transaction deadline enforcement and the
-full unknown/interruption recovery matrix also remain open. Keep uncertain evidence for recovery;
-do not delete it or change the request to force a replay. This API is separate from the existing
-`evolve --producer-result` CLI seed warm-start route.
+`all_rejected` leaves archive/state unchanged and returns `result.terminal_journal`. It retains
+the prepared intent, native evidence, rejection receipts and durable terminal journal. An exact
+retry independently checks that terminal and returns `evaluations=()` without executing candidates.
+
+`execution_control` shares a fixed active deadline and checks cancellation at stage boundaries,
+including lock waits and the last checkpoint before commit. Existing parent limits can only
+narrow it. The budget digest is derived from the actual declared limits; supplied digests must
+match and cannot disable a previously pinned control. Once the commit critical region begins,
+the atomic protocol finishes without a new deadline check.
+
+This clock is process-local. Cross-process elapsed-budget restoration, immediate cancellation of
+an active subprocess and the full unknown/interruption recovery matrix remain open. Keep uncertain
+evidence for recovery; do not delete it or change the request to force a replay. This API is
+separate from the existing `evolve --producer-result` CLI seed warm-start route.

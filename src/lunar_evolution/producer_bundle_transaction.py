@@ -9,17 +9,26 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from . import _benchmark_files as _files
+from .automatic_solve_lifecycle import (
+    SolveExecutionBudgetExceeded,
+    SolveExecutionCancelled,
+    SolveExecutionControl,
+)
 from .bundle_evolution import NativeDraftEvaluationResult
 from .evolution import Candidate, CandidateArchive, CandidateDraft, PopulationStrategy
 from .producer_bundle_admission import (
     ProducerBundleAdmissionPlan,
     build_producer_bundle_admission_plan,
+)
+from .producer_bundle_control import (
+    bind_native_producer_bundle_control,
+    native_producer_bundle_budget_sha256,
 )
 from .producer_bundle_intent import (
     persist_producer_bundle_prepared_intent,
@@ -38,6 +47,10 @@ from .producer_bundle_publication import (
     parse_producer_bundle_publication_journal,
 )
 from .producer_bundle_receipts import build_native_producer_bundle_publication_artifact
+from .producer_bundle_rejection import (
+    finalize_producer_bundle_all_rejected,
+    inspect_producer_bundle_all_rejected,
+)
 from .producer_bundle_staging import (
     ProducerBundlePublicationArtifact,
     ProducerBundlePublicationManifest,
@@ -260,6 +273,7 @@ class NativeProducerBundleTransactionResult:
     manifest: ProducerBundlePublicationManifest | None
     published_journal: ProducerBundlePublicationJournal | None
     publication_status: str
+    terminal_journal: ProducerBundlePublicationJournal | None = None
 
 
 def run_native_producer_bundle_publication_transaction(
@@ -273,8 +287,53 @@ def run_native_producer_bundle_publication_transaction(
     parent_task_id: str = "producer",
     task_id: str = "native-bundle-publication",
     budget_sha256: str | None = None,
+    execution_control: SolveExecutionControl | None = None,
 ) -> NativeProducerBundleTransactionResult:
-    """Evaluate Shinka/OpenEvolve material and atomically publish valid native candidates."""
+    """Evaluate imported material and atomically publish the valid native subset.
+
+    A supplied control is owned by the caller and must be retained across in-process retries.
+    It never refreshes a deadline here. Cancellation stops new stages; once commit crosses its
+    durable unknown marker, it finishes publication or preserves the existing unknown outcome.
+    Cross-process budget restoration is not implemented by this active-execution API.
+    """
+    if not isinstance(strategy, PopulationStrategy):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
+    options = {"journal_id": journal_id, "run_id": run_id, "parent_task_id": parent_task_id,
+               "task_id": task_id, "budget_sha256": budget_sha256}
+    derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
+    if budget_sha256 is not None and budget_sha256 != derived_budget:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
+    options["budget_sha256"] = derived_budget
+    if execution_control is not None:
+        with bind_native_producer_bundle_control(strategy, execution_control) as checkpoint:
+            return _run_native_producer_bundle_publication_transaction(
+                workspace, strategy, drafts, admission_plan, checkpoint=checkpoint, **options,
+            )
+
+    def checkpoint(stage: str) -> None:
+        if strategy._cancelled():
+            raise SolveExecutionCancelled(stage)
+        strategy._check_stage(stage)
+
+    return _run_native_producer_bundle_publication_transaction(
+        workspace, strategy, drafts, admission_plan, checkpoint=checkpoint, **options,
+    )
+
+
+def _run_native_producer_bundle_publication_transaction(
+    workspace: str | Path,
+    strategy: PopulationStrategy,
+    drafts: Sequence[ProducerBundleDraft],
+    admission_plan: ProducerBundleAdmissionPlan,
+    *,
+    journal_id: str,
+    run_id: str | None,
+    parent_task_id: str,
+    task_id: str,
+    budget_sha256: str | None,
+    checkpoint: Callable[[str], object],
+) -> NativeProducerBundleTransactionResult:
+    checkpoint("producer_preparation")
 
     if not isinstance(strategy, PopulationStrategy):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
@@ -317,7 +376,6 @@ def run_native_producer_bundle_publication_transaction(
         for field in authority_fields
     ):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_authority_invalid")
-    budget_sha256 = budget_sha256 or _sha(_canonical({"scope": "native-producer-bundle"}))
     candidates: list[ProducerBundlePublicationCandidate] = []
     for ordinal, (draft, item) in enumerate(zip(drafts, admission_plan.bundles, strict=True)):
         if not isinstance(draft, ProducerBundleDraft) or draft.bundle_id != item.bundle_id:
@@ -359,17 +417,34 @@ def run_native_producer_bundle_publication_transaction(
     artifacts: list[ProducerBundlePublicationArtifact] = []
     rejected: list[str] = []
     try:
-        journal_sha256 = persist_producer_bundle_prepared_intent(root, journal)
+        checkpoint("producer_prepared_intent")
+        journal_sha256 = persist_producer_bundle_prepared_intent(root, journal, checkpoint=checkpoint)
+        terminal = inspect_producer_bundle_all_rejected(
+            root, journal, preflight=preflight, checkpoint=checkpoint,
+        )
+        if terminal is not None:
+            return NativeProducerBundleTransactionResult(
+                journal=journal, preflight=preflight, evaluations=(), admitted_candidate_ids=(),
+                rejected_candidate_ids=tuple(item.candidate_id for item in terminal.candidates),
+                artifacts=(), manifest=None, published_journal=None,
+                publication_status="all_rejected", terminal_journal=terminal,
+            )
+    except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
+        raise
     except Exception as exc:
         code = getattr(exc, "code", "producer_bundle_transaction_recovery_required")
         raise NativeProducerBundleTransactionError(code) from exc
     for ordinal, (draft, planned) in enumerate(zip(drafts, candidates, strict=True)):
         try:
+            checkpoint("producer_draft_evaluation")
             result = strategy.context.bundle_pipeline.evaluate_draft_non_publishing(
                 strategy, draft.draft, journal_id=journal_id, ordinal=ordinal,
                 journal_candidate=planned, admission_plan=admission_plan,
                 journal_sha256=journal_sha256,
             )
+            checkpoint("producer_draft_adjudication")
+        except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
+            raise
         except Exception as exc:
             code = getattr(exc, "code", "producer_bundle_transaction_recovery_required")
             raise NativeProducerBundleTransactionError(code) from exc
@@ -386,30 +461,47 @@ def run_native_producer_bundle_publication_transaction(
             raise NativeProducerBundleTransactionError(code) from exc
 
     try:
+        checkpoint("producer_adjudication")
         verify_producer_bundle_prepared_intent(root, journal)
+    except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
+        raise
     except Exception as exc:
         code = getattr(exc, "code", "producer_bundle_transaction_recovery_required")
         raise NativeProducerBundleTransactionError(code) from exc
     admitted = tuple(item.candidate_id for item in candidates if item.candidate_id not in set(rejected))
     if not artifacts:
+        try:
+            terminal = finalize_producer_bundle_all_rejected(
+                root, journal, preflight, tuple(evaluations),
+                authority=strategy.integrity_authority, checkpoint=checkpoint,
+            )
+        except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
+            raise
+        except Exception as exc:
+            code = getattr(exc, "code", "producer_bundle_transaction_recovery_required")
+            raise NativeProducerBundleTransactionError(code) from exc
         return NativeProducerBundleTransactionResult(
             journal=journal, preflight=preflight, evaluations=tuple(evaluations),
             admitted_candidate_ids=(), rejected_candidate_ids=tuple(rejected), artifacts=(),
             manifest=None, published_journal=None, publication_status="all_rejected",
+            terminal_journal=terminal,
         )
 
     state_after = derive_population_state_after(
         base_state, base_archive, artifacts, journal=journal, strategy=strategy,
     )
     try:
+        checkpoint("producer_staging")
         manifest = stage_producer_bundle_publication(
             root, journal, preflight, tuple(artifacts), state_after=state_after,
             rejected_candidate_ids=tuple(rejected),
+            checkpoint=checkpoint,
         )
         staged = parse_producer_bundle_publication_journal(
             root / "evolution" / "producer-batches" / journal_id / "journal.json",
         )
-        published = commit_producer_bundle_publication(root, staged)
+        checkpoint("producer_commit")
+        published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint)
         archive = CandidateArchive(root, requested_strategy="population", read_only=True)
         records = tuple(archive.records())
         archive.validate_candidate_integrity(require_all=True, records=records)
@@ -418,7 +510,7 @@ def run_native_producer_bundle_publication_transaction(
             raise NativeProducerBundleTransactionError("producer_bundle_transaction_readback_invalid")
         strategy._validate_candidate_integrity_state(committed_state)
         strategy._active(committed_state)
-    except NativeProducerBundleTransactionError:
+    except (NativeProducerBundleTransactionError, SolveExecutionCancelled, SolveExecutionBudgetExceeded):
         raise
     except Exception as exc:
         code = getattr(exc, "code", "producer_bundle_transaction_recovery_required")
@@ -428,6 +520,7 @@ def run_native_producer_bundle_publication_transaction(
         admitted_candidate_ids=admitted, rejected_candidate_ids=tuple(rejected),
         artifacts=tuple(artifacts), manifest=manifest, published_journal=published,
         publication_status="published",
+        terminal_journal=published,
     )
 
 

@@ -830,7 +830,7 @@ class MultiFileCandidatePipeline:
             error="bundle_candidate_record_failed",
         )
         if strategy._cancelled():
-            raise _InitialCandidateFailure("candidate_failed")
+            raise SolveExecutionCancelled("candidate_execution")
         record = run_candidate_execution_recorded(
             admission, plan=plan, workspace_path=copied.workspace_path, input_path=staged.input_path,
             attempt_path=run_root / "attempt", expected_admission_sha256=admission.digest(),

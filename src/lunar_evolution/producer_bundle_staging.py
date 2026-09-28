@@ -13,13 +13,15 @@ import hashlib
 import json
 import os
 import stat
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, NoReturn
 
 from . import _benchmark_files as _files
+from .automatic_solve_lifecycle import SolveExecutionBudgetExceeded, SolveExecutionCancelled
 from .evolution import MAX_ARCHIVE_BYTES, MAX_ARCHIVE_LINE_BYTES, MAX_STATE_BYTES
 from .producer_bundle_preflight import (
     ProducerBundlePreflightReceipt,
@@ -264,7 +266,7 @@ def _fsync_dir(path: Path) -> None:
 
 
 @contextmanager
-def _locked(workspace: Path):
+def _locked(workspace: Path, *, checkpoint: Callable[[str], object] | None = None):
     root = workspace / "evolution"
     lock = root / _LOCK_NAME
     if _present(lock):
@@ -274,12 +276,21 @@ def _locked(workspace: Path):
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
             raise OSError("publication lock invalid")
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        if checkpoint is None:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        else:
+            while True:
+                checkpoint("producer_publication_lock")
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    time.sleep(0.05)
         current = os.lstat(lock)
         if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
             raise OSError("publication lock replaced")
         yield
-    except ProducerBundlePublicationStagingError:
+    except (ProducerBundlePublicationStagingError, SolveExecutionBudgetExceeded, SolveExecutionCancelled):
         raise
     except OSError as exc:
         raise ProducerBundlePublicationStagingError("producer_bundle_publication_lock_failed") from exc
@@ -913,6 +924,7 @@ def stage_producer_bundle_publication(
     *,
     state_after: Mapping[str, object],
     rejected_candidate_ids: Sequence[str] = (),
+    checkpoint: Callable[[str], object] | None = None,
 ) -> ProducerBundlePublicationManifest:
     """Build and durably retain a complete batch without exposing any candidate."""
     if not isinstance(journal, ProducerBundlePublicationJournal) or not isinstance(preflight, ProducerBundlePreflightReceipt):
@@ -961,7 +973,9 @@ def stage_producer_bundle_publication(
     )
     evolution = root / "evolution"
     archive_path, state_path = evolution / "archive.jsonl", evolution / "state.json"
-    with _locked(root):
+    with _locked(root, checkpoint=checkpoint):
+        if checkpoint is not None:
+            checkpoint("producer_staging_locked")
         # Reconfirm the base bytes while holding the publication lock; preflight alone is read-only.
         archive = _read(archive_path, MAX_ARCHIVE_BYTES) if _present(archive_path) else b""
         state = _read(state_path, MAX_STATE_BYTES) if _present(state_path) else b""
@@ -993,6 +1007,8 @@ def stage_producer_bundle_publication(
             state_after_bytes = _pretty(dict(state_after), MAX_STATE_BYTES)
             _write_new(stage / "archive.jsonl", archive_after, maximum=MAX_ARCHIVE_BYTES)
             _write_new(stage / "state.json", state_after_bytes, maximum=MAX_STATE_BYTES)
+            if checkpoint is not None:
+                checkpoint("producer_staging_prepared")
             # Persist the exact source journal and preflight evidence alongside the stage.
             staged_journal_bytes = _pretty(staged_journal.to_dict(), MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
             _write_new(batch / "journal.json", staged_journal_bytes, maximum=MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
@@ -1104,12 +1120,19 @@ def _verify_stage(
     if seen != set(manifest.candidate_ids):
         _fail("producer_bundle_publication_manifest_invalid")
 
-def commit_producer_bundle_publication(workspace: str | Path, journal: ProducerBundlePublicationJournal) -> ProducerBundlePublicationJournal:
+def commit_producer_bundle_publication(
+    workspace: str | Path,
+    journal: ProducerBundlePublicationJournal,
+    *,
+    checkpoint: Callable[[str], object] | None = None,
+) -> ProducerBundlePublicationJournal:
     """Expose one complete staged batch; any uncertain boundary remains terminal."""
     root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
     evolution = root / "evolution"
-    with _locked(root):
+    with _locked(root, checkpoint=checkpoint):
+        if checkpoint is not None:
+            checkpoint("producer_commit_locked")
         marker, _ = _load_marker(evolution / _MARKER_NAME)
         if marker["journal_id"] != journal.journal_id or marker["status"] != "staged":
             _fail("producer_bundle_publication_recovery_required")
@@ -1121,6 +1144,8 @@ def commit_producer_bundle_publication(workspace: str | Path, journal: ProducerB
         if staged_journal.journal_id != journal.journal_id or manifest.journal_sha256 != staged_journal.digest():
             _fail("producer_bundle_publication_manifest_invalid")
         _verify_stage(batch, manifest, staged_journal)
+        if checkpoint is not None:
+            checkpoint("producer_commit_verified")
         # Once the first target is moved, all failures are unknown and marker status is durable.
         unknown_marker = marker_payload(journal_id=journal.journal_id, journal_sha256=manifest.journal_sha256,
                                          manifest_sha256=manifest.digest(), status="unknown")

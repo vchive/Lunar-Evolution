@@ -1,5 +1,36 @@
 # Feature 153 validation
 
+## 2026-09-29 active controls and durable all-rejected terminal
+
+The native transaction accepts a caller-owned active clock, composes tighter parent controls,
+and checks cancellation/remaining time before admitting preparation, drafts, staging and commit.
+Publication lock waits are polled with the same control; typed timeout/cancellation exceptions
+survive lock and terminal wrappers. The final commit checkpoint precedes the durable unknown
+marker; after that boundary the commit completes without misclassifying published output.
+Budget digests derive from actual native policy even when the optional control is omitted.
+An explicit old digest cannot remove a control or silently change execution limits on retry.
+
+All-rejected local evaluations now have a durable `all_rejected/committed` journal, unchanged
+archive/state after digests, complete rejected receipts and retained evidence descriptors.
+Independent inspection rebuilds receipt content from original native records rather than trusting
+portable self-digests. Exact terminal retry returns no evaluations, and partial/missing/tampered
+evidence fails closed. The covered rejection slice is successful execution followed by local
+evaluation validity zero; unknown/nonzero/timeout outcomes are not promoted to this terminal.
+
+Final isolated-worktree selection: **510 passed / 0 failed / 0 skipped** (60.27 seconds), including
+all producer-bundle suites, Shinka handoff, non-publishing drafts, bundle population/controller/CLI,
+native evolution, quality/diversity and solve lifecycle. JUnit:
+`/tmp/lunar-shinka-20260929-controls.xml`. The selection includes real local file-lock contention,
+budget/cancel propagation, no-replay terminal retry and rehashed portable-receipt tampering.
+Whole-tree Ruff, compileall and `git diff --check` passed. Earlier focused counts overlap this
+selection and are not added to its count.
+
+The independent worktree remains `codex/shinka-native-publication`; RSI files/implementation were
+excluded. No model, WebAgent, remote evaluator or real OpenEvolve/Shinka campaign ran. Durable
+cross-process budget restoration, active-subprocess cancellation, full unknown/interruption
+recovery, evolved/seeded/repeated population admissions, launcher/scheduler integration and the
+three-phase release runner remain open. This does not complete P1 production acceptance.
+
 ## 2026-09-29 offline native transaction and prepared intent
 
 The Shinka SQLite fixture now traverses export, explicit grouping, Feature 152 plan, native

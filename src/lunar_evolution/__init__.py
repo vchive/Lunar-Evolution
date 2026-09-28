@@ -437,6 +437,11 @@ from .producer_bundle_recovery import (
     inspect_producer_bundle_publication_resume,
     resume_producer_bundle_publication,
 )
+from .producer_bundle_rejection import (
+    ProducerBundleRejectionError,
+    finalize_producer_bundle_all_rejected,
+    inspect_producer_bundle_all_rejected,
+)
 from .producer_bundle_staging import (
     ProducerBundlePublicationArtifact,
     ProducerBundlePublicationManifest,
@@ -812,6 +817,7 @@ __all__ = [
     "ProducerBundleReceiptError",
     "ProducerBundleRecoveryError",
     "ProducerBundleRecoveryResult",
+    "ProducerBundleRejectionError",
     "ProducerBundleResult",
     "ProducerEnvelopeEvidence",
     "ProducerExecutionReceipt",
@@ -964,10 +970,12 @@ __all__ = [
     "execute_producer_process",
     "export_shinka_envelope",
     "export_shinka_result",
+    "finalize_producer_bundle_all_rejected",
     "inspect_acceptance_observation_binding",
     "inspect_bundle_delivery",
     "inspect_candidate_evaluation",
     "inspect_candidate_execution_record",
+    "inspect_producer_bundle_all_rejected",
     "inspect_producer_bundle_publication_resume",
     "inventory_campaign_directory",
     "launch_producer_process",
