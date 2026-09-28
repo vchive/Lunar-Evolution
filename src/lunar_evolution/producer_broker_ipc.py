@@ -22,6 +22,7 @@ from .producer_request_transport import (
     HostRequestLedger,
     HostRequestSnapshot,
     ProducerRequestTransportError,
+    read_host_request_journal,
 )
 
 _MAX_FRAME_BYTES = MAX_REQUEST_BYTES * 4 // 3 + 4096
@@ -51,6 +52,9 @@ class ProducerBrokerConfig:
 class ProducerBrokerObservation:
     snapshot: HostRequestSnapshot
     journal_path: Path
+    journal_identity: HostRequestJournalIdentity
+    journal_sha256: str
+    journal_bytes: int
     complete: bool
     reason: str
 
@@ -211,8 +215,15 @@ def serve_producer_broker(
                 reason = "request_boundary_unknown"
                 break
         snapshot = ledger.snapshot()
-    return ProducerBrokerObservation(snapshot, journal_path,
-                                     reason == "complete" and snapshot.within_broker_limits, reason)
+    recovered = read_host_request_journal(
+        journal_path, expected_identity=identity, deadline=deadline_ns / 1_000_000_000,
+    )
+    if recovered.snapshot != snapshot or (reason == "complete" and recovered.uncertain_request_ids):
+        raise ProducerBrokerIpcError("producer_broker_journal_recovery_mismatch")
+    return ProducerBrokerObservation(
+        snapshot, journal_path, identity, recovered.journal_sha256, recovered.journal_bytes,
+        reason == "complete" and snapshot.within_broker_limits, reason,
+    )
 
 
 def brokered_producer_post(request_id: str, body: bytes, *, deadline_ns: int) -> tuple[int, bytes]:

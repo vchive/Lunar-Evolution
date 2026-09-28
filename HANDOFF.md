@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-28 P1 原生输出与请求日志同次捕获
+
+外部 producer 指 OpenEvolve、ShinkaEvolve 等开源候选生成器，不需要用户提供私有命令。
+当前 OpenEvolve 的显式 wrapper 只接单候选，Shinka 的 SQLite exporter 是离线导入；
+二者均未完成可信外部进程的全自动生产验收。
+
+原生 trusted runner 现在在原尝试墙钟截止前，稳定读取 envelope 和所有声明的候选源文件，
+把字节摘要、文件身份及进程终态摘要绑定到独占持久收据。使用宿主 broker 时，关闭后的
+请求 journal 会在同一截止前重放校验；journal 身份、字节摘要、大小、请求数及声明请求数
+是否一致也进入收据。恢复检查输出和 journal 是否改变。受控双文件 fixture 覆盖有无
+broker 的成功链及源文件、journal 篡改；过期 deadline 不创建收据。
+相关 native output/attempt、请求、生命周期及隔离回归 **87 passed**；Ruff、compileall、
+diff check 通过。
+
+这只是 P1 的证据切片：收据仍标记 `publication_eligible=false`，broker 覆盖仅为
+`brokered_requests_only`。Feature 157/158 的全出口约束及请求执行证明、候选执行评分和
+发布事务、调度及真实开源项目验收继续开放，T159-05 不勾选。未调用真实开源 producer、
+provider 或新的 campaign。
+
 ## 2026-09-28 Feature 142 真实模型验收通过
 
 第二套独立登记 `native-142-20260928-02` 固定产品 `94f6e0e`，登记提交 `3f877fe`，

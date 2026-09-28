@@ -122,7 +122,7 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
         attestation=attestation, artifact=artifact,
     )
     assert result.status == "recovery_required"
-    assert result.reason == "native_trusted_attempt_request_and_output_unverified"
+    assert result.reason == "native_trusted_attempt_output_capture_unknown"
     assert result.registration_sha256 is not None
     assert result.gate_released and result.target_started
     assert result.exit_code == 0
@@ -130,6 +130,7 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
     assert not (batch / "execution-receipt.json").exists()
     terminal = json.loads((batch / "native-trusted-process-terminal.json").read_bytes())
     assert result.terminal_sha256 == terminal["terminal_sha256"]
+    assert result.output_capture_sha256 is None
     assert terminal["process_status"] == "exited_zero"
     assert terminal["receipt_scope"] == "process_only"
     assert terminal["publication_eligible"] is False

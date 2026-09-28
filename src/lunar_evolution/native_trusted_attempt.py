@@ -19,6 +19,7 @@ from .native_bootstrap import (
     load_native_bootstrap_artifact,
     native_bootstrap_command,
 )
+from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
 from .process_ownership import (
     ProcessCleanupStatus,
     RegisteredProcess,
@@ -98,6 +99,7 @@ class NativeTrustedAttemptObservation:
     exit_code: int | None
     cleanup_status: str | None
     terminal_sha256: str | None = None
+    output_capture_sha256: str | None = None
     broker_observation: ProducerBrokerObservation | None = None
 
 
@@ -317,6 +319,7 @@ def run_native_trusted_attempt(
         cleanup_status: str | None = None
         reason = "native_trusted_attempt_terminal_receipt_missing"
         terminal_sha256: str | None = None
+        output_capture_sha256: str | None = None
         handoff_sha256: str | None = None
         claimed = False
         fds: set[int] = set()
@@ -585,6 +588,21 @@ def run_native_trusted_attempt(
                  or not broker_observation.complete)
         ):
             reason = "native_trusted_attempt_broker_unknown"
+        if (
+            terminal_sha256 is not None and exit_code == 0
+            and reason == "native_trusted_attempt_request_and_output_unverified"
+        ):
+            try:
+                captured = capture_native_trusted_output(
+                    batch, intent=intent, terminal_sha256=terminal_sha256,
+                    broker=(broker_observation if isinstance(
+                        broker_observation, ProducerBrokerObservation,
+                    ) else None),
+                    deadline=deadline, monotonic=monotonic,
+                )
+                output_capture_sha256 = str(captured["capture_sha256"])
+            except NativeTrustedCaptureError:
+                reason = "native_trusted_attempt_output_capture_unknown"
         return NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
@@ -592,6 +610,7 @@ def run_native_trusted_attempt(
             gate_released=gate_released, target_started=target_started,
             exit_code=exit_code, cleanup_status=cleanup_status,
             terminal_sha256=terminal_sha256,
+            output_capture_sha256=output_capture_sha256,
             broker_observation=(broker_observation if isinstance(
                 broker_observation, ProducerBrokerObservation,
             ) else None),

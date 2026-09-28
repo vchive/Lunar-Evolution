@@ -4,17 +4,29 @@ import hashlib
 import json
 import subprocess
 import sys
+import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
+from test_http_transport_deadline import clear_proxy_environment, local_http
 
 from lunar_evolution.algorithm import AlgorithmProblemContract
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
-from lunar_evolution.native_trusted_attempt import run_native_trusted_attempt
+from lunar_evolution.native_trusted_attempt import (
+    recover_native_trusted_attempt,
+    run_native_trusted_attempt,
+)
+from lunar_evolution.native_trusted_capture import (
+    NativeTrustedCaptureError,
+    capture_native_trusted_output,
+    recover_native_trusted_output_capture,
+)
 from lunar_evolution.native_trusted_output import (
     NativeTrustedOutputError,
     prepare_native_trusted_output,
 )
+from lunar_evolution.producer_broker_ipc import ProducerBrokerConfig
 from lunar_evolution.producer_bundle_handoff import BundleGroup
 from lunar_evolution.producer_launcher import (
     build_producer_launch_attestation,
@@ -164,8 +176,23 @@ def test_rejects_changed_bundle_source(
         prepare_native_trusted_output(tmp_path, **arguments)
 
 
+def test_capture_does_not_create_receipt_after_original_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output, _, arguments = _fixture(tmp_path, monkeypatch)
+    with pytest.raises(NativeTrustedCaptureError, match="native_trusted_capture_wall_timeout"):
+        capture_native_trusted_output(
+            output.parent, intent=arguments["intent"], terminal_sha256="c" * 64,
+            broker=None, deadline=time.monotonic() - 1,
+        )
+    assert not (output.parent / "native-trusted-output-capture.json").exists()
+
+
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
-def test_prepares_output_from_actual_native_trusted_attempt(tmp_path: Path) -> None:
+@pytest.mark.parametrize("brokered", [False, True])
+def test_prepares_output_from_actual_native_trusted_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, brokered: bool,
+) -> None:
     contract = _contract()
     producer_root = tmp_path / "producer"
     producer_root.mkdir()
@@ -180,13 +207,26 @@ def test_prepares_output_from_actual_native_trusted_attempt(tmp_path: Path) -> N
     envelope = {
         "schema_version": "1", "producer_id": "fixture", "producer_fingerprint": PIN,
         "status": "completed", "contract_sha256": contract.digest(),
-        "budget": {"requests": 0}, "materials": materials,
+        "budget": {"requests": int(brokered)}, "materials": materials,
     }
     body = json.dumps(envelope)
+    broker_call = (
+        ' const char *w=getenv("LUNAR_PRODUCER_REQUEST_FD");\n'
+        ' const char *r=getenv("LUNAR_PRODUCER_RESPONSE_FD");\n'
+        ' if (!w || !r) return 10;\n'
+        ' const char *q="{\\"protocol\\":\\"lunar-producer-broker-ipc-v1\\",'
+        '\\"request_id\\":\\"req-1\\",\\"body_base64\\":\\"aGVsbG8=\\"}\\n";\n'
+        ' if (write(atoi(w), q, strlen(q)) != (ssize_t)strlen(q)) return 11;\n'
+        ' char reply[4096]; int n=0; char c;\n'
+        ' while (n<4095 && read(atoi(r), &c, 1)==1) {reply[n++]=c; if(c==10)break;}\n'
+        ' reply[n]=0; if (!strstr(reply,"\\"status\\":\\"completed\\"")) return 12;\n'
+    ) if brokered else ""
     source = producer_root / "target.c"
     source.write_text(
         '#include <stdio.h>\n#include <sys/stat.h>\n'
+        '#include <stdlib.h>\n#include <string.h>\n#include <unistd.h>\n'
         'int main(void) {\n'
+        + broker_call +
         ' if (mkdir("../output/pkg", 0700) != 0) return 2;\n'
         ' FILE *f = fopen("../output/pkg/main.py", "wb");\n'
         f' if (!f || fputs({json.dumps(main)}, f) < 0 || fclose(f) != 0) return 3;\n'
@@ -216,11 +256,32 @@ def test_prepares_output_from_actual_native_trusted_attempt(tmp_path: Path) -> N
     attestation = build_producer_launch_attestation(intent, "nonce-001")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    process = run_native_trusted_attempt(
-        workspace, producer_root=producer_root, intent=intent,
-        attestation=attestation, artifact=artifact,
-    )
+    if brokered:
+        clear_proxy_environment(monkeypatch)
+    with (local_http() if brokered else nullcontext((None, []))) as (endpoint, calls):
+        process = run_native_trusted_attempt(
+            workspace, producer_root=producer_root, intent=intent,
+            attestation=attestation, artifact=artifact,
+            broker_config=(ProducerBrokerConfig(endpoint, {}) if endpoint else None),
+        )
     assert process.exit_code == 0
+    assert len(calls) == int(brokered)
+    assert process.output_capture_sha256 is not None
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    batch = workspace / "evolution" / "producer-batches" / intent.journal_id
+    capture = recover_native_trusted_output_capture(batch, intent=intent, terminal=terminal)
+    assert capture["capture_sha256"] == process.output_capture_sha256
+    assert len(capture["materials"]) == 2
+    assert capture["publication_eligible"] is False
+    broker_evidence = capture["broker_evidence"]
+    if brokered:
+        assert broker_evidence["admitted_count"] == 1
+        assert broker_evidence["declared_count_matches"] is True
+        assert broker_evidence["coverage"] == "brokered_requests_only"
+    else:
+        assert broker_evidence is None
     result = prepare_native_trusted_output(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
         contract=contract,
@@ -231,3 +292,10 @@ def test_prepares_output_from_actual_native_trusted_attempt(tmp_path: Path) -> N
     assert result.process_terminal_sha256 == process.terminal_sha256
     assert len(result.drafts) == 1
     assert result.publication_eligible is False
+    if brokered:
+        with (batch / ".host-request-journal" / "requests").open("ab") as journal:
+            journal.write(b"tampered\n")
+    else:
+        (batch / "output" / "pkg" / "helper.py").write_text("VALUE = 2\n", encoding="utf-8")
+    with pytest.raises(NativeTrustedCaptureError, match="native_trusted_capture_.*"):
+        recover_native_trusted_output_capture(batch, intent=intent, terminal=terminal)

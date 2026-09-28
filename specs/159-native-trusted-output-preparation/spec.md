@@ -1,6 +1,6 @@
 # Feature 159: native trusted output preparation
 
-**Status**: Provider-free read-only preparation slice
+**Status**: Provider-free read-only preparation and same-attempt capture slices; publication integration open
 
 ## Problem
 
@@ -28,6 +28,19 @@ establish host-observed outbound traffic. The result is explicitly `publication_
 It writes no receipt, journal, archive, candidate, or campaign and does not run an evaluator.
 The production runner must capture and durably bind output evidence within the same attempt and
 join controller-owned request evidence before publication can use this result.
+
+## Same-attempt capture progress
+
+The native runner now reads the envelope and every declared source material after process cleanup
+but before its original wall deadline, using bounded no-follow stable reads. It persists their
+byte hashes and file identities in an exclusive receipt chained to the verified process terminal.
+When the isolated target used the host broker, the closed request journal is independently replayed
+within that deadline; its identity, exact byte hash, size, admitted count and declared-count match
+are bound to the capture receipt. Read-only recovery rejects changed output or journal bytes.
+
+This receipt remains `publication_eligible=false`. Its broker coverage is explicitly
+`brokered_requests_only`; the remaining Feature 157/158 isolation and request-enforcement proof,
+plus evaluator/archive publication integration, must be completed before publication.
 
 ## Acceptance
 

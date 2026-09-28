@@ -6,4 +6,6 @@
 - [x] T159-04 Cover positive, incomplete process, duplicate key, over-budget, symlink, race and
   changed-source cases with provider-free tests.
 - [ ] T159-05 Integrate contemporaneous output capture and durable receipt under the original
-  native attempt deadline, then join host-observed request coverage before publication.
+  native attempt deadline, then join host-observed request coverage before publication. The
+  capture/receipt and broker-journal binding slices are implemented; full egress coverage and
+  publication admission remain open.

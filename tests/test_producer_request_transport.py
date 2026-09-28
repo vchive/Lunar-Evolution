@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -217,6 +218,8 @@ def test_durable_journal_replays_completed_and_uncertain_requests(tmp_path):
         ledger.finish(first, status="completed")
     assert os.stat(path).st_mode & 0o777 == 0o600
     recovery = read_host_request_journal(path, expected_identity=identity)
+    assert recovery.journal_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert recovery.journal_bytes == path.stat().st_size
     assert recovery.snapshot.admitted_count == 2
     assert recovery.snapshot.active_count == 1
     assert [(event.sequence, event.status, event.duration_ms) for event in recovery.snapshot.events] == [
@@ -224,6 +227,12 @@ def test_durable_journal_replays_completed_and_uncertain_requests(tmp_path):
     ]
     assert recovery.uncertain_request_ids == ("request-002",)
     assert not recovery.snapshot.within_broker_limits
+    _error(
+        "producer_request_transport_wall_timeout",
+        lambda: read_host_request_journal(
+            path, expected_identity=identity, deadline=1.0, monotonic=lambda: 1.0,
+        ),
+    )
 
 
 def test_journal_recovery_checks_identity_and_detects_tampering(tmp_path):
