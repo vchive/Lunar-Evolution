@@ -189,15 +189,18 @@ def audit_native_campaign(
                 parent_events = store.list_events(parent.id)
                 prep_ok = contract is not None and bool(_event_payloads(parent_events, "bundle_profile_prepared"))
                 report["preparation_success"] = "1/1" if prep_ok else "0/1"
-                try:
-                    inspect_acceptance_observation_binding(
-                        reg, store=store, parent_id=parent.id, materials=materials,
-                        contract=contract, workspace=root / "runtime-binding",
-                    )
-                    runtime_ok = True
-                    report["holdout_counts"] = {"passed": 8, "failed": 0, "unknown": 0, "missing": 0}
-                except (AcceptanceObservationBindingError, TypeError, ValueError, KeyError, OSError):
-                    report["holdout_counts"] = {"passed": 0, "failed": 8, "unknown": 0, "missing": 0}
+                if prep_ok:
+                    observation = root / "runtime-binding" / "observation"
+                    try:
+                        inspect_acceptance_observation_binding(
+                            reg, store=store, parent_id=parent.id, materials=materials,
+                            contract=contract, workspace=root / "runtime-binding",
+                        )
+                        runtime_ok = True
+                        report["holdout_counts"] = {"passed": 8, "failed": 0, "unknown": 0, "missing": 0}
+                    except (AcceptanceObservationBindingError, TypeError, ValueError, KeyError, OSError):
+                        if observation.exists():
+                            report["holdout_counts"] = {"passed": 0, "failed": 8, "unknown": 0, "missing": 0}
                 child_id = None
                 for payload in _event_payloads(parent_events, "evolution_linked"):
                     if isinstance(payload.get("evolution_run_id"), str):

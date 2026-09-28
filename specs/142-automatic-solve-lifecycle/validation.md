@@ -1,5 +1,28 @@
 # Validation
 
+## First registered real-model attempt (2026-09-28)
+
+The fresh `native-142-20260928-01` registration pinned product `6089942` and
+was committed at `49f00a4` on clean remote `main`. Its single real `glm-5.2` attempt
+made 3 provider requests and observed 41,467 tokens. It exited 1 after the
+independent evaluator auditor response failed strict validation. The retained
+preparation diagnostic is `auditor_response / response_invalid`, with
+`recoverable=false`; no candidate generation or delivery occurred. Preparation,
+primary and joint success are each **0/1**. The attempt is consumed and must
+never be resumed or replaced under this registration.
+
+The original report used an empty parent ID because the preparation hook had
+not fired; read-only inspection confirms that a parent run exists and that
+preparation failed. Its published inventory is not independently verifiable:
+SQLite checkpointed `state.db` and removed `state.db-wal`/`state.db-shm` after
+publication. Preserve that failed campaign and its audit directory unchanged.
+The runner now obtains the CLI parent ID for failed preparation and quiesces
+SQLite before inventory publication. The auditor counts holdouts as missing
+when preparation never completed. The focused runner/audit suites pass **15**
+tests, the broader acceptance combination passes **37**, and native offline E2E
+passes **226/226**. These fixes are offline verification only; T040 still requires a fresh
+registration and a separate real attempt/postrun audit.
+
 ## Registered native runner and campaign audit (2026-09-28)
 
 `tools/run_acceptance.py` starts one isolated interpreter that imports only registered source

@@ -1,12 +1,15 @@
 """One-shot native automatic multi-file acceptance launch."""
 from __future__ import annotations
 
+import gc
 import hashlib
 import json
 import os
+import re
+import sqlite3
 import stat
 from collections.abc import Iterator
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from contextlib import closing, contextmanager, redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -113,6 +116,31 @@ def _write_record(campaign: Path, claim: dict[str, Any], name: str, record: dict
     return hashlib.sha256(raw).hexdigest()
 
 
+def _quiesce_native_database(database: Path) -> None:
+    """Finish SQLite's WAL checkpoint before sealing the campaign inventory."""
+    try:
+        if not database.exists():
+            return
+        home = database.parent.lstat()
+        source = database.lstat()
+        if not stat.S_ISDIR(home.st_mode) or not stat.S_ISREG(source.st_mode) or source.st_nlink != 1:
+            _fail("acceptance_database_unstable")
+        # Store connections can survive CLI return through reference cycles. Closing
+        # them after inventory publication would checkpoint WAL into the sealed DB.
+        gc.collect()
+        with closing(sqlite3.connect(database.as_uri() + "?mode=rw", uri=True, timeout=5)) as connection:
+            checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if checkpoint is None or checkpoint[0] != 0:
+                _fail("acceptance_database_unstable")
+            mode = connection.execute("PRAGMA journal_mode=DELETE").fetchone()
+            if mode is None or mode[0] != "delete":
+                _fail("acceptance_database_unstable")
+        if database.with_name(database.name + "-wal").exists() or database.with_name(database.name + "-shm").exists():
+            _fail("acceptance_database_unstable")
+    except (OSError, sqlite3.Error) as exc:
+        raise AcceptanceNativeRunnerError("acceptance_database_unstable") from exc
+
+
 def run_registered_acceptance(
     registration_path: str | os.PathLike[str],
     seal_path: str | os.PathLike[str],
@@ -208,11 +236,17 @@ def run_registered_acceptance(
             and isinstance(native.get("evolution"), dict)
             and native["evolution"].get("status") == "succeeded"
         )
+        database = campaign / "native-home" / "state.db"
+        _quiesce_native_database(database)
+        native_parent_id = native.get("run_id") if isinstance(native, dict) else None
+        if not isinstance(native_parent_id, str) or re.fullmatch(r"[0-9a-f]{32}", native_parent_id) is None:
+            native_parent_id = ""
+        parent_run_id = binding.get("parent_run_id") or native_parent_id
         audit_report = audit_native_campaign(
             registration,
             campaign_root=campaign,
-            database=campaign / "native-home" / "state.db",
-            parent_run_id=binding.get("parent_run_id", ""),
+            database=database,
+            parent_run_id=parent_run_id,
         )
         audit_verified = (
             audit_report.get("status") == "verified"
@@ -244,7 +278,7 @@ def run_registered_acceptance(
             "audit_joint_success": audit_report.get("joint_success", "0/1"),
             "audit_reason": audit_report.get("reason"),
             "audit_report_sha256": hashlib.sha256(_canonical(audit_report)).hexdigest(),
-            **snapshot, **binding,
+            **snapshot, **({"parent_run_id": parent_run_id} if parent_run_id else {}), **binding,
         }
         _write_record(campaign, claim, "native-result.json", result)
         audit_output = campaign.with_name(f"{campaign.name}-audit")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from lunar_evolution.acceptance_campaign_audit import (
 )
 from lunar_evolution.acceptance_native_runner import (
     AcceptanceNativeRunnerError,
+    _quiesce_native_database,
     run_registered_acceptance,
 )
 from lunar_evolution.acceptance_request_budget import (
@@ -24,6 +26,7 @@ from lunar_evolution.acceptance_request_budget import (
     own_request_budget,
 )
 from lunar_evolution.runtime import ModelTurn, OpenAICompatibleRuntime
+from lunar_evolution.store import Store
 
 
 def _registered_native(tmp_path: Path):
@@ -176,6 +179,56 @@ def test_native_cli_success_cannot_bypass_failed_independent_audit(
     result = _run(fixture)
     assert result["status"] == "failed"
     assert result["audit_joint_success"] == "0/1"
+
+
+def test_failed_preparation_audits_cli_parent_without_prepared_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _registered_native(tmp_path)
+    monkeypatch.setenv("LUNAR_EVOLUTION_MODEL_ENDPOINT", "https://example.invalid/v1/chat/completions")
+    monkeypatch.setenv("LUNAR_EVOLUTION_API_KEY", "fixture-key")
+    observed = []
+
+    def audit(_registration, *, campaign_root, database, parent_run_id):
+        observed.append(parent_run_id)
+        return {
+            "schema_version": "1", "scope": "acceptance_campaign_audit",
+            "status": "failed", "preparation_success": "0/1",
+            "primary_success": "0/1", "joint_success": "0/1",
+            "reason": "audit_preparation_failed",
+        }
+
+    def fake_main(_args, *, _acceptance_preparation_hook):
+        print(json.dumps({"run_id": "a" * 32, "status": "failed"}))
+        return 1
+
+    monkeypatch.setattr("lunar_evolution.acceptance_native_runner.audit_native_campaign", audit)
+    monkeypatch.setattr(cli, "main", fake_main)
+    result = _run(fixture)
+    assert observed == ["a" * 32]
+    assert result["status"] == "failed"
+    assert result["parent_run_id"] == observed[0]
+
+
+def test_native_database_must_checkpoint_before_inventory(tmp_path: Path) -> None:
+    database = tmp_path / "native-home" / "state.db"
+    store = Store(database)
+    store.initialize()
+    connection = sqlite3.connect(database)
+    try:
+        connection.execute("CREATE TABLE acceptance_checkpoint_fixture (value INTEGER)")
+        connection.commit()
+        with pytest.raises(AcceptanceNativeRunnerError, match="^acceptance_database_unstable$"):
+            _quiesce_native_database(database)
+    finally:
+        connection.close()
+    _quiesce_native_database(database)
+    assert not database.with_name("state.db-wal").exists()
+    assert not database.with_name("state.db-shm").exists()
+    before = hashlib.sha256(database.read_bytes()).hexdigest()
+    with sqlite3.connect(database) as reader:
+        assert reader.execute("SELECT count(*) FROM acceptance_checkpoint_fixture").fetchone() == (0,)
+    assert hashlib.sha256(database.read_bytes()).hexdigest() == before
 
 
 def test_request_and_token_limits_stop_following_calls(monkeypatch: pytest.MonkeyPatch) -> None:

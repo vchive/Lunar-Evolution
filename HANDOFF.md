@@ -1,5 +1,22 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-28 首次真实模型验收及修复
+
+用户已在私有 `.env` 配置模型 endpoint/key；不要打印或提交。已从 clean remote `main`
+进行一次新登记的真实 `glm-5.2` 验收：产品 pin `6089942`、登记提交 `49f00a4`，
+campaign 为 `.lunar/acceptance-campaigns-20260928/native-142-20260928-01`。
+一次性尝试已消耗，模型请求 3 次，观测 token 41,467，退出码 1。准备阶段的固定诊断为
+`auditor_response / response_invalid`、不可恢复；preparation、primary、joint 均为 **0/1**，
+没有进入候选生成和交付。不能在此登记下重试，也不能改写留存证据。
+
+原生报告因准备 hook 未调用而缺少 parent ID；只读数据库复核确认父任务存在，但准备失败。
+已发布的独立审计 inventory 在 SQLite 随后 checkpoint 后与现场不一致，原审计目录也保留不动。
+当前代码补充了失败时的父任务 ID 回退、inventory 发布前的 SQLite 静止检查，并把未执行的
+八项 holdout 计为 missing。runner/audit 专项 **15 passed**、验收组合 **37 passed**、原生
+离线 E2E **226/226**；这是离线回归，不是成功的真实
+验收。T040 仍需修复后的代码合入 clean `main`、全新登记与 campaign，再执行一次真实模型
+尝试及独立审计。P1 外部 producer 的共享 deadline、完整请求出口隔离、正式登记/恢复仍未完成。
+
 ## 2026-09-28 provider-free acceptance staging checkpoint
 
 最新提交 `3273a2e` 已推送。`stage_acceptance_attempt` 将新 campaign admission、
