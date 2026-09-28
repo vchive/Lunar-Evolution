@@ -49,7 +49,7 @@ duplicate promotions, or lineage drift.
 ## Unknown and BRS behavior
 
 An unknown result or interrupted gateway blocks all subsequent controller launches. Explicit
-reconciliation accepts only completed, failed, or cancelled evidence whose episode ID, request
+reconciliation accepts completed, failed, timed-out, abandoned or cancelled evidence whose episode ID, request
 digest and pinned actor match. Completed evidence must contain all required receipts and pass
 the configured verifier before promotion. A stale episode CAS or conflicting terminal result is
 rejected. The generic ledger still rejects unknown-to-running; only the controller's evidence

@@ -43,10 +43,16 @@ The implementation is ready for the next phase only when these provider-free che
 The provider-free regression command is:
 
 ```bash
-PYTHONPATH=src pytest -q tests/test_rsi_cli.py tests/test_rsi_controller.py \
-  tests/test_rsi_store.py tests/test_rsi_learning.py tests/test_rsi_gateway.py \
-  tests/test_rsi_adapter_controller_integration.py
+PYTHONPATH=src:. python -m pytest tests/test_rsi_*.py \
+  --basetemp /tmp/lunar-rsi-validation --junitxml=/tmp/lunar-rsi-validation.xml
 ```
 
 The CLI diagnostics only use local fixture solver IDs and persist to `rsi.sqlite3`; they do not
 constitute evidence for real OpenEvolve, Shinka, OSWorld, or remote evaluator performance.
+
+Recovery now covers both a launched call with no retained outcome and an actual retained `unknown`
+outcome. Explicit evidence can reconcile either to completion, failure, timeout, abandonment or
+cancellation. Timeout/abandonment cannot create memory or silently reissue the original call.
+Actor durable pins include full runtime/receipt profiles; native verifier replay reopens retained
+evidence and checks inode/bytes without rerunning evaluation. The baseline command above exercises
+local native subprocesses as well as fixtures; no external campaign is launched.

@@ -18,25 +18,35 @@ repository and does not reset existing architecture or historical acceptance evi
 
 ## P0 — Recoverable and reproducible baseline
 
-- [ ] Capture the existing RSI implementation together with the already committed Shinka changes
+- [x] Capture the existing RSI implementation together with the already committed Shinka changes
   on a clean, reviewable integration branch, preserving the shared working tree.
-- [ ] Persist full controller configuration, initial memory, request and result identities before
+- [x] Persist full controller configuration, initial memory, request and result identities before
   exposing recoverable DRS/BRS execution. Reject contract/evaluator/environment/solver/actor drift.
-- [ ] Resume terminal episodes idempotently without another solver invocation. A running/unknown
+- [x] Resume terminal episodes idempotently without another solver invocation. A running/unknown
   invocation without a retained terminal result requires reconciliation rather than replay.
-- [ ] Persist BRS wave membership and frozen parent; quarantine uncertain waves and make ordered
+- [x] Persist BRS wave membership and frozen parent; quarantine uncertain waves and make ordered
   memory merging recoverable without duplicate entries.
-- [ ] Connect explicit result-backed reconciliation and controller continuation through API/CLI.
-- [ ] Validate interruption windows, process restarts, competing controllers, receipt tampering,
+- [x] Connect explicit result-backed reconciliation and controller continuation through API/CLI.
+- [x] Validate interruption windows, process restarts, competing controllers, receipt tampering,
   changed pins and terminal replay before claiming P0 completion.
 
 ## P1 — Real local evidence and producer delivery
 
-- [ ] Add a local native SolverGateway and independent verifier that reopen retained candidate
+- [x] Add a local native SolverGateway and independent verifier that reopen retained candidate
   source, execution and evaluator evidence; locally rerun independent evaluation in an isolated
   snapshot before memory admission. Preserve the distinction from fixture LocalExactVerifier.
-- [ ] Complete durable total-budget restoration and unknown/interruption treatment for producer
-  transactions, with active-process cancellation and explicit cleanup evidence.
+- [x] Restore the same producer deadline across same-boot process restarts. Bind it to the original
+  prepared intent, clock identity and boot; reject missing/replaced evidence and budget refreshes.
+- [x] Bind durable AgentLoop Actor profiles to runtime/receipt settings, implementation and paths;
+  opaque runtime configuration cannot silently resume under the same display name.
+- [x] Poll the original control during native candidate/evaluator execution, terminate the owned
+  process group on cancellation/expiry, and persist interruption/cleanup evidence. Unknown cleanup
+  never becomes successful completion or publication.
+- [ ] Complete explicit unknown producer reconciliation across process restart. Retaining a
+  deadline and stop evidence alone does not resolve an uncertain process outcome.
+- [x] Retain trusted output preparation as immutable evidence binding process/capture/request
+  journal, explicit source groups, native drafts and admission plan. This receipt still grants no
+  publication authority while complete egress authority is missing.
 - [ ] Join native trusted output/request receipts to Feature 153 admission, local reevaluation,
   atomic archive publication and parent delivery. Complete broker egress/credential/recovery
   acceptance, not just brokered-request counts.
@@ -47,8 +57,10 @@ repository and does not reset existing architecture or historical acceptance evi
 
 ## P2 — Learning quality and broader orchestration
 
-- [ ] Implement deterministic curriculum ranking by verified coverage, diversity and declared
+- [x] Implement deterministic curriculum ranking by verified coverage, diversity and declared
   failure boundaries, with stable identities and reproducible recovery.
+- [x] Reconstruct curriculum feedback from retained practices in the durable controller; reconcile
+  uncertain observations before selecting another practice. Initial catalog/history are pinned.
 - [ ] Validate frozen-memory transfer across independent local tasks; measure actual benefit before
   claiming improved general capability. LLM curriculum remains optional and separately bounded.
 - [ ] Support producer imports into evolved/seeded populations and repeated admissions without
@@ -60,3 +72,15 @@ repository and does not reset existing architecture or historical acceptance evi
 All development checks use local fixtures or local subprocesses. This plan does not launch
 WebAgent or remote evaluators. Real campaign evidence and implementation completeness remain
 separate acceptance claims.
+
+## Integration and evidence
+
+Development is isolated on `codex/rsi-recovery-integration` in
+`/tmp/lunar-rsi-integration-20260929`. The original shared workspace is preserved. Commits are
+pushed incrementally; their presence on this branch does not mean they have merged to `main`.
+
+P0 is implemented and focused recovery/store/CLI/curriculum validation passes (80 tests on
+2026-09-29, `/tmp/lunar-unknown-reconcile-10.xml`). This includes interrupted launches as well as
+persisted `unknown` results reconciled to timeout/abandonment. P1 and P2 remain open wherever a
+checkbox is unchecked. A complete release test result and actual campaign efficacy must be
+reported separately from these local checks.

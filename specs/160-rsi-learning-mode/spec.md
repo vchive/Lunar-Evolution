@@ -103,8 +103,9 @@ Transfer test 必须关闭 Curriculum 和 memory update，只读取已批准 sna
 Lunar 的 RSI mode 对齐 RSIAgent 的三 Agent 闭环：Curriculum 只选择练习，Actor 负责在
 环境中执行，Independent Verifier 只读取声明的 episode evidence 并决定是否提交因果经验，
 最后由 frozen-memory transfer 测量迁移效果。当前控制面已经具备 Curriculum、episode
-lineage、verifier-gated snapshot、BRS/DRS 调度和 transfer guard；真实 OSWorld/ALE 风格
-Actor 环境、receipt 重开/隔离 verifier 和自主多样性 curriculum 仍属于后续接线工作。
+lineage、verifier-gated snapshot、BRS/DRS 持久恢复和 transfer guard。本地 native
+gateway、重开 receipt 后隔离重评的 verifier，以及历史覆盖/多样性/失败边界课程已实现。
+真实模型/OSWorld/ALE 风格 Actor、完整开源 campaign 和通用迁移收益仍需后续独立验收。
 
 ## Lunar integration points
 
