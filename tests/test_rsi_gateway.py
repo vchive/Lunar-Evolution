@@ -158,3 +158,37 @@ def test_memory_commit_rejects_episode_from_a_different_frozen_parent():
             memory=item,
         )
     assert error.value.code == "rsi_memory_episode_snapshot_mismatch"
+
+
+def test_solver_request_result_durable_round_trip():
+    from lunar_evolution.rsi_learning import TraceEvent
+
+    req = replace(request(), practice_charter=(("steps", ["read", "write"]),))
+    assert SolverRequest.from_dict(req.to_dict()) == req
+    result = replace(DeterministicMockSolver().run(req), trace_events=(TraceEvent(0, "action", "execute", HEX),))
+    assert SolverResult.from_dict(result.to_dict()) == result
+
+
+@pytest.mark.parametrize("field,value", [("schema_version", "2"), ("kind", "other"), ("budget", [])])
+def test_solver_request_reopen_rejects_schema_drift(field, value):
+    data = request().to_dict()
+    data[field] = value
+    with pytest.raises(RSILearningError):
+        SolverRequest.from_dict(data)
+
+
+@pytest.mark.parametrize("field,value", [("schema_version", "2"), ("kind", "other"), ("trace_events", [{}]), ("solver_score", float("nan")), ("solver_provenance", [])])
+def test_solver_result_reopen_rejects_invalid_evidence(field, value):
+    data = DeterministicMockSolver().run(request()).to_dict()
+    data[field] = value
+    with pytest.raises(RSILearningError):
+        SolverResult.from_dict(data)
+
+
+@pytest.mark.parametrize("provenance", [(("backend", "native_population"),), (("actor", "agent-loop"),), (("backend", "shinka"), ("fixture", False))])
+def test_fixture_verifier_rejects_real_backend_receipts(provenance):
+    req = request()
+    result = replace(DeterministicMockSolver().run(req), solver_provenance=provenance)
+    decision = LocalExactVerifier().verify(episode(), req, result)
+    assert decision.outcome == "unresolved"
+    assert decision.checks[0].name == "independent_verifier_required"

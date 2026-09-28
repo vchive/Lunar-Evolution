@@ -8,6 +8,7 @@ without a model, a remote evaluator, or an OpenEvolve installation.
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -127,6 +128,22 @@ class SolverRequest:
             "practice_charter": dict(self.practice_charter),
         }
 
+    @classmethod
+    def from_dict(cls, value: object) -> SolverRequest:
+        fields = {"schema_version", "kind", "episode_id", "contract_sha256", "evaluator_sha256",
+                  "environment_sha256", "memory_snapshot_sha256", "solver_id", "solver_settings",
+                  "budget", "practice_charter"}
+        if (not isinstance(value, dict) or set(value) != fields
+                or value["schema_version"] != "1" or value["kind"] != "rsi_solver_request"):
+            raise RSILearningError("rsi_solver_request_schema_invalid")
+        for name in ("solver_settings", "budget", "practice_charter"):
+            if not isinstance(value[name], dict):
+                raise RSILearningError(f"rsi_{name}_invalid")
+        result = cls.build(**{key: item for key, item in value.items()
+                              if key not in {"schema_version", "kind"}})
+        result.digest()
+        return result
+
     def digest(self) -> str:
         return _record_digest(self.to_dict())
 
@@ -175,6 +192,11 @@ class SolverResult:
             not isinstance(event, TraceEvent) for event in self.trace_events
         ):
             raise RSILearningError("rsi_trace_events_invalid")
+        if self.solver_score is not None and (
+            isinstance(self.solver_score, bool) or not isinstance(self.solver_score, (int, float))
+            or not math.isfinite(self.solver_score)
+        ):
+            raise RSILearningError("rsi_solver_score_invalid")
         if type(self.terminal_reason) is not str or len(self.terminal_reason.encode()) > 8192:
             raise RSILearningError("rsi_terminal_reason_invalid")
         if type(self.solver_provenance) is not tuple or len(self.solver_provenance) > MAX_SOLVER_SETTINGS:
@@ -200,6 +222,29 @@ class SolverResult:
             "actor_fingerprint": self.actor_fingerprint,
         }
 
+    @classmethod
+    def from_dict(cls, value: object) -> SolverResult:
+        fields = {"schema_version", "kind", "episode_id", "request_sha256", "status",
+                  "candidate_receipt_sha256", "execution_receipt_sha256",
+                  "official_evaluation_receipt_sha256", "trace_digest", "solver_score",
+                  "terminal_reason", "solver_provenance", "candidate_source_sha256",
+                  "dependency_sha256", "trace_events", "actor_fingerprint"}
+        if (not isinstance(value, dict) or set(value) != fields
+                or value["schema_version"] != "1" or value["kind"] != "rsi_solver_result"):
+            raise RSILearningError("rsi_solver_result_schema_invalid")
+        events = value["trace_events"]
+        if not isinstance(events, list) or len(events) > 64:
+            raise RSILearningError("rsi_trace_events_invalid")
+        event_fields = {"sequence", "kind", "name", "payload_sha256", "observation_sha256"}
+        if any(not isinstance(event, dict) or set(event) != event_fields for event in events):
+            raise RSILearningError("rsi_trace_events_invalid")
+        payload = {key: item for key, item in value.items() if key not in {"schema_version", "kind"}}
+        payload["trace_events"] = tuple(TraceEvent(**event) for event in events)
+        payload["solver_provenance"] = _bounded_map(value["solver_provenance"], "solver_provenance")
+        result = cls(**payload)
+        _record_digest(result.to_dict())
+        return result
+
 
 class SolverGateway(Protocol):
     def run(self, request: SolverRequest) -> SolverResult:
@@ -213,6 +258,9 @@ class DeterministicMockSolver:
         if terminal_status not in {"completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"}:
             raise ValueError("invalid terminal status")
         self.terminal_status = terminal_status
+
+    def fingerprint(self) -> str:
+        return _record_digest({"protocol": "rsi-deterministic-mock-v1", "terminal_status": self.terminal_status})
 
     def run(self, request: SolverRequest) -> SolverResult:
         request_digest = request.digest()
@@ -245,7 +293,18 @@ class LocalExactVerifier:
             "trace_digest": result.trace_digest,
         }
         evidence_sha256 = _record_digest(evidence)
-        if result.episode_id != episode.episode_id or result.request_sha256 != request.digest():
+        provenance = dict(result.solver_provenance)
+        nonfixture = (
+            "actor" in provenance
+            or (provenance.get("backend") in {"native_population", "openevolve", "shinka"}
+                and provenance.get("fixture") is not True)
+            or (request.solver_id != "mock" and provenance.get("fixture") is not True)
+        )
+        if nonfixture:
+            outcome = "unresolved"
+            diagnosis = "a non-fixture solver requires an independent evidence verifier"
+            checks.append(VerifierCheck("independent_verifier_required", "unresolved", evidence_sha256))
+        elif result.episode_id != episode.episode_id or result.request_sha256 != request.digest():
             outcome = "unresolved"
             diagnosis = "request identity mismatch"
             checks.append(VerifierCheck("request_identity", "fail", _record_digest({"check": "identity", "episode": episode.episode_id})))
