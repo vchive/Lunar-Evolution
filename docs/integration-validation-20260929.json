@@ -1,0 +1,62 @@
+{
+  "date": "2026-09-29",
+  "branch": "codex/rsi-recovery-integration",
+  "platform": "Darwin arm64",
+  "python": "3.13.12",
+  "development_scope": "local fixtures, subprocesses and loopback only; no new remote model/evaluator/campaign",
+  "release_runner_exit_code": 0,
+  "release_started_commit": "c20a1bac0366ff0ea9011311d07c3a2a5a71e106",
+  "final_product_change": "58d9a91",
+  "release_working_tree": true,
+  "final_inventory": 8359,
+  "additional_tests_after_release_collection": 14,
+  "all_additional_tests_covered_by_final_producer": true,
+  "reports": {
+    "current": {
+      "junit": "/tmp/lunar-release-all-20260929/current.xml",
+      "sha256": "92bd2fbec19b0161c1f16d4374c05ea483121c59a71839b3aa30764a463ccdb7",
+      "tests": 8345,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 7
+    },
+    "archived": {
+      "junit": "/tmp/lunar-release-all-20260929/archived.xml",
+      "sha256": "d67780011cbc362abc1e7a2567a32a604d4bcbd334870600e57d511d19e14548",
+      "tests": 2294,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frozen123": {
+      "junit": "/tmp/lunar-release-all-20260929/frozen123.xml",
+      "sha256": "ef912fb4b4cca6165a9d0c5b4a3234db8e20b37976e2987dcbcbbed0b7debaf0",
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "native_e2e": {
+      "junit": "/tmp/lunar-release-native-20260929/native-e2e.xml",
+      "sha256": "1aaa53fc2fd859261c83b88aeaae12f0a26e3371e51e610018361275009e28df",
+      "tests": 226,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "final_producer": {
+      "junit": "/tmp/lunar-final-repeat-17.xml",
+      "sha256": "d144aab7ef40b39e825aed40ea9ca3aeae9da551ac96eaeb55b5f12a9af12506",
+      "tests": 70,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "limitations": [
+    "Release current phase began before final producer staging/transaction edits; affected modules and every added test passed the final 70-test supplement.",
+    "Seven current tests skipped: six Linux-only executable-binding checks and one filesystem case-alias condition.",
+    "Historical/frozen phases run their pinned historical products, not the current code.",
+    "No production-model learning quality, real external campaign, Linux CI or merge-to-main claim."
+  ]
+}

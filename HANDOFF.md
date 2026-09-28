@@ -26,7 +26,10 @@ T160-13 已完成，T160-12a/b 与 T160-14 本地切片已完成；T160-12/15 �
 Feature 142 `worker-service-integration-design.md` 只有设计：WSI-01–07 尚未实现。
 
 已完成验证：RSI 全集 238 项、native E2E 226 项、重复导入组合 68 项通过（集合重叠，
-不相加）；Ruff/compileall/diff check 通过。全量 release 结果见本条随后补充的验收记录。
+不相加）；Ruff/compileall/diff check 通过。三阶段 release exit 0：当前 8338 passed /
+7 platform skipped，历史 2294 passed，冻结 24 passed。最终 producer 70 项通过，覆盖
+release collection 后增加的全部 14 项；最终收集 8359 项。版本/报告摘要/范围见
+`docs/integration-validation-20260929.json`，不将历史测试计为当前产品测试。
 测试只使用本地 fixture/subprocess/loopback，无新模型请求、WebAgent、远程 evaluator 或
 真实 OpenEvolve/Shinka campaign。Feature 142 已有真实 native 成功仍是历史独立证据，
 不要用本轮 fixture 代替，也不要误读旧 Feature 139 失败为“从无成功”。

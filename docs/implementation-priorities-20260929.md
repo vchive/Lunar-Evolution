@@ -52,8 +52,9 @@ repository and does not reset existing architecture or historical acceptance evi
   acceptance, not just brokered-request counts.
 - [ ] Connect pinned OpenEvolve and Shinka launchers to scheduler/user entry points; run their
   separate real campaign acceptance only after the production boundary is complete.
-- [ ] Run current/archived/frozen release regression and supported-platform checks, merge the
-  reviewed integration and align public documentation with exact implemented scope.
+- [x] Run local current/archived/frozen release regression and a final affected-module supplement;
+  record exact versions, counts and platform skips in `integration-validation-20260929.json`.
+- [ ] Complete Linux/supported-platform CI and merge the reviewed integration to the default branch.
 
 ## P2 — Learning quality and broader orchestration
 
@@ -92,3 +93,9 @@ P0 is implemented and focused recovery/store/CLI/curriculum validation passes (8
 persisted `unknown` results reconciled to timeout/abandonment. P1 and P2 remain open wherever a
 checkbox is unchecked. A complete release test result and actual campaign efficacy must be
 reported separately from these local checks.
+
+Local release runner completed with exit 0: current 8,338 passed / 7 platform skips, archived
+2,294 passed, frozen registration 24 passed. Native offline E2E separately passed 226 cases.
+The current phase collected before the last producer tests were added; a final 70-case affected
+suite passed and covers all 14 added tests. Final inventory is 8,359; these overlapping counts
+are not added together. The versioned JSON above retains report hashes and scope limitations.
