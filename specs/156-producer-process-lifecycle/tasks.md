@@ -24,3 +24,10 @@ verified `target_path`; a differing `argv[0]` cannot select unverified executabl
 not a Feature 156 runner entry point. T156-05/06/09/11/12/14 remain open until formal registration,
 the shared deadline, broker/credential/journal boundaries, cleanup and recovery are connected to
 that native path and accepted together.
+
+The cooperative `run_producer_lifecycle` supporting entry point now joins one attested direct
+process receipt to a stable envelope reread, verified multi-file bundles, native drafts, and an
+admission plan. It retains `request_coverage=cooperative_declaration_only`,
+`broker_coverage=not_integrated`, and `publication_status=not_started`. It does not authorize
+arbitrary direct executables as trusted bootstrap, provide complete outbound coverage, or stage
+or publish candidates. T156-05/06/09/12/14 remain open for the production path.
