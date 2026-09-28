@@ -6,7 +6,7 @@ import math
 import os
 import re
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import _benchmark_files as files
@@ -49,6 +49,7 @@ _BINDING_FIELDS = {
     "admission_sha256", "completion_sha256", "evaluation_path", "evaluation_sha256",
 }
 _DIGEST_FIELDS = {"bundle_sha256", "plan_sha256", "admission_sha256", "completion_sha256", "evaluation_sha256"}
+_HEX24 = re.compile(r"^[0-9a-f]{24}$")
 
 
 def _fail(code="invalid"):
@@ -117,6 +118,57 @@ def _runner_digest(plan, inputs):
         "max_output_bytes": plan.max_output_bytes, "inputs": [item.to_dict() for item in inputs],
         "max_processes": 1,
     }))
+
+
+def derive_native_draft_run_id(journal_id, candidate_id, bundle_sha256):
+    """Derive the fixed native attempt suffix used by a draft-only journal evaluation."""
+    if not isinstance(journal_id, str) or not journal_id or "/" in journal_id or "\\" in journal_id:
+        _fail("run_id_invalid")
+    if not isinstance(candidate_id, str) or not candidate_id or "/" in candidate_id or "\\" in candidate_id:
+        _fail("candidate_id_invalid")
+    if not isinstance(bundle_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", bundle_sha256) is None:
+        _fail("bundle_digest_invalid")
+    return hashlib.sha256(canonical_json({
+        "protocol": "lunar-native-draft-run-v1",
+        "journal_id": journal_id,
+        "candidate_id": candidate_id,
+        "bundle_sha256": bundle_sha256,
+    })).hexdigest()[:24]
+
+
+@dataclass(frozen=True)
+class NativeDraftEvaluationResult:
+    """Retained native execution/evaluation evidence before publication."""
+
+    candidate_id: str
+    journal_id: str
+    run_id: str
+    bundle: CandidateSourceBundle
+    source_root: Path
+    run_root: Path
+    plan: object
+    admission: object
+    execution: object
+    evaluation: object
+
+    @property
+    def report(self):
+        return self.evaluation.report
+
+    def to_dict(self):
+        return {
+            "status": "evaluated",
+            "candidate_id": self.candidate_id,
+            "journal_id": self.journal_id,
+            "run_id": self.run_id,
+            "bundle_sha256": self.bundle.digest(),
+            "source_root": str(self.source_root),
+            "run_root": str(self.run_root),
+            "plan_sha256": self.plan.digest(),
+            "admission_sha256": self.admission.digest(),
+            "execution": self.execution.to_dict(),
+            "evaluation": self.evaluation.to_dict(),
+        }
 
 
 def _bundle_source(workspace, evidence, code_path):
@@ -381,7 +433,7 @@ class MultiFileCandidatePipeline:
             _fail("profile_invalid")
 
     @staticmethod
-    def _allocate_run(archive):
+    def _allocate_run(archive, run_id=None):
         archive._ensure_layout()
         chain = DirectoryChain(archive.root, "destination_changed")
         try:
@@ -393,20 +445,149 @@ class MultiFileCandidatePipeline:
             parent_path = archive.root / "bundle-attempts"
             parent = DirectoryChain(parent_path, "destination_changed")
             try:
-                tree = PrivateTree(parent, prefix=".bundle-run-")
+                if run_id is None:
+                    tree = PrivateTree(parent, prefix=".bundle-run-")
+                    try:
+                        name = tree.name
+                        for child in ("workspaces", "inputs", "evaluations"):
+                            os.mkdir(child, 0o700, dir_fd=tree.fd)
+                        os.fsync(tree.fd)
+                        os.fsync(parent.fd)
+                        tree.check_root()
+                        return parent_path / name
+                    finally:
+                        tree.close()
+                if not isinstance(run_id, str) or _HEX24.fullmatch(run_id) is None:
+                    _fail("run_id_invalid")
+                name = ".bundle-run-" + run_id
                 try:
-                    for name in ("workspaces", "inputs", "evaluations"):
-                        os.mkdir(name, 0o700, dir_fd=tree.fd)
-                    os.fsync(tree.fd)
-                    os.fsync(parent.fd)
-                    tree.check_root()
-                    return parent_path / tree.name
-                finally:
-                    tree.close()
+                    os.mkdir(name, 0o700, dir_fd=parent.fd)
+                except FileExistsError:
+                    _fail("run_exists")
+                os.fsync(parent.fd)
+                path = parent_path / name
+                for child in ("workspaces", "inputs", "evaluations"):
+                    (path / child).mkdir(mode=0o700)
+                for child in ("workspaces", "inputs", "evaluations"):
+                    os.chmod(path / child, 0o700)
+                return path
             finally:
                 parent.close()
         finally:
             chain.close()
+
+    def evaluate_draft_non_publishing(
+        self, strategy, draft, *, journal_id, candidate_id, iteration, generation,
+        parent=None, parent_id=None, island_id, run_id=None,
+    ):
+        """Execute and independently evaluate one journal-planned draft without publishing it.
+
+        The source tree is retained under the private producer batch area and native execution
+        evidence stays at its original ``bundle-attempts`` path.  This method deliberately never
+        allocates an archive candidate ID and never calls ``CandidateArchive.persist``.
+        """
+        from .evolution import CandidateDraft, _InitialCandidateFailure
+
+        if not isinstance(draft, CandidateDraft):
+            _fail("draft_invalid")
+        archive = strategy.archive
+        self.validate_context(strategy.context, strategy.integrity_authority)
+        self.preflight()
+        if parent is not None:
+            derived_parent = getattr(parent, "candidate_id", None)
+            if parent_id is not None and parent_id != derived_parent:
+                _fail("lineage_invalid")
+            parent_id = derived_parent
+        if not isinstance(journal_id, str) or not journal_id or "/" in journal_id or "\\" in journal_id:
+            _fail("journal_id_invalid")
+        if not isinstance(candidate_id, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", candidate_id) is None:
+            _fail("candidate_id_invalid")
+        if isinstance(iteration, bool) or not isinstance(iteration, int) or iteration < 0:
+            _fail("iteration_invalid")
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+            _fail("generation_invalid")
+        if isinstance(island_id, bool) or not isinstance(island_id, int) or island_id < 0:
+            _fail("island_invalid")
+        draft = CandidateDraft(draft.source, draft.filename, dict(draft.metadata),
+                               dict(draft.source_files) if draft.source_files is not None else None)
+        bundle = validate_bundle_draft(draft, strategy.context.contract.digest())
+        expected_run_id = derive_native_draft_run_id(journal_id, candidate_id, bundle.digest())
+        if run_id is None:
+            run_id = expected_run_id
+        elif run_id != expected_run_id:
+            _fail("run_id_mismatch")
+
+        archive._ensure_layout()
+        batch_root = archive.root / "producer-batches" / journal_id / "native-drafts" / candidate_id
+        if batch_root.exists() or batch_root.is_symlink():
+            _fail("draft_exists")
+        batch_root.mkdir(mode=0o700, parents=True)
+        source_root = batch_root / "source"
+        source_root.mkdir(mode=0o700)
+        sources = draft.source_files or {draft.filename: draft.source}
+        for item in bundle.files:
+            archive._atomic_write_bytes(
+                source_root / item.path, sources[item.path].encode("utf-8"),
+                error="bundle_candidate_source_changed",
+            )
+        bundle_path = source_root / _BUNDLE_NAME
+        archive._atomic_write_bytes(
+            bundle_path, canonical_json(bundle.to_dict()), error="bundle_candidate_source_changed",
+        )
+        run_root = self._allocate_run(archive, run_id)
+        try:
+            copied = materialize_candidate_source_bundle(
+                bundle, source_root=source_root, workspace_root=run_root / "workspaces",
+                contract_sha256=bundle.contract_sha256, expected_bundle_sha256=bundle.digest(),
+            )
+            plan = build_candidate_workspace_plan(
+                bundle, command=self.command, environment=self.environment,
+                contract_sha256=bundle.contract_sha256, timeout_seconds=self.timeout_seconds,
+                max_output_bytes=self.max_output_bytes,
+            )
+            admission = build_candidate_execution_admission(
+                plan, inputs=self.inputs, dependency_sha256=self.dependency_sha256,
+                environment_sha256=self.environment_sha256, evaluator=self.evaluator.pin(),
+                output_contract_sha256=candidate_output_contract_sha256(strategy.context.contract.outputs),
+                budget=self.budget,
+            )
+            staged = stage_candidate_execution_inputs(
+                admission, plan=plan, input_root=self.input_root, staging_root=run_root / "inputs",
+            )
+            for name, value in (("plan", plan), ("admission", admission)):
+                archive._atomic_write_bytes(run_root / (name + ".json"), canonical_json(value.to_dict()), error="bundle_candidate_record_failed")
+            if strategy._cancelled():
+                raise _InitialCandidateFailure("candidate_failed")
+            record = run_candidate_execution_recorded(
+                admission, plan=plan, workspace_path=copied.workspace_path, input_path=staged.input_path,
+                attempt_path=run_root / "attempt", expected_admission_sha256=admission.digest(),
+                expected_plan_sha256=plan.digest(), expected_bundle_sha256=bundle.digest(),
+                expected_contract_sha256=strategy.context.contract.digest(),
+                timeout_seconds=self._effective_timeout("candidate_execution"),
+                remaining_timeout=self._remaining_timeout, process_observer=self._process_observer,
+                process_released=self._process_released,
+            )
+            self._effective_timeout("candidate_execution")
+            if record.to_dict().get("runner_result", {}).get("status") != "succeeded":
+                raise _InitialCandidateFailure("candidate_failed")
+            self._effective_timeout("evaluation")
+            result = evaluate_candidate_execution(
+                admission, plan=plan, contract=strategy.context.contract, evaluator=self.evaluator,
+                harness_path=self.harness_path, workspace_path=copied.workspace_path,
+                input_path=staged.input_path, attempt_path=run_root / "attempt",
+                evaluation_root=run_root / "evaluations", expected_admission_sha256=admission.digest(),
+                expected_completion_sha256=record.completion_sha256, remaining_timeout=self._remaining_timeout,
+                process_observer=self._process_observer, process_released=self._process_released,
+            )
+            self._effective_timeout("evaluation")
+            return NativeDraftEvaluationResult(
+                candidate_id=candidate_id, journal_id=journal_id, run_id=run_id, bundle=bundle,
+                source_root=source_root, run_root=run_root, plan=plan, admission=admission,
+                execution=record, evaluation=result,
+            )
+        except Exception:
+            # Retain all allocated native evidence for fail-closed inspection and recovery.
+            raise
 
     def persist(self, strategy, draft, *, iteration, generation, parent, island_id):
         from .evolution import (
@@ -538,4 +719,7 @@ def load_bundle_pipeline(profile_path):
         _fail("profile_invalid")
 
 
-__all__ = ["MultiFileCandidatePipeline", "load_bundle_pipeline", "read_bundle_delivery_materials", "read_candidate_source_files"]
+__all__ = [
+    "MultiFileCandidatePipeline", "NativeDraftEvaluationResult", "derive_native_draft_run_id",
+    "load_bundle_pipeline", "read_bundle_delivery_materials", "read_candidate_source_files",
+]
