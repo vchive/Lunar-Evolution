@@ -75,10 +75,15 @@ proof of a production-wide request deadline.
    one that crashes the controller after admission. Until then, retain the existing
    declaration-only and process-wall-time semantics.
 
-The current implementation completes bounded host accounting, a fixture-level durable
-journal, and a real HTTP worker for requests explicitly routed through the broker. It does
-not prove complete provider egress coverage, own a protected production journal directory,
-or integrate with Feature 156, so T157-05 and T157-06 remain open.
+The native trusted attempt can now pass anonymous request/response descriptors to its
+network-isolated target. A controller thread initializes the private host journal before
+the release gate opens and routes bounded target frames through the existing broker and
+HTTP worker. The target environment contains descriptor numbers, not the endpoint,
+credential, or journal path. A fixed endpoint is chosen by the controller for the whole
+attempt; target frames provide only opaque request ID and body. Malformed or over-budget
+frames stop the bridge without outbound I/O. Its observation still has
+`coverage=brokered_requests_only`, and the process-only terminal receipt does not yet
+bind a replayed journal. T157-05 and T157-06 therefore remain open.
 
 ## Native producer isolation boundary
 

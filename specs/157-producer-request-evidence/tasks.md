@@ -18,3 +18,12 @@ identity-bound, append-only, fsynced events and read-only crash recovery. A POSI
 now supplies real brokered POST I/O, bounded IPC, process-backed cancellation, and an
 in-memory response result. Complete egress coverage, protected production journal ownership,
 and Feature 156 integration are still required.
+
+The native trusted attempt now optionally gives its isolated target a bounded anonymous-pipe
+request/response protocol. The controller creates a private journal before gate release,
+applies the immutable intent budgets through the existing broker and HTTP worker, and keeps
+the configured endpoint and headers outside the target environment. A local native fixture
+proves one completed request; malformed frames and a second request beyond the budget reach
+no provider I/O. This is a request-exit integration slice, not T157-05/06 closure: the
+process-only receipt does not bind the journal, and a production scheduler cannot yet treat
+the broker observation as publication authority.

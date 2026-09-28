@@ -4,10 +4,13 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from test_http_transport_deadline import clear_proxy_environment, local_http
 
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
 from lunar_evolution.native_trusted_attempt import (
@@ -22,15 +25,26 @@ from lunar_evolution.producer_bootstrap import (
     observe_trusted_bootstrap_attempt,
     parse_trusted_bootstrap_evidence,
 )
+from lunar_evolution.producer_broker_ipc import (
+    ProducerBrokerConfig,
+    ProducerBrokerIpcError,
+    brokered_producer_post,
+    serve_producer_broker,
+)
 from lunar_evolution.producer_launcher import (
     build_producer_launch_attestation,
     build_producer_launch_intent,
 )
 from lunar_evolution.producer_process import ProducerProcessError
+from lunar_evolution.producer_request_transport import (
+    HostRequestJournalIdentity,
+    read_host_request_journal,
+)
 from lunar_evolution.trusted_bootstrap_registration import TrustedBootstrapRegistrationError
 
 
-def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_exit: int = 0):
+def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_exit: int = 0,
+             broker_request: bool = False):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     producer_root = tmp_path / "producer"
@@ -38,16 +52,33 @@ def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_
     target = producer_root / "target"
     source = producer_root / "target.c"
     marker = workspace / "evolution" / "producer-batches" / "journal-001" / "work" / "marker"
-    source.write_text(
-        '#include <fcntl.h>\n#include <unistd.h>\n'
-        'int main(void) { '
-        f'sleep({target_sleep}); '
-        f'int fd = open("{marker}", O_CREAT | O_WRONLY, 0600); '
-        'if (fd < 0) return 2; '
-        'if (write(fd, "started", 7) != 7) return 3; '
-        f'return close(fd) == 0 ? {target_exit} : 4; }}\n',
-        encoding="utf-8",
-    )
+    if broker_request:
+        source.write_text(
+            '#include <fcntl.h>\n#include <stdlib.h>\n#include <string.h>\n#include <unistd.h>\n'
+            'int main(void) { '
+            'const char *w=getenv("LUNAR_PRODUCER_REQUEST_FD"); '
+            'const char *r=getenv("LUNAR_PRODUCER_RESPONSE_FD"); '
+            'if(!w||!r)return 10; '
+            'const char *q="{\\"protocol\\":\\"lunar-producer-broker-ipc-v1\\",\\"request_id\\":\\"req-1\\",\\"body_base64\\":\\"aGVsbG8=\\"}\\n"; '
+            'if(write(atoi(w),q,strlen(q))!=(ssize_t)strlen(q))return 11; '
+            'char reply[4096]; int n=0; char c; '
+            'while(n<4095 && read(atoi(r),&c,1)==1){reply[n++]=c;if(c==10)break;} '
+            'reply[n]=0; if(!strstr(reply,"\\"status\\":\\"completed\\""))return 12; '
+            f'int fd=open("{marker}",O_CREAT|O_WRONLY,0600); '
+            'if(fd<0)return 13; if(write(fd,reply,n)!=n)return 14; '
+            'return close(fd); }\n', encoding="utf-8",
+        )
+    else:
+        source.write_text(
+            '#include <fcntl.h>\n#include <unistd.h>\n'
+            'int main(void) { '
+            f'sleep({target_sleep}); '
+            f'int fd = open("{marker}", O_CREAT | O_WRONLY, 0600); '
+            'if (fd < 0) return 2; '
+            'if (write(fd, "started", 7) != 7) return 3; '
+            f'return close(fd) == 0 ? {target_exit} : 4; }}\n',
+            encoding="utf-8",
+        )
     subprocess.run(["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(target)],
                    check=True, capture_output=True)
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
@@ -129,6 +160,127 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
             deadline=0.0, monotonic=lambda: 0.0,
         )
     assert expired.value.code == "producer_bootstrap_attempt_wall_timeout"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_routes_isolated_target_request_through_host_broker(tmp_path: Path, monkeypatch):
+    clear_proxy_environment(monkeypatch)
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, broker_request=True,
+    )
+    secret = "host-only-secret"
+    with local_http() as (endpoint, calls):
+        result = run_native_trusted_attempt(
+            workspace, producer_root=producer_root, intent=intent,
+            attestation=attestation, artifact=artifact,
+            broker_config=ProducerBrokerConfig(endpoint, {"Authorization": secret}),
+        )
+    assert result.exit_code == 0 and result.target_started
+    assert result.broker_observation is not None
+    assert result.broker_observation.complete
+    assert result.broker_observation.snapshot.admitted_count == 1
+    assert result.broker_observation.snapshot.events[0].status == "completed"
+    assert len(calls) == 1 and calls[0][1] == b"hello"
+    assert calls[0][2]["Authorization"] == secret
+    assert secret not in (batch / "work" / "marker").read_text()
+    journal = result.broker_observation.journal_path
+    assert journal.parent.name == ".host-request-journal"
+    assert journal.stat().st_mode & 0o777 == 0o600
+    assert journal.parent.stat().st_mode & 0o777 == 0o700
+    header = json.loads(journal.read_bytes().splitlines()[0])
+    recovery = read_host_request_journal(
+        journal, expected_identity=HostRequestJournalIdentity(**header["identity"]),
+    )
+    assert recovery.uncertain_request_ids == ()
+    assert recovery.snapshot.events[0].status == "completed"
+    assert result.status == "recovery_required"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_broker_journal_initialization_failure_keeps_native_gate_closed(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    batch.mkdir(parents=True)
+    (batch / ".host-request-journal").symlink_to(tmp_path, target_is_directory=True)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+        broker_config=ProducerBrokerConfig("http://127.0.0.1:1", {}),
+    )
+    assert result.reason == "native_trusted_attempt_broker_unknown"
+    assert not result.gate_released and not result.target_started
+    assert not (batch / "work" / "marker").exists()
+
+
+def test_broker_rejects_malformed_target_frame_before_provider_io(tmp_path: Path, monkeypatch):
+    clear_proxy_environment(monkeypatch)
+    _, _, intent, _, _, batch = _attempt(tmp_path)
+    batch.mkdir(parents=True)
+    request_read, request_write = os.pipe()
+    response_read, response_write = os.pipe()
+    try:
+        os.write(request_write, b'{"protocol":"lunar-producer-broker-ipc-v1",'
+                                b'"request_id":"req-1","request_id":"req-2",'
+                                b'"body_base64":""}\n')
+        os.close(request_write)
+        request_write = -1
+        with local_http() as (endpoint, calls):
+            observed = serve_producer_broker(
+                request_read, response_write, intent=intent,
+                journal_dir=batch / ".host-request-journal",
+                config=ProducerBrokerConfig(endpoint, {}),
+                deadline_ns=time.monotonic_ns() + 2_000_000_000,
+            )
+        assert not observed.complete
+        assert observed.reason == "request_boundary_unknown"
+        assert observed.snapshot.admitted_count == 0
+        assert calls == []
+    finally:
+        for fd in (request_read, request_write, response_read, response_write):
+            if fd >= 0:
+                os.close(fd)
+
+
+def test_broker_denies_second_request_before_provider_io(tmp_path: Path, monkeypatch):
+    clear_proxy_environment(monkeypatch)
+    _, _, intent, _, _, batch = _attempt(tmp_path)
+    batch.mkdir(parents=True)
+    request_read, request_write = os.pipe()
+    response_read, response_write = os.pipe()
+    monkeypatch.setenv("LUNAR_PRODUCER_REQUEST_FD", str(request_write))
+    monkeypatch.setenv("LUNAR_PRODUCER_RESPONSE_FD", str(response_read))
+    deadline_ns = time.monotonic_ns() + 4_000_000_000
+    state = {}
+
+    def run_server(endpoint: str) -> None:
+        try:
+            state["observed"] = serve_producer_broker(
+                request_read, response_write, intent=intent,
+                journal_dir=batch / ".host-request-journal",
+                config=ProducerBrokerConfig(endpoint, {}), deadline_ns=deadline_ns,
+            )
+        finally:
+            os.close(request_read)
+            os.close(response_write)
+
+    with local_http() as (endpoint, calls):
+        server = threading.Thread(target=run_server, args=(endpoint,))
+        server.start()
+        try:
+            status, _ = brokered_producer_post("req-1", b"first", deadline_ns=deadline_ns)
+            assert status == 200
+            with pytest.raises(ProducerBrokerIpcError) as failure:
+                brokered_producer_post("req-2", b"second", deadline_ns=deadline_ns)
+            assert failure.value.code == "producer_broker_response_missing"
+        finally:
+            os.close(request_write)
+            os.close(response_read)
+            server.join(timeout=5)
+    assert not server.is_alive()
+    assert len(calls) == 1 and calls[0][1] == b"first"
+    observed = state["observed"]
+    assert not observed.complete
+    assert observed.snapshot.admitted_count == 1
+    assert observed.snapshot.events[0].status == "completed"
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")

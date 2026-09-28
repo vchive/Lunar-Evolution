@@ -6,6 +6,7 @@ import os
 import selectors
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -30,6 +31,11 @@ from .producer_bootstrap import (
     build_trusted_bootstrap_launch,
     observe_trusted_bootstrap_attempt,
     parse_bootstrap_handshake_frame,
+)
+from .producer_broker_ipc import (
+    ProducerBrokerConfig,
+    ProducerBrokerObservation,
+    serve_producer_broker,
 )
 from .producer_isolation import ProducerIsolationError, build_producer_isolation_policy
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
@@ -92,6 +98,7 @@ class NativeTrustedAttemptObservation:
     exit_code: int | None
     cleanup_status: str | None
     terminal_sha256: str | None = None
+    broker_observation: ProducerBrokerObservation | None = None
 
 
 def _terminal_receipt(
@@ -268,6 +275,7 @@ def run_native_trusted_attempt(
     intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation,
     artifact: NativeBootstrapArtifact,
+    broker_config: ProducerBrokerConfig | None = None,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
@@ -279,6 +287,8 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_admission_invalid")
     if not isinstance(artifact, NativeBootstrapArtifact):
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
+    if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
+        raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
     deadline = monotonic() + float(intent.wall_timeout_seconds)
     try:
         installed = load_native_bootstrap_artifact(
@@ -310,6 +320,9 @@ def run_native_trusted_attempt(
         handoff_sha256: str | None = None
         claimed = False
         fds: set[int] = set()
+        broker_thread: threading.Thread | None = None
+        broker_ready: threading.Event | None = None
+        broker_state: dict[str, object] = {}
         try:
             consume_trusted_bootstrap_attestation(
                 root, producer_root=target_root, intent=intent, attestation=attestation,
@@ -340,6 +353,35 @@ def run_native_trusted_attempt(
                 fds.update((gate_read, gate_write))
                 frame_read, frame_write = os.pipe()
                 fds.update((frame_read, frame_write))
+                broker_child_fds: tuple[int, int] = ()
+                broker_env = {"PATH": os.defpath, "LANG": "C"}
+                if broker_config is not None:
+                    request_read, request_write = os.pipe()
+                    response_read, response_write = os.pipe()
+                    fds.update((request_read, request_write, response_read, response_write))
+                    broker_child_fds = (request_write, response_read)
+                    broker_env["LUNAR_PRODUCER_REQUEST_FD"] = str(request_write)
+                    broker_env["LUNAR_PRODUCER_RESPONSE_FD"] = str(response_read)
+                    broker_ready = threading.Event()
+                    broker_deadline_ns = time.monotonic_ns() + int(
+                        _remaining(deadline, monotonic) * 1_000_000_000
+                    )
+
+                    def serve() -> None:
+                        try:
+                            broker_state["observation"] = serve_producer_broker(
+                                request_read, response_write, intent=intent,
+                                journal_dir=batch / ".host-request-journal",
+                                config=broker_config, deadline_ns=broker_deadline_ns,
+                                ready=broker_ready,
+                            )
+                        except Exception:  # noqa: BLE001 - fixed-code thread boundary
+                            broker_state["error"] = "native_trusted_attempt_broker_unknown"
+                        finally:
+                            broker_ready.set()
+                            os.close(request_read)
+                            os.close(response_write)
+
                 command = native_bootstrap_command(
                     pair.bootstrap.executable, control_fd=control_read,
                     gate_fd=gate_read, frame_fd=frame_write,
@@ -348,13 +390,20 @@ def run_native_trusted_attempt(
                 process = subprocess.Popen(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
-                    pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds),
-                    cwd=str(working), env={"PATH": os.defpath, "LANG": "C"},
+                    pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
+                              *broker_child_fds),
+                    cwd=str(working), env=broker_env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
                 for fd in (control_read, gate_read, frame_write):
                     os.close(fd)
                     fds.remove(fd)
+                if broker_config is not None:
+                    for fd in broker_child_fds:
+                        os.close(fd)
+                        fds.remove(fd)
+                    broker_thread = threading.Thread(target=serve, daemon=True)
+                    broker_thread.start()
                 _write_control(control_write, control, deadline, monotonic)
                 os.close(control_write)
                 fds.remove(control_write)
@@ -400,6 +449,10 @@ def run_native_trusted_attempt(
                         return False
 
                 owner = RegisteredProcess(pid, pid, owner_check=owned, label=launch.launch_id)
+                if broker_ready is not None and (
+                    not broker_ready.wait(_remaining(deadline, monotonic)) or "error" in broker_state
+                ):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_broker_unknown")
                 _remaining(deadline, monotonic)
                 os.write(gate_write, b"1")
                 os.close(gate_write)
@@ -457,6 +510,10 @@ def run_native_trusted_attempt(
                 except subprocess.TimeoutExpired:
                     if reason == "native_trusted_attempt_terminal_receipt_missing":
                         reason = "native_trusted_attempt_reap_unknown"
+            if broker_thread is not None:
+                broker_thread.join(timeout=max(0.0, deadline - monotonic()) + 0.25)
+                if broker_thread.is_alive() or "error" in broker_state:
+                    reason = "native_trusted_attempt_broker_unknown"
             if session is not None and registration is not None:
                 evidence = session.evidence()
                 if evidence.status == "passed" and (
@@ -520,6 +577,14 @@ def run_native_trusted_attempt(
                 reason = exc.code
             except ProducerProcessError:
                 reason = "native_trusted_attempt_terminal_write_unknown"
+        broker_observation = broker_state.get("observation")
+        if (
+            broker_config is not None and gate_released
+            and reason == "native_trusted_attempt_request_and_output_unverified"
+            and (not isinstance(broker_observation, ProducerBrokerObservation)
+                 or not broker_observation.complete)
+        ):
+            reason = "native_trusted_attempt_broker_unknown"
         return NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
@@ -527,6 +592,9 @@ def run_native_trusted_attempt(
             gate_released=gate_released, target_started=target_started,
             exit_code=exit_code, cleanup_status=cleanup_status,
             terminal_sha256=terminal_sha256,
+            broker_observation=(broker_observation if isinstance(
+                broker_observation, ProducerBrokerObservation,
+            ) else None),
         )
 
 
