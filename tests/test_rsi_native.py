@@ -388,3 +388,36 @@ def test_explicit_fingerprint_required_for_opaque_stateful_factory(tmp_path):
         NativePopulationGateway(profile, Opaque(), tmp_path / "gateway")
     gateway = NativePopulationGateway(profile, Opaque(), tmp_path / "gateway", actor_fingerprint=HEX)
     assert gateway.actor_fingerprint == HEX
+
+
+def test_default_fixture_verifier_rejects_real_native_results(tmp_path):
+    from lunar_evolution.rsi_gateway import LocalExactVerifier
+    _profile, request, _gateway, result, episode = native_run(tmp_path)
+    decision = LocalExactVerifier().verify(episode, request, result)
+    assert decision.outcome == "unresolved"
+    assert decision.checks[0].name == "independent_verifier_required"
+
+
+def test_durable_resume_rejects_source_changed_after_verified_terminal(tmp_path, monkeypatch):
+    import json
+
+    from lunar_evolution.rsi_controller import RSILearningController
+    from lunar_evolution.rsi_store import RSILedger
+    _prototype, profile, request = make_request(tmp_path)
+    gateway = NativePopulationGateway(profile, _native_fixed_draft, tmp_path / "gateway")
+    verifier = NativeIndependentVerifier(profile, gateway.workspace_root)
+    first = RSILearningController(gateway, verifier=verifier, ledger=RSILedger(tmp_path / "rsi.db"))
+    result = first.run_drs(
+        run_id="tampered-native", contract_sha256=request.contract_sha256,
+        evaluator_sha256=request.evaluator_sha256, environment_sha256=request.environment_sha256,
+        solver_id="native_population", max_target_attempts=1,
+    )
+    assert result.status == "completed"
+    execution = result.target_attempts[0]
+    root = gateway.workspace_root / "episodes" / execution.episode.episode_id
+    receipt = json.loads((root / "native-candidate.json").read_text())
+    source = root / receipt["source_root"] / "solve/helper.py"
+    source.write_text("def choose(limit):\n    return 6\n")
+    monkeypatch.setattr(NativePopulationGateway, "run", lambda *args, **kwargs: pytest.fail("resume launched native process"))
+    with pytest.raises(Exception, match="rsi_native_material_changed"):
+        RSILearningController(gateway, verifier=verifier, ledger=RSILedger(tmp_path / "rsi.db")).resume(run_id="tampered-native")
