@@ -37,6 +37,13 @@ admission plan. It retains `request_coverage=cooperative_declaration_only`,
 arbitrary direct executables as trusted bootstrap, provide complete outbound coverage, or stage
 or publish candidates. T156-05/06/09/12/14 remain open for the production path.
 
+The preparation result now exposes the verified process terminal, cleanup and execution outcome,
+with `deadline_scope=process_attempt_only`. Draft preparation requires a completed zero-exit
+terminal, released gate, verified owner cleanup, stable envelope evidence, and matching read-only
+receipt recovery. Provider-free regressions reject unknown terminal or cleanup, missing envelope
+evidence, and a terminal receipt chain mismatch. This only tightens the cooperative support path;
+it does not close the trusted production lifecycle tasks above.
+
 The native trusted runner now writes a separate, create-only
 `native-trusted-process-terminal.json` after the exact handoff and bootstrap evidence are
 durable, the child has a known exit code, and owner-checked cleanup is verified. The receipt

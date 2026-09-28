@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -82,12 +83,66 @@ def test_cooperative_process_prepares_multifile_draft_without_publication(tmp_pa
         expected_run_id="run-001", expected_parent_task_id="parent-001", expected_task_id="task-001",
     )
     assert result.receipt.status == "completed"
+    assert result.terminal_status == "completed"
+    assert result.cleanup_status in {"cleaned", "already_exited"}
+    assert result.execution_outcome == "completed"
+    assert result.deadline_scope == "process_attempt_only"
     assert len(result.drafts) == len(result.admission_plan.bundles) == 1
     assert set(result.drafts[0].draft.source_files) == {"pkg/main.py", "pkg/helper.py"}
     assert result.request_coverage == "cooperative_declaration_only"
     assert result.broker_coverage == "not_integrated"
     assert result.publication_status == "not_started"
     assert not (tmp_path / "evolution/producer-batches/journal-001/journal.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("receipt_change", "error_code"),
+    [
+        ({"cleanup_status": "cleanup_unverified"}, "producer_lifecycle_cleanup_unverified"),
+        ({"status": "unknown"}, "producer_lifecycle_process_incomplete"),
+        ({"envelope_evidence": None}, "producer_lifecycle_envelope_unbound"),
+    ],
+)
+def test_unverified_terminal_receipt_cannot_prepare_drafts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    receipt_change: dict[str, object], error_code: str,
+) -> None:
+    contract, producer_root, intent, attestation = _fixture(tmp_path)
+    real_run = producer_lifecycle.run_producer_process
+
+    def alter_receipt(*args, **kwargs):
+        return replace(real_run(*args, **kwargs), **receipt_change, receipt_sha256=None)
+
+    monkeypatch.setattr(producer_lifecycle, "run_producer_process", alter_receipt)
+    with pytest.raises(ProducerLifecycleError, match=error_code):
+        run_producer_lifecycle(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            contract=contract,
+            groups=[BundleGroup("bundle-1", "pkg/main.py", ("pkg/main.py", "pkg/helper.py"))],
+            evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
+            dependency_sha256=PIN, environment_sha256=PIN,
+        )
+
+
+def test_terminal_receipt_chain_drift_cannot_prepare_drafts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract, producer_root, intent, attestation = _fixture(tmp_path)
+    real_recover = producer_lifecycle.recover_producer_process
+
+    def mismatched_recovery(*args, **kwargs):
+        observed = real_recover(*args, **kwargs)
+        return {**observed, "receipt_sha256": "0" * 64}
+
+    monkeypatch.setattr(producer_lifecycle, "recover_producer_process", mismatched_recovery)
+    with pytest.raises(ProducerLifecycleError, match="producer_lifecycle_receipt_unbound"):
+        run_producer_lifecycle(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            contract=contract,
+            groups=[BundleGroup("bundle-1", "pkg/main.py", ("pkg/main.py", "pkg/helper.py"))],
+            evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
+            dependency_sha256=PIN, environment_sha256=PIN,
+        )
 
 
 def test_authority_mismatch_does_not_consume_attestation(tmp_path: Path) -> None:

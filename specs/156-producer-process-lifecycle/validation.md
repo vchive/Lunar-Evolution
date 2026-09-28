@@ -1,5 +1,16 @@
 # Feature 156 validation
 
+## Cooperative preparation terminal checkpoint (2026-09-28)
+
+`run_producer_lifecycle` now returns explicit terminal, cleanup, execution-outcome and deadline-scope
+fields only after the process receipt is completed with zero exit, gate release, verified cleanup,
+stable envelope evidence, and a matching durable terminal receipt chain. The focused provider-free
+tests cover success, unknown terminal, unverified cleanup, missing envelope evidence, receipt-chain
+drift and post-execution envelope replacement. The wall-clock deadline covers the process attempt;
+the later bundle/draft/plan preparation is outside that deadline. This is supporting cooperative
+preparation only, without trusted bootstrap admission, host-observed request enforcement, evaluator
+execution or publication.
+
 ## Native process-terminal follow-up (2026-09-28)
 
 The provider-free native attempt now persists a process-only terminal receipt after a known exit,

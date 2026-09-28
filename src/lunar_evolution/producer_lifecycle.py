@@ -48,6 +48,10 @@ class ProducerLifecyclePreparation:
     bundles: tuple[VerifiedProducerBundle, ...]
     drafts: tuple[ProducerBundleDraft, ...]
     admission_plan: ProducerBundleAdmissionPlan
+    terminal_status: str
+    cleanup_status: str
+    execution_outcome: str
+    deadline_scope: str
     request_coverage: str = "cooperative_declaration_only"
     broker_coverage: str = "not_integrated"
     publication_status: str = "not_started"
@@ -138,6 +142,13 @@ def run_producer_lifecycle(
     )
     if receipt.status != "completed" or receipt.exit_code != 0 or not receipt.gate_released:
         raise ProducerLifecycleError("producer_lifecycle_process_incomplete")
+    # A successful envelope alone is insufficient.  Keep the preparation stage
+    # fail-closed unless the durable process receipt proves bounded completion and
+    # verified owner cleanup under the same attempt deadline.
+    if receipt.cleanup_status not in {"cleaned", "already_exited"}:
+        raise ProducerLifecycleError("producer_lifecycle_cleanup_unverified")
+    if receipt.envelope_evidence is None or receipt.envelope_evidence.read_status != "stable":
+        raise ProducerLifecycleError("producer_lifecycle_envelope_unbound")
     try:
         observed = recover_producer_process(workspace, journal_id=intent.journal_id)
     except Exception as exc:
@@ -155,7 +166,17 @@ def run_producer_lifecycle(
         runner_fingerprint=intent.runner_fingerprint, dependency_sha256=intent.dependency_sha256,
         environment_sha256=intent.environment_sha256,
     )
-    return ProducerLifecyclePreparation(receipt, envelope, bundles, drafts, plan)
+    return ProducerLifecyclePreparation(
+        receipt=receipt,
+        envelope=envelope,
+        bundles=bundles,
+        drafts=drafts,
+        admission_plan=plan,
+        terminal_status=receipt.status,
+        cleanup_status=receipt.cleanup_status,
+        execution_outcome="completed",
+        deadline_scope="process_attempt_only",
+    )
 
 
 __all__ = ["ProducerLifecycleError", "ProducerLifecyclePreparation", "run_producer_lifecycle"]
