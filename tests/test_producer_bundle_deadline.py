@@ -289,3 +289,51 @@ def test_changed_deadline_after_first_evaluation_stops_transaction(tmp_path, mon
         _call(fixture, SolveExecutionControl(30))
     assert completed == [0]
     assert not (_batch(context, journal_id) / "stage").exists()
+
+
+def test_same_process_new_injected_clock_cannot_reuse_old_deadline(tmp_path):
+    root, value = workspace(tmp_path), journal()
+    original = FakeClock()
+    control = SolveExecutionControl(30, clock=original)
+    _persist(root, value, control)
+    original.value = control.deadline
+    replacement = FakeClock()
+    assert replacement.value == control.started_at
+    with pytest.raises(ProducerBundleDeadlineError, match="clock_mismatch|clock_unrestorable"):
+        _persist(root, value, SolveExecutionControl(30, clock=replacement))
+    with pytest.raises(ProducerBundleDeadlineError, match="clock_unrestorable"):
+        restore_producer_bundle_execution_control(root, value)
+
+
+def test_restore_requires_exact_prepared_journal(tmp_path):
+    root, value = workspace(tmp_path), journal()
+    control = SolveExecutionControl(30)
+    _persist(root, value, control)
+    path = root / "evolution/producer-batches" / value.journal_id / "journal.prepared.json"
+    path.unlink()
+    with pytest.raises(ProducerBundleDeadlineError, match="prepared_intent"):
+        restore_producer_bundle_execution_control(root, value)
+
+
+def test_injected_clock_registry_keeps_strong_reference(tmp_path):
+    import gc
+    import weakref
+
+    root, value = workspace(tmp_path), journal()
+    clock = FakeClock()
+    reference = weakref.ref(clock)
+    _persist(root, value, SolveExecutionControl(30, clock=clock))
+    token = json.loads(_path(root, value).read_bytes())["clock_token"]
+    del clock
+    gc.collect()
+    assert reference() is not None
+    assert deadline._clock_for_token(token) is reference()
+
+
+def test_restore_rejects_modified_prepared_intent(tmp_path):
+    root, value = workspace(tmp_path), journal()
+    _persist(root, value, SolveExecutionControl(30))
+    path = root / "evolution/producer-batches" / value.journal_id / "journal.prepared.json"
+    path.write_bytes(path.read_bytes() + b"\n")
+    with pytest.raises(ProducerBundleDeadlineError, match="prepared_intent_invalid"):
+        restore_producer_bundle_execution_control(root, value)

@@ -15,7 +15,10 @@ identity is read from `/proc/sys/kernel/random/boot_id`; Darwin uses native `sys
 used. The original allowance and absolute deadline are restored only within the same OS boot.
 
 Explicit injected clocks remain supported for deterministic local tests, with their clock kind
-and PID recorded. They are never accepted by the cross-process restore API. A production clock
+and PID recorded, plus a random token in a process-local strong-reference registry. Only the
+original clock object can reuse that token; a fresh object, process restart, or PID reuse cannot
+reset its observed time. Strong references prevent object-ID reuse from impersonating the clock.
+They are never accepted by the cross-process restore API. A production clock
 cannot adopt an injected-clock record, and a fixture clock cannot replace a native clock.
 
 ## Retention and failure rules
@@ -48,7 +51,9 @@ through commit. This change does not introduce automatic unknown reconciliation,
 mid-process cancellation, a scheduler, or a real producer campaign.
 
 `restore_producer_bundle_execution_control(workspace, prepared_journal)` returns the original
-allowance/start/deadline with the native monotonic clock. Current parent/task cancellation authority
+allowance/start/deadline with the native monotonic clock, after reopening and verifying the exact
+prepared journal. A clock-only interruption may continue only through the locked preparation API.
+Current parent/task cancellation authority
 must still be supplied by the caller; cancellation state is not inferred from a new process.
 
 ## Validation

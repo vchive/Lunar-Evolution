@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from threading import RLock
 
 from ._candidate_workspace_io import DirectoryChain
 from .automatic_solve_lifecycle import (
@@ -36,14 +37,23 @@ from .producer_bundle_intent import (
     _write_exclusive as _write_intent,
 )
 from .producer_bundle_publication import ProducerBundlePublicationJournal
-from .producer_bundle_staging import _batch, _locked, _present, _workspace
+from .producer_bundle_staging import (
+    _batch,
+    _check_held_publication_lock,
+    _locked,
+    _present,
+    _workspace,
+)
 
 _PROTOCOL = "lunar-producer-bundle-deadline-v1"
 _NAME = "execution.deadline.json"
 _MAX_BYTES = 8192
+_CLOCK_LOCK = RLock()
+_CLOCK_TOKENS: dict[str, Callable[[], float]] = {}
+
 _FIELDS = {
     "protocol", "journal_id", "journal_sha256", "timeout_seconds", "started_monotonic",
-    "deadline_monotonic", "boot_id", "clock_kind", "clock_owner_pid", "file_identity", "self_sha256",
+    "deadline_monotonic", "boot_id", "clock_kind", "clock_owner_pid", "clock_token", "file_identity", "self_sha256",
 }
 
 
@@ -114,10 +124,16 @@ def _validate_record(value: object) -> dict[str, object]:
     if value["clock_kind"] not in {"native_monotonic", "injected_process_clock"}:
         _fail("invalid")
     if value["clock_kind"] == "native_monotonic":
-        if value["clock_owner_pid"] is not None:
+        if value["clock_owner_pid"] is not None or value["clock_token"] is not None:
             _fail("invalid")
     elif type(value["clock_owner_pid"]) is not int or value["clock_owner_pid"] < 1:
         _fail("invalid")
+    if value["clock_kind"] == "injected_process_clock":
+        try:
+            if str(uuid.UUID(value["clock_token"])) != value["clock_token"]:
+                _fail("invalid")
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ProducerBundleDeadlineError("producer_bundle_deadline_invalid") from exc
     try:
         if str(uuid.UUID(value["boot_id"])) != value["boot_id"]:
             _fail("invalid")
@@ -189,6 +205,7 @@ def _write_exclusive(chain: DirectoryChain, body: dict[str, object]) -> None:
     descriptor = None
     try:
         chain.check()
+        _check_held_publication_lock()
         descriptor = os.open(_NAME, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=chain.fd)
         opened = os.fstat(descriptor)
         body = {**body, "file_identity": {"device": opened.st_dev, "inode": opened.st_ino}}
@@ -196,11 +213,13 @@ def _write_exclusive(chain: DirectoryChain, body: dict[str, object]) -> None:
         raw = _canonical(_validate_record(body))
         remaining = memoryview(raw)
         while remaining:
+            _check_held_publication_lock()
             count = os.write(descriptor, remaining)
             if count <= 0:
                 _fail("write_failed")
             remaining = remaining[count:]
         os.fsync(descriptor)
+        _check_held_publication_lock()
         retained, info = _read(chain)
         if retained != raw or info[:2] != (opened.st_dev, opened.st_ino):
             _fail("changed")
@@ -213,6 +232,23 @@ def _write_exclusive(chain: DirectoryChain, body: dict[str, object]) -> None:
     finally:
         if descriptor is not None:
             os.close(descriptor)
+
+
+def _clock_token(clock: Callable[[], float]) -> str:
+    with _CLOCK_LOCK:
+        for token, retained in _CLOCK_TOKENS.items():
+            if retained is clock:
+                return token
+        token = str(uuid.uuid4())
+        _CLOCK_TOKENS[token] = clock
+        return token
+
+
+def _clock_for_token(token: object) -> Callable[[], float] | None:
+    if type(token) is not str:
+        return None
+    with _CLOCK_LOCK:
+        return _CLOCK_TOKENS.get(token)
 
 
 @dataclass(frozen=True)
@@ -238,7 +274,10 @@ class ProducerBundleDeadline:
                 _fail("journal_mismatch")
             if value["boot_id"] != _boot_id():
                 _fail("boot_changed")
-            if value["clock_kind"] == "injected_process_clock" and value["clock_owner_pid"] != os.getpid():
+            if value["clock_kind"] == "injected_process_clock" and (
+                value["clock_owner_pid"] != os.getpid()
+                or _clock_for_token(value["clock_token"]) is not self.clock
+            ):
                 _fail("clock_unrestorable")
             now = _number(self.clock())
             started, deadline = float(value["started_monotonic"]), float(value["deadline_monotonic"])
@@ -290,6 +329,7 @@ def persist_controlled_producer_bundle_intent(
 
         with _locked(root, checkpoint=guarded_checkpoint):
             chain.check()
+            _check_held_publication_lock()
             checkpoint("producer_deadline_locked")
             control.check("producer_deadline_locked")
             path = batch / _NAME
@@ -306,13 +346,17 @@ def persist_controlled_producer_bundle_intent(
                     "boot_id": _boot_id(),
                     "clock_kind": "native_monotonic" if control._clock is time.monotonic else "injected_process_clock",
                     "clock_owner_pid": None if control._clock is time.monotonic else os.getpid(),
+                    "clock_token": None if control._clock is time.monotonic else _clock_token(control._clock),
                 }
                 _write_exclusive(chain, body)
+            _check_held_publication_lock()
             raw, identity = _read(chain)
             value = _parse(raw)
             if value["timeout_seconds"] != control.timeout_seconds:
                 _fail("allowance_mismatch")
             if (value["clock_kind"] == "native_monotonic") != (control._clock is time.monotonic):
+                _fail("clock_mismatch")
+            if value["clock_kind"] == "injected_process_clock" and _clock_for_token(value["clock_token"]) is not control._clock:
                 _fail("clock_mismatch")
             retained = ProducerBundleDeadline(root, journal.journal_id, journal_digest, raw, identity, control._clock)
             retained.check("producer_deadline_locked")
@@ -348,6 +392,11 @@ def restore_producer_bundle_execution_control(
         value = _parse(raw)
         if value["clock_kind"] != "native_monotonic":
             _fail("clock_unrestorable")
+        try:
+            expected_intent, _ = _intent_content(journal)
+            _verify_existing(batch / _INTENT_NAME, expected_intent)
+        except Exception as exc:
+            raise ProducerBundleDeadlineError("producer_bundle_deadline_prepared_intent_invalid") from exc
         retained = ProducerBundleDeadline(root, journal.journal_id, journal.digest(), raw, identity, time.monotonic)
         retained.check("producer_deadline_restore")
         return SolveExecutionControl(float(value["timeout_seconds"]), started_at=float(value["started_monotonic"]))
