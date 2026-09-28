@@ -29,6 +29,10 @@ from .candidate_execution_cleanup import (
     parse_candidate_execution_cleanup,
 )
 from .candidate_execution_runner import CandidateExecutionRunnerError, run_candidate_execution
+from .candidate_process_interruption import (
+    CandidateProcessInterrupted,
+    build_process_interruption_receipt,
+)
 from .candidate_workspace_plan import (
     CandidateWorkspaceError,
     CandidateWorkspacePlan,
@@ -41,7 +45,7 @@ _RESULT = "result.json"
 _CLEANUP = "cleanup.json"
 _COMPLETE = "completed.json"
 _CORE_NAMES = {_INTENT, _RESULT, _COMPLETE}
-_NAMES = _CORE_NAMES | {_CLEANUP}
+_NAMES = _CORE_NAMES | {_CLEANUP, "interrupted.json"}
 _TEMP_NAMES = {"." + name + ".tmp" for name in _NAMES}
 _PROTOCOL = "lunar-candidate-execution-"
 _ERRORS = {
@@ -447,6 +451,10 @@ def _inspect(chain: DirectoryChain, plan, admission, binding) -> CandidateExecut
     if len({(node["device"], node["inode"]) for node in nodes}) != 3:
         _fail("identity_mismatch")
     intent_sha = _sha(intent_bytes)
+    # An interruption receipt can never coexist with authoritative completion. Do not allow
+    # adding result/completion files after a stop to turn a cancelled attempt into a success.
+    if "interrupted.json" in names and (_RESULT in names or _COMPLETE in names):
+        _fail("record_changed")
     if names & _TEMP_NAMES or not _CORE_NAMES <= names:
         if _COMPLETE in names and _RESULT not in names:
             _fail("record_changed")
@@ -644,6 +652,12 @@ def run_candidate_execution_recorded(
                 process_released=release_process,
                 process_exit_observed=observe_exit,
             )
+        except CandidateProcessInterrupted as stop:
+            payload = build_process_interruption_receipt(
+                stop.observation, request_sha256=_sha(intent_bytes), stage="candidate_execution",
+            )
+            _write(attempt_chain, "interrupted.json", payload)
+            raise stop.cause
         except (SolveExecutionBudgetExceeded, SolveExecutionCancelled):
             raise
         except Exception:  # noqa: BLE001 - runner exceptions cannot expose candidate or host prose

@@ -1,5 +1,25 @@
 # Feature 153 validation
 
+## 2026-09-29 durable deadline and active subprocess controls
+
+The native controlled path now retains the original monotonic deadline, full prepared-journal pin,
+boot UUID, and file identity. Same-boot process restart does not refresh allowance. Injected fixture
+clocks require the original strongly retained object token. Missing/changed clock evidence or a
+changed boot rejects continuation. Publication lock ownership is rechecked at mutation boundaries.
+
+Candidate and evaluator selector loops now poll the same control while running, terminate the
+private process group on cancellation/expiry/control failure, and retain a bound interruption
+observation before re-raising the stop. Unconfirmed cleanup stays unknown. Stopped candidates
+cannot acquire completion authority; stopped evaluators have no authoritative score. Native
+transaction regression checks unchanged archive/state and no attempt replay after an active stop.
+
+Focused active-process tests: **8 passed**. Combined native execution/evaluation/process release,
+producer controls/deadlines/non-publishing drafts/population selection: **155 passed**. Ruff and
+`git diff --check` passed. Counts overlap and are not additive.
+
+No model, network evaluator, WebAgent or external campaign is used by this regression. Full
+unknown-attempt reconcile, launcher/scheduler, and real OpenEvolve/Shinka acceptance remain open.
+
 ## 2026-09-29 active controls and durable all-rejected terminal
 
 The native transaction accepts a caller-owned active clock, composes tighter parent controls,
@@ -26,10 +46,11 @@ Whole-tree Ruff, compileall and `git diff --check` passed. Earlier focused count
 selection and are not added to its count.
 
 The independent worktree remains `codex/shinka-native-publication`; RSI files/implementation were
-excluded. No model, WebAgent, remote evaluator or real OpenEvolve/Shinka campaign ran. Durable
-cross-process budget restoration, active-subprocess cancellation, full unknown/interruption
-recovery, evolved/seeded/repeated population admissions, launcher/scheduler integration and the
-three-phase release runner remain open. This does not complete P1 production acceptance.
+excluded. No model, WebAgent, remote evaluator or real OpenEvolve/Shinka campaign ran. Full
+unknown/interruption recovery, evolved/seeded/repeated population admissions,
+launcher/scheduler integration and the three-phase release runner remain open. Same-boot durable
+deadline restoration and active-subprocess cancellation were subsequently implemented in the
+integration worktree; see the current validation above. This does not complete P1 production acceptance.
 
 ## 2026-09-29 offline native transaction and prepared intent
 

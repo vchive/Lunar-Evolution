@@ -127,13 +127,16 @@ preserved and hooks are restored on exit. Every invocation derives its budget di
 native execution/evaluation limits, zero preparation provider requests, and the declared wall
 allowance (`null` when omitted). An explicit digest only checks that policy; it cannot replace it.
 An exact retry cannot remove the control or change limits while preserving a controlled intent.
-The caller must retain the same control for in-process retry; this API does not persist elapsed
-time or prevent a caller from constructing a fresh control with the same allowance after restart.
+The controlled path persists the original monotonic start/deadline with the prepared intent,
+boot UUID and retained inode. A fresh same-allowance control cannot extend it; native clocks
+resume only within the same boot. Injected test clocks additionally require the original
+strongly retained object token. Missing or corrupted clock evidence fails closed.
 
 Cancellation and expiry stop admission to subsequent stages and bounded lock waits. Native
-subprocesses receive their remaining timeout at launch; cancellation during execution is observed
-at the next stage boundary, not by an immediate process watcher. File IO and cleanup are not a hard
-host-wide timeout. Commit checks again after acquiring the lock and verifying the staged evidence.
+subprocesses receive their remaining timeout at launch and poll the shared control while running.
+Cancellation, expiry, or a failed control kills the private process group and retains a bounded
+interruption/cleanup observation before propagating the stop. Stopped candidates and evaluators
+have no result/completion/evaluation authority. File IO and cleanup are not a hard host-wide timeout. Commit checks again after acquiring the lock and verifying the staged evidence.
 After writing the durable unknown marker it completes the existing commit protocol, without a
 new timeout check that could create partial publication or misreport an already published batch.
 
@@ -146,8 +149,8 @@ evaluation calls. Missing or partial terminal evidence requires recovery and is 
 repaired or replayed. Nonzero execution, timeout, and other unknown draft outcomes are still
 outside this completed terminal slice.
 
-Remaining work includes durable deadline restoration, active-process cancellation, and the full
-unknown/interruption recovery matrix. Launcher/scheduler integration, remote execution, and real
+Remaining work includes the full unknown/interruption recovery matrix and explicit reconciliation
+of incomplete stopped attempts. Launcher/scheduler integration, remote execution, and real
 OpenEvolve/Shinka campaigns are separate work.
 
 ## Acceptance

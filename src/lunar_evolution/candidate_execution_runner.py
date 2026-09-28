@@ -28,6 +28,7 @@ from .candidate_execution import (
     CandidateExecutionError,
     admit_candidate_execution,
 )
+from .candidate_process_interruption import CandidateProcessInterrupted
 from .candidate_workspace_plan import (
     CandidateWorkspaceError,
     CandidateWorkspacePlan,
@@ -116,6 +117,8 @@ def _bounded_process_bytes(
     capture_limit: int, process_observer: Callable[[int, int | None], None] | None = None,
     process_released: Callable[[int, int | None], None] | None = None,
     process_exit_observed: Callable[[int | None], None] | None = None,
+    continuation: Callable[[], float] | None = None,
+    stage: str = "candidate_execution",
 ) -> tuple[bytes, bytes, Literal["succeeded", "failed", "timed_out"], int | None, str | None]:
     """Run a process while keeping each captured stream bounded in memory.
 
@@ -137,6 +140,8 @@ def _bounded_process_bytes(
     owned_group_exited = True
     cleanup_deadline: float | None = None
     exit_code: int | None = None
+    interruption: Exception | None = None
+    released = False
     started = time.monotonic()
 
     def terminate() -> None:
@@ -173,7 +178,20 @@ def _bounded_process_bytes(
         deadline = started + timeout
         while True:
             now = time.monotonic()
-            if reason is None:
+            if reason is None and cleanup_deadline is None and continuation is not None:
+                try:
+                    remaining = continuation()
+                    if type(remaining) not in (int, float) or not math.isfinite(remaining) or remaining <= 0:
+                        raise CandidateExecutionRunnerError("invalid")
+                    # A slow callback may return a stale remainder. Anchor it to the
+                    # pre-call sample so callback work never extends the admitted deadline,
+                    # then refresh now before deciding whether any work may continue.
+                    deadline = min(deadline, now + remaining)
+                    now = time.monotonic()
+                except Exception as exc:  # noqa: BLE001 - any failed authority stops owned work
+                    interruption = exc
+                    terminate()
+            if reason is None and interruption is None:
                 if now >= deadline:
                     reason = "timeout"
                     terminate()
@@ -232,7 +250,7 @@ def _bounded_process_bytes(
                     process.wait(timeout=PROCESS_CLEANUP_GRACE_SECONDS)
                 except subprocess.TimeoutExpired:
                     cleanup_ok = False
-        if process is not None and process_observer is not None:
+        if process is not None and (process_observer is not None or interruption is not None):
             owned_group_exited = (
                 process_identity is not None and _wait_owned_group_exit(*process_identity)
             )
@@ -241,6 +259,7 @@ def _bounded_process_bytes(
                 and process_identity is not None and process_released is not None):
             try:
                 process_released(*process_identity)
+                released = True
             except Exception:  # noqa: BLE001, S110 - ownership metadata must not mask the result
                 pass
 
@@ -251,6 +270,21 @@ def _bounded_process_bytes(
             process_exit_observed(process.returncode if process is not None else None)
         except Exception:  # noqa: BLE001, S110 - telemetry cannot alter execution
             pass
+    if interruption is not None:
+        reason_code = (
+            "cancelled" if isinstance(interruption, SolveExecutionCancelled)
+            else "timed_out" if isinstance(interruption, SolveExecutionBudgetExceeded)
+            else "control_failed"
+        )
+        assert process_identity is not None
+        observation = {
+            "reason": reason_code, "stage": stage, "pid": process_identity[0],
+            "pgid": process_identity[1], "exit_code": process.returncode,
+            "cleanup": "verified" if cleanup_ok and owned_group_exited and released else "unknown",
+            "ownership_release": "observed" if released else "not_observed",
+            "observed_ms": max(0, min(86_400_000, round((time.monotonic() - started) * 1000))),
+        }
+        raise CandidateProcessInterrupted(interruption, observation)
     stdout = bytes(output["stdout"])
     stderr = bytes(output["stderr"])
     if not owned_group_exited:
@@ -271,13 +305,14 @@ def _bounded_process(
     process_observer: Callable[[int, int | None], None] | None = None,
     process_released: Callable[[int, int | None], None] | None = None,
     process_exit_observed: Callable[[int | None], None] | None = None,
+    continuation: Callable[[], float] | None = None,
 ) -> tuple[str, str, Literal["succeeded", "failed", "timed_out"], int | None, str | None]:
     """Keep the candidate runner's historical bounded, replacement-decoded text projection."""
     raw_stdout, raw_stderr, status, exit_code, error = _bounded_process_bytes(
         command, cwd=cwd, environment=environment, timeout=timeout, output_limit=output_limit,
         capture_limit=min(output_limit, MAX_RESULT_OUTPUT_BYTES),
         process_observer=process_observer, process_released=process_released,
-        process_exit_observed=process_exit_observed,
+        process_exit_observed=process_exit_observed, continuation=continuation,
     )
     stdout, stdout_overflow = _bounded(raw_stdout, output_limit)
     stderr, stderr_overflow = _bounded(raw_stderr, output_limit)
@@ -536,6 +571,7 @@ class CandidateExecutionRunner:
                     timeout=effective_timeout, output_limit=output_limit,
                     process_observer=process_observer, process_released=process_released,
                     process_exit_observed=process_exit_observed,
+                    continuation=operational_timeout if remaining_timeout is not None else None,
                 )
             except (SolveExecutionBudgetExceeded, SolveExecutionCancelled):
                 raise

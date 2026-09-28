@@ -33,6 +33,10 @@ from .candidate_execution_runner import (
     _bounded_process_bytes,
     _Executable,
 )
+from .candidate_process_interruption import (
+    CandidateProcessInterrupted,
+    build_process_interruption_receipt,
+)
 from .candidate_workspace_plan import CandidateWorkspaceError
 from .evaluator import _structured_content_check
 from .source_constraints import (
@@ -638,7 +642,16 @@ def evaluate_candidate_execution(
                         output_limit=MAX_REPORT_BYTES, capture_limit=MAX_REPORT_BYTES,
                         process_observer=process_observer,
                         process_released=process_released,
+                        continuation=effective_timeout if remaining_timeout is not None else None,
+                        stage="evaluation",
                     )
+                except CandidateProcessInterrupted as stop:
+                    payload = build_process_interruption_receipt(
+                        stop.observation, request_sha256=_sha(copies["request.json"]), stage="evaluation",
+                    )
+                    tree.write("interrupted.json", canonical_json(payload))
+                    tree.sync_and_check()
+                    raise stop.cause
                 except OSError:
                     _fail("process_start_failed")
                 effective_timeout()
