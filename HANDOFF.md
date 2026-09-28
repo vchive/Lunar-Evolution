@@ -1,5 +1,18 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-28 P1 同次捕获接入候选准备
+
+原生多文件候选的只读准备增加显式 `require_same_attempt_capture` 严格路径：准备前后都恢复并
+复核原尝试内持久化的输出收据和宿主请求日志，结果带收据摘要；broker 不完整或 producer 声明
+的请求数与宿主记录不一致时拒绝。真实本地两文件 fixture 在有、无 broker 两种模式下通过，
+输出或日志篡改后的严格准备会拒绝。旧的只读检查入口仍可用于支持性诊断，不能被当作发布许可。
+输出、原生尝试、请求传输/证据、生命周期矩阵及隔离组合回归 **90 passed**；Ruff、compileall、
+diff check 通过。全仓回归因测试规模较大中止，未将其记为通过。
+
+当前 `publication_eligible` 仍为 false。Feature 157/158 的完整请求出口覆盖、候选本地执行
+评分与原子发布、调度接线以及 OpenEvolve/ShinkaEvolve 的真实生产验收继续开放。本轮未调用
+真实开源 producer 或新的模型 campaign。
+
 ## 2026-09-28 P1 原生输出与请求日志同次捕获
 
 外部 producer 指 OpenEvolve、ShinkaEvolve 等开源候选生成器，不需要用户提供私有命令。

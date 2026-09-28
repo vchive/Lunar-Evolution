@@ -42,6 +42,14 @@ This receipt remains `publication_eligible=false`. Its broker coverage is explic
 `brokered_requests_only`; the remaining Feature 157/158 isolation and request-enforcement proof,
 plus evaluator/archive publication integration, must be completed before publication.
 
+Read-only preparation now has an explicit `require_same_attempt_capture` mode for the native
+path. It recovers the durable capture before inspecting candidate files and again after building
+the multi-file drafts and admission plan. Missing, changed or invalid capture evidence fails
+closed; incomplete broker evidence or a mismatch between the producer declaration and host
+admissions also fails. The result carries the capture digest and distinguishes brokered-only
+request observation from declaration-only inspection. This mode still grants no publication
+authority, since complete outbound coverage and the downstream execution transaction remain open.
+
 ## Acceptance
 
 1. A verified successful native terminal and a valid explicit two-file group produce a native

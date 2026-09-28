@@ -110,8 +110,39 @@ def test_prepares_verified_multifile_output_without_publication(
     assert len(result.bundles) == len(result.drafts) == len(result.admission_plan.bundles) == 1
     assert set(result.drafts[0].draft.source_files) == {"pkg/main.py", "pkg/helper.py"}
     assert result.request_coverage == "producer_declaration_only"
+    assert result.output_capture_sha256 is None
     assert result.publication_eligible is False
     assert not (output.parent / "journal.json").exists()
+
+
+def test_strict_preparation_requires_same_attempt_capture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _output, _, arguments = _fixture(tmp_path, monkeypatch)
+    with pytest.raises(NativeTrustedOutputError, match="native_trusted_output_capture_unverified"):
+        prepare_native_trusted_output(
+            tmp_path, **arguments, require_same_attempt_capture=True,
+        )
+
+
+@pytest.mark.parametrize("broker_evidence", [
+    {"complete": False, "declared_count_matches": True},
+    {"complete": True, "declared_count_matches": False},
+])
+def test_strict_preparation_rejects_incomplete_broker_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, broker_evidence: dict[str, bool],
+) -> None:
+    _output, _, arguments = _fixture(tmp_path, monkeypatch)
+    import lunar_evolution.native_trusted_output as output_module
+
+    monkeypatch.setattr(
+        output_module, "recover_native_trusted_output_capture",
+        lambda *args, **kwargs: {"broker_evidence": broker_evidence},
+    )
+    with pytest.raises(NativeTrustedOutputError, match="native_trusted_output_broker_incomplete"):
+        prepare_native_trusted_output(
+            tmp_path, **arguments, require_same_attempt_capture=True,
+        )
 
 
 def test_requires_successful_verified_process_before_reading_output(
@@ -288,8 +319,13 @@ def test_prepares_output_from_actual_native_trusted_attempt(
         groups=[BundleGroup("bundle-1", "pkg/main.py", ("pkg/main.py", "pkg/helper.py"))],
         evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
         dependency_sha256=PIN, environment_sha256=PIN,
+        require_same_attempt_capture=True,
     )
     assert result.process_terminal_sha256 == process.terminal_sha256
+    assert result.output_capture_sha256 == process.output_capture_sha256
+    assert result.request_coverage == (
+        "brokered_requests_only" if brokered else "producer_declaration_only"
+    )
     assert len(result.drafts) == 1
     assert result.publication_eligible is False
     if brokered:
@@ -299,3 +335,12 @@ def test_prepares_output_from_actual_native_trusted_attempt(
         (batch / "output" / "pkg" / "helper.py").write_text("VALUE = 2\n", encoding="utf-8")
     with pytest.raises(NativeTrustedCaptureError, match="native_trusted_capture_.*"):
         recover_native_trusted_output_capture(batch, intent=intent, terminal=terminal)
+    with pytest.raises(NativeTrustedOutputError, match="native_trusted_output_capture_unverified"):
+        prepare_native_trusted_output(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+            contract=contract,
+            groups=[BundleGroup("bundle-1", "pkg/main.py", ("pkg/main.py", "pkg/helper.py"))],
+            evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
+            dependency_sha256=PIN, environment_sha256=PIN,
+            require_same_attempt_capture=True,
+        )

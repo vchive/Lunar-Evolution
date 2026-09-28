@@ -13,6 +13,10 @@ from . import _benchmark_files as _files
 from .algorithm import AlgorithmProblemContract
 from .native_bootstrap import NativeBootstrapArtifact
 from .native_trusted_attempt import recover_native_trusted_attempt
+from .native_trusted_capture import (
+    NativeTrustedCaptureError,
+    recover_native_trusted_output_capture,
+)
 from .producer_bundle_admission import (
     ProducerBundleAdmissionPlan,
     build_producer_bundle_admission_plan,
@@ -44,6 +48,7 @@ class NativeTrustedOutputError(ValueError):
 @dataclass(frozen=True, slots=True)
 class NativeTrustedOutputPreparation:
     process_terminal_sha256: str
+    output_capture_sha256: str | None
     envelope_bytes_sha256: str
     envelope: ProducerResultEnvelope
     bundles: tuple[VerifiedProducerBundle, ...]
@@ -75,12 +80,12 @@ def prepare_native_trusted_output(
     runner_fingerprint: str,
     dependency_sha256: str,
     environment_sha256: str,
+    require_same_attempt_capture: bool = False,
 ) -> NativeTrustedOutputPreparation:
     """Verify current producer files, without granting durable execution or publication authority.
 
-    The process terminal is independently recovered before output is read. This post-run
-    preparation does not establish that output existed before the original wall deadline;
-    the production runner must capture and bind that evidence during the same attempt.
+    The process terminal is independently recovered before output is read. Production callers
+    require the same-attempt capture; the default remains a read-only supporting inspection.
     """
     if not isinstance(intent, ProducerLaunchIntent) or not isinstance(contract, AlgorithmProblemContract):
         raise NativeTrustedOutputError("native_trusted_output_input_invalid")
@@ -109,6 +114,19 @@ def prepare_native_trusted_output(
     ):
         raise NativeTrustedOutputError("native_trusted_output_process_incomplete")
     batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    capture: dict[str, object] | None = None
+    if require_same_attempt_capture:
+        try:
+            capture = recover_native_trusted_output_capture(
+                batch, intent=intent, terminal=terminal,
+            )
+        except NativeTrustedCaptureError as exc:
+            raise NativeTrustedOutputError("native_trusted_output_capture_unverified") from exc
+        broker = capture["broker_evidence"]
+        if broker is not None and (
+            broker["complete"] is not True or broker["declared_count_matches"] is not True
+        ):
+            raise NativeTrustedOutputError("native_trusted_output_broker_incomplete")
     path = batch / intent.envelope_path
     limit = min(intent.output_max_bytes, MAX_PRODUCER_ENVELOPE_BYTES)
     try:
@@ -151,10 +169,25 @@ def prepare_native_trusted_output(
         runner_fingerprint=intent.runner_fingerprint, dependency_sha256=intent.dependency_sha256,
         environment_sha256=intent.environment_sha256,
     )
+    if capture is not None:
+        try:
+            current = recover_native_trusted_output_capture(
+                batch, intent=intent, terminal=terminal,
+            )
+        except NativeTrustedCaptureError as exc:
+            raise NativeTrustedOutputError("native_trusted_output_capture_changed") from exc
+        if current != capture or evidence.sha256 != capture["envelope_evidence"]["sha256"]:
+            raise NativeTrustedOutputError("native_trusted_output_capture_changed")
     return NativeTrustedOutputPreparation(
         process_terminal_sha256=str(terminal["terminal_sha256"]),
+        output_capture_sha256=(str(capture["capture_sha256"]) if capture is not None else None),
         envelope_bytes_sha256=evidence.sha256, envelope=envelope,
         bundles=bundles, drafts=drafts, admission_plan=plan,
+        request_coverage=(
+            "brokered_requests_only"
+            if capture is not None and capture["broker_evidence"] is not None
+            else "producer_declaration_only"
+        ),
     )
 
 
