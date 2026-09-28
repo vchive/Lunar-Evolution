@@ -30,6 +30,7 @@ from .producer_bundle_control import (
     bind_native_producer_bundle_control,
     native_producer_bundle_budget_sha256,
 )
+from .producer_bundle_deadline import persist_controlled_producer_bundle_intent
 from .producer_bundle_intent import (
     persist_producer_bundle_prepared_intent,
     verify_producer_bundle_prepared_intent,
@@ -294,7 +295,8 @@ def run_native_producer_bundle_publication_transaction(
     A supplied control is owned by the caller and must be retained across in-process retries.
     It never refreshes a deadline here. Cancellation stops new stages; once commit crosses its
     durable unknown marker, it finishes publication or preserves the existing unknown outcome.
-    Cross-process budget restoration is not implemented by this active-execution API.
+    The original monotonic deadline is retained with the prepared intent. A new process-local
+    control can only narrow it; restart in a different boot fails closed.
     """
     if not isinstance(strategy, PopulationStrategy):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
@@ -307,7 +309,8 @@ def run_native_producer_bundle_publication_transaction(
     if execution_control is not None:
         with bind_native_producer_bundle_control(strategy, execution_control) as checkpoint:
             return _run_native_producer_bundle_publication_transaction(
-                workspace, strategy, drafts, admission_plan, checkpoint=checkpoint, **options,
+                workspace, strategy, drafts, admission_plan, checkpoint=checkpoint,
+                execution_control=execution_control, **options,
             )
 
     def checkpoint(stage: str) -> None:
@@ -332,6 +335,7 @@ def _run_native_producer_bundle_publication_transaction(
     task_id: str,
     budget_sha256: str | None,
     checkpoint: Callable[[str], object],
+    execution_control: SolveExecutionControl | None = None,
 ) -> NativeProducerBundleTransactionResult:
     checkpoint("producer_preparation")
 
@@ -418,7 +422,15 @@ def _run_native_producer_bundle_publication_transaction(
     rejected: list[str] = []
     try:
         checkpoint("producer_prepared_intent")
-        journal_sha256 = persist_producer_bundle_prepared_intent(root, journal, checkpoint=checkpoint)
+        if execution_control is None:
+            journal_sha256 = persist_producer_bundle_prepared_intent(root, journal, checkpoint=checkpoint)
+        else:
+            retained = persist_controlled_producer_bundle_intent(
+                root, journal, execution_control, checkpoint=checkpoint,
+            )
+            checkpoint.bind_retained_deadline(retained.check)
+            checkpoint("producer_prepared_intent")
+            journal_sha256 = journal.digest()
         terminal = inspect_producer_bundle_all_rejected(
             root, journal, preflight=preflight, checkpoint=checkpoint,
         )
