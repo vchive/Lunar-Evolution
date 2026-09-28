@@ -5,4 +5,14 @@
 - [x] T153-03 Implement staged all-or-nothing publication with a durable recovery marker.
 - [x] T153-04 Implement exact-match resume and terminal unknown-publication rejection.
 - [x] T153-05 Add provider-free focused regression and static validation.
-- [ ] T153-06 Keep launcher/scheduler and real external campaign validation as a later feature.
+- [ ] T153-06 Add non-publishing native draft execution/evaluation under journal-derived IDs and
+      the shared deadline. Bind each retained run to its batch and keep it at the original native
+      `bundle-attempts` path; do not allocate a sequential ID or write the final archive/state.
+- [ ] T153-06a Prepare native records/receipts for planned final source paths and extend staging
+      to verify the complete retained run evidence without copying or rewriting path/inode
+      bindings. Derive active state from frozen population state and adjudications.
+- [ ] T153-06b Validate the controlled two-file path, evidence tampering, mixed/all-rejected and
+      unknown results, interruption and shared-deadline recovery, then archive-integrity,
+      population-restoration and delivery read-back before offline regression.
+- [ ] T153-07 Connect launcher/scheduler and run separate real OpenEvolve and ShinkaEvolve
+      campaigns after the draft-to-publication path and request boundary are accepted.

@@ -1,6 +1,6 @@
 # Feature 153: producer bundle publication transaction
 
-**Status**: Provider-free journal and read-only preflight slice; staged publication pending
+**Status**: Provider-free journal, preflight, staging and commit available; draft evaluation integration pending
 
 ## Problem
 
@@ -68,6 +68,43 @@ publisher, automatic solve defaults, AgentLoop defaults, producer launchers, sch
 transport, or real external campaign acceptance. It does not claim framework parity or model
 effectiveness.
 
+## Integration boundary
+
+The provider-free preflight, stage and commit APIs consume already adjudicated local evidence.
+They do not execute a producer or candidate. The current `MultiFileCandidatePipeline.persist()`
+cannot feed that transaction directly: it allocates a sequential candidate ID, writes source
+bytes and the candidate record into the live archive during evaluation, and retains execution
+evidence under `evolution/bundle-attempts`. That violates the zero-write archive prefix and
+deterministic candidate-ID requirements above. Until the native pipeline can evaluate drafts
+under a private batch source/stage tree with the journal's fixed IDs, and bind its complete
+original execution/evaluation evidence into the staged transaction, external producer results remain
+unpublishable through this path. A fixture that calls stage/commit with hand-built artifacts
+does not close this integration or authorize a real external campaign.
+
+The native bundle-evidence parser currently requires `run_root` under
+`evolution/bundle-attempts/.bundle-run-<24-hex>` and verifies the original execution and
+evaluation paths. Therefore the first integration keeps each retained run at its allocated
+path in the destination workspace while using a private batch source/stage tree. Before launch,
+the run is durably bound to one journal and planned candidate ID. It is not a published archive
+candidate, and it is never moved or reused. Copying a scratch archive or rewriting a record's
+candidate ID, evidence path, digest, or inode identity after execution is not valid evidence.
+
+An execution-only native path must accept the planned ID and frozen lineage/island mapping,
+revalidate the verified source bundle, and run the existing native executor and independent
+evaluator under the batch deadline. It must leave destination `archive.jsonl`, `state.json`,
+and final `evolution/candidates/<id>` trees unchanged until the transaction commits. Only
+after independent evidence inspection may it prepare a canonical native record and archive
+receipt for the planned final source path. The publication manifest must bind the full retained
+plan/admission, workspace/input, attempt/completion/cleanup, and evaluation evidence as well as
+the source and portable receipts. A portable digest alone does not establish that the native
+evidence still exists or belongs to this candidate.
+
+`state_after` is derived from the frozen population state and all adjudications; it contains
+only prior active IDs and admitted planned IDs with their fixed lineage/island mapping. The
+publication lock checks the original archive/state prefix and complete evidence before changing
+any final candidate, archive, or active-state byte. After commit, normal read-only archive
+integrity checks, population restoration, and delivery must succeed from the committed state.
+
 ## Acceptance
 
 1. A valid plan creates one canonical journal whose digest is stable across parse/serialize
@@ -88,3 +125,12 @@ effectiveness.
    unchanged, and provider-free tests do not start a producer or model provider.
 8. The preflight revalidates the existing candidate source/record/receipt tree before any batch
    write; archive/state drift or source tampering has zero side effects.
+9. A verified two-file draft executes and is independently evaluated once under its planned ID.
+   Before commit, the original archive/state bytes and final candidate-tree inventory are
+   unchanged; sequential ID allocation and per-candidate destination persistence are not called.
+10. Staging and commit reject missing, foreign, truncated, symlinked, replaced, or identity-changed
+    retained native evidence, even with unchanged portable receipts. A successful commit passes
+    native archive integrity, population restore, and delivery read-back checks.
+11. Mixed admitted/rejected candidates publish the admitted subset once; an unknown attempt,
+    cleanup uncertainty, deadline expiry, cancellation, or archive-prefix drift publishes none.
+    Recovery inspection does not replay a started execution or evaluator.

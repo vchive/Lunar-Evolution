@@ -198,6 +198,67 @@ def test_native_attempt_routes_isolated_target_request_through_host_broker(tmp_p
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_broker_keeps_pipe_ownership_through_parent_cleanup(tmp_path: Path, monkeypatch):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    clear_proxy_environment(monkeypatch)
+    workspace, producer_root, intent, attestation, artifact, _ = _attempt(
+        tmp_path, broker_request=True,
+    )
+    parent_cleanup = threading.Event()
+    serve = runner.serve_producer_broker
+    cleanup = runner._cleanup
+    thread_type = runner.threading.Thread
+    joins = []
+    ticks = []
+
+    def observed_clock():
+        current = time.monotonic()
+        ticks.append(current)
+        return current
+
+    def delayed_serve(request_fd, response_fd, **kwargs):
+        observation = serve(request_fd, response_fd, **kwargs)
+        identities = [os.fstat(fd) for fd in (request_fd, response_fd)]
+        assert parent_cleanup.wait(2)
+        # The broker thread is the sole owner even when the parent finishes its target cleanup.
+        for fd, expected in zip((request_fd, response_fd), identities, strict=True):
+            current = os.fstat(fd)
+            assert (current.st_dev, current.st_ino) == (expected.st_dev, expected.st_ino)
+        return observation
+
+    def signal_cleanup(*args, **kwargs):
+        parent_cleanup.set()
+        return cleanup(*args, **kwargs)
+
+    class ObservedThread(thread_type):
+        def __init__(self, *args, **kwargs):
+            self.producer_broker = getattr(kwargs.get("target"), "__name__", None) == "serve"
+            super().__init__(*args, **kwargs)
+
+        def join(self, timeout=None):
+            if self.producer_broker:
+                joins.append((timeout, max(0.0, ticks[0] + intent.wall_timeout_seconds - ticks[-1])))
+            return super().join(timeout)
+
+    monkeypatch.setattr(runner, "serve_producer_broker", delayed_serve)
+    monkeypatch.setattr(runner, "_cleanup", signal_cleanup)
+    monkeypatch.setattr(runner.threading, "Thread", ObservedThread)
+    with local_http() as (endpoint, _):
+        result = run_native_trusted_attempt(
+            workspace, producer_root=producer_root, intent=intent,
+            attestation=attestation, artifact=artifact,
+            broker_config=ProducerBrokerConfig(endpoint, {}),
+            monotonic=observed_clock,
+        )
+    assert result.broker_observation is not None and result.broker_observation.complete
+    assert result.reason == "native_trusted_attempt_output_capture_unknown"
+    assert len(joins) == 1
+    timeout, remaining = joins[0]
+    assert timeout == remaining
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_broker_journal_initialization_failure_keeps_native_gate_closed(tmp_path: Path):
     workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
     batch.mkdir(parents=True)

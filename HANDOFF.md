@@ -1,5 +1,21 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-28 开源 producer 接线与发布边界
+
+“外部 producer”仅指 OpenEvolve、ShinkaEvolve 等开源演化器，不存在需要用户提供的私有
+producer 服务或专用命令。OpenEvolve 现有显式本地单候选 wrapper；ShinkaEvolve 现有 SQLite
+结果的离线导出/导入。用户的模型密钥在私有 `.env`，不得输出或提交；Feature 142 的真实模型
+验收已经通过，无需重复跑该登记，也不运行 WebAgent。
+
+本轮已推送 `9c1fedb`：批次 staging 在任何写入前重验完整 preflight receipt 及 archive
+record count。已推送 `35850fb`：真实验收 revalidation 从已提交材料重建留存证据，拒绝同时
+伪造材料和 admission 摘要。原生 broker 线程的管道所有权及墙钟 join 已收紧；相关原生
+专项回归和线程异常严格检查通过。当前 `publication_eligible=false`，因为多文件流水线
+评测时直接写目标 archive、分配顺序 ID，证据留在 `evolution/bundle-attempts`，不能直接
+接到 Feature 153 的零写入、确定性 ID、原子批次发布。后续必须先完成隔离草稿评测、原位
+执行证据的完整绑定和发布收据、完整请求出口及真实 OpenEvolve/ShinkaEvolve 独立验收，
+方可声明 P1 完成。
+
 ## 2026-09-28 P1 同次捕获接入候选准备
 
 原生多文件候选的只读准备增加显式 `require_same_attempt_capture` 严格路径：准备前后都恢复并

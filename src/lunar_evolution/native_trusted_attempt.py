@@ -382,8 +382,11 @@ def run_native_trusted_attempt(
                             broker_state["error"] = "native_trusted_attempt_broker_unknown"
                         finally:
                             broker_ready.set()
-                            os.close(request_read)
-                            os.close(response_write)
+                            for fd in (request_read, response_write):
+                                try:
+                                    os.close(fd)
+                                except OSError:
+                                    broker_state["error"] = "native_trusted_attempt_broker_unknown"
 
                 command = native_bootstrap_command(
                     pair.bootstrap.executable, control_fd=control_read,
@@ -407,6 +410,9 @@ def run_native_trusted_attempt(
                         fds.remove(fd)
                     broker_thread = threading.Thread(target=serve, daemon=True)
                     broker_thread.start()
+                    # Only the broker thread closes its controller-side descriptors.
+                    fds.remove(request_read)
+                    fds.remove(response_write)
                 _write_control(control_write, control, deadline, monotonic)
                 os.close(control_write)
                 fds.remove(control_write)
@@ -514,7 +520,7 @@ def run_native_trusted_attempt(
                     if reason == "native_trusted_attempt_terminal_receipt_missing":
                         reason = "native_trusted_attempt_reap_unknown"
             if broker_thread is not None:
-                broker_thread.join(timeout=max(0.0, deadline - monotonic()) + 0.25)
+                broker_thread.join(timeout=max(0.0, deadline - monotonic()))
                 if broker_thread.is_alive() or "error" in broker_state:
                     reason = "native_trusted_attempt_broker_unknown"
             if session is not None and registration is not None:
