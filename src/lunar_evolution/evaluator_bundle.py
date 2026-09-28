@@ -134,6 +134,14 @@ class EvaluatorBundleError(EvolutionError):
     """A bounded evaluator compilation, preflight, or integrity failure."""
 
 
+class _SuiteResponseError(EvaluatorBundleError):
+    """Fixed auditor response category without retaining generated content."""
+
+    def __init__(self, message: str, reason: str) -> None:
+        self.reason = reason
+        super().__init__(message)
+
+
 class EvaluatorPreparationError(EvaluatorBundleError):
     """A local preparation failure with a controller-owned, bounded observation."""
 
@@ -821,29 +829,36 @@ def _parse_probe_suite(
     raw: str, contract: AlgorithmProblemContract, *, label: str = "audit", invocation="candidate",
 ) -> ProbeSuite:
     if not isinstance(raw, str) or not raw.strip():
-        raise EvaluatorBundleError(f"evaluator {label} returned empty output")
+        raise _SuiteResponseError(f"evaluator {label} returned empty output", "response_envelope_invalid")
     if len(raw.encode("utf-8")) > MAX_BUNDLE_RESPONSE_BYTES:
-        raise EvaluatorBundleError(f"evaluator {label} response exceeds the bounded size")
+        raise _SuiteResponseError(f"evaluator {label} response exceeds the bounded size", "response_envelope_invalid")
     if _SECRET.search(raw):
-        raise EvaluatorBundleError(
-            f"evaluator {label} response contains credential-like content"
+        raise _SuiteResponseError(
+            f"evaluator {label} response contains credential-like content", "response_envelope_invalid"
         )
     try:
         payload = _strict_json_loads(raw)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise EvaluatorBundleError(
-            f"evaluator {label} must return one strict JSON object"
+        raise _SuiteResponseError(
+            f"evaluator {label} must return one strict JSON object", "response_envelope_invalid"
         ) from exc
     expected = {"schema_version", "constraint_coverage", "probes", "score_order"}
     if not isinstance(payload, dict) or set(payload) != expected:
-        raise EvaluatorBundleError(f"evaluator {label} suite has an invalid shape")
+        raise _SuiteResponseError(f"evaluator {label} suite has an invalid shape", "response_envelope_invalid")
     if payload["schema_version"] != "1":
-        raise EvaluatorBundleError(f"evaluator {label} schema_version must be '1'")
+        raise _SuiteResponseError(f"evaluator {label} schema_version must be '1'", "response_envelope_invalid")
     required_probe_paths = _required_probe_paths(contract)
-    probes = _parse_probes(payload["probes"], required_probe_paths)
-    return _validate_probe_suite(
-        payload["constraint_coverage"], probes, payload["score_order"], contract, label=label, invocation=invocation,
-    )
+    try:
+        probes = _parse_probes(payload["probes"], required_probe_paths)
+    except EvaluatorBundleError as exc:
+        raise _SuiteResponseError(str(exc), "response_probes_invalid") from exc
+    try:
+        return _validate_probe_suite(
+            payload["constraint_coverage"], probes, payload["score_order"], contract,
+            label=label, invocation=invocation,
+        )
+    except EvaluatorBundleError as exc:
+        raise _SuiteResponseError(str(exc), "response_suite_invalid") from exc
 
 
 def _required_probe_paths(contract: AlgorithmProblemContract) -> frozenset[str]:
@@ -1772,6 +1787,8 @@ def _compile_audit_suite(
         if not isinstance(result, RuntimeResult):
             raise EvaluatorBundleError("evaluator auditor returned an invalid runtime result")
         return _parse_probe_suite(result.text, contract, invocation=invocation)
+    except _SuiteResponseError as exc:
+        raise _local_failure(str(exc), "auditor_response", exc.reason) from exc
     except (EvaluatorBundleError, ValueError, TypeError, RecursionError) as exc:
         raise _local_failure(str(exc), "auditor_response", "response_invalid") from exc
 

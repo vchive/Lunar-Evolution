@@ -98,7 +98,8 @@ def test_native_local_failure_is_durable_and_visible_without_reexecution(
     stage = role + ("_response" if failure == "response" else "_preflight")
     expected_detail = {
         "schema_version": "1", "stage": stage,
-        "reason": "response_invalid" if failure == "response" else "input_format_invalid",
+        "reason": ("response_envelope_invalid" if role == "auditor" else "response_invalid")
+        if failure == "response" else "input_format_invalid",
         "probe_index": None if failure == "response" else 3,
         "input_index": None if failure == "response" else 1, "order_index": None,
     }

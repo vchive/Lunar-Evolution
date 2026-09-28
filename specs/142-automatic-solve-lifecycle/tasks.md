@@ -142,5 +142,7 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
   runtime and observation binding inside the native preparation hook, and the independent campaign
   audit inspects the retained observation before accepting the result.
 
-- [ ] T040 Run the new one-slot real attempt and independent postrun six-stage/holdout audit.
-      Preserve Feature 139's closed evidence and report `0/1` honestly if a stage fails.
+- [x] T040 Run the new one-slot real attempt and independent postrun six-stage/holdout audit.
+      The second fresh registration completed at `native-142-20260928-02` with verified
+      preparation, primary and joint success `1/1`, eight passed holdouts and an independent
+      matching audit. Preserve the first failed attempt and Feature 139's closed evidence.

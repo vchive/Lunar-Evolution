@@ -32,7 +32,10 @@ class EvaluatorPreparationDiagnostic:
             if value is not None and (type(value) is not int or not 1 <= value <= maximum):
                 raise ValueError("invalid evaluator diagnostic index")
         if self.stage in RESPONSE_STAGES:
-            valid = (self.reason == "response_invalid" and self.probe_index is None
+            reasons = ({"response_invalid", "response_envelope_invalid",
+                        "response_probes_invalid", "response_suite_invalid"}
+                       if self.stage == "auditor_response" else {"response_invalid"})
+            valid = (self.reason in reasons and self.probe_index is None
                      and self.input_index is None and self.order_index is None)
         elif self.reason == "input_format_invalid":
             valid = self.probe_index is not None and self.input_index is not None and self.order_index is None
