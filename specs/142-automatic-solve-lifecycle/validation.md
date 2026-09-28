@@ -1,5 +1,20 @@
 # Validation
 
+## Auditor response categories before the second registration (2026-09-28)
+
+The first real attempt retained only `auditor_response / response_invalid`; its generated
+response was not retained, so the exact cause cannot be reconstructed. The parser now reports
+one of three fixed, content-free categories for known auditor failures:
+`response_envelope_invalid` for empty/oversized/non-JSON or wrong top-level shape,
+`response_probes_invalid` for malformed probe objects/files, and
+`response_suite_invalid` for coverage, valid-probe, or score-order constraints.
+Unexpected parser/runtime failures retain the older `response_invalid` category. Strict
+validation and generated response retention rules are unchanged. The focused diagnostic and
+prompt protocol suites passed 282 tests; native offline E2E passed **226/226** with zero
+failures/skips, with JUnit at
+`.lunar-evolution/test-results/native-e2e-20260928-response-categories/native-e2e.xml`.
+This is offline evidence, not a second real attempt.
+
 ## First registered real-model attempt (2026-09-28)
 
 The fresh `native-142-20260928-01` registration pinned product `6089942` and

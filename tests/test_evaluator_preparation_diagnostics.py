@@ -211,7 +211,7 @@ def _assert_failed(root, runtime, invocation, role, expected, *, second_input=Fa
 
 @pytest.mark.parametrize("invocation", MODES)
 @pytest.mark.parametrize("role", ROLES)
-@pytest.mark.parametrize("malformation", ["json", "shape", "coverage", "runtime_result"])
+@pytest.mark.parametrize("malformation", ["json", "shape", "probes", "coverage", "runtime_result"])
 def test_direct_response_failures_are_typed_without_response_content(
     tmp_path, invocation, role, malformation,
 ):
@@ -230,13 +230,22 @@ def test_direct_response_failures_are_typed_without_response_content(
         payload = json.loads(result.text)
         if malformation == "shape":
             payload["private_extra"] = SECRET
+        elif malformation == "probes":
+            payload["probes"][0]["files"] = []
         else:
             payload["constraint_coverage"] = []
         return RuntimeResult(json.dumps(payload))
 
     runtime.run = respond
+    reason = "response_invalid"
+    if role == "audit" and malformation != "runtime_result":
+        reason = (
+            "response_probes_invalid" if malformation == "probes" else
+            "response_suite_invalid" if malformation == "coverage" else
+            "response_envelope_invalid"
+        )
     _assert_failed(tmp_path, runtime, invocation, role,
-                   _expected(_stage(role, "response"), "response_invalid"))
+                   _expected(_stage(role, "response"), reason))
 
 
 @pytest.mark.parametrize("invocation", MODES)
