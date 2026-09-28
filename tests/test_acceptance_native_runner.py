@@ -102,6 +102,14 @@ def test_single_native_invocation_retains_result(
     assert result["request_count"] == 0
     assert json.loads((root / "native-result.json").read_bytes()) == result
     assert json.loads((root / "native-launch.json").read_bytes())["attempt_claim_sha256"] == result["attempt_claim_sha256"]
+    budget = json.loads((root / "native-budget.json").read_bytes())
+    assert budget["attempt_claim_sha256"] == result["attempt_claim_sha256"]
+    assert budget["registration_sha256"] == result["registration_sha256"]
+    assert budget["request_count"] == result["request_count"] == 0
+    assert result["provider_call_made"] is False
+    assert result["budget_receipt_sha256"] == hashlib.sha256(
+        json.dumps(budget, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     assert (root / "attempt-started.json").exists()
     with pytest.raises(Exception, match="campaign_root_not_fresh"):
         _run(fixture)

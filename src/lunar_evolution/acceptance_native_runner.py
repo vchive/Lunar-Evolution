@@ -88,7 +88,8 @@ def _native_args(registration: dict[str, Any], task: str, campaign: Path) -> lis
     ]
 
 
-def _write_record(campaign: Path, claim: dict[str, Any], name: str, record: dict[str, Any]) -> None:
+def _write_record(campaign: Path, claim: dict[str, Any], name: str, record: dict[str, Any]) -> str:
+    raw = json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
     try:
         descriptor = os.open(campaign, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
         try:
@@ -98,12 +99,13 @@ def _write_record(campaign: Path, claim: dict[str, Any], name: str, record: dict
                     or (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino)
                     or (held.st_dev, held.st_ino) != (claim["root_device"], claim["root_inode"])):
                 _fail("acceptance_campaign_root_changed")
-            _write_new(descriptor, name, json.dumps(record, sort_keys=True, separators=(",", ":")).encode())
+            _write_new(descriptor, name, raw)
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
     except OSError as exc:
         raise AcceptanceNativeRunnerError("acceptance_record_unavailable") from exc
+    return hashlib.sha256(raw).hexdigest()
 
 
 def run_registered_acceptance(
@@ -201,12 +203,26 @@ def run_registered_acceptance(
             and isinstance(native.get("evolution"), dict)
             and native["evolution"].get("status") == "succeeded"
         )
+        snapshot = budget.snapshot()
+        budget_record = {
+            "schema_version": "1", "scope": "acceptance_native_budget",
+            "attempt_claim_sha256": claim["attempt_claim_sha256"],
+            "registration_sha256": claim["registration_sha256"],
+            "request_ceiling": budget.max_requests,
+            "observed_token_ceiling": budget.max_observed_tokens,
+            **snapshot,
+        }
+        budget_digest = _write_record(campaign, claim, "native-budget.json", budget_record)
         result = {
             "schema_version": "1", "scope": "acceptance_native_result",
             "status": "completed" if code == 0 and binding and native_succeeded else "failed",
             "exit_code": code, "attempt_claim_sha256": claim["attempt_claim_sha256"],
             "registration_sha256": claim["registration_sha256"],
-            **budget.snapshot(), **binding,
+            "request_ceiling": budget.max_requests,
+            "observed_token_ceiling": budget.max_observed_tokens,
+            "budget_receipt_sha256": budget_digest,
+            "provider_call_made": snapshot["request_count"] > 0,
+            **snapshot, **binding,
         }
         _write_record(campaign, claim, "native-result.json", result)
         return result
