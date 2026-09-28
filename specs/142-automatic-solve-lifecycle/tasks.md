@@ -123,12 +123,14 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
       separately tracked Feature 142 materials. Keep generated evaluator/profile digests distinct.
 - [x] T037 Check all registered material bytes against committed Git blobs, reject non-regular
       committed file modes, use one pinned HEAD during the read, and recheck checkout stability.
-- [ ] T038 Implement a launch runner that verifies the actual remote `main` commit, enforces the
+- [x] T038 Implement a launch runner that verifies the actual remote `main` commit, enforces the
       clean `HEAD == origin/main` gate, atomically claims one fresh campaign root, and retains the
-      preregistration/preflight evidence before the sole provider attempt.
+      preregistration/preflight evidence before the sole provider attempt. The pinned isolated
+      entrypoint invokes one foreground native solve and retains launch, budget, result and audit
+      evidence; this offline implementation does not count as the T040 real attempt.
 - [x] T038a Implement and verify the provider-free remote/root/evidence admission slice described
       in [campaign-admission.md](campaign-admission.md); it does not itself launch an attempt.
-- [ ] T039 Bind the native preparation-generated evaluator/profile to the preregistered independent
+- [x] T039 Bind the native preparation-generated evaluator/profile to the preregistered independent
       criteria and the observation manifest; add provider-free mismatch and interruption tests.
 
   The `15b8113` supporting slice validates a complete prepared parent, keeps all preregistered
@@ -136,8 +138,9 @@ foreground/background equivalence remained outside acceptance; Phase C below clo
   their reports, projections, actual harness digest, exits, cleanup and a create-only binding
   receipt. Strict criteria/material, drift, cancellation, deadline and directory-swap regressions
   pass. Follow-up `b50ab43` now reconnects the retained receipt to a `criteria_bound` observation
-  manifest/binding and create-only `observation/` publication. T039 remains open only for wiring
-  this publication into campaign discovery and the formal launch runner.
+  manifest/binding and create-only `observation/` publication. The formal runner now calls both
+  runtime and observation binding inside the native preparation hook, and the independent campaign
+  audit inspects the retained observation before accepting the result.
 
 - [ ] T040 Run the new one-slot real attempt and independent postrun six-stage/holdout audit.
       Preserve Feature 139's closed evidence and report `0/1` honestly if a stage fails.

@@ -1,5 +1,27 @@
 # Validation
 
+## Registered native runner and campaign audit (2026-09-28)
+
+`tools/run_acceptance.py` starts one isolated interpreter that imports only registered source
+bytes. `run_registered_acceptance` validates the configured provider identity before claiming a
+root, then uses `stage_acceptance_attempt` to revalidate clean remote `main` and retained campaign
+evidence and create the one-shot attempt claim. The foreground native solve uses the registered
+limits and a controller-owned request/token budget. Its preparation hook publishes both the
+runtime criteria/holdout receipt and the observation manifest/binding. The read-only campaign
+auditor checks retained observation, native generation/execution/scoring evidence and verified
+parent delivery. Its result, rather than CLI-reported success alone, decides native acceptance.
+The runner retains create-only launch, budget and result records and publishes the audit with a
+campaign inventory. T038 and T039 are implemented and verified offline; no real-model result is
+inferred from fixture runs.
+
+On the current branch, the runner, campaign audit, pinned loader, isolated entrypoint,
+observation binding and attempt staging suites passed **31 tests** with no failures or skips
+(`PYTHONPATH=src pytest -q --disable-warnings` with those six test modules). T040 remains open:
+`LUNAR_EVOLUTION_MODEL_ENDPOINT` and `LUNAR_EVOLUTION_API_KEY` are unset in this execution
+environment, and this development branch is not clean `origin/main`. A fresh committed
+registration, clean pushed `main`, configured model endpoint/key, one real attempt and independent
+postrun review are still required. The historical Feature 139 result remains untouched.
+
 ## Native runtime binding and fixed holdouts (`15b8113`, 2026-09-27)
 
 The provider-free preparation wrapper validates the actual native prepared parent, its exact
