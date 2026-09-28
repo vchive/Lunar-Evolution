@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,10 +12,16 @@ from lunar_evolution.native_trusted_attempt import (
     NativeTrustedAttemptError,
     run_native_trusted_attempt,
 )
+from lunar_evolution.producer_bootstrap import (
+    build_trusted_bootstrap_launch,
+    observe_trusted_bootstrap_attempt,
+    parse_trusted_bootstrap_evidence,
+)
 from lunar_evolution.producer_launcher import (
     build_producer_launch_attestation,
     build_producer_launch_intent,
 )
+from lunar_evolution.producer_process import ProducerProcessError
 from lunar_evolution.trusted_bootstrap_registration import TrustedBootstrapRegistrationError
 
 
@@ -85,6 +92,19 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
     assert result.exit_code == 0
     assert marker.read_text(encoding="utf-8") == "started"
     assert not (batch / "execution-receipt.json").exists()
+    evidence = parse_trusted_bootstrap_evidence(
+        (batch / "trusted-bootstrap-evidence.json").read_bytes()
+    )
+    assert evidence.status == "passed"
+    assert evidence.target_pgid is not None
+    launch = build_trusted_bootstrap_launch(intent, attestation, artifact.descriptor)
+    observed = observe_trusted_bootstrap_attempt(
+        workspace, launch=launch, descriptor=artifact.descriptor,
+        intent=intent, attestation=attestation,
+    )
+    assert observed["status"] == "evidence_available"
+    assert observed["bootstrap_status"] == "passed"
+    assert observed["evidence_sha256"] == evidence.evidence_sha256
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
@@ -107,6 +127,7 @@ def test_registration_failure_keeps_gate_closed_and_target_unstarted(tmp_path: P
     assert not (batch / "work" / "marker").exists()
     assert (batch / "attestation-consumption.json").exists()
     assert not (batch / "process-registration.json").exists()
+    assert not (batch / "trusted-bootstrap-evidence.json").exists()
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
@@ -153,3 +174,74 @@ def test_native_attempt_timeout_keeps_unknown_and_cleans_owned_group(tmp_path: P
     assert result.gate_released and result.target_started
     assert result.cleanup_status in {"cleaned", "already_exited"}
     assert not (batch / "work" / "marker").exists()
+    evidence = parse_trusted_bootstrap_evidence(
+        (batch / "trusted-bootstrap-evidence.json").read_bytes()
+    )
+    assert evidence.status == "unknown"
+    launch = build_trusted_bootstrap_launch(intent, attestation, artifact.descriptor)
+    observed = observe_trusted_bootstrap_attempt(
+        workspace, launch=launch, descriptor=artifact.descriptor,
+        intent=intent, attestation=attestation,
+    )
+    assert observed["status"] == "recovery_required"
+    assert observed["reason"] == "trusted_bootstrap_evidence_unknown"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_evidence_write_failure_stays_recovery_required(tmp_path: Path, monkeypatch):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    atomic_json = runner._atomic_json
+
+    def reject_evidence(path, value, *, exclusive=False):
+        if path.name == "trusted-bootstrap-evidence.json":
+            raise ProducerProcessError("producer_process_receipt_write_unknown")
+        return atomic_json(path, value, exclusive=exclusive)
+
+    monkeypatch.setattr(runner, "_atomic_json", reject_evidence)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    assert result.status == "recovery_required"
+    assert result.reason == "native_trusted_attempt_evidence_write_unknown"
+    assert not (batch / "trusted-bootstrap-evidence.json").exists()
+    assert not (batch / "execution-receipt.json").exists()
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_invalid_terminal_frame_persists_failed_evidence(tmp_path: Path, monkeypatch):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    read_frame = runner._read_frame
+    seen = 0
+
+    def wrong_terminal(fd, deadline, monotonic):
+        nonlocal seen
+        frame = read_frame(fd, deadline, monotonic)
+        seen += 1
+        if seen == 3:
+            return replace(frame, sequence=2, frame_sha256=None)
+        return frame
+
+    monkeypatch.setattr(runner, "_read_frame", wrong_terminal)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    assert result.status == "recovery_required"
+    assert result.reason == "producer_bootstrap_terminal_order_invalid"
+    evidence = parse_trusted_bootstrap_evidence(
+        (batch / "trusted-bootstrap-evidence.json").read_bytes()
+    )
+    assert evidence.status == "failed"
+    assert evidence.failure_code == "producer_bootstrap_terminal_order_invalid"
+    launch = build_trusted_bootstrap_launch(intent, attestation, artifact.descriptor)
+    observed = observe_trusted_bootstrap_attempt(
+        workspace, launch=launch, descriptor=artifact.descriptor,
+        intent=intent, attestation=attestation,
+    )
+    assert observed["status"] == "evidence_available"
+    assert observed["bootstrap_status"] == "failed"

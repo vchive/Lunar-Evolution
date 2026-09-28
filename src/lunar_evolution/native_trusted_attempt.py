@@ -12,7 +12,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .native_bootstrap import (
@@ -26,6 +26,7 @@ from .process_ownership import ProcessCleanupStatus, RegisteredProcess
 from .producer_bootstrap import (
     BootstrapHandshakeFrame,
     ProducerBootstrapError,
+    TrustedBootstrapSession,
     build_trusted_bootstrap_launch,
     parse_bootstrap_handshake_frame,
 )
@@ -33,6 +34,7 @@ from .producer_isolation import ProducerIsolationError, build_producer_isolation
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_process import (
     ProducerProcessError,
+    _atomic_json,
     _cleanup,
     _current_process_owned,
     _current_recovery_lock_identity,
@@ -151,6 +153,7 @@ def run_native_trusted_attempt(
         process: subprocess.Popen[bytes] | None = None
         owner: RegisteredProcess | None = None
         registration: dict[str, object] | None = None
+        session: TrustedBootstrapSession | None = None
         gate_released = False
         target_started = False
         exit_code: int | None = None
@@ -215,6 +218,8 @@ def run_native_trusted_attempt(
                     recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
                 )
                 registration = published.registration
+                session = TrustedBootstrapSession(launch, str(registration["registration_sha256"]))
+                session.accept_frame(ready)
                 pid = process.pid
                 owner_identity = registration["owner_identity"]
 
@@ -238,7 +243,9 @@ def run_native_trusted_attempt(
                 os.close(gate_write)
                 fds.remove(gate_write)
                 gate_released = True
+                session.release(launch.gate_nonce)
                 started = _read_frame(frame_read, deadline, monotonic)
+                session.accept_frame(started)
                 if (
                     started.kind != "target_started" or started.sequence != 2
                     or started.launch_sha256 != launch.launch_sha256
@@ -249,6 +256,7 @@ def run_native_trusted_attempt(
                     raise NativeTrustedAttemptError("native_trusted_attempt_target_start_unknown")
                 target_started = True
                 terminal = _read_frame(frame_read, deadline, monotonic)
+                session.accept_frame(terminal)
                 if (
                     terminal.kind != "terminal" or terminal.sequence != 3
                     or terminal.launch_sha256 != launch.launch_sha256
@@ -256,7 +264,7 @@ def run_native_trusted_attempt(
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_terminal_unknown")
                 exit_code = process.wait(timeout=_remaining(deadline, monotonic))
-        except (NativeTrustedAttemptError, TrustedBootstrapRegistrationError,
+        except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
                 TrustedBootstrapBindingError, NativeBootstrapError, ProducerIsolationError,
                 ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
             if not claimed:
@@ -286,6 +294,28 @@ def run_native_trusted_attempt(
                     process.wait(timeout=max(0.0, deadline - monotonic()))
                 except subprocess.TimeoutExpired:
                     reason = "native_trusted_attempt_reap_unknown"
+            if session is not None and registration is not None:
+                evidence = session.evidence()
+                if evidence.status == "passed" and (
+                    cleanup_status not in {"cleaned", "already_exited"} or exit_code is None
+                ):
+                    evidence = replace(evidence, status="unknown", evidence_sha256=None)
+                try:
+                    current = _read_durable_json(
+                        batch / "process-registration.json",
+                        code="native_trusted_attempt_registration_unknown",
+                    )
+                    if current != registration or _current_recovery_lock_identity(batch) != lock_identity:
+                        raise ProducerProcessError("native_trusted_attempt_registration_unknown")
+                    _atomic_json(batch / "trusted-bootstrap-evidence.json", evidence.to_dict(), exclusive=True)
+                    persisted = _read_durable_json(
+                        batch / "trusted-bootstrap-evidence.json",
+                        code="native_trusted_attempt_evidence_write_unknown",
+                    )
+                    if persisted != evidence.to_dict():
+                        raise ProducerProcessError("native_trusted_attempt_evidence_write_unknown")
+                except ProducerProcessError:
+                    reason = "native_trusted_attempt_evidence_write_unknown"
         return NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
