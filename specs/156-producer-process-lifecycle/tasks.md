@@ -17,6 +17,11 @@
 - [x] T156-13 Add capture/read and signal/cleanup fault-injection fixtures, including child exit before gate and broken gate delivery; preserve terminal unknown/recovery evidence.
 - [ ] T156-14 Integrate Feature 157 only after controller-owned request evidence is host-observed and recovery-safe; producer-declared files remain diagnostics.
 
+The native trusted attempt now requires a stable durable handoff reread before gate release.
+It cross-checks the one-time nonce claim, formal registration, and handoff under the existing
+wall-clock deadline; missing or tampered handoff keeps the target unstarted. This is pre-gate
+evidence only. No terminal execution receipt or brokered request coverage is claimed.
+
 The `15b8113` supporting checkpoint adds a compiled native trusted bootstrap and a real Darwin
 bootstrap → isolated target test. The target can write its declared workspace while outside
 writes, controller-secret reads and direct network connections are denied. C execution uses the

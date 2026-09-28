@@ -5,6 +5,14 @@
 - [x] T158-03 Specify and implement the ready/block/release/target-start state machine in a trusted bootstrap runtime fixture.
 - [ ] T158-04 Bind bootstrap and target identities to Feature 156 registration, cleanup, recovery, and one monotonic attempt.
 
+  The native attempt now rereads the durable claim, nonce ledger, registration, and handoff
+  under held no-follow directory chains before releasing its private gate. The handoff is
+  verified against the same launch, descriptor, intent, attestation, claim, and registration;
+  the reread consumes the attempt's existing monotonic deadline. Missing, changed, or invalid
+  handoff bytes keep the target unstarted and leave recovery required. This closes the pre-gate
+  handoff reread only; terminal Feature 156 receipt, host-observed broker requests, and
+  post-crash process recovery remain open.
+
   The formal pre-gate registration publisher now reads matching durable batch/nonce claims,
   validates the observed native ready frame and live PID/PGID owner, checks both byte-binding
   records and the active recovery-lock inode, and publishes the Feature 156 registration plus

@@ -28,6 +28,7 @@ from .producer_bootstrap import (
     ProducerBootstrapError,
     TrustedBootstrapSession,
     build_trusted_bootstrap_launch,
+    observe_trusted_bootstrap_attempt,
     parse_bootstrap_handshake_frame,
 )
 from .producer_isolation import ProducerIsolationError, build_producer_isolation_policy
@@ -218,6 +219,18 @@ def run_native_trusted_attempt(
                     recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
                 )
                 registration = published.registration
+                observed = observe_trusted_bootstrap_attempt(
+                    root, launch=launch, descriptor=installed.descriptor,
+                    intent=intent, attestation=attestation, require_handoff=True,
+                    deadline=deadline, monotonic=monotonic,
+                )
+                if (
+                    observed.get("status") != "recovery_required"
+                    or observed.get("reason") != "trusted_bootstrap_terminal_evidence_missing"
+                    or observed.get("registration_sha256") != registration["registration_sha256"]
+                    or observed.get("handoff_sha256") != published.handoff["handoff_sha256"]
+                ):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_handoff_unknown")
                 session = TrustedBootstrapSession(launch, str(registration["registration_sha256"]))
                 session.accept_frame(ready)
                 pid = process.pid

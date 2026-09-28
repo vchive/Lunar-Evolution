@@ -13,6 +13,7 @@ from lunar_evolution.native_trusted_attempt import (
     run_native_trusted_attempt,
 )
 from lunar_evolution.producer_bootstrap import (
+    ProducerBootstrapError,
     build_trusted_bootstrap_launch,
     observe_trusted_bootstrap_attempt,
     parse_trusted_bootstrap_evidence,
@@ -100,11 +101,55 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
     launch = build_trusted_bootstrap_launch(intent, attestation, artifact.descriptor)
     observed = observe_trusted_bootstrap_attempt(
         workspace, launch=launch, descriptor=artifact.descriptor,
-        intent=intent, attestation=attestation,
+        intent=intent, attestation=attestation, require_handoff=True,
     )
     assert observed["status"] == "evidence_available"
     assert observed["bootstrap_status"] == "passed"
     assert observed["evidence_sha256"] == evidence.evidence_sha256
+    assert isinstance(observed["handoff_sha256"], str)
+    with pytest.raises(ProducerBootstrapError) as expired:
+        observe_trusted_bootstrap_attempt(
+            workspace, launch=launch, descriptor=artifact.descriptor,
+            intent=intent, attestation=attestation, require_handoff=True,
+            deadline=0.0, monotonic=lambda: 0.0,
+        )
+    assert expired.value.code == "producer_bootstrap_attempt_wall_timeout"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+@pytest.mark.parametrize(
+    ("mutation", "reason"),
+    [
+        ("missing", "producer_bootstrap_attempt_handoff_missing"),
+        ("tampered", "trusted_bootstrap_handoff_schema_invalid"),
+    ],
+)
+def test_native_attempt_requires_stable_handoff_before_gate(
+    tmp_path: Path, monkeypatch, mutation: str, reason: str,
+):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    publish = runner.publish_trusted_bootstrap_registration
+
+    def changed_publish(*args, **kwargs):
+        result = publish(*args, **kwargs)
+        handoff = batch / "trusted-bootstrap-handoff.json"
+        if mutation == "missing":
+            handoff.unlink()
+        else:
+            handoff.write_bytes(b"{}")
+        return result
+
+    monkeypatch.setattr(runner, "publish_trusted_bootstrap_registration", changed_publish)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    assert result.status == "recovery_required"
+    assert result.reason == reason
+    assert not result.gate_released and not result.target_started
+    assert not (batch / "work" / "marker").exists()
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")

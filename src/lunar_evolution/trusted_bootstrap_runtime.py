@@ -31,6 +31,7 @@ from .producer_bootstrap import (
     TrustedBootstrapEvidence,
     TrustedBootstrapLaunch,
     TrustedBootstrapSession,
+    _strict_json,
     build_trusted_bootstrap_registration,
     parse_bootstrap_handshake_frame,
     parse_trusted_bootstrap_evidence,
@@ -43,6 +44,10 @@ from .producer_launcher import (
     parse_producer_launch_attestation,
 )
 from .producer_process import _current_process_owned, _process_owner_identity
+from .trusted_bootstrap_handoff import (
+    TrustedBootstrapHandoffError,
+    verify_trusted_bootstrap_process_registration_handoff,
+)
 
 _MAX_CONTROL_BYTES = 64 * 1024
 _MAX_FRAME_BYTES = 64 * 1024
@@ -418,10 +423,18 @@ def _recover_from_held_directory(parent: int, *, launch: TrustedBootstrapLaunch)
 def observe_trusted_bootstrap_attempt(
     workspace: str | Path, *, launch: TrustedBootstrapLaunch,
     descriptor: TrustedBootstrapDescriptor, intent: object, attestation: object,
+    require_handoff: bool = False,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
     """Validate the persisted formal attempt without inspecting or controlling processes."""
+    def check_deadline() -> None:
+        if deadline is not None and monotonic() >= deadline:
+            raise ProducerBootstrapError("producer_bootstrap_attempt_wall_timeout")
+
     if not isinstance(launch, TrustedBootstrapLaunch):
         raise ProducerBootstrapError("producer_bootstrap_attempt_launch_invalid")
+    check_deadline()
     try:
         parsed_attestation = parse_producer_launch_attestation(
             attestation.to_dict() if isinstance(attestation, ProducerLaunchAttestation) else attestation,
@@ -460,14 +473,35 @@ def observe_trusted_bootstrap_attempt(
                 )
                 if registration is None:
                     raise ProducerBootstrapError("producer_bootstrap_attempt_registration_missing")
+                handoff = None
+                if require_handoff:
+                    check_deadline()
+                    handoff = _recovery_artifact(
+                        "trusted-bootstrap-handoff.json", parent=journal_fd,
+                        code="producer_bootstrap_attempt_handoff_invalid",
+                    )
+                    if handoff is None:
+                        raise ProducerBootstrapError("producer_bootstrap_attempt_handoff_missing")
                 evidence = _recovery_artifact(
                     "trusted-bootstrap-evidence.json", parent=journal_fd,
                     code="producer_bootstrap_attempt_evidence_invalid",
                 )
-                return verify_trusted_bootstrap_attempt(
+                result = verify_trusted_bootstrap_attempt(
                     launch, descriptor, intent, parsed_attestation, claim, registration,
                     evidence=evidence,
                 )
+                if handoff is not None:
+                    try:
+                        verified_handoff = verify_trusted_bootstrap_process_registration_handoff(
+                            handoff, launch=launch, descriptor=descriptor, intent=intent,
+                            attestation=parsed_attestation, consumption=_strict_json(claim),
+                            registration=_strict_json(registration),
+                        )
+                    except TrustedBootstrapHandoffError as exc:
+                        raise ProducerBootstrapError(exc.code) from exc
+                    result["handoff_sha256"] = verified_handoff["handoff_sha256"]
+                check_deadline()
+                return result
     except TrustedBootstrapRuntimeError as exc:
         raise ProducerBootstrapError(exc.code) from exc
 

@@ -11,7 +11,8 @@ import hashlib
 import json
 import re
 import sys
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -668,13 +669,17 @@ def observe_trusted_bootstrap_attempt(
     workspace: str | Path, *, launch: TrustedBootstrapLaunch,
     descriptor: TrustedBootstrapDescriptor, intent: ProducerLaunchIntent | object,
     attestation: ProducerLaunchAttestation | object,
+    require_handoff: bool = False,
+    deadline: float | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
     """Read one formal attempt's durable records without process authority."""
     from .trusted_bootstrap_runtime import observe_trusted_bootstrap_attempt as observe
 
     return observe(
         workspace, launch=launch, descriptor=descriptor, intent=intent,
-        attestation=attestation,
+        attestation=attestation, require_handoff=require_handoff,
+        deadline=deadline, monotonic=monotonic,
     )
 
 

@@ -1,5 +1,14 @@
 # Validation
 
+## Native pre-gate handoff reread (2026-09-28)
+
+The native attempt now uses the formal read-only observer under its existing deadline before
+releasing the gate. The observer requires a stable no-follow handoff file and verifies it
+against the byte-identical nonce claim, launch, descriptor, attestation, and formal
+registration. Provider-free native subprocess tests prove that removing or altering the
+handoff after publication leaves the target marker absent. Terminal execution receipts,
+brokered requests, and post-crash cleanup remain outside this increment.
+
 ## Native bootstrap and isolation checkpoint (`15b8113`, 2026-09-27)
 
 The checked-in C bootstrap now has a real Darwin bootstrap-to-isolated-target integration test.
