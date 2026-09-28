@@ -146,6 +146,18 @@ def test_native_generation_failure_retains_preparation_only(tmp_path, monkeypatc
     assert report["candidate_counts"]["parser_complete"] == 0
 
 
+def test_missing_preparation_does_not_count_unrun_holdouts_as_failed(tmp_path, monkeypatch):
+    from lunar_evolution.acceptance_campaign_audit import audit_native_campaign
+
+    registration, campaign, database, parent_id = native_campaign(tmp_path, monkeypatch)
+    with Store(database)._connect() as connection:
+        connection.execute("DELETE FROM events WHERE run_id = ? AND type = 'bundle_profile_prepared'", (parent_id,))
+    report = audit_native_campaign(registration, campaign_root=campaign, database=database, parent_run_id=parent_id)
+    assert report["status"] == "failed"
+    assert report["preparation_success"] == "0/1"
+    assert report["holdout_counts"] == {"passed": 0, "failed": 0, "unknown": 0, "missing": 8}
+
+
 def test_published_audit_is_create_only_and_read_only_reaudit_detects_drift(tmp_path, monkeypatch):
     from lunar_evolution.acceptance_campaign_audit import (
         AcceptanceCampaignAuditError,
