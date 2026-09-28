@@ -9,3 +9,7 @@
   native attempt deadline, then join host-observed request coverage before publication. The
   capture/receipt and broker-journal binding slices are implemented; full egress coverage and
   publication admission remain open.
+- [x] T159-06 Persist and recover a create-only native preparation receipt binding successful
+  terminal, same-attempt capture, complete brokered-request journal, explicit source groups,
+  native drafts and admission-plan digest; reject evidence drift and retain
+  `publication_eligible=false` until complete egress and publication/delivery gates exist.

@@ -26,3 +26,13 @@ request scope remains `brokered_requests_only`.
 The combined native output/attempt, request transport/evidence, lifecycle matrix and isolation
 regression passed **87 tests**. Ruff, compileall and diff checks passed. The HTTP target is a
 local fixture; no external producer or model provider was called.
+# Durable preparation receipt validation (2026-09-29)
+
+`tests/test_native_trusted_preparation.py`: 13 passed using only local fixtures, request journals,
+capture receipts and source files. Covers exact retries, explicit receipt-pinned recovery,
+uncertain/missing broker, altered source/capture/journal/contract/receipt, symlink receipt and an
+interrupted exclusive write. Ruff, compilation and diff checks pass. No model/provider request,
+external campaign, candidate execution, publication or archive write was performed.
+
+The receipt binds current verified preparation to output captured within the original attempt.
+It does not turn `brokered_requests_only` into complete egress coverage. T159-05 remains open.
