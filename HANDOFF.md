@@ -1,5 +1,42 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-29 P0/P1/P2 集成与本地闭环
+
+当前开发分支 `codex/rsi-recovery-integration`，独立 worktree
+`/tmp/lunar-rsi-integration-20260929`；原始 `/Users/liminghan/Documents/lunar_agent`
+继续保留其他并行改动，不能整目录覆盖或 `git add .`。下面是当前状态，早期记录中
+“RSI 无 controller resume”“尚无真实 native 成功”及初始种群只准一次导入已被更新。
+
+已实现并分批推送：
+
+- P0：DRS/BRS 持久控制器恢复、终态证据幂等复用、result-backed unknown reconcile、
+  指纹/记忆链检查、BRS frozen wave/quarantine/有序合并恢复与 CLI resume。
+- P1：本地 native gateway 与独立候选/评测重跑 verifier；durable Actor 必须 pin
+  runtime/receipt 配置；默认与自定义 target judge 都不能绕过 verifier。
+- P1：producer 同 boot 总墙钟恢复、发布锁替换检查、候选/评测运行中取消与 cleanup 收据。
+  可信 producer preparation 收据持久绑定 terminal/capture/broker/groups/drafts/plan，
+  仍保留 `publication_eligible=false`，不会把仅 brokered 请求记录当完整出口证明。
+- P2：确定性覆盖/多样性/失败边界 curriculum 和持久历史反馈；空记忆对冻结记忆的本地
+  双臂独立评测、比较收据、篡改检查与终态只读重放；初始种群可连续导入不同 producer 批次，
+  保留旧 archive/history，只追加新的 admission，冲突在执行前拒绝。
+
+SDD 优先级以 `docs/implementation-priorities-20260929.md` 为准。Feature 160 的
+T160-13 已完成，T160-12a/b 与 T160-14 本地切片已完成；T160-12/15 真实 Actor/campaign
+验收仍开放。Feature 153 T153-06e/f/g 已完成；T153-06b/07 不要标为完成。
+Feature 142 `worker-service-integration-design.md` 只有设计：WSI-01–07 尚未实现。
+
+已完成验证：RSI 全集 238 项、native E2E 226 项、重复导入组合 68 项通过（集合重叠，
+不相加）；Ruff/compileall/diff check 通过。全量 release 结果见本条随后补充的验收记录。
+测试只使用本地 fixture/subprocess/loopback，无新模型请求、WebAgent、远程 evaluator 或
+真实 OpenEvolve/Shinka campaign。Feature 142 已有真实 native 成功仍是历史独立证据，
+不要用本轮 fixture 代替，也不要误读旧 Feature 139 失败为“从无成功”。
+
+未完成且不能宣称已发布：外部 producer 完整 egress/credential/recovery authority，
+trusted output→publication→自动 parent delivery，完整 unknown producer reconcile，
+真实开源 launcher/scheduler/campaign 验收；evolved/seeded population 导入，真实模型迁移
+效果与 WorkerService 统一适配；跨平台 CI 和合并到 main。当前新增能力在集成分支，
+不代表已合入默认分支。密钥/.env 原样保留，未读取内容、输出或提交。
+
 ## 2026-09-29 Shinka 共享运行预算与全拒绝终态
 
 在独立分支 `codex/shinka-native-publication` 继续 Feature 153，不扩展或提交 RSI。
