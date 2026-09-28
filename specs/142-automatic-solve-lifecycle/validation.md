@@ -14,6 +14,14 @@ The runner retains create-only launch, budget and result records and publishes t
 campaign inventory. T038 and T039 are implemented and verified offline; no real-model result is
 inferred from fixture runs.
 
+At `9ee8594`, published native audit verification also binds the exact `report.json` bytes to
+the digest and outcome fields in `native-result.json`. A changed result count or even valid JSON
+with extra whitespace is rejected; the runner and publisher use the same canonical bytes.
+The runner/audit focused suites passed **11 tests**, and the current native offline E2E passed
+**226/226**, with no failures or skips. The E2E JUnit report is retained at
+`.lunar-evolution/test-results/native-e2e-20260928-p0p1/native-e2e.xml`. These are local offline
+checks, not the T040 model attempt.
+
 On the current branch, the runner, campaign audit, pinned loader, isolated entrypoint,
 observation binding and attempt staging suites passed **31 tests** with no failures or skips
 (`PYTHONPATH=src pytest -q --disable-warnings` with those six test modules). T040 remains open:
