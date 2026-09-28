@@ -52,7 +52,9 @@ def _configured_environment(checkout: Path) -> dict[str, str]:
         ):
             raise ValueError("invalid env setting")
         values[name] = value
-    environment.update({name: value for name, value in values.items() if value})
+    for name in _ENV_NAMES:
+        environment.pop(name, None)
+    environment.update(values)
     return environment
 
 

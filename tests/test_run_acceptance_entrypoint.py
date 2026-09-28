@@ -102,6 +102,35 @@ def test_private_env_file_reaches_isolated_child_without_entering_argv(tmp_path)
     }
 
 
+def test_private_env_does_not_inherit_unspecified_or_blank_shell_credentials(tmp_path):
+    checkout = tmp_path / "checkout"
+    loader = checkout / "src/lunar_evolution"
+    loader.mkdir(parents=True)
+    (loader / "acceptance_pinned_loader.py").write_text(
+        "import json, os\n"
+        "print(json.dumps({'key': os.environ.get('LUNAR_EVOLUTION_API_KEY')}))\n",
+        encoding="utf-8",
+    )
+    config = checkout / ".env"
+    config.write_text("LUNAR_EVOLUTION_API_KEY=\n", encoding="utf-8")
+    config.chmod(0o600)
+    environment = os.environ.copy()
+    environment["LUNAR_EVOLUTION_API_KEY"] = "old-shell-key"
+    command = [
+        sys.executable, str(ENTRYPOINT), "--registration", str(tmp_path / "reg.json"),
+        "--seal", str(tmp_path / "seal.json"), "--checkout-root", str(checkout),
+        "--campaign-parent", str(tmp_path),
+    ]
+    for configured, expected in (("LUNAR_EVOLUTION_API_KEY=\n", ""), ("# no key\n", None)):
+        config.write_text(configured, encoding="utf-8")
+        result = subprocess.run(
+            command, env=environment, capture_output=True, text=True, check=False,
+        )
+        assert result.returncode == 0
+        assert json.loads(result.stdout) == {"key": expected}
+        assert "old-shell-key" not in result.stdout + result.stderr
+
+
 def test_env_file_rejects_insecure_or_ambiguous_credentials(tmp_path):
     checkout = tmp_path / "checkout"
     loader = checkout / "src/lunar_evolution"
