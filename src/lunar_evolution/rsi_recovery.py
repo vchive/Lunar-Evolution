@@ -82,6 +82,10 @@ class DurableLearningRun:
             "gateway_fingerprint": fingerprint(self.controller.gateway),
             "verifier_fingerprint": fingerprint(self.controller.verifier),
             "curriculum_fingerprint": fingerprint(self.controller.curriculum),
+            "curriculum_history_fingerprint": (
+                self.controller.curriculum.history_fingerprint()
+                if callable(getattr(self.controller.curriculum, "history_fingerprint", None)) else None
+            ),
             "target_judge_fingerprint": fingerprint(self.controller.target_judge),
         }
 
@@ -89,7 +93,7 @@ class DurableLearningRun:
         config = self.state["config"]
         current = self._config(config["mode"], {})
         for key in ("solver_settings", "actor_fingerprint", "gateway_fingerprint",
-                    "verifier_fingerprint", "curriculum_fingerprint", "target_judge_fingerprint"):
+                    "verifier_fingerprint", "curriculum_fingerprint", "curriculum_history_fingerprint", "target_judge_fingerprint"):
             if current[key] != config[key]:
                 raise RSILearningError(f"rsi_resume_{key}_drift")
         for key, value in (expected or {}).items():
@@ -385,12 +389,41 @@ class DurableLearningRun:
         entry["stage"] = "settled" if result.status != "unknown" else "unknown"
         return EpisodeExecution(episode, request, result, decision)
 
+    def _observed_curriculum(self, *, before: tuple[int, int] | None = None):
+        """Rebuild a policy from its pinned initial history and settled prior practices.
+
+        The controller retains the initial immutable policy. Replaying evidence into a fresh
+        policy makes reconciliation replace an uncertain observation instead of appending a
+        conflicting history item, and makes crash recovery independent of Python object state.
+        """
+        from .rsi_controller import CurriculumDecision
+        policy = self.controller.curriculum
+        if not callable(getattr(policy, "observe", None)):
+            return policy
+        entries = sorted(self.state["episodes"].values(), key=lambda item: (
+            item["running_episode"]["wave"], item["running_episode"]["ordinal"],
+            item["running_episode"]["episode_id"],
+        ))
+        for entry in entries:
+            episode = entry["running_episode"]
+            position = (episode["wave"], episode["ordinal"])
+            if (episode["episode_kind"] != "practice" or entry["result"] is None
+                    or (before is not None and position >= before)):
+                continue
+            execution = self._materialize(entry)
+            raw = (self.state["config"]["practices"][episode["ordinal"]]
+                   if self.state["config"]["mode"] == "brs"
+                   else self.state["decisions"][episode["episode_id"]])
+            decision = CurriculumDecision(**{**raw, "compatible_solvers": tuple(raw["compatible_solvers"])})
+            policy = policy.observe(decision=decision, execution=execution)
+        return policy
+
     def _decision(self, key: str, target: Any, diagnosis: str, wave: int, ordinal: int):
         from .rsi_controller import CurriculumDecision
         stored = self.state["decisions"].get(key)
         if stored is None:
-            decision = self.controller.curriculum.choose(target=target, diagnosis=diagnosis,
-                                                         wave=wave, ordinal=ordinal)
+            policy = self._observed_curriculum(before=(wave, ordinal))
+            decision = policy.choose(target=target, diagnosis=diagnosis, wave=wave, ordinal=ordinal)
             self.state["decisions"][key] = decision.to_dict()
             self._save()
             return decision
@@ -437,6 +470,11 @@ class DurableLearningRun:
                                key=lambda e: e.episode.wave))
         practices = tuple(sorted((e for e in results if e.episode.episode_kind == "practice"),
                                  key=lambda e: (e.episode.wave, e.episode.ordinal)))
+        policy = self._observed_curriculum()
+        history_pin = getattr(policy, "history_fingerprint", None)
+        if callable(history_pin):
+            self.state["curriculum_history_sha256"] = history_pin()
+            self._save()
         head = self.ledger.get(self.run_id)
         if head.state != status:
             self.ledger.transition(self.run_id, state=status, expected_record_sha256=head.record_sha256,

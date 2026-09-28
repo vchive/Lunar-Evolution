@@ -8,10 +8,13 @@ not execute a solver, infer a task command, call a model, mutate a ledger, or wr
 Candidates explicitly declare a family, capability gap, strategy, expected result, failure
 boundary, compatible solvers, and stable candidate ID.
 
-This module can be used directly or injected into the controller. The default fixture policy
-and CLI are unchanged. Controller history feedback remains an explicit integration step:
-`policy.observe(decision=decision, execution=execution)` returns a new immutable policy.
-It never silently updates a run that already pinned a policy.
+This module can be used directly or injected into a durable controller. The default fixture policy
+and CLI keep their existing deterministic selection. The durable controller pins both the initial
+policy and its history, persists each selected decision, and rebuilds a fresh immutable policy from
+retained prior practice evidence before selecting the next task. `observe(...)` never mutates the
+initial policy. Uncertain observations are replaced by the explicitly reconciled episode on the
+next reconstruction. Finished runs retain the final history fingerprint; resumed runs reuse their
+persisted decisions without selecting or launching them again.
 
 ## Verified history
 

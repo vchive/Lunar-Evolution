@@ -186,3 +186,17 @@ def test_later_parent_callback_consumption_reduces_earlier_parent_remainder(tmp_
                 check("preparation")
             assert error.value.stage == "preparation"
     assert calls == ["preparation"]
+
+
+def test_parent_remainder_sampled_before_callback_cannot_extend_deadline(tmp_path):
+    clock = FakeClock()
+    parent_deadline = clock.value + 10
+
+    def consuming_parent(stage):
+        remaining = parent_deadline - clock.value
+        clock.value += 9
+        return remaining
+
+    strategy = PopulationStrategy(replace(build_context(tmp_path), remaining_timeout=consuming_parent))
+    with bind_native_producer_bundle_control(strategy, SolveExecutionControl(60, clock=clock)) as check:
+        assert check("preparation") == 1

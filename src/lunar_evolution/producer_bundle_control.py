@@ -108,11 +108,12 @@ def bind_native_producer_bundle_control(
         remaining = execution_control.check(stage)
         parent_observations: list[tuple[float, float]] = []
         for callback in (*timeout_callbacks, *retained_deadlines):
+            sampled_at = execution_control._now()
             parent_remaining = callback(stage)
             if (isinstance(parent_remaining, bool) or not isinstance(parent_remaining, (int, float))
                     or not math.isfinite(float(parent_remaining)) or parent_remaining <= 0):
                 raise ProducerBundleControlError("producer_bundle_transaction_parent_budget_invalid")
-            parent_observations.append((execution_control._now(), float(parent_remaining)))
+            parent_observations.append((sampled_at, float(parent_remaining)))
         # Parent callbacks may consume time or observe cancellation. Recheck before admitting work.
         if strategy._cancelled():
             raise SolveExecutionCancelled(stage)
