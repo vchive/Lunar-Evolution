@@ -147,7 +147,11 @@ class EpisodeExecution:
 
     @property
     def passed(self) -> bool:
-        return self.verifier.outcome == "pass"
+        return (
+            self.episode.status == self.result.status == "completed"
+            and self.episode.verifier == self.verifier
+            and self.verifier.outcome == "pass"
+        )
 
 
 class PracticeEpisodeRunner:
@@ -300,7 +304,9 @@ class FrozenMemoryTransferRunner:
         )
         execution = PracticeEpisodeRunner(self.gateway, self.verifier, self.ledger).run(episode, request)
         accepted, _diagnosis = self.target_judge(execution)
-        status = "passed" if accepted else ("unknown" if execution.result.status == "unknown" else "failed")
+        status = "passed" if accepted and execution.passed else (
+            "unknown" if execution.result.status == "unknown" else "failed"
+        )
         receipt = TransferReceipt(
             run_id=run_id,
             target_id=target_id,
@@ -511,7 +517,7 @@ class RSILearningController:
             execution = PracticeEpisodeRunner(self.gateway, self.verifier, self.ledger).run(target, request)
             targets.append(execution)
             accepted, diagnosis = self.target_judge(execution)
-            if accepted:
+            if accepted and execution.passed:
                 result = LearningRunResult(run_id, "completed", self.snapshot, tuple(targets), tuple(practices))
                 self._finish_run(run_record, result)
                 return result

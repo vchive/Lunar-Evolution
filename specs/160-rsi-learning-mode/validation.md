@@ -56,3 +56,7 @@ cancellation. Timeout/abandonment cannot create memory or silently reissue the o
 Actor durable pins include full runtime/receipt profiles; native verifier replay reopens retained
 evidence and checks inode/bytes without rerunning evaluation. The baseline command above exercises
 local native subprocesses as well as fixtures; no external campaign is launched.
+
+All controller paths, including the non-durable DRS and single frozen-transfer runner, require a
+completed episode with its attached passing verifier decision before a custom target judge can
+accept it. A judge can narrow acceptance; it cannot promote unknown, stopped or unverified work.

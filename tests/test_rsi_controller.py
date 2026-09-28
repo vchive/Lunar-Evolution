@@ -186,3 +186,27 @@ def test_controller_binds_episode_lifecycle_to_append_only_ledger(tmp_path: Path
         "running", "completed", "completed",
     ]
     assert ledger.get(episode_id).payload["verifier"]["outcome"] == "pass"
+
+
+@pytest.mark.parametrize("status", ["unknown", "timed_out", "abandoned", "cancelled", "completed"])
+def test_custom_target_judge_cannot_accept_unverified_drs_or_transfer(status):
+    # The completed non-fixture result requires an independent native verifier; a custom
+    # target policy is allowed to tighten acceptance, never bypass that verification gate.
+    solver_id = "native_population" if status == "completed" else "mock"
+    pins = {"contract_sha256": HEX, "evaluator_sha256": HEX,
+            "environment_sha256": HEX, "solver_id": solver_id}
+    judge = lambda _execution: (True, "always accepted")
+    gateway = ScriptedGateway(status)
+    result = RSILearningController(gateway, target_judge=judge).run_drs(
+        run_id="judge-gate", **pins, max_target_attempts=1, max_practice_rounds=0,
+    )
+    expected = "unknown" if status == "unknown" else "failed"
+    assert result.status == expected
+    assert result.memory_snapshot == EMPTY_MEMORY_SNAPSHOT
+    assert len(gateway.requests) == 1
+    receipt, execution = FrozenMemoryTransferRunner(
+        ScriptedGateway(status), target_judge=judge,
+    ).run(run_id="transfer-judge", target_id="target", **pins,
+          snapshot=EMPTY_MEMORY_SNAPSHOT)
+    assert receipt.status == expected
+    assert not execution.passed
