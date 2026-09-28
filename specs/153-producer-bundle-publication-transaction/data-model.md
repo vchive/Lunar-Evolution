@@ -56,3 +56,10 @@ publication stage or workspace marker for this outcome.
 The active control policy digest covers zero preparation requests, native execution budget,
 independent evaluator timeout, and the optional total wall allowance. The live monotonic start
 and cancellation callbacks are process-local controls, not portable journal fields.
+
+`state.json` retains `producer_admissions = {schema_version: "1", events: [...]}`. Each event
+contains exactly `after_iteration` and ordered `candidate_ids`. Supported native repeated
+admissions use integer iteration zero; existing events must match archive order and candidate
+lineage/provenance. New batches use disjoint candidate and bundle identifiers. The next state
+copies all prior events and appends one event for the admitted subset; all-rejected batches add
+none. Staging independently compares canonical event bytes, including JSON types, before commit.

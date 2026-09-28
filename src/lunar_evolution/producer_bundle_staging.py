@@ -893,6 +893,29 @@ def _validate_native_state_after(
     ):
         _fail("producer_bundle_publication_state_invalid")
     admitted_ids = {item.candidate_id for item in admitted}
+    # Native repeated imports may append one event, never rewrite the frozen event prefix.
+    # Preserve this boundary even for callers using staging without the transaction wrapper.
+    if "producer_admissions" in before or "producer_admissions" in after:
+        previous = before.get("producer_admissions", {"schema_version": "1", "events": []})
+        current = after.get("producer_admissions")
+        if (
+            not isinstance(previous, dict)
+            or set(previous) != {"schema_version", "events"}
+            or previous.get("schema_version") != "1"
+            or not isinstance(previous.get("events"), list)
+            or not isinstance(current, dict)
+            or set(current) != {"schema_version", "events"}
+            or current.get("schema_version") != "1"
+            or _canonical(current.get("events"), MAX_STATE_BYTES) != _canonical(previous["events"] + [{
+                "after_iteration": before.get("iteration"),
+                "candidate_ids": [item.candidate_id for item in admitted],
+            }], MAX_STATE_BYTES)
+            or type(before.get("iteration")) is not int
+            or before["iteration"] < 0
+            or type(after.get("iteration")) is not int
+            or after["iteration"] != before["iteration"]
+        ):
+            _fail("producer_bundle_publication_state_invalid")
     active_ids = [item for values in after_active.values() for item in values]
     if len(active_ids) != len(set(active_ids)):
         _fail("producer_bundle_publication_state_invalid")
@@ -911,6 +934,8 @@ def _validate_native_state_after(
         "candidate_integrity_authority",
         "candidate_archive_sha256",
     }
+    if marker_fields & set(before) and not marker_fields <= set(after):
+        _fail("producer_bundle_publication_state_invalid")
     if marker_fields <= set(after):
         if after.get("candidate_integrity_schema_version") != "1":
             _fail("producer_bundle_publication_state_invalid")
@@ -920,6 +945,11 @@ def _validate_native_state_after(
                 _fail("producer_bundle_publication_archive_too_large")
             lines = archive_after.splitlines()
             records = [Candidate.from_dict(json.loads(line.decode("utf-8"))) for line in lines if line]
+            if "producer_admissions" not in after and any(
+                item.candidate_id in admitted_ids and "producer_bundle" in item.metadata
+                for item in records
+            ):
+                _fail("producer_bundle_publication_state_invalid")
             ordinary = [item for item in records if "seed_handoff" not in item.metadata]
             archive_digest = _sha(_canonical([item.to_dict() for item in ordinary]))
             authority = CandidateIntegrityAuthority.from_dict(after.get("candidate_integrity_authority"))

@@ -17,6 +17,7 @@ from lunar_evolution.evolution import CandidateArchive, CandidateDraft, Populati
 from lunar_evolution.producer_bundle_admission import build_producer_bundle_admission_plan
 from lunar_evolution.producer_bundle_handoff import BundleGroup, prepare_producer_bundle_manifest
 from lunar_evolution.producer_bundle_population import prepare_producer_bundle_drafts
+from lunar_evolution.producer_bundle_recovery import resume_producer_bundle_publication
 from lunar_evolution.producer_bundle_transaction import (
     NativeProducerBundleTransactionError,
     run_native_producer_bundle_publication_transaction,
@@ -37,9 +38,9 @@ Path("output/result.json").write_text(json.dumps({{"value": value}}))
 '''
 
 
-def _shinka_drafts(tmp_path: Path, context, values: tuple[int, ...]):
+def _shinka_drafts(tmp_path: Path, context, values: tuple[int, ...], *, bundle_prefix: str = "bundle"):
     results = tmp_path / "shinka-run"
-    results.mkdir()
+    results.mkdir(parents=True)
     database = sqlite3.connect(results / "programs.sqlite")
     database.execute(
         """
@@ -73,7 +74,7 @@ def _shinka_drafts(tmp_path: Path, context, values: tuple[int, ...]):
         program_ids=tuple(f"program-{index}" for index in range(len(values))),
     )
     groups = tuple(
-        BundleGroup(f"bundle-{index}", item.path, (item.path,))
+        BundleGroup(f"{bundle_prefix}-{index}", item.path, (item.path,))
         for index, item in enumerate(envelope.materials)
     )
     bundles = prepare_producer_bundle_manifest(
@@ -201,6 +202,73 @@ def test_shinka_sqlite_drafts_are_locally_reevaluated_and_published_with_readbac
     CandidateArchive(context.workspace, requested_strategy="population", read_only=True).validate_candidate_integrity(
         require_all=True,
     )
+
+
+def test_repeated_iteration_zero_producer_admission_appends_history(tmp_path: Path) -> None:
+    context = build_context(tmp_path / "native")
+    strategy = PopulationStrategy(context)
+    _initialize_native_population(strategy)
+
+    first_strategy, first_drafts, first_plan, _ = _shinka_drafts(
+        tmp_path / "first", context, (9,), bundle_prefix="first-bundle",
+    )
+    _batch_directory(context.workspace, "repeated-first")
+    first = run_native_producer_bundle_publication_transaction(
+        context.workspace, first_strategy, first_drafts, first_plan, journal_id="repeated-first",
+    )
+    assert first.publication_status == "published"
+    first_archive, _first_state, first_records = _archive_projection(context.workspace)
+    first_candidate_root = context.workspace / "evolution/candidates" / first.admitted_candidate_ids[0]
+    first_files = {
+        path: (path.read_bytes(), path.stat().st_ino)
+        for path in first_candidate_root.rglob("*") if path.is_file()
+    }
+
+    second_strategy, second_drafts, second_plan, _ = _shinka_drafts(
+        tmp_path / "second", context, (8,), bundle_prefix="second-bundle",
+    )
+    _batch_directory(context.workspace, "repeated-second")
+    second = run_native_producer_bundle_publication_transaction(
+        context.workspace, second_strategy, second_drafts, second_plan, journal_id="repeated-second",
+    )
+    assert second.publication_status == "published"
+    assert second.admitted_candidate_ids
+    assert set(first.admitted_candidate_ids).isdisjoint(second.admitted_candidate_ids)
+
+    archive = CandidateArchive(context.workspace, requested_strategy="population", read_only=True)
+    records = archive.records()
+    archive.validate_candidate_integrity(require_all=True, records=records)
+    assert (context.workspace / "evolution/archive.jsonl").read_bytes().startswith(first_archive)
+    assert [item.to_dict() for item in records[:len(first_records)]] == first_records
+    assert {path: (path.read_bytes(), path.stat().st_ino) for path in first_files} == first_files
+    state = archive.read_state()
+    assert state["producer_admissions"]["events"] == [
+        {"after_iteration": 0, "candidate_ids": list(first.admitted_candidate_ids)},
+        {"after_iteration": 0, "candidate_ids": list(second.admitted_candidate_ids)},
+    ]
+    ids = {item.candidate_id for item in records}
+    assert set(first.admitted_candidate_ids) | set(second.admitted_candidate_ids) <= ids
+    assert sum(map(len, state["active_ids"].values())) == state["config"]["population_size"]
+    assert all(len(values) <= second_strategy._capacity(int(island)) for island, values in state["active_ids"].items())
+    assert state["best_candidate_id"] == first.admitted_candidate_ids[0]
+    before_retry = _archive_projection(context.workspace)
+    assert resume_producer_bundle_publication(
+        context.workspace, second_plan, second.published_journal,
+    ).status == "published"
+    assert _archive_projection(context.workspace) == before_retry
+    best = archive.best()
+    delivery_root = tmp_path / "delivery"
+    delivery_root.mkdir()
+    delivered = publish_bundle_delivery(delivery_root, identity={
+        "candidate_id": best.candidate_id,
+        "contract_sha256": context.contract.digest(),
+        "bundle_sha256": best.bundle_evidence["bundle_sha256"],
+        "receipt_sha256": best.receipt_sha256,
+        "evaluation_sha256": best.bundle_evidence["evaluation_sha256"],
+    }, materials=read_bundle_delivery_materials(context.workspace, best))
+    assert inspect_bundle_delivery(delivered.delivery_path) == delivered
+    assert json.loads((delivered.delivery_path / "output/result.json").read_bytes()) == {"value": 9}
+    assert second_strategy.resume().status == "completed"
 
 
 def test_all_rejected_shinka_batch_leaves_native_archive_and_state_unchanged(tmp_path: Path) -> None:
@@ -397,5 +465,220 @@ def test_interrupted_transaction_rejects_missing_or_changed_prepared_intent(tmp_
     with pytest.raises(NativeProducerBundleTransactionError, match="prepared_intent"):
         run_native_producer_bundle_publication_transaction(
             context.workspace, strategy, drafts, plan, journal_id=journal_id,
+        )
+    assert _archive_projection(context.workspace) == before
+
+
+def _prepare_repeated_batch(tmp_path, *, second_values=(8,), reuse_bundle=False):
+    context = build_context(tmp_path / "native")
+    _initialize_native_population(PopulationStrategy(context))
+    strategy, drafts, plan, _ = _shinka_drafts(
+        tmp_path / "first", context, (9,), bundle_prefix="first",
+    )
+    _batch_directory(context.workspace, "first")
+    first = run_native_producer_bundle_publication_transaction(
+        context.workspace, strategy, drafts, plan, journal_id="first",
+    )
+    strategy, drafts, plan, _ = _shinka_drafts(
+        tmp_path / "second", context, second_values,
+        bundle_prefix="first" if reuse_bundle else "second",
+    )
+    _batch_directory(context.workspace, "second")
+    return context, strategy, drafts, plan, first
+
+
+def test_repeated_batch_rejects_bundle_collision_before_evaluation(tmp_path, monkeypatch):
+    context, strategy, drafts, plan, _ = _prepare_repeated_batch(tmp_path, reuse_bundle=True)
+    before = _archive_projection(context.workspace)
+    monkeypatch.setattr(context.bundle_pipeline, "evaluate_draft_non_publishing",
+                        lambda *a, **k: pytest.fail("colliding bundle reached execution"))
+    with pytest.raises(NativeProducerBundleTransactionError, match="bundle_collision"):
+        run_native_producer_bundle_publication_transaction(
+            context.workspace, strategy, drafts, plan, journal_id="second",
+        )
+    assert _archive_projection(context.workspace) == before
+    assert not (context.workspace / "evolution/producer-batches/second/journal.prepared.json").exists()
+
+
+def test_rejected_second_batch_retains_first_publication_and_terminal_retry(tmp_path, monkeypatch):
+    context, strategy, drafts, plan, _ = _prepare_repeated_batch(tmp_path, second_values=(999,))
+    before = _archive_projection(context.workspace)
+    result = run_native_producer_bundle_publication_transaction(
+        context.workspace, strategy, drafts, plan, journal_id="second",
+    )
+    assert result.publication_status == "all_rejected"
+    assert _archive_projection(context.workspace) == before
+    monkeypatch.setattr(context.bundle_pipeline, "evaluate_draft_non_publishing",
+                        lambda *a, **k: pytest.fail("terminal rejection replayed"))
+    retry = run_native_producer_bundle_publication_transaction(
+        context.workspace, PopulationStrategy(context), drafts, plan, journal_id="second",
+    )
+    assert retry.publication_status == "all_rejected"
+    assert retry.evaluations == ()
+    assert _archive_projection(context.workspace) == before
+
+
+@pytest.mark.parametrize("unknown", [False, True])
+def test_second_batch_interruption_preserves_prefix_and_never_replays_finished_work(
+    tmp_path, monkeypatch, unknown,
+):
+    context, strategy, drafts, plan, first = _prepare_repeated_batch(tmp_path)
+    before = _archive_projection(context.workspace)
+    stage = producer_bundle_transaction.stage_producer_bundle_publication
+    retained = []
+
+    def interrupt(*args, **kwargs):
+        retained.extend(args[3])
+        raise RuntimeError("interrupted before stage")
+
+    monkeypatch.setattr(producer_bundle_transaction, "stage_producer_bundle_publication", interrupt)
+    with pytest.raises(NativeProducerBundleTransactionError, match="recovery_required"):
+        run_native_producer_bundle_publication_transaction(
+            context.workspace, strategy, drafts, plan, journal_id="second",
+        )
+    assert _archive_projection(context.workspace) == before
+    monkeypatch.setattr(producer_bundle_transaction, "stage_producer_bundle_publication", stage)
+    for name in ("run_candidate_execution_recorded", "evaluate_candidate_execution"):
+        monkeypatch.setattr(bundle_evolution, name, lambda *a, **k: pytest.fail("completed work replayed"))
+    if unknown:
+        evidence = retained[0].record["bundle_evidence"]
+        (context.workspace / evidence["run_root"] / "attempt/completed.json").unlink()
+        with pytest.raises(NativeProducerBundleTransactionError):
+            run_native_producer_bundle_publication_transaction(
+                context.workspace, PopulationStrategy(context), drafts, plan, journal_id="second",
+            )
+        assert _archive_projection(context.workspace) == before
+    else:
+        result = run_native_producer_bundle_publication_transaction(
+            context.workspace, PopulationStrategy(context), drafts, plan, journal_id="second",
+        )
+        assert result.publication_status == "published"
+        archive = CandidateArchive(context.workspace, read_only=True, requested_strategy="population")
+        assert archive.read_state()["producer_admissions"]["events"] == [
+            {"after_iteration": 0, "candidate_ids": list(first.admitted_candidate_ids)},
+            {"after_iteration": 0, "candidate_ids": list(result.admitted_candidate_ids)},
+        ]
+        assert (context.workspace / "evolution/archive.jsonl").read_bytes().startswith(before[0])
+
+
+@pytest.mark.parametrize("change", [
+    "null", "schema", "empty", "missing_record", "duplicate", "boolean_iteration",
+    "future_iteration", "extra_field", "missing_marker",
+])
+def test_repeated_batch_rejects_invalid_history_before_execution(tmp_path, monkeypatch, change):
+    context, strategy, drafts, plan, _first = _prepare_repeated_batch(tmp_path)
+    state_path = context.workspace / "evolution/state.json"
+    state = json.loads(state_path.read_bytes())
+    history = state["producer_admissions"]
+    if change == "null":
+        state["producer_admissions"] = None
+    elif change == "schema":
+        history["schema_version"] = "2"
+    elif change == "empty":
+        history["events"] = []
+    elif change == "missing_record":
+        history["events"][0]["candidate_ids"] = ["missing-candidate"]
+    elif change == "duplicate":
+        history["events"][0]["candidate_ids"] *= 2
+    elif change == "boolean_iteration":
+        history["events"][0]["after_iteration"] = False
+    elif change == "future_iteration":
+        history["events"][0]["after_iteration"] = 1
+    elif change == "extra_field":
+        history["events"][0]["unexpected"] = "value"
+    elif change == "missing_marker":
+        del state["producer_admissions"]
+    state_path.write_text(json.dumps(state))
+    before = (context.workspace / "evolution/archive.jsonl").read_bytes(), state_path.read_bytes()
+    monkeypatch.setattr(context.bundle_pipeline, "evaluate_draft_non_publishing",
+                        lambda *a, **k: pytest.fail("invalid history reached execution"))
+    with pytest.raises(NativeProducerBundleTransactionError, match="population_history_unsupported"):
+        run_native_producer_bundle_publication_transaction(
+            context.workspace, strategy, drafts, plan, journal_id="second",
+        )
+    assert ((context.workspace / "evolution/archive.jsonl").read_bytes(), state_path.read_bytes()) == before
+    assert not (context.workspace / "evolution/producer-batches/second/journal.prepared.json").exists()
+
+
+@pytest.mark.parametrize("change", ["extra", "missing", "fingerprint", "bundle_digest", "producer_id"])
+def test_repeated_batch_validates_archived_producer_metadata(tmp_path, change):
+    _context, strategy, _drafts, _plan, _first = _prepare_repeated_batch(tmp_path)
+    records = list(strategy.archive.records())
+    metadata = json.loads(json.dumps(records[-1].metadata))
+    provenance = metadata["producer_bundle"]
+    if change == "extra":
+        provenance["score"] = 999
+    elif change == "missing":
+        del provenance["producer_id"]
+    elif change == "fingerprint":
+        provenance["producer_fingerprint"] = "invalid"
+    elif change == "bundle_digest":
+        provenance["bundle_sha256"] = "e" * 64
+    elif change == "producer_id":
+        provenance["producer_id"] = "../unsafe"
+    records[-1] = replace(records[-1], metadata=metadata)
+    with pytest.raises(NativeProducerBundleTransactionError, match="population_history_unsupported"):
+        producer_bundle_transaction._ensure_initial_population_window(
+            strategy.archive.read_state(), records, strategy,
+        )
+
+
+@pytest.mark.parametrize("change", [
+    "drop", "rewrite", "duplicate", "reorder", "boolean", "float", "state_boolean",
+])
+def test_staging_cannot_rewrite_prior_producer_admission_events(tmp_path, monkeypatch, change):
+    context, strategy, drafts, plan, _ = _prepare_repeated_batch(tmp_path)
+    before = _archive_projection(context.workspace)
+    derive = producer_bundle_transaction.derive_population_state_after
+
+    def changed(*args, **kwargs):
+        result = derive(*args, **kwargs)
+        events = result["producer_admissions"]["events"]
+        if change == "drop":
+            del result["producer_admissions"]
+        elif change == "rewrite":
+            events[0]["candidate_ids"] = ["rewritten-old-candidate"]
+        elif change == "duplicate":
+            events.append(events[-1])
+        elif change == "boolean":
+            events[0]["after_iteration"] = False
+        elif change == "float":
+            events[-1]["after_iteration"] = 0.0
+        elif change == "state_boolean":
+            result["iteration"] = False
+        else:
+            events.reverse()
+        return result
+
+    monkeypatch.setattr(producer_bundle_transaction, "derive_population_state_after", changed)
+    with pytest.raises(NativeProducerBundleTransactionError, match="publication_state_invalid"):
+        run_native_producer_bundle_publication_transaction(
+            context.workspace, strategy, drafts, plan, journal_id="second",
+        )
+    assert _archive_projection(context.workspace) == before
+    assert not (context.workspace / "evolution/producer-publication.json").exists()
+
+
+@pytest.mark.parametrize("remove_integrity", [False, True])
+def test_first_native_batch_cannot_omit_admission_history(tmp_path, monkeypatch, remove_integrity):
+    context = build_context(tmp_path / "native")
+    _initialize_native_population(PopulationStrategy(context))
+    strategy, drafts, plan, _ = _shinka_drafts(tmp_path, context, (9,))
+    _batch_directory(context.workspace, "first-no-history")
+    before = _archive_projection(context.workspace)
+    derive = producer_bundle_transaction.derive_population_state_after
+
+    def omit_history(*args, **kwargs):
+        state = derive(*args, **kwargs)
+        del state["producer_admissions"]
+        if remove_integrity:
+            for key in ("candidate_integrity_schema_version", "candidate_integrity_authority", "candidate_archive_sha256"):
+                del state[key]
+        return state
+
+    monkeypatch.setattr(producer_bundle_transaction, "derive_population_state_after", omit_history)
+    with pytest.raises(NativeProducerBundleTransactionError, match="publication_state_invalid"):
+        run_native_producer_bundle_publication_transaction(
+            context.workspace, strategy, drafts, plan, journal_id="first-no-history",
         )
     assert _archive_projection(context.workspace) == before

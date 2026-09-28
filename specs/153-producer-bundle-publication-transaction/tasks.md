@@ -17,7 +17,8 @@
       to verify the complete retained run evidence without copying or rewriting path/inode
       bindings. Derive active state from frozen population state and adjudications.
       Bounded to an initialized iteration-zero running population with no offspring history,
-      seed admission, or prior producer admission.
+      seed admission. Repeated producer admission is now supported in this same window with
+      strict prior-event schema/provenance checks and fresh candidate/bundle identifiers.
 - [ ] T153-06b Validate the controlled two-file path, evidence tampering, mixed/all-rejected and
       unknown results, interruption and shared-deadline recovery, then archive-integrity,
       population-restoration and delivery read-back before offline regression.
@@ -37,5 +38,10 @@
       allowance resets, replaced injected clock objects and missing/changed retained clock records.
 - [x] T153-06f Poll active candidate/evaluator subprocesses for cancellation/deadline, terminate
       the owned process group and retain interruption/cleanup evidence before propagating the stop.
+- [x] T153-06g Append repeated producer batches to an iteration-zero running population;
+      preserve prior archive bytes and candidate files, revalidate producer provenance, reject
+      identifier collisions before execution, and append exactly one admission event. Validate
+      bounded population/delivery read-back, all-rejected no-change, unknown no-replay and
+      pre-stage retry with retained completed execution/evaluation evidence.
 - [ ] T153-07 Connect launcher/scheduler and run separate real OpenEvolve and ShinkaEvolve
       campaigns after the draft-to-publication path and request boundary are accepted.

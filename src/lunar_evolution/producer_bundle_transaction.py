@@ -21,8 +21,10 @@ from .automatic_solve_lifecycle import (
     SolveExecutionControl,
 )
 from .bundle_evolution import NativeDraftEvaluationResult
+from .candidate_bundle import parse_candidate_source_bundle
 from .evolution import Candidate, CandidateArchive, CandidateDraft, PopulationStrategy
 from .producer_bundle_admission import (
+    ProducerBundleAdmissionItem,
     ProducerBundleAdmissionPlan,
     build_producer_bundle_admission_plan,
 )
@@ -163,6 +165,9 @@ def _ensure_initial_population_window(
     state: Mapping[str, Any],
     records: Sequence[Candidate],
     strategy: PopulationStrategy,
+    *,
+    new_candidate_ids: Sequence[str] = (),
+    new_bundle_ids: Sequence[str] = (),
 ) -> None:
     outcome_fields = {
         "outcome_schema_version", "outcome_start_iteration", "outcome_watermark",
@@ -172,6 +177,7 @@ def _ensure_initial_population_window(
     iteration = state.get("iteration")
     if (
         isinstance(iteration, bool)
+        or not isinstance(iteration, int)
         or iteration != 0
         or state.get("status") != "running"
         or "seed_admission" in state
@@ -179,11 +185,65 @@ def _ensure_initial_population_window(
         or strategy.archive.offspring_outcomes()
         or any(candidate.iteration != 0 for candidate in records)
         or any("seed_handoff" in candidate.metadata for candidate in records)
-        or state.get("producer_admissions") is not None
-        or any("producer_bundle" in candidate.metadata for candidate in records)
     ):
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_population_history_unsupported"
+        )
+
+    # Producer admissions are append-only history.  The population strategy owns the full
+    # schema/lineage validation; this transaction adds the immutable-prefix checks specific to
+    # importing another batch.  In particular, never let a new batch rewrite a prior event or
+    # reuse a previously admitted bundle identifier.
+    try:
+        if "producer_admissions" in state and state["producer_admissions"] is None:
+            raise ValueError("null admission history")
+        events = strategy._producer_admission_events(state, records)
+        if len(events) >= 10_000:
+            raise ValueError("admission history full")
+        producer_records = [item for item in records if "producer_bundle" in item.metadata]
+        if [item.candidate_id for item in producer_records] != [
+            candidate_id for _iteration, ids in events for candidate_id in ids
+        ]:
+            raise ValueError("admission history differs from archive order")
+        existing_bundle_ids: set[str] = set()
+        for candidate in producer_records:
+            metadata = candidate.metadata["producer_bundle"]
+            if set(candidate.metadata) != {"producer_bundle"} or set(metadata) != {
+                "bundle_id", "bundle_sha256", "producer_fingerprint", "producer_id", "envelope_sha256",
+            } or candidate.bundle_evidence is None:
+                raise ValueError("invalid producer provenance")
+            bundle = parse_candidate_source_bundle(
+                strategy.context.workspace / candidate.bundle_evidence["bundle_path"],
+            )
+            provenance = ProducerBundleAdmissionItem(
+                **metadata, draft_bundle_sha256=bundle.digest(), entrypoint=bundle.entrypoint,
+                material_paths=tuple(item.path for item in bundle.files),
+            )
+            if (
+                provenance.bundle_id in existing_bundle_ids
+                or bundle.contract_sha256 != strategy.integrity_authority.contract_sha256
+                or bundle.digest() != candidate.bundle_evidence["bundle_sha256"]
+            ):
+                raise ValueError("inconsistent producer provenance")
+            existing_bundle_ids.add(provenance.bundle_id)
+    except Exception as exc:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_population_history_unsupported"
+        ) from exc
+    existing_ids = {candidate.candidate_id for candidate in records}
+    planned_ids = tuple(new_candidate_ids)
+    if (
+        len(existing_ids) != len(records)
+        or len(set(planned_ids)) != len(planned_ids)
+        or set(planned_ids) & existing_ids
+    ):
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_candidate_collision"
+        )
+    planned_bundles = tuple(new_bundle_ids)
+    if len(set(planned_bundles)) != len(planned_bundles) or set(planned_bundles) & existing_bundle_ids:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_bundle_collision"
         )
 
 
@@ -217,13 +277,27 @@ def derive_population_state_after(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_candidate_collision")
 
     iteration = base_state.get("iteration")
-    _ensure_initial_population_window(base_state, before, strategy)
+    _ensure_initial_population_window(
+        base_state,
+        before,
+        strategy,
+        new_candidate_ids=tuple(item.candidate_id for item in journal.candidates),
+        new_bundle_ids=tuple(item.bundle_id for item in journal.candidates),
+    )
 
     admission_ids = [item.candidate_id for item in added]
     projection_state = dict(base_state)
+    existing_admissions = base_state.get("producer_admissions")
+    existing_events = []
+    if existing_admissions is not None:
+        if not isinstance(existing_admissions, dict) or not isinstance(existing_admissions.get("events"), list):
+            raise NativeProducerBundleTransactionError(
+                "producer_bundle_transaction_population_history_unsupported"
+            )
+        existing_events = json.loads(_canonical(existing_admissions["events"]))
     projection_state["producer_admissions"] = {
         "schema_version": "1",
-        "events": [{"after_iteration": iteration, "candidate_ids": admission_ids}],
+        "events": existing_events + [{"after_iteration": iteration, "candidate_ids": admission_ids}],
     }
 
     source_overrides = {
@@ -407,7 +481,11 @@ def _run_native_producer_bundle_publication_transaction(
         code = getattr(exc, "code", "producer_bundle_transaction_preflight_failed")
         raise NativeProducerBundleTransactionError(code) from exc
     try:
-        _ensure_initial_population_window(base_state, _records_from_archive(base_archive), strategy)
+        _ensure_initial_population_window(
+            base_state, _records_from_archive(base_archive), strategy,
+            new_candidate_ids=tuple(item.candidate_id for item in journal.candidates),
+            new_bundle_ids=tuple(item.bundle_id for item in journal.candidates),
+        )
         strategy._validate_candidate_integrity_state(base_state)
         strategy._active(dict(base_state))
     except NativeProducerBundleTransactionError:

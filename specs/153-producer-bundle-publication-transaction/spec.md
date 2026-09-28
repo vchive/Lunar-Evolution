@@ -108,8 +108,12 @@ intent, source, plan/admission, workspace/input, attempt/completion/cleanup, and
 alongside portable receipts. A portable digest alone does not establish retained evidence.
 
 The supported entry point requires an initialized population with `iteration=0` and
-`status=running`, no offspring history, no seed admissions, and no previous producer admissions.
-Evolved and terminal populations are rejected before evaluation. `state_after` is derived from
+`status=running`, no offspring history, and no seed admissions. It may append a new producer
+batch to an existing producer-admission history, but only when the history has the strict schema,
+every prior admitted record is present and provenance-complete, and the new candidate/bundle IDs
+are disjoint from the frozen archive. Existing admission events are preserved byte-for-byte and
+the new event is appended at `after_iteration=0`. Evolved, seeded, terminal, malformed-history,
+and provenance-incomplete populations are rejected before evaluation. `state_after` is derived from
 the frozen archive and admitted candidate records using native ranking, island capacities, best
 candidate and stagnation rules. Admission to the archive does not guarantee active membership:
 the active population remains bounded. The publication lock checks the original archive/state

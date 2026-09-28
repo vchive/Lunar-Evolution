@@ -1,5 +1,29 @@
 # Feature 153 validation
 
+## 2026-09-29 repeated producer admission in the initial population window
+
+The native transaction can append a fresh producer batch to an iteration-zero running
+population. It validates strict prior-event schema and archive order, candidate lineage,
+complete producer provenance and retained source-manifest digests before evaluation. Fresh
+candidate and bundle IDs cannot collide with archived IDs. Each admitted subset appends one
+event; existing archive bytes, candidate files/inodes and prior events are preserved.
+
+Staging independently checks canonical admission-event bytes (including JSON number/boolean
+types) and refuses dropped history or integrity markers. Repeated publication passes bounded
+active-population, independent archive/receipt, delivery and population-resume checks. A rejected
+second batch leaves the first state unchanged; exact rejected-terminal retry runs no evaluator.
+Pre-stage retry reuses completed native evidence, while missing completion evidence rejects
+continuation without replaying the earlier work.
+
+Transaction/staging/recovery/native-intent selection: **68 passed**, 23.18 seconds, JUnit
+`/tmp/lunar-repeat-combined-v2.xml`. Final marker-downgrade/staging selection: **18 passed**,
+JUnit `/tmp/lunar-repeat-first-marker-v2.xml`. These selections overlap. Ruff and
+`git diff --check` pass. All cases use local fixtures and local subprocesses only.
+
+This completes T153-06g, not evolved/seeded population admission, unknown-result reconciliation,
+automatic delivery orchestration, an external launcher/scheduler, or real campaign acceptance.
+The older entries below describe the restrictions at their original validation checkpoints.
+
 ## 2026-09-29 durable deadline and active subprocess controls
 
 The native controlled path now retains the original monotonic deadline, full prepared-journal pin,

@@ -19,7 +19,9 @@ quiescent Shinka programs.sqlite export
 The caller supplies an existing initialized `PopulationStrategy` with a native multi-file pipeline,
 plus `drafts` from `prepare_producer_bundle_drafts()` and an `admission_plan` from
 `build_producer_bundle_admission_plan()`. Its stored population must have `iteration=0`,
-`status=running`, no prior offspring history, no seed admission and no prior producer admission.
+`status=running`, no prior offspring history and no seed admission. Existing producer admissions
+are allowed only as a validated append-only history; each new batch uses fresh candidate and bundle
+identifiers and adds one event without rewriting prior events.
 Constructing a strategy object alone does not initialize that state. This example is an integration
 hook for a caller that already owns it; it does not use private initialization methods.
 
