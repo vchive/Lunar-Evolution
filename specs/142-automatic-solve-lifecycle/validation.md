@@ -1,5 +1,29 @@
 # Validation
 
+## Second registered real-model attempt (2026-09-28)
+
+The fresh `native-142-20260928-02` registration pinned product
+`94f6e0e32868207774319cd0a9c543c32342aee1` and was committed at
+`3f877fe` on clean remote `main`. Its sole `glm-5.2` attempt completed with
+exit 0, 9 provider requests against a ceiling of 20, and 95,545 observed
+tokens against a ceiling of 160,000; usage was known. The retained parent run
+is `248522b8cd934e61a94c4b2de2cbc090`. This is a separate registration
+from the consumed, failed `native-142-20260928-01` attempt.
+
+The published native audit is **verified**: preparation, primary and joint
+success are each **1/1**; all eight fixed holdouts passed; two candidates were
+observed, parser-complete, executed and scored. After the process exited, a
+separate read-only `verify_native_campaign_audit` call validated the published
+report/result digest binding and complete campaign inventory. A fresh
+`audit_native_campaign` call against the retained registration, database and
+parent ID produced a report exactly equal to the published report. The
+independent audit neither called the provider nor executed or mutated the
+campaign. Evidence remains under
+`.lunar/acceptance-campaigns-20260928/native-142-20260928-02` and its
+`-audit` sibling. This closes Feature 142 T040 for the registered task and
+model; it is one real sample, not a general success-rate estimate or external
+producer acceptance.
+
 ## Auditor response categories before the second registration (2026-09-28)
 
 The first real attempt retained only `auditor_response / response_invalid`; its generated
