@@ -11,9 +11,49 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
+
+_ENV_NAMES = frozenset({
+    "LUNAR_EVOLUTION_MODEL_ENDPOINT", "LUNAR_EVOLUTION_MODEL", "LUNAR_EVOLUTION_API_KEY",
+})
+_MAX_ENV_BYTES = 8192
+
+
+def _configured_environment(checkout: Path) -> dict[str, str]:
+    environment = os.environ.copy()
+    path = checkout / ".env"
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    except FileNotFoundError:
+        return environment
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > _MAX_ENV_BYTES
+        ):
+            raise ValueError("invalid env file")
+        data = os.read(descriptor, _MAX_ENV_BYTES + 1)
+        if len(data) != info.st_size:
+            raise ValueError("changed env file")
+    finally:
+        os.close(descriptor)
+    values: dict[str, str] = {}
+    for line in data.decode("utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        name, separator, value = line.partition("=")
+        if (
+            separator != "=" or name not in _ENV_NAMES or name in values
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
+        ):
+            raise ValueError("invalid env setting")
+        values[name] = value
+    environment.update({name: value for name, value in values.items() if value})
+    return environment
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -55,6 +95,11 @@ def main(argv: list[str] | None = None) -> int:
     if not loader.is_file():
         return _error("acceptance_loader_missing")
 
+    try:
+        environment = _configured_environment(checkout)
+    except (OSError, UnicodeError, ValueError):
+        return _error("acceptance_env_invalid")
+
     # ``-I -S`` gives the child a clean import environment.  The environment is still
     # inherited for the provider endpoint/key; those values are never placed in argv.
     command = [
@@ -65,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         completed = subprocess.run(
             command,
             cwd=checkout,
-            env=os.environ.copy(),
+            env=environment,
             stdin=subprocess.DEVNULL,
             capture_output=True,
             check=False,

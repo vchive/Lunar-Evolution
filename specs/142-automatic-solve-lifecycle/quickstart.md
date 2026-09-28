@@ -31,6 +31,13 @@ For just the actual foreground/background coordinator scenarios, run:
 
 ## Use with a configured runtime
 
+For the one-shot registered acceptance entry point, fill the ignored repository-root `.env`
+with the full chat-completions URL, model name, and API key. The checked-in `.env.example`
+shows the expected names. Keep `.env` private (`chmod 600 .env`); `tools/run_acceptance.py`
+loads only those three values into the isolated child and never puts the key in command arguments.
+The gateway documentation page is not an API endpoint. Do not commit `.env` or paste the key
+into a registration, command line, or chat.
+
 Configure the runtime endpoint, model and credential through the existing runtime options and
 `LUNAR_EVOLUTION_API_KEY` environment variable. Use a new home for your work; archived evidence is
 not a writable home. For example, with a configured OpenAI-compatible endpoint and an existing
