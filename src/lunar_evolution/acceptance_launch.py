@@ -321,6 +321,10 @@ def revalidate_acceptance_campaign(
         manifest = parse_acceptance_registration(_read_regular(manifest_file).decode("utf-8"))
         seal = parse_registration_seal(_read_regular(seal_file).decode("utf-8"))
         root = parent / manifest["campaign_root"]
+        info = os.stat(root, follow_symlinks=False)
+        if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
+            _fail("campaign_admission_incomplete")
+        parent_info = os.stat(parent, follow_symlinks=False)
         admission_raw = _read_regular(root / "admission.json", MAX_PRODUCT_FILE_BYTES)
         admission = None
         def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -357,55 +361,46 @@ def revalidate_acceptance_campaign(
                 _fail("campaign_admission_incomplete")
         if admission.get("seal_sha256") != seal.get("seal_sha256"):
             _fail("campaign_admission_incomplete")
-        info = os.stat(root, follow_symlinks=False)
-        if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
-            _fail("campaign_admission_incomplete")
         if (admission.get("root_device"), admission.get("root_inode")) != (info.st_dev, info.st_ino):
             _fail("campaign_admission_incomplete")
-        parent_info = os.stat(parent, follow_symlinks=False)
         if (admission.get("parent_device"), admission.get("parent_inode")) != (
             parent_info.st_dev, parent_info.st_ino,
         ):
             _fail("campaign_admission_incomplete")
+        prepared_preflight = {**first, "checks": {**first["checks"], "campaign_root_absent": True}}
+        snapshots = _material_snapshots(manifest, checkout)
+        snapshots.update({
+            "registration.json": _read_regular(manifest_file),
+            "registration-seal.json": _read_regular(seal_file),
+            "preflight.json": _canonical(prepared_preflight),
+            "remote-main.json": _canonical({
+                "schema_version": "1", "scope": "acceptance_remote_main",
+                "ref": "refs/heads/main", "commit": remote_commit,
+            }),
+        })
         files = admission.get("files")
-        if not isinstance(files, list) or not files:
+        expected_files = [
+            {"path": path, "size": len(content), "sha256": hashlib.sha256(content).hexdigest()}
+            for path, content in sorted(snapshots.items())
+        ]
+        if files != expected_files:
             _fail("campaign_admission_incomplete")
-        expected = set()
-        for item in files:
-            if (not isinstance(item, dict) or set(item) != {"path", "size", "sha256"}
-                    or type(item.get("size")) is not int or item["size"] < 0
-                    or type(item.get("sha256")) is not str
-                    or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"])):
-                _fail("campaign_admission_incomplete")
-            try:
-                relative = item["path"]
-                if not isinstance(relative, str):
-                    _fail("campaign_admission_incomplete")
-                parts = relative.split("/")
-                if (not relative or any(part in {"", ".", "..", ".git"} for part in parts)
-                        or any(ord(char) < 32 or ord(char) == 127 for char in relative)):
-                    _fail("campaign_admission_incomplete")
-            except (TypeError, ValueError):
-                _fail("campaign_admission_incomplete")
-            expected.add(relative)
-        if len(expected) != len(files) or "admission.json" in expected:
-            _fail("campaign_admission_incomplete")
-        expected_root = {"materials", "admission.json", *(p for p in expected if "/" not in p)}
+        root_files = {path for path in snapshots if "/" not in path}
+        expected_root = {"materials", "admission.json", *root_files}
         with os.scandir(root) as entries:
             if {e.name for e in entries} != expected_root:
                 _fail("campaign_admission_incomplete")
-        expected_materials = {p.split("/", 1)[1] for p in expected if p.startswith("materials/")}
+        expected_materials = {p.split("/", 1)[1] for p in snapshots if p.startswith("materials/")}
         with os.scandir(root / "materials") as entries:
             material_entries = list(entries)
             if {e.name for e in material_entries} != expected_materials:
                 _fail("campaign_admission_incomplete")
-            if any(e.is_dir(follow_symlinks=False) for e in material_entries):
+            if any(e.is_dir(follow_symlinks=False) or e.is_symlink() for e in material_entries):
                 _fail("campaign_admission_incomplete")
-        for item in files:
-            path = item["path"]
+        for path, content in snapshots.items():
             target = root / path
             raw = _read_regular(target, MAX_PRODUCT_FILE_BYTES)
-            if len(raw) != item.get("size") or hashlib.sha256(raw).hexdigest() != item.get("sha256"):
+            if raw != content:
                 _fail("campaign_admission_incomplete")
             named = os.stat(target, follow_symlinks=False)
             if (not stat.S_ISREG(named.st_mode) or named.st_nlink != 1
@@ -414,6 +409,27 @@ def revalidate_acceptance_campaign(
         materials_info = os.stat(root / "materials", follow_symlinks=False)
         if (not stat.S_ISDIR(materials_info.st_mode)
                 or stat.S_IMODE(materials_info.st_mode) != 0o700):
+            _fail("campaign_admission_incomplete")
+        expected_admission = {
+            "schema_version": "1", "scope": "acceptance_campaign_admission",
+            "status": "prepared", "provider_started": False,
+            **{key: manifest[key] for key in (
+                "registration_id", "campaign_id", "attempt_id", "campaign_root",
+                "registration_sha256", "product_commit",
+            )},
+            "seal_sha256": seal["seal_sha256"],
+            "head_commit": first["head_commit"], "remote_commit": remote_commit,
+            "root_device": info.st_dev, "root_inode": info.st_ino,
+            "parent_device": parent_info.st_dev, "parent_inode": parent_info.st_ino,
+            "files": expected_files,
+        }
+        expected_admission["admission_sha256"] = hashlib.sha256(_canonical(expected_admission)).hexdigest()
+        if admission != expected_admission:
+            _fail("campaign_admission_incomplete")
+        root_final = os.stat(root, follow_symlinks=False)
+        parent_final = os.stat(parent, follow_symlinks=False)
+        if ((root_final.st_dev, root_final.st_ino) != (info.st_dev, info.st_ino)
+                or (parent_final.st_dev, parent_final.st_ino) != (parent_info.st_dev, parent_info.st_ino)):
             _fail("campaign_admission_incomplete")
         if _remote_main(checkout) != remote_commit:
             _fail("remote_main_mismatch")

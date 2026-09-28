@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import stat
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -512,6 +513,24 @@ def test_revalidation_accepts_one_unchanged_admission(tmp_path: Path) -> None:
     assert result["remote_commit"] == prepared["remote_commit"]
 
 
+def test_revalidation_uses_only_git_processes_and_never_starts_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    run = subprocess.run
+    commands = []
+
+    def git_only(command, *args, **kwargs):
+        commands.append(command)
+        assert command[0] == "git"
+        return run(command, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", git_only)
+    assert _revalidate(fixture)["launch_allowed"] is True
+    assert commands
+
+
 @pytest.mark.parametrize("mutation", ["duplicate", "extra", "missing", "noncanonical"])
 def test_revalidation_rejects_admission_shape_drift(tmp_path: Path, mutation: str) -> None:
     fixture = _registered_origin(tmp_path)
@@ -553,6 +572,54 @@ def test_revalidation_rejects_file_pin_drift_and_symlink(tmp_path: Path) -> None
         _revalidate(fixture)
 
 
+def test_revalidation_rejects_rehashed_local_evidence(tmp_path: Path) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    _, parent, manifest, _, _, _ = fixture
+    root = parent / manifest["campaign_root"]
+    material = root / "materials/input.bin"
+    material.write_bytes(b"forged input")
+    admission_path = root / "admission.json"
+    admission = json.loads(admission_path.read_bytes())
+    for item in admission["files"]:
+        if item["path"] == "materials/input.bin":
+            item["size"] = material.stat().st_size
+            item["sha256"] = hashlib.sha256(material.read_bytes()).hexdigest()
+    admission["admission_sha256"] = hashlib.sha256(_canonical({
+        key: value for key, value in admission.items() if key != "admission_sha256"
+    })).hexdigest()
+    admission_path.write_bytes(_canonical(admission))
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+
+
+@pytest.mark.parametrize("name", ["preflight.json", "remote-main.json"])
+def test_revalidation_rejects_rehashed_observation(tmp_path: Path, name: str) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    _, parent, manifest, _, _, _ = fixture
+    root = parent / manifest["campaign_root"]
+    target = root / name
+    observation = json.loads(target.read_bytes())
+    if name == "preflight.json":
+        observation["checks"]["identity_fresh"] = False
+    else:
+        observation["commit"] = "f" * 40
+    target.write_bytes(_canonical(observation))
+    admission_path = root / "admission.json"
+    admission = json.loads(admission_path.read_bytes())
+    for item in admission["files"]:
+        if item["path"] == name:
+            item["size"] = target.stat().st_size
+            item["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+    admission["admission_sha256"] = hashlib.sha256(_canonical({
+        key: value for key, value in admission.items() if key != "admission_sha256"
+    })).hexdigest()
+    admission_path.write_bytes(_canonical(admission))
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+
+
 def test_revalidation_rejects_hardlink_and_materials_permission_drift(tmp_path: Path) -> None:
     fixture = _registered_origin(tmp_path)
     _prepare(fixture)
@@ -568,13 +635,37 @@ def test_revalidation_rejects_hardlink_and_materials_permission_drift(tmp_path: 
         _revalidate(fixture)
 
 
+@pytest.mark.parametrize("replacement", ["copy", "symlink"])
+def test_revalidation_rejects_replaced_campaign_root(tmp_path: Path, replacement: str) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    _, parent, manifest, _, _, _ = fixture
+    root = parent / manifest["campaign_root"]
+    saved = parent / "original-campaign"
+    root.rename(saved)
+    if replacement == "copy":
+        shutil.copytree(saved, root, copy_function=shutil.copy2)
+        assert (root / "admission.json").read_bytes() == (saved / "admission.json").read_bytes()
+        assert root.stat().st_ino != saved.stat().st_ino
+    else:
+        root.symlink_to(saved, target_is_directory=True)
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+
+
+def test_revalidation_rejects_missing_admission(tmp_path: Path) -> None:
+    fixture = _registered_origin(tmp_path)
+    _prepare(fixture)
+    _, parent, manifest, _, _, _ = fixture
+    (parent / manifest["campaign_root"] / "admission.json").unlink()
+    with pytest.raises(AcceptanceRegistrationError, match="^campaign_admission_incomplete$"):
+        _revalidate(fixture)
+
+
 def test_revalidation_rejects_remote_drift(tmp_path: Path) -> None:
     fixture = _registered_origin(tmp_path)
     _prepare(fixture)
-    remote_main = acceptance_launch._remote_main
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(acceptance_launch, "_remote_main", lambda checkout: "f" * 40)
+    _, _, manifest, _, _, origin = fixture
+    _git(origin, "update-ref", "refs/heads/main", manifest["product_commit"])
     with pytest.raises(AcceptanceRegistrationError, match="^remote_main_mismatch$"):
         _revalidate(fixture)
-    monkeypatch.undo()
-    assert acceptance_launch._remote_main is remote_main
