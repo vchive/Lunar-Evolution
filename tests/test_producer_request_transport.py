@@ -279,6 +279,53 @@ def test_journal_rejects_existing_path_and_symbolic_links(tmp_path):
     )
 
 
+def test_journal_requires_private_owner_directory_and_file(tmp_path):
+    identity = _identity()
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o755)
+    shared.chmod(0o755)
+    _error(
+        "producer_request_transport_journal_path_invalid",
+        lambda: HostRequestJournal.create(shared / "requests.log", identity),
+    )
+    assert not (shared / "requests.log").exists()
+
+    path = tmp_path / "requests.log"
+    with HostRequestJournal.create(path, identity):
+        pass
+    path.chmod(0o644)
+    _error(
+        "producer_request_transport_journal_path_invalid",
+        lambda: read_host_request_journal(path, expected_identity=identity),
+    )
+    path.chmod(0o600)
+    tmp_path.chmod(0o750)
+    _error(
+        "producer_request_transport_journal_path_invalid",
+        lambda: read_host_request_journal(path, expected_identity=identity),
+    )
+    tmp_path.chmod(0o700)
+
+
+@pytest.mark.parametrize("drift", ["file", "directory"])
+def test_journal_permission_drift_poisoned_before_next_admission(tmp_path, drift):
+    path = tmp_path / "requests.log"
+    with HostRequestJournal.create(path, _identity()) as journal:
+        ledger = HostRequestLedger(request_timeout_seconds=1, max_requests=2, journal=journal)
+        changed = path if drift == "file" else tmp_path
+        changed.chmod(0o644 if drift == "file" else 0o755)
+        _error(
+            "producer_request_transport_journal_path_invalid",
+            lambda: ledger.admit("request-001"),
+        )
+        assert ledger.snapshot().admitted_count == 0
+        changed.chmod(0o600 if drift == "file" else 0o700)
+        _error(
+            "producer_request_transport_journal_unavailable",
+            lambda: ledger.admit("request-001"),
+        )
+
+
 def test_journal_write_failure_poison_and_does_not_advance_ledger(tmp_path, monkeypatch):
     path = tmp_path / "requests.log"
     clock = Clock()

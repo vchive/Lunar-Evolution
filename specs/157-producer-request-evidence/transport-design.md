@@ -23,9 +23,12 @@ exact launch/journal/run/parent/task tuple, intent digest, and request budgets. 
 write poisons that journal handle. Read-only recovery validates every line and reports
 unclosed admissions and timed-out records as uncertain, without resuming them. A deadline
 record alone does not establish that provider I/O stopped. It rejects symlinked file and
-ancestor paths. The controller must place this file in an OS-protected directory that the
-producer cannot write; a hash chain alone does not authenticate bytes against a child
-that can edit the journal with the controller's credentials.
+ancestor paths. Creation and replay require a current-user-owned `0700` leaf directory
+and `0600` journal file; every append rechecks both modes and owners. These checks
+exclude shared filesystem access but cannot distinguish a producer running under the
+same user. The controller must also isolate the producer from this directory; a hash
+chain alone does not authenticate bytes against a child that can edit the journal with
+the controller's credentials.
 
 `ControllerOwnedRequestBroker` now provides the provider-free transport boundary. It passes
 the exact controller-issued admission and deadline to a controlled transport handle, and

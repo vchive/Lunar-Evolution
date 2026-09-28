@@ -166,7 +166,15 @@ def _parent_fd(path: Path):
 
 def _checked_file(fd: int) -> None:
     info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or info.st_uid != os.geteuid() or info.st_mode & 0o777 != 0o600):
+        _fail("producer_request_transport_journal_path_invalid")
+
+
+def _checked_parent(fd: int) -> None:
+    info = os.fstat(fd)
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+            or info.st_mode & 0o777 != 0o700):
         _fail("producer_request_transport_journal_path_invalid")
 
 
@@ -185,9 +193,10 @@ class HostRequestJournal:
     record exists. The path is never reopened for appending after a crash.
     """
 
-    def __init__(self, fd: int, identity: HostRequestJournalIdentity, initial_size: int,
-                 head: str) -> None:
+    def __init__(self, fd: int, parent_fd: int, identity: HostRequestJournalIdentity,
+                 initial_size: int, head: str) -> None:
         self._fd = fd
+        self._parent_fd = parent_fd
         self.identity = identity
         self._size = initial_size
         self._head = head
@@ -204,6 +213,11 @@ class HostRequestJournal:
         if not _REQUEST_ID.fullmatch(target.name):
             _fail("producer_request_transport_journal_path_invalid")
         with _parent_fd(target) as parent:
+            _checked_parent(parent)
+            try:
+                parent_copy = os.dup(parent)
+            except OSError as exc:
+                raise ProducerRequestTransportError("producer_request_transport_journal_path_invalid") from exc
             try:
                 fd = os.open(
                     target.name,
@@ -212,6 +226,7 @@ class HostRequestJournal:
                     dir_fd=parent,
                 )
             except OSError as exc:
+                os.close(parent_copy)
                 raise ProducerRequestTransportError("producer_request_transport_journal_path_invalid") from exc
             try:
                 _checked_file(fd)
@@ -227,16 +242,19 @@ class HostRequestJournal:
                 os.fsync(parent)
             except Exception as exc:
                 os.close(fd)
+                os.close(parent_copy)
                 if isinstance(exc, ProducerRequestTransportError):
                     raise
                 raise ProducerRequestTransportError("producer_request_transport_journal_write_failed") from exc
-        return cls(fd, identity, len(header), head)
+        return cls(fd, parent_copy, identity, len(header), head)
 
     def close(self) -> None:
         with self._lock:
             if self._fd >= 0:
                 os.close(self._fd)
                 self._fd = -1
+                os.close(self._parent_fd)
+                self._parent_fd = -1
 
     def __enter__(self) -> Self:
         return self
@@ -262,6 +280,7 @@ class HostRequestJournal:
         if self._size + len(line) > MAX_HOST_REQUEST_JOURNAL_BYTES:
             _fail("producer_request_transport_journal_too_large")
         try:
+            _checked_parent(self._parent_fd)
             _checked_file(self._fd)
             _write_all(self._fd, line)
             os.fsync(self._fd)
@@ -346,6 +365,7 @@ def read_host_request_journal(
     if not _REQUEST_ID.fullmatch(target.name):
         _fail("producer_request_transport_journal_path_invalid")
     with _parent_fd(target) as parent:
+        _checked_parent(parent)
         try:
             fd = os.open(target.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
         except OSError as exc:
