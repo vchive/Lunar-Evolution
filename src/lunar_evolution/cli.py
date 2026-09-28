@@ -89,6 +89,9 @@ from .models import Run
 from .policy import MasterPolicy, PlanDocument, PlanPatch
 from .producer_handoff import ProducerHandoffError
 from .profiles import ModelProfile
+from .rsi_adapters import fixture_solver_gateway
+from .rsi_controller import DeterministicCurriculum, RSILearningController
+from .rsi_store import RSILedger
 from .runtime import OpenAICompatibleRuntime, build_runtime
 from .seed_handoff import SeedAdmissionError
 from .staged_workflow import StagedWorkflowConfig
@@ -1132,6 +1135,45 @@ def build_parser() -> argparse.ArgumentParser:
     memory_parser.add_argument("--limit", type=int, default=20)
     _add_home(memory_parser)
     _add_json(memory_parser)
+
+    rsi_parser = subparsers.add_parser("rsi", help="run or inspect local RSI learning mode")
+    rsi_commands = rsi_parser.add_subparsers(dest="rsi_command", required=True)
+    rsi_run_parser = rsi_commands.add_parser(
+        "run", help="run the provider-free RSI fixture and persist its ledger"
+    )
+    rsi_run_parser.add_argument("contract", type=Path, help="contract file used to pin the run")
+    rsi_run_parser.add_argument("--mode", choices=("drs", "brs"), default="drs")
+    rsi_run_parser.add_argument("--solver", choices=("mock", "native_population", "openevolve", "shinka"), default="mock")
+    rsi_run_parser.add_argument("--run-id", help="explicit durable RSI run ID")
+    rsi_run_parser.add_argument("--contract-sha256", help="explicit contract pin; defaults to file bytes")
+    rsi_run_parser.add_argument("--evaluator-sha256", help="evaluator pin; defaults to local exact fixture")
+    rsi_run_parser.add_argument("--environment-sha256", help="environment pin; defaults to local fixture")
+    rsi_run_parser.add_argument("--max-practice-rounds", type=int, default=3)
+    rsi_run_parser.add_argument("--max-target-attempts", type=int, default=4)
+    rsi_run_parser.add_argument("--practice-count", type=int, default=2, help="BRS practice decisions")
+    rsi_run_parser.add_argument(
+        "--worker-status",
+        choices=("completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"),
+        default="completed",
+        help="terminal status for the local fixture worker",
+    )
+    _add_home(rsi_run_parser)
+    _add_json(rsi_run_parser)
+
+    rsi_inspect_parser = rsi_commands.add_parser("inspect", help="inspect one RSI run or episode ledger")
+    rsi_inspect_parser.add_argument("logical_id")
+    _add_home(rsi_inspect_parser)
+    _add_json(rsi_inspect_parser)
+
+    rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
+    rsi_reconcile_parser.add_argument("episode_id")
+    rsi_reconcile_parser.add_argument(
+        "--worker-state", choices=("running", "idle", "completed", "failed", "cancelled", "unknown"), required=True,
+    )
+    rsi_reconcile_parser.add_argument("--launched", action="store_true", help="treat an idle worker as launched")
+    rsi_reconcile_parser.add_argument("--expected-record-sha256", required=True)
+    _add_home(rsi_reconcile_parser)
+    _add_json(rsi_reconcile_parser)
 
     decide_parser = subparsers.add_parser("decide", help="classify a goal with Master policy")
     decide_parser.add_argument("goal", nargs="?", help="goal, or '-' to read stdin")
@@ -5334,6 +5376,96 @@ def _detach_evolution(
     }
 
 
+def _rsi_record_payload(record) -> dict[str, object]:
+    return {
+        "logical_id": record.logical_id,
+        "revision": record.revision,
+        "kind": record.kind,
+        "state": record.state,
+        "request_sha256": record.request_sha256,
+        "parent_record_sha256": record.parent_record_sha256,
+        "payload": record.payload,
+        "record_sha256": record.record_sha256,
+        "created_at": record.created_at,
+    }
+
+
+def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, object]:
+    """Run only the deterministic local RSI fixture from the CLI.
+
+    Real solver processes are deliberately not started by this diagnostic command.  They enter
+    the same controller later through ``SolverGateway`` adapters after their receipt contract is
+    implemented.
+    """
+    try:
+        contract_bytes = args.contract.read_bytes()
+    except OSError as exc:
+        raise ValueError(f"could not read RSI contract: {exc}") from exc
+    contract_sha256 = args.contract_sha256 or hashlib.sha256(contract_bytes).hexdigest()
+    evaluator_sha256 = args.evaluator_sha256 or hashlib.sha256(b"lunar-rsi-local-exact-v1").hexdigest()
+    environment_sha256 = args.environment_sha256 or hashlib.sha256(b"lunar-rsi-local-fixture-v1").hexdigest()
+    run_id = args.run_id or f"rsi-{uuid.uuid4().hex[:16]}"
+    ledger = RSILedger(config.home / "rsi.sqlite3")
+    gateway = fixture_solver_gateway(args.solver, terminal_status=args.worker_status)
+
+    def target_judge(execution):
+        # Make the successful local fixture exercise the learning gate once before transfer.
+        if args.mode == "drs" and execution.episode.episode_kind == "target" and execution.episode.wave == 0:
+            return False, "local fixture capability gap"
+        return execution.passed, "local fixture target accepted" if execution.passed else execution.verifier.diagnosis
+
+    controller = RSILearningController(
+        gateway,
+        curriculum=DeterministicCurriculum(),
+        target_judge=target_judge,
+        ledger=ledger,
+    )
+    if args.mode == "drs":
+        result = controller.run_drs(
+            run_id=run_id,
+            contract_sha256=contract_sha256,
+            evaluator_sha256=evaluator_sha256,
+            environment_sha256=environment_sha256,
+            solver_id=args.solver,
+            max_practice_rounds=args.max_practice_rounds,
+            max_target_attempts=args.max_target_attempts,
+        )
+    else:
+        target = controller._target_episode(
+            run_id,
+            f"{run_id}-target-seed",
+            {
+                "contract_sha256": contract_sha256,
+                "evaluator_sha256": evaluator_sha256,
+                "environment_sha256": environment_sha256,
+                "solver_id": args.solver,
+            },
+            0,
+        )
+        decisions = tuple(
+            controller.curriculum.choose(target=target, diagnosis=f"fixture-gap-{index}", wave=0, ordinal=index)
+            for index in range(args.practice_count)
+        )
+        result = controller.run_brs(
+            run_id=run_id,
+            contract_sha256=contract_sha256,
+            evaluator_sha256=evaluator_sha256,
+            environment_sha256=environment_sha256,
+            solver_id=args.solver,
+            practices=decisions,
+        )
+    return {
+        "run_id": result.run_id,
+        "mode": args.mode,
+        "status": result.status,
+        "target_attempts": len(result.target_attempts),
+        "practice_episodes": len(result.practice_episodes),
+        "memory_snapshot_sha256": result.memory_snapshot.digest(),
+        "recovery_eligibility": "reconcile_required" if result.status == "unknown" else "terminal",
+        "ledger": str(config.home / "rsi.sqlite3"),
+    }
+
+
 def _memory_payload(config: Config, query: str | None, scope: str | None, limit: int) -> list[dict[str, object]]:
     memory = MemoryStore(config.database)
     memory.initialize()
@@ -6068,6 +6200,33 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
         if args.command == "init":
             _emit({"home": str(config.home), "status": "initialized"}, args.json)
             return 0
+        if args.command == "rsi":
+            ledger = RSILedger(config.home / "rsi.sqlite3")
+            if args.rsi_command == "run":
+                payload = _rsi_run_payload(config, args)
+                _emit(payload, args.json)
+                return 0 if payload["status"] == "completed" else 1
+            if args.rsi_command == "inspect":
+                record = ledger.get(args.logical_id)
+                if record is None:
+                    _emit_error(f"unknown RSI record: {args.logical_id}", args.json)
+                    return 2
+                payload = {
+                    "head": _rsi_record_payload(record),
+                    "history": [_rsi_record_payload(item) for item in ledger.history(args.logical_id)],
+                }
+                _emit(payload, args.json)
+                return 0
+            if args.rsi_command == "reconcile":
+                record = ledger.reconcile_worker(
+                    args.episode_id,
+                    worker_state=args.worker_state,
+                    launched=args.launched,
+                    expected_record_sha256=args.expected_record_sha256,
+                )
+                _emit(_rsi_record_payload(record), args.json)
+                return 0
+            raise ValueError("rsi_command_invalid")
         if args.command == "solve":
             payload = _solve(config, args)
             _emit(payload, args.json)
