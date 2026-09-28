@@ -573,7 +573,7 @@ class DurableLearningRun:
                 raise RSILearningError("rsi_record_parent_conflict")
             request = SolverRequest.from_dict(entry["request"])
             self._check_result(request, result)
-            if result.status not in {"completed", "failed", "cancelled"}:
+            if result.status not in {"completed", "failed", "timed_out", "abandoned", "cancelled"}:
                 raise RSILearningError("rsi_reconcile_terminal_evidence_required")
             old = entry.get("result")
             if old is not None and old["status"] != "unknown":

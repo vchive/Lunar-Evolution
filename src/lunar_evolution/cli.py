@@ -5482,6 +5482,8 @@ def _rsi_resume_controller(ledger: RSILedger, run_id: str):
     if checkpoint is None:
         raise ValueError("rsi_controller_checkpoint_missing")
     pinned = checkpoint[1]["config"]
+    if pinned.get("actor_fingerprint") is not None:
+        raise ValueError("rsi_cli_actor_fingerprint_unsupported")
     settings = pinned["solver_settings"]
     if set(settings) != {"fixture_worker_status"}:
         raise ValueError("rsi_cli_resume_requires_fixture_run")
