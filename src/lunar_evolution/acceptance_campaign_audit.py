@@ -235,6 +235,18 @@ def publish_native_campaign_audit(
 ) -> dict[str, Any]:
     """Audit and publish a create-only report plus the campaign inventory."""
     report = audit_native_campaign(registration, campaign_root=campaign_root, database=database, parent_run_id=parent_run_id)
+    return _publish_native_campaign_audit_report(report, campaign_root=campaign_root, output_directory=output_directory)
+
+
+def _publish_native_campaign_audit_report(
+    report: Mapping[str, Any], *, campaign_root: str | Path, output_directory: str | Path,
+) -> dict[str, Any]:
+    """Publish an already-computed report without rerunning the read-only audit.
+
+    The native runner computes the audit before writing its final result record.  This
+    helper lets it publish the resulting report after that record exists, so the
+    immutable inventory covers the complete retained campaign exactly once.
+    """
     try:
         inventory = inventory_campaign_directory(campaign_root)
         output = Path(output_directory).expanduser().resolve()

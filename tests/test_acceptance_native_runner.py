@@ -75,6 +75,12 @@ def test_single_native_invocation_retains_result(
         "lunar_evolution.acceptance_native_runner.publish_acceptance_observation_binding",
         lambda *_args, **_kwargs: {"binding": {"observation_binding_sha256": "b" * 64}},
     )
+    monkeypatch.setattr(
+        "lunar_evolution.acceptance_native_runner.audit_native_campaign",
+        lambda *_args, **_kwargs: {
+            "status": "verified", "primary_success": "1/1", "joint_success": "1/1",
+        },
+    )
     calls = []
 
     class Control:
@@ -113,6 +119,46 @@ def test_single_native_invocation_retains_result(
     assert (root / "attempt-started.json").exists()
     with pytest.raises(Exception, match="campaign_root_not_fresh"):
         _run(fixture)
+
+
+def test_native_cli_success_cannot_bypass_failed_independent_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _registered_native(tmp_path)
+    monkeypatch.setenv("LUNAR_EVOLUTION_MODEL_ENDPOINT", "https://example.invalid/v1/chat/completions")
+    monkeypatch.setenv("LUNAR_EVOLUTION_API_KEY", "fixture-key")
+    monkeypatch.setattr(
+        "lunar_evolution.acceptance_native_runner.prepare_acceptance_runtime_binding",
+        lambda *_args, **_kwargs: {"binding_sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.acceptance_native_runner.publish_acceptance_observation_binding",
+        lambda *_args, **_kwargs: {"binding": {"observation_binding_sha256": "b" * 64}},
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.acceptance_native_runner.audit_native_campaign",
+        lambda *_args, **_kwargs: {
+            "status": "failed", "primary_success": "0/1", "joint_success": "0/1",
+            "reason": "audit_inventory_changed",
+        },
+    )
+
+    def fake_main(_args, *, _acceptance_preparation_hook):
+        class Control:
+            def check(self, _stage):
+                return None
+
+            def effective_timeout(self, *, stage):
+                return 1
+
+        _acceptance_preparation_hook(object(), "parent-1", object(), Control())
+        print(json.dumps({"status": "succeeded", "evolution": {"status": "succeeded"}}))
+        return 0
+
+    monkeypatch.setattr(cli, "main", fake_main)
+    result = _run(fixture)
+    assert result["status"] == "failed"
+    assert result["audit_joint_success"] == "0/1"
 
 
 def test_request_and_token_limits_stop_following_calls(monkeypatch: pytest.MonkeyPatch) -> None:

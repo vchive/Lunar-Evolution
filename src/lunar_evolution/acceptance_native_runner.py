@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from ._benchmark_files import read_regular_file
+from .acceptance_campaign_audit import (
+    _publish_native_campaign_audit_report,
+    audit_native_campaign,
+)
 from .acceptance_launch import _write_new
 from .acceptance_launch_stage import stage_acceptance_attempt
 from .acceptance_observation_binding import publish_acceptance_observation_binding
@@ -203,6 +207,16 @@ def run_registered_acceptance(
             and isinstance(native.get("evolution"), dict)
             and native["evolution"].get("status") == "succeeded"
         )
+        audit_report = audit_native_campaign(
+            registration,
+            campaign_root=campaign,
+            database=campaign / "native-home" / "state.db",
+            parent_run_id=binding.get("parent_run_id", ""),
+        )
+        audit_verified = (
+            audit_report.get("status") == "verified"
+            and audit_report.get("joint_success") == "1/1"
+        )
         snapshot = budget.snapshot()
         budget_record = {
             "schema_version": "1", "scope": "acceptance_native_budget",
@@ -215,16 +229,29 @@ def run_registered_acceptance(
         budget_digest = _write_record(campaign, claim, "native-budget.json", budget_record)
         result = {
             "schema_version": "1", "scope": "acceptance_native_result",
-            "status": "completed" if code == 0 and binding and native_succeeded else "failed",
+            # The CLI's self-reported success is necessary but never sufficient. The
+            # independent retained-evidence audit owns the final acceptance decision.
+            "status": "completed" if code == 0 and binding and native_succeeded and audit_verified else "failed",
             "exit_code": code, "attempt_claim_sha256": claim["attempt_claim_sha256"],
             "registration_sha256": claim["registration_sha256"],
             "request_ceiling": budget.max_requests,
             "observed_token_ceiling": budget.max_observed_tokens,
             "budget_receipt_sha256": budget_digest,
             "provider_call_made": snapshot["request_count"] > 0,
+            "audit_status": audit_report.get("status", "failed"),
+            "audit_primary_success": audit_report.get("primary_success", "0/1"),
+            "audit_joint_success": audit_report.get("joint_success", "0/1"),
+            "audit_reason": audit_report.get("reason"),
+            "audit_report_sha256": hashlib.sha256(
+                json.dumps(audit_report, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
             **snapshot, **binding,
         }
         _write_record(campaign, claim, "native-result.json", result)
+        audit_output = campaign.with_name(f"{campaign.name}-audit")
+        _publish_native_campaign_audit_report(
+            audit_report, campaign_root=campaign, output_directory=audit_output,
+        )
         return result
 
 
