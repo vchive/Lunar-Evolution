@@ -22,6 +22,7 @@
 - [x] T160-13 增加 durable controller-level resume、unknown reconcile gate 和 diversity/failure-boundary curriculum policy。
   包含 DRS/BRS checkpoint、跨进程锁、CAS/hash-chain、solver/settings/actor/环境指纹、
   verified terminal 幂等复用、memory lineage、CLI result-backed reconciliation 和历史反馈重建。
-- [ ] T160-14 冻结 heldout panel，对照 empty/frozen memory 的独立评测并持久化比较收据；
-  fixture 改善只证明测量方法，不证明真实模型泛化收益。
+- [x] T160-14 冻结宿主声明的 task panel，对照 empty/frozen memory 的独立评测并持久化比较收据；
+  21 项本地测试覆盖双合同、改善/持平/退步、篡改和中断不重跑。宿主负责已批准快照与 heldout
+  来源；fixture 改善只证明测量方法，不证明真实模型泛化收益。
 - [ ] T160-15 在生产边界闭合后单独验收真实 Actor、OpenEvolve/Shinka campaign；LLM curriculum 可选。

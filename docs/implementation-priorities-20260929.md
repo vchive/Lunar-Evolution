@@ -61,13 +61,21 @@ repository and does not reset existing architecture or historical acceptance evi
   failure boundaries, with stable identities and reproducible recovery.
 - [x] Reconstruct curriculum feedback from retained practices in the durable controller; reconcile
   uncertain observations before selecting another practice. Initial catalog/history are pinned.
-- [ ] Validate frozen-memory transfer across independent local tasks; measure actual benefit before
-  claiming improved general capability. LLM curriculum remains optional and separately bounded.
-- [ ] Support producer imports into evolved/seeded populations and repeated admissions without
-  changing historical lineage or watermarks.
+- [x] Implement a frozen-memory comparison panel against an empty-memory baseline with independently
+  verified native runs, equal task budgets and retained comparison evidence. Multiple declared
+  contracts, improvements/ties/regressions, tampering and no-replay recovery have local tests.
+- [ ] Measure benefit with a real model and independent held-out tasks before claiming improved
+  general capability. Local fixture deltas prove the measurement path, not generalized learning.
+  LLM curriculum remains optional and separately bounded.
+- [x] Support repeated producer batches in an iteration-zero running population without seeds or
+  offspring history; append immutable admission events and reject ID/provenance collisions before
+  evaluating another candidate. Stage validation independently preserves history and integrity pins.
+- [ ] Support evolved/seeded population admission while preserving lineage and outcome watermarks.
 - [ ] Incrementally adapt automatic solve and external producer execution to common WorkerService
   lifecycle/delivery where useful; this architectural convergence does not invalidate the already
-  accepted native path and is not a prerequisite for its existing use.
+  accepted native path and is not a prerequisite for its existing use. The exact binding, state,
+  cancellation and delivery contract is recorded in Feature 142 `worker-service-integration-design.md`;
+  implementation tasks WSI-01–07 remain open.
 
 All development checks use local fixtures or local subprocesses. This plan does not launch
 WebAgent or remote evaluators. Real campaign evidence and implementation completeness remain
