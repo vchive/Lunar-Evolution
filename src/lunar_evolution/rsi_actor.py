@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from .agent_loop import AgentLoopRuntime, AgentLoopTimeout
+from .agent_loop import AgentLoopTimeout
 from .automatic_solve_lifecycle import SolveExecutionCancelled
 from .candidate_evaluation_spec import canonical_json
 from .rsi_gateway import SolverRequest, SolverResult
@@ -51,11 +51,55 @@ def _positive_timeout(value: object, name: str) -> float | None:
     return float(value)
 
 
+def _callable_identity(value: Callable[..., Any]) -> dict[str, Any]:
+    """Describe implementation bytes without invoking a factory or serializing secrets."""
+    target = value if inspect.isfunction(value) else type(value)
+    try:
+        source = inspect.getsource(target)
+    except (OSError, TypeError):
+        source = None
+    code = getattr(value, "__code__", None)
+    if source is None and code is None:
+        # An opaque extension still needs an explicit profile pin; its import identity does
+        # not pretend to inventory internal runtime configuration.
+        implementation = None
+    else:
+        implementation = source or code.co_code.hex()
+    return {
+        "module": getattr(target, "__module__", "unknown"),
+        "name": getattr(target, "__qualname__", type(value).__qualname__),
+        "implementation_sha256": (
+            hashlib.sha256(implementation.encode("utf-8")).hexdigest()
+            if implementation is not None else None
+        ),
+    }
+
+
+def _profile_pin(component: Callable[..., Any], supplied: str | None, name: str) -> str:
+    """A class name or function body alone cannot pin model/tool/closure configuration."""
+    observed = getattr(component, "fingerprint", None)
+    observed = _digest(observed(), name) if callable(observed) else None
+    if supplied is not None:
+        if observed is not None and observed != supplied:
+            raise RSILearningError(f"rsi_{name}_mismatch")
+        return supplied
+    if observed is None:
+        raise RSILearningError(f"rsi_{name}_required")
+    return observed
+
+
 class AgentLoopActorGateway:
     """Run RSI solver requests through a locally constructed :class:`AgentLoopRuntime`.
 
     ``receipt_builder`` is the trust boundary for completion.  It is deliberately optional so a
     model run cannot be mistaken for an official evaluator receipt.
+
+    Durable callers must supply full runtime/receipt profile fingerprints or callable objects
+    exposing ``fingerprint()``. Those pins must cover model, tool, settings and receipt authority
+    configuration. A function body cannot prove the identity of a captured model client. With
+    such profiles, ``SolverResult.actor_fingerprint`` equals ``gateway.fingerprint()``; legacy
+    non-durable callers retain the historical runtime/name fingerprint. The runtime may expose
+    its own ``fingerprint()`` for an additional check against the pinned runtime profile.
     """
 
     def __init__(
@@ -67,6 +111,8 @@ class AgentLoopActorGateway:
         dependency_paths: Sequence[str] = ("requirements.txt",),
         receipt_builder: Callable[[SolverRequest, Path, RuntimeResult, str], Mapping[str, Any]] | None = None,
         actor_name: str = "lunar-agent-loop",
+        runtime_fingerprint: str | None = None,
+        receipt_builder_fingerprint: str | None = None,
     ) -> None:
         if not callable(runtime_factory):
             raise TypeError("runtime_factory must be callable")
@@ -83,6 +129,38 @@ class AgentLoopActorGateway:
             raise TypeError("receipt_builder must be callable or None")
         self.receipt_builder = receipt_builder
         self.actor_name = actor_name
+        self.runtime_fingerprint = (
+            _digest(runtime_fingerprint, "actor_runtime_fingerprint")
+            if runtime_fingerprint is not None else None
+        )
+        self.receipt_builder_fingerprint = (
+            _digest(receipt_builder_fingerprint, "actor_receipt_builder_fingerprint")
+            if receipt_builder_fingerprint is not None else None
+        )
+        if receipt_builder is None and receipt_builder_fingerprint is not None:
+            raise RSILearningError("rsi_actor_receipt_builder_fingerprint_without_builder")
+
+    def fingerprint(self) -> str:
+        """Bind durable Actor configuration without constructing or calling the runtime."""
+        runtime_pin = _profile_pin(
+            self.runtime_factory, self.runtime_fingerprint, "actor_runtime_fingerprint",
+        )
+        receipt = None
+        if self.receipt_builder is not None:
+            receipt = {
+                "implementation": _callable_identity(self.receipt_builder),
+                "profile": _profile_pin(
+                    self.receipt_builder, self.receipt_builder_fingerprint,
+                    "actor_receipt_builder_fingerprint",
+                ),
+            }
+        return _record_digest({
+            "protocol": "lunar-rsi-agent-loop-gateway-v1", "actor": self.actor_name,
+            "workspace_root": str(self.workspace_root), "candidate_paths": self.candidate_paths,
+            "dependency_paths": self.dependency_paths,
+            "runtime": {"implementation": _callable_identity(self.runtime_factory), "profile": runtime_pin},
+            "receipt_builder": receipt,
+        })
 
     def _episode_workspace(self, episode_id: str) -> Path:
         # Episode ids are protocol identifiers, but must also be one directory component here.
@@ -221,8 +299,20 @@ class AgentLoopActorGateway:
         terminal_status = "failed"
         reason = "actor_failed"
         try:
+            has_profile = self.runtime_fingerprint is not None or callable(
+                getattr(self.runtime_factory, "fingerprint", None),
+            )
+            if has_profile:
+                actor_fingerprint = self.fingerprint()
             runtime = self._new_runtime(workspace)
-            actor_fingerprint = self._fingerprint(runtime)
+            if has_profile:
+                observed = getattr(runtime, "fingerprint", None)
+                if callable(observed) and _digest(observed(), "actor_runtime_fingerprint") != _profile_pin(
+                    self.runtime_factory, self.runtime_fingerprint, "actor_runtime_fingerprint",
+                ):
+                    raise RSILearningError("rsi_actor_runtime_fingerprint_mismatch")
+            else:
+                actor_fingerprint = self._fingerprint(runtime)
             setter = getattr(runtime, "set_event_sink", None)
             if callable(setter):
                 setter(lambda event_type, payload: self._trace_event(events, event_type, payload if isinstance(payload, Mapping) else {}))
@@ -248,7 +338,7 @@ class AgentLoopActorGateway:
             terminal_status, reason = "timed_out", "actor_timeout"
         except SolveExecutionCancelled:
             terminal_status, reason = "cancelled", "actor_cancelled"
-        except Exception:
+        except Exception:  # noqa: BLE001 - external runtime failures become bounded terminal evidence
             # Keep errors out of public trace and terminal evidence; callers can inspect local logs.
             terminal_status = "failed"
             reason = "actor_failure"
