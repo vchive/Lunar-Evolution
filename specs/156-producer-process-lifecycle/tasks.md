@@ -20,7 +20,7 @@
 The native trusted attempt now requires a stable durable handoff reread before gate release.
 It cross-checks the one-time nonce claim, formal registration, and handoff under the existing
 wall-clock deadline; missing or tampered handoff keeps the target unstarted. This is pre-gate
-evidence only. No terminal execution receipt or brokered request coverage is claimed.
+evidence only. No full Feature 156 execution receipt or brokered request coverage is claimed.
 
 The `15b8113` supporting checkpoint adds a compiled native trusted bootstrap and a real Darwin
 bootstrap → isolated target test. The target can write its declared workspace while outside
@@ -36,3 +36,14 @@ admission plan. It retains `request_coverage=cooperative_declaration_only`,
 `broker_coverage=not_integrated`, and `publication_status=not_started`. It does not authorize
 arbitrary direct executables as trusted bootstrap, provide complete outbound coverage, or stage
 or publish candidates. T156-05/06/09/12/14 remain open for the production path.
+
+The native trusted runner now writes a separate, create-only
+`native-trusted-process-terminal.json` after the exact handoff and bootstrap evidence are
+durable, the child has a known exit code, and owner-checked cleanup is verified. The receipt
+binds the formal registration, handoff, bootstrap evidence, process status, and cleanup status;
+it explicitly says `receipt_scope=process_only` and `publication_eligible=false`. Read-only
+recovery verifies that chain. When the terminal is missing, explicit recovery takes the
+registered lifecycle lock and may clean only the exact OS start identity, retaining unknown
+outcome in a separate recovery receipt. This is a partial T156-06/09 slice. The native path
+still lacks a Feature 156 output-envelope receipt, host-observed request evidence, and complete
+terminal deadline/capture coverage, so T156-05/06/09/14 remain open.

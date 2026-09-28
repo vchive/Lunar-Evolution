@@ -71,3 +71,12 @@ unchanged into the terminal receipt. Darwin uses `libproc` start seconds and mic
 uses the boot ID and `/proc` start tick. An unavailable or changed identity cannot authorize
 signalling a live process. The live controller may still clean descendants after it has reaped
 the exact child; recovery cannot borrow that in-memory observation.
+
+The native trusted-bootstrap attempt also has a narrower
+`lunar-native-trusted-process-terminal-v1` receipt. It binds the formal registration digest,
+trusted handoff digest, bootstrap evidence digest, exit code, and verified cleanup status.
+Its fixed `receipt_scope=process_only` and `publication_eligible=false` prevent downstream
+consumers from treating it as the full `ProducerExecutionReceipt`: request counts and output
+envelope bytes have not been host-verified. Missing terminal evidence remains unknown; explicit
+recovery uses the registration's lifecycle lock and OS start identity and writes a separate
+recovery receipt without relaunch.

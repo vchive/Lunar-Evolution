@@ -1,5 +1,16 @@
 # Feature 156 validation
 
+## Native process-terminal follow-up (2026-09-28)
+
+The provider-free native attempt now persists a process-only terminal receipt after a known exit,
+verified process-group cleanup, and durable cross-record bootstrap evidence. Its recovery reader
+checks the exact registration/handoff/evidence chain and rejects receipt tampering. A missing
+terminal permits only explicit owner-checked cleanup and an unknown recovery receipt, never a
+replacement launch. The native attempt focused suite passes **13 tests** on Darwin, including a
+live registered group left by an interrupted cleanup. This does
+not close broader Feature 156 acceptance: stdout/stderr capture, result-envelope validation,
+host-observed requests, and scheduler/publication integration remain open.
+
 ## Cross-feature lifecycle acceptance matrix (`2026-09-28`)
 
 The provider-free lifecycle evidence is now indexed in the [acceptance matrix](acceptance-matrix.md).
