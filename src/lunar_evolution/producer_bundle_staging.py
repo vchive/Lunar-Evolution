@@ -21,7 +21,11 @@ from typing import Any, NoReturn
 
 from . import _benchmark_files as _files
 from .evolution import MAX_ARCHIVE_BYTES, MAX_ARCHIVE_LINE_BYTES, MAX_STATE_BYTES
-from .producer_bundle_preflight import ProducerBundlePreflightReceipt
+from .producer_bundle_preflight import (
+    ProducerBundlePreflightReceipt,
+    _authority_digest,
+    parse_producer_bundle_preflight_receipt,
+)
 from .producer_bundle_publication import (
     MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES,
     ProducerBundlePublicationCandidate,
@@ -538,8 +542,24 @@ def stage_producer_bundle_publication(
     """Build and durably retain a complete batch without exposing any candidate."""
     if not isinstance(journal, ProducerBundlePublicationJournal) or not isinstance(preflight, ProducerBundlePreflightReceipt):
         _fail("producer_bundle_publication_input_invalid")
-    if journal.journal_id != preflight.journal_id or journal.state != "prepared":
+    if journal.state != "prepared":
         _fail("producer_bundle_publication_state_invalid")
+    try:
+        preflight = parse_producer_bundle_preflight_receipt(preflight.to_dict())
+    except Exception as exc:
+        raise ProducerBundlePublicationStagingError("producer_bundle_publication_preflight_invalid") from exc
+    if (
+        preflight.journal_id != journal.journal_id
+        or preflight.run_id != journal.run_id
+        or preflight.task_id != journal.task_id
+        or preflight.plan_sha256 != journal.admission_sha256
+        or preflight.archive_prefix_sha256 != journal.archive_prefix_sha256
+        or preflight.base_archive_sha256 != journal.base_archive_sha256
+        or preflight.base_state_sha256 != journal.base_state_sha256
+        or preflight.authority_sha256 != _authority_digest(journal)
+        or preflight.candidate_ids != tuple(item.candidate_id for item in journal.candidates)
+    ):
+        _fail("producer_bundle_publication_preflight_mismatch")
     try:
         values = tuple(artifacts)
     except TypeError as exc:
@@ -572,6 +592,8 @@ def stage_producer_bundle_publication(
         state = _read(state_path, MAX_STATE_BYTES) if _present(state_path) else b""
         if _sha(archive) != journal.base_archive_sha256 or _sha(state) != journal.base_state_sha256:
             _fail("producer_bundle_publication_prefix_drift")
+        if archive.count(b"\n") != preflight.record_count:
+            _fail("producer_bundle_publication_preflight_mismatch")
         if _present(evolution / _MARKER_NAME):
             _fail("producer_bundle_publication_recovery_required")
         stage.mkdir(mode=0o700)

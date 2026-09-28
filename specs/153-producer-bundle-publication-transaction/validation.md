@@ -1,5 +1,14 @@
 # Feature 153 validation
 
+## 2026-09-28 preflight-to-stage binding
+
+Staging reparses the read-only preflight receipt before any write, then binds its run/task,
+admission plan, archive/state prefix, authority digest, and ordered candidate IDs to the
+publication journal. Under the publication lock it also checks the retained archive record
+count before creating the stage. A stale or cross-batch receipt fails closed without a stage
+or publication marker. Focused provider-free tests cover every mismatched field, a mutated
+receipt digest, and record-count drift.
+
 T153-01 and T153-02 provide the provider-free canonical journal, deterministic candidate IDs, and
 zero-write admission preflight. T153-03/T153-04/T153-05 are now implemented. The staged
 transaction writes candidate source trees, record/receipt sidecars, archive/state snapshots, and a
