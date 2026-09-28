@@ -1160,6 +1160,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_home(rsi_run_parser)
     _add_json(rsi_run_parser)
 
+    rsi_resume_parser = rsi_commands.add_parser("resume", help="continue an existing local RSI fixture run")
+    rsi_resume_parser.add_argument("run_id")
+    _add_home(rsi_resume_parser)
+    _add_json(rsi_resume_parser)
+
     rsi_inspect_parser = rsi_commands.add_parser("inspect", help="inspect one RSI run or episode ledger")
     rsi_inspect_parser.add_argument("logical_id")
     _add_home(rsi_inspect_parser)
@@ -1168,10 +1173,11 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
     rsi_reconcile_parser.add_argument(
-        "--worker-state", choices=("running", "idle", "completed", "failed", "cancelled", "unknown"), required=True,
+        "--worker-state", choices=("running", "idle", "completed", "failed", "cancelled", "unknown"),
     )
     rsi_reconcile_parser.add_argument("--launched", action="store_true", help="treat an idle worker as launched")
     rsi_reconcile_parser.add_argument("--expected-record-sha256", required=True)
+    rsi_reconcile_parser.add_argument("--result", type=Path, help="retained solver result JSON; verify and continue its run")
     _add_home(rsi_reconcile_parser)
     _add_json(rsi_reconcile_parser)
 
@@ -5408,17 +5414,12 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
     ledger = RSILedger(config.home / "rsi.sqlite3")
     gateway = fixture_solver_gateway(args.solver, terminal_status=args.worker_status)
 
-    def target_judge(execution):
-        # Make the successful local fixture exercise the learning gate once before transfer.
-        if args.mode == "drs" and execution.episode.episode_kind == "target" and execution.episode.wave == 0:
-            return False, "local fixture capability gap"
-        return execution.passed, "local fixture target accepted" if execution.passed else execution.verifier.diagnosis
-
     controller = RSILearningController(
         gateway,
         curriculum=DeterministicCurriculum(),
-        target_judge=target_judge,
+        target_judge=_rsi_fixture_target_judge,
         ledger=ledger,
+        solver_settings={"fixture_worker_status": args.worker_status},
     )
     if args.mode == "drs":
         result = controller.run_drs(
@@ -5454,9 +5455,19 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
             solver_id=args.solver,
             practices=decisions,
         )
+    return _rsi_result_payload(config, result, args.mode)
+
+
+def _rsi_fixture_target_judge(execution):
+    if execution.episode.episode_kind == "target" and execution.episode.wave == 0:
+        return False, "local fixture capability gap"
+    return execution.passed, "local fixture target accepted" if execution.passed else execution.verifier.diagnosis
+
+
+def _rsi_result_payload(config: Config, result, mode: str) -> dict[str, object]:
     return {
         "run_id": result.run_id,
-        "mode": args.mode,
+        "mode": mode,
         "status": result.status,
         "target_attempts": len(result.target_attempts),
         "practice_episodes": len(result.practice_episodes),
@@ -5464,6 +5475,20 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
         "recovery_eligibility": "reconcile_required" if result.status == "unknown" else "terminal",
         "ledger": str(config.home / "rsi.sqlite3"),
     }
+
+
+def _rsi_resume_controller(ledger: RSILedger, run_id: str):
+    checkpoint = ledger.controller_checkpoint(run_id)
+    if checkpoint is None:
+        raise ValueError("rsi_controller_checkpoint_missing")
+    pinned = checkpoint[1]["config"]
+    settings = pinned["solver_settings"]
+    if set(settings) != {"fixture_worker_status"}:
+        raise ValueError("rsi_cli_resume_requires_fixture_run")
+    gateway = fixture_solver_gateway(pinned["solver_id"], terminal_status=settings["fixture_worker_status"])
+    return RSILearningController(gateway, curriculum=DeterministicCurriculum(),
+                                target_judge=_rsi_fixture_target_judge, ledger=ledger,
+                                solver_settings=settings), pinned["mode"]
 
 
 def _memory_payload(config: Config, query: str | None, scope: str | None, limit: int) -> list[dict[str, object]]:
@@ -6206,6 +6231,11 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 payload = _rsi_run_payload(config, args)
                 _emit(payload, args.json)
                 return 0 if payload["status"] == "completed" else 1
+            if args.rsi_command == "resume":
+                controller, mode = _rsi_resume_controller(ledger, args.run_id)
+                payload = _rsi_result_payload(config, controller.resume(run_id=args.run_id), mode)
+                _emit(payload, args.json)
+                return 0 if payload["status"] == "completed" else 1
             if args.rsi_command == "inspect":
                 record = ledger.get(args.logical_id)
                 if record is None:
@@ -6218,6 +6248,28 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 _emit(payload, args.json)
                 return 0
             if args.rsi_command == "reconcile":
+                if args.result is not None:
+                    if args.worker_state is not None or args.launched:
+                        raise ValueError("rsi_reconcile_result_and_worker_state_conflict")
+                    from ._benchmark_files import absolute_path, read_regular_file
+                    from .candidate_evaluation_spec import strict_json
+                    from .rsi_gateway import SolverResult
+                    head = ledger.get(args.episode_id)
+                    if head is None or head.kind != "episode":
+                        raise ValueError("rsi_reconcile_episode_missing")
+                    run_id = head.payload["run_id"]
+                    controller, mode = _rsi_resume_controller(ledger, run_id)
+                    raw = read_regular_file(absolute_path(args.result), 128 * 1024)
+                    result = SolverResult.from_dict(strict_json(raw, maximum=128 * 1024))
+                    outcome = controller.reconcile_episode(
+                        run_id=run_id, episode_id=args.episode_id, result=result,
+                        expected_record_sha256=args.expected_record_sha256,
+                    )
+                    payload = _rsi_result_payload(config, outcome, mode)
+                    _emit(payload, args.json)
+                    return 0 if payload["status"] == "completed" else 1
+                if args.worker_state is None:
+                    raise ValueError("rsi_reconcile_evidence_required")
                 record = ledger.reconcile_worker(
                     args.episode_id,
                     worker_state=args.worker_state,

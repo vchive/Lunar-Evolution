@@ -49,6 +49,34 @@ lunar-evolution rsi reconcile EPISODE_ID --worker-state failed \
   --expected-record-sha256 RECORD_SHA256 --home .lunar-evolution --json
 ```
 
-The current fixture covers the DRS cycle, BRS frozen-parent merge, transfer write guard, terminal
-state fixtures, and these local diagnostics. Durable controller resume, real OpenEvolve/Shinka
-adapters, and LLM-assisted curriculum remain follow-up work; no provider credentials are read.
+Continue the same persisted fixture controller (including terminal idempotent reads) with:
+
+```bash
+lunar-evolution rsi resume RUN_ID --home .lunar-evolution --json
+```
+
+An uncertain invocation is never reissued. Supply a retained `SolverResult` for the original
+request and the current episode record digest to reconcile and continue the original run:
+
+```bash
+lunar-evolution rsi reconcile EPISODE_ID --result ./retained-result.json \
+  --expected-record-sha256 RECORD_SHA256 --home .lunar-evolution --json
+```
+
+`--worker-state` is a legacy ledger-only diagnostic; it cannot substitute for terminal execution
+evidence or continue a controller. `--result` cannot be combined with worker-state flags. The
+CLI reconstructs only its own fixture runs; native Python integrations must supply the same pinned
+gateway and independent verifier through `RSILearningController.resume()` / `reconcile_episode()`.
+Legacy runs without controller checkpoints remain inspectable but are not silently migrated.
+
+The Python API also exposes `NativeEvaluationProfile`, `NativePopulationGateway`, and
+`NativeIndependentVerifier` in `lunar_evolution.rsi_native`. The gateway performs one bounded local
+proposal and native evaluation; the explicit verifier reopens the retained evidence and runs an
+independent local verification. The default `LocalExactVerifier` is fixture-only and will not
+approve results from these native backends. See [verifier design](verifier-design.md) for exact
+scope and declared dependency/runtime limits.
+
+The deterministic diversity curriculum is available as an explicit Python policy in
+`lunar_evolution.rsi_curriculum`; see [curriculum design](curriculum-design.md). Real
+OpenEvolve/Shinka adapters and LLM-assisted curriculum remain follow-up work; no provider
+credentials are read by these commands.
