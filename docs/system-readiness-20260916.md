@@ -1,6 +1,24 @@
 # Lunar Evolution 当前能力、剩余工作与终态验收
 
-## 2026-09-27 当前判断
+## 2026-09-28 当前判断
+
+已推送的 `3273a2e` 将新 campaign admission、launch-time revalidation、一次性 attempt claim
+和发布后的 retained claim/inventory 复核接成 `stage_acceptance_attempt`。聚焦 launch/attempt
+gate 回归 **50 passed**；在该提交上的原生离线 E2E **224 passed / 0 failed / 0 skipped**，
+报告为 `.lunar-evolution/test-results/native-e2e-20260928-stage/native-e2e.xml`。
+返回值只是持久的 `attempt-started.json`，明确记录
+`provider_started=false`、`provider_call_made=false`；此入口没有启动 native solve、模型、
+外部 producer 或 evaluator。原生多文件 provider-free E2E **224/224** 仍是离线结果，
+不能作为真实模型成功样本。
+
+发布前仍需完成 Feature 142 T038 的正式唯一 native solve 调用与执行监督、T039 的
+observation binding 到 campaign discovery/runner 接线、T040 的新登记唯一真实模型 attempt
+及独立六阶段 postrun/holdout 审计。外部 producer 的 Feature 156 正式 deadline、执行字节绑定、登记、
+清理与恢复，Feature 157 出口/凭据/journal 保护，以及 Feature 158 trusted bootstrap
+与同一 attempt 的生命周期绑定分别开放；离线 staging 不关闭这些工作。Feature 139
+历史槽仍为 preparation **1/1**、primary/joint **0/1**，本次没有增加真实模型验收结果。
+
+## 2026-09-27 历史检查点
 
 `15b8113` 已补齐准备产物与预登记判据的本地绑定、固定八项 native holdout 的实际执行与
 持久证据，并拒绝材料/目录漂移、取消和 deadline 后的绑定发布。五套相关专项 **82 passed /

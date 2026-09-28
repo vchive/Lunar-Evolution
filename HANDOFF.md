@@ -1,5 +1,23 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-28 provider-free acceptance staging checkpoint
+
+最新提交 `3273a2e` 已推送。`stage_acceptance_attempt` 将新 campaign admission、
+launch-time revalidation、create-only 单次 attempt claim 和发布后的 retained claim/inventory
+复核接成一个 controller-owned provider-free 入口；失败后不复用或修复已保留的 campaign root。
+这只建立持久的 `attempt-started.json`，其中 `provider_started=false`、
+`provider_call_made=false`；没有调用模型、外部 producer 或 evaluator。launch/attempt gate
+聚焦回归 **50 passed**。在 `3273a2e` 上重新运行原生离线 E2E，**224 passed / 0 failed /
+0 skipped**，报告位于 `.lunar-evolution/test-results/native-e2e-20260928-stage/native-e2e.xml`；
+pytest 清理旧临时只读快照目录时另有警告，不影响该次测试结果。
+
+Feature 142 仍开放：T038 需把这个入口接入正式唯一 native solve 调用及执行监督；T039
+需把已发布的 observation binding 接入 campaign discovery 和正式 runner；T040 需在新登记、
+clean `origin/main` 与固定材料下运行唯一真实模型 attempt，并完成独立六阶段 postrun/holdout
+审计。Feature 156/157/158 的外部 producer 正式共享 deadline、执行字节绑定、登记/清理/恢复、请求出口与
+凭据保护、trusted bootstrap 生命周期绑定及完整矩阵仍是另一条未完成的生产接线，不能由
+上述 provider-free staging 回归代替。
+
 ## 2026-09-28 campaign revalidation、trusted handoff 与 producer lifecycle matrix checkpoint
 
 最新已提交并推送的提交为 `91ba125`、`e13b375`、`1579d43`、`7a008e7`、`f4a788b`、
