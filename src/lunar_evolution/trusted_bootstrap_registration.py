@@ -19,12 +19,19 @@ from pathlib import Path
 
 from .producer_bootstrap import (
     BootstrapHandshakeFrame,
+    ProducerBootstrapError,
     TrustedBootstrapDescriptor,
     TrustedBootstrapLaunch,
+    build_trusted_bootstrap_launch,
     parse_bootstrap_handshake_frame,
     verify_trusted_bootstrap_process_registration,
 )
-from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
+from .producer_launcher import (
+    ProducerLaunchAttestation,
+    ProducerLaunchError,
+    ProducerLaunchIntent,
+    verify_producer_launch_attestation,
+)
 from .producer_process import (
     PRODUCER_PROCESS_PROTOCOL,
     ProducerProcessError,
@@ -32,9 +39,12 @@ from .producer_process import (
     _canonical,
     _current_recovery_lock_identity,
     _digest_without,
+    _file_identity,
     _held_directory,
+    _identity_digest,
     _process_owner_identity,
     _read_durable_json,
+    _relative_path,
     _safe_dir,
     _safe_root,
     _sha,
@@ -103,6 +113,77 @@ def _claim_bytes(path: Path) -> tuple[bytes, dict[str, object]]:
         raise
     except (OSError, UnicodeError, ValueError, ProducerProcessError) as exc:
         raise TrustedBootstrapRegistrationError("trusted_registration_claim_unknown") from exc
+
+
+def consume_trusted_bootstrap_attestation(
+    workspace: str | Path,
+    *,
+    producer_root: str | Path,
+    intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation,
+    descriptor: TrustedBootstrapDescriptor,
+    launch: TrustedBootstrapLaunch,
+    recovery_lock_identity: tuple[int, int],
+    deadline: float,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> dict[str, object]:
+    """Consume the target attestation once before preparing or spawning a bootstrap.
+
+    The caller holds the journal recovery lock for the full attempt. A partial
+    publication is deliberately left in place, so neither a failed write nor a
+    crashed controller can reuse the nonce or journal identity.
+    """
+    if monotonic() >= deadline:
+        _fail("trusted_registration_wall_timeout")
+    if not isinstance(intent, ProducerLaunchIntent) or not isinstance(attestation, ProducerLaunchAttestation):
+        _fail("trusted_registration_admission_invalid")
+    try:
+        verify_producer_launch_attestation(intent, attestation)
+        expected_launch = build_trusted_bootstrap_launch(
+            intent, attestation, descriptor, gate_nonce=attestation.nonce,
+        )
+    except (ProducerLaunchError, ProducerBootstrapError, TypeError, ValueError) as exc:
+        raise TrustedBootstrapRegistrationError("trusted_registration_admission_invalid") from exc
+    if launch != expected_launch:
+        _fail("trusted_registration_launch_mismatch")
+    try:
+        root = _safe_root(workspace)
+        batch = root / "evolution" / "producer-batches" / intent.journal_id
+        _safe_dir(batch)
+        if _current_recovery_lock_identity(batch) != recovery_lock_identity:
+            _fail("trusted_registration_lock_mismatch")
+        target_root = _safe_root(producer_root, "producer_process_producer_root_invalid")
+        target = _relative_path(target_root, intent.executable_relative)
+        _safe_dir(target.parent)
+        identity = _file_identity(target)
+    except ProducerProcessError as exc:
+        raise TrustedBootstrapRegistrationError("trusted_registration_target_unknown") from exc
+    expected_identity = {
+        "sha256": intent.executable_sha256, "size": intent.executable_size,
+        "device": intent.executable_device, "inode": intent.executable_inode,
+        "mtime_ns": intent.executable_mtime_ns, "ctime_ns": intent.executable_ctime_ns,
+    }
+    if identity != expected_identity:
+        _fail("trusted_registration_target_changed")
+    if monotonic() >= deadline:
+        _fail("trusted_registration_wall_timeout")
+    claim: dict[str, object] = {
+        "schema_version": "1", "protocol": PRODUCER_PROCESS_PROTOCOL,
+        "consumption_id": intent.launch_id, "launch_id": intent.launch_id,
+        "journal_id": intent.journal_id, "run_id": intent.run_id,
+        "parent_task_id": intent.parent_task_id, "task_id": intent.task_id,
+        "intent_sha256": intent.intent_sha256 or intent.digest(),
+        "attestation_sha256": attestation.attestation_sha256 or attestation.digest(),
+        "nonce": attestation.nonce, "executable_identity": _identity_digest(identity),
+    }
+    claim["consumption_sha256"] = _digest_without(claim, "consumption_sha256")
+    nonce_key = hashlib.sha256(attestation.nonce.encode("utf-8")).hexdigest()
+    try:
+        _atomic_json(root / "evolution" / "producer-nonces" / f"{nonce_key}.json", claim, exclusive=True)
+        _atomic_json(batch / "attestation-consumption.json", claim, exclusive=True)
+    except ProducerProcessError as exc:
+        raise TrustedBootstrapRegistrationError("trusted_registration_claim_conflict") from exc
+    return claim
 
 
 def publish_trusted_bootstrap_registration(
@@ -229,5 +310,5 @@ def publish_trusted_bootstrap_registration(
 
 __all__ = [
     "PublishedTrustedBootstrapRegistration", "TrustedBootstrapRegistrationError",
-    "publish_trusted_bootstrap_registration",
+    "consume_trusted_bootstrap_attestation", "publish_trusted_bootstrap_registration",
 ]
