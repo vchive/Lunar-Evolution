@@ -201,8 +201,8 @@ def test_intent_interruption_remains_unknown_without_new_candidate(tmp_path):
     _prototype, profile, request = make_request(tmp_path)
     root = tmp_path / "gateway/episodes" / request.episode_id
     root.mkdir(parents=True)
-    (root / "native-intent.json").write_bytes(canonical_json({"protocol": "lunar-rsi-native-v1", "request": request.to_dict()}))
     gateway = NativePopulationGateway(profile, lambda _: pytest.fail("must not replay"), tmp_path / "gateway")
+    (root / "native-intent.json").write_bytes(canonical_json({"protocol": "lunar-rsi-native-v1", "request": request.to_dict(), "gateway_fingerprint": gateway.fingerprint()}))
     assert gateway.run(request).status == "unknown"
     assert not (root / "native-result.json").exists()
 
@@ -279,3 +279,112 @@ def test_native_controller_integration_uses_explicit_independent_verifier(tmp_pa
     )
     assert result.status == "completed"
     assert result.target_attempts[0].episode.verifier.outcome == "pass"
+
+
+def test_native_fingerprints_bind_profile_actor_and_roots(tmp_path):
+    _prototype, profile, _request = make_request(tmp_path)
+    draft = lambda _: draft_for_score(7)
+    gateway = NativePopulationGateway(profile, draft, tmp_path / "gateway")
+    verifier = NativeIndependentVerifier(profile, gateway.workspace_root)
+    assert len(gateway.fingerprint()) == 64
+    assert len(verifier.fingerprint()) == 64
+    assert gateway.fingerprint() != NativePopulationGateway(profile, draft, tmp_path / "other").fingerprint()
+    changed = replace(profile, dependency_paths=("missing.lock",))
+    with pytest.raises(Exception, match="missing"):
+        changed.fingerprint()
+
+
+def test_resume_validation_reopens_cached_clean_room_without_running(tmp_path, monkeypatch):
+    profile, request, gateway, result, episode = native_run(tmp_path)
+    verifier = NativeIndependentVerifier(profile, gateway.workspace_root)
+    first = verifier.verify(episode, request, result)
+    assert first.outcome == "pass"
+    monkeypatch.setattr(NativePopulationGateway, "run", lambda *args, **kwargs: pytest.fail("resume reran verifier"))
+    assert verifier.validate_retained(episode, request, result, first) is None
+
+
+def test_resume_validation_rejects_changed_clean_room_evidence(tmp_path):
+    profile, request, gateway, result, episode = native_run(tmp_path)
+    verifier = NativeIndependentVerifier(profile, gateway.workspace_root)
+    decision = verifier.verify(episode, request, result)
+    assert decision.outcome == "pass"
+    receipt = next(verifier.verification_root.rglob("verifier-receipt.json"))
+    raw = receipt.read_bytes()
+    receipt.write_bytes(raw[:-1] + (b" " if raw[-1:] != b" " else b"!"))
+    with pytest.raises(Exception, match="rsi_native_"):
+        verifier.validate_retained(episode, request, result, decision)
+
+
+def _native_fixed_draft(_request):
+    return draft_for_score(7)
+
+
+def test_durable_native_controller_restores_terminal_without_candidate_or_evaluator_run(tmp_path, monkeypatch):
+    from lunar_evolution.rsi_controller import RSILearningController
+    from lunar_evolution.rsi_store import RSILedger
+    _prototype, profile, request = make_request(tmp_path)
+    gateway = NativePopulationGateway(profile, _native_fixed_draft, tmp_path / "gateway")
+    verifier = NativeIndependentVerifier(profile, gateway.workspace_root)
+    ledger = RSILedger(tmp_path / "rsi.db")
+    first = RSILearningController(gateway, verifier=verifier, ledger=ledger,
+                                 actor_fingerprint=gateway.actor_fingerprint)
+    result = first.run_drs(
+        run_id="durable-native", contract_sha256=request.contract_sha256,
+        evaluator_sha256=request.evaluator_sha256, environment_sha256=request.environment_sha256,
+        solver_id="native_population", max_target_attempts=1,
+    )
+    assert result.status == "completed"
+    second_gateway = NativePopulationGateway(profile, _native_fixed_draft, tmp_path / "gateway")
+    second_verifier = NativeIndependentVerifier(profile, gateway.workspace_root)
+    second = RSILearningController(second_gateway, verifier=second_verifier,
+                                  ledger=RSILedger(tmp_path / "rsi.db"),
+                                  actor_fingerprint=second_gateway.actor_fingerprint)
+    monkeypatch.setattr(NativePopulationGateway, "run", lambda *args, **kwargs: pytest.fail("terminal resume reran native processes"))
+    monkeypatch.setattr(NativeIndependentVerifier, "verify", lambda *args, **kwargs: pytest.fail("terminal resume reverified"))
+    assert second.resume(run_id="durable-native") == result
+
+
+def test_node_rejects_replacement_between_read_and_inode_observation(tmp_path, monkeypatch):
+    from lunar_evolution import rsi_native
+    path = tmp_path / "bytes"
+    path.write_bytes(b"original")
+    original_read = rsi_native._read
+
+    def replace_after_read(actual, maximum):
+        content = original_read(actual, maximum)
+        actual.rename(actual.with_suffix(".old"))
+        actual.write_bytes(content)
+        return content
+
+    monkeypatch.setattr(rsi_native, "_read", replace_after_read)
+    with pytest.raises(Exception, match="rsi_native_material_changed"):
+        rsi_native._node(path)
+
+
+def test_repeat_verifier_uses_retained_rerun_without_new_processes(tmp_path, monkeypatch):
+    profile, request, gateway, result, episode = native_run(tmp_path)
+    verifier = NativeIndependentVerifier(profile, gateway.workspace_root)
+    first = verifier.verify(episode, request, result)
+    assert first.outcome == "pass"
+    monkeypatch.setattr(NativePopulationGateway, "run", lambda *args, **kwargs: pytest.fail("repeated verifier started process"))
+    assert verifier.verify(episode, request, result) == first
+
+
+def test_gateway_rejects_changed_actor_under_same_episode(tmp_path):
+    profile, request, gateway, _result, _episode = native_run(tmp_path)
+    other = NativePopulationGateway(profile, lambda _: draft_for_score(8), gateway.workspace_root)
+    with pytest.raises(Exception, match="rsi_native_request_reuse"):
+        other.run(request)
+
+
+def test_explicit_fingerprint_required_for_opaque_stateful_factory(tmp_path):
+    _prototype, profile, _request = make_request(tmp_path)
+
+    class Opaque:
+        def __call__(self, _request):
+            return draft_for_score(7)
+
+    with pytest.raises(Exception, match="rsi_native_actor_fingerprint_required"):
+        NativePopulationGateway(profile, Opaque(), tmp_path / "gateway")
+    gateway = NativePopulationGateway(profile, Opaque(), tmp_path / "gateway", actor_fingerprint=HEX)
+    assert gateway.actor_fingerprint == HEX

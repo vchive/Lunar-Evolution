@@ -8,12 +8,13 @@ It provides process/workspace separation, not an OS security sandbox or a transf
 from __future__ import annotations
 
 import hashlib
+import inspect
 import math
 import os
 import re
 import tempfile
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from pathlib import Path
 
 from . import _benchmark_files as files
@@ -75,9 +76,62 @@ def _at(root: Path, value: str) -> Path:
 
 
 def _node(path: Path) -> dict:
+    """Hash one retained regular file and recheck its inode/size around the read."""
+    before = path.lstat()
+    if not path.is_file() or path.is_symlink():
+        _fail("material_invalid")
     raw = _read(path, 64 * 1024 * 1024)
-    observed = path.lstat()
-    return {"size": len(raw), "sha256": _sha(raw), "device": observed.st_dev, "inode": observed.st_ino}
+    after = path.lstat()
+    if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+        after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
+    ) or len(raw) != after.st_size:
+        _fail("material_changed")
+    return {"size": len(raw), "sha256": _sha(raw), "device": after.st_dev, "inode": after.st_ino}
+
+
+def _stable_value(value: object, depth: int = 0):
+    if depth > 16:
+        _fail("actor_fingerprint_required")
+    if value is None or type(value) in {str, bool, int, float}:
+        return value
+    if isinstance(value, Path):
+        return {"path": str(value)}
+    if type(value) in {list, tuple}:
+        return [_stable_value(item, depth + 1) for item in value]
+    if type(value) is dict and all(type(key) is str for key in value):
+        return {key: _stable_value(item, depth + 1) for key, item in value.items()}
+    if inspect.isclass(value):
+        try:
+            source = inspect.getsource(value)
+        except (OSError, TypeError):
+            _fail("actor_fingerprint_required")
+        return {"class": f"{value.__module__}.{value.__qualname__}", "source": source}
+    if is_dataclass(value):
+        return {"dataclass": f"{type(value).__module__}.{type(value).__qualname__}",
+                "value": _stable_value(asdict(value), depth + 1)}
+    _fail("actor_fingerprint_required")
+
+
+def _callable_fingerprint(value: object) -> str:
+    supplied = getattr(value, "fingerprint", None)
+    if callable(supplied):
+        result = supplied()
+        if type(result) is str and re.fullmatch(r"[0-9a-f]{64}", result):
+            return result
+        _fail("actor_fingerprint_invalid")
+    if not inspect.isfunction(value):
+        _fail("actor_fingerprint_required")
+    try:
+        source = inspect.getsource(value)
+    except (OSError, TypeError):
+        source = None
+    payload = {"module": value.__module__, "qualname": value.__qualname__,
+               "source": source, "bytecode": value.__code__.co_code.hex(),
+               "constants": _stable_value(list(value.__code__.co_consts)),
+               "defaults": _stable_value(value.__defaults__),
+               "kwdefaults": _stable_value(value.__kwdefaults__),
+               "closure": [_stable_value(cell.cell_contents) for cell in (value.__closure__ or ())]}
+    return _hash({"protocol": _PROTOCOL + "-actor", "callable": payload})
 
 
 def _write_new(path: Path, value: dict) -> None:
@@ -136,6 +190,24 @@ class NativeEvaluationProfile:
     dependency_root: Path
     dependency_paths: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "dependency_root", files.absolute_path(self.dependency_root))
+        object.__setattr__(self, "dependency_paths", tuple(_relative(item) for item in self.dependency_paths))
+
+    def fingerprint(self) -> str:
+        return _hash({
+            "protocol": _PROTOCOL + "-profile",
+            "contract_sha256": self.contract.digest(),
+            "evaluator_sha256": self.pipeline.evaluator.digest(),
+            "runner_fingerprint": self.pipeline.runner_fingerprint,
+            "harness_path": str(self.pipeline.harness_path),
+            "input_root": str(self.pipeline.input_root),
+            "environment_sha256": native_environment_fingerprint(self.pipeline),
+            "dependency_sha256": native_dependency_fingerprint(self.dependency_root, self.dependency_paths),
+            "dependency_root": str(self.dependency_root),
+            "dependency_paths": list(self.dependency_paths),
+        })
+
     def validate(self, request: SolverRequest) -> None:
         if request.solver_id != "native_population":
             _fail("solver_mismatch")
@@ -193,13 +265,18 @@ def _result_from(value: dict) -> SolverResult:
 
 
 def _inspect(profile: NativeEvaluationProfile, root: Path, request: SolverRequest,
-             result: SolverResult):
+             result: SolverResult, *, expected_gateway_fingerprint: str | None = None):
     profile.validate(request)
     stored = _record(root / "native-result.json")
     if stored["request"] != request.to_dict() or _result_from(stored).to_dict() != result.to_dict():
         _fail("result_mismatch")
     intent = _record(root / "native-intent.json")
-    if intent != {"protocol": _PROTOCOL, "request": request.to_dict()}:
+    if (set(intent) != {"protocol", "request", "gateway_fingerprint"}
+            or intent["protocol"] != _PROTOCOL or intent["request"] != request.to_dict()
+            or type(intent["gateway_fingerprint"]) is not str
+            or not re.fullmatch(r"[0-9a-f]{64}", intent["gateway_fingerprint"])
+            or (expected_gateway_fingerprint is not None
+                and intent["gateway_fingerprint"] != expected_gateway_fingerprint)):
         _fail("request_mismatch")
     receipt_path = root / "native-candidate.json"
     if stored["candidate_descriptor"] != _node(receipt_path):
@@ -222,7 +299,7 @@ def _inspect(profile: NativeEvaluationProfile, root: Path, request: SolverReques
         if _node(_at(root, relative)) != descriptor:
             _fail("material_changed")
     bundle = parse_candidate_source_bundle(strict_json(_read(source / "bundle-manifest.json")))
-    if bundle.digest() != result.candidate_source_sha256:
+    if bundle.digest() != result.candidate_source_sha256 or result.actor_fingerprint is None:
         _fail("source_mismatch")
     verify_candidate_source_bundle(bundle, source_root=source, contract_sha256=request.contract_sha256,
                                    expected_bundle_sha256=result.candidate_source_sha256)
@@ -269,6 +346,13 @@ def _inspect(profile: NativeEvaluationProfile, root: Path, request: SolverReques
                           (source / "bundle-manifest.json", run / "plan.json", run / "admission.json"))
     if set(receipt["files"]) != expected_files:
         _fail("materials_invalid")
+    # Every retained descriptor is checked again after all reads.  This closes a mutation window
+    # where a source could be replaced after its first byte/inode observation.
+    for relative, descriptor in receipt["files"].items():
+        if _node(_at(root, relative)) != descriptor:
+            _fail("material_changed")
+    if _node(receipt_path) != stored["candidate_descriptor"]:
+        _fail("candidate_changed")
     return bundle, sources, evaluation
 
 
@@ -288,22 +372,33 @@ class NativePopulationGateway:
     """One real local native proposal per request, with exact read-only terminal retry."""
 
     def __init__(self, profile: NativeEvaluationProfile,
-                 draft_factory: Callable[[SolverRequest], CandidateDraft], workspace_root: str | Path):
+                 draft_factory: Callable[[SolverRequest], CandidateDraft], workspace_root: str | Path,
+                 *, actor_fingerprint: str | None = None):
         if not isinstance(profile, NativeEvaluationProfile) or not callable(draft_factory):
             raise TypeError("a native profile and draft factory are required")
         self.profile = profile
         self.draft_factory = draft_factory
         self.workspace_root = files.absolute_path(workspace_root)
+        if actor_fingerprint is not None and not re.fullmatch(r"[0-9a-f]{64}", actor_fingerprint):
+            _fail("actor_fingerprint_invalid")
+        self.actor_fingerprint = actor_fingerprint or _callable_fingerprint(draft_factory)
+
+    def fingerprint(self) -> str:
+        return _hash({"protocol": _PROTOCOL + "-gateway", "profile": self.profile.fingerprint(),
+                      "actor_fingerprint": self.actor_fingerprint,
+                      "workspace_root": str(self.workspace_root)})
 
     def _terminal(self, request: SolverRequest, status: str, reason: str) -> SolverResult:
         return SolverResult(request.episode_id, request.digest(), status, None, None, None,
                             _hash({"request": request.digest(), "status": status}), terminal_reason=reason,
-                            solver_provenance=(("backend", "native_population"),))
+                            solver_provenance=(("backend", "native_population"), ("fixture", False)),
+                            actor_fingerprint=self.actor_fingerprint)
 
     def run(self, request: SolverRequest) -> SolverResult:
         root = _episode_root(self.workspace_root, request.episode_id, create=True)
         result_path, intent_path = root / "native-result.json", root / "native-intent.json"
-        intent = {"protocol": _PROTOCOL, "request": request.to_dict()}
+        intent = {"protocol": _PROTOCOL, "request": request.to_dict(),
+                  "gateway_fingerprint": self.fingerprint()}
         if intent_path.exists() or intent_path.is_symlink():
             if _record(intent_path) != intent:
                 _fail("request_reuse")
@@ -314,7 +409,7 @@ class NativePopulationGateway:
             if stored["request"] != request.to_dict():
                 _fail("request_reuse")
             if result.status == "completed":
-                _inspect(self.profile, root, request, result)
+                _inspect(self.profile, root, request, result, expected_gateway_fingerprint=self.fingerprint())
             return result
         if result_path.exists() or result_path.is_symlink():
             _fail("intent_missing")
@@ -359,7 +454,8 @@ class NativePopulationGateway:
                 native.execution.completion_sha256, native.evaluation.digest(),
                 _hash({"request": request.digest(), "candidate": native.bundle.digest()}),
                 native.report.combined_score, "native_candidate_evaluated",
-                (("backend", "native_population"),), native.bundle.digest(), self.profile.pipeline.dependency_sha256,
+                (("backend", "native_population"), ("fixture", False),), native.bundle.digest(), self.profile.pipeline.dependency_sha256,
+                actor_fingerprint=self.actor_fingerprint,
             )
         except SolveExecutionCancelled:
             result = self._terminal(request, "cancelled", "native_cancelled")
@@ -370,7 +466,7 @@ class NativePopulationGateway:
         _write_new(result_path, {"protocol": _PROTOCOL, "request": request.to_dict(),
                                  "result": result.to_dict(), "candidate_descriptor": candidate_descriptor})
         if result.status == "completed":
-            _inspect(self.profile, root, request, result)
+            _inspect(self.profile, root, request, result, expected_gateway_fingerprint=self.fingerprint())
         return result
 
 
@@ -382,22 +478,85 @@ class NativeIndependentVerifier:
         self.profile = profile
         self.workspace_root = files.absolute_path(workspace_root)
         self.verification_root = files.absolute_path(verification_root or self.workspace_root / "verifications")
-        self.verifier_fingerprint = _hash({"protocol": _PROTOCOL, "role": "independent-verifier"})
+        self.verifier_fingerprint = self.fingerprint()
+
+    def fingerprint(self) -> str:
+        return _hash({"protocol": _PROTOCOL, "role": "independent-verifier",
+                      "profile": self.profile.fingerprint(), "workspace_root": str(self.workspace_root),
+                      "verification_root": str(self.verification_root)})
+
+    def _cache_path(self, request: SolverRequest, result: SolverResult) -> Path:
+        key = _hash({"request": request.to_dict(), "result": result.to_dict(),
+                     "verifier": self.fingerprint()})
+        return self.verification_root / ("receipt-" + key + ".json")
+
+    def validate_retained(self, episode: PracticeEpisode, request: SolverRequest,
+                          result: SolverResult, decision: VerifierDecision) -> None:
+        """Read-only resume gate: inspect saved rerun evidence without executing anything."""
+        self._identity(episode, request, result)
+        if decision.verifier_fingerprint != self.fingerprint():
+            _fail("verifier_fingerprint_drift")
+        if decision.outcome != "pass":
+            # A rejection/unresolved decision grants no memory authority, but its original
+            # execution/evaluator receipts must still be intact on terminal resume.
+            _inspect(self.profile, _episode_root(self.workspace_root, request.episode_id, create=False), request, result)
+            return
+        original_root = _episode_root(self.workspace_root, request.episode_id, create=False)
+        _, _, original = _inspect(self.profile, original_root, request, result)
+        cache = _record(self._cache_path(request, result))
+        if set(cache) != {"protocol", "request", "result", "decision", "verification", "receipt_node"}:
+            _fail("verification_cache_invalid")
+        if (cache["protocol"] != _PROTOCOL or cache["request"] != request.to_dict()
+                or cache["result"] != result.to_dict() or cache["decision"] != decision.to_dict()):
+            _fail("verification_cache_mismatch")
+        verification = _at(self.verification_root, cache["verification"])
+        receipt_path = verification / "verifier-receipt.json"
+        if _node(receipt_path) != cache["receipt_node"]:
+            _fail("verification_receipt_changed")
+        evidence_record = _record(receipt_path)
+        evidence = evidence_record["evidence"]
+        if (evidence_record["protocol"] != _PROTOCOL or _hash(evidence) != decision.receipt_sha256
+                or evidence != {"request": request.to_dict(), "result": result.to_dict(),
+                                "checks": [check.to_dict() for check in decision.checks], "outcome": decision.outcome}):
+            _fail("verification_receipt_mismatch")
+        rerun_root = _episode_root(verification, request.episode_id, create=False)
+        rerun = _result_from(_record(rerun_root / "native-result.json"))
+        _, _, fresh = _inspect(self.profile, rerun_root, request, rerun)
+        if (_json(fresh.report.to_dict()) != _json(original.report.to_dict())
+                or original.report.validity != 1 or decision.outcome != "pass"):
+            _fail("verification_report_mismatch")
+        _inspect(self.profile, original_root, request, result)
+        if _node(receipt_path) != cache["receipt_node"]:
+            _fail("verification_receipt_changed")
+
+    @staticmethod
+    def _identity(episode: PracticeEpisode, request: SolverRequest, result: SolverResult) -> None:
+        if (result.status != "completed" or episode.status != "completed"
+                or episode.episode_id != request.episode_id or result.episode_id != request.episode_id
+                or result.request_sha256 != request.digest()
+                or any(getattr(episode, field) != getattr(request, field) for field in
+                       ("contract_sha256", "evaluator_sha256", "environment_sha256", "memory_snapshot_sha256", "solver_id"))):
+            _fail("identity_mismatch")
+        for field in ("candidate_receipt_sha256", "execution_receipt_sha256", "official_evaluation_receipt_sha256"):
+            if getattr(episode, field) != getattr(result, field):
+                _fail("episode_evidence_mismatch")
 
     def verify(self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult) -> VerifierDecision:
         checks = []
         fresh = None
         outcome, diagnosis = "unresolved", "native evidence could not be independently verified"
         try:
-            if (result.status != "completed" or episode.status != "completed"
-                    or episode.episode_id != request.episode_id or result.episode_id != request.episode_id
-                    or result.request_sha256 != request.digest()
-                    or any(getattr(episode, field) != getattr(request, field) for field in
-                           ("contract_sha256", "evaluator_sha256", "environment_sha256", "memory_snapshot_sha256", "solver_id"))):
-                _fail("identity_mismatch")
-            for field in ("candidate_receipt_sha256", "execution_receipt_sha256", "official_evaluation_receipt_sha256"):
-                if getattr(episode, field) != getattr(result, field):
-                    _fail("episode_evidence_mismatch")
+            self._identity(episode, request, result)
+            if self.fingerprint() != self.verifier_fingerprint:
+                _fail("verifier_fingerprint_drift")
+            cache_path = self._cache_path(request, result)
+            if cache_path.exists() or cache_path.is_symlink():
+                value = _record(cache_path)["decision"]
+                value = dict(value)
+                value["checks"] = tuple(VerifierCheck(**item) for item in value["checks"])
+                cached = VerifierDecision(**value)
+                self.validate_retained(episode, request, result, cached)
+                return cached
             root = _episode_root(self.workspace_root, request.episode_id, create=False)
             bundle, sources, evaluation = _inspect(self.profile, root, request, result)
             checks.extend((
@@ -406,7 +565,6 @@ class NativeIndependentVerifier:
             ))
             if evaluation.report.validity != 1:
                 outcome, diagnosis = "fail", "official local evaluator rejected the candidate"
-                checks.append(VerifierCheck("official_evaluator", "fail", evaluation.digest()))
             else:
                 _ensure_private_directory(Path(self.verification_root.anchor), tuple(self.verification_root.parts[1:]))
                 chain = DirectoryChain(self.verification_root, "rsi_native_directory_changed")
@@ -415,7 +573,8 @@ class NativeIndependentVerifier:
                     chain.check()
                 finally:
                     chain.close()
-                gateway = NativePopulationGateway(self.profile, lambda _: CandidateDraft.from_files(sources, entrypoint=bundle.entrypoint), fresh)
+                gateway = NativePopulationGateway(self.profile, lambda _: CandidateDraft.from_files(sources, entrypoint=bundle.entrypoint), fresh,
+                                                  actor_fingerprint=_hash({"verifier": self.fingerprint(), "bundle": bundle.digest()}))
                 rerun = gateway.run(request)
                 if rerun.status != "completed":
                     _fail("rerun_incomplete")
@@ -440,7 +599,7 @@ class NativeIndependentVerifier:
                 evidence["outcome"] = outcome
                 evidence["checks"] = [c.to_dict() for c in checks]
                 receipt = _hash(evidence)
-        return VerifierDecision(
+        decision = VerifierDecision(
             episode.episode_id, outcome, receipt, diagnosis, self.verifier_fingerprint, tuple(checks),
             contract_sha256=request.contract_sha256, evaluator_sha256=request.evaluator_sha256,
             environment_sha256=request.environment_sha256,
@@ -448,6 +607,16 @@ class NativeIndependentVerifier:
             evidence_sha256=receipt, candidate_receipt_sha256=result.candidate_receipt_sha256,
             execution_receipt_sha256=result.execution_receipt_sha256,
         )
+        if outcome == "pass" and fresh is not None:
+            try:
+                _write_new(self._cache_path(request, result), {
+                    "protocol": _PROTOCOL, "request": request.to_dict(), "result": result.to_dict(),
+                    "decision": decision.to_dict(), "verification": str(fresh.relative_to(self.verification_root)),
+                    "receipt_node": _node(fresh / "verifier-receipt.json"),
+                })
+            except Exception:  # noqa: BLE001 - a missing cache cannot authorize recovery
+                return replace(decision, outcome="unresolved", diagnosis="verification cache unavailable")
+        return decision
 
 
 __all__ = [
