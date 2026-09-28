@@ -4415,3 +4415,28 @@ compileall、`git diff --check` 通过。提交为 `53a3076 Complete producer ca
 推送因当前环境无法连接 GitHub（SSH 22 refused，HTTPS 443 unreachable）未完成；恢复网络后
 执行 `git push origin codex/feature-156-producer-lifecycle`。T156-09、T156-05/06、T158-04、
 T157-05/06 和真实 provider/campaign 验收仍保持开放，未扩大外部 admission 范围。
+
+## 2026-09-28 Registered native acceptance runner and lifecycle budget slice
+
+完成并推送 `b43615e`、`d891517`：新增唯一显式入口 `tools/run_acceptance.py`，入口只使用
+标准库，在新的 `-I -S` 子解释器中加载登记 checkout 的完整 Python 源码清单；pinned loader
+逐文件检查 no-follow regular file、inode/size/mtime/ctime 和 SHA-256，拒绝不完整清单、缓存
+字节码和已加载的安装包。凭据只通过子进程环境传递。入口在缺少 loader 时于 child spawn 前
+固定失败，相关测试已覆盖。
+
+正式 native runner 已接入单次 attempt claim、材料复核、preparation 后 runtime/observation
+binding、请求/观测 token 上限及固定结果留存；新增只读六阶段 campaign audit 和 create-only
+audit publication/recheck，并新增可信 bootstrap registration 的 live owner、ready frame、
+recovery-lock inode、bootstrap/target 字节绑定与 handoff 校验。producer transport 支持共享
+单调 wall deadline，runtime 请求会计在未知 token 用量时 fail closed；native bootstrap 只向
+target 转发显式 broker fd，不转发控制器环境或凭据。
+
+专项回归：入口、campaign audit、native runner、pinned loader、trusted bootstrap registration
+与 request transport 共 61 项通过；compileall、Ruff、`git diff --check` 通过。该切片已推送
+到 `origin/codex/feature-156-producer-lifecycle`，工作区干净。
+
+范围边界保持不变：尚未创建新的真实 campaign、未调用 provider、未运行真实 model attempt，
+也未把 producer bootstrap registration 接入完整 Feature 156 cleanup/recovery 或 Feature 157
+production journal。T040 的真实一次 attempt、独立 postrun/holdout audit、T156-05/06/09/12/14、
+T157-05/06、T158-04 的完整生产接线仍开放；下一步必须从新的 registration、冻结材料、clean
+`origin/main` 和唯一 campaign root 开始，离线准入与 runner 全部通过后才能启动真实验收。
