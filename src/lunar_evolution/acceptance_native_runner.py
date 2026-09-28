@@ -13,6 +13,7 @@ from typing import Any
 
 from ._benchmark_files import read_regular_file
 from .acceptance_campaign_audit import (
+    _canonical,
     _publish_native_campaign_audit_report,
     audit_native_campaign,
 )
@@ -242,9 +243,7 @@ def run_registered_acceptance(
             "audit_primary_success": audit_report.get("primary_success", "0/1"),
             "audit_joint_success": audit_report.get("joint_success", "0/1"),
             "audit_reason": audit_report.get("reason"),
-            "audit_report_sha256": hashlib.sha256(
-                json.dumps(audit_report, sort_keys=True, separators=(",", ":")).encode()
-            ).hexdigest(),
+            "audit_report_sha256": hashlib.sha256(_canonical(audit_report)).hexdigest(),
             **snapshot, **binding,
         }
         _write_record(campaign, claim, "native-result.json", result)

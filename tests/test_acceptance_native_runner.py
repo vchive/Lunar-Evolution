@@ -10,6 +10,10 @@ from test_acceptance_launch import _registered_origin
 from test_acceptance_registration import _git, _write_registration
 
 from lunar_evolution import cli
+from lunar_evolution.acceptance_campaign_audit import (
+    AcceptanceCampaignAuditError,
+    verify_native_campaign_audit,
+)
 from lunar_evolution.acceptance_native_runner import (
     AcceptanceNativeRunnerError,
     run_registered_acceptance,
@@ -78,6 +82,7 @@ def test_single_native_invocation_retains_result(
     monkeypatch.setattr(
         "lunar_evolution.acceptance_native_runner.audit_native_campaign",
         lambda *_args, **_kwargs: {
+            "schema_version": "1", "scope": "acceptance_campaign_audit",
             "status": "verified", "primary_success": "1/1", "joint_success": "1/1",
         },
     )
@@ -117,6 +122,18 @@ def test_single_native_invocation_retains_result(
         json.dumps(budget, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     assert (root / "attempt-started.json").exists()
+    audit_output = root.with_name(f"{root.name}-audit")
+    assert verify_native_campaign_audit(campaign_root=root, output_directory=audit_output)["status"] == "verified"
+    report_path = audit_output / "report.json"
+    original = report_path.read_bytes()
+    altered = json.loads(original)
+    altered["joint_success"] = "0/1"
+    report_path.write_text(json.dumps(altered, sort_keys=True, separators=(",", ":")))
+    with pytest.raises(AcceptanceCampaignAuditError, match="^audit_report_binding_mismatch$"):
+        verify_native_campaign_audit(campaign_root=root, output_directory=audit_output)
+    report_path.write_bytes(original + b" ")
+    with pytest.raises(AcceptanceCampaignAuditError, match="^audit_report_binding_mismatch$"):
+        verify_native_campaign_audit(campaign_root=root, output_directory=audit_output)
     with pytest.raises(Exception, match="campaign_root_not_fresh"):
         _run(fixture)
 

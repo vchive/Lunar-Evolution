@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from ._audit_snapshot import AuditSnapshotError, audit_snapshot
+from ._benchmark_files import BenchmarkFileError, read_regular_file
 from .acceptance_observation_binding import (
     AcceptanceObservationBindingError,
     inspect_acceptance_observation_binding,
@@ -259,10 +260,11 @@ def _publish_native_campaign_audit_report(
 
 
 def verify_native_campaign_audit(*, campaign_root: str | Path, output_directory: str | Path) -> dict[str, Any]:
-    """Verify an immutable published audit and recheck campaign bytes."""
+    """Verify a published audit against retained native evidence and campaign bytes."""
     output = Path(output_directory).expanduser().resolve()
     try:
-        report = json.loads((output / "report.json").read_text(encoding="utf-8"))
+        report_bytes = read_regular_file(output / "report.json", 64 * 1024)
+        report = json.loads(report_bytes)
         inventory = json.loads((output / "inventory.json").read_text(encoding="utf-8"))
         if not isinstance(report, dict) or not isinstance(inventory, dict):
             raise TypeError("invalid audit publication")
@@ -271,12 +273,27 @@ def verify_native_campaign_audit(*, campaign_root: str | Path, output_directory:
         if report.get("status") not in {"verified", "failed"}:
             raise ValueError("invalid audit report status")
         audit_campaign_directory(campaign_root, inventory)
+        native_result = Path(campaign_root) / "native-result.json"
+        if native_result.exists() or native_result.is_symlink():
+            result = json.loads(read_regular_file(native_result, 64 * 1024))
+            if (
+                not isinstance(result, dict)
+                or result.get("scope") != "acceptance_native_result"
+                or result.get("audit_report_sha256") != hashlib.sha256(report_bytes).hexdigest()
+                or result.get("audit_status") != report.get("status")
+                or result.get("audit_primary_success") != report.get("primary_success")
+                or result.get("audit_joint_success") != report.get("joint_success")
+                or result.get("audit_reason") != report.get("reason")
+            ):
+                raise AcceptanceCampaignAuditError("audit_report_binding_mismatch")
     except CampaignInventoryError as exc:
         raise AcceptanceCampaignAuditError("audit_inventory_changed") from exc
-    except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+    except AcceptanceCampaignAuditError:
+        raise
+    except (BenchmarkFileError, OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
         raise AcceptanceCampaignAuditError("audit_publication_invalid") from exc
-    # Directory integrity proves that the published evidence is unchanged. It does
-    # not turn a failed audit into a successful one; preserve the auditor's result.
+    # The native result binds the report itself. A standalone audit without that result
+    # can only verify campaign inventory and should be treated as an unanchored report.
     return dict(report)
 
 
