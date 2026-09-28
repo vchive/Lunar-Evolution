@@ -8,9 +8,15 @@ durable implementation small and provider-free while using the same SQLite/WAL c
 
 from __future__ import annotations
 
+import fcntl
+import hashlib
 import json
+import os
 import sqlite3
+import stat
+import threading
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -125,6 +131,8 @@ class RSILedger:
 
     def __init__(self, database: str | Path) -> None:
         self.database = Path(database).expanduser().resolve()
+        self._controller_guards = {}
+        self._controller_guards_lock = threading.RLock()
         self.initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -132,7 +140,7 @@ class RSILedger:
         connection = sqlite3.connect(self.database, timeout=30)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = NORMAL")
+        connection.execute("PRAGMA synchronous = FULL")
         return connection
 
     def initialize(self) -> None:
@@ -152,8 +160,149 @@ class RSILedger:
                 )"""
             )
             connection.execute(
+                "CREATE TABLE IF NOT EXISTS rsi_controller_journal ("
+                "run_id TEXT NOT NULL, revision INTEGER NOT NULL, parent_sha256 TEXT, "
+                "payload TEXT NOT NULL, checkpoint_sha256 TEXT NOT NULL UNIQUE, "
+                "PRIMARY KEY(run_id, revision))"
+            )
+            connection.execute(
                 "CREATE INDEX IF NOT EXISTS rsi_records_kind_idx ON rsi_records(kind, logical_id, revision)"
             )
+
+
+    @contextmanager
+    def controller_lock(self, run_id: str):
+        """Serialize controller mutations across threads/processes; never steal live work."""
+        _id(run_id, name="run_id")
+        name = hashlib.sha256(run_id.encode()).hexdigest()
+        lock_dir = self.database.parent / (self.database.name + ".controller-locks")
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        if lock_dir.is_symlink() or not lock_dir.is_dir():
+            raise RSILearningError("rsi_controller_lock_invalid")
+        directory_fd = os.open(lock_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        descriptor = None
+        try:
+            descriptor = os.open(name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600,
+                                 dir_fd=directory_fd)
+            identity = os.fstat(descriptor)
+            if not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1:
+                raise RSILearningError("rsi_controller_lock_invalid")
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise RSILearningError("rsi_controller_busy") from exc
+            with self._controller_guards_lock:
+                self._controller_guards[run_id] = (directory_fd, descriptor, lock_dir, name)
+            try:
+                self._assert_controller_lock(run_id)
+                yield
+            finally:
+                with self._controller_guards_lock:
+                    self._controller_guards.pop(run_id, None)
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        except OSError as exc:
+            raise RSILearningError("rsi_controller_lock_invalid") from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            os.close(directory_fd)
+
+    def _assert_controller_lock(self, run_id: str) -> None:
+        with self._controller_guards_lock:
+            guard = self._controller_guards.get(run_id)
+        if guard is None:
+            raise RSILearningError("rsi_controller_lock_required")
+        directory_fd, descriptor, lock_dir, name = guard
+        try:
+            held = os.fstat(descriptor)
+            named = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            held_dir = os.fstat(directory_fd)
+            named_dir = os.stat(lock_dir, follow_symlinks=False)
+            if (not stat.S_ISREG(named.st_mode) or held.st_nlink != 1 or named.st_nlink != 1
+                    or (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino)
+                    or not stat.S_ISDIR(named_dir.st_mode)
+                    or (held_dir.st_dev, held_dir.st_ino) != (named_dir.st_dev, named_dir.st_ino)):
+                raise RSILearningError("rsi_controller_lock_identity_changed")
+        except OSError as exc:
+            raise RSILearningError("rsi_controller_lock_identity_changed") from exc
+
+    def controller_checkpoint(self, run_id: str) -> tuple[str, dict[str, Any]] | None:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
+                "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (run_id,),
+            ).fetchall()
+        parent = None
+        last = None
+        for ordinal, row in enumerate(rows):
+            payload = json.loads(row["payload"])
+            digest = hashlib.sha256(canonical_json({
+                "run_id": run_id, "revision": ordinal, "parent_sha256": parent,
+                "payload": payload,
+            }, maximum=8 * 1024 * 1024)).hexdigest()
+            if (row["revision"] != ordinal or row["parent_sha256"] != parent
+                    or row["checkpoint_sha256"] != digest):
+                raise RSILearningError("rsi_controller_checkpoint_corrupt")
+            parent = digest
+            last = (digest, payload)
+        return last
+
+    def write_controller_checkpoint(
+        self, run_id: str, payload: Mapping[str, Any], *, expected_sha256: str | None,
+    ) -> str:
+        self._assert_controller_lock(run_id)
+        clean = json.loads(canonical_json(dict(payload), maximum=8 * 1024 * 1024))
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
+                "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,),
+            ).fetchone()
+            parent = row["checkpoint_sha256"] if row else None
+            if parent != expected_sha256:
+                raise RSILearningError("rsi_controller_checkpoint_conflict")
+            self._assert_controller_lock(run_id)
+            revision = row["revision"] + 1 if row else 0
+            digest = hashlib.sha256(canonical_json({
+                "run_id": run_id, "revision": revision, "parent_sha256": parent,
+                "payload": clean,
+            }, maximum=8 * 1024 * 1024)).hexdigest()
+            connection.execute("INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
+                               (run_id, revision, parent, json.dumps(clean, sort_keys=True), digest))
+        return digest
+
+    def resume_reconciled_run(self, run_id: str, *, expected_record_sha256: str) -> RSIRecord:
+        """Only a controller checkpoint with settled children may reopen an unknown run."""
+        self._assert_controller_lock(run_id)
+        checkpoint = self.controller_checkpoint(run_id)
+        if checkpoint is None or not checkpoint[1].get("reconciliation_ready"):
+            raise RSILearningError("rsi_controller_reconciliation_required")
+        if any(
+            entry.get("stage") != "planned" and (
+                entry.get("result") is None or entry["result"].get("status") == "unknown"
+            ) for entry in checkpoint[1].get("episodes", {}).values()
+        ):
+            raise RSILearningError("rsi_controller_reconciliation_required")
+        head = self.get(run_id)
+        if head is None or head.kind != "run" or head.state != "unknown":
+            raise RSILearningError("rsi_controller_reconciliation_required")
+        # Keep the generic transition matrix fail-closed for unknown -> running.
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = self._head(connection, run_id)
+            if current.record_sha256 != expected_record_sha256:
+                raise RSILearningError("rsi_record_parent_conflict")
+            revision = current.revision + 1
+            payload = {**current.payload, "reconciled_checkpoint_sha256": checkpoint[0]}
+            digest = self._record_digest(
+                logical_id=run_id, revision=revision, kind="run", state="running",
+                request_sha256=current.request_sha256, parent_record_sha256=current.record_sha256,
+                payload=payload,
+            )
+            connection.execute("INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                               (run_id, revision, "run", "running", current.request_sha256,
+                                current.record_sha256, json.dumps(payload, sort_keys=True), digest, utc_now()))
+        return self.get(run_id)
 
     @staticmethod
     def _record_digest(
@@ -175,7 +324,7 @@ class RSILedger:
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> RSIRecord:
-        return RSIRecord(
+        record = RSIRecord(
             logical_id=row["logical_id"],
             revision=row["revision"],
             kind=row["kind"],
@@ -186,6 +335,14 @@ class RSILedger:
             record_sha256=row["record_sha256"],
             created_at=row["created_at"],
         )
+        expected = RSILedger._record_digest(
+            logical_id=record.logical_id, revision=record.revision, kind=record.kind,
+            state=record.state, request_sha256=record.request_sha256,
+            parent_record_sha256=record.parent_record_sha256, payload=record.payload,
+        )
+        if expected != record.record_sha256:
+            raise RSILearningError("rsi_record_digest_mismatch")
+        return record
 
     def _head(self, connection: sqlite3.Connection, logical_id: str) -> RSIRecord | None:
         row = connection.execute(
@@ -376,7 +533,13 @@ class RSILedger:
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (logical_id,)
             ).fetchall()
-        return tuple(self._row_to_record(row) for row in rows)
+        records = tuple(self._row_to_record(row) for row in rows)
+        parent = None
+        for ordinal, record in enumerate(records):
+            if record.revision != ordinal or record.parent_record_sha256 != parent:
+                raise RSILearningError("rsi_record_lineage_mismatch")
+            parent = record.record_sha256
+        return records
 
     def transition(
         self, logical_id: str, *, state: str, expected_record_sha256: str,

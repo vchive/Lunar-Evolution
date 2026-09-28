@@ -327,6 +327,8 @@ class RSILearningController:
         memory_store: RSIMemoryStore | None = None,
         target_judge: TargetJudge = default_target_judge,
         ledger: RSILedger | None = None,
+        solver_settings: Mapping[str, Any] | None = None,
+        actor_fingerprint: str | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -334,6 +336,34 @@ class RSILearningController:
         self.memory_store = memory_store or RSIMemoryStore(EMPTY_MEMORY_SNAPSHOT)
         self.target_judge = target_judge
         self.ledger = ledger
+        self._explicit_memory_store = memory_store is not None
+        self.solver_settings = dict(solver_settings or {})
+        if actor_fingerprint is not None:
+            _digest(actor_fingerprint, "actor_fingerprint")
+        self.actor_fingerprint = actor_fingerprint
+
+    def resume(
+        self, *, run_id: str, contract_sha256: str | None = None,
+        evaluator_sha256: str | None = None, environment_sha256: str | None = None,
+        solver_id: str | None = None, solver_settings: Mapping[str, Any] | None = None,
+        actor_fingerprint: str | None = None,
+    ) -> LearningRunResult:
+        """Resume durable work; unresolved launches require explicit evidence reconciliation."""
+        from .rsi_recovery import DurableLearningRun
+        return DurableLearningRun(self, run_id).resume({
+            "contract_sha256": contract_sha256, "evaluator_sha256": evaluator_sha256,
+            "environment_sha256": environment_sha256, "solver_id": solver_id,
+            "solver_settings": dict(solver_settings) if solver_settings is not None else None,
+            "actor_fingerprint": actor_fingerprint,
+        })
+
+    def reconcile_episode(
+        self, *, run_id: str, episode_id: str, result: SolverResult,
+        expected_record_sha256: str,
+    ) -> LearningRunResult:
+        """Settle an original uncertain request with terminal evidence, then continue its run."""
+        from .rsi_recovery import DurableLearningRun
+        return DurableLearningRun(self, run_id).reconcile(episode_id, result, expected_record_sha256)
 
     @property
     def snapshot(self) -> MemorySnapshot:
@@ -456,8 +486,17 @@ class RSILearningController:
         _id(run_id, "run_id")
         for value, name in ((contract_sha256, "contract_sha256"), (evaluator_sha256, "evaluator_sha256"), (environment_sha256, "environment_sha256")):
             _digest(value, name)
-        if max_practice_rounds < 0 or max_target_attempts < 1:
+        if (type(max_practice_rounds) is not int or type(max_target_attempts) is not int
+                or max_practice_rounds < 0 or max_target_attempts < 1):
             raise RSILearningError("rsi_learning_budget_invalid")
+        if self.ledger is not None:
+            from .rsi_recovery import DurableLearningRun
+            return DurableLearningRun(self, run_id).start("drs", {
+                "contract_sha256": contract_sha256, "evaluator_sha256": evaluator_sha256,
+                "environment_sha256": environment_sha256, "solver_id": solver_id,
+                "budget": dict(budget or {}), "max_practice_rounds": max_practice_rounds,
+                "max_target_attempts": max_target_attempts,
+            })
         pins = {"contract_sha256": contract_sha256, "evaluator_sha256": evaluator_sha256, "environment_sha256": environment_sha256, "solver_id": solver_id}
         run_record = self._start_run(
             run_id=run_id, mode="drs", contract_sha256=contract_sha256,
@@ -520,6 +559,16 @@ class RSILearningController:
         for value, name in ((contract_sha256, "contract_sha256"), (evaluator_sha256, "evaluator_sha256"), (environment_sha256, "environment_sha256")):
             _digest(value, name)
         _id(solver_id, "solver_id")
+        if type(wave) is not int or wave < 0 or (max_workers is not None and (type(max_workers) is not int or max_workers < 1)):
+            raise RSILearningError("rsi_learning_budget_invalid")
+        if self.ledger is not None:
+            from .rsi_recovery import DurableLearningRun
+            return DurableLearningRun(self, run_id).start("brs", {
+                "contract_sha256": contract_sha256, "evaluator_sha256": evaluator_sha256,
+                "environment_sha256": environment_sha256, "solver_id": solver_id,
+                "budget": dict(budget or {}), "practices": [decision.to_dict() for decision in practices],
+                "wave": wave, "max_workers": max_workers,
+            })
         run_record = self._start_run(
             run_id=run_id, mode="brs", contract_sha256=contract_sha256,
             evaluator_sha256=evaluator_sha256, environment_sha256=environment_sha256,
