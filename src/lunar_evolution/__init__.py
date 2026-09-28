@@ -10,6 +10,12 @@ from .acceptance_audit import (
     build_acceptance_audit_request,
     parse_acceptance_audit_request,
 )
+from .acceptance_campaign_audit import (
+    AcceptanceCampaignAuditError,
+    audit_native_campaign,
+    publish_native_campaign_audit,
+    verify_native_campaign_audit,
+)
 from .acceptance_holdouts import AcceptanceHoldoutError, run_acceptance_holdouts
 from .acceptance_launch import (
     AcceptanceCampaignError,
@@ -17,6 +23,10 @@ from .acceptance_launch import (
     revalidate_acceptance_campaign,
 )
 from .acceptance_launch_stage import stage_acceptance_attempt
+from .acceptance_native_runner import (
+    AcceptanceNativeRunnerError,
+    run_registered_acceptance,
+)
 from .acceptance_observation_binding import (
     AcceptanceObservationBindingError,
     inspect_acceptance_observation_binding,
@@ -45,6 +55,11 @@ from .acceptance_registration import (
     parse_acceptance_registration,
     parse_registration_seal,
     preflight_acceptance_registration,
+)
+from .acceptance_request_budget import (
+    AcceptanceRequestBudget,
+    AcceptanceRequestBudgetError,
+    own_request_budget,
 )
 from .acceptance_runtime_binding import (
     AcceptanceRuntimeBindingError,
@@ -619,12 +634,16 @@ __all__ = [
     "WORKSPACE_PLAN_SCHEMA_VERSION",
     "AcceptanceAttemptGateError",
     "AcceptanceAuditError",
+    "AcceptanceCampaignAuditError",
     "AcceptanceCampaignError",
     "AcceptanceHoldoutError",
+    "AcceptanceNativeRunnerError",
     "AcceptanceObservationBindingError",
     "AcceptanceObservationError",
     "AcceptanceProbeError",
     "AcceptanceRegistrationError",
+    "AcceptanceRequestBudget",
+    "AcceptanceRequestBudgetError",
     "AcceptanceRuntimeBindingError",
     "AcceptanceSnapshotEvidence",
     "AdmittedBenchmarkComparison",
@@ -875,6 +894,7 @@ __all__ = [
     "audit_campaign_directory",
     "audit_candidate_execution_cleanup",
     "audit_holdout_receipts",
+    "audit_native_campaign",
     "benchmark_case_content_digest",
     "bind_acceptance_runtime",
     "bind_benchmark_comparison_result_evidence",
@@ -938,6 +958,7 @@ __all__ = [
     "normalize_feedback",
     "observe_acceptance_evidence",
     "observe_trusted_bootstrap_attempt",
+    "own_request_budget",
     "parse_acceptance_audit_request",
     "parse_acceptance_manifest",
     "parse_acceptance_registration",
@@ -978,6 +999,7 @@ __all__ = [
     "producer_bundle_dependency_sha256",
     "profile_sha256",
     "publish_acceptance_observation_binding",
+    "publish_native_campaign_audit",
     "publish_producer_bundle_publication",
     "read_bundle_delivery_materials",
     "read_candidate_source_files",
@@ -1000,6 +1022,7 @@ __all__ = [
     "run_effect_preflight",
     "run_harness_adapter",
     "run_producer_process",
+    "run_registered_acceptance",
     "run_subject_adapter",
     "sealed_linux_executable",
     "source_only_dependency_sha256",
@@ -1013,6 +1036,7 @@ __all__ = [
     "validate_candidate_workspace_plan",
     "validate_producer_request_evidence",
     "verify_candidate_source_bundle",
+    "verify_native_campaign_audit",
     "verify_producer_launch_attestation",
     "verify_trusted_bootstrap_attempt",
     "verify_trusted_bootstrap_process_registration",
