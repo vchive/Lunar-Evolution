@@ -98,6 +98,28 @@ def test_unknown_practice_reconciliation_continues_original_target_and_commits_o
                                     result=evidence, expected_record_sha256=head.record_sha256) == done
 
 
+@pytest.mark.parametrize("status", ["failed", "timed_out", "abandoned", "cancelled"])
+def test_persisted_unknown_reconciles_to_terminal_failure_without_replay(tmp_path, status):
+    gateway = Gateway(("unknown",))
+    instance = controller(tmp_path, gateway)
+    initial = instance.run_drs(run_id="unknown-terminal", **PINS,
+                               max_target_attempts=1, max_practice_rounds=0)
+    assert initial.status == "unknown"
+    request = gateway.requests[0]
+    head = instance.ledger.get(request.episode_id)
+    assert head.state == "unknown"
+    result = instance.reconcile_episode(
+        run_id="unknown-terminal", episode_id=request.episode_id,
+        result=DeterministicMockSolver(terminal_status=status).run(request),
+        expected_record_sha256=head.record_sha256,
+    )
+    assert result.status == "failed"
+    assert instance.ledger.get(request.episode_id).state == status
+    assert result.memory_snapshot == EMPTY_MEMORY_SNAPSHOT
+    assert instance.resume(run_id="unknown-terminal") == result
+    assert len(gateway.requests) == 1
+
+
 def test_terminal_result_survives_verifier_crash_without_solver_retry(tmp_path):
     class Verifier(LocalExactVerifier):
         crash = True

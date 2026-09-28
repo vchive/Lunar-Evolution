@@ -86,3 +86,19 @@ def test_changed_catalog_is_rejected_before_gateway(tmp_path):
     with pytest.raises(RSILearningError, match="curriculum_fingerprint_drift"):
         RSILearningController(gateway, curriculum=changed, ledger=ledger).resume(run_id="catalog")
     assert not gateway.requests
+
+
+@pytest.mark.parametrize("status", ["timed_out", "abandoned"])
+def test_unknown_reconciles_to_terminal_failure_without_replay(tmp_path, status):
+    ledger = RSILedger(tmp_path / "rsi.db")
+    gateway = Gateway(interrupt="terminal-target-0")
+    instance = RSILearningController(gateway, ledger=ledger)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        instance.run_drs(run_id="terminal", **PINS)
+    assert instance.resume(run_id="terminal").status == "unknown"
+    request = gateway.requests[0]
+    outcome = instance.reconcile_episode(run_id="terminal", episode_id=request.episode_id,
+                                          result=DeterministicMockSolver(terminal_status=status).run(request),
+                                          expected_record_sha256=ledger.get(request.episode_id).record_sha256)
+    assert outcome.status == "failed"
+    assert len(gateway.requests) == 1

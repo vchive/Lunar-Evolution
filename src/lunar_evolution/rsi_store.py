@@ -54,7 +54,7 @@ _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
 _EPISODE_TRANSITIONS: dict[str, frozenset[str]] = {
     "planned": frozenset({"planned", "running", "cancelled", "abandoned", "unknown"}),
     "running": frozenset({"running", "completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"}),
-    "unknown": frozenset({"unknown", "completed", "failed", "cancelled"}),
+    "unknown": frozenset({"unknown", "completed", "failed", "timed_out", "abandoned", "cancelled"}),
     "completed": frozenset({"completed"}),
     "failed": frozenset({"failed"}),
     "timed_out": frozenset({"timed_out"}),
