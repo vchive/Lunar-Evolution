@@ -167,3 +167,25 @@ def test_published_audit_is_create_only_and_read_only_reaudit_detects_drift(tmp_
     (campaign / "unexpected.bin").write_bytes(b"drift")
     with pytest.raises(AcceptanceCampaignAuditError, match="audit_inventory_changed"):
         verify_native_campaign_audit(campaign_root=campaign, output_directory=evidence)
+
+
+def test_published_failed_audit_remains_failed_when_inventory_is_intact(tmp_path, monkeypatch):
+    from lunar_evolution.acceptance_campaign_audit import (
+        _publish_native_campaign_audit_report,
+        verify_native_campaign_audit,
+    )
+
+    _registration, campaign, _database, _parent_id = native_campaign(tmp_path, monkeypatch)
+    evidence = tmp_path / "independent-audit"
+    failed = {
+        "schema_version": "1",
+        "scope": "acceptance_campaign_audit",
+        "status": "failed",
+        "primary_success": "0/1",
+        "joint_success": "0/1",
+        "reason": "audit_inventory_changed",
+    }
+    _publish_native_campaign_audit_report(failed, campaign_root=campaign, output_directory=evidence)
+    result = verify_native_campaign_audit(campaign_root=campaign, output_directory=evidence)
+    assert result["status"] == "failed"
+    assert result["joint_success"] == "0/1"

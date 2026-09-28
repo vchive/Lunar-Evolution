@@ -266,12 +266,18 @@ def verify_native_campaign_audit(*, campaign_root: str | Path, output_directory:
         inventory = json.loads((output / "inventory.json").read_text(encoding="utf-8"))
         if not isinstance(report, dict) or not isinstance(inventory, dict):
             raise TypeError("invalid audit publication")
+        if report.get("schema_version") != "1" or report.get("scope") != "acceptance_campaign_audit":
+            raise ValueError("invalid audit report identity")
+        if report.get("status") not in {"verified", "failed"}:
+            raise ValueError("invalid audit report status")
         audit_campaign_directory(campaign_root, inventory)
     except CampaignInventoryError as exc:
         raise AcceptanceCampaignAuditError("audit_inventory_changed") from exc
     except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
         raise AcceptanceCampaignAuditError("audit_publication_invalid") from exc
-    return {**report, "status": "verified"}
+    # Directory integrity proves that the published evidence is unchanged. It does
+    # not turn a failed audit into a successful one; preserve the auditor's result.
+    return dict(report)
 
 
 __all__ = [
