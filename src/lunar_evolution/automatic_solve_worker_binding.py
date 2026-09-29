@@ -21,6 +21,7 @@ class AutomaticSolveWorkerBindingState(StrEnum):
     AWAITING_INPUT = "awaiting_input"
     RECOVERY_REQUIRED = "recovery_required"
     UNKNOWN = "unknown"
+    SUPERSEDED = "superseded"
     TERMINAL = "terminal"
 
 

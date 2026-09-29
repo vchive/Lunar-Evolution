@@ -3345,8 +3345,8 @@ class Store:
         """Create an initial bridge admission before the worker executor is released.
 
         This operation checks only durable admission identities.  The library bridge must still
-        acquire automatic workspace ownership before work.  Later-generation resumption is
-        deliberately unavailable until native cleanup and recovery authority have been checked.
+        acquire automatic workspace ownership before work.  Later generations require the
+        separate resume operation after native cleanup and recovery authority have been checked.
         """
         if not isinstance(binding, AutomaticSolveWorkerBinding):
             raise TypeError("binding must be an AutomaticSolveWorkerBinding")
@@ -3452,8 +3452,10 @@ class Store:
             AutomaticSolveWorkerBindingState.ACTIVE: {AutomaticSolveWorkerBindingState.AWAITING_INPUT,
                 AutomaticSolveWorkerBindingState.RECOVERY_REQUIRED, AutomaticSolveWorkerBindingState.UNKNOWN},
         }
-        if expected.state is AutomaticSolveWorkerBindingState.TERMINAL:
-            raise ValueError("terminal automatic solve binding is immutable")
+        if expected.state in {
+            AutomaticSolveWorkerBindingState.TERMINAL, AutomaticSolveWorkerBindingState.SUPERSEDED,
+        }:
+            raise ValueError("terminal or superseded automatic solve binding is immutable")
         if state != expected.state and state not in allowed.get(expected.state, set()):
             raise ValueError("automatic solve binding transition requires native recovery")
         for old, new in ((expected.contract_digest, contract_digest), (expected.child_run_id, child_run_id)):
@@ -3486,6 +3488,183 @@ class Store:
                 "state": updated.state.value, "reason": updated.observation_reason,
             })
         return updated
+
+    def resume_automatic_solve_worker_binding(
+        self,
+        expected: AutomaticSolveWorkerBinding,
+        new_binding: AutomaticSolveWorkerBinding,
+    ) -> AutomaticSolveWorkerBinding | None:
+        """Atomically admit the next worker generation after a settled recovery.
+
+        This is deliberately narrower than a generic binding create.  Only an explicitly
+        observed ``awaiting_input`` or ``recovery_required`` generation may be superseded;
+        ``unknown`` is never evidence that a native execution is safe to restart.  The caller
+        is responsible for holding both the old worker-owner lock and the native workspace lock
+        before invoking this operation.  No process is started or signalled here.
+        """
+        if not isinstance(expected, AutomaticSolveWorkerBinding) or not isinstance(
+            new_binding, AutomaticSolveWorkerBinding
+        ):
+            raise TypeError("automatic solve binding DTOs required")
+        if expected.state not in {
+            AutomaticSolveWorkerBindingState.AWAITING_INPUT,
+            AutomaticSolveWorkerBindingState.RECOVERY_REQUIRED,
+        }:
+            raise ValueError("automatic solve binding state is not resumable")
+        if new_binding.state is not AutomaticSolveWorkerBindingState.ADMITTED:
+            raise ValueError("automatic solve resume requires an admitted new generation")
+        if new_binding.generation != expected.generation + 1:
+            raise ValueError("automatic solve generation must increment by one")
+        if new_binding.prior_generation != expected.generation:
+            raise ValueError("automatic solve prior generation does not match")
+        if new_binding.binding_id == expected.binding_id:
+            raise ValueError("automatic solve resume requires a new binding identity")
+        if new_binding.worker_id == expected.worker_id or new_binding.worker_attempt_id == expected.worker_attempt_id:
+            raise ValueError("automatic solve resume requires a new worker attempt")
+        if any(value is not None for value in (
+            new_binding.observation_reason,
+            new_binding.stop_reason,
+            new_binding.result_ref_digest,
+            new_binding.native_receipt_id,
+            new_binding.delivery_identity,
+        )):
+            raise ValueError("automatic solve resumed generation has unexpected metadata")
+        immutable = (
+            "owner_id", "run_id", "workspace_identity", "lifecycle_digest", "runtime_fingerprint",
+            "budget_policy", "contract_digest", "child_run_id",
+        )
+        if any(getattr(expected, field) != getattr(new_binding, field) for field in immutable):
+            raise ValueError("automatic solve resume pin drift")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if not self._automatic_solve_worker_binding_matches(connection, expected):
+                return None
+            old_worker = connection.execute(
+                "SELECT w.owner_id, w.phase, a.status, a.service_owner_id, a.finished_at, a.outcome "
+                "FROM workers w JOIN worker_attempts a ON a.worker_id = w.id "
+                "WHERE w.id = ? AND a.id = ?",
+                (expected.worker_id, expected.worker_attempt_id),
+            ).fetchone()
+            if (
+                old_worker is None
+                or old_worker["owner_id"] != expected.owner_id
+                or old_worker["phase"] != WorkerPhase.IDLE.value
+                or old_worker["status"] != "finished"
+                or old_worker["finished_at"] is None
+                or old_worker["outcome"] not in {item.value for item in WorkerOutcome}
+                or old_worker["service_owner_id"] != expected.service_owner_id
+            ):
+                raise ValueError("automatic solve old worker is not settled")
+            if connection.execute(
+                "SELECT 1 FROM worker_attempts a WHERE a.worker_id = ? AND "
+                "(a.status = 'running' OR EXISTS (SELECT 1 FROM worker_attempt_processes p "
+                "WHERE p.attempt_id = a.id)) LIMIT 1",
+                (expected.worker_id,),
+            ).fetchone() is not None:
+                raise ValueError("automatic solve old worker still owns an active attempt or process")
+            self._validate_automatic_solve_worker_attempt(connection, new_binding)
+            if connection.execute(
+                "SELECT 1 FROM worker_bindings WHERE worker_attempt_id = ?",
+                (new_binding.worker_attempt_id,),
+            ).fetchone() is not None:
+                raise ValueError("automatic solve new worker attempt already owns a task binding")
+            if connection.execute(
+                "SELECT 1 FROM automatic_solve_worker_bindings "
+                "WHERE (binding_id = ? OR worker_id = ? OR worker_attempt_id = ?) "
+                "AND binding_id != ?",
+                (new_binding.binding_id, new_binding.worker_id, new_binding.worker_attempt_id, expected.binding_id),
+            ).fetchone() is not None:
+                raise ValueError("automatic solve new worker identity is already bound")
+            run = self._validate_automatic_solve_worker_pins(connection, expected)
+            if run["status"] not in {RunStatus.PENDING.value, RunStatus.RUNNING.value}:
+                raise ValueError("automatic solve run is not eligible for resume")
+            self._validate_automatic_solve_worker_linked_children(connection, expected)
+            self._validate_automatic_solve_worker_resume_quiescence(connection, expected.run_id)
+            if expected.child_run_id is not None:
+                self._validate_automatic_solve_worker_resume_quiescence(connection, expected.child_run_id)
+            timestamp = utc_now()
+            old_updated = connection.execute(
+                "UPDATE automatic_solve_worker_bindings SET state = ?, updated_at = ? "
+                "WHERE binding_id = ? AND generation = ? AND state = ?",
+                (
+                    AutomaticSolveWorkerBindingState.SUPERSEDED.value,
+                    timestamp,
+                    expected.binding_id,
+                    expected.generation,
+                    expected.state.value,
+                ),
+            ).rowcount
+            if old_updated != 1:
+                return None
+            admitted = replace(new_binding, created_at=timestamp, updated_at=timestamp)
+            values = admitted.to_dict()
+            connection.execute(
+                f"INSERT INTO automatic_solve_worker_bindings({','.join(values)}) "
+                f"VALUES({','.join('?' for _ in values)})",
+                tuple(values.values()),
+            )
+            self._append_event(connection, expected.run_id, None, "automatic_solve_worker_resumed", {
+                "prior_binding_id": expected.binding_id,
+                "binding_id": admitted.binding_id,
+                "prior_generation": expected.generation,
+                "generation": admitted.generation,
+                "worker_id": admitted.worker_id,
+                "worker_attempt_id": admitted.worker_attempt_id,
+            })
+        return admitted
+
+    @staticmethod
+    def _validate_automatic_solve_worker_resume_quiescence(connection, run_id: str) -> None:
+        run = connection.execute(
+            "SELECT runner_pid, runner_pgid FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if run is None:
+            raise ValueError("automatic solve native run is missing")
+        if run["runner_pid"] is not None or run["runner_pgid"] is not None:
+            raise ValueError("automatic solve native runner is still registered")
+        if Store._pending_input_row(connection, run_id) is not None:
+            raise ValueError("automatic solve native run has pending input")
+        registered = connection.execute(
+            "SELECT 1 FROM attempts a JOIN tasks t ON t.id = a.task_id "
+            "WHERE t.run_id = ? AND (a.pid IS NOT NULL OR a.pgid IS NOT NULL) LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if registered is not None:
+            raise ValueError("automatic solve native attempt is still registered")
+
+    def _validate_automatic_solve_worker_linked_children(self, connection, binding) -> None:
+        """Check native links even if interruption happened before the binding pinned a child.
+
+        A discovered child never fills immutable old pins implicitly.  Revalidate its accepted
+        contract, reciprocal links and registrations, then require explicit pin recovery.  A
+        pinned child's terminal status is allowed for parent delivery recovery.
+        """
+        if binding.child_run_id is not None:
+            return  # _validate_automatic_solve_worker_pins checked the exact reciprocal pair.
+        links = connection.execute(
+            "SELECT payload FROM events WHERE run_id = ? AND type = 'evolution_linked'",
+            (binding.run_id,),
+        ).fetchall()
+        if not links:
+            return
+        if len(links) != 1:
+            raise ValueError("automatic solve child link evidence is ambiguous")
+        try:
+            link = json.loads(links[0]["payload"])
+            if not isinstance(link, dict):
+                raise TypeError("invalid child link")
+            linked = replace(
+                binding, contract_digest=link["contract_sha256"], child_run_id=link["evolution_run_id"],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("automatic solve child link evidence is malformed") from exc
+        if linked.contract_digest is None or linked.child_run_id is None:
+            raise ValueError("automatic solve child link evidence is malformed")
+        if binding.contract_digest is not None and linked.contract_digest != binding.contract_digest:
+            raise ValueError("automatic solve accepted contract drift")
+        self._validate_automatic_solve_worker_pins(connection, linked)
+        self._validate_automatic_solve_worker_resume_quiescence(connection, linked.child_run_id)
+        raise ValueError("automatic solve child link requires explicit binding pin recovery")
 
     def create_automatic_solve_worker_result_reference(
         self, expected: AutomaticSolveWorkerBinding, reference: AutomaticSolveWorkerResultReference,
