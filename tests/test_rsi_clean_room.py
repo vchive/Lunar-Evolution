@@ -103,6 +103,35 @@ def test_clean_room_reopen_failure_cannot_fall_back_to_delegate_pass(tmp_path: P
     assert decision.verifier_fingerprint == verifier.fingerprint()
 
 
+def test_clean_room_terminal_unknown_resume_is_read_only_noop(tmp_path: Path):
+    profile, request, result, episode, gateway = _run(tmp_path)
+    verifier = CleanRoomRSIVerifier(profile, gateway.workspace_root, verification_root=tmp_path / "verify")
+    unknown_result = replace(
+        result,
+        status="unknown",
+        candidate_receipt_sha256=None,
+        execution_receipt_sha256=None,
+        official_evaluation_receipt_sha256=None,
+        candidate_source_sha256=None,
+        dependency_sha256=None,
+        solver_score=None,
+        terminal_reason="worker_unknown",
+    )
+    unknown_episode = replace(
+        episode,
+        status="unknown",
+        candidate_receipt_sha256=None,
+        execution_receipt_sha256=None,
+        official_evaluation_receipt_sha256=None,
+        candidate_source_sha256=None,
+        dependency_sha256=None,
+        terminal_reason="worker_unknown",
+    )
+    decision = verifier.verify(unknown_episode, request, unknown_result)
+    assert decision.outcome == "unresolved"
+    verifier.validate_retained(unknown_episode, request, unknown_result, decision)
+
+
 def test_clean_room_rejects_profile_environment_drift(tmp_path: Path):
     profile, request, result, episode, gateway = _run(tmp_path)
     profile.pipeline.environment = (("RSI_CLEAN_ROOM_DRIFT", "1"),)
