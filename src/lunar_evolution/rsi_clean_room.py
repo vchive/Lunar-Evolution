@@ -112,6 +112,16 @@ class CleanRoomRSIVerifier:
             "workspace_root": str(self.workspace_root),
         })
 
+    def _safe_fingerprint(self) -> str:
+        """Return a valid identity even when recomputing the current profile fails."""
+
+        try:
+            value = self.fingerprint()
+            _digest(value, "verifier_fingerprint")
+            return value
+        except Exception:  # noqa: BLE001 - unresolved evidence still needs a valid identity
+            return self.verifier_fingerprint
+
     def reopen_fingerprints(
         self,
         episode: PracticeEpisode,
@@ -231,7 +241,7 @@ class CleanRoomRSIVerifier:
             outcome="unresolved",
             receipt_sha256=evidence,
             diagnosis="clean-room verification unresolved: " + reason,
-            verifier_fingerprint=self.fingerprint(),
+            verifier_fingerprint=self._safe_fingerprint(),
             checks=(VerifierCheck("clean_room_integrity", "unresolved", evidence),),
             contract_sha256=request.contract_sha256,
             evaluator_sha256=request.evaluator_sha256,
@@ -241,7 +251,7 @@ class CleanRoomRSIVerifier:
             candidate_receipt_sha256=result.candidate_receipt_sha256,
             execution_receipt_sha256=result.execution_receipt_sha256,
         )
-        return self._augment(base, fingerprints, self.fingerprint())
+        return self._augment(base, fingerprints, self._safe_fingerprint())
 
     def validate_retained(
         self,
@@ -256,6 +266,10 @@ class CleanRoomRSIVerifier:
             raise RSILearningError("rsi_clean_room_verifier_fingerprint_drift")
         if self.fingerprint() != self.verifier_fingerprint:
             raise RSILearningError("rsi_clean_room_verifier_fingerprint_drift")
+        # Incomplete/uncertain terminal states have no retained candidate workspace to inspect.
+        # They remain unresolved and are safe to replay as a read-only no-op.
+        if decision.outcome != "pass" and (episode.status != "completed" or result.status != "completed"):
+            return
         fingerprints = self.reopen_fingerprints(episode, request, result)
         if decision.outcome != "pass":
             # Native verifier's non-pass resume path is read-only original evidence inspection.
