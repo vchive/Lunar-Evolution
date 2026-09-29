@@ -233,6 +233,16 @@ class NativeTrustedPublicationAuthority:
             )
         ):
             raise NativeTrustedPublicationError("native_trusted_publication_execution_identity_invalid")
+        expected_authority_id = hashlib.sha256(
+            _canonical({
+                "scope": self.scope,
+                "preparation_sha256": self.preparation_sha256,
+                "token_sha256": self.token_sha256,
+                "nonce": self.nonce,
+            })
+        ).hexdigest()
+        if self.authority_id != expected_authority_id:
+            raise NativeTrustedPublicationError("native_trusted_publication_authority_id_mismatch")
         if self.authority_sha256 != self.digest():
             raise NativeTrustedPublicationError("native_trusted_publication_authority_digest_mismatch")
 
