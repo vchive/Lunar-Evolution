@@ -277,6 +277,10 @@ class DurableLearningRun:
             self._check_reconciliation_checkpoint(entry, request)
             self._check_verifier_reservations(entry, request)
         stage_counts = self._check_external_stages()
+        from .rsi_shared_transfer import validate_transfers
+        transfer_counts = validate_transfers(self)
+        for name in stage_counts:
+            stage_counts[name] += transfer_counts[name]
         reserved = [entry for entry in self.state["episodes"].values() if entry["budget_reserved"]]
         practices = [
             entry
@@ -295,6 +299,7 @@ class DurableLearningRun:
             or consumed["unknown_retries"] != len(reconciliations)
             or consumed["verifier_invocations"]
             != sum(len(entry["verifier_invocations"]) for entry in self.state["episodes"].values())
+            + transfer_counts["verifier"]
             or consumed["evaluator_invocations"] != stage_counts["evaluator"]
             or consumed["transfer_invocations"] != stage_counts["transfer"]
         ):
@@ -312,6 +317,8 @@ class DurableLearningRun:
             if not isinstance(current, Mapping):
                 raise RSILearningError("rsi_controller_checkpoint_invalid")
             if previous is not None:
+                from .rsi_shared_transfer import validate_transfer_history
+                validate_transfer_history(previous, current)
                 validate_stage_history(previous.get("stage_accounting"), current.get("stage_accounting"))
                 previous_episodes = previous.get("episodes", {})
                 current_episodes = current.get("episodes", {})
@@ -364,14 +371,18 @@ class DurableLearningRun:
                                 raise RSILearningError("rsi_budget_checkpoint_invalid")
             previous = current
 
-    def _check_stage_support(self, budget: RSIRunBudget) -> None:
+    def _check_stage_support(self, budget: RSIRunBudget, config: Mapping | None = None) -> None:
         # Only adapters declaring the pre-execution hook can accept finite evaluator limits.
         if budget.state["planned"]["max_evaluator_invocations"] is not None:
             for component in (self.controller.gateway, self.controller.verifier):
                 if "evaluator" not in getattr(component, "stage_budget_accounting", ()):
                     raise RSILearningError("rsi_budget_evaluator_accounting_unavailable")
-        # Transfer panels have a separate durable budget, installed by compare(budget=...).
-        if budget.state["planned"]["max_transfer_invocations"] is not None:
+        # DRS/BRS itself has no implicit transfer phase. Transfer budgets are accepted only
+        # by the explicit controller.compare_transfer API, so a run cannot accidentally spend
+        # transfer quota in a normal learning loop.
+        configured = self.state.get("config", {}) if config is None else config
+        if (budget.state["planned"]["max_transfer_invocations"] is not None
+                and configured.get("enable_transfer_accounting") is not True):
             raise RSILearningError("rsi_budget_transfer_accounting_unavailable")
 
     def _stage_scope(self, request: SolverRequest, phase: str):
@@ -871,7 +882,7 @@ class DurableLearningRun:
                     raise RSILearningError("rsi_actor_fingerprint_required")
                 snapshot = self.controller.snapshot.to_dict()
                 budget = RSIRunBudget.create(config["budget"])
-                self._check_stage_support(budget)
+                self._check_stage_support(budget, config)
                 self.state = {
                     "schema_version": "1",
                     "run_id": self.run_id,

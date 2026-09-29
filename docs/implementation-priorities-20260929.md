@@ -132,9 +132,12 @@ release publication.
   candidate/revoke/quarantine tails and changed source evidence.
 - [x] Bind trusted native practice/holdout panels to durable promotion proof and explicit
   scope/compatibility-bound active-memory retrieval. Recheck the active selection before launch.
-- [ ] Join controller and transfer reservations into one run ledger and implement retained
-  evaluator/transfer reconciliation. Separate local scopes are not a shared budget.
+- [x] Join controller and transfer evaluator/verifier/transfer reservations into one run ledger
+  through explicit `compare_transfer` opt-in; retained panel opens are read-only and do not
+  relaunch work. The two panel gateway launches remain outside the learning
+  `solver_invocations` counter, and full transfer unknown reconciliation is still open.
 - [ ] Enable automatic active-memory policy and regression handling in durable DRS/BRS.
 
-The local RSI and CLI suite passes 679 cases after the final promotion proof changes. This is
+The local RSI and CLI suite passes 679 cases after the final promotion proof changes. The shared
+transfer/producer recovery supplement passes 140 cases with 2 platform skips. This is
 provider-free evidence and does not close real telemetry, campaign, Actor or efficacy acceptance.

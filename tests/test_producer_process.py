@@ -319,6 +319,7 @@ def test_registration_write_failure_never_releases_work_gate(tmp_path: Path, mon
     recovered = recover_producer_process(tmp_path, journal_id=intent.journal_id)
     assert recovered["status"] == "recovery_required"
     assert recovered["reason"] == "producer_process_registration_missing"
+    assert recover_producer_process(tmp_path, journal_id=intent.journal_id, cleanup=True) == recovered
 
 
 def test_child_exit_before_gate_requires_recovery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -984,6 +985,43 @@ def _registered_live_process(tmp_path: Path):
     return batch, intent, process
 
 
+def _unknown_live_process(tmp_path: Path):
+    """Build a complete unknown terminal receipt around a still-live fixture process."""
+    producer_root, intent, attestation = _fixture(tmp_path)
+    run_producer_process(tmp_path, intent=intent, attestation=attestation, producer_root=producer_root)
+    batch = tmp_path / "evolution/producer-batches/journal-001"
+    terminal_path = batch / "execution-receipt.json"
+    terminal = json.loads(terminal_path.read_text())
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(30)"],
+        start_new_session=True, stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    registration_path = batch / "process-registration.json"
+    registration = json.loads(registration_path.read_text())
+    registration["pid"] = process.pid
+    registration["pgid"] = os.getpgid(process.pid)
+    registration["owner_identity"] = producer_process._process_owner_identity(process.pid)
+    assert registration["owner_identity"] is not None
+    registration["owner_identity_sha256"] = producer_process._sha(registration["owner_identity"])
+    registration["registration_sha256"] = producer_process._digest_without(
+        registration, "registration_sha256",
+    )
+    registration_path.write_bytes(producer_process._canonical(registration))
+    terminal.update({
+        "pid": process.pid,
+        "pgid": registration["pgid"],
+        "owner_identity": registration["owner_identity"],
+        "registration_sha256": registration["registration_sha256"],
+        "previous_receipt_sha256": registration["registration_sha256"],
+        "status": "unknown",
+        "failure_code": "producer_process_cleanup_unknown",
+    })
+    terminal["receipt_sha256"] = producer_process._digest_without(terminal, "receipt_sha256")
+    terminal_path.write_bytes(producer_process._canonical(terminal))
+    return batch, intent, process, terminal
+
+
 def test_explicit_recovery_cleans_only_registered_owner_and_writes_receipt(tmp_path: Path):
     batch, intent, process = _registered_live_process(tmp_path)
     try:
@@ -1317,3 +1355,98 @@ def test_recovery_rejects_symlinked_batch_directory(tmp_path: Path):
     with pytest.raises(ProducerProcessError) as exc:
         recover_producer_process(tmp_path, journal_id=intent.journal_id)
     assert exc.value.code == "producer_process_recovery_receipt_invalid"
+
+
+def test_unknown_terminal_reconcile_cleans_only_registered_identity(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path)
+    receipt = run_producer_process(tmp_path, intent=intent, attestation=attestation, producer_root=producer_root)
+    batch = tmp_path / "evolution/producer-batches/journal-001"
+    path = batch / "execution-receipt.json"
+    raw = json.loads(path.read_text())
+    raw["status"] = "unknown"
+    raw["failure_code"] = "producer_process_cleanup_unknown"
+    raw["receipt_sha256"] = producer_process._digest_without(raw, "receipt_sha256")
+    path.write_bytes(producer_process._canonical(raw))
+    with pytest.raises(ProducerProcessError) as exc:
+        recover_producer_process(tmp_path, journal_id=intent.journal_id)
+    assert exc.value.code == "producer_process_recovery_required"
+    recovered = recover_producer_process(tmp_path, journal_id=intent.journal_id, cleanup=True)
+    assert recovered["status"] == "recovery_required"
+    assert recovered["execution_outcome"] == "unknown"
+    assert recovered["reason"] == "producer_process_terminal_unknown"
+    assert recovered["terminal_receipt_sha256"] == raw["receipt_sha256"]
+    assert recovered["previous_receipt_sha256"] == receipt.registration_sha256
+    assert recover_producer_process(tmp_path, journal_id=intent.journal_id) == recovered
+
+
+@pytest.mark.parametrize("mutation", ["delete", "alter"])
+def test_unknown_terminal_reconcile_rejects_changed_original_after_cleanup(
+    tmp_path: Path, mutation: str,
+):
+    batch, intent, process, _terminal = _unknown_live_process(tmp_path)
+    try:
+        recovered = recover_producer_process(tmp_path, journal_id=intent.journal_id, cleanup=True)
+        assert recovered["reason"] == "producer_process_terminal_unknown"
+        path = batch / "execution-receipt.json"
+        if mutation == "delete":
+            path.unlink()
+        else:
+            altered = json.loads(path.read_text())
+            altered["failure_code"] = "producer_process_tampered_after_reconcile"
+            altered["receipt_sha256"] = producer_process._digest_without(altered, "receipt_sha256")
+            path.write_bytes(producer_process._canonical(altered))
+        with pytest.raises(ProducerProcessError) as exc:
+            recover_producer_process(tmp_path, journal_id=intent.journal_id)
+        assert exc.value.code == "producer_process_recovery_receipt_invalid"
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=2)
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires OS process identity")
+def test_unknown_terminal_reconcile_cleans_exact_live_owner_and_preserves_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    batch, intent, process, terminal = _unknown_live_process(tmp_path)
+
+    def forbidden_spawn(*args, **kwargs):
+        pytest.fail("unknown terminal reconciliation must not relaunch the producer")
+
+    monkeypatch.setattr(producer_process.subprocess, "Popen", forbidden_spawn)
+    try:
+        recovered = recover_producer_process(tmp_path, journal_id=intent.journal_id, cleanup=True)
+        assert recovered["reason"] == "producer_process_terminal_unknown"
+        assert recovered["term_sent"] is True
+        assert recovered["cleanup_status"] in {"cleaned", "cleanup_unverified", "ownership_lost"}
+        assert json.loads((batch / "execution-receipt.json").read_text()) == terminal
+        assert json.loads((batch / "recovery-receipt.json").read_text()) == recovered
+        assert recover_producer_process(tmp_path, journal_id=intent.journal_id) == recovered
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=2)
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires OS process identity")
+def test_unknown_terminal_reconcile_owner_mismatch_never_signals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    batch, intent, process, terminal = _unknown_live_process(tmp_path)
+    try:
+        monkeypatch.setattr(
+            producer_process, "_process_owner_identity",
+            lambda pid: {"kind": "different-start-identity", "pid": pid},
+        )
+        recovered = recover_producer_process(tmp_path, journal_id=intent.journal_id, cleanup=True)
+        assert recovered["reason"] == "producer_process_terminal_unknown"
+        assert recovered["cleanup_status"] == "ownership_lost"
+        assert recovered["term_sent"] is False
+        assert recovered["kill_sent"] is False
+        assert process.poll() is None
+        assert json.loads((batch / "execution-receipt.json").read_text()) == terminal
+    finally:
+        monkeypatch.undo()
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=2)

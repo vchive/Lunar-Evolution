@@ -91,11 +91,11 @@ class DurableStageAccounting:
         RSIRunBudget.load(budget_state)
 
     def reserve(self, stage: str, identity: Mapping[str, Any]) -> dict[str, Any]:
-        if self._failed:
-            raise RSILearningError("rsi_stage_accounting_poisoned")
         clean = dict(identity)
         pin = digest({"stage": stage, "identity": clean})
         with self.lock:
+            if self._failed:
+                raise RSILearningError("rsi_stage_accounting_poisoned")
             validate_stage_state(self.state)
             if any(row["intent_sha256"] == pin for row in self.state["invocations"]):
                 raise RSILearningError("rsi_stage_invocation_replay_forbidden")
@@ -118,9 +118,9 @@ class DurableStageAccounting:
     def complete(self, row: dict[str, Any], receipt_sha256: str) -> None:
         if not _sha(receipt_sha256):
             raise RSILearningError("rsi_stage_evidence_invalid")
-        if self._failed:
-            raise RSILearningError("rsi_stage_accounting_poisoned")
         with self.lock:
+            if self._failed:
+                raise RSILearningError("rsi_stage_accounting_poisoned")
             if not any(value is row for value in self.state["invocations"]):
                 raise RSILearningError("rsi_stage_intent_conflict")
             evidence = {"receipt_sha256": receipt_sha256}

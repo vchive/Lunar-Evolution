@@ -1356,7 +1356,7 @@ def _read_durable_json(path: Path, *, code: str) -> dict[str, object]:
 
 
 def _inspect_producer_process(
-    workspace: str | Path, *, journal_id: str,
+    workspace: str | Path, *, journal_id: str, allow_unknown: bool = False,
 ) -> dict[str, object]:
     """Inspect durable launch state without consuming another claim or restarting a producer."""
     root = _safe_root(workspace)
@@ -1438,12 +1438,18 @@ def _inspect_producer_process(
         or raw.get("previous_receipt_sha256") != registration.get("registration_sha256")
     ):
         _fail("producer_process_recovery_receipt_invalid")
-    if raw.get("status") in {"unknown", "recovery_required"}:
+    recovered = _read_recovery_receipt(batch, registration, terminal_receipt=raw)
+    if recovered is not None:
+        return recovered
+    if raw.get("status") in {"unknown", "recovery_required"} and not allow_unknown:
         _fail("producer_process_recovery_required")
     return raw
 
 
-def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> dict[str, object] | None:
+def _read_recovery_receipt(
+    batch: Path, registration: Mapping[str, object],
+    *, terminal_receipt: Mapping[str, object] | None = None,
+) -> dict[str, object] | None:
     path = batch / "recovery-receipt.json"
     try:
         os.lstat(path)
@@ -1457,7 +1463,9 @@ def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> d
         or receipt.get("protocol") != "lunar-producer-process-recovery-v1"
         or receipt.get("status") != "recovery_required"
         or receipt.get("execution_outcome") != "unknown"
-        or receipt.get("reason") != "producer_process_terminal_receipt_missing"
+        or receipt.get("reason") not in {
+            "producer_process_terminal_receipt_missing", "producer_process_terminal_unknown",
+        }
         or receipt.get("recovery_sha256") != _digest_without(receipt, "recovery_sha256")
         or any(receipt.get(key) != registration.get(key) for key in (
             "launch_id", "journal_id", "run_id", "parent_task_id", "task_id",
@@ -1465,6 +1473,12 @@ def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> d
             "registration_sha256", "pid", "pgid", "owner_identity_sha256",
         ))
         or receipt.get("previous_receipt_sha256") != registration.get("registration_sha256")
+        or (receipt.get("reason") == "producer_process_terminal_unknown"
+            and (terminal_receipt is None
+                 or terminal_receipt.get("status") not in {"unknown", "recovery_required"}
+                 or receipt.get("terminal_receipt_sha256") != terminal_receipt.get("receipt_sha256")))
+        or (receipt.get("reason") == "producer_process_terminal_receipt_missing"
+            and (terminal_receipt is not None or receipt.get("terminal_receipt_sha256") is not None))
         or receipt.get("cleanup_status") not in {status.value for status in ProcessCleanupStatus}
         or not isinstance(receipt.get("term_sent"), bool)
         or not isinstance(receipt.get("kill_sent"), bool)
@@ -1476,6 +1490,8 @@ def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> d
 
 def _cleanup_recovered_process(
     batch: Path, registration: Mapping[str, object], lock_identity: tuple[int, int],
+    *, terminal_receipt: Mapping[str, object] | None = None,
+    claim: Mapping[str, object] | None = None, nonce_claim_path: Path | None = None,
 ) -> dict[str, object]:
     pid = registration.get("pid")
     pgid = registration.get("pgid")
@@ -1491,7 +1507,7 @@ def _cleanup_recovered_process(
         or registration.get("recovery_lock_inode") != lock_identity[1]
     ):
         _fail("producer_process_recovery_registration_invalid")
-    prior = _read_recovery_receipt(batch, registration)
+    prior = _read_recovery_receipt(batch, registration, terminal_receipt=terminal_receipt)
     if prior is not None:
         _fail("producer_process_recovery_already_recorded")
 
@@ -1502,6 +1518,24 @@ def _cleanup_recovered_process(
             current = _read_durable_json(
                 registration_path, code="producer_process_recovery_registration_invalid",
             )
+            terminal_changed = (
+                terminal_receipt is not None
+                and (_read_durable_json(
+                    batch / "execution-receipt.json",
+                    code="producer_process_recovery_receipt_invalid",
+                ) != terminal_receipt
+                    or claim is None or nonce_claim_path is None
+                    or _read_durable_json(
+                        batch / "attestation-consumption.json",
+                        code="producer_process_recovery_claim_invalid",
+                    ) != claim
+                    or _read_durable_json(
+                        nonce_claim_path,
+                        code="producer_process_recovery_claim_invalid",
+                    ) != claim)
+            )
+            if terminal_changed:
+                return False
             return (
                 current == registration
                 and _current_recovery_lock_identity(batch) == lock_identity
@@ -1519,7 +1553,11 @@ def _cleanup_recovered_process(
     receipt: dict[str, object] = {
         "schema_version": "1", "protocol": "lunar-producer-process-recovery-v1",
         "status": "recovery_required", "execution_outcome": "unknown",
-        "reason": "producer_process_terminal_receipt_missing",
+        "reason": (
+            "producer_process_terminal_unknown"
+            if terminal_receipt is not None
+            else "producer_process_terminal_receipt_missing"
+        ),
         **{key: registration[key] for key in (
             "launch_id", "journal_id", "run_id", "parent_task_id", "task_id",
             "intent_sha256", "attestation_sha256", "consumption_sha256",
@@ -1530,6 +1568,8 @@ def _cleanup_recovered_process(
         "term_sent": result.term_sent, "kill_sent": result.kill_sent,
         "alive_after": result.alive_after,
     }
+    if terminal_receipt is not None:
+        receipt["terminal_receipt_sha256"] = terminal_receipt["receipt_sha256"]
     receipt["recovery_sha256"] = _digest_without(receipt, "recovery_sha256")
     try:
         _atomic_json(batch / "recovery-receipt.json", receipt, exclusive=True)
@@ -1541,7 +1581,11 @@ def _cleanup_recovered_process(
 def recover_producer_process(
     workspace: str | Path, *, journal_id: str, cleanup: bool = False,
 ) -> dict[str, object]:
-    """Inspect one attempt; explicit cleanup only addresses a missing terminal receipt."""
+    """Inspect one attempt; explicitly clean missing/unknown outcomes without relaunch.
+
+    Cleanup writes separate evidence and never changes the original execution outcome.
+    Unknown execution remains unavailable to downstream publication and retry consumers.
+    """
     if not isinstance(cleanup, bool):
         _fail("producer_process_recovery_cleanup_invalid")
     if not cleanup:
@@ -1551,10 +1595,17 @@ def recover_producer_process(
         _fail("producer_process_recovery_identity_invalid")
     batch = root / "evolution" / "producer-batches" / journal_id
     with _recovery_lock(batch) as lock_identity:
-        observation = _inspect_producer_process(workspace, journal_id=journal_id)
+        observation = _inspect_producer_process(
+            workspace, journal_id=journal_id, allow_unknown=True,
+        )
         if observation.get("protocol") == "lunar-producer-process-recovery-v1":
             _fail("producer_process_recovery_already_recorded")
-        if observation.get("reason") != "producer_process_terminal_receipt_missing":
+        missing_terminal = observation.get("reason") == "producer_process_terminal_receipt_missing"
+        unknown_terminal = (
+            observation.get("protocol") == _PROTOCOL
+            and observation.get("status") in {"unknown", "recovery_required"}
+        )
+        if not missing_terminal and not unknown_terminal:
             return observation
         registration = _read_durable_json(
             batch / "process-registration.json", code="producer_process_recovery_registration_invalid",
@@ -1574,7 +1625,11 @@ def recover_producer_process(
         )
         if nonce_claim != claim or claim.get("consumption_sha256") != registration.get("consumption_sha256"):
             _fail("producer_process_recovery_claim_invalid")
-        return _cleanup_recovered_process(batch, registration, lock_identity)
+        return _cleanup_recovered_process(
+            batch, registration, lock_identity,
+            terminal_receipt=observation if unknown_terminal else None,
+            claim=claim, nonce_claim_path=root / "evolution" / "producer-nonces" / f"{nonce_key}.json",
+        )
 
 
 launch_producer_process = run_producer_process

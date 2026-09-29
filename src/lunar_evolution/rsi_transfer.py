@@ -300,8 +300,10 @@ class FrozenMemoryTransferBenchmark:
                                           actor_fingerprint=self.fingerprint())
         return gateway, NativeIndependentVerifier(task.profile, root)
 
-    def compare(self, *, comparison_id: str, tasks: Sequence[NativeTransferTask],
-                snapshot: MemorySnapshot, budget: Mapping[str, Any] | None = None) -> FrozenTransferResult:
+    def comparison_identity(self, *, comparison_id: str, tasks: Sequence[NativeTransferTask],
+                            snapshot: MemorySnapshot, budget: Mapping[str, Any] | None = None,
+                            accounting_binding: Mapping[str, str] | None = None) -> dict:
+        """Validate and pin a panel before any file or run-ledger mutation."""
         if type(comparison_id) is not str or _ID.fullmatch(comparison_id) is None:
             _fail("comparison_id_invalid")
         if not isinstance(snapshot, MemorySnapshot) or not snapshot.items:
@@ -326,14 +328,46 @@ class FrozenMemoryTransferBenchmark:
                 _fail("budget_invalid")
             try:
                 stage_budget = dict(budget)
-                budget_state = RSIRunBudget.create(stage_budget).state
+                RSIRunBudget.create(stage_budget)
             except RSILearningError:
                 _fail("budget_invalid")
             identity["stage_budget"] = stage_budget
-        else:
-            budget_state = None
+        if accounting_binding is not None:
+            if (budget is not None or not isinstance(accounting_binding, Mapping)
+                    or set(accounting_binding) != {"run_id", "ledger_path"}
+                    or any(type(value) is not str or not value for value in accounting_binding.values())):
+                _fail("accounting_binding_invalid")
+            identity["accounting_binding"] = dict(accounting_binding)
         # Bound the full panel before executing or writing any state.
-        identity = strict_json(canonical_json(identity, maximum=_MAX_INTENT))
+        return strict_json(canonical_json(identity, maximum=_MAX_INTENT))
+
+    def compare(self, *, comparison_id: str, tasks: Sequence[NativeTransferTask],
+                snapshot: MemorySnapshot, budget: Mapping[str, Any] | None = None,
+                accounting: DurableStageAccounting | None = None,
+                accounting_binding: Mapping[str, str] | None = None,
+                read_only: bool = False) -> FrozenTransferResult:
+        """Compare a panel, optionally charging a caller-owned durable run budget.
+
+        A shared scope owns this panel's invocation list but references the same budget state
+        and atomic checkpoint writer as its controller. Retained opens never reserve work.
+        """
+        tasks = tuple(tasks)
+        if (accounting is None) != (accounting_binding is None):
+            _fail("accounting_binding_invalid")
+        identity = self.comparison_identity(comparison_id=comparison_id, tasks=tasks,
+                                            snapshot=snapshot, budget=budget,
+                                            accounting_binding=accounting_binding)
+        budget_state = None if budget is None else RSIRunBudget.create(budget).state
+        if read_only:
+            root = self.workspace_root / "comparisons" / comparison_id
+            intent, receipt = root / "intent.json", root / "comparison.json"
+            if not intent.exists() and not intent.is_symlink():
+                return FrozenTransferResult(comparison_id, "unknown", "unresolved", None, None, len(tasks))
+            if _read(intent) != identity:
+                _fail("comparison_identity_changed")
+            if not receipt.exists() and not receipt.is_symlink():
+                return FrozenTransferResult(comparison_id, "unknown", "unresolved", None, None, len(tasks))
+            return self._resume(root, identity, tasks, snapshot, accounting=accounting)
         _ensure_private_directory(Path(self.workspace_root.anchor), tuple(self.workspace_root.parts[1:]))
         root = _ensure_private_directory(self.workspace_root, ("comparisons", comparison_id))
         intent, receipt = root / "intent.json", root / "comparison.json"
@@ -353,17 +387,17 @@ class FrozenMemoryTransferBenchmark:
                     except RSILearningError:
                         _fail("stage_accounting_invalid")
                 return FrozenTransferResult(comparison_id, "unknown", "unresolved", None, None, len(tasks))
-            return self._resume(root, identity, tasks, snapshot)
+            return self._resume(root, identity, tasks, snapshot, accounting=accounting)
         if receipt.exists() or receipt.is_symlink():
             _fail("intent_missing")
         _write_new(intent, identity)
-        accounting = None
         if budget_state is not None:
             accounting_path = root / "stage-accounting.json"
             stage_state = {"invocations": []}
             def persist_stage():
                 _write_replace(accounting_path, {"budget": budget_state, "stages": stage_state})
             accounting = DurableStageAccounting(stage_state, budget_state, persist_stage)
+        if accounting is not None:
             accounting.reserve("transfer", {"comparison_id": comparison_id, "identity_sha256": _sha(identity)})
         snapshots = {EMPTY_MEMORY_SNAPSHOT.digest(): EMPTY_MEMORY_SNAPSHOT, snapshot.digest(): snapshot}
         rows = []
@@ -397,10 +431,10 @@ class FrozenMemoryTransferBenchmark:
         _write_new(receipt, payload)
         if accounting is not None:
             accounting.complete(accounting.state["invocations"][0], payload["receipt_sha256"])
-        return self._resume(root, identity, tasks, snapshot)
+        return self._resume(root, identity, tasks, snapshot, accounting=accounting)
 
     def _resume(self, root: Path, identity: dict, tasks: tuple[NativeTransferTask, ...],
-                snapshot: MemorySnapshot) -> FrozenTransferResult:
+                snapshot: MemorySnapshot, *, accounting: DurableStageAccounting | None = None) -> FrozenTransferResult:
         payload = _read(root / "comparison.json")
         if set(payload) != {"protocol", "intent_sha256", "rows", "summary", "receipt_sha256"}:
             _fail("comparison_record_invalid")
@@ -408,11 +442,19 @@ class FrozenMemoryTransferBenchmark:
         if payload["protocol"] != _PROTOCOL or payload["intent_sha256"] != _sha(identity) or _sha(body) != payload["receipt_sha256"]:
             _fail("comparison_receipt_mismatch")
         stage_budget = identity.get("stage_budget")
+        shared = "accounting_binding" in identity
+        if shared and accounting is None:
+            _fail("shared_accounting_required")
         accounting_path = root / "stage-accounting.json"
-        if stage_budget is not None:
-            if not accounting_path.exists() or accounting_path.is_symlink():
-                _fail("stage_accounting_missing")
-            retained = _read(accounting_path)
+        if stage_budget is not None or shared:
+            if shared:
+                if accounting_path.exists() or accounting_path.is_symlink():
+                    _fail("stage_accounting_unexpected")
+                retained = {"budget": accounting.budget_state, "stages": accounting.state}
+            else:
+                if not accounting_path.exists() or accounting_path.is_symlink():
+                    _fail("stage_accounting_missing")
+                retained = _read(accounting_path)
             if set(retained) != {"budget", "stages"}:
                 _fail("stage_accounting_invalid")
             try:
@@ -420,10 +462,13 @@ class FrozenMemoryTransferBenchmark:
                 counts = validate_stage_state(retained["stages"])
             except RSILearningError:
                 _fail("stage_accounting_invalid")
-            budget_state.assert_matches(stage_budget)
+            if not shared:
+                budget_state.assert_matches(stage_budget)
             if counts["transfer"] != 1:
                 _fail("stage_accounting_invalid")
-            if any(budget_state.state["consumed"][name + "_invocations"] != counts[name] for name in ("transfer", "evaluator", "verifier")):
+            if any((budget_state.state["consumed"][name + "_invocations"] < counts[name] if shared
+                    else budget_state.state["consumed"][name + "_invocations"] != counts[name])
+                   for name in ("transfer", "evaluator", "verifier")):
                 _fail("stage_accounting_invalid")
             transfer_rows = [row for row in retained["stages"]["invocations"] if row["stage"] == "transfer"]
             if len(transfer_rows) != 1:
@@ -442,9 +487,10 @@ class FrozenMemoryTransferBenchmark:
         rows = payload["rows"]
         if type(rows) is not list or len(rows) != len(tasks):
             _fail("comparison_tasks_mismatch")
-        stage_rows = [] if stage_budget is None else retained["stages"]["invocations"]
+        accounted = stage_budget is not None or shared
+        stage_rows = retained["stages"]["invocations"] if accounted else []
         snapshots = {EMPTY_MEMORY_SNAPSHOT.digest(): EMPTY_MEMORY_SNAPSHOT, snapshot.digest(): snapshot}
-        if stage_budget is not None:
+        if accounted:
             known_tasks = {task.task_id: task for task in tasks}
             for stage_row in stage_rows:
                 if stage_row["stage"] == "transfer":
@@ -493,7 +539,7 @@ class FrozenMemoryTransferBenchmark:
                     verifier.validate_retained(arm.episode, arm.request, arm.result, arm.verifier)
                 elif arm.verifier.outcome == "pass":
                     _fail("comparison_terminal_verifier_invalid")
-                if stage_budget is not None:
+                if accounted:
                     owner_rows = [row for row in stage_rows if row["stage"] == "evaluator" and row["identity"]["owner"].get("task_id") == task.task_id and row["identity"]["owner"].get("arm") == arm_name]
                     expected_receipts = {arm.result.official_evaluation_receipt_sha256}
                     expected_receipts.update(check.receipt_sha256 for check in arm.verifier.checks if check.name in {"official_evaluator", "independent_rerun"} and check.receipt_sha256)

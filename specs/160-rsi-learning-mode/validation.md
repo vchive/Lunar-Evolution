@@ -48,8 +48,11 @@ The implementation is ready for the next phase only when these provider-free che
 - Separate evaluator/verifier/transfer counters validate integer types and remaining arithmetic.
   Native evaluator calls and frozen transfer panels reserve before execution only when an explicit
   durable stage scope is installed; pending intents remain visible in a sidecar and are never replayed.
-  Controller transfer budgets and external provider telemetry are still unavailable. Complete
-  legacy checkpoints without stage counters require migration rather than synthetic zero counts.
+  Explicit `compare_transfer` can bind these three stage counters to the controller run ledger;
+  its retained opens are read-only. The panel's gateway launches remain outside the learning
+  `solver_invocations` counter, while full transfer unknown reconciliation and external provider
+  telemetry remain unavailable. Complete legacy checkpoints without stage counters require
+  migration rather than synthetic zero counts.
 - `RSIUsageReceipt` accepts only complete token triples, non-negative integer measurements, and
   reproducible estimates using receipt-bound micro-USD rates. Missing provider telemetry remains
   unavailable (`null`), never a synthetic zero. Its aggregation uses the observed controller wall

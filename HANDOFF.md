@@ -10,10 +10,14 @@ and checked through candidate → shadow → approved → active. Explicit `acti
 `run_active_target` APIs select compatible active memory, recheck revocation before dispatch,
 and reject duplicate target execution. Default DRS/BRS active-memory loading remains disabled.
 
-Final local RSI plus CLI regression: **679 passed**; targeted Ruff, compileall and diff checks pass.
-No remote evaluator, real campaign or new model request was made. Controller and transfer still
-have separate accounting scopes at this checkpoint; sharing the run ledger is the next slice.
-Production producer egress/credentials/reconcile, automatic parent delivery, real launchers,
+Final local RSI plus CLI regression: **692 passed**; targeted Ruff, compileall and diff checks pass.
+No remote evaluator, real campaign or new model request was made. Explicit `compare_transfer`
+now shares evaluator/verifier/transfer reservations with the controller run ledger; retained
+panel opens are read-only. Its panel gateway launches remain outside the learning
+`solver_invocations` counter, and shared panels are not directly bound to promotion evidence.
+The local producer lifecycle supplement now reconciles an existing `unknown` terminal under the
+original registration, nonce, lock and OS owner identity, writes a separate recovery receipt, and
+keeps execution unknown. Production producer egress/credentials/reconcile, automatic parent delivery, real launchers,
 real Actor/campaign acceptance and generalized transfer gains remain open.
 
 
