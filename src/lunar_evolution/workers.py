@@ -71,6 +71,12 @@ def _is_timeout_error(error: BaseException) -> bool:
 
 
 def _failure_reason(error: BaseException) -> WorkerStopReason:
+    typed = getattr(error, "worker_stop_reason", None)
+    if typed is not None:
+        try:
+            return WorkerStopReason(typed)
+        except (TypeError, ValueError):
+            pass
     current = error
     for _ in range(8):
         if isinstance(current, _WorkerStopped):
@@ -371,6 +377,49 @@ class WorkerService:
                 raise
         return self.store.get_worker(worker.id)  # type: ignore[return-value]
 
+    def dispatch_adapter(
+        self,
+        owner_id: str,
+        adapter: AgentAdapter,
+        *,
+        prompt: str,
+        role: str = "worker",
+        description: str | None = None,
+        parent_worker_id: str | None = None,
+        required_capabilities: Sequence[str] = (),
+        timeout: float | None = None,
+        before_start: Callable[[Worker, WorkerAttempt], None] | None = None,
+    ) -> Worker:
+        """Dispatch an explicitly constructed adapter through the normal attempt boundary.
+
+        This is the narrow extension used by native lifecycle bridges.  It does not register
+        the adapter globally and therefore cannot be selected or resumed by the generic worker
+        API.  The same attempt ownership, process observation and cleanup path is retained.
+        """
+        if not isinstance(adapter, AgentAdapter):
+            # Protocols marked runtime-checkable are intentionally used here so custom bridge
+            # adapters receive the same lifecycle validation as registry-created instances.
+            raise TypeError("adapter does not implement the AgentAdapter lifecycle")
+        with self._lock:
+            self._ensure_open()
+            worker = self.store.create_worker(
+                owner_id, role, description or prompt[:512], parent_worker_id=parent_worker_id,
+                agent_type=adapter.name, max_depth=self.max_depth,
+                require_parent_running=parent_worker_id is not None,
+            )
+            try:
+                return self._start(
+                    worker, owner_id, prompt, required_capabilities, adapter, timeout,
+                    before_start=before_start, require_parent_running=parent_worker_id is not None,
+                    allow_stopped_resume=False,
+                )
+            except Exception:
+                parent = self.store.get_worker(parent_worker_id) if parent_worker_id else None
+                if parent_worker_id and (parent is None or parent.phase is not WorkerPhase.RUNNING):
+                    with suppress(Exception):
+                        self.store.cancel_worker_tree(worker.id, owner_id)
+                raise
+
     def _execute(
         self,
         execution: _Execution,
@@ -460,7 +509,10 @@ class WorkerService:
                 WorkerStopReason.CANCELLED if self._closed else
                 WorkerStopReason.PROCESS_CLEANUP if execution.cleanup_failed else _failure_reason(exc)
             )
-            outcome = WorkerOutcome.STOPPED if reason is WorkerStopReason.CANCELLED else WorkerOutcome.FAILURE
+            outcome = WorkerOutcome.STOPPED if reason in {
+                WorkerStopReason.CANCELLED, WorkerStopReason.AWAITING_INPUT,
+                WorkerStopReason.RECOVERY_REQUIRED,
+            } else WorkerOutcome.FAILURE
             fallback = AgentResult(
                 adapter_name=adapter.name,
                 role=worker.role,

@@ -237,6 +237,19 @@ class LocalController:
     def read_worker_result(self, owner_id: str, worker_id: str):
         return self.workers.read_result(owner_id, worker_id)
 
+    def dispatch_automatic_solve_worker(self, continuation, *, timeout: float | None = None):
+        """Explicitly opt into the native automatic-solve WorkerService bridge."""
+        from .automatic_solve_worker_adapter import AutomaticSolveWorkerBridge
+
+        return AutomaticSolveWorkerBridge(self.config, self).dispatch(
+            continuation.run_id, continuation, timeout=timeout,
+        )
+
+    def read_automatic_solve_worker(self, owner_id: str, worker_id: str):
+        from .automatic_solve_worker_adapter import AutomaticSolveWorkerBridge
+
+        return AutomaticSolveWorkerBridge(self.config, self).read(owner_id, worker_id)
+
     @staticmethod
     def _active_algorithm_contract(
         document: PlanDocument,

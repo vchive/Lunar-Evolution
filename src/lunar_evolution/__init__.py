@@ -675,6 +675,16 @@ from .trusted_bootstrap_handoff import (
     verify_trusted_bootstrap_process_registration_handoff,
 )
 from .workers import WorkerService
+from .automatic_solve_worker_adapter import (
+    AutomaticSolveAwaitingInput,
+    AutomaticSolveRecoveryRequired,
+    AutomaticSolveWorkerAdapter,
+    AutomaticSolveWorkerBridge,
+)
+from .automatic_solve_continuation import (
+    AutomaticSolveContinuation,
+    continue_automatic_solve,
+)
 from .workflow_checkpoint import (
     AggregateUsage,
     Checkpoint,
@@ -1015,6 +1025,12 @@ __all__ = [
     "WorkerService",
     "WorkerState",
     "WorkerStopReason",
+    "AutomaticSolveAwaitingInput",
+    "AutomaticSolveRecoveryRequired",
+    "AutomaticSolveWorkerAdapter",
+    "AutomaticSolveWorkerBridge",
+    "AutomaticSolveContinuation",
+    "continue_automatic_solve",
     "WorkflowCheckpoint",
     "WorkflowCheckpointError",
     "WorkflowController",

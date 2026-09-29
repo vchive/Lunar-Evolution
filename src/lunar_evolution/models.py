@@ -58,6 +58,8 @@ class WorkerStopReason(StrEnum):
     RUNTIME_ERROR = "runtime_error"
     PROCESS_CLEANUP = "process_cleanup"
     RESTART = "restart"
+    AWAITING_INPUT = "awaiting_input"
+    RECOVERY_REQUIRED = "recovery_required"
 
 
 @dataclass(frozen=True)

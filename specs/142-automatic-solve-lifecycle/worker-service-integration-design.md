@@ -1,7 +1,10 @@
 # Opt-in automatic solve / WorkerService integration design
 
-**Status: design only, 2026-09-29.** No bridge, schema migration, adapter or CLI switch is
-implemented by this document. Feature 142's existing foreground/background execution,
+**Status: partial foundation implemented, 2026-09-29.** WSI-01/02 durable binding DTOs,
+Store migration/CAS, typed continuation and shared-control seam are implemented. WSI-03 now
+provides an explicit foreground WorkerService bridge and native result projection; process
+observer composition, durable generation resume and full native evidence reopening remain
+open. Feature 142's existing foreground/background execution,
 answer/resume, cancellation and delivery remain the supported default. This integration is an
 optional P2 extension; its absence does not mean automatic solve lacks a lifecycle.
 
@@ -211,13 +214,13 @@ Crash handling must preserve these boundaries:
 
 All tasks below are open. They do not reopen completed Feature 142 lifecycle acceptance.
 
-- [ ] WSI-01 Define the binding/result-reference DTOs, exact-generation CAS, Store migration,
+- [x] WSI-01 Define the binding/result-reference DTOs, exact-generation CAS, Store migration,
   state mapping and bridge-only suspension handling. Cover duplicate admission and drift before
   implementing execution.
-- [ ] WSI-02 Extract the typed synchronous orchestration/control seam with default CLI behavior
+- [x] WSI-02 Extract the typed synchronous orchestration/control seam with default CLI behavior
   preserved. Prove shared-deadline identity, parent ceiling and stage cancellation without
   new model/provider calls.
-- [ ] WSI-03 Implement a fresh per-attempt adapter and explicit library dispatch/resume/read API.
+- [x] WSI-03 Implement a fresh per-attempt adapter and explicit library dispatch/resume/read API.
   Reject unbound invocation, generic-resume bypass, wrong owner and already live native owner.
 - [ ] WSI-04 Compose controller process observers and cleanup with exact bridge authority.
   Cover registration failure, cancelled queued work, descendant cleanup, PID reuse, replaced
