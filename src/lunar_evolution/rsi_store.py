@@ -30,26 +30,27 @@ from .rsi_learning import (
     TransferReceipt,
 )
 
-RunState = Literal["created", "running", "paused", "completed", "failed", "cancelled", "unknown"]
+RunState = Literal["created", "running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"]
 EpisodeState = Literal[
     "planned", "running", "completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"
 ]
 WorkerState = Literal["running", "idle", "completed", "failed", "cancelled", "unknown"]
 
-RUN_STATES = frozenset({"created", "running", "paused", "completed", "failed", "cancelled", "unknown"})
+RUN_STATES = frozenset({"created", "running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"})
 EPISODE_STATES = frozenset({
     "planned", "running", "completed", "failed", "timed_out", "abandoned", "cancelled", "unknown",
 })
 WORKER_STATES = frozenset({"running", "idle", "completed", "failed", "cancelled", "unknown"})
 
 _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
-    "created": frozenset({"created", "running", "cancelled", "failed", "unknown"}),
-    "running": frozenset({"running", "paused", "completed", "failed", "cancelled", "unknown"}),
-    "paused": frozenset({"paused", "running", "cancelled", "failed", "unknown"}),
-    "unknown": frozenset({"unknown", "completed", "failed", "cancelled"}),
+    "created": frozenset({"created", "running", "cancelled", "failed", "unknown", "budget_exhausted"}),
+    "running": frozenset({"running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"}),
+    "paused": frozenset({"paused", "running", "cancelled", "failed", "unknown", "budget_exhausted"}),
+    "unknown": frozenset({"unknown", "completed", "failed", "cancelled", "budget_exhausted"}),
     "completed": frozenset({"completed"}),
     "failed": frozenset({"failed"}),
     "cancelled": frozenset({"cancelled"}),
+    "budget_exhausted": frozenset({"budget_exhausted"}),
 }
 _EPISODE_TRANSITIONS: dict[str, frozenset[str]] = {
     "planned": frozenset({"planned", "running", "cancelled", "abandoned", "unknown"}),

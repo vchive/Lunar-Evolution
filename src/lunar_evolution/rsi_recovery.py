@@ -15,6 +15,7 @@ from dataclasses import replace
 from typing import Any
 
 from .candidate_evaluation_spec import canonical_json
+from .rsi_budget import RSIRunBudget
 from .rsi_gateway import RSIMemoryStore, SolverRequest, SolverResult
 from .rsi_learning import (
     MemorySnapshot,
@@ -91,6 +92,8 @@ class DurableLearningRun:
 
     def _check_components(self, expected: Mapping[str, Any] | None = None) -> None:
         config = self.state["config"]
+        budget = RSIRunBudget.load(self.state.get("budget_state"))
+        budget.assert_matches(config.get("budget"))
         current = self._config(config["mode"], {})
         for key in ("solver_settings", "actor_fingerprint", "gateway_fingerprint",
                     "verifier_fingerprint", "curriculum_fingerprint", "curriculum_history_fingerprint", "target_judge_fingerprint"):
@@ -113,10 +116,15 @@ class DurableLearningRun:
         }
         if durable_episode_ids - checkpoint_episode_ids or checkpoint_episode_ids - durable_episode_ids - planned_without_ledger:
             raise RSILearningError("rsi_resume_episode_checkpoint_gap")
-        for entry in self.state["episodes"].values():
+        for episode_id, entry in self.state["episodes"].items():
             self._check_episode_checkpoint_shape(entry)
+            if type(entry.get("budget_reserved")) is not bool:
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
             request = SolverRequest.from_dict(entry["request"])
             episode = PracticeEpisode.from_dict(entry["running_episode"])
+            depth, ancestry = self._episode_lineage(episode_id, entry)
+            if entry.get("depth") != depth or entry.get("ancestry") != list(ancestry):
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
             if entry["stage"] == "planned" and self.ledger.get(request.episode_id) is not None:
                 raise RSILearningError("rsi_resume_episode_stage_invalid")
             if (request.digest() != episode.request_sha256
@@ -147,7 +155,29 @@ class DurableLearningRun:
                     ):
                         if getattr(episode, name) != getattr(result, name):
                             raise RSILearningError("rsi_resume_episode_result_mismatch")
+        reserved = [entry for entry in self.state["episodes"].values() if entry["budget_reserved"]]
+        practices = [entry for entry in reserved
+                     if PracticeEpisode.from_dict(entry["running_episode"]).episode_kind == "practice"]
+        consumed = budget.state["consumed"]
+        if consumed["solver_invocations"] < len(reserved) or consumed["practice_episodes"] < len(practices):
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
         self._validate_memory()
+
+    def _episode_lineage(self, episode_id: str, entry: Mapping[str, Any]) -> tuple[int, tuple[str, ...]]:
+        seen: list[str] = [episode_id]
+        parent = PracticeEpisode.from_dict(entry["running_episode"]).parent_target_episode_id
+        while parent is not None:
+            # BRS has no target execution: each independent practice is rooted at this fixed
+            # synthetic target.  It is the only parent that may be absent from the episode map.
+            if (self.state["config"]["mode"] == "brs"
+                    and parent == f"{self.run_id}-target-seed"):
+                seen.append(parent)
+                return len(seen) - 1, tuple(reversed(seen))
+            if parent in seen or parent not in self.state["episodes"]:
+                raise RSILearningError("rsi_budget_depth_cycle")
+            seen.append(parent)
+            parent = PracticeEpisode.from_dict(self.state["episodes"][parent]["running_episode"]).parent_target_episode_id
+        return len(seen) - 1, tuple(reversed(seen))
 
     @staticmethod
     def _check_episode_checkpoint_shape(entry: Mapping[str, Any]) -> None:
@@ -251,6 +281,7 @@ class DurableLearningRun:
                     "initial_memory_snapshot": snapshot, "memory_snapshot": snapshot,
                     "episodes": {}, "decisions": {}, "commits": [], "status": "running",
                     "quarantined": [], "reconciliation_ready": False,
+                    "budget_state": RSIRunBudget.create(config["budget"]).state,
                 }
                 self._save()
             self._ensure_run_record()
@@ -309,7 +340,15 @@ class DurableLearningRun:
                 self.state["episodes"][episode_id] = {
                     "request": request.to_dict(), "running_episode": running.to_record_dict(),
                     "stage": "planned", "result": None, "episode": None,
+                    "depth": 0, "ancestry": [episode_id], "budget_reserved": False,
                 }
+                depth, ancestry = self._episode_lineage(episode_id, self.state["episodes"][episode_id])
+                self.state["episodes"][episode_id]["depth"] = depth
+                self.state["episodes"][episode_id]["ancestry"] = list(ancestry)
+                budget = RSIRunBudget.load(self.state["budget_state"])
+                budget.reserve_launch(episode_kind=kind, depth=depth, ancestry=ancestry)
+                self.state["budget_state"] = budget.state
+                self.state["episodes"][episode_id]["budget_reserved"] = True
                 self._save()
             entry = self.state["episodes"][episode_id]
             request = SolverRequest.from_dict(entry["request"])
@@ -319,6 +358,13 @@ class DurableLearningRun:
                 # This also protects an episode omitted from an otherwise valid checkpoint.
                 if self.ledger.get(request.episode_id) is not None:
                     raise RSILearningError("rsi_resume_episode_stage_invalid")
+                if not entry["budget_reserved"]:
+                    budget = RSIRunBudget.load(self.state["budget_state"])
+                    budget.reserve_launch(
+                        episode_kind=kind, depth=entry["depth"], ancestry=tuple(entry["ancestry"]),
+                    )
+                    self.state["budget_state"] = budget.state
+                    entry["budget_reserved"] = True
                 # After this durable write even a crash before gateway.run is ambiguous.
                 entry["stage"] = "launched"
                 self._save()
@@ -534,7 +580,7 @@ class DurableLearningRun:
         return LearningRunResult(self.run_id, status, self.controller.snapshot, targets, practices)
 
     def _continue(self):
-        if self.state["status"] in {"completed", "failed", "cancelled"}:
+        if self.state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
             return self._finish(self.state["status"])
         unresolved = any(
             entry["stage"] != "planned" and
@@ -548,9 +594,14 @@ class DurableLearningRun:
             if not self.state["reconciliation_ready"]:
                 return self._finish("unknown")
             self.ledger.resume_reconciled_run(self.run_id, expected_record_sha256=head.record_sha256)
-        if self.state["config"]["mode"] == "brs":
-            return self._brs()
-        return self._drs()
+        try:
+            if self.state["config"]["mode"] == "brs":
+                return self._brs()
+            return self._drs()
+        except RSILearningError as exc:
+            if exc.code == "rsi_budget_exhausted":
+                return self._finish("budget_exhausted")
+            raise
 
     def _drs(self):
         config = self.state["config"]
@@ -633,6 +684,14 @@ class DurableLearningRun:
                 return self._continue()
             if head.state not in {"running", "unknown"}:
                 raise RSILearningError("rsi_reconcile_state_invalid")
+            budget = RSIRunBudget.load(self.state["budget_state"])
+            try:
+                budget.reserve_unknown_reconcile()
+            except RSILearningError as exc:
+                if exc.code == "rsi_budget_exhausted":
+                    return self._finish("budget_exhausted")
+                raise
+            self.state["budget_state"] = budget.state
             canonical = PracticeEpisode.from_dict(head.payload)
             if canonical.status != head.state:
                 raise RSILearningError("rsi_episode_ledger_state_mismatch")
