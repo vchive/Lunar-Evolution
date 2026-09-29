@@ -572,6 +572,7 @@ from .rsi_adapters import (
     ProviderFreeSolverGateway,
     fixture_solver_gateway,
 )
+from .rsi_clean_room import CleanRoomFingerprints, CleanRoomRSIVerifier
 from .rsi_controller import (
     Curriculum,
     CurriculumDecision,
@@ -806,6 +807,8 @@ __all__ = [
     "CandidateWorkspaceError",
     "CandidateWorkspacePlan",
     "Checkpoint",
+    "CleanRoomFingerprints",
+    "CleanRoomRSIVerifier",
     "CommandAgentAdapter",
     "CommandCandidateEvaluator",
     "CommandCandidateGenerator",
