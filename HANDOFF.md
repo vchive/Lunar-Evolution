@@ -2,9 +2,9 @@
 
 ## 2026-09-29 WorkerService integration status (latest)
 
-The latest `codex/rsi-recovery-integration` commits `3e078b9`, `be847bf`, and
-`debf5d9` complete the implemented portions of WorkerService Integration (WSI-01 through
-WSI-06). The integration worktree is `/tmp/lunar-rsi-integration-20260929`; the original
+The latest `codex/rsi-recovery-integration` commits `3e078b9`, `be847bf`, `debf5d9`, and
+`6d0b233` complete the implemented portions of WorkerService Integration (WSI-01 through
+WSI-06) and record the remaining WSI-07 release gate. The integration worktree is `/tmp/lunar-rsi-integration-20260929`; the original
 `/Users/liminghan/Documents/lunar_agent` worktree remains untouched.
 
 Completed in this slice:
