@@ -12,6 +12,7 @@ from lunar_evolution.automatic_solve_worker_binding import (
     AutomaticSolveWorkerBindingState,
     AutomaticSolveWorkerResultReference,
 )
+from lunar_evolution.models import WorkerOutcome
 from lunar_evolution.store import Store
 
 
@@ -106,6 +107,45 @@ def test_result_reference_rejects_cross_generation_reuse(tmp_path):
     )
     with pytest.raises(ValueError, match="owner mismatch"):
         store.create_automatic_solve_worker_result_reference(admitted, reference)
+
+
+@pytest.mark.parametrize("terminalizer", ["cancel", "settle_failed"])
+def test_terminal_native_run_rejects_nonterminal_binding_observation(tmp_path, terminalizer):
+    store, run, _worker, _attempt, binding = _fixture(tmp_path)
+    admitted = store.create_automatic_solve_worker_binding(binding)
+    if terminalizer == "cancel":
+        store.cancel_run(run.id)
+    else:
+        task = store.ensure_orchestration_task(run.id, title="bridge task", prompt="fixture")
+        attempt = store.claim_orchestration_task(task.id, "fixture")
+        assert attempt is not None
+        if terminalizer == "settle_failed":
+            store.finish_task(task.id, attempt.id, False, error="fixture")
+        else:
+            store.finish_task(task.id, attempt.id, True)
+        store.settle_run(run.id)
+    with pytest.raises(ValueError, match="activate after terminal"):
+        store.compare_and_swap_automatic_solve_worker_binding(
+            admitted, state=AutomaticSolveWorkerBindingState.ACTIVE,
+        )
+
+
+def test_unknown_observation_is_retained_after_terminal_run(tmp_path):
+    store, run, _worker, _attempt, binding = _fixture(tmp_path)
+    admitted = store.create_automatic_solve_worker_binding(binding)
+    store.cancel_run(run.id)
+    unknown = store.compare_and_swap_automatic_solve_worker_binding(
+        admitted, state=AutomaticSolveWorkerBindingState.UNKNOWN,
+    )
+    assert unknown is not None and unknown.state is AutomaticSolveWorkerBindingState.UNKNOWN
+
+
+def test_existing_admission_rechecks_live_attempt_on_idempotent_replay(tmp_path):
+    store, _run, worker, attempt, binding = _fixture(tmp_path)
+    store.create_automatic_solve_worker_binding(binding)
+    store.settle_worker(worker.id, attempt.id, WorkerOutcome.FAILURE)
+    with pytest.raises(ValueError, match="no longer active"):
+        store.create_automatic_solve_worker_binding(binding)
 
 
 @pytest.mark.parametrize("field,value", [

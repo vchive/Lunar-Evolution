@@ -3365,6 +3365,7 @@ class Store:
                 current = self._automatic_solve_worker_binding_from_row(existing)
                 if not binding_payload_equal(current, binding):
                     raise ValueError("automatic solve binding admission drift")
+                self._validate_automatic_solve_worker_attempt(connection, current)
                 self._validate_automatic_solve_worker_pins(connection, current)
                 return current
             if connection.execute(
@@ -3466,7 +3467,11 @@ class Store:
             if not self._automatic_solve_worker_binding_matches(connection, expected):
                 return None
             self._validate_automatic_solve_worker_attempt(connection, expected)
-            self._validate_automatic_solve_worker_pins(connection, updated)
+            run = self._validate_automatic_solve_worker_pins(connection, updated)
+            if run["status"] in {
+                RunStatus.SUCCEEDED.value, RunStatus.FAILED.value, RunStatus.CANCELLED.value,
+            } and updated.state is AutomaticSolveWorkerBindingState.ACTIVE:
+                raise ValueError("automatic solve binding cannot activate after terminal run")
             updated = replace(updated, updated_at=utc_now())
             connection.execute(
                 "UPDATE automatic_solve_worker_bindings SET state = ?, contract_digest = ?, child_run_id = ?, "
