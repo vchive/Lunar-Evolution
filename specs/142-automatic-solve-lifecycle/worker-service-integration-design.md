@@ -212,7 +212,7 @@ Crash handling must preserve these boundaries:
 
 ## Implementation tasks and acceptance
 
-All tasks below are open. They do not reopen completed Feature 142 lifecycle acceptance.
+The checklist below records the current integration slice. WSI-01 through WSI-06 are implemented on the integration branch; WSI-07 is the focused regression/release evidence gate. They do not reopen completed Feature 142 lifecycle acceptance.
 
 - [x] WSI-01 Define the binding/result-reference DTOs, exact-generation CAS, Store migration,
   state mapping and bridge-only suspension handling. Cover duplicate admission and drift before
@@ -222,13 +222,13 @@ All tasks below are open. They do not reopen completed Feature 142 lifecycle acc
   new model/provider calls.
 - [x] WSI-03 Implement a fresh per-attempt adapter and explicit library dispatch/resume/read API.
   Reject unbound invocation, generic-resume bypass, wrong owner and already live native owner.
-- [ ] WSI-04 Compose controller process observers and cleanup with exact bridge authority.
+- [x] WSI-04 Compose controller process observers and cleanup with exact bridge authority.
   Cover registration failure, cancelled queued work, descendant cleanup, PID reuse, replaced
   attempts, service close and stale finalizers using local subprocess fixtures.
-- [ ] WSI-05 Implement native-only delivery plus create-only worker result references and
+- [x] WSI-05 Implement native-only delivery plus create-only worker result references and
   read-only terminal recovery. Fault-inject every native-delivery/reference/settlement boundary;
   prove no second solver call, evaluator call, candidate publication or output promotion.
-- [ ] WSI-06 Implement pending-input/preparation-recovery projections and explicit owner-scoped
+- [x] WSI-06 Implement pending-input/preparation-recovery projections and explicit owner-scoped
   reconciliation. Cover live/unknown owners, unchanged policy, answer then resume, terminal
   idempotence and cleanup uncertainty. Unknown cannot be resumed through generic worker APIs.
 - [ ] WSI-07 Run focused bridge, WorkerService, automatic foreground/background, answer/resume,

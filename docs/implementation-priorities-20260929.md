@@ -91,7 +91,7 @@ post-crash cleanup, publication/delivery, and real launcher acceptance remain op
   lifecycle/delivery where useful; this architectural convergence does not invalidate the already
   accepted native path and is not a prerequisite for its existing use. The exact binding, state,
   cancellation and delivery contract is recorded in Feature 142 `worker-service-integration-design.md`;
-  implementation tasks WSI-01–07 remain open.
+  WSI-01–06 are now implemented on the integration branch; WSI-07 focused release evidence, complete producer closure, remote CI and default-branch merge remain open.
 
 All development checks use local fixtures or local subprocesses. This plan does not launch
 WebAgent or remote evaluators. Real campaign evidence and implementation completeness remain
