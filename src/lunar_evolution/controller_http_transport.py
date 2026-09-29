@@ -265,7 +265,12 @@ class ControllerHttpTransport:
             "body": base64.b64encode(payload.body).decode("ascii"),
             "timeout": seconds,
             "deadline": admission.deadline_ns / 1_000_000_000,
-            "configuration": http_transport._configuration(),
+            "configuration": {
+                "proxies": {}, "proxy_source": "environment",
+                "trust": {name: os.environ[name] for name in ("SSL_CERT_FILE", "SSL_CERT_DIR")
+                          if name in os.environ},
+            },
+            "redirect_policy": "deny",
         }
         encoded = json.dumps(
             request, ensure_ascii=False, allow_nan=False, separators=(",", ":"),

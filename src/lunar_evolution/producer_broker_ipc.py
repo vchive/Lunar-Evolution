@@ -9,8 +9,10 @@ import os
 import selectors
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 
 from .controller_http_transport import ControllerHttpRequest, ControllerHttpTransport
 from .controller_request_broker import ControllerOwnedRequestBroker, ControllerRequestBrokerError
@@ -42,10 +44,11 @@ class ProducerBrokerConfig:
     """Host-only provider destination and credentials, never passed to the target."""
 
     endpoint: str
-    headers: dict[str, str]
+    headers: Mapping[str, str]
 
     def __post_init__(self) -> None:
         ControllerHttpRequest(self.endpoint, self.headers, b"")
+        object.__setattr__(self, "headers", MappingProxyType(dict(self.headers)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,7 +197,7 @@ def serve_producer_broker(
                 if type(request_id) is not str:
                     raise ProducerBrokerIpcError("producer_broker_frame_invalid")
                 result = broker.execute(
-                    request_id, ControllerHttpRequest(config.endpoint, config.headers, body),
+                    request_id, ControllerHttpRequest(config.endpoint, dict(config.headers), body),
                 )
                 response = result.response
                 data = _encode({

@@ -274,6 +274,7 @@ def exchange(request: Request, timeout: float) -> TransportResponse:
         "headers": dict(request.header_items()),
         "body": base64.b64encode(request.data or b"").decode("ascii"),
         "timeout": seconds, "deadline": deadline, "configuration": _configuration(),
+        "redirect_policy": "follow",
     }
     encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()
     if len(encoded) > MAX_REQUEST_BYTES:
@@ -470,6 +471,11 @@ class _ObservedHTTPSHandler(_ObservedHandler, urllib_request.HTTPSHandler):
     pass
 
 
+class _NoRedirectHandler(urllib_request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def _worker(lifeline):
     import resource
 
@@ -479,8 +485,10 @@ def _worker(lifeline):
     if len(raw) > MAX_REQUEST_BYTES:
         raise ValueError("request IPC too large")
     item = _load(raw)
-    if type(item) is not dict or set(item) != {"endpoint", "method", "headers", "body", "timeout", "deadline", "configuration"}:
+    if type(item) is not dict or set(item) != {"endpoint", "method", "headers", "body", "timeout", "deadline", "configuration", "redirect_policy"}:
         raise ValueError("invalid request IPC")
+    if type(item["redirect_policy"]) is not str or item["redirect_policy"] not in {"follow", "deny"}:
+        raise ValueError("invalid redirect policy")
     seconds = validate_timeout(item["timeout"])
     deadline = item["deadline"]
     if type(deadline) not in (int, float) or not math.isfinite(deadline):
@@ -513,6 +521,7 @@ def _worker(lifeline):
     opener = urllib_request.build_opener(
         urllib_request.ProxyHandler(proxies),
         _ObservedHTTPHandler(milestones), _ObservedHTTPSHandler(milestones),
+        _NoRedirectHandler() if item["redirect_policy"] == "deny" else urllib_request.HTTPRedirectHandler(),
     )
     remaining = deadline - monotonic()
     if remaining <= 0:

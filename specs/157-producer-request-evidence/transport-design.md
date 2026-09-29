@@ -80,7 +80,11 @@ network-isolated target. A controller thread initializes the private host journa
 the release gate opens and routes bounded target frames through the existing broker and
 HTTP worker. The target environment contains descriptor numbers, not the endpoint,
 credential, or journal path. A fixed endpoint is chosen by the controller for the whole
-attempt; target frames provide only opaque request ID and body. Malformed or over-budget
+attempt; target frames provide only opaque request ID and body. The controller snapshots
+host headers at configuration time and runs broker HTTP requests without ambient proxies
+or redirects. A 30x response is a terminal HTTP failure, never authority to send the
+request or its credentials to another origin. The general model HTTP transport retains
+its existing redirect/proxy behavior. Malformed or over-budget
 frames stop the bridge without outbound I/O. Its observation still has
 `coverage=brokered_requests_only`, and the process-only terminal receipt does not yet
 bind a replayed journal. T157-05 and T157-06 therefore remain open.

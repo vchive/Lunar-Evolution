@@ -27,3 +27,10 @@ proves one completed request; malformed frames and a second request beyond the b
 no provider I/O. This is a request-exit integration slice, not T157-05/06 closure: the
 process-only receipt does not bind the journal, and a production scheduler cannot yet treat
 the broker observation as publication authority.
+
+The controller HTTP worker now rejects redirects and bypasses ambient proxy settings on the
+broker path. Broker configuration copies and freezes host headers before execution. Local
+two-server and proxy fixtures verify that neither a 30x target nor an ambient proxy receives
+the credential. This narrows the fixed-endpoint authority; DNS resolution, complete target
+egress isolation, journal ownership across crash, and receipt/publication integration remain
+open.

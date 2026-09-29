@@ -4,8 +4,11 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from test_http_transport_deadline import clear_proxy_environment, local_http
@@ -51,6 +54,76 @@ def assert_reaped(processes):
         assert process.returncode is not None
         assert process.poll() is not None
         assert process.stdin.closed and process.stdout.closed
+
+
+@contextmanager
+def redirect_pair():
+    first_calls, second_calls = [], []
+
+    class Destination(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            second_calls.append((self.command, dict(self.headers)))
+            self.send_response(200)
+            self.end_headers()
+
+        do_GET = do_POST
+
+    destination = ThreadingHTTPServer(("127.0.0.1", 0), Destination)
+
+    class Redirect(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            first_calls.append((self.command, dict(self.headers)))
+            self.send_response(307)
+            self.send_header("Location", f"http://127.0.0.1:{destination.server_port}/other")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    source = ThreadingHTTPServer(("127.0.0.1", 0), Redirect)
+    threads = [threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01})
+               for server in (source, destination)]
+    for thread in threads:
+        thread.start()
+    try:
+        yield f"http://127.0.0.1:{source.server_port}/post", first_calls, second_calls
+    finally:
+        for server in (source, destination):
+            server.shutdown()
+            server.server_close()
+        for thread in threads:
+            thread.join(timeout=2)
+            assert not thread.is_alive()
+
+
+def test_controller_transport_rejects_redirect_without_forwarding_credentials():
+    with redirect_pair() as (endpoint, first_calls, second_calls):
+        handle = ControllerHttpTransport().start(
+            admission(), ControllerHttpRequest(endpoint, {"Authorization": "host-secret"}, b"payload"),
+        )
+        assert handle.wait(2.0) == "failed"
+        assert handle.response is None
+        assert handle.failure.status == 307
+    assert len(first_calls) == 1
+    assert first_calls[0][1]["Authorization"] == "host-secret"
+    assert second_calls == []
+
+
+def test_controller_transport_ignores_ambient_proxy(monkeypatch):
+    with local_http() as (endpoint, endpoint_calls), local_http() as (proxy, proxy_calls):
+        monkeypatch.setenv("http_proxy", proxy)
+        monkeypatch.setenv("no_proxy", "not-matched.invalid")
+        handle = ControllerHttpTransport().start(
+            admission(), ControllerHttpRequest(endpoint, {"Authorization": "host-secret"}, b"payload"),
+        )
+        assert handle.wait(2.0) == "completed"
+    assert len(endpoint_calls) == 1
+    assert proxy_calls == []
 
 
 def test_success_response_is_local_and_worker_has_no_secret_arguments(monkeypatch):
