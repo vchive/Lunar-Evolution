@@ -58,6 +58,13 @@ repository and does not reset existing architecture or historical acceptance evi
       The full release workflow now includes macOS/Python 3.12 alongside Linux/Python
       3.11–3.13. Remote workflow results and the default-branch merge remain pending.
 
+The broker preflight now rejects URL userinfo/fragments/ambiguous authority and caller-supplied
+authority, proxy, hop-by-hop, framing, control-character, and case-insensitive duplicate headers
+before worker launch. Unknown native-attempt inspection snapshots retained interruption receipts
+by inode and bytes before and after validation, rejecting replacement or concurrent terminal
+evidence. These are defensive slices only; DNS pinning, complete egress proof, owner-checked
+post-crash cleanup, publication/delivery, and real launcher acceptance remain open.
+
 ## P2 — Learning quality and broader orchestration
 
 - [x] Implement deterministic curriculum ranking by verified coverage, diversity and declared
@@ -101,3 +108,11 @@ Local release runner completed with exit 0: current 8,338 passed / 7 platform sk
 The current phase collected before the last producer tests were added; a final 70-case affected
 suite passed and covers all 14 added tests. Final inventory is 8,359; these overlapping counts
 are not added together. The versioned JSON above retains report hashes and scope limitations.
+
+The follow-up focused release was rerun with the worktree `.venv`: all four previously surfaced
+current-suite failures passed in isolation, and the affected producer/transport suite passed
+54 cases. A system-Python invocation is invalid for the installed-CLI test and must not be
+counted as a product failure. The 2026-09-29 full runner invocation using system Python reported
+8,376 passed / 10 skipped / 4 environment failures before this correction; archived 2,294 and
+frozen 24 remained green. A correctly configured full current rerun is still recommended before
+release publication.

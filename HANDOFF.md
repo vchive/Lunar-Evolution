@@ -40,6 +40,22 @@ trusted output→publication→自动 parent delivery，完整 unknown producer 
 效果与 WorkerService 统一适配；跨平台 CI 和合并到 main。当前新增能力在集成分支，
 不代表已合入默认分支。密钥/.env 原样保留，未读取内容、输出或提交。
 
+## 2026-09-29 broker authority and unknown evidence hardening
+
+本轮推送 `44b8962`。受控 producer HTTP 请求在 worker 启动前拒绝 URL userinfo、fragment、
+空白/非法 authority，以及 `Host`、proxy、hop-by-hop、framing 头、控制字符和大小写重复头，
+避免调用方覆盖固定出口语义。对应 loopback/proxy/输入拒绝回归通过，通用模型 transport
+行为未改变。
+
+unknown draft attempt 检查在读取中断收据前后绑定普通文件 inode、设备、大小、mtime/ctime
+和原始字节，并在返回前再次检查终态文件、目录及收据，能够拒绝同字节替换和并发完成证据。
+这仍是只读 unknown 诊断；候选/评测启动路径没有持久的跨进程 owner registration，因此
+主动清理、重试、发布和 parent delivery 仍未授权。
+
+受影响本地组合回归 54 项通过，Ruff/diff check 通过；使用 worktree `.venv` 重跑完整回归
+中此前 4 个失败用例均通过。一次未正确激活 `.venv` 的全量 runner 报告 8,376 passed、
+10 skipped、4 个环境失败，不能作为产品失败或发布基线；历史 2,294 和冻结 24 仍通过。
+
 ## 2026-09-29 Shinka 共享运行预算与全拒绝终态
 
 在独立分支 `codex/shinka-native-publication` 继续 Feature 153，不扩展或提交 RSI。
