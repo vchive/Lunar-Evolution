@@ -30,6 +30,25 @@ The implementation is ready for the next phase only when these provider-free che
   episode terminal/recovery states; `unknown` requires reconciliation.
 - Changed solver settings, contract, evaluator, environment or memory snapshot are rejected on resume.
 
+## Durable budget and accounting
+
+- A durable run checkpoint fixes `max_depth`, `max_solver_invocations`,
+  `max_practice_episodes`, `max_unknown_retries`, and an absolute `deadline_unix`. Resume rejects a
+  changed plan, a missing budget state, or `planned/consumed/remaining` values that cannot be
+  reconstructed from the episode reservations.
+- Before a solver launch the controller persists the episode's depth, ancestry and reservation.
+  Depth overflow, a lineage cycle, an elapsed absolute deadline, or any exhausted launch/practice
+  limit ends the run as `budget_exhausted`; resume of that terminal run issues no new gateway call.
+- Unknown reconciliation has its own bounded counter. An exhausted reconciliation budget preserves
+  the unknown evidence and ends the run as `budget_exhausted`; it cannot authorize an implicit retry.
+- `RSIUsageReceipt` accepts only complete token triples, non-negative integer measurements, and
+  reproducible estimates using receipt-bound micro-USD rates. Missing provider telemetry remains
+  unavailable (`null`), never a synthetic zero. Its aggregation uses the observed controller wall
+  clock rather than summing potentially concurrent BRS episode durations.
+- Usage receipt validation is currently a local model-level check. Durable episode sidecars,
+  run-level aggregation, CLI display, and adapter telemetry capture remain an open integration task;
+  no provider usage or cost claim is inferred from `SolverResult`.
+
 ## Integration regression
 
 - Existing Population, OpenEvolve, Shinka handoff, ordinary `MemoryStore`, Feature 044 experiment
@@ -60,3 +79,8 @@ local native subprocesses as well as fixtures; no external campaign is launched.
 All controller paths, including the non-durable DRS and single frozen-transfer runner, require a
 completed episode with its attached passing verifier decision before a custom target judge can
 accept it. A judge can narrow acceptance; it cannot promote unknown, stopped or unverified work.
+
+The same command includes `test_rsi_budget.py` and `test_rsi_usage.py`. The former exercises the
+durable Phase 1 budget contract; the latter validates standalone receipt parsing and aggregation.
+Neither test substitutes for real Actor, provider telemetry, solver campaign, or heldout-transfer
+acceptance.

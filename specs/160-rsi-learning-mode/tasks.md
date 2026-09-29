@@ -22,6 +22,14 @@
 - [x] T160-13 增加 durable controller-level resume、unknown reconcile gate 和 diversity/failure-boundary curriculum policy。
   包含 DRS/BRS checkpoint、跨进程锁、CAS/hash-chain、solver/settings/actor/环境指纹、
   verified terminal 幂等复用、memory lineage、CLI result-backed reconciliation 和历史反馈重建。
+- [x] T160-13a 将 run budget 作为恢复 contract 持久化：checkpoint 固定
+  `max_depth`、`max_solver_invocations`、`max_practice_episodes`、`max_unknown_retries` 和
+  绝对 `deadline_unix`，并写入 `planned/consumed/remaining`、episode depth/ancestry/reservation。
+  恢复会拒绝预算漂移、缺失或无法从 episode checkpoint 复核的计数；超限进入不可恢复的
+  `budget_exhausted`，不再发起 solver 调用。
+- [ ] T160-13b 将 adapter 声明的 `RSIUsageReceipt` 接入 durable episode sidecar、run aggregate 和
+  `rsi inspect` 输出。严格 receipt 数据模型及本地单元测试已存在，但当前 controller 不从
+  `SolverResult` 推断 usage，也尚未持久化 provider telemetry 或 run-level cost aggregate。
 - [x] T160-14 冻结宿主声明的 task panel，对照 empty/frozen memory 的独立评测并持久化比较收据；
   21 项本地测试覆盖双合同、改善/持平/退步、篡改和中断不重跑。宿主负责已批准快照与 heldout
   来源；fixture 改善只证明测量方法，不证明真实模型泛化收益。

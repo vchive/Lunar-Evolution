@@ -25,7 +25,7 @@ are immutable. A later state is a new record linked to the previous record by di
   "kind": "rsi_run",
   "run_id": "rsi-...",
   "mode": "brs|drs",
-  "status": "created|running|paused|completed|failed|cancelled|unknown",
+  "status": "created|running|paused|completed|failed|cancelled|unknown|budget_exhausted",
   "contract_sha256": "<sha256>",
   "evaluator_sha256": "<sha256>",
   "environment_sha256": "<sha256>",
@@ -35,6 +35,13 @@ are immutable. A later state is a new record linked to the previous record by di
   "max_practice_rounds": 8,
   "max_target_attempts": 4,
   "wall_timeout_seconds": 1800,
+  "budget": {
+    "max_depth": 4,
+    "max_solver_invocations": 12,
+    "max_practice_episodes": 8,
+    "max_unknown_retries": 2,
+    "deadline_unix": 1798675200
+  },
   "no_improvement_limit": 2,
   "created_at": "2026-09-28T00:00:00Z",
   "previous_record_sha256": null,
@@ -45,6 +52,41 @@ are immutable. A later state is a new record linked to the previous record by di
 `paused` is resumable. `unknown` means the controller cannot prove whether an external worker
 finished; it requires reconciliation and cannot be silently retried. A run can be completed only
 after all target/transfer evidence required by its mode is terminal.
+
+`budget` is the durable controller plan, distinct from an individual request's solver/tool budget.
+Every limit may be `null`; `deadline_unix`, when supplied, is an absolute Unix timestamp, never a
+duration recomputed by resume. The run record retains the immutable plan while the controller
+checkpoint retains its state:
+
+```json
+{
+  "budget_state": {
+    "planned": {
+      "max_depth": 4,
+      "max_solver_invocations": 12,
+      "max_practice_episodes": 8,
+      "max_unknown_retries": 2,
+      "deadline_unix": 1798675200
+    },
+    "consumed": {
+      "solver_invocations": 3,
+      "practice_episodes": 2,
+      "unknown_retries": 0
+    },
+    "remaining": {
+      "solver_invocations": 9,
+      "practice_episodes": 6,
+      "unknown_retries": 2
+    }
+  }
+}
+```
+
+`remaining` is derived from the immutable plan and consumed counts, rather than accepted as an
+independent counter. A malformed, missing, expanded, or plan-drifting state fails resume closed.
+`budget_exhausted` is terminal and prevents another controller launch. The current Phase 1 deadline
+gate is evaluated before launch reservation; external solver/evaluator cancellation remains part of
+the separate adapter lifecycle contract.
 
 ## Practice episode and target attempt
 
@@ -96,6 +138,50 @@ Both use the same envelope and differ by `episode_kind`:
 Lunar evidence. A solver score or an unverified model response cannot fill any of these authority
 fields. `trace_digest` covers a bounded action/tool/observation summary; raw private chain-of-thought
 is never a required or accepted field.
+
+The durable controller checkpoint augments each episode entry with recovery-only fields that are
+not part of the canonical `PracticeEpisode` wire record:
+
+```json
+{
+  "depth": 1,
+  "ancestry": ["rsi-...-target-0", "rsi-...-practice-0-0"],
+  "budget_reserved": true
+}
+```
+
+The ancestry is unique and must resolve to the episode's declared parent; its derived depth is
+checked when loading the checkpoint. A reservation is written before dispatch, so a crash cannot
+erase a charged launch and reissue it under a renewed budget.
+
+## Usage receipt (local contract; durable sidecar pending)
+
+`RSIUsageReceipt` is a provider-neutral, bounded JSON value intended to become an optional
+episode sidecar and a completed-run aggregate. It is not embedded in `SolverResult`, preserving the
+existing solver result digest and fixture contract. The current implementation validates this shape
+and supports safe aggregation, but does not yet persist it in RSI controller checkpoints:
+
+```json
+{
+  "request_count": 1,
+  "input_tokens": 1200,
+  "output_tokens": 300,
+  "total_tokens": 1500,
+  "wall_elapsed_ms": 842,
+  "cpu_elapsed_ms": null,
+  "gpu_elapsed_ms": null,
+  "input_cost_per_1k_micros": 2500,
+  "output_cost_per_1k_micros": 10000,
+  "estimated_cost_micros": 6000
+}
+```
+
+Token values are either a complete input/output/total triple or all `null`; CPU and GPU measures
+are independently optional. A cost estimate is present only when the token triple and both
+receipt-bound rates are known, using integer micro-USD arithmetic. An unavailable report stays
+`null`; it is never converted into zero. A future durable sidecar must be supplied by the adapter
+or an explicit receipt provider, validate this exact shape, and preserve it through reconcile and
+resume. It must not infer measurements from a solver status or score.
 
 ## Verifier decision
 
@@ -185,7 +271,7 @@ measurement of the frozen snapshot and never changes that snapshot.
 
 ```text
 run:       created -> running -> paused -> running -> completed
-                              \-> failed|cancelled|unknown
+                              \-> failed|cancelled|unknown|budget_exhausted
 episode:   planned -> running -> completed|failed|timed_out|abandoned|cancelled|unknown
 verifier:  absent -> pass|fail|unresolved
 memory:    candidate -> approved|rejected|unresolved
