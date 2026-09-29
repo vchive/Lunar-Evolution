@@ -1,5 +1,33 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-29 Feature 160 durable recovery and candidate governance
+
+Latest pushed commit on `codex/rsi-recovery-integration`: `d7a0e5b` (parent governance history
+validation `311e5a3`). The integration worktree is clean. Provider-free regression is **650 passed**
+including `tests/test_rsi_*.py` and the existing CLI regression; compileall, targeted Ruff and
+`git diff --check` pass. JUnit evidence is `/tmp/lunar-rsi-final-20260929.xml`.
+
+Feature 160 now includes durable evaluator/verifier/transfer budget fields, call-before-work verifier
+reservations, immutable verifier intents, retained-decision reconciliation, checkpoint hash-history
+monotonicity checks, and a read-only `LocalExactVerifier.validate_retained` path. An interrupted
+verifier never replays automatically; a retained decision must match the episode record, intent digest,
+fingerprints and read-only evidence. The CLI exposes pending intents in `rsi inspect` and accepts a
+strict bounded decision file through `rsi reconcile --verifier-decision ... --expected-intent-sha256 ...`.
+
+Optional `rsi run --memory-policy candidate-only` now persists observed→verified→candidate records in
+an append-only governance table. Candidate content, source episode, verifier receipt, CAS parent and
+full history are checked on restore; candidate-only runs keep the solver snapshot empty and reject
+approved/active writes. Recovery stores candidate record digests and validates the journal read-only;
+it never recreates a missing candidate. The default `verifier-snapshot` fixture behavior remains
+unchanged. CLI `inspect` reports pending intents, stage-accounting availability and a run-scoped
+read-only governance summary.
+
+Still open and intentionally not claimed complete: runtime accounting and finite reservations for
+evaluator/transfer, trusted holdout promotion to active memory, automatic active retrieval, full
+external producer egress/parent delivery, real OpenEvolve/Shinka campaigns, and the independent
+terminal-history anchor needed to detect deletion of a later revoke/quarantine record after a
+checkpoint. No WebAgent, remote evaluator, real campaign or new model request was run.
+
 ## 2026-09-29 P0/P1/P2 集成与本地闭环
 
 当前开发分支 `codex/rsi-recovery-integration`，独立 worktree
