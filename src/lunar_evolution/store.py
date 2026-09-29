@@ -3366,7 +3366,9 @@ class Store:
                 if not binding_payload_equal(current, binding):
                     raise ValueError("automatic solve binding admission drift")
                 self._validate_automatic_solve_worker_attempt(connection, current)
-                self._validate_automatic_solve_worker_pins(connection, current)
+                run = self._validate_automatic_solve_worker_pins(connection, current)
+                if run["status"] not in {RunStatus.PENDING.value, RunStatus.RUNNING.value}:
+                    raise ValueError("automatic solve run is not eligible for admission")
                 return current
             if connection.execute(
                 "SELECT 1 FROM automatic_solve_worker_bindings WHERE run_id = ? OR worker_attempt_id = ?",
@@ -3470,7 +3472,7 @@ class Store:
             run = self._validate_automatic_solve_worker_pins(connection, updated)
             if run["status"] in {
                 RunStatus.SUCCEEDED.value, RunStatus.FAILED.value, RunStatus.CANCELLED.value,
-            } and updated.state is AutomaticSolveWorkerBindingState.ACTIVE:
+            } and updated.state is AutomaticSolveWorkerBindingState.ACTIVE and expected.state is not updated.state:
                 raise ValueError("automatic solve binding cannot activate after terminal run")
             updated = replace(updated, updated_at=utc_now())
             connection.execute(

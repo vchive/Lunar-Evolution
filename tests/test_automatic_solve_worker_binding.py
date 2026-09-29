@@ -109,25 +109,42 @@ def test_result_reference_rejects_cross_generation_reuse(tmp_path):
         store.create_automatic_solve_worker_result_reference(admitted, reference)
 
 
-@pytest.mark.parametrize("terminalizer", ["cancel", "settle_failed"])
+@pytest.mark.parametrize("terminalizer", ["cancel", "settle_failed", "settle_succeeded"])
 def test_terminal_native_run_rejects_nonterminal_binding_observation(tmp_path, terminalizer):
     store, run, _worker, _attempt, binding = _fixture(tmp_path)
     admitted = store.create_automatic_solve_worker_binding(binding)
     if terminalizer == "cancel":
         store.cancel_run(run.id)
     else:
-        task = store.ensure_orchestration_task(run.id, title="bridge task", prompt="fixture")
-        attempt = store.claim_orchestration_task(task.id, "fixture")
+        task = store.list_tasks(run.id)[0]
+        attempt = store.claim_task(task.id, "fixture")
         assert attempt is not None
         if terminalizer == "settle_failed":
             store.finish_task(task.id, attempt.id, False, error="fixture")
         else:
             store.finish_task(task.id, attempt.id, True)
         store.settle_run(run.id)
+    assert store.get_run(run.id).status.value in {"cancelled", "failed", "succeeded"}
+    with pytest.raises(ValueError, match="not eligible for admission"):
+        store.create_automatic_solve_worker_binding(binding)
     with pytest.raises(ValueError, match="activate after terminal"):
         store.compare_and_swap_automatic_solve_worker_binding(
             admitted, state=AutomaticSolveWorkerBindingState.ACTIVE,
         )
+
+
+def test_existing_active_binding_can_record_final_pins_without_reactivation(tmp_path):
+    store, run, _worker, _attempt, binding = _fixture(tmp_path)
+    admitted = store.create_automatic_solve_worker_binding(binding)
+    active = store.compare_and_swap_automatic_solve_worker_binding(
+        admitted, state=AutomaticSolveWorkerBindingState.ACTIVE,
+    )
+    store.cancel_run(run.id)
+    observed = store.compare_and_swap_automatic_solve_worker_binding(
+        active, state=AutomaticSolveWorkerBindingState.ACTIVE,
+    )
+    assert observed.state is AutomaticSolveWorkerBindingState.ACTIVE
+    assert observed.generation == active.generation
 
 
 def test_unknown_observation_is_retained_after_terminal_run(tmp_path):
