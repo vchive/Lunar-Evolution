@@ -9,7 +9,7 @@ all such work is represented by immutable, caller-supplied receipt digests.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -104,6 +104,16 @@ def _canonical_digest(value: Mapping[str, Any]) -> str:
     except Exception as exc:
         raise RSILearningError("rsi_memory_governance_record_invalid") from exc
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _object(value: object, *, fields: set[str]) -> dict[str, Any]:
+    if (
+        type(value) is not dict
+        or any(type(key) is not str for key in value)
+        or set(value) != fields
+    ):
+        _fail("rsi_memory_governance_record_invalid")
+    return value
 
 
 @dataclass(frozen=True)
@@ -261,6 +271,14 @@ class PromotionGate:
             (self.challenger_holdout_score, "challenger_holdout_score"),
         ):
             _score(value, name=name)
+        comparisons = (
+            self.baseline_practice_receipt_sha256,
+            self.challenger_practice_receipt_sha256,
+            self.baseline_holdout_receipt_sha256,
+            self.challenger_holdout_receipt_sha256,
+        )
+        if len(set(comparisons)) != len(comparisons):
+            _fail("rsi_memory_gate_comparison_receipt_reused")
         practice = _unique_digests(
             self.practice_pass_receipts, name="practice_pass_receipts", minimum=1
         )
@@ -294,6 +312,22 @@ class PromotionGate:
             and len(self.practice_pass_receipts) >= 2
             and self.challenger_holdout_score > self.baseline_holdout_score
         )
+
+    def validate_authority(
+        self, authority: MemoryAuthority, *, require_activation: bool = False
+    ) -> None:
+        if not isinstance(authority, MemoryAuthority):
+            _fail("rsi_memory_authority_invalid")
+        if self.compatibility_fingerprint != authority.compatibility.digest():
+            _fail("rsi_memory_gate_compatibility_mismatch")
+        if self.parent_snapshot_sha256 != authority.parent_snapshot_sha256:
+            _fail("rsi_memory_gate_parent_snapshot_mismatch")
+        if authority.source_receipt_sha256 not in self.practice_pass_receipts:
+            _fail("rsi_memory_gate_source_receipt_unbound")
+        if self.has_regression:
+            _fail("rsi_memory_gate_regression")
+        if require_activation and not self.ready_for_activation:
+            _fail("rsi_memory_activation_evidence_insufficient")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -342,6 +376,8 @@ class MemoryPromotionRecord:
             {receipt.state for receipt in self.receipts}
         ) != len(self.receipts):
             _fail("rsi_memory_lifecycle_receipts_invalid")
+        if self.receipts[0].receipt_sha256 != self.authority.source_receipt_sha256:
+            _fail("rsi_memory_observation_receipt_mismatch")
         for before, after in zip(self.receipts, self.receipts[1:]):
             if after.state not in _TRANSITIONS[before.state]:
                 _fail("rsi_memory_lifecycle_transition_invalid")
@@ -351,26 +387,25 @@ class MemoryPromotionRecord:
             _fail("rsi_memory_observed_parent_invalid")
         if self.state != "observed" and self.previous_record_sha256 is None:
             _fail("rsi_memory_transition_parent_missing")
-        requires_verifier = self.state in {
-            "verified",
-            "candidate",
-            "shadow",
-            "approved",
-            "active",
-            "deprecated",
-        }
+        history_states = {receipt.state for receipt in self.receipts}
+        requires_verifier = "verified" in history_states
         has_verifier = (
             self.verifier_receipt_sha256 is not None or self.verifier_fingerprint is not None
         )
+        if has_verifier and not requires_verifier:
+            _fail("rsi_memory_verifier_evidence_invalid")
         if requires_verifier or has_verifier:
             _digest(self.verifier_receipt_sha256, name="verifier_receipt_sha256")
             _digest(self.verifier_fingerprint, name="verifier_fingerprint")
         if (self.verifier_receipt_sha256 is None) != (self.verifier_fingerprint is None):
             _fail("rsi_memory_verifier_evidence_invalid")
-        if self.state in {"approved", "active", "deprecated"}:
+        if "approved" in history_states:
             if not isinstance(self.gate, PromotionGate):
                 _fail("rsi_memory_gate_missing")
-        elif self.gate is not None and self.state not in {"revoked", "quarantined"}:
+            self.gate.validate_authority(
+                self.authority, require_activation="active" in history_states
+            )
+        elif self.gate is not None:
             _fail("rsi_memory_gate_invalid")
 
     def _payload(self) -> dict[str, Any]:
@@ -393,6 +428,125 @@ class MemoryPromotionRecord:
     def to_dict(self) -> dict[str, Any]:
         return {**self._payload(), "record_sha256": self.digest()}
 
+    @classmethod
+    def from_dict(cls, value: object) -> MemoryPromotionRecord:
+        """Parse the exact bounded wire record and recheck its lifecycle semantics."""
+        item = _object(
+            value,
+            fields={
+                "protocol",
+                "schema_version",
+                "kind",
+                "authority",
+                "state",
+                "receipts",
+                "previous_record_sha256",
+                "verifier_receipt_sha256",
+                "verifier_fingerprint",
+                "gate",
+                "record_sha256",
+            },
+        )
+        _canonical_digest(item)
+        if (
+            item["protocol"] != MEMORY_GOVERNANCE_PROTOCOL
+            or item["schema_version"] != MEMORY_GOVERNANCE_SCHEMA_VERSION
+            or item["kind"] != "rsi_memory_promotion_record"
+        ):
+            _fail("rsi_memory_governance_protocol_invalid")
+        _id(item["state"], name="lifecycle_state")
+        _digest(item["record_sha256"], name="record_sha256")
+        source = _object(
+            item["authority"],
+            fields={
+                "memory_id",
+                "content_sha256",
+                "source_episode_id",
+                "source_episode_sha256",
+                "source_receipt_sha256",
+                "parent_snapshot_sha256",
+                "scope",
+                "compatibility",
+            },
+        )
+        scope = _object(source["scope"], fields={"scope_id", "problem_family", "conflict_key"})
+        compatibility = _object(
+            source["compatibility"],
+            fields={
+                "contract_sha256",
+                "evaluator_sha256",
+                "environment_sha256",
+                "solver_id",
+                "solver_fingerprint",
+            },
+        )
+        authority = MemoryAuthority(
+            source["memory_id"],
+            source["content_sha256"],
+            source["source_episode_id"],
+            source["source_episode_sha256"],
+            source["source_receipt_sha256"],
+            source["parent_snapshot_sha256"],
+            MemoryScope(**scope),
+            MemoryCompatibility(**compatibility),
+        )
+        raw_receipts = item["receipts"]
+        if (
+            type(raw_receipts) is not list
+            or not 1 <= len(raw_receipts) <= MAX_MEMORY_LIFECYCLE_RECEIPTS
+        ):
+            _fail("rsi_memory_lifecycle_receipts_invalid")
+        receipts = []
+        for raw_receipt in raw_receipts:
+            receipt = _object(
+                raw_receipt,
+                fields={"state", "receipt_sha256", "actor_fingerprint", "reason_code"},
+            )
+            _id(receipt["state"], name="lifecycle_state")
+            receipts.append(LifecycleReceipt(**receipt))
+        gate = None
+        if item["gate"] is not None:
+            raw_gate = _object(
+                item["gate"],
+                fields={
+                    "compatibility_fingerprint",
+                    "parent_snapshot_sha256",
+                    "baseline_practice_receipt_sha256",
+                    "challenger_practice_receipt_sha256",
+                    "baseline_holdout_receipt_sha256",
+                    "challenger_holdout_receipt_sha256",
+                    "baseline_practice_score",
+                    "challenger_practice_score",
+                    "baseline_holdout_score",
+                    "challenger_holdout_score",
+                    "practice_pass_receipts",
+                    "holdout_pass_receipts",
+                    "holdout_failure_receipts",
+                },
+            )
+            evidence = {}
+            for name in (
+                "practice_pass_receipts",
+                "holdout_pass_receipts",
+                "holdout_failure_receipts",
+            ):
+                if type(raw_gate[name]) is not list or len(raw_gate[name]) > MAX_PROMOTION_EVIDENCE:
+                    _fail(f"rsi_memory_{name}_invalid")
+                evidence[name] = tuple(raw_gate[name])
+            gate = PromotionGate(**{**raw_gate, **evidence})
+        record = cls(
+            authority,
+            item["state"],
+            tuple(receipts),
+            item["previous_record_sha256"],
+            item["verifier_receipt_sha256"],
+            item["verifier_fingerprint"],
+            gate,
+        )
+        if item["record_sha256"] != record.digest():
+            _fail("rsi_memory_governance_record_digest_mismatch")
+        return record
+
 
 class MemoryGovernanceAuthority:
     """In-process lifecycle authority with stale-record and active-conflict gates.
@@ -404,6 +558,49 @@ class MemoryGovernanceAuthority:
 
     def __init__(self) -> None:
         self._heads: dict[str, MemoryPromotionRecord] = {}
+
+    @classmethod
+    def from_history(cls, records: Iterable[MemoryPromotionRecord]) -> MemoryGovernanceAuthority:
+        """Restore complete per-memory histories in order, allowing interleaved memories."""
+        if not isinstance(records, Iterable) or isinstance(records, (str, bytes, Mapping)):
+            _fail("rsi_memory_governance_history_invalid")
+        authority = cls()
+        for raw_record in records:
+            if not isinstance(raw_record, MemoryPromotionRecord):
+                _fail("rsi_memory_promotion_record_invalid")
+            record = MemoryPromotionRecord.from_dict(raw_record.to_dict())
+            previous = authority._heads.get(record.authority.memory_id)
+            if previous is None:
+                if record.state != "observed":
+                    _fail("rsi_memory_governance_history_incomplete")
+            else:
+                if record.authority != previous.authority:
+                    _fail("rsi_memory_governance_history_authority_mismatch")
+                if (
+                    record.previous_record_sha256 != previous.digest()
+                    or record.state not in _TRANSITIONS[previous.state]
+                    or len(record.receipts) != len(previous.receipts) + 1
+                    or record.receipts[:-1] != previous.receipts
+                ):
+                    _fail("rsi_memory_governance_history_chain_mismatch")
+                if previous.verifier_receipt_sha256 is not None and (
+                    record.verifier_receipt_sha256 != previous.verifier_receipt_sha256
+                    or record.verifier_fingerprint != previous.verifier_fingerprint
+                ):
+                    _fail("rsi_memory_governance_history_verifier_mismatch")
+                if previous.gate is not None and record.gate != previous.gate:
+                    _fail("rsi_memory_governance_history_gate_mismatch")
+            authority._heads[record.authority.memory_id] = record
+            if record.state == "active":
+                for other in authority._heads.values():
+                    if (
+                        other.state == "active"
+                        and other.authority.memory_id != record.authority.memory_id
+                        and other.authority.scope == record.authority.scope
+                        and other.authority.compatibility == record.authority.compatibility
+                    ):
+                        _fail("rsi_memory_active_conflict")
+        return authority
 
     @staticmethod
     def _receipt(
@@ -513,6 +710,11 @@ class MemoryGovernanceAuthority:
             _fail("rsi_memory_verifier_episode_invalid")
         if verifier is None or verifier.outcome != "pass" or not verifier.independent_of_actor:
             _fail("rsi_memory_verifier_not_passed")
+        if (
+            verifier.candidate_receipt_sha256 != source_episode.candidate_receipt_sha256
+            or verifier.execution_receipt_sha256 != source_episode.execution_receipt_sha256
+        ):
+            _fail("rsi_memory_verifier_receipt_mismatch")
         pins = source.compatibility
         if (
             source_episode.contract_sha256 != pins.contract_sha256
@@ -576,14 +778,7 @@ class MemoryGovernanceAuthority:
     def _validate_gate(record: MemoryPromotionRecord, gate: PromotionGate) -> None:
         if not isinstance(gate, PromotionGate):
             _fail("rsi_memory_gate_invalid")
-        if gate.compatibility_fingerprint != record.authority.compatibility.digest():
-            _fail("rsi_memory_gate_compatibility_mismatch")
-        if gate.parent_snapshot_sha256 != record.authority.parent_snapshot_sha256:
-            _fail("rsi_memory_gate_parent_snapshot_mismatch")
-        if record.authority.source_receipt_sha256 not in gate.practice_pass_receipts:
-            _fail("rsi_memory_gate_source_receipt_unbound")
-        if gate.has_regression:
-            _fail("rsi_memory_gate_regression")
+        gate.validate_authority(record.authority)
 
     def approve(
         self,
@@ -620,9 +815,8 @@ class MemoryGovernanceAuthority:
             if other.authority.memory_id == current.authority.memory_id or other.state != "active":
                 continue
             if (
-                other.authority.scope.conflict_key == current.authority.scope.conflict_key
-                and other.authority.compatibility.digest()
-                == current.authority.compatibility.digest()
+                other.authority.scope == current.authority.scope
+                and other.authority.compatibility == current.authority.compatibility
             ):
                 _fail("rsi_memory_active_conflict")
         return self._advance(
