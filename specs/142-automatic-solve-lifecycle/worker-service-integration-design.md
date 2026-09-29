@@ -126,9 +126,10 @@ an admitted deadline. Default construction remains after native ownership admiss
 
 Focused local acceptance covers preserved object identity, repeated binding, native/worker/parent
 minimum budgets, cross-clock parent composition, cancellation at each stage, request/runtime
-drift and the typed seam reaching the existing synchronous orchestration. This slice does not
-claim WorkerService admission, process-observer composition or result-reference delivery; those
-remain WSI-01 and WSI-03 through WSI-07.
+drift and the typed seam reaching the existing synchronous orchestration. This historical note
+predates the current integration slice: WorkerService admission, process-observer composition and
+result-reference delivery are implemented in WSI-01 through WSI-06. WSI-07 remains the complete
+release regression gate.
 
 Extract a typed public orchestration seam from the existing synchronous path, provisionally
 `continue_automatic_solve(..., execution_control=None, ownership=...)`. It must reuse the
