@@ -84,7 +84,11 @@ attempt; target frames provide only opaque request ID and body. The controller s
 host headers at configuration time and runs broker HTTP requests without ambient proxies
 or redirects. A 30x response is a terminal HTTP failure, never authority to send the
 request or its credentials to another origin. The general model HTTP transport retains
-its existing redirect/proxy behavior. Malformed or over-budget
+its existing redirect/proxy behavior. Broker request preflight rejects URL userinfo,
+fragments, malformed authority and whitespace, plus header overrides for Host, proxy
+authorization, hop-by-hop controls and framing. Header names and values have bounded
+control-character and duplicate-name checks. This constrains the configured HTTP
+authority but does not pin DNS answers or attest all producer egress. Malformed or over-budget
 frames stop the bridge without outbound I/O. Its observation still has
 `coverage=brokered_requests_only`, and the process-only terminal receipt does not yet
 bind a replayed journal. T157-05 and T157-06 therefore remain open.

@@ -59,8 +59,20 @@ def _present(path: Path) -> bool:
     return True
 
 
-def _interruption(path: Path, request_sha256: str, stage: str) -> tuple[str, str]:
-    _raw, value = _json(path, 8192)
+def _interruption_identity(path: Path) -> tuple[int, int, int, int, int]:
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        _fail("producer_attempt_recovery_evidence_changed")
+    return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+
+
+def _interruption(
+    path: Path, request_sha256: str, stage: str,
+) -> tuple[bytes, tuple[int, int, int, int, int], str, str]:
+    before = _interruption_identity(path)
+    raw, value = _json(path, 8192)
+    if _interruption_identity(path) != before:
+        _fail("producer_attempt_recovery_evidence_changed")
     fields = {
         "reason", "stage", "pid", "pgid", "exit_code", "cleanup", "ownership_release", "observed_ms",
     }
@@ -74,7 +86,7 @@ def _interruption(path: Path, request_sha256: str, stage: str) -> tuple[str, str
         raise NativeProducerAttemptRecoveryError("producer_attempt_recovery_interruption_invalid") from exc
     if value != rebuilt:
         _fail("producer_attempt_recovery_interruption_invalid")
-    return value["reason"], value["cleanup"]
+    return raw, before, value["reason"], value["cleanup"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,13 +192,22 @@ def inspect_native_producer_bundle_unknown_attempt(
         if record.status != "recorded":
             interrupted = attempt / "interrupted.json"
             reason, cleanup = ("missing_terminal_evidence", "unknown")
+            interruption_bytes = None
+            interruption_identity = None
             if _present(interrupted):
                 if record.launch_intent_sha256 is None:
                     _fail("producer_attempt_recovery_interruption_invalid")
-                reason, cleanup = _interruption(
+                interruption_bytes, interruption_identity, reason, cleanup = _interruption(
                     interrupted, record.launch_intent_sha256, "candidate_execution",
                 )
             recheck()
+            if (_present(attempt / "result.json") or _present(attempt / "completed.json")
+                    or (interruption_bytes is None and _present(interrupted))
+                    or (interruption_bytes is not None and (
+                        _interruption_identity(interrupted) != interruption_identity
+                        or _read(interrupted, 8192) != interruption_bytes
+                    ))):
+                _fail("producer_attempt_recovery_evidence_changed")
             return NativeProducerUnknownAttempt(candidate_id, run_id, "candidate_execution", reason, cleanup)
         if record.to_dict()["runner_result"]["status"] != "succeeded":
             _fail("producer_attempt_recovery_known_terminal")
@@ -201,7 +222,7 @@ def inspect_native_producer_bundle_unknown_attempt(
         if len(entries) != 1 or re.fullmatch(r"\.candidate-evaluation-[0-9a-f]{24}", entries[0].name) is None:
             _fail("producer_attempt_recovery_evaluation_mapping_invalid")
         evaluation = entries[0]
-        _directory_identity(evaluation)
+        evaluation_identity = _directory_identity(evaluation)
         request_raw, request = _json(evaluation / "request.json")
         expected_binding = {
             "workspace_plan_sha256": execution_plan.digest(),
@@ -221,10 +242,14 @@ def inspect_native_producer_bundle_unknown_attempt(
         if request.get("binding") != expected_binding:
             _fail("producer_attempt_recovery_evidence_changed")
         interrupted = evaluation / "interrupted.json"
+        interruption_bytes = None
+        interruption_identity = None
         if _present(interrupted):
             if _present(evaluation / "evaluation.json"):
                 _fail("producer_attempt_recovery_interruption_invalid")
-            reason, cleanup = _interruption(interrupted, hashlib.sha256(request_raw).hexdigest(), "evaluation")
+            interruption_bytes, interruption_identity, reason, cleanup = _interruption(
+                interrupted, hashlib.sha256(request_raw).hexdigest(), "evaluation",
+            )
         elif _present(evaluation / "evaluation.json"):
             inspect_candidate_evaluation(evaluation)
             _fail("producer_attempt_recovery_known_terminal")
@@ -233,6 +258,14 @@ def inspect_native_producer_bundle_unknown_attempt(
         if _read(evaluation / "request.json") != request_raw:
             _fail("producer_attempt_recovery_evidence_changed")
         recheck()
+        if (_directory_identity(evaluation) != evaluation_identity
+                or _present(evaluation / "evaluation.json")
+                or (interruption_bytes is None and _present(interrupted))
+                or (interruption_bytes is not None and (
+                    _interruption_identity(interrupted) != interruption_identity
+                    or _read(interrupted, 8192) != interruption_bytes
+                ))):
+            _fail("producer_attempt_recovery_evidence_changed")
         return NativeProducerUnknownAttempt(candidate_id, run_id, "evaluation", reason, cleanup)
     except NativeProducerAttemptRecoveryError:
         raise

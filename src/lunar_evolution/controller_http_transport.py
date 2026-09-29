@@ -11,6 +11,7 @@ import base64
 import json
 import math
 import os
+import re
 import selectors
 import signal
 import time
@@ -23,6 +24,12 @@ from .http_transport import TransportFailure, TransportResponse
 from .producer_request_transport import RequestAdmission
 
 _CANCEL_WAIT_SECONDS = 0.1
+_HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+_RESERVED_HEADERS = frozenset({
+    "host", "content-length", "transfer-encoding", "connection", "keep-alive",
+    "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer",
+    "upgrade",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,12 +41,30 @@ class ControllerHttpRequest:
     body: bytes
 
     def __post_init__(self) -> None:
-        if type(self.endpoint) is not str or urlsplit(self.endpoint).scheme not in {"http", "https"}:
+        if type(self.endpoint) is not str or any(
+            char.isspace() or ord(char) == 127 for char in self.endpoint
+        ):
+            raise ValueError("controller_http_endpoint_invalid")
+        try:
+            target = urlsplit(self.endpoint)
+            valid_target = (
+                target.scheme in {"http", "https"}
+                and target.hostname is not None
+                and target.port != 0
+                and target.username is None and target.password is None
+                and not target.fragment
+            )
+        except ValueError as exc:
+            raise ValueError("controller_http_endpoint_invalid") from exc
+        if not valid_target:
             raise ValueError("controller_http_endpoint_invalid")
         if type(self.headers) is not dict or any(
-            type(key) is not str or type(value) is not str
+            type(key) is not str or _HEADER_NAME.fullmatch(key) is None
+            or key.lower() in _RESERVED_HEADERS
+            or type(value) is not str
+            or any(ord(char) < 32 or ord(char) == 127 for char in value)
             for key, value in self.headers.items()
-        ):
+        ) or len({key.lower() for key in self.headers}) != len(self.headers):
             raise ValueError("controller_http_headers_invalid")
         if type(self.body) is not bytes:
             raise ValueError("controller_http_body_invalid")

@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,7 +18,11 @@ from test_producer_bundle_transaction import (
     _shinka_drafts,
 )
 
-from lunar_evolution import bundle_evolution, producer_bundle_transaction
+from lunar_evolution import (
+    bundle_evolution,
+    producer_bundle_attempt_recovery,
+    producer_bundle_transaction,
+)
 from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.candidate_process_interruption import build_process_interruption_receipt
 from lunar_evolution.evolution import PopulationStrategy
@@ -75,6 +81,23 @@ def _inspect(workspace, plan, journal, result):
     return inspect_native_producer_bundle_unknown_attempt(
         workspace, plan, journal, candidate_id=result.candidate_id,
     )
+
+
+def _make_unknown(result, stage: str) -> Path:
+    if stage == "candidate_execution":
+        attempt = result.run_root / "attempt"
+        (attempt / "completed.json").unlink()
+        (attempt / "result.json").unlink()
+        (attempt / "cleanup.json").unlink(missing_ok=True)
+        receipt = attempt / "interrupted.json"
+        request_sha256 = result.execution.launch_intent_sha256
+    else:
+        evaluation = result.evaluation.evaluation_path
+        (evaluation / "evaluation.json").unlink()
+        receipt = evaluation / "interrupted.json"
+        request_sha256 = hashlib.sha256((evaluation / "request.json").read_bytes()).hexdigest()
+    _receipt(receipt, stage=stage, request_sha256=request_sha256)
+    return receipt
 
 
 def test_completed_attempt_is_outside_unknown_inspection(tmp_path, monkeypatch):
@@ -140,6 +163,62 @@ def test_evaluation_stop_and_missing_receipt_remain_unknown(tmp_path, monkeypatc
     assert (observed.stage, observed.reason, observed.cleanup) == (
         "evaluation", "missing_terminal_evidence", "unknown",
     )
+
+
+def test_inspector_reopens_retained_unknown_from_new_interpreter(tmp_path, monkeypatch):
+    context, _drafts, plan, journal, result = _retained(tmp_path, monkeypatch)
+    _make_unknown(result, "evaluation")
+    plan_path = tmp_path / "admission-plan.json"
+    plan_path.write_bytes(canonical_json(plan.to_dict()))
+    prepared = (
+        context.workspace / "evolution" / "producer-batches" / journal.journal_id
+        / "journal.prepared.json"
+    )
+    archive = context.workspace / "evolution" / "archive.jsonl"
+    archive_before = archive.read_bytes()
+    script = """
+import json
+import sys
+from dataclasses import asdict
+from lunar_evolution.producer_bundle_admission import parse_producer_bundle_admission_plan
+from lunar_evolution.producer_bundle_attempt_recovery import inspect_native_producer_bundle_unknown_attempt
+from lunar_evolution.producer_bundle_publication import parse_producer_bundle_publication_journal
+
+plan = parse_producer_bundle_admission_plan(sys.argv[2])
+journal = parse_producer_bundle_publication_journal(sys.argv[3])
+result = inspect_native_producer_bundle_unknown_attempt(
+    sys.argv[1], plan, journal, candidate_id=sys.argv[4],
+)
+print(json.dumps(asdict(result)))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(context.workspace), str(plan_path),
+         str(prepared), result.candidate_id],
+        check=True, capture_output=True, text=True,
+    )
+    observed = json.loads(completed.stdout)
+    assert observed["status"] == "unknown"
+    assert archive.read_bytes() == archive_before
+
+
+@pytest.mark.parametrize("stage", ["candidate_execution", "evaluation"])
+def test_unknown_inspection_rejects_same_byte_receipt_replacement_during_read(
+    tmp_path, monkeypatch, stage,
+):
+    context, _drafts, plan, journal, result = _retained(tmp_path, monkeypatch)
+    receipt = _make_unknown(result, stage)
+    original = producer_bundle_attempt_recovery._interruption
+
+    def replace_after_read(*args, **kwargs):
+        observed = original(*args, **kwargs)
+        replacement = receipt.with_name("interrupted-replacement.json")
+        replacement.write_bytes(receipt.read_bytes())
+        os.replace(replacement, receipt)
+        return observed
+
+    monkeypatch.setattr(producer_bundle_attempt_recovery, "_interruption", replace_after_read)
+    with pytest.raises(NativeProducerAttemptRecoveryError, match="evidence_changed"):
+        _inspect(context.workspace, plan, journal, result)
 
 
 @pytest.mark.parametrize("tamper", [

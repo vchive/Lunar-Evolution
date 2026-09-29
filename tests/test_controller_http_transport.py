@@ -126,6 +126,32 @@ def test_controller_transport_ignores_ambient_proxy(monkeypatch):
     assert proxy_calls == []
 
 
+@pytest.mark.parametrize("endpoint", [
+    "http://user:pass@127.0.0.1:1/post",
+    "http://127.0.0.1:1/post#fragment",
+    "http://127.0.0.1:0/post",
+    "http://[::1/post",
+    " http://127.0.0.1:1/post",
+])
+def test_controller_transport_rejects_ambiguous_endpoint_before_start(endpoint):
+    with pytest.raises(ValueError, match="^controller_http_endpoint_invalid$"):
+        ControllerHttpRequest(endpoint, {"Authorization": "secret"}, b"payload")
+
+
+@pytest.mark.parametrize("headers", [
+    {"Host": "other.example"},
+    {"content-length": "0"},
+    {"Proxy-Authorization": "secret"},
+    {"Transfer-Encoding": "chunked"},
+    {"X-Injected\r\nHost": "other.example"},
+    {"X-Header": "safe\r\nHost: other.example"},
+    {"Authorization": "first", "authorization": "second"},
+])
+def test_controller_transport_rejects_authority_and_framing_header_overrides(headers):
+    with pytest.raises(ValueError, match="^controller_http_headers_invalid$"):
+        ControllerHttpRequest("http://127.0.0.1:1/post", headers, b"payload")
+
+
 def test_success_response_is_local_and_worker_has_no_secret_arguments(monkeypatch):
     processes, options = record_processes(monkeypatch)
     secret = "controller-transport-secret"

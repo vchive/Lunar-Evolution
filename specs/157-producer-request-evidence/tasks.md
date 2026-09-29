@@ -34,3 +34,9 @@ two-server and proxy fixtures verify that neither a 30x target nor an ambient pr
 the credential. This narrows the fixed-endpoint authority; DNS resolution, complete target
 egress isolation, journal ownership across crash, and receipt/publication integration remain
 open.
+
+The broker also rejects endpoint userinfo, fragments, malformed authority and unencoded
+whitespace before launching the HTTP worker. It rejects caller-supplied authority, proxy and
+framing headers, control characters, invalid header names, and case-insensitive duplicates.
+These checks prevent a fixed destination from being silently overridden by HTTP metadata;
+they do not establish DNS pinning or complete producer egress coverage.
