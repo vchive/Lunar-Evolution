@@ -1,6 +1,11 @@
 import pytest
 
-from lunar_evolution.rsi_learning import RSILearningError
+from lunar_evolution.rsi_learning import (
+    PracticeEpisode,
+    RSILearningError,
+    VerifierCheck,
+    VerifierDecision,
+)
 from lunar_evolution.rsi_memory_governance import (
     MemoryAuthority,
     MemoryCompatibility,
@@ -26,12 +31,59 @@ def compatibility() -> MemoryCompatibility:
     return MemoryCompatibility(digest(1), digest(2), digest(3), "native", digest(4))
 
 
-def authority(memory_id: str = "memory-1") -> MemoryAuthority:
+def episode(memory_id: str = "memory-1", *, verified: bool = True) -> PracticeEpisode:
+    pins = compatibility()
+    result = (
+        PracticeEpisode(
+            f"episode-{memory_id}",
+            "run-1",
+            pins.contract_sha256,
+            pins.evaluator_sha256,
+            pins.environment_sha256,
+            digest(8),
+            pins.solver_id,
+            "planned",
+            solver_fingerprint=pins.solver_fingerprint,
+        )
+        .transition("running", request_sha256=digest(9))
+        .transition(
+            "completed",
+            candidate_receipt_sha256=digest(50),
+            execution_receipt_sha256=digest(51),
+            official_evaluation_receipt_sha256=digest(7),
+            trace_digest=digest(52),
+        )
+    )
+    if not verified:
+        return result
+    return result.attach_verifier(
+        VerifierDecision(
+            result.episode_id,
+            "pass",
+            digest(10),
+            "independently verified candidate",
+            VERIFIER,
+            (VerifierCheck("official_evaluator", "pass", digest(7)),),
+            contract_sha256=pins.contract_sha256,
+            evaluator_sha256=pins.evaluator_sha256,
+            environment_sha256=pins.environment_sha256,
+            official_evaluation_receipt_sha256=digest(7),
+            candidate_receipt_sha256=digest(50),
+            execution_receipt_sha256=digest(51),
+            evidence_sha256=digest(53),
+        )
+    )
+
+
+def authority(
+    memory_id: str = "memory-1", *, source_episode: PracticeEpisode | None = None
+) -> MemoryAuthority:
+    source_episode = source_episode or episode(memory_id)
     return MemoryAuthority(
         memory_id,
         digest(5),
         f"episode-{memory_id}",
-        digest(6),
+        source_episode.digest(),
         digest(7),
         digest(8),
         scope(),
@@ -76,9 +128,7 @@ def candidate_in_shadow(governance: MemoryGovernanceAuthority, source: MemoryAut
     )
     verified = governance.verify(
         observed,
-        verifier_receipt_sha256=digest(10),
-        verifier_fingerprint=VERIFIER,
-        compatibility_fingerprint=source.compatibility.digest(),
+        source_episode=episode(source.memory_id),
         transition_receipt_sha256=digest(11),
         actor_fingerprint=ACTOR,
     )
@@ -170,6 +220,8 @@ def test_revoked_and_quarantined_memory_are_excluded_from_new_retrieval():
     )
 
     assert revoked.state == "revoked"
+    assert revoked.verifier_receipt_sha256 == active.verifier_receipt_sha256
+    assert revoked.gate == active.gate
     assert governance.retrieve(scope=scope(), compatibility=compatibility()) == ()
 
     source_two = authority("memory-2")
@@ -219,31 +271,56 @@ def test_lifecycle_is_strict_and_rejects_stale_or_unverified_promotions():
         governance.nominate_candidate(
             observed, transition_receipt_sha256=digest(12), actor_fingerprint=ACTOR
         )
-    with pytest.raises(RSILearningError, match="rsi_memory_verifier_compatibility_mismatch"):
+    with pytest.raises(RSILearningError, match="rsi_memory_verifier_episode_mismatch"):
         governance.verify(
             observed,
-            verifier_receipt_sha256=digest(10),
-            verifier_fingerprint=VERIFIER,
-            compatibility_fingerprint=digest(99),
+            source_episode=episode("other"),
             transition_receipt_sha256=digest(11),
             actor_fingerprint=ACTOR,
         )
 
     verified = governance.verify(
         observed,
-        verifier_receipt_sha256=digest(10),
-        verifier_fingerprint=VERIFIER,
-        compatibility_fingerprint=source.compatibility.digest(),
+        source_episode=episode(),
         transition_receipt_sha256=digest(11),
         actor_fingerprint=ACTOR,
     )
     with pytest.raises(RSILearningError, match="rsi_memory_stale_record"):
         governance.verify(
             observed,
-            verifier_receipt_sha256=digest(10),
-            verifier_fingerprint=VERIFIER,
-            compatibility_fingerprint=source.compatibility.digest(),
+            source_episode=episode(),
             transition_receipt_sha256=digest(18),
             actor_fingerprint=ACTOR,
         )
     assert verified.state == "verified"
+
+
+def test_unverified_episode_is_never_accepted_as_promotion_evidence():
+    governance = MemoryGovernanceAuthority()
+    source_episode = episode(verified=False)
+    source = authority(source_episode=source_episode)
+    observed = governance.observe(
+        source, observation_receipt_sha256=source.source_receipt_sha256, actor_fingerprint=ACTOR
+    )
+
+    with pytest.raises(RSILearningError, match="rsi_memory_verifier_not_passed"):
+        governance.verify(
+            observed,
+            source_episode=source_episode,
+            transition_receipt_sha256=digest(11),
+            actor_fingerprint=ACTOR,
+        )
+
+
+def test_holdout_tie_cannot_activate_without_observed_transfer_improvement():
+    governance = MemoryGovernanceAuthority()
+    source = authority()
+    shadow = candidate_in_shadow(governance, source)
+    approved = governance.approve(
+        shadow,
+        gate(source, baseline_holdout_score=10, challenger_holdout_score=10),
+        transition_receipt_sha256=digest(14),
+        actor_fingerprint=ACTOR,
+    )
+    with pytest.raises(RSILearningError, match="rsi_memory_activation_evidence_insufficient"):
+        governance.activate(approved, transition_receipt_sha256=digest(15), actor_fingerprint=ACTOR)

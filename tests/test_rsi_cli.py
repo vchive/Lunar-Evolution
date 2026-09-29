@@ -16,6 +16,13 @@ def test_rsi_cli_run_persists_run_and_memory_ledger(tmp_path: Path, capsys) -> N
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "completed"
     assert payload["memory_snapshot_sha256"]
+    assert payload["budget"]["consumed"] == {
+        "solver_invocations": 3,
+        "practice_episodes": 1,
+        "unknown_retries": 0,
+    }
+    assert "request_count" in payload["usage"]
+    assert payload["usage"]["wall_elapsed_ms"] >= 0
 
     ledger = RSILedger(home / "rsi.sqlite3")
     assert [record.state for record in ledger.history("cli-rsi-drs")] == [
@@ -30,6 +37,13 @@ def test_rsi_cli_run_persists_run_and_memory_ledger(tmp_path: Path, capsys) -> N
     inspected = json.loads(capsys.readouterr().out)
     assert inspected["head"]["payload"]["mode"] == "drs"
     assert inspected["head"]["payload"]["memory_snapshot_sha256"] == payload["memory_snapshot_sha256"]
+    assert inspected["budget"] == payload["budget"]
+    assert inspected["usage"] == payload["usage"]
+
+    assert main(["rsi", "inspect", "cli-rsi-drs-target-0", "--json", "--home", str(home)]) == 0
+    episode = json.loads(capsys.readouterr().out)
+    assert episode["budget"] == payload["budget"]
+    assert episode["usage"] == payload["usage"]
 
 
 def test_rsi_cli_unknown_requires_explicit_reconciliation(tmp_path: Path, capsys) -> None:
@@ -69,9 +83,17 @@ def test_rsi_cli_restart_reuses_completed_run_without_gateway(tmp_path, capsys, 
 
     monkeypatch.setattr(ProviderFreeSolverGateway, "run", unexpected)
     assert main(["rsi", "resume", "reuse", "--home", str(home), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == first
+    resumed = json.loads(capsys.readouterr().out)
+    assert {key: resumed[key] for key in first if key != "usage"} == {
+        key: first[key] for key in first if key != "usage"
+    }
+    assert resumed["usage"]["wall_elapsed_ms"] >= first["usage"]["wall_elapsed_ms"]
     assert main(args) == 0
-    assert json.loads(capsys.readouterr().out) == first
+    rerun = json.loads(capsys.readouterr().out)
+    assert {key: rerun[key] for key in first if key != "usage"} == {
+        key: first[key] for key in first if key != "usage"
+    }
+    assert rerun["usage"]["wall_elapsed_ms"] >= resumed["usage"]["wall_elapsed_ms"]
 
 
 def test_rsi_cli_unknown_resume_never_reissues_and_result_continues(tmp_path, capsys, monkeypatch):
@@ -105,8 +127,13 @@ def test_rsi_cli_unknown_resume_never_reissues_and_result_continues(tmp_path, ca
                  "--home", str(home), "--json"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "completed" and result["practice_episodes"] == 1
+    assert "budget" in result and "usage" in result
     assert main(["rsi", "resume", "uncertain", "--home", str(home), "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == result
+    resumed = json.loads(capsys.readouterr().out)
+    assert {key: resumed[key] for key in result if key != "usage"} == {
+        key: result[key] for key in result if key != "usage"
+    }
+    assert resumed["usage"]["wall_elapsed_ms"] >= result["usage"]["wall_elapsed_ms"]
 
 
 def test_rsi_cli_resume_is_stable_across_real_processes(tmp_path):
@@ -123,4 +150,9 @@ def test_rsi_cli_resume_is_stable_across_real_processes(tmp_path):
                            env=env, capture_output=True, text=True, timeout=30, check=True)
     second = subprocess.run(prefix + ["rsi", "resume", "restart"] + common,
                             env=env, capture_output=True, text=True, timeout=30, check=True)
-    assert json.loads(first.stdout) == json.loads(second.stdout)
+    first_payload = json.loads(first.stdout)
+    second_payload = json.loads(second.stdout)
+    assert {key: second_payload[key] for key in first_payload if key != "usage"} == {
+        key: first_payload[key] for key in first_payload if key != "usage"
+    }
+    assert second_payload["usage"]["wall_elapsed_ms"] >= first_payload["usage"]["wall_elapsed_ms"]

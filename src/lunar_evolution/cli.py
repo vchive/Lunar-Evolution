@@ -5464,6 +5464,20 @@ def _rsi_fixture_target_judge(execution):
     return execution.passed, "local fixture target accepted" if execution.passed else execution.verifier.diagnosis
 
 
+def _rsi_checkpoint_payload(config: Config, run_id: str) -> dict[str, object]:
+    """Project the durable controller budget and aggregate usage for one RSI run."""
+    checkpoint = RSILedger(config.home / "rsi.sqlite3").controller_checkpoint(run_id)
+    if checkpoint is None:
+        raise ValueError("rsi_controller_checkpoint_missing")
+    state = checkpoint[1]
+    try:
+        budget = state["budget_state"]
+        usage = state["usage_state"]["aggregate"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError("rsi_controller_checkpoint_invalid") from exc
+    return {"budget": budget, "usage": usage}
+
+
 def _rsi_result_payload(config: Config, result, mode: str) -> dict[str, object]:
     return {
         "run_id": result.run_id,
@@ -5474,6 +5488,7 @@ def _rsi_result_payload(config: Config, result, mode: str) -> dict[str, object]:
         "memory_snapshot_sha256": result.memory_snapshot.digest(),
         "recovery_eligibility": "reconcile_required" if result.status == "unknown" else "terminal",
         "ledger": str(config.home / "rsi.sqlite3"),
+        **_rsi_checkpoint_payload(config, result.run_id),
     }
 
 
@@ -6243,9 +6258,13 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 if record is None:
                     _emit_error(f"unknown RSI record: {args.logical_id}", args.json)
                     return 2
+                run_id = record.logical_id if record.kind == "run" else record.payload.get("run_id")
+                if type(run_id) is not str:
+                    raise ValueError("rsi_inspect_run_id_missing")
                 payload = {
                     "head": _rsi_record_payload(record),
                     "history": [_rsi_record_payload(item) for item in ledger.history(args.logical_id)],
+                    **_rsi_checkpoint_payload(config, run_id),
                 }
                 _emit(payload, args.json)
                 return 0

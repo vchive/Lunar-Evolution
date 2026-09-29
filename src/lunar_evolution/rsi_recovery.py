@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import threading
+import time
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -24,6 +25,7 @@ from .rsi_learning import (
     VerifierCheck,
     VerifierDecision,
 )
+from .rsi_usage import MAX_USAGE_VALUE, RSIUsageReceipt, aggregate_usage, usage_receipt_from
 
 
 def digest(value: object) -> str:
@@ -69,11 +71,79 @@ class DurableLearningRun:
         self.state: dict[str, Any] = {}
         self.mutex = threading.RLock()
         self.validated_evidence: set[str] = set()
+        self._wall_checkpoint_ns = time.monotonic_ns()
 
     def _save(self) -> None:
-        self.version = self.ledger.write_controller_checkpoint(
-            self.run_id, self.state, expected_sha256=self.version,
-        )
+        usage = self.state.get("usage_state")
+        if not isinstance(usage, dict):
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        elapsed_ns = time.monotonic_ns() - self._wall_checkpoint_ns
+        elapsed_ms = max(0, elapsed_ns // 1_000_000)
+        previous = usage.get("controller_wall_elapsed_ms")
+        if type(previous) is not int or previous < 0 or previous > MAX_USAGE_VALUE - elapsed_ms:
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        usage["controller_wall_elapsed_ms"] = previous + elapsed_ms
+        self._refresh_run_usage()
+        try:
+            self.version = self.ledger.write_controller_checkpoint(
+                self.run_id, self.state, expected_sha256=self.version,
+            )
+        except Exception:
+            usage["controller_wall_elapsed_ms"] = previous
+            self._refresh_run_usage()
+            raise
+        self._wall_checkpoint_ns = time.monotonic_ns()
+
+    def _refresh_run_usage(self) -> None:
+        usage = self.state.get("usage_state")
+        if not isinstance(usage, dict):
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        elapsed = usage.get("controller_wall_elapsed_ms")
+        if type(elapsed) is not int or elapsed < 0 or elapsed > MAX_USAGE_VALUE:
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        receipts: list[RSIUsageReceipt | None] = []
+        for entry in self.state.get("episodes", {}).values():
+            sidecar = entry.get("usage")
+            receipts.append(RSIUsageReceipt.from_dict(sidecar) if sidecar is not None else None)
+        usage["aggregate"] = aggregate_usage(receipts, wall_elapsed_ms=elapsed).to_dict()
+
+    def _usage_binding(self, request: SolverRequest, result: Mapping[str, Any], usage: Mapping[str, Any]) -> str:
+        return digest({
+            "request_sha256": request.digest(),
+            "result_sha256": digest(result),
+            "usage": dict(usage),
+        })
+
+    def _check_usage_checkpoint(self, entry: Mapping[str, Any], request: SolverRequest) -> None:
+        if "usage" not in entry or "usage_binding" not in entry:
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        sidecar = entry["usage"]
+        binding = entry["usage_binding"]
+        if sidecar is None:
+            if binding is not None:
+                raise RSILearningError("rsi_usage_checkpoint_invalid")
+            return
+        result = entry.get("result")
+        if not isinstance(result, Mapping) or type(binding) is not str:
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        receipt = RSIUsageReceipt.from_dict(sidecar)
+        if binding != self._usage_binding(request, result, receipt.to_dict()):
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+
+    def _check_run_usage_checkpoint(self) -> None:
+        usage = self.state.get("usage_state")
+        if not isinstance(usage, Mapping) or set(usage) != {"controller_wall_elapsed_ms", "aggregate"}:
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        elapsed = usage["controller_wall_elapsed_ms"]
+        if type(elapsed) is not int or elapsed < 0 or elapsed > MAX_USAGE_VALUE:
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
+        receipts: list[RSIUsageReceipt | None] = []
+        for entry in self.state["episodes"].values():
+            sidecar = entry.get("usage")
+            receipts.append(RSIUsageReceipt.from_dict(sidecar) if sidecar is not None else None)
+        expected = aggregate_usage(receipts, wall_elapsed_ms=elapsed).to_dict()
+        if usage["aggregate"] != expected:
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
 
     def _config(self, mode: str, values: Mapping[str, Any]) -> dict[str, Any]:
         return {
@@ -118,9 +188,10 @@ class DurableLearningRun:
             raise RSILearningError("rsi_resume_episode_checkpoint_gap")
         for episode_id, entry in self.state["episodes"].items():
             self._check_episode_checkpoint_shape(entry)
+            request = SolverRequest.from_dict(entry["request"])
+            self._check_usage_checkpoint(entry, request)
             if type(entry.get("budget_reserved")) is not bool:
                 raise RSILearningError("rsi_budget_checkpoint_invalid")
-            request = SolverRequest.from_dict(entry["request"])
             episode = PracticeEpisode.from_dict(entry["running_episode"])
             depth, ancestry = self._episode_lineage(episode_id, entry)
             if entry.get("depth") != depth or entry.get("ancestry") != list(ancestry):
@@ -166,6 +237,7 @@ class DurableLearningRun:
                 or consumed["practice_episodes"] != len(practices)
                 or consumed["unknown_retries"] != len(reconciliations)):
             raise RSILearningError("rsi_budget_checkpoint_invalid")
+        self._check_run_usage_checkpoint()
         self._validate_memory()
 
     def _check_reconciliation_checkpoint(self, entry: Mapping[str, Any], request: SolverRequest) -> None:
@@ -327,6 +399,12 @@ class DurableLearningRun:
                     "episodes": {}, "decisions": {}, "commits": [], "status": "running",
                     "quarantined": [], "reconciliation_ready": False,
                     "budget_state": RSIRunBudget.create(config["budget"]).state,
+                    "usage_state": {
+                        "controller_wall_elapsed_ms": 0,
+                        "aggregate": RSIUsageReceipt.observed(
+                            request_count=None, wall_elapsed_ms=0,
+                        ).to_dict(),
+                    },
                 }
                 self._save()
             self._ensure_run_record()
@@ -387,6 +465,8 @@ class DurableLearningRun:
                     "stage": "planned", "result": None, "episode": None,
                     "depth": 0, "ancestry": [episode_id], "budget_reserved": False,
                     "reconciliation": None,
+                    "usage": None,
+                    "usage_binding": None,
                 }
                 depth, ancestry = self._episode_lineage(episode_id, self.state["episodes"][episode_id])
                 self.state["episodes"][episode_id]["depth"] = depth
@@ -421,10 +501,20 @@ class DurableLearningRun:
                 self._ensure_episode(running)
         if launch:
             self.ledger._assert_controller_lock(self.run_id)
+            started_ns = time.monotonic_ns()
             result = self.controller.gateway.run(request)
+            wall_elapsed_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
             self._check_result(request, result)
+            receipt = usage_receipt_from(
+                self.controller.gateway, request, result, wall_elapsed_ms=wall_elapsed_ms,
+            )
             with self.mutex:
                 entry["result"] = result.to_dict()
+                entry["usage"] = receipt.to_dict() if receipt is not None else None
+                entry["usage_binding"] = (
+                    self._usage_binding(request, entry["result"], entry["usage"])
+                    if entry["usage"] is not None else None
+                )
                 self._save()
         with self.mutex:
             if entry["result"] is None:
@@ -750,6 +840,10 @@ class DurableLearningRun:
                 "terminal_result_sha256": digest(result.to_dict()),
             }
             entry["result"] = result.to_dict()
+            # External reconciliation supplies terminal solver evidence but no trustworthy
+            # provider meter, so it cannot inherit usage observed for the prior unknown result.
+            entry["usage"] = None
+            entry["usage_binding"] = None
             entry["episode"] = None
             entry.pop("diagnostic_verifier", None)
             entry.pop("verifier_decision", None)

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from .candidate_evaluation_spec import canonical_json
-from .rsi_learning import RSILearningError
+from .rsi_learning import PracticeEpisode, RSILearningError
 
 MEMORY_GOVERNANCE_PROTOCOL = "lunar-rsi-memory-governance-v1"
 MEMORY_GOVERNANCE_SCHEMA_VERSION = "1"
@@ -289,7 +289,11 @@ class PromotionGate:
 
     @property
     def ready_for_activation(self) -> bool:
-        return not self.has_regression and len(self.practice_pass_receipts) >= 2
+        return (
+            not self.has_regression
+            and len(self.practice_pass_receipts) >= 2
+            and self.challenger_holdout_score > self.baseline_holdout_score
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -488,14 +492,39 @@ class MemoryGovernanceAuthority:
         self,
         record: MemoryPromotionRecord,
         *,
-        verifier_receipt_sha256: str,
-        verifier_fingerprint: str,
-        compatibility_fingerprint: str,
+        source_episode: PracticeEpisode,
         transition_receipt_sha256: str,
         actor_fingerprint: str,
     ) -> MemoryPromotionRecord:
         current = self._head(record, required="observed")
-        if compatibility_fingerprint != current.authority.compatibility.digest():
+        if not isinstance(source_episode, PracticeEpisode):
+            _fail("rsi_memory_verifier_episode_invalid")
+        source_episode.to_record_dict()
+        verifier = source_episode.verifier
+        source = current.authority
+        if (
+            source_episode.episode_id != source.source_episode_id
+            or source_episode.digest() != source.source_episode_sha256
+            or source_episode.memory_snapshot_sha256 != source.parent_snapshot_sha256
+            or source_episode.official_evaluation_receipt_sha256 != source.source_receipt_sha256
+        ):
+            _fail("rsi_memory_verifier_episode_mismatch")
+        if source_episode.status != "completed" or source_episode.episode_kind != "practice":
+            _fail("rsi_memory_verifier_episode_invalid")
+        if verifier is None or verifier.outcome != "pass" or not verifier.independent_of_actor:
+            _fail("rsi_memory_verifier_not_passed")
+        pins = source.compatibility
+        if (
+            source_episode.contract_sha256 != pins.contract_sha256
+            or source_episode.evaluator_sha256 != pins.evaluator_sha256
+            or source_episode.environment_sha256 != pins.environment_sha256
+            or source_episode.solver_id != pins.solver_id
+            or source_episode.solver_fingerprint != pins.solver_fingerprint
+            or verifier.contract_sha256 != pins.contract_sha256
+            or verifier.evaluator_sha256 != pins.evaluator_sha256
+            or verifier.environment_sha256 != pins.environment_sha256
+            or verifier.official_evaluation_receipt_sha256 != source.source_receipt_sha256
+        ):
             _fail("rsi_memory_verifier_compatibility_mismatch")
         return self._advance(
             current,
@@ -503,8 +532,8 @@ class MemoryGovernanceAuthority:
             receipt_sha256=transition_receipt_sha256,
             actor_fingerprint=actor_fingerprint,
             reason_code="independent_verifier_passed",
-            verifier_receipt_sha256=verifier_receipt_sha256,
-            verifier_fingerprint=verifier_fingerprint,
+            verifier_receipt_sha256=verifier.receipt_sha256,
+            verifier_fingerprint=verifier.verifier_fingerprint,
         )
 
     def nominate_candidate(
