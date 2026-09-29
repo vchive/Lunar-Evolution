@@ -47,9 +47,15 @@ repository and does not reset existing architecture or historical acceptance evi
 - [x] Retain trusted output preparation as immutable evidence binding process/capture/request
   journal, explicit source groups, native drafts and admission plan. This receipt still grants no
   publication authority while complete egress authority is missing.
-- [ ] Join native trusted output/request receipts to Feature 153 admission, local reevaluation,
-  atomic archive publication and parent delivery. Complete broker egress/credential/recovery
-  acceptance, not just brokered-request counts.
+- [x] Join native trusted output/request receipts to Feature 153 admission and local reevaluation
+  through the restricted `offline_import` bridge. The bridge binds launch/attestation,
+  process/capture/broker evidence and the admission plan, then invokes atomic Feature 153
+  publication and consumes a one-shot authority only for `published`/`all_rejected` terminals.
+  This is a provider-free local import path; it does not claim complete egress authority or
+  automatic parent delivery.
+- [ ] Complete broker egress/credential/recovery acceptance, production publication authority,
+  automatic parent delivery, and real external producer acceptance. The offline bridge must not
+  be used as evidence for these claims.
 - [ ] Connect pinned OpenEvolve and Shinka launchers to scheduler/user entry points; run their
   separate real campaign acceptance only after the production boundary is complete.
 - [x] Run local current/archived/frozen release regression and a final affected-module supplement;

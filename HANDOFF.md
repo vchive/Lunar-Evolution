@@ -16,6 +16,10 @@
 - P1：producer 同 boot 总墙钟恢复、发布锁替换检查、候选/评测运行中取消与 cleanup 收据。
   可信 producer preparation 收据持久绑定 terminal/capture/broker/groups/drafts/plan，
   仍保留 `publication_eligible=false`，不会把仅 brokered 请求记录当完整出口证明。
+- P1：新增受限 `offline_import` trusted-output bridge：一次性 token 只保留摘要，authority
+  绑定 launch/attestation/executable identity/terminal/capture/broker/preparation/plan，
+  通过 Feature 153 做本地独立复评和原子发布；仅 `published`/`all_rejected` 终态消费
+  authority，失败与重放 fail-closed。此路径不等于生产 egress authority 或 parent delivery。
 - P2：确定性覆盖/多样性/失败边界 curriculum 和持久历史反馈；空记忆对冻结记忆的本地
   双臂独立评测、比较收据、篡改检查与终态只读重放；初始种群可连续导入不同 producer 批次，
   保留旧 archive/history，只追加新的 admission，冲突在执行前拒绝。

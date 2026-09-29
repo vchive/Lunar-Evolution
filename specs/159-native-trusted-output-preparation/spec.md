@@ -1,6 +1,6 @@
 # Feature 159: native trusted output preparation
 
-**Status**: Provider-free read-only preparation and same-attempt capture slices; publication integration open
+**Status**: Provider-free preparation plus restricted offline-import publication bridge; production egress and delivery remain open
 
 ## Problem
 
@@ -49,6 +49,22 @@ closed; incomplete broker evidence or a mismatch between the producer declaratio
 admissions also fails. The result carries the capture digest and distinguishes brokered-only
 request observation from declaration-only inspection. This mode still grants no publication
 authority, since complete outbound coverage and the downstream execution transaction remain open.
+
+## Restricted offline-import bridge
+
+Feature 159 now provides a separate `offline_import` bridge for local, provider-free material.
+It does not change the preparation receipt's `publication_eligible=false` meaning. A caller must
+provide a one-shot authority whose token is retained only as a digest and whose fields bind the
+launch, attestation, executable identity, process terminal, same-attempt capture, broker journal,
+preparation receipt, source grouping and Feature 153 admission plan. The bridge reopens and
+revalidates those records before invoking native local reevaluation and Feature 153 staged
+publication. The authority is written with create-only semantics and consumed only after a
+`published` or `all_rejected` terminal. Transaction failure, authority replay, field drift,
+missing evidence and production scope are rejected.
+
+This path is deliberately limited to offline import. Brokered-only request coverage is not a
+complete egress proof, and the bridge does not enable production launcher/scheduler use,
+cross-process unknown reconciliation, or automatic parent delivery.
 
 ## Acceptance
 

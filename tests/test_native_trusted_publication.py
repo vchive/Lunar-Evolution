@@ -4,14 +4,10 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
-
 from test_native_trusted_preparation import materialized
 
 from lunar_evolution import native_trusted_publication as publication
 from lunar_evolution.native_trusted_preparation import persist_native_trusted_preparation
-from lunar_evolution.producer_bundle_transaction import (
-    NativeProducerBundleTransactionResult,
-)
 
 
 def _prepared(tmp_path, monkeypatch):
