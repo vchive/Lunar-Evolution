@@ -81,6 +81,19 @@ def test_resume_rejects_budget_checkpoint_that_expands_remaining_work(tmp_path):
         controller(tmp_path, Gateway()).resume(run_id="tampered")
 
 
+def test_resume_requires_budget_counts_to_exactly_match_reserved_episodes(tmp_path):
+    first = controller(tmp_path, Gateway(("failed",)))
+    first.run_drs(run_id="overcounted", **PINS, budget={"max_solver_invocations": 3},
+                  max_practice_rounds=0, max_target_attempts=1)
+    version, checkpoint = first.ledger.controller_checkpoint("overcounted")
+    checkpoint["budget_state"]["consumed"]["solver_invocations"] = 3
+    checkpoint["budget_state"]["remaining"]["solver_invocations"] = 0
+    with first.ledger.controller_lock("overcounted"):
+        first.ledger.write_controller_checkpoint("overcounted", checkpoint, expected_sha256=version)
+    with pytest.raises(RSILearningError, match="rsi_budget_checkpoint_invalid"):
+        controller(tmp_path, Gateway()).resume(run_id="overcounted")
+
+
 def test_unknown_reconciliation_has_a_durable_retry_budget(tmp_path):
     gateway = Gateway(("unknown",))
     first = controller(tmp_path, gateway)
@@ -94,3 +107,26 @@ def test_unknown_reconciliation_has_a_durable_retry_budget(tmp_path):
     assert result.status == "budget_exhausted"
     checkpoint = first.ledger.controller_checkpoint("unknown")[1]
     assert checkpoint["budget_state"]["consumed"]["unknown_retries"] == 0
+
+
+def test_reconciliation_budget_is_bound_to_original_record_and_evidence(tmp_path):
+    gateway = Gateway(("unknown",))
+    first = controller(tmp_path, gateway)
+    assert first.run_drs(run_id="reconciled", **PINS, budget={"max_unknown_retries": 1},
+                         max_practice_rounds=0, max_target_attempts=1).status == "unknown"
+    request = gateway.requests[0]
+    head = first.ledger.get(request.episode_id)
+    assert first.reconcile_episode(
+        run_id="reconciled", episode_id=request.episode_id,
+        result=DeterministicMockSolver(terminal_status="failed").run(request),
+        expected_record_sha256=head.record_sha256,
+    ).status == "failed"
+    version, checkpoint = first.ledger.controller_checkpoint("reconciled")
+    entry = checkpoint["episodes"][request.episode_id]
+    assert entry["reconciliation"]["expected_record_sha256"] == head.record_sha256
+    checkpoint["budget_state"]["consumed"]["unknown_retries"] = 0
+    checkpoint["budget_state"]["remaining"]["unknown_retries"] = 1
+    with first.ledger.controller_lock("reconciled"):
+        first.ledger.write_controller_checkpoint("reconciled", checkpoint, expected_sha256=version)
+    with pytest.raises(RSILearningError, match="rsi_budget_checkpoint_invalid"):
+        controller(tmp_path, Gateway()).resume(run_id="reconciled")

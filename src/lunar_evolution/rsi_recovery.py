@@ -155,13 +155,58 @@ class DurableLearningRun:
                     ):
                         if getattr(episode, name) != getattr(result, name):
                             raise RSILearningError("rsi_resume_episode_result_mismatch")
+            self._check_reconciliation_checkpoint(entry, request)
         reserved = [entry for entry in self.state["episodes"].values() if entry["budget_reserved"]]
         practices = [entry for entry in reserved
                      if PracticeEpisode.from_dict(entry["running_episode"]).episode_kind == "practice"]
+        reconciliations = [entry for entry in self.state["episodes"].values()
+                           if entry.get("reconciliation") is not None]
         consumed = budget.state["consumed"]
-        if consumed["solver_invocations"] < len(reserved) or consumed["practice_episodes"] < len(practices):
+        if (consumed["solver_invocations"] != len(reserved)
+                or consumed["practice_episodes"] != len(practices)
+                or consumed["unknown_retries"] != len(reconciliations)):
             raise RSILearningError("rsi_budget_checkpoint_invalid")
         self._validate_memory()
+
+    def _check_reconciliation_checkpoint(self, entry: Mapping[str, Any], request: SolverRequest) -> None:
+        """Bind an unknown-retry reservation to its original record and terminal evidence."""
+        reconciliation = entry.get("reconciliation")
+        if reconciliation is None:
+            return
+        if not isinstance(reconciliation, Mapping) or set(reconciliation) != {
+            "expected_record_sha256", "prior_result", "terminal_result_sha256",
+        }:
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        expected = reconciliation["expected_record_sha256"]
+        if type(expected) is not str or len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        parent = entry.get("reconciliation_parent")
+        if not isinstance(parent, Mapping):
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        original = PracticeEpisode.from_dict(parent)
+        if original.status not in {"running", "unknown"}:
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        if not any(
+            record.record_sha256 == expected and record.payload == dict(parent)
+            for record in self.ledger.history(request.episode_id)
+        ):
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        prior = reconciliation["prior_result"]
+        if prior is None:
+            if original.status != "running":
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+        else:
+            prior_result = SolverResult.from_dict(prior)
+            self._check_result(request, prior_result)
+            if prior_result.status != "unknown" or original.status != "unknown":
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+        result = entry.get("result")
+        if not isinstance(result, Mapping) or digest(result) != reconciliation["terminal_result_sha256"]:
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        terminal = SolverResult.from_dict(result)
+        self._check_result(request, terminal)
+        if terminal.status not in {"completed", "failed", "timed_out", "abandoned", "cancelled"}:
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
 
     def _episode_lineage(self, episode_id: str, entry: Mapping[str, Any]) -> tuple[int, tuple[str, ...]]:
         seen: list[str] = [episode_id]
@@ -341,6 +386,7 @@ class DurableLearningRun:
                     "request": request.to_dict(), "running_episode": running.to_record_dict(),
                     "stage": "planned", "result": None, "episode": None,
                     "depth": 0, "ancestry": [episode_id], "budget_reserved": False,
+                    "reconciliation": None,
                 }
                 depth, ancestry = self._episode_lineage(episode_id, self.state["episodes"][episode_id])
                 self.state["episodes"][episode_id]["depth"] = depth
@@ -695,7 +741,14 @@ class DurableLearningRun:
             canonical = PracticeEpisode.from_dict(head.payload)
             if canonical.status != head.state:
                 raise RSILearningError("rsi_episode_ledger_state_mismatch")
+            if old is not None and old["status"] != "unknown":
+                raise RSILearningError("rsi_reconcile_terminal_result_conflict")
             entry["reconciliation_parent"] = canonical.to_record_dict()
+            entry["reconciliation"] = {
+                "expected_record_sha256": expected_record_sha256,
+                "prior_result": old,
+                "terminal_result_sha256": digest(result.to_dict()),
+            }
             entry["result"] = result.to_dict()
             entry["episode"] = None
             entry.pop("diagnostic_verifier", None)
