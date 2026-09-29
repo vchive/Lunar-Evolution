@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from test_bundle_population import build_context, draft_for_score
 
-from lunar_evolution.rsi_controller import PracticeEpisodeRunner
+from lunar_evolution.rsi_controller import PracticeEpisodeRunner, RSILearningController
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_governance_store import RSIMemoryGovernanceLedger
 from lunar_evolution.rsi_learning import (
@@ -103,6 +104,53 @@ def _prepared(tmp_path: Path):
     return store, memory, scope, shadow, snapshot, service, practice, holdout
 
 
+def _shared_prepared(tmp_path: Path):
+    ledger, profile, episode, memory, scope = _source(tmp_path)
+    candidates = RSIMemoryGovernanceLedger(ledger)
+    candidate = candidates.nominate(episode=episode, memory=memory, scope=scope, actor_fingerprint=ACTOR)
+    shadow = candidates.restore().start_shadow(candidate, transition_receipt_sha256="c" * 64, actor_fingerprint=ACTOR)
+    candidates.append(shadow, memory=memory, expected_record_sha256=candidate.digest())
+    snapshot = MemorySnapshot("promotion-snapshot", EMPTY_MEMORY_SNAPSHOT.digest(), (memory,))
+    learning_root = tmp_path / "shared-learning"
+    controller = RSILearningController(
+        NativePopulationGateway(profile, lambda _request: draft_for_score(5), learning_root,
+                                actor_fingerprint=ACTOR),
+        verifier=NativeIndependentVerifier(profile, learning_root), ledger=ledger,
+    )
+    outcome = controller.run_drs(
+        run_id="learning", contract_sha256=profile.contract.digest(),
+        evaluator_sha256=profile.pipeline.evaluator.digest(),
+        environment_sha256=profile.pipeline.environment_sha256, solver_id="native_population",
+        enable_transfer_accounting=True,
+        budget={"max_solver_invocations": 5, "max_transfer_invocations": 2,
+                "max_evaluator_invocations": 10, "max_verifier_invocations": 5},
+    )
+    assert outcome.status == "completed"
+    benchmark = FrozenMemoryTransferBenchmark(
+        lambda _request, readonly: draft_for_score(7 if readonly.items else 5),
+        tmp_path / "shared-panels", actor_fingerprint=ACTOR,
+    )
+    practice_tasks, holdout_tasks = (NativeTransferTask("practice", profile),), (NativeTransferTask("holdout", profile),)
+    practice = controller.compare_transfer(run_id="learning", benchmark=benchmark,
+                                          comparison_id="practice-shared", tasks=practice_tasks, snapshot=snapshot)
+    holdout = controller.compare_transfer(run_id="learning", benchmark=benchmark,
+                                         comparison_id="holdout-shared", tasks=holdout_tasks, snapshot=snapshot)
+    service = NativePromotionEvidence(
+        benchmark, practice_tasks, holdout_tasks, snapshot, "practice-shared", "holdout-shared",
+        shared_ledger=ledger, shared_run_id="learning",
+    )
+    store = RSIMemoryGovernanceLedger(ledger, promotion_evidence=service)
+    return store, memory, scope, shadow, snapshot, service, practice, holdout
+
+
+def _block_promotion_launches(monkeypatch):
+    def blocked(*_args, **_kwargs):
+        pytest.fail("retained promotion launched new work")
+    monkeypatch.setattr(FrozenMemoryTransferBenchmark, "compare", blocked)
+    monkeypatch.setattr(NativePopulationGateway, "run", blocked)
+    monkeypatch.setattr(NativeIndependentVerifier, "verify", blocked)
+
+
 def test_native_promotion_approves_and_activates_from_retained_panels(tmp_path):
     store, memory, scope, shadow, _snapshot, _service, practice, holdout = _prepared(tmp_path)
     approved = store.promote_from_comparisons(
@@ -120,6 +168,48 @@ def test_native_promotion_approves_and_activates_from_retained_panels(tmp_path):
     )
     assert active.state == "active"
     assert store.active_memories(scope=scope, compatibility=active.authority.compatibility) == (memory,)
+
+
+def test_shared_promotion_validates_retained_panels_without_launch(tmp_path, monkeypatch):
+    store, memory, _scope, shadow, _snapshot, service, practice, holdout = _shared_prepared(tmp_path)
+    _block_promotion_launches(monkeypatch)
+    retained = service.validate_retained(shadow)
+    assert retained["practice"]["receipt_sha256"] == practice.receipt_sha256
+    assert retained["holdout"]["receipt_sha256"] == holdout.receipt_sha256
+    approved = store.promote_from_comparisons(
+        memory_id=memory.memory_id, memory=memory,
+        practice_comparison=json.loads(practice.receipt_path.read_text()),
+        holdout_comparison=json.loads(holdout.receipt_path.read_text()),
+        transition_receipt_sha256="d" * 64, actor_fingerprint=ACTOR,
+        expected_record_sha256=shadow.digest(),
+    )
+    assert approved.state == "approved"
+    active = store.activate(memory_id=memory.memory_id, memory=memory,
+                            transition_receipt_sha256="e" * 64, actor_fingerprint=ACTOR,
+                            expected_record_sha256=approved.digest())
+    assert active.state == "active"
+
+
+@pytest.mark.parametrize("damage", ["missing_run", "rollback_budget", "tamper_solver", "tamper_receipt"])
+def test_shared_promotion_rejects_checkpoint_or_panel_tamper(tmp_path, monkeypatch, damage):
+    _store, _memory, _scope, _shadow, _snapshot, service, _practice, _holdout = _shared_prepared(tmp_path)
+    _block_promotion_launches(monkeypatch)
+    if damage == "missing_run":
+        broken = replace(service, shared_run_id="missing")
+    else:
+        version, state = service.shared_ledger.controller_checkpoint("learning")
+        if damage == "rollback_budget":
+            state["budget_state"]["consumed"]["transfer_invocations"] = 0
+            state["budget_state"]["remaining"]["transfer_invocations"] = 2
+        elif damage == "tamper_solver":
+            state["transfer_panels"]["practice-shared"]["solvers"]["invocations"].pop()
+        else:
+            state["transfer_panels"]["practice-shared"]["receipt_sha256"] = "f" * 64
+        with service.shared_ledger.controller_lock("learning"):
+            service.shared_ledger.write_controller_checkpoint("learning", state, expected_sha256=version)
+        broken = service
+    with pytest.raises(RSILearningError):
+        broken.validate_retained()
 
 
 def test_forged_panel_and_snapshot_drift_are_rejected(tmp_path):

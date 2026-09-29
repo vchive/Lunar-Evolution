@@ -77,6 +77,91 @@ def validate_stage_history(previous: object, current: object) -> None:
             raise RSILearningError("rsi_stage_checkpoint_invalid")
 
 
+def validate_solver_state(value: object) -> int:
+    """Validate panel gateway reservations kept beside the stage ledger."""
+    if not isinstance(value, Mapping) or set(value) != {"invocations"} or not isinstance(value["invocations"], list):
+        raise RSILearningError("rsi_solver_checkpoint_invalid")
+    seen = set()
+    for row in value["invocations"]:
+        if (not isinstance(row, Mapping) or set(row) != {"identity", "intent_sha256", "result_sha256"}
+                or not isinstance(row["identity"], Mapping)
+                or row["intent_sha256"] != digest(row["identity"])
+                or row["intent_sha256"] in seen
+                or (row["result_sha256"] is not None and not _sha(row["result_sha256"]))):
+            raise RSILearningError("rsi_solver_checkpoint_invalid")
+        seen.add(row["intent_sha256"])
+    return len(value["invocations"])
+
+
+def validate_solver_history(previous: object, current: object) -> None:
+    old = previous if previous is not None else {"invocations": []}
+    new = current if current is not None else {"invocations": []}
+    validate_solver_state(old)
+    validate_solver_state(new)
+    if len(new["invocations"]) < len(old["invocations"]):
+        raise RSILearningError("rsi_solver_checkpoint_invalid")
+    for before, after in zip(old["invocations"], new["invocations"]):
+        if before["identity"] != after["identity"] or before["intent_sha256"] != after["intent_sha256"]:
+            raise RSILearningError("rsi_solver_checkpoint_invalid")
+        if before["result_sha256"] is not None and before["result_sha256"] != after["result_sha256"]:
+            raise RSILearningError("rsi_solver_checkpoint_invalid")
+
+
+class DurableSolverAccounting:
+    """Reserve and settle a gateway call using the run's solver budget."""
+    def __init__(self, state: dict[str, Any], budget_state: dict[str, Any],
+                 persist: Callable[[], Any], *, lock: Any = None):
+        self.state, self.budget_state, self.persist = state, budget_state, persist
+        self.lock = lock or threading.RLock()
+        self._failed = False
+        validate_solver_state(state)
+        RSIRunBudget.load(budget_state)
+
+    def reserve(self, identity: Mapping[str, Any]) -> dict[str, Any]:
+        clean = dict(identity)
+        pin = digest(clean)
+        with self.lock:
+            if self._failed:
+                raise RSILearningError("rsi_solver_accounting_poisoned")
+            validate_solver_state(self.state)
+            if any(row["intent_sha256"] == pin for row in self.state["invocations"]):
+                raise RSILearningError("rsi_solver_invocation_replay_forbidden")
+            old_budget, old_rows = copy.deepcopy(self.budget_state), copy.deepcopy(self.state["invocations"])
+            budget = RSIRunBudget.load(self.budget_state)
+            budget.reserve_solver_invocation()
+            row = {"identity": clean, "intent_sha256": pin, "result_sha256": None}
+            self.state["invocations"].append(row)
+            try:
+                self.persist()
+            except Exception:
+                self._failed = True
+                self.budget_state.clear(); self.budget_state.update(old_budget)
+                self.state["invocations"][:] = old_rows
+                raise
+            return row
+
+    def complete(self, row: dict[str, Any], result_sha256: str) -> None:
+        if not _sha(result_sha256):
+            raise RSILearningError("rsi_solver_evidence_invalid")
+        with self.lock:
+            if self._failed:
+                raise RSILearningError("rsi_solver_accounting_poisoned")
+            if not any(value is row for value in self.state["invocations"]):
+                raise RSILearningError("rsi_solver_intent_conflict")
+            if row["result_sha256"] is not None:
+                if row["result_sha256"] != result_sha256:
+                    raise RSILearningError("rsi_solver_evidence_conflict")
+                return
+            previous = row["result_sha256"]
+            row["result_sha256"] = result_sha256
+            try:
+                self.persist()
+            except Exception:
+                self._failed = True
+                row["result_sha256"] = previous
+                raise
+
+
 class DurableStageAccounting:
     """Mutate caller-owned state and atomically persist its budget and reservation."""
 
@@ -196,5 +281,15 @@ def reserve_stage(stage: str, identity: Mapping[str, Any]) -> Callable[[str], No
     return lambda receipt_sha256: accounting.complete(row, receipt_sha256)
 
 
-__all__ = ["DurableStageAccounting", "accounting_available", "reserve_stage", "stage_accounting",
-           "validate_evaluator_intent", "validate_stage_history", "validate_stage_state"]
+__all__ = [
+    "DurableSolverAccounting",
+    "DurableStageAccounting",
+    "accounting_available",
+    "reserve_stage",
+    "stage_accounting",
+    "validate_evaluator_intent",
+    "validate_solver_history",
+    "validate_solver_state",
+    "validate_stage_history",
+    "validate_stage_state",
+]

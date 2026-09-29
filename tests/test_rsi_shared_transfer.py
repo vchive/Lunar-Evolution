@@ -8,6 +8,7 @@ from test_rsi_transfer import block_run, profile, snapshot, task
 from lunar_evolution.rsi_controller import RSILearningController
 from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.rsi_native import NativeIndependentVerifier, NativePopulationGateway
+from lunar_evolution.rsi_stage_accounting import digest
 from lunar_evolution.rsi_store import RSILedger
 from lunar_evolution.rsi_transfer import FrozenMemoryTransferBenchmark
 
@@ -20,7 +21,7 @@ def _transfer_draft(request, readonly):
     return draft_for_score(7 if readonly.items else 5)
 
 
-def setup_run(tmp_path, *, transfer_limit=1, verifier_limit=3, evaluator_limit=6):
+def setup_run(tmp_path, *, transfer_limit=1, verifier_limit=3, evaluator_limit=6, solver_limit=None):
     p = profile(tmp_path)
     root = tmp_path / "learning"
     controller = RSILearningController(
@@ -32,7 +33,7 @@ def setup_run(tmp_path, *, transfer_limit=1, verifier_limit=3, evaluator_limit=6
         evaluator_sha256=p.pipeline.evaluator.digest(), environment_sha256=p.pipeline.environment_sha256,
         solver_id="native_population", enable_transfer_accounting=True,
         budget={"max_transfer_invocations": transfer_limit, "max_evaluator_invocations": evaluator_limit,
-                "max_verifier_invocations": verifier_limit},
+                "max_verifier_invocations": verifier_limit, "max_solver_invocations": solver_limit},
     )
     assert outcome.status == "completed"
     benchmark = FrozenMemoryTransferBenchmark(_transfer_draft, tmp_path / "panels", actor_fingerprint="c" * 64)
@@ -56,7 +57,7 @@ def test_shared_panel_counts_and_retained_resume_do_not_repeat_work(tmp_path, mo
     assert result.status == "completed" and result.effect == "improved"
     state = checkpoint(controller)
     assert state["budget_state"]["consumed"] == {
-        "solver_invocations": 1, "practice_episodes": 0, "unknown_retries": 0,
+        "solver_invocations": 3, "practice_episodes": 0, "unknown_retries": 0,
         "evaluator_invocations": 6, "verifier_invocations": 3, "transfer_invocations": 1,
     }
     panel = state["transfer_panels"]["panel"]
@@ -113,6 +114,36 @@ def test_shared_transfer_limit_stops_next_panel_before_actor(tmp_path, monkeypat
         compare(controller, benchmark, panel_task, memory, comparison_id="second")
     assert checkpoint(controller)["budget_state"] == before
     assert compare(controller, benchmark, panel_task, memory, comparison_id="second").status == "unknown"
+
+
+def test_shared_solver_budget_exhausts_before_second_arm_and_keeps_pending(tmp_path, monkeypatch):
+    controller, benchmark, panel_task, memory = setup_run(tmp_path, solver_limit=2)
+    with pytest.raises(RSILearningError, match="rsi_budget_exhausted"):
+        compare(controller, benchmark, panel_task, memory)
+    state = checkpoint(controller)
+    panel = state["transfer_panels"]["panel"]
+    assert state["budget_state"]["consumed"]["solver_invocations"] == 2
+    assert len(panel["solvers"]["invocations"]) == 1
+    assert panel["solvers"]["invocations"][0]["result_sha256"] is not None
+    block_run(monkeypatch)
+    assert compare(controller, benchmark, panel_task, memory).status == "unknown"
+
+
+@pytest.mark.parametrize("field", ["request_sha256", "result_sha256"])
+def test_shared_solver_reservation_tamper_is_rejected_on_resume(tmp_path, field):
+    controller, benchmark, panel_task, memory = setup_run(tmp_path)
+    compare(controller, benchmark, panel_task, memory)
+    version, state = controller.ledger.controller_checkpoint("learning")
+    row = state["transfer_panels"]["panel"]["solvers"]["invocations"][0]
+    if field == "request_sha256":
+        row["identity"][field] = "d" * 64
+        row["intent_sha256"] = digest(row["identity"])
+    else:
+        row[field] = "e" * 64
+    with controller.ledger.controller_lock("learning"):
+        controller.ledger.write_controller_checkpoint("learning", state, expected_sha256=version)
+    with pytest.raises(RSILearningError, match="(solver|checkpoint)_invalid"):
+        controller.resume(run_id="learning")
 
 
 def test_shared_panel_crash_keeps_reservation_and_forbids_relaunch(tmp_path, monkeypatch):

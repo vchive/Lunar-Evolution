@@ -2,7 +2,7 @@ name: test
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/rsi-recovery-integration]
   pull_request:
 
 jobs:

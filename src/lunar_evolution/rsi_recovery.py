@@ -294,7 +294,7 @@ class DurableLearningRun:
         ]
         consumed = budget.state["consumed"]
         if (
-            consumed["solver_invocations"] != len(reserved)
+            consumed["solver_invocations"] != len(reserved) + transfer_counts["solver_invocations"]
             or consumed["practice_episodes"] != len(practices)
             or consumed["unknown_retries"] != len(reconciliations)
             or consumed["verifier_invocations"]

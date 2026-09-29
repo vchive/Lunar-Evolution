@@ -8,9 +8,12 @@ from .rsi_gateway import SolverRequest
 from .rsi_learning import RSILearningError
 from .rsi_native import _PROTOCOL as _NATIVE_PROTOCOL
 from .rsi_stage_accounting import (
+    DurableSolverAccounting,
     DurableStageAccounting,
     digest,
     validate_evaluator_intent,
+    validate_solver_history,
+    validate_solver_state,
     validate_stage_history,
     validate_stage_state,
 )
@@ -35,6 +38,7 @@ def validate_transfer_history(previous: Mapping, current: Mapping) -> None:
         if any(before.get(key) != after.get(key) for key in ("identity", "root")):
             _fail()
         validate_stage_history(before.get("stages"), after.get("stages"))
+        validate_solver_history(before.get("solvers"), after.get("solvers"))
         if before.get("receipt_sha256") is not None and before["receipt_sha256"] != after.get("receipt_sha256"):
             _fail()
 
@@ -98,12 +102,12 @@ def _validate_completed_panel(identity, root, payload, stage_rows) -> None:
 
 def validate_transfers(run) -> dict[str, int]:
     """Validate retained panel counters and bindings without constructing an execution backend."""
-    totals = {"transfer": 0, "evaluator": 0, "verifier": 0}
+    totals = {"transfer": 0, "evaluator": 0, "verifier": 0, "solver_invocations": 0}
     panels = run.state.get("transfer_panels", {})
     if not isinstance(panels, Mapping):
         _fail()
     for comparison_id, entry in panels.items():
-        if not isinstance(entry, Mapping) or set(entry) != {"identity", "root", "stages", "receipt_sha256"}:
+        if not isinstance(entry, Mapping) or set(entry) != {"identity", "root", "stages", "solvers", "receipt_sha256"}:
             _fail()
         identity = entry["identity"]
         if (not isinstance(identity, Mapping) or identity.get("comparison_id") != comparison_id
@@ -117,11 +121,20 @@ def validate_transfers(run) -> dict[str, int]:
         if not root.is_absolute() or root.is_symlink():
             _fail()
         stages = entry["stages"]
+        solvers = entry["solvers"]
         counts = validate_stage_state(stages)
+        solver_count = validate_solver_state(solvers)
         if counts["transfer"] not in {0, 1}:
             _fail()
         for name in totals:
-            totals[name] += counts[name]
+            if name in counts:
+                totals[name] += counts[name]
+        # A pending panel may have fewer calls, but never more than its fixed arm count.
+        if (solver_count != 2 * len(identity.get("tasks", ()))
+                and (entry["receipt_sha256"] is not None
+                     or solver_count > 2 * len(identity.get("tasks", ())))):
+            _fail()
+        totals["solver_invocations"] += solver_count
         intent = root / "intent.json"
         if intent.exists() or intent.is_symlink():
             if _read(intent) != identity:
@@ -134,6 +147,20 @@ def validate_transfers(run) -> dict[str, int]:
         known = {task.get("task_id"): task for task in tasks}
         if len(known) != len(tasks):
             _fail()
+        expected_solver = set()
+        for task in tasks:
+            for arm in ("baseline", "frozen"):
+                request = _request(identity, task, arm)
+                expected_solver.add((task["task_id"], arm, request.episode_id, request.digest()))
+        observed_solver = set()
+        for solver_row in solvers["invocations"]:
+            owner = solver_row["identity"]
+            observed = (owner.get("task_id"), owner.get("arm"), owner.get("episode_id"), owner.get("request_sha256"))
+            if (owner.get("comparison_id") != comparison_id or observed not in expected_solver):
+                _fail()
+            if observed in observed_solver:
+                _fail()
+            observed_solver.add(observed)
         transfer_row = None
         seen_verifiers = set()
         evaluator_counts = {}
@@ -178,6 +205,13 @@ def validate_transfers(run) -> dict[str, int]:
                     or payload.get("intent_sha256") != digest(identity)):
                 _fail()
             _validate_completed_panel(identity, root, payload, stages["invocations"])
+            payload_results = {(row["task_id"], arm): _execution(row[arm]).result
+                               for row in payload["rows"] for arm in ("baseline", "frozen")}
+            for solver_row in solvers["invocations"]:
+                owner = solver_row["identity"]
+                result = payload_results[(owner["task_id"], owner["arm"])]
+                if solver_row["result_sha256"] != digest(result.to_dict()):
+                    _fail()
     return totals
 
 
@@ -205,16 +239,20 @@ def compare_transfer(run, *, benchmark, comparison_id, tasks, snapshot):
             if root.exists() or root.is_symlink():
                 raise RSILearningError("rsi_transfer_unbound_panel")
             entry = {"identity": identity, "root": str(root),
-                     "stages": {"invocations": []}, "receipt_sha256": None}
+                     "stages": {"invocations": []}, "solvers": {"invocations": []},
+                     "receipt_sha256": None}
             panels[comparison_id] = entry
             run._save()
         elif entry["identity"] != identity or entry["root"] != str(root):
             raise RSILearningError("rsi_transfer_comparison_identity_changed")
         accounting = DurableStageAccounting(entry["stages"], run.state["budget_state"],
                                              run._save, lock=run.mutex)
+        solver_accounting = DurableSolverAccounting(entry["solvers"], run.state["budget_state"],
+                                                    run._save, lock=run.mutex)
         run.ledger._assert_controller_lock(run.run_id)
         result = benchmark.compare(comparison_id=comparison_id, tasks=tasks, snapshot=snapshot,
-                                   accounting=accounting, accounting_binding=binding, read_only=read_only)
+                                   accounting=accounting, solver_accounting=solver_accounting,
+                                   accounting_binding=binding, read_only=read_only)
         if result.status == "completed":
             if entry["receipt_sha256"] not in {None, result.receipt_sha256}:
                 _fail()

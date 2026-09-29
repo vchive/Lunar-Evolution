@@ -42,6 +42,7 @@ from .rsi_native import (
     NativePopulationGateway,
 )
 from .rsi_stage_accounting import (
+    DurableSolverAccounting,
     DurableStageAccounting,
     stage_accounting,
     validate_evaluator_intent,
@@ -344,6 +345,7 @@ class FrozenMemoryTransferBenchmark:
     def compare(self, *, comparison_id: str, tasks: Sequence[NativeTransferTask],
                 snapshot: MemorySnapshot, budget: Mapping[str, Any] | None = None,
                 accounting: DurableStageAccounting | None = None,
+                solver_accounting: DurableSolverAccounting | None = None,
                 accounting_binding: Mapping[str, str] | None = None,
                 read_only: bool = False) -> FrozenTransferResult:
         """Compare a panel, optionally charging a caller-owned durable run budget.
@@ -352,7 +354,7 @@ class FrozenMemoryTransferBenchmark:
         and atomic checkpoint writer as its controller. Retained opens never reserve work.
         """
         tasks = tuple(tasks)
-        if (accounting is None) != (accounting_binding is None):
+        if (accounting is None) != (accounting_binding is None) or (solver_accounting is None) != (accounting_binding is None):
             _fail("accounting_binding_invalid")
         identity = self.comparison_identity(comparison_id=comparison_id, tasks=tasks,
                                             snapshot=snapshot, budget=budget,
@@ -367,7 +369,8 @@ class FrozenMemoryTransferBenchmark:
                 _fail("comparison_identity_changed")
             if not receipt.exists() and not receipt.is_symlink():
                 return FrozenTransferResult(comparison_id, "unknown", "unresolved", None, None, len(tasks))
-            return self._resume(root, identity, tasks, snapshot, accounting=accounting)
+            return self._resume(root, identity, tasks, snapshot, accounting=accounting,
+                                solver_accounting=solver_accounting)
         _ensure_private_directory(Path(self.workspace_root.anchor), tuple(self.workspace_root.parts[1:]))
         root = _ensure_private_directory(self.workspace_root, ("comparisons", comparison_id))
         intent, receipt = root / "intent.json", root / "comparison.json"
@@ -387,7 +390,8 @@ class FrozenMemoryTransferBenchmark:
                     except RSILearningError:
                         _fail("stage_accounting_invalid")
                 return FrozenTransferResult(comparison_id, "unknown", "unresolved", None, None, len(tasks))
-            return self._resume(root, identity, tasks, snapshot, accounting=accounting)
+            return self._resume(root, identity, tasks, snapshot, accounting=accounting,
+                                solver_accounting=solver_accounting)
         if receipt.exists() or receipt.is_symlink():
             _fail("intent_missing")
         _write_new(intent, identity)
@@ -414,6 +418,12 @@ class FrozenMemoryTransferBenchmark:
                     verifier, comparison_id=comparison_id, task_id=task.task_id, arm=arm,
                 )
                 runner = PracticeEpisodeRunner(gateway, scoped_verifier)
+                solver_row = None
+                if solver_accounting is not None:
+                    solver_row = solver_accounting.reserve({
+                        "comparison_id": comparison_id, "task_id": task.task_id, "arm": arm,
+                        "episode_id": request.episode_id, "request_sha256": request.digest(),
+                    })
                 if accounting is None:
                     execution = runner.run(episode, request)
                 else:
@@ -421,6 +431,8 @@ class FrozenMemoryTransferBenchmark:
                         "comparison_id": comparison_id, "task_id": task.task_id, "arm": arm,
                     }):
                         execution = runner.run(episode, request)
+                if solver_row is not None:
+                    solver_accounting.complete(solver_row, _sha(execution.result.to_dict()))
                 arms.append(execution)
             if snapshot.to_dict() != identity["snapshot"]:
                 _fail("memory_snapshot_changed")
@@ -431,10 +443,12 @@ class FrozenMemoryTransferBenchmark:
         _write_new(receipt, payload)
         if accounting is not None:
             accounting.complete(accounting.state["invocations"][0], payload["receipt_sha256"])
-        return self._resume(root, identity, tasks, snapshot, accounting=accounting)
+        return self._resume(root, identity, tasks, snapshot, accounting=accounting,
+                            solver_accounting=solver_accounting)
 
     def _resume(self, root: Path, identity: dict, tasks: tuple[NativeTransferTask, ...],
-                snapshot: MemorySnapshot, *, accounting: DurableStageAccounting | None = None) -> FrozenTransferResult:
+                snapshot: MemorySnapshot, *, accounting: DurableStageAccounting | None = None,
+                solver_accounting: DurableSolverAccounting | None = None) -> FrozenTransferResult:
         payload = _read(root / "comparison.json")
         if set(payload) != {"protocol", "intent_sha256", "rows", "summary", "receipt_sha256"}:
             _fail("comparison_record_invalid")
@@ -443,7 +457,7 @@ class FrozenMemoryTransferBenchmark:
             _fail("comparison_receipt_mismatch")
         stage_budget = identity.get("stage_budget")
         shared = "accounting_binding" in identity
-        if shared and accounting is None:
+        if shared and (accounting is None or solver_accounting is None):
             _fail("shared_accounting_required")
         accounting_path = root / "stage-accounting.json"
         if stage_budget is not None or shared:
@@ -482,6 +496,19 @@ class FrozenMemoryTransferBenchmark:
                 _fail("stage_accounting_invalid")
             if transfer_rows[0]["evidence"] is None or transfer_rows[0]["evidence"]["receipt_sha256"] != payload["receipt_sha256"]:
                 _fail("stage_accounting_invalid")
+            if shared:
+                solver_state = solver_accounting.state
+                solver_rows = solver_state["invocations"]
+                expected = 2 * len(tasks)
+                if len(solver_rows) != expected:
+                    _fail("solver_checkpoint_invalid")
+                for row in solver_rows:
+                    owner = row["identity"]
+                    if (owner.get("comparison_id") != identity["comparison_id"]
+                            or owner.get("task_id") not in {task["task_id"] for task in identity["tasks"]}
+                            or owner.get("arm") not in {"baseline", "frozen"}
+                            or row["result_sha256"] is None):
+                        _fail("solver_checkpoint_invalid")
         elif accounting_path.exists() or accounting_path.is_symlink():
             _fail("stage_accounting_unexpected")
         rows = payload["rows"]

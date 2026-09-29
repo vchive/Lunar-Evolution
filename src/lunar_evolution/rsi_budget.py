@@ -159,6 +159,17 @@ class RSIRunBudget:
         self.state["consumed"]["solver_invocations"] += 1
         self._refresh()
 
+    def reserve_solver_invocation(self) -> None:
+        """Reserve one solver gateway call outside the learning episode scheduler."""
+        planned = self.state["planned"]
+        if planned["deadline_unix"] is not None and time.time() >= planned["deadline_unix"]:
+            raise RSILearningError("rsi_budget_exhausted")
+        limit = planned["max_solver_invocations"]
+        if limit is not None and self.state["consumed"]["solver_invocations"] >= limit:
+            raise RSILearningError("rsi_budget_exhausted")
+        self.state["consumed"]["solver_invocations"] += 1
+        self._refresh()
+
     def reserve_unknown_reconcile(self) -> None:
         limit = self.state["planned"]["max_unknown_retries"]
         if limit is not None and self.state["consumed"]["unknown_retries"] >= limit:
