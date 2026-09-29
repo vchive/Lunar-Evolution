@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -97,7 +98,7 @@ def _request_runtime_workspace(controller: Any, binding: AutomaticSolveWorkerBin
     if binding.state is AutomaticSolveWorkerBindingState.UNKNOWN:
         _fail("binding")
     try:
-        from .cli import _compiler_fingerprint
+        from .cli import _compiler_fingerprint, _conversation_manifest
 
         workspace = Path(run.workspace)
         if str(workspace) != binding.workspace_identity:
@@ -107,10 +108,34 @@ def _request_runtime_workspace(controller: Any, binding: AutomaticSolveWorkerBin
         if len(requests) != 1 or type(requests[0]) is not dict:
             _fail("request")
         request = requests[0]
-        if (type(request.get("automatic_lifecycle_version")) is not int
-                or request.get("automatic_lifecycle_version") != 1 or request.get("bundle_mode") != "compiled"
-                or _digest(request, maximum=16 * 1024) != binding.lifecycle_digest
-                or request != json.loads(binding.normalized_policy())):
+        policy = json.loads(binding.normalized_policy())
+        if type(policy) is not dict:
+            _fail("request")
+        wrapped = set(policy) == {"native_request", "worker_active_timeout", "manifest_sha256"}
+        if not wrapped and set(policy) != set(request):
+            _fail("request")
+        if wrapped:
+            native_request = policy["native_request"]
+            timeout = policy["worker_active_timeout"]
+            manifest_pin = policy["manifest_sha256"]
+            if type(native_request) is not dict or (timeout is not None and (
+                    isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                    or not math.isfinite(float(timeout)) or timeout <= 0 or timeout > 24 * 60 * 60)):
+                _fail("request")
+            if manifest_pin is not None and (
+                    type(manifest_pin) is not str or len(manifest_pin) != 64
+                    or any(char not in _HEX for char in manifest_pin)):
+                _fail("request")
+            manifest = _conversation_manifest(run)
+            observed_manifest = _digest(manifest, maximum=512 * 1024) if manifest is not None else None
+            if observed_manifest != manifest_pin:
+                _fail("runtime")
+        else:
+            native_request, timeout, manifest_pin = policy, None, None
+        if (type(native_request.get("automatic_lifecycle_version")) is not int
+                or native_request.get("automatic_lifecycle_version") != 1 or native_request.get("bundle_mode") != "compiled"
+                or _digest(native_request, maximum=16 * 1024) != binding.lifecycle_digest
+                or _digest(request, maximum=16 * 1024) != binding.lifecycle_digest):
             _fail("request")
         if _compiler_fingerprint(controller.runtime) != binding.runtime_fingerprint:
             _fail("runtime")
@@ -124,6 +149,8 @@ def _request_runtime_workspace(controller: Any, binding: AutomaticSolveWorkerBin
     return {
         "lifecycle_digest": binding.lifecycle_digest,
         "runtime_fingerprint": binding.runtime_fingerprint,
+        "manifest_sha256": manifest_pin,
+        "worker_active_timeout": timeout,
         "workspace": {
             "sha256": _digest(str(workspace), maximum=8 * 1024),
             "device": int(opened.st_dev),
@@ -138,12 +165,15 @@ def _contract_and_child(controller: Any, binding: AutomaticSolveWorkerBinding, p
     except Exception as exc:
         _fail("contract")
         raise AssertionError from exc
-    if binding.contract_digest is not None:
-        if contract is None or contract.digest() != binding.contract_digest:
-            _fail("contract")
+    if binding.contract_digest is not None and (contract is None or contract.digest() != binding.contract_digest):
+        _fail("contract")
     links = [event.get("payload") for event in controller.store.list_events(parent.id)
              if event.get("type") == "evolution_linked"]
     if len(links) > 1 or any(not isinstance(item, dict) for item in links):
+        _fail("child")
+    if links and set(links[0]) != {"evolution_run_id", "contract_sha256", "strategy"}:
+        _fail("child")
+    if links and (type(links[0]["evolution_run_id"]) is not str or not links[0]["evolution_run_id"]):
         _fail("child")
     child_id = links[0].get("evolution_run_id") if links else None
     if child_id is not None:
@@ -163,6 +193,50 @@ def _contract_and_child(controller: Any, binding: AutomaticSolveWorkerBinding, p
     else:
         child = None
     return contract, child
+
+
+def _terminal_event(controller: Any, run: Any) -> tuple[str, dict[str, object]]:
+    if run.status.value not in _TERMINAL or controller.store.pending_input(run.id) is not None:
+        _fail("terminal")
+    event_type = "run_" + run.status.value
+    event = _one_event(controller, run.id, event_type)
+    if event is None and run.status is RunStatus.FAILED:
+        event_type = "budget_exceeded"
+        event = _one_event(controller, run.id, event_type)
+    if event is None:
+        _fail("terminal")
+    return event_type, event
+
+
+def _child_terminal(controller: Any, parent: Any, child: Any) -> dict[str, object] | None:
+    if child is None:
+        return None
+    expected = Path(parent.workspace) / "evolution-run"
+    if Path(child.workspace) != expected:
+        _fail("child")
+    held = None
+    try:
+        held = DirectoryChain(expected, "automatic_solve_native_result_child")
+        info = os.fstat(held.fd)
+        event_type, event = _terminal_event(controller, child)
+        result = {
+            "status": child.status.value,
+            "terminal_event": event_type,
+            "terminal_event_sha256": _canonical_event(event),
+            "workspace": {
+                "sha256": _digest(str(expected), maximum=8 * 1024),
+                "device": int(info.st_dev), "inode": int(info.st_ino),
+            },
+        }
+        held.check()
+        return result
+    except NativeResultReferenceError:
+        raise
+    except Exception as exc:
+        raise NativeResultReferenceError("child") from exc
+    finally:
+        if held is not None:
+            held.close()
 
 
 def _artifact_digest(controller: Any, run_ids: tuple[str, ...]) -> tuple[str, int]:
@@ -280,24 +354,15 @@ def _capture(controller: Any, binding: AutomaticSolveWorkerBinding, chain: Direc
     parent = controller.store.get_run(binding.run_id)
     pins = _request_runtime_workspace(controller, binding, parent, chain)
     contract, child = _contract_and_child(controller, binding, parent)
-    if parent.status.value not in _TERMINAL:
-        _fail("terminal")
     outcome = parent.status.value
-    terminal_type = "run_" + outcome
-    terminal_event = _one_event(controller, parent.id, terminal_type)
-    if terminal_event is None and outcome == RunStatus.FAILED.value:
-        terminal_event = _one_event(controller, parent.id, "budget_exceeded")
-        terminal_type = "budget_exceeded"
-    if terminal_event is None:
-        _fail("terminal")
+    terminal_type, terminal_event = _terminal_event(controller, parent)
+    child_terminal = _child_terminal(controller, parent, child)
     run_ids = (parent.id,) + ((child.id,) if child is not None else ())
     cleanup = _cleanup(controller, binding, run_ids)
     artifact_sha256, artifact_count = _artifact_digest(controller, run_ids)
     delivery = None
     if outcome == RunStatus.SUCCEEDED.value:
         delivery = _read_success_delivery(controller, binding, parent, child, contract)
-    elif child is not None and child.status.value not in _TERMINAL:
-        _fail("terminal")
     reference = {
         "schema_version": _SCHEMA,
         "kind": _KIND,
@@ -310,6 +375,7 @@ def _capture(controller: Any, binding: AutomaticSolveWorkerBinding, chain: Direc
         "native": {
             "status": parent.status.value,
             "child_run_id": child.id if child is not None else None,
+            "child": child_terminal,
             "contract_digest": contract.digest() if contract is not None else None,
             "terminal_event": terminal_type,
             "terminal_event_sha256": _canonical_event(terminal_event),
@@ -325,6 +391,56 @@ def _capture(controller: Any, binding: AutomaticSolveWorkerBinding, chain: Direc
         _fail("reference")
         raise AssertionError from exc
     return reference
+
+
+def _validate_reference_shape(candidate: object, binding: AutomaticSolveWorkerBinding) -> dict[str, object]:
+    if type(candidate) is not dict:
+        _fail("reference")
+    expected_binding = {
+        "binding_id": binding.binding_id, "generation": binding.generation,
+        "run_id": binding.run_id, "worker_attempt_id": binding.worker_attempt_id,
+    }
+    if (candidate.get("schema_version") != _SCHEMA or candidate.get("kind") != _KIND
+            or candidate.get("binding") != expected_binding
+            or candidate.get("outcome") not in _TERMINAL):
+        _fail("reference")
+    native = candidate.get("native")
+    if type(native) is not dict or native.get("status") != candidate.get("outcome"):
+        _fail("reference")
+    for key in ("terminal_event_sha256", "artifact_manifest_sha256"):
+        value = native.get(key)
+        if type(value) is not str or len(value) != 64 or any(char not in _HEX for char in value):
+            _fail("reference")
+    for key in ("lifecycle_digest", "runtime_fingerprint"):
+        value = candidate.get(key)
+        if value != getattr(binding, "lifecycle_digest" if key == "lifecycle_digest" else "runtime_fingerprint"):
+            _fail("reference")
+    workspace = candidate.get("workspace")
+    if (type(workspace) is not dict or type(workspace.get("sha256")) is not str
+            or len(workspace["sha256"]) != 64 or any(char not in _HEX for char in workspace["sha256"])
+            or type(workspace.get("device")) is not int or type(workspace.get("inode")) is not int):
+        _fail("reference")
+    cleanup = candidate.get("cleanup")
+    if cleanup != {"native_attempt_processes": 0, "worker_processes": 0}:
+        _fail("reference")
+    delivery = native.get("delivery")
+    if candidate["outcome"] == RunStatus.SUCCEEDED.value:
+        if type(delivery) is not dict:
+            _fail("reference")
+        for key in ("bundle_sha256", "receipt_sha256", "evaluation_sha256", "delivery_sha256", "terminal_event_sha256"):
+            value = delivery.get(key)
+            if type(value) is not str or len(value) != 64 or any(char not in _HEX for char in value):
+                _fail("reference")
+        if type(delivery.get("outputs_count")) is not int or delivery["outputs_count"] < 0:
+            _fail("reference")
+    elif delivery is not None:
+        _fail("reference")
+    try:
+        canonical_json(candidate, maximum=_MAX_REFERENCE_BYTES)
+    except Exception as exc:
+        _fail("reference")
+        raise AssertionError from exc
+    return candidate
 
 
 def capture_native_result(controller: Any, binding: AutomaticSolveWorkerBinding) -> dict[str, object]:
@@ -343,15 +459,24 @@ def capture_native_result(controller: Any, binding: AutomaticSolveWorkerBinding)
         parent = controller.store.get_run(binding.run_id)
         if parent is None or parent.status.value != result["outcome"]:
             _fail("terminal")
+        # Recheck every durable request/runtime pin captured above, including the active
+        # timeout and conversation-manifest pin carried by the adapter's wrapped policy.
         if _request_runtime_workspace(controller, binding, parent, chain) != {
-            key: result[key] for key in ("lifecycle_digest", "runtime_fingerprint", "workspace")
+            key: result[key] for key in (
+                "lifecycle_digest",
+                "runtime_fingerprint",
+                "manifest_sha256",
+                "worker_active_timeout",
+                "workspace",
+            )
         }:
             _fail("reference")
-        contract, child = _contract_and_child(controller, binding, parent)
+        _contract, child = _contract_and_child(controller, binding, parent)
         run_ids = (parent.id,) + ((child.id,) if child is not None else ())
         _cleanup(controller, binding, run_ids)
         native = result["native"]
         if (_artifact_digest(controller, run_ids) != (native["artifact_manifest_sha256"], native["artifact_count"])
+                or _child_terminal(controller, parent, child) != native["child"]
                 or _canonical_event(_one_event(controller, parent.id, native["terminal_event"]) or {}) != native["terminal_event_sha256"]):
             _fail("reference")
         chain.check()
@@ -378,18 +503,26 @@ def validate_native_result(
             _fail("reference")
         if reference.outcome not in _TERMINAL:
             _fail("reference")
-        candidate = reference.reference
+        try:
+            rebuilt = AutomaticSolveWorkerResultReference(
+                binding_id=reference.binding_id, generation=reference.generation,
+                run_id=reference.run_id, worker_attempt_id=reference.worker_attempt_id,
+                outcome=reference.outcome, reference=dict(reference.reference),
+                sha256=reference.sha256, created_at=reference.created_at,
+            )
+            if rebuilt.outcome != rebuilt.reference.get("outcome"):
+                _fail("reference")
+        except Exception as exc:
+            _fail("reference")
+            raise AssertionError from exc
+        candidate = rebuilt.reference
     elif type(reference) is dict:
         candidate = reference
     else:
         _fail("reference")
-    try:
-        canonical_json(candidate, maximum=_MAX_REFERENCE_BYTES)
-    except Exception as exc:
-        _fail("reference")
-        raise AssertionError from exc
+    _validate_reference_shape(candidate, binding)
     current = capture_native_result(controller, binding)
-    if candidate != current:
+    if canonical_json(candidate, maximum=_MAX_REFERENCE_BYTES) != canonical_json(current, maximum=_MAX_REFERENCE_BYTES):
         _fail("reference")
     return current
 

@@ -86,6 +86,21 @@ from .agents import (
     RuntimeAgentAdapter,
 )
 from .algorithm import OutputSpec
+from .automatic_solve_continuation import (
+    AutomaticSolveContinuation,
+    continue_automatic_solve,
+)
+from .automatic_solve_worker_adapter import (
+    AutomaticSolveAwaitingInput,
+    AutomaticSolveRecoveryRequired,
+    AutomaticSolveWorkerAdapter,
+    AutomaticSolveWorkerBridge,
+)
+from .automatic_solve_worker_result import (
+    NativeResultReferenceError,
+    capture_native_result,
+    validate_native_result,
+)
 from .benchmark import (
     ACTIVE_BENCHMARK_STRATEGIES,
     BENCHMARK_STRATEGIES,
@@ -675,16 +690,6 @@ from .trusted_bootstrap_handoff import (
     verify_trusted_bootstrap_process_registration_handoff,
 )
 from .workers import WorkerService
-from .automatic_solve_worker_adapter import (
-    AutomaticSolveAwaitingInput,
-    AutomaticSolveRecoveryRequired,
-    AutomaticSolveWorkerAdapter,
-    AutomaticSolveWorkerBridge,
-)
-from .automatic_solve_continuation import (
-    AutomaticSolveContinuation,
-    continue_automatic_solve,
-)
 from .workflow_checkpoint import (
     AggregateUsage,
     Checkpoint,
@@ -774,6 +779,11 @@ __all__ = [
     "AgentResult",
     "AgentSelectionError",
     "AggregateUsage",
+    "AutomaticSolveAwaitingInput",
+    "AutomaticSolveContinuation",
+    "AutomaticSolveRecoveryRequired",
+    "AutomaticSolveWorkerAdapter",
+    "AutomaticSolveWorkerBridge",
     "BaselineProvenance",
     "BenchmarkComparisonError",
     "BenchmarkComparisonPlan",
@@ -894,6 +904,7 @@ __all__ = [
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
     "NativeProducerUnknownAttempt",
+    "NativeResultReferenceError",
     "NativeTrustedPublicationAuthority",
     "NativeTrustedPublicationError",
     "OffspringOutcome",
@@ -1025,12 +1036,6 @@ __all__ = [
     "WorkerService",
     "WorkerState",
     "WorkerStopReason",
-    "AutomaticSolveAwaitingInput",
-    "AutomaticSolveRecoveryRequired",
-    "AutomaticSolveWorkerAdapter",
-    "AutomaticSolveWorkerBridge",
-    "AutomaticSolveContinuation",
-    "continue_automatic_solve",
     "WorkflowCheckpoint",
     "WorkflowCheckpointError",
     "WorkflowController",
@@ -1090,6 +1095,7 @@ __all__ = [
     "candidate_file_table_sha256",
     "candidate_output_contract_sha256",
     "canonical_profile_json",
+    "capture_native_result",
     "claim_acceptance_attempt",
     "commit_producer_bundle_publication",
     "compile_evaluator_bundle",
@@ -1097,6 +1103,7 @@ __all__ = [
     "compute_handoff_fingerprint",
     "compute_seed_identity",
     "config_from_contract",
+    "continue_automatic_solve",
     "contract_candidate_runner_fingerprint",
     "convert_fm_eval_baseline",
     "declared_producer_environment_sha256",
@@ -1208,6 +1215,7 @@ __all__ = [
     "validate_candidate_execution_admission",
     "validate_candidate_source_bundle",
     "validate_candidate_workspace_plan",
+    "validate_native_result",
     "validate_producer_request_evidence",
     "verify_candidate_source_bundle",
     "verify_native_campaign_audit",
