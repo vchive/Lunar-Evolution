@@ -7,7 +7,6 @@ implementation; this module only verifies the snapshot immediately before delega
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import stat
 from contextlib import nullcontext
@@ -21,7 +20,7 @@ from .automatic_solve_lifecycle import (
     _positive_timeout,
     own_automatic_solve,
 )
-from .candidate_evaluation_spec import canonical_json
+from .candidate_evaluation_spec import canonical_json, strict_json
 from .config import Config
 
 
@@ -47,7 +46,8 @@ class AutomaticSolveContinuation:
         if not workspace.is_absolute() or workspace.is_symlink():
             raise ValueError("automatic continuation workspace is invalid")
         request = self.request
-        if (type(request) is not dict or request.get("automatic_lifecycle_version") != 1
+        if (type(request) is not dict or type(request.get("automatic_lifecycle_version")) is not int
+                or request.get("automatic_lifecycle_version") != 1
                 or request.get("bundle_mode") != "compiled"):
             raise ValueError("automatic continuation request is not lifecycle-enabled")
         expected = _digest(request)
@@ -63,14 +63,18 @@ class AutomaticSolveContinuation:
     def request(self) -> dict[str, object]:
         if type(self.request_json) is not str or len(self.request_json.encode("utf-8")) > 512 * 1024:
             raise ValueError("automatic continuation request is invalid")
-        return json.loads(self.request_json)
+        request = strict_json(self.request_json, maximum=512 * 1024)
+        if not isinstance(request, dict):
+            raise TypeError("automatic continuation request is invalid")
+        return request
 
     @classmethod
     def capture(cls, controller: Any, run: Any) -> AutomaticSolveContinuation:
         from .cli import _compiler_fingerprint, _conversation_manifest, _latest_evolution_request
 
         request = _latest_evolution_request(controller.store, run.id)
-        if (not isinstance(request, dict) or request.get("automatic_lifecycle_version") != 1
+        if (not isinstance(request, dict) or type(request.get("automatic_lifecycle_version")) is not int
+                or request.get("automatic_lifecycle_version") != 1
                 or request.get("bundle_mode") != "compiled"):
             raise ValueError("automatic solve is not lifecycle-enabled")
         manifest = _conversation_manifest(run)
@@ -120,6 +124,29 @@ def continue_automatic_solve(
         raise TypeError("execution_control must be SolveExecutionControl")
     if parent_control is not None and not isinstance(parent_control, SolveExecutionControl):
         raise TypeError("parent_control must be SolveExecutionControl")
+    run = controller.store.get_run(continuation.run_id)
+    if run is None:
+        raise ValueError("automatic continuation run no longer exists")
+    continuation.verify(controller, run)
+    # Resolve and validate every persisted policy pin before taking a workspace lock or
+    # admitting any control. This mirrors the ordinary CLI continuation gate.
+    from .cli import (
+        _conversation_manifest,
+        _evolution_args,
+        _solve_payload,
+        _validate_conversational_bundle_request,
+        _validate_evolution_override,
+        build_parser,
+    )
+
+    args = build_parser().parse_args(["solve", "--resume", "--run-id", continuation.run_id])
+    _validate_conversational_bundle_request(args, continuation.request)
+    _validate_evolution_override(args, continuation.request)
+    effective_args = _evolution_args(args, continuation.request)
+    effective_args.detach = False
+    pending_input = controller.store.pending_input(run.id)
+    if run.status.value in {"succeeded", "failed", "cancelled"} or pending_input is not None:
+        return _solve_payload(controller, run)
     if active_timeout is not None:
         _positive_timeout(active_timeout, "worker active timeout")
     if owner is not None and (
@@ -129,10 +156,6 @@ def continue_automatic_solve(
         or owner.lock_fd is None
     ):
         raise ValueError("automatic continuation owner is not admitted")
-    run = controller.store.get_run(continuation.run_id)
-    if run is None:
-        raise ValueError("automatic continuation run no longer exists")
-    continuation.verify(controller, run)
     if owner is not None:
         retained = os.fstat(owner.lock_fd)
         named = (Path(run.workspace) / ".automatic-solve.lock").lstat()
@@ -141,23 +164,20 @@ def continue_automatic_solve(
             raise ValueError("automatic continuation owner workspace changed")
     # Only native parser defaults and persisted policy reach private orchestration. There is
     # no public mutable namespace, detached flag, alternate model or internal bypass fields.
-    from .cli import _evolution_args, _validate_evolution_override, build_parser
-    args = build_parser().parse_args(["solve", "--resume", "--run-id", continuation.run_id])
-    _validate_evolution_override(args, continuation.request)
-    effective_args = _evolution_args(args, continuation.request)
-    effective_args.detach = False
     effective_args._automatic_owner = owner
     if execution_control is not None:
         effective_args._solve_execution_control = execution_control
     effective_args._solve_parent_control = parent_control
     effective_args._solve_active_timeout = active_timeout
-    from .cli import _continue_automatic_solve, _conversation_manifest
+    from .cli import _continue_automatic_solve
 
     with (nullcontext(owner) if owner is not None else own_automatic_solve(run.id, Path(run.workspace))) as held:
         run = controller.store.get_run(continuation.run_id)
         if run is None:
             raise ValueError("automatic continuation run no longer exists")
         continuation.verify(controller, run)
+        if run.status.value in {"succeeded", "failed", "cancelled"} or controller.store.pending_input(run.id) is not None:
+            return _solve_payload(controller, run)
         for control in (execution_control, parent_control):
             if control is not None:
                 control.check("contract")
