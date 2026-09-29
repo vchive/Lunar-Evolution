@@ -1,5 +1,34 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-29 WorkerService integration status (latest)
+
+The latest `codex/rsi-recovery-integration` commits `3e078b9`, `be847bf`, and
+`debf5d9` complete the implemented portions of WorkerService Integration (WSI-01 through
+WSI-06). The integration worktree is `/tmp/lunar-rsi-integration-20260929`; the original
+`/Users/liminghan/Documents/lunar_agent` worktree remains untouched.
+
+Completed in this slice:
+
+- durable worker binding and generation-aware resume/recovery, including CAS fencing and
+  typed continuation states;
+- shared execution control and explicit `AutomaticSolveWorkerAdapter`/`WorkerService`
+  bridge APIs, so generic resume cannot bypass the native binding policy;
+- composable outer/native process observers with cleanup ownership, nested-scope handling,
+  stale-callback rejection, and cleanup-failure reporting;
+- read-only native result evidence capture and validation, including request/runtime/workspace
+  pins, reciprocal parent/child links, terminal event, delivery receipt/artifact, process
+  cleanup, inode and digest checks; and
+- generation resume fencing that rejects unknown or stale generations and atomically
+  supersedes a settled parent before admitting the next generation.
+
+The latest local focused suites for the adapter, binding, native result reader, continuation,
+worker, fault, deadline and WorkerService paths pass. This is still an integration slice, not
+a release claim. P0/P1 work remains open for complete external producer egress and credential/
+recovery authority, trusted output to publication and automatic parent delivery, complete
+unknown-producer reconciliation, real OpenEvolve/Shinka campaign acceptance, cross-platform CI
+verification and merge to the default branch. No WebAgent, remote evaluator, real producer
+campaign or new model request was run.
+
 ## 2026-09-29 shared solver accounting and promotion
 
 Pushed `515cc29` on `codex/rsi-recovery-integration` from
