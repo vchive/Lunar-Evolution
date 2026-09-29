@@ -29,7 +29,9 @@
       tampering rejection, budget downgrade rejection, deadline/cancellation before commit and
       successful completion after entering the commit critical region.
       Added: same-boot subprocess budget restoration and active-stop non-publication regression.
-      Still open: full unknown/interruption reconciliation across process restart.
+      Added: read-only inspection of incomplete native candidate/evaluator attempts with exact
+      prepared journal, plan/admission, source and stop-receipt checks. It reports unknown only;
+      owner-checked post-crash cleanup and full unknown reconciliation remain open.
 - [x] T153-06c Persist and independently inspect native all-rejected terminal batches without
       publishing candidates; rebuild portable receipts from retained original evidence.
 - [x] T153-06d Compose caller-owned active execution controls with tighter parent controls,

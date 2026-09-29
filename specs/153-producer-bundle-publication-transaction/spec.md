@@ -153,9 +153,11 @@ evaluation calls. Missing or partial terminal evidence requires recovery and is 
 repaired or replayed. Nonzero execution, timeout, and other unknown draft outcomes are still
 outside this completed terminal slice.
 
-Remaining work includes the full unknown/interruption recovery matrix and explicit reconciliation
-of incomplete stopped attempts. Launcher/scheduler integration, remote execution, and real
-OpenEvolve/Shinka campaigns are separate work.
+Read-only inspection now identifies a bound incomplete native candidate/evaluator attempt and
+returns an unknown diagnostic without replay or publication. It does not reconcile orphan process
+ownership or turn missing terminal evidence into a known outcome. Remaining work includes the full
+unknown/interruption recovery matrix and owner-checked reconciliation. Launcher/scheduler
+integration, remote execution, and real OpenEvolve/Shinka campaigns are separate work.
 
 ## Acceptance
 

@@ -386,6 +386,11 @@ from .producer_bundle_admission import (
     build_producer_bundle_admission_plan,
     parse_producer_bundle_admission_plan,
 )
+from .producer_bundle_attempt_recovery import (
+    NativeProducerAttemptRecoveryError,
+    NativeProducerUnknownAttempt,
+    inspect_native_producer_bundle_unknown_attempt,
+)
 from .producer_bundle_handoff import (
     BundleGroup,
     ProducerBundleHandoffError,
@@ -865,8 +870,10 @@ __all__ = [
     "ModelIdentity",
     "ModelProfile",
     "MultiFileCandidatePipeline",
+    "NativeProducerAttemptRecoveryError",
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
+    "NativeProducerUnknownAttempt",
     "OffspringOutcome",
     "OpenEvolveHandoffError",
     "OpenEvolveStrategy",
@@ -1078,6 +1085,7 @@ __all__ = [
     "inspect_bundle_delivery",
     "inspect_candidate_evaluation",
     "inspect_candidate_execution_record",
+    "inspect_native_producer_bundle_unknown_attempt",
     "inspect_producer_bundle_all_rejected",
     "inspect_producer_bundle_publication_resume",
     "inventory_campaign_directory",
