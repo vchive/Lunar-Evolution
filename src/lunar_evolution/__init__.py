@@ -461,6 +461,13 @@ from .producer_bundle_transaction import (
     derive_population_state_after,
     run_native_producer_bundle_publication_transaction,
 )
+from .native_trusted_publication import (
+    NativeTrustedPublicationAuthority,
+    NativeTrustedPublicationError,
+    build_native_trusted_publication_authority,
+    run_native_trusted_output_publication_transaction,
+    run_native_trusted_publication_transaction,
+)
 from .producer_handoff import (
     ProducerHandoffError,
     ProducerMaterial,
@@ -876,6 +883,8 @@ __all__ = [
     "NativeProducerAttemptRecoveryError",
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
+    "NativeTrustedPublicationAuthority",
+    "NativeTrustedPublicationError",
     "NativeProducerUnknownAttempt",
     "OffspringOutcome",
     "OpenEvolveHandoffError",
@@ -1046,6 +1055,7 @@ __all__ = [
     "build_holdout_receipt",
     "build_native_producer_bundle_evaluation_receipt",
     "build_native_producer_bundle_execution_receipt",
+    "build_native_trusted_publication_authority",
     "build_private_input_profile",
     "build_producer_bundle_admission_plan",
     "build_producer_bundle_evaluation_receipt",
@@ -1167,6 +1177,8 @@ __all__ = [
     "run_effect_preflight",
     "run_harness_adapter",
     "run_native_producer_bundle_publication_transaction",
+    "run_native_trusted_output_publication_transaction",
+    "run_native_trusted_publication_transaction",
     "run_producer_process",
     "run_registered_acceptance",
     "run_subject_adapter",
