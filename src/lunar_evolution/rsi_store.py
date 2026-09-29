@@ -541,6 +541,25 @@ class RSILedger:
             parent = record.record_sha256
         return records
 
+    def episode_ids_for_run(self, run_id: str) -> tuple[str, ...]:
+        """Return durable episode identities bound to one controller run."""
+        if not isinstance(run_id, str) or not run_id:
+            raise RSILearningError("rsi_run_id_invalid")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT logical_id, payload FROM rsi_records WHERE kind = 'episode' "
+                "ORDER BY logical_id, revision",
+            ).fetchall()
+        result: set[str] = set()
+        for logical_id, raw in rows:
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise RSILearningError("rsi_episode_record_invalid") from exc
+            if isinstance(payload, dict) and payload.get("run_id") == run_id:
+                result.add(str(logical_id))
+        return tuple(sorted(result))
+
     def transition(
         self, logical_id: str, *, state: str, expected_record_sha256: str,
         payload_patch: Mapping[str, Any] | None = None,

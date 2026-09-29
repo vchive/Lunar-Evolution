@@ -240,6 +240,55 @@ def test_reconcile_rejects_forged_request_stale_cas_and_missing_receipts(tmp_pat
     assert instance.resume(run_id="evidence").status == "unknown"
 
 
+@pytest.mark.parametrize("change", ["stage_only", "erase_result", "erase_entry"])
+def test_resume_rejects_checkpoint_stage_that_would_reopen_unknown_launch(tmp_path, change):
+    first_gateway = Gateway(("unknown",))
+    first = controller(tmp_path, first_gateway)
+    result = first.run_drs(run_id="stage-gate", **PINS, max_practice_rounds=0, max_target_attempts=1)
+    assert result.status == "unknown"
+    version, state = first.ledger.controller_checkpoint("stage-gate")
+    entry = state["episodes"]["stage-gate-target-0"]
+    assert entry["stage"] == "unknown" and entry["result"]["status"] == "unknown"
+    entry["stage"] = "planned"
+    if change == "erase_result":
+        entry["result"] = None
+        entry["episode"] = None
+    elif change == "erase_entry":
+        del state["episodes"]["stage-gate-target-0"]
+    with first.ledger.controller_lock("stage-gate"):
+        first.ledger.write_controller_checkpoint("stage-gate", state, expected_sha256=version)
+
+    resumed_gateway = Gateway(crash=True)
+    expected_error = "episode_checkpoint_gap" if change == "erase_entry" else "episode_stage_invalid"
+    with pytest.raises(RSILearningError, match=expected_error):
+        controller(tmp_path, resumed_gateway).resume(run_id="stage-gate")
+    assert resumed_gateway.requests == []
+
+
+def test_resume_can_launch_planned_episode_with_no_retained_launch(tmp_path, monkeypatch):
+    first_gateway = Gateway()
+    first = controller(tmp_path, first_gateway)
+    original = DurableLearningRun._save
+
+    def stop_before_launch_checkpoint(self):
+        if any(entry["stage"] == "launched" for entry in self.state["episodes"].values()):
+            raise RuntimeError("before durable launch")
+        return original(self)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(DurableLearningRun, "_save", stop_before_launch_checkpoint)
+        with pytest.raises(RuntimeError, match="before durable launch"):
+            first.run_drs(run_id="planned", **PINS, max_practice_rounds=0, max_target_attempts=1)
+    assert first_gateway.requests == []
+    assert first.ledger.get("planned-target-0") is None
+    second_gateway = Gateway()
+    second = controller(tmp_path, second_gateway)
+    assert second.resume(run_id="planned").status == "completed"
+    assert len(second_gateway.requests) == 1
+    second.resume(run_id="planned")
+    assert len(second_gateway.requests) == 1
+
+
 def test_controller_lock_blocks_second_owner_and_checkpoint_corruption(tmp_path):
     instance = controller(tmp_path, Gateway())
     with instance.ledger.controller_lock("locked"), pytest.raises(RSILearningError, match="controller_busy"):

@@ -105,9 +105,20 @@ class DurableLearningRun:
         if supplied not in {initial.digest(), snapshot.digest()} and self.controller._explicit_memory_store:
             raise RSILearningError("rsi_resume_memory_snapshot_drift")
         self.controller.memory_store = RSIMemoryStore(snapshot)
+        durable_episode_ids = set(self.ledger.episode_ids_for_run(self.run_id))
+        checkpoint_episode_ids = set(self.state["episodes"])
+        planned_without_ledger = {
+            episode_id for episode_id, entry in self.state["episodes"].items()
+            if entry.get("stage") == "planned" and episode_id not in durable_episode_ids
+        }
+        if durable_episode_ids - checkpoint_episode_ids or checkpoint_episode_ids - durable_episode_ids - planned_without_ledger:
+            raise RSILearningError("rsi_resume_episode_checkpoint_gap")
         for entry in self.state["episodes"].values():
+            self._check_episode_checkpoint_shape(entry)
             request = SolverRequest.from_dict(entry["request"])
             episode = PracticeEpisode.from_dict(entry["running_episode"])
+            if entry["stage"] == "planned" and self.ledger.get(request.episode_id) is not None:
+                raise RSILearningError("rsi_resume_episode_stage_invalid")
             if (request.digest() != episode.request_sha256
                     or episode.run_id != self.run_id
                     or request.solver_id != config["solver_id"]
@@ -137,6 +148,42 @@ class DurableLearningRun:
                         if getattr(episode, name) != getattr(result, name):
                             raise RSILearningError("rsi_resume_episode_result_mismatch")
         self._validate_memory()
+
+    @staticmethod
+    def _check_episode_checkpoint_shape(entry: Mapping[str, Any]) -> None:
+        """Keep checkpoint stage labels from weakening the unknown gate.
+
+        A launch intent is allowed to retain a result while recovery is between the result write
+        and episode materialization.  Other combinations are impossible in a controller-produced
+        checkpoint and must fail closed instead of allowing a forged ``planned`` entry to launch
+        again.
+        """
+        if not isinstance(entry, Mapping):
+            raise RSILearningError("rsi_resume_episode_stage_invalid")
+        stage = entry.get("stage")
+        if stage not in {"planned", "launched", "unknown", "settled"}:
+            raise RSILearningError("rsi_resume_episode_stage_invalid")
+        raw_result = entry.get("result")
+        raw_episode = entry.get("episode")
+        if stage == "planned" and (raw_result is not None or raw_episode is not None):
+            raise RSILearningError("rsi_resume_episode_stage_invalid")
+        if raw_result is None:
+            if stage in {"unknown", "settled"} or raw_episode is not None:
+                raise RSILearningError("rsi_resume_episode_stage_invalid")
+            return
+        if not isinstance(raw_result, Mapping):
+            raise RSILearningError("rsi_resume_episode_stage_invalid")
+        status = raw_result.get("status")
+        if stage == "unknown" and status != "unknown":
+            raise RSILearningError("rsi_resume_episode_stage_invalid")
+        if stage == "settled" and status == "unknown":
+            raise RSILearningError("rsi_resume_episode_stage_invalid")
+        if raw_episode is None:
+            if stage == "settled":
+                raise RSILearningError("rsi_resume_episode_stage_invalid")
+            return
+        if not isinstance(raw_episode, Mapping) or raw_episode.get("status") != status:
+            raise RSILearningError("rsi_resume_episode_stage_invalid")
 
     def _validate_memory(self) -> None:
         """Rebuild the committed chain using verified episodes and compare each durable snapshot."""
@@ -268,6 +315,10 @@ class DurableLearningRun:
             request = SolverRequest.from_dict(entry["request"])
             running = PracticeEpisode.from_dict(entry["running_episode"])
             if entry["stage"] == "planned":
+                # A checkpoint cannot erase an earlier launch already recorded in the ledger.
+                # This also protects an episode omitted from an otherwise valid checkpoint.
+                if self.ledger.get(request.episode_id) is not None:
+                    raise RSILearningError("rsi_resume_episode_stage_invalid")
                 # After this durable write even a crash before gateway.run is ambiguous.
                 entry["stage"] = "launched"
                 self._save()
