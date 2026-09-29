@@ -3,11 +3,11 @@ from pathlib import Path
 import pytest
 
 from lunar_evolution.agent_loop import AgentLoopTimeout
+from lunar_evolution.automatic_solve_lifecycle import SolveExecutionCancelled
 from lunar_evolution.rsi_actor import AgentLoopActorGateway
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.runtime import RuntimeResult
-from lunar_evolution.automatic_solve_lifecycle import SolveExecutionCancelled
 
 
 def _request(*, episode_id="episode-1", budget=None):
@@ -68,8 +68,6 @@ def test_agent_loop_success_without_receipts_is_unknown_and_only_public_trace(tm
 def test_dependency_digest_changes_with_dependency_content(tmp_path: Path):
     first_runtime = RuntimeFixture()
     first = AgentLoopActorGateway(lambda: first_runtime, tmp_path).run(_request(episode_id="episode-a"))
-    second_runtime = RuntimeFixture()
-
     class DifferentDependency(RuntimeFixture):
         def run(self, prompt, workspace, timeout=None, **kwargs):
             result = super().run(prompt, workspace, timeout, **kwargs)

@@ -177,3 +177,50 @@ def test_unlimited_counters_remain_explicitly_unlimited() -> None:
     assert budget.state["remaining"]["evaluator_invocations"] is None
     assert budget.state["remaining"]["unknown_retries"] is None
 
+
+def test_reserve_stages_is_atomic_across_independent_stage_limits() -> None:
+    budget = RSIRunBudget.create({
+        "max_evaluator_invocations": 1,
+        "max_verifier_invocations": 0,
+    })
+    before = deepcopy(budget.state)
+    with _error("rsi_budget_exhausted"):
+        budget.reserve_stages(("evaluator", "verifier"))
+    assert budget.state == before
+    budget.reserve_stages(("evaluator",))
+    assert budget.state["consumed"]["evaluator_invocations"] == 1
+
+
+def test_reserve_launch_with_stages_charges_all_or_none() -> None:
+    budget = RSIRunBudget.create({
+        "max_solver_invocations": 1,
+        "max_target_attempts": 1,
+        "max_evaluator_invocations": 1,
+        "max_verifier_invocations": 0,
+    })
+    before = deepcopy(budget.state)
+    with _error("rsi_budget_exhausted"):
+        budget.reserve_launch_with_stages(
+            episode_kind="target", depth=0, ancestry=("target",),
+            stages=("evaluator", "verifier"),
+        )
+    assert budget.state == before
+    budget.reserve_launch_and_stages(
+        episode_kind="target", depth=0, ancestry=("target",), stages=("evaluator",),
+    )
+    assert budget.state["consumed"]["solver_invocations"] == 1
+    assert budget.state["consumed"]["target_attempts"] == 1
+    assert budget.state["consumed"]["evaluator_invocations"] == 1
+
+
+def test_batch_stage_rejects_duplicates_and_invalid_sequence() -> None:
+    budget = RSIRunBudget.create()
+    before = deepcopy(budget.state)
+    with _error("rsi_budget_counter_invalid"):
+        budget.reserve_stages(("evaluator", "evaluator"))
+    assert budget.state == before
+    with _error("rsi_budget_stage_invalid"):
+        budget.reserve_stages(())
+    with _error("rsi_budget_stage_invalid"):
+        budget.reserve_stages("evaluator")
+    assert budget.state == before

@@ -735,6 +735,9 @@ class PracticeEpisode:
         allowed = {
             "planned": {"running"},
             "running": {"completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"},
+            # An unknown worker is quarantined, but an explicit evidence-bearing reconciliation
+            # may settle it without replaying the solver side effect.
+            "unknown": {"completed", "failed", "timed_out", "abandoned", "cancelled"},
         }
         if status not in allowed.get(self.status, set()):
             _fail("rsi_episode_state_transition_invalid")

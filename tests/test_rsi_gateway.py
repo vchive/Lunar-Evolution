@@ -24,6 +24,9 @@ class ScriptedGateway:
 
     def __init__(self, *statuses: str) -> None:
         self.statuses = list(statuses)
+
+    def rsi_fingerprint_config(self):
+        return {"statuses": list(self.statuses)}
         self.requests: list[SolverRequest] = []
 
     def run(self, request: SolverRequest) -> SolverResult:

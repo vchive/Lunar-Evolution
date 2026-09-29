@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from .agent_loop import AgentLoopRuntime, AgentLoopTimeout
+from .agent_loop import AgentLoopTimeout
 from .automatic_solve_lifecycle import SolveExecutionCancelled
 from .candidate_evaluation_spec import canonical_json
 from .rsi_gateway import SolverRequest, SolverResult
@@ -83,6 +83,16 @@ class AgentLoopActorGateway:
             raise TypeError("receipt_builder must be callable or None")
         self.receipt_builder = receipt_builder
         self.actor_name = actor_name
+
+    def rsi_fingerprint_config(self) -> dict[str, Any]:
+        """Expose immutable actor wiring while excluding runtime factories and process state."""
+
+        return {
+            "actor_name": self.actor_name,
+            "candidate_paths": list(self.candidate_paths),
+            "dependency_paths": list(self.dependency_paths),
+            "receipt_builder": bool(self.receipt_builder),
+        }
 
     def _episode_workspace(self, episode_id: str) -> Path:
         # Episode ids are protocol identifiers, but must also be one directory component here.
@@ -248,7 +258,7 @@ class AgentLoopActorGateway:
             terminal_status, reason = "timed_out", "actor_timeout"
         except SolveExecutionCancelled:
             terminal_status, reason = "cancelled", "actor_cancelled"
-        except Exception:
+        except Exception:  # noqa: BLE001 - actor must publish a bounded failed result
             # Keep errors out of public trace and terminal evidence; callers can inspect local logs.
             terminal_status = "failed"
             reason = "actor_failure"

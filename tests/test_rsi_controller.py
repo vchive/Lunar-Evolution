@@ -23,6 +23,9 @@ class ScriptedGateway:
         self.statuses = list(statuses)
         self.requests: list[SolverRequest] = []
 
+    def rsi_fingerprint_config(self):
+        return {"statuses": list(self.statuses)}
+
     def run(self, request: SolverRequest) -> SolverResult:
         self.requests.append(request)
         status = self.statuses.pop(0)
@@ -125,6 +128,9 @@ def test_brs_commits_completed_children_in_ordinal_order():
 @pytest.mark.parametrize("status", ["unknown", "timed_out", "abandoned", "cancelled"])
 def test_brs_uncertain_child_blocks_wave_memory_merge_until_reconciliation(status: str):
     class OrdinalGateway:
+        def rsi_fingerprint_config(self):
+            return {"fixture": "ordinal"}
+
         def run(self, request):
             ordinal = int(request.episode_id.rsplit("-", 1)[1])
             terminal_status = "completed" if ordinal == 0 else status

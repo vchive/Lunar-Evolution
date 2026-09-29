@@ -8,6 +8,7 @@ without a model, a remote evaluator, or an OpenEvolve installation.
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -52,6 +53,45 @@ def _bounded_map(value: object, name: str) -> tuple[tuple[str, Any], ...]:
             raise RSILearningError(f"rsi_{name}_invalid")
         result.append((key, item))
     return tuple(sorted(result))
+
+
+def _wire_record(value: object, *, kind: str, required: set[str]) -> dict[str, Any]:
+    """Validate one strict wire envelope before constructing a typed request/result."""
+
+    if not isinstance(value, dict) or any(type(key) is not str for key in value):
+        raise RSILearningError("rsi_wire_record_invalid")
+    expected = {"schema_version", "kind", *required}
+    if set(value) != expected or value.get("schema_version") != "1" or value.get("kind") != kind:
+        raise RSILearningError("rsi_wire_record_invalid")
+    try:
+        encoded = canonical_json(value, maximum=128 * 1024)
+        from .candidate_evaluation_spec import strict_json
+
+        parsed = strict_json(encoded, maximum=128 * 1024)
+    except Exception as exc:
+        raise RSILearningError("rsi_wire_record_invalid") from exc
+    if parsed != value or canonical_json(parsed, maximum=128 * 1024) != encoded:
+        raise RSILearningError("rsi_wire_record_invalid")
+    return value
+
+
+def _trace_event_from_dict(value: object) -> TraceEvent:
+    if not isinstance(value, dict) or set(value) != {
+        "sequence", "kind", "name", "payload_sha256", "observation_sha256",
+    }:
+        raise RSILearningError("rsi_trace_event_invalid")
+    try:
+        return TraceEvent(
+            sequence=value["sequence"],
+            kind=value["kind"],
+            name=value["name"],
+            payload_sha256=value["payload_sha256"],
+            observation_sha256=value["observation_sha256"],
+        )
+    except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+        if isinstance(exc, RSILearningError):
+            raise
+        raise RSILearningError("rsi_trace_event_invalid") from exc
 
 
 @dataclass(frozen=True)
@@ -111,6 +151,36 @@ class SolverRequest:
             _bounded_map(budget or {}, "budget"),
             _bounded_map(practice_charter or {}, "practice_charter"),
         )
+
+    @classmethod
+    def from_dict(cls, value: object) -> SolverRequest:
+        """Load a request only when its complete wire envelope round-trips canonically."""
+
+        required = {
+            "episode_id", "contract_sha256", "evaluator_sha256", "environment_sha256",
+            "memory_snapshot_sha256", "solver_id", "solver_settings", "budget",
+            "practice_charter",
+        }
+        payload = _wire_record(value, kind="rsi_solver_request", required=required)
+        try:
+            request = cls.build(
+                episode_id=payload["episode_id"],
+                contract_sha256=payload["contract_sha256"],
+                evaluator_sha256=payload["evaluator_sha256"],
+                environment_sha256=payload["environment_sha256"],
+                memory_snapshot_sha256=payload["memory_snapshot_sha256"],
+                solver_id=payload["solver_id"],
+                solver_settings=payload["solver_settings"],
+                budget=payload["budget"],
+                practice_charter=payload["practice_charter"],
+            )
+        except (TypeError, ValueError, RSILearningError) as exc:
+            if isinstance(exc, RSILearningError):
+                raise
+            raise RSILearningError("rsi_solver_request_invalid") from exc
+        if canonical_json(request.to_dict(), maximum=128 * 1024) != canonical_json(payload, maximum=128 * 1024):
+            raise RSILearningError("rsi_solver_request_invalid")
+        return request
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -179,6 +249,17 @@ class SolverResult:
             raise RSILearningError("rsi_terminal_reason_invalid")
         if type(self.solver_provenance) is not tuple or len(self.solver_provenance) > MAX_SOLVER_SETTINGS:
             raise RSILearningError("rsi_solver_provenance_invalid")
+        if self.solver_score is not None and (
+            isinstance(self.solver_score, bool)
+            or not isinstance(self.solver_score, (int, float))
+            or not math.isfinite(float(self.solver_score))
+        ):
+            raise RSILearningError("rsi_solver_score_invalid")
+        if any(
+            type(item) is not tuple or len(item) != 2 or type(item[0]) is not str
+            for item in self.solver_provenance
+        ):
+            raise RSILearningError("rsi_solver_provenance_invalid")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -200,6 +281,45 @@ class SolverResult:
             "actor_fingerprint": self.actor_fingerprint,
         }
 
+    @classmethod
+    def from_dict(cls, value: object) -> SolverResult:
+        """Load a result with strict fields, trace events and provenance preservation."""
+
+        required = {
+            "episode_id", "request_sha256", "status", "candidate_receipt_sha256",
+            "execution_receipt_sha256", "official_evaluation_receipt_sha256", "trace_digest",
+            "solver_score", "terminal_reason", "solver_provenance", "candidate_source_sha256",
+            "dependency_sha256", "trace_events", "actor_fingerprint",
+        }
+        payload = _wire_record(value, kind="rsi_solver_result", required=required)
+        events = payload["trace_events"]
+        if not isinstance(events, list) or len(events) > 64:
+            raise RSILearningError("rsi_trace_events_invalid")
+        try:
+            result = cls(
+                episode_id=payload["episode_id"],
+                request_sha256=payload["request_sha256"],
+                status=payload["status"],
+                candidate_receipt_sha256=payload["candidate_receipt_sha256"],
+                execution_receipt_sha256=payload["execution_receipt_sha256"],
+                official_evaluation_receipt_sha256=payload["official_evaluation_receipt_sha256"],
+                trace_digest=payload["trace_digest"],
+                solver_score=payload["solver_score"],
+                terminal_reason=payload["terminal_reason"],
+                solver_provenance=_bounded_map(payload["solver_provenance"], "solver_provenance"),
+                candidate_source_sha256=payload["candidate_source_sha256"],
+                dependency_sha256=payload["dependency_sha256"],
+                trace_events=tuple(_trace_event_from_dict(item) for item in events),
+                actor_fingerprint=payload["actor_fingerprint"],
+            )
+        except (TypeError, ValueError, RSILearningError) as exc:
+            if isinstance(exc, RSILearningError):
+                raise
+            raise RSILearningError("rsi_solver_result_invalid") from exc
+        if canonical_json(result.to_dict(), maximum=128 * 1024) != canonical_json(payload, maximum=128 * 1024):
+            raise RSILearningError("rsi_solver_result_invalid")
+        return result
+
 
 class SolverGateway(Protocol):
     def run(self, request: SolverRequest) -> SolverResult:
@@ -213,6 +333,9 @@ class DeterministicMockSolver:
         if terminal_status not in {"completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"}:
             raise ValueError("invalid terminal status")
         self.terminal_status = terminal_status
+
+    def rsi_fingerprint_config(self) -> dict[str, str]:
+        return {"terminal_status": self.terminal_status}
 
     def run(self, request: SolverRequest) -> SolverResult:
         request_digest = request.digest()
@@ -235,6 +358,9 @@ class DeterministicMockSolver:
 
 class LocalExactVerifier:
     """Verifier fixture: only a completed result with all receipts can pass."""
+
+    def rsi_fingerprint_config(self) -> dict[str, str]:
+        return {"verifier": "local-exact-v1"}
 
     def verify(self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult) -> VerifierDecision:
         checks: list[VerifierCheck] = []
@@ -295,6 +421,9 @@ class RSIMemoryStore:
 
     def __init__(self, snapshot: MemorySnapshot) -> None:
         self._snapshot = snapshot
+
+    def rsi_fingerprint_config(self) -> dict[str, str]:
+        return {"memory_snapshot_sha256": self._snapshot.digest()}
 
     @property
     def snapshot(self) -> MemorySnapshot:

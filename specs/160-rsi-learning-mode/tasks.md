@@ -15,3 +15,5 @@
 - [x] T160-11 将 candidate source、dependency、actor/solver fingerprint 和 bounded public action/tool/observation trace 纳入 episode evidence；MemoryItem 增加 condition/action/observed-result/applicability 因果投影。
 - [ ] T160-12 接入真实 Actor environment runner，并由独立 verifier 重开和校验 evaluator receipt；provider-free fixture 不得替代该验收。
 - [ ] T160-13 增加 durable controller-level resume、unknown reconcile gate 和 diversity/failure-boundary curriculum policy。
+  - [x] 阶段 1：controller-level durable resume、evidence-bound unknown reconcile、fingerprint drift gate、预算/深度/终止状态持久化。
+  - [ ] 阶段 2：diversity/failure-boundary curriculum policy（仍待实现）。

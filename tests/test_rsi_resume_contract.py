@@ -63,16 +63,15 @@ def test_unknown_episode_is_quarantined_until_explicit_reconcile(tmp_path: Path)
         )
 
 
-@pytest.mark.xfail(
-    reason="Feature 160 stage 1 controller-level resume is not implemented yet",
-    strict=False,
-)
 def test_resume_reuses_terminal_receipt_without_reexecution(tmp_path: Path) -> None:
     """A completed episode must be returned from its receipt, never executed a second time."""
 
     class CountingGateway:
         def __init__(self) -> None:
             self.calls = 0
+
+        def rsi_fingerprint_config(self):
+            return {"fixture": "counting"}
 
         def run(self, request):
             self.calls += 1
@@ -109,10 +108,6 @@ def test_resume_reuses_terminal_receipt_without_reexecution(tmp_path: Path) -> N
     assert gateway.calls == 1
 
 
-@pytest.mark.xfail(
-    reason="Feature 160 stage 1 controller-level resume is not implemented yet",
-    strict=False,
-)
 @pytest.mark.parametrize(
     "field",
     [
@@ -138,10 +133,6 @@ def test_resume_rejects_fingerprint_drift(tmp_path: Path, field: str) -> None:
         controller.resume("resume-drift", observed_fingerprints=observed)
 
 
-@pytest.mark.xfail(
-    reason="Feature 160 stage 1 controller-level resume is not implemented yet",
-    strict=False,
-)
 def test_resume_cannot_expand_budget_or_reset_deadline(tmp_path: Path) -> None:
     """Resume accepts only the persisted remaining budget and absolute deadline."""
 
@@ -164,10 +155,6 @@ def test_resume_cannot_expand_budget_or_reset_deadline(tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.xfail(
-    reason="Feature 160 stage 1 controller-level resume is not implemented yet",
-    strict=False,
-)
 def test_unknown_run_requires_reconcile_before_resume(tmp_path: Path) -> None:
     """An unknown run cannot launch practice or retry until reconcile settles it."""
 
@@ -183,10 +170,6 @@ def test_unknown_run_requires_reconcile_before_resume(tmp_path: Path) -> None:
     assert ledger.get("resume-unknown").record_sha256 == unknown.record_sha256
 
 
-@pytest.mark.xfail(
-    reason="Feature 160 stage 1 controller-level resume is not implemented yet",
-    strict=False,
-)
 def test_resume_preserves_episode_identity_after_interruption(tmp_path: Path) -> None:
     """Recovery continues the original episode/request identity instead of creating a new target."""
 

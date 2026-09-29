@@ -12,8 +12,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import math
+import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .candidate_evaluation_spec import canonical_json
@@ -88,6 +89,7 @@ class RSIRunBudget:
     """Canonical planned/consumed/remaining budget state for one RSI run."""
 
     def __init__(self, state: dict[str, Any]) -> None:
+        self._lock = threading.RLock()
         self.state = state
         self._validate()
 
@@ -153,15 +155,17 @@ class RSIRunBudget:
             _error("rsi_budget_checkpoint_invalid")
 
     def to_dict(self) -> dict[str, Any]:
-        self._validate()
-        return copy.deepcopy(self.state)
+        with self._lock:
+            self._validate()
+            return copy.deepcopy(self.state)
 
     def canonical_bytes(self) -> bytes:
-        self._validate()
-        try:
-            return canonical_json(self.state, maximum=_MAX_STATE_BYTES)
-        except (TypeError, ValueError, OverflowError, RecursionError):
-            _error("rsi_budget_checkpoint_invalid")
+        with self._lock:
+            self._validate()
+            try:
+                return canonical_json(self.state, maximum=_MAX_STATE_BYTES)
+            except (TypeError, ValueError, OverflowError, RecursionError):
+                _error("rsi_budget_checkpoint_invalid")
 
     def digest(self) -> str:
         return hashlib.sha256(self.canonical_bytes()).hexdigest()
@@ -176,6 +180,18 @@ class RSIRunBudget:
         now: float | None = None,
     ) -> None:
         """Check a prospective reservation without changing counters."""
+        with self._lock:
+            self._check_unlocked(counter=counter, amount=amount, depth=depth, ancestry=ancestry, now=now)
+
+    def _check_unlocked(
+        self,
+        *,
+        counter: str | None = None,
+        amount: int = 1,
+        depth: int | None = None,
+        ancestry: tuple[str, ...] | None = None,
+        now: float | None = None,
+    ) -> None:
         self._validate()
         if type(amount) is not int or amount < 1:
             _error("rsi_budget_amount_invalid")
@@ -207,15 +223,7 @@ class RSIRunBudget:
 
     def consume(self, counter: str, amount: int = 1) -> None:
         """Atomically consume a named counter after checking the run deadline and limit."""
-        self.check(counter=counter, amount=amount)
-        before = copy.deepcopy(self.state)
-        try:
-            self.state["consumed"][counter] += amount
-            self._refresh()
-        except Exception:
-            self.state.clear()
-            self.state.update(before)
-            raise
+        self._reserve_counters((counter,), amount=amount)
 
     def _refresh(self) -> None:
         planned = self.state["planned"]
@@ -237,33 +245,93 @@ class RSIRunBudget:
         ancestry: tuple[str, ...],
     ) -> None:
         """Reserve one target/practice solver launch with depth and cycle protection."""
+        self._reserve_launch_and_stages(
+            episode_kind=episode_kind, depth=depth, ancestry=ancestry, stages=(),
+        )
+
+    def reserve_stages(self, stages: Sequence[str]) -> None:
+        """Atomically reserve several independent side-effect stages."""
+        if isinstance(stages, (str, bytes)) or not isinstance(stages, Sequence):
+            _error("rsi_budget_stage_invalid")
+        names = tuple(stages)
+        if not names:
+            _error("rsi_budget_stage_invalid")
+        counters: list[str] = []
+        for stage in names:
+            if type(stage) is not str or stage not in _STAGE_COUNTERS:
+                _error("rsi_budget_stage_invalid")
+            counters.append(_STAGE_COUNTERS[stage])
+        self._reserve_counters(tuple(counters))
+
+    def reserve_launch_with_stages(
+        self,
+        *,
+        episode_kind: str,
+        depth: int,
+        ancestry: tuple[str, ...],
+        stages: Sequence[str] = ("evaluator",),
+    ) -> None:
+        """Reserve a launch and its immediately following stages in one atomic mutation."""
+        self._reserve_launch_and_stages(
+            episode_kind=episode_kind, depth=depth, ancestry=ancestry, stages=stages,
+        )
+
+    # Alias with a verb-first name for callers that model this as one side-effect gate.
+    reserve_launch_and_stages = reserve_launch_with_stages
+
+    def _reserve_launch_and_stages(
+        self,
+        *,
+        episode_kind: str,
+        depth: int,
+        ancestry: tuple[str, ...],
+        stages: Sequence[str],
+    ) -> None:
         if type(episode_kind) is not str or episode_kind not in _EPISODE_KINDS:
             _error("rsi_budget_episode_kind_invalid")
-        self._validate()
-        self._check_depth(depth, ancestry)
-        counters = ["solver_invocations"]
-        counters.append("target_attempts" if episode_kind == "target" else "practice_rounds")
+        if isinstance(stages, (str, bytes)) or not isinstance(stages, Sequence):
+            _error("rsi_budget_stage_invalid")
+        stage_counters: list[str] = []
+        for stage in stages:
+            if type(stage) is not str or stage not in _STAGE_COUNTERS:
+                _error("rsi_budget_stage_invalid")
+            stage_counters.append(_STAGE_COUNTERS[stage])
+        counters = ["solver_invocations", "target_attempts" if episode_kind == "target" else "practice_rounds"]
         if episode_kind == "practice":
             counters.append("practice_episodes")
-        for counter in counters:
-            self.check(counter=counter)
-        before = copy.deepcopy(self.state)
-        try:
+        self._reserve_counters(tuple(counters + stage_counters), depth=depth, ancestry=ancestry)
+
+    def _reserve_counters(
+        self,
+        counters: tuple[str, ...],
+        *,
+        amount: int = 1,
+        depth: int | None = None,
+        ancestry: tuple[str, ...] | None = None,
+    ) -> None:
+        with self._lock:
+            if not counters or any(counter not in _COUNTER_LIMITS for counter in counters):
+                _error("rsi_budget_counter_invalid")
+            if len(set(counters)) != len(counters):
+                _error("rsi_budget_counter_invalid")
+            self._check_unlocked(amount=amount, depth=depth, ancestry=ancestry)
             for counter in counters:
-                self.state["consumed"][counter] += 1
-            self._refresh()
-        except Exception:
-            self.state.clear()
-            self.state.update(before)
-            raise
+                self._check_unlocked(counter=counter, amount=amount)
+            before = copy.deepcopy(self.state)
+            try:
+                for counter in counters:
+                    self.state["consumed"][counter] += amount
+                self._refresh()
+            except Exception:
+                self.state.clear()
+                self.state.update(before)
+                raise
 
     def reserve_solver_invocation(self) -> None:
         self.consume("solver_invocations")
 
     def reserve_stage(self, stage: str) -> None:
-        if type(stage) is not str or stage not in _STAGE_COUNTERS:
-            _error("rsi_budget_stage_invalid")
-        self.consume(_STAGE_COUNTERS[stage])
+        self.reserve_stages((stage,))
 
     def reserve_unknown_reconcile(self) -> None:
         self.consume("unknown_retries")

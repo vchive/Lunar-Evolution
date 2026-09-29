@@ -45,6 +45,13 @@ class ProviderFreeSolverGateway:
         if type(self.provenance) is not tuple or len(self.provenance) > 32:
             raise RSILearningError("rsi_fixture_solver_provenance_invalid")
 
+    def rsi_fingerprint_config(self) -> dict[str, Any]:
+        return {
+            "solver_id": self.solver_id,
+            "terminal_status": self.terminal_status,
+            "provenance": dict(self.provenance),
+        }
+
     def run(self, request: SolverRequest) -> SolverResult:
         if request.solver_id != self.solver_id:
             raise RSILearningError("rsi_fixture_solver_request_mismatch")
