@@ -414,6 +414,21 @@ class RSILearningController:
         return compare_transfer(DurableLearningRun(self, run_id), benchmark=benchmark,
                                 comparison_id=comparison_id, tasks=tasks, snapshot=snapshot)
 
+    def reconcile_transfer(self, *, run_id: str, benchmark: Any, comparison_id: str,
+                           tasks: Sequence[Any], snapshot: MemorySnapshot,
+                           expected_record_sha256: str, expected_intent_sha256: str,
+                           expected_receipt_sha256: str):
+        """Adopt a fully retained transfer result without launching either arm."""
+        from .rsi_recovery import DurableLearningRun
+        from .rsi_transfer_recovery import reconcile_transfer_panel
+
+        return reconcile_transfer_panel(
+            DurableLearningRun(self, run_id), benchmark=benchmark, comparison_id=comparison_id,
+            tasks=tasks, snapshot=snapshot, expected_record_sha256=expected_record_sha256,
+            expected_intent_sha256=expected_intent_sha256,
+            expected_receipt_sha256=expected_receipt_sha256,
+        )
+
     def reconcile_verifier(
         self,
         *,

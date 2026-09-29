@@ -101,6 +101,32 @@ does not issue model requests, evaluate a candidate, regenerate a receipt or rel
 
 ## One active control seam
 
+### WSI-02 implementation contract (2026-09-29)
+
+`automatic_solve_continuation.py` exposes an immutable `AutomaticSolveContinuation` captured
+from a lifecycle-enabled Run and `continue_automatic_solve(controller, continuation, ...)`.
+The captured configuration pins the native workspace, complete persisted evolution request,
+compiler manifest and runtime fingerprint. Continuation reopens those pins before ownership
+admission and delegates to the existing synchronous CLI orchestration; no second solver,
+preparation, evaluation or delivery path is introduced. This first seam is foreground-only.
+Runtime credentials stay in the caller's already constructed controller and are not copied into
+the continuation configuration. Existing CLI entry points retain their defaults.
+
+The CLI control binder preserves an explicitly supplied `SolveExecutionControl` object. Native
+wall policy and an optional worker active timeout only narrow its deadline, and native Run
+cancellation plus existing stage observation compose with prior callbacks. An optional parent
+control supplies a live remaining-budget/cancellation ceiling. Different controls may use
+different monotonic clock origins: only sampled durations are transferred between them, with
+time spent obtaining a parent sample charged against the child. A parent becoming cancelled,
+expired or more tightly constrained blocks subsequent work. Rebinding or polling never extends
+an admitted deadline. Default construction remains after native ownership admission.
+
+Focused local acceptance covers preserved object identity, repeated binding, native/worker/parent
+minimum budgets, cross-clock parent composition, cancellation at each stage, request/runtime
+drift and the typed seam reaching the existing synchronous orchestration. This slice does not
+claim WorkerService admission, process-observer composition or result-reference delivery; those
+remain WSI-01 and WSI-03 through WSI-07.
+
 Extract a typed public orchestration seam from the existing synchronous path, provisionally
 `continue_automatic_solve(..., execution_control=None, ownership=...)`. It must reuse the
 existing preparation, evolution and delivery functions, rather than implement a parallel solve.

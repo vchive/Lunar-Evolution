@@ -77,6 +77,8 @@ class SolveExecutionControl:
     raises a typed exception when no work may start.
     """
 
+    _parent_graph_lock: ClassVar[RLock] = RLock()
+
     def __init__(
         self,
         timeout_seconds: float,
@@ -101,6 +103,10 @@ class SolveExecutionControl:
         self._cancellation_callbacks: list[CancellationCallback] = callbacks
         self._cancelled = False
         self._observe_stage = observe_stage
+        self._observe_callbacks: list[Callable[[str], None]] = (
+            [] if observe_stage is None else [observe_stage]
+        )
+        self._parent_controls: list[SolveExecutionControl] = []
         self._lock = RLock()
 
     def add_cancellation_callback(self, callback: CancellationCallback) -> SolveExecutionControl:
@@ -116,6 +122,59 @@ class SolveExecutionControl:
     # canonical method for documentation and callers that need a descriptive name.
     add_cancel_callback = add_cancellation_callback
 
+    def add_observation_callback(self, callback: Callable[[str], None]) -> SolveExecutionControl:
+        """Compose a stage observer without replacing an existing owner callback."""
+
+        if not callable(callback):
+            raise TypeError("stage observer must be callable")
+        with self._lock:
+            if callback not in self._observe_callbacks:
+                self._observe_callbacks.append(callback)
+            if self._observe_stage is None:
+                self._observe_stage = callback
+        return self
+
+    def narrow_deadline(self, timeout_seconds: float) -> SolveExecutionControl:
+        """Narrow this active control using its own clock, never extend it.
+
+        The timeout is measured from the first narrowing observation.  Repeated calls can only
+        keep the earlier deadline, so a continuation binder cannot reset an admitted parent
+        execution.  No absolute timestamp from another clock is compared.
+        """
+
+        timeout = _positive_timeout(timeout_seconds, "solve wall timeout")
+        observed_at = self._now()
+        candidate = observed_at + timeout
+        with self._lock:
+            if candidate < self.deadline:
+                self.deadline = candidate
+                self.timeout_seconds = max(0.0, self.deadline - self.started_at)
+        return self
+
+    def add_parent_control(self, parent: SolveExecutionControl) -> SolveExecutionControl:
+        """Compose a caller-owned control without importing its monotonic clock origin."""
+
+        if not isinstance(parent, SolveExecutionControl):
+            raise TypeError("parent control must be SolveExecutionControl")
+        with self._parent_graph_lock:
+            if parent is self or parent._contains_control(self):
+                raise ValueError("solve execution control parent cycle")
+            with self._lock:
+                if parent not in self._parent_controls:
+                    self._parent_controls.append(parent)
+        return self
+
+    def _contains_control(self, target: SolveExecutionControl, seen: set[int] | None = None) -> bool:
+        seen = set() if seen is None else seen
+        if id(self) in seen:
+            return False
+        seen.add(id(self))
+        if self is target:
+            return True
+        with self._lock:
+            parents = tuple(self._parent_controls)
+        return any(parent._contains_control(target, seen) for parent in parents)
+
     def cancel(self) -> None:
         """Locally stop admitting work, without changing the fixed deadline."""
 
@@ -129,7 +188,8 @@ class SolveExecutionControl:
             if self._cancelled:
                 return True
             callbacks = tuple(self._cancellation_callbacks)
-        return any(bool(callback()) for callback in callbacks)
+            parents = tuple(self._parent_controls)
+        return any(bool(callback()) for callback in callbacks) or any(parent.is_cancelled() for parent in parents)
 
     def remaining(self, stage_timeout: float | None = None) -> float:
         """Return remaining seconds, narrowed by ``stage_timeout`` when supplied.
@@ -141,15 +201,34 @@ class SolveExecutionControl:
         ceiling = None if stage_timeout is None else _positive_timeout(stage_timeout, "stage timeout")
         if self.is_cancelled():
             return 0.0
+        self._narrow_to_parents()
+        if self.is_cancelled():
+            return 0.0
         remainder = max(0.0, self.deadline - self._now())
         return remainder if ceiling is None else min(remainder, ceiling)
+
+    def _narrow_to_parents(self, stage: str | None = None) -> None:
+        with self._lock:
+            parents = tuple(self._parent_controls)
+        for parent in parents:
+            # Parent and child clocks may have unrelated origins. Charge time spent
+            # obtaining the sample by anchoring its duration before the callback.
+            sampled_at = self._now()
+            remaining = parent.remaining() if stage is None else parent.check(stage)
+            with self._lock:
+                self.deadline = min(self.deadline, sampled_at + remaining)
 
     def check(self, stage: str = _DEFAULT_STAGE) -> float:
         """Require positive budget and no cancellation before admitting a stage."""
 
         stage = _stage_name(stage)
-        if self._observe_stage is not None:
-            self._observe_stage(stage)
+        with self._lock:
+            observers = tuple(self._observe_callbacks)
+        for observer in observers:
+            observer(stage)
+        if self.is_cancelled():
+            raise SolveExecutionCancelled(stage)
+        self._narrow_to_parents(stage)
         if self.is_cancelled():
             raise SolveExecutionCancelled(stage)
         observed_at = self._now()

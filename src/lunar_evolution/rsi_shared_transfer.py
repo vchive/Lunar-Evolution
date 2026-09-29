@@ -31,6 +31,12 @@ def validate_transfer_history(previous: Mapping, current: Mapping) -> None:
         _fail()
     if not isinstance(old, Mapping) or not isinstance(new, Mapping):
         _fail()
+    old_recovery = previous.get("transfer_reconciliations", {})
+    new_recovery = current.get("transfer_reconciliations", {})
+    if not isinstance(old_recovery, Mapping) or not isinstance(new_recovery, Mapping):
+        _fail()
+    if any(new_recovery.get(key) != value for key, value in old_recovery.items()):
+        _fail()
     for name, before in old.items():
         after = new.get(name)
         if not isinstance(before, Mapping) or not isinstance(after, Mapping):
@@ -212,6 +218,38 @@ def validate_transfers(run) -> dict[str, int]:
                 result = payload_results[(owner["task_id"], owner["arm"])]
                 if solver_row["result_sha256"] != digest(result.to_dict()):
                     _fail()
+    recoveries = run.state.get("transfer_reconciliations", {})
+    if not isinstance(recoveries, Mapping):
+        _fail()
+    history = dict(run.ledger.controller_checkpoint_history(run.run_id)) if recoveries else {}
+    for comparison_id, audit in recoveries.items():
+        if (not isinstance(audit, Mapping) or set(audit) != {
+                "checkpoint_sha256", "intent_sha256", "receipt_sha256",
+            } or comparison_id not in panels
+                or any(type(value) is not str or len(value) != 64
+                       or any(c not in "0123456789abcdef" for c in value)
+                       for value in audit.values())):
+            _fail()
+        original = history.get(audit["checkpoint_sha256"])
+        prior = None if original is None else original.get("transfer_panels", {}).get(comparison_id)
+        current = panels[comparison_id]
+        if (not isinstance(prior, Mapping) or set(prior) != set(current)
+                or prior["receipt_sha256"] is not None
+                or prior["identity"] != current["identity"] or prior["root"] != current["root"]
+                or prior["solvers"] != current["solvers"]
+                or current["receipt_sha256"] != audit["receipt_sha256"]):
+            _fail()
+        validate_stage_state(prior["stages"])
+        stage_before, stage_after = prior["stages"]["invocations"], current["stages"]["invocations"]
+        if len(stage_before) != len(stage_after):
+            _fail()
+        for before, after in zip(stage_before, stage_after, strict=True):
+            if before["stage"] == "transfer":
+                expected = {**before, "evidence": {"receipt_sha256": audit["receipt_sha256"]}}
+                if before["intent_sha256"] != audit["intent_sha256"] or after != expected:
+                    _fail()
+            elif before != after:
+                _fail()
     return totals
 
 

@@ -14,12 +14,19 @@ import sqlite3
 import uuid
 from collections.abc import Mapping, Sequence
 from contextlib import closing
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .agents import AgentResult
 from .algorithm import MAX_OUTPUTS, OutputSpec
+from .automatic_solve_worker_binding import (
+    AutomaticSolveWorkerBinding,
+    AutomaticSolveWorkerBindingState,
+    AutomaticSolveWorkerResultReference,
+    binding_payload_equal,
+)
 from .budget import BudgetSpec
 from .evaluator import validate_acceptance
 from .models import (
@@ -211,6 +218,50 @@ CREATE TABLE IF NOT EXISTS worker_attempt_results (
 );
 CREATE INDEX IF NOT EXISTS worker_attempt_results_worker_idx
     ON worker_attempt_results(worker_id, created_at);
+CREATE TABLE IF NOT EXISTS automatic_solve_worker_bindings (
+    binding_id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    run_id TEXT NOT NULL REFERENCES runs(id),
+    workspace_identity TEXT NOT NULL,
+    worker_id TEXT NOT NULL,
+    worker_attempt_id TEXT NOT NULL,
+    service_owner_id TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    lifecycle_digest TEXT NOT NULL,
+    runtime_fingerprint TEXT NOT NULL,
+    budget_policy TEXT NOT NULL,
+    contract_digest TEXT,
+    child_run_id TEXT,
+    prior_generation INTEGER,
+    observation_reason TEXT,
+    stop_reason TEXT,
+    result_ref_digest TEXT,
+    native_receipt_id TEXT,
+    delivery_identity TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    schema_version TEXT NOT NULL DEFAULT '1'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS automatic_solve_worker_generation_idx
+    ON automatic_solve_worker_bindings(run_id, generation);
+CREATE UNIQUE INDEX IF NOT EXISTS automatic_solve_worker_unresolved_idx
+    ON automatic_solve_worker_bindings(run_id)
+    WHERE state IN ('admitted', 'active', 'awaiting_input', 'recovery_required', 'unknown');
+CREATE INDEX IF NOT EXISTS automatic_solve_worker_run_idx
+    ON automatic_solve_worker_bindings(run_id, generation);
+CREATE TABLE IF NOT EXISTS automatic_solve_worker_result_refs (
+    binding_id TEXT NOT NULL REFERENCES automatic_solve_worker_bindings(binding_id),
+    generation INTEGER NOT NULL,
+    run_id TEXT NOT NULL REFERENCES runs(id),
+    worker_attempt_id TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    reference TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    schema_version TEXT NOT NULL DEFAULT '1',
+    PRIMARY KEY(binding_id, generation)
+);
 CREATE TABLE IF NOT EXISTS plan_revisions (
     plan_id TEXT NOT NULL,
     run_id TEXT NOT NULL REFERENCES runs(id),
@@ -297,6 +348,8 @@ class Store:
             self._ensure_column(connection, "attempts", "pgid", "INTEGER")
             self._ensure_column(connection, "workers", "result_ref", "TEXT")
             self._ensure_column(connection, "worker_attempts", "service_owner_id", "TEXT")
+            self._ensure_column(connection, "automatic_solve_worker_bindings", "schema_version", "TEXT NOT NULL DEFAULT '1'")
+            self._ensure_column(connection, "automatic_solve_worker_result_refs", "schema_version", "TEXT NOT NULL DEFAULT '1'")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS worker_attempts_owner_idx "
                 "ON worker_attempts(service_owner_id, status)"
@@ -340,6 +393,10 @@ class Store:
             connection.execute(
                 "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)",
                 (10, utc_now()),
+            )
+            connection.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)",
+                (11, utc_now()),
             )
 
     @staticmethod
@@ -3282,6 +3339,320 @@ class Store:
             row = connection.execute("SELECT * FROM workers WHERE id = ?", (worker_id,)).fetchone()
         return self._worker_from_row(row) if row else None
 
+    def create_automatic_solve_worker_binding(
+        self, binding: AutomaticSolveWorkerBinding,
+    ) -> AutomaticSolveWorkerBinding:
+        """Create an initial bridge admission before the worker executor is released.
+
+        This operation checks only durable admission identities.  The library bridge must still
+        acquire automatic workspace ownership before work.  Later-generation resumption is
+        deliberately unavailable until native cleanup and recovery authority have been checked.
+        """
+        if not isinstance(binding, AutomaticSolveWorkerBinding):
+            raise TypeError("binding must be an AutomaticSolveWorkerBinding")
+        if (binding.state is not AutomaticSolveWorkerBindingState.ADMITTED or binding.generation != 0
+                or binding.prior_generation is not None or any(value is not None for value in (
+                    binding.observation_reason, binding.stop_reason, binding.result_ref_digest,
+                    binding.native_receipt_id, binding.delivery_identity,
+                ))):
+            raise ValueError("automatic solve binding requires initial admission")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM automatic_solve_worker_bindings WHERE binding_id = ?", (binding.binding_id,),
+            ).fetchone()
+            if existing is not None:
+                current = self._automatic_solve_worker_binding_from_row(existing)
+                if not binding_payload_equal(current, binding):
+                    raise ValueError("automatic solve binding admission drift")
+                self._validate_automatic_solve_worker_pins(connection, current)
+                return current
+            if connection.execute(
+                "SELECT 1 FROM automatic_solve_worker_bindings WHERE run_id = ? OR worker_attempt_id = ?",
+                (binding.run_id, binding.worker_attempt_id),
+            ).fetchone() is not None:
+                raise ValueError("automatic solve already has a worker binding")
+            worker = connection.execute("SELECT * FROM workers WHERE id = ?", (binding.worker_id,)).fetchone()
+            attempt = connection.execute(
+                "SELECT * FROM worker_attempts WHERE id = ?", (binding.worker_attempt_id,),
+            ).fetchone()
+            if (worker is None or attempt is None or worker["owner_id"] != binding.owner_id
+                    or worker["phase"] != WorkerPhase.RUNNING.value
+                    or attempt["worker_id"] != binding.worker_id
+                    or attempt["service_owner_id"] != binding.service_owner_id
+                    or attempt["status"] != "running"):
+                raise ValueError("automatic solve worker attempt is not an active reciprocal owner")
+            if connection.execute(
+                "SELECT 1 FROM worker_bindings WHERE worker_attempt_id = ?", (binding.worker_attempt_id,),
+            ).fetchone() is not None:
+                raise ValueError("automatic solve worker attempt already owns a task binding")
+            run = self._validate_automatic_solve_worker_pins(connection, binding)
+            if run["status"] not in {RunStatus.PENDING.value, RunStatus.RUNNING.value}:
+                raise ValueError("automatic solve run is not eligible for admission")
+            timestamp = utc_now()
+            binding = replace(binding, created_at=timestamp, updated_at=timestamp)
+            values = binding.to_dict()
+            connection.execute(
+                f"INSERT INTO automatic_solve_worker_bindings({','.join(values)}) "
+                f"VALUES({','.join('?' for _ in values)})", tuple(values.values()),
+            )
+            self._append_event(connection, binding.run_id, None, "automatic_solve_worker_admitted", {
+                "binding_id": binding.binding_id, "generation": binding.generation,
+                "worker_id": binding.worker_id, "worker_attempt_id": binding.worker_attempt_id,
+            })
+        return binding
+
+    def get_automatic_solve_worker_binding(
+        self, binding_id: str, *, owner_id: str,
+    ) -> AutomaticSolveWorkerBinding | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM automatic_solve_worker_bindings WHERE binding_id = ?", (binding_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        binding = self._automatic_solve_worker_binding_from_row(row)
+        if binding.owner_id != owner_id:
+            raise PermissionError("automatic solve binding is owned by another caller")
+        return binding
+
+    def list_automatic_solve_worker_bindings(
+        self, owner_id: str, *, run_id: str | None = None,
+    ) -> list[AutomaticSolveWorkerBinding]:
+        query = "SELECT * FROM automatic_solve_worker_bindings WHERE owner_id = ?"
+        values: list[object] = [owner_id]
+        if run_id is not None:
+            query += " AND run_id = ?"
+            values.append(run_id)
+        with self._connect() as connection:
+            rows = connection.execute(query + " ORDER BY run_id, generation", values).fetchall()
+        return [self._automatic_solve_worker_binding_from_row(row) for row in rows]
+
+    def compare_and_swap_automatic_solve_worker_binding(
+        self, expected: AutomaticSolveWorkerBinding, *, state: AutomaticSolveWorkerBindingState,
+        contract_digest: str | None = None, child_run_id: str | None = None,
+        observation_reason: str | None = None, stop_reason: str | None = None,
+    ) -> AutomaticSolveWorkerBinding | None:
+        """Update only the exact retained generation; pins bind one way and never drift.
+
+        ``None`` means the caller's observation lost a race.  This method neither starts nor
+        settles a worker, reconciles unknown execution, nor authorizes a later generation.
+        Terminal result-reference settlement is intentionally a separate create-only operation.
+        """
+        if not isinstance(expected, AutomaticSolveWorkerBinding):
+            raise TypeError("expected must be an AutomaticSolveWorkerBinding")
+        state = AutomaticSolveWorkerBindingState(state)
+        allowed = {
+            AutomaticSolveWorkerBindingState.ADMITTED: {AutomaticSolveWorkerBindingState.ACTIVE,
+                AutomaticSolveWorkerBindingState.AWAITING_INPUT, AutomaticSolveWorkerBindingState.RECOVERY_REQUIRED,
+                AutomaticSolveWorkerBindingState.UNKNOWN},
+            AutomaticSolveWorkerBindingState.ACTIVE: {AutomaticSolveWorkerBindingState.AWAITING_INPUT,
+                AutomaticSolveWorkerBindingState.RECOVERY_REQUIRED, AutomaticSolveWorkerBindingState.UNKNOWN},
+        }
+        if expected.state is AutomaticSolveWorkerBindingState.TERMINAL:
+            raise ValueError("terminal automatic solve binding is immutable")
+        if state != expected.state and state not in allowed.get(expected.state, set()):
+            raise ValueError("automatic solve binding transition requires native recovery")
+        for old, new in ((expected.contract_digest, contract_digest), (expected.child_run_id, child_run_id)):
+            if old is not None and new is not None and old != new:
+                raise ValueError("automatic solve binding pin drift")
+        updated = replace(
+            expected, state=state, contract_digest=contract_digest or expected.contract_digest,
+            child_run_id=child_run_id or expected.child_run_id, observation_reason=observation_reason,
+            stop_reason=stop_reason,
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if not self._automatic_solve_worker_binding_matches(connection, expected):
+                return None
+            self._validate_automatic_solve_worker_attempt(connection, expected)
+            self._validate_automatic_solve_worker_pins(connection, updated)
+            updated = replace(updated, updated_at=utc_now())
+            connection.execute(
+                "UPDATE automatic_solve_worker_bindings SET state = ?, contract_digest = ?, child_run_id = ?, "
+                "observation_reason = ?, stop_reason = ?, updated_at = ? WHERE binding_id = ? AND generation = ?",
+                (updated.state.value, updated.contract_digest, updated.child_run_id, updated.observation_reason,
+                 updated.stop_reason, updated.updated_at, updated.binding_id, updated.generation),
+            )
+            self._append_event(connection, updated.run_id, None, "automatic_solve_worker_observed", {
+                "binding_id": updated.binding_id, "generation": updated.generation,
+                "state": updated.state.value, "reason": updated.observation_reason,
+            })
+        return updated
+
+    def create_automatic_solve_worker_result_reference(
+        self, expected: AutomaticSolveWorkerBinding, reference: AutomaticSolveWorkerResultReference,
+    ) -> AutomaticSolveWorkerResultReference | None:
+        """Retain one exact terminal reference, without granting native publication authority.
+
+        The future bridge reader must independently validate native artifact/receipt bytes.
+        A matching Store record alone is never proof of native success or permission to rerun.
+        """
+        if not isinstance(expected, AutomaticSolveWorkerBinding) or not isinstance(reference, AutomaticSolveWorkerResultReference):
+            raise TypeError("automatic solve binding and result reference DTOs required")
+        # Rebuild the value from its current mapping to catch mutation after DTO construction.
+        validated_reference = AutomaticSolveWorkerResultReference(
+            binding_id=reference.binding_id, generation=reference.generation,
+            run_id=reference.run_id, worker_attempt_id=reference.worker_attempt_id,
+            outcome=reference.outcome, reference=dict(reference.reference),
+            sha256=reference.sha256, created_at=reference.created_at,
+        )
+        if validated_reference.sha256 != reference.sha256:
+            raise ValueError("automatic solve result reference was mutated")
+        reference = validated_reference
+        if (reference.binding_id, reference.generation, reference.run_id, reference.worker_attempt_id) != (
+            expected.binding_id, expected.generation, expected.run_id, expected.worker_attempt_id,
+        ):
+            raise ValueError("automatic solve result reference owner mismatch")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM automatic_solve_worker_result_refs WHERE binding_id = ? AND generation = ?",
+                (reference.binding_id, reference.generation),
+            ).fetchone()
+            if existing is not None:
+                retained = self._automatic_solve_worker_result_from_row(existing)
+                if replace(retained, created_at="") != replace(reference, created_at=""):
+                    raise ValueError("automatic solve result reference already exists")
+                current_row = connection.execute(
+                    "SELECT * FROM automatic_solve_worker_bindings WHERE binding_id = ?", (expected.binding_id,),
+                ).fetchone()
+                current = self._automatic_solve_worker_binding_from_row(current_row)
+                if not binding_payload_equal(current, expected) or current.result_ref_digest != retained.sha256:
+                    raise ValueError("automatic solve result reference binding mismatch")
+                self._validate_automatic_solve_worker_pins(connection, current)
+                return retained
+            if not self._automatic_solve_worker_binding_matches(connection, expected):
+                return None
+            self._validate_automatic_solve_worker_attempt(connection, expected)
+            if expected.state not in {AutomaticSolveWorkerBindingState.ADMITTED, AutomaticSolveWorkerBindingState.ACTIVE}:
+                raise ValueError("automatic solve result requires active native observation")
+            run = self._validate_automatic_solve_worker_pins(connection, expected)
+            if run["status"] != reference.outcome:
+                raise ValueError("automatic solve result outcome disagrees with native run")
+            if reference.outcome == "succeeded" and (expected.contract_digest is None or expected.child_run_id is None):
+                raise ValueError("automatic solve success requires bound contract and child")
+            reference = replace(reference, created_at=utc_now())
+            connection.execute(
+                "INSERT INTO automatic_solve_worker_result_refs(binding_id, generation, run_id, worker_attempt_id, "
+                "outcome, reference, sha256, created_at, schema_version) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (reference.binding_id, reference.generation, reference.run_id, reference.worker_attempt_id,
+                 reference.outcome, json.dumps(reference.reference, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
+                 reference.sha256, reference.created_at, reference.schema_version),
+            )
+            connection.execute(
+                "UPDATE automatic_solve_worker_bindings SET state = ?, result_ref_digest = ?, updated_at = ? "
+                "WHERE binding_id = ? AND generation = ?",
+                (AutomaticSolveWorkerBindingState.TERMINAL.value, reference.sha256, reference.created_at,
+                 reference.binding_id, reference.generation),
+            )
+            self._append_event(connection, expected.run_id, None, "automatic_solve_worker_result_observed", {
+                "binding_id": expected.binding_id, "generation": expected.generation,
+                "outcome": reference.outcome, "reference_sha256": reference.sha256,
+            })
+        return reference
+
+    def get_automatic_solve_worker_result_reference(
+        self, binding_id: str, *, owner_id: str, generation: int,
+    ) -> AutomaticSolveWorkerResultReference | None:
+        binding = self.get_automatic_solve_worker_binding(binding_id, owner_id=owner_id)
+        if binding is None or binding.generation != generation:
+            return None
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM automatic_solve_worker_result_refs WHERE binding_id = ? AND generation = ?",
+                (binding_id, generation),
+            ).fetchone()
+        if row is None:
+            if binding.result_ref_digest is not None:
+                raise ValueError("automatic solve result reference is missing")
+            return None
+        reference = self._automatic_solve_worker_result_from_row(row)
+        if (binding.state is not AutomaticSolveWorkerBindingState.TERMINAL
+                or reference.sha256 != binding.result_ref_digest
+                or (reference.run_id, reference.worker_attempt_id) != (binding.run_id, binding.worker_attempt_id)):
+            raise ValueError("automatic solve result reference binding mismatch")
+        return reference
+
+    @staticmethod
+    def _automatic_solve_worker_binding_from_row(row) -> AutomaticSolveWorkerBinding:
+        return AutomaticSolveWorkerBinding(**dict(row))
+
+    @staticmethod
+    def _automatic_solve_worker_result_from_row(row) -> AutomaticSolveWorkerResultReference:
+        values = dict(row)
+        values["reference"] = json.loads(values["reference"])
+        return AutomaticSolveWorkerResultReference(**values)
+
+    def _automatic_solve_worker_binding_matches(self, connection, expected) -> bool:
+        row = connection.execute(
+            "SELECT * FROM automatic_solve_worker_bindings WHERE binding_id = ?", (expected.binding_id,),
+        ).fetchone()
+        return row is not None and self._automatic_solve_worker_binding_from_row(row) == expected
+
+    @staticmethod
+    def _validate_automatic_solve_worker_attempt(connection, binding) -> None:
+        attempt = connection.execute(
+            "SELECT a.worker_id, a.service_owner_id, a.status, w.owner_id, w.phase "
+            "FROM worker_attempts a JOIN workers w ON w.id = a.worker_id WHERE a.id = ?",
+            (binding.worker_attempt_id,),
+        ).fetchone()
+        if (attempt is None or attempt["worker_id"] != binding.worker_id
+                or attempt["service_owner_id"] != binding.service_owner_id
+                or attempt["owner_id"] != binding.owner_id or attempt["status"] != "running"
+                or attempt["phase"] != WorkerPhase.RUNNING.value):
+            raise ValueError("automatic solve worker attempt ownership is no longer active")
+
+    @staticmethod
+    def _validate_automatic_solve_worker_pins(connection, binding):
+        run = connection.execute("SELECT * FROM runs WHERE id = ?", (binding.run_id,)).fetchone()
+        if run is None or run["workspace"] != binding.workspace_identity:
+            raise ValueError("automatic solve workspace identity drift")
+        requests = connection.execute(
+            "SELECT payload FROM events WHERE run_id = ? AND type = 'evolution_requested'", (binding.run_id,),
+        ).fetchall()
+        if len(requests) != 1:
+            raise ValueError("automatic solve lifecycle request is missing or ambiguous")
+        request = json.loads(requests[0]["payload"])
+        if (not isinstance(request, dict) or request.get("bundle_mode") != "compiled"
+                or type(request.get("automatic_lifecycle_version")) is not int
+                or request["automatic_lifecycle_version"] != 1):
+            raise ValueError("automatic solve lifecycle is not enabled")
+        digest = hashlib.sha256(json.dumps(request, ensure_ascii=False, sort_keys=True,
+                                           separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        if digest != binding.lifecycle_digest:
+            raise ValueError("automatic solve lifecycle request drift")
+        if binding.contract_digest is not None:
+            plan = connection.execute(
+                "SELECT document FROM plan_revisions WHERE run_id = ? AND plan_id = ? AND version = ?",
+                (binding.run_id, run["current_plan_id"], run["current_plan_version"]),
+            ).fetchone()
+            if plan is None:
+                raise ValueError("automatic solve accepted contract is missing")
+            from .algorithm import AlgorithmProblemContract
+            document = PlanDocument.from_dict(json.loads(plan["document"]))
+            if (document.algorithm_problem is None
+                    or AlgorithmProblemContract.from_dict(document.algorithm_problem).digest() != binding.contract_digest):
+                raise ValueError("automatic solve accepted contract drift")
+        if binding.child_run_id is not None:
+            if binding.contract_digest is None or binding.child_run_id == binding.run_id:
+                raise ValueError("automatic solve child requires accepted contract")
+            child = connection.execute("SELECT id FROM runs WHERE id = ?", (binding.child_run_id,)).fetchone()
+            forward = connection.execute(
+                "SELECT payload FROM events WHERE run_id = ? AND type = 'evolution_linked'", (binding.run_id,),
+            ).fetchall()
+            reverse = connection.execute(
+                "SELECT payload FROM events WHERE run_id = ? AND type = 'evolution_parent_linked'", (binding.child_run_id,),
+            ).fetchall()
+            if (child is None or [json.loads(row["payload"]) for row in forward] != [{
+                "evolution_run_id": binding.child_run_id, "contract_sha256": binding.contract_digest,
+                "strategy": "population",
+            }] or [json.loads(row["payload"]) for row in reverse] != [{
+                "parent_run_id": binding.run_id, "contract_sha256": binding.contract_digest,
+            }]):
+                raise ValueError("automatic solve reciprocal child link drift")
+        return run
+
     def bind_worker(
         self,
         *,
@@ -3315,6 +3686,11 @@ class Store:
                 "SELECT 1 FROM worker_bindings WHERE worker_id = ?", (worker_id,),
             ).fetchone() is not None:
                 raise ValueError("worker already has a binding")
+            if connection.execute(
+                "SELECT 1 FROM automatic_solve_worker_bindings WHERE worker_attempt_id = ?",
+                (worker_attempt_id,),
+            ).fetchone() is not None:
+                raise ValueError("worker attempt already has an automatic solve binding")
             worker = connection.execute(
                 "SELECT id FROM workers WHERE id = ?", (worker_id,),
             ).fetchone()
@@ -3750,6 +4126,10 @@ class Store:
                 raise PermissionError("worker is not owned by caller")
             if worker["phase"] == WorkerPhase.RUNNING.value:
                 raise ValueError("worker is already running")
+            if connection.execute(
+                "SELECT 1 FROM automatic_solve_worker_bindings WHERE worker_id = ?", (worker_id,),
+            ).fetchone() is not None:
+                raise ValueError("automatic solve worker requires explicit native bridge resume")
             if not allow_stopped_resume and worker["stop_reason"] is not None:
                 raise ValueError("worker was stopped before its attempt could start")
             if require_parent_running:

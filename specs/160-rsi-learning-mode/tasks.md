@@ -33,8 +33,8 @@
 - [x] T160-13c 将 evaluator、verifier 和 transfer 的子预算及实际用量接入同一 run 账本；
   显式 `compare_transfer` 将三类阶段 reservation、sidecar 和预算计数绑定到 controller
   checkpoint，恢复时只读重开并拒绝 panel/receipt/verifier 篡改。transfer 的两个 gateway
-  launch 仍属于 transfer panel，不计入学习 `solver_invocations`；完整 transfer unknown
-  reconcile、真实 provider telemetry 和 promotion identity 适配仍开放。旧预算 checkpoint
+  launch 已计入同一 run 的 `solver_invocations`；shared panel 已可绑定可信 promotion。
+  完整 transfer unknown reconcile 和真实 provider telemetry 仍开放。旧预算 checkpoint
   缺少 stage counters 时明确要求迁移，不自动补零。
 - [x] T160-13c1 verifier 中断后进入 unknown；只有原 episode/intent 指纹和只读 retained
   evidence 校验均通过才可继续，已完成 decision 不重跑、不重复计费。CLI inspect/reconcile 接通。

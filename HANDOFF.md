@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-29 shared solver accounting and promotion
+
+Pushed `515cc29` on `codex/rsi-recovery-integration` from
+`/tmp/lunar-rsi-integration-20260929`. Frozen transfer gateway calls now reserve the same
+`solver_invocations` budget as learning episodes, before work. Reservation/result/history
+validation rejects erased charges and changed task/arm/request/result identity. An exhausted
+panel stays unknown on retained reopen without dispatching another arm.
+
+Shared native promotion validates the original run checkpoint chain, budget counters and
+panel evidence read-only; standalone promotion remains compatible. Local RSI plus CLI
+regression: **706 passed**, focused accounting/promotion: **87 passed** (overlapping counts).
+Ruff, compileall and diff checks pass. The branch push now triggers the Linux/macOS test matrix;
+remote completion and default-branch merge remain pending. Later entries below describe earlier
+baselines; their claim that transfer solver calls are uncounted is superseded by this entry.
+
+The original user worktree remains untouched. Subsequent retained-completion recovery and
+WorkerService binding/control work must be validated and committed separately. No real model,
+remote evaluator, WebAgent or real producer campaign was launched.
+
 ## 2026-09-29 RSI stage reservations, trusted promotion and active retrieval
 
 Integrated local evaluator/verifier/transfer reservations, retained stage sidecars, accounting

@@ -2508,22 +2508,44 @@ def _solve(config: Config, args: argparse.Namespace) -> dict[str, object]:
 
 def _bind_solve_execution_control(
     args: argparse.Namespace, controller: LocalController, run: Run,
-    *, observe_stage=None,
+    *, observe_stage=None, parent_control: SolveExecutionControl | None = None,
 ) -> None:
-    """Attach one process-local solve deadline to an automatic multi-file execution."""
-    timeout = getattr(args, "solve_wall_timeout", None)
-    if not getattr(args, "multi_file", False) or timeout is None:
-        return
-    args._solve_execution_control = SolveExecutionControl(
-        timeout,
-        observe_stage=observe_stage,
-        cancellation_callbacks=(
-            lambda: (
-                (current := controller.store.get_run(run.id)) is None
-                or current.status.value == "cancelled"
-            ),
+    """Attach one process-local solve deadline without replacing an admitted control."""
+    from .automatic_solve_lifecycle import SolveExecutionControl as ControlType
+
+    timeout = getattr(args, "solve_wall_timeout", None) if getattr(args, "multi_file", False) else None
+    active_timeout = getattr(args, "_solve_active_timeout", None)
+    parent_control = parent_control if parent_control is not None else getattr(args, "_solve_parent_control", None)
+    control = getattr(args, "_solve_execution_control", None)
+    if control is not None and not isinstance(control, ControlType):
+        raise TypeError("_solve_execution_control must be SolveExecutionControl")
+    if parent_control is not None and not isinstance(parent_control, ControlType):
+        raise TypeError("parent_control must be SolveExecutionControl")
+    ceilings = [value for value in (timeout, active_timeout) if value is not None]
+    if control is None:
+        if not ceilings and parent_control is None:
+            return
+        if not ceilings:
+            sampled_at = time.monotonic()
+            ceilings.append(parent_control.check("contract"))
+            control = SolveExecutionControl(min(ceilings), started_at=sampled_at, observe_stage=observe_stage)
+        else:
+            control = SolveExecutionControl(min(ceilings), observe_stage=observe_stage)
+        args._solve_execution_control = control
+    for ceiling in ceilings:
+        control.narrow_deadline(ceiling)
+    if parent_control is not None and parent_control is not control:
+        control.add_parent_control(parent_control)
+    control.add_cancellation_callback(
+        lambda: (
+            (current := controller.store.get_run(run.id)) is None
+            or current.status.value == "cancelled"
         ),
     )
+    if observe_stage is not None:
+        control.add_observation_callback(observe_stage)
+    if parent_control is not None:
+        control.check("contract")
 
 
 def _lifecycle_enabled(request: dict | None) -> bool:
@@ -2582,10 +2604,10 @@ def _resume_automatic_solve(config, args, controller, run, manifest=None, *, own
         if run.status.value in {"succeeded", "failed", "cancelled"}:
             return run
         observation = SolveExecutionObservation(controller.store, run.id, getattr(args, "solve_wall_timeout", None))
-        _bind_solve_execution_control(args, controller, run, observe_stage=observation.observe)
         args._solve_owner_held = True
         args._solve_observation = observation
         try:
+            _bind_solve_execution_control(args, controller, run, observe_stage=observation.observe)
             settled = controller.resume_conversational(
                 run.id, RuntimeContractCompiler(controller.runtime),
                 compiler_fingerprint=_compiler_fingerprint(controller.runtime),

@@ -134,8 +134,9 @@ release publication.
   scope/compatibility-bound active-memory retrieval. Recheck the active selection before launch.
 - [x] Join controller and transfer evaluator/verifier/transfer reservations into one run ledger
   through explicit `compare_transfer` opt-in; retained panel opens are read-only and do not
-  relaunch work. The two panel gateway launches remain outside the learning
-  `solver_invocations` counter, and full transfer unknown reconciliation is still open.
+  relaunch work. Both panel gateway launches now consume the learning run's
+  `solver_invocations` counter. Shared panels also bind to trusted native promotion evidence.
+  Full transfer unknown reconciliation is still open.
 - [ ] Enable automatic active-memory policy and regression handling in durable DRS/BRS.
 
 The local RSI and CLI suite passes 679 cases after the final promotion proof changes. The shared

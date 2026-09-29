@@ -49,7 +49,7 @@ The implementation is ready for the next phase only when these provider-free che
   Native evaluator calls and frozen transfer panels reserve before execution only when an explicit
   durable stage scope is installed; pending intents remain visible in a sidecar and are never replayed.
   Explicit `compare_transfer` can bind these three stage counters to the controller run ledger;
-  its retained opens are read-only. The panel's gateway launches remain outside the learning
+  its retained opens are read-only. The panel's gateway launches consume the learning run's
   `solver_invocations` counter, while full transfer unknown reconciliation and external provider
   telemetry remain unavailable. Complete legacy checkpoints without stage counters require
   migration rather than synthetic zero counts.
@@ -104,3 +104,9 @@ decision input. Trusted native holdout promotion and explicit active-memory retr
 by host-configured retained-panel evidence; default DRS/BRS automatic retrieval remains disabled.
 None of these local checks substitutes for real Actor, provider telemetry, solver campaign or
 transfer gains.
+
+Shared solver accounting and native promotion were validated with **706 passing RSI/CLI tests**
+at commit `515cc29`. Shared promotion reopens the original checkpoint history, panel identity,
+solver/stage reservations and native evidence without executing a solver or evaluator. Solver
+budget exhaustion leaves unfinished panels unknown and never authorizes another arm on reopen.
+This count precedes the separate retained-completion recovery and WorkerService foundation work.
