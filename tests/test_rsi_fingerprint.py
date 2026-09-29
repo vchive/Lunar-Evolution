@@ -48,6 +48,7 @@ def test_contract_is_canonical_and_round_trips() -> None:
     assert RSIFingerprintContract.from_dict(contract.to_dict()) == contract
     assert canonical_fingerprint_digest(contract) == contract.digest()
     assert canonical_fingerprint_digest(contract.to_dict()) == contract.digest()
+    assert len(contract.solver_fingerprint) == 64
 
 
 def test_mapping_order_does_not_change_digest() -> None:
@@ -125,10 +126,12 @@ def test_alias_target_judge_sha256_requires_exact_match() -> None:
     values.pop("schema_version")
     values.pop("kind")
     values["target_judge_fingerprint"] = HEX
+    values.pop("target_judge_fingerprint")
     built = RSIFingerprintContract.build(**values, target_judge_sha256=HEX)
     assert built == contract
+    mismatch = dict(values, target_judge_fingerprint=HEX)
     with pytest.raises(RSIFingerprintError):
-        RSIFingerprintContract.build(**values, target_judge_sha256=OTHER)
+        RSIFingerprintContract.build(**mismatch, target_judge_sha256=OTHER)
 
 
 def test_invalid_comparison_inputs_fail_closed() -> None:

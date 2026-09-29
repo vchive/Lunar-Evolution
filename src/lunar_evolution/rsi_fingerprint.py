@@ -136,7 +136,14 @@ def _json_value(value: Any) -> Any:
 
 
 def _settings(value: object) -> tuple[tuple[str, Any], ...]:
-    normalized = value if isinstance(value, _FrozenObject) else _normalize_json(value)
+    if isinstance(value, _FrozenObject):
+        normalized = value
+    elif isinstance(value, tuple) and all(
+        isinstance(item, tuple) and len(item) == 2 and type(item[0]) is str for item in value
+    ):
+        normalized = _normalize_json(dict(value))
+    else:
+        normalized = _normalize_json(value)
     if not isinstance(normalized, _FrozenObject) or any(
         not isinstance(item, tuple) or len(item) != 2 or type(item[0]) is not str
         for item in normalized
@@ -199,7 +206,7 @@ class RSIFingerprintContract:
         actor_fingerprint: str,
         verifier_fingerprint: str,
         curriculum_fingerprint: str,
-        target_judge_fingerprint: str,
+        target_judge_fingerprint: str | None = None,
         target_judge_sha256: str | None = None,
     ) -> RSIFingerprintContract:
         """Build a contract while accepting a mapping for ergonomic call sites.
@@ -209,9 +216,11 @@ class RSIFingerprintContract:
         """
 
         if target_judge_sha256 is not None:
-            if target_judge_fingerprint != target_judge_sha256:
+            if target_judge_fingerprint is not None and target_judge_fingerprint != target_judge_sha256:
                 raise RSIFingerprintError("record_invalid", reasons=("target_judge",))
             target_judge_fingerprint = target_judge_sha256
+        if target_judge_fingerprint is None:
+            raise RSIFingerprintError("digest_invalid", reasons=("target_judge_fingerprint",))
         return cls(
             contract_sha256=contract_sha256,
             evaluator_sha256=evaluator_sha256,
@@ -257,6 +266,15 @@ class RSIFingerprintContract:
             curriculum_fingerprint=value["curriculum_fingerprint"],
             target_judge_fingerprint=value["target_judge_fingerprint"],
         )
+
+    @property
+    def solver_fingerprint(self) -> str:
+        """Digest of the registered solver id and immutable settings."""
+
+        return hashlib.sha256(canonical_json({
+            "solver_id": self.solver_id,
+            "solver_settings": _json_value(self.solver_settings),
+        }, maximum=MAX_FINGERPRINT_RECORD_BYTES)).hexdigest()
 
     @property
     def target_judge_sha256(self) -> str:
