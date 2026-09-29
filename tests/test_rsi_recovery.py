@@ -120,11 +120,13 @@ def test_persisted_unknown_reconciles_to_terminal_failure_without_replay(tmp_pat
     assert len(gateway.requests) == 1
 
 
-def test_terminal_result_survives_verifier_crash_without_solver_retry(tmp_path):
+def test_terminal_result_survives_verifier_crash_without_automatic_verifier_retry(tmp_path):
     class Verifier(LocalExactVerifier):
         crash = True
+        calls = 0
 
         def verify(self, *args):
+            self.calls += 1
             if self.crash:
                 raise RuntimeError("verifier interrupted")
             return super().verify(*args)
@@ -136,7 +138,8 @@ def test_terminal_result_survives_verifier_crash_without_solver_retry(tmp_path):
         first.run_drs(run_id="verification", **PINS)
     verifier.crash = False
     resumed = controller(tmp_path, Gateway(crash=True), verifier=verifier).resume(run_id="verification")
-    assert resumed.status == "completed"
+    assert resumed.status == "unknown"
+    assert verifier.calls == 1
     assert len(gateway.requests) == 1
 
 

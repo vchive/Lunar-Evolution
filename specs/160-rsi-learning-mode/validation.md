@@ -41,12 +41,20 @@ The implementation is ready for the next phase only when these provider-free che
   limit ends the run as `budget_exhausted`; resume of that terminal run issues no new gateway call.
 - Unknown reconciliation has its own bounded counter. An exhausted reconciliation budget preserves
   the unknown evidence and ends the run as `budget_exhausted`; it cannot authorize an implicit retry.
+- Verifier reservations and intents are durable before execution. Interrupted verifier work stays
+  unknown until the original intent and current record are explicitly reconciled against retained
+  evidence. Saved decisions are reused without another invocation or charge. Pure read-only
+  verifier reconciliation consumes no solver retry allowance and cannot revive an exhausted run.
+- Separate evaluator/verifier/transfer counters validate integer types and remaining arithmetic.
+  Finite evaluator/transfer limits are rejected while runtime accounting is unavailable. Complete
+  legacy checkpoints without stage counters require migration rather than synthetic zero counts.
 - `RSIUsageReceipt` accepts only complete token triples, non-negative integer measurements, and
   reproducible estimates using receipt-bound micro-USD rates. Missing provider telemetry remains
   unavailable (`null`), never a synthetic zero. Its aggregation uses the observed controller wall
   clock rather than summing potentially concurrent BRS episode durations.
-- Usage receipt validation is currently a local model-level check. Durable episode sidecars,
-  run-level aggregation, CLI display, and adapter telemetry capture remain an open integration task;
+- Optional adapter telemetry is persisted as a per-episode sidecar, bound to the original
+  request/result identity and receipt digest. Resume rechecks the sidecar and run aggregate;
+  `rsi inspect` exposes the durable budget and aggregate. Missing telemetry remains `null`, and
   no provider usage or cost claim is inferred from `SolverResult`.
 
 ## Integration regression
@@ -80,7 +88,12 @@ All controller paths, including the non-durable DRS and single frozen-transfer r
 completed episode with its attached passing verifier decision before a custom target judge can
 accept it. A judge can narrow acceptance; it cannot promote unknown, stopped or unverified work.
 
-The same command includes `test_rsi_budget.py` and `test_rsi_usage.py`. The former exercises the
-durable Phase 1 budget contract; the latter validates standalone receipt parsing and aggregation.
-Neither test substitutes for real Actor, provider telemetry, solver campaign, or heldout-transfer
-acceptance.
+The same command includes `test_rsi_budget.py`, `test_rsi_usage.py`,
+`test_rsi_usage_sidecar.py`, and `test_rsi_memory_governance.py`. These exercise the local durable
+budget, usage-sidecar binding and the independent promotion authority. The optional durable
+`candidate_only` policy is covered by `test_rsi_governance_store.py`: source/content binding, partial
+nomination recovery, CAS, policy drift, read-only restoration, quarantine and activation rejection.
+`test_rsi_stage_budget.py` covers verifier budget exhaustion, intent interruption and evidence-based
+reconciliation without execution. CLI tests exercise both memory policies and strict retained
+decision input. Active memory retrieval and trusted holdout promotion remain unfinished. None of
+these local checks substitutes for real Actor, provider telemetry, solver campaign or transfer gains.

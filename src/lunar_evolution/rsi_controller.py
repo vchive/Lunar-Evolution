@@ -23,6 +23,7 @@ from .rsi_gateway import (
     SolverRequest,
     SolverResult,
 )
+from .rsi_governance_store import RSIMemoryGovernanceLedger
 from .rsi_learning import (
     EMPTY_MEMORY_SNAPSHOT,
     MemoryItem,
@@ -32,6 +33,7 @@ from .rsi_learning import (
     TransferReceipt,
     VerifierDecision,
 )
+from .rsi_memory_governance import MemoryScope
 from .rsi_store import RSILedger, RSIRecord
 
 
@@ -335,6 +337,7 @@ class RSILearningController:
         ledger: RSILedger | None = None,
         solver_settings: Mapping[str, Any] | None = None,
         actor_fingerprint: str | None = None,
+        memory_governance: RSIMemoryGovernanceLedger | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -347,6 +350,12 @@ class RSILearningController:
         if actor_fingerprint is not None:
             _digest(actor_fingerprint, "actor_fingerprint")
         self.actor_fingerprint = actor_fingerprint
+        self.memory_governance = memory_governance
+        if memory_governance is not None:
+            if ledger is None or memory_governance.ledger.database != ledger.database:
+                raise RSILearningError("rsi_memory_governance_ledger_mismatch")
+            if self.snapshot.items:
+                raise RSILearningError("rsi_memory_trusted_promotion_unavailable")
 
     def resume(
         self, *, run_id: str, contract_sha256: str | None = None,
@@ -370,6 +379,25 @@ class RSILearningController:
         """Settle an original uncertain request with terminal evidence, then continue its run."""
         from .rsi_recovery import DurableLearningRun
         return DurableLearningRun(self, run_id).reconcile(episode_id, result, expected_record_sha256)
+
+    def reconcile_verifier(
+        self,
+        *,
+        run_id: str,
+        episode_id: str,
+        decision: VerifierDecision,
+        expected_record_sha256: str,
+        expected_intent_sha256: str,
+    ) -> LearningRunResult:
+        """Adopt retained verifier evidence without invoking the verifier again."""
+        from .rsi_recovery import DurableLearningRun
+
+        return DurableLearningRun(self, run_id).reconcile_verifier(
+            episode_id,
+            decision,
+            expected_record_sha256=expected_record_sha256,
+            expected_intent_sha256=expected_intent_sha256,
+        )
 
     @property
     def snapshot(self) -> MemorySnapshot:
@@ -438,17 +466,12 @@ class RSILearningController:
         request = self._request(episode, charter={**decision.to_dict(), "decision_sha256": decision.digest()})
         return PracticeEpisodeRunner(self.gateway, self.verifier, self.ledger).run(episode, request)
 
-    def _commit(
-        self,
+    @staticmethod
+    def _memory_proposal(
         execution: EpisodeExecution,
         decision: CurriculumDecision,
-        *,
-        expected_episode_snapshot_sha256: str | None = None,
-        source_snapshot_sha256: str | None = None,
-    ) -> MemorySnapshot:
-        if not execution.passed:
-            return self.snapshot
-        memory = MemoryItem(
+    ) -> MemoryItem:
+        return MemoryItem(
             memory_id=f"memory-{execution.episode.episode_id}",
             problem_family=decision.practice_family,
             trigger=decision.capability_gap,
@@ -465,11 +488,48 @@ class RSILearningController:
             receipt_sha256=execution.verifier.receipt_sha256,
             episode_id=execution.episode.episode_id,
         )
+
+    def _candidate_proposal(
+        self,
+        execution: EpisodeExecution,
+        decision: CurriculumDecision,
+    ) -> dict[str, Any]:
+        return {
+            "episode": execution.episode,
+            "memory": self._memory_proposal(execution, decision),
+            "scope": MemoryScope(
+                "contract:" + execution.episode.contract_sha256,
+                decision.practice_family,
+                _record_digest({"capability_gap": decision.capability_gap}),
+            ),
+            "actor_fingerprint": self.actor_fingerprint
+            or _record_digest(
+                {
+                    "policy": "rsi-candidate-governance-v1",
+                }
+            ),
+        }
+
+    def _commit(
+        self,
+        execution: EpisodeExecution,
+        decision: CurriculumDecision,
+        *,
+        expected_episode_snapshot_sha256: str | None = None,
+        source_snapshot_sha256: str | None = None,
+    ) -> MemorySnapshot:
+        if not execution.passed:
+            return self.snapshot
+        if self.memory_governance is not None:
+            if self.snapshot.items:
+                raise RSILearningError("rsi_memory_trusted_promotion_unavailable")
+            self.memory_governance.nominate(**self._candidate_proposal(execution, decision))
+            return self.snapshot
         snapshot = self.memory_store.commit(
             parent_snapshot_sha256=self.snapshot.digest(),
             episode=execution.episode,
             decision=execution.verifier,
-            memory=memory,
+            memory=self._memory_proposal(execution, decision),
             expected_episode_snapshot_sha256=expected_episode_snapshot_sha256,
             source_snapshot_sha256=source_snapshot_sha256,
         )

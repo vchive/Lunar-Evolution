@@ -228,13 +228,25 @@ class RSILedger:
             raise RSILearningError("rsi_controller_lock_identity_changed") from exc
 
     def controller_checkpoint(self, run_id: str) -> tuple[str, dict[str, Any]] | None:
+        history = self.controller_checkpoint_history(run_id)
+        return history[-1] if history else None
+
+    def controller_checkpoint_history(self, run_id: str) -> list[tuple[str, dict[str, Any]]]:
+        """Return every verified controller checkpoint in append order.
+
+        The returned payloads are decoded copies from the hash chain; callers must treat them as
+        read-only evidence. A missing run has an empty history. Legacy rows remain readable only
+        when their existing chain validates; migration of legacy budget payloads is enforced by
+        ``RSIRunBudget.load`` at recovery time.
+        """
+        _id(run_id, name="run_id")
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
                 "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (run_id,),
             ).fetchall()
         parent = None
-        last = None
+        history = []
         for ordinal, row in enumerate(rows):
             payload = json.loads(row["payload"])
             digest = hashlib.sha256(canonical_json({
@@ -245,8 +257,8 @@ class RSILedger:
                     or row["checkpoint_sha256"] != digest):
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
             parent = digest
-            last = (digest, payload)
-        return last
+            history.append((digest, payload))
+        return history
 
     def write_controller_checkpoint(
         self, run_id: str, payload: Mapping[str, Any], *, expected_sha256: str | None,

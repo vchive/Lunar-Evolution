@@ -78,6 +78,49 @@ memory entry 必须带有：
 
 ### 4. BRS / DRS
 
+#### Durable candidate governance boundary
+
+An explicit `memory_governance` ledger selects the `candidate_only` controller policy. A passing
+practice creates durable observed, verified and candidate records, retaining the complete immutable
+memory content and source episode/verifier identity. Every append uses compare-and-swap; exact
+repetition is idempotent, and an interrupted partial nomination resumes its missing transitions.
+Restoration reopens the full journal and source episode history, rejecting missing transitions,
+changed content, source drift, stale parents and invalid verifier/gate histories.
+
+This policy never adds a candidate to the solver snapshot. It rejects nonempty initial snapshots
+and approved/active writes until trusted holdout evidence is connected. Caller-supplied gate scores
+are insufficient. The selected policy is a durable run pin; resume cannot switch it. Existing
+`verifier_snapshot` fixtures keep their protocol behavior and do not establish B2 promotion
+acceptance. Full active retrieval, trusted promotion and automatic transfer regression remain open.
+
+The CLI exposes this opt-in policy as `rsi run --memory-policy candidate-only`; `resume` restores
+the pinned policy. `inspect` reports candidate lifecycle heads using read-only journal validation.
+Committed nominations must be validated from retained history, never recreated during recovery.
+
+#### Durable verifier reservation and reconciliation
+
+The run budget includes separate evaluator, verifier and transfer invocation ceilings and counters.
+The controller reserves verifier work and persists the request, result, source episode and verifier
+identity before invocation. A retained decision is reused without another charge; an interrupted
+intent with no retained decision puts the run in `unknown` and does not authorize replay.
+
+`reconcile_verifier` accepts a retained decision only after checking the expected current episode
+record, the original pending-intent digest and the verifier's read-only evidence validator. It
+preserves the solver result and reservation. Repeating the same reconciliation is idempotent;
+changed evidence, missing validation authority or a terminal exhausted run cannot restart work.
+The local exact fixture reconstructs decisions without calling `verify`; a native verifier reopens
+its retained independent execution evidence.
+
+The CLI exposes pending intents through `rsi inspect` and accepts `rsi reconcile --verifier-decision
+FILE --expected-record-sha256 DIGEST --expected-intent-sha256 DIGEST`. This mode is exclusive with
+solver-result and worker-state reconciliation. Decision files are bounded regular JSON files with
+an exact schema, including nested checks and duplicate-key rejection.
+
+Evaluator and transfer runtime reservations remain unconnected. Until they are connected, a
+durable controller rejects finite limits for these stages before execution rather than claiming
+to enforce them. Legacy budget checkpoints without stage counters require explicit migration;
+recovery must not invent zero consumption for previously executed work.
+
 - BRS 从同一份 frozen wave memory 启动多个 practice，所有 episode 验证完后才按确定顺序合并。
 - DRS 先执行 target attempt，根据 PASS/FAIL/UNRESOLVED 和 capability gap 选择 practice；
   每次 practice commit 后再尝试 target。

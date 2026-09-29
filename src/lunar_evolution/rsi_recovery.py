@@ -4,6 +4,7 @@ A launch intent is committed before calling the gateway. An intent without a ter
 uncertain work, never permission to launch again. Reconciliation supplies evidence for the same
 immutable request, then resumes the original controller schedule.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -150,7 +151,8 @@ class DurableLearningRun:
 
     def _config(self, mode: str, values: Mapping[str, Any]) -> dict[str, Any]:
         return {
-            "mode": mode, **dict(values),
+            "mode": mode,
+            **dict(values),
             "solver_settings": dict(self.controller.solver_settings),
             "actor_fingerprint": self.controller.actor_fingerprint,
             "gateway_fingerprint": fingerprint(self.controller.gateway),
@@ -158,18 +160,34 @@ class DurableLearningRun:
             "curriculum_fingerprint": fingerprint(self.controller.curriculum),
             "curriculum_history_fingerprint": (
                 self.controller.curriculum.history_fingerprint()
-                if callable(getattr(self.controller.curriculum, "history_fingerprint", None)) else None
+                if callable(getattr(self.controller.curriculum, "history_fingerprint", None))
+                else None
             ),
             "target_judge_fingerprint": fingerprint(self.controller.target_judge),
+            "memory_policy": (
+                "candidate_only"
+                if self.controller.memory_governance is not None
+                else "verifier_snapshot"
+            ),
         }
 
     def _check_components(self, expected: Mapping[str, Any] | None = None) -> None:
+        self._check_checkpoint_history()
         config = self.state["config"]
         budget = RSIRunBudget.load(self.state.get("budget_state"))
         budget.assert_matches(config.get("budget"))
+        self._check_stage_support(budget)
         current = self._config(config["mode"], {})
-        for key in ("solver_settings", "actor_fingerprint", "gateway_fingerprint",
-                    "verifier_fingerprint", "curriculum_fingerprint", "curriculum_history_fingerprint", "target_judge_fingerprint"):
+        for key in (
+            "solver_settings",
+            "actor_fingerprint",
+            "gateway_fingerprint",
+            "verifier_fingerprint",
+            "curriculum_fingerprint",
+            "curriculum_history_fingerprint",
+            "target_judge_fingerprint",
+            "memory_policy",
+        ):
             if current[key] != config[key]:
                 raise RSILearningError(f"rsi_resume_{key}_drift")
         for key, value in (expected or {}).items():
@@ -177,17 +195,26 @@ class DurableLearningRun:
                 raise RSILearningError(f"rsi_resume_{key}_drift")
         snapshot = MemorySnapshot.from_dict(self.state["memory_snapshot"])
         initial = MemorySnapshot.from_dict(self.state["initial_memory_snapshot"])
+        if config["memory_policy"] == "candidate_only" and (snapshot.items or initial.items):
+            raise RSILearningError("rsi_memory_trusted_promotion_unavailable")
         supplied = self.controller.snapshot.digest()
-        if supplied not in {initial.digest(), snapshot.digest()} and self.controller._explicit_memory_store:
+        if (
+            supplied not in {initial.digest(), snapshot.digest()}
+            and self.controller._explicit_memory_store
+        ):
             raise RSILearningError("rsi_resume_memory_snapshot_drift")
         self.controller.memory_store = RSIMemoryStore(snapshot)
         durable_episode_ids = set(self.ledger.episode_ids_for_run(self.run_id))
         checkpoint_episode_ids = set(self.state["episodes"])
         planned_without_ledger = {
-            episode_id for episode_id, entry in self.state["episodes"].items()
+            episode_id
+            for episode_id, entry in self.state["episodes"].items()
             if entry.get("stage") == "planned" and episode_id not in durable_episode_ids
         }
-        if durable_episode_ids - checkpoint_episode_ids or checkpoint_episode_ids - durable_episode_ids - planned_without_ledger:
+        if (
+            durable_episode_ids - checkpoint_episode_ids
+            or checkpoint_episode_ids - durable_episode_ids - planned_without_ledger
+        ):
             raise RSILearningError("rsi_resume_episode_checkpoint_gap")
         for episode_id, entry in self.state["episodes"].items():
             self._check_episode_checkpoint_shape(entry)
@@ -201,10 +228,12 @@ class DurableLearningRun:
                 raise RSILearningError("rsi_budget_checkpoint_invalid")
             if entry["stage"] == "planned" and self.ledger.get(request.episode_id) is not None:
                 raise RSILearningError("rsi_resume_episode_stage_invalid")
-            if (request.digest() != episode.request_sha256
-                    or episode.run_id != self.run_id
-                    or request.solver_id != config["solver_id"]
-                    or dict(request.solver_settings) != config["solver_settings"]):
+            if (
+                request.digest() != episode.request_sha256
+                or episode.run_id != self.run_id
+                or request.solver_id != config["solver_id"]
+                or dict(request.solver_settings) != config["solver_settings"]
+            ):
                 raise RSILearningError("rsi_resume_request_drift")
             for name in ("contract_sha256", "evaluator_sha256", "environment_sha256"):
                 if getattr(request, name) != config[name] or getattr(episode, name) != config[name]:
@@ -214,34 +243,393 @@ class DurableLearningRun:
                 self._check_result(request, result)
                 if entry.get("episode") is not None:
                     episode = PracticeEpisode.from_dict(entry["episode"])
-                    if (episode.request_sha256 != result.request_sha256
-                            or episode.episode_id != result.episode_id or episode.status != result.status
-                            or episode.trace_events != result.trace_events
-                            or episode.run_id != self.run_id
-                            or episode.memory_snapshot_sha256 != request.memory_snapshot_sha256
-                            or episode.solver_fingerprint != digest({"solver_id": request.solver_id,
-                                                                     "settings": request.solver_settings})):
+                    if (
+                        episode.request_sha256 != result.request_sha256
+                        or episode.episode_id != result.episode_id
+                        or episode.status != result.status
+                        or episode.trace_events != result.trace_events
+                        or episode.run_id != self.run_id
+                        or episode.memory_snapshot_sha256 != request.memory_snapshot_sha256
+                        or episode.solver_fingerprint
+                        != digest(
+                            {"solver_id": request.solver_id, "settings": request.solver_settings}
+                        )
+                    ):
                         raise RSILearningError("rsi_resume_episode_result_mismatch")
                     for name in (
-                        "candidate_receipt_sha256", "execution_receipt_sha256",
-                        "official_evaluation_receipt_sha256", "trace_digest",
-                        "candidate_source_sha256", "dependency_sha256", "actor_fingerprint",
+                        "candidate_receipt_sha256",
+                        "execution_receipt_sha256",
+                        "official_evaluation_receipt_sha256",
+                        "trace_digest",
+                        "candidate_source_sha256",
+                        "dependency_sha256",
+                        "actor_fingerprint",
                     ):
                         if getattr(episode, name) != getattr(result, name):
                             raise RSILearningError("rsi_resume_episode_result_mismatch")
             self._check_reconciliation_checkpoint(entry, request)
+            self._check_verifier_reservations(entry, request)
         reserved = [entry for entry in self.state["episodes"].values() if entry["budget_reserved"]]
-        practices = [entry for entry in reserved
-                     if PracticeEpisode.from_dict(entry["running_episode"]).episode_kind == "practice"]
-        reconciliations = [entry for entry in self.state["episodes"].values()
-                           if entry.get("reconciliation") is not None]
+        practices = [
+            entry
+            for entry in reserved
+            if PracticeEpisode.from_dict(entry["running_episode"]).episode_kind == "practice"
+        ]
+        reconciliations = [
+            entry
+            for entry in self.state["episodes"].values()
+            if entry.get("reconciliation") is not None
+        ]
         consumed = budget.state["consumed"]
-        if (consumed["solver_invocations"] != len(reserved)
-                or consumed["practice_episodes"] != len(practices)
-                or consumed["unknown_retries"] != len(reconciliations)):
+        if (
+            consumed["solver_invocations"] != len(reserved)
+            or consumed["practice_episodes"] != len(practices)
+            or consumed["unknown_retries"] != len(reconciliations)
+            or consumed["verifier_invocations"]
+            != sum(len(entry["verifier_invocations"]) for entry in self.state["episodes"].values())
+            or consumed["evaluator_invocations"] != 0
+            or consumed["transfer_invocations"] != 0
+        ):
             raise RSILearningError("rsi_budget_checkpoint_invalid")
         self._check_run_usage_checkpoint()
         self._validate_memory()
+
+    def _check_checkpoint_history(self) -> None:
+        """Reject checkpoint rewrites that erase durable stage reservations or counters."""
+        history = self.ledger.controller_checkpoint_history(self.run_id)
+        if not history or history[-1][0] != self.version:
+            raise RSILearningError("rsi_controller_checkpoint_invalid")
+        previous: Mapping[str, Any] | None = None
+        for _, current in history:
+            if not isinstance(current, Mapping):
+                raise RSILearningError("rsi_controller_checkpoint_invalid")
+            if previous is not None:
+                previous_episodes = previous.get("episodes", {})
+                current_episodes = current.get("episodes", {})
+                if not isinstance(previous_episodes, Mapping) or not isinstance(current_episodes, Mapping):
+                    raise RSILearningError("rsi_controller_checkpoint_invalid")
+                for episode_id, old_entry in previous_episodes.items():
+                    if not isinstance(old_entry, Mapping):
+                        raise RSILearningError("rsi_controller_checkpoint_invalid")
+                    old_intents = old_entry.get("verifier_invocations")
+                    if old_intents is None:
+                        continue  # pre-stage-counter checkpoints are migrated by RSIRunBudget.load
+                    if not isinstance(old_intents, list):
+                        raise RSILearningError("rsi_budget_checkpoint_invalid")
+                    new_entry = current_episodes.get(episode_id)
+                    if not isinstance(new_entry, Mapping):
+                        if old_intents:
+                            raise RSILearningError("rsi_resume_episode_checkpoint_gap")
+                        continue
+                    new_intents = new_entry.get("verifier_invocations")
+                    if not isinstance(new_intents, list) or len(new_intents) < len(old_intents):
+                        raise RSILearningError("rsi_budget_checkpoint_invalid")
+                    for old_intent, new_intent in zip(old_intents, new_intents):
+                        if not isinstance(old_intent, Mapping) or not isinstance(new_intent, Mapping):
+                            raise RSILearningError("rsi_budget_checkpoint_invalid")
+                        identity = (
+                            "request_sha256", "result_sha256", "episode_record_sha256",
+                            "verifier_fingerprint", "decision_kind",
+                        )
+                        if any(old_intent.get(name) != new_intent.get(name) for name in identity):
+                            raise RSILearningError("rsi_budget_checkpoint_invalid")
+                        for field in ("decision", "reconciliation"):
+                            old_value = old_intent.get(field)
+                            new_value = new_intent.get(field)
+                            if old_value is not None and new_value != old_value:
+                                raise RSILearningError("rsi_budget_checkpoint_invalid")
+                old_budget = previous.get("budget_state")
+                new_budget = current.get("budget_state")
+                if isinstance(old_budget, Mapping) and isinstance(new_budget, Mapping):
+                    old_planned = old_budget.get("planned")
+                    new_planned = new_budget.get("planned")
+                    if (isinstance(old_planned, Mapping) and isinstance(new_planned, Mapping)
+                            and old_planned != new_planned):
+                        raise RSILearningError("rsi_budget_checkpoint_invalid")
+                    old_consumed = old_budget.get("consumed")
+                    new_consumed = new_budget.get("consumed")
+                    if isinstance(old_consumed, Mapping) and isinstance(new_consumed, Mapping):
+                        for name, old_value in old_consumed.items():
+                            new_value = new_consumed.get(name)
+                            if type(old_value) is int and (type(new_value) is not int or new_value < old_value):
+                                raise RSILearningError("rsi_budget_checkpoint_invalid")
+            previous = current
+
+    @staticmethod
+    def _check_stage_support(budget: RSIRunBudget) -> None:
+        # These calls currently happen inside gateways or independent transfer tools, so the
+        # controller cannot promise a pre-execution reservation for either stage.
+        for stage in ("evaluator", "transfer"):
+            if budget.state["planned"][f"max_{stage}_invocations"] is not None:
+                raise RSILearningError(f"rsi_budget_{stage}_accounting_unavailable")
+
+    @staticmethod
+    def _verifier_decision(raw: Mapping[str, Any]) -> VerifierDecision:
+        return VerifierDecision(
+            **{
+                **raw,
+                "checks": tuple(VerifierCheck(**check) for check in raw["checks"]),
+            }
+        )
+
+    def _check_verifier_reservations(
+        self, entry: Mapping[str, Any], request: SolverRequest
+    ) -> None:
+        reservations = entry.get("verifier_invocations")
+        if not isinstance(reservations, list):
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        results = {}
+        if entry.get("result") is not None:
+            results[digest(entry["result"])] = SolverResult.from_dict(entry["result"])
+        reconciliation = entry.get("reconciliation")
+        if reconciliation is not None and reconciliation["prior_result"] is not None:
+            prior = reconciliation["prior_result"]
+            results[digest(prior)] = SolverResult.from_dict(prior)
+        history = self.ledger.history(request.episode_id)
+        seen = set()
+        current = self._current_verifier_intent(entry)
+        for intent in reservations:
+            if not isinstance(intent, Mapping) or set(intent) != {
+                "request_sha256",
+                "result_sha256",
+                "episode_record_sha256",
+                "verifier_fingerprint",
+                "decision_kind",
+                "decision",
+                "reconciliation",
+            }:
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+            result_digest = intent["result_sha256"]
+            if (
+                type(result_digest) is not str
+                or result_digest in seen
+                or result_digest not in results
+            ):
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+            seen.add(result_digest)
+            result = results[result_digest]
+            canonical = next(
+                (
+                    row
+                    for row in history
+                    if row.payload.get("record_sha256") == intent["episode_record_sha256"]
+                ),
+                None,
+            )
+            if canonical is None:
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+            episode = PracticeEpisode.from_dict(canonical.payload)
+            if (
+                intent["request_sha256"] != request.digest()
+                or intent["verifier_fingerprint"] != self.state["config"]["verifier_fingerprint"]
+                or episode.request_sha256 != request.digest()
+                or episode.episode_id != request.episode_id
+                or episode.status != result.status
+                or episode.verifier is not None
+                or intent["decision_kind"]
+                != ("completion" if result.status == "completed" else "diagnostic")
+            ):
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+            for name in (
+                "candidate_receipt_sha256",
+                "execution_receipt_sha256",
+                "official_evaluation_receipt_sha256",
+                "trace_digest",
+                "trace_events",
+                "candidate_source_sha256",
+                "dependency_sha256",
+                "actor_fingerprint",
+            ):
+                if getattr(episode, name) != getattr(result, name):
+                    raise RSILearningError("rsi_budget_checkpoint_invalid")
+            if intent["decision"] is not None:
+                try:
+                    decision = self._verifier_decision(intent["decision"])
+                except (RSILearningError, KeyError, TypeError) as exc:
+                    raise RSILearningError("rsi_budget_checkpoint_invalid") from exc
+                if decision.episode_id != request.episode_id:
+                    raise RSILearningError("rsi_budget_checkpoint_invalid")
+            reconciliation = intent["reconciliation"]
+            if reconciliation is not None:
+                if (
+                    not isinstance(reconciliation, Mapping)
+                    or set(reconciliation)
+                    != {
+                        "expected_record_sha256",
+                        "intent_sha256",
+                        "decision_sha256",
+                    }
+                    or intent["decision"] is None
+                ):
+                    raise RSILearningError("rsi_budget_checkpoint_invalid")
+                pending = {**intent, "decision": None, "reconciliation": None}
+                if (
+                    reconciliation["intent_sha256"] != digest(pending)
+                    or reconciliation["decision_sha256"] != digest(intent["decision"])
+                    or not any(
+                        row.record_sha256 == reconciliation["expected_record_sha256"]
+                        and row.payload.get("record_sha256") == intent["episode_record_sha256"]
+                        for row in history
+                    )
+                ):
+                    raise RSILearningError("rsi_budget_checkpoint_invalid")
+            if intent is current:
+                key = (
+                    "verifier_decision"
+                    if intent["decision_kind"] == "completion"
+                    else "diagnostic_verifier"
+                )
+                if entry.get(key) != intent["decision"]:
+                    raise RSILearningError("rsi_budget_checkpoint_invalid")
+        for key in ("verifier_decision", "diagnostic_verifier"):
+            if entry.get(key) is not None and (
+                current is None or current["decision"] != entry[key]
+            ):
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+        raw_episode = entry.get("episode")
+        if (
+            raw_episode is not None
+            and raw_episode.get("verifier") is not None
+            and (current is None or current["decision"] != raw_episode["verifier"])
+        ):
+            raise RSILearningError("rsi_budget_checkpoint_invalid")
+        if history and results:
+            canonical = PracticeEpisode.from_dict(history[-1].payload)
+            if canonical.verifier is not None and (
+                current is None or current["decision"] != canonical.verifier.to_dict()
+            ):
+                raise RSILearningError("rsi_budget_checkpoint_invalid")
+
+    @staticmethod
+    def _current_verifier_intent(entry: Mapping[str, Any]) -> dict[str, Any] | None:
+        result = entry.get("result")
+        if result is None:
+            return None
+        result_digest = digest(result)
+        for intent in entry.get("verifier_invocations", []):
+            if isinstance(intent, dict) and intent.get("result_sha256") == result_digest:
+                return intent
+        return None
+
+    def _verify(
+        self,
+        entry: dict[str, Any],
+        episode: PracticeEpisode,
+        request: SolverRequest,
+        result: SolverResult,
+        *,
+        allow_invocation: bool,
+    ) -> VerifierDecision | None:
+        intent = self._current_verifier_intent(entry)
+        if intent is not None:
+            # An intent without a retained decision may already have executed. Resume must
+            # quarantine it; only a saved decision grants permission to continue.
+            return (
+                None if intent["decision"] is None else self._verifier_decision(intent["decision"])
+            )
+        if not allow_invocation:
+            return None
+        budget = RSIRunBudget.load(self.state["budget_state"])
+        budget.reserve_stage("verifier")
+        self.state["budget_state"] = budget.state
+        intent = {
+            "request_sha256": request.digest(),
+            "result_sha256": digest(result.to_dict()),
+            "episode_record_sha256": episode.record_sha256,
+            "verifier_fingerprint": self.state["config"]["verifier_fingerprint"],
+            "decision_kind": "completion" if episode.status == "completed" else "diagnostic",
+            "decision": None,
+            "reconciliation": None,
+        }
+        entry["verifier_invocations"].append(intent)
+        self._save()
+        self.ledger._assert_controller_lock(self.run_id)
+        decision = self.controller.verifier.verify(episode, request, result)
+        intent["decision"] = decision.to_dict()
+        key = (
+            "verifier_decision"
+            if intent["decision_kind"] == "completion"
+            else "diagnostic_verifier"
+        )
+        entry[key] = intent["decision"]
+        self._save()
+        return decision
+
+    def reconcile_verifier(
+        self,
+        episode_id: str,
+        decision: VerifierDecision,
+        *,
+        expected_record_sha256: str,
+        expected_intent_sha256: str,
+    ):
+        """Adopt an independently reopened decision without executing the verifier again."""
+        with self.ledger.controller_lock(self.run_id):
+            self._load()
+            entry = self.state["episodes"].get(episode_id)
+            if entry is None:
+                raise RSILearningError("rsi_reconcile_episode_missing")
+            head = self.ledger.get(episode_id)
+            if head is None or head.record_sha256 != expected_record_sha256:
+                raise RSILearningError("rsi_record_parent_conflict")
+            intent = self._current_verifier_intent(entry)
+            if intent is None:
+                raise RSILearningError("rsi_verifier_reconcile_intent_missing")
+            if not isinstance(decision, VerifierDecision):
+                raise RSILearningError("rsi_verifier_reconcile_decision_invalid")
+            pending_intent = {**intent, "decision": None, "reconciliation": None}
+            intent_pin = (
+                intent["reconciliation"]["intent_sha256"]
+                if intent["reconciliation"] is not None
+                else digest(pending_intent)
+            )
+            if intent_pin != expected_intent_sha256:
+                raise RSILearningError("rsi_verifier_reconcile_intent_conflict")
+            if intent["decision"] is not None:
+                if intent["decision"] != decision.to_dict():
+                    raise RSILearningError("rsi_verifier_reconcile_decision_conflict")
+                return self._continue()
+            if self.state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
+                raise RSILearningError("rsi_verifier_reconcile_state_invalid")
+            request = SolverRequest.from_dict(entry["request"])
+            result = SolverResult.from_dict(entry["result"])
+            episode = PracticeEpisode.from_dict(entry["episode"])
+            if (
+                decision.episode_id != episode_id
+                or episode.record_sha256 != intent["episode_record_sha256"]
+                or head.payload != episode.to_record_dict()
+            ):
+                raise RSILearningError("rsi_verifier_reconcile_decision_invalid")
+            for name in (
+                "contract_sha256",
+                "evaluator_sha256",
+                "environment_sha256",
+                "candidate_receipt_sha256",
+                "execution_receipt_sha256",
+                "official_evaluation_receipt_sha256",
+            ):
+                if getattr(decision, name) != getattr(episode, name):
+                    raise RSILearningError("rsi_verifier_reconcile_decision_invalid")
+            validate = getattr(self.controller.verifier, "validate_retained", None)
+            if not callable(validate):
+                raise RSILearningError("rsi_verifier_reconcile_validation_unavailable")
+            validate(episode, request, result, decision)
+            intent["reconciliation"] = {
+                "expected_record_sha256": expected_record_sha256,
+                "intent_sha256": expected_intent_sha256,
+                "decision_sha256": digest(decision.to_dict()),
+            }
+            intent["decision"] = decision.to_dict()
+            key = (
+                "verifier_decision"
+                if intent["decision_kind"] == "completion"
+                else "diagnostic_verifier"
+            )
+            entry[key] = intent["decision"]
+            self.state["reconciliation_ready"] = True
+            self._save()
+            self._materialize(entry, allow_verifier=False)
+            return self._continue()
 
     def _check_reconciliation_checkpoint(self, entry: Mapping[str, Any], request: SolverRequest) -> None:
         """Bind an unknown-retry reservation to its original record and terminal evidence."""
@@ -338,9 +726,18 @@ class DurableLearningRun:
     def _validate_memory(self) -> None:
         """Rebuild the committed chain using verified episodes and compare each durable snapshot."""
         from .rsi_controller import CurriculumDecision, EpisodeExecution
+
         committed = self.state["commits"]
         if len(set(committed)) != len(committed):
             raise RSILearningError("rsi_memory_commit_duplicate")
+        governance = self.controller.memory_governance
+        candidate_digests = self.state.get("candidate_record_digests")
+        if governance is not None:
+            if not isinstance(candidate_digests, dict) or set(candidate_digests) != set(committed):
+                raise RSILearningError("rsi_memory_candidate_checkpoint_invalid")
+            retained = governance.inspect_records(self.ledger, require_journal=True)
+        elif candidate_digests not in (None, {}):
+            raise RSILearningError("rsi_memory_candidate_checkpoint_invalid")
         initial = MemorySnapshot.from_dict(self.state["initial_memory_snapshot"])
         final = self.controller.memory_store
         ledger = self.controller.ledger
@@ -356,17 +753,44 @@ class DurableLearningRun:
                 result = SolverResult.from_dict(entry["result"])
                 if episode.verifier is None or episode.verifier.outcome != "pass":
                     raise RSILearningError("rsi_memory_commit_not_approved")
-                raw = (self.state["config"]["practices"][episode.ordinal]
-                       if self.state["config"]["mode"] == "brs" else self.state["decisions"][episode_id])
-                decision = CurriculumDecision(**{**raw, "compatible_solvers": tuple(raw["compatible_solvers"])})
+                raw = (
+                    self.state["config"]["practices"][episode.ordinal]
+                    if self.state["config"]["mode"] == "brs"
+                    else self.state["decisions"][episode_id]
+                )
+                decision = CurriculumDecision(
+                    **{**raw, "compatible_solvers": tuple(raw["compatible_solvers"])}
+                )
+                execution = EpisodeExecution(episode, request, result, episode.verifier)
+                if governance is not None:
+                    proposal = self.controller._candidate_proposal(execution, decision)
+                    expected = governance.preview_nomination(**proposal)
+                    history = tuple(
+                        record
+                        for record in retained
+                        if record.authority.memory_id == proposal["memory"].memory_id
+                    )
+                    candidate = expected[-1]
+                    if candidate_digests[episode_id] != candidate.digest() or tuple(
+                        record.digest() for record in history[:3]
+                    ) != tuple(record.digest() for record in expected):
+                        raise RSILearningError("rsi_memory_candidate_evidence_missing")
+                    continue
                 frozen = initial.digest() if self.state["config"]["mode"] == "brs" else None
                 rebuilt = self.controller._commit(
-                    EpisodeExecution(episode, request, result, episode.verifier), decision,
-                    expected_episode_snapshot_sha256=frozen, source_snapshot_sha256=frozen,
+                    execution,
+                    decision,
+                    expected_episode_snapshot_sha256=frozen,
+                    source_snapshot_sha256=frozen,
                 )
                 stored = ledger.get(f"memory:{rebuilt.snapshot_id}")
-                if (stored is None or stored.kind != "memory" or stored.state != "approved"
-                        or stored.payload != rebuilt.to_dict() or stored.request_sha256 != rebuilt.digest()):
+                if (
+                    stored is None
+                    or stored.kind != "memory"
+                    or stored.state != "approved"
+                    or stored.payload != rebuilt.to_dict()
+                    or stored.request_sha256 != rebuilt.digest()
+                ):
                     raise RSILearningError("rsi_memory_snapshot_evidence_mismatch")
             if self.controller.snapshot.digest() != final.snapshot.digest():
                 raise RSILearningError("rsi_memory_snapshot_lineage_mismatch")
@@ -393,19 +817,33 @@ class DurableLearningRun:
             else:
                 if self.ledger.get(self.run_id) is not None:
                     raise RSILearningError("rsi_legacy_run_not_resumable")
-                if hasattr(self.controller.gateway, "runtime_factory") and config["actor_fingerprint"] is None:
+                if (
+                    hasattr(self.controller.gateway, "runtime_factory")
+                    and config["actor_fingerprint"] is None
+                ):
                     raise RSILearningError("rsi_actor_fingerprint_required")
                 snapshot = self.controller.snapshot.to_dict()
+                budget = RSIRunBudget.create(config["budget"])
+                self._check_stage_support(budget)
                 self.state = {
-                    "schema_version": "1", "run_id": self.run_id, "config": config,
-                    "initial_memory_snapshot": snapshot, "memory_snapshot": snapshot,
-                    "episodes": {}, "decisions": {}, "commits": [], "status": "running",
-                    "quarantined": [], "reconciliation_ready": False,
-                    "budget_state": RSIRunBudget.create(config["budget"]).state,
+                    "schema_version": "1",
+                    "run_id": self.run_id,
+                    "config": config,
+                    "initial_memory_snapshot": snapshot,
+                    "memory_snapshot": snapshot,
+                    "episodes": {},
+                    "decisions": {},
+                    "commits": [],
+                    "status": "running",
+                    "candidate_record_digests": {},
+                    "quarantined": [],
+                    "reconciliation_ready": False,
+                    "budget_state": budget.state,
                     "usage_state": {
                         "controller_wall_elapsed_ms": 0,
                         "aggregate": RSIUsageReceipt.observed(
-                            request_count=None, wall_elapsed_ms=0,
+                            request_count=None,
+                            wall_elapsed_ms=0,
                         ).to_dict(),
                     },
                 }
@@ -444,35 +882,67 @@ class DurableLearningRun:
         if expected is not None and result.actor_fingerprint != expected:
             raise RSILearningError("rsi_resume_actor_fingerprint_drift")
 
-    def _episode(self, episode_id: str, kind: str, wave: int, ordinal: int,
-                 parent: str | None, charter: Mapping[str, Any] | None = None):
+    def _episode(
+        self,
+        episode_id: str,
+        kind: str,
+        wave: int,
+        ordinal: int,
+        parent: str | None,
+        charter: Mapping[str, Any] | None = None,
+    ):
         with self.mutex:
             if episode_id not in self.state["episodes"]:
                 config = self.state["config"]
-                snapshot = (MemorySnapshot.from_dict(self.state["initial_memory_snapshot"])
-                            if config["mode"] == "brs" else self.controller.snapshot)
+                snapshot = (
+                    MemorySnapshot.from_dict(self.state["initial_memory_snapshot"])
+                    if config["mode"] == "brs"
+                    else self.controller.snapshot
+                )
                 episode = PracticeEpisode(
-                    episode_id, self.run_id, config["contract_sha256"], config["evaluator_sha256"],
-                    config["environment_sha256"], snapshot.digest(), config["solver_id"], "planned",
-                    episode_kind=kind, wave=wave, ordinal=ordinal, parent_target_episode_id=parent,
+                    episode_id,
+                    self.run_id,
+                    config["contract_sha256"],
+                    config["evaluator_sha256"],
+                    config["environment_sha256"],
+                    snapshot.digest(),
+                    config["solver_id"],
+                    "planned",
+                    episode_kind=kind,
+                    wave=wave,
+                    ordinal=ordinal,
+                    parent_target_episode_id=parent,
                 )
                 request = SolverRequest.build(
-                    episode_id=episode_id, contract_sha256=episode.contract_sha256,
-                    evaluator_sha256=episode.evaluator_sha256, environment_sha256=episode.environment_sha256,
-                    memory_snapshot_sha256=episode.memory_snapshot_sha256, solver_id=episode.solver_id,
-                    solver_settings=config["solver_settings"], budget=config["budget"], practice_charter=charter,
+                    episode_id=episode_id,
+                    contract_sha256=episode.contract_sha256,
+                    evaluator_sha256=episode.evaluator_sha256,
+                    environment_sha256=episode.environment_sha256,
+                    memory_snapshot_sha256=episode.memory_snapshot_sha256,
+                    solver_id=episode.solver_id,
+                    solver_settings=config["solver_settings"],
+                    budget=config["budget"],
+                    practice_charter=charter,
                 )
                 running = episode.transition("running", request_sha256=request.digest())
                 self.state["episodes"][episode_id] = {
-                    "request": request.to_dict(), "running_episode": running.to_record_dict(),
-                    "stage": "planned", "result": None, "episode": None,
-                    "depth": 0, "ancestry": [episode_id], "budget_reserved": False,
+                    "request": request.to_dict(),
+                    "running_episode": running.to_record_dict(),
+                    "stage": "planned",
+                    "result": None,
+                    "episode": None,
+                    "depth": 0,
+                    "ancestry": [episode_id],
+                    "budget_reserved": False,
                     "reconciliation": None,
+                    "verifier_invocations": [],
                     "usage": None,
                     "usage_digest": None,
                     "usage_binding": None,
                 }
-                depth, ancestry = self._episode_lineage(episode_id, self.state["episodes"][episode_id])
+                depth, ancestry = self._episode_lineage(
+                    episode_id, self.state["episodes"][episode_id]
+                )
                 self.state["episodes"][episode_id]["depth"] = depth
                 self.state["episodes"][episode_id]["ancestry"] = list(ancestry)
                 budget = RSIRunBudget.load(self.state["budget_state"])
@@ -491,7 +961,9 @@ class DurableLearningRun:
                 if not entry["budget_reserved"]:
                     budget = RSIRunBudget.load(self.state["budget_state"])
                     budget.reserve_launch(
-                        episode_kind=kind, depth=entry["depth"], ancestry=tuple(entry["ancestry"]),
+                        episode_kind=kind,
+                        depth=entry["depth"],
+                        ancestry=tuple(entry["ancestry"]),
                     )
                     self.state["budget_state"] = budget.state
                     entry["budget_reserved"] = True
@@ -510,7 +982,10 @@ class DurableLearningRun:
             wall_elapsed_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
             self._check_result(request, result)
             receipt = usage_receipt_from(
-                self.controller.gateway, request, result, wall_elapsed_ms=wall_elapsed_ms,
+                self.controller.gateway,
+                request,
+                result,
+                wall_elapsed_ms=wall_elapsed_ms,
             )
             with self.mutex:
                 entry["result"] = result.to_dict()
@@ -520,7 +995,8 @@ class DurableLearningRun:
                 )
                 entry["usage_binding"] = (
                     self._usage_binding(request, entry["result"], entry["usage"])
-                    if entry["usage"] is not None else None
+                    if entry["usage"] is not None
+                    else None
                 )
                 self._save()
         with self.mutex:
@@ -555,8 +1031,9 @@ class DurableLearningRun:
             raise RSILearningError("rsi_episode_ledger_head_conflict")
         self.ledger.append_episode_record(episode, expected_record_sha256=head.record_sha256)
 
-    def _materialize(self, entry: dict[str, Any]):
+    def _materialize(self, entry: dict[str, Any], *, allow_verifier: bool = True):
         from .rsi_controller import EpisodeExecution
+
         request = SolverRequest.from_dict(entry["request"])
         result = SolverResult.from_dict(entry["result"])
         self._check_result(request, result)
@@ -564,24 +1041,33 @@ class DurableLearningRun:
             episode = PracticeEpisode.from_dict(entry["episode"])
             self._append_if_needed(episode)
         else:
-            parent = PracticeEpisode.from_dict(entry.get("reconciliation_parent") or entry["running_episode"])
+            parent = PracticeEpisode.from_dict(
+                entry.get("reconciliation_parent") or entry["running_episode"]
+            )
             evidence = {
-                "trace_digest": result.trace_digest, "trace_events": result.trace_events,
+                "trace_digest": result.trace_digest,
+                "trace_events": result.trace_events,
                 "candidate_source_sha256": result.candidate_source_sha256,
                 "dependency_sha256": result.dependency_sha256,
                 "actor_fingerprint": result.actor_fingerprint,
-                "solver_fingerprint": digest({"solver_id": request.solver_id, "settings": request.solver_settings}),
+                "solver_fingerprint": digest(
+                    {"solver_id": request.solver_id, "settings": request.solver_settings}
+                ),
             }
             if result.status == "completed":
-                evidence.update(candidate_receipt_sha256=result.candidate_receipt_sha256,
-                                execution_receipt_sha256=result.execution_receipt_sha256,
-                                official_evaluation_receipt_sha256=result.official_evaluation_receipt_sha256)
+                evidence.update(
+                    candidate_receipt_sha256=result.candidate_receipt_sha256,
+                    execution_receipt_sha256=result.execution_receipt_sha256,
+                    official_evaluation_receipt_sha256=result.official_evaluation_receipt_sha256,
+                )
             else:
                 evidence["terminal_reason"] = result.terminal_reason or f"solver_{result.status}"
             if parent.status == "unknown":
                 if result.status == "completed":
                     evidence["terminal_reason"] = None
-                episode = replace(parent, status=result.status, previous_record_sha256=parent.digest(), **evidence)
+                episode = replace(
+                    parent, status=result.status, previous_record_sha256=parent.digest(), **evidence
+                )
                 episode.to_record_dict()
             else:
                 episode = parent.transition(result.status, **evidence)
@@ -592,20 +1078,19 @@ class DurableLearningRun:
             # An interrupted checkpoint write may lag the canonical verifier append.
             head = self.ledger.get(episode.episode_id)
             recovered = PracticeEpisode.from_dict(head.payload)
-            if recovered.previous_record_sha256 == episode.record_sha256 and recovered.verifier is not None:
+            if (
+                recovered.previous_record_sha256 == episode.record_sha256
+                and recovered.verifier is not None
+            ):
                 episode = recovered
                 entry["episode"] = episode.to_record_dict()
                 self._save()
         if episode.status == "completed" and episode.verifier is None:
-            retained = entry.get("verifier_decision")
-            if retained is None:
-                decision = self.controller.verifier.verify(episode, request, result)
-                entry["verifier_decision"] = decision.to_dict()
-                self._save()
-            else:
-                decision = VerifierDecision(**{
-                    **retained, "checks": tuple(VerifierCheck(**check) for check in retained["checks"]),
-                })
+            decision = self._verify(
+                entry, episode, request, result, allow_invocation=allow_verifier
+            )
+            if decision is None:
+                return None
             episode = episode.attach_verifier(decision)
             self._append_if_needed(episode)
             entry["episode"] = episode.to_record_dict()
@@ -617,19 +1102,17 @@ class DurableLearningRun:
                 validate(episode, request, result, decision)
                 self.validated_evidence.add(episode.record_sha256)
         if decision is None:
-            if entry.get("diagnostic_verifier") is None:
-                decision = self.controller.verifier.verify(episode, request, result)
-                entry["diagnostic_verifier"] = decision.to_dict()
-                self._save()
-            else:
-                raw = entry["diagnostic_verifier"]
-                decision = VerifierDecision(**{
-                    **raw, "checks": tuple(VerifierCheck(**check) for check in raw["checks"]),
-                })
+            decision = self._verify(
+                entry, episode, request, result, allow_invocation=allow_verifier
+            )
+            if decision is None:
+                return None
         entry["stage"] = "settled" if result.status != "unknown" else "unknown"
         return EpisodeExecution(episode, request, result, decision)
 
-    def _observed_curriculum(self, *, before: tuple[int, int] | None = None):
+    def _observed_curriculum(
+        self, *, before: tuple[int, int] | None = None, allow_verifier: bool = True
+    ):
         """Rebuild a policy from its pinned initial history and settled prior practices.
 
         The controller retains the initial immutable policy. Replaying evidence into a fresh
@@ -637,24 +1120,38 @@ class DurableLearningRun:
         conflicting history item, and makes crash recovery independent of Python object state.
         """
         from .rsi_controller import CurriculumDecision
+
         policy = self.controller.curriculum
         if not callable(getattr(policy, "observe", None)):
             return policy
-        entries = sorted(self.state["episodes"].values(), key=lambda item: (
-            item["running_episode"]["wave"], item["running_episode"]["ordinal"],
-            item["running_episode"]["episode_id"],
-        ))
+        entries = sorted(
+            self.state["episodes"].values(),
+            key=lambda item: (
+                item["running_episode"]["wave"],
+                item["running_episode"]["ordinal"],
+                item["running_episode"]["episode_id"],
+            ),
+        )
         for entry in entries:
             episode = entry["running_episode"]
             position = (episode["wave"], episode["ordinal"])
-            if (episode["episode_kind"] != "practice" or entry["result"] is None
-                    or (before is not None and position >= before)):
+            if (
+                episode["episode_kind"] != "practice"
+                or entry["result"] is None
+                or (before is not None and position >= before)
+            ):
                 continue
-            execution = self._materialize(entry)
-            raw = (self.state["config"]["practices"][episode["ordinal"]]
-                   if self.state["config"]["mode"] == "brs"
-                   else self.state["decisions"][episode["episode_id"]])
-            decision = CurriculumDecision(**{**raw, "compatible_solvers": tuple(raw["compatible_solvers"])})
+            execution = self._materialize(entry, allow_verifier=allow_verifier)
+            if execution is None:
+                continue
+            raw = (
+                self.state["config"]["practices"][episode["ordinal"]]
+                if self.state["config"]["mode"] == "brs"
+                else self.state["decisions"][episode["episode_id"]]
+            )
+            decision = CurriculumDecision(
+                **{**raw, "compatible_solvers": tuple(raw["compatible_solvers"])}
+            )
             policy = policy.observe(decision=decision, execution=execution)
         return policy
 
@@ -678,9 +1175,12 @@ class DurableLearningRun:
         ledger = self.controller.ledger
         self.controller.ledger = None
         try:
-            snapshot = self.controller._commit(execution, decision,
-                                               expected_episode_snapshot_sha256=frozen,
-                                               source_snapshot_sha256=frozen)
+            snapshot = self.controller._commit(
+                execution,
+                decision,
+                expected_episode_snapshot_sha256=frozen,
+                source_snapshot_sha256=frozen,
+            )
         finally:
             self.controller.ledger = ledger
             self.controller.memory_store = RSIMemoryStore(parent)
@@ -690,44 +1190,74 @@ class DurableLearningRun:
         elif old.payload != snapshot.to_dict() or old.request_sha256 != snapshot.digest():
             raise RSILearningError("rsi_memory_parent_conflict")
         self.state["memory_snapshot"] = snapshot.to_dict()
+        if self.controller.memory_governance is not None:
+            expected = self.controller.memory_governance.preview_nomination(
+                **self.controller._candidate_proposal(execution, decision)
+            )
+            self.state["candidate_record_digests"][episode_id] = expected[-1].digest()
         self.state["commits"].append(episode_id)
         self._save()
         self.controller.memory_store = RSIMemoryStore(snapshot)
 
-    def _executions(self):
+    def _executions(self, *, allow_verifier: bool = True):
         results = []
         for entry in self.state["episodes"].values():
             if entry["result"] is not None:
-                results.append(self._materialize(entry))
+                execution = self._materialize(entry, allow_verifier=allow_verifier)
+                if execution is not None:
+                    results.append(execution)
         return results
 
     def _finish(self, status: str):
         from .rsi_controller import LearningRunResult
+
         self.state["status"] = status
         self._save()
-        results = self._executions()
-        targets = tuple(sorted((e for e in results if e.episode.episode_kind == "target"),
-                               key=lambda e: e.episode.wave))
-        practices = tuple(sorted((e for e in results if e.episode.episode_kind == "practice"),
-                                 key=lambda e: (e.episode.wave, e.episode.ordinal)))
-        policy = self._observed_curriculum()
+        results = self._executions(allow_verifier=False)
+        targets = tuple(
+            sorted(
+                (e for e in results if e.episode.episode_kind == "target"),
+                key=lambda e: e.episode.wave,
+            )
+        )
+        practices = tuple(
+            sorted(
+                (e for e in results if e.episode.episode_kind == "practice"),
+                key=lambda e: (e.episode.wave, e.episode.ordinal),
+            )
+        )
+        policy = self._observed_curriculum(allow_verifier=False)
         history_pin = getattr(policy, "history_fingerprint", None)
         if callable(history_pin):
             self.state["curriculum_history_sha256"] = history_pin()
             self._save()
         head = self.ledger.get(self.run_id)
         if head.state != status:
-            self.ledger.transition(self.run_id, state=status, expected_record_sha256=head.record_sha256,
-                                   payload_patch={"memory_snapshot_sha256": self.controller.snapshot.digest(),
-                                                  "target_attempts": len(targets), "practice_episodes": len(practices)})
+            self.ledger.transition(
+                self.run_id,
+                state=status,
+                expected_record_sha256=head.record_sha256,
+                payload_patch={
+                    "memory_snapshot_sha256": self.controller.snapshot.digest(),
+                    "target_attempts": len(targets),
+                    "practice_episodes": len(practices),
+                },
+            )
         return LearningRunResult(self.run_id, status, self.controller.snapshot, targets, practices)
 
     def _continue(self):
         if self.state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
             return self._finish(self.state["status"])
         unresolved = any(
-            entry["stage"] != "planned" and
-            (entry["result"] is None or entry["result"]["status"] == "unknown")
+            entry["stage"] != "planned"
+            and (
+                entry["result"] is None
+                or entry["result"]["status"] == "unknown"
+                or (
+                    self._current_verifier_intent(entry) is not None
+                    and self._current_verifier_intent(entry)["decision"] is None
+                )
+            )
             for entry in self.state["episodes"].values()
         )
         if unresolved:
@@ -736,7 +1266,9 @@ class DurableLearningRun:
         if head.state == "unknown":
             if not self.state["reconciliation_ready"]:
                 return self._finish("unknown")
-            self.ledger.resume_reconciled_run(self.run_id, expected_record_sha256=head.record_sha256)
+            self.ledger.resume_reconciled_run(
+                self.run_id, expected_record_sha256=head.record_sha256
+            )
         try:
             if self.state["config"]["mode"] == "brs":
                 return self._brs()
@@ -847,6 +1379,7 @@ class DurableLearningRun:
                 "terminal_result_sha256": digest(result.to_dict()),
             }
             entry["result"] = result.to_dict()
+            entry["stage"] = "launched"
             # External reconciliation supplies terminal solver evidence but no trustworthy
             # provider meter, so it cannot inherit usage observed for the prior unknown result.
             entry["usage"] = None
@@ -858,5 +1391,10 @@ class DurableLearningRun:
             entry.pop("target_judgment", None)
             self.state["reconciliation_ready"] = True
             self._save()
-            self._materialize(entry)
+            try:
+                self._materialize(entry)
+            except RSILearningError as exc:
+                if exc.code == "rsi_budget_exhausted":
+                    return self._finish("budget_exhausted")
+                raise
             return self._continue()

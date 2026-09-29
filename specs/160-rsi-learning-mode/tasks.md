@@ -27,9 +27,22 @@
   绝对 `deadline_unix`，并写入 `planned/consumed/remaining`、episode depth/ancestry/reservation。
   恢复会拒绝预算漂移、缺失或无法从 episode checkpoint 复核的计数；超限进入不可恢复的
   `budget_exhausted`，不再发起 solver 调用。
-- [ ] T160-13b 将 adapter 声明的 `RSIUsageReceipt` 接入 durable episode sidecar、run aggregate 和
-  `rsi inspect` 输出。严格 receipt 数据模型及本地单元测试已存在，但当前 controller 不从
-  `SolverResult` 推断 usage，也尚未持久化 provider telemetry 或 run-level cost aggregate。
+- [x] T160-13b 将 adapter 声明的 `RSIUsageReceipt` 接入 durable episode sidecar、run aggregate 和
+  `rsi inspect` 输出。缺失的 provider telemetry 保持 `null`；每个 sidecar 绑定原始
+  request/result 和 receipt digest，恢复时重新校验。真实 provider 的用量报告仍需独立验收。
+- [ ] T160-13c 将 evaluator、verifier 和 transfer 的子预算及实际用量接入同一 run 账本；
+  已补齐三类限额/计数模型和 verifier 的调用前持久 reservation、intent 与只读 reconcile。
+  evaluator/transfer 尚无统一运行时计量，有限限额在执行前拒绝，不能宣称 A5 全部完成。
+  旧预算 checkpoint 缺少 stage counters 时明确要求迁移，不自动补零。
+- [x] T160-13c1 verifier 中断后进入 unknown；只有原 episode/intent 指纹和只读 retained
+  evidence 校验均通过才可继续，已完成 decision 不重跑、不重复计费。CLI inspect/reconcile 接通。
+- [ ] T160-13d 将 memory promotion authority 接入 durable ledger 与 controller 检索路径。
+  独立模块已实现 observed→verified→candidate→shadow→approved→active→deprecated/revoked/
+  quarantined 生命周期、source episode/verifier 绑定和 holdout 门；尚未取代默认 fixture 的
+  verifier-gated snapshot。可信 holdout 晋级、active 检索和自动回归仍开放。
+- [x] T160-13d1 增加可选 candidate_only 的持久治理 journal、完整历史/内容/来源复核、CAS、
+  部分 nomination 中断恢复和 CLI 展示；候选不进入 solver snapshot，approved/active 写入拒绝。
+  策略随 run 固定，已提交候选在恢复时只读校验，证据丢失不得自动重建。
 - [x] T160-14 冻结宿主声明的 task panel，对照 empty/frozen memory 的独立评测并持久化比较收据；
   21 项本地测试覆盖双合同、改善/持平/退步、篡改和中断不重跑。宿主负责已批准快照与 heldout
   来源；fixture 改善只证明测量方法，不证明真实模型泛化收益。

@@ -8,6 +8,7 @@ import json
 import math
 import os
 import shlex
+import sqlite3
 import subprocess
 import sys
 import time
@@ -57,6 +58,7 @@ from .automatic_solve_lifecycle import (
 )
 from .benchmark import BenchmarkConfig, BenchmarkRunner
 from .budget import BudgetSpec
+from .candidate_evaluation_spec import strict_json
 from .config import Config
 from .controller import LocalController, WorkerObservationTimeout
 from .conversational import RuntimeContractCompiler, build_algorithm_role_plan
@@ -91,6 +93,8 @@ from .producer_handoff import ProducerHandoffError
 from .profiles import ModelProfile
 from .rsi_adapters import fixture_solver_gateway
 from .rsi_controller import DeterministicCurriculum, RSILearningController
+from .rsi_governance_store import RSIMemoryGovernanceLedger
+from .rsi_learning import VerifierCheck, VerifierDecision
 from .rsi_store import RSILedger
 from .runtime import OpenAICompatibleRuntime, build_runtime
 from .seed_handoff import SeedAdmissionError
@@ -1152,6 +1156,12 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_run_parser.add_argument("--max-target-attempts", type=int, default=4)
     rsi_run_parser.add_argument("--practice-count", type=int, default=2, help="BRS practice decisions")
     rsi_run_parser.add_argument(
+        "--memory-policy",
+        choices=("verifier-snapshot", "candidate-only"),
+        default="verifier-snapshot",
+        help="fixture memory policy; candidate-only durably journals candidates without activating them",
+    )
+    rsi_run_parser.add_argument(
         "--worker-status",
         choices=("completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"),
         default="completed",
@@ -1178,6 +1188,14 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_reconcile_parser.add_argument("--launched", action="store_true", help="treat an idle worker as launched")
     rsi_reconcile_parser.add_argument("--expected-record-sha256", required=True)
     rsi_reconcile_parser.add_argument("--result", type=Path, help="retained solver result JSON; verify and continue its run")
+    rsi_reconcile_parser.add_argument(
+        "--verifier-decision", type=Path,
+        help="retained verifier decision JSON; reconcile a pending verifier intent without rerunning it",
+    )
+    rsi_reconcile_parser.add_argument(
+        "--expected-intent-sha256",
+        help="digest of the pending verifier intent shown by rsi inspect",
+    )
     _add_home(rsi_reconcile_parser)
     _add_json(rsi_reconcile_parser)
 
@@ -5413,6 +5431,9 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
     run_id = args.run_id or f"rsi-{uuid.uuid4().hex[:16]}"
     ledger = RSILedger(config.home / "rsi.sqlite3")
     gateway = fixture_solver_gateway(args.solver, terminal_status=args.worker_status)
+    memory_governance = (
+        RSIMemoryGovernanceLedger(ledger) if args.memory_policy == "candidate-only" else None
+    )
 
     controller = RSILearningController(
         gateway,
@@ -5420,6 +5441,7 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
         target_judge=_rsi_fixture_target_judge,
         ledger=ledger,
         solver_settings={"fixture_worker_status": args.worker_status},
+        memory_governance=memory_governance,
     )
     if args.mode == "drs":
         result = controller.run_drs(
@@ -5475,10 +5497,107 @@ def _rsi_checkpoint_payload(config: Config, run_id: str) -> dict[str, object]:
         usage = state["usage_state"]["aggregate"]
     except (KeyError, TypeError) as exc:
         raise ValueError("rsi_controller_checkpoint_invalid") from exc
-    return {"budget": budget, "usage": usage}
+    pending: list[dict[str, object]] = []
+    for episode_id, entry in state.get("episodes", {}).items():
+        if not isinstance(entry, dict):
+            continue
+        for intent in entry.get("verifier_invocations", ()):
+            if isinstance(intent, dict) and intent.get("decision") is None:
+                from .rsi_recovery import digest as _rsi_digest
+                pending.append({
+                    "episode_id": episode_id,
+                    "intent": intent,
+                    "intent_sha256": _rsi_digest(intent),
+                })
+    return {
+        "budget": budget,
+        "stage_budget_accounting": {
+            "evaluator": "unavailable",
+            "verifier": "durable",
+            "transfer": "unavailable",
+        },
+        "usage": usage,
+        "pending_verifier_intents": pending,
+        "memory_policy": state.get("config", {}).get("memory_policy", "verifier_snapshot"),
+    }
+
+
+def _rsi_governance_summary(config: Config, run_id: str, memory_policy: str) -> dict[str, object]:
+    """Read the optional governance journal without creating its table or changing state."""
+    database = config.home / "rsi.sqlite3"
+    if not database.exists():
+        return {"available": False, "records": 0, "memories": 0, "heads": []}
+    try:
+        ledger = RSILedger(database)
+        records = RSIMemoryGovernanceLedger.inspect_records(
+            ledger, require_journal=memory_policy == "candidate_only",
+        )
+        records = tuple(
+            record for record in records
+            if ledger.get(record.authority.source_episode_id).payload.get("run_id") == run_id
+        )
+        heads = {}
+        for record in records:
+            heads[record.authority.memory_id] = record
+        return {
+            "available": memory_policy == "candidate_only" or bool(records),
+            "records": len(records),
+            "memories": len(heads),
+            "heads": [
+                {
+                    "memory_id": memory_id,
+                    "state": head.state,
+                    "record_sha256": head.digest(),
+                    "revision": len(head.receipts) - 1,
+                }
+                for memory_id, head in sorted(heads.items())
+            ],
+        }
+    except (OSError, sqlite3.Error, TypeError, ValueError, RecursionError) as exc:
+        raise ValueError("rsi_memory_governance_inspect_failed") from exc
+
+
+def _rsi_verifier_decision_from_file(path: Path) -> VerifierDecision:
+    """Load one exact, bounded retained verifier decision without executing verification."""
+    from ._benchmark_files import absolute_path, read_regular_file
+
+    raw = read_regular_file(absolute_path(path), 128 * 1024)
+    value = strict_json(raw, maximum=128 * 1024)
+    parser = getattr(VerifierDecision, "from_dict", None)
+    if callable(parser):
+        decision = parser(value)
+        if not isinstance(decision, VerifierDecision):
+            raise TypeError("rsi_verifier_decision_invalid")
+        return decision
+    if not isinstance(value, dict):
+        raise TypeError("rsi_verifier_decision_invalid")
+    required = {
+        "episode_id", "outcome", "receipt_sha256", "diagnosis", "verifier_fingerprint",
+        "checks", "independent_of_actor", "contract_sha256", "evaluator_sha256",
+        "environment_sha256", "official_evaluation_receipt_sha256", "evidence_sha256",
+        "candidate_receipt_sha256", "execution_receipt_sha256",
+    }
+    if set(value) != required or not isinstance(value["checks"], list):
+        raise ValueError("rsi_verifier_decision_schema_invalid")
+    checks: list[VerifierCheck] = []
+    for raw_check in value["checks"]:
+        if not isinstance(raw_check, dict) or set(raw_check) != {"name", "outcome", "receipt_sha256"}:
+            raise ValueError("rsi_verifier_check_schema_invalid")
+        checks.append(VerifierCheck(raw_check["name"], raw_check["outcome"], raw_check["receipt_sha256"]))
+    try:
+        return VerifierDecision(
+            value["episode_id"], value["outcome"], value["receipt_sha256"], value["diagnosis"],
+            value["verifier_fingerprint"], tuple(checks), value["independent_of_actor"],
+            value["contract_sha256"], value["evaluator_sha256"], value["environment_sha256"],
+            value["official_evaluation_receipt_sha256"], value["evidence_sha256"],
+            value["candidate_receipt_sha256"], value["execution_receipt_sha256"],
+        )
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ValueError("rsi_verifier_decision_invalid") from exc
 
 
 def _rsi_result_payload(config: Config, result, mode: str) -> dict[str, object]:
+    checkpoint = _rsi_checkpoint_payload(config, result.run_id)
     return {
         "run_id": result.run_id,
         "mode": mode,
@@ -5488,7 +5607,8 @@ def _rsi_result_payload(config: Config, result, mode: str) -> dict[str, object]:
         "memory_snapshot_sha256": result.memory_snapshot.digest(),
         "recovery_eligibility": "reconcile_required" if result.status == "unknown" else "terminal",
         "ledger": str(config.home / "rsi.sqlite3"),
-        **_rsi_checkpoint_payload(config, result.run_id),
+        **checkpoint,
+        "governance": _rsi_governance_summary(config, result.run_id, checkpoint["memory_policy"]),
     }
 
 
@@ -5503,9 +5623,17 @@ def _rsi_resume_controller(ledger: RSILedger, run_id: str):
     if set(settings) != {"fixture_worker_status"}:
         raise ValueError("rsi_cli_resume_requires_fixture_run")
     gateway = fixture_solver_gateway(pinned["solver_id"], terminal_status=settings["fixture_worker_status"])
+    memory_policy = pinned.get("memory_policy", "verifier_snapshot")
+    if memory_policy not in {"candidate_only", "verifier_snapshot"}:
+        raise ValueError("rsi_cli_memory_policy_invalid")
+    if memory_policy == "candidate_only":
+        RSIMemoryGovernanceLedger.inspect_records(ledger, require_journal=True)
+    memory_governance = (
+        RSIMemoryGovernanceLedger(ledger) if memory_policy == "candidate_only" else None
+    )
     return RSILearningController(gateway, curriculum=DeterministicCurriculum(),
                                 target_judge=_rsi_fixture_target_judge, ledger=ledger,
-                                solver_settings=settings), pinned["mode"]
+                                solver_settings=settings, memory_governance=memory_governance), pinned["mode"]
 
 
 def _memory_payload(config: Config, query: str | None, scope: str | None, limit: int) -> list[dict[str, object]]:
@@ -6266,9 +6394,35 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                     "history": [_rsi_record_payload(item) for item in ledger.history(args.logical_id)],
                     **_rsi_checkpoint_payload(config, run_id),
                 }
+                payload["governance"] = _rsi_governance_summary(
+                    config, run_id, payload["memory_policy"],
+                )
                 _emit(payload, args.json)
                 return 0
             if args.rsi_command == "reconcile":
+                if args.verifier_decision is not None:
+                    if args.result is not None or args.worker_state is not None or args.launched:
+                        raise ValueError("rsi_reconcile_verifier_decision_conflict")
+                    if args.expected_intent_sha256 is None:
+                        raise ValueError("rsi_reconcile_expected_intent_sha256_required")
+                    head = ledger.get(args.episode_id)
+                    if head is None or head.kind != "episode":
+                        raise ValueError("rsi_reconcile_episode_missing")
+                    run_id = head.payload["run_id"]
+                    controller, mode = _rsi_resume_controller(ledger, run_id)
+                    decision = _rsi_verifier_decision_from_file(args.verifier_decision)
+                    outcome = controller.reconcile_verifier(
+                        run_id=run_id,
+                        episode_id=args.episode_id,
+                        decision=decision,
+                        expected_record_sha256=args.expected_record_sha256,
+                        expected_intent_sha256=args.expected_intent_sha256,
+                    )
+                    payload = _rsi_result_payload(config, outcome, mode)
+                    _emit(payload, args.json)
+                    return 0 if payload["status"] == "completed" else 1
+                if args.expected_intent_sha256 is not None:
+                    raise ValueError("rsi_reconcile_expected_intent_without_decision")
                 if args.result is not None:
                     if args.worker_state is not None or args.launched:
                         raise ValueError("rsi_reconcile_result_and_worker_state_conflict")

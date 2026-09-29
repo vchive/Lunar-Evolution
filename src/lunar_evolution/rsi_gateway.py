@@ -284,7 +284,10 @@ class DeterministicMockSolver:
 class LocalExactVerifier:
     """Verifier fixture: only a completed result with all receipts can pass."""
 
-    def verify(self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult) -> VerifierDecision:
+    def _reconstruct_decision(
+        self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult,
+    ) -> VerifierDecision:
+        """Rebuild the fixture decision from retained values without executing anything."""
         checks: list[VerifierCheck] = []
         evidence = {
             "candidate_receipt_sha256": result.candidate_receipt_sha256,
@@ -347,6 +350,24 @@ class LocalExactVerifier:
             candidate_receipt_sha256=result.candidate_receipt_sha256,
             execution_receipt_sha256=result.execution_receipt_sha256,
         )
+
+    def verify(self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult) -> VerifierDecision:
+        return self._reconstruct_decision(episode, request, result)
+
+    def validate_retained(
+        self, episode: PracticeEpisode, request: SolverRequest,
+        result: SolverResult, decision: VerifierDecision,
+    ) -> None:
+        """Validate a retained fixture decision read-only.
+
+        This intentionally bypasses ``verify`` so subclasses that attach execution side effects
+        cannot turn resume reconciliation into a second verifier invocation.
+        """
+        if not isinstance(decision, VerifierDecision):
+            raise RSILearningError("rsi_verifier_retained_decision_invalid")
+        expected = self._reconstruct_decision(episode, request, result)
+        if expected != decision:
+            raise RSILearningError("rsi_verifier_retained_decision_mismatch")
 
 
 class RSIMemoryStore:

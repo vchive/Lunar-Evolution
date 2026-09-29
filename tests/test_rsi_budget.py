@@ -1,6 +1,9 @@
 """Focused A5 coverage for durable RSI run budgets and terminal handling."""
+from copy import deepcopy
+
 import pytest
 
+from lunar_evolution.rsi_budget import RSIRunBudget
 from lunar_evolution.rsi_controller import RSILearningController
 from lunar_evolution.rsi_gateway import DeterministicMockSolver
 from lunar_evolution.rsi_learning import RSILearningError
@@ -47,10 +50,20 @@ def test_solver_budget_is_persisted_and_stops_new_episodes(tmp_path):
             "max_solver_invocations": 1,
             "max_practice_episodes": None,
             "max_unknown_retries": None,
+            "max_evaluator_invocations": None,
+            "max_verifier_invocations": None,
+            "max_transfer_invocations": None,
             "deadline_unix": None,
         },
-        "consumed": {"solver_invocations": 1, "practice_episodes": 0, "unknown_retries": 0},
-        "remaining": {"solver_invocations": 0, "practice_episodes": None, "unknown_retries": None},
+        "consumed": {
+            "solver_invocations": 1, "practice_episodes": 0, "unknown_retries": 0,
+            "evaluator_invocations": 0, "verifier_invocations": 1, "transfer_invocations": 0,
+        },
+        "remaining": {
+            "solver_invocations": 0, "practice_episodes": None, "unknown_retries": None,
+            "evaluator_invocations": None, "verifier_invocations": None,
+            "transfer_invocations": None,
+        },
     }
     resumed_gateway = Gateway()
     assert controller(tmp_path, resumed_gateway).resume(run_id="bounded").status == "budget_exhausted"
@@ -130,3 +143,128 @@ def test_reconciliation_budget_is_bound_to_original_record_and_evidence(tmp_path
         first.ledger.write_controller_checkpoint("reconciled", checkpoint, expected_sha256=version)
     with pytest.raises(RSILearningError, match="rsi_budget_checkpoint_invalid"):
         controller(tmp_path, Gateway()).resume(run_id="reconciled")
+
+
+@pytest.mark.parametrize("stage", ["evaluator", "verifier", "transfer"])
+def test_stage_budgets_are_independent_and_survive_restore(stage):
+    budget = RSIRunBudget.create({
+        "max_evaluator_invocations": 2,
+        "max_verifier_invocations": 2,
+        "max_transfer_invocations": 2,
+        "max_solver_invocations": 0,
+    })
+    budget.reserve_stage(stage)
+    restored = RSIRunBudget.load(deepcopy(budget.state))
+    restored.reserve_stage(stage)
+    assert restored.state["consumed"][f"{stage}_invocations"] == 2
+    assert restored.state["remaining"][f"{stage}_invocations"] == 0
+    for other in {"evaluator", "verifier", "transfer"} - {stage}:
+        assert restored.state["consumed"][f"{other}_invocations"] == 0
+        assert restored.state["remaining"][f"{other}_invocations"] == 2
+    assert restored.state["consumed"]["solver_invocations"] == 0
+    before = deepcopy(restored.state)
+    with pytest.raises(RSILearningError, match="rsi_budget_exhausted"):
+        restored.reserve_stage(stage)
+    assert restored.state == before
+
+
+@pytest.mark.parametrize("stage", ["evaluator", "verifier", "transfer"])
+def test_stage_zero_budget_and_expired_deadline_stop_without_charging(stage, monkeypatch):
+    blocked = RSIRunBudget.create({f"max_{stage}_invocations": 0})
+    with pytest.raises(RSILearningError, match="rsi_budget_exhausted"):
+        blocked.reserve_stage(stage)
+    assert blocked.state["consumed"][f"{stage}_invocations"] == 0
+
+    monkeypatch.setattr("lunar_evolution.rsi_budget.time.time", lambda: 100.0)
+    budget = RSIRunBudget.create({f"max_{stage}_invocations": 2, "deadline_unix": 101.0})
+    budget.reserve_stage(stage)
+    monkeypatch.setattr("lunar_evolution.rsi_budget.time.time", lambda: 101.0)
+    restored = RSIRunBudget.load(deepcopy(budget.state))
+    before = deepcopy(restored.state)
+    with pytest.raises(RSILearningError, match="rsi_budget_exhausted"):
+        restored.reserve_stage(stage)
+    assert restored.state == before
+    assert restored.state["planned"]["deadline_unix"] == 101.0
+
+
+@pytest.mark.parametrize("stage", ["evaluator", "verifier", "transfer"])
+@pytest.mark.parametrize("field,value", [
+    ("consumed", -1), ("consumed", True), ("consumed", 3),
+    ("remaining", -1), ("remaining", False), ("remaining", 2),
+])
+def test_stage_restoration_rejects_invalid_or_inconsistent_counters(stage, field, value):
+    budget = RSIRunBudget.create({f"max_{stage}_invocations": 2})
+    budget.reserve_stage(stage)
+    state = deepcopy(budget.state)
+    state[field][f"{stage}_invocations"] = value
+    with pytest.raises(RSILearningError, match="rsi_budget_checkpoint_invalid"):
+        RSIRunBudget.load(state)
+
+
+@pytest.mark.parametrize("stage", ["evaluator", "verifier", "transfer"])
+def test_stage_limit_drift_is_rejected_on_resume(stage):
+    planned = {f"max_{stage}_invocations": 2}
+    budget = RSIRunBudget.create(planned)
+    budget.reserve_stage(stage)
+    restored = RSIRunBudget.load(deepcopy(budget.state))
+    restored.assert_matches(planned)
+    with pytest.raises(RSILearningError, match="rsi_resume_budget_drift"):
+        restored.assert_matches({f"max_{stage}_invocations": 3})
+
+
+@pytest.mark.parametrize("stage", ["evaluator", "verifier", "transfer"])
+def test_unlimited_stage_keeps_real_count_and_explicit_unlimited_remaining(stage):
+    budget = RSIRunBudget.create(None)
+    budget.reserve_stage(stage)
+    restored = RSIRunBudget.load(deepcopy(budget.state))
+    assert restored.state["consumed"][f"{stage}_invocations"] == 1
+    assert restored.state["remaining"][f"{stage}_invocations"] is None
+    restored.state["remaining"][f"{stage}_invocations"] = 0
+    with pytest.raises(RSILearningError, match="rsi_budget_checkpoint_invalid"):
+        RSIRunBudget.load(restored.state)
+
+
+def test_restoration_rejects_boolean_remaining_even_when_equal_to_zero():
+    state = RSIRunBudget.create({"max_verifier_invocations": 0}).state
+    state["remaining"]["verifier_invocations"] = False
+    with pytest.raises(RSILearningError, match="rsi_budget_checkpoint_invalid"):
+        RSIRunBudget.load(state)
+
+
+@pytest.mark.parametrize("stage", ["evaluator", "verifier", "transfer"])
+@pytest.mark.parametrize("value", [-1, True, 1.5, "2"])
+def test_stage_limits_reject_non_integer_or_negative_values(stage, value):
+    with pytest.raises(RSILearningError, match=f"rsi_budget_max_{stage}_invocations_invalid"):
+        RSIRunBudget.create({f"max_{stage}_invocations": value})
+
+
+def test_legacy_budget_checkpoint_requires_explicit_evidence_based_migration():
+    budget = RSIRunBudget.create({"max_solver_invocations": 2})
+    budget.reserve_launch(episode_kind="target", depth=0, ancestry=("target",))
+    state = deepcopy(budget.state)
+    for stage in ("evaluator", "verifier", "transfer"):
+        del state["planned"][f"max_{stage}_invocations"]
+        del state["consumed"][f"{stage}_invocations"]
+        del state["remaining"][f"{stage}_invocations"]
+    before = deepcopy(state)
+    with pytest.raises(RSILearningError, match="rsi_budget_legacy_checkpoint_requires_migration"):
+        RSIRunBudget.load(state)
+    assert state == before
+
+
+@pytest.mark.parametrize("section", ["planned", "consumed", "remaining"])
+def test_partial_new_stage_checkpoint_is_invalid(section):
+    state = RSIRunBudget.create(None).state
+    key = "max_transfer_invocations" if section == "planned" else "transfer_invocations"
+    del state[section][key]
+    with pytest.raises(RSILearningError, match="rsi_budget_checkpoint_invalid"):
+        RSIRunBudget.load(state)
+
+
+@pytest.mark.parametrize("stage", ["solver", "practice", "Evaluator", None, ["verifier"]])
+def test_unknown_stage_names_are_rejected_without_charging(stage):
+    budget = RSIRunBudget.create(None)
+    before = deepcopy(budget.state)
+    with pytest.raises(RSILearningError, match="rsi_budget_stage_invalid"):
+        budget.reserve_stage(stage)
+    assert budget.state == before

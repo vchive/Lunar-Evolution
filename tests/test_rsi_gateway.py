@@ -192,3 +192,32 @@ def test_fixture_verifier_rejects_real_backend_receipts(provenance):
     decision = LocalExactVerifier().verify(episode(), req, result)
     assert decision.outcome == "unresolved"
     assert decision.checks[0].name == "independent_verifier_required"
+
+
+@pytest.mark.parametrize("status", ["completed", "unknown", "failed", "timed_out", "cancelled"])
+def test_retained_fixture_verification_never_calls_overridden_verify(status):
+    class NoReplayVerifier(LocalExactVerifier):
+        def verify(self, *_args):
+            raise AssertionError("retained evidence must not execute verify")
+
+    req = request()
+    result = DeterministicMockSolver(terminal_status=status).run(req)
+    source = episode()
+    decision = LocalExactVerifier().verify(source, req, result)
+    assert NoReplayVerifier().validate_retained(source, req, result, decision) is None
+
+
+@pytest.mark.parametrize("field,value", [
+    ("receipt_sha256", "b" * 64),
+    ("candidate_receipt_sha256", "b" * 64),
+    ("diagnosis", "changed verdict"),
+    ("verifier_fingerprint", "b" * 64),
+])
+def test_retained_fixture_verification_rejects_changed_decision(field, value):
+    req = request()
+    result = DeterministicMockSolver().run(req)
+    source = episode()
+    verifier = LocalExactVerifier()
+    decision = replace(verifier.verify(source, req, result), **{field: value})
+    with pytest.raises(RSILearningError, match="rsi_verifier_retained_decision_mismatch"):
+        verifier.validate_retained(source, req, result, decision)
