@@ -24,6 +24,7 @@ from .rsi_native import (
     _episode_root,
     _hash,
     _inspect,
+    _record,
     native_dependency_fingerprint,
     native_environment_fingerprint,
 )
@@ -95,11 +96,21 @@ class CleanRoomRSIVerifier:
             self.workspace_root,
             verification_root=verification_root,
         )
+        # Keep the initial identity just like NativeIndependentVerifier does.  ``fingerprint``
+        # recomputes the current identity so durable recovery can detect profile drift, while
+        # verify/validate_retained reject a wrapper that was mutated after construction.
+        self.verifier_fingerprint = self.fingerprint()
 
     def fingerprint(self) -> str:
         """Return the verifier identity used by RSI episode records."""
 
-        return self._delegate.fingerprint()
+        return _hash({
+            "protocol": _PROTOCOL,
+            "role": "clean-room-verifier",
+            "delegate_fingerprint": self._delegate.fingerprint(),
+            "profile": self.profile.fingerprint(),
+            "workspace_root": str(self.workspace_root),
+        })
 
     def reopen_fingerprints(
         self,
@@ -162,6 +173,7 @@ class CleanRoomRSIVerifier:
     def _augment(
         decision: VerifierDecision,
         fingerprints: CleanRoomFingerprints | None,
+        verifier_fingerprint: str,
         *,
         outcome: str | None = None,
         diagnosis: str | None = None,
@@ -192,10 +204,83 @@ class CleanRoomRSIVerifier:
             decision,
             outcome=target_outcome,
             diagnosis=target_diagnosis,
+            verifier_fingerprint=verifier_fingerprint,
             checks=tuple(checks),
             receipt_sha256=receipt,
             evidence_sha256=receipt,
         )
+
+    def _unresolved(
+        self,
+        episode: PracticeEpisode,
+        request: SolverRequest,
+        result: SolverResult,
+        *,
+        fingerprints: CleanRoomFingerprints | None,
+        reason: str,
+    ) -> VerifierDecision:
+        evidence = _hash({
+            "protocol": _PROTOCOL,
+            "request": request.digest(),
+            "result": result.trace_digest,
+            "reason": reason,
+            "fingerprints": fingerprints.to_dict() if fingerprints is not None else None,
+        })
+        base = VerifierDecision(
+            episode_id=episode.episode_id,
+            outcome="unresolved",
+            receipt_sha256=evidence,
+            diagnosis="clean-room verification unresolved: " + reason,
+            verifier_fingerprint=self.fingerprint(),
+            checks=(VerifierCheck("clean_room_integrity", "unresolved", evidence),),
+            contract_sha256=request.contract_sha256,
+            evaluator_sha256=request.evaluator_sha256,
+            environment_sha256=request.environment_sha256,
+            official_evaluation_receipt_sha256=result.official_evaluation_receipt_sha256,
+            evidence_sha256=evidence,
+            candidate_receipt_sha256=result.candidate_receipt_sha256,
+            execution_receipt_sha256=result.execution_receipt_sha256,
+        )
+        return self._augment(base, fingerprints, self.fingerprint())
+
+    def validate_retained(
+        self,
+        episode: PracticeEpisode,
+        request: SolverRequest,
+        result: SolverResult,
+        decision: VerifierDecision,
+    ) -> None:
+        """Validate terminal clean-room evidence without launching a solver or evaluator."""
+
+        if decision.verifier_fingerprint != self.fingerprint():
+            raise RSILearningError("rsi_clean_room_verifier_fingerprint_drift")
+        if self.fingerprint() != self.verifier_fingerprint:
+            raise RSILearningError("rsi_clean_room_verifier_fingerprint_drift")
+        fingerprints = self.reopen_fingerprints(episode, request, result)
+        if decision.outcome != "pass":
+            # Native verifier's non-pass resume path is read-only original evidence inspection.
+            self._delegate._identity(episode, request, result)
+            _inspect(self.profile, _episode_root(self.workspace_root, request.episode_id, create=False), request, result)
+            return
+
+        # NativeIndependentVerifier persists its unwrapped decision in the delegate cache.  Use
+        # that cache for the existing read-only replay checks, then compare the public wrapper
+        # decision reconstructed from it with the decision supplied by the controller.
+        cache = _record(self._delegate._cache_path(request, result))
+        raw = cache.get("decision")
+        if not isinstance(raw, dict) or not isinstance(raw.get("checks"), list):
+            raise RSILearningError("rsi_clean_room_delegate_cache_invalid")
+        delegate_decision = VerifierDecision(**{
+            **raw,
+            "checks": tuple(VerifierCheck(**item) for item in raw["checks"]),
+        })
+        self._delegate.validate_retained(episode, request, result, delegate_decision)
+        expected = self._augment(delegate_decision, fingerprints, self.fingerprint())
+        if expected != decision:
+            raise RSILearningError("rsi_clean_room_decision_mismatch")
+        after = self.reopen_fingerprints(episode, request, result)
+        if after != fingerprints:
+            raise RSILearningError("rsi_clean_room_material_changed")
 
     def verify(
         self,
@@ -211,6 +296,8 @@ class CleanRoomRSIVerifier:
 
         fingerprints: CleanRoomFingerprints | None = None
         try:
+            if self.fingerprint() != self.verifier_fingerprint:
+                raise RSILearningError("rsi_clean_room_verifier_fingerprint_drift")
             fingerprints = self.reopen_fingerprints(episode, request, result)
             decision = self._delegate.verify(episode, request, result)
             # Reopen once more after the independent replay.  This catches material changed by
@@ -218,29 +305,17 @@ class CleanRoomRSIVerifier:
             after = self.reopen_fingerprints(episode, request, result)
             if after != fingerprints:
                 raise RSILearningError("rsi_clean_room_material_changed")
-            return self._augment(decision, fingerprints)
+            return self._augment(decision, fingerprints, self.fingerprint())
         except Exception as exc:  # noqa: BLE001 - fail closed at the verifier boundary
-            if fingerprints is not None:
-                check = VerifierCheck("clean_room_integrity", "unresolved", fingerprints.digest())
-                base = VerifierDecision(
-                    episode_id=episode.episode_id,
-                    outcome="unresolved",
-                    receipt_sha256=check.receipt_sha256,
-                    diagnosis="clean-room evidence could not be verified",
-                    verifier_fingerprint=self.fingerprint(),
-                    checks=(check,),
-                    contract_sha256=request.contract_sha256,
-                    evaluator_sha256=request.evaluator_sha256,
-                    environment_sha256=request.environment_sha256,
-                    official_evaluation_receipt_sha256=result.official_evaluation_receipt_sha256,
-                    evidence_sha256=check.receipt_sha256,
-                    candidate_receipt_sha256=result.candidate_receipt_sha256,
-                    execution_receipt_sha256=result.execution_receipt_sha256,
-                )
-                return self._augment(base, fingerprints, diagnosis=f"clean-room verification unresolved: {type(exc).__name__}")
-            # Reuse the existing verifier's bounded unresolved shape for failures before the
-            # retained workspace could be reopened.  It never grants memory authority.
-            return self._delegate.verify(episode, request, result)
+            # Never fall back to the delegate here: a failed wrapper reopen must not be able to
+            # turn into an approved memory decision from a lower-level cache.
+            return self._unresolved(
+                episode,
+                request,
+                result,
+                fingerprints=fingerprints,
+                reason=type(exc).__name__,
+            )
 
 
 __all__ = ["CleanRoomFingerprints", "CleanRoomRSIVerifier"]

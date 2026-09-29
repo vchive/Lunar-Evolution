@@ -76,6 +76,31 @@ def test_clean_room_recomputes_pins_and_replays(tmp_path: Path):
         "environment_fingerprint",
         "independent_rerun",
     }
+    verifier.validate_retained(episode, request, result, decision)
+
+
+def test_clean_room_fingerprint_is_wrapper_specific(tmp_path: Path):
+    profile, request, result, episode, gateway = _run(tmp_path)
+    verifier = CleanRoomRSIVerifier(profile, gateway.workspace_root, verification_root=tmp_path / "verify")
+    assert verifier.fingerprint() != verifier._delegate.fingerprint()
+    decision = verifier.verify(episode, request, result)
+    verifier.validate_retained(episode, request, result, decision)
+
+
+def test_clean_room_reopen_failure_cannot_fall_back_to_delegate_pass(tmp_path: Path, monkeypatch):
+    profile, request, result, episode, gateway = _run(tmp_path)
+    verifier = CleanRoomRSIVerifier(profile, gateway.workspace_root, verification_root=tmp_path / "verify")
+    approved = verifier.verify(episode, request, result)
+    assert approved.outcome == "pass"
+
+    def fail_reopen(*_args, **_kwargs):
+        raise RuntimeError("reopen failed")
+
+    monkeypatch.setattr(verifier, "reopen_fingerprints", fail_reopen)
+    monkeypatch.setattr(verifier._delegate, "verify", lambda *_args, **_kwargs: approved)
+    decision = verifier.verify(episode, request, result)
+    assert decision.outcome == "unresolved"
+    assert decision.verifier_fingerprint == verifier.fingerprint()
 
 
 def test_clean_room_rejects_profile_environment_drift(tmp_path: Path):
