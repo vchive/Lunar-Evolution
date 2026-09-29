@@ -204,6 +204,15 @@ class LocalController:
         self._active_lock = threading.RLock()
         self._active_runtimes: dict[str, Runtime] = {}
         self._active_agents: dict[str, AgentAdapter] = {}
+        # The automatic WorkerService bridge is the sole owner of this composable callback
+        # scope.  A controller may nest native runtime scopes on the owning thread, while a
+        # second thread is rejected before it can replace the bridge's callbacks.
+        self._automatic_observation_lock = threading.RLock()
+        self._automatic_observation_owner: int | None = None
+        self._automatic_observation_depth = 0
+        self._automatic_observation_local = threading.local()
+        self._automatic_process_releases: dict[tuple[str, int, int], Callable[[], None]] = {}
+        self._runtime_observation_callbacks = threading.local()
         self.evaluator = evaluator
         self.router = router or DomainRouter()
         self.profiles = profiles or ProfileRegistry()
@@ -4404,9 +4413,16 @@ class LocalController:
                     registration.label.removeprefix("run:"), registration.pid, registration.pgid,
                 )
             elif registration.label.startswith("attempt:"):
-                self.store.clear_attempt_process(
-                    registration.label.removeprefix("attempt:"), registration.pid, registration.pgid,
-                )
+                attempt_id = registration.label.removeprefix("attempt:")
+                with self._active_lock:
+                    release = self._automatic_process_releases.get((attempt_id, registration.pid, registration.pgid))
+                if release is None:
+                    self.store.clear_attempt_process(attempt_id, registration.pid, registration.pgid)
+                else:
+                    try:
+                        release()
+                    except Exception:  # noqa: BLE001, S110 - retain native registration after outer release failure
+                        pass
 
     def attempt_process_observers(self, run_id: str, attempt_id: str, *, parent_id: str | None = None):
         """Register sequential local work and reject a launch that lost its execution owner.
@@ -4414,7 +4430,7 @@ class LocalController:
         Registration precedes the terminal-state check: cancellation either observes this row,
         or the registering thread observes cancellation and cleans this exact process itself.
         """
-        def observe(pid: int, pgid: int | None) -> None:
+        def observe_native(pid: int, pgid: int | None) -> None:
             attempt = self.store.get_attempt(attempt_id)
             task = self.store.get_task(attempt.task_id) if attempt is not None else None
             if task is None or task.run_id != run_id:
@@ -4449,11 +4465,190 @@ class LocalController:
             if stopped and isinstance(pgid, int):
                 self._cleanup_process_registrations((self._attempt_registration(attempt_id, pid, pgid),))
 
-        def release(pid: int, pgid: int | None) -> None:
+        def release_native(pid: int, pgid: int | None) -> None:
             if pgid is not None:
-                self.store.clear_attempt_process(attempt_id, pid, pgid)
+                return self.store.clear_attempt_process(attempt_id, pid, pgid)
+            return True
+
+        scope = self._current_automatic_observation()
+        if scope is None:
+            return observe_native, release_native
+        scope.validate_run(run_id, parent_id)
+        registered: set[tuple[int, int]] = set()
+        released: set[tuple[int, int]] = set()
+
+        def release_owned(pid: int, pgid: int) -> None:
+            scope.require_active()
+            scope.validate_run(run_id, parent_id)
+            attempt = self.store.get_attempt(attempt_id)
+            task = self.store.get_task(attempt.task_id) if attempt is not None else None
+            if task is None or task.run_id != run_id:
+                raise ValueError("process attempt does not belong to run")
+            if (attempt.pid, attempt.pgid) != (pid, pgid):
+                raise ValueError("automatic worker process release is stale")
+            try:
+                if scope.released(run_id, attempt_id, pid, pgid) is False:
+                    raise ValueError("outer process release was not confirmed")
+                if not self.store.clear_attempt_process(attempt_id, pid, pgid):
+                    raise ValueError("native process release was not confirmed")
+            except Exception:
+                scope.failed = True
+                raise
+            released.add((pid, pgid))
+            with self._active_lock:
+                self._automatic_process_releases.pop((attempt_id, pid, pgid), None)
+
+        def observe(pid: int, pgid: int | None) -> None:
+            scope.require_current()
+            scope.validate_run(run_id, parent_id)
+            if any(type(value) is not int or value <= 1 for value in (pid, pgid)):
+                scope.failed = True
+                raise ValueError("automatic worker process identity is invalid")
+            attempt = self.store.get_attempt(attempt_id)
+            task = self.store.get_task(attempt.task_id) if attempt is not None else None
+            if task is None or task.run_id != run_id:
+                scope.failed = True
+                raise ValueError("process attempt does not belong to run")
+            if (attempt.pid, attempt.pgid) != (None, None) and (attempt.pid, attempt.pgid) != (pid, pgid):
+                if type(attempt.pid) is int and type(attempt.pgid) is int:
+                    self._cleanup_process_registrations((
+                        self._attempt_registration(attempt_id, attempt.pid, attempt.pgid),
+                    ))
+                retained = self.store.get_attempt(attempt_id)
+                if retained is not None and (retained.pid, retained.pgid) != (None, None):
+                    scope.failed = True
+                    cleanup_registered_processes((RegisteredProcess(
+                        pid, pgid, owner_check=lambda: True, label="unregistered-launch",
+                    ),))
+                    raise ValueError("automatic worker attempt still owns another process")
+            try:
+                if not self.store.set_attempt_process(attempt_id, pid, pgid):
+                    raise ValueError("native process registration was not confirmed")
+                registered.add((pid, pgid))
+                released.discard((pid, pgid))
+                with self._active_lock:
+                    self._automatic_process_releases[(attempt_id, pid, pgid)] = lambda: release_owned(pid, pgid)
+                if scope.observer(run_id, attempt_id, pid, pgid) is False:
+                    raise ValueError("outer process registration was not confirmed")
+                scope.check()
+                current = self.store.get_run(run_id)
+                latest = self.store.get_attempt(attempt_id)
+                parent = self.store.get_run(scope.parent_id)
+                if (current is None or current.status in {RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.SUCCEEDED}
+                        or latest is None or latest.status != "running" or parent is None
+                        or parent.status in {RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.SUCCEEDED}):
+                    raise SolveExecutionCancelled("runtime")
+            except Exception:
+                scope.failed = True
+                # The native registration is retained before calling the outer observer, so
+                # cleanup uses one exact native ownership decision even after partial failure.
+                current = self.store.get_attempt(attempt_id)
+                if current is not None and (current.pid, current.pgid) == (pid, pgid):
+                    self._cleanup_process_registrations((self._attempt_registration(attempt_id, pid, pgid),))
+                else:
+                    cleanup_registered_processes((RegisteredProcess(
+                        pid, pgid, owner_check=lambda: True, label="unregistered-launch",
+                    ),))
+                raise
+
+        def release(pid: int, pgid: int | None) -> None:
+            scope.require_current()
+            scope.validate_run(run_id, parent_id)
+            if (pid, pgid) not in registered:
+                raise ValueError("automatic worker process release is stale")
+            if (pid, pgid) not in released:
+                release_owned(pid, pgid)
 
         return observe, release
+
+    class _AutomaticWorkerObservationScope:
+        __slots__ = ("active", "controller", "failed", "guard", "observer", "parent_id", "released")
+
+        def __init__(self, controller, parent_id, observer, released, guard) -> None:
+            self.controller = controller
+            self.parent_id = parent_id
+            self.observer = observer
+            self.released = released
+            self.guard = guard
+            self.active = True
+            self.failed = False
+
+        def require_active(self) -> None:
+            if not self.active:
+                raise ValueError("automatic worker observation scope is no longer active")
+
+        def require_current(self) -> None:
+            self.require_active()
+            if self.controller._current_automatic_observation() is not self:
+                raise ValueError("automatic worker observation scope is not current")
+
+        def validate_run(self, run_id: str, parent_id: str | None) -> None:
+            authority = self.controller._automatic_cancel_targets(self.parent_id)
+            if authority is None or not authority.verified:
+                raise ValueError("automatic worker native ownership cannot be verified")
+            if run_id == self.parent_id and parent_id is None:
+                return
+            if parent_id != self.parent_id or authority.child_id != run_id:
+                raise ValueError("automatic worker child ownership cannot be verified")
+
+        def check(self) -> None:
+            self.require_current()
+            self.guard()
+            if self.failed:
+                raise SolveExecutionCancelled("worker_observation")
+
+    def _current_automatic_observation(self):
+        if (self._automatic_observation_owner is not None
+                and self._automatic_observation_owner != threading.get_ident()):
+            raise RuntimeError("automatic controller runtime is owned by another thread")
+        scope = getattr(self._automatic_observation_local, "scope", None)
+        return scope if scope is not None and scope.active else None
+
+    @contextmanager
+    def _automatic_observation_ownership(self):
+        if not self._automatic_observation_lock.acquire(blocking=False):
+            raise RuntimeError("automatic controller runtime is owned by another thread")
+        self._automatic_observation_owner = threading.get_ident()
+        self._automatic_observation_depth += 1
+        try:
+            yield
+        finally:
+            self._automatic_observation_depth -= 1
+            if self._automatic_observation_depth == 0:
+                self._automatic_observation_owner = None
+            self._automatic_observation_lock.release()
+
+    @contextmanager
+    def automatic_worker_observation(self, parent_id: str, observer, released, guard):
+        """Compose one exact worker owner around native attempt observation and cleanup.
+
+        Native runtime scopes may nest on the owning thread.  Another thread cannot replace
+        this controller's hooks, and callbacks retained beyond this context are revoked.  Native
+        cleanup remains the sole signalling authority; outer release must confirm the exact
+        process before its native registration can be cleared.
+        """
+        if not isinstance(parent_id, str) or not parent_id.strip():
+            raise ValueError("automatic worker parent ID must be non-empty")
+        if not all(callable(callback) for callback in (observer, released, guard)):
+            raise TypeError("automatic worker observation callbacks must be callable")
+        with self._automatic_observation_ownership():
+            prior = self._current_automatic_observation()
+            scope = self._AutomaticWorkerObservationScope(self, parent_id, observer, released, guard)
+            scope.validate_run(parent_id, None)
+            self._automatic_observation_local.scope = scope
+            try:
+                yield scope
+                if scope.failed:
+                    raise SolveExecutionCancelled("worker_observation")
+            finally:
+                scope.active = False
+                self._automatic_observation_local.scope = prior
+
+    def _automatic_worker_guard(self, run_id: str, parent_id: str | None = None) -> None:
+        scope = self._current_automatic_observation()
+        if scope is not None:
+            scope.validate_run(run_id, parent_id)
+            scope.check()
 
     def ensure_attempt_process_released(self, run_id: str, attempt_id: str, *, parent_id: str | None = None) -> None:
         """A sequential automatic stage cannot continue past unresolved local cleanup."""
@@ -4488,8 +4683,9 @@ class LocalController:
     def observe_attempt_runtime(self, run_id: str, attempt_id: str, *, parent_id: str | None = None):
         """Bind the existing runtime and optional local tools to one automatic attempt."""
         observe, release = self.attempt_process_observers(run_id, attempt_id, parent_id=parent_id)
+        scope = self._current_automatic_observation()
 
-        def guard() -> None:
+        def native_guard() -> None:
             for target in (run_id, parent_id):
                 if target is None:
                     continue
@@ -4500,7 +4696,26 @@ class LocalController:
                     raise SolveExecutionCancelled("runtime")
             self.ensure_attempt_process_released(run_id, attempt_id, parent_id=parent_id)
 
+        def guard() -> None:
+            if scope is not None:
+                scope.validate_run(run_id, parent_id)
+                scope.check()
+            native_guard()
+
+        callback_key = id(self.runtime)
+        callback_map = getattr(self._runtime_observation_callbacks, "values", None)
+        if callback_map is None:
+            callback_map = {}
+            self._runtime_observation_callbacks.values = callback_map
+        prior_callbacks = callback_map.get(callback_key)
+        if prior_callbacks is None:
+            prior_callbacks = tuple(
+                getattr(self.runtime, name, None)
+                for name in ("_process_observer", "_process_released", "_continuation_guard")
+            )
+        callback_map[callback_key] = (observe, release, guard)
         with self._active_lock:
+            prior_runtime = self._active_runtimes.get(attempt_id)
             self._active_runtimes[attempt_id] = self.runtime
         try:
             for name, callback in (("set_process_observer", observe), ("set_process_released", release),
@@ -4510,15 +4725,26 @@ class LocalController:
                     setter(callback)
             yield observe, release
         finally:
-            for name in ("set_process_observer", "set_process_released", "set_continuation_guard"):
+            for name, callback in zip(
+                ("set_process_observer", "set_process_released", "set_continuation_guard"),
+                prior_callbacks,
+                strict=True,
+            ):
                 setter = getattr(self.runtime, name, None)
                 if callable(setter):
                     try:
-                        setter(None)
+                        setter(callback)
                     except Exception:  # noqa: BLE001, S110 - fan-out must survive adapter failure
                         pass
             with self._active_lock:
-                self._active_runtimes.pop(attempt_id, None)
+                if prior_runtime is None:
+                    self._active_runtimes.pop(attempt_id, None)
+                else:
+                    self._active_runtimes[attempt_id] = prior_runtime
+            if prior_callbacks == (None, None, None):
+                callback_map.pop(callback_key, None)
+            else:
+                callback_map[callback_key] = prior_callbacks
 
     def _cancel_active_callbacks(self, run_ids: set[str] | None = None) -> None:
         with self._active_lock:
