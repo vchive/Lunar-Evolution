@@ -352,6 +352,13 @@ from .models import (
     WorkerResultEnvelope,
     WorkerStopReason,
 )
+from .native_trusted_publication import (
+    NativeTrustedPublicationAuthority,
+    NativeTrustedPublicationError,
+    build_native_trusted_publication_authority,
+    run_native_trusted_output_publication_transaction,
+    run_native_trusted_publication_transaction,
+)
 from .openevolve_handoff import (
     OpenEvolveHandoffError,
     admit_openevolve_result,
@@ -460,13 +467,6 @@ from .producer_bundle_transaction import (
     NativeProducerBundleTransactionResult,
     derive_population_state_after,
     run_native_producer_bundle_publication_transaction,
-)
-from .native_trusted_publication import (
-    NativeTrustedPublicationAuthority,
-    NativeTrustedPublicationError,
-    build_native_trusted_publication_authority,
-    run_native_trusted_output_publication_transaction,
-    run_native_trusted_publication_transaction,
 )
 from .producer_handoff import (
     ProducerHandoffError,
@@ -883,9 +883,9 @@ __all__ = [
     "NativeProducerAttemptRecoveryError",
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
+    "NativeProducerUnknownAttempt",
     "NativeTrustedPublicationAuthority",
     "NativeTrustedPublicationError",
-    "NativeProducerUnknownAttempt",
     "OffspringOutcome",
     "OpenEvolveHandoffError",
     "OpenEvolveStrategy",
