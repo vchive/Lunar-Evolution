@@ -6,10 +6,13 @@ import select
 import socket
 import subprocess
 import sys
+import time
+from contextlib import ExitStack
 from pathlib import Path
 
 import pytest
 
+from lunar_evolution.linux_executable_binding import sealed_linux_executable
 from lunar_evolution.native_bootstrap import (
     NativeBootstrapError,
     build_native_bootstrap_artifact,
@@ -111,6 +114,92 @@ def test_native_artifact_rejects_duplicate_gate_token(tmp_path: Path):
     assert process.wait(timeout=5) != 0
     assert not marker.exists()
     assert os.read(frame_r, 8192) == b""
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux sealed memfd fixture")
+@pytest.mark.parametrize(
+    "binding_kind", ["sealed", "linked", "F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL"],
+)
+def test_native_artifact_requires_complete_sealed_memfd_target(tmp_path: Path, binding_kind):
+    """The fd-bound target has no directory link but must pass the bootstrap gate."""
+    import fcntl
+
+    source = tmp_path / "target.c"
+    target = tmp_path / "target"
+    marker = tmp_path / "marker"
+    source.write_text(
+        '#include <fcntl.h>\n#include <unistd.h>\n'
+        'int main(void) { int fd = open("' + str(marker) + '", O_CREAT | O_WRONLY, 0600); '
+        'if (fd < 0) return 2; if (write(fd, "started", 7) != 7) return 3; '
+        'return close(fd) == 0 ? 0 : 4; }\n', encoding="utf-8",
+    )
+    subprocess.run(["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(target)],
+                    check=True, capture_output=True)
+    info = target.stat()
+    expected = {
+        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(), "size": info.st_size,
+        "device": info.st_dev, "inode": info.st_ino, "mtime_ns": info.st_mtime_ns,
+        "ctime_ns": info.st_ctime_ns,
+    }
+    artifact = build_native_bootstrap_artifact(tmp_path / "install")
+    with ExitStack() as stack:
+        if binding_kind == "sealed":
+            binding = stack.enter_context(sealed_linux_executable(target, expected, deadline=time.monotonic() + 10))
+            target_fd = binding.pass_fd
+        elif binding_kind == "linked":
+            target_fd = os.open(target, os.O_RDONLY | os.O_CLOEXEC)
+            stack.callback(os.close, target_fd)
+        else:
+            target_fd = os.memfd_create("incomplete-fixture", os.MFD_ALLOW_SEALING | os.MFD_CLOEXEC)
+            stack.callback(os.close, target_fd)
+            with os.fdopen(os.dup(target_fd), "wb") as output:
+                output.write(target.read_bytes())
+            os.fchmod(target_fd, 0o700)
+            seals = 0
+            for seal in ("F_SEAL_WRITE", "F_SEAL_GROW", "F_SEAL_SHRINK", "F_SEAL_SEAL"):
+                if seal != binding_kind:
+                    seals |= getattr(fcntl, seal)
+            fcntl.fcntl(target_fd, fcntl.F_ADD_SEALS, seals)
+        executable = f"/proc/self/fd/{target_fd}"
+        launch = _launch(target)
+        control = encode_native_bootstrap_control(
+            launch, target_path=executable, target_argv=(executable,),
+            target_cwd=tmp_path, target_fd=target_fd,
+        )
+        control_r, control_w = os.pipe()
+        gate_r, gate_w = os.pipe()
+        frame_r, frame_w = os.pipe()
+        process = subprocess.Popen(
+            native_bootstrap_command(artifact, control_fd=control_r, gate_fd=gate_r, frame_fd=frame_w),
+            pass_fds=(control_r, gate_r, frame_w, target_fd), close_fds=True,
+            env={"PATH": os.defpath}, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        )
+        os.close(control_r); os.close(gate_r); os.close(frame_w)
+        os.write(control_w, control); os.close(control_w)
+        try:
+            assert _read_frame(frame_r).kind == "bootstrap_ready"
+            os.write(gate_w, b"1")
+            os.close(gate_w)
+            gate_w = -1
+            code = process.wait(timeout=5)
+            frames = _read_remaining_frames(frame_r)
+            if binding_kind == "sealed":
+                assert [frame.kind for frame in frames] == ["target_started", "terminal"]
+                assert code == 0, process.stderr.read()
+                assert marker.read_text(encoding="utf-8") == "started"
+            else:
+                assert [frame.kind for frame in frames] == ["target_start_failed"]
+                assert code == 69
+                assert not marker.exists()
+        finally:
+            if gate_w >= 0:
+                os.close(gate_w)
+            os.close(frame_r)
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            process.stderr.close()
 
 
 @pytest.mark.skipif(__import__("sys").platform not in {"darwin", "linux"}, reason="native bootstrap platform")
