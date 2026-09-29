@@ -122,3 +122,19 @@ counted as a product failure. The 2026-09-29 full runner invocation using system
 8,376 passed / 10 skipped / 4 environment failures before this correction; archived 2,294 and
 frozen 24 remained green. A correctly configured full current rerun is still recommended before
 release publication.
+
+## RSI follow-up checkpoint — stage accounting and promotion
+
+- [x] Reserve native evaluator and frozen transfer work before execution; retain receipt-bound
+  stage sidecars, validate counters and forbid pending-intent replay. Persistence errors poison
+  the accounting instance so it cannot continue dispatching.
+- [x] Anchor governance history independently of controller checkpoints; reject deleted
+  candidate/revoke/quarantine tails and changed source evidence.
+- [x] Bind trusted native practice/holdout panels to durable promotion proof and explicit
+  scope/compatibility-bound active-memory retrieval. Recheck the active selection before launch.
+- [ ] Join controller and transfer reservations into one run ledger and implement retained
+  evaluator/transfer reconciliation. Separate local scopes are not a shared budget.
+- [ ] Enable automatic active-memory policy and regression handling in durable DRS/BRS.
+
+The local RSI and CLI suite passes 679 cases after the final promotion proof changes. This is
+provider-free evidence and does not close real telemetry, campaign, Actor or efficacy acceptance.

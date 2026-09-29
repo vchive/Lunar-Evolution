@@ -264,3 +264,38 @@ def test_transfer_unknown_arm_retains_terminal_evidence(tmp_path, monkeypatch):
     native.write_bytes(canonical_json(retained, maximum=128 * 1024))
     with pytest.raises(Exception, match="rsi_transfer_comparison_native_record_mismatch"):
         benchmark.compare(comparison_id="unknown", tasks=(task(p),), snapshot=memory)
+
+
+def test_transfer_stage_budget_is_reserved_before_local_panel(tmp_path):
+    p = profile(tmp_path)
+    memory = snapshot(p.contract.digest())
+    result = FrozenMemoryTransferBenchmark(
+        lambda request, readonly: draft_for_score(7 if readonly.items else 5),
+        tmp_path / "budget-transfer", actor_fingerprint="b" * 64,
+    ).compare(
+        comparison_id="budgeted", tasks=(task(p),), snapshot=memory,
+        budget={"max_transfer_invocations": 1, "max_evaluator_invocations": 4},
+    )
+    assert result.status == "completed" and result.effect == "improved"
+    state = json.loads((tmp_path / "budget-transfer" / "comparisons" / "budgeted" / "stage-accounting.json").read_text())
+    assert state["budget"]["consumed"]["transfer_invocations"] == 1
+    assert state["budget"]["consumed"]["evaluator_invocations"] == 4
+    assert all(row["evidence"] is not None for row in state["stages"]["invocations"])
+
+
+def test_transfer_stage_sidecar_tamper_and_missing_evidence_are_rejected(tmp_path):
+    p = profile(tmp_path)
+    memory = snapshot(p.contract.digest())
+    root = tmp_path / "budget-transfer" / "comparisons" / "budgeted"
+    benchmark = FrozenMemoryTransferBenchmark(
+        lambda request, readonly: draft_for_score(7 if readonly.items else 5),
+        tmp_path / "budget-transfer", actor_fingerprint="b" * 64,
+    )
+    benchmark.compare(comparison_id="budgeted", tasks=(task(p),), snapshot=memory,
+                     budget={"max_transfer_invocations": 1, "max_evaluator_invocations": 4})
+    sidecar = json.loads((root / "stage-accounting.json").read_text())
+    sidecar["stages"]["invocations"][0]["identity"]["comparison_id"] = "other"
+    (root / "stage-accounting.json").write_text(json.dumps(sidecar, sort_keys=True, separators=(",", ":")))
+    with pytest.raises(Exception, match="stage_accounting_invalid"):
+        benchmark.compare(comparison_id="budgeted", tasks=(task(p),), snapshot=memory,
+                          budget={"max_transfer_invocations": 1, "max_evaluator_invocations": 4})

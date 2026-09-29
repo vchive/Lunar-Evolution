@@ -844,6 +844,15 @@ class MultiFileCandidatePipeline:
         if record.to_dict().get("runner_result", {}).get("status") != "succeeded":
             raise _InitialCandidateFailure("candidate_failed")
         self._effective_timeout("evaluation")
+        # Only an explicit RSI scope records this reservation. Persist before calling the
+        # official evaluator so interrupted calls retain their charge and cannot replay.
+        from .rsi_stage_accounting import reserve_stage
+        evaluation_done = reserve_stage("evaluator", {
+            "admission_sha256": admission.digest(), "plan_sha256": plan.digest(),
+            "completion_sha256": record.completion_sha256,
+            "evaluator_sha256": self.evaluator.digest(),
+            "evaluation_root": str(run_root / "evaluations"),
+        })
         result = evaluate_candidate_execution(
             admission, plan=plan, contract=strategy.context.contract, evaluator=self.evaluator,
             harness_path=self.harness_path, workspace_path=copied.workspace_path,
@@ -852,6 +861,7 @@ class MultiFileCandidatePipeline:
             expected_completion_sha256=record.completion_sha256, remaining_timeout=self._remaining_timeout,
             process_observer=self._process_observer, process_released=self._process_released,
         )
+        evaluation_done(result.digest())
         self._effective_timeout("evaluation")
         return NativeDraftEvaluationResult(
             candidate_id=candidate_id, journal_id=journal_id, run_id=run_id, bundle=bundle,

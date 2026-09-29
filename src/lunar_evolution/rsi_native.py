@@ -28,6 +28,7 @@ from .candidate_execution import admit_candidate_execution
 from .candidate_execution_evidence import inspect_candidate_execution_record
 from .candidate_workspace_plan import parse_candidate_workspace_plan
 from .evolution import CandidateDraft, EvolutionConfig, EvolutionContext, PopulationStrategy
+from .rsi_budget import RSIRunBudget
 from .rsi_gateway import SolverRequest, SolverResult
 from .rsi_learning import PracticeEpisode, RSILearningError, VerifierCheck, VerifierDecision
 
@@ -371,6 +372,8 @@ def _episode_root(root: Path, episode_id: str, *, create: bool) -> Path:
 class NativePopulationGateway:
     """One real local native proposal per request, with exact read-only terminal retry."""
 
+    stage_budget_accounting = frozenset({"evaluator"})
+
     def __init__(self, profile: NativeEvaluationProfile,
                  draft_factory: Callable[[SolverRequest], CandidateDraft], workspace_root: str | Path,
                  *, actor_fingerprint: str | None = None):
@@ -415,7 +418,11 @@ class NativePopulationGateway:
             _fail("intent_missing")
         self.profile.validate(request)
         budget = dict(request.budget)
-        if set(budget) - {"candidate_attempts", "wall_timeout_seconds"}:
+        from .rsi_stage_accounting import accounting_available
+        controller_limits = set(RSIRunBudget.create(None).state["planned"])
+        if set(budget) & controller_limits and not accounting_available():
+            _fail("budget_accounting_required")
+        if set(budget) - {"candidate_attempts", "wall_timeout_seconds", *controller_limits}:
             _fail("budget_unsupported")
         if "candidate_attempts" in budget and (type(budget["candidate_attempts"]) is not int or budget["candidate_attempts"] < 1):
             _fail("budget_invalid")
@@ -457,6 +464,10 @@ class NativePopulationGateway:
                 (("backend", "native_population"), ("fixture", False),), native.bundle.digest(), self.profile.pipeline.dependency_sha256,
                 actor_fingerprint=self.actor_fingerprint,
             )
+        except RSILearningError as exc:
+            if exc.code.startswith(("rsi_budget_", "rsi_stage_")):
+                raise
+            result = self._terminal(request, "unknown", "native_evidence_incomplete")
         except SolveExecutionCancelled:
             result = self._terminal(request, "cancelled", "native_cancelled")
         except TimeoutError:
@@ -472,6 +483,8 @@ class NativePopulationGateway:
 
 class NativeIndependentVerifier:
     """Read original evidence and retain a fresh candidate/evaluator rerun before passing."""
+
+    stage_budget_accounting = frozenset({"evaluator"})
 
     def __init__(self, profile: NativeEvaluationProfile, workspace_root: str | Path,
                  *, verification_root: str | Path | None = None):
@@ -586,6 +599,10 @@ class NativeIndependentVerifier:
                 _inspect(self.profile, root, request, result)
                 checks.append(VerifierCheck("independent_rerun", "pass", rerun.official_evaluation_receipt_sha256))
                 outcome, diagnosis = "pass", "retained native evidence and independent rerun passed"
+        except RSILearningError as exc:
+            if exc.code.startswith(("rsi_budget_", "rsi_stage_")):
+                raise
+            checks.append(VerifierCheck("independent_verification", "unresolved", _hash({"request": request.digest(), "status": "unresolved"})))
         except Exception:  # noqa: BLE001 - all integrity ambiguity remains non-admitting
             checks.append(VerifierCheck("independent_verification", "unresolved", _hash({"request": request.digest(), "status": "unresolved"})))
         evidence = {"request": request.to_dict(), "result": result.to_dict(), "checks": [c.to_dict() for c in checks], "outcome": outcome}

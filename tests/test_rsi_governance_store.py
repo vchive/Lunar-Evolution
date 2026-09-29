@@ -123,6 +123,29 @@ def test_compare_and_swap_prevents_stale_shadow_and_exact_repetition_is_idempote
     assert store.restore().get(memory.memory_id) == shadow
 
 
+def test_plain_append_cannot_write_trusted_promotion(tmp_path):
+    ledger = RSILedger(tmp_path / "rsi.db")
+    store = RSIMemoryGovernanceLedger(ledger)
+    episode, memory, scope = material(ledger)
+    candidate = nominate(store, episode, memory, scope)
+    governance = store.restore()
+    shadow = governance.start_shadow(
+        candidate, transition_receipt_sha256="c" * 64, actor_fingerprint=ACTOR
+    )
+    store.append(shadow, memory=memory, expected_record_sha256=candidate.digest())
+    gate = PromotionGate(
+        candidate.authority.compatibility.digest(), candidate.authority.parent_snapshot_sha256,
+        "1" * 64, candidate.authority.source_receipt_sha256, "2" * 64, "3" * 64,
+        10, 11, 10, 11,
+        (candidate.authority.source_receipt_sha256, "4" * 64), ("3" * 64,),
+    )
+    approved = governance.approve(
+        shadow, gate, transition_receipt_sha256="d" * 64, actor_fingerprint=ACTOR,
+    )
+    with pytest.raises(RSILearningError, match="rsi_memory_trusted_promotion_unavailable"):
+        store.append(approved, memory=memory, expected_record_sha256=shadow.digest())
+
+
 def test_changed_nomination_cannot_replace_content_or_revive_quarantined_memory(tmp_path):
     ledger = RSILedger(tmp_path / "rsi.db")
     store = RSIMemoryGovernanceLedger(ledger)
@@ -298,9 +321,12 @@ def test_governed_checkpoint_pins_candidate_record_and_requires_journal_on_resum
 
     with sqlite3.connect(ledger.database) as connection:
         connection.execute("DELETE FROM rsi_memory_governance")
-    with pytest.raises(RSILearningError, match="rsi_memory_candidate_evidence_missing"):
+    with pytest.raises(RSILearningError, match="rsi_memory_governance_anchor_mismatch"):
         controller(RSILedger(ledger.database), Gateway()).resume(run_id="governed")
-    assert RSIMemoryGovernanceLedger.inspect_records(ledger) == ()
+    with pytest.raises(RSILearningError, match="rsi_memory_governance_anchor_mismatch"):
+        RSIMemoryGovernanceLedger.inspect_records(ledger, require_journal=True)
+    with sqlite3.connect(ledger.database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM rsi_memory_governance").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("remaining", [1, 2])
@@ -312,9 +338,12 @@ def test_committed_candidate_history_cannot_be_silently_completed_during_resume(
     with sqlite3.connect(ledger.database) as connection:
         connection.execute("DELETE FROM rsi_memory_governance WHERE revision >= ?", (remaining,))
     restored = controller(RSILedger(ledger.database), Gateway())
-    with pytest.raises(RSILearningError, match="rsi_memory_candidate_evidence_missing"):
+    with pytest.raises(RSILearningError, match="rsi_memory_governance_anchor_mismatch"):
         restored.resume(run_id="governed")
-    assert len(RSIMemoryGovernanceLedger.inspect_records(ledger)) == remaining
+    with pytest.raises(RSILearningError, match="rsi_memory_governance_anchor_mismatch"):
+        RSIMemoryGovernanceLedger.inspect_records(ledger, require_journal=True)
+    with sqlite3.connect(ledger.database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM rsi_memory_governance").fetchone()[0] == remaining
 
 
 @pytest.mark.parametrize("mutation", ["remove_map", "wrong_digest", "missing_digest", "extra_digest"])

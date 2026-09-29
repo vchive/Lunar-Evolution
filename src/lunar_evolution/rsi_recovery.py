@@ -26,6 +26,13 @@ from .rsi_learning import (
     VerifierCheck,
     VerifierDecision,
 )
+from .rsi_stage_accounting import (
+    DurableStageAccounting,
+    stage_accounting,
+    validate_evaluator_intent,
+    validate_stage_history,
+    validate_stage_state,
+)
 from .rsi_usage import MAX_USAGE_VALUE, RSIUsageReceipt, aggregate_usage, usage_receipt_from
 
 
@@ -269,6 +276,7 @@ class DurableLearningRun:
                             raise RSILearningError("rsi_resume_episode_result_mismatch")
             self._check_reconciliation_checkpoint(entry, request)
             self._check_verifier_reservations(entry, request)
+        stage_counts = self._check_external_stages()
         reserved = [entry for entry in self.state["episodes"].values() if entry["budget_reserved"]]
         practices = [
             entry
@@ -287,8 +295,8 @@ class DurableLearningRun:
             or consumed["unknown_retries"] != len(reconciliations)
             or consumed["verifier_invocations"]
             != sum(len(entry["verifier_invocations"]) for entry in self.state["episodes"].values())
-            or consumed["evaluator_invocations"] != 0
-            or consumed["transfer_invocations"] != 0
+            or consumed["evaluator_invocations"] != stage_counts["evaluator"]
+            or consumed["transfer_invocations"] != stage_counts["transfer"]
         ):
             raise RSILearningError("rsi_budget_checkpoint_invalid")
         self._check_run_usage_checkpoint()
@@ -304,6 +312,7 @@ class DurableLearningRun:
             if not isinstance(current, Mapping):
                 raise RSILearningError("rsi_controller_checkpoint_invalid")
             if previous is not None:
+                validate_stage_history(previous.get("stage_accounting"), current.get("stage_accounting"))
                 previous_episodes = previous.get("episodes", {})
                 current_episodes = current.get("episodes", {})
                 if not isinstance(previous_episodes, Mapping) or not isinstance(current_episodes, Mapping):
@@ -355,13 +364,50 @@ class DurableLearningRun:
                                 raise RSILearningError("rsi_budget_checkpoint_invalid")
             previous = current
 
-    @staticmethod
-    def _check_stage_support(budget: RSIRunBudget) -> None:
-        # These calls currently happen inside gateways or independent transfer tools, so the
-        # controller cannot promise a pre-execution reservation for either stage.
-        for stage in ("evaluator", "transfer"):
-            if budget.state["planned"][f"max_{stage}_invocations"] is not None:
-                raise RSILearningError(f"rsi_budget_{stage}_accounting_unavailable")
+    def _check_stage_support(self, budget: RSIRunBudget) -> None:
+        # Only adapters declaring the pre-execution hook can accept finite evaluator limits.
+        if budget.state["planned"]["max_evaluator_invocations"] is not None:
+            for component in (self.controller.gateway, self.controller.verifier):
+                if "evaluator" not in getattr(component, "stage_budget_accounting", ()):
+                    raise RSILearningError("rsi_budget_evaluator_accounting_unavailable")
+        # Transfer panels have a separate durable budget, installed by compare(budget=...).
+        if budget.state["planned"]["max_transfer_invocations"] is not None:
+            raise RSILearningError("rsi_budget_transfer_accounting_unavailable")
+
+    def _stage_scope(self, request: SolverRequest, phase: str):
+        accounting = DurableStageAccounting(
+            self.state.setdefault("stage_accounting", {"invocations": []}),
+            self.state["budget_state"], self._save, lock=self.mutex,
+        )
+        return stage_accounting(accounting, {
+            "run_id": self.run_id, "episode_id": request.episode_id,
+            "request_sha256": request.digest(), "phase": phase,
+        })
+
+    def _check_external_stages(self) -> dict[str, int]:
+        state = self.state.get("stage_accounting", {"invocations": []})
+        counts = validate_stage_state(state)
+        if counts["verifier"] or counts["transfer"]:
+            raise RSILearningError("rsi_stage_checkpoint_invalid")
+        for row in state["invocations"]:
+            owner = row["identity"].get("owner")
+            if not isinstance(owner, Mapping) or set(owner) != {
+                "run_id", "episode_id", "request_sha256", "phase",
+            } or owner["run_id"] != self.run_id or owner["phase"] not in {"gateway", "verifier"}:
+                raise RSILearningError("rsi_stage_checkpoint_invalid")
+            entry = self.state["episodes"].get(owner["episode_id"])
+            if entry is None or owner["request_sha256"] != digest(entry["request"]):
+                raise RSILearningError("rsi_stage_checkpoint_invalid")
+            if owner["phase"] == "verifier" and not entry["verifier_invocations"]:
+                raise RSILearningError("rsi_stage_checkpoint_invalid")
+            validate_evaluator_intent(row, evaluator_sha256=self.state["config"]["evaluator_sha256"])
+            if row["evidence"] is not None and entry.get("result") is not None:
+                result = entry["result"]
+                if owner["phase"] == "gateway" and result["status"] == "completed" and (
+                    row["evidence"]["receipt_sha256"] != result["official_evaluation_receipt_sha256"]
+                ):
+                    raise RSILearningError("rsi_stage_evaluator_binding_invalid")
+        return counts
 
     @staticmethod
     def _verifier_decision(raw: Mapping[str, Any]) -> VerifierDecision:
@@ -544,7 +590,8 @@ class DurableLearningRun:
         entry["verifier_invocations"].append(intent)
         self._save()
         self.ledger._assert_controller_lock(self.run_id)
-        decision = self.controller.verifier.verify(episode, request, result)
+        with self._stage_scope(request, "verifier"):
+            decision = self.controller.verifier.verify(episode, request, result)
         intent["decision"] = decision.to_dict()
         key = (
             "verifier_decision"
@@ -839,6 +886,7 @@ class DurableLearningRun:
                     "quarantined": [],
                     "reconciliation_ready": False,
                     "budget_state": budget.state,
+                    "stage_accounting": {"invocations": []},
                     "usage_state": {
                         "controller_wall_elapsed_ms": 0,
                         "aggregate": RSIUsageReceipt.observed(
@@ -978,7 +1026,8 @@ class DurableLearningRun:
         if launch:
             self.ledger._assert_controller_lock(self.run_id)
             started_ns = time.monotonic_ns()
-            result = self.controller.gateway.run(request)
+            with self._stage_scope(request, "gateway"):
+                result = self.controller.gateway.run(request)
             wall_elapsed_ms = max(0, (time.monotonic_ns() - started_ns) // 1_000_000)
             self._check_result(request, result)
             receipt = usage_receipt_from(

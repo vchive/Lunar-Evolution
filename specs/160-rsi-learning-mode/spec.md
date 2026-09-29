@@ -91,7 +91,8 @@ This policy never adds a candidate to the solver snapshot. It rejects nonempty i
 and approved/active writes until trusted holdout evidence is connected. Caller-supplied gate scores
 are insufficient. The selected policy is a durable run pin; resume cannot switch it. Existing
 `verifier_snapshot` fixtures keep their protocol behavior and do not establish B2 promotion
-acceptance. Full active retrieval, trusted promotion and automatic transfer regression remain open.
+acceptance. Trusted native promotion and explicit active retrieval now reopen retained panel evidence;
+default DRS/BRS automatic retrieval and automatic transfer regression remain open.
 
 The CLI exposes this opt-in policy as `rsi run --memory-policy candidate-only`; `resume` restores
 the pinned policy. `inspect` reports candidate lifecycle heads using read-only journal validation.
@@ -116,9 +117,10 @@ FILE --expected-record-sha256 DIGEST --expected-intent-sha256 DIGEST`. This mode
 solver-result and worker-state reconciliation. Decision files are bounded regular JSON files with
 an exact schema, including nested checks and duplicate-key rejection.
 
-Evaluator and transfer runtime reservations remain unconnected. Until they are connected, a
-durable controller rejects finite limits for these stages before execution rather than claiming
-to enforce them. Legacy budget checkpoints without stage counters require explicit migration;
+Native evaluator and standalone transfer runtime reservations are connected through explicit
+durable scopes. Controller transfer budgets still require a shared run ledger. A gateway without
+evaluator accounting support rejects a finite evaluator limit before execution. Legacy budget
+checkpoints without stage counters require explicit migration;
 recovery must not invent zero consumption for previously executed work.
 
 - BRS 从同一份 frozen wave memory 启动多个 practice，所有 episode 验证完后才按确定顺序合并。

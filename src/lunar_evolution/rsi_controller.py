@@ -29,11 +29,12 @@ from .rsi_learning import (
     MemoryItem,
     MemorySnapshot,
     PracticeEpisode,
+    ReadOnlyMemorySnapshot,
     RSILearningError,
     TransferReceipt,
     VerifierDecision,
 )
-from .rsi_memory_governance import MemoryScope
+from .rsi_memory_governance import MemoryCompatibility, MemoryScope
 from .rsi_store import RSILedger, RSIRecord
 
 
@@ -185,6 +186,20 @@ class PracticeEpisodeRunner:
         )
 
     def run(self, episode: PracticeEpisode, request: SolverRequest) -> EpisodeExecution:
+        return self._run(episode, request, memory=None)
+
+    def run_with_memory(
+        self, episode: PracticeEpisode, request: SolverRequest, memory: ReadOnlyMemorySnapshot,
+    ) -> EpisodeExecution:
+        """Run through the explicit read-only memory capability of an Actor gateway."""
+        if not isinstance(memory, ReadOnlyMemorySnapshot):
+            raise RSILearningError("rsi_active_memory_snapshot_invalid")
+        return self._run(episode, request, memory=memory)
+
+    def _run(
+        self, episode: PracticeEpisode, request: SolverRequest,
+        *, memory: ReadOnlyMemorySnapshot | None,
+    ) -> EpisodeExecution:
         if episode.status != "planned":
             raise RSILearningError("rsi_episode_runner_requires_planned")
         if (
@@ -196,9 +211,19 @@ class PracticeEpisodeRunner:
             raise RSILearningError("rsi_episode_request_mismatch")
         if request.environment_sha256 != episode.environment_sha256 or request.memory_snapshot_sha256 != episode.memory_snapshot_sha256:
             raise RSILearningError("rsi_episode_request_mismatch")
+        run_with_memory = None
+        if memory is not None:
+            if memory.digest != request.memory_snapshot_sha256:
+                raise RSILearningError("rsi_active_memory_snapshot_mismatch")
+            run_with_memory = getattr(self.gateway, "run_with_memory", None)
+            if not callable(run_with_memory):
+                raise RSILearningError("rsi_active_gateway_memory_api_required")
         running = episode.transition("running", request_sha256=request.digest())
         ledger_head = self._create_running_record(running)
-        result = self.gateway.run(request)
+        if memory is None:
+            result = self.gateway.run(request)
+        else:
+            result = run_with_memory(request, memory)
         if result.request_sha256 != request.digest() or result.episode_id != episode.episode_id:
             raise RSILearningError("rsi_solver_result_identity_mismatch")
         if result.status == "completed":
@@ -402,6 +427,91 @@ class RSILearningController:
     @property
     def snapshot(self) -> MemorySnapshot:
         return self.memory_store.snapshot
+
+    def active_snapshot(
+        self, *, scope: MemoryScope, compatibility: MemoryCompatibility,
+    ) -> ReadOnlyMemorySnapshot:
+        """Inspect a deterministic, scope-bound active selection without changing run memory."""
+        if self.memory_governance is None:
+            raise RSILearningError("rsi_active_memory_governance_required")
+        if not isinstance(scope, MemoryScope) or not isinstance(compatibility, MemoryCompatibility):
+            raise RSILearningError("rsi_memory_retrieval_scope_invalid")
+        items = tuple(sorted(
+            self.memory_governance.active_memories(scope=scope, compatibility=compatibility),
+            key=lambda item: item.memory_id,
+        ))
+        identity = _record_digest({
+            "protocol": "lunar-rsi-active-selection-v1", "scope": scope.to_dict(),
+            "compatibility": compatibility.to_dict(), "items": [item.to_dict() for item in items],
+        })
+        return ReadOnlyMemorySnapshot(MemorySnapshot("rsi-active-" + identity, None, items))
+
+    def run_active_target(
+        self, *, run_id: str, target_id: str, scope: MemoryScope,
+        compatibility: MemoryCompatibility, contract_sha256: str, evaluator_sha256: str,
+        environment_sha256: str, solver_id: str,
+        expected_snapshot_sha256: str | None = None,
+    ) -> EpisodeExecution:
+        """Run one new target with active read-only memory and independent verification.
+
+        This explicit local entry point neither changes the DRS/BRS memory policy nor resumes
+        interrupted work. A retained target ID cannot dispatch again through this API.
+        """
+        _id(run_id, "run_id")
+        _id(target_id, "target_id")
+        if self.ledger is None:
+            raise RSILearningError("rsi_active_target_requires_ledger")
+        if not isinstance(compatibility, MemoryCompatibility):
+            raise RSILearningError("rsi_memory_retrieval_scope_invalid")
+        run_with_memory = getattr(self.gateway, "run_with_memory", None)
+        if not callable(run_with_memory):
+            raise RSILearningError("rsi_active_gateway_memory_api_required")
+        settings = tuple(sorted(self.solver_settings.items()))
+        expected_compatibility = MemoryCompatibility(
+            contract_sha256, evaluator_sha256, environment_sha256, solver_id,
+            _record_digest({"solver_id": solver_id, "settings": settings}),
+        )
+        if compatibility != expected_compatibility:
+            raise RSILearningError("rsi_active_memory_compatibility_mismatch")
+        memory = self.active_snapshot(scope=scope, compatibility=compatibility)
+        if not memory.items:
+            raise RSILearningError("rsi_active_memory_unavailable")
+        if expected_snapshot_sha256 is not None:
+            _digest(expected_snapshot_sha256, "memory_snapshot_sha256")
+            if expected_snapshot_sha256 != memory.digest:
+                raise RSILearningError("rsi_active_memory_snapshot_mismatch")
+        request = SolverRequest.build(
+            episode_id=target_id, contract_sha256=contract_sha256,
+            evaluator_sha256=evaluator_sha256, environment_sha256=environment_sha256,
+            memory_snapshot_sha256=memory.digest, solver_id=solver_id,
+            solver_settings=self.solver_settings,
+            practice_charter={"curriculum_enabled": False, "memory_write_enabled": False,
+                              "memory_policy": "active_readonly", "memory_scope": scope.to_dict()},
+        )
+        episode = PracticeEpisode(
+            target_id, run_id, contract_sha256, evaluator_sha256, environment_sha256,
+            memory.digest, solver_id, "planned", episode_kind="target",
+        )
+        controller = self
+
+        class ActiveGateway:
+            def run_with_memory(self, supplied_request, supplied_memory):
+                # Reopen immediately before dispatch, including changes after the episode's
+                # running intent was persisted. A changed/revoked selection cannot be reused.
+                current = controller.active_snapshot(scope=scope, compatibility=compatibility)
+                if current.digest != supplied_memory.digest or not current.items:
+                    raise RSILearningError("rsi_active_memory_changed_before_launch")
+                return run_with_memory(supplied_request, current)
+
+        # Serialize by target identity rather than run identity. Two callers may choose
+        # different run IDs for the same target; only one may acquire the target's active
+        # snapshot and create its immutable episode intent.
+        with self.ledger.controller_lock("active-target:" + target_id):
+            if self.ledger.get(target_id) is not None:
+                raise RSILearningError("rsi_active_target_already_started")
+            return PracticeEpisodeRunner(ActiveGateway(), self.verifier, self.ledger).run_with_memory(
+                episode, request, memory,
+            )
 
     def _start_run(
         self,

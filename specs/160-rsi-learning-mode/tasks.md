@@ -31,15 +31,19 @@
   `rsi inspect` 输出。缺失的 provider telemetry 保持 `null`；每个 sidecar 绑定原始
   request/result 和 receipt digest，恢复时重新校验。真实 provider 的用量报告仍需独立验收。
 - [ ] T160-13c 将 evaluator、verifier 和 transfer 的子预算及实际用量接入同一 run 账本；
-  已补齐三类限额/计数模型和 verifier 的调用前持久 reservation、intent 与只读 reconcile。
-  evaluator/transfer 尚无统一运行时计量，有限限额在执行前拒绝，不能宣称 A5 全部完成。
-  旧预算 checkpoint 缺少 stage counters 时明确要求迁移，不自动补零。
+  已补齐三类限额/计数模型、verifier 的调用前持久 reservation、intent 与只读 reconcile，
+  并为 native evaluator 和 frozen transfer 增加显式 scope 下的调用前 reservation 与 sidecar。
+  durable controller 的 evaluator scope 已接线；transfer panel 的 `compare(budget=...)` 已接线，
+  但仍缺 controller 与 transfer 共用账本、完整 evaluator/transfer 只读 reconcile 及真实 provider
+  telemetry，因此不能宣称 A5 全部完成。旧预算 checkpoint 缺少 stage counters 时明确要求迁移，
+  不自动补零。
 - [x] T160-13c1 verifier 中断后进入 unknown；只有原 episode/intent 指纹和只读 retained
   evidence 校验均通过才可继续，已完成 decision 不重跑、不重复计费。CLI inspect/reconcile 接通。
 - [ ] T160-13d 将 memory promotion authority 接入 durable ledger 与 controller 检索路径。
   独立模块已实现 observed→verified→candidate→shadow→approved→active→deprecated/revoked/
   quarantined 生命周期、source episode/verifier 绑定和 holdout 门；尚未取代默认 fixture 的
-  verifier-gated snapshot。可信 holdout 晋级、active 检索和自动回归仍开放。
+  verifier-gated snapshot。可信 holdout 晋级已接入 host-configured native promotion evidence 和 durable
+  proof；显式 active retrieval API 已接线，但默认 DRS/BRS 仍不会自动加载 active memory，自动回归仍开放。
 - [x] T160-13d1 增加可选 candidate_only 的持久治理 journal、完整历史/内容/来源复核、CAS、
   部分 nomination 中断恢复和 CLI 展示；候选不进入 solver snapshot，approved/active 写入拒绝。
   策略随 run 固定，已提交候选在恢复时只读校验，证据丢失不得自动重建。

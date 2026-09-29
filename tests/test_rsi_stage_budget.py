@@ -415,3 +415,19 @@ def test_unconnected_finite_stage_budget_fails_before_any_solver_work(tmp_path, 
         first.run_drs(run_id="unconnected", **PINS, budget={f"max_{stage}_invocations": limit})
     assert gateway.requests == [] and verifier.calls == 0
     assert first.ledger.controller_checkpoint("unconnected") is None
+
+
+def test_external_stage_reservation_rolls_back_when_checkpoint_write_fails():
+    from lunar_evolution.rsi_budget import RSIRunBudget
+    from lunar_evolution.rsi_stage_accounting import DurableStageAccounting
+
+    state = {"invocations": []}
+    budget = RSIRunBudget.create({"max_evaluator_invocations": 1}).state
+    def fail_persist():
+        raise RuntimeError("checkpoint unavailable")
+    accounting = DurableStageAccounting(state, budget, fail_persist)
+    with pytest.raises(RuntimeError):
+        accounting.reserve("evaluator", {"episode_id": "ep"})
+    assert state == {"invocations": []}
+    assert budget["consumed"]["evaluator_invocations"] == 0
+    assert budget["remaining"]["evaluator_invocations"] == 1

@@ -46,7 +46,9 @@ The implementation is ready for the next phase only when these provider-free che
   evidence. Saved decisions are reused without another invocation or charge. Pure read-only
   verifier reconciliation consumes no solver retry allowance and cannot revive an exhausted run.
 - Separate evaluator/verifier/transfer counters validate integer types and remaining arithmetic.
-  Finite evaluator/transfer limits are rejected while runtime accounting is unavailable. Complete
+  Native evaluator calls and frozen transfer panels reserve before execution only when an explicit
+  durable stage scope is installed; pending intents remain visible in a sidecar and are never replayed.
+  Controller transfer budgets and external provider telemetry are still unavailable. Complete
   legacy checkpoints without stage counters require migration rather than synthetic zero counts.
 - `RSIUsageReceipt` accepts only complete token triples, non-negative integer measurements, and
   reproducible estimates using receipt-bound micro-USD rates. Missing provider telemetry remains
@@ -95,5 +97,7 @@ budget, usage-sidecar binding and the independent promotion authority. The optio
 nomination recovery, CAS, policy drift, read-only restoration, quarantine and activation rejection.
 `test_rsi_stage_budget.py` covers verifier budget exhaustion, intent interruption and evidence-based
 reconciliation without execution. CLI tests exercise both memory policies and strict retained
-decision input. Active memory retrieval and trusted holdout promotion remain unfinished. None of
-these local checks substitutes for real Actor, provider telemetry, solver campaign or transfer gains.
+decision input. Trusted native holdout promotion and explicit active-memory retrieval are covered
+by host-configured retained-panel evidence; default DRS/BRS automatic retrieval remains disabled.
+None of these local checks substitutes for real Actor, provider telemetry, solver campaign or
+transfer gains.

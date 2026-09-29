@@ -1,5 +1,22 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-29 RSI stage reservations, trusted promotion and active retrieval
+
+Integrated local evaluator/verifier/transfer reservations, retained stage sidecars, accounting
+fail-stop on persistence failure, and independent governance terminal anchors. Removing a later
+candidate/revoke/quarantine record is now detected against the durable high-water mark. Trusted
+native practice/holdout evidence is reopened read-only, bound into a durable promotion proof,
+and checked through candidate → shadow → approved → active. Explicit `active_snapshot` and
+`run_active_target` APIs select compatible active memory, recheck revocation before dispatch,
+and reject duplicate target execution. Default DRS/BRS active-memory loading remains disabled.
+
+Final local RSI plus CLI regression: **679 passed**; targeted Ruff, compileall and diff checks pass.
+No remote evaluator, real campaign or new model request was made. Controller and transfer still
+have separate accounting scopes at this checkpoint; sharing the run ledger is the next slice.
+Production producer egress/credentials/reconcile, automatic parent delivery, real launchers,
+real Actor/campaign acceptance and generalized transfer gains remain open.
+
+
 ## 2026-09-29 Feature 160 durable recovery and candidate governance
 
 Latest pushed commit on `codex/rsi-recovery-integration`: `d7a0e5b` (parent governance history
