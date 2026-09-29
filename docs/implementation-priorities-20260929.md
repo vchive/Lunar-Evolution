@@ -55,6 +55,8 @@ repository and does not reset existing architecture or historical acceptance evi
 - [x] Run local current/archived/frozen release regression and a final affected-module supplement;
   record exact versions, counts and platform skips in `integration-validation-20260929.json`.
 - [ ] Complete Linux/supported-platform CI and merge the reviewed integration to the default branch.
+      The full release workflow now includes macOS/Python 3.12 alongside Linux/Python
+      3.11–3.13. Remote workflow results and the default-branch merge remain pending.
 
 ## P2 — Learning quality and broader orchestration
 
