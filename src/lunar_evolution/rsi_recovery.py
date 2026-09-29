@@ -115,18 +115,21 @@ class DurableLearningRun:
         })
 
     def _check_usage_checkpoint(self, entry: Mapping[str, Any], request: SolverRequest) -> None:
-        if "usage" not in entry or "usage_binding" not in entry:
+        if "usage" not in entry or "usage_digest" not in entry or "usage_binding" not in entry:
             raise RSILearningError("rsi_usage_checkpoint_invalid")
         sidecar = entry["usage"]
+        usage_digest = entry["usage_digest"]
         binding = entry["usage_binding"]
         if sidecar is None:
-            if binding is not None:
+            if usage_digest is not None or binding is not None:
                 raise RSILearningError("rsi_usage_checkpoint_invalid")
             return
         result = entry.get("result")
         if not isinstance(result, Mapping) or type(binding) is not str:
             raise RSILearningError("rsi_usage_checkpoint_invalid")
         receipt = RSIUsageReceipt.from_dict(sidecar)
+        if usage_digest != digest(receipt.to_dict()):
+            raise RSILearningError("rsi_usage_checkpoint_invalid")
         if binding != self._usage_binding(request, result, receipt.to_dict()):
             raise RSILearningError("rsi_usage_checkpoint_invalid")
 
@@ -466,6 +469,7 @@ class DurableLearningRun:
                     "depth": 0, "ancestry": [episode_id], "budget_reserved": False,
                     "reconciliation": None,
                     "usage": None,
+                    "usage_digest": None,
                     "usage_binding": None,
                 }
                 depth, ancestry = self._episode_lineage(episode_id, self.state["episodes"][episode_id])
@@ -511,6 +515,9 @@ class DurableLearningRun:
             with self.mutex:
                 entry["result"] = result.to_dict()
                 entry["usage"] = receipt.to_dict() if receipt is not None else None
+                entry["usage_digest"] = (
+                    digest(entry["usage"]) if entry["usage"] is not None else None
+                )
                 entry["usage_binding"] = (
                     self._usage_binding(request, entry["result"], entry["usage"])
                     if entry["usage"] is not None else None
@@ -843,6 +850,7 @@ class DurableLearningRun:
             # External reconciliation supplies terminal solver evidence but no trustworthy
             # provider meter, so it cannot inherit usage observed for the prior unknown result.
             entry["usage"] = None
+            entry["usage_digest"] = None
             entry["usage_binding"] = None
             entry["episode"] = None
             entry.pop("diagnostic_verifier", None)

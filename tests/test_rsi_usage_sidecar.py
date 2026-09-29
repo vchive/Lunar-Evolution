@@ -127,5 +127,5 @@ def test_external_reconciliation_does_not_reuse_unknown_provider_usage(tmp_path)
     assert result.status == "failed"
     checkpoint = first.ledger.controller_checkpoint("reconciled-sidecar")[1]
     entry = checkpoint["episodes"]["reconciled-sidecar-target-0"]
-    assert entry["usage"] is entry["usage_binding"] is None
+    assert entry["usage"] is entry["usage_digest"] is entry["usage_binding"] is None
     assert checkpoint["usage_state"]["aggregate"]["request_count"] is None
