@@ -1,11 +1,11 @@
 # Validation: RSI learning mode
 
-This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **438 tests**,
-with no failures or skips (`/tmp/lunar-rsi-callback-release01.xml`). The run includes DRS/BRS callback
+This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **467 tests**,
+with no failures or skips (`/tmp/lunar-rsi-next.xml`). The run includes DRS/BRS callback
 crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery and append-only
 unknown receipt failure settlement. Ruff, compileall and `git diff --check` passed.
-An isolated export of the staged source also passed all **438 tests**
-(`/tmp/lunar-rsi-callback-index.xml`), Ruff, compilation and an import check of every public API
+An isolated export of the staged source also passed all **467 tests**
+(`/tmp/lunar-rsi-staged.xml`), Ruff, compilation and an import check of every public API
 export. Unrelated, uncommitted producer changes were absent from that source snapshot.
 A passing fixture matrix is not evidence that every external worker or callback recovery path has
 been implemented.
@@ -22,8 +22,11 @@ been implemented.
 
 ## Verifier and transfer
 
-- The local verifier checks request identity, worker outcome and required receipt bindings. These
-  fixtures do not reopen artifacts in a clean workspace or rerun an independent official evaluator.
+- The local verifier checks request identity, worker outcome and required receipt bindings. The
+  provider-free clean-room verifier additionally reopens candidate source/dependencies in an
+  isolated temporary workspace, recomputes source/task/evaluator identities, detects workspace
+  mutation, and fails closed on timeout, exception or untrusted evidence. It is not an official
+  evaluator or a hard process kill boundary.
 - Actor traces expose bounded public observations rather than private reasoning. Isolation and
   artifact validation by a real verifier remain separate acceptance work.
 - Frozen transfer runs with `curriculum_enabled=false` and `memory_write_enabled=false`; an attempted
@@ -76,6 +79,12 @@ been implemented.
   were rerun in this RSI-focused round.
 - Mock, Native Population, OpenEvolve fixture and Shinka export fixture can each be invoked through
   `SolverGateway` without gaining direct RSI memory access.
+- The adapter contract exposes one lifecycle and receipt vocabulary for those fixtures. Adapter
+  capabilities cannot enable direct memory writes; timeout, cancellation and unknown outcomes stay
+  terminal and recovery is explicit.
+- Memory admission is a separate append-only SQLite control plane. Only a passing episode with a
+  verifier receipt can reach candidate state; holdout and baseline regression evidence are required
+  before approval/activation, and compatibility drift or revocation makes retrieval fail closed.
 - Ruff, compileall and focused Feature 160 tests pass without provider credentials or WebAgent.
 
 ## Local regression entry points
@@ -104,6 +113,9 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | DRS/BRS callback crash, reconcile, budget reservation and old-version migration | `test_rsi_controller_callbacks.py` |
 | CLI callback inspection, strict input admission and explicit continuation | `test_rsi_callback_cli.py` |
 | Transfer callback/receipt reconciliation and atomic failure settlement | `test_rsi_transfer_reconcile.py` |
+| Clean-room source/dependency reopen, evaluator identity and contamination gates | `test_rsi_cleanroom.py` |
+| Memory admission lifecycle, CAS transitions and promotion/revocation gates | `test_rsi_memory_governance.py` |
+| Unified solver adapter lifecycle, budget/deadline and terminal receipt contract | `test_rsi_adapter_contract.py` |
 | Existing local protocol, actor, CLI and backend fixtures | Remaining `test_rsi_*.py` tests |
 
 The CLI diagnostics only use local fixture solver IDs and persist to `rsi.sqlite3`; they do not
@@ -118,8 +130,9 @@ constitute evidence for real OpenEvolve, Shinka, OSWorld, or remote evaluator pe
   This round implements explicit failure settlement only, not unknown-to-passed publication.
 - Real producer launch/ownership/heartbeat, cancellation/cleanup and unknown-worker inspection;
   real OpenEvolve/Shinka/native campaigns and provider performance.
-- A clean-room verifier that reopens candidate inputs/dependencies and independently runs an
-  official evaluator; memory promotion/holdout and transfer quality regression.
+- A real Actor environment runner and independently trusted official evaluator; the local
+  clean-room verifier and memory governance control plane are provider-free building blocks, not
+  external authenticity or model-quality evidence.
 - Solver→RSI recursive execution and nested budget propagation. Depth/cycle and unknown-retry
   budget primitives must not be described as a completed nested scheduler.
 - Real request/token/CPU/GPU/cost accounting. Control-plane reservations are not measured provider

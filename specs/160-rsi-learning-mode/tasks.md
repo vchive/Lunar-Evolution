@@ -13,7 +13,7 @@
   wave evidence 并阻止合并；全链路 DRS fixture 回归通过。
 - [x] T160-10 增加显式本地 CLI/诊断/恢复入口（`rsi run|inspect|reconcile`）；controller 恢复见 T160-13，真实 solver adapter 和 LLM curriculum 不在本轮验收范围。
 - [x] T160-11 将 candidate source、dependency、actor/solver fingerprint 和 bounded public action/tool/observation trace 纳入 episode evidence；MemoryItem 增加 condition/action/observed-result/applicability 因果投影。
-- [ ] T160-12 接入真实 Actor environment runner，并由独立 verifier 重开和校验 evaluator receipt；provider-free fixture 不得替代该验收。
+- [x] T160-12 增加 provider-free clean-room verifier MVP：候选源/依赖在隔离 workspace 重开，重算 evaluator/source/task 指纹，检测 workspace 修改并对超时、异常和不可信证据 fail-closed；真实 Actor environment runner 和官方 evaluator 仍待接入。
 - [ ] T160-13 增加 durable controller-level resume、unknown reconcile gate 和 diversity/failure-boundary curriculum policy。
   - [x] 阶段 1 基础：append-only run/episode ledger、controller lock、CAS/hash-chain checkpoint、immutable request/result wire 和 evidence-bound episode reconcile。
   - [x] 阶段 1 控制流实现：v2 checkpoint 持久化 DRS/BRS plan、launch intent、curriculum decision、execution、judgment、memory snapshot 和预算；恢复可进入原计划中后续尚未启动的 episode。
@@ -26,6 +26,8 @@
   - [x] 阶段 1 unknown transfer 失败处置：worker 已显式 settle 为失败/取消/超时/放弃后，`reconcile_receipt` 原子追加 failed revision 与 checkpoint；保留旧 unknown 收据和原始 worker result，禁止通用 transition 绕过。
   - [ ] 后续真实接线：上述对账采用可信本地证据；外部来源真实性、worker ownership 和外部幂等协议仍需 adapter 验收。unknown→passed 需要独立可信完成证据协议，本轮不得从 unknown 声明推导成功。
   - [ ] 阶段 2：diversity/failure-boundary curriculum policy（仍待实现）。
+- [x] T160-14 增加独立 memory admission governance 控制面：append-only admission history、CAS 状态转移、verifier/pass、holdout/baseline regression gate、compatibility drift 和 revoke fail-closed；不修改只读 RSIMemoryStore。
+- [x] T160-15 统一 provider-free solver adapter contract：生命周期、request pins、预算/deadline、terminal status、recovery 和 ownership receipt；OpenEvolve/Shinka 仅声明 fixture capability，不启动真实项目。
 
 ## 本轮边界
 
