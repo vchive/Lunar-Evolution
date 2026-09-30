@@ -77,12 +77,13 @@ def test_recovery_keeps_unclosed_request_uncertain(tmp_path):
     ("kwargs", "code"),
     [
         ({"deadline_ns": 0}, "producer_broker_recovery_input_invalid"),
-        ({"deadline_ns": time.monotonic_ns() + 5_000_000_000, "expected_journal_sha256": "z" * 64},
+        ({"expected_journal_sha256": "z" * 64},
          "producer_broker_recovery_digest_invalid"),
     ],
 )
 def test_recovery_rejects_invalid_boundary_inputs(tmp_path, kwargs, code):
     identity = _identity()
+    kwargs = {"deadline_ns": time.monotonic_ns() + 5_000_000_000, **kwargs}
     with pytest.raises(ProducerBrokerIpcError) as exc:
         recover_producer_broker_observation(tmp_path / "missing", identity=identity, **kwargs)
     assert exc.value.code == code

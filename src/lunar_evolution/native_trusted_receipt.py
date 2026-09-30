@@ -223,6 +223,7 @@ def build_native_trusted_execution_receipt(
                 **({
                     "broker_journal_relative_path": broker["journal_relative_path"],
                     "broker_journal_identity": broker["journal_identity"],
+                    "broker_journal_file_identity": broker["journal_file_identity"],
                     "broker_journal_sha256": broker["journal_sha256"],
                     "broker_journal_bytes": broker["journal_bytes"],
                     "broker_admitted_count": broker["admitted_count"],

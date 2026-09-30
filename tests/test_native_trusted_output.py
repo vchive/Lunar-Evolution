@@ -357,10 +357,14 @@ def test_prepares_output_from_actual_native_trusted_attempt(
         assert broker_evidence["coverage"] == "brokered_requests_only"
         assert set(broker_evidence) == {
             "journal_relative_path", "journal_identity", "journal_sha256", "journal_bytes",
-            "admitted_count", "complete", "declared_count_matches", "coverage",
+            "journal_file_identity", "admitted_count", "complete", "declared_count_matches", "coverage",
         }
         assert broker_evidence["journal_identity"]["launch_id"] == intent.launch_id
         assert broker_evidence["journal_identity"]["journal_id"] == intent.journal_id
+        assert process.broker_observation is not None
+        assert broker_evidence["journal_file_identity"] == list(
+            process.broker_observation.journal_file_identity,
+        )
     else:
         assert broker_evidence is None
     result = prepare_native_trusted_output(
@@ -408,7 +412,15 @@ def test_prepares_output_from_actual_native_trusted_attempt(
         capture_path.write_text(
             json.dumps(capture, sort_keys=True, separators=(",", ":")), encoding="utf-8",
         )
-        with (batch / ".host-request-journal" / "requests").open("ab") as journal:
+        journal_path = batch / ".host-request-journal" / "requests"
+        replacement = journal_path.with_name("replacement")
+        replacement.write_bytes(journal_path.read_bytes())
+        replacement.chmod(0o600)
+        journal_path.unlink()
+        replacement.rename(journal_path)
+        with pytest.raises(NativeTrustedCaptureError, match="native_trusted_capture_broker_invalid"):
+            recover_native_trusted_output_capture(batch, intent=intent, terminal=terminal)
+        with journal_path.open("ab") as journal:
             journal.write(b"tampered\n")
     else:
         (batch / "output" / "pkg" / "helper.py").write_text("VALUE = 2\n", encoding="utf-8")

@@ -46,7 +46,7 @@ _ENVELOPE_EVIDENCE_FIELDS = frozenset(
 _BROKER_EVIDENCE_FIELDS = frozenset(
     {
         "journal_relative_path", "journal_identity", "journal_sha256", "journal_bytes",
-        "admitted_count", "complete", "declared_count_matches", "coverage",
+        "journal_file_identity", "admitted_count", "complete", "declared_count_matches", "coverage",
     }
 )
 
@@ -165,6 +165,13 @@ def _validate_broker_evidence_shape(value: object) -> dict[str, object]:
     if value.get("journal_relative_path") != ".host-request-journal/requests":
         raise NativeTrustedCaptureError("native_trusted_capture_broker_invalid")
     if type(value.get("journal_sha256")) is not str or _SHA256.fullmatch(value["journal_sha256"]) is None:
+        raise NativeTrustedCaptureError("native_trusted_capture_broker_invalid")
+    file_identity = value.get("journal_file_identity")
+    if (
+        type(file_identity) is not list
+        or len(file_identity) != 2
+        or any(type(item) is not int or item < 0 for item in file_identity)
+    ):
         raise NativeTrustedCaptureError("native_trusted_capture_broker_invalid")
     for field in ("journal_bytes", "admitted_count"):
         item = value.get(field)
@@ -297,6 +304,8 @@ def capture_native_trusted_output(
             or recovered.snapshot != broker.snapshot
             or recovered.journal_sha256 != broker.journal_sha256
             or recovered.journal_bytes != broker.journal_bytes
+            or broker.journal_file_identity is not None
+            and recovered.journal_file_identity != broker.journal_file_identity
             or recovered.snapshot.coverage != "brokered_requests_only"
         ):
             raise NativeTrustedCaptureError("native_trusted_capture_broker_invalid")
@@ -305,6 +314,7 @@ def capture_native_trusted_output(
             "journal_identity": broker.journal_identity.to_dict(),
             "journal_sha256": recovered.journal_sha256,
             "journal_bytes": recovered.journal_bytes,
+            "journal_file_identity": list(recovered.journal_file_identity),
             "admitted_count": recovered.snapshot.admitted_count,
             # ``complete`` is only host-observed coverage.  A declaration/count
             # mismatch is retained as diagnostic evidence but cannot be called
@@ -398,6 +408,7 @@ def recover_native_trusted_output_capture(
             identity = _validate_broker_identity(broker["journal_identity"], intent)
             recovered = read_host_request_journal(
                 batch / ".host-request-journal" / "requests", expected_identity=identity,
+                expected_file_identity=tuple(broker["journal_file_identity"]),
             )
         except (KeyError, TypeError, ValueError, ProducerRequestTransportError) as exc:
             raise NativeTrustedCaptureError("native_trusted_capture_broker_invalid") from exc
@@ -405,6 +416,7 @@ def recover_native_trusted_output_capture(
             recovered.snapshot.coverage != "brokered_requests_only"
             or broker.get("journal_sha256") != recovered.journal_sha256
             or broker.get("journal_bytes") != recovered.journal_bytes
+            or broker.get("journal_file_identity") != list(recovered.journal_file_identity)
             or broker.get("admitted_count") != recovered.snapshot.admitted_count
             or (broker["complete"] and (
                 not recovered.snapshot.within_broker_limits

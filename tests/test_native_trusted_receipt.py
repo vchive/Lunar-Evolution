@@ -102,6 +102,8 @@ def test_native_receipt_persistence_creates_formal_receipt(tmp_path: Path, monke
     assert receipt.trusted_execution is not None
     assert receipt.trusted_execution["broker_coverage"] == "brokered_requests_only"
     assert receipt.trusted_execution["broker_journal_relative_path"] == ".host-request-journal/requests"
+    assert len(receipt.trusted_execution["broker_journal_file_identity"]) == 2
+    assert all(isinstance(item, int) and item >= 0 for item in receipt.trusted_execution["broker_journal_file_identity"])
     assert receipt.trusted_execution["broker_journal_sha256"]
     assert receipt.trusted_execution["broker_journal_bytes"] > 0
     assert receipt.trusted_execution["broker_admitted_count"] == receipt.request_count
