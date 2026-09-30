@@ -274,11 +274,7 @@ def recover_producer_broker_observation(
     The optional digest and byte count let a retained execution receipt bind the replay to the
     exact journal that was captured before the process stopped.
     """
-    if (
-        not isinstance(identity, HostRequestJournalIdentity)
-        or type(deadline_ns) is not int
-        or deadline_ns <= time.monotonic_ns()
-    ):
+    if not isinstance(identity, HostRequestJournalIdentity) or type(deadline_ns) is not int:
         raise ProducerBrokerIpcError("producer_broker_recovery_input_invalid")
     if expected_journal_sha256 is not None and (
         type(expected_journal_sha256) is not str or len(expected_journal_sha256) != 64
@@ -295,6 +291,8 @@ def recover_producer_broker_observation(
         or any(type(item) is not int or item < 0 for item in expected_journal_file_identity)
     ):
         raise ProducerBrokerIpcError("producer_broker_recovery_file_identity_invalid")
+    if deadline_ns <= time.monotonic_ns():
+        raise ProducerBrokerIpcError("producer_broker_recovery_input_invalid")
     path = Path(journal_path).expanduser().absolute()
     try:
         recovered = read_host_request_journal(

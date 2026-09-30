@@ -1,5 +1,20 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Broker journal recovery and scheduler boundary hardening
+
+当前 feature 分支已推送 `2248cf7`、`816c283` 和 `2a9f16d`。scheduler 在消耗一次性
+attestation 前拒绝 NaN、无穷大和其他非法 `parent_deadline`，并保留 cancellation/deadline
+向 native attempt 的原样传播。Feature 157 broker 增加只读
+`recover_producer_broker_observation()`：它在调用方 deadline 内重放 controller-owned journal，
+绑定 journal digest、字节数以及打开文件的 device/inode，拒绝 same-content replacement、
+partial append、非法 descriptor handoff 和无效 HTTP 状态；活动或超时请求保持
+`recovery_required`，不会重开 journal、重试 provider 请求或恢复 producer。
+
+本轮 focused broker/request/native scheduler 回归、Ruff、compileall 和 diff check 均通过。
+这些是 T157-05/T157-06 的 supporting evidence，仍未完成完整 egress coverage、跨进程生产
+scheduler/launcher、Feature 156 正式生命周期接线和真实 OpenEvolve/Shinka campaign；当前仍只
+使用本地 fixture，不运行 WebAgent、远程 evaluator 或公司评测平台。
+
 ## 2026-10-01 Native trusted scheduler and read-only recovery supporting slice
 
 新增 `src/lunar_evolution/native_trusted_scheduler.py`，提供两个明确的本地 supporting
