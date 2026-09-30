@@ -15,6 +15,7 @@ import selectors
 import subprocess
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -266,10 +267,10 @@ def persist_native_trusted_stream_capture(
 
 def recover_native_trusted_stream_capture(
     batch: str | Path, *, intent: ProducerLaunchIntent,
-    terminal: dict[str, object],
+    terminal: Mapping[str, object],
 ) -> dict[str, object]:
     """Validate a stream sidecar and its binding to the supplied attempt."""
-    if not isinstance(intent, ProducerLaunchIntent) or not isinstance(terminal, dict):
+    if not isinstance(intent, ProducerLaunchIntent) or not isinstance(terminal, Mapping):
         raise NativeTrustedStreamError("native_trusted_stream_context_invalid")
     try:
         record = _read_durable_json(Path(batch) / _NAME, code="native_trusted_stream_invalid")
