@@ -4723,3 +4723,15 @@ warning。没有运行 provider、WebAgent、外部 producer 或真实 campaign�
 T158-04 仍未闭合：正式 Feature 156 `execution-receipt.json`、native terminal 与 broker journal
 的生产绑定、publication admission、scheduler 接线以及 post-crash owner-checked cleanup/
 recovery 仍待实现。
+
+## 2026-09-30 Native execution-audit sidecar
+
+在不复用正式 `execution-receipt.json` 的前提下，增加了可选的
+`native-trusted-execution-audit.json` create-only sidecar。只有 process terminal、同一 attempt
+的 output capture、deadline sidecar 和 registration 全部重新验证后才会写入；记录并绑定
+launch/intent/attestation、registration、deadline、terminal、capture 摘要和 broker coverage，
+固定 `publication_eligible=false`。缺少 capture、重复写入或任何证据篡改都不会得到 sidecar。
+
+新增回归覆盖完整摘要链、create-only 冲突和 process-only 拒绝写入，并同步 Feature 158
+data-model/tasks/validation。该 sidecar 只是后续正式接线的只读投影，不能替代 Feature 156
+execution receipt，也不改变 scheduler、publication 或外部 producer admission。

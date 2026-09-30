@@ -17,6 +17,7 @@ from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
 from lunar_evolution.native_trusted_attempt import (
     NativeTrustedAttemptError,
     audit_native_trusted_lifecycle,
+    persist_native_trusted_lifecycle_audit,
     recover_native_trusted_attempt,
     run_native_trusted_attempt,
 )
@@ -295,6 +296,47 @@ def test_audit_native_lifecycle_rejects_tampered_broker_journal(
     )
     assert audit["status"] == "recovery_required"
     assert audit["reason"] == "native_trusted_capture_broker_invalid"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_persist_native_lifecycle_audit_is_create_only_and_chain_bound(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    capture = _materialize_valid_capture(batch, intent, terminal)
+    audit = persist_native_trusted_lifecycle_audit(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert audit["protocol"] == "lunar-native-trusted-execution-audit-v1"
+    assert audit["terminal_sha256"] == terminal["terminal_sha256"]
+    assert audit["capture_sha256"] == capture["capture_sha256"]
+    assert audit["deadline_sha256"]
+    assert audit["publication_eligible"] is False
+    with pytest.raises(NativeTrustedAttemptError) as conflict:
+        persist_native_trusted_lifecycle_audit(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert conflict.value.code == "native_trusted_lifecycle_audit_write_unknown"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_persist_native_lifecycle_audit_requires_verified_capture(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        persist_native_trusted_lifecycle_audit(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert failure.value.code == "native_trusted_lifecycle_audit_not_verified"
+    assert not (batch / "native-trusted-execution-audit.json").exists()
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")

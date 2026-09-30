@@ -79,6 +79,8 @@ _RECOVERY_PROTOCOL = "lunar-native-trusted-process-recovery-v1"
 _RECOVERY_NAME = "native-trusted-process-recovery.json"
 _DEADLINE_PROTOCOL = "lunar-native-trusted-attempt-deadline-v1"
 _DEADLINE_NAME = "native-trusted-attempt-deadline.json"
+_AUDIT_PROTOCOL = "lunar-native-trusted-execution-audit-v1"
+_AUDIT_NAME = "native-trusted-execution-audit.json"
 _CLEANUP_RESERVE_SECONDS = 0.25
 _TERMINAL_FIELDS = frozenset({
     "schema_version", "protocol", "launch_id", "journal_id", "run_id",
@@ -1086,6 +1088,11 @@ def audit_native_trusted_lifecycle(
     result: dict[str, object] = {
         "status": "process_only", "reason": "native_trusted_lifecycle_process_verified",
         "launch_id": intent.launch_id, "journal_id": intent.journal_id,
+        "launch_sha256": terminal.get("launch_sha256"),
+        "intent_sha256": terminal.get("intent_sha256"),
+        "attestation_sha256": terminal.get("attestation_sha256"),
+        "registration_sha256": terminal.get("registration_sha256"),
+        "deadline_sha256": None,
         "terminal_sha256": terminal.get("terminal_sha256"),
         "output_capture_sha256": None, "broker_coverage": "not_observed",
         "publication_eligible": False,
@@ -1102,6 +1109,13 @@ def audit_native_trusted_lifecycle(
         result["reason"] = "native_trusted_lifecycle_process_terminal_unpublishable"
         return result
     batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    try:
+        deadline = _read_deadline(batch, terminal)
+    except NativeTrustedAttemptError:
+        result["status"] = "recovery_required"
+        result["reason"] = "native_trusted_recovery_deadline_invalid"
+        return result
+    result["deadline_sha256"] = deadline["deadline_sha256"]
     capture_path = batch / "native-trusted-output-capture.json"
     try:
         os.lstat(capture_path)
@@ -1138,7 +1152,48 @@ def audit_native_trusted_lifecycle(
     return result
 
 
+def persist_native_trusted_lifecycle_audit(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+) -> dict[str, object]:
+    """Persist a create-only, publication-ineligible cross-record audit sidecar."""
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    if audit.get("reason") != "native_trusted_lifecycle_capture_verified":
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_not_verified")
+    required = (
+        "launch_sha256", "intent_sha256", "attestation_sha256", "registration_sha256",
+        "deadline_sha256", "terminal_sha256", "output_capture_sha256",
+    )
+    if any(not isinstance(audit.get(key), str) for key in required):
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_context_invalid")
+    record: dict[str, object] = {
+        "schema_version": "1", "protocol": _AUDIT_PROTOCOL,
+        "launch_id": audit["launch_id"], "journal_id": audit["journal_id"],
+        "launch_sha256": audit["launch_sha256"], "intent_sha256": audit["intent_sha256"],
+        "attestation_sha256": audit["attestation_sha256"],
+        "registration_sha256": audit["registration_sha256"],
+        "deadline_sha256": audit["deadline_sha256"],
+        "terminal_sha256": audit["terminal_sha256"],
+        "capture_sha256": audit["output_capture_sha256"],
+        "broker_coverage": audit["broker_coverage"],
+        "publication_eligible": False,
+    }
+    record["audit_sha256"] = _digest_without(record, "audit_sha256")
+    batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    try:
+        _atomic_json(batch / _AUDIT_NAME, record, exclusive=True)
+        stored = _read_durable_json(batch / _AUDIT_NAME, code="native_trusted_lifecycle_audit_write_unknown")
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_write_unknown") from exc
+    if stored != record:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_write_unknown")
+    return record
+
+
 __all__ = [
     "NativeTrustedAttemptError", "NativeTrustedAttemptObservation",
-    "audit_native_trusted_lifecycle", "recover_native_trusted_attempt", "run_native_trusted_attempt",
+    "audit_native_trusted_lifecycle", "persist_native_trusted_lifecycle_audit",
+    "recover_native_trusted_attempt", "run_native_trusted_attempt",
 ]

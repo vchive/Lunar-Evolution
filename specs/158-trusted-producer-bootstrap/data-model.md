@@ -64,6 +64,13 @@ cleanup is verified; otherwise the attempt remains `unknown`/`recovery_required`
 runtime controls, not launch/attestation identities, and are not allowed to widen budgets or
 authorize a replay.
 
+When the process terminal and same-attempt output capture both verify, an optional
+`native-trusted-execution-audit.json` sidecar may be created exactly once. It binds the launch,
+intent, attestation, formal registration, retained deadline, process terminal, and output-capture
+digests, records broker coverage, and fixes `publication_eligible=false`. This sidecar is a
+read-only lifecycle audit projection; it is not Feature 156's `execution-receipt.json` and cannot
+authorize publication or recovery signals.
+
 When cancellation is observed after the gate and target start, the native attempt may persist the
 same process-only terminal schema with `process_status=cancelled` and `exit_code=null`. The receipt
 continues to bind registration, handoff, and the exact bootstrap evidence digest; unknown evidence

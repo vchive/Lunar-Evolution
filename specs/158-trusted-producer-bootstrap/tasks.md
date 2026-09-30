@@ -50,6 +50,12 @@
   never mistaken for a process terminal. This adds lifecycle observability only and does not
   publish output, authorize cleanup, or close the formal Feature 156 receipt path.
 
+  A verified audit can now be persisted once as
+  `native-trusted-execution-audit.json`. The create-only sidecar binds the terminal, capture,
+  retained deadline, registration, launch, intent, and attestation digests and records broker
+  coverage while forcing `publication_eligible=false`. It is an explicit projection for later
+  integration; it is not the formal `execution-receipt.json` and does not widen admission.
+
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This

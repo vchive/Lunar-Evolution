@@ -33,6 +33,12 @@ unknown records are classified as `recovery_required` before any output read. Th
 provider-free and publication-ineligible until Feature 156's formal execution receipt and
 recovery path consume the same records.
 
+The verified audit can also be persisted once as a digest-only
+`native-trusted-execution-audit.json` sidecar. Focused coverage checks its terminal/capture/deadline
+chain, create-only behavior, and refusal to write when output capture is absent. The sidecar is
+publication-ineligible and deliberately remains separate from Feature 156's formal execution
+receipt until trusted stream, envelope, broker, and recovery evidence are integrated.
+
 ## Native pre-gate handoff reread (2026-09-28)
 
 The native attempt now uses the formal read-only observer under its existing deadline before
