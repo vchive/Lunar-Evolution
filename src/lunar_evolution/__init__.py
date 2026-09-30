@@ -613,6 +613,12 @@ from .rsi_adapters import (
     fixture_solver_gateway,
 )
 from .rsi_budget import RSIRunBudget
+from .rsi_cleanroom_admission import (
+    CleanRoomAdmissionError,
+    CleanRoomAdmissionGate,
+    CleanRoomAdmissionRequest,
+    admit_cleanroom_verdict,
+)
 from .rsi_controller import (
     Curriculum,
     CurriculumDecision,
@@ -893,6 +899,9 @@ __all__ = [
     "CandidateWorkspaceError",
     "CandidateWorkspacePlan",
     "Checkpoint",
+    "CleanRoomAdmissionError",
+    "CleanRoomAdmissionGate",
+    "CleanRoomAdmissionRequest",
     "CommandAgentAdapter",
     "CommandCandidateEvaluator",
     "CommandCandidateGenerator",
@@ -1141,6 +1150,7 @@ __all__ = [
     "admit_benchmark_task_envelope",
     "admit_candidate_execution",
     "admit_candidate_execution_admission",
+    "admit_cleanroom_verdict",
     "admit_openevolve_result",
     "admit_producer_envelope",
     "admit_producer_result",
