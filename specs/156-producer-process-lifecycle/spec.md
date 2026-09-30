@@ -34,6 +34,7 @@ This feature covers:
 * no-shell process creation with a new process session and exact PID/PGID ownership;
 * a registration-before-work gate and durable launch receipt;
 * monotonic wall-clock and request/output ceilings, with no budget reset;
+* caller-owned cancellation observed during capture and process wait, with bounded cleanup;
 * bounded, concurrent stdout/stderr capture;
 * no-follow output-envelope reads with byte, size, inode, and digest rechecks;
 * owner-checked SIGTERM/SIGKILL process-group cleanup using the existing primitives; and
@@ -140,10 +141,15 @@ that deadline. A request counter is observed from the bounded producer envelope;
 negative, contradictory, or over-limit counters produce `failed` when observed deterministically
 and `unknown` when observation itself is incomplete.
 
-Wall-clock expiry causes an owner-checked SIGTERM followed by bounded SIGKILL escalation through
+Wall-clock expiry or an observed caller cancellation causes an owner-checked SIGTERM followed by bounded SIGKILL escalation through
 `process_ownership.cleanup_registered_process`. The process group is probed after each step. If
 ownership or liveness cannot be proven, the result is `unknown`/`recovery_required`; no signal is
 sent to a reused PID or PGID and no replacement launch is attempted.
+
+The optional `cancelled` callback is process-local authority supplied by the caller. It is checked
+before launch, after durable registration, during nonblocking stdout/stderr capture, and while
+waiting for the leader. A callback that raises or returns a non-boolean value fails closed. A
+verified cleanup produces one durable `cancelled` receipt; uncertain cleanup remains `unknown`.
 
 ## Bounded output capture
 

@@ -776,6 +776,13 @@ def _stream_evidence(name: str, state: dict[str, object]) -> ProducerStreamEvide
     )
 
 
+def _empty_stream_evidence(name: str) -> ProducerStreamEvidence:
+    return ProducerStreamEvidence(
+        stream=name, bytes_observed=0, sha256=hashlib.sha256(b"").hexdigest(),
+        truncated=False, capture_status="complete",
+    )
+
+
 def _capture(
     process: subprocess.Popen[bytes],
     *,
@@ -783,6 +790,7 @@ def _capture(
     deadline: float,
     monotonic: Callable[[], float],
     on_exited_leader: Callable[[], bool] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[ProducerStreamEvidence, ProducerStreamEvidence, bool, bool]:
     selector = selectors.DefaultSelector()
     states: dict[str, dict[str, object]] = {
@@ -798,6 +806,8 @@ def _capture(
     exited_leader_handled = False
     try:
         while True:
+            if cancel_check is not None and cancel_check():
+                break
             leader_exited = process.poll() is not None
             if not selector.get_map() and leader_exited:
                 break
@@ -932,6 +942,19 @@ def _remaining_timeout(deadline: float, monotonic: Callable[[], float]) -> float
     return max(0.0, deadline - monotonic())
 
 
+def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
+    """Observe caller cancellation without allowing a faulty callback to escape ambiguity."""
+    if cancelled is None:
+        return False
+    try:
+        value = cancelled()
+    except Exception as exc:
+        raise ProducerProcessError("producer_process_cancellation_unknown") from exc
+    if not isinstance(value, bool):
+        raise ProducerProcessError("producer_process_cancellation_invalid")
+    return value
+
+
 def _run_producer_process(
     workspace: str | Path,
     *,
@@ -942,12 +965,17 @@ def _run_producer_process(
     expected_parent_task_id: str | None = None,
     expected_task_id: str | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] | None = None,
     popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
     recovery_lock_identity: tuple[int, int],
 ) -> ProducerExecutionReceipt:
     """Run one exact producer attempt and return a durable terminal receipt."""
     if not isinstance(intent, ProducerLaunchIntent):
         _fail("producer_process_intent_invalid")
+    if cancelled is not None and not callable(cancelled):
+        _fail("producer_process_cancellation_invalid")
+    if _observe_cancellation(cancelled):
+        _fail("producer_process_cancelled")
     deadline = monotonic() + float(intent.wall_timeout_seconds)
     try:
         verify_producer_launch_attestation(intent, attestation)
@@ -1022,6 +1050,8 @@ def _run_producer_process(
     registration_digest = ""
     registration: RegisteredProcess | None = None
     try:
+        if _observe_cancellation(cancelled):
+            _fail("producer_process_cancelled")
         if monotonic() >= deadline:
             _fail("producer_process_wall_timeout")
         env = {"PATH": os.defpath, "LANG": "C", GATE_ENV: str(gate_read)}
@@ -1096,6 +1126,16 @@ def _run_producer_process(
         registration_payload["registration_sha256"] = _digest_without(registration_payload, "registration_sha256")
         _atomic_json(batch / "process-registration.json", registration_payload, exclusive=True)
         registration_digest = str(registration_payload["registration_sha256"])
+        if _observe_cancellation(cancelled):
+            cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+            verified = cleanup_result.status in {ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED}
+            return _persist_receipt(
+                batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                process.pid, pgid, gate_released, _empty_stream_evidence("stdout"),
+                _empty_stream_evidence("stderr"), None, cleanup_result,
+                "cancelled" if verified else "unknown",
+                None if verified else "producer_process_cleanup_unknown",
+            )
         if monotonic() >= deadline:
             _fail("producer_process_wall_timeout")
         os.write(gate_write, b"1")
@@ -1111,10 +1151,28 @@ def _run_producer_process(
                 ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED,
             }
 
+        cancellation_observed = False
+
+        def observe_capture_cancellation() -> bool:
+            nonlocal cancellation_observed
+            cancellation_observed = _observe_cancellation(cancelled)
+            return cancellation_observed
+
         stdout, stderr, overflow, timed_out = _capture(
             process, limit=intent.output_max_bytes, deadline=deadline, monotonic=monotonic,
-            on_exited_leader=cleanup_exited_leader,
+            on_exited_leader=cleanup_exited_leader, cancel_check=observe_capture_cancellation,
         )
+        if cancellation_observed:
+            cleanup_result = exited_leader_cleanup or _cleanup(
+                registration, process, deadline=deadline, monotonic=monotonic,
+            )
+            verified = cleanup_result.status in {ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED}
+            return _persist_receipt(
+                batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                process.pid, pgid, gate_released, stdout, stderr, None, cleanup_result,
+                "cancelled" if verified else "unknown",
+                None if verified else "producer_process_cleanup_unknown",
+            )
         if exited_leader_cleanup is not None and exited_leader_cleanup.status not in {
             ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED,
         }:
@@ -1143,14 +1201,29 @@ def _run_producer_process(
                 batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot, process.pid, pgid,
                 gate_released, stdout, stderr, None, cleanup_result, status, failure,
             )
-        try:
-            exit_code = process.wait(timeout=_remaining_timeout(deadline, monotonic))
-        except subprocess.TimeoutExpired:
-            cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
-            return _persist_receipt(
-                batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot, process.pid, pgid,
-                gate_released, stdout, stderr, None, cleanup_result, "unknown", "producer_process_wall_timeout",
-            )
+        while True:
+            if _observe_cancellation(cancelled):
+                cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+                verified = cleanup_result.status in {ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED}
+                return _persist_receipt(
+                    batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                    process.pid, pgid, gate_released, stdout, stderr, None, cleanup_result,
+                    "cancelled" if verified else "unknown",
+                    None if verified else "producer_process_cleanup_unknown",
+                )
+            remaining = _remaining_timeout(deadline, monotonic)
+            if remaining <= 0:
+                cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+                return _persist_receipt(
+                    batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                    process.pid, pgid, gate_released, stdout, stderr, None, cleanup_result,
+                    "unknown", "producer_process_wall_timeout",
+                )
+            try:
+                exit_code = process.wait(timeout=min(0.05, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
         cleanup_result = exited_leader_cleanup or _cleanup(
             registration, process, deadline=deadline, monotonic=monotonic,
         )
@@ -1225,6 +1298,7 @@ def run_producer_process(
     expected_parent_task_id: str | None = None,
     expected_task_id: str | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] | None = None,
     popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
 ) -> ProducerExecutionReceipt:
     """Hold the per-journal ownership lock through the entire process attempt."""
@@ -1239,7 +1313,7 @@ def run_producer_process(
         return _run_producer_process(
             workspace, intent=intent, attestation=attestation, producer_root=producer_root,
             expected_run_id=expected_run_id, expected_parent_task_id=expected_parent_task_id,
-            expected_task_id=expected_task_id, monotonic=monotonic,
+            expected_task_id=expected_task_id, monotonic=monotonic, cancelled=cancelled,
             popen_factory=popen_factory, recovery_lock_identity=lock_identity,
         )
 
@@ -1303,6 +1377,7 @@ class ProducerProcessRunner:
         expected_parent_task_id: str | None = None,
         expected_task_id: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        cancelled: Callable[[], bool] | None = None,
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
     ) -> ProducerExecutionReceipt:
         workspace_path = Path(workspace)
@@ -1316,6 +1391,7 @@ class ProducerProcessRunner:
             expected_parent_task_id=expected_parent_task_id,
             expected_task_id=expected_task_id,
             monotonic=monotonic,
+            cancelled=cancelled,
             popen_factory=popen_factory,
         )
 

@@ -818,6 +818,76 @@ def test_timeout_is_terminal_without_relaunch(tmp_path: Path):
     assert receipt.failure_code in {"producer_process_wall_timeout", "producer_process_cleanup_unknown"}
 
 
+def test_active_cancellation_terminates_child_and_persists_cancelled_receipt(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path, mode="timeout")
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        # The first three observations happen before/around registration; the next one is
+        # reached by the nonblocking capture loop while the sleeping child is still running.
+        return calls >= 5
+
+    started = time.monotonic()
+    receipt = run_producer_process(
+        tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+        cancelled=cancelled,
+    )
+    assert receipt.status == "cancelled"
+    assert receipt.failure_code is None
+    assert receipt.cleanup_status in {"cleaned", "already_exited"}
+    assert calls >= 5
+    assert time.monotonic() - started < intent.wall_timeout_seconds
+    assert recover_producer_process(tmp_path, journal_id=intent.journal_id) == receipt.to_dict()
+
+
+def test_active_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    producer_root, intent, attestation = _fixture(tmp_path, mode="timeout")
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls >= 5
+
+    def uncertain_cleanup(registration, **kwargs):
+        return ProcessCleanupResult(
+            label=registration.label,
+            pid=registration.pid,
+            pgid=registration.pgid,
+            status=ProcessCleanupStatus.KILL_FAILED,
+            alive_after=True,
+        )
+
+    monkeypatch.setattr(producer_process, "cleanup_registered_process", uncertain_cleanup)
+    receipt = run_producer_process(
+        tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+        cancelled=cancelled,
+    )
+    assert receipt.status == "unknown"
+    assert receipt.failure_code == "producer_process_cleanup_unknown"
+
+
+@pytest.mark.parametrize(
+    ("callback", "code"),
+    [
+        (lambda: 1, "producer_process_cancellation_invalid"),
+        (lambda: (_ for _ in ()).throw(RuntimeError("callback failed")), "producer_process_cancellation_unknown"),
+    ],
+)
+def test_cancellation_callback_failure_is_fail_closed_before_spawn(
+    tmp_path: Path, callback, code: str,
+):
+    producer_root, intent, attestation = _fixture(tmp_path)
+    with pytest.raises(ProducerProcessError) as exc:
+        run_producer_process(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            cancelled=callback, popen_factory=lambda *args, **kwargs: pytest.fail("must not spawn"),
+        )
+    assert exc.value.code == code
+
+
 def test_symlink_envelope_is_rejected_with_terminal_receipt(tmp_path: Path):
     producer_root, intent, attestation = _fixture(tmp_path, mode="symlink-envelope")
     receipt = run_producer_process(tmp_path, intent=intent, attestation=attestation, producer_root=producer_root)

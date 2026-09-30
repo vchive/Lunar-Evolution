@@ -18,6 +18,15 @@ passed**，全量相关选择此前 **1328 passed / 2 skipped**；未运行真�
 producer 运行中子进程即时取消、完整 unknown/interruption recovery、evolved/seeded/repeated
 population admission、launcher/scheduler 接线和真实 OpenEvolve/Shinka campaign。
 
+随后补齐 Feature 156 cooperative runner 的运行中取消窄切片：`run_producer_process`/
+`ProducerProcessRunner.run` 接受 process-local `cancelled` 回调，在启动前、登记后、非阻塞
+capture 循环和 leader wait 中观察；owner-checked cleanup 成功时写入一次 `cancelled` 终态，
+清理不确定保留 `unknown`，回调异常或非布尔值在 spawn 前 fail-closed。新增本地 fixture
+覆盖 active cancellation、cleanup uncertainty 和回调错误，producer-process/lifecycle
+专项 **81 passed、2 skipped**。这不等于 Feature 153 transaction 已自动接入该回调，也不
+关闭 trusted bootstrap、host-observed request、post-crash recovery、launcher/scheduler 或
+真实 campaign 边界。
+
 ## 2026-09-30 RSI callback 显式对账与 unknown transfer 处置
 
 继续 Feature 160 阶段 1，补齐上一轮留下的本地恢复接口。新增 `rsi_callbacks.py`，

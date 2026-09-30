@@ -14,6 +14,7 @@ receipt = run_producer_process(
     expected_run_id=run_id,
     expected_parent_task_id=parent_task_id,
     expected_task_id=task_id,
+    cancelled=parent_control.is_cancelled,
 )
 ```
 
@@ -31,8 +32,9 @@ revalidate preflight and exact executable identity
 ```
 
 `completed` means the process exited successfully, cleanup is verified, the bounded envelope read
-is stable, and all observed request/output limits hold. `failed` means a deterministic local
-violation or nonzero exit was observed. `unknown` or `recovery_required` means the controller
+is stable, and all observed request/output limits hold. `cancelled` means the caller's cancellation
+callback was observed while the child was registered and owner-checked cleanup completed. `failed`
+means a deterministic local violation or nonzero exit was observed. `unknown` or `recovery_required` means the controller
 cannot prove process, cleanup, output, or receipt state; the caller must inspect the exact receipt
 and may not relaunch automatically.
 

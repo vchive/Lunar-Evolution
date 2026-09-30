@@ -1,5 +1,15 @@
 # Feature 156 validation
 
+## Active cancellation follow-up (2026-09-30)
+
+The cooperative local runner accepts an optional process-local `cancelled` callback and observes it
+before launch, after registration, inside the nonblocking capture loop, and during leader wait. A
+verified owner-checked cleanup produces one durable `cancelled` execution receipt; cleanup
+uncertainty remains `unknown`, and callback exceptions or non-boolean values fail closed before
+spawn. Focused producer-process/lifecycle tests pass **81 passed, 2 skipped** after this slice.
+This does not claim trusted bootstrap admission, host-observed requests, scheduler integration or
+real producer acceptance.
+
 ## Cooperative preparation terminal checkpoint (2026-09-28)
 
 `run_producer_lifecycle` now returns explicit terminal, cleanup, execution-outcome and deadline-scope
