@@ -33,3 +33,9 @@ The completed native evidence projection now carries the broker coverage into th
 digest before writing its prepared intent. This is a narrow receipt/journal handoff; T157-05 and
 T157-06 remain open for protected journal ownership, crash-safe transport recovery, bypass
 coverage tests, and production scheduler integration.
+
+The broker now also exposes a read-only `recover_producer_broker_observation()` boundary. It
+replays the controller-owned journal under a caller deadline, binds an optional retained digest
+and byte count, and keeps active or timed-out requests at `recovery_required`; it never reopens
+the journal for append or retries provider I/O. This is supporting crash-recovery evidence for
+T157-05/T157-06. It does not establish complete egress coverage or authorize a resumed producer.
