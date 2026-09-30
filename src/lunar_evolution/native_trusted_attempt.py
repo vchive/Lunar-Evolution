@@ -965,6 +965,10 @@ def recover_native_trusted_attempt(
             registration.get("recovery_lock_device"), registration.get("recovery_lock_inode")
         ) != lock_identity:
             raise NativeTrustedAttemptError("native_trusted_recovery_registration_invalid")
+        # Every recovery observation, including an already-written terminal, must
+        # validate the retained attempt budget. Otherwise a tampered sidecar could
+        # silently detach the terminal from the original wall-clock authority.
+        _read_deadline(batch, registration)
         path = batch / _TERMINAL_NAME
         try:
             os.lstat(path)

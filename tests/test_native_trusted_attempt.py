@@ -638,6 +638,11 @@ def test_recovery_rejects_tampered_native_attempt_deadline(
     deadline_path.write_text(json.dumps(deadline, sort_keys=True, separators=(",", ":")), encoding="utf-8")
     with pytest.raises(NativeTrustedAttemptError) as failure:
         recover_native_trusted_attempt(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert failure.value.code == "native_trusted_recovery_deadline_invalid"
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        recover_native_trusted_attempt(
             workspace, intent=intent, attestation=attestation, artifact=artifact, cleanup=True,
         )
     assert failure.value.code == "native_trusted_recovery_deadline_invalid"
