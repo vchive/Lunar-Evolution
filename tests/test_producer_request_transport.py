@@ -263,6 +263,62 @@ def test_journal_recovery_checks_identity_and_detects_tampering(tmp_path):
     )
 
 
+def test_journal_recovery_can_bind_to_original_file_identity(tmp_path):
+    path = tmp_path / "requests.log"
+    identity = _identity()
+    with HostRequestJournal.create(path, identity) as journal:
+        admission = HostRequestLedger(
+            request_timeout_seconds=1, max_requests=2, journal=journal,
+        ).admit("request-001")
+        assert admission.sequence == 1
+    original_identity = (
+        path.stat().st_dev,
+        path.stat().st_ino,
+    )
+    recovery = read_host_request_journal(
+        path, expected_identity=identity, expected_file_identity=original_identity,
+    )
+    assert recovery.journal_file_identity == original_identity
+
+    replacement = tmp_path / "replacement.log"
+    replacement.write_bytes(path.read_bytes())
+    replacement.chmod(0o600)
+    path.unlink()
+    replacement.rename(path)
+    _error(
+        "producer_request_transport_journal_replaced",
+        lambda: read_host_request_journal(
+            path, expected_identity=identity, expected_file_identity=original_identity,
+        ),
+    )
+
+
+def test_partial_append_is_recovery_invalid_and_never_admitted(tmp_path, monkeypatch):
+    path = tmp_path / "requests.log"
+    identity = _identity()
+    with HostRequestJournal.create(path, identity) as journal:
+        ledger = HostRequestLedger(
+            request_timeout_seconds=1, max_requests=2, journal=journal,
+        )
+        original_write_all = transport._write_all
+
+        def partial_write(fd, value):
+            os.write(fd, value[:3])
+            raise OSError("fixture partial append")
+
+        monkeypatch.setattr(transport, "_write_all", partial_write)
+        _error(
+            "producer_request_transport_journal_write_failed",
+            lambda: ledger.admit("request-001"),
+        )
+        assert ledger.snapshot().admitted_count == 0
+        monkeypatch.setattr(transport, "_write_all", original_write_all)
+    _error(
+        "producer_request_transport_journal_invalid",
+        lambda: read_host_request_journal(path, expected_identity=identity),
+    )
+
+
 def test_journal_rejects_existing_path_and_symbolic_links(tmp_path):
     identity = _identity()
     path = tmp_path / "requests.log"

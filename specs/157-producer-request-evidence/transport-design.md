@@ -27,7 +27,11 @@ ancestor paths. Creation and replay require a current-user-owned `0700` leaf dir
 and `0600` journal file; every append rechecks both modes and owners. These checks
 exclude shared filesystem access but cannot distinguish a producer running under the
 same user. The controller must also isolate the producer from this directory; a hash
-chain alone does not authenticate bytes against a child that can edit the journal with
+same user. Replay also returns the opened file's device/inode identity and can require
+the identity captured by the original controller, so a same-content journal replacement
+is rejected before recovery is accepted. The controller must also isolate the producer
+from this directory; a hash chain alone does not authenticate bytes against a child that
+can edit the journal with
 the controller's credentials.
 
 `ControllerOwnedRequestBroker` now provides the provider-free transport boundary. It passes
@@ -87,6 +91,12 @@ bind a replayed journal. The completed formal Feature 156 receipt binds the cano
 journal identity and admitted-count coverage, and Feature 153 may require that receipt before
 publication staging. T157-05 and T157-06 therefore remain open for crash-safe ownership,
 complete egress coverage, and scheduler integration.
+
+The target SDK validates that both descriptor handoffs are live anonymous pipes and rejects
+regular files, sockets, reused descriptors, invalid request IDs, and non-2xx/5xx response
+status values before attempting a frame. This closes accidental alternate-file and
+descriptor-reuse paths at the SDK boundary; it still does not prove that a process started
+outside the trusted native bootstrap cannot open an unrelated provider connection.
 
 ## Native producer isolation boundary
 

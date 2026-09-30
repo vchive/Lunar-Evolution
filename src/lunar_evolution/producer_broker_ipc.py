@@ -7,6 +7,7 @@ import binascii
 import json
 import os
 import selectors
+import stat
 import threading
 import time
 from dataclasses import dataclass
@@ -57,6 +58,7 @@ class ProducerBrokerObservation:
     journal_bytes: int
     complete: bool
     reason: str
+    journal_file_identity: tuple[int, int] | None = None
 
 
 def _encode(value: dict[str, object], *, limit: int) -> bytes:
@@ -149,6 +151,27 @@ def _write_line(fd: int, data: bytes, deadline_ns: int) -> None:
                 raise ProducerBrokerIpcError("producer_broker_response_pipe_closed") from exc
 
 
+def _target_pipe(name: str) -> int:
+    """Resolve one controller-created anonymous pipe from the target environment.
+
+    The environment is only a descriptor handoff; accepting a regular file,
+    socket, or arbitrary inherited descriptor would create a second egress or
+    persistence channel outside the broker protocol.  The native launcher uses
+    ``os.pipe`` for both directions, so fail closed on every other descriptor.
+    """
+    value = os.environ.get(name)
+    if type(value) is not str or not value or not value.isdecimal():
+        raise ProducerBrokerIpcError("producer_broker_pipe_invalid")
+    try:
+        fd = int(value, 10)
+        info = os.fstat(fd)
+    except (OSError, ValueError, OverflowError) as exc:
+        raise ProducerBrokerIpcError("producer_broker_pipe_invalid") from exc
+    if fd < 0 or not stat.S_ISFIFO(info.st_mode):
+        raise ProducerBrokerIpcError("producer_broker_pipe_invalid")
+    return fd
+
+
 def serve_producer_broker(
     request_fd: int, response_fd: int, *, intent: ProducerLaunchIntent,
     journal_dir: Path, config: ProducerBrokerConfig, deadline_ns: int,
@@ -221,15 +244,94 @@ def serve_producer_broker(
     if recovered.snapshot != snapshot or (reason == "complete" and recovered.uncertain_request_ids):
         raise ProducerBrokerIpcError("producer_broker_journal_recovery_mismatch")
     return ProducerBrokerObservation(
-        snapshot, journal_path, identity, recovered.journal_sha256, recovered.journal_bytes,
-        reason == "complete" and snapshot.within_broker_limits, reason,
+        snapshot=snapshot,
+        journal_path=journal_path,
+        journal_identity=identity,
+        journal_sha256=recovered.journal_sha256,
+        journal_bytes=recovered.journal_bytes,
+        complete=(reason == "complete" and snapshot.within_broker_limits),
+        reason=reason,
+        journal_file_identity=recovered.journal_file_identity,
+    )
+
+
+def recover_producer_broker_observation(
+    journal_path: str | Path,
+    *,
+    identity: HostRequestJournalIdentity,
+    deadline_ns: int,
+    expected_journal_sha256: str | None = None,
+    expected_journal_bytes: int | None = None,
+    expected_journal_file_identity: tuple[int, int] | None = None,
+) -> ProducerBrokerObservation:
+    """Rebuild one broker observation from a durable journal after interruption.
+
+    Recovery is deliberately read-only: it never opens the journal for append, retries a
+    request, or upgrades an active/timed-out request to a successful terminal.  A complete
+    observation is returned only when every admitted request has a host-observed terminal.
+    The optional digest and byte count let a retained execution receipt bind the replay to the
+    exact journal that was captured before the process stopped.
+    """
+    if (
+        not isinstance(identity, HostRequestJournalIdentity)
+        or type(deadline_ns) is not int
+        or deadline_ns <= time.monotonic_ns()
+    ):
+        raise ProducerBrokerIpcError("producer_broker_recovery_input_invalid")
+    if expected_journal_sha256 is not None and (
+        type(expected_journal_sha256) is not str or len(expected_journal_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in expected_journal_sha256)
+    ):
+        raise ProducerBrokerIpcError("producer_broker_recovery_digest_invalid")
+    if expected_journal_bytes is not None and (
+        type(expected_journal_bytes) is not int or expected_journal_bytes < 1
+    ):
+        raise ProducerBrokerIpcError("producer_broker_recovery_size_invalid")
+    if expected_journal_file_identity is not None and (
+        type(expected_journal_file_identity) is not tuple
+        or len(expected_journal_file_identity) != 2
+        or any(type(item) is not int or item < 0 for item in expected_journal_file_identity)
+    ):
+        raise ProducerBrokerIpcError("producer_broker_recovery_file_identity_invalid")
+    path = Path(journal_path).expanduser().absolute()
+    try:
+        recovered = read_host_request_journal(
+            path,
+            expected_identity=identity,
+            deadline=deadline_ns / 1_000_000_000,
+            expected_file_identity=expected_journal_file_identity,
+        )
+    except ProducerRequestTransportError as exc:
+        raise ProducerBrokerIpcError("producer_broker_recovery_journal_invalid") from exc
+    if expected_journal_sha256 is not None and recovered.journal_sha256 != expected_journal_sha256:
+        raise ProducerBrokerIpcError("producer_broker_recovery_journal_mismatch")
+    if expected_journal_bytes is not None and recovered.journal_bytes != expected_journal_bytes:
+        raise ProducerBrokerIpcError("producer_broker_recovery_journal_mismatch")
+    complete = not recovered.uncertain_request_ids and recovered.snapshot.within_broker_limits
+    return ProducerBrokerObservation(
+        snapshot=recovered.snapshot,
+        journal_path=path,
+        journal_identity=identity,
+        journal_sha256=recovered.journal_sha256,
+        journal_bytes=recovered.journal_bytes,
+        complete=complete,
+        journal_file_identity=recovered.journal_file_identity,
+        reason="recovered" if complete else "recovery_required",
     )
 
 
 def brokered_producer_post(request_id: str, body: bytes, *, deadline_ns: int) -> tuple[int, bytes]:
     """Target-side SDK call; endpoint and credentials never enter the target."""
-    read_fd = int(os.environ["LUNAR_PRODUCER_RESPONSE_FD"])
-    write_fd = int(os.environ["LUNAR_PRODUCER_REQUEST_FD"])
+    if type(request_id) is not str or not request_id or "\n" in request_id:
+        raise ProducerBrokerIpcError("producer_broker_request_id_invalid")
+    if type(body) is not bytes:
+        raise ProducerBrokerIpcError("producer_broker_body_invalid")
+    if type(deadline_ns) is not int or deadline_ns <= time.monotonic_ns():
+        raise ProducerBrokerIpcError("producer_broker_deadline_invalid")
+    read_fd = _target_pipe("LUNAR_PRODUCER_RESPONSE_FD")
+    write_fd = _target_pipe("LUNAR_PRODUCER_REQUEST_FD")
+    if read_fd == write_fd:
+        raise ProducerBrokerIpcError("producer_broker_pipe_invalid")
     frame = _encode({
         "protocol": "lunar-producer-broker-ipc-v1", "request_id": request_id,
         "body_base64": base64.b64encode(body).decode("ascii"),
@@ -242,12 +344,13 @@ def brokered_producer_post(request_id: str, body: bytes, *, deadline_ns: int) ->
     if (set(response) != {"protocol", "request_id", "status", "http_status", "body_base64"}
             or response["protocol"] != "lunar-producer-broker-ipc-v1"
             or response["request_id"] != request_id or response["status"] != "completed"
-            or type(response["http_status"]) is not int):
+            or type(response["http_status"]) is not int
+            or not 100 <= response["http_status"] <= 599):
         raise ProducerBrokerIpcError("producer_broker_response_invalid")
     return response["http_status"], _body(response["body_base64"], maximum=MAX_RESULT_BYTES)
 
 
 __all__ = [
     "ProducerBrokerConfig", "ProducerBrokerIpcError", "ProducerBrokerObservation",
-    "brokered_producer_post", "serve_producer_broker",
+    "brokered_producer_post", "recover_producer_broker_observation", "serve_producer_broker",
 ]

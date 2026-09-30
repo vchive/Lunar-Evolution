@@ -134,6 +134,10 @@ class HostRequestRecovery:
     uncertain_request_ids: tuple[str, ...]
     journal_sha256: str
     journal_bytes: int
+    # The journal's device/inode pair is captured while the file descriptor is
+    # open.  Callers that retain a broker observation can bind replay to this
+    # exact file and reject a same-content replacement after a crash.
+    journal_file_identity: tuple[int, int]
 
 
 def _canonical(value: object) -> bytes:
@@ -360,6 +364,7 @@ def _journal_record(line: bytes, ordinal: int, head: str) -> dict[str, object]:
 def read_host_request_journal(
     path: str | Path, *, expected_identity: HostRequestJournalIdentity,
     deadline: float | None = None, monotonic: Callable[[], float] = time.monotonic,
+    expected_file_identity: tuple[int, int] | None = None,
 ) -> HostRequestRecovery:
     """Read a closed journal without changing it or resuming uncertain requests."""
     if type(expected_identity) is not HostRequestJournalIdentity:
@@ -376,6 +381,17 @@ def read_host_request_journal(
         try:
             _checked_file(fd)
             before = os.fstat(fd)
+            file_identity = (before.st_dev, before.st_ino)
+            if (
+                expected_file_identity is not None
+                and (
+                    type(expected_file_identity) is not tuple
+                    or len(expected_file_identity) != 2
+                    or any(type(item) is not int or item < 0 for item in expected_file_identity)
+                    or file_identity != expected_file_identity
+                )
+            ):
+                _fail("producer_request_transport_journal_replaced")
             size = before.st_size
             if size <= 0 or size > MAX_HOST_REQUEST_JOURNAL_BYTES:
                 _fail("producer_request_transport_journal_too_large")
@@ -491,6 +507,7 @@ def read_host_request_journal(
         ),
         uncertain_request_ids=tuple(uncertain[key] for key in sorted(uncertain)),
         journal_sha256=hashlib.sha256(data).hexdigest(), journal_bytes=len(data),
+        journal_file_identity=file_identity,
     )
 
 
