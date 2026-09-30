@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 import os
+import re
 import selectors
 import stat
 import threading
@@ -28,6 +29,7 @@ from .producer_request_transport import (
 
 _MAX_FRAME_BYTES = MAX_REQUEST_BYTES * 4 // 3 + 4096
 _MAX_RESPONSE_FRAME_BYTES = MAX_RESULT_BYTES * 4 // 3 + 4096
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 
 class ProducerBrokerIpcError(ValueError):
@@ -322,7 +324,7 @@ def recover_producer_broker_observation(
 
 def brokered_producer_post(request_id: str, body: bytes, *, deadline_ns: int) -> tuple[int, bytes]:
     """Target-side SDK call; endpoint and credentials never enter the target."""
-    if type(request_id) is not str or not request_id or "\n" in request_id:
+    if type(request_id) is not str or _REQUEST_ID.fullmatch(request_id) is None:
         raise ProducerBrokerIpcError("producer_broker_request_id_invalid")
     if type(body) is not bytes:
         raise ProducerBrokerIpcError("producer_broker_body_invalid")
