@@ -21,3 +21,20 @@ estimate; all estimates are integer micro-USD and remain explicitly estimates.
 This is provider-free evidence and does not establish external billing truth. It does not measure
 GPU time or infer a provider charge from a control-plane reservation. Process adapters may append
 one receipt per lifecycle stage once they can provide a trusted local observation.
+
+## Controller sidecar integration
+
+`RSILearningController` accepts an optional `RSIUsageLedger` and passes it to each
+`PracticeEpisodeRunner`. A solver invocation appends one `adapter_stage="solver"` receipt whose
+event ID is derived from the run ID, episode ID and request digest. `wall_time_ms` is measured
+from the local monotonic clock around the gateway call; input/output tokens and CPU time remain
+`null` because this fixture boundary has no provider or process accounting authority. The
+sidecar is observational and does not replace `RSIRunBudget` reservations or budget decisions.
+
+The event ID makes normal resume/replay idempotent, including concurrent BRS appends, because the
+append-only ledger deduplicates an exact event. It cannot provide distributed exactly-once
+semantics: a process crash after the solver side effect but before the usage append leaves the
+receipt absent, while a crash after the append but before the episode checkpoint leaves the
+receipt present. Recovery reuses the durable episode result and never infers missing elapsed
+time, so operators must treat such gaps as incomplete local evidence rather than zero usage or a
+claim about provider billing.

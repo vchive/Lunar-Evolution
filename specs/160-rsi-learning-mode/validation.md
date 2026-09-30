@@ -1,6 +1,6 @@
 # Validation: RSI learning mode
 
-This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **519 tests**,
+This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **523 tests**,
 with no failures or skips (`/tmp/lunar-rsi-release-current`). The run includes DRS/BRS callback
 crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery and append-only
 unknown receipt failure settlement. Ruff, compileall and `git diff --check` passed.
@@ -121,6 +121,7 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | Provider-free no/old/current transfer regression, seen/unseen split, multi-target holdout and contamination gate | `test_rsi_transfer_regression.py` |
 | Unified solver adapter lifecycle, budget/deadline and terminal receipt contract | `test_rsi_adapter_contract.py` |
 | Provider-free usage receipts, unknown fail-closed summaries, CAS/hash-chain and durable reopen | `test_rsi_usage.py` |
+| Optional controller/episode solver sidecar, monotonic wall time, concurrent append and replay idempotency | `test_rsi_usage_controller.py` |
 | Failure clustering, capability coverage, hard-negative selection and curriculum replay | `test_rsi_curriculum.py` |
 | Controller checkpoint/resume of failure-driven curriculum ledger | `test_rsi_curriculum_resume.py` |
 | Transfer report to memory-governance promotion and two-step activation gate | `test_rsi_memory_promotion.py` |
@@ -145,7 +146,10 @@ constitute evidence for real OpenEvolve, Shinka, OSWorld, or remote evaluator pe
   budget primitives must not be described as a completed nested scheduler.
 - Real provider billing, GPU measurement and external cost truth. The provider-free usage ledger
   records local receipts and configurable estimates; control-plane reservations are not measured
-  provider usage, and frozen transfer fixture success does not prove learning gains.
+  provider usage, and frozen transfer fixture success does not prove learning gains. A crash after
+  a solver side effect but before its optional usage append can leave a missing receipt; replay
+  remains side-effect safe but cannot claim distributed exactly-once accounting or reconstruct the
+  missing monotonic duration.
 
 No WebAgent, remote evaluator or company evaluation platform is required or authorized by this
 local validation procedure.

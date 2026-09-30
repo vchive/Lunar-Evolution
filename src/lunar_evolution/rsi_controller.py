@@ -10,6 +10,7 @@ then commits results in ordinal order against one frozen parent snapshot.
 from __future__ import annotations
 
 import hashlib
+import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
@@ -39,6 +40,8 @@ from .rsi_learning import (
     VerifierDecision,
 )
 from .rsi_store import RSILedger, RSIRecord
+from .rsi_usage import RSIUsageError, UsageReceipt
+from .rsi_usage import UsageLedger as RSIUsageLedger
 
 
 def _digest(value: object, name: str) -> str:
@@ -184,12 +187,79 @@ class PracticeEpisodeRunner:
         gateway: SolverGateway,
         verifier: Any | None = None,
         ledger: RSILedger | None = None,
+        usage_ledger: RSIUsageLedger | None = None,
         *, before_verify: Callable[[], None] | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
         self.ledger = ledger
+        self.usage_ledger = usage_ledger
         self.before_verify = before_verify
+
+    @staticmethod
+    def _usage_event_id(episode: PracticeEpisode, request: SolverRequest) -> str:
+        """Derive one stable sidecar event identity for the physical solver invocation."""
+
+        return "rsi-solver-" + _record_digest({
+            "run_id": episode.run_id,
+            "episode_id": episode.episode_id,
+            "request_sha256": request.digest(),
+        })
+
+    def _record_solver_usage(self, episode: PracticeEpisode, request: SolverRequest,
+                             started_ns: int, finished_ns: int) -> None:
+        if self.usage_ledger is None:
+            return
+        elapsed_ns = max(0, finished_ns - started_ns)
+        # This is local monotonic elapsed time, not provider billing truth.  The append is
+        # intentionally idempotent by event_id; append() (rather than record()) obtains the
+        # current head under its file lock, which also makes concurrent BRS workers safe.
+        self.usage_ledger.append(UsageReceipt(
+            event_id=self._usage_event_id(episode, request),
+            run_id=episode.run_id,
+            episode_id=episode.episode_id,
+            adapter_stage="solver",
+            wall_time_ms=elapsed_ns // 1_000_000,
+            input_tokens=None,
+            output_tokens=None,
+            cpu_time_ms=None,
+        ))
+
+    @classmethod
+    def ensure_unknown_solver_usage(
+        cls, usage_ledger: RSIUsageLedger | None, episode: PracticeEpisode,
+        request: SolverRequest,
+    ) -> None:
+        """Record a replay gap without inventing elapsed time.
+
+        A durable solver result proves that a side effect happened, but it carries no trustworthy
+        local duration.  The unknown receipt keeps that gap visible while preserving the same
+        event identity used by a normal invocation.
+        """
+
+        if usage_ledger is None:
+            return
+        event_id = cls._usage_event_id(episode, request)
+        if any(item.event_id == event_id for item in usage_ledger.records()):
+            return
+        try:
+            usage_ledger.append(UsageReceipt(
+                event_id=event_id,
+                run_id=episode.run_id,
+                episode_id=episode.episode_id,
+                adapter_stage="solver",
+                wall_time_ms=None,
+                input_tokens=None,
+                output_tokens=None,
+                cpu_time_ms=None,
+            ))
+        except RSIUsageError as exc:
+            # Another controller may have appended the same replay marker after our read.  The
+            # append-only ledger remains authoritative; accept only that exact event race.
+            if str(exc) != "rsi_usage_event_conflict" or not any(
+                item.event_id == event_id for item in usage_ledger.records()
+            ):
+                raise
 
     def _create_running_record(self, episode: PracticeEpisode) -> RSIRecord | None:
         if self.ledger is None:
@@ -220,7 +290,19 @@ class PracticeEpisodeRunner:
             raise RSILearningError("rsi_episode_request_mismatch")
         running = episode.transition("running", request_sha256=request.digest())
         ledger_head = self._create_running_record(running)
-        result = self.gateway.run(request)
+        started_ns = time.monotonic_ns()
+        try:
+            result = self.gateway.run(request)
+        except Exception as gateway_error:
+            # Preserve the gateway exception if accounting itself cannot be appended.  A missing
+            # sidecar record is explicit incomplete evidence; it must not be mistaken for a
+            # zero-cost or exactly-once provider observation.
+            try:
+                self._record_solver_usage(episode, request, started_ns, time.monotonic_ns())
+            except Exception as accounting_error:
+                raise gateway_error from accounting_error
+            raise
+        self._record_solver_usage(episode, request, started_ns, time.monotonic_ns())
         if self.ledger is not None:
             # Persist the immutable worker result before advancing the episode head.  If the
             # controller dies after the gateway side effect, reconcile can inspect this exact
@@ -816,6 +898,7 @@ class RSILearningController:
         memory_store: RSIMemoryStore | None = None,
         target_judge: TargetJudge = default_target_judge,
         ledger: RSILedger | None = None,
+        usage_ledger: RSIUsageLedger | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -823,6 +906,9 @@ class RSILearningController:
         self.memory_store = memory_store or RSIMemoryStore(EMPTY_MEMORY_SNAPSHOT)
         self.target_judge = target_judge
         self.ledger = ledger
+        if usage_ledger is not None and not isinstance(usage_ledger, RSIUsageLedger):
+            raise TypeError("usage_ledger must be an RSI usage UsageLedger")
+        self.usage_ledger = usage_ledger
 
     @property
     def snapshot(self) -> MemorySnapshot:
@@ -1308,8 +1394,6 @@ class RSILearningController:
             if result.status == "unknown" and reconciled_failure:
                 result = replace(result, status=episode.status,
                                  terminal_reason=episode.terminal_reason or "reconciled_failure")
-        if result.status == "unknown":
-            raise RSILearningError("rsi_unknown_reconcile_required")
         if (
             request.episode_id != episode_id
             or episode.request_sha256 != request.digest()
@@ -1322,6 +1406,9 @@ class RSILearningController:
             or request.solver_id != episode.solver_id
         ):
             raise RSILearningError("rsi_episode_result_conflict")
+        self._usage_replay_marker(episode, request)
+        if result.status == "unknown":
+            raise RSILearningError("rsi_unknown_reconcile_required")
         if episode.status in {"completed", "failed", "timed_out", "abandoned", "cancelled"} and result.status != episode.status:
             raise RSILearningError("rsi_episode_result_conflict")
 
@@ -1366,6 +1453,9 @@ class RSILearningController:
         else:
             decision = self._verify_episode(episode, request, result, before_verify)
         return EpisodeExecution(episode, request, result, decision)
+
+    def _usage_replay_marker(self, episode: PracticeEpisode, request: SolverRequest) -> None:
+        PracticeEpisodeRunner.ensure_unknown_solver_usage(self.usage_ledger, episode, request)
 
     @staticmethod
     def _merge_resume_executions(
@@ -1486,7 +1576,7 @@ class RSILearningController:
                 return controller._verify_episode(episode, request, result, budget.check)
 
         return PracticeEpisodeRunner(
-            self.gateway, ControllerVerifier(), self.ledger,
+            self.gateway, ControllerVerifier(), self.ledger, self.usage_ledger,
         ).run(episode, request)
 
     def _flow_episode(self, record: RSIRecord | None, state: dict[str, Any],
@@ -1696,6 +1786,15 @@ class RSILearningController:
         self._validate_resume_identity(record, observed_fingerprints, budget_policy)
         if record.state in {"completed", "failed", "cancelled", "budget_exhausted"}:
             checkpoint = self.ledger.controller_checkpoint(run_id)
+            terminal_executions = checkpoint[1].get("executions", {}).values() if checkpoint else ()
+            if not terminal_executions:
+                terminal_executions = (
+                    *record.payload.get("target_attempts", ()),
+                    *record.payload.get("practice_episodes", ()),
+                )
+            for raw_execution in terminal_executions:
+                execution = self._deserialize_execution(raw_execution)
+                self._usage_replay_marker(execution.episode, execution.request)
             self._restore_failure_curriculum(checkpoint[1] if checkpoint else record.payload)
             return LearningRunResult(
                 run_id, record.state, MemorySnapshot.from_dict(record.payload["memory_snapshot"]),
@@ -1868,7 +1967,9 @@ class RSILearningController:
             episode_kind="practice", wave=wave, ordinal=ordinal, parent_target_episode_id=target.episode_id,
         )
         request = self._request(episode, charter={**decision.to_dict(), "decision_sha256": decision.digest()})
-        return PracticeEpisodeRunner(self.gateway, self.verifier, self.ledger).run(episode, request)
+        return PracticeEpisodeRunner(
+            self.gateway, self.verifier, self.ledger, self.usage_ledger,
+        ).run(episode, request)
 
     def _commit(
         self,
