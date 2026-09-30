@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import selectors
 import subprocess
 import threading
@@ -31,6 +32,7 @@ _PROTOCOL = "lunar-native-trusted-stream-capture-v1"
 _NAME = "native-trusted-stream-capture.json"
 _MAX_CAPTURE_CHUNK = 65536
 _STREAMS = ("stdout", "stderr")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class NativeTrustedStreamError(ValueError):
@@ -228,11 +230,11 @@ def persist_native_trusted_stream_capture(
     """Persist a create-only stream projection; never makes it publishable."""
     if not isinstance(intent, ProducerLaunchIntent) or not isinstance(observation, NativeTrustedStreamObservation):
         raise NativeTrustedStreamError("native_trusted_stream_context_invalid")
-    if not isinstance(attestation_sha256, str) or len(attestation_sha256) != 64:
+    if not isinstance(attestation_sha256, str) or _SHA256.fullmatch(attestation_sha256) is None:
         raise NativeTrustedStreamError("native_trusted_stream_context_invalid")
-    if not isinstance(registration_sha256, str) or len(registration_sha256) != 64:
+    if not isinstance(registration_sha256, str) or _SHA256.fullmatch(registration_sha256) is None:
         raise NativeTrustedStreamError("native_trusted_stream_context_invalid")
-    if not isinstance(deadline_sha256, str) or len(deadline_sha256) != 64:
+    if not isinstance(deadline_sha256, str) or _SHA256.fullmatch(deadline_sha256) is None:
         raise NativeTrustedStreamError("native_trusted_stream_context_invalid")
     if not observation.complete:
         raise NativeTrustedStreamError("native_trusted_stream_capture_incomplete")
@@ -296,11 +298,24 @@ def recover_native_trusted_stream_capture(
         or terminal.get("stream_capture_sha256") != record.get("stream_capture_sha256")
     ):
         raise NativeTrustedStreamError("native_trusted_stream_invalid")
+    for key in ("attestation_sha256", "registration_sha256", "deadline_sha256", "stream_capture_sha256"):
+        if not isinstance(record.get(key), str) or _SHA256.fullmatch(record[key]) is None:
+            raise NativeTrustedStreamError("native_trusted_stream_invalid")
     for name in _STREAMS:
         item = record.get(f"{name}_evidence")
         if not isinstance(item, dict) or set(item) != {"stream", "bytes_observed", "sha256", "truncated", "capture_status"}:
             raise NativeTrustedStreamError("native_trusted_stream_invalid")
-        if item.get("stream") != name or not isinstance(item.get("bytes_observed"), int) or item["bytes_observed"] < 0:
+        if (
+            item.get("stream") != name
+            or not isinstance(item.get("bytes_observed"), int)
+            or isinstance(item.get("bytes_observed"), bool)
+            or item["bytes_observed"] < 0
+            or item["bytes_observed"] > intent.output_max_bytes + 1
+            or not isinstance(item.get("sha256"), str)
+            or _SHA256.fullmatch(item["sha256"]) is None
+            or type(item.get("truncated")) is not bool
+            or item.get("capture_status") not in {"complete", "limit_exceeded"}
+        ):
             raise NativeTrustedStreamError("native_trusted_stream_invalid")
     return record
 
