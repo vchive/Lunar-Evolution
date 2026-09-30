@@ -8,6 +8,7 @@ registration and retained deadline.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from .native_bootstrap import NativeBootstrapArtifact
@@ -30,6 +31,9 @@ from .producer_process import (
     ProducerExecutionReceipt,
     ProducerProcessError,
     ProducerStreamEvidence,
+    _atomic_json,
+    _canonical,
+    _digest_without,
     _identity_digest,
     _read_durable_json,
 )
@@ -222,4 +226,88 @@ def build_native_trusted_execution_receipt(
         raise NativeTrustedReceiptError("native_trusted_receipt_evidence_invalid") from exc
 
 
-__all__ = ["NativeTrustedReceiptError", "build_native_trusted_execution_receipt"]
+def _receipt_path(workspace: str | Path, intent: ProducerLaunchIntent) -> Path:
+    return _batch(workspace, intent) / "execution-receipt.json"
+
+
+def _validate_persisted_receipt(
+    observed: dict[str, object], expected: ProducerExecutionReceipt,
+) -> None:
+    """Require a previously written receipt to be the exact projected bytes."""
+    try:
+        if observed.get("receipt_sha256") != _digest_without(observed, "receipt_sha256"):
+            raise NativeTrustedReceiptError("native_trusted_receipt_persisted_invalid")
+        if _canonical(observed) != _canonical(expected.to_dict()):
+            raise NativeTrustedReceiptError("native_trusted_receipt_existing_mismatch")
+    except ProducerProcessError as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_persisted_invalid") from exc
+
+
+def persist_native_trusted_execution_receipt(
+    workspace: str | Path,
+    *,
+    intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation,
+    artifact: NativeBootstrapArtifact,
+    require_broker: bool = True,
+) -> ProducerExecutionReceipt:
+    """Create the formal receipt exactly once after strict native evidence projection.
+
+    The operation is create-only.  A repeated call may replay identical durable bytes, but
+    an existing or concurrently-created receipt with any different byte is a hard conflict.
+    This function does not admit a population or publish a bundle.
+    """
+    receipt = build_native_trusted_execution_receipt(
+        workspace,
+        intent=intent,
+        attestation=attestation,
+        artifact=artifact,
+        require_broker=require_broker,
+    )
+    path = _receipt_path(workspace, intent)
+
+    # Read an existing path before attempting the exclusive link.  lstat avoids following
+    # a hostile symlink; the bounded durable reader performs the full identity recheck.
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_persisted_invalid") from exc
+    else:
+        try:
+            observed = _read_durable_json(
+                path, code="native_trusted_receipt_persisted_invalid",
+            )
+        except ProducerProcessError as exc:
+            raise NativeTrustedReceiptError("native_trusted_receipt_persisted_invalid") from exc
+        _validate_persisted_receipt(observed, receipt)
+        return receipt
+
+    try:
+        _atomic_json(path, receipt.to_dict(), exclusive=True)
+    except ProducerProcessError:
+        # A concurrent writer may have won the create-only race.  Replay only if its bytes
+        # are exactly the projection we just built; all other write failures remain unknown.
+        try:
+            observed = _read_durable_json(
+                path, code="native_trusted_receipt_persisted_invalid",
+            )
+        except ProducerProcessError as reread_exc:
+            raise NativeTrustedReceiptError("native_trusted_receipt_write_unknown") from reread_exc
+        _validate_persisted_receipt(observed, receipt)
+        return receipt
+
+    try:
+        stored = _read_durable_json(path, code="native_trusted_receipt_reread_invalid")
+    except ProducerProcessError as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_reread_invalid") from exc
+    _validate_persisted_receipt(stored, receipt)
+    return receipt
+
+
+__all__ = [
+    "NativeTrustedReceiptError",
+    "build_native_trusted_execution_receipt",
+    "persist_native_trusted_execution_receipt",
+]

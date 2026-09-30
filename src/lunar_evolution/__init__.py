@@ -360,6 +360,7 @@ from .native_trusted_cleanup import (
 from .native_trusted_receipt import (
     NativeTrustedReceiptError,
     build_native_trusted_execution_receipt,
+    persist_native_trusted_execution_receipt,
 )
 from .native_trusted_streams import (
     NativeTrustedStreamCapture,
@@ -1241,6 +1242,7 @@ __all__ = [
     "parse_trusted_bootstrap_registration",
     "persist_controlled_producer_bundle_intent",
     "persist_native_trusted_cleanup",
+    "persist_native_trusted_execution_receipt",
     "persist_native_trusted_stream_capture",
     "persist_producer_bundle_prepared_intent",
     "preflight_acceptance_registration",
