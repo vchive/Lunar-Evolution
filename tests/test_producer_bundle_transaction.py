@@ -21,7 +21,11 @@ from lunar_evolution.producer_bundle_transaction import (
     NativeProducerBundleTransactionError,
     run_native_producer_bundle_publication_transaction,
 )
-from lunar_evolution.producer_process import _digest_without
+from lunar_evolution.producer_process import (
+    ProducerProcessError,
+    _digest_without,
+    parse_producer_execution_receipt,
+)
 from lunar_evolution.shinka_handoff import export_shinka_result
 
 PRODUCER_FINGERPRINT = "d" * 64
@@ -144,10 +148,44 @@ def _formal_execution_receipt(
         "execution_snapshot_size": 0,
         "failure_code": None,
         "previous_receipt_sha256": "d" * 64,
-        "trusted_execution": {"broker_coverage": "brokered_requests_only"},
+        "trusted_execution": {
+            "terminal_sha256": "3" * 64,
+            "stream_capture_sha256": "4" * 64,
+            "output_capture_sha256": "5" * 64,
+            "cleanup_sha256": "6" * 64,
+            "broker_coverage": "brokered_requests_only",
+            "broker_journal_relative_path": ".host-request-journal/requests",
+            "broker_journal_identity": {
+                "launch_id": "launch-formal",
+                "journal_id": journal_id,
+                "run_id": run_id or journal_id,
+                "parent_task_id": parent_task_id,
+                "task_id": task_id,
+                "intent_sha256": "a" * 64,
+                "request_timeout_seconds": 30,
+                "max_requests": 10,
+                "wall_deadline_ns": 1,
+            },
+            "broker_journal_file_identity": [1, 2],
+            "broker_journal_sha256": "7" * 64,
+            "broker_journal_bytes": 1,
+            "broker_admitted_count": 0,
+            "broker_declared_count_matches": True,
+        },
     }
     receipt["receipt_sha256"] = _digest_without(receipt, "receipt_sha256")
     return receipt
+
+
+def test_formal_receipt_parser_rejects_missing_broker_journal_file_identity() -> None:
+    receipt = _formal_execution_receipt(journal_id="journal-formal")
+    trusted = receipt["trusted_execution"]
+    assert isinstance(trusted, dict)
+    del trusted["broker_journal_file_identity"]
+    receipt["receipt_sha256"] = _digest_without(receipt, "receipt_sha256")
+    with pytest.raises(ProducerProcessError) as failure:
+        parse_producer_execution_receipt(receipt)
+    assert failure.value.code == "producer_process_receipt_trusted_execution_invalid"
 
 
 def _initialize_native_population(strategy: PopulationStrategy, values: tuple[int, ...] = (1, 2)) -> None:

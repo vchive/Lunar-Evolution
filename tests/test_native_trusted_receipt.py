@@ -144,6 +144,27 @@ def test_native_receipt_recovery_returns_exact_projection(tmp_path: Path, monkey
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_receipt_recovery_rejects_same_content_journal_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, intent, attestation, artifact, batch = _valid_receipt_context(tmp_path, monkeypatch)
+    persist_native_trusted_execution_receipt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    journal_path = batch / ".host-request-journal" / "requests"
+    replacement = journal_path.with_name("requests-replacement")
+    replacement.write_bytes(journal_path.read_bytes())
+    replacement.chmod(0o600)
+    journal_path.unlink()
+    replacement.rename(journal_path)
+    with pytest.raises(NativeTrustedReceiptError) as failure:
+        recover_native_trusted_execution_receipt(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert failure.value.code == "native_trusted_receipt_recovery_invalid"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_native_receipt_recovery_distinguishes_missing_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

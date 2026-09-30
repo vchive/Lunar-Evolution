@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import secrets
 import selectors
 import stat
@@ -37,6 +38,7 @@ from .producer_launcher import (
     ProducerLaunchIntent,
     verify_producer_launch_attestation,
 )
+from .producer_request_evidence import MAX_REQUEST_EVENTS
 
 PRODUCER_PROCESS_PROTOCOL = "lunar-producer-process-execution-v1"
 GATE_ENV = "LUNAR_PRODUCER_GATE_FD"
@@ -51,6 +53,7 @@ _SNAPSHOT_PATHS = {
     "target": ".producer-snapshots/target",
 }
 _RECOVERY_LOCK_PROTOCOL = "journal-flock-v1"
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 _RECEIPT_FIELDS = frozenset({
     "schema_version", "protocol", "launch_id", "journal_id", "run_id", "parent_task_id",
@@ -813,8 +816,8 @@ def parse_producer_execution_receipt(value: object) -> ProducerExecutionReceipt:
     if not isinstance(owner, dict):
         _fail("producer_process_receipt_owner_identity_invalid")
     trusted = value.get("trusted_execution")
-    if trusted is not None and not isinstance(trusted, dict):
-        _fail("producer_process_receipt_trusted_execution_invalid")
+    if trusted is not None:
+        _validate_trusted_execution(trusted, value)
     try:
         return ProducerExecutionReceipt(
             **{
@@ -830,6 +833,94 @@ def parse_producer_execution_receipt(value: object) -> ProducerExecutionReceipt:
         raise
     except (TypeError, ValueError, KeyError) as exc:
         raise ProducerProcessError("producer_process_receipt_schema_invalid") from exc
+
+
+def _validate_trusted_execution(value: object, receipt: Mapping[str, object]) -> None:
+    """Validate the native receipt's broker projection as a closed schema.
+
+    ``trusted_execution`` is optional for portable process receipts, but once present it is
+    consumed as formal evidence by native publication.  In particular, a brokered receipt
+    must retain the journal's device/inode pair and the exact journal identity.  Accepting a
+    same-content replacement here would let a recovery caller bind evidence to a different
+    file after a crash, so all nested keys and bindings are checked before the DTO is built.
+    """
+    if not isinstance(value, dict):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    base = {
+        "terminal_sha256", "stream_capture_sha256", "output_capture_sha256", "cleanup_sha256",
+        "broker_coverage",
+    }
+    if not base <= set(value):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field in ("terminal_sha256", "stream_capture_sha256", "output_capture_sha256", "cleanup_sha256"):
+        item = value.get(field)
+        if type(item) is not str or _SHA256.fullmatch(item) is None:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    coverage = value.get("broker_coverage")
+    if coverage == "none":
+        if set(value) != base:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+        return
+    broker_fields = {
+        "broker_journal_relative_path", "broker_journal_identity", "broker_journal_file_identity",
+        "broker_journal_sha256", "broker_journal_bytes", "broker_admitted_count",
+        "broker_declared_count_matches",
+    }
+    if coverage != "brokered_requests_only" or set(value) != base | broker_fields:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    if value.get("broker_journal_relative_path") != ".host-request-journal/requests":
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    journal_sha = value.get("broker_journal_sha256")
+    if type(journal_sha) is not str or _SHA256.fullmatch(journal_sha) is None:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    file_identity = value.get("broker_journal_file_identity")
+    if (
+        type(file_identity) is not list or len(file_identity) != 2
+        or any(type(item) is not int or item < 0 for item in file_identity)
+    ):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field in ("broker_journal_bytes", "broker_admitted_count"):
+        item = value.get(field)
+        if type(item) is not int or item < 0:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    if type(value.get("broker_declared_count_matches")) is not bool:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    identity = value.get("broker_journal_identity")
+    if not isinstance(identity, dict):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    # The journal identity is serialized by HostRequestJournalIdentity.to_dict().  Keep the
+    # parser independent of that implementation while enforcing its canonical key set.
+    identity_keys = {
+        "launch_id", "journal_id", "run_id", "parent_task_id", "task_id", "intent_sha256",
+        "request_timeout_seconds", "max_requests", "wall_deadline_ns",
+    }
+    if set(identity) != identity_keys:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field in ("launch_id", "journal_id", "run_id", "parent_task_id", "task_id"):
+        item = identity.get(field)
+        if type(item) is not str or not item or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", item):
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    if type(identity.get("intent_sha256")) is not str or _SHA256.fullmatch(identity["intent_sha256"]) is None:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field, lower, upper in (("request_timeout_seconds", 1, 86_400), ("max_requests", 1, MAX_REQUEST_EVENTS)):
+        item = identity.get(field)
+        if type(item) is not int or not lower <= item <= upper:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    deadline = identity.get("wall_deadline_ns")
+    if type(deadline) is not int or not 0 < deadline < 2**63:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    bindings = {
+        "launch_id": receipt.get("launch_id"), "journal_id": receipt.get("journal_id"),
+        "run_id": receipt.get("run_id"), "parent_task_id": receipt.get("parent_task_id"),
+        "task_id": receipt.get("task_id"), "intent_sha256": receipt.get("intent_sha256"),
+        "request_timeout_seconds": receipt.get("request_timeout_seconds"),
+        "max_requests": receipt.get("max_requests"),
+    }
+    if any(identity.get(field) != expected for field, expected in bindings.items()):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    receipt_max_requests = receipt.get("max_requests")
+    if type(receipt_max_requests) is not int or value["broker_admitted_count"] > receipt_max_requests:
+        _fail("producer_process_receipt_trusted_execution_invalid")
 
 
 def _stream_evidence(name: str, state: dict[str, object]) -> ProducerStreamEvidence:
