@@ -1,5 +1,25 @@
 # Validation
 
+## Native attempt control propagation (provider-free fixture verified; integration open)
+
+The cooperative Feature 156 runner already verifies active cancellation and composition of a
+caller-owned monotonic parent deadline. The native trusted attempt must provide the same control
+boundary before T158-04 can close: the effective deadline is `min(intent_deadline,
+parent_deadline)` in one monotonic clock domain, and every control/frame write, frame read, broker
+wait, process wait, cleanup phase, and terminal evidence write consumes that remaining budget.
+Cancellation is a process-local callback, checked before spawn, after durable registration, while
+waiting for bootstrap/target frames, and while waiting for the leader. A boolean cancellation
+observation followed by verified owner-checked cleanup may produce a `cancelled` process receipt;
+callback exceptions, non-boolean values, deadline expiry, or cleanup uncertainty remain
+`unknown`/`recovery_required`. The callback and parent deadline are control inputs rather than
+identity fields and cannot authorize a retry or publication.
+
+The native fixture suite now covers active cancellation after target start, cleanup uncertainty, a
+parent deadline that narrows the intent budget, and invalid callback/deadline inputs. The focused
+native attempt suite passes 24 tests on the local Darwin host. This is supporting evidence for the
+control boundary only; the acceptance matrix keeps the row `supporting-only` until T158-04 connects
+the attempt to the formal Feature 156 registration, broker, terminal receipt, and recovery runner.
+
 ## Native pre-gate handoff reread (2026-09-28)
 
 The native attempt now uses the formal read-only observer under its existing deadline before

@@ -44,7 +44,7 @@ from lunar_evolution.trusted_bootstrap_registration import TrustedBootstrapRegis
 
 
 def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_exit: int = 0,
-             broker_request: bool = False):
+             broker_request: bool = False, mark_started_before_sleep: bool = False):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     producer_root = tmp_path / "producer"
@@ -69,9 +69,16 @@ def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_
             'return close(fd); }\n', encoding="utf-8",
         )
     else:
+        pre_sleep = (
+            f'int fd0 = open("{marker}", O_CREAT | O_WRONLY, 0600); '
+            'if (fd0 < 0) return 2; '
+            'if (write(fd0, "started", 7) != 7) return 3; '
+            'if (close(fd0) != 0) return 4; '
+        ) if mark_started_before_sleep else ""
         source.write_text(
             '#include <fcntl.h>\n#include <unistd.h>\n'
             'int main(void) { '
+            f'{pre_sleep}'
             f'sleep({target_sleep}); '
             f'int fd = open("{marker}", O_CREAT | O_WRONLY, 0600); '
             'if (fd < 0) return 2; '
@@ -636,3 +643,136 @@ def test_native_attempt_invalid_terminal_frame_persists_failed_evidence(tmp_path
     )
     assert observed["status"] == "evidence_available"
     assert observed["bootstrap_status"] == "failed"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_active_cancellation_terminates_owned_group(tmp_path: Path):
+    """An active cancellation must stop a registered target before terminal evidence."""
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, timeout=5, target_sleep=10, mark_started_before_sleep=True,
+    )
+    started = time.monotonic()
+    marker_seen_at: float | None = None
+
+    def cancelled() -> bool:
+        # Wait until the target has left the gate and created its marker so this exercises
+        # cancellation of a live, owned process rather than the pre-gate admission path.
+        nonlocal marker_seen_at
+        if (batch / "work" / "marker").is_file():
+            marker_seen_at = marker_seen_at or time.monotonic()
+        return marker_seen_at is not None and time.monotonic() - marker_seen_at >= 0.2
+
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact, cancelled=cancelled,
+    )
+    assert result.status == "recovery_required"
+    assert result.reason == "native_trusted_attempt_cancelled"
+    assert result.gate_released and result.target_started
+    assert result.cleanup_status in {"cleaned", "already_exited"}
+    assert result.exit_code is None
+    assert (batch / "work" / "marker").read_text(encoding="utf-8") == "started"
+    assert time.monotonic() - started < intent.wall_timeout_seconds
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Path, monkeypatch):
+    """Cancellation cannot claim success when process-group cleanup is unverified."""
+    import lunar_evolution.native_trusted_attempt as runner
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, timeout=1, target_sleep=10, mark_started_before_sleep=True,
+    )
+    marker_seen_at: float | None = None
+
+    def cancelled() -> bool:
+        nonlocal marker_seen_at
+        if (batch / "work" / "marker").is_file():
+            marker_seen_at = marker_seen_at or time.monotonic()
+        return marker_seen_at is not None and time.monotonic() - marker_seen_at >= 0.2
+
+    def uncertain_cleanup(owner, process, **kwargs):
+        return ProcessCleanupResult(
+            label=owner.label, pid=owner.pid, pgid=owner.pgid,
+            status=ProcessCleanupStatus.KILL_FAILED, alive_after=True,
+        )
+
+    monkeypatch.setattr(runner, "_cleanup", uncertain_cleanup)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact, cancelled=cancelled,
+    )
+    assert result.status == "recovery_required"
+    assert result.reason == "native_trusted_attempt_cleanup_unknown"
+    assert result.cleanup_status == "kill_failed"
+    assert result.exit_code is None
+
+    # The test deliberately replaced lifecycle cleanup; remove the sleeping fixture
+    # after assertions so no child survives the test process.
+    registration = json.loads((batch / "process-registration.json").read_bytes())
+    pid = registration["pid"]
+    try:
+        os.killpg(pid, 9)
+    except ProcessLookupError:
+        pass
+    try:
+        os.waitpid(pid, 0)
+    except ChildProcessError:
+        pass
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_parent_deadline_narrows_intent_wall_budget(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, timeout=5, target_sleep=10,
+    )
+    started = time.monotonic()
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+        parent_deadline=started + 0.35,
+    )
+    assert result.status == "recovery_required"
+    assert result.reason in {
+        "native_trusted_attempt_wall_timeout",
+        "native_trusted_attempt_cleanup_unknown",
+    }
+    assert result.gate_released
+    assert time.monotonic() - started < intent.wall_timeout_seconds
+    assert not (batch / "work" / "marker").exists()
+
+
+@pytest.mark.parametrize(
+    ("cancelled", "code"),
+    [
+        (lambda: 1, "native_trusted_attempt_cancellation_invalid"),
+        (lambda: (_ for _ in ()).throw(RuntimeError("callback failed")),
+         "native_trusted_attempt_cancellation_unknown"),
+    ],
+)
+def test_native_attempt_invalid_cancellation_callback_fails_closed(
+    tmp_path: Path, cancelled, code: str,
+):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        run_native_trusted_attempt(
+            workspace, producer_root=producer_root, intent=intent,
+            attestation=attestation, artifact=artifact, cancelled=cancelled,
+        )
+    assert failure.value.code == code
+    assert not (batch / "attestation-consumption.json").exists()
+    assert not (batch / "process-registration.json").exists()
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_invalid_parent_deadline_fails_closed(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        run_native_trusted_attempt(
+            workspace, producer_root=producer_root, intent=intent,
+            attestation=attestation, artifact=artifact,
+            parent_deadline=float("nan"),
+        )
+    assert failure.value.code == "native_trusted_attempt_parent_deadline_invalid"
+    assert not (batch / "attestation-consumption.json").exists()
+    assert not (batch / "process-registration.json").exists()

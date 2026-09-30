@@ -2,7 +2,7 @@
 
 **Created**: 2026-09-24
 
-**Status**: Provider-free trusted-bootstrap fixture and production launch identity adapter implemented; Feature 156 lifecycle and scheduler integration remain deferred
+**Status**: Provider-free trusted-bootstrap fixture and production launch identity adapter implemented; Feature 156 lifecycle, native control propagation, and scheduler integration remain deferred
 
 ## Problem
 
@@ -43,6 +43,16 @@ Feature 156 owns attestation consumption, PID/PGID registration, wall-clock exec
 envelope evidence, cleanup, recovery, and the terminal execution receipt. Feature 158 changes only
 the pre-work process boundary used by a future Feature 156 implementation: the registered process
 is the trusted bootstrap until the target is handed off in the same process group.
+
+The native trusted attempt must receive the same caller control boundary as the cooperative runner
+when this handoff is integrated. An optional process-local `cancelled` callback is observed before
+spawn, after registration, while waiting for bootstrap/target frames, and while waiting for the
+leader. An optional caller-owned `parent_deadline` uses the same monotonic clock domain as the
+intent deadline; the effective deadline is the earlier of the two and can never widen the intent
+budget. A verified owner-checked cleanup may produce a `cancelled` process receipt, while callback
+errors, invalid callback results, deadline expiry, or cleanup uncertainty remain
+`unknown`/`recovery_required`. These controls are runtime inputs, not launch identities, and must
+not be omitted from a later lifecycle audit or used to create a second attempt.
 
 Feature 157 remains the optional cooperative SDK request-evidence contract. Bootstrap evidence
 does not upgrade SDK declarations to host-enforced request timeouts. Features 150–153 and Feature
@@ -110,7 +120,10 @@ not whether the target or its descendants later leave that group.
 
 The bootstrap does not consume a second attestation. It receives the already consumed, exact
 launch record and cannot widen budgets. Timeout, handshake uncertainty, target start uncertainty,
-or cleanup uncertainty retain Feature 156's terminal unknown semantics and never trigger a retry.
+cancellation, or cleanup uncertainty retain Feature 156's terminal unknown semantics and never
+trigger a retry. The native process-only receipt must bind the effective deadline outcome and
+cleanup status without treating a callback or parent deadline as a substitute for formal request,
+output, or publication evidence.
 The fixture's timeout is one absolute monotonic deadline measured from the attempt start. Both
 owner-checked cleanup grace phases are clipped to that deadline; after expiry, a leader reap is
 bounded and any remaining liveness is recorded as `unknown`/`recovery_required` rather than

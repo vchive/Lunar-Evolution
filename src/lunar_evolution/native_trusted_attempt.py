@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import selectors
 import subprocess
@@ -75,6 +76,7 @@ _TERMINAL_PROTOCOL = "lunar-native-trusted-process-terminal-v1"
 _TERMINAL_NAME = "native-trusted-process-terminal.json"
 _RECOVERY_PROTOCOL = "lunar-native-trusted-process-recovery-v1"
 _RECOVERY_NAME = "native-trusted-process-recovery.json"
+_CLEANUP_RESERVE_SECONDS = 0.25
 _TERMINAL_FIELDS = frozenset({
     "schema_version", "protocol", "launch_id", "journal_id", "run_id",
     "parent_task_id", "task_id", "intent_sha256", "attestation_sha256",
@@ -229,20 +231,80 @@ def _cleanup_recovered_attempt(
     return receipt
 
 
-def _remaining(deadline: float, monotonic: Callable[[], float]) -> float:
+def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
+    """Observe caller cancellation without allowing a faulty callback to escape."""
+    if cancelled is None:
+        return False
+    try:
+        value = cancelled()
+    except Exception as exc:
+        raise NativeTrustedAttemptError(
+            "native_trusted_attempt_cancellation_unknown"
+        ) from exc
+    if not isinstance(value, bool):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
+    return value
+
+
+def _remaining(
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> float:
+    if _observe_cancellation(cancelled):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
     remaining = deadline - monotonic()
     if remaining <= 0:
         raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
     return remaining
 
 
-def _write_control(fd: int, data: bytes, deadline: float, monotonic: Callable[[], float]) -> None:
+def _compose_parent_deadline(
+    intent: ProducerLaunchIntent,
+    monotonic: Callable[[], float],
+    parent_deadline: float | None,
+) -> float:
+    """Compose the attempt budget with an optional caller-owned deadline."""
+    started = monotonic()
+    if type(started) not in (int, float) or not math.isfinite(float(started)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    own_deadline = float(started) + float(intent.wall_timeout_seconds)
+    if parent_deadline is None:
+        return own_deadline
+    if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_parent_deadline_invalid")
+    return min(own_deadline, float(parent_deadline))
+
+
+def _wait_event(
+    event: threading.Event,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> bool:
+    """Wait in bounded slices so cancellation is observed during broker startup."""
+    while True:
+        remaining = _remaining(deadline, monotonic, cancelled)
+        if event.wait(timeout=min(0.05, remaining)):
+            return True
+
+
+def _write_control(
+    fd: int,
+    data: bytes,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> None:
     os.set_blocking(fd, False)
     with selectors.DefaultSelector() as selector:
         selector.register(fd, selectors.EVENT_WRITE)
         offset = 0
         while offset < len(data):
-            if not selector.select(_remaining(deadline, monotonic)):
+            remaining = _remaining(deadline, monotonic, cancelled)
+            if not selector.select(min(0.05, remaining) if cancelled is not None else remaining):
+                if cancelled is not None:
+                    continue
                 raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
             try:
                 offset += os.write(fd, data[offset:])
@@ -250,12 +312,20 @@ def _write_control(fd: int, data: bytes, deadline: float, monotonic: Callable[[]
                 continue
 
 
-def _read_frame(fd: int, deadline: float, monotonic: Callable[[], float]) -> BootstrapHandshakeFrame:
+def _read_frame(
+    fd: int,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> BootstrapHandshakeFrame:
     data = bytearray()
     with selectors.DefaultSelector() as selector:
         selector.register(fd, selectors.EVENT_READ)
         while True:
-            if not selector.select(_remaining(deadline, monotonic)):
+            remaining = _remaining(deadline, monotonic, cancelled)
+            if not selector.select(min(0.05, remaining) if cancelled is not None else remaining):
+                if cancelled is not None:
+                    continue
                 raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
             part = os.read(fd, 1)
             if not part:
@@ -270,6 +340,32 @@ def _read_frame(fd: int, deadline: float, monotonic: Callable[[], float]) -> Boo
                 raise NativeTrustedAttemptError("native_trusted_attempt_frame_invalid")
 
 
+def _read_attempt_frame(
+    fd: int,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None,
+) -> BootstrapHandshakeFrame:
+    # Keep the historical three-argument call shape when no callback is supplied;
+    # a few embedders instrument this private helper in their local harnesses.
+    if cancelled is None:
+        return _read_frame(fd, deadline, monotonic)
+    return _read_frame(fd, deadline, monotonic, cancelled)
+
+
+def _write_attempt_control(
+    fd: int,
+    data: bytes,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None,
+) -> None:
+    if cancelled is None:
+        _write_control(fd, data, deadline, monotonic)
+    else:
+        _write_control(fd, data, deadline, monotonic, cancelled)
+
+
 def run_native_trusted_attempt(
     workspace: str | Path,
     *,
@@ -279,6 +375,8 @@ def run_native_trusted_attempt(
     artifact: NativeBootstrapArtifact,
     broker_config: ProducerBrokerConfig | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
 
@@ -291,7 +389,12 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
-    deadline = monotonic() + float(intent.wall_timeout_seconds)
+    if cancelled is not None and not callable(cancelled):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
+    if _observe_cancellation(cancelled):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
+    deadline = _compose_parent_deadline(intent, monotonic, parent_deadline)
+    _remaining(deadline, monotonic, cancelled)
     try:
         installed = load_native_bootstrap_artifact(
             artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
@@ -367,7 +470,7 @@ def run_native_trusted_attempt(
                     broker_env["LUNAR_PRODUCER_RESPONSE_FD"] = str(response_read)
                     broker_ready = threading.Event()
                     broker_deadline_ns = time.monotonic_ns() + int(
-                        _remaining(deadline, monotonic) * 1_000_000_000
+                        _remaining(deadline, monotonic, cancelled) * 1_000_000_000
                     )
 
                     def serve() -> None:
@@ -392,7 +495,7 @@ def run_native_trusted_attempt(
                     pair.bootstrap.executable, control_fd=control_read,
                     gate_fd=gate_read, frame_fd=frame_write,
                 )
-                _remaining(deadline, monotonic)
+                _remaining(deadline, monotonic, cancelled)
                 process = subprocess.Popen(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
@@ -413,10 +516,10 @@ def run_native_trusted_attempt(
                     # Only the broker thread closes its controller-side descriptors.
                     fds.remove(request_read)
                     fds.remove(response_write)
-                _write_control(control_write, control, deadline, monotonic)
+                _write_attempt_control(control_write, control, deadline, monotonic, cancelled)
                 os.close(control_write)
                 fds.remove(control_write)
-                ready = _read_frame(frame_read, deadline, monotonic)
+                ready = _read_attempt_frame(frame_read, deadline, monotonic, cancelled)
                 if ready.kind != "bootstrap_ready" or ready.sequence != 1:
                     raise NativeTrustedAttemptError("native_trusted_attempt_ready_invalid")
                 published = publish_trusted_bootstrap_registration(
@@ -459,16 +562,23 @@ def run_native_trusted_attempt(
 
                 owner = RegisteredProcess(pid, pid, owner_check=owned, label=launch.launch_id)
                 if broker_ready is not None and (
-                    not broker_ready.wait(_remaining(deadline, monotonic)) or "error" in broker_state
+                    not _wait_event(broker_ready, deadline, monotonic, cancelled)
+                    or "error" in broker_state
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_broker_unknown")
-                _remaining(deadline, monotonic)
+                _remaining(deadline, monotonic, cancelled)
+                if _observe_cancellation(cancelled):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
                 gate_released = True
                 session.release(launch.gate_nonce)
-                started = _read_frame(frame_read, deadline, monotonic)
+                # Keep a small slice of the attempt budget available for the owner-checked
+                # cleanup path. This remains inside the caller deadline; it only makes a
+                # late frame timeout conservative instead of entering cleanup with no budget.
+                execution_deadline = deadline - _CLEANUP_RESERVE_SECONDS
+                started = _read_attempt_frame(frame_read, execution_deadline, monotonic, cancelled)
                 session.accept_frame(started)
                 if (
                     started.kind != "target_started" or started.sequence != 2
@@ -479,7 +589,7 @@ def run_native_trusted_attempt(
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_target_start_unknown")
                 target_started = True
-                terminal = _read_frame(frame_read, deadline, monotonic)
+                terminal = _read_attempt_frame(frame_read, execution_deadline, monotonic, cancelled)
                 session.accept_frame(terminal)
                 if (
                     terminal.kind != "terminal" or terminal.sequence != 3
@@ -487,7 +597,17 @@ def run_native_trusted_attempt(
                     or terminal.intent_sha256 != launch.intent_sha256
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_terminal_unknown")
-                exit_code = process.wait(timeout=_remaining(deadline, monotonic))
+                while True:
+                    remaining = _remaining(deadline, monotonic, cancelled)
+                    if remaining <= _CLEANUP_RESERVE_SECONDS:
+                        raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                    try:
+                        exit_code = process.wait(
+                            timeout=min(0.05, remaining)
+                        )
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
                 TrustedBootstrapBindingError, NativeBootstrapError, ProducerIsolationError,
                 ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
@@ -570,7 +690,7 @@ def run_native_trusted_attempt(
                     gate_released=gate_released, target_started=target_started,
                     exit_code=exit_code, cleanup_status=cleanup_status,
                 )
-                _remaining(deadline, monotonic)
+                _remaining(deadline, monotonic, cancelled)
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
                 stored = _read_durable_json(
                     batch / _TERMINAL_NAME, code="native_trusted_attempt_terminal_write_unknown",

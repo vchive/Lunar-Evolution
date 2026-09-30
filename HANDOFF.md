@@ -1,5 +1,22 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-30 Native trusted control propagation audit
+
+Feature 156 的 cooperative runner 已有 `cancelled` 回调和同一 monotonic 时钟域的
+`parent_deadline` 组合（取 intent 与 parent 的较小值），并在捕获、leader wait 和清理阶段保留
+`cancelled`/`unknown` 终态。此次文档审计把相同边界明确写入 Feature 158：native trusted
+attempt 接入时必须在 spawn 前、登记后、bootstrap/target frame wait 和 leader wait 观察回调，
+所有等待、cleanup 与 receipt 写入共用有效 deadline；回调异常、非法返回值、deadline 到期或
+清理不确定都保持 fail-closed。
+
+native trusted attempt 已接入 `cancelled`/`parent_deadline` 接口和 fail-closed 语义；selector、
+broker、frame、leader wait 都使用短轮询，且为 owner-checked cleanup 预留同一 deadline 内的
+收尾窗口。native-attempt focused suite **24 passed**，覆盖 active cancellation、cleanup
+uncertainty、parent deadline 提前终止和非法控制输入；Ruff、compileall、diff check 通过。
+acceptance matrix 的 L158-05 已更新为 `supporting-only`。这条 supporting-only/production
+integration 边界不能由 cooperative L156-12 的离线证据代替；仍需与 Feature 156/157 的正式
+registration、broker、terminal receipt 和 recovery 生命周期一起验收。
+
 ## 2026-09-30 RSI/producer 本地闭环增量
 
 已推送 `31f0098`（RSI）和 `d1ae8bc`（producer）。RSI 新增 spawn 进程级 clean-room verifier：

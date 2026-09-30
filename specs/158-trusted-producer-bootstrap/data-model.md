@@ -41,6 +41,22 @@ TrustedBootstrapEvidence
   evidence_sha256
 ```
 
+Native attempt control inputs are deliberately outside the durable identity model:
+
+```text
+NativeTrustedAttemptControl (runtime input, not persisted as identity)
+  cancelled?            # process-local callback returning bool
+  parent_deadline?      # absolute monotonic timestamp in the caller's clock domain
+  effective_deadline    # min(intent_deadline, parent_deadline when supplied)
+```
+
+The effective deadline is consumed by every native control/frame wait, process wait, cleanup
+phase, broker wait, and receipt write. A callback exception or non-boolean result fails closed. A
+true cancellation observation can only become a `cancelled` process receipt after owner-checked
+cleanup is verified; otherwise the attempt remains `unknown`/`recovery_required`. These values are
+runtime controls, not launch/attestation identities, and are not allowed to widen budgets or
+authorize a replay.
+
 `kind` is one of `bootstrap_ready`, `target_started`, `target_start_failed`, or `terminal`. Frames
 are bounded, canonical, ordered, and no-follow transport records; they contain no producer text,
 prompt, credential, provider response, or score. A successful evidence record requires the pinned

@@ -21,6 +21,14 @@
   native artifact with inherited bindings, pass one deadline through cleanup/receipt/recovery,
   and connect the broker before T158-04 can close.
 
+  The native attempt's control surface is also part of this integration task: accept an optional
+  process-local `cancelled` callback and caller-owned monotonic `parent_deadline`, use the earlier
+  of the parent and intent deadlines for every frame wait, process wait, cleanup, and receipt
+  write, and preserve `cancelled` versus `unknown`/`recovery_required` according to verified
+  owner-checked cleanup. The callback must be checked at pre-spawn, post-registration, frame-wait,
+  and leader-wait boundaries; exceptions or non-boolean values fail closed before spawn. These
+  controls must be covered by native-attempt fixtures before the task can be considered complete.
+
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This

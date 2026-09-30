@@ -12,8 +12,13 @@
 4. Release the gate only after registration is durable. Drain stdout/stderr concurrently under
    fixed byte ceilings and record only bounded counts, truncation flags, and digests.
 5. Enforce one monotonic wall-clock deadline across waits, capture, owner-checked cleanup, and
-   output observation. Use `process_ownership.cleanup_registered_process` and preserve every
-   uncertain result as terminal recovery-required evidence.
+   output observation. Compose an optional caller-owned `parent_deadline` in the same monotonic
+   clock domain by taking the earlier deadline; it can only narrow the intent budget. Observe an
+   optional process-local `cancelled` callback before launch, after registration, during capture,
+   and while waiting for the leader. Use `process_ownership.cleanup_registered_process` and
+   preserve every uncertain result as terminal recovery-required evidence. A verified cleanup
+   publishes one `cancelled` receipt; callback errors, non-boolean results, and cleanup
+   uncertainty fail closed.
 6. Add no-follow, bounded, double-stat output-envelope inspection and bind its bytes, identity,
    and digest to the execution receipt. Do not parse or adjudicate producer scores here.
 7. Add recovery inspection for controller interruption and unknown cleanup. It may clean the
