@@ -26,6 +26,13 @@ recovery returns the exact receipt without signaling, and tampering, callback er
 expiry, or cleanup uncertainty do not create that terminal. This remains process-only evidence;
 it does not authorize bundle publication or replace the formal execution receipt.
 
+The read-only native lifecycle audit now composes the process terminal with optional output capture
+and broker evidence. Focused fixtures cover process-only completion without capture, valid capture
+digest and request coverage, capture receipt tampering, and broker journal tampering. Recovery or
+unknown records are classified as `recovery_required` before any output read. The audit remains
+provider-free and publication-ineligible until Feature 156's formal execution receipt and
+recovery path consume the same records.
+
 ## Native pre-gate handoff reread (2026-09-28)
 
 The native attempt now uses the formal read-only observer under its existing deadline before

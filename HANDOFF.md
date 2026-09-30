@@ -4701,3 +4701,25 @@ target 转发显式 broker fd，不转发控制器环境或凭据。
 production journal。T040 的真实一次 attempt、独立 postrun/holdout audit、T156-05/06/09/12/14、
 T157-05/06、T158-04 的完整生产接线仍开放；下一步必须从新的 registration、冻结材料、clean
 `origin/main` 和唯一 campaign root 开始，离线准入与 runner 全部通过后才能启动真实验收。
+
+## 2026-09-30 Native lifecycle audit increment
+
+继续在当前 `codex/feature-156-producer-lifecycle` 分支推进 T158-04 的可观测性切片。原生
+attempt 的 deadline sidecar 现在同时绑定 `launch_sha256` 与 `attestation_sha256`，因此只读
+恢复和 cleanup recovery 都会拒绝换绑到另一份有效预算的 sidecar。
+
+新增只读 `audit_native_trusted_lifecycle`：先验证正式 native process terminal，再按同一
+attempt 复核可选 output capture 与 broker journal。没有 capture 时返回 `process_only`；有效
+capture 返回 capture 摘要和 request coverage，但仍保持 `publication_eligible=false`；capture
+receipt、broker journal 或其他持久证据改变时返回 `recovery_required`。若底层恢复只有
+recovery/unknown 记录，不会再被误报成 process terminal。该 API 不 spawn、不 signal、不 cleanup、
+不 publish。
+
+本轮补充了 process-only、有效 capture、capture receipt 篡改和 broker journal 篡改回归，
+并同步更新 Feature 158 data-model/tasks/validation。专项 native attempt 回归通过，Ruff、
+compileall、`git diff --check` 通过；Darwin immutable snapshot 测试仍可能产生 pytest 清理
+warning。没有运行 provider、WebAgent、外部 producer 或真实 campaign。
+
+T158-04 仍未闭合：正式 Feature 156 `execution-receipt.json`、native terminal 与 broker journal
+的生产绑定、publication admission、scheduler 接线以及 post-crash owner-checked cleanup/
+recovery 仍待实现。

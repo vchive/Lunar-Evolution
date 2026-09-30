@@ -91,7 +91,8 @@ _TERMINAL_FIELDS = frozenset({
     "terminal_sha256",
 })
 _DEADLINE_FIELDS = frozenset({
-    "schema_version", "protocol", "launch_id", "journal_id", "intent_sha256",
+    "schema_version", "protocol", "launch_id", "journal_id", "launch_sha256",
+    "intent_sha256", "attestation_sha256",
     "started_monotonic", "deadline_monotonic", "boot_id", "deadline_sha256",
 })
 
@@ -180,7 +181,9 @@ def _deadline_record(
     record: dict[str, object] = {
         "schema_version": "1", "protocol": _DEADLINE_PROTOCOL,
         "launch_id": launch.launch_id, "journal_id": launch.journal_id,
+        "launch_sha256": launch.launch_sha256,
         "intent_sha256": launch.intent_sha256,
+        "attestation_sha256": launch.attestation_sha256,
         "started_monotonic": float(started), "deadline_monotonic": float(deadline),
         "boot_id": boot_id,
     }
@@ -222,7 +225,9 @@ def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str,
         or record.get("protocol") != _DEADLINE_PROTOCOL
         or record.get("launch_id") != registration.get("launch_id")
         or record.get("journal_id") != registration.get("journal_id")
+        or record.get("launch_sha256") != registration.get("launch_sha256")
         or record.get("intent_sha256") != registration.get("intent_sha256")
+        or record.get("attestation_sha256") != registration.get("attestation_sha256")
     ):
         raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
     started = record.get("started_monotonic")
@@ -1064,7 +1069,76 @@ def recover_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_recovery_evidence_invalid") from exc
 
 
+def audit_native_trusted_lifecycle(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+) -> dict[str, object]:
+    """Read-only audit of the native process/output evidence chain.
+
+    This composes the durable process terminal with the optional same-attempt output
+    capture and broker journal. It never launches, cleans up, or publishes. A valid
+    process-only terminal remains ``process_only`` when output capture is absent;
+    changed or malformed capture evidence is ``recovery_required``.
+    """
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    result: dict[str, object] = {
+        "status": "process_only", "reason": "native_trusted_lifecycle_process_verified",
+        "launch_id": intent.launch_id, "journal_id": intent.journal_id,
+        "terminal_sha256": terminal.get("terminal_sha256"),
+        "output_capture_sha256": None, "broker_coverage": "not_observed",
+        "publication_eligible": False,
+    }
+    if (
+        terminal.get("protocol") != _TERMINAL_PROTOCOL
+        or not isinstance(terminal.get("terminal_sha256"), str)
+        or terminal.get("process_status") not in {"exited_zero", "exited_nonzero", "cancelled"}
+    ):
+        result["status"] = "recovery_required"
+        result["reason"] = "native_trusted_lifecycle_process_terminal_unverified"
+        return result
+    if terminal.get("process_status") != "exited_zero":
+        result["reason"] = "native_trusted_lifecycle_process_terminal_unpublishable"
+        return result
+    batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    capture_path = batch / "native-trusted-output-capture.json"
+    try:
+        os.lstat(capture_path)
+    except FileNotFoundError:
+        result["reason"] = "native_trusted_lifecycle_capture_missing"
+        return result
+    except OSError as exc:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_capture_invalid") from exc
+    try:
+        # Import lazily: native_trusted_output imports this module's recovery API.
+        from .native_trusted_capture import (
+            NativeTrustedCaptureError,
+            recover_native_trusted_output_capture,
+        )
+
+        capture = recover_native_trusted_output_capture(
+            batch, intent=intent, terminal=terminal,
+        )
+    except NativeTrustedCaptureError as exc:
+        result["status"] = "recovery_required"
+        result["reason"] = exc.code
+        return result
+    except Exception:  # noqa: BLE001 - fixed read-only audit boundary.
+        result["status"] = "recovery_required"
+        result["reason"] = "native_trusted_lifecycle_capture_invalid"
+        return result
+    result["output_capture_sha256"] = capture["capture_sha256"]
+    broker = capture.get("broker_evidence")
+    if isinstance(broker, dict):
+        result["broker_coverage"] = broker.get("coverage", "unknown")
+    else:
+        result["broker_coverage"] = "producer_declaration_only"
+    result["reason"] = "native_trusted_lifecycle_capture_verified"
+    return result
+
+
 __all__ = [
     "NativeTrustedAttemptError", "NativeTrustedAttemptObservation",
-    "recover_native_trusted_attempt", "run_native_trusted_attempt",
+    "audit_native_trusted_lifecycle", "recover_native_trusted_attempt", "run_native_trusted_attempt",
 ]

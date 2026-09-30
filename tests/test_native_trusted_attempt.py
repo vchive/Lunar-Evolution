@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -15,9 +16,11 @@ from test_http_transport_deadline import clear_proxy_environment, local_http
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
 from lunar_evolution.native_trusted_attempt import (
     NativeTrustedAttemptError,
+    audit_native_trusted_lifecycle,
     recover_native_trusted_attempt,
     run_native_trusted_attempt,
 )
+from lunar_evolution.native_trusted_capture import capture_native_trusted_output
 from lunar_evolution.process_ownership import ProcessCleanupResult, ProcessCleanupStatus
 from lunar_evolution.producer_bootstrap import (
     ProducerBootstrapError,
@@ -107,6 +110,33 @@ def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_
     return workspace, producer_root, intent, attestation, artifact, batch
 
 
+def _materialize_valid_capture(
+    batch: Path, intent, terminal: dict[str, object], *, broker=None,
+) -> dict[str, object]:
+    output = batch / intent.output_directory
+    output.mkdir(parents=True, exist_ok=True)
+    content = b"candidate = 1\n"
+    material = output / "candidate.py"
+    material.write_bytes(content)
+    envelope = {
+        "schema_version": "1", "producer_id": intent.producer_id,
+        "producer_fingerprint": intent.producer_fingerprint, "status": "completed",
+        "contract_sha256": intent.contract_sha256, "budget": {"requests": 0},
+        "materials": [{
+            "kind": "candidate_source", "path": "candidate.py", "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        }],
+    }
+    (output / "producer-result.json").write_text(
+        json.dumps(envelope, sort_keys=True, separators=(",", ":")), encoding="utf-8",
+    )
+    deadline = json.loads((batch / "native-trusted-attempt-deadline.json").read_bytes())
+    return capture_native_trusted_output(
+        batch, intent=intent, terminal_sha256=terminal["terminal_sha256"], broker=broker,
+        deadline=deadline["deadline_monotonic"],
+    )
+
+
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_path: Path, monkeypatch):
     import lunar_evolution.native_trusted_attempt as runner
@@ -146,7 +176,9 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
     )
     assert deadline_record["launch_id"] == intent.launch_id
     assert deadline_record["journal_id"] == intent.journal_id
+    assert deadline_record["launch_sha256"] == terminal["launch_sha256"]
     assert deadline_record["intent_sha256"] == intent.intent_sha256
+    assert deadline_record["attestation_sha256"] == attestation.attestation_sha256
     assert deadline_record["deadline_monotonic"] - deadline_record["started_monotonic"] == intent.wall_timeout_seconds
     assert recover_native_trusted_attempt(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
@@ -175,6 +207,94 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
             deadline=0.0, monotonic=lambda: 0.0,
         )
     assert expired.value.code == "producer_bootstrap_attempt_wall_timeout"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_audit_native_lifecycle_reports_process_only_when_capture_missing(tmp_path: Path):
+    workspace, _producer_root, intent, attestation, artifact, _ = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert audit["status"] == "process_only"
+    assert audit["reason"] == "native_trusted_lifecycle_capture_missing"
+    assert audit["output_capture_sha256"] is None
+    assert audit["broker_coverage"] == "not_observed"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_audit_native_lifecycle_reports_verified_capture(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    capture = _materialize_valid_capture(batch, intent, terminal)
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert audit["status"] == "process_only"
+    assert audit["reason"] == "native_trusted_lifecycle_capture_verified"
+    assert audit["output_capture_sha256"] == capture["capture_sha256"]
+    assert audit["broker_coverage"] == "producer_declaration_only"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_audit_native_lifecycle_rejects_tampered_capture(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    _materialize_valid_capture(batch, intent, terminal)
+    capture_path = batch / "native-trusted-output-capture.json"
+    capture = json.loads(capture_path.read_bytes())
+    capture["publication_eligible"] = True
+    capture_path.write_text(json.dumps(capture, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert audit["status"] == "recovery_required"
+    assert audit["reason"] == "native_trusted_capture_receipt_invalid"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_audit_native_lifecycle_rejects_tampered_broker_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    clear_proxy_environment(monkeypatch)
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, broker_request=True,
+    )
+    with local_http() as (endpoint, _calls):
+        result = run_native_trusted_attempt(
+            workspace, producer_root=producer_root, intent=intent,
+            attestation=attestation, artifact=artifact,
+            broker_config=ProducerBrokerConfig(endpoint, {}),
+        )
+    assert result.broker_observation is not None
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    _materialize_valid_capture(
+        batch, intent, terminal, broker=result.broker_observation,
+    )
+    with (batch / ".host-request-journal" / "requests").open("ab") as journal:
+        journal.write(b"tampered\n")
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert audit["status"] == "recovery_required"
+    assert audit["reason"] == "native_trusted_capture_broker_invalid"
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
@@ -658,6 +778,36 @@ def test_recovery_rejects_tampered_native_attempt_deadline(
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_recovery_requires_native_attempt_deadline_sidecar(tmp_path: Path):
+    """A terminal receipt cannot be recovered without its retained budget."""
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    assert result.terminal_sha256 is not None
+    (batch / "native-trusted-attempt-deadline.json").unlink()
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        recover_native_trusted_attempt(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert failure.value.code == "native_trusted_recovery_deadline_invalid"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_lifecycle_audit_keeps_missing_attempt_recovery_required(tmp_path: Path):
+    """A missing claim is not reported as a process-only terminal."""
+    workspace, producer_root, intent, attestation, artifact, _ = _attempt(tmp_path)
+    result = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert result["status"] == "recovery_required"
+    assert result["reason"] == "native_trusted_lifecycle_process_terminal_unverified"
+    assert result["terminal_sha256"] is None
+    assert result["publication_eligible"] is False
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_recovery_rejects_tampered_native_terminal_receipt(tmp_path: Path):
     from lunar_evolution import producer_process
 
@@ -893,7 +1043,9 @@ def test_native_attempt_parent_deadline_narrows_intent_wall_budget(tmp_path: Pat
     result = run_native_trusted_attempt(
         workspace, producer_root=producer_root, intent=intent,
         attestation=attestation, artifact=artifact,
-        parent_deadline=started + 0.35,
+        # Leave enough headroom for Darwin immutable-snapshot setup while still
+        # proving the parent budget cuts the five-second intent deadline short.
+        parent_deadline=started + 1.5,
     )
     assert result.status == "recovery_required"
     assert result.reason in {

@@ -42,6 +42,14 @@
   obtain a fresh grace window. This closes the durable-budget slice only; cross-boot recovery and
   the formal Feature 156 execution receipt remain open.
 
+  The native attempt now exposes a read-only `audit_native_trusted_lifecycle` composition point.
+  It first requires a verified process terminal, then optionally revalidates the same-attempt
+  output capture and broker journal. Missing capture is reported as `process_only`; valid capture
+  returns its digest and request-coverage classification while remaining unpublished; changed or
+  malformed capture/journal evidence returns `recovery_required`. A recovery/unknown record is
+  never mistaken for a process terminal. This adds lifecycle observability only and does not
+  publish output, authorize cleanup, or close the formal Feature 156 receipt path.
+
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This
