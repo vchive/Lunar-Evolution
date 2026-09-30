@@ -21,6 +21,7 @@ from lunar_evolution.producer_bundle_transaction import (
     NativeProducerBundleTransactionError,
     run_native_producer_bundle_publication_transaction,
 )
+from lunar_evolution.producer_process import _digest_without
 from lunar_evolution.shinka_handoff import export_shinka_result
 
 PRODUCER_FINGERPRINT = "d" * 64
@@ -98,6 +99,26 @@ def _batch_directory(workspace: Path, journal_id: str) -> None:
     (workspace / "evolution" / "producer-batches" / journal_id).mkdir(parents=True)
 
 
+def _formal_execution_receipt(
+    *, journal_id: str, run_id: str | None = None, parent_task_id: str = "producer",
+    task_id: str = "native-bundle-publication",
+) -> dict[str, object]:
+    receipt: dict[str, object] = {
+        "protocol": "lunar-producer-process-execution-v1",
+        "journal_id": journal_id,
+        "run_id": run_id or journal_id,
+        "parent_task_id": parent_task_id,
+        "task_id": task_id,
+        "status": "completed",
+        "exit_code": 0,
+        "gate_released": True,
+        "cleanup_status": "cleaned",
+        "trusted_execution": {"broker_coverage": "brokered_requests_only"},
+    }
+    receipt["receipt_sha256"] = _digest_without(receipt, "receipt_sha256")
+    return receipt
+
+
 def _initialize_native_population(strategy: PopulationStrategy, values: tuple[int, ...] = (1, 2)) -> None:
     active = {index: [] for index in range(strategy.config.num_islands)}
     for index, value in enumerate(values):
@@ -159,6 +180,7 @@ def test_shinka_sqlite_drafts_are_locally_reevaluated_and_published_with_readbac
     assert result.publication_status == "published"
     assert result.published_journal is not None
     assert result.published_journal.state == "published"
+    assert "native_execution_receipt_sha256" not in result.journal.to_dict()
     assert (export / "producer-result.json").is_file()
 
     archive = CandidateArchive(context.workspace, requested_strategy="population", read_only=True)
@@ -201,6 +223,57 @@ def test_shinka_sqlite_drafts_are_locally_reevaluated_and_published_with_readbac
     CandidateArchive(context.workspace, requested_strategy="population", read_only=True).validate_candidate_integrity(
         require_all=True,
     )
+
+
+def test_transaction_links_formal_native_execution_receipt(tmp_path: Path) -> None:
+    context = build_context(tmp_path / "native")
+    strategy = PopulationStrategy(context)
+    _initialize_native_population(strategy)
+    strategy, drafts, plan, _export = _shinka_drafts(tmp_path, context, (9,))
+    journal_id = "transaction-with-receipt"
+    _batch_directory(context.workspace, journal_id)
+    receipt = _formal_execution_receipt(journal_id=journal_id)
+    receipt_path = context.workspace / "evolution" / "producer-batches" / journal_id / "execution-receipt.json"
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+
+    result = run_native_producer_bundle_publication_transaction(
+        context.workspace, strategy, drafts, plan, journal_id=journal_id,
+        native_execution_receipt_sha256=receipt["receipt_sha256"],
+    )
+
+    assert result.publication_status == "published"
+    assert result.journal.native_execution_receipt_sha256 == receipt["receipt_sha256"]
+    persisted = json.loads(
+        (context.workspace / "evolution" / "producer-batches" / journal_id / "journal.json").read_bytes()
+    )
+    assert persisted["native_execution_receipt_sha256"] == receipt["receipt_sha256"]
+
+
+@pytest.mark.parametrize("mode", ["missing", "invalid", "tampered"])
+def test_transaction_rejects_missing_invalid_or_tampered_formal_receipt(
+    tmp_path: Path, mode: str,
+) -> None:
+    context = build_context(tmp_path / "native")
+    strategy = PopulationStrategy(context)
+    _initialize_native_population(strategy)
+    strategy, drafts, plan, _export = _shinka_drafts(tmp_path, context, (9,))
+    journal_id = f"transaction-receipt-{mode}"
+    _batch_directory(context.workspace, journal_id)
+    receipt = _formal_execution_receipt(journal_id=journal_id)
+    receipt_path = context.workspace / "evolution" / "producer-batches" / journal_id / "execution-receipt.json"
+    if mode == "invalid":
+        receipt_path.write_text("{}", encoding="utf-8")
+    elif mode == "tampered":
+        receipt["status"] = "failed"
+        receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+
+    with pytest.raises(NativeProducerBundleTransactionError) as failure:
+        run_native_producer_bundle_publication_transaction(
+            context.workspace, strategy, drafts, plan, journal_id=journal_id,
+            native_execution_receipt_sha256=receipt["receipt_sha256"],
+        )
+    assert failure.value.code == "producer_bundle_transaction_execution_receipt_invalid"
+    assert not (context.workspace / "evolution" / "producer-batches" / journal_id / "journal.prepared.json").exists()
 
 
 def test_all_rejected_shinka_batch_leaves_native_archive_and_state_unchanged(tmp_path: Path) -> None:
