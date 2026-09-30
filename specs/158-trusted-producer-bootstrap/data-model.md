@@ -77,11 +77,19 @@ cleanup status, TERM/KILL/alive flags, and a self-digest. The terminal carries
 `cleanup_sha256`, and recovery rechecks the sidecar before returning a terminal observation.
 Cleanup evidence cannot authorize a signal or publication by itself.
 
-`build_native_trusted_execution_receipt` is a read-only strict projection into the formal Feature
-156 `ProducerExecutionReceipt`. It requires a passed native terminal, complete bounded streams,
+`build_native_trusted_execution_receipt` is a strict projection into the formal Feature 156
+`ProducerExecutionReceipt`. It requires a passed native terminal, complete bounded streams,
 stable envelope evidence, complete host-broker coverage by default, target execution binding, and
-verified cleanup. It constructs the formal DTO but does not write `execution-receipt.json` or
-enter population admission; the publication transaction remains a separate integration step.
+verified cleanup. The projection is side-effect free. The companion
+`persist_native_trusted_execution_receipt` is the create-only persistence boundary: it calls the
+same projection, writes `execution-receipt.json` with the existing bounded fsync/atomic
+no-follow writer using `exclusive=true`, then performs a bounded reread and validates the exact
+canonical self-digest and all bound evidence again. A missing receipt may be created once; an
+existing receipt is accepted only when its canonical bytes and `receipt_sha256` are exactly the
+same result (idempotent read-only replay). Any collision, changed bytes, symlink, non-regular
+file, digest mismatch, or failed reread is rejected and never replaced. This persists the formal
+receipt but does not enter population admission or publication; the publication transaction
+remains a separate integration step.
 
 The native process-only terminal includes `deadline_sha256` alongside the registration, handoff,
 and bootstrap-evidence digests. Recovery reconstructs the expected terminal against the retained

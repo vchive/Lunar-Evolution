@@ -54,3 +54,11 @@ registered lifecycle lock and may clean only the exact OS start identity, retain
 outcome in a separate recovery receipt. This is a partial T156-06/09 slice. The native path
 still lacks a Feature 156 output-envelope receipt, host-observed request evidence, and complete
 terminal deadline/capture coverage, so T156-05/06/09/14 remain open.
+
+The formal receipt slice now adds a create-only `execution-receipt.json` persistence entry after
+the strict native evidence projection. It uses the existing bounded fsync/atomic
+no-follow writer, reject replacement and non-regular destinations, reread and revalidate the
+canonical self-digest, and treat an unchanged existing receipt as an idempotent replay. Missing
+or rebound sidecars, incomplete broker coverage, and cleanup uncertainty remain fail-closed. This
+does not close T156-14 or authorize publication; the admission transaction still consumes the
+receipt through its own boundary.

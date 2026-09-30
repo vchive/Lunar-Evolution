@@ -136,6 +136,14 @@ explicit shell/session/stdin/environment assertions, and a hostile executable th
 side effect before reading the gate. The hostile case is intentionally negative evidence: the
 ordinary runner cannot prove pre-gate non-execution, so it does not satisfy T156-12 or T158-04.
 
+The native formal-receipt acceptance row additionally requires create-only persistence after the
+strict evidence projection. The first call must durably create one canonical `execution-receipt.json`
+and a bounded reread must recover the identical receipt digest. A second call with unchanged
+evidence must succeed without rewriting bytes. Existing different bytes, self-digest tampering,
+symlink/non-regular destinations, and any missing or rebound evidence must fail closed without
+replacement or a second attestation claim. The receipt remains a lifecycle artifact until the
+separate Feature 153 publication/admission transaction accepts it.
+
 ## Implementation checkpoint (2026-09-24)
 
 The local runner now claims the nonce once across the workspace, revalidates launch identity,

@@ -61,6 +61,16 @@ under the system-derived launch directory; updates use bounded temp files, `fsyn
 no-follow rename. Receipt transitions bind the previous receipt digest, so a later launch cannot
 overwrite an earlier attempt.
 
+The native trusted path has a distinct create-only formalization boundary. After all native
+terminal, bounded stream, stable envelope, complete host-broker, target execution-binding,
+deadline, and owner-checked cleanup evidence has been revalidated, the controller may project and
+persist exactly one `ProducerExecutionReceipt` at `execution-receipt.json`. Persistence uses the
+same bounded fsync/atomic no-follow writer with an exclusive destination, followed by a bounded
+reread and canonical self-digest check. A byte-identical existing receipt is an idempotent
+read-only replay; any collision or altered receipt is rejected and never replaced. This receipt
+is still evidence for the later admission transaction: writing it does not by itself authorize
+population admission, publication, scheduler retry, or a second attestation.
+
 `consumed_at_unix_ns` is audit metadata only and never replaces the monotonic execution deadline.
 `session_id` and `owner_lock_sha256` identify the local registration; they do not grant authority
 to signal another process. Producer output, stdout, and stderr are represented by bounded sizes

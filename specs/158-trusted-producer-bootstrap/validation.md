@@ -52,9 +52,15 @@ on recovery. Envelope capture records stable before/after identity digests; brok
 the canonical host journal and requires complete admitted-count coverage. Cleanup is persisted as
 `native-trusted-cleanup.json` and bound into the terminal. Focused native stream, output, attempt,
 cleanup, and projection suites pass locally with provider-free fixtures. The new
-`build_native_trusted_execution_receipt` function only builds an in-memory formal DTO after these
-checks; it intentionally does not write `execution-receipt.json`, publish bundles, or change the
-`publication_eligible=false` boundary.
+`build_native_trusted_execution_receipt` function builds an in-memory formal DTO only after these
+checks. The companion persistence test must create exactly one `execution-receipt.json`, fsync
+the canonical payload, reread it through the bounded no-follow path, and recover the same receipt
+self-digest. Repeating the call against unchanged bytes is a read-only idempotent success. The
+negative fixtures must reject an existing different receipt, a self-rehashed/tampered receipt, a
+symlink or non-regular destination, and every missing or changed terminal, stream, envelope,
+broker, target-binding, deadline, or cleanup sidecar. No fixture may treat the formal receipt as
+publication or population authority; it remains `publication_eligible=false` until the separate
+Feature 153 admission transaction consumes it.
 
 ## Native pre-gate handoff reread (2026-09-28)
 

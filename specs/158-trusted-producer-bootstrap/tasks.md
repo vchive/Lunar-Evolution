@@ -69,6 +69,15 @@
   coverage while forcing `publication_eligible=false`. It is an explicit projection for later
   integration; it is not the formal `execution-receipt.json` and does not widen admission.
 
+  The current persistence slice exposes `persist_native_trusted_execution_receipt`. It writes
+  only the formal `execution-receipt.json` after the strict projection has closed terminal,
+  stream, envelope, broker, target-binding, deadline, and cleanup evidence. The write is
+  create-only and uses the existing bounded fsync/atomic no-follow writer with an exclusive
+  destination. A bounded reread must validate canonical bytes and the receipt self-digest. An
+  existing identical receipt is a successful idempotent replay; a collision, tamper, symlink,
+  non-regular destination, or changed projection is a fixed failure. This step does not authorize
+  publication, population admission, scheduler execution, or a retry with a new attestation.
+
   The sidecar has a matching read-only recovery verifier. It requires the sidecar's exact schema
   and self-digest, then reruns the terminal/capture/deadline chain and compares every bound digest;
   it never treats the sidecar alone as process or publication authority.

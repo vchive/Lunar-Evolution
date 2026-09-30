@@ -23,6 +23,11 @@
    and digest to the execution receipt. Do not parse or adjudicate producer scores here.
 7. Add recovery inspection for controller interruption and unknown cleanup. It may clean the
    exact registered group but never relaunches or consumes another attestation.
-8. Add provider-free fixture tests and static checks, then run the focused lifecycle suite and
+8. Persist the native formal `ProducerExecutionReceipt` through a create-only
+   `execution-receipt.json` boundary after all evidence has been revalidated. Use bounded
+   fsync/atomic no-follow writes, exclusive creation, bounded reread, and canonical self-digest
+   verification; permit only byte-identical idempotent replay and reject collisions without
+   replacement. Keep admission and publication in their own transaction.
+9. Add provider-free fixture tests and static checks, then run the focused lifecycle suite and
    the existing offline regression. Keep automatic solve and scheduler entry points unchanged
    until a separate integration feature is specified.
