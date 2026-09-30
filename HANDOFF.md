@@ -58,6 +58,61 @@ verifier/curriculum/judge 的调用内部中断与真实外部 callback 不重�
 verifier、memory governance、holdout 收益回归、真实 solver adapter、嵌套递归与用量/成本统计
 仍按阶段报告推进。阶段 1 不笼统标记全部完成。本轮只提交 RSI 文件，保留未提交的 producer 工作。
 
+## 2026-09-29 Shinka 共享运行预算与全拒绝终态
+
+在独立分支 `codex/shinka-native-publication` 继续 Feature 153，不扩展或提交 RSI。
+事务新增 caller-owned `SolveExecutionControl`，复用同一个运行时钟，组合更紧的父级预算，
+在候选、暂存、获得发布锁及提交前检查。锁等待支持取消/到期退出；超时、取消保留明确类型。
+提交越过持久 unknown marker 后完成原有提交协议，避免已发布却被误报超时。
+预算摘要由实际执行/评估/墙钟限额生成，重试不能通过省略 control 或复制旧摘要来放宽政策。
+
+全拒绝批次现在写入独立拒绝收据及 `all_rejected/committed` 终态 journal，archive/state
+保持原字节。只读检查从原始 native evidence 重建完整收据，拒绝仅重算便携摘要的篡改。
+精确重试只检查终态，不再运行候选或评分；部分落盘或证据缺失保留现场并要求恢复。
+该终态目前覆盖执行成功后本地评估 validity=0，不把未知/超时/非零执行当作已完成拒绝。
+
+隔离树最终组合回归 **510 passed / 0 failed / 0 skipped**，JUnit 位于
+`/tmp/lunar-shinka-20260929-controls.xml`；全树 Ruff、compileall、diff check 通过。
+未运行真实模型、WebAgent、远程 evaluator 或真实 OpenEvolve/Shinka campaign。
+
+仍开放：跨进程剩余墙钟持久化、运行中子进程即时取消、完整 unknown/中断恢复、演化后/有 seed/
+多次 producer 导入、launcher/scheduler 接线、真实 producer campaign 和全量三阶段 release
+runner。P1 完整生产验收尚未完成。主工作区继续保留并行 RSI 改动；选择性同步本轮 Shinka
+文件，不要用整目录覆盖或 `git add .`。
+
+## 2026-09-29 Shinka 原生离线发布链路
+
+继续现有 Feature 153，保留并行 RSI 工作，未扩展其实现。Shinka SQLite fixture 已打通
+导出、分组、原生隔离草稿执行/独立评分、原子发布、archive/state 回读、种群 resume 和交付包
+读取校验。生产者分数不作为 Lunar 分数；低分但有效的候选可入库，同时由原生选择规则控制
+活动种群。事务仅接受 iteration=0、running、无 offspring/seed/既有 producer admission 的种群。
+
+执行前新增 `journal.prepared.json`，冻结完整任务、预算、来源与 archive 前缀；草稿证据绑定
+该摘要。相同请求中断重试复用已完成证据，不重新执行或评分；修改任务/预算、缺少或篡改 intent
+均拒绝。stage/commit/recovery 独立校验该绑定，删除证据描述不能绕过。最终独立分支回归：
+319 项导入/种群/演化、44 项发布/恢复/事务通过；另一个先行证据组合为 64 项通过（集合重叠，
+不累加）。Ruff、compileall、diff check 通过。没有运行 WebAgent、远程 evaluator 或真实模型/producer。
+
+共享 HEAD `0504739` 中 RSI adapter 测试依赖尚未提交的 RSI 模块，因此发布使用独立 worktree
+`/tmp/lunar-shinka-publication-20260929`、分支 `codex/shinka-native-publication`，基于 `f012b20`，
+只包含 Shinka/native 改动；原工作区及 RSI 文件原样保留。后续请避免把这些已发布改动重复实现。
+
+仍未完成：事务总墙钟/取消、all-rejected 持久终态、完整 unknown/中断恢复、更晚演化窗口导入、
+launcher/scheduler 接线及真实 OpenEvolve/Shinka 验收。详见 Feature 153 tasks/validation；
+本轮完成的是可回归的本地接入切片，不代表 P1 整体完成。
+
+## 2026-09-28 ShinkaEvolve 离线接入与 RSI 并行状态
+
+ShinkaEvolve 当前已接入为**离线 SQLite 导入器**：Lunar 可只读解析 Shinka 结果、导出候选，
+再通过本地 warm-start/bundle transaction 路径评测和发布。Feature 153 的 mixed/all-rejected
+以及发布后 `resume()` 回归已通过；当前事务边界只支持尚未开始 offspring 轮次的初始种群，
+带有既有演化历史或 seed admission 的种群会 fail-closed（`producer_bundle_transaction_population_history_unsupported`）。
+这不等于完整 Shinka 生产接线：尚未自动启动 Shinka、接入调度器或运行真实 Shinka campaign，
+也未调用 WebAgent 或远程评测。
+
+RSI（Feature 160）由并行工作流推进，现有 provider-free 本地 MVP、调研/规格/任务文档和
+fixture 回归保持不变；本条交接不扩大 RSI 的真实 provider、LLM curriculum 或远程评测范围。
+
 ## 2026-09-28 开源 producer 接线与发布边界
 
 “外部 producer”仅指 OpenEvolve、ShinkaEvolve 等开源演化器，不存在需要用户提供的私有

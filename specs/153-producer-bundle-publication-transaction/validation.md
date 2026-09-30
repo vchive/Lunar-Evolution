@@ -1,5 +1,69 @@
 # Feature 153 validation
 
+## 2026-09-29 active controls and durable all-rejected terminal
+
+The native transaction accepts a caller-owned active clock, composes tighter parent controls,
+and checks cancellation/remaining time before admitting preparation, drafts, staging and commit.
+Publication lock waits are polled with the same control; typed timeout/cancellation exceptions
+survive lock and terminal wrappers. The final commit checkpoint precedes the durable unknown
+marker; after that boundary the commit completes without misclassifying published output.
+Budget digests derive from actual native policy even when the optional control is omitted.
+An explicit old digest cannot remove a control or silently change execution limits on retry.
+
+All-rejected local evaluations now have a durable `all_rejected/committed` journal, unchanged
+archive/state after digests, complete rejected receipts and retained evidence descriptors.
+Independent inspection rebuilds receipt content from original native records rather than trusting
+portable self-digests. Exact terminal retry returns no evaluations, and partial/missing/tampered
+evidence fails closed. The covered rejection slice is successful execution followed by local
+evaluation validity zero; unknown/nonzero/timeout outcomes are not promoted to this terminal.
+
+Final isolated-worktree selection: **510 passed / 0 failed / 0 skipped** (60.27 seconds), including
+all producer-bundle suites, Shinka handoff, non-publishing drafts, bundle population/controller/CLI,
+native evolution, quality/diversity and solve lifecycle. JUnit:
+`/tmp/lunar-shinka-20260929-controls.xml`. The selection includes real local file-lock contention,
+budget/cancel propagation, no-replay terminal retry and rehashed portable-receipt tampering.
+Whole-tree Ruff, compileall and `git diff --check` passed. Earlier focused counts overlap this
+selection and are not added to its count.
+
+The independent worktree remains `codex/shinka-native-publication`; RSI files/implementation were
+excluded. No model, WebAgent, remote evaluator or real OpenEvolve/Shinka campaign ran. Durable
+cross-process budget restoration, active-subprocess cancellation, full unknown/interruption
+recovery, evolved/seeded/repeated population admissions, launcher/scheduler integration and the
+three-phase release runner remain open. This does not complete P1 production acceptance.
+
+## 2026-09-29 offline native transaction and prepared intent
+
+The Shinka SQLite fixture now traverses export, explicit grouping, Feature 152 plan, native
+non-publishing draft execution/evaluation, atomic stage/commit, archive/state read-back, native
+population resume and portable delivery inspection. Local scores determine admission; producer
+scores are provenance only. A valid low-scoring import remains archived without displacing an elite.
+The supported initial window rejects offspring history, seed/prior producer admission, terminal
+state, live strategy drift and mutated source/provenance before the first candidate execution.
+
+The complete prepared journal is durably created before execution. Every transaction draft binds
+its digest. Exact pre-stage retries reuse retained completed evidence without rerunning execution
+or evaluation; changed task/run/parent/budget and missing or changed intent fail closed. Stage,
+commit and recovery independently bind the retained prepared intent to the actual publication
+journal; dropping evidence/binding/intent or changing the request cannot downgrade the check.
+
+Validation used an isolated checkout on `codex/shinka-native-publication`, excluding the separate
+incomplete RSI commit and its untracked dependencies:
+
+- Native transaction, prepared intent, non-publishing draft, receipt, retained recovery and native
+  publication-intent selection: **64 passed**.
+- Shinka export, admission/preflight/publication/staging, bundle population, native evolution and
+  quality/diversity selection: **319 passed**.
+- Final changed publication-intent/staging/recovery/retained-recovery/transaction selection:
+  **44 passed** after the last review fixes.
+- Ruff (`src tests tools`), compileall and `git diff --check` passed.
+
+These selections overlap; their counts are not a unique total. A preceding working-tree current
+product pytest run also exited successfully, but predates the final intent changes and is not
+used as final release qualification. The three-phase historical/frozen release runner was not
+rerun. No model, WebAgent, real OpenEvolve/Shinka campaign or remote evaluator was invoked.
+Shared transaction deadline/cancellation, durable all-rejected terminal state, full unknown-attempt
+recovery, evolved-population import and launcher/scheduler production integration remain open.
+
 ## 2026-09-28 preflight-to-stage binding
 
 Staging reparses the read-only preflight receipt before any write, then binds its run/task,
@@ -25,8 +89,6 @@ identity drift, duplicate publication, or terminal evidence changes without invo
 evaluator. The native archive reader also fails closed while the durable publication marker exists.
 
 The combined Feature 153 journal, preflight, staging, recovery, and marker selection passes **40
-tests** at the current checkout. The full current product regression passes (**7,2xx passed, 1
-skipped**; the exact count is emitted by the local pytest run) with only pre-existing temporary
-directory cleanup warnings. Ruff, compileall, diff, and legacy-name scans pass. T153-06 remains
-intentionally deferred: this feature does not start a launcher, scheduler, external producer,
-provider, or real campaign.
+tests** at the current checkout. That historical entry did not retain an exact full-suite count, so it is not used as current
+release qualification. The dated checkpoints below record the native integration separately.
+This feature does not start a launcher, scheduler, external producer, provider, or real campaign.

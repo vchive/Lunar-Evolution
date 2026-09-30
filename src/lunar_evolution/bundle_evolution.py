@@ -5,6 +5,7 @@ import hashlib
 import math
 import os
 import re
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -50,6 +51,13 @@ _BINDING_FIELDS = {
 }
 _DIGEST_FIELDS = {"bundle_sha256", "plan_sha256", "admission_sha256", "completion_sha256", "evaluation_sha256"}
 _HEX24 = re.compile(r"^[0-9a-f]{24}$")
+_DRAFT_BINDING_NAME = "draft-binding.json"
+_DRAFT_BINDING_PROTOCOL = "lunar-native-draft-binding-v1"
+_DRAFT_BINDING_FIELDS = {
+    "protocol", "journal_id", "candidate_id", "run_id", "bundle_id", "bundle_sha256",
+    "ordinal", "parent_id", "generation", "iteration", "island_id", "source_root",
+    "source_identity", "run_root", "run_identity", "plan_sha256", "admission_sha256",
+}
 
 
 def _fail(code="invalid"):
@@ -136,6 +144,104 @@ def derive_native_draft_run_id(journal_id, candidate_id, bundle_sha256):
     })).hexdigest()[:24]
 
 
+def _ensure_private_directory(root: Path, parts: tuple[str, ...]) -> Path:
+    """Create a workspace-relative directory tree without following a link component."""
+    root = files.absolute_path(root)
+    chain = DirectoryChain(root, "destination_changed")
+    try:
+        for name in parts:
+            if not isinstance(name, str) or not name or name in {".", ".."} or "/" in name:
+                _fail("destination_changed")
+            try:
+                before = os.stat(name, dir_fd=chain.fd, follow_symlinks=False)
+            except FileNotFoundError:
+                try:
+                    os.mkdir(name, 0o700, dir_fd=chain.fd)
+                    before = os.stat(name, dir_fd=chain.fd, follow_symlinks=False)
+                except OSError:
+                    _fail("destination_changed")
+            if stat.S_ISLNK(before.st_mode) or not stat.S_ISDIR(before.st_mode):
+                _fail("destination_changed")
+            try:
+                child = os.open(
+                    name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=chain.fd,
+                )
+            except OSError:
+                _fail("destination_changed")
+            parent = chain.fd
+            chain.fds.append(child)
+            chain.links.append((parent, name, child))
+            observed = os.fstat(child)
+            if (before.st_dev, before.st_ino) != (observed.st_dev, observed.st_ino):
+                _fail("destination_changed")
+            chain.check()
+        return root.joinpath(*parts)
+    finally:
+        chain.close()
+
+
+def _draft_binding(*, journal_id: str, candidate_id: str, run_id: str, bundle_id: str,
+                   bundle_sha256: str, ordinal: int | None, parent_id: str | None,
+                   generation: int, iteration: int, island_id: int, source_root: str,
+                   source_identity: tuple[int, int], run_root: str,
+                   run_identity: tuple[int, int], plan_sha256: str,
+                   admission_sha256: str, journal_sha256: str | None = None) -> dict:
+    value = {
+        "protocol": _DRAFT_BINDING_PROTOCOL,
+        "journal_id": journal_id,
+        "candidate_id": candidate_id,
+        "run_id": run_id,
+        "bundle_id": bundle_id,
+        "bundle_sha256": bundle_sha256,
+        "ordinal": ordinal,
+        "parent_id": parent_id,
+        "generation": generation,
+        "iteration": iteration,
+        "island_id": island_id,
+        "source_root": source_root,
+        "source_identity": list(source_identity),
+        "run_root": run_root,
+        "run_identity": list(run_identity),
+        "plan_sha256": plan_sha256,
+        "admission_sha256": admission_sha256,
+    }
+    if journal_sha256 is not None:
+        value["journal_sha256"] = journal_sha256
+    return value
+
+
+def _directory_identity(path: Path) -> tuple[int, int]:
+    """Return a directory inode only after checking every parent without following links."""
+    chain = DirectoryChain(files.absolute_path(path), "destination_changed")
+    try:
+        info = os.fstat(chain.fd)
+        if not stat.S_ISDIR(info.st_mode):
+            _fail("destination_changed")
+        return info.st_dev, info.st_ino
+    finally:
+        chain.close()
+
+
+def _safe_atomic_write(archive, path: Path, content: bytes, *, error: str) -> None:
+    """Write through a held no-follow parent check before using the archive's atomic writer."""
+    root = files.absolute_path(archive.root)
+    absolute = files.absolute_path(path)
+    try:
+        relative_parent = absolute.parent.relative_to(root)
+    except ValueError:
+        _fail("destination_changed")
+    _ensure_private_directory(root, tuple(relative_parent.parts))
+    parent = DirectoryChain(absolute.parent, "destination_changed")
+    try:
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            _fail("destination_changed")
+        archive._atomic_write_bytes(path, content, error=error)
+        parent.check()
+    finally:
+        parent.close()
+
+
 @dataclass(frozen=True)
 class NativeDraftEvaluationResult:
     """Retained native execution/evaluation evidence before publication."""
@@ -150,6 +256,14 @@ class NativeDraftEvaluationResult:
     admission: object
     execution: object
     evaluation: object
+    bundle_id: str | None = None
+    parent_id: str | None = None
+    generation: int | None = None
+    iteration: int | None = None
+    island_id: int | None = None
+    ordinal: int | None = None
+    metadata: dict | None = None
+    journal_sha256: str | None = None
 
     @property
     def report(self):
@@ -160,6 +274,7 @@ class NativeDraftEvaluationResult:
             "status": "evaluated",
             "candidate_id": self.candidate_id,
             "journal_id": self.journal_id,
+            "journal_sha256": self.journal_sha256,
             "run_id": self.run_id,
             "bundle_sha256": self.bundle.digest(),
             "source_root": str(self.source_root),
@@ -168,6 +283,12 @@ class NativeDraftEvaluationResult:
             "admission_sha256": self.admission.digest(),
             "execution": self.execution.to_dict(),
             "evaluation": self.evaluation.to_dict(),
+            "bundle_id": self.bundle_id,
+            "parent_id": self.parent_id,
+            "generation": self.generation,
+            "iteration": self.iteration,
+            "island_id": self.island_id,
+            "ordinal": self.ordinal,
         }
 
 
@@ -477,8 +598,9 @@ class MultiFileCandidatePipeline:
             chain.close()
 
     def evaluate_draft_non_publishing(
-        self, strategy, draft, *, journal_id, candidate_id, iteration, generation,
-        parent=None, parent_id=None, island_id, run_id=None,
+        self, strategy, draft, *, journal_id, candidate_id=None, ordinal=None,
+        journal_candidate=None, admission_plan=None, iteration=None, generation=None, parent=None,
+        parent_id=None, island_id=None, run_id=None, journal_sha256=None,
     ):
         """Execute and independently evaluate one journal-planned draft without publishing it.
 
@@ -486,15 +608,67 @@ class MultiFileCandidatePipeline:
         evidence stays at its original ``bundle-attempts`` path.  This method deliberately never
         allocates an archive candidate ID and never calls ``CandidateArchive.persist``.
         """
-        from .evolution import CandidateDraft, _InitialCandidateFailure
+        from .evolution import CandidateDraft, EvolutionError, _InitialCandidateFailure
+        from .producer_bundle_preflight import derive_producer_bundle_candidate_id
+        from .producer_bundle_publication import ProducerBundlePublicationCandidate
 
         if not isinstance(draft, CandidateDraft):
             _fail("draft_invalid")
+        journal_parent_id = None
+        if journal_candidate is not None:
+            if not isinstance(journal_candidate, ProducerBundlePublicationCandidate):
+                _fail("journal_candidate_invalid")
+            if candidate_id is not None or iteration is not None or generation is not None or island_id is not None:
+                _fail("candidate_mapping_ambiguous")
+            from .producer_bundle_admission import ProducerBundleAdmissionPlan
+            if not isinstance(admission_plan, ProducerBundleAdmissionPlan):
+                _fail("journal_admission_plan_invalid")
+            if (
+                journal_candidate.status != "planned"
+                or journal_candidate.execution_receipt_sha256 is not None
+                or journal_candidate.evaluation_receipt_sha256 is not None
+                or journal_candidate.publication_receipt_sha256 is not None
+            ):
+                _fail("journal_candidate_state_invalid")
+            if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 0:
+                _fail("journal_candidate_ordinal_invalid")
+            if ordinal >= len(admission_plan.bundles):
+                _fail("journal_candidate_ordinal_invalid")
+            planned_bundle = admission_plan.bundles[ordinal]
+            if (
+                journal_candidate.bundle_id != planned_bundle.bundle_id
+                or journal_candidate.bundle_sha256 != planned_bundle.bundle_sha256
+            ):
+                _fail("journal_candidate_bundle_mapping_invalid")
+            candidate_id = journal_candidate.candidate_id
+            iteration = journal_candidate.iteration
+            generation = journal_candidate.generation
+            island_id = journal_candidate.island_id
+            journal_parent_id = journal_candidate.parent_id
+            if parent_id is not None and parent_id != journal_candidate.parent_id:
+                _fail("lineage_invalid")
+            parent_id = journal_candidate.parent_id
         archive = strategy.archive
+        if journal_sha256 is not None:
+            from .producer_bundle_intent import verify_producer_bundle_prepared_intent
+            from .producer_bundle_publication import parse_producer_bundle_publication_journal
+
+            prepared = parse_producer_bundle_publication_journal(
+                archive.root / "producer-batches" / journal_id / "journal.prepared.json",
+            )
+            if (journal_candidate is None or prepared.digest() != journal_sha256
+                    or prepared.journal_id != journal_id
+                    or prepared.admission_sha256 != admission_plan.digest()
+                    or ordinal >= len(prepared.candidates)
+                    or prepared.candidates[ordinal] != journal_candidate):
+                _fail("draft_binding_mismatch")
+            verify_producer_bundle_prepared_intent(archive.workspace, prepared)
         self.validate_context(strategy.context, strategy.integrity_authority)
         self.preflight()
         if parent is not None:
             derived_parent = getattr(parent, "candidate_id", None)
+            if journal_candidate is not None and derived_parent != journal_parent_id:
+                _fail("lineage_invalid")
             if parent_id is not None and parent_id != derived_parent:
                 _fail("lineage_invalid")
             parent_id = derived_parent
@@ -511,6 +685,19 @@ class MultiFileCandidatePipeline:
         draft = CandidateDraft(draft.source, draft.filename, dict(draft.metadata),
                                dict(draft.source_files) if draft.source_files is not None else None)
         bundle = validate_bundle_draft(draft, strategy.context.contract.digest())
+        bundle_sha256 = bundle.digest()
+        if journal_candidate is not None:
+            if journal_candidate.bundle_sha256 != bundle_sha256:
+                _fail("bundle_mismatch")
+            if candidate_id != derive_producer_bundle_candidate_id(
+                journal_id, ordinal, journal_candidate.bundle_id, bundle_sha256,
+            ):
+                _fail("candidate_id_mismatch")
+        bundle_id = journal_candidate.bundle_id if journal_candidate is not None else (
+            draft.metadata.get("producer_bundle", {}).get("bundle_id", candidate_id)
+            if isinstance(draft.metadata, dict) and isinstance(draft.metadata.get("producer_bundle"), dict)
+            else candidate_id
+        )
         expected_run_id = derive_native_draft_run_id(journal_id, candidate_id, bundle.digest())
         if run_id is None:
             run_id = expected_run_id
@@ -518,76 +705,161 @@ class MultiFileCandidatePipeline:
             _fail("run_id_mismatch")
 
         archive._ensure_layout()
-        batch_root = archive.root / "producer-batches" / journal_id / "native-drafts" / candidate_id
-        if batch_root.exists() or batch_root.is_symlink():
+        batch_parent = _ensure_private_directory(
+            archive.root, ("producer-batches", journal_id, "native-drafts"),
+        )
+        batch_root = batch_parent / candidate_id
+        if batch_root.is_symlink():
             _fail("draft_exists")
-        batch_root.mkdir(mode=0o700, parents=True)
+        if batch_root.exists():
+            # A retry of the exact journal mapping is read-only.  Reopen the original evidence
+            # instead of replaying execution or evaluation under the same candidate identity.
+            try:
+                _directory_identity(batch_root)
+                binding_bytes = _read(batch_root / _DRAFT_BINDING_NAME, 16 * 1024)
+                binding = strict_json(binding_bytes)
+                source_root = batch_root / "source"
+                run_root = archive.root / "bundle-attempts" / (".bundle-run-" + run_id)
+                source_identity = _directory_identity(source_root)
+                run_identity = _directory_identity(run_root)
+                saved_bundle = parse_candidate_source_bundle(strict_json(_read(source_root / _BUNDLE_NAME, MAX_CANDIDATE_BUNDLE_BYTES)))
+                if saved_bundle.digest() != bundle.digest():
+                    _fail("draft_exists")
+                plan = parse_candidate_workspace_plan(
+                    strict_json(_read(run_root / "plan.json", MAX_EXECUTION_ADMISSION_BYTES))
+                )
+                admission_bytes = _read(run_root / "admission.json", MAX_EXECUTION_ADMISSION_BYTES)
+                admission = admit_candidate_execution(
+                    admission_bytes, plan=plan,
+                    expected_plan_sha256=plan.digest(), expected_bundle_sha256=bundle.digest(),
+                    expected_contract_sha256=strategy.context.contract.digest(),
+                ).admission
+                expected_binding = _draft_binding(
+                    journal_id=journal_id, candidate_id=candidate_id, run_id=run_id,
+                    bundle_id=bundle_id, bundle_sha256=bundle_sha256, ordinal=ordinal,
+                    parent_id=parent_id, generation=generation, iteration=iteration, island_id=island_id,
+                    source_root=source_root.relative_to(archive.workspace).as_posix(),
+                    source_identity=source_identity, run_root=run_root.relative_to(archive.workspace).as_posix(),
+                    run_identity=run_identity, plan_sha256=plan.digest(), admission_sha256=admission.digest(),
+                    journal_sha256=journal_sha256,
+                )
+                if binding != expected_binding:
+                    _fail("draft_binding_mismatch")
+                record = inspect_candidate_execution_record(
+                    run_root / "attempt", plan=plan, admission=admission,
+                    expected_admission_sha256=admission.digest(), expected_plan_sha256=plan.digest(),
+                    expected_bundle_sha256=bundle.digest(), expected_contract_sha256=strategy.context.contract.digest(),
+                )
+                evaluation_root = run_root / "evaluations"
+                entries = list(evaluation_root.iterdir())
+                if len(entries) != 1 or entries[0].is_symlink() or not entries[0].is_dir() \
+                        or re.fullmatch(r"\.candidate-evaluation-[0-9a-f]{24}", entries[0].name) is None:
+                    _fail("evidence_invalid")
+                evaluation_path = entries[0]
+                result = inspect_candidate_evaluation(evaluation_path)
+                return NativeDraftEvaluationResult(
+                    candidate_id=candidate_id, journal_id=journal_id, run_id=run_id, bundle=bundle,
+                    source_root=source_root, run_root=run_root, plan=plan, admission=admission,
+                    execution=record, evaluation=result, bundle_id=bundle_id, parent_id=parent_id,
+                    generation=generation, iteration=iteration, island_id=island_id, ordinal=ordinal,
+                    metadata=dict(draft.metadata), journal_sha256=journal_sha256,
+                )
+            except EvolutionError:
+                raise
+            except Exception:  # noqa: BLE001 - stale or malformed retained evidence fails closed
+                _fail("draft_exists")
+        _ensure_private_directory(archive.root, (
+            "producer-batches", journal_id, "native-drafts", candidate_id,
+        ))
         source_root = batch_root / "source"
-        source_root.mkdir(mode=0o700)
+        _ensure_private_directory(archive.root, (
+            "producer-batches", journal_id, "native-drafts", candidate_id, "source",
+        ))
         sources = draft.source_files or {draft.filename: draft.source}
         for item in bundle.files:
-            archive._atomic_write_bytes(
+            relative_parts = tuple(Path(item.path).parts)
+            if len(relative_parts) > 1:
+                _ensure_private_directory(
+                    source_root, relative_parts[:-1],
+                )
+            _safe_atomic_write(
+                archive,
                 source_root / item.path, sources[item.path].encode("utf-8"),
                 error="bundle_candidate_source_changed",
             )
         bundle_path = source_root / _BUNDLE_NAME
-        archive._atomic_write_bytes(
+        _safe_atomic_write(
+            archive,
             bundle_path, canonical_json(bundle.to_dict()), error="bundle_candidate_source_changed",
         )
         run_root = self._allocate_run(archive, run_id)
-        try:
-            copied = materialize_candidate_source_bundle(
-                bundle, source_root=source_root, workspace_root=run_root / "workspaces",
-                contract_sha256=bundle.contract_sha256, expected_bundle_sha256=bundle.digest(),
-            )
-            plan = build_candidate_workspace_plan(
-                bundle, command=self.command, environment=self.environment,
-                contract_sha256=bundle.contract_sha256, timeout_seconds=self.timeout_seconds,
-                max_output_bytes=self.max_output_bytes,
-            )
-            admission = build_candidate_execution_admission(
-                plan, inputs=self.inputs, dependency_sha256=self.dependency_sha256,
-                environment_sha256=self.environment_sha256, evaluator=self.evaluator.pin(),
-                output_contract_sha256=candidate_output_contract_sha256(strategy.context.contract.outputs),
-                budget=self.budget,
-            )
-            staged = stage_candidate_execution_inputs(
-                admission, plan=plan, input_root=self.input_root, staging_root=run_root / "inputs",
-            )
-            for name, value in (("plan", plan), ("admission", admission)):
-                archive._atomic_write_bytes(run_root / (name + ".json"), canonical_json(value.to_dict()), error="bundle_candidate_record_failed")
-            if strategy._cancelled():
-                raise _InitialCandidateFailure("candidate_failed")
-            record = run_candidate_execution_recorded(
-                admission, plan=plan, workspace_path=copied.workspace_path, input_path=staged.input_path,
-                attempt_path=run_root / "attempt", expected_admission_sha256=admission.digest(),
-                expected_plan_sha256=plan.digest(), expected_bundle_sha256=bundle.digest(),
-                expected_contract_sha256=strategy.context.contract.digest(),
-                timeout_seconds=self._effective_timeout("candidate_execution"),
-                remaining_timeout=self._remaining_timeout, process_observer=self._process_observer,
-                process_released=self._process_released,
-            )
-            self._effective_timeout("candidate_execution")
-            if record.to_dict().get("runner_result", {}).get("status") != "succeeded":
-                raise _InitialCandidateFailure("candidate_failed")
-            self._effective_timeout("evaluation")
-            result = evaluate_candidate_execution(
-                admission, plan=plan, contract=strategy.context.contract, evaluator=self.evaluator,
-                harness_path=self.harness_path, workspace_path=copied.workspace_path,
-                input_path=staged.input_path, attempt_path=run_root / "attempt",
-                evaluation_root=run_root / "evaluations", expected_admission_sha256=admission.digest(),
-                expected_completion_sha256=record.completion_sha256, remaining_timeout=self._remaining_timeout,
-                process_observer=self._process_observer, process_released=self._process_released,
-            )
-            self._effective_timeout("evaluation")
-            return NativeDraftEvaluationResult(
-                candidate_id=candidate_id, journal_id=journal_id, run_id=run_id, bundle=bundle,
-                source_root=source_root, run_root=run_root, plan=plan, admission=admission,
-                execution=record, evaluation=result,
-            )
-        except Exception:
-            # Retain all allocated native evidence for fail-closed inspection and recovery.
-            raise
+        copied = materialize_candidate_source_bundle(
+            bundle, source_root=source_root, workspace_root=run_root / "workspaces",
+            contract_sha256=bundle.contract_sha256, expected_bundle_sha256=bundle.digest(),
+        )
+        plan = build_candidate_workspace_plan(
+            bundle, command=self.command, environment=self.environment,
+            contract_sha256=bundle.contract_sha256, timeout_seconds=self.timeout_seconds,
+            max_output_bytes=self.max_output_bytes,
+        )
+        admission = build_candidate_execution_admission(
+            plan, inputs=self.inputs, dependency_sha256=self.dependency_sha256,
+            environment_sha256=self.environment_sha256, evaluator=self.evaluator.pin(),
+            output_contract_sha256=candidate_output_contract_sha256(strategy.context.contract.outputs),
+            budget=self.budget,
+        )
+        staged = stage_candidate_execution_inputs(
+            admission, plan=plan, input_root=self.input_root, staging_root=run_root / "inputs",
+        )
+        for name, value in (("plan", plan), ("admission", admission)):
+            archive._atomic_write_bytes(run_root / (name + ".json"), canonical_json(value.to_dict()), error="bundle_candidate_record_failed")
+        source_identity = _directory_identity(source_root)
+        run_identity = _directory_identity(run_root)
+        _safe_atomic_write(
+            archive,
+            batch_root / _DRAFT_BINDING_NAME,
+            canonical_json(_draft_binding(
+                journal_id=journal_id, candidate_id=candidate_id, run_id=run_id,
+                bundle_id=bundle_id, bundle_sha256=bundle_sha256, ordinal=ordinal,
+                parent_id=parent_id, generation=generation, iteration=iteration, island_id=island_id,
+                source_root=source_root.relative_to(archive.workspace).as_posix(),
+                source_identity=source_identity, run_root=run_root.relative_to(archive.workspace).as_posix(),
+                run_identity=run_identity, plan_sha256=plan.digest(), admission_sha256=admission.digest(),
+                journal_sha256=journal_sha256,
+            )),
+            error="bundle_candidate_record_failed",
+        )
+        if strategy._cancelled():
+            raise SolveExecutionCancelled("candidate_execution")
+        record = run_candidate_execution_recorded(
+            admission, plan=plan, workspace_path=copied.workspace_path, input_path=staged.input_path,
+            attempt_path=run_root / "attempt", expected_admission_sha256=admission.digest(),
+            expected_plan_sha256=plan.digest(), expected_bundle_sha256=bundle.digest(),
+            expected_contract_sha256=strategy.context.contract.digest(),
+            timeout_seconds=self._effective_timeout("candidate_execution"),
+            remaining_timeout=self._remaining_timeout, process_observer=self._process_observer,
+            process_released=self._process_released,
+        )
+        self._effective_timeout("candidate_execution")
+        if record.to_dict().get("runner_result", {}).get("status") != "succeeded":
+            raise _InitialCandidateFailure("candidate_failed")
+        self._effective_timeout("evaluation")
+        result = evaluate_candidate_execution(
+            admission, plan=plan, contract=strategy.context.contract, evaluator=self.evaluator,
+            harness_path=self.harness_path, workspace_path=copied.workspace_path,
+            input_path=staged.input_path, attempt_path=run_root / "attempt",
+            evaluation_root=run_root / "evaluations", expected_admission_sha256=admission.digest(),
+            expected_completion_sha256=record.completion_sha256, remaining_timeout=self._remaining_timeout,
+            process_observer=self._process_observer, process_released=self._process_released,
+        )
+        self._effective_timeout("evaluation")
+        return NativeDraftEvaluationResult(
+            candidate_id=candidate_id, journal_id=journal_id, run_id=run_id, bundle=bundle,
+            source_root=source_root, run_root=run_root, plan=plan, admission=admission,
+            execution=record, evaluation=result, bundle_id=bundle_id, parent_id=parent_id,
+            generation=generation, iteration=iteration, island_id=island_id, ordinal=ordinal,
+            metadata=dict(draft.metadata), journal_sha256=journal_sha256,
+        )
 
     def persist(self, strategy, draft, *, iteration, generation, parent, island_id):
         from .evolution import (

@@ -39,13 +39,14 @@ _JOURNAL_FIELDS = {
     "population_config_sha256", "num_islands", "candidates", "state", "publication_phase",
     "terminal_marker_sha256", "archive_after_sha256", "state_after_sha256", "journal_sha256",
 }
-_STATES = frozenset({"prepared", "executing", "publishing", "published", "failed", "unknown"})
+_STATES = frozenset({"prepared", "executing", "publishing", "published", "all_rejected", "failed", "unknown"})
 _PHASES = frozenset({"preflight", "staged", "committed", "recovery_required"})
 _STATE_PHASES = {
     "prepared": "preflight",
     "executing": "staged",
     "publishing": "staged",
     "published": "committed",
+    "all_rejected": "committed",
     "failed": "recovery_required",
     "unknown": "recovery_required",
 }
@@ -282,10 +283,23 @@ class ProducerBundlePublicationJournal:
             not statuses <= {"admitted", "rejected"} or "admitted" not in statuses
         ):
             _fail("producer_bundle_publication_state_candidates_invalid")
+        if self.state == "all_rejected" and statuses != {"rejected"}:
+            _fail("producer_bundle_publication_state_candidates_invalid")
         if self.state not in {"unknown", "failed"} and "unknown" in statuses:
             _fail("producer_bundle_publication_state_candidates_invalid")
         terminal = (self.terminal_marker_sha256, self.archive_after_sha256, self.state_after_sha256)
-        if self.state == "published":
+        if self.state == "all_rejected":
+            if (
+                any(value is None for value in terminal)
+                or self.archive_after_sha256 != self.base_archive_sha256
+                or self.state_after_sha256 != self.base_state_sha256
+                or any(item.execution_receipt_sha256 is None
+                       or item.evaluation_receipt_sha256 is None
+                       or item.publication_receipt_sha256 is not None
+                       for item in self.candidates)
+            ):
+                _fail("producer_bundle_publication_terminal_evidence_invalid")
+        elif self.state == "published":
             if any(value is None for value in terminal) or any(
                 item.status == "admitted" and item.publication_receipt_sha256 is None
                 for item in self.candidates
