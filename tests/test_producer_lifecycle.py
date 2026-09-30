@@ -4,17 +4,24 @@ import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from lunar_evolution import producer_lifecycle
 from lunar_evolution.algorithm import AlgorithmProblemContract
+from lunar_evolution.native_trusted_scheduler import NativeTrustedSchedulerError
 from lunar_evolution.producer_bundle_handoff import BundleGroup
 from lunar_evolution.producer_launcher import (
     build_producer_launch_attestation,
     build_producer_launch_intent,
 )
-from lunar_evolution.producer_lifecycle import ProducerLifecycleError, run_producer_lifecycle
+from lunar_evolution.producer_lifecycle import (
+    ProducerLifecycleError,
+    recover_native_trusted_lifecycle,
+    run_native_trusted_lifecycle,
+    run_producer_lifecycle,
+)
 from lunar_evolution.producer_process import ProducerProcessError
 
 PIN = "b" * 64
@@ -193,4 +200,137 @@ def test_envelope_replacement_after_execution_is_rejected(
             groups=[BundleGroup("bundle-1", "pkg/main.py", ("pkg/main.py", "pkg/helper.py"))],
             evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
             dependency_sha256=PIN, environment_sha256=PIN,
+        )
+
+
+def _native_projection_fixture() -> tuple[object, dict[str, object]]:
+    receipt = SimpleNamespace(
+        status="completed",
+        cleanup_status="cleaned",
+        trusted_execution={"broker_coverage": "brokered_requests_only"},
+        receipt_sha256="a" * 64,
+    )
+    output = SimpleNamespace(
+        envelope="envelope",
+        bundles=("bundle",),
+        drafts=("draft",),
+        admission_plan="plan",
+        request_coverage="brokered_requests_only",
+    )
+    return SimpleNamespace(
+        receipt=receipt,
+        output=output,
+        publication=SimpleNamespace(publication_status="published"),
+        status="published",
+    ), {"receipt": receipt, "output": output}
+
+
+def test_native_trusted_lifecycle_projects_scheduler_and_keeps_publication_explicit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_run, expected = _native_projection_fixture()
+    observed: dict[str, object] = {}
+
+    def scheduler_call(*args, **kwargs):
+        observed.update(kwargs)
+        return native_run
+
+    monkeypatch.setattr(producer_lifecycle, "run_native_trusted_producer", scheduler_call)
+    result = run_native_trusted_lifecycle(
+        tmp_path,
+        producer_root=tmp_path,
+        intent=object(),
+        attestation=object(),
+        artifact=object(),
+        broker_config=object(),
+        contract=object(),
+        groups=(),
+        evaluator_kind="local",
+        evaluator_fingerprint=PIN,
+        runner_fingerprint=PIN,
+        dependency_sha256=PIN,
+        environment_sha256=PIN,
+        strategy="strategy",
+        execution_control="control",
+        cancelled=lambda: False,
+        parent_deadline=123.5,
+    )
+
+    assert result.receipt is expected["receipt"]
+    assert result.envelope == "envelope"
+    assert result.bundles == ("bundle",)
+    assert result.drafts == ("draft",)
+    assert result.admission_plan == "plan"
+    assert result.terminal_status == "completed"
+    assert result.cleanup_status == "cleaned"
+    assert result.deadline_scope == "native_attempt_only"
+    assert result.request_coverage == "brokered_requests_only"
+    assert result.broker_coverage == "brokered_requests_only"
+    assert result.publication_status == "published"
+    assert result.native_run is native_run
+    assert result.publication is native_run.publication
+    assert observed["strategy"] == "strategy"
+    assert observed["execution_control"] == "control"
+    assert observed["parent_deadline"] == 123.5
+
+
+def test_native_trusted_lifecycle_without_strategy_is_prepared_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_run, _ = _native_projection_fixture()
+    native_run.publication = None
+    native_run.status = "prepared"
+    monkeypatch.setattr(producer_lifecycle, "run_native_trusted_producer", lambda *a, **k: native_run)
+    result = run_native_trusted_lifecycle(
+        tmp_path,
+        producer_root=tmp_path,
+        intent=object(), attestation=object(), artifact=object(), broker_config=object(),
+        contract=object(), groups=(), evaluator_kind="local", evaluator_fingerprint=PIN,
+        runner_fingerprint=PIN, dependency_sha256=PIN, environment_sha256=PIN,
+    )
+    assert result.publication is None
+    assert result.publication_status == "not_started"
+
+
+def test_native_trusted_lifecycle_recovery_is_read_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_run, _ = _native_projection_fixture()
+    native_run.publication = None
+    native_run.status = "recovered"
+    observed: dict[str, object] = {}
+
+    def recovery_call(*args, **kwargs):
+        observed.update(kwargs)
+        return native_run
+
+    monkeypatch.setattr(producer_lifecycle, "recover_native_trusted_producer", recovery_call)
+    result = recover_native_trusted_lifecycle(
+        tmp_path,
+        intent=object(), attestation=object(), artifact=object(), contract=object(), groups=(),
+        evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
+        dependency_sha256=PIN, environment_sha256=PIN, require_broker=False,
+    )
+    assert result.publication is None
+    assert result.publication_status == "not_started"
+    assert observed["require_broker"] is False
+
+
+def test_native_trusted_lifecycle_preserves_fixed_scheduler_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(*args, **kwargs):
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_receipt_unverified")
+
+    monkeypatch.setattr(producer_lifecycle, "run_native_trusted_producer", fail)
+    with pytest.raises(
+        ProducerLifecycleError,
+        match="^producer_lifecycle_native_trusted_scheduler_receipt_unverified$",
+    ):
+        run_native_trusted_lifecycle(
+            tmp_path,
+            producer_root=tmp_path,
+            intent=object(), attestation=object(), artifact=object(), broker_config=object(),
+            contract=object(), groups=(), evaluator_kind="local", evaluator_fingerprint=PIN,
+            runner_fingerprint=PIN, dependency_sha256=PIN, environment_sha256=PIN,
         )

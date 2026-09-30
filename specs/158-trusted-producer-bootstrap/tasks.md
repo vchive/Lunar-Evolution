@@ -119,6 +119,12 @@
 - [x] T158-06 Add a hostile direct-producer negative fixture; do not accept cooperative gate behavior as proof for arbitrary executables.
 - [x] T158-07 Defer Feature 154/156/157 integration, scheduler/default entry points, publication, and external campaign validation to a later feature.
 
+The provider-free scheduler is now reachable through the formal lifecycle wrapper in
+`producer_lifecycle`. This is a callable composition boundary with explicit publication and
+read-only recovery; it does not change the status of T158-04. Production bootstrap registration,
+cross-process cleanup/recovery, protected broker ownership, and real campaign validation remain
+required before this feature can be marked complete.
+
 The runtime fixture now propagates one absolute monotonic deadline through normal and exceptional
 cleanup and bounds the final leader reap. This is supporting evidence for T158-04; it does not
 bind the fixture to Feature 156 registration, recovery, or a production scheduler entry point.

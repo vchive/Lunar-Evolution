@@ -4825,3 +4825,20 @@ registration，再检查 sidecar 的固定字段、自摘要和逐项绑定；�
 deadline digest 重建 terminal；即使攻击者把 deadline sidecar 换成同一 launch 下另一份自摘要
 正确的预算，也会得到 `native_trusted_recovery_terminal_invalid`。相关 native attempt/output
 回归、Ruff、compileall 与 `git diff --check` 均通过。
+
+## 2026-10-01 Producer lifecycle composition wrapper
+
+On `codex/feature-156-producer-lifecycle`, the native trusted scheduler is now composed behind
+the public `producer_lifecycle` API. `run_native_trusted_lifecycle` performs one provider-free
+native attempt, persists the formal execution receipt, projects strict output preparation, and
+optionally invokes the existing publication transaction when the caller supplies a strategy.
+`recover_native_trusted_lifecycle` is read-only and revalidates retained evidence without spawning
+or consuming another attestation. The preparation DTO retains native run/recovery observations
+and reports request/broker/publication coverage explicitly; the cooperative entry point remains
+unchanged.
+
+Focused lifecycle and scheduler tests pass after the projection double fix; Ruff, compileall and
+`git diff --check` are the required follow-up checks. This is an orchestration boundary only.
+Feature 156/158 still have open production gaps: integrated bootstrap registration and
+post-crash owner-checked cleanup/recovery, complete host-observed broker enforcement, and real
+scheduler/campaign wiring. No provider, WebAgent, external producer, or remote evaluator is run.

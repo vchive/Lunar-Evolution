@@ -17,6 +17,11 @@
 - [x] T156-13 Add capture/read and signal/cleanup fault-injection fixtures, including child exit before gate and broken gate delivery; preserve terminal unknown/recovery evidence.
 - [ ] T156-14 Integrate Feature 157 only after controller-owned request evidence is host-observed and recovery-safe; producer-declared files remain diagnostics.
 
+- [x] T156-15 Add the provider-free lifecycle composition wrapper over the native trusted scheduler,
+  including explicit publication and read-only recovery projections. This task is complete as an
+  orchestration/API slice; it does not close T156-05/06/09/12/14 or the production integration
+  gates below.
+
 The native trusted attempt now requires a stable durable handoff reread before gate release.
 It cross-checks the one-time nonce claim, formal registration, and handoff under the existing
 wall-clock deadline; missing or tampered handoff keeps the target unstarted. This is pre-gate

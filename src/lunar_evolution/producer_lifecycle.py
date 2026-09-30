@@ -9,11 +9,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import _benchmark_files as _files
 from .algorithm import AlgorithmProblemContract
+from .native_bootstrap import NativeBootstrapArtifact
+from .native_trusted_scheduler import (
+    NativeTrustedProducerRecovery,
+    NativeTrustedProducerRun,
+    NativeTrustedSchedulerError,
+    recover_native_trusted_producer,
+    run_native_trusted_producer,
+)
+from .producer_broker_ipc import ProducerBrokerConfig
 from .producer_bundle_admission import (
     ProducerBundleAdmissionPlan,
     build_producer_bundle_admission_plan,
@@ -55,6 +65,11 @@ class ProducerLifecyclePreparation:
     request_coverage: str = "cooperative_declaration_only"
     broker_coverage: str = "not_integrated"
     publication_status: str = "not_started"
+    # The native trusted path keeps the scheduler's complete observations available to callers
+    # while reusing this preparation DTO for the existing bundle/publication boundary.  These
+    # fields are optional so the cooperative path above remains byte-for-byte compatible.
+    native_run: NativeTrustedProducerRun | NativeTrustedProducerRecovery | None = None
+    publication: object | None = None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -179,4 +194,145 @@ def run_producer_lifecycle(
     )
 
 
-__all__ = ["ProducerLifecycleError", "ProducerLifecyclePreparation", "run_producer_lifecycle"]
+def _project_native_preparation(
+    run: NativeTrustedProducerRun | NativeTrustedProducerRecovery,
+) -> ProducerLifecyclePreparation:
+    """Project the native trusted scheduler result into the lifecycle DTO.
+
+    The scheduler has already performed terminal, receipt, capture, envelope, and authority
+    checks.  This projection only copies those verified objects into the established preparation
+    shape; it does not reinterpret an unknown result or grant publication authority.
+    """
+    try:
+        receipt = run.receipt
+        output = run.output
+        publication = getattr(run, "publication", None)
+        status = getattr(run, "status", "recovered")
+        trusted = receipt.trusted_execution or {}
+        broker_coverage = str(trusted.get("broker_coverage", "none"))
+        publication_status = status if publication is not None else "not_started"
+        return ProducerLifecyclePreparation(
+            receipt=receipt,
+            envelope=output.envelope,
+            bundles=output.bundles,
+            drafts=output.drafts,
+            admission_plan=output.admission_plan,
+            terminal_status=receipt.status,
+            cleanup_status=receipt.cleanup_status,
+            execution_outcome="completed",
+            # The scheduler's preparation and optional publication are outside the producer's
+            # one-shot native attempt deadline; callers must not treat this as a renewed budget.
+            deadline_scope="native_attempt_only",
+            request_coverage=output.request_coverage,
+            broker_coverage=broker_coverage,
+            publication_status=publication_status,
+            native_run=run,
+            publication=publication,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ProducerLifecycleError("producer_lifecycle_native_projection_invalid") from exc
+
+
+def run_native_trusted_lifecycle(
+    workspace: str | Path,
+    *,
+    producer_root: str | Path,
+    intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation,
+    artifact: NativeBootstrapArtifact,
+    broker_config: ProducerBrokerConfig,
+    contract: AlgorithmProblemContract,
+    groups: Sequence[BundleGroup],
+    evaluator_kind: str,
+    evaluator_fingerprint: str,
+    runner_fingerprint: str,
+    dependency_sha256: str,
+    environment_sha256: str,
+    strategy: object | None = None,
+    execution_control: object | None = None,
+    cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
+) -> ProducerLifecyclePreparation:
+    """Run one formal native trusted lifecycle and project its prepared bundles.
+
+    This is the producer lifecycle's production-facing composition point.  It delegates process,
+    broker, receipt, and strict output verification to ``native_trusted_scheduler`` and keeps
+    publication explicit through the existing optional ``strategy`` argument.  Omitting the
+    strategy returns a prepared, publication-free result; supplying it runs the existing atomic
+    publication transaction after the formal receipt is bound.
+    """
+    try:
+        run = run_native_trusted_producer(
+            workspace,
+            producer_root=producer_root,
+            intent=intent,
+            attestation=attestation,
+            artifact=artifact,
+            broker_config=broker_config,
+            contract=contract,
+            groups=groups,
+            evaluator_kind=evaluator_kind,
+            evaluator_fingerprint=evaluator_fingerprint,
+            runner_fingerprint=runner_fingerprint,
+            dependency_sha256=dependency_sha256,
+            environment_sha256=environment_sha256,
+            strategy=strategy,
+            execution_control=execution_control,
+            cancelled=cancelled,
+            parent_deadline=parent_deadline,
+        )
+    except NativeTrustedSchedulerError as exc:
+        # Preserve the fixed scheduler code under the lifecycle namespace without exposing
+        # arbitrary producer/provider text.
+        raise ProducerLifecycleError(f"producer_lifecycle_{exc.code}") from exc
+    return _project_native_preparation(run)
+
+
+def recover_native_trusted_lifecycle(
+    workspace: str | Path,
+    *,
+    intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation,
+    artifact: NativeBootstrapArtifact,
+    contract: AlgorithmProblemContract,
+    groups: Sequence[BundleGroup],
+    evaluator_kind: str,
+    evaluator_fingerprint: str,
+    runner_fingerprint: str,
+    dependency_sha256: str,
+    environment_sha256: str,
+    require_broker: bool = True,
+) -> ProducerLifecyclePreparation:
+    """Read-only project of a durable native trusted lifecycle.
+
+    Recovery never relaunches a producer, consumes another attestation, or publishes a bundle.
+    The returned preparation can be handed to the explicit publication transaction only after a
+    caller makes that decision separately.
+    """
+    try:
+        recovered = recover_native_trusted_producer(
+            workspace,
+            intent=intent,
+            attestation=attestation,
+            artifact=artifact,
+            contract=contract,
+            groups=groups,
+            evaluator_kind=evaluator_kind,
+            evaluator_fingerprint=evaluator_fingerprint,
+            runner_fingerprint=runner_fingerprint,
+            dependency_sha256=dependency_sha256,
+            environment_sha256=environment_sha256,
+            require_broker=require_broker,
+        )
+    except NativeTrustedSchedulerError as exc:
+        raise ProducerLifecycleError(f"producer_lifecycle_{exc.code}") from exc
+    return _project_native_preparation(recovered)
+
+
+__all__ = [
+    "ProducerLifecycleError",
+    "ProducerLifecyclePreparation",
+    "recover_native_trusted_lifecycle",
+    "run_native_trusted_lifecycle",
+    "run_producer_lifecycle",
+]

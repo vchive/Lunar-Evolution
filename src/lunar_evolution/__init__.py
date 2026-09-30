@@ -521,6 +521,13 @@ from .producer_launcher import (
     preflight_producer_launch,
     verify_producer_launch_attestation,
 )
+from .producer_lifecycle import (
+    ProducerLifecycleError,
+    ProducerLifecyclePreparation,
+    recover_native_trusted_lifecycle,
+    run_native_trusted_lifecycle,
+    run_producer_lifecycle,
+)
 from .producer_process import (
     GATE_ENV,
     PRODUCER_PROCESS_PROTOCOL,
@@ -1016,6 +1023,8 @@ __all__ = [
     "ProducerLaunchError",
     "ProducerLaunchIntent",
     "ProducerLaunchPreflight",
+    "ProducerLifecycleError",
+    "ProducerLifecyclePreparation",
     "ProducerMaterial",
     "ProducerProcessError",
     "ProducerProcessRegistration",
@@ -1278,6 +1287,7 @@ __all__ = [
     "reconcile_remote_state",
     "recover_native_trusted_cleanup",
     "recover_native_trusted_execution_receipt",
+    "recover_native_trusted_lifecycle",
     "recover_native_trusted_producer",
     "recover_native_trusted_stream_capture",
     "recover_producer_process",
@@ -1298,7 +1308,9 @@ __all__ = [
     "run_effect_preflight",
     "run_harness_adapter",
     "run_native_producer_bundle_publication_transaction",
+    "run_native_trusted_lifecycle",
     "run_native_trusted_producer",
+    "run_producer_lifecycle",
     "run_producer_process",
     "run_registered_acceptance",
     "run_subject_adapter",

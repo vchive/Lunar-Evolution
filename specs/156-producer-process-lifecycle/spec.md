@@ -220,3 +220,24 @@ the only result exposed to downstream publication code.
    un-attested bytes while producing a successful execution receipt.
 9. A hostile direct target that performs a side effect before reading the gate cannot produce a
    completed receipt; external admission uses only an attested Lunar-owned bootstrap.
+
+## Implementation checkpoint (2026-10-01): lifecycle composition wrapper
+
+The provider-free implementation now exposes `run_native_trusted_lifecycle` and
+`recover_native_trusted_lifecycle` from `producer_lifecycle`. The run entry point delegates one
+native trusted attempt to the scheduler, persists and verifies the formal execution receipt,
+projects strict same-attempt output preparation, and invokes the existing publication transaction
+only when a caller explicitly supplies its strategy. The recovery entry point is read-only: it
+revalidates retained receipt and output evidence and cannot spawn, consume a second attestation,
+widen a deadline, or publish.
+
+The existing cooperative `run_producer_lifecycle` contract is unchanged. The projected DTO now
+also exposes native run/recovery observations, broker coverage, request coverage, and publication
+status so callers cannot mistake preparation for publication eligibility. Focused tests cover
+projection, explicit publication, preparation-only mode, read-only recovery, and fixed scheduler
+error mapping.
+
+This is an orchestration boundary, not a claim that Feature 156 is complete. Full production
+registration/cleanup and cross-process recovery, host-observed broker enforcement, real scheduler
+campaign wiring, and external producer acceptance remain open. All validation in this checkpoint
+uses local provider-free doubles and fixtures.

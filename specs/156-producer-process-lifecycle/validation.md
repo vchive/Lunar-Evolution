@@ -162,6 +162,19 @@ assert that recovery never starts a process or consumes a second attestation. Th
 composition test only; it does not satisfy the full Feature 156 lifecycle acceptance or connect
 the controller-owned request transport and post-crash process recovery.
 
+## Lifecycle composition wrapper (2026-10-01)
+
+`tests/test_producer_lifecycle.py` covers the native wrapper's ordering and projection boundary:
+the scheduler result is retained in the preparation DTO, explicit publication is reflected only
+when a strategy is supplied, preparation-only mode remains unpublished, recovery is read-only, and
+fixed scheduler errors are namespaced without leaking arbitrary exception text. These tests use
+provider-free scheduler doubles and do not establish production trusted-bootstrap admission.
+
+The wrapper validation passed together with `tests/test_native_trusted_scheduler.py`. Ruff,
+`compileall`, and `git diff --check` are required for this checkpoint. The remaining risks are the
+same as T158-04: production registration/cleanup and crash recovery, complete host-observed broker
+coverage, and real campaign/scheduler wiring.
+
 ## Implementation checkpoint (2026-09-24)
 
 The local runner now claims the nonce once across the workspace, revalidates launch identity,

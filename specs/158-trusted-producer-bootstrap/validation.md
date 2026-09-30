@@ -64,6 +64,14 @@ The recovery verifier also rejects a missing or rehashed sidecar and a capture d
 inside a self-rehashed sidecar. This keeps the audit projection diagnostic until formal Feature 156
 receipt consumption is implemented.
 
+## Formal lifecycle wrapper (2026-10-01)
+
+The native trusted scheduler is exposed through `run_native_trusted_lifecycle` and its
+read-only recovery counterpart. Focused provider-free tests verify the attempt → receipt → strict
+output order, optional publication handoff, and recovery's no-spawn/no-replay behavior. The wrapper
+is intentionally a supporting API slice and does not promote the native fixture to a production
+producer or scheduler campaign.
+
 The native stream slice now drains both output pipes concurrently under the per-stream byte limit,
 persists `stream_capture_sha256` in the terminal, and rejects incomplete or rebound stream records
 on recovery. Envelope capture records stable before/after identity digests; broker capture binds
