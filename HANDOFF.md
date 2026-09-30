@@ -11,10 +11,14 @@ terminal；恢复会校验流状态、摘要、边界和同一 launch/registrati
 
 owner-checked cleanup 现在生成 create-only `native-trusted-cleanup.json`，terminal 绑定
 `cleanup_sha256`，恢复重新验证 cleanup sidecar，不能借 sidecar 自己的摘要伪造另一种 cleanup
-结果。新增 `native_trusted_receipt.py` 的严格只读 projection：只有 terminal、bounded
-streams、stable envelope、完整 broker coverage、target execution binding 和 cleanup 全部
-闭合时，才构造 Feature 156 `ProducerExecutionReceipt`；它不会写正式
-`execution-receipt.json`，也不会开启 population admission 或 publication。
+结果。`native_trusted_receipt.py` 的严格 projection 只有在 terminal、bounded streams、stable
+envelope、完整 broker coverage、target execution binding 和 cleanup 全部闭合时，才构造
+Feature 156 `ProducerExecutionReceipt`。新增的
+`persist_native_trusted_execution_receipt` 在同一严格检查之后，以 exclusive bounded
+fsync/atomic no-follow 方式 create-only 写正式 `execution-receipt.json`，随后 bounded reread
+并复核 canonical self-digest；完全一致的已存在 receipt 只读幂等重放，冲突、篡改、symlink、
+非 regular 文件或 evidence 漂移 fail-closed。该持久化仍不会开启 population admission 或
+publication，后续发布事务继续独立负责放行。
 
 本轮已推送的增量包括 `fba0cf3`、`fcf9f87`、`fa46ba2`、`af5e5c5` 和本分支的 receipt/cleanup
 实现。focused native attempt/output/stream/cleanup/receipt fixtures、Ruff、compileall 和
