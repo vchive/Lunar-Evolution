@@ -5,10 +5,11 @@ with no failures or skips (`/tmp/lunar-rsi-release-current`). The run includes D
 crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery and append-only
 unknown receipt failure settlement. Ruff, compileall and `git diff --check` passed.
 The process-level clean-room fixtures are included in that count; they use only local module-level
-evaluators and do not establish an official evaluator or external authenticity. An isolated export
-of the staged source must be rerun after this change before it can be cited as a release artifact.
-A passing fixture matrix is not evidence that every external worker or callback recovery path has
-been implemented.
+evaluators and do not establish an official evaluator or external authenticity. The clean-room
+admission bridge and controller promotion composition added after that baseline require the focused
+tests listed below to be rerun before this document is cited as a release artifact. A passing
+fixture matrix is not evidence that every external worker or callback recovery path has been
+implemented.
 
 ## Data and authority
 
@@ -29,6 +30,10 @@ been implemented.
   `CleanRoomProcessVerifier` fixture adds a daemon `spawn` process with bounded JSON IPC and
   terminate/kill cleanup; this is a local process lifetime boundary, not an OS sandbox, network
   isolation mechanism, official evaluator or external authenticity proof.
+- `CleanRoomAdmissionGate` accepts only a `pass` verdict whose episode, source, dependency, task
+  input and evaluator digests match caller-owned pins. It appends at most `observed -> verified`,
+  replays an identical admission idempotently, rejects identity/provenance conflicts, and does not
+  mutate the read-only memory store.
 - Actor traces expose bounded public observations rather than private reasoning. Isolation and
   artifact validation by a real verifier remain separate acceptance work.
 - Frozen transfer runs with `curriculum_enabled=false` and `memory_write_enabled=false`; an attempted
@@ -87,6 +92,12 @@ been implemented.
 - Memory admission is a separate append-only SQLite control plane. Only a passing episode with a
   verifier receipt can reach candidate state; holdout and baseline regression evidence are required
   before approval/activation, and compatibility drift or revocation makes retrieval fail closed.
+- `RSILearningController.promote_transfer_regression()` is an explicit provider-free composition
+  entry point. It freezes the controller snapshot and parent snapshot, runs the local transfer
+  suite once, checks component fingerprints and CAS, then delegates to the promotion adapter for
+  `shadow -> approved` and optional `approved -> active`. Replaying a completed promotion on the
+  same controller does not rerun the suite or append another governance revision. It is not a
+  default scheduler, official evaluator integration, or external producer acceptance.
 - Ruff, compileall and focused Feature 160 tests pass without provider credentials or WebAgent.
 
 ## Local regression entry points
@@ -117,6 +128,7 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | Transfer callback/receipt reconciliation and atomic failure settlement | `test_rsi_transfer_reconcile.py` |
 | Clean-room source/dependency reopen, evaluator identity and contamination gates | `test_rsi_cleanroom.py` |
 | Process clean-room timeout/exception/IPC/child mutation gates | `test_rsi_cleanroom_process.py` |
+| Clean-room verdict provenance and idempotent observed-to-verified admission | `test_rsi_cleanroom_admission.py` |
 | Memory admission lifecycle, CAS transitions and promotion/revocation gates | `test_rsi_memory_governance.py` |
 | Provider-free no/old/current transfer regression, seen/unseen split, multi-target holdout and contamination gate | `test_rsi_transfer_regression.py` |
 | Unified solver adapter lifecycle, budget/deadline and terminal receipt contract | `test_rsi_adapter_contract.py` |
@@ -124,7 +136,7 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | Optional controller/episode solver sidecar, monotonic wall time, concurrent append and replay idempotency | `test_rsi_usage_controller.py` |
 | Failure clustering, capability coverage, hard-negative selection and curriculum replay | `test_rsi_curriculum.py` |
 | Controller checkpoint/resume of failure-driven curriculum ledger | `test_rsi_curriculum_resume.py` |
-| Transfer report to memory-governance promotion and two-step activation gate | `test_rsi_memory_promotion.py` |
+| Transfer report to memory-governance promotion and two-step activation gate | `test_rsi_memory_promotion.py`, `test_rsi_controller_promotion.py` |
 | Existing local protocol, actor, CLI and backend fixtures | Remaining `test_rsi_*.py` tests |
 
 The CLI diagnostics only use local fixture solver IDs and persist to `rsi.sqlite3`; they do not
@@ -140,8 +152,11 @@ constitute evidence for real OpenEvolve, Shinka, OSWorld, or remote evaluator pe
 - Real producer launch/ownership/heartbeat, cancellation/cleanup and unknown-worker inspection;
   real OpenEvolve/Shinka/native campaigns and provider performance.
 - A real Actor environment runner and independently trusted official evaluator; the local
-  clean-room verifier and memory governance control plane are provider-free building blocks, not
-  external authenticity or model-quality evidence.
+  clean-room verifier, clean-room admission bridge and memory governance control plane are
+  provider-free building blocks, not external authenticity or model-quality evidence.
+- The controller promotion composition is explicit and caller-driven. Default automatic holdout
+  scheduling, real evaluator execution, rollback/quarantine automation and production campaign
+  wiring remain outside this acceptance claim.
 - Solver→RSI recursive execution and nested budget propagation. Depth/cycle and unknown-retry
   budget primitives must not be described as a completed nested scheduler.
 - Real provider billing, GPU measurement and external cost truth. The provider-free usage ledger

@@ -31,6 +31,7 @@ from .rsi_gateway import (
 from .rsi_identity import RSIIdentityError, component_fingerprint
 from .rsi_learning import (
     EMPTY_MEMORY_SNAPSHOT,
+    EMPTY_MEMORY_SNAPSHOT_SHA256,
     MemoryItem,
     MemorySnapshot,
     PracticeEpisode,
@@ -909,10 +910,132 @@ class RSILearningController:
         if usage_ledger is not None and not isinstance(usage_ledger, RSIUsageLedger):
             raise TypeError("usage_ledger must be an RSI usage UsageLedger")
         self.usage_ledger = usage_ledger
+        # Transfer reports are retained only as a local idempotency aid.  The governance
+        # admission record remains the durable source of truth; a fresh process may return
+        # ``None`` for an already-approved report when the report itself was not persisted.
+        self._transfer_promotion_reports: dict[str, Any] = {}
 
     @property
     def snapshot(self) -> MemorySnapshot:
         return self.memory_store.snapshot
+
+    def promote_transfer_regression(
+        self,
+        *,
+        governance: Any,
+        admission_id: str,
+        expected_record_sha256: str,
+        old_memory: MemorySnapshot,
+        tasks: Sequence[Any],
+        runner: Callable[..., Any],
+        policy: Any | None = None,
+        activate: bool = False,
+        fingerprints: Mapping[str, object] | None = None,
+    ) -> tuple[Any | None, Any]:
+        """Run local transfer regression and apply the explicit memory promotion gate.
+
+        This is deliberately opt-in and provider-free.  ``old_memory`` and the controller's
+        current immutable snapshot are the only memories passed to the regression suite; the
+        suite runner is supplied by the caller and must return its local observations.  The
+        governance adapter performs the final CAS and ``shadow -> approved`` (optionally
+        ``approved -> active``) transitions.  No ``RSIMemoryStore`` mutation is performed.
+
+        A second call after approval/activation is an idempotent read.  It does not execute the
+        suite again or append another governance revision; when this controller still has the
+        original report it is returned, otherwise the report slot is ``None``.
+        """
+        # Lazy imports keep the controller's core execution path independent from the optional
+        # governance/transfer modules and avoid making this composition mandatory for DRS/BRS.
+        from .rsi_memory_governance import MemoryGovernanceStore
+        from .rsi_memory_promotion import MemoryPromotionAdapter, MemoryPromotionError
+        from .rsi_transfer_regression import TransferRegressionSuite
+
+        if not isinstance(governance, MemoryGovernanceStore):
+            raise MemoryPromotionError("rsi_memory_promotion_governance_invalid")
+        if type(admission_id) is not str or not admission_id.strip():
+            raise MemoryPromotionError("rsi_memory_promotion_admission_invalid")
+        if type(expected_record_sha256) is not str or len(expected_record_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in expected_record_sha256
+        ):
+            raise MemoryPromotionError("rsi_memory_promotion_expected_record_invalid")
+        if not isinstance(old_memory, MemorySnapshot):
+            raise MemoryPromotionError("rsi_memory_promotion_memory_invalid")
+        if type(activate) is not bool:
+            raise MemoryPromotionError("rsi_memory_promotion_activate_invalid")
+        if fingerprints is not None and (
+            not isinstance(fingerprints, Mapping) or any(type(key) is not str for key in fingerprints)
+        ):
+            raise MemoryPromotionError("rsi_memory_promotion_fingerprint_invalid")
+
+        admission = governance.get(admission_id)
+        if admission is None:
+            raise MemoryPromotionError("rsi_memory_governance_missing")
+        if admission.record_sha256 != expected_record_sha256:
+            raise MemoryPromotionError("rsi_memory_governance_cas_conflict")
+
+        # A candidate admission is bound to exactly the frozen current snapshot.  The parent
+        # digest is also checked before spending any holdout calls, including the empty parent
+        # convention used by the governance adapter.
+        current_memory = self.snapshot
+        if admission.memory_snapshot_sha256 != current_memory.digest():
+            raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
+        expected_parent = old_memory.digest()
+        if (admission.parent_snapshot_sha256 or EMPTY_MEMORY_SNAPSHOT_SHA256) != expected_parent:
+            raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
+
+        observed_fingerprints: dict[str, object] = {
+            "memory_snapshot_sha256": current_memory.digest(),
+            "solver_fingerprint": _component_digest(self.gateway, name="solver"),
+            "verifier_fingerprint": _component_digest(self.verifier, name="verifier"),
+            "curriculum_fingerprint": _component_digest(self.curriculum, name="curriculum"),
+            "target_judge_fingerprint": _component_digest(self.target_judge, name="target_judge"),
+        }
+        observed_fingerprints.update(dict(fingerprints or {}))
+        for key, value in observed_fingerprints.items():
+            declared = admission.compatibility.get(key)
+            if declared is not None and declared != value:
+                raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
+
+        # Do not rerun a completed promotion.  CAS is checked above so a caller cannot turn an
+        # old expected digest into an idempotent success after another process changed the head.
+        if admission.state == "active":
+            return self._transfer_promotion_reports.get(admission_id), admission
+        if admission.state == "approved" and not activate:
+            return self._transfer_promotion_reports.get(admission_id), admission
+        if admission.state == "approved" and activate:
+            cached_report = self._transfer_promotion_reports.get(admission_id)
+            if cached_report is None:
+                promoted = MemoryPromotionAdapter(governance).activate_approved(
+                    admission_id,
+                    expected_record_sha256=expected_record_sha256,
+                    compatibility=admission.compatibility,
+                )
+                return None, promoted
+            promoted = MemoryPromotionAdapter(governance).promote(
+                admission_id,
+                cached_report,
+                expected_record_sha256=expected_record_sha256,
+                compatibility=admission.compatibility,
+                activate=True,
+            )
+            return cached_report, promoted
+
+        report = TransferRegressionSuite(policy=policy).run(
+            tasks, old_memory=old_memory, current_memory=current_memory, runner=runner,
+        )
+        # A malicious or accidental runner must not mutate the controller's memory between the
+        # frozen suite and the governance write.
+        if self.snapshot.digest() != current_memory.digest():
+            raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
+        promoted = MemoryPromotionAdapter(governance).promote(
+            admission_id,
+            report,
+            expected_record_sha256=expected_record_sha256,
+            compatibility=admission.compatibility,
+            activate=activate,
+        )
+        self._transfer_promotion_reports[admission_id] = report
+        return report, promoted
 
     def _failure_curriculum_state(self) -> dict[str, Any] | None:
         """Return optional mutable failure-driven curriculum state for a run checkpoint."""

@@ -22,3 +22,21 @@ and the governance drift check still applies. The adapter does not execute a sol
 does not contact OpenEvolve/Shinka or another remote service, and never mutates the immutable
 `RSIMemoryStore`. `promote_transfer_report(...)` is the equivalent functional entry point for a
 controller that does not need to retain an adapter instance.
+
+## Controller composition
+
+`RSILearningController.promote_transfer_regression(...)` is the explicit controller-facing
+composition for this adapter. It obtains the controller's current immutable snapshot, accepts an
+explicit frozen `old_memory`, runs the local `TransferRegressionSuite`, verifies the admission's
+current and parent snapshot digests plus solver/verifier/curriculum/target-judge fingerprints,
+then delegates to `MemoryPromotionAdapter`. With the default `activate=False` it appends only
+`shadow -> approved`; `activate=True` appends `approved` first and then `active`. A completed
+promotion is replay-safe on the same controller instance: it returns the cached report without
+rerunning the suite or appending another governance revision. CAS, snapshot, compatibility or
+report eligibility failures remain fail-closed.
+
+This is an opt-in, provider-free composition boundary. The caller supplies the local regression
+runner; it does not schedule a holdout campaign, invoke an official evaluator, modify the
+read-only `RSIMemoryStore`, or establish external worker authenticity. The clean-room path has a
+separate `CleanRoomAdmissionGate` that only advances a provenance-matched passing verdict from
+`observed` to `verified`; it must not be conflated with transfer promotion or automatic activation.

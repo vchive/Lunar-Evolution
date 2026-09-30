@@ -26,12 +26,14 @@
   - [x] 阶段 1 unknown transfer 失败处置：worker 已显式 settle 为失败/取消/超时/放弃后，`reconcile_receipt` 原子追加 failed revision 与 checkpoint；保留旧 unknown 收据和原始 worker result，禁止通用 transition 绕过。
   - [ ] 后续真实接线：上述对账采用可信本地证据；外部来源真实性、worker ownership 和外部幂等协议仍需 adapter 验收。unknown→passed 需要独立可信完成证据协议，本轮不得从 unknown 声明推导成功。
   - [ ] 阶段 2：diversity/failure-boundary curriculum policy（仍待实现）。
-- [x] T160-14 增加独立 memory admission governance 控制面：append-only admission history、CAS 状态转移、verifier/pass、holdout/baseline regression gate、compatibility drift 和 revoke fail-closed；不修改只读 RSIMemoryStore。
+- [x] T160-14 增加独立 memory admission governance 控制面：append-only admission history、CAS 状态转移、verifier/pass、holdout/baseline regression gate、compatibility drift 和 revoke fail-closed；不修改只读 RSIMemoryStore。clean-room verdict 的 `observed → verified` admission bridge 见 T160-21。
 - [x] T160-15 统一 provider-free solver adapter contract：生命周期、request pins、预算/deadline、terminal status、recovery 和 ownership receipt；OpenEvolve/Shinka 仅声明 fixture capability，不启动真实项目。
-- [x] T160-16 增加 provider-free frozen-memory transfer regression 窄版本：no/old/current memory 对照、seen/unseen 多目标、重复试验、污染检查和 promotion evidence；真实 evaluator/controller 自动触发仍待接线。
+- [x] T160-16 增加 provider-free frozen-memory transfer regression 窄版本：no/old/current memory 对照、seen/unseen 多目标、重复试验、污染检查和 promotion evidence；已由 controller 的显式 `promote_transfer_regression()` 组合入口按调用方请求接线，默认自动触发和真实 evaluator 仍待接线。
 - [x] T160-17 增加 provider-free failure-driven curriculum 窄版本：failure cluster、capability coverage、hard-negative/boundary probe、重复抑制、预算审计和 canonical ledger replay；可选 controller checkpoint/resume 接线已完成，复杂 bandit/RL 后置。
 - [x] T160-18 增加显式 transfer-report → memory-governance promotion adapter：校验 report digest、holdout/baseline/regression evidence 和 CAS，强制 shadow → approved → active 两步晋级。
 - [x] T160-19 增加 provider-free 用量/成本 accounting 窄版本：run/episode/adapter-stage append-only JSON receipt、CAS/hash-chain、未知 token/time fail-closed、可配置估算成本、预算摘要和 durable reopen。真实 provider billing、GPU 计量和真实 process adapter 接线仍待后续。
+- [x] T160-20 增加 controller-level transfer promotion 组合入口：冻结当前/parent memory，执行本地 transfer regression，校验 solver/verifier/curriculum/judge fingerprint 与 CAS，并通过 `MemoryPromotionAdapter` 强制 `shadow → approved`（可选 `approved → active`）；重复调用只读重放，不重复 runner 或 governance revision。该入口为显式 opt-in 的 provider-free 路径，不等于默认自动调度或真实 evaluator 接线。
+- [x] T160-21 增加 clean-room verdict admission bridge：严格校验 episode、source/dependency/task/evaluator provenance 与 `pass` verdict，幂等写入 governance 的 `observed → verified`；不修改 `RSIMemoryStore`，不自动推进 candidate/shadow，也不提供外部真实性证明。
 
 ## 本轮边界
 

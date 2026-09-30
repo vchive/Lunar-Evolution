@@ -88,7 +88,7 @@ Curriculum → Practice Episode → SolverGateway → Evaluator/Receipt → Veri
 
 ### A4. Clean-room independent verifier
 
-现状证据：已增加 provider-free `CleanRoomVerifier`，会在隔离 workspace 重开 candidate source/dependencies，重算 source/task/evaluator digest，检测 workspace 修改，并对超时、异常和不可信 evidence fail-closed。它尚未接入 controller，也不会替代真实 Actor environment 或官方 evaluator。
+现状证据：已增加 provider-free `CleanRoomVerifier`，会在隔离 workspace 重开 candidate source/dependencies，重算 source/task/evaluator digest，检测 workspace 修改，并对超时、异常和不可信 evidence fail-closed。`CleanRoomAdmissionGate` 现在把通过的 clean-room verdict 严格绑定到 episode、source/dependency/task/evaluator provenance，并幂等写入 governance 的 `observed → verified`；它仍是独立 admission boundary，尚未由 controller 自动调用，也不会替代真实 Actor environment 或官方 evaluator。
 
 为什么必须补：Actor 的成功不能直接成为学习证据。memory commit 必须基于独立可复核的 artifact 和 evaluator 结果，否则错误、伪造或环境污染会进入长期 memory。
 
@@ -116,7 +116,7 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 
 ### B2. Memory governance 与 promotion gate
 
-已增加独立 append-only SQLite memory admission control plane，支持 observed → verified → candidate → shadow → approved → active → deprecated/revoked、CAS digest、verifier/pass、holdout/baseline regression 和 compatibility drift gate；另有显式 `MemoryPromotionAdapter` 接收 transfer report 并强制两步晋级。它不修改只读 `RSIMemoryStore`，也尚未接入自动 holdout campaign 或默认 controller 触发。
+已增加独立 append-only SQLite memory admission control plane，支持 observed → verified → candidate → shadow → approved → active → deprecated/revoked、CAS digest、verifier/pass、holdout/baseline regression 和 compatibility drift gate；另有显式 `MemoryPromotionAdapter` 接收 transfer report 并强制两步晋级。`RSILearningController.promote_transfer_regression()` 现在提供一个**显式 opt-in 的 provider-free 组合入口**：冻结 controller 当前 snapshot，执行本地 transfer regression，再经 adapter 做 `shadow → approved`（可选继续 `approved → active`），并在 snapshot、parent snapshot、solver/verifier/curriculum/judge fingerprint 或 CAS 漂移时 fail-closed；已完成的 promotion 可幂等重放，不重复 runner 或 governance revision。它不修改只读 `RSIMemoryStore`，也不代表真实 evaluator、自动 holdout campaign 或默认 controller 触发已经接通。
 
 最小范围：observed → verified → candidate → shadow → approved → active → deprecated/revoked。candidate 必须绑定 verifier receipt、source episode、scope、compatibility 和 parent snapshot；用 baseline/holdout 决定 promotion；支持冲突、rollback、quarantine。
 
@@ -126,7 +126,9 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 
 已增加 provider-free `TransferRegressionSuite`：对 no-memory/old-memory/current-memory 三个冻结 arm
 执行 seen/unseen 多目标、重复试验、输入/任务/记忆污染检查，并生成可喂给 promotion gate 的
-holdout/baseline evidence。真实 evaluator、跨任务数据集和 controller 自动触发仍未接通。
+holdout/baseline evidence。controller 现可通过显式 `promote_transfer_regression()` 组合这套 suite
+和 promotion adapter；该入口只接受调用方提供的本地 runner，默认不会自动触发，也未接入真实
+evaluator、跨任务数据集或生产 campaign。
 
 最小范围：no-memory、old-memory、current-memory 对照；seen/unseen task split；多目标 holdout；repeated runs；task-family coverage；contamination check；promotion 后自动执行最小回归套件。
 
@@ -215,10 +217,7 @@ capability/prerequisite coverage、hard-negative/boundary probe、重复抑制�
 
 ### 阶段 2：可信学习闭环（P1）
 
-当前已完成 provider-free clean-room verifier（含本地 spawn 进程生命周期/超时边界）、provenance/污染检测、transfer regression 窄版本、
-memory promotion adapter、失败驱动 curriculum 及其可选 resume 接线和统一 adapter contract。剩余
-顺序为：接入真实 evaluator/Actor、holdout regression 的默认 controller 触发、rollback/quarantine
-自动触发，以及真实 process adapter/campaign。
+当前已完成 provider-free clean-room verifier（含本地 spawn 进程生命周期/超时边界）、provenance/污染检测、clean-room verdict → governance 的 verified admission bridge、transfer regression 窄版本、memory promotion adapter、controller 的显式 transfer promotion 组合入口、失败驱动 curriculum 及其可选 resume 接线和统一 adapter contract。剩余顺序为：接入真实 evaluator/Actor、将 holdout regression 接到受控的默认调度策略、rollback/quarantine 自动触发，以及真实 process adapter/campaign。
 
 出口：错误或伪造 receipt 无法进入 active memory；局部成功不能冒充迁移能力。
 

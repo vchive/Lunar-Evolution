@@ -1,5 +1,30 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 RSI clean-room admission and controller promotion composition
+
+Feature 160 新增两条本地 provider-free 组合边界。`CleanRoomAdmissionGate`（见
+`src/lunar_evolution/rsi_cleanroom_admission.py`）只接受 outcome 为 `pass` 且 episode、source、
+dependency、task input、evaluator provenance 与调用方 pins 完全一致的
+`CleanRoomVerdict`，以幂等方式把 governance admission 从 `observed` 推进到 `verified`。
+它不修改只读 `RSIMemoryStore`，不直接推进 candidate/shadow，也不提供外部 evaluator 或
+worker 真实性证明。
+
+`RSILearningController.promote_transfer_regression()`（见
+`src/lunar_evolution/rsi_controller.py`）是显式 opt-in 的 controller 组合入口：冻结当前
+snapshot 和传入的 parent snapshot，运行本地 `TransferRegressionSuite`，检查
+solver/verifier/curriculum/target-judge fingerprint、snapshot/parent digest 与 governance
+CAS，再交给 `MemoryPromotionAdapter` 执行 `shadow -> approved`，可选继续
+`approved -> active`。同一 controller 对已完成 promotion 只读重放，不重复 runner 或
+governance revision；入口不会自动调度 holdout、调用真实 evaluator、修改 memory store 或
+接入 OpenEvolve/Shinka campaign。`activate=True` 仍保留 approved revision，失败、漂移和
+rejected report 均 fail-closed。
+
+本轮文档同步更新 `specs/160-rsi-learning-mode/stage-gap-report.md`、`tasks.md`、
+`validation.md` 和 `memory-promotion.md`。实现仍属于本地 fixture 边界；提交前必须运行
+controller-promotion、memory-promotion、transfer-regression、clean-room admission/clean-room
+focused tests，以及 Ruff、compileall、`git diff --check`。不要把这些结果描述成真实模型、
+官方 evaluator、外部 producer 或 WebAgent 验收；当前分支也不等于已合入 `master`。
+
 ## 2026-10-01 Broker journal recovery and scheduler boundary hardening
 
 当前 feature 分支已推送 `2248cf7`、`816c283` 和 `2a9f16d`。scheduler 在消耗一次性
@@ -4842,3 +4867,21 @@ Focused lifecycle and scheduler tests pass after the projection double fix; Ruff
 Feature 156/158 still have open production gaps: integrated bootstrap registration and
 post-crash owner-checked cleanup/recovery, complete host-observed broker enforcement, and real
 scheduler/campaign wiring. No provider, WebAgent, external producer, or remote evaluator is run.
+
+## 2026-10-01 RSI transfer promotion composition
+
+Feature 160 now includes an explicit provider-free `RSILearningController.promote_transfer_regression`
+composition entry. It freezes the controller's current memory and supplied parent snapshot, runs the
+local frozen transfer regression, checks snapshot/CAS and solver/verifier/curriculum/judge fingerprints,
+then uses `MemoryPromotionAdapter` for the explicit `shadow -> approved` gate and optional
+`approved -> active` step. Repeated calls do not rerun the suite or append duplicate governance
+revisions. If a process dies after `shadow -> approved`, a fresh controller can resume the durable
+`approved -> active` edge from persisted holdout/baseline evidence without replaying the regression.
+
+The clean-room verdict bridge is also committed: `CleanRoomAdmissionGate` accepts only a strict
+provider-free pass with matching episode/source/dependency/task/evaluator provenance and idempotently
+records `observed -> verified`; it does not mutate `RSIMemoryStore` or skip candidate/shadow gates.
+
+Focused RSI promotion, transfer, governance, clean-room, Ruff, compileall, and diff checks pass.
+These are local fixture capabilities only; default automatic holdout scheduling, real evaluator/Actor,
+external producer lifecycle, and real OpenEvolve/Shinka campaigns remain outside this handoff.

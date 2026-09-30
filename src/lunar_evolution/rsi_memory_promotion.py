@@ -124,6 +124,23 @@ class MemoryPromotionAdapter:
         ``expected_record_sha256`` must point at the current ``shadow`` head.  The method never
         accepts an ``active`` target from a caller and therefore cannot skip the approved gate.
         """
+        # A controller may crash after the durable ``shadow -> approved`` append.  On retry,
+        # continue that exact lifecycle edge instead of attempting to append ``approved`` twice.
+        current = self.governance.get(admission_id)
+        if current is not None and current.state == "approved":
+            evidence = _evidence(report)
+            if (
+                current.memory_snapshot_sha256 != report.current_memory_sha256
+                or (current.parent_snapshot_sha256 or EMPTY_MEMORY_SNAPSHOT_SHA256) != report.old_memory_sha256
+            ):
+                raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
+            return self.governance.transition(
+                admission_id,
+                "active",
+                expected_record_sha256=expected_record_sha256,
+                compatibility=compatibility,
+                **evidence,
+            )
         approved = self.approve(
             admission_id,
             report,
@@ -135,6 +152,36 @@ class MemoryPromotionAdapter:
             "active",
             expected_record_sha256=approved.record_sha256,
             compatibility=compatibility,
+        )
+
+    def activate_approved(
+        self,
+        admission_id: str,
+        *,
+        expected_record_sha256: str,
+        compatibility: Mapping[str, object] | None = None,
+    ) -> MemoryAdmissionRecord:
+        """Resume an already-approved admission without replaying the regression runner.
+
+        The approved governance revision is the durable source of the holdout and baseline
+        evidence.  This path is intentionally limited to the single ``approved -> active`` edge
+        and therefore cannot manufacture approval or bypass the regression gate.
+        """
+        current = self.governance.get(admission_id)
+        if current is None:
+            raise MemoryGovernanceError("rsi_memory_governance_missing")
+        if current.state != "approved":
+            raise MemoryPromotionError("rsi_memory_promotion_approved_required")
+        if not current.regression_passed or current.holdout_receipt_sha256 is None or current.baseline_receipt_sha256 is None:
+            raise MemoryPromotionError("rsi_memory_promotion_regression_gate")
+        return self.governance.transition(
+            admission_id,
+            "active",
+            expected_record_sha256=expected_record_sha256,
+            compatibility=compatibility,
+            holdout_receipt_sha256=current.holdout_receipt_sha256,
+            baseline_receipt_sha256=current.baseline_receipt_sha256,
+            regression_passed=True,
         )
 
     def promote(
