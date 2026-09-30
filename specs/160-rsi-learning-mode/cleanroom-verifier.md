@@ -34,8 +34,16 @@ integrity checks succeed.
 
 The verifier re-reads the materialized candidate after evaluation.  This catches wrappers that
 modify source or dependencies.  The temporary directory is mode `0700`, source/dependencies are
-read-only, and it is removed after evaluation.  The Python callable timeout is an observation
-bound; a production hard-kill adapter must execute the wrapper in a separate process.
+read-only, and it is removed after evaluation.  The default Python callable timeout is an
+observation bound.  `CleanRoomProcessVerifier` (or `verify_in_subprocess`) is the provider-free
+hard-kill fixture boundary: it accepts only a module-level locally importable evaluator, runs it
+in a daemon `spawn` process, and returns a versioned JSON result envelope over a private pipe.  On
+timeout the parent terminates and, when available, kills the child before returning `unresolved`;
+evaluator exception text never crosses the boundary.  The parent still re-reads all materialized
+artifacts after the child exits, so a child that tampers with source, dependencies, or task input
+cannot pass.  The process is a lifecycle and timeout boundary, not an operating-system sandbox:
+it does not provide network isolation, filesystem policy enforcement, or provenance for external
+packages.  Those controls remain outside this provider-free fixture.
 
 This slice does not persist memory, inspect hidden holdout data, launch remote evaluators, or
 replace the existing `LocalExactVerifier`.  It is a reusable local fixture for the next promotion

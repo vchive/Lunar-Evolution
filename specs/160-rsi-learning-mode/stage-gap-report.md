@@ -92,7 +92,7 @@ Curriculum → Practice Episode → SolverGateway → Evaluator/Receipt → Veri
 
 为什么必须补：Actor 的成功不能直接成为学习证据。memory commit 必须基于独立可复核的 artifact 和 evaluator 结果，否则错误、伪造或环境污染会进入长期 memory。
 
-最小范围：verifier 独立 workspace 和最小权限；定位源码、依赖锁定和运行输入；重算 source/dependency/environment digest；重新执行官方 evaluator 或受信 wrapper；隔离 Actor 私有 trace。当前已完成本地 wrapper/contamination slice，真实 process-level hard-kill 和 evaluator 接线仍待完成。
+最小范围：verifier 独立 workspace 和最小权限；定位源码、依赖锁定和运行输入；重算 source/dependency/environment digest；重新执行官方 evaluator 或受信 wrapper；隔离 Actor 私有 trace。当前已完成本地 wrapper/contamination slice 及 spawn 进程生命周期/超时边界；真实官方 evaluator、Actor environment 和外部真实性接线仍待完成。
 
 验收标准：修改 candidate 源码、依赖、输入或 producer score 而不更新绑定 artifact 时，verifier 拒绝；Actor 报告成功但 clean-room evaluator 失败时，不得 commit memory。
 
@@ -215,7 +215,7 @@ capability/prerequisite coverage、hard-negative/boundary probe、重复抑制�
 
 ### 阶段 2：可信学习闭环（P1）
 
-当前已完成 provider-free clean-room verifier、provenance/污染检测、transfer regression 窄版本、
+当前已完成 provider-free clean-room verifier（含本地 spawn 进程生命周期/超时边界）、provenance/污染检测、transfer regression 窄版本、
 memory promotion adapter、失败驱动 curriculum 及其可选 resume 接线和统一 adapter contract。剩余
 顺序为：接入真实 evaluator/Actor、holdout regression 的默认 controller 触发、rollback/quarantine
 自动触发，以及真实 process adapter/campaign。

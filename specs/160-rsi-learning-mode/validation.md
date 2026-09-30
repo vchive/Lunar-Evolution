@@ -1,12 +1,12 @@
 # Validation: RSI learning mode
 
-This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **499 tests**,
-with no failures or skips (`/tmp/lunar-rsi-release-final.xml`). The run includes DRS/BRS callback
+This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **519 tests**,
+with no failures or skips (`/tmp/lunar-rsi-release-current`). The run includes DRS/BRS callback
 crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery and append-only
 unknown receipt failure settlement. Ruff, compileall and `git diff --check` passed.
-An isolated export of the staged source also passed all **499 tests**
-(`/tmp/lunar-rsi-staged-final.xml`), Ruff, compilation and an import check of every public API
-export. Unrelated, uncommitted producer changes were absent from that source snapshot.
+The process-level clean-room fixtures are included in that count; they use only local module-level
+evaluators and do not establish an official evaluator or external authenticity. An isolated export
+of the staged source must be rerun after this change before it can be cited as a release artifact.
 A passing fixture matrix is not evidence that every external worker or callback recovery path has
 been implemented.
 
@@ -25,8 +25,10 @@ been implemented.
 - The local verifier checks request identity, worker outcome and required receipt bindings. The
   provider-free clean-room verifier additionally reopens candidate source/dependencies in an
   isolated temporary workspace, recomputes source/task/evaluator identities, detects workspace
-  mutation, and fails closed on timeout, exception or untrusted evidence. It is not an official
-  evaluator or a hard process kill boundary.
+  mutation, and fails closed on timeout, exception or untrusted evidence. The
+  `CleanRoomProcessVerifier` fixture adds a daemon `spawn` process with bounded JSON IPC and
+  terminate/kill cleanup; this is a local process lifetime boundary, not an OS sandbox, network
+  isolation mechanism, official evaluator or external authenticity proof.
 - Actor traces expose bounded public observations rather than private reasoning. Isolation and
   artifact validation by a real verifier remain separate acceptance work.
 - Frozen transfer runs with `curriculum_enabled=false` and `memory_write_enabled=false`; an attempted
@@ -114,9 +116,11 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | CLI callback inspection, strict input admission and explicit continuation | `test_rsi_callback_cli.py` |
 | Transfer callback/receipt reconciliation and atomic failure settlement | `test_rsi_transfer_reconcile.py` |
 | Clean-room source/dependency reopen, evaluator identity and contamination gates | `test_rsi_cleanroom.py` |
+| Process clean-room timeout/exception/IPC/child mutation gates | `test_rsi_cleanroom_process.py` |
 | Memory admission lifecycle, CAS transitions and promotion/revocation gates | `test_rsi_memory_governance.py` |
 | Provider-free no/old/current transfer regression, seen/unseen split, multi-target holdout and contamination gate | `test_rsi_transfer_regression.py` |
 | Unified solver adapter lifecycle, budget/deadline and terminal receipt contract | `test_rsi_adapter_contract.py` |
+| Provider-free usage receipts, unknown fail-closed summaries, CAS/hash-chain and durable reopen | `test_rsi_usage.py` |
 | Failure clustering, capability coverage, hard-negative selection and curriculum replay | `test_rsi_curriculum.py` |
 | Controller checkpoint/resume of failure-driven curriculum ledger | `test_rsi_curriculum_resume.py` |
 | Transfer report to memory-governance promotion and two-step activation gate | `test_rsi_memory_promotion.py` |
@@ -139,8 +143,9 @@ constitute evidence for real OpenEvolve, Shinka, OSWorld, or remote evaluator pe
   external authenticity or model-quality evidence.
 - Solver→RSI recursive execution and nested budget propagation. Depth/cycle and unknown-retry
   budget primitives must not be described as a completed nested scheduler.
-- Real request/token/CPU/GPU/cost accounting. Control-plane reservations are not measured provider
-  usage, and frozen transfer fixture success does not prove learning gains.
+- Real provider billing, GPU measurement and external cost truth. The provider-free usage ledger
+  records local receipts and configurable estimates; control-plane reservations are not measured
+  provider usage, and frozen transfer fixture success does not prove learning gains.
 
 No WebAgent, remote evaluator or company evaluation platform is required or authorized by this
 local validation procedure.

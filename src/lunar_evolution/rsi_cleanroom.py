@@ -16,12 +16,17 @@ when a hard kill boundary is required.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import importlib
+import json
 import math
+import multiprocessing
 import os
 import shutil
 import stat
 import tempfile
+import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -38,6 +43,8 @@ MAX_SOURCE_BYTES = 4 * 1024 * 1024
 MAX_DEPENDENCY_BYTES = 16 * 1024 * 1024
 MAX_TASK_INPUT_BYTES = 16 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 128 * 1024
+# Base64 evidence can be 4/3 of its original size; bound the full IPC envelope separately.
+MAX_PROCESS_RESULT_BYTES = 2 * MAX_EVIDENCE_BYTES + 4096
 MAX_EPISODE_ID_BYTES = 256
 MAX_TIMEOUT_SECONDS = 300.0
 MAX_DEPENDENCIES = 128
@@ -586,13 +593,207 @@ class CleanRoomVerifier:
         )
 
 
+def _process_wire_evidence(value: bytes | Mapping[str, Any]) -> tuple[object, str]:
+    """Make the bounded evaluator evidence JSON-safe for the child IPC envelope."""
+
+    if type(value) is bytes:
+        return base64.b64encode(value).decode("ascii"), "base64"
+    return json.loads(canonical_json(value, maximum=MAX_EVIDENCE_BYTES)), "json"
+
+
+def _process_wire_result(value: object) -> bytes:
+    """Encode one evaluator result as a small versioned JSON envelope."""
+
+    candidate, reason = _parse_evaluation(value)
+    if reason or candidate is None:
+        return b'{"protocol":"rsi-cleanroom-process-v1","status":"untrusted_evidence"}'
+    try:
+        evidence, evidence_encoding = _process_wire_evidence(candidate.evidence)
+        payload = {
+            "outcome": candidate.outcome,
+            "evidence": evidence,
+            "receipt_sha256": candidate.receipt_sha256,
+        }
+        # Bound the complete envelope, including unexpected top-level fields, before it crosses
+        # the IPC boundary.  This keeps an untrusted fixture from using its result as an
+        # unbounded memory channel even though ordinary evidence is separately capped.
+        envelope = {
+            "protocol": "rsi-cleanroom-process-v1",
+            "status": "ok",
+            "value": payload,
+            "evidence_encoding": evidence_encoding,
+        }
+        return canonical_json(envelope, maximum=MAX_PROCESS_RESULT_BYTES)
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        return b'{"protocol":"rsi-cleanroom-process-v1","status":"invalid_result"}'
+
+
+def _cleanroom_process_worker(send_conn: Any, evaluator: Callable[[CleanRoomContext], object], context: CleanRoomContext) -> None:
+    """Run a fixture evaluator and return only a JSON result envelope.
+
+    This function must stay module-level so the spawn context can import it.  The process is
+    marked daemon by the parent; the parent remains responsible for terminating it on timeout.
+    """
+
+    try:
+        if component_fingerprint(evaluator) != context.evaluator_sha256:
+            wire = b'{"protocol":"rsi-cleanroom-process-v1","status":"evaluator_fingerprint_mismatch"}'
+        else:
+            wire = _process_wire_result(evaluator(context))
+    except BaseException:  # noqa: BLE001 - evaluator details never cross the trust boundary.
+        wire = b'{"protocol":"rsi-cleanroom-process-v1","status":"evaluator_exception"}'
+    try:
+        send_conn.send_bytes(wire)
+    except (BrokenPipeError, EOFError, OSError):
+        pass
+    finally:
+        send_conn.close()
+
+
+def _decode_process_result(payload: bytes) -> tuple[object | None, str | None]:
+    if len(payload) > MAX_PROCESS_RESULT_BYTES:
+        return None, "invalid_result_envelope"
+    try:
+        envelope = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, "invalid_result_envelope"
+    if not isinstance(envelope, Mapping) or envelope.get("protocol") != "rsi-cleanroom-process-v1":
+        return None, "invalid_result_envelope"
+    status = envelope.get("status")
+    if status in {"evaluator_exception", "untrusted_evidence", "evaluator_fingerprint_mismatch"}:
+        if set(envelope) != {"protocol", "status"}:
+            return None, "invalid_result_envelope"
+        return None, status
+    if status != "ok" or set(envelope) != {"protocol", "status", "value", "evidence_encoding"}:
+        return None, "invalid_result_envelope"
+    value = envelope["value"]
+    if not isinstance(value, Mapping):
+        return None, "untrusted_evidence"
+    result = dict(value)
+    evidence_encoding = envelope.get("evidence_encoding", "none")
+    if evidence_encoding == "base64":
+        encoded = result.get("evidence")
+        if type(encoded) is not str:
+            return None, "untrusted_evidence"
+        try:
+            result["evidence"] = base64.b64decode(encoded.encode("ascii"), validate=True)
+        except (ValueError, UnicodeEncodeError):
+            return None, "untrusted_evidence"
+    elif evidence_encoding != "json":
+        return None, "invalid_result_envelope"
+    return result, None
+
+
+def _is_importable_fixture(evaluator: object) -> bool:
+    """Require a module-level callable for the spawn process boundary."""
+
+    module_name = getattr(evaluator, "__module__", None)
+    qualname = getattr(evaluator, "__qualname__", None)
+    if type(module_name) is not str or type(qualname) is not str or "<locals>" in qualname:
+        return False
+    try:
+        target: object = importlib.import_module(module_name)
+        for part in qualname.split("."):
+            target = getattr(target, part)
+    except (ImportError, AttributeError, ValueError):
+        return False
+    return target is evaluator
+
+
+class CleanRoomProcessVerifier(CleanRoomVerifier):
+    """Clean-room verifier with a killable process-level evaluator boundary.
+
+    Only module-level, locally importable evaluator fixtures are accepted.  This keeps the
+    subprocess contract deterministic and prevents accidentally treating a closure or provider
+    client as a durable evaluator identity.  The parent still performs all artifact, evidence and
+    receipt checks implemented by :class:`CleanRoomVerifier`.
+    """
+
+    @staticmethod
+    def _run_evaluator(
+        evaluator: Callable[[CleanRoomContext], object],
+        context: CleanRoomContext,
+        timeout_seconds: float,
+    ) -> tuple[CleanRoomEvaluation | None, str | None]:
+        if not _is_importable_fixture(evaluator):
+            return None, "evaluator_not_importable"
+        context_factory = multiprocessing.get_context("spawn")
+        parent_conn, child_conn = context_factory.Pipe(duplex=False)
+        process = context_factory.Process(
+            target=_cleanroom_process_worker,
+            args=(child_conn, evaluator, context),
+            name="lunar-cleanroom-evaluator",
+            daemon=True,
+        )
+        deadline = time.monotonic() + timeout_seconds
+        try:
+            try:
+                process.start()
+            except (OSError, TypeError, ValueError, RuntimeError):
+                return None, "evaluator_not_importable"
+            child_conn.close()
+            # Drain before join: a legitimate evidence envelope can exceed the OS pipe buffer.
+            # Waiting for the sender to exit first deadlocks its bounded send_bytes call.
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None, "evaluator_timeout"
+                if parent_conn.poll(min(0.05, remaining)):
+                    payload = parent_conn.recv_bytes(MAX_PROCESS_RESULT_BYTES)
+                    break
+                if not process.is_alive():
+                    # A normal evaluator exception exits without an envelope.  Do not spend the
+                    # rest of the timeout budget waiting when the child is already gone.
+                    if parent_conn.poll(0):
+                        payload = parent_conn.recv_bytes(MAX_PROCESS_RESULT_BYTES)
+                        break
+                    return None, "evaluator_exception"
+            process.join(max(0.0, deadline - time.monotonic()))
+            if process.is_alive() or time.monotonic() > deadline:
+                return None, "evaluator_timeout"
+            if process.exitcode != 0:
+                return None, "evaluator_exception"
+            value, reason = _decode_process_result(payload)
+            if reason:
+                return None, reason
+            return _parse_evaluation(value)
+        except (EOFError, OSError, ValueError):
+            return None, "invalid_result_envelope"
+        finally:
+            # Includes KeyboardInterrupt/SystemExit in the caller: no evaluator should continue
+            # using a workspace after verify() unwinds and removes that workspace.
+            child_conn.close()
+            parent_conn.close()
+            if process.pid is not None:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(0.1)
+                    if process.is_alive() and hasattr(process, "kill"):
+                        process.kill()
+                process.join()
+            try:
+                process.close()
+            except ValueError:
+                # A platform that cannot reap a forcibly killed child is still fail-closed; the
+                # unresolved verdict is preferable to re-raising from cleanup.
+                pass
+
+
+def verify_in_subprocess(request: CleanRoomVerificationRequest) -> CleanRoomVerdict:
+    """Convenience entry point for a hard-kill, provider-free clean-room verification."""
+
+    return CleanRoomProcessVerifier().verify(request)
+
+
 __all__ = [
     "CandidateArtifact",
     "CleanRoomContext",
     "CleanRoomError",
     "CleanRoomEvaluation",
+    "CleanRoomProcessVerifier",
     "CleanRoomVerdict",
     "CleanRoomVerificationRequest",
     "CleanRoomVerifier",
     "VerificationRequest",
+    "verify_in_subprocess",
 ]

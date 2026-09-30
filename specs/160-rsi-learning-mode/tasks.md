@@ -31,6 +31,7 @@
 - [x] T160-16 增加 provider-free frozen-memory transfer regression 窄版本：no/old/current memory 对照、seen/unseen 多目标、重复试验、污染检查和 promotion evidence；真实 evaluator/controller 自动触发仍待接线。
 - [x] T160-17 增加 provider-free failure-driven curriculum 窄版本：failure cluster、capability coverage、hard-negative/boundary probe、重复抑制、预算审计和 canonical ledger replay；可选 controller checkpoint/resume 接线已完成，复杂 bandit/RL 后置。
 - [x] T160-18 增加显式 transfer-report → memory-governance promotion adapter：校验 report digest、holdout/baseline/regression evidence 和 CAS，强制 shadow → approved → active 两步晋级。
+- [x] T160-19 增加 provider-free 用量/成本 accounting 窄版本：run/episode/adapter-stage append-only JSON receipt、CAS/hash-chain、未知 token/time fail-closed、可配置估算成本、预算摘要和 durable reopen。真实 provider billing、GPU 计量和真实 process adapter 接线仍待后续。
 
 ## 本轮边界
 
