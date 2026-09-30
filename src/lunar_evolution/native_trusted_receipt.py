@@ -1,9 +1,9 @@
-"""Strict projection from native trusted evidence to a Feature 156 receipt.
+"""Strict projection and create-only persistence for a Feature 156 native receipt.
 
-The projection is intentionally read-only.  It does not create ``execution-receipt.json`` or
-authorize bundle publication.  It only constructs the formal receipt object after terminal,
-stream, envelope, broker, cleanup, and target-execution evidence all verify against the same
-registration and retained deadline.
+The projection constructs a formal receipt only after terminal, stream, envelope, broker,
+cleanup, and target-execution evidence all verify against the same registration and retained
+deadline.  Persistence is a separate create-only boundary: it never admits a population or
+authorizes bundle publication.
 """
 
 from __future__ import annotations
@@ -220,6 +220,14 @@ def build_native_trusted_execution_receipt(
                 "output_capture_sha256": capture["capture_sha256"],
                 "cleanup_sha256": cleanup["cleanup_sha256"],
                 "broker_coverage": "brokered_requests_only" if broker is not None else "none",
+                **({
+                    "broker_journal_relative_path": broker["journal_relative_path"],
+                    "broker_journal_identity": broker["journal_identity"],
+                    "broker_journal_sha256": broker["journal_sha256"],
+                    "broker_journal_bytes": broker["journal_bytes"],
+                    "broker_admitted_count": broker["admitted_count"],
+                    "broker_declared_count_matches": broker["declared_count_matches"],
+                } if broker is not None else {}),
             },
         )
     except (KeyError, TypeError, ValueError) as exc:
@@ -306,8 +314,70 @@ def persist_native_trusted_execution_receipt(
     return receipt
 
 
+def recover_native_trusted_execution_receipt(
+    workspace: str | Path,
+    *,
+    intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation,
+    artifact: NativeBootstrapArtifact,
+    require_broker: bool = True,
+) -> ProducerExecutionReceipt:
+    """Recover a formal receipt only when bytes and live evidence still agree.
+
+    Recovery is deliberately read-only.  It reprojects the retained native evidence,
+    then requires the durable ``execution-receipt.json`` to be an exact canonical
+    match for that projection.  A missing path has its own fixed code; malformed,
+    tampered, or drifted evidence is collapsed to ``recovery_invalid`` so callers
+    cannot mistake a partial recovery for a trusted terminal receipt.
+    """
+    if (
+        not isinstance(intent, ProducerLaunchIntent)
+        or not isinstance(attestation, ProducerLaunchAttestation)
+        or not isinstance(artifact, NativeBootstrapArtifact)
+        or not isinstance(require_broker, bool)
+    ):
+        raise NativeTrustedReceiptError("native_trusted_receipt_recovery_invalid")
+    path = _receipt_path(workspace, intent)
+    try:
+        os.lstat(path)
+    except FileNotFoundError as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_missing") from exc
+    except OSError as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_recovery_invalid") from exc
+
+    try:
+        observed = _read_durable_json(
+            path, code="native_trusted_receipt_recovery_invalid",
+        )
+    except ProducerProcessError as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_recovery_invalid") from exc
+
+    try:
+        expected = build_native_trusted_execution_receipt(
+            workspace,
+            intent=intent,
+            attestation=attestation,
+            artifact=artifact,
+            require_broker=require_broker,
+        )
+        _validate_persisted_receipt(observed, expected)
+        # The native projection performs several bounded evidence reads.  Recheck the
+        # receipt afterward so a concurrent replacement cannot hide behind the first
+        # observation while the retained evidence was being verified.
+        reread = _read_durable_json(
+            path, code="native_trusted_receipt_recovery_invalid",
+        )
+        _validate_persisted_receipt(reread, expected)
+    except NativeTrustedReceiptError as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_recovery_invalid") from exc
+    except (ProducerProcessError, TypeError, ValueError, KeyError) as exc:
+        raise NativeTrustedReceiptError("native_trusted_receipt_recovery_invalid") from exc
+    return expected
+
+
 __all__ = [
     "NativeTrustedReceiptError",
     "build_native_trusted_execution_receipt",
     "persist_native_trusted_execution_receipt",
+    "recover_native_trusted_execution_receipt",
 ]

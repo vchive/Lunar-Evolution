@@ -361,6 +361,7 @@ from .native_trusted_receipt import (
     NativeTrustedReceiptError,
     build_native_trusted_execution_receipt,
     persist_native_trusted_execution_receipt,
+    recover_native_trusted_execution_receipt,
 )
 from .native_trusted_streams import (
     NativeTrustedStreamCapture,
@@ -1264,6 +1265,7 @@ __all__ = [
     "read_host_request_journal",
     "reconcile_remote_state",
     "recover_native_trusted_cleanup",
+    "recover_native_trusted_execution_receipt",
     "recover_native_trusted_stream_capture",
     "recover_producer_process",
     "remote_cancel",
