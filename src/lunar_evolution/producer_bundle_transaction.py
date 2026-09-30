@@ -59,7 +59,10 @@ from .producer_bundle_staging import (
     commit_producer_bundle_publication,
     stage_producer_bundle_publication,
 )
-from .producer_process import _digest_without
+from .producer_process import (
+    ProducerProcessError,
+    parse_producer_execution_receipt,
+)
 
 
 class NativeProducerBundleTransactionError(RuntimeError):
@@ -157,23 +160,24 @@ def _verify_native_execution_receipt_link(
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_execution_receipt_invalid"
         ) from exc
-    if not isinstance(raw, dict):
+    try:
+        parsed = parse_producer_execution_receipt(raw)
+    except (ProducerProcessError, TypeError, ValueError) as exc:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_execution_receipt_invalid"
-        )
-    trusted = raw.get("trusted_execution")
+        ) from exc
+    trusted = parsed.trusted_execution
     if (
-        raw.get("protocol") != "lunar-producer-process-execution-v1"
-        or raw.get("receipt_sha256") != receipt_sha256
-        or raw.get("receipt_sha256") != _digest_without(raw, "receipt_sha256")
-        or any(raw.get(key) != value for key, value in (
+        parsed.protocol != "lunar-producer-process-execution-v1"
+        or parsed.receipt_sha256 != receipt_sha256
+        or any(getattr(parsed, key) != value for key, value in (
             ("journal_id", journal_id),
             ("run_id", run_id), ("parent_task_id", parent_task_id), ("task_id", task_id),
         ))
-        or raw.get("status") != "completed"
-        or raw.get("exit_code") != 0
-        or raw.get("gate_released") is not True
-        or raw.get("cleanup_status") not in {"cleaned", "already_exited"}
+        or parsed.status != "completed"
+        or parsed.exit_code != 0
+        or parsed.gate_released is not True
+        or parsed.cleanup_status not in {"cleaned", "already_exited"}
         or not isinstance(trusted, dict)
         or trusted.get("broker_coverage") != "brokered_requests_only"
     ):

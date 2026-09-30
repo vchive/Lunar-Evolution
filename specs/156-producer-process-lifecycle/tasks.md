@@ -68,3 +68,12 @@ The receipt is now consumable by Feature 153's publication transaction through t
 its prepared intent and carries the digest into the publication journal. This closes the
 receipt-to-journal handoff slice only; T156-14 remains open until the controller-owned request
 transport, recovery-safe native runner, and scheduler path are integrated as one lifecycle.
+
+The provider-free `native_trusted_scheduler` supporting slice now composes the trusted attempt,
+formal receipt persistence, strict output projection, and optional publication in one explicit
+one-shot entrypoint. Its recovery entrypoint only revalidates the retained receipt and output and
+never relaunches or consumes another attestation. The six focused scheduler tests verify ordering,
+publication identity binding, incomplete-attempt rejection, read-only recovery, and receipt
+binding drift. This does not close T156-05/06/09/12/14: the scheduler still depends on the lower
+native evidence boundaries and does not provide production controller-owned request transport,
+continuous ownership/heartbeat, cross-process unknown recovery, or a real campaign runner.

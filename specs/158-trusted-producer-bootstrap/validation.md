@@ -51,6 +51,15 @@ This proves the durable handoff boundary only. The native fixture still does not
 Feature 156 runner contract, scheduler integration, post-crash transport recovery, or external
 campaign acceptance required to close T158-04.
 
+The local scheduler composition is now covered by six provider-free focused tests. The normal
+entrypoint preserves the trusted attempt -> formal receipt -> strict output order and only invokes
+publication when a caller supplies a strategy; the recovery entrypoint verifies retained evidence
+without spawning or consuming a new attestation. These tests use boundary doubles and therefore
+only prove orchestration and identity binding. They do not upgrade the cooperative/native fixture
+to production trusted-bootstrap status, and T158-04 remains open for shared Feature 156
+registration, durable cleanup and unknown recovery, protected broker ownership, and a real
+launcher/scheduler campaign.
+
 The recovery verifier also rejects a missing or rehashed sidecar and a capture digest changed only
 inside a self-rehashed sidecar. This keeps the audit projection diagnostic until formal Feature 156
 receipt consumption is implemented.

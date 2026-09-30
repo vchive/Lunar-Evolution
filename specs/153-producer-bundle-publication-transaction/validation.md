@@ -105,6 +105,17 @@ side effect. Legacy journals without the optional field continue to parse with u
 canonical bytes.
 
 The current gate checks the receipt self-digest, protocol, launch task identity, successful
-terminal, gate release, verified cleanup, and `brokered_requests_only` coverage. Full receipt
-schema/evidence revalidation at the publication boundary remains a follow-up (T153-06f); this
-slice does not start a scheduler or run a real OpenEvolve/Shinka campaign.
+terminal, gate release, verified cleanup, and `brokered_requests_only` coverage. The complete
+receipt schema is now parsed at this boundary, including nested stream/envelope evidence,
+self-digest, and owner identity; unknown fields and malformed nested values fail closed before
+the first transaction write.
+
+The local `native_trusted_scheduler` entrypoint composes one native attempt, create-only formal
+receipt persistence, strict same-attempt output preparation, and optional publication. Its
+read-only recovery entrypoint reprojects retained receipt/output evidence without spawning,
+consuming another attestation, changing the deadline, or publishing. The scheduler focused
+fixture regression passes **6 tests**. These tests validate ordering and binding through local
+test doubles; they do not establish production launcher ownership, cross-process unknown
+recovery, controller-owned request transport, or real OpenEvolve/Shinka campaigns. T153-06f and
+the local supporting slice are complete; T153-07 and the production integration boundary remain
+open.

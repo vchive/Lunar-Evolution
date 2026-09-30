@@ -84,6 +84,15 @@
   receipt-to-publication handoff; T158-04 remains open for the integrated bootstrap/runner,
   crash recovery, protected broker ownership, and scheduler entry point.
 
+  The provider-free `native_trusted_scheduler` adds a narrow composition boundary over the existing
+  attempt and receipt/output projections. `run_native_trusted_producer` performs one attested local
+  attempt, persists the formal receipt, verifies strict same-attempt output, and optionally hands the
+  result to publication with journal/run/task and receipt-digest bindings. Its companion recovery
+  entrypoint is read-only and cannot relaunch, consume another attestation, widen the deadline, or
+  publish. The six focused tests cover this ordering and fail-closed binding behavior. This remains
+  supporting evidence for T158-04; the production Feature 156 registration/cleanup/recovery path,
+  host-observed broker transport, and real producer scheduler/campaign are still unconnected.
+
   The sidecar has a matching read-only recovery verifier. It requires the sidecar's exact schema
   and self-digest, then reruns the terminal/capture/deadline chain and compares every bound digest;
   it never treats the sidecar alone as process or publication authority.

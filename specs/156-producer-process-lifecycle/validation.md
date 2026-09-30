@@ -154,6 +154,14 @@ prepared intent, so an invalid receipt leaves no publication side effect. This v
 handoff only; trusted-bootstrap lifecycle integration, complete request evidence, unknown
 recovery, scheduler entry points, and real campaign acceptance remain out of scope.
 
+The new provider-free scheduler regression covers the explicit native trusted one-shot entrypoint
+and its read-only recovery projection. The normal path orders attempt, formal receipt persistence,
+strict same-attempt output preparation, and optional publication; the recovery path rereads the
+same receipt/output evidence and fails closed on digest drift. The six tests use local doubles to
+assert that recovery never starts a process or consumes a second attestation. This is a supporting
+composition test only; it does not satisfy the full Feature 156 lifecycle acceptance or connect
+the controller-owned request transport and post-crash process recovery.
+
 ## Implementation checkpoint (2026-09-24)
 
 The local runner now claims the nonce once across the workspace, revalidates launch identity,

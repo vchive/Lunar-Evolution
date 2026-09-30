@@ -1,5 +1,26 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Native trusted scheduler and read-only recovery supporting slice
+
+新增 `src/lunar_evolution/native_trusted_scheduler.py`，提供两个明确的本地 supporting
+入口：`run_native_trusted_producer()` 按一次性顺序串起 native trusted attempt、正式
+`execution-receipt.json` 持久化、严格同尝试 output preparation，并在显式传入 strategy 时
+调用 Feature 153 publication transaction；publication journal 绑定同一 journal/run/task
+身份和 `native_execution_receipt_sha256`。未传 strategy 时只返回 prepared 结果，不隐式发布。
+
+`recover_native_trusted_producer()` 是只读恢复入口：只重新验证原 launch/attestation、正式
+receipt 和 output evidence，不重新启动进程、不消费第二次 attestation、不刷新预算，也不
+发布 population。缺失、漂移或不完整证据均 fail-closed；恢复结果只有在 receipt digest 与
+strict output projection 一致时才返回。
+
+`tests/test_native_trusted_scheduler.py` 的 provider-free focused regression **6 passed**，
+覆盖顺序、输入 gate、显式 publication 绑定、不完整 attempt 拒绝、只读 recovery 和 receipt
+binding drift。测试通过 boundary doubles 验证调度边界，不能替代真实 native bootstrap、host
+observed request transport、跨进程 crash recovery 或 OpenEvolve/Shinka campaign 验收。
+因此这是 Feature 153/156/158 的 supporting slice；正式 launcher/scheduler 生产接线、
+unknown/interruption recovery、Feature 157 controller-owned transport、完整生命周期验收和
+真实 campaign 仍保持开放。当前仍只运行本地 fixture/provider-free 回归。
+
 ## 2026-10-01 Formal native execution receipt to publication journal
 
 Feature 156/157/158 的 native trusted evidence 现在已有正式收据闭环：在 terminal、并发有界

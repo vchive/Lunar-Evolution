@@ -104,15 +104,46 @@ def _formal_execution_receipt(
     task_id: str = "native-bundle-publication",
 ) -> dict[str, object]:
     receipt: dict[str, object] = {
+        "schema_version": "1",
         "protocol": "lunar-producer-process-execution-v1",
+        "launch_id": "launch-formal",
         "journal_id": journal_id,
         "run_id": run_id or journal_id,
         "parent_task_id": parent_task_id,
         "task_id": task_id,
+        "intent_sha256": "a" * 64,
+        "attestation_sha256": "b" * 64,
+        "consumption_sha256": "c" * 64,
+        "registration_sha256": "d" * 64,
+        "executable_identity": "e" * 64,
+        "pid": 4242,
+        "pgid": 4242,
+        "owner_identity": {"pid": 4242, "start_time": 1},
         "status": "completed",
         "exit_code": 0,
         "gate_released": True,
+        "request_timeout_seconds": 30,
+        "max_requests": 10,
+        "output_max_bytes": 4096,
+        "wall_timeout_seconds": 60,
+        "request_count": 0,
+        "stdout_evidence": {
+            "stream": "stdout", "bytes_observed": 0, "sha256": "f" * 64,
+            "truncated": False, "capture_status": "complete",
+        },
+        "stderr_evidence": {
+            "stream": "stderr", "bytes_observed": 0, "sha256": "0" * 64,
+            "truncated": False, "capture_status": "complete",
+        },
+        "envelope_evidence": None,
         "cleanup_status": "cleaned",
+        "cleanup_sha256": "1" * 64,
+        "execution_binding": "linux-sealed-memfd",
+        "execution_snapshot_relative_path": None,
+        "execution_snapshot_sha256": "2" * 64,
+        "execution_snapshot_size": 0,
+        "failure_code": None,
+        "previous_receipt_sha256": "d" * 64,
         "trusted_execution": {"broker_coverage": "brokered_requests_only"},
     }
     receipt["receipt_sha256"] = _digest_without(receipt, "receipt_sha256")
@@ -249,7 +280,7 @@ def test_transaction_links_formal_native_execution_receipt(tmp_path: Path) -> No
     assert persisted["native_execution_receipt_sha256"] == receipt["receipt_sha256"]
 
 
-@pytest.mark.parametrize("mode", ["missing", "invalid", "tampered"])
+@pytest.mark.parametrize("mode", ["missing", "invalid", "tampered", "unknown-field"])
 def test_transaction_rejects_missing_invalid_or_tampered_formal_receipt(
     tmp_path: Path, mode: str,
 ) -> None:
@@ -265,6 +296,10 @@ def test_transaction_rejects_missing_invalid_or_tampered_formal_receipt(
         receipt_path.write_text("{}", encoding="utf-8")
     elif mode == "tampered":
         receipt["status"] = "failed"
+        receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    elif mode == "unknown-field":
+        receipt["unexpected"] = True
+        receipt["receipt_sha256"] = _digest_without(receipt, "receipt_sha256")
         receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
 
     with pytest.raises(NativeProducerBundleTransactionError) as failure:

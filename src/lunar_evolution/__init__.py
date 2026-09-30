@@ -363,6 +363,13 @@ from .native_trusted_receipt import (
     persist_native_trusted_execution_receipt,
     recover_native_trusted_execution_receipt,
 )
+from .native_trusted_scheduler import (
+    NativeTrustedProducerRecovery,
+    NativeTrustedProducerRun,
+    NativeTrustedSchedulerError,
+    recover_native_trusted_producer,
+    run_native_trusted_producer,
+)
 from .native_trusted_streams import (
     NativeTrustedStreamCapture,
     NativeTrustedStreamError,
@@ -526,6 +533,7 @@ from .producer_process import (
     ProducerStreamEvidence,
     execute_producer_process,
     launch_producer_process,
+    parse_producer_execution_receipt,
     recover_producer_process,
     run_producer_process,
 )
@@ -957,7 +965,10 @@ __all__ = [
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
     "NativeTrustedCleanupError",
+    "NativeTrustedProducerRecovery",
+    "NativeTrustedProducerRun",
     "NativeTrustedReceiptError",
+    "NativeTrustedSchedulerError",
     "NativeTrustedStreamCapture",
     "NativeTrustedStreamError",
     "NativeTrustedStreamObservation",
@@ -1231,6 +1242,7 @@ __all__ = [
     "parse_producer_bundle_preflight_receipt",
     "parse_producer_bundle_publication_journal",
     "parse_producer_envelope",
+    "parse_producer_execution_receipt",
     "parse_producer_launch_admission",
     "parse_producer_launch_attestation",
     "parse_producer_launch_intent",
@@ -1266,6 +1278,7 @@ __all__ = [
     "reconcile_remote_state",
     "recover_native_trusted_cleanup",
     "recover_native_trusted_execution_receipt",
+    "recover_native_trusted_producer",
     "recover_native_trusted_stream_capture",
     "recover_producer_process",
     "remote_cancel",
@@ -1285,6 +1298,7 @@ __all__ = [
     "run_effect_preflight",
     "run_harness_adapter",
     "run_native_producer_bundle_publication_transaction",
+    "run_native_trusted_producer",
     "run_producer_process",
     "run_registered_acceptance",
     "run_subject_adapter",

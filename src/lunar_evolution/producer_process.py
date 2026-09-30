@@ -52,6 +52,18 @@ _SNAPSHOT_PATHS = {
 }
 _RECOVERY_LOCK_PROTOCOL = "journal-flock-v1"
 
+_RECEIPT_FIELDS = frozenset({
+    "schema_version", "protocol", "launch_id", "journal_id", "run_id", "parent_task_id",
+    "task_id", "intent_sha256", "attestation_sha256", "consumption_sha256",
+    "registration_sha256", "executable_identity", "pid", "pgid", "owner_identity",
+    "gate_released", "request_timeout_seconds", "max_requests", "output_max_bytes",
+    "wall_timeout_seconds", "request_count", "exit_code", "stdout_evidence", "stderr_evidence",
+    "envelope_evidence", "cleanup_status", "cleanup_sha256", "execution_binding",
+    "execution_snapshot_relative_path", "execution_snapshot_sha256", "execution_snapshot_size",
+    "status", "failure_code", "previous_receipt_sha256", "receipt_sha256",
+})
+_RECEIPT_OPTIONAL_FIELDS = frozenset({"trusted_execution"})
+
 
 class ProducerProcessError(ValueError):
     """Fixed-code lifecycle error without producer-controlled prose or paths."""
@@ -765,6 +777,59 @@ class ProducerExecutionReceipt:
 
     def digest(self) -> str:
         return _digest_without(self.to_dict(), "receipt_sha256")
+
+
+def parse_producer_execution_receipt(value: object) -> ProducerExecutionReceipt:
+    """Parse one complete, self-authenticating process receipt.
+
+    Publication code must consume the formal Feature 156 DTO rather than trusting a
+    handful of copied status fields.  The parser therefore rejects unknown or missing
+    fields and rebuilds the nested evidence objects before the DTO verifies its own
+    canonical digest.
+    """
+    if not isinstance(value, dict):
+        _fail("producer_process_receipt_schema_invalid")
+    keys = set(value)
+    if keys - (_RECEIPT_FIELDS | _RECEIPT_OPTIONAL_FIELDS) or not _RECEIPT_FIELDS <= keys:
+        _fail("producer_process_receipt_schema_invalid")
+
+    def _nested(raw: object, expected: frozenset[str], code: str) -> dict[str, object]:
+        if not isinstance(raw, dict) or set(raw) != expected:
+            _fail(code)
+        return raw
+
+    stream_fields = frozenset({"stream", "bytes_observed", "sha256", "truncated", "capture_status"})
+    stdout = _nested(value.get("stdout_evidence"), stream_fields, "producer_process_receipt_stream_invalid")
+    stderr = _nested(value.get("stderr_evidence"), stream_fields, "producer_process_receipt_stream_invalid")
+    envelope_value = value.get("envelope_evidence")
+    envelope = None
+    if envelope_value is not None:
+        envelope_fields = frozenset({
+            "relative_path", "sha256", "bytes", "device", "inode", "mtime_ns", "ctime_ns",
+            "identity_before", "identity_after", "read_status",
+        })
+        envelope = _nested(envelope_value, envelope_fields, "producer_process_receipt_envelope_invalid")
+    owner = value.get("owner_identity")
+    if not isinstance(owner, dict):
+        _fail("producer_process_receipt_owner_identity_invalid")
+    trusted = value.get("trusted_execution")
+    if trusted is not None and not isinstance(trusted, dict):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    try:
+        return ProducerExecutionReceipt(
+            **{
+                **value,
+                "stdout_evidence": ProducerStreamEvidence(**stdout),
+                "stderr_evidence": ProducerStreamEvidence(**stderr),
+                "envelope_evidence": None if envelope is None else ProducerEnvelopeEvidence(**envelope),
+                "owner_identity": owner,
+                "trusted_execution": trusted,
+            }
+        )
+    except ProducerProcessError:
+        raise
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ProducerProcessError("producer_process_receipt_schema_invalid") from exc
 
 
 def _stream_evidence(name: str, state: dict[str, object]) -> ProducerStreamEvidence:
@@ -1681,9 +1746,18 @@ execute_producer_process = run_producer_process
 
 
 __all__ = [
-    "GATE_ENV", "PRODUCER_PROCESS_PROTOCOL",
-    "ProducerAttestationConsumption", "ProducerEnvelopeEvidence", "ProducerExecutionReceipt",
-    "ProducerProcessError", "ProducerProcessRegistration", "ProducerProcessRunner",
-    "ProducerStreamEvidence", "execute_producer_process", "launch_producer_process",
-    "recover_producer_process", "run_producer_process",
+    "GATE_ENV",
+    "PRODUCER_PROCESS_PROTOCOL",
+    "ProducerAttestationConsumption",
+    "ProducerEnvelopeEvidence",
+    "ProducerExecutionReceipt",
+    "ProducerProcessError",
+    "ProducerProcessRegistration",
+    "ProducerProcessRunner",
+    "ProducerStreamEvidence",
+    "execute_producer_process",
+    "launch_producer_process",
+    "parse_producer_execution_receipt",
+    "recover_producer_process",
+    "run_producer_process",
 ]

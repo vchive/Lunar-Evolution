@@ -35,7 +35,17 @@
       journal and validate its self-digest, task identity, successful terminal, cleanup, and
       broker-coverage summary before the first transaction write. Keep legacy journals without
       this field byte-compatible.
-- [ ] T153-06f Revalidate the complete formal receipt schema and retained native evidence at the
-      publication boundary, rather than relying on the current bounded summary gate.
+- [x] T153-06f Revalidate the complete formal receipt schema and retained native evidence at the
+      publication boundary, rather than relying on the current bounded summary gate. The
+      publication transaction now parses the complete canonical receipt DTO (including nested
+      stream/envelope evidence, self-digest, and owner identity) before checking terminal,
+      cleanup, and broker coverage; malformed or unknown fields leave zero publication writes.
+- [x] T153-06g Add a provider-free native trusted one-shot scheduler and read-only recovery
+      projection. The entrypoint orders attempt, formal receipt persistence, strict same-attempt
+      output preparation, and optional publication while binding journal/run/task identity and
+      receipt digest. Recovery only revalidates retained evidence and never relaunches or
+      consumes another attestation; this is a supporting slice, not production campaign wiring.
 - [ ] T153-07 Connect launcher/scheduler and run separate real OpenEvolve and ShinkaEvolve
-      campaigns after the draft-to-publication path and request boundary are accepted.
+      campaigns after the draft-to-publication path and request boundary are accepted. The
+      T153-06g local entrypoint does not close this task: launcher ownership, durable
+      cross-process recovery, controller-owned request transport, and real campaigns remain open.
