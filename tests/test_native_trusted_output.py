@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from test_http_transport_deadline import clear_proxy_environment, local_http
 
+from lunar_evolution import producer_process
 from lunar_evolution.algorithm import AlgorithmProblemContract
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
 from lunar_evolution.native_trusted_attempt import (
@@ -219,6 +220,39 @@ def test_capture_does_not_create_receipt_after_original_deadline(
     assert not (output.parent / "native-trusted-output-capture.json").exists()
 
 
+def test_capture_recovery_requires_strict_envelope_identity_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output, _, arguments = _fixture(tmp_path, monkeypatch)
+    batch = output.parent
+    capture = capture_native_trusted_output(
+        batch, intent=arguments["intent"], terminal_sha256="c" * 64,
+        broker=None, deadline=time.monotonic() + 5.0,
+    )
+    evidence = capture["envelope_evidence"]
+    assert set(evidence) == {
+        "relative_path", "sha256", "bytes", "device", "inode", "mtime_ns", "ctime_ns",
+        "identity_before", "identity_after", "read_status",
+    }
+    assert evidence["identity_before"] == evidence["identity_after"]
+    assert evidence["read_status"] == "stable"
+
+    path = batch / "native-trusted-output-capture.json"
+    tampered = json.loads(path.read_bytes())
+    tampered["envelope_evidence"]["read_status"] = "unknown"
+    tampered["capture_sha256"] = producer_process._digest_without(tampered, "capture_sha256")
+    path.write_text(json.dumps(tampered, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    terminal = {
+        "protocol": "lunar-native-trusted-process-terminal-v1",
+        "process_status": "exited_zero", "gate_released": True,
+        "target_started": True, "cleanup_status": "cleaned", "terminal_sha256": "c" * 64,
+    }
+    with pytest.raises(NativeTrustedCaptureError, match="native_trusted_capture_receipt_invalid"):
+        recover_native_trusted_output_capture(
+            batch, intent=arguments["intent"], terminal=terminal,
+        )
+
+
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 @pytest.mark.parametrize("brokered", [False, True])
 def test_prepares_output_from_actual_native_trusted_attempt(
@@ -310,7 +344,14 @@ def test_prepares_output_from_actual_native_trusted_attempt(
     if brokered:
         assert broker_evidence["admitted_count"] == 1
         assert broker_evidence["declared_count_matches"] is True
+        assert broker_evidence["complete"] is True
         assert broker_evidence["coverage"] == "brokered_requests_only"
+        assert set(broker_evidence) == {
+            "journal_relative_path", "journal_identity", "journal_sha256", "journal_bytes",
+            "admitted_count", "complete", "declared_count_matches", "coverage",
+        }
+        assert broker_evidence["journal_identity"]["launch_id"] == intent.launch_id
+        assert broker_evidence["journal_identity"]["journal_id"] == intent.journal_id
     else:
         assert broker_evidence is None
     result = prepare_native_trusted_output(
@@ -329,6 +370,19 @@ def test_prepares_output_from_actual_native_trusted_attempt(
     assert len(result.drafts) == 1
     assert result.publication_eligible is False
     if brokered:
+        capture_path = batch / "native-trusted-output-capture.json"
+        tampered = json.loads(capture_path.read_bytes())
+        tampered["broker_evidence"]["journal_identity"]["max_requests"] = intent.max_requests + 1
+        tampered["capture_sha256"] = producer_process._digest_without(tampered, "capture_sha256")
+        capture_path.write_text(
+            json.dumps(tampered, sort_keys=True, separators=(",", ":")), encoding="utf-8",
+        )
+        with pytest.raises(NativeTrustedCaptureError, match="native_trusted_capture_broker_invalid"):
+            recover_native_trusted_output_capture(batch, intent=intent, terminal=terminal)
+        # Restore the valid receipt before exercising independent journal tampering.
+        capture_path.write_text(
+            json.dumps(capture, sort_keys=True, separators=(",", ":")), encoding="utf-8",
+        )
         with (batch / ".host-request-journal" / "requests").open("ab") as journal:
             journal.write(b"tampered\n")
     else:
