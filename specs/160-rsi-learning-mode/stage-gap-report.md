@@ -88,11 +88,11 @@ Curriculum → Practice Episode → SolverGateway → Evaluator/Receipt → Veri
 
 ### A4. Clean-room independent verifier
 
-现状证据：LocalExactVerifier 主要验证 identity、terminal status 和 receipt 字段，不会重开 candidate workspace、重算 source/dependency digest，也不会在干净环境重新执行 official evaluator。
+现状证据：已增加 provider-free `CleanRoomVerifier`，会在隔离 workspace 重开 candidate source/dependencies，重算 source/task/evaluator digest，检测 workspace 修改，并对超时、异常和不可信 evidence fail-closed。它尚未接入 controller，也不会替代真实 Actor environment 或官方 evaluator。
 
 为什么必须补：Actor 的成功不能直接成为学习证据。memory commit 必须基于独立可复核的 artifact 和 evaluator 结果，否则错误、伪造或环境污染会进入长期 memory。
 
-最小范围：verifier 独立 workspace 和最小权限；定位源码、依赖锁定和运行输入；重算 source/dependency/environment digest；重新执行官方 evaluator 或受信 wrapper；隔离 Actor 私有 trace。
+最小范围：verifier 独立 workspace 和最小权限；定位源码、依赖锁定和运行输入；重算 source/dependency/environment digest；重新执行官方 evaluator 或受信 wrapper；隔离 Actor 私有 trace。当前已完成本地 wrapper/contamination slice，真实 process-level hard-kill 和 evaluator 接线仍待完成。
 
 验收标准：修改 candidate 源码、依赖、输入或 producer score 而不更新绑定 artifact 时，verifier 拒绝；Actor 报告成功但 clean-room evaluator 失败时，不得 commit memory。
 
@@ -116,7 +116,7 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 
 ### B2. Memory governance 与 promotion gate
 
-已有 verifier-gated memory commit 和 approved snapshot，但没有完整 candidate、shadow、active、revoke 生命周期，也没有稳定的 champion/challenger 与回归晋级门。
+已增加独立 append-only SQLite memory admission control plane，支持 observed → verified → candidate → shadow → approved → active → deprecated/revoked、CAS digest、verifier/pass、holdout/baseline regression 和 compatibility drift gate。它不修改只读 `RSIMemoryStore`，也尚未接入自动 holdout campaign 或 transfer quality suite。
 
 最小范围：observed → verified → candidate → shadow → approved → active → deprecated/revoked。candidate 必须绑定 verifier receipt、source episode、scope、compatibility 和 parent snapshot；用 baseline/holdout 决定 promotion；支持冲突、rollback、quarantine。
 
@@ -140,7 +140,7 @@ DeterministicCurriculum 能按固定输入选择 practice，但没有 capability
 
 ### B5. Solver adapter contract 与证据交接
 
-SolverGateway 已有请求/结果边界，但各 adapter 的 preflight、snapshot、deadline、cancel、cleanup、receipt、recovery 和 capability declaration 尚未完全统一。
+已增加 provider-free `AdapterContractHarness`，统一 register → preflight → snapshot → execute → observe → finalize → verify → recover → close 生命周期、request pins、budget/deadline、terminal receipt、ownership 和 memory-write gate；OpenEvolve/Shinka 目前只是声明式 fixture capability。真实 process adapter 的 preflight、cancel、cleanup、external evidence 和 campaign 接线仍未完成。
 
 最小范围：register → preflight → snapshot → execute → observe → finalize → verify → recover → close；capability/schema/version handshake；统一输入输出、预算和 receipt schema；solver-specific 状态不得直接写 approved memory。
 
@@ -211,7 +211,7 @@ SolverGateway 已有请求/结果边界，但各 adapter 的 preflight、snapsho
 
 ### 阶段 2：可信学习闭环（P1）
 
-顺序：clean-room verifier/evaluator rerun → provenance、污染隔离、score/verdict 分离 → memory promotion/rollback/quarantine → holdout transfer regression → 可重放失败驱动 curriculum。
+当前已完成 provider-free clean-room verifier、provenance/污染检测的窄版本、memory promotion 状态机和统一 adapter contract。剩余顺序为：接入真实 evaluator/Actor、holdout transfer regression、rollback/quarantine 的 controller 接线，以及可重放失败驱动 curriculum。
 
 出口：错误或伪造 receipt 无法进入 active memory；局部成功不能冒充迁移能力。
 
@@ -238,11 +238,11 @@ SolverGateway 已有请求/结果边界，但各 adapter 的 preflight、snapsho
 - 161-rsi-durable-resume
 - 162-rsi-unknown-reconcile
 - 163-rsi-fingerprint-drift-gate
-- 164-rsi-cleanroom-verifier
+- 164-rsi-cleanroom-verifier（provider-free MVP 已完成，真实 evaluator 接线待做）
 - 165-rsi-budget-depth-termination
-- 166-rsi-memory-promotion-transfer
+- 166-rsi-memory-promotion-transfer（promotion control plane 已完成，transfer regression 待做）
 - 167-rsi-curriculum-failure-driven
-- 168-solver-adapter-lifecycle
+- 168-solver-adapter-lifecycle（provider-free contract 已完成，真实 process adapter 待做）
 - 169-producer-real-campaign-closure
 
 这些编号只是拆分建议，不代表已经创建对应 feature。
