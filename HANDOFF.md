@@ -4739,3 +4739,8 @@ execution receipt，也不改变 scheduler、publication 或外部 producer admi
 同时增加了 sidecar 的只读 recovery verifier：它先重新验证底层 terminal/capture/deadline/
 registration，再检查 sidecar 的固定字段、自摘要和逐项绑定；缺失、改写或仅重新计算自摘要
 的 sidecar 都会被拒绝。
+
+随后把 deadline 摘要继续绑定进 `native-trusted-process-terminal.json`。恢复会用当前 retained
+deadline digest 重建 terminal；即使攻击者把 deadline sidecar 换成同一 launch 下另一份自摘要
+正确的预算，也会得到 `native_trusted_recovery_terminal_invalid`。相关 native attempt/output
+回归、Ruff、compileall 与 `git diff --check` 均通过。

@@ -87,7 +87,7 @@ _TERMINAL_FIELDS = frozenset({
     "parent_task_id", "task_id", "intent_sha256", "attestation_sha256",
     "consumption_sha256", "registration_sha256", "launch_sha256",
     "bootstrap_descriptor_sha256", "pid", "pgid", "owner_identity_sha256",
-    "handoff_sha256", "bootstrap_evidence_sha256", "gate_released",
+    "handoff_sha256", "bootstrap_evidence_sha256", "deadline_sha256", "gate_released",
     "target_started", "exit_code", "cleanup_status", "process_status",
     "receipt_scope", "publication_eligible", "previous_receipt_sha256",
     "terminal_sha256",
@@ -118,7 +118,8 @@ class NativeTrustedAttemptObservation:
 def _terminal_receipt(
     registration: Mapping[str, object], *, handoff_sha256: str,
     evidence_sha256: str, gate_released: bool, target_started: bool,
-    exit_code: int | None, cleanup_status: str, cancelled: bool = False,
+    exit_code: int | None, cleanup_status: str, deadline_sha256: str,
+    cancelled: bool = False,
 ) -> dict[str, object]:
     if cancelled and exit_code is not None:
         raise NativeTrustedAttemptError("native_trusted_attempt_terminal_invalid")
@@ -137,6 +138,7 @@ def _terminal_receipt(
         )},
         "handoff_sha256": handoff_sha256,
         "bootstrap_evidence_sha256": evidence_sha256,
+        "deadline_sha256": deadline_sha256,
         "gate_released": gate_released, "target_started": target_started,
         "exit_code": exit_code, "cleanup_status": cleanup_status,
         "process_status": process_status, "receipt_scope": "process_only",
@@ -550,9 +552,10 @@ def run_native_trusted_attempt(
         broker_ready: threading.Event | None = None
         broker_state: dict[str, object] = {}
         try:
-            _persist_deadline(
+            deadline_record = _persist_deadline(
                 batch, launch, started=started_monotonic, deadline=deadline,
             )
+            deadline_sha256 = str(deadline_record["deadline_sha256"])
             consume_trusted_bootstrap_attestation(
                 root, producer_root=target_root, intent=intent, attestation=attestation,
                 descriptor=installed.descriptor, launch=launch,
@@ -834,7 +837,8 @@ def run_native_trusted_attempt(
                     registration, handoff_sha256=handoff_sha256,
                     evidence_sha256=evidence_sha,
                     gate_released=gate_released, target_started=target_started,
-                    exit_code=None, cleanup_status=cleanup_status, cancelled=True,
+                    exit_code=None, cleanup_status=cleanup_status,
+                    deadline_sha256=deadline_sha256, cancelled=True,
                 )
                 # Receipt publication must consume the caller deadline, but must not
                 # call the cancellation callback again after cleanup has been verified.
@@ -874,6 +878,7 @@ def run_native_trusted_attempt(
                     evidence_sha256=str(observed["evidence_sha256"]),
                     gate_released=gate_released, target_started=target_started,
                     exit_code=exit_code, cleanup_status=cleanup_status,
+                    deadline_sha256=deadline_sha256,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
@@ -975,7 +980,7 @@ def recover_native_trusted_attempt(
         # Every recovery observation, including an already-written terminal, must
         # validate the retained attempt budget. Otherwise a tampered sidecar could
         # silently detach the terminal from the original wall-clock authority.
-        _read_deadline(batch, registration)
+        deadline_record = _read_deadline(batch, registration)
         path = batch / _TERMINAL_NAME
         try:
             os.lstat(path)
@@ -1035,7 +1040,8 @@ def recover_native_trusted_attempt(
                 registration, handoff_sha256=str(bound["handoff_sha256"]),
                 evidence_sha256=str(bound["evidence_sha256"]),
                 gate_released=True, target_started=True,
-                exit_code=None, cleanup_status=str(receipt["cleanup_status"]), cancelled=True,
+                exit_code=None, cleanup_status=str(receipt["cleanup_status"]),
+                deadline_sha256=str(deadline_record["deadline_sha256"]), cancelled=True,
             )
         else:
             if (
@@ -1054,6 +1060,7 @@ def recover_native_trusted_attempt(
                 evidence_sha256=str(bound["evidence_sha256"]),
                 gate_released=True, target_started=True,
                 exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
+                deadline_sha256=str(deadline_record["deadline_sha256"]),
             )
         if receipt != expected:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")

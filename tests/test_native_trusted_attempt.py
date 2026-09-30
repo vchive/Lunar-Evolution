@@ -872,6 +872,30 @@ def test_recovery_requires_native_attempt_deadline_sidecar(tmp_path: Path):
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_recovery_rejects_valid_but_rebound_native_attempt_deadline(tmp_path: Path):
+    """A self-digested replacement budget cannot detach the terminal chain."""
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    deadline_path = batch / "native-trusted-attempt-deadline.json"
+    deadline = json.loads(deadline_path.read_bytes())
+    deadline["deadline_monotonic"] = deadline["started_monotonic"] + 1.0
+    from lunar_evolution import producer_process
+
+    deadline["deadline_sha256"] = producer_process._digest_without(deadline, "deadline_sha256")
+    deadline_path.write_text(
+        json.dumps(deadline, sort_keys=True, separators=(",", ":")), encoding="utf-8",
+    )
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        recover_native_trusted_attempt(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert failure.value.code == "native_trusted_recovery_terminal_invalid"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_lifecycle_audit_keeps_missing_attempt_recovery_required(tmp_path: Path):
     """A missing claim is not reported as a process-only terminal."""
     workspace, _producer_root, intent, attestation, artifact, _ = _attempt(tmp_path)

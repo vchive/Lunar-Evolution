@@ -64,6 +64,10 @@ cleanup is verified; otherwise the attempt remains `unknown`/`recovery_required`
 runtime controls, not launch/attestation identities, and are not allowed to widen budgets or
 authorize a replay.
 
+The native process-only terminal includes `deadline_sha256` alongside the registration, handoff,
+and bootstrap-evidence digests. Recovery reconstructs the expected terminal against the retained
+deadline record, so a valid but rebound budget cannot detach from the original terminal.
+
 When the process terminal and same-attempt output capture both verify, an optional
 `native-trusted-execution-audit.json` sidecar may be created exactly once. It binds the launch,
 intent, attestation, formal registration, retained deadline, process terminal, and output-capture

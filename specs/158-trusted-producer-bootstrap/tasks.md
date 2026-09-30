@@ -42,6 +42,10 @@
   obtain a fresh grace window. This closes the durable-budget slice only; cross-boot recovery and
   the formal Feature 156 execution receipt remain open.
 
+  The native process-only terminal now carries `deadline_sha256` and recovery reconstructs the
+  terminal against the retained deadline digest. Replacing a sidecar with another self-valid,
+  same-launch budget therefore fails terminal recovery instead of changing the attempt's authority.
+
   The native attempt now exposes a read-only `audit_native_trusted_lifecycle` composition point.
   It first requires a verified process terminal, then optionally revalidates the same-attempt
   output capture and broker journal. Missing capture is reported as `process_only`; valid capture

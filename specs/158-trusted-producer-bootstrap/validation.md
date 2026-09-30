@@ -26,6 +26,9 @@ recovery returns the exact receipt without signaling, and tampering, callback er
 expiry, or cleanup uncertainty do not create that terminal. This remains process-only evidence;
 it does not authorize bundle publication or replace the formal execution receipt.
 
+Terminal receipts now bind the retained deadline sidecar digest. A focused regression replaces the
+sidecar with a different self-digested budget and confirms recovery rejects the terminal chain.
+
 The read-only native lifecycle audit now composes the process terminal with optional output capture
 and broker evidence. Focused fixtures cover process-only completion without capture, valid capture
 digest and request coverage, capture receipt tampering, and broker journal tampering. Recovery or
