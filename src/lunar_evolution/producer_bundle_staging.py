@@ -16,6 +16,7 @@ import stat
 import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, NoReturn
@@ -41,6 +42,9 @@ _MARKER_NAME = "producer-publication.json"
 _LOCK_NAME = "producer-publication.lock"
 _STAGE_NAME = "stage"
 _MAX_SOURCE_BYTES = 16 * 1024 * 1024
+_HELD_PUBLICATION_LOCKS: ContextVar[tuple[tuple[Path, int, os.stat_result], ...]] = ContextVar(
+    "held_producer_publication_locks", default=(),
+)
 
 
 class ProducerBundlePublicationStagingError(ValueError):
@@ -53,6 +57,20 @@ class ProducerBundlePublicationStagingError(ValueError):
 
 def _fail(code: str) -> NoReturn:
     raise ProducerBundlePublicationStagingError(code)
+
+
+def _check_held_publication_lock() -> None:
+    """Revalidate every active lock in this call context before a filesystem mutation."""
+    for lock, descriptor, expected in _HELD_PUBLICATION_LOCKS.get():
+        try:
+            named = os.lstat(lock)
+            held = os.fstat(descriptor)
+            if (not stat.S_ISREG(named.st_mode) or held.st_nlink != 1 or named.st_nlink != 1
+                    or (held.st_dev, held.st_ino) != (expected.st_dev, expected.st_ino)
+                    or (named.st_dev, named.st_ino) != (expected.st_dev, expected.st_ino)):
+                _fail("producer_bundle_publication_lock_changed")
+        except OSError as exc:
+            raise ProducerBundlePublicationStagingError("producer_bundle_publication_lock_changed") from exc
 
 
 def _canonical(value: object, maximum: int = MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES) -> bytes:
@@ -149,6 +167,7 @@ def _ensure_directory(root: Path, relative: str) -> Path:
             _directory(current)
             continue
         try:
+            _check_held_publication_lock()
             current.mkdir(mode=0o700)
         except OSError as exc:
             raise ProducerBundlePublicationStagingError("producer_bundle_publication_stage_write_failed") from exc
@@ -178,6 +197,7 @@ def _batch(workspace: Path, journal_id: str) -> Path:
 
 
 def _write_new(path: Path, content: bytes, *, maximum: int) -> None:
+    _check_held_publication_lock()
     if len(content) > maximum:
         _fail("producer_bundle_publication_too_large")
     if _present(path):
@@ -191,6 +211,7 @@ def _write_new(path: Path, content: bytes, *, maximum: int) -> None:
         try:
             view = memoryview(content)
             while view:
+                _check_held_publication_lock()
                 count = os.write(descriptor, view)
                 if count <= 0:
                     raise OSError("publication write made no progress")
@@ -198,7 +219,9 @@ def _write_new(path: Path, content: bytes, *, maximum: int) -> None:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+        _check_held_publication_lock()
         os.link(temporary, path, follow_symlinks=False)
+        _check_held_publication_lock()
         os.unlink(temporary)
         _fsync_dir(path.parent)
     except ProducerBundlePublicationStagingError:
@@ -206,6 +229,7 @@ def _write_new(path: Path, content: bytes, *, maximum: int) -> None:
     except OSError as exc:
         try:
             if _present(temporary):
+                _check_held_publication_lock()
                 temporary.unlink()
         except OSError:
             pass
@@ -213,6 +237,7 @@ def _write_new(path: Path, content: bytes, *, maximum: int) -> None:
 
 
 def _replace_existing(path: Path, content: bytes, *, maximum: int) -> None:
+    _check_held_publication_lock()
     if len(content) > maximum:
         _fail("producer_bundle_publication_too_large")
     _regular(path)
@@ -224,6 +249,7 @@ def _replace_existing(path: Path, content: bytes, *, maximum: int) -> None:
         try:
             view = memoryview(content)
             while view:
+                _check_held_publication_lock()
                 count = os.write(descriptor, view)
                 if count <= 0:
                     raise OSError("publication write made no progress")
@@ -231,6 +257,7 @@ def _replace_existing(path: Path, content: bytes, *, maximum: int) -> None:
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+        _check_held_publication_lock()
         os.replace(temporary, path)
         _fsync_dir(path.parent)
     except ProducerBundlePublicationStagingError:
@@ -238,16 +265,19 @@ def _replace_existing(path: Path, content: bytes, *, maximum: int) -> None:
     except OSError as exc:
         try:
             if _present(temporary):
+                _check_held_publication_lock()
                 temporary.unlink()
         except OSError:
             pass
         raise ProducerBundlePublicationStagingError("producer_bundle_publication_commit_unknown") from exc
 
 def _replace_file(source: Path, target: Path) -> None:
+    _check_held_publication_lock()
     _regular(source)
     if target.is_symlink() or (target.exists() and not target.is_file()):
         _fail("producer_bundle_publication_commit_conflict")
     try:
+        _check_held_publication_lock()
         os.replace(source, target)
         _fsync_dir(target.parent)
     except OSError as exc:
@@ -267,6 +297,7 @@ def _fsync_dir(path: Path) -> None:
 
 @contextmanager
 def _locked(workspace: Path, *, checkpoint: Callable[[str], object] | None = None):
+    _check_held_publication_lock()
     root = workspace / "evolution"
     lock = root / _LOCK_NAME
     if _present(lock):
@@ -289,7 +320,13 @@ def _locked(workspace: Path, *, checkpoint: Callable[[str], object] | None = Non
         current = os.lstat(lock)
         if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
             raise OSError("publication lock replaced")
-        yield
+        token = _HELD_PUBLICATION_LOCKS.set((*_HELD_PUBLICATION_LOCKS.get(), (lock, descriptor, info)))
+        try:
+            _check_held_publication_lock()
+            yield
+            _check_held_publication_lock()
+        finally:
+            _HELD_PUBLICATION_LOCKS.reset(token)
     except (ProducerBundlePublicationStagingError, SolveExecutionBudgetExceeded, SolveExecutionCancelled):
         raise
     except OSError as exc:
@@ -753,6 +790,7 @@ def _artifact_entry(
     candidate_root = batch / _STAGE_NAME / "candidates" / artifact.candidate_id
     if _present(candidate_root):
         _fail("producer_bundle_publication_staging_conflict")
+    _check_held_publication_lock()
     candidate_root.mkdir(mode=0o700)
     for relative, content in sorted(artifact.source_bytes().items()):
         parent = Path(relative).parent.as_posix()
@@ -989,7 +1027,9 @@ def stage_producer_bundle_publication(
             verify_native_publication_intent(
                 root, journal, item.candidate_id, item.retained_evidence, record=item.record,
             )
+        _check_held_publication_lock()
         stage.mkdir(mode=0o700)
+        _check_held_publication_lock()
         (stage / "candidates").mkdir(mode=0o700)
         try:
             entries = tuple(_artifact_entry(batch, item, journal) for item in values)
@@ -1032,6 +1072,7 @@ def stage_producer_bundle_publication(
             # validation/write failure. A failed marker write is handled as unknown by its caller.
             if not _present(evolution / _MARKER_NAME) and _present(stage):
                 import shutil
+                _check_held_publication_lock()
                 shutil.rmtree(stage, ignore_errors=True)
             raise
 
@@ -1155,6 +1196,7 @@ def commit_producer_bundle_publication(
         try:
             candidates_root = evolution / "candidates"
             if not _present(candidates_root):
+                _check_held_publication_lock()
                 candidates_root.mkdir(mode=0o700)
                 _fsync_dir(evolution)
             _directory(candidates_root)
@@ -1164,6 +1206,7 @@ def commit_producer_bundle_publication(
                 _directory(source)
                 if _present(target):
                     _fail("producer_bundle_publication_commit_conflict")
+                _check_held_publication_lock()
                 os.replace(source, target)
                 _fsync_dir(candidates_root)
             _replace_file(stage / "archive.jsonl", evolution / "archive.jsonl")
@@ -1188,6 +1231,7 @@ def commit_producer_bundle_publication(
             final_bytes = _pretty(final.to_dict(), MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
             _write_new(batch / "journal.published.json", final_bytes, maximum=MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
             _replace_existing(batch / "journal.json", final_bytes, maximum=MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
+            _check_held_publication_lock()
             marker_path.unlink()
             _fsync_dir(evolution)
             return final

@@ -386,6 +386,17 @@ from .producer_bundle_admission import (
     build_producer_bundle_admission_plan,
     parse_producer_bundle_admission_plan,
 )
+from .producer_bundle_control import (
+    ProducerBundleControlError,
+    bind_native_producer_bundle_control,
+    native_producer_bundle_budget_sha256,
+)
+from .producer_bundle_deadline import (
+    ProducerBundleDeadline,
+    ProducerBundleDeadlineError,
+    persist_controlled_producer_bundle_intent,
+    restore_producer_bundle_execution_control,
+)
 from .producer_bundle_handoff import (
     BundleGroup,
     ProducerBundleHandoffError,
@@ -940,6 +951,9 @@ __all__ = [
     "ProducerBundleAdmissionError",
     "ProducerBundleAdmissionItem",
     "ProducerBundleAdmissionPlan",
+    "ProducerBundleControlError",
+    "ProducerBundleDeadline",
+    "ProducerBundleDeadlineError",
     "ProducerBundleDraft",
     "ProducerBundleEvaluationReceipt",
     "ProducerBundleExecutionReceipt",
@@ -1098,6 +1112,7 @@ __all__ = [
     "benchmark_case_content_digest",
     "bind_acceptance_runtime",
     "bind_benchmark_comparison_result_evidence",
+    "bind_native_producer_bundle_control",
     "build_acceptance_audit_request",
     "build_acceptance_manifest",
     "build_acceptance_registration",
@@ -1167,6 +1182,7 @@ __all__ = [
     "load_memory_snapshot",
     "manifest_sha256",
     "materialize_candidate_source_bundle",
+    "native_producer_bundle_budget_sha256",
     "normalize_feedback",
     "observe_acceptance_evidence",
     "observe_trusted_bootstrap_attempt",
@@ -1200,6 +1216,7 @@ __all__ = [
     "parse_trusted_bootstrap_evidence",
     "parse_trusted_bootstrap_process_registration_handoff",
     "parse_trusted_bootstrap_registration",
+    "persist_controlled_producer_bundle_intent",
     "persist_producer_bundle_prepared_intent",
     "preflight_acceptance_registration",
     "preflight_producer_bundle_publication",
@@ -1227,6 +1244,7 @@ __all__ = [
     "remote_submit",
     "remote_sync",
     "resolve_candidate_integrity_authority",
+    "restore_producer_bundle_execution_control",
     "resume_producer_bundle_publication",
     "revalidate_acceptance_campaign",
     "run_acceptance_holdouts",

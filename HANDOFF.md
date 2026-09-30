@@ -1,5 +1,23 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-30 RSI/producer 本地闭环增量
+
+已推送 `31f0098`（RSI）和 `d1ae8bc`（producer）。RSI 新增 spawn 进程级 clean-room verifier：
+私有 JSON IPC、结果大小限制、硬超时 terminate/kill、异常隔离、fingerprint/工作区篡改
+fail-closed；新增 provider-free 用量账本的严格 JSON/CAS/hash-chain、估算成本和按指标
+fail-closed 预算摘要。`RSILearningController` 可选注入 usage ledger，solver 调用记录确定性
+event ID 与本地 monotonic wall time；恢复时缺少 sidecar 会登记未知时长，不伪造成本或精确时长。
+当前 RSI 本地组合 **523 passed**，未运行 WebAgent、远程 evaluator 或公司平台。
+
+Feature 153 新增同一 OS boot 内的 durable monotonic deadline：在 prepared intent 前写入
+`execution.deadline.json`，绑定 journal digest、boot、clock、inode 和原始 deadline，重启后
+只能恢复同一 deadline；锁替换和写入中的身份漂移 fail-closed。producer bundle 回归 **208
+passed**，全量相关选择此前 **1328 passed / 2 skipped**；未运行真实 producer campaign。
+
+当前仍开放：真实 Actor/官方 evaluator 和 artifact handoff、usage provider billing/GPU truth、
+producer 运行中子进程即时取消、完整 unknown/interruption recovery、evolved/seeded/repeated
+population admission、launcher/scheduler 接线和真实 OpenEvolve/Shinka campaign。
+
 ## 2026-09-30 RSI callback 显式对账与 unknown transfer 处置
 
 继续 Feature 160 阶段 1，补齐上一轮留下的本地恢复接口。新增 `rsi_callbacks.py`，

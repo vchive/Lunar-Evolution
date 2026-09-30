@@ -80,7 +80,10 @@ narrow it. The budget digest is derived from the actual declared limits; supplie
 match and cannot disable a previously pinned control. Once the commit critical region begins,
 the atomic protocol finishes without a new deadline check.
 
-This clock is process-local. Cross-process elapsed-budget restoration, immediate cancellation of
-an active subprocess and the full unknown/interruption recovery matrix remain open. Keep uncertain
-evidence for recovery; do not delete it or change the request to force a replay. This API is
-separate from the existing `evolve --producer-result` CLI seed warm-start route.
+The controlled clock is retained in `execution.deadline.json` before the prepared intent. A fresh
+process may restore the original monotonic allowance only within the same OS boot through
+`restore_producer_bundle_execution_control`; a fresh control cannot extend the retained deadline.
+Injected fixture clocks remain process-local and are never accepted by the restore API. Active
+subprocess cancellation and the full unknown/interruption recovery matrix remain open. Keep
+uncertain evidence for recovery; do not delete it or change the request to force a replay. This
+API is separate from the existing `evolve --producer-result` CLI seed warm-start route.

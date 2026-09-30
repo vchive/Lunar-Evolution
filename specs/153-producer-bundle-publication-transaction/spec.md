@@ -2,9 +2,10 @@
 
 **Status**: Offline imported Shinka material can pass native draft evaluation, retained-evidence
 publication, population read-back/resume, and delivery verification in the initial population
-window. Caller-owned active deadline/cancellation and durable all-rejected terminal inspection
-are implemented. Cross-process deadline restoration and full unknown-result recovery remain open;
-no launcher, scheduler, remote service, or real campaign is included.
+window. Caller-owned active deadline/cancellation, same-boot durable deadline restoration and
+durable all-rejected terminal inspection are implemented. Active-process cancellation and full
+unknown-result recovery remain open; no launcher, scheduler, remote service, or real campaign is
+included.
 
 ## Problem
 
@@ -146,9 +147,9 @@ evaluation calls. Missing or partial terminal evidence requires recovery and is 
 repaired or replayed. Nonzero execution, timeout, and other unknown draft outcomes are still
 outside this completed terminal slice.
 
-Remaining work includes durable deadline restoration, active-process cancellation, and the full
-unknown/interruption recovery matrix. Launcher/scheduler integration, remote execution, and real
-OpenEvolve/Shinka campaigns are separate work.
+Remaining work includes active-process cancellation and the full unknown/interruption recovery
+matrix. Launcher/scheduler integration, remote execution, and real OpenEvolve/Shinka campaigns
+are separate work.
 
 ## Acceptance
 

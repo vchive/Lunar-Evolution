@@ -21,6 +21,7 @@ from .producer_bundle_publication import (
 )
 from .producer_bundle_staging import (
     _batch,
+    _check_held_publication_lock,
     _locked,
     _present,
     _pretty,
@@ -98,6 +99,7 @@ def _started(batch: Path) -> bool:
 
 def _write_exclusive(chain: DirectoryChain, content: bytes) -> None:
     """Write through the held no-follow batch directory; retain failed writes for recovery."""
+    _check_held_publication_lock()
     descriptor = os.open(
         _INTENT_NAME,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
@@ -108,6 +110,7 @@ def _write_exclusive(chain: DirectoryChain, content: bytes) -> None:
         opened = os.fstat(descriptor)
         view = memoryview(content)
         while view:
+            _check_held_publication_lock()
             count = os.write(descriptor, view)
             if count <= 0:
                 raise OSError("intent write made no progress")

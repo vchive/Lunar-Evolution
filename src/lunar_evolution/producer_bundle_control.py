@@ -1,8 +1,8 @@
 """Compose one caller-owned deadline across native producer publication stages.
 
-This is an active-execution control, not a durable restart clock. The caller creates and retains
-the control before preparation, and reuses that same object for any in-process retry. This module
-never creates a fresh deadline or alters the native candidate/evaluator identity.
+The caller's control remains unchanged. A transaction may attach its retained monotonic deadline
+to the yielded checkpoint after the prepared intent is fixed. Both deadlines and cancellation
+sources then constrain every stage; this module never refreshes either allowance.
 """
 
 from __future__ import annotations
@@ -93,6 +93,13 @@ def bind_native_producer_bundle_control(
     if any(not callable(callback) for callback in (*timeout_callbacks, *guards)):
         raise ProducerBundleControlError("producer_bundle_transaction_parent_control_invalid")
 
+    retained_deadlines: list[Callable[[str], float]] = []
+
+    def bind_retained_deadline(callback: Callable[[str], float]) -> None:
+        if not callable(callback):
+            raise ProducerBundleControlError("producer_bundle_transaction_control_invalid")
+        retained_deadlines.append(callback)
+
     def check(stage: str) -> float:
         if strategy._cancelled():
             raise SolveExecutionCancelled(stage)
@@ -100,12 +107,13 @@ def bind_native_producer_bundle_control(
             guard()
         remaining = execution_control.check(stage)
         parent_observations: list[tuple[float, float]] = []
-        for callback in timeout_callbacks:
+        for callback in (*timeout_callbacks, *retained_deadlines):
+            sampled_at = execution_control._now()
             parent_remaining = callback(stage)
             if (isinstance(parent_remaining, bool) or not isinstance(parent_remaining, (int, float))
                     or not math.isfinite(float(parent_remaining)) or parent_remaining <= 0):
                 raise ProducerBundleControlError("producer_bundle_transaction_parent_budget_invalid")
-            parent_observations.append((execution_control._now(), float(parent_remaining)))
+            parent_observations.append((sampled_at, float(parent_remaining)))
         # Parent callbacks may consume time or observe cancellation. Recheck before admitting work.
         if strategy._cancelled():
             raise SolveExecutionCancelled(stage)
@@ -121,6 +129,7 @@ def bind_native_producer_bundle_control(
             remaining = min(remaining, adjusted_remaining)
         return remaining
 
+    check.bind_retained_deadline = bind_retained_deadline
     pipeline.set_remaining_timeout(check)
     pipeline.set_continuation_guard(None)
     try:

@@ -10,8 +10,8 @@
       `bundle-attempts` path; do not allocate a sequential ID or write the final archive/state.
       Implemented: planned-ID draft execution, immutable prepared intent, exact retained-evidence
       retry and unchanged live archive/state before commit. Caller-owned active deadline,
-      bounded lock waits, stage-boundary cancellation and actual policy pins are implemented.
-      Still open: durable cross-process deadline restoration and active-process cancellation.
+      bounded lock waits, stage-boundary cancellation, actual policy pins and same-boot durable
+      deadline restoration are implemented. Still open: active-process cancellation.
 - [x] T153-06a Prepare native records/receipts for planned final source paths and extend staging
       to verify the complete retained run evidence without copying or rewriting path/inode
       bindings. Derive active state from frozen population state and adjudications.
@@ -26,7 +26,7 @@
       Added: durable all-rejected terminal receipts, exact no-evaluation retry, receipt/identity
       tampering rejection, budget downgrade rejection, deadline/cancellation before commit and
       successful completion after entering the commit critical region.
-      Still open: full unknown/interruption and cross-process shared-deadline recovery.
+      Still open: full unknown/interruption recovery and active-process cancellation.
 - [x] T153-06c Persist and independently inspect native all-rejected terminal batches without
       publishing candidates; rebuild portable receipts from retained original evidence.
 - [x] T153-06d Compose caller-owned active execution controls with tighter parent controls,

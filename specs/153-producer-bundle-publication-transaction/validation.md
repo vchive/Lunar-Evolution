@@ -26,10 +26,11 @@ Whole-tree Ruff, compileall and `git diff --check` passed. Earlier focused count
 selection and are not added to its count.
 
 The independent worktree remains `codex/shinka-native-publication`; RSI files/implementation were
-excluded. No model, WebAgent, remote evaluator or real OpenEvolve/Shinka campaign ran. Durable
-cross-process budget restoration, active-subprocess cancellation, full unknown/interruption
-recovery, evolved/seeded/repeated population admissions, launcher/scheduler integration and the
-three-phase release runner remain open. This does not complete P1 production acceptance.
+excluded. No model, WebAgent, remote evaluator or real OpenEvolve/Shinka campaign ran. Same-boot
+durable deadline restoration is now covered by provider-free subprocess tests. Active-subprocess
+cancellation, full unknown/interruption recovery, evolved/seeded/repeated population admissions,
+launcher/scheduler integration and the three-phase release runner remain open. This does not
+complete P1 production acceptance.
 
 ## 2026-09-29 offline native transaction and prepared intent
 
