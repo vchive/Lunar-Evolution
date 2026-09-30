@@ -15,8 +15,9 @@ Feature 153 新增同一 OS boot 内的 durable monotonic deadline：在 prepare
 passed**，全量相关选择此前 **1328 passed / 2 skipped**；未运行真实 producer campaign。
 
 当前仍开放：真实 Actor/官方 evaluator 和 artifact handoff、usage provider billing/GPU truth、
-producer 运行中子进程即时取消、完整 unknown/interruption recovery、evolved/seeded/repeated
-population admission、launcher/scheduler 接线和真实 OpenEvolve/Shinka campaign。
+完整 unknown/interruption recovery、evolved/seeded/repeated population admission、
+launcher/scheduler 接线和真实 OpenEvolve/Shinka campaign。Feature 153 transaction 尚未自动
+把该取消回调接到外部 producer 生命周期。
 
 随后补齐 Feature 156 cooperative runner 的运行中取消窄切片：`run_producer_process`/
 `ProducerProcessRunner.run` 接受 process-local `cancelled` 回调，在启动前、登记后、非阻塞
