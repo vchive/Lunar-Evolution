@@ -15,6 +15,7 @@ receipt = run_producer_process(
     expected_parent_task_id=parent_task_id,
     expected_task_id=task_id,
     cancelled=parent_control.is_cancelled,
+    parent_deadline=parent_control.deadline,
 )
 ```
 

@@ -6,7 +6,9 @@ The cooperative local runner accepts an optional process-local `cancelled` callb
 before launch, after registration, inside the nonblocking capture loop, and during leader wait. A
 verified owner-checked cleanup produces one durable `cancelled` execution receipt; cleanup
 uncertainty remains `unknown`, and callback exceptions or non-boolean values fail closed before
-spawn. Focused producer-process/lifecycle tests pass **81 passed, 2 skipped** after this slice.
+spawn. It also accepts an optional caller `parent_deadline` in the same monotonic clock domain and
+takes the earlier of the intent and parent deadlines. Focused producer-process/lifecycle tests pass
+**83 passed, 2 skipped** after this slice.
 This does not claim trusted bootstrap admission, host-observed requests, scheduler integration or
 real producer acceptance.
 

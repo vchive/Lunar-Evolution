@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import secrets
 import selectors
@@ -955,6 +956,23 @@ def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
     return value
 
 
+def _compose_parent_deadline(
+    intent: ProducerLaunchIntent,
+    monotonic: Callable[[], float],
+    parent_deadline: float | None,
+) -> float:
+    """Compose an optional caller deadline in the same monotonic clock domain."""
+    started = monotonic()
+    if type(started) not in (int, float) or not math.isfinite(float(started)):
+        _fail("producer_process_clock_invalid")
+    own_deadline = float(started) + float(intent.wall_timeout_seconds)
+    if parent_deadline is None:
+        return own_deadline
+    if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
+        _fail("producer_process_parent_deadline_invalid")
+    return min(own_deadline, float(parent_deadline))
+
+
 def _run_producer_process(
     workspace: str | Path,
     *,
@@ -966,6 +984,7 @@ def _run_producer_process(
     expected_task_id: str | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
     popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
     recovery_lock_identity: tuple[int, int],
 ) -> ProducerExecutionReceipt:
@@ -976,7 +995,7 @@ def _run_producer_process(
         _fail("producer_process_cancellation_invalid")
     if _observe_cancellation(cancelled):
         _fail("producer_process_cancelled")
-    deadline = monotonic() + float(intent.wall_timeout_seconds)
+    deadline = _compose_parent_deadline(intent, monotonic, parent_deadline)
     try:
         verify_producer_launch_attestation(intent, attestation)
     except ProducerLaunchError as exc:
@@ -1299,6 +1318,7 @@ def run_producer_process(
     expected_task_id: str | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
     popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
 ) -> ProducerExecutionReceipt:
     """Hold the per-journal ownership lock through the entire process attempt."""
@@ -1314,6 +1334,7 @@ def run_producer_process(
             workspace, intent=intent, attestation=attestation, producer_root=producer_root,
             expected_run_id=expected_run_id, expected_parent_task_id=expected_parent_task_id,
             expected_task_id=expected_task_id, monotonic=monotonic, cancelled=cancelled,
+            parent_deadline=parent_deadline,
             popen_factory=popen_factory, recovery_lock_identity=lock_identity,
         )
 
@@ -1378,6 +1399,7 @@ class ProducerProcessRunner:
         expected_task_id: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         cancelled: Callable[[], bool] | None = None,
+        parent_deadline: float | None = None,
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
     ) -> ProducerExecutionReceipt:
         workspace_path = Path(workspace)
@@ -1392,6 +1414,7 @@ class ProducerProcessRunner:
             expected_task_id=expected_task_id,
             monotonic=monotonic,
             cancelled=cancelled,
+            parent_deadline=parent_deadline,
             popen_factory=popen_factory,
         )
 

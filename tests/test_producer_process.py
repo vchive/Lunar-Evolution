@@ -869,6 +869,28 @@ def test_active_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Path, monk
     assert receipt.failure_code == "producer_process_cleanup_unknown"
 
 
+def test_parent_deadline_narrows_intent_wall_budget(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path, mode="timeout")
+    started = time.monotonic()
+    receipt = run_producer_process(
+        tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+        parent_deadline=started + 0.2,
+    )
+    assert receipt.status == "unknown"
+    assert receipt.failure_code in {"producer_process_wall_timeout", "producer_process_cleanup_unknown"}
+    assert time.monotonic() - started < intent.wall_timeout_seconds
+
+
+def test_invalid_parent_deadline_fails_before_attestation_consumption(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path)
+    with pytest.raises(ProducerProcessError, match="parent_deadline_invalid"):
+        run_producer_process(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            parent_deadline=float("nan"), popen_factory=lambda *args, **kwargs: pytest.fail("must not spawn"),
+        )
+    assert not (tmp_path / "evolution/producer-batches/journal-001/attestation-consumption.json").exists()
+
+
 @pytest.mark.parametrize(
     ("callback", "code"),
     [

@@ -24,9 +24,11 @@ launcher/scheduler 接线和真实 OpenEvolve/Shinka campaign。Feature 153 tran
 capture 循环和 leader wait 中观察；owner-checked cleanup 成功时写入一次 `cancelled` 终态，
 清理不确定保留 `unknown`，回调异常或非布尔值在 spawn 前 fail-closed。新增本地 fixture
 覆盖 active cancellation、cleanup uncertainty 和回调错误，producer-process/lifecycle
-专项 **81 passed、2 skipped**。这不等于 Feature 153 transaction 已自动接入该回调，也不
-关闭 trusted bootstrap、host-observed request、post-crash recovery、launcher/scheduler 或
-真实 campaign 边界。
+专项 **81 passed、2 skipped**。随后增加同一 monotonic 时钟域的可选 `parent_deadline`，runner
+与 intent deadline 取较小值，并覆盖窄预算终止和非法 deadline fail-closed。当前专项为
+**83 passed、2 skipped**。这不等于 Feature 153 transaction 已自动接入该回调，也不关闭
+trusted bootstrap、host-observed request、post-crash recovery、launcher/scheduler 或真实
+campaign 边界。
 
 ## 2026-09-30 RSI callback 显式对账与 unknown transfer 处置
 

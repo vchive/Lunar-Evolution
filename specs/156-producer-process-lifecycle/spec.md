@@ -136,8 +136,9 @@ receipt digest.
 The intent's `request_timeout_seconds`, `max_requests`, `output_max_bytes`, and
 `wall_timeout_seconds` remain independent ceilings. The launcher derives one monotonic deadline at
 the launch gate and passes the remaining time to every wait, pipe-drain, cleanup, and output-read
-operation. No retry, signal grace period, receipt write, or recovery inspection resets or widens
-that deadline. A request counter is observed from the bounded producer envelope; missing,
+operation. An optional caller-owned `parent_deadline` in the same monotonic clock domain is
+composed by taking the earlier deadline; it cannot widen the intent allowance. No retry, signal
+grace period, receipt write, or recovery inspection resets or widens that deadline. A request counter is observed from the bounded producer envelope; missing,
 negative, contradictory, or over-limit counters produce `failed` when observed deterministically
 and `unknown` when observation itself is incomplete.
 
