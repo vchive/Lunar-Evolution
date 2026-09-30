@@ -17,6 +17,10 @@ from .native_trusted_capture import (
     NativeTrustedCaptureError,
     recover_native_trusted_output_capture,
 )
+from .native_trusted_receipt import (
+    NativeTrustedReceiptError,
+    recover_native_trusted_execution_receipt,
+)
 from .producer_bundle_admission import (
     ProducerBundleAdmissionPlan,
     build_producer_bundle_admission_plan,
@@ -54,6 +58,7 @@ class NativeTrustedOutputPreparation:
     bundles: tuple[VerifiedProducerBundle, ...]
     drafts: tuple[ProducerBundleDraft, ...]
     admission_plan: ProducerBundleAdmissionPlan
+    execution_receipt_sha256: str | None = None
     request_coverage: str = "producer_declaration_only"
     publication_eligible: bool = False
 
@@ -81,6 +86,7 @@ def prepare_native_trusted_output(
     dependency_sha256: str,
     environment_sha256: str,
     require_same_attempt_capture: bool = False,
+    require_execution_receipt: bool = False,
 ) -> NativeTrustedOutputPreparation:
     """Verify current producer files, without granting durable execution or publication authority.
 
@@ -88,6 +94,8 @@ def prepare_native_trusted_output(
     require the same-attempt capture; the default remains a read-only supporting inspection.
     """
     if not isinstance(intent, ProducerLaunchIntent) or not isinstance(contract, AlgorithmProblemContract):
+        raise NativeTrustedOutputError("native_trusted_output_input_invalid")
+    if type(require_same_attempt_capture) is not bool or type(require_execution_receipt) is not bool:
         raise NativeTrustedOutputError("native_trusted_output_input_invalid")
     if (
         contract.digest() != intent.contract_sha256
@@ -114,8 +122,16 @@ def prepare_native_trusted_output(
     ):
         raise NativeTrustedOutputError("native_trusted_output_process_incomplete")
     batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    execution_receipt = None
+    if require_execution_receipt:
+        try:
+            execution_receipt = recover_native_trusted_execution_receipt(
+                workspace, intent=intent, attestation=attestation, artifact=artifact,
+            )
+        except NativeTrustedReceiptError as exc:
+            raise NativeTrustedOutputError("native_trusted_output_receipt_unverified") from exc
     capture: dict[str, object] | None = None
-    if require_same_attempt_capture:
+    if require_same_attempt_capture or require_execution_receipt:
         try:
             capture = recover_native_trusted_output_capture(
                 batch, intent=intent, terminal=terminal,
@@ -178,11 +194,23 @@ def prepare_native_trusted_output(
             raise NativeTrustedOutputError("native_trusted_output_capture_changed") from exc
         if current != capture or evidence.sha256 != capture["envelope_evidence"]["sha256"]:
             raise NativeTrustedOutputError("native_trusted_output_capture_changed")
+    if execution_receipt is not None:
+        try:
+            current_receipt = recover_native_trusted_execution_receipt(
+                workspace, intent=intent, attestation=attestation, artifact=artifact,
+            )
+        except NativeTrustedReceiptError as exc:
+            raise NativeTrustedOutputError("native_trusted_output_receipt_changed") from exc
+        if current_receipt != execution_receipt:
+            raise NativeTrustedOutputError("native_trusted_output_receipt_changed")
     return NativeTrustedOutputPreparation(
         process_terminal_sha256=str(terminal["terminal_sha256"]),
         output_capture_sha256=(str(capture["capture_sha256"]) if capture is not None else None),
         envelope_bytes_sha256=evidence.sha256, envelope=envelope,
         bundles=bundles, drafts=drafts, admission_plan=plan,
+        execution_receipt_sha256=(
+            execution_receipt.receipt_sha256 if execution_receipt is not None else None
+        ),
         request_coverage=(
             "brokered_requests_only"
             if capture is not None and capture["broker_evidence"] is not None

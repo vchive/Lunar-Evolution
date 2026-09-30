@@ -27,6 +27,7 @@ from lunar_evolution.native_trusted_output import (
     NativeTrustedOutputError,
     prepare_native_trusted_output,
 )
+from lunar_evolution.native_trusted_receipt import persist_native_trusted_execution_receipt
 from lunar_evolution.producer_broker_ipc import ProducerBrokerConfig
 from lunar_evolution.producer_bundle_handoff import BundleGroup
 from lunar_evolution.producer_launcher import (
@@ -124,6 +125,14 @@ def test_strict_preparation_requires_same_attempt_capture(
         prepare_native_trusted_output(
             tmp_path, **arguments, require_same_attempt_capture=True,
         )
+
+
+def test_formal_preparation_requires_durable_execution_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _output, _, arguments = _fixture(tmp_path, monkeypatch)
+    with pytest.raises(NativeTrustedOutputError, match="native_trusted_output_receipt_unverified"):
+        prepare_native_trusted_output(tmp_path, **arguments, require_execution_receipt=True)
 
 
 @pytest.mark.parametrize("broker_evidence", [
@@ -369,6 +378,22 @@ def test_prepares_output_from_actual_native_trusted_attempt(
     )
     assert len(result.drafts) == 1
     assert result.publication_eligible is False
+    assert result.execution_receipt_sha256 is None
+    if brokered:
+        formal = persist_native_trusted_execution_receipt(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+        formal_preparation = prepare_native_trusted_output(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+            contract=contract,
+            groups=[BundleGroup("bundle-1", "pkg/main.py", ("pkg/main.py", "pkg/helper.py"))],
+            evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
+            dependency_sha256=PIN, environment_sha256=PIN,
+            require_execution_receipt=True,
+        )
+        assert formal_preparation.execution_receipt_sha256 == formal.receipt_sha256
+        assert formal_preparation.request_coverage == "brokered_requests_only"
+        assert formal_preparation.publication_eligible is False
     if brokered:
         capture_path = batch / "native-trusted-output-capture.json"
         tampered = json.loads(capture_path.read_bytes())
