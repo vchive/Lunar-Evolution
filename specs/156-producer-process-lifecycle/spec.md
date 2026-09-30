@@ -47,8 +47,11 @@ The native trusted path now has a create-only formal receipt boundary: once term
 streams, stable envelope, host-broker, target-binding, deadline, and cleanup evidence all verify,
 it persists `execution-receipt.json` and exposes its canonical digest. Feature 153 may consume
 that digest before staging and record it in the publication journal. The handoff is deliberately
-one-way: publication does not rewrite the receipt, and an optional link does not close the
-trusted-bootstrap, recovery, scheduler, or real-campaign gaps listed below.
+one-way: publication does not rewrite the receipt. A provider-free native trusted scheduler now
+composes one attempt, receipt persistence, strict output projection, and optional publication, with
+a read-only recovery projection that cannot relaunch or consume another attestation. This is a
+supporting composition boundary only and does not close the trusted-bootstrap, production
+controller transport, cross-process recovery, or real-campaign gaps listed below.
 
 ## Lifecycle state machine
 

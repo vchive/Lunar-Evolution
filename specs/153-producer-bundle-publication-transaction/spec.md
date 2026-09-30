@@ -3,10 +3,11 @@
 **Status**: Offline imported Shinka material can pass native draft evaluation, retained-evidence
 publication, population read-back/resume, and delivery verification in the initial population
 window. Caller-owned active deadline/cancellation, same-boot durable deadline restoration,
-durable all-rejected terminal inspection, and the optional Feature 156 formal execution-receipt
-link are implemented. Active-process cancellation, full unknown-result recovery, complete formal
-receipt schema revalidation at this boundary, launcher/scheduler integration, and real campaigns
-remain open.
+durable all-rejected terminal inspection, the optional Feature 156 formal execution-receipt link,
+and complete formal receipt schema revalidation at this boundary are implemented. A local
+provider-free native trusted one-shot/recovery supporting slice is also available. Active-process
+cancellation, full unknown-result recovery, production launcher/scheduler integration, and real
+campaigns remain open.
 
 ## Problem
 
@@ -151,10 +152,12 @@ outside this completed terminal slice.
 The transaction also accepts an optional `native_execution_receipt_sha256` from the trusted native
 producer path. Before creating `journal.prepared.json` or any other publication side effect, it
 reads the create-only `execution-receipt.json` under the journal's batch directory, verifies its
-self-digest and identity/status/cleanup/broker summary, and records the same digest in the
-canonical publication journal. Legacy calls that omit the link retain their original canonical
-bytes. This is the first formal receipt-to-publication boundary; it does not launch a producer,
-recover an unknown native attempt, or imply scheduler/real-campaign acceptance.
+self-digest, complete nested stream/envelope evidence, owner identity,
+identity/status/cleanup/broker summary, and retained native evidence, and records the same digest
+in the canonical publication journal. Legacy calls that omit the link retain their original
+canonical bytes. The local `native_trusted_scheduler` composes this receipt path with one-shot
+attempt and strict output projection, and exposes a read-only recovery projection. Neither
+boundary launches a replacement producer or implies production scheduler/real-campaign acceptance.
 
 Remaining work includes active-process cancellation and the full unknown/interruption recovery
 matrix. Launcher/scheduler integration, remote execution, and real OpenEvolve/Shinka campaigns

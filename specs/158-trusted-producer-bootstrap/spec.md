@@ -2,7 +2,7 @@
 
 **Created**: 2026-09-24
 
-**Status**: Provider-free trusted-bootstrap fixture and production launch identity adapter implemented; native formal receipt persistence and the optional Feature 153 publication-journal handoff are available, while Feature 156 lifecycle completion, recovery-safe broker integration, and scheduler integration remain deferred
+**Status**: Provider-free trusted-bootstrap fixture and production launch identity adapter implemented; native formal receipt persistence, the optional Feature 153 publication-journal handoff, and a local one-shot scheduler/recovery supporting slice are available, while Feature 156 lifecycle completion, recovery-safe broker integration, production scheduler integration, and real campaigns remain deferred
 
 ## Problem
 
