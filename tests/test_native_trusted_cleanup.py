@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from test_producer_process import _fixture
 
+from lunar_evolution.native_trusted_attempt import run_native_trusted_attempt
 from lunar_evolution.native_trusted_cleanup import (
     NativeTrustedCleanupError,
     persist_native_trusted_cleanup,
@@ -96,3 +97,22 @@ def test_cleanup_sidecar_rejects_terminal_rebinding_or_tamper(tmp_path: Path) ->
             terminal={**terminal, "registration_sha256": "a" * 64},
         )
     assert tamper.value.code == "native_trusted_cleanup_invalid"
+
+
+@pytest.mark.skipif(__import__("sys").platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_binds_cleanup_sidecar_into_terminal(tmp_path: Path) -> None:
+    from test_native_trusted_attempt import _attempt
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace,
+        producer_root=producer_root,
+        intent=intent,
+        attestation=attestation,
+        artifact=artifact,
+    )
+    terminal = json.loads((batch / "native-trusted-process-terminal.json").read_text())
+    cleanup = json.loads((batch / "native-trusted-cleanup.json").read_text())
+    assert terminal["cleanup_sha256"] == cleanup["cleanup_sha256"]
+    assert cleanup["registration_sha256"] == terminal["registration_sha256"]
+    assert cleanup["deadline_sha256"] == terminal["deadline_sha256"]

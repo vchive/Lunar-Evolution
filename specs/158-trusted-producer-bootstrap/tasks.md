@@ -46,6 +46,15 @@
   terminal against the retained deadline digest. Replacing a sidecar with another self-valid,
   same-launch budget therefore fails terminal recovery instead of changing the attempt's authority.
 
+  The native attempt now captures stdout/stderr concurrently with bounded nonblocking drains and
+  persists `native-trusted-stream-capture.json`; its digest is bound into the process terminal
+  and checked on recovery. Envelope evidence now includes before/after identity digests and stable
+  read status, while broker evidence binds the canonical host journal identity and admitted-count
+  coverage. Owner-checked cleanup is persisted in `native-trusted-cleanup.json` and bound through
+  `cleanup_sha256`. A strict read-only projection can construct a Feature 156 execution receipt
+  only after all of these records verify; it still does not write the formal receipt or authorize
+  publication.
+
   The native attempt now exposes a read-only `audit_native_trusted_lifecycle` composition point.
   It first requires a verified process terminal, then optionally revalidates the same-attempt
   output capture and broker journal. Missing capture is reported as `process_only`; valid capture

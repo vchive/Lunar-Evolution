@@ -64,6 +64,25 @@ cleanup is verified; otherwise the attempt remains `unknown`/`recovery_required`
 runtime controls, not launch/attestation identities, and are not allowed to widen budgets or
 authorize a replay.
 
+Native attempts drain stdout and stderr concurrently through bounded pipes. The
+`native-trusted-stream-capture.json` sidecar records one `ProducerStreamEvidence` object per
+stream, the output limit, launch/registration/deadline bindings, and a self-digest. The
+process-only terminal carries `stream_capture_sha256`; recovery rejects overflow, incomplete
+capture, digest rebinding, or malformed stream fields. This evidence is diagnostic and remains
+`publication_eligible=false`.
+
+After owner-checked cleanup, the attempt writes the create-only
+`native-trusted-cleanup.json` sidecar. It binds the registration, retained deadline, PID/PGID,
+cleanup status, TERM/KILL/alive flags, and a self-digest. The terminal carries
+`cleanup_sha256`, and recovery rechecks the sidecar before returning a terminal observation.
+Cleanup evidence cannot authorize a signal or publication by itself.
+
+`build_native_trusted_execution_receipt` is a read-only strict projection into the formal Feature
+156 `ProducerExecutionReceipt`. It requires a passed native terminal, complete bounded streams,
+stable envelope evidence, complete host-broker coverage by default, target execution binding, and
+verified cleanup. It constructs the formal DTO but does not write `execution-receipt.json` or
+enter population admission; the publication transaction remains a separate integration step.
+
 The native process-only terminal includes `deadline_sha256` alongside the registration, handoff,
 and bootstrap-evidence digests. Recovery reconstructs the expected terminal against the retained
 deadline record, so a valid but rebound budget cannot detach from the original terminal.

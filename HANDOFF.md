@@ -1,5 +1,27 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Native trusted stream, envelope, cleanup, and receipt projection
+
+Feature 158/156 的 native trusted supporting slice 已继续推进。native bootstrap 现在以非阻塞
+并发管道读取 stdout/stderr，按每个流的 `output_max_bytes` 限制生成
+`native-trusted-stream-capture.json`，并把 `stream_capture_sha256` 绑定到 process-only
+terminal；恢复会校验流状态、摘要、边界和同一 launch/registration/deadline。输出 capture
+现在记录 envelope 的 `identity_before`、`identity_after`、`read_status=stable`，broker
+记录绑定 canonical host journal identity、摘要、大小和 admitted-count coverage。
+
+owner-checked cleanup 现在生成 create-only `native-trusted-cleanup.json`，terminal 绑定
+`cleanup_sha256`，恢复重新验证 cleanup sidecar，不能借 sidecar 自己的摘要伪造另一种 cleanup
+结果。新增 `native_trusted_receipt.py` 的严格只读 projection：只有 terminal、bounded
+streams、stable envelope、完整 broker coverage、target execution binding 和 cleanup 全部
+闭合时，才构造 Feature 156 `ProducerExecutionReceipt`；它不会写正式
+`execution-receipt.json`，也不会开启 population admission 或 publication。
+
+本轮已推送的增量包括 `fba0cf3`、`fcf9f87`、`fa46ba2`、`af5e5c5` 和本分支的 receipt/cleanup
+实现。focused native attempt/output/stream/cleanup/receipt fixtures、Ruff、compileall 和
+diff check 通过；未运行 WebAgent、远程 evaluator、真实 OpenEvolve/Shinka campaign。T158-04
+仍未完全关闭：formal receipt 持久化、Feature 157 production journal 接线、publication
+transaction、scheduler/default producer entrypoint 和真实 campaign 仍在后续范围。
+
 ## 2026-09-30 Native trusted durable attempt deadline
 
 native trusted attempt 现在在消费 attestation 前，把本次尝试的有效 monotonic 起点和

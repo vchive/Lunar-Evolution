@@ -46,6 +46,16 @@ The recovery verifier also rejects a missing or rehashed sidecar and a capture d
 inside a self-rehashed sidecar. This keeps the audit projection diagnostic until formal Feature 156
 receipt consumption is implemented.
 
+The native stream slice now drains both output pipes concurrently under the per-stream byte limit,
+persists `stream_capture_sha256` in the terminal, and rejects incomplete or rebound stream records
+on recovery. Envelope capture records stable before/after identity digests; broker capture binds
+the canonical host journal and requires complete admitted-count coverage. Cleanup is persisted as
+`native-trusted-cleanup.json` and bound into the terminal. Focused native stream, output, attempt,
+cleanup, and projection suites pass locally with provider-free fixtures. The new
+`build_native_trusted_execution_receipt` function only builds an in-memory formal DTO after these
+checks; it intentionally does not write `execution-receipt.json`, publish bundles, or change the
+`publication_eligible=false` boundary.
+
 ## Native pre-gate handoff reread (2026-09-28)
 
 The native attempt now uses the formal read-only observer under its existing deadline before

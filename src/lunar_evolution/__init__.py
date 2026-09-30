@@ -352,6 +352,23 @@ from .models import (
     WorkerResultEnvelope,
     WorkerStopReason,
 )
+from .native_trusted_cleanup import (
+    NativeTrustedCleanupError,
+    persist_native_trusted_cleanup,
+    recover_native_trusted_cleanup,
+)
+from .native_trusted_receipt import (
+    NativeTrustedReceiptError,
+    build_native_trusted_execution_receipt,
+)
+from .native_trusted_streams import (
+    NativeTrustedStreamCapture,
+    NativeTrustedStreamError,
+    NativeTrustedStreamObservation,
+    persist_native_trusted_stream_capture,
+    recover_native_trusted_stream_capture,
+    start_native_trusted_stream_capture,
+)
 from .openevolve_handoff import (
     OpenEvolveHandoffError,
     admit_openevolve_result,
@@ -937,6 +954,11 @@ __all__ = [
     "MultiFileCandidatePipeline",
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
+    "NativeTrustedCleanupError",
+    "NativeTrustedReceiptError",
+    "NativeTrustedStreamCapture",
+    "NativeTrustedStreamError",
+    "NativeTrustedStreamObservation",
     "OffspringOutcome",
     "OpenEvolveHandoffError",
     "OpenEvolveStrategy",
@@ -1127,6 +1149,7 @@ __all__ = [
     "build_holdout_receipt",
     "build_native_producer_bundle_evaluation_receipt",
     "build_native_producer_bundle_execution_receipt",
+    "build_native_trusted_execution_receipt",
     "build_private_input_profile",
     "build_producer_bundle_admission_plan",
     "build_producer_bundle_evaluation_receipt",
@@ -1217,6 +1240,8 @@ __all__ = [
     "parse_trusted_bootstrap_process_registration_handoff",
     "parse_trusted_bootstrap_registration",
     "persist_controlled_producer_bundle_intent",
+    "persist_native_trusted_cleanup",
+    "persist_native_trusted_stream_capture",
     "persist_producer_bundle_prepared_intent",
     "preflight_acceptance_registration",
     "preflight_producer_bundle_publication",
@@ -1236,6 +1261,8 @@ __all__ = [
     "read_candidate_source_files",
     "read_host_request_journal",
     "reconcile_remote_state",
+    "recover_native_trusted_cleanup",
+    "recover_native_trusted_stream_capture",
     "recover_producer_process",
     "remote_cancel",
     "remote_continue_experiment",
@@ -1263,6 +1290,7 @@ __all__ = [
     "stage_candidate_execution_inputs",
     "stage_candidate_inputs",
     "stage_producer_bundle_publication",
+    "start_native_trusted_stream_capture",
     "validate_benchmark_comparison_plan",
     "validate_candidate_execution_admission",
     "validate_candidate_source_bundle",

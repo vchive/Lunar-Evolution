@@ -21,6 +21,11 @@ from .native_bootstrap import (
     native_bootstrap_command,
 )
 from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
+from .native_trusted_cleanup import (
+    NativeTrustedCleanupError,
+    persist_native_trusted_cleanup,
+    recover_native_trusted_cleanup,
+)
 from .native_trusted_streams import (
     NativeTrustedStreamCapture,
     NativeTrustedStreamError,
@@ -98,7 +103,7 @@ _TERMINAL_FIELDS = frozenset({
     "handoff_sha256", "bootstrap_evidence_sha256", "deadline_sha256", "gate_released",
     "target_started", "exit_code", "cleanup_status", "process_status",
     "receipt_scope", "publication_eligible", "previous_receipt_sha256",
-    "terminal_sha256", "stream_capture_sha256",
+    "terminal_sha256", "stream_capture_sha256", "cleanup_sha256",
 })
 _DEADLINE_FIELDS = frozenset({
     "schema_version", "protocol", "launch_id", "journal_id", "launch_sha256",
@@ -130,6 +135,7 @@ def _terminal_receipt(
     evidence_sha256: str, gate_released: bool, target_started: bool,
     exit_code: int | None, cleanup_status: str, deadline_sha256: str,
     cancelled: bool = False, stream_capture_sha256: str | None = None,
+    cleanup_sha256: str | None = None,
 ) -> dict[str, object]:
     if cancelled and exit_code is not None:
         raise NativeTrustedAttemptError("native_trusted_attempt_terminal_invalid")
@@ -155,6 +161,7 @@ def _terminal_receipt(
         "publication_eligible": False,
         "previous_receipt_sha256": registration["registration_sha256"],
         "stream_capture_sha256": stream_capture_sha256,
+        "cleanup_sha256": cleanup_sha256,
     }
     receipt["terminal_sha256"] = _digest_without(receipt, "terminal_sha256")
     return receipt
@@ -552,6 +559,8 @@ def run_native_trusted_attempt(
         target_started = False
         exit_code: int | None = None
         cleanup_status: str | None = None
+        cleanup_sha256: str | None = None
+        cleanup_record: dict[str, object] | None = None
         reason = "native_trusted_attempt_terminal_receipt_missing"
         terminal_sha256: str | None = None
         output_capture_sha256: str | None = None
@@ -786,6 +795,18 @@ def run_native_trusted_attempt(
                     cleanup_status = result.status.value
                     if result.status not in {ProcessCleanupStatus.CLEANED, ProcessCleanupStatus.ALREADY_EXITED}:
                         reason = "native_trusted_attempt_cleanup_unknown"
+                    if registration is not None:
+                        try:
+                            cleanup_record = persist_native_trusted_cleanup(
+                                root,
+                                intent=intent,
+                                registration_sha256=str(registration["registration_sha256"]),
+                                deadline_sha256=deadline_sha256,
+                                cleanup=result,
+                            )
+                            cleanup_sha256 = str(cleanup_record["cleanup_sha256"])
+                        except NativeTrustedCleanupError:
+                            reason = "native_trusted_attempt_cleanup_evidence_unknown"
                 try:
                     process.wait(timeout=max(0.0, deadline - monotonic()))
                 except subprocess.TimeoutExpired:
@@ -878,6 +899,7 @@ def run_native_trusted_attempt(
                     exit_code=None, cleanup_status=cleanup_status,
                     deadline_sha256=deadline_sha256, cancelled=True,
                     stream_capture_sha256=stream_capture_sha256,
+                    cleanup_sha256=cleanup_sha256,
                 )
                 # Receipt publication must consume the caller deadline, but must not
                 # call the cancellation callback again after cleanup has been verified.
@@ -931,6 +953,7 @@ def run_native_trusted_attempt(
                     exit_code=exit_code, cleanup_status=cleanup_status,
                     deadline_sha256=deadline_sha256,
                     stream_capture_sha256=stream_capture_sha256,
+                    cleanup_sha256=cleanup_sha256,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
@@ -1101,6 +1124,7 @@ def recover_native_trusted_attempt(
                 exit_code=None, cleanup_status=str(receipt["cleanup_status"]),
                 deadline_sha256=str(deadline_record["deadline_sha256"]), cancelled=True,
                 stream_capture_sha256=receipt.get("stream_capture_sha256"),
+                cleanup_sha256=receipt.get("cleanup_sha256"),
             )
         else:
             if (
@@ -1121,8 +1145,20 @@ def recover_native_trusted_attempt(
                 exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
                 deadline_sha256=str(deadline_record["deadline_sha256"]),
                 stream_capture_sha256=receipt.get("stream_capture_sha256"),
+                cleanup_sha256=receipt.get("cleanup_sha256"),
             )
         if receipt != expected:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        cleanup_digest = receipt.get("cleanup_sha256")
+        if not isinstance(cleanup_digest, str) or len(cleanup_digest) != 64:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        try:
+            cleanup_record = recover_native_trusted_cleanup(
+                root, intent=intent, terminal=receipt,
+            )
+        except NativeTrustedCleanupError as exc:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
+        if cleanup_record.get("cleanup_sha256") != cleanup_digest:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
         stream_digest = receipt.get("stream_capture_sha256")
         if stream_digest is not None:
