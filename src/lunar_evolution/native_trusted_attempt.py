@@ -39,6 +39,7 @@ from .producer_broker_ipc import (
     ProducerBrokerObservation,
     serve_producer_broker,
 )
+from .producer_bundle_deadline import _boot_id as _producer_boot_id
 from .producer_isolation import ProducerIsolationError, build_producer_isolation_policy
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_process import (
@@ -76,6 +77,8 @@ _TERMINAL_PROTOCOL = "lunar-native-trusted-process-terminal-v1"
 _TERMINAL_NAME = "native-trusted-process-terminal.json"
 _RECOVERY_PROTOCOL = "lunar-native-trusted-process-recovery-v1"
 _RECOVERY_NAME = "native-trusted-process-recovery.json"
+_DEADLINE_PROTOCOL = "lunar-native-trusted-attempt-deadline-v1"
+_DEADLINE_NAME = "native-trusted-attempt-deadline.json"
 _CLEANUP_RESERVE_SECONDS = 0.25
 _TERMINAL_FIELDS = frozenset({
     "schema_version", "protocol", "launch_id", "journal_id", "run_id",
@@ -86,6 +89,10 @@ _TERMINAL_FIELDS = frozenset({
     "target_started", "exit_code", "cleanup_status", "process_status",
     "receipt_scope", "publication_eligible", "previous_receipt_sha256",
     "terminal_sha256",
+})
+_DEADLINE_FIELDS = frozenset({
+    "schema_version", "protocol", "launch_id", "journal_id", "intent_sha256",
+    "started_monotonic", "deadline_monotonic", "boot_id", "deadline_sha256",
 })
 
 
@@ -137,6 +144,108 @@ def _terminal_receipt(
     return receipt
 
 
+def _compose_attempt_budget(
+    intent: ProducerLaunchIntent,
+    monotonic: Callable[[], float],
+    parent_deadline: float | None,
+) -> tuple[float, float]:
+    """Return the attempt start and its single effective monotonic deadline."""
+    started = monotonic()
+    if type(started) not in (int, float) or not math.isfinite(float(started)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    own_deadline = float(started) + float(intent.wall_timeout_seconds)
+    if parent_deadline is None:
+        return float(started), own_deadline
+    if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_parent_deadline_invalid")
+    return float(started), min(own_deadline, float(parent_deadline))
+
+
+def _deadline_record(
+    launch: object,
+    *,
+    started: float,
+    deadline: float,
+) -> dict[str, object]:
+    if type(started) not in (int, float) or not math.isfinite(float(started)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    if type(deadline) not in (int, float) or not math.isfinite(float(deadline)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    if float(deadline) <= float(started):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    try:
+        boot_id = _producer_boot_id()
+    except Exception as exc:
+        raise NativeTrustedAttemptError("native_trusted_attempt_boot_identity_unknown") from exc
+    record: dict[str, object] = {
+        "schema_version": "1", "protocol": _DEADLINE_PROTOCOL,
+        "launch_id": launch.launch_id, "journal_id": launch.journal_id,
+        "intent_sha256": launch.intent_sha256,
+        "started_monotonic": float(started), "deadline_monotonic": float(deadline),
+        "boot_id": boot_id,
+    }
+    record["deadline_sha256"] = _digest_without(record, "deadline_sha256")
+    return record
+
+
+def _persist_deadline(
+    batch: Path, launch: object, *, started: float, deadline: float,
+) -> dict[str, object]:
+    record = _deadline_record(launch, started=started, deadline=deadline)
+    try:
+        _atomic_json(batch / _DEADLINE_NAME, record, exclusive=True)
+        stored = _read_durable_json(
+            batch / _DEADLINE_NAME, code="native_trusted_attempt_deadline_write_unknown",
+        )
+    except ProducerProcessError as exc:
+        if exc.code == "producer_process_attestation_replayed":
+            # A retained deadline is evidence that this launch already entered the
+            # admission path. Never replace it with a newly allocated budget.
+            raise NativeTrustedAttemptError("native_trusted_attempt_claim_failed") from exc
+        raise NativeTrustedAttemptError("native_trusted_attempt_deadline_write_unknown") from exc
+    if stored != record:
+        raise NativeTrustedAttemptError("native_trusted_attempt_deadline_write_unknown")
+    return record
+
+
+def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str, object]:
+    try:
+        record = _read_durable_json(
+            batch / _DEADLINE_NAME, code="native_trusted_recovery_deadline_invalid",
+        )
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
+    if set(record) != _DEADLINE_FIELDS:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    if (
+        record.get("schema_version") != "1"
+        or record.get("protocol") != _DEADLINE_PROTOCOL
+        or record.get("launch_id") != registration.get("launch_id")
+        or record.get("journal_id") != registration.get("journal_id")
+        or record.get("intent_sha256") != registration.get("intent_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    started = record.get("started_monotonic")
+    deadline = record.get("deadline_monotonic")
+    if (
+        type(started) not in (int, float)
+        or type(deadline) not in (int, float)
+        or not math.isfinite(float(started))
+        or not math.isfinite(float(deadline))
+        or float(deadline) <= float(started)
+        or not isinstance(record.get("boot_id"), str)
+        or record.get("deadline_sha256") != _digest_without(record, "deadline_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    try:
+        current_boot_id = _producer_boot_id()
+    except Exception as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
+    if record["boot_id"] != current_boot_id:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    return record
+
+
 def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> dict[str, object] | None:
     path = batch / _RECOVERY_NAME
     try:
@@ -182,6 +291,7 @@ def _cleanup_recovered_attempt(
 ) -> dict[str, object]:
     if _read_recovery_receipt(batch, registration) is not None:
         raise NativeTrustedAttemptError("native_trusted_recovery_already_recorded")
+    deadline_record = _read_deadline(batch, registration)
     pid = registration["pid"]
     pgid = registration["pgid"]
     owner_identity = registration["owner_identity"]
@@ -211,7 +321,11 @@ def _cleanup_recovered_attempt(
 
     result = cleanup_registered_process(
         RegisteredProcess(pid, pgid, owner_check=owned, label=str(registration["launch_id"])),
-        grace_seconds=0.25,
+        # Recovery must consume the original attempt budget.  Passing the retained
+        # absolute deadline prevents a post-crash cleanup from receiving a fresh grace
+        # window after the original wall budget has expired.
+        grace_seconds=_CLEANUP_RESERVE_SECONDS,
+        deadline=float(deadline_record["deadline_monotonic"]),
     )
     receipt: dict[str, object] = {
         "schema_version": "1", "protocol": _RECOVERY_PROTOCOL,
@@ -271,15 +385,7 @@ def _compose_parent_deadline(
     parent_deadline: float | None,
 ) -> float:
     """Compose the attempt budget with an optional caller-owned deadline."""
-    started = monotonic()
-    if type(started) not in (int, float) or not math.isfinite(float(started)):
-        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
-    own_deadline = float(started) + float(intent.wall_timeout_seconds)
-    if parent_deadline is None:
-        return own_deadline
-    if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
-        raise NativeTrustedAttemptError("native_trusted_attempt_parent_deadline_invalid")
-    return min(own_deadline, float(parent_deadline))
+    return _compose_attempt_budget(intent, monotonic, parent_deadline)[1]
 
 
 def _wait_event(
@@ -399,7 +505,7 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
     if _observe_cancellation(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
-    deadline = _compose_parent_deadline(intent, monotonic, parent_deadline)
+    started_monotonic, deadline = _compose_attempt_budget(intent, monotonic, parent_deadline)
     _remaining(deadline, monotonic, cancelled)
     try:
         installed = load_native_bootstrap_artifact(
@@ -437,6 +543,9 @@ def run_native_trusted_attempt(
         broker_ready: threading.Event | None = None
         broker_state: dict[str, object] = {}
         try:
+            _persist_deadline(
+                batch, launch, started=started_monotonic, deadline=deadline,
+            )
             consume_trusted_bootstrap_attestation(
                 root, producer_root=target_root, intent=intent, attestation=attestation,
                 descriptor=installed.descriptor, launch=launch,
@@ -620,6 +729,11 @@ def run_native_trusted_attempt(
                 TrustedBootstrapBindingError, NativeBootstrapError, ProducerIsolationError,
                 ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
             if not claimed:
+                if isinstance(exc, NativeTrustedAttemptError) and exc.code in {
+                    "native_trusted_attempt_deadline_write_unknown",
+                    "native_trusted_attempt_boot_identity_unknown",
+                }:
+                    raise
                 raise NativeTrustedAttemptError("native_trusted_attempt_claim_failed") from exc
             reason = getattr(exc, "code", "native_trusted_attempt_unknown")
             cancellation_requested = reason == "native_trusted_attempt_cancelled"

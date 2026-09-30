@@ -141,6 +141,13 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
     assert terminal["process_status"] == "exited_zero"
     assert terminal["receipt_scope"] == "process_only"
     assert terminal["publication_eligible"] is False
+    deadline_record = json.loads(
+        (batch / "native-trusted-attempt-deadline.json").read_bytes()
+    )
+    assert deadline_record["launch_id"] == intent.launch_id
+    assert deadline_record["journal_id"] == intent.journal_id
+    assert deadline_record["intent_sha256"] == intent.intent_sha256
+    assert deadline_record["deadline_monotonic"] - deadline_record["started_monotonic"] == intent.wall_timeout_seconds
     assert recover_native_trusted_attempt(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
     ) == terminal
@@ -574,6 +581,14 @@ def test_explicit_recovery_cleans_live_registered_native_group(tmp_path: Path, m
     assert result.status == "recovery_required"
     assert result.terminal_sha256 is None
     assert not (batch / "native-trusted-process-terminal.json").exists()
+    cleanup_deadlines: list[float | None] = []
+    original_recovery_cleanup = runner.cleanup_registered_process
+
+    def observed_recovery_cleanup(*args, **kwargs):
+        cleanup_deadlines.append(kwargs.get("deadline"))
+        return original_recovery_cleanup(*args, **kwargs)
+
+    monkeypatch.setattr(runner, "cleanup_registered_process", observed_recovery_cleanup)
     recovered = recover_native_trusted_attempt(
         workspace, intent=intent, attestation=attestation, artifact=artifact, cleanup=True,
     )
@@ -581,8 +596,58 @@ def test_explicit_recovery_cleans_live_registered_native_group(tmp_path: Path, m
     assert recovered["term_sent"] is True
     assert recovered["cleanup_status"] in {"cleaned", "cleanup_unverified", "ownership_lost"}
     assert recovered["pid"] == recovered["pgid"]
+    assert cleanup_deadlines and cleanup_deadlines[0] is not None
+    deadline_record = json.loads(
+        (batch / "native-trusted-attempt-deadline.json").read_bytes()
+    )
+    assert cleanup_deadlines[0] == deadline_record["deadline_monotonic"]
     try:
         os.waitpid(recovered["pid"], 0)
+    except ChildProcessError:
+        pass
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_recovery_rejects_tampered_native_attempt_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, timeout=5, target_sleep=0,
+    )
+
+    original_atomic_json = runner._atomic_json
+
+    def reject_terminal(path, value, *, exclusive=False):
+        if path.name == "native-trusted-process-terminal.json":
+            raise ProducerProcessError("producer_process_receipt_write_unknown")
+        return original_atomic_json(path, value, exclusive=exclusive)
+
+    # Leave a registered attempt that requires explicit recovery.
+    monkeypatch.setattr(runner, "_atomic_json", reject_terminal)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    assert result.reason == "native_trusted_attempt_terminal_write_unknown"
+    deadline_path = batch / "native-trusted-attempt-deadline.json"
+    deadline = json.loads(deadline_path.read_bytes())
+    deadline["deadline_monotonic"] = deadline["started_monotonic"]
+    deadline["deadline_sha256"] = runner._digest_without(deadline, "deadline_sha256")
+    deadline_path.write_text(json.dumps(deadline, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        recover_native_trusted_attempt(
+            workspace, intent=intent, attestation=attestation, artifact=artifact, cleanup=True,
+        )
+    assert failure.value.code == "native_trusted_recovery_deadline_invalid"
+    registration = json.loads((batch / "process-registration.json").read_bytes())
+    try:
+        os.killpg(registration["pid"], 9)
+    except ProcessLookupError:
+        pass
+    try:
+        os.waitpid(registration["pid"], 0)
     except ChildProcessError:
         pass
 

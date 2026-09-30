@@ -48,6 +48,12 @@ NativeTrustedAttemptControl (runtime input, not persisted as identity)
   cancelled?            # process-local callback returning bool
   parent_deadline?      # absolute monotonic timestamp in the caller's clock domain
   effective_deadline    # min(intent_deadline, parent_deadline when supplied)
+
+The effective budget is retained before attestation consumption in a separate
+`native-trusted-attempt-deadline.json` record. It contains the launch/journal/intent bindings,
+the monotonic start and absolute deadline, the current OS boot identity, and a self-digest. The
+record is exclusive and immutable for the attempt. Recovery accepts it only on the same boot and
+passes the retained absolute deadline to cleanup; it never allocates a replacement deadline.
 ```
 
 The effective deadline is consumed by every native control/frame wait, process wait, cleanup

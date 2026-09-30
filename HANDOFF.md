@@ -1,5 +1,16 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-30 Native trusted durable attempt deadline
+
+native trusted attempt 现在在消费 attestation 前，把本次尝试的有效 monotonic 起点和
+`min(intent deadline, parent deadline)` 写入同一 batch 的
+`native-trusted-attempt-deadline.json`，带当前 OS boot id 和自摘要。文件采用独占写入，
+重复 launch 不会分配新的预算；恢复时必须验证 launch/intent/boot/摘要，恢复 cleanup
+把原始绝对 deadline 传给 owner-checked cleanup，因此崩溃后的显式 recovery 不会刷新或扩大
+原始墙钟预算。新增 focused 回归覆盖 sidecar 绑定、恢复 deadline 传递、篡改拒绝；native
+trusted attempt suite **27 passed**。这仍是 Feature 158 T158-04 的 supporting slice，
+尚未接入正式 Feature 156 execution receipt、发布事务或 scheduler。
+
 ## 2026-09-30 Native trusted control propagation audit
 
 Feature 156 的 cooperative runner 已有 `cancelled` 回调和同一 monotonic 时钟域的

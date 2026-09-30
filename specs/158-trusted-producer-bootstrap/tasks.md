@@ -35,6 +35,13 @@
   cancelled terminal. This closes the local cancellation evidence slice but not the formal
   Feature 156 execution receipt, broker, or post-crash integration required by T158-04.
 
+  The attempt now persists `native-trusted-attempt-deadline.json` before attestation consumption.
+  It binds the launch and intent, records the effective monotonic start/deadline and current boot
+  identity, and refuses to replace an existing sidecar. Explicit post-crash cleanup validates this
+  record and passes its original absolute deadline into owner-checked cleanup, so recovery cannot
+  obtain a fresh grace window. This closes the durable-budget slice only; cross-boot recovery and
+  the formal Feature 156 execution receipt remain open.
+
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This
