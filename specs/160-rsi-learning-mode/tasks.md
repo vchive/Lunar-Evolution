@@ -28,6 +28,8 @@
   - [ ] 阶段 2：diversity/failure-boundary curriculum policy（仍待实现）。
 - [x] T160-14 增加独立 memory admission governance 控制面：append-only admission history、CAS 状态转移、verifier/pass、holdout/baseline regression gate、compatibility drift 和 revoke fail-closed；不修改只读 RSIMemoryStore。
 - [x] T160-15 统一 provider-free solver adapter contract：生命周期、request pins、预算/deadline、terminal status、recovery 和 ownership receipt；OpenEvolve/Shinka 仅声明 fixture capability，不启动真实项目。
+- [x] T160-16 增加 provider-free frozen-memory transfer regression 窄版本：no/old/current memory 对照、seen/unseen 多目标、重复试验、污染检查和 promotion evidence；真实 evaluator/controller 自动触发仍待接线。
+- [x] T160-17 增加 provider-free failure-driven curriculum 窄版本：failure cluster、capability coverage、hard-negative/boundary probe、重复抑制、预算审计和 canonical ledger replay；默认 controller 接线和复杂 bandit/RL 后置。
 
 ## 本轮边界
 
@@ -35,5 +37,5 @@
 - 没有完整 plan 的旧 checkpoint 只恢复已存在的证据，不猜测缺失的 BRS wave 或创建后续 episode。
 - 本轮验证只使用本地 fixture。OpenEvolve/Shinka/native 的 fixture ID 和 receipt 协议通过，不等于真实 producer campaign 或模型效果已经验收。
 - `RSIRunBudget` 的 depth/cycle API 不代表已实现 solver→RSI 嵌套调度；当前 DRS/BRS 是 depth 0。真实递归、嵌套资源预算与 token/成本统计保留在后续任务。
-- T160-12 的真实 Actor、clean-room verifier、真实 producer lifecycle/adapter 接线、memory governance、holdout/transfer regression 和复杂 curriculum 仍按阶段报告独立推进；不增加分布式平台、自修改 Agent 或模型训练实现范围。
+- T160-12 的真实 Actor、官方 evaluator、真实 producer lifecycle/adapter 接线、holdout/transfer regression 的 controller 自动接线和复杂 curriculum 仍按阶段报告独立推进；不增加分布式平台、自修改 Agent 或模型训练实现范围。
 - 专用 callback 恢复接口已具备；真实 worker ownership/heartbeat/workspace 检查和旧不确定记录的迁移仍有开放边界，不能由本地矩阵推导生产恢复或分布式 exactly-once。

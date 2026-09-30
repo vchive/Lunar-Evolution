@@ -1,10 +1,10 @@
 # Validation: RSI learning mode
 
-This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **467 tests**,
+This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **478 tests**,
 with no failures or skips (`/tmp/lunar-rsi-next.xml`). The run includes DRS/BRS callback
 crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery and append-only
 unknown receipt failure settlement. Ruff, compileall and `git diff --check` passed.
-An isolated export of the staged source also passed all **467 tests**
+An isolated export of the staged source also passed all **478 tests**
 (`/tmp/lunar-rsi-staged.xml`), Ruff, compilation and an import check of every public API
 export. Unrelated, uncommitted producer changes were absent from that source snapshot.
 A passing fixture matrix is not evidence that every external worker or callback recovery path has
@@ -115,7 +115,9 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | Transfer callback/receipt reconciliation and atomic failure settlement | `test_rsi_transfer_reconcile.py` |
 | Clean-room source/dependency reopen, evaluator identity and contamination gates | `test_rsi_cleanroom.py` |
 | Memory admission lifecycle, CAS transitions and promotion/revocation gates | `test_rsi_memory_governance.py` |
+| Provider-free no/old/current transfer regression, seen/unseen split, multi-target holdout and contamination gate | `test_rsi_transfer_regression.py` |
 | Unified solver adapter lifecycle, budget/deadline and terminal receipt contract | `test_rsi_adapter_contract.py` |
+| Failure clustering, capability coverage, hard-negative selection and curriculum replay | `test_rsi_curriculum.py` |
 | Existing local protocol, actor, CLI and backend fixtures | Remaining `test_rsi_*.py` tests |
 
 The CLI diagnostics only use local fixture solver IDs and persist to `rsi.sqlite3`; they do not

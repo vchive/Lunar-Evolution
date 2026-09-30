@@ -124,7 +124,9 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 
 ### B3. Transfer regression suite
 
-已有 frozen-memory transfer test，但主要是单次冻结测试，不能证明跨任务能力提升或避免污染。
+已增加 provider-free `TransferRegressionSuite`：对 no-memory/old-memory/current-memory 三个冻结 arm
+执行 seen/unseen 多目标、重复试验、输入/任务/记忆污染检查，并生成可喂给 promotion gate 的
+holdout/baseline evidence。真实 evaluator、跨任务数据集和 controller 自动触发仍未接通。
 
 最小范围：no-memory、old-memory、current-memory 对照；seen/unseen task split；多目标 holdout；repeated runs；task-family coverage；contamination check；promotion 后自动执行最小回归套件。
 
@@ -132,7 +134,9 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 
 ### B4. Curriculum 从固定策略升级为可审计的失败驱动策略
 
-DeterministicCurriculum 能按固定输入选择 practice，但没有 capability coverage、failure-boundary mining、hard negative、重复抑制和探索/利用平衡。
+已增加 provider-free `FailureDrivenCurriculum` 窄版本：有界 failure ontology、内容寻址 cluster、
+capability/prerequisite coverage、hard-negative/boundary probe、重复抑制、budget/novelty/reason
+审计和 canonical ledger replay。它保持确定性，不包含 bandit/RL，也尚未由 controller 默认启用。
 
 最小范围：能力、前置能力、可观察失败、practice task、transfer task 的基本 ontology；失败模式聚类和去重；任务选择记录 reason、coverage、novelty 和 budget；先保持确定性、可重放，不引入复杂 bandit/RL。
 
@@ -211,7 +215,10 @@ DeterministicCurriculum 能按固定输入选择 practice，但没有 capability
 
 ### 阶段 2：可信学习闭环（P1）
 
-当前已完成 provider-free clean-room verifier、provenance/污染检测的窄版本、memory promotion 状态机和统一 adapter contract。剩余顺序为：接入真实 evaluator/Actor、holdout transfer regression、rollback/quarantine 的 controller 接线，以及可重放失败驱动 curriculum。
+当前已完成 provider-free clean-room verifier、provenance/污染检测、transfer regression 窄版本、
+memory promotion 状态机、失败驱动 curriculum 窄版本和统一 adapter contract。剩余顺序为：接入真实
+evaluator/Actor、holdout regression 的 controller 接线、rollback/quarantine 自动触发，以及真实
+process adapter/campaign。
 
 出口：错误或伪造 receipt 无法进入 active memory；局部成功不能冒充迁移能力。
 
@@ -241,7 +248,7 @@ DeterministicCurriculum 能按固定输入选择 practice，但没有 capability
 - 164-rsi-cleanroom-verifier（provider-free MVP 已完成，真实 evaluator 接线待做）
 - 165-rsi-budget-depth-termination
 - 166-rsi-memory-promotion-transfer（promotion control plane 已完成，transfer regression 待做）
-- 167-rsi-curriculum-failure-driven
+- 167-rsi-curriculum-failure-driven（provider-free 窄版本已完成，controller 默认接线待做）
 - 168-solver-adapter-lifecycle（provider-free contract 已完成，真实 process adapter 待做）
 - 169-producer-real-campaign-closure
 
