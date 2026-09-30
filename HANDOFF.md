@@ -1,5 +1,32 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-30 RSI 持久计划续跑与中断回归
+
+继续 Feature 160 阶段 1，纠正此前把基础 resume/replay 等同于完整可恢复控制流的结论。
+DRS/BRS 现在共用持久 v2 plan、launch intent、决策、执行证据、memory 和预算 checkpoint；
+首次启动及恢复持有同一运行锁。已知结果复用后可继续原计划中尚未发起的 episode；缺少结果
+的已发起请求保持隔离，不重复调用 solver。BRS 整波冻结父快照、统一预留预算并按 ordinal 合并。
+
+显式 unknown→failed/cancelled 对账可恢复控制流，原始 unknown 或缺失的 result 保持原样；
+run 对账绑定 episode journal 并消耗持久 unknown-retry 预算。恢复重算当前组件配置/代码指纹，
+拒绝旧 observed 指纹掩盖漂移，检查预算历史不能回退和 execution 各层身份一致性。
+已完成 journal 在 run head 更新前中断时，恢复不会因后来超时而改判。
+
+Frozen transfer 使用独立 namespace、锁和 journal，复用已落盘结果、验证/判定与收据；
+宽松 judge 不能让失败或 unknown 通过。DRS/BRS 重复 CLI 运行复用学习和 transfer 结果。
+本地 RSI 组合 **289 passed / 0 failed**，JUnit：`/tmp/lunar-rsi-final-combined02.xml`；
+Ruff、compileall、diff check 通过。没有运行真实模型、WebAgent、远程 evaluator 或 producer campaign。
+
+独立导出暂存区源码再次 **289 passed**（`/tmp/lunar-rsi-index-validation.xml`），公开 API
+全部可导入。检查发现旧提交 `38086ac` 提前导出了未提交的 producer 模块；本轮提交修正
+该导出清单，工作区中的 producer 文件及其新导出保持原样，作为未提交工作留给对应开发线。
+
+仍开放：真实进程 ownership/heartbeat/cleanup 与 unknown 观测；transfer callback 已启动但结果
+未落盘时的显式对账入口、已发布 unknown transfer 收据的后续处置；DRS/BRS 本地确定性
+verifier/curriculum/judge 的调用内部中断与真实外部 callback 不重复执行保证。clean-room
+verifier、memory governance、holdout 收益回归、真实 solver adapter、嵌套递归与用量/成本统计
+仍按阶段报告推进。阶段 1 不笼统标记全部完成。本轮只提交 RSI 文件，保留未提交的 producer 工作。
+
 ## 2026-09-28 开源 producer 接线与发布边界
 
 “外部 producer”仅指 OpenEvolve、ShinkaEvolve 等开源演化器，不存在需要用户提供的私有

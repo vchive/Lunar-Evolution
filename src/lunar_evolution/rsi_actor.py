@@ -20,6 +20,7 @@ from .agent_loop import AgentLoopTimeout
 from .automatic_solve_lifecycle import SolveExecutionCancelled
 from .candidate_evaluation_spec import canonical_json
 from .rsi_gateway import SolverRequest, SolverResult
+from .rsi_identity import component_fingerprint
 from .rsi_learning import RSILearningError, TraceEvent
 from .runtime import RuntimeResult
 
@@ -85,13 +86,15 @@ class AgentLoopActorGateway:
         self.actor_name = actor_name
 
     def rsi_fingerprint_config(self) -> dict[str, Any]:
-        """Expose immutable actor wiring while excluding runtime factories and process state."""
+        """Bind actor wiring and configured callables without constructing a runtime."""
 
         return {
             "actor_name": self.actor_name,
+            "workspace_root": str(self.workspace_root),
             "candidate_paths": list(self.candidate_paths),
             "dependency_paths": list(self.dependency_paths),
-            "receipt_builder": bool(self.receipt_builder),
+            "runtime_factory": component_fingerprint(self.runtime_factory),
+            "receipt_builder": component_fingerprint(self.receipt_builder) if self.receipt_builder is not None else None,
         }
 
     def _episode_workspace(self, episode_id: str) -> Path:

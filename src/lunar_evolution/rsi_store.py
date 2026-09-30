@@ -56,7 +56,7 @@ _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
 _EPISODE_TRANSITIONS: dict[str, frozenset[str]] = {
     "planned": frozenset({"planned", "running", "cancelled", "abandoned", "unknown"}),
     "running": frozenset({"running", "completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"}),
-    "unknown": frozenset({"unknown", "completed", "failed", "cancelled"}),
+    "unknown": frozenset({"unknown", "completed", "failed", "timed_out", "abandoned", "cancelled"}),
     "completed": frozenset({"completed"}),
     "failed": frozenset({"failed"}),
     "timed_out": frozenset({"timed_out"}),
@@ -137,7 +137,7 @@ class RSILedger:
 
     def __init__(self, database: str | Path) -> None:
         self.database = Path(database).expanduser().resolve()
-        self._controller_guards: dict[str, tuple[int, int, Path, str]] = {}
+        self._controller_guards: dict[str, tuple[int, int, Path, str, int]] = {}
         self._controller_guards_lock = threading.RLock()
         self.initialize()
 
@@ -214,7 +214,7 @@ class RSILedger:
             except BlockingIOError as exc:
                 raise RSILearningError("rsi_controller_busy") from exc
             with self._controller_guards_lock:
-                self._controller_guards[run_id] = (directory_fd, descriptor, lock_dir, name)
+                self._controller_guards[run_id] = (directory_fd, descriptor, lock_dir, name, threading.get_ident())
             try:
                 self._assert_controller_lock(run_id)
                 yield
@@ -229,12 +229,22 @@ class RSILedger:
                 os.close(descriptor)
             os.close(directory_fd)
 
+    def controller_lock_held(self, run_id: str) -> bool:
+        """Whether this thread owns the validated per-run controller lock."""
+        _id(run_id, name="run_id")
+        with self._controller_guards_lock:
+            guard = self._controller_guards.get(run_id)
+            if guard is None or guard[4] != threading.get_ident():
+                return False
+        self._assert_controller_lock(run_id)
+        return True
+
     def _assert_controller_lock(self, run_id: str) -> None:
         with self._controller_guards_lock:
             guard = self._controller_guards.get(run_id)
-        if guard is None:
+        if guard is None or guard[4] != threading.get_ident():
             raise RSILearningError("rsi_controller_lock_required")
-        directory_fd, descriptor, lock_dir, name = guard
+        directory_fd, descriptor, lock_dir, name, _owner = guard
         try:
             held = os.fstat(descriptor)
             named = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
@@ -445,16 +455,35 @@ class RSILedger:
             )
 
     def create_transfer_receipt(self, receipt: TransferReceipt) -> RSIRecord:
-        """Persist a frozen-memory transfer result without allowing later mutation."""
+        """Persist a frozen-memory transfer receipt with exact-byte replay semantics."""
         if not isinstance(receipt, TransferReceipt):
             raise RSILearningError("rsi_transfer_receipt_invalid")
-        return self._create(
-            logical_id=f"transfer:{receipt.run_id}:{receipt.target_id}",
-            kind="transfer",
-            state=receipt.status,
-            request_sha256=receipt.solver_fingerprint,
-            payload=receipt.to_dict(),
-        )
+        logical_id = f"transfer:{receipt.run_id}:{receipt.target_id}"
+        payload = receipt.to_dict()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._head(connection, logical_id)
+            if existing is not None:
+                if (
+                    existing.kind != "transfer"
+                    or existing.state != receipt.status
+                    or existing.request_sha256 != receipt.solver_fingerprint
+                    or existing.payload != payload
+                ):
+                    raise RSILearningError("rsi_transfer_receipt_conflict")
+                return existing
+            created_at = utc_now()
+            digest = self._record_digest(
+                logical_id=logical_id, revision=0, kind="transfer", state=receipt.status,
+                request_sha256=receipt.solver_fingerprint, parent_record_sha256=None, payload=payload,
+            )
+            connection.execute(
+                "INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (logical_id, 0, "transfer", receipt.status, receipt.solver_fingerprint, None,
+                 json.dumps(payload, sort_keys=True), digest, created_at),
+            )
+            return RSIRecord(logical_id, 0, "transfer", receipt.status, receipt.solver_fingerprint,
+                             None, payload, digest, created_at)
 
     def save_episode_result(self, request: SolverRequest, result: SolverResult) -> None:
         """Persist one immutable, request-bound solver result exactly once.
@@ -502,7 +531,7 @@ class RSILedger:
         _id(episode_id, name="episode_id")
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT request_payload, result_payload, result_sha256 FROM rsi_episode_results "
+                "SELECT episode_id, request_sha256, request_payload, result_payload, result_sha256 FROM rsi_episode_results "
                 "WHERE episode_id = ?", (episode_id,)
             ).fetchone()
         if row is None:
@@ -514,7 +543,13 @@ class RSILedger:
             if isinstance(exc, RSILearningError):
                 raise RSILearningError("rsi_episode_result_corrupt") from exc
             raise RSILearningError("rsi_episode_result_corrupt") from exc
-        if result.episode_id != request.episode_id or result.request_sha256 != request.digest():
+        if (
+            row["episode_id"] != episode_id
+            or request.episode_id != episode_id
+            or result.episode_id != episode_id
+            or row["request_sha256"] != request.digest()
+            or result.request_sha256 != request.digest()
+        ):
             raise RSILearningError("rsi_episode_result_corrupt")
         if hashlib.sha256(canonical_json(result.to_dict(), maximum=128 * 1024)).hexdigest() != row["result_sha256"]:
             raise RSILearningError("rsi_episode_result_corrupt")
@@ -574,14 +609,17 @@ class RSILedger:
         episode: PracticeEpisode,
         *,
         expected_record_sha256: str | None = None,
-        allow_unknown_completed: bool = False,
+        allow_unknown_settlement: bool = False,
     ) -> RSIRecord:
         record = self._episode_payload(episode)
         head = self._head(connection, episode.episode_id)
         if head is None:
             raise RSILearningError("rsi_record_missing")
         self._check_episode_head(head, episode)
-        if head.state == "unknown" and episode.status == "completed" and not allow_unknown_completed:
+        if (
+            head.state == "unknown" and episode.status != "unknown"
+            and not allow_unknown_settlement
+        ):
             raise RSILearningError("rsi_unknown_reconcile_required")
         expected = expected_record_sha256 or head.record_sha256
         _digest(expected, name="expected_record_sha256")
@@ -767,6 +805,92 @@ class RSILedger:
             )
             return RSIRecord(logical_id, revision, head.kind, state, head.request_sha256, head.record_sha256, merged, record_sha256, created_at)
 
+    def reconcile_run(
+        self,
+        run_id: str,
+        *,
+        expected_record_sha256: str,
+        evidence: Mapping[str, Any],
+    ) -> RSIRecord:
+        """Resume an unknown run only after evidence has settled its episode workers.
+
+        The controller lock prevents two recovery controllers from dispatching work.  Episode
+        heads and their verified reconciliation journal digests are bound into the new run
+        revision and rechecked under the SQLite write transaction before advancing the CAS head.
+        """
+        _id(run_id, name="run_id")
+        _digest(expected_record_sha256, name="expected_record_sha256")
+        self._assert_controller_lock(run_id)
+        clean_evidence = _payload(evidence)
+        if not isinstance(clean_evidence.get("reconciliation"), Mapping) or not clean_evidence["reconciliation"]:
+            raise RSILearningError("rsi_unknown_reconcile_evidence_required")
+        episode_ids = self.episode_ids_for_run(run_id)
+        if not episode_ids:
+            raise RSILearningError("rsi_unknown_reconcile_required")
+        bindings: list[dict[str, Any]] = []
+        has_reconciliation = False
+        for episode_id in episode_ids:
+            history = self.history(episode_id)
+            if not history or not self._is_canonical_episode(history[-1]):
+                raise RSILearningError("rsi_unknown_reconcile_required")
+            head = history[-1]
+            if head.state not in {"completed", "failed", "timed_out", "abandoned", "cancelled"}:
+                raise RSILearningError("rsi_unknown_reconcile_required")
+            journal = self.episode_reconciliation(episode_id)
+            if any(item.state == "unknown" for item in history) and not journal:
+                raise RSILearningError("rsi_unknown_reconcile_evidence_required")
+            if journal:
+                # The most recent reconciliation must settle, rather than merely quarantine, the
+                # episode.  Later verifier attachment is safe because it preserves that lineage.
+                if journal[-1]["worker_state"] == "unknown":
+                    raise RSILearningError("rsi_unknown_reconcile_required")
+                has_reconciliation = True
+            bindings.append({
+                "episode_id": episode_id,
+                "record_sha256": head.record_sha256,
+                "reconciliation_sha256": journal[-1]["journal_sha256"] if journal else None,
+            })
+        if not has_reconciliation:
+            raise RSILearningError("rsi_unknown_reconcile_evidence_required")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._assert_controller_lock(run_id)
+            head = self._head(connection, run_id)
+            if head is None or head.kind != "run":
+                raise RSILearningError("rsi_run_missing")
+            if head.record_sha256 != expected_record_sha256:
+                raise RSILearningError("rsi_record_parent_conflict")
+            if head.state != "unknown":
+                raise RSILearningError("rsi_unknown_reconcile_state_invalid")
+            current_ids = []
+            for row in connection.execute("SELECT DISTINCT logical_id FROM rsi_records WHERE kind = 'episode'"):
+                current = self._head(connection, row["logical_id"])
+                if current is not None and current.payload.get("run_id") == run_id:
+                    current_ids.append(current.logical_id)
+            if tuple(sorted(current_ids)) != tuple(sorted(episode_ids)):
+                raise RSILearningError("rsi_record_parent_conflict")
+            for binding in bindings:
+                current = self._head(connection, binding["episode_id"])
+                if current is None or current.record_sha256 != binding["record_sha256"]:
+                    raise RSILearningError("rsi_record_parent_conflict")
+            payload = {**head.payload, "run_reconciliation": {
+                "evidence": clean_evidence, "episodes": bindings,
+            }}
+            revision = head.revision + 1
+            created_at = utc_now()
+            digest = self._record_digest(
+                logical_id=run_id, revision=revision, kind="run", state="running",
+                request_sha256=head.request_sha256, parent_record_sha256=head.record_sha256,
+                payload=payload,
+            )
+            connection.execute(
+                "INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, revision, "run", "running", head.request_sha256, head.record_sha256,
+                 json.dumps(payload, sort_keys=True), digest, created_at),
+            )
+            return RSIRecord(run_id, revision, "run", "running", head.request_sha256,
+                             head.record_sha256, payload, digest, created_at)
+
     def reconcile_worker(
         self, episode_id: str, *, worker_state: WorkerState, expected_record_sha256: str,
         launched: bool = True, payload_patch: Mapping[str, Any] | None = None,
@@ -826,23 +950,29 @@ class RSILedger:
         if not isinstance(reason, Mapping):
             raise RSILearningError("rsi_unknown_reconcile_evidence_required")
         if result is not None:
-            if worker_state != "completed":
+            if worker_state != result.status or worker_state not in {
+                "completed", "failed", "timed_out", "abandoned", "cancelled", "unknown",
+            }:
                 raise RSILearningError("rsi_episode_result_state_mismatch")
             request_result = self.episode_result(episode_id)
             if request_result is None:
                 raise RSILearningError("rsi_episode_result_missing")
             saved_request, saved_result = request_result
-            if (
-                saved_request.digest() != episode.request_sha256
-                or saved_result.to_dict() != result.to_dict()
-                or saved_result.status != "completed"
-            ):
+            if saved_result.to_dict() != result.to_dict():
                 raise RSILearningError("rsi_episode_result_conflict")
-            if saved_request.episode_id != episode_id:
+            if (
+                saved_request.episode_id != episode_id
+                or saved_request.digest() != episode.request_sha256
+                or saved_request.contract_sha256 != episode.contract_sha256
+                or saved_request.evaluator_sha256 != episode.evaluator_sha256
+                or saved_request.environment_sha256 != episode.environment_sha256
+                or saved_request.memory_snapshot_sha256 != episode.memory_snapshot_sha256
+                or saved_request.solver_id != episode.solver_id
+            ):
                 raise RSILearningError("rsi_episode_result_request_mismatch")
             settled = replace(
                 episode,
-                status="completed",
+                status=saved_result.status,
                 verifier=None,
                 request_sha256=saved_request.digest(),
                 candidate_receipt_sha256=saved_result.candidate_receipt_sha256,
@@ -853,9 +983,14 @@ class RSILedger:
                 dependency_sha256=saved_result.dependency_sha256,
                 trace_events=saved_result.trace_events,
                 actor_fingerprint=saved_result.actor_fingerprint,
-                terminal_reason=None,
+                solver_fingerprint=hashlib.sha256(canonical_json({
+                    "solver_id": saved_request.solver_id, "settings": saved_request.solver_settings,
+                })).hexdigest(),
+                terminal_reason=(None if saved_result.status == "completed" else
+                                 saved_result.terminal_reason or f"reconciled_worker_{worker_state}"),
                 previous_record_sha256=episode.digest(),
             )
+            object.__setattr__(settled, "_wire_extension_fields", None)
             settled._validate_durable_state()
         else:
             if worker_state == "completed":
@@ -863,17 +998,11 @@ class RSILedger:
             if worker_state == "unknown":
                 if episode.status != "running":
                     raise RSILearningError("rsi_unknown_reconcile_state_invalid")
-                settled = episode.transition(
-                    "unknown",
-                    terminal_reason="reconciled_worker_unknown",
-                )
+                settled = episode.transition("unknown", terminal_reason="reconciled_worker_unknown")
             else:
                 if worker_state not in {"failed", "timed_out", "abandoned", "cancelled"}:
                     raise RSILearningError("rsi_unknown_reconcile_state_invalid")
-                settled = episode.transition(
-                    state,
-                    terminal_reason=f"reconciled_worker_{worker_state}",
-                )
+                settled = episode.transition(state, terminal_reason=f"reconciled_worker_{worker_state}")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             head = self._head(connection, episode_id)
@@ -908,7 +1037,7 @@ class RSILedger:
             )
             return self._append_episode_record_tx(
                 connection, settled, expected_record_sha256=expected_record_sha256,
-                allow_unknown_completed=True,
+                allow_unknown_settlement=True,
             )
 
 

@@ -11,6 +11,10 @@ their executable source is generated or otherwise unavailable to :func:`inspect.
 Without an explicit configuration hook, mutable objects fail closed rather than hashing their
 ``__dict__``.  This prevents call counters and other runtime state from changing a durable RSI
 identity.
+
+Function identities bind immutable defaults and lexical captures. External dependencies such as
+module globals, imported helpers and provider/model settings must be projected by the component's
+explicit configuration hook; this helper does not discover a complete Python dependency graph.
 """
 
 from __future__ import annotations
@@ -114,17 +118,93 @@ def _invoke_hook(value: object, names: Sequence[str]) -> object | None:
     return None
 
 
-def _code_object_material(code: CodeType) -> str:
-    # This fallback is only used when source is unavailable.  It contains executable bytecode and
-    # structural names, never a repr with memory addresses or mutable function state.
-    return "bytecode-v1:" + canonical_json({
+def _immutable_callable_value(value: object, *, depth: int = 0) -> Any:
+    """Bind immutable function configuration; mutable captures need a deliberate projection."""
+
+    if depth > MAX_CONFIG_DEPTH:
+        _fail("config_invalid")
+    if value is None or type(value) in {bool, int, float, str}:
+        return _normalize(value, depth=depth)
+    if type(value) is tuple:
+        if len(value) > MAX_CONFIG_KEYS:
+            _fail("config_invalid")
+        return [_immutable_callable_value(item, depth=depth + 1) for item in value]
+    _fail("config_hook_required")
+
+
+def _function_config(function: object) -> dict[str, Any]:
+    """Include live defaults and captured configuration, which source text cannot identify."""
+
+    if not inspect.isfunction(function):
+        _fail("config_hook_required")
+    closure = function.__closure__ or ()
+    freevars = function.__code__.co_freevars
+    if len(closure) != len(freevars):
+        _fail("config_invalid")
+    try:
+        captures = {
+            name: _immutable_callable_value(cell.cell_contents)
+            for name, cell in zip(freevars, closure)
+        }
+    except RSIIdentityError:
+        raise
+    except ValueError as exc:
+        raise RSIIdentityError("config_invalid") from exc
+    return {
+        "defaults": _immutable_callable_value(function.__defaults__),
+        "kwdefaults": {
+            name: _immutable_callable_value(value)
+            for name, value in (function.__kwdefaults__ or {}).items()
+        },
+        "closure": captures,
+    }
+
+
+def _code_constant(value: object, *, depth: int) -> Any:
+    if depth > MAX_CONFIG_DEPTH:
+        _fail("code_invalid")
+    if isinstance(value, CodeType):
+        return {"code": _code_object_payload(value, depth=depth + 1)}
+    if value is Ellipsis:
+        return {"ellipsis": True}
+    if type(value) is bytes:
+        return {"bytes": value.hex()}
+    if type(value) in {tuple, frozenset}:
+        values = [_code_constant(item, depth=depth + 1) for item in value]
+        if type(value) is frozenset:
+            values.sort(key=lambda item: canonical_json(item, maximum=MAX_CODE_BYTES))
+        return {type(value).__name__: values}
+    if type(value) is complex:
+        return {"complex": [value.real, value.imag]}
+    if value is None or type(value) in {bool, int, float, str}:
+        return value
+    _fail("code_invalid")
+
+
+def _code_object_payload(code: CodeType, *, depth: int = 0) -> dict[str, Any]:
+    return {
         "co_code": code.co_code.hex(),
-        "co_consts": [item for item in code.co_consts if type(item) in {type(None), bool, int, float, str}],
+        "co_consts": [_code_constant(item, depth=depth) for item in code.co_consts],
         "co_names": list(code.co_names),
         "co_varnames": list(code.co_varnames),
+        "co_freevars": list(code.co_freevars),
+        "co_cellvars": list(code.co_cellvars),
         "co_argcount": code.co_argcount,
+        "co_posonlyargcount": code.co_posonlyargcount,
         "co_kwonlyargcount": code.co_kwonlyargcount,
-    }, maximum=MAX_CODE_BYTES).decode("utf-8")
+        "co_flags": code.co_flags,
+    }
+
+
+def _code_object_material(code: CodeType) -> str:
+    # Include nested executable code and every constant; dropping a nested lambda or tuple would
+    # make distinct generated solvers share the same identity.
+    try:
+        return "bytecode-v2:" + canonical_json(_code_object_payload(code), maximum=MAX_CODE_BYTES).decode("utf-8")
+    except RSIIdentityError:
+        raise
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise RSIIdentityError("code_invalid") from exc
 
 
 def _source_material(value: object, explicit: object | None) -> str:
@@ -179,11 +259,23 @@ def _config_material(value: object, explicit: object | None) -> Any:
     hook_value = _invoke_hook(value, ("rsi_fingerprint_config", "fingerprint_config"))
     if hook_value is not None:
         return _normalize(hook_value)
+    if inspect.ismethod(value):
+        # Source belongs to the method function, while behavior can depend on a different owner
+        # instance each time.  The owner's hook excludes counters but must include real settings.
+        owner_config = _invoke_hook(value.__self__, ("rsi_fingerprint_config", "fingerprint_config"))
+        if owner_config is None:
+            _fail("config_hook_required")
+        return {
+            "bound_owner": _normalize(owner_config),
+            "callable": _function_config(value.__func__),
+        }
+    if inspect.isfunction(value):
+        return _function_config(value)
     # Declarative JSON values are already stable configuration.  Arbitrary instances must opt in;
     # hashing __dict__ would accidentally include counters, caches and process-local handles.
     if value is None or type(value) in {bool, int, float, str} or isinstance(value, (Mapping, list, tuple)):
         return _normalize(value)
-    if inspect.isclass(value) or inspect.isfunction(value) or inspect.ismethod(value):
+    if inspect.isclass(value):
         return {}
     _fail("config_hook_required")
 

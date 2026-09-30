@@ -1,8 +1,32 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from lunar_evolution.cli import main
 from lunar_evolution.rsi_store import RSILedger
+
+
+@pytest.mark.parametrize("mode", ["drs", "brs"])
+def test_rsi_cli_repeated_run_reuses_learning_and_transfer(tmp_path: Path, capsys, mode: str) -> None:
+    contract = tmp_path / "contract.json"
+    contract.write_text('{"problem_id":"fixture"}', encoding="utf-8")
+    home = tmp_path / "home"
+    run_id = f"repeat-{mode}"
+    arguments = ["rsi", "run", str(contract), "--run-id", run_id, "--mode", mode,
+                 "--json", "--home", str(home)]
+    assert main(arguments) == 0
+    first = json.loads(capsys.readouterr().out)
+    ledger = RSILedger(home / "rsi.sqlite3")
+    run_history = ledger.history(run_id)
+    journal = ledger.controller_checkpoint_history(run_id)
+    episodes = {key: ledger.history(key) for key in ledger.episode_ids_for_run(run_id)}
+
+    assert main(arguments) == 0
+    assert json.loads(capsys.readouterr().out) == first
+    assert ledger.history(run_id) == run_history
+    assert ledger.controller_checkpoint_history(run_id) == journal
+    assert {key: ledger.history(key) for key in ledger.episode_ids_for_run(run_id)} == episodes
 
 
 def test_rsi_cli_run_persists_run_and_memory_ledger(tmp_path: Path, capsys) -> None:

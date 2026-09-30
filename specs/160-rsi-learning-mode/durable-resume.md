@@ -1,8 +1,8 @@
 # Feature 160 阶段 1：可恢复 RSI 契约
 
-**状态：规格与契约测试**
+**状态：本地 RSI 组合 289 项通过，包含 v2 DRS/BRS、CLI 和 transfer 基础恢复矩阵；尚有 callback/unknown transfer receipt 恢复接口开放，详见 validation.md。**
 
-本文把 `RSILearningController` 从“可以把一次 DRS/BRS 跑完”推进到“中断后可以安全继续”的最小行为写成可审计契约。它不是对当前代码状态的描述；当前代码已有 append-only ledger、CAS 状态迁移和 episode record，但还没有完整的 controller-level `resume()`、unknown reconcile gate、统一预算持久化和 fingerprint drift gate。
+本文规定 `RSILearningController` 的本地可恢复行为。当前代码已有 append-only ledger、CAS、controller lock、持久化 request/result、v2 DRS/BRS plan 和恢复驱动，不能再把它描述为只有只读 resume。与此同时，模块存在不等于整份验收矩阵已经完成；`tasks.md` 将阶段 1 的实现和最终集成验收分开记录。
 
 本阶段只使用本地 fixture、SQLite ledger 和 loopback/subprocess 证据。它不要求 WebAgent、远程 evaluator、真实 OpenEvolve/Shinka campaign 或新的模型请求。
 
@@ -21,56 +21,32 @@
 
 ## 2. Durable run checkpoint
 
-每次控制面边界都追加一个不可变 checkpoint；旧记录永远不原位修改。checkpoint 至少包含下面的逻辑字段：
+每次控制面边界都追加一个不可变 checkpoint；旧记录永远不原位修改。v2 run checkpoint 的主要结构如下（嵌套对象省略内容，实际 wire 以代码为准）：
 
 ```json
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "kind": "rsi_run_checkpoint",
   "run_id": "rsi-...",
   "mode": "drs|brs",
-  "status": "created|running|paused|completed|failed|cancelled|unknown",
-  "phase": "target|practice|verify|commit|transfer|finished",
-  "current_episode_id": "episode-...",
-  "current_wave": 0,
-  "current_ordinal": 0,
-  "contract_sha256": "<sha256>",
-  "evaluator_sha256": "<sha256>",
-  "environment_sha256": "<sha256>",
-  "memory_snapshot_sha256": "<sha256>",
-  "solver_id": "mock",
-  "solver_fingerprint": "<sha256>",
-  "actor_fingerprint": "<sha256>|null",
-  "budget": {
-    "max_depth": 3,
-    "max_practice_episodes": 8,
-    "max_target_attempts": 4,
-    "max_solver_invocations": 16,
-    "max_evaluator_invocations": 16,
-    "max_verifier_invocations": 16,
-    "max_transfer_invocations": 4,
-    "deadline_at": "2026-09-30T00:00:00Z",
-    "unknown_retries": 0,
-    "unknown_retry_limit": 1
-  },
-  "consumed": {
-    "depth": 0,
-    "practice_episodes": 0,
-    "target_attempts": 0,
-    "solver_invocations": 0,
-    "evaluator_invocations": 0,
-    "verifier_invocations": 0,
-    "transfer_invocations": 0
-  },
-  "last_side_effect_key": "run/episode/request|memory/parent/episode/receipt|transfer/run/target/snapshot/solver",
-  "previous_record_sha256": "<sha256>|null",
-  "record_sha256": "<sha256>"
+  "status": "running|completed|failed|cancelled|unknown|budget_exhausted",
+  "phase": "created|launch|evaluated|commit|committed|terminal",
+  "current_episode_id": null,
+  "plan": {},
+  "pins": {},
+  "root_snapshot": {},
+  "memory_snapshot": {},
+  "budget_state": {"planned": {}, "consumed": {}, "remaining": {}},
+  "intents": {},
+  "executions": {},
+  "decisions": {},
+  "judgments": {}
 }
 ```
 
-`budget` 是 run contract 的一部分，创建 run 后不可扩大。`consumed` 只能单调增加；重启或重试不得把计数归零。`deadline_at` 是绝对时间，resume 不能重新计算一个新的完整墙钟。若旧实现需要额外字段，应通过 schema 版本升级并保持未知字段 fail-closed。
+`plan` 固定 DRS 次数上限或 BRS wave、practices 和并发配置；`intents` 绑定原 episode 与请求，`executions` 保存结果及 verifier。run head 固定初始 component fingerprints 和预算 policy；controller journal 单独维护 hash-chain 与 CAS digest。绝对 deadline 的实际字段是 `deadline_unix`，预算上限包括 `max_depth`、各 invocation limit 和 `max_unknown_retries`。planned 不扩大，consumed 单调增加，resume 不重置剩余量和 deadline。
 
-checkpoint 的 `phase` 表示下一个需要处理的控制面边界，而不是“模型可能正在做什么”的猜测。外部 side effect 开始前必须先写入含有 request digest 的 checkpoint；side effect 完成后必须先持久化 receipt，再推进 checkpoint。进程在两者之间退出时，run 进入 `unknown`，不能直接跳到下一个 episode。
+checkpoint 的 `phase` 表示持久化控制面边界。solver 启动前先预留预算、保存 intent，再由 runner 写入 running episode；gateway 返回后先保存结果，再推进 episode 和 journal。进程退出不会自动把所有记录改为 unknown；恢复根据持久证据判断可继续、需恢复或需 reconcile。已发起且结果未知的请求不能重发。
 
 ## 3. Resume API 和恢复顺序
 
@@ -89,13 +65,13 @@ controller.resume(
 恢复顺序固定为：
 
 1. 读取 run head 和当前 episode/wave journal；校验每条记录的 digest、lineage 和 CAS parent。
-2. 校验 run 状态。`completed`、`failed`、`cancelled` 只能返回既有终态；`unknown` 必须先通过 reconcile；`paused`、`running` 才能继续执行。
+2. 校验 run 状态。`completed`、`failed`、`cancelled`、`budget_exhausted` 复用既有终态；已落盘 terminal journal 需要幂等补齐 run head，不能因恢复时 deadline 已过而改写结论；`unknown` 必须先通过 reconcile。
 3. 校验 fingerprint 和 budget。任何不兼容漂移都在启动 solver/evaluator 前拒绝。
 4. 读取 side-effect receipt。已有完整 terminal receipt 时只恢复其结果，不再次调用 solver 或 evaluator。
-5. 对没有 terminal receipt 的 episode 继续同一 `episode_id`、同一 request digest 和同一 memory snapshot；不得创建第二个 target/practice identity。
+5. 对只有 intent、尚无 running episode 的请求，可以启动同一 ID 和同一 request。已有 running/unknown 而无结果证据的请求必须停在 recovery/reconcile gate。只有完整 v2 plan 才允许继续后续尚未启动的 planned episode；旧 checkpoint 不猜测计划。
 6. 完成验证、commit 或 transfer 后追加新的 checkpoint，再决定下一个 phase。
 
-恢复结果必须指出 `resumed_from_record_sha256` 和 `resume_reason`。这两个字段用于审计，不得改变 request 或 evidence digest。
+审计使用 run/episode revision、controller hash-chain、reconciliation journal 和固定错误码。`LearningRunResult` 当前不承诺 `resumed_from_record_sha256` 或 `resume_reason` 字段，不应将草案字段当成已实现接口。
 
 ## 4. Side-effect 幂等性
 
@@ -110,6 +86,8 @@ controller.resume(
 
 同一个幂等键收到字节不同的 receipt、不同的 request 或不同的 fingerprint 时必须 fail closed，并保留冲突原因。成功 resume 不得通过复制旧 receipt、清空预算、换用新的 episode ID 或省略 evidence 来绕过幂等检查。
 
+表中的 verifier 复用保证适用于已经持久化的 decision。DRS/BRS 的 verifier/curriculum/judge 在调用内部中断、结果尚未保存时仍可能重算本地 deterministic fixture，真实外部 callback 的 exactly-once 尚未实现。显式 started gate 当前仅在 frozen transfer 的 verifier/judge 上提供；该 gate 的不确定结果还缺少专用 evidence-bound 续接 API。
+
 ## 5. Unknown reconcile gate
 
 `unknown` 表示控制面无法证明 worker 是否已经完成；它不是失败，也不是可直接重试的信号。run 或 episode 进入 `unknown` 后：
@@ -121,7 +99,7 @@ controller.resume(
 - `already_terminal` 只在 receipt 完整且绑定精确时复用；`recoverable` 继续原 episode；其他结论必须终止或等待人工处理；
 - 未通过 reconcile 前，DRS 不得进入 practice/retry，BRS 不得合并 wave 中任何 child。
 
-worker 仍存活、进程已退出但 receipt 完整、receipt 缺失、workspace 被替换和 fingerprint 漂移至少要有不同的诊断码。reconcile 本身也必须是 append-only、CAS 保护和幂等的。
+上述 process ownership、heartbeat 和 workspace 检查是接真实 producer 时的接线要求。当前本地路径依据 immutable request/result 与 evidence-bound reconciliation journal；不能将它声称为完整的进程存活或外部 ownership 探测。显式 reconcile 为失败/取消等结论时也必须保持原结果 wire 不可变，并使 controller 能识别已解决的不确定状态。
 
 ## 6. Fingerprint drift gate
 
@@ -137,7 +115,9 @@ actor_fingerprint（若存在）
 budget_digest / deadline
 ```
 
-阶段 1 默认采用 exact-match policy。任意值缺失、改变或无法重新计算都拒绝复用旧 terminal receipt，并将 run/episode 标记为 `drifted` 或 `manual_review`。未来若允许兼容 patch，必须显式注册 policy、记录旧/新 digest 和理由；不能由 resume 调用方临时放宽。
+阶段 1 采用 exact-match policy，另绑定 verifier、curriculum、target judge 的代码及配置身份。controller 必须重新计算当前组件指纹；调用方回传旧 fingerprint 不能代替该检查。无法构建可信身份或存在变化时 fail closed，保留已有记录并返回 drift/identity 错误。`drifted`/`manual_review` 尚不是当前 run 的自动持久状态；兼容 patch policy 仍未实现。
+
+mutable instance 需显式配置 hook；函数默认值、closure 和 bound owner 的配置必须被绑定或拒绝。模块全局、导入依赖和 provider/model 配置需要组件 hook 主动投影，本地 identity helper 不发现完整 Python 依赖图，也不替代 producer/environment attestation。
 
 推荐固定诊断码：`rsi_resume_contract_drift`、`rsi_resume_evaluator_drift`、`rsi_resume_environment_drift`、`rsi_resume_memory_drift`、`rsi_resume_solver_drift`、`rsi_resume_actor_drift`、`rsi_resume_budget_drift`。
 
@@ -145,13 +125,15 @@ budget_digest / deadline
 
 每个 run 维护 planned/consumed/remaining 三组可查询值。所有 child episode 从父 run 的剩余预算派生；child 不能增加父预算。以下任一条件达到上限时，控制器必须追加明确终态并停止创建新 episode：
 
-- `now >= deadline_at`；
-- `depth >= max_depth`；
+- `now >= deadline_unix`；
+- 新 child 的 `depth > max_depth`，或 ancestry 存在环；
 - practice、target、solver、evaluator、verifier 或 transfer 调用数达到上限；
-- unknown reconcile 次数达到 `unknown_retry_limit`；
-- no-improvement 或 mode-specific wave 上限达到。
+- unknown reconcile/retry 次数超过 `max_unknown_retries`（预算原语已有，真实 adapter 接线需单独验收）；
+- mode-specific plan 上限达到。no-improvement policy 不属于已完成能力。
 
 预算耗尽的终态应区分 `timed_out`、`budget_exhausted`、`unknown` 和 `failed` 的原因。预算检查必须发生在每个 side effect 前和 resume 后；失败重试不能通过省略 `budget`、复制旧 request 或新建 run 来放宽原策略。
+
+当前 controller DRS/BRS 以 depth 0 运行，launch 原子预留 solver、evaluator、verifier；它们是保守的控制面预留计数，不能当作真实 provider 请求数、token 用量或成本。transfer 使用独立持久边界和调用预算。递归 solver→RSI 调度、嵌套预算传播、CPU/GPU/token 用量及成本统计仍在后续范围。
 
 ## 8. 验收矩阵
 
@@ -164,5 +146,6 @@ budget_digest / deadline
 5. 让 deadline、depth、practice 和 nested solver budget 耗尽；不创建额外 episode、不提交 memory、不启动 transfer。
 6. 两个并发 resume 使用同一 checkpoint；只有一个 CAS 成功，另一个得到 `rsi_record_parent_conflict` 或等价固定错误。
 
-测试可以先以 `xfail(strict=False)` 形式落地，直到 controller/store API 完成；通过时应自动转为绿色，不改变现有 provider-free suite 的成功标准。
+阶段 1 完成判据是实际 crash injection 和副作用计数断言通过，不以占位 `xfail`、仅抛固定异常的测试或只读 receipt replay 代替。每轮测试结果在 `validation.md`/交接中记录；`tasks.md` 只勾选本地实际覆盖的边界，未实现的 callback 和外部证据恢复接口继续保持未完成。
 
+当前本地 DRS/BRS 矩阵、显式 unknown 终止证据、memory publication、末态 journal/deadline、逐 verifier deadline、并发锁和 CLI 重复运行已通过；`tasks.md` 分别记录这些已覆盖项。Frozen transfer 的启动后未知 verifier/judge 尚无专用 evidence-bound 续接 API；已经发布 unknown transfer receipt 后显式 settle worker 仍停在 `rsi_transfer_unknown_receipt_reconcile_required`。保留这些 gate 是正确的保守行为，但不是对应恢复能力已经完成。

@@ -5408,9 +5408,11 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
     ledger = RSILedger(config.home / "rsi.sqlite3")
     gateway = fixture_solver_gateway(args.solver, terminal_status=args.worker_status)
 
+    judge_mode = args.mode
+
     def target_judge(execution):
         # Make the successful local fixture exercise the learning gate once before transfer.
-        if args.mode == "drs" and execution.episode.episode_kind == "target" and execution.episode.wave == 0:
+        if judge_mode == "drs" and execution.episode.episode_kind == "target" and execution.episode.wave == 0:
             return False, "local fixture capability gap"
         return execution.passed, "local fixture target accepted" if execution.passed else execution.verifier.diagnosis
 
@@ -6218,12 +6220,12 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 _emit(payload, args.json)
                 return 0
             if args.rsi_command == "reconcile":
-                record = ledger.reconcile_worker(
+                record = ledger.reconcile_episode(
                     args.episode_id,
                     worker_state=args.worker_state,
                     launched=args.launched,
                     expected_record_sha256=args.expected_record_sha256,
-                    payload_patch={
+                    evidence={
                         "reconciliation": {
                             "source": "explicit_cli",
                             "worker_state": args.worker_state,
