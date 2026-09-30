@@ -291,6 +291,7 @@ def recover_native_trusted_stream_capture(
     if (
         record.get("publication_eligible") is not False
         or record.get("capture_complete") is not True
+        or record.get("capture_reason") is not None
         or record.get("output_max_bytes") != intent.output_max_bytes
         or record.get("stream_capture_sha256") != _digest_without(record, "stream_capture_sha256")
         or record.get("attestation_sha256") != terminal.get("attestation_sha256")
