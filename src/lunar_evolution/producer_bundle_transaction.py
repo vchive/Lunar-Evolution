@@ -21,6 +21,7 @@ from .automatic_solve_lifecycle import (
     SolveExecutionControl,
 )
 from .bundle_evolution import NativeDraftEvaluationResult
+from .candidate_evaluation_spec import strict_json
 from .evolution import Candidate, CandidateArchive, CandidateDraft, PopulationStrategy
 from .producer_bundle_admission import (
     ProducerBundleAdmissionPlan,
@@ -58,6 +59,7 @@ from .producer_bundle_staging import (
     commit_producer_bundle_publication,
     stage_producer_bundle_publication,
 )
+from .producer_process import _digest_without
 
 
 class NativeProducerBundleTransactionError(RuntimeError):
@@ -133,6 +135,51 @@ def _records_from_archive(archive: bytes) -> list[Candidate]:
         except Exception as exc:
             raise NativeProducerBundleTransactionError("producer_bundle_transaction_archive_invalid") from exc
     return records
+
+
+def _verify_native_execution_receipt_link(
+    root: Path,
+    *,
+    journal_id: str,
+    run_id: str,
+    parent_task_id: str,
+    task_id: str,
+    receipt_sha256: str | None,
+) -> None:
+    """Validate the optional native execution receipt before creating a publication journal."""
+    if receipt_sha256 is None:
+        return
+    batch = root / "evolution" / "producer-batches" / journal_id
+    path = batch / "execution-receipt.json"
+    try:
+        raw = strict_json(_files.read_regular_file(path, 256 * 1024), 256 * 1024)
+    except Exception as exc:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_execution_receipt_invalid"
+        ) from exc
+    if not isinstance(raw, dict):
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_execution_receipt_invalid"
+        )
+    trusted = raw.get("trusted_execution")
+    if (
+        raw.get("protocol") != "lunar-producer-process-execution-v1"
+        or raw.get("receipt_sha256") != receipt_sha256
+        or raw.get("receipt_sha256") != _digest_without(raw, "receipt_sha256")
+        or any(raw.get(key) != value for key, value in (
+            ("journal_id", journal_id),
+            ("run_id", run_id), ("parent_task_id", parent_task_id), ("task_id", task_id),
+        ))
+        or raw.get("status") != "completed"
+        or raw.get("exit_code") != 0
+        or raw.get("gate_released") is not True
+        or raw.get("cleanup_status") not in {"cleaned", "already_exited"}
+        or not isinstance(trusted, dict)
+        or trusted.get("broker_coverage") != "brokered_requests_only"
+    ):
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_execution_receipt_invalid"
+        )
 
 
 def _snapshot_drafts(
@@ -288,6 +335,7 @@ def run_native_producer_bundle_publication_transaction(
     parent_task_id: str = "producer",
     task_id: str = "native-bundle-publication",
     budget_sha256: str | None = None,
+    native_execution_receipt_sha256: str | None = None,
     execution_control: SolveExecutionControl | None = None,
 ) -> NativeProducerBundleTransactionResult:
     """Evaluate imported material and atomically publish the valid native subset.
@@ -301,7 +349,8 @@ def run_native_producer_bundle_publication_transaction(
     if not isinstance(strategy, PopulationStrategy):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
     options = {"journal_id": journal_id, "run_id": run_id, "parent_task_id": parent_task_id,
-               "task_id": task_id, "budget_sha256": budget_sha256}
+               "task_id": task_id, "budget_sha256": budget_sha256,
+               "native_execution_receipt_sha256": native_execution_receipt_sha256}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -334,6 +383,7 @@ def _run_native_producer_bundle_publication_transaction(
     parent_task_id: str,
     task_id: str,
     budget_sha256: str | None,
+    native_execution_receipt_sha256: str | None,
     checkpoint: Callable[[str], object],
     execution_control: SolveExecutionControl | None = None,
 ) -> NativeProducerBundleTransactionResult:
@@ -351,6 +401,14 @@ def _run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_workspace_invalid")
     if run_id is None:
         run_id = journal_id
+    _verify_native_execution_receipt_link(
+        root,
+        journal_id=journal_id,
+        run_id=run_id,
+        parent_task_id=parent_task_id,
+        task_id=task_id,
+        receipt_sha256=native_execution_receipt_sha256,
+    )
     base_state_bytes, base_state = _read_state(root)
     base_archive = _read_optional(root / "evolution" / "archive.jsonl")
     try:
@@ -400,6 +458,7 @@ def _run_native_producer_bundle_publication_transaction(
         dependency_sha256=admission_plan.dependency_sha256, environment_sha256=admission_plan.environment_sha256,
         budget_sha256=budget_sha256, strategy="population", population_config_sha256=_sha(_canonical(base_state["config"])),
         num_islands=num_islands, candidates=tuple(candidates),
+        native_execution_receipt_sha256=native_execution_receipt_sha256,
     )
     try:
         preflight = preflight_producer_bundle_publication(root, admission_plan, journal, budget_sha256=budget_sha256)
