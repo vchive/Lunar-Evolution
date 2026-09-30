@@ -56,6 +56,10 @@
   coverage while forcing `publication_eligible=false`. It is an explicit projection for later
   integration; it is not the formal `execution-receipt.json` and does not widen admission.
 
+  The sidecar has a matching read-only recovery verifier. It requires the sidecar's exact schema
+  and self-digest, then reruns the terminal/capture/deadline chain and compares every bound digest;
+  it never treats the sidecar alone as process or publication authority.
+
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This

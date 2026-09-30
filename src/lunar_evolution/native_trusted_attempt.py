@@ -1192,8 +1192,58 @@ def persist_native_trusted_lifecycle_audit(
     return record
 
 
+def recover_native_trusted_lifecycle_audit(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+) -> dict[str, object]:
+    """Revalidate the audit sidecar and all of the evidence it summarizes."""
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    if audit.get("reason") != "native_trusted_lifecycle_capture_verified":
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_not_verified")
+    batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    try:
+        record = _read_durable_json(
+            batch / _AUDIT_NAME, code="native_trusted_lifecycle_audit_invalid",
+        )
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_invalid") from exc
+    expected_fields = {
+        "schema_version", "protocol", "launch_id", "journal_id", "launch_sha256",
+        "intent_sha256", "attestation_sha256", "registration_sha256", "deadline_sha256",
+        "terminal_sha256", "capture_sha256", "broker_coverage", "publication_eligible",
+        "audit_sha256",
+    }
+    if (
+        set(record) != expected_fields
+        or record.get("schema_version") != "1"
+        or record.get("protocol") != _AUDIT_PROTOCOL
+        or record.get("publication_eligible") is not False
+        or record.get("audit_sha256") != _digest_without(record, "audit_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_invalid")
+    expected = {
+        "launch_id": audit["launch_id"], "journal_id": audit["journal_id"],
+        "launch_sha256": audit["launch_sha256"], "intent_sha256": audit["intent_sha256"],
+        "attestation_sha256": audit["attestation_sha256"],
+        "registration_sha256": audit["registration_sha256"],
+        "deadline_sha256": audit["deadline_sha256"],
+        "terminal_sha256": audit["terminal_sha256"],
+        "capture_sha256": audit["output_capture_sha256"],
+        "broker_coverage": audit["broker_coverage"],
+    }
+    if any(record.get(key) != value for key, value in expected.items()):
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_invalid")
+    return record
+
+
 __all__ = [
-    "NativeTrustedAttemptError", "NativeTrustedAttemptObservation",
-    "audit_native_trusted_lifecycle", "persist_native_trusted_lifecycle_audit",
-    "recover_native_trusted_attempt", "run_native_trusted_attempt",
+    "NativeTrustedAttemptError",
+    "NativeTrustedAttemptObservation",
+    "audit_native_trusted_lifecycle",
+    "persist_native_trusted_lifecycle_audit",
+    "recover_native_trusted_attempt",
+    "recover_native_trusted_lifecycle_audit",
+    "run_native_trusted_attempt",
 ]

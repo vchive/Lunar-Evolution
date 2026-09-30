@@ -39,6 +39,10 @@ chain, create-only behavior, and refusal to write when output capture is absent.
 publication-ineligible and deliberately remains separate from Feature 156's formal execution
 receipt until trusted stream, envelope, broker, and recovery evidence are integrated.
 
+The recovery verifier also rejects a missing or rehashed sidecar and a capture digest changed only
+inside a self-rehashed sidecar. This keeps the audit projection diagnostic until formal Feature 156
+receipt consumption is implemented.
+
 ## Native pre-gate handoff reread (2026-09-28)
 
 The native attempt now uses the formal read-only observer under its existing deadline before

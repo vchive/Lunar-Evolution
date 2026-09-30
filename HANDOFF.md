@@ -4735,3 +4735,7 @@ launch/intent/attestation、registration、deadline、terminal、capture 摘要�
 新增回归覆盖完整摘要链、create-only 冲突和 process-only 拒绝写入，并同步 Feature 158
 data-model/tasks/validation。该 sidecar 只是后续正式接线的只读投影，不能替代 Feature 156
 execution receipt，也不改变 scheduler、publication 或外部 producer admission。
+
+同时增加了 sidecar 的只读 recovery verifier：它先重新验证底层 terminal/capture/deadline/
+registration，再检查 sidecar 的固定字段、自摘要和逐项绑定；缺失、改写或仅重新计算自摘要
+的 sidecar 都会被拒绝。

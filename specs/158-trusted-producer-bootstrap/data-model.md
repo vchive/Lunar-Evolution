@@ -71,6 +71,10 @@ digests, records broker coverage, and fixes `publication_eligible=false`. This s
 read-only lifecycle audit projection; it is not Feature 156's `execution-receipt.json` and cannot
 authorize publication or recovery signals.
 
+Consumers must use the read-only audit recovery API, which rechecks the underlying terminal,
+capture, deadline, and registration chain before accepting the sidecar. A missing, changed, or
+self-rehashed sidecar is invalid even when its summarized process records remain valid.
+
 When cancellation is observed after the gate and target start, the native attempt may persist the
 same process-only terminal schema with `process_status=cancelled` and `exit_code=null`. The receipt
 continues to bind registration, handoff, and the exact bootstrap evidence digest; unknown evidence

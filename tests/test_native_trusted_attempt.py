@@ -19,6 +19,7 @@ from lunar_evolution.native_trusted_attempt import (
     audit_native_trusted_lifecycle,
     persist_native_trusted_lifecycle_audit,
     recover_native_trusted_attempt,
+    recover_native_trusted_lifecycle_audit,
     run_native_trusted_attempt,
 )
 from lunar_evolution.native_trusted_capture import capture_native_trusted_output
@@ -337,6 +338,40 @@ def test_persist_native_lifecycle_audit_requires_verified_capture(tmp_path: Path
         )
     assert failure.value.code == "native_trusted_lifecycle_audit_not_verified"
     assert not (batch / "native-trusted-execution-audit.json").exists()
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_recover_native_lifecycle_audit_revalidates_underlying_chain(tmp_path: Path):
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(tmp_path)
+    run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact,
+    )
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    persisted = _materialize_valid_capture(batch, intent, terminal)
+    expected = persist_native_trusted_lifecycle_audit(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    recovered = recover_native_trusted_lifecycle_audit(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert recovered == expected
+    assert recovered["capture_sha256"] == persisted["capture_sha256"]
+
+    path = batch / "native-trusted-execution-audit.json"
+    tampered = json.loads(path.read_bytes())
+    tampered["capture_sha256"] = "f" * 64
+    from lunar_evolution import producer_process
+
+    tampered["audit_sha256"] = producer_process._digest_without(tampered, "audit_sha256")
+    path.write_text(json.dumps(tampered, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    with pytest.raises(NativeTrustedAttemptError) as failure:
+        recover_native_trusted_lifecycle_audit(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert failure.value.code == "native_trusted_lifecycle_audit_invalid"
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
