@@ -353,3 +353,83 @@ def test_recovery_rejects_receipt_binding_drift(
             dependency_sha256="1" * 64,
             environment_sha256="2" * 64,
         )
+
+
+def test_scheduler_forwards_cancellation_and_parent_deadline_to_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    receipt = SimpleNamespace(receipt_sha256="d" * 64)
+    output = SimpleNamespace(
+        execution_receipt_sha256=receipt.receipt_sha256,
+        drafts=(),
+        admission_plan="plan",
+    )
+    cancellation = lambda: False
+    observed: dict[str, object] = {}
+
+    def attempt(*args, **kwargs):
+        observed.update(kwargs)
+        return _attempt()
+
+    monkeypatch.setattr(scheduler, "run_native_trusted_attempt", attempt)
+    monkeypatch.setattr(
+        scheduler, "persist_native_trusted_execution_receipt", lambda *a, **k: receipt
+    )
+    monkeypatch.setattr(scheduler, "prepare_native_trusted_output", lambda *a, **k: output)
+    run_native_trusted_producer(
+        context.workspace,
+        producer_root=tmp_path,
+        intent=context.intent,
+        attestation=context.attestation,
+        artifact=context.artifact,
+        broker_config=context.broker,
+        contract=context.contract,
+        groups=(),
+        evaluator_kind="local",
+        evaluator_fingerprint="e" * 64,
+        runner_fingerprint="f" * 64,
+        dependency_sha256="1" * 64,
+        environment_sha256="2" * 64,
+        cancelled=cancellation,
+        parent_deadline=123.5,
+    )
+
+    assert observed["cancelled"] is cancellation
+    assert observed["parent_deadline"] == 123.5
+
+
+def test_scheduler_rejects_invalid_parent_deadline_before_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(tmp_path)
+    called = False
+
+    def unexpected(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(scheduler, "run_native_trusted_attempt", unexpected)
+    with pytest.raises(
+        NativeTrustedSchedulerError,
+        match="parent_deadline_invalid",
+    ):
+        run_native_trusted_producer(
+            context.workspace,
+            producer_root=tmp_path,
+            intent=context.intent,
+            attestation=context.attestation,
+            artifact=context.artifact,
+            broker_config=context.broker,
+            contract=context.contract,
+            groups=(),
+            evaluator_kind="local",
+            evaluator_fingerprint="e" * 64,
+            runner_fingerprint="f" * 64,
+            dependency_sha256="1" * 64,
+            environment_sha256="2" * 64,
+            parent_deadline=float("nan"),
+        )
+    assert called is False

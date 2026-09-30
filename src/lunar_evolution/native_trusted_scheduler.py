@@ -14,6 +14,7 @@ while giving the local fixture path one formal entry point for future scheduler 
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -108,6 +109,24 @@ def _check_attempt(attempt: NativeTrustedAttemptObservation) -> None:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_attempt_unpublishable")
 
 
+def _check_parent_deadline(parent_deadline: float | None) -> None:
+    """Validate the scheduler's caller-owned deadline before consuming an attestation.
+
+    The native attempt performs the same check at its lower boundary.  Keeping this
+    validation at the scheduler boundary gives callers a stable, scheduler-scoped error
+    and, more importantly, prevents a malformed deadline from entering the one-shot
+    admission path (where the attestation would otherwise be consumed before the error is
+    projected).
+    """
+    if parent_deadline is None:
+        return
+    if (
+        type(parent_deadline) not in (int, float)
+        or not math.isfinite(float(parent_deadline))
+    ):
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_parent_deadline_invalid")
+
+
 def run_native_trusted_producer(
     workspace: str | Path,
     *,
@@ -149,6 +168,7 @@ def run_native_trusted_producer(
         raise NativeTrustedSchedulerError("native_trusted_scheduler_groups_invalid")
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_cancellation_invalid")
+    _check_parent_deadline(parent_deadline)
     root = _workspace_root(workspace)
 
     try:
