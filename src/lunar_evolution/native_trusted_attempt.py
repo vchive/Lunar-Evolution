@@ -21,6 +21,14 @@ from .native_bootstrap import (
     native_bootstrap_command,
 )
 from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
+from .native_trusted_streams import (
+    NativeTrustedStreamCapture,
+    NativeTrustedStreamError,
+    NativeTrustedStreamObservation,
+    persist_native_trusted_stream_capture,
+    recover_native_trusted_stream_capture,
+    start_native_trusted_stream_capture,
+)
 from .process_ownership import (
     ProcessCleanupStatus,
     RegisteredProcess,
@@ -90,7 +98,7 @@ _TERMINAL_FIELDS = frozenset({
     "handoff_sha256", "bootstrap_evidence_sha256", "deadline_sha256", "gate_released",
     "target_started", "exit_code", "cleanup_status", "process_status",
     "receipt_scope", "publication_eligible", "previous_receipt_sha256",
-    "terminal_sha256",
+    "terminal_sha256", "stream_capture_sha256",
 })
 _DEADLINE_FIELDS = frozenset({
     "schema_version", "protocol", "launch_id", "journal_id", "launch_sha256",
@@ -112,6 +120,8 @@ class NativeTrustedAttemptObservation:
     cleanup_status: str | None
     terminal_sha256: str | None = None
     output_capture_sha256: str | None = None
+    stream_capture_sha256: str | None = None
+    stream_observation: NativeTrustedStreamObservation | None = None
     broker_observation: ProducerBrokerObservation | None = None
 
 
@@ -119,7 +129,7 @@ def _terminal_receipt(
     registration: Mapping[str, object], *, handoff_sha256: str,
     evidence_sha256: str, gate_released: bool, target_started: bool,
     exit_code: int | None, cleanup_status: str, deadline_sha256: str,
-    cancelled: bool = False,
+    cancelled: bool = False, stream_capture_sha256: str | None = None,
 ) -> dict[str, object]:
     if cancelled and exit_code is not None:
         raise NativeTrustedAttemptError("native_trusted_attempt_terminal_invalid")
@@ -144,6 +154,7 @@ def _terminal_receipt(
         "process_status": process_status, "receipt_scope": "process_only",
         "publication_eligible": False,
         "previous_receipt_sha256": registration["registration_sha256"],
+        "stream_capture_sha256": stream_capture_sha256,
     }
     receipt["terminal_sha256"] = _digest_without(receipt, "terminal_sha256")
     return receipt
@@ -544,6 +555,10 @@ def run_native_trusted_attempt(
         reason = "native_trusted_attempt_terminal_receipt_missing"
         terminal_sha256: str | None = None
         output_capture_sha256: str | None = None
+        stream_capture_sha256: str | None = None
+        stream_observation: NativeTrustedStreamObservation | None = None
+        stream_capture: NativeTrustedStreamCapture | None = None
+        stream_capture_failed = False
         handoff_sha256: str | None = None
         claimed = False
         cancellation_requested = False
@@ -628,7 +643,11 @@ def run_native_trusted_attempt(
                     pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
                               *broker_child_fds),
                     cwd=str(working), env=broker_env,
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                stream_capture = start_native_trusted_stream_capture(
+                    process, limit=intent.output_max_bytes,
+                    deadline=deadline, monotonic=monotonic,
                 )
                 for fd in (control_read, gate_read, frame_write):
                     os.close(fd)
@@ -772,6 +791,13 @@ def run_native_trusted_attempt(
                 except subprocess.TimeoutExpired:
                     if reason == "native_trusted_attempt_terminal_receipt_missing":
                         reason = "native_trusted_attempt_reap_unknown"
+            if stream_capture is not None:
+                try:
+                    stream_observation = stream_capture.finish(deadline=deadline)
+                    if not stream_observation.complete and reason == "native_trusted_attempt_terminal_receipt_missing":
+                        stream_capture_failed = True
+                except NativeTrustedStreamError:
+                    stream_capture_failed = True
             if broker_thread is not None:
                 broker_thread.join(timeout=max(0.0, deadline - monotonic()))
                 if broker_thread.is_alive() or "error" in broker_state:
@@ -833,12 +859,25 @@ def run_native_trusted_attempt(
                     or observed.get("handoff_sha256") != handoff_sha256
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_terminal_evidence_unknown")
+                if stream_observation is not None and stream_observation.complete:
+                    try:
+                        stream_record = persist_native_trusted_stream_capture(
+                            batch, intent=intent,
+                            attestation_sha256=attestation.attestation_sha256,
+                            registration_sha256=str(registration["registration_sha256"]),
+                            deadline_sha256=deadline_sha256,
+                            observation=stream_observation,
+                        )
+                        stream_capture_sha256 = str(stream_record["stream_capture_sha256"])
+                    except NativeTrustedStreamError:
+                        stream_capture_failed = True
                 receipt = _terminal_receipt(
                     registration, handoff_sha256=handoff_sha256,
                     evidence_sha256=evidence_sha,
                     gate_released=gate_released, target_started=target_started,
                     exit_code=None, cleanup_status=cleanup_status,
                     deadline_sha256=deadline_sha256, cancelled=True,
+                    stream_capture_sha256=stream_capture_sha256,
                 )
                 # Receipt publication must consume the caller deadline, but must not
                 # call the cancellation callback again after cleanup has been verified.
@@ -873,12 +912,25 @@ def run_native_trusted_attempt(
                     or observed.get("handoff_sha256") != handoff_sha256
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_terminal_evidence_unknown")
+                if stream_observation is not None and stream_observation.complete:
+                    try:
+                        stream_record = persist_native_trusted_stream_capture(
+                            batch, intent=intent,
+                            attestation_sha256=attestation.attestation_sha256,
+                            registration_sha256=str(registration["registration_sha256"]),
+                            deadline_sha256=deadline_sha256,
+                            observation=stream_observation,
+                        )
+                        stream_capture_sha256 = str(stream_record["stream_capture_sha256"])
+                    except NativeTrustedStreamError:
+                        stream_capture_failed = True
                 receipt = _terminal_receipt(
                     registration, handoff_sha256=handoff_sha256,
                     evidence_sha256=str(observed["evidence_sha256"]),
                     gate_released=gate_released, target_started=target_started,
                     exit_code=exit_code, cleanup_status=cleanup_status,
                     deadline_sha256=deadline_sha256,
+                    stream_capture_sha256=stream_capture_sha256,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
@@ -892,6 +944,8 @@ def run_native_trusted_attempt(
                     "native_trusted_attempt_request_and_output_unverified"
                     if exit_code == 0 else "native_trusted_attempt_exit_failed"
                 )
+                if stream_capture_sha256 is None:
+                    stream_capture_failed = True
             except (NativeTrustedAttemptError, ProducerBootstrapError) as exc:
                 reason = exc.code
             except ProducerProcessError:
@@ -919,6 +973,8 @@ def run_native_trusted_attempt(
                 output_capture_sha256 = str(captured["capture_sha256"])
             except NativeTrustedCaptureError:
                 reason = "native_trusted_attempt_output_capture_unknown"
+        if stream_capture_failed and reason == "native_trusted_attempt_request_and_output_unverified":
+            reason = "native_trusted_attempt_stream_capture_unknown"
         return NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
@@ -927,6 +983,8 @@ def run_native_trusted_attempt(
             exit_code=exit_code, cleanup_status=cleanup_status,
             terminal_sha256=terminal_sha256,
             output_capture_sha256=output_capture_sha256,
+            stream_capture_sha256=stream_capture_sha256,
+            stream_observation=stream_observation,
             broker_observation=(broker_observation if isinstance(
                 broker_observation, ProducerBrokerObservation,
             ) else None),
@@ -1042,6 +1100,7 @@ def recover_native_trusted_attempt(
                 gate_released=True, target_started=True,
                 exit_code=None, cleanup_status=str(receipt["cleanup_status"]),
                 deadline_sha256=str(deadline_record["deadline_sha256"]), cancelled=True,
+                stream_capture_sha256=receipt.get("stream_capture_sha256"),
             )
         else:
             if (
@@ -1061,9 +1120,20 @@ def recover_native_trusted_attempt(
                 gate_released=True, target_started=True,
                 exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
                 deadline_sha256=str(deadline_record["deadline_sha256"]),
+                stream_capture_sha256=receipt.get("stream_capture_sha256"),
             )
         if receipt != expected:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        stream_digest = receipt.get("stream_capture_sha256")
+        if stream_digest is not None:
+            if not isinstance(stream_digest, str) or len(stream_digest) != 64:
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+            try:
+                recover_native_trusted_stream_capture(
+                    batch, intent=intent, terminal=receipt,
+                )
+            except NativeTrustedStreamError as exc:
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
         return receipt
 
     if cleanup:
@@ -1101,7 +1171,8 @@ def audit_native_trusted_lifecycle(
         "registration_sha256": terminal.get("registration_sha256"),
         "deadline_sha256": None,
         "terminal_sha256": terminal.get("terminal_sha256"),
-        "output_capture_sha256": None, "broker_coverage": "not_observed",
+        "stream_capture_sha256": None, "output_capture_sha256": None,
+        "broker_coverage": "not_observed",
         "publication_eligible": False,
     }
     if (
@@ -1123,6 +1194,17 @@ def audit_native_trusted_lifecycle(
         result["reason"] = "native_trusted_recovery_deadline_invalid"
         return result
     result["deadline_sha256"] = deadline["deadline_sha256"]
+    stream_digest = terminal.get("stream_capture_sha256")
+    if stream_digest is not None:
+        try:
+            stream = recover_native_trusted_stream_capture(
+                batch, intent=intent, terminal=terminal,
+            )
+        except NativeTrustedStreamError as exc:
+            result["status"] = "recovery_required"
+            result["reason"] = exc.code
+            return result
+        result["stream_capture_sha256"] = stream["stream_capture_sha256"]
     capture_path = batch / "native-trusted-output-capture.json"
     try:
         os.lstat(capture_path)
@@ -1171,7 +1253,7 @@ def persist_native_trusted_lifecycle_audit(
         raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_not_verified")
     required = (
         "launch_sha256", "intent_sha256", "attestation_sha256", "registration_sha256",
-        "deadline_sha256", "terminal_sha256", "output_capture_sha256",
+        "deadline_sha256", "terminal_sha256", "stream_capture_sha256", "output_capture_sha256",
     )
     if any(not isinstance(audit.get(key), str) for key in required):
         raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_context_invalid")
@@ -1183,6 +1265,7 @@ def persist_native_trusted_lifecycle_audit(
         "registration_sha256": audit["registration_sha256"],
         "deadline_sha256": audit["deadline_sha256"],
         "terminal_sha256": audit["terminal_sha256"],
+        "stream_capture_sha256": audit["stream_capture_sha256"],
         "capture_sha256": audit["output_capture_sha256"],
         "broker_coverage": audit["broker_coverage"],
         "publication_eligible": False,
@@ -1220,7 +1303,7 @@ def recover_native_trusted_lifecycle_audit(
         "schema_version", "protocol", "launch_id", "journal_id", "launch_sha256",
         "intent_sha256", "attestation_sha256", "registration_sha256", "deadline_sha256",
         "terminal_sha256", "capture_sha256", "broker_coverage", "publication_eligible",
-        "audit_sha256",
+        "stream_capture_sha256", "audit_sha256",
     }
     if (
         set(record) != expected_fields
@@ -1237,6 +1320,7 @@ def recover_native_trusted_lifecycle_audit(
         "registration_sha256": audit["registration_sha256"],
         "deadline_sha256": audit["deadline_sha256"],
         "terminal_sha256": audit["terminal_sha256"],
+        "stream_capture_sha256": audit["stream_capture_sha256"],
         "capture_sha256": audit["output_capture_sha256"],
         "broker_coverage": audit["broker_coverage"],
     }
