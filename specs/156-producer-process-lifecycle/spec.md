@@ -43,6 +43,13 @@ This feature covers:
 It does not define provider calls, candidate scoring, Feature 150--153 admission/publication,
 automatic solve defaults, remote transport, or an external campaign acceptance claim.
 
+The native trusted path now has a create-only formal receipt boundary: once terminal, bounded
+streams, stable envelope, host-broker, target-binding, deadline, and cleanup evidence all verify,
+it persists `execution-receipt.json` and exposes its canonical digest. Feature 153 may consume
+that digest before staging and record it in the publication journal. The handoff is deliberately
+one-way: publication does not rewrite the receipt, and an optional link does not close the
+trusted-bootstrap, recovery, scheduler, or real-campaign gaps listed below.
+
 ## Lifecycle state machine
 
 ```text

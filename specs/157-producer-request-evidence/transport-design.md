@@ -83,7 +83,10 @@ credential, or journal path. A fixed endpoint is chosen by the controller for th
 attempt; target frames provide only opaque request ID and body. Malformed or over-budget
 frames stop the bridge without outbound I/O. Its observation still has
 `coverage=brokered_requests_only`, and the process-only terminal receipt does not yet
-bind a replayed journal. T157-05 and T157-06 therefore remain open.
+bind a replayed journal. The completed formal Feature 156 receipt binds the canonical broker
+journal identity and admitted-count coverage, and Feature 153 may require that receipt before
+publication staging. T157-05 and T157-06 therefore remain open for crash-safe ownership,
+complete egress coverage, and scheduler integration.
 
 ## Native producer isolation boundary
 

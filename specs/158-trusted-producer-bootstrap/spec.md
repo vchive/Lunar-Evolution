@@ -2,7 +2,7 @@
 
 **Created**: 2026-09-24
 
-**Status**: Provider-free trusted-bootstrap fixture and production launch identity adapter implemented; Feature 156 lifecycle, native control propagation, and scheduler integration remain deferred
+**Status**: Provider-free trusted-bootstrap fixture and production launch identity adapter implemented; native formal receipt persistence and the optional Feature 153 publication-journal handoff are available, while Feature 156 lifecycle completion, recovery-safe broker integration, and scheduler integration remain deferred
 
 ## Problem
 
@@ -124,6 +124,13 @@ cancellation, or cleanup uncertainty retain Feature 156's terminal unknown seman
 trigger a retry. The native process-only receipt must bind the effective deadline outcome and
 cleanup status without treating a callback or parent deadline as a substitute for formal request,
 output, or publication evidence.
+
+After the complete native evidence projection succeeds, Feature 156 persists the formal
+`execution-receipt.json` create-only and exposes its digest. Feature 153 can pass that digest into
+the publication transaction, which records it in the canonical publication journal only after
+receipt identity, successful terminal, cleanup, and broker-coverage checks. This handoff does not
+replace the bootstrap's registration/recovery obligations or make the fixture a scheduler entry
+point.
 The fixture's timeout is one absolute monotonic deadline measured from the attempt start. Both
 owner-checked cleanup grace phases are clipped to that deadline; after expiry, a leader reap is
 bounded and any remaining liveness is recorded as `unknown`/`recovery_required` rather than

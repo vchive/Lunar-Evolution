@@ -93,3 +93,18 @@ The combined Feature 153 journal, preflight, staging, recovery, and marker selec
 tests** at the current checkout. That historical entry did not retain an exact full-suite count, so it is not used as current
 release qualification. The dated checkpoints below record the native integration separately.
 This feature does not start a launcher, scheduler, external producer, provider, or real campaign.
+
+## 2026-10-01 formal native receipt link
+
+The publication journal now has an optional `native_execution_receipt_sha256` field. When a
+caller supplies it, the transaction reads the matching
+`evolution/producer-batches/<journal_id>/execution-receipt.json` before the prepared intent or
+any stage is written. The provider-free regression covers a completed formal receipt, journal
+round-trip preservation, and missing/invalid/tampered receipt rejection with zero publication
+side effect. Legacy journals without the optional field continue to parse with unchanged
+canonical bytes.
+
+The current gate checks the receipt self-digest, protocol, launch task identity, successful
+terminal, gate release, verified cleanup, and `brokered_requests_only` coverage. Full receipt
+schema/evidence revalidation at the publication boundary remains a follow-up (T153-06f); this
+slice does not start a scheduler or run a real OpenEvolve/Shinka campaign.

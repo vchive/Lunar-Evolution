@@ -20,6 +20,7 @@ ProducerBundlePublicationJournal
   terminal_marker_sha256?
   archive_after_sha256?
   state_after_sha256?
+  native_execution_receipt_sha256? # Feature 156 formal receipt bound to this batch
   journal_sha256                 # hash payload with this field omitted
 
 ProducerBundlePublicationCandidate
@@ -56,3 +57,12 @@ publication stage or workspace marker for this outcome.
 The active control policy digest covers zero preparation requests, native execution budget,
 independent evaluator timeout, and the optional total wall allowance. The live monotonic start
 and cancellation callbacks are process-local controls, not portable journal fields.
+
+`native_execution_receipt_sha256` is an optional cross-feature link. When present, the
+transaction reads `evolution/producer-batches/<journal_id>/execution-receipt.json` before its
+first write and requires the receipt's self-digest, protocol, task identity, successful exit,
+released gate, verified cleanup, and broker coverage to agree with the request. The digest is
+then carried into the canonical journal and every staged/committed journal rewrite. Omitting the
+field preserves legacy journal bytes and remains supported for offline material that has no
+trusted native receipt. This link is an admission precondition; it does not create the receipt,
+replace native evidence recovery, or itself prove that a producer campaign was scheduled.

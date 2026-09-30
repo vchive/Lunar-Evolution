@@ -106,6 +106,13 @@ Consumers must use the read-only audit recovery API, which rechecks the underlyi
 capture, deadline, and registration chain before accepting the sidecar. A missing, changed, or
 self-rehashed sidecar is invalid even when its summarized process records remain valid.
 
+The formal `execution-receipt.json` is the downstream handoff object. Feature 153 may require its
+`receipt_sha256` and must find the same receipt under the journal's derived batch directory with
+matching task identity and a completed, cleaned, broker-covered terminal. The publication journal
+stores only that digest; it does not copy or mutate the receipt. Legacy publication journals may
+omit the link, and this optional handoff does not authorize scheduler execution or bypass native
+recovery checks.
+
 When cancellation is observed after the gate and target start, the native attempt may persist the
 same process-only terminal schema with `process_status=cancelled` and `exit_code=null`. The receipt
 continues to bind registration, handoff, and the exact bootstrap evidence digest; unknown evidence

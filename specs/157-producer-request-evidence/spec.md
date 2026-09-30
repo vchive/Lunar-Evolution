@@ -59,8 +59,11 @@ receives neither endpoint nor credential. The journal is created outside target 
 directories before the release gate opens. Missing initialization closes the gate.
 
 This path is still `brokered_requests_only`. The process-only native terminal receipt
-does not bind a broker journal or authorize publication. A complete execution receipt,
-recovery-safe broker handoff, and scheduler admission remain deferred. See
+does not bind a broker journal or authorize publication. The later formal Feature 156 execution
+receipt now carries the verified broker-coverage summary when the native evidence projection is
+complete; Feature 153 can require that receipt before staging, but this does not by itself prove
+complete egress or scheduler admission. A recovery-safe broker handoff and production scheduler
+integration remain deferred. See
 `transport-design.md` for the production transport and isolation requirements.
 
 ## Non-goals

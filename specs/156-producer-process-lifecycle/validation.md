@@ -144,6 +144,16 @@ symlink/non-regular destinations, and any missing or rebound evidence must fail 
 replacement or a second attestation claim. The receipt remains a lifecycle artifact until the
 separate Feature 153 publication/admission transaction accepts it.
 
+## 2026-10-01 receipt-to-publication handoff
+
+The formal native receipt persistence tests now cover the downstream handoff contract: a
+completed `execution-receipt.json` can be supplied to Feature 153 by digest, appears in the
+canonical publication journal, and is rejected when missing, malformed, self-digest-tampered,
+or terminally unsuccessful. The publication transaction performs this check before creating its
+prepared intent, so an invalid receipt leaves no publication side effect. This validates the
+handoff only; trusted-bootstrap lifecycle integration, complete request evidence, unknown
+recovery, scheduler entry points, and real campaign acceptance remain out of scope.
+
 ## Implementation checkpoint (2026-09-24)
 
 The local runner now claims the nonce once across the workspace, revalidates launch identity,

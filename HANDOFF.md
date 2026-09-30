@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Formal native execution receipt to publication journal
+
+Feature 156/157/158 的 native trusted evidence 现在已有正式收据闭环：在 terminal、并发有界
+stream、稳定 envelope、host broker coverage、target execution binding、durable deadline 和
+owner-checked cleanup 全部复核通过后，create-only `execution-receipt.json` 才会持久化；重复
+调用只读复用完全相同的 canonical bytes，漂移、冲突、symlink、非 regular 文件或不完整证据
+均 fail-closed。Feature 153 的 publication transaction 可通过
+`native_execution_receipt_sha256` 接收该收据摘要，在写入 `journal.prepared.json` 之前读取并
+校验同一 batch 下的正式收据、任务身份、成功终态、gate release、cleanup 和 broker coverage，
+并把摘要写入 canonical publication journal。未提供该可选字段的 legacy journal 保持原有字节
+兼容性。
+
+这条链已经有 provider-free focused regression，覆盖有效 receipt 的 journal round-trip 以及
+缺失、格式错误、自摘要篡改、失败终态和错误任务身份的零写入拒绝。它只证明“正式执行收据
+→发布 journal”的持久边界，不等于完整 receipt schema 在发布边界重新投影，也不等于 trusted
+bootstrap 的生产 runner、crash-safe broker recovery、scheduler/default producer entrypoint 或
+真实 OpenEvolve/Shinka campaign 已完成。后续仍需完成 T153-06f、T156-05/06/09/12/14、
+T157-05/06、T158-04 的生产接线与真实 campaign 验收；当前仍不运行 WebAgent 或远程 evaluator。
+
 ## 2026-10-01 Native trusted stream, envelope, cleanup, and receipt projection
 
 Feature 158/156 的 native trusted supporting slice 已继续推进。native bootstrap 现在以非阻塞

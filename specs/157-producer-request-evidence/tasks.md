@@ -27,3 +27,9 @@ proves one completed request; malformed frames and a second request beyond the b
 no provider I/O. This is a request-exit integration slice, not T157-05/06 closure: the
 process-only receipt does not bind the journal, and a production scheduler cannot yet treat
 the broker observation as publication authority.
+
+The completed native evidence projection now carries the broker coverage into the formal Feature
+156 execution receipt, and Feature 153's publication transaction can require that receipt by
+digest before writing its prepared intent. This is a narrow receipt/journal handoff; T157-05 and
+T157-06 remain open for protected journal ownership, crash-safe transport recovery, bypass
+coverage tests, and production scheduler integration.

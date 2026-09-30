@@ -2,10 +2,11 @@
 
 **Status**: Offline imported Shinka material can pass native draft evaluation, retained-evidence
 publication, population read-back/resume, and delivery verification in the initial population
-window. Caller-owned active deadline/cancellation, same-boot durable deadline restoration and
-durable all-rejected terminal inspection are implemented. Active-process cancellation and full
-unknown-result recovery remain open; no launcher, scheduler, remote service, or real campaign is
-included.
+window. Caller-owned active deadline/cancellation, same-boot durable deadline restoration,
+durable all-rejected terminal inspection, and the optional Feature 156 formal execution-receipt
+link are implemented. Active-process cancellation, full unknown-result recovery, complete formal
+receipt schema revalidation at this boundary, launcher/scheduler integration, and real campaigns
+remain open.
 
 ## Problem
 
@@ -146,6 +147,14 @@ unchanged archive/state digests. Exact transaction retries return the terminal j
 evaluation calls. Missing or partial terminal evidence requires recovery and is never silently
 repaired or replayed. Nonzero execution, timeout, and other unknown draft outcomes are still
 outside this completed terminal slice.
+
+The transaction also accepts an optional `native_execution_receipt_sha256` from the trusted native
+producer path. Before creating `journal.prepared.json` or any other publication side effect, it
+reads the create-only `execution-receipt.json` under the journal's batch directory, verifies its
+self-digest and identity/status/cleanup/broker summary, and records the same digest in the
+canonical publication journal. Legacy calls that omit the link retain their original canonical
+bytes. This is the first formal receipt-to-publication boundary; it does not launch a producer,
+recover an unknown native attempt, or imply scheduler/real-campaign acceptance.
 
 Remaining work includes active-process cancellation and the full unknown/interruption recovery
 matrix. Launcher/scheduler integration, remote execution, and real OpenEvolve/Shinka campaigns

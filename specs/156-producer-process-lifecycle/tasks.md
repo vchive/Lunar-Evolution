@@ -62,3 +62,9 @@ canonical self-digest, and treat an unchanged existing receipt as an idempotent 
 or rebound sidecars, incomplete broker coverage, and cleanup uncertainty remain fail-closed. This
 does not close T156-14 or authorize publication; the admission transaction still consumes the
 receipt through its own boundary.
+
+The receipt is now consumable by Feature 153's publication transaction through the optional
+`native_execution_receipt_sha256` journal link. The transaction checks the receipt before writing
+its prepared intent and carries the digest into the publication journal. This closes the
+receipt-to-journal handoff slice only; T156-14 remains open until the controller-owned request
+transport, recovery-safe native runner, and scheduler path are integrated as one lifecycle.

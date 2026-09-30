@@ -31,5 +31,11 @@
       publishing candidates; rebuild portable receipts from retained original evidence.
 - [x] T153-06d Compose caller-owned active execution controls with tighter parent controls,
       pin the actual policy, and preserve typed cancellation/timeout across publication locks.
+- [x] T153-06e Bind an optional Feature 156 formal native execution receipt to the publication
+      journal and validate its self-digest, task identity, successful terminal, cleanup, and
+      broker-coverage summary before the first transaction write. Keep legacy journals without
+      this field byte-compatible.
+- [ ] T153-06f Revalidate the complete formal receipt schema and retained native evidence at the
+      publication boundary, rather than relying on the current bounded summary gate.
 - [ ] T153-07 Connect launcher/scheduler and run separate real OpenEvolve and ShinkaEvolve
       campaigns after the draft-to-publication path and request boundary are accepted.

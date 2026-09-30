@@ -42,6 +42,15 @@ chain, create-only behavior, and refusal to write when output capture is absent.
 publication-ineligible and deliberately remains separate from Feature 156's formal execution
 receipt until trusted stream, envelope, broker, and recovery evidence are integrated.
 
+## 2026-10-01 formal receipt to publication journal
+
+The strict native projection now has a create-only formal receipt and a provider-free downstream
+check in Feature 153. A valid receipt digest is preserved in the publication journal; missing,
+invalid, self-digest-tampered, unsuccessful, or wrong-task receipts are rejected before staging.
+This proves the durable handoff boundary only. The native fixture still does not satisfy the full
+Feature 156 runner contract, scheduler integration, post-crash transport recovery, or external
+campaign acceptance required to close T158-04.
+
 The recovery verifier also rejects a missing or rehashed sidecar and a capture digest changed only
 inside a self-rehashed sidecar. This keeps the audit projection diagnostic until formal Feature 156
 receipt consumption is implemented.

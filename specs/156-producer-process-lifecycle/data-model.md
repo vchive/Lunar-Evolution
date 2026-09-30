@@ -71,6 +71,13 @@ read-only replay; any collision or altered receipt is rejected and never replace
 is still evidence for the later admission transaction: writing it does not by itself authorize
 population admission, publication, scheduler retry, or a second attestation.
 
+When Feature 153 receives the receipt digest, it must point to the same
+`evolution/producer-batches/<journal_id>/execution-receipt.json` object and matching
+`journal_id/run_id/parent_task_id/task_id`. Feature 153 records the digest in its canonical
+publication journal; it does not rewrite or replace this lifecycle receipt. A missing, changed,
+or cross-task receipt blocks publication before any stage write. This downstream link is optional
+for legacy offline journals and does not turn the cooperative runner into a trusted bootstrap.
+
 `consumed_at_unix_ns` is audit metadata only and never replaces the monotonic execution deadline.
 `session_id` and `owner_lock_sha256` identify the local registration; they do not grant authority
 to signal another process. Producer output, stdout, and stderr are represented by bounded sizes

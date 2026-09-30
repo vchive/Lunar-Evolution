@@ -78,6 +78,12 @@
   non-regular destination, or changed projection is a fixed failure. This step does not authorize
   publication, population admission, scheduler execution, or a retry with a new attestation.
 
+  The persisted formal receipt is now accepted by Feature 153 through an optional
+  `native_execution_receipt_sha256` journal link. Publication validates the receipt before its
+  prepared intent and carries the digest into the canonical journal. This closes only the
+  receipt-to-publication handoff; T158-04 remains open for the integrated bootstrap/runner,
+  crash recovery, protected broker ownership, and scheduler entry point.
+
   The sidecar has a matching read-only recovery verifier. It requires the sidecar's exact schema
   and self-digest, then reruns the terminal/capture/deadline chain and compares every bound digest;
   it never treats the sidecar alone as process or publication authority.
