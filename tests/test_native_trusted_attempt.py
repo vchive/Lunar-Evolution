@@ -211,7 +211,7 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_audit_native_lifecycle_reports_process_only_when_capture_missing(tmp_path: Path):
-    workspace, _producer_root, intent, attestation, artifact, _ = _attempt(tmp_path)
+    workspace, producer_root, intent, attestation, artifact, _ = _attempt(tmp_path)
     run_native_trusted_attempt(
         workspace, producer_root=producer_root, intent=intent,
         attestation=attestation, artifact=artifact,
@@ -797,7 +797,7 @@ def test_recovery_requires_native_attempt_deadline_sidecar(tmp_path: Path):
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_lifecycle_audit_keeps_missing_attempt_recovery_required(tmp_path: Path):
     """A missing claim is not reported as a process-only terminal."""
-    workspace, producer_root, intent, attestation, artifact, _ = _attempt(tmp_path)
+    workspace, _producer_root, intent, attestation, artifact, _ = _attempt(tmp_path)
     result = audit_native_trusted_lifecycle(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
     )
