@@ -386,7 +386,10 @@ def validate_lifecycle(gateway: object, capability: AdapterCapability | None = N
 
     if capability is None:
         solver_id = getattr(gateway, "solver_id", None) or getattr(gateway, "name", None) or "fixture"
-        capability = AdapterCapability.fixture(str(solver_id))
+        # ``for_fixture`` is the declaration-only factory.  Keep the implicit
+        # capability path equivalent to an explicit ``fixture_capability``
+        # declaration without requiring adapters to expose a solver registry.
+        capability = AdapterCapability.for_fixture(str(solver_id))
     if not isinstance(capability, AdapterCapability):
         raise AdapterContractError("rsi_adapter_capability_invalid")
     for attr in ("memory_store", "memory_writer", "write_memory", "commit_memory", "publish_memory", "admit_memory"):
@@ -419,14 +422,20 @@ class AdapterContractHarness:
             args = (request, result) if result is not None else (request,)
             return method(*args)
         solver_request = request.to_solver_request()
-        candidates = (
-            ((request, result), ((request, result) if result is not None else ())),
-            ((solver_request, result), ((solver_request, result) if result is not None else ())),
-            ((request,), (request,)),
-            ((solver_request,), (solver_request,)),
-            ((), ()),
-        )
-        for _display, args in candidates:
+        # Prefer the rich request for named hooks.  The empty-argument shape is
+        # deliberately last when no result is available: otherwise a hook such
+        # as ``preflight(request=None)`` would silently receive no request.
+        if result is None:
+            candidates = ((request,), (solver_request,), ())
+        else:
+            candidates = (
+                (request, result),
+                (solver_request, result),
+                (request,),
+                (solver_request,),
+                (),
+            )
+        for args in candidates:
             try:
                 signature.bind(*args)
             except TypeError:
@@ -443,6 +452,35 @@ class AdapterContractHarness:
         result: AdapterResult | None = None
         solver_result: SolverResult | None = None
         closed = False
+        recovery_attempted = False
+        close_attempted = False
+
+        def recover(recovery_result: AdapterResult) -> None:
+            nonlocal recovery_attempted
+            if recovery_attempted or not self.capability.supports_recovery:
+                return
+            recovery_attempted = True
+            phases.append(AdapterLifecycle.RECOVER.value)
+            method = getattr(self.gateway, "recover", None)
+            if method is not None:
+                self._invoke(method, request, recovery_result)
+
+        def close(close_result: AdapterResult | None) -> None:
+            nonlocal close_attempted
+            if close_attempted:
+                return
+            close_attempted = True
+            phases.append(AdapterLifecycle.CLOSE.value)
+            method = getattr(self.gateway, "close", None)
+            if method is not None:
+                try:
+                    self._invoke(method, request, close_result)
+                except Exception:  # noqa: BLE001,S110 - cleanup is explicitly best effort
+                    # Cleanup is best effort.  The terminal receipt already
+                    # records the execution outcome and must not be replaced
+                    # by a cleanup implementation error.
+                    pass
+
         try:
             for phase in (AdapterLifecycle.REGISTER, AdapterLifecycle.PREFLIGHT, AdapterLifecycle.SNAPSHOT):
                 phases.append(phase.value)
@@ -474,18 +512,9 @@ class AdapterContractHarness:
                 method = getattr(self.gateway, phase.value, None)
                 if method is not None:
                     self._invoke(method, request, result)
-            if result.status in {"failed", "timed_out", "cancelled", "unknown"} and self.capability.supports_recovery:
-                phases.append(AdapterLifecycle.RECOVER.value)
-                method = getattr(self.gateway, "recover", None)
-                if method is not None:
-                    self._invoke(method, request, result)
-            phases.append(AdapterLifecycle.CLOSE.value)
-            close = getattr(self.gateway, "close", None)
-            if close is not None:
-                try:
-                    self._invoke(close, request, result)
-                except (RuntimeError, TypeError, ValueError):
-                    pass
+            if result.status in {"failed", "timed_out", "cancelled", "unknown"}:
+                recover(result)
+            close(result)
             closed = True
             return AdapterResult(result.receipt, tuple(phases), result.ownership, result.capability_sha256)
         except BaseException as exc:
@@ -494,24 +523,24 @@ class AdapterContractHarness:
             status = _terminal_from_exception(exc)
             trace = _record_digest({"episode_id": request.episode_id, "status": status, "error": type(exc).__name__})
             fallback = SolverResult(request.episode_id, request.to_solver_request().digest(), status, None, None, None, trace, terminal_reason=f"contract_{status}")
-            phases.append(AdapterLifecycle.RECOVER.value)
-            phases.append(AdapterLifecycle.CLOSE.value)
-            close = getattr(self.gateway, "close", None)
-            if close is not None:
-                try:
-                    self._invoke(close, request, result)
-                except (RuntimeError, TypeError, ValueError):
-                    pass
+            fallback_result = AdapterResult(
+                AdapterReceipt.from_solver_result(fallback),
+                tuple(phases),
+                AdapterOwnership(),
+                self.capability.digest(),
+            )
+            try:
+                recover(fallback_result)
+            except Exception:  # noqa: BLE001,S110 - recovery cannot mask the primary failure
+                # A recovery hook cannot erase the primary failure or prevent
+                # cleanup.  Its attempted phase remains journaled once.
+                pass
+            close(fallback_result)
             closed = True
-            return AdapterResult(AdapterReceipt.from_solver_result(fallback), tuple(phases), AdapterOwnership(), self.capability.digest())
+            return AdapterResult(fallback_result.receipt, tuple(phases), fallback_result.ownership, fallback_result.capability_sha256)
         finally:
-            if not closed:
-                close = getattr(self.gateway, "close", None)
-                if close is not None:
-                    try:
-                        self._invoke(close, request, result)
-                    except (RuntimeError, TypeError, ValueError):
-                        pass
+            if not closed and not close_attempted:
+                close(result)
 
     execute = run
 

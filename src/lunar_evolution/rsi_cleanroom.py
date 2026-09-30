@@ -20,6 +20,7 @@ import hashlib
 import math
 import os
 import shutil
+import stat
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -102,7 +103,8 @@ def _safe_dependency_name(value: object) -> str:
     if type(value) is not str or not value or "\x00" in value or "\\" in value:
         _fail("dependency_path_invalid")
     path = PurePosixPath(value)
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+    if (path.is_absolute() or not path.parts or path.as_posix() != value
+            or any(part in {"", ".", ".."} for part in path.parts)):
         _fail("dependency_path_invalid")
     return value
 
@@ -137,20 +139,20 @@ def _read_nofollow(path: Path, maximum: int) -> bytes:
 
     if "\x00" in str(path):
         _fail("source_path_invalid")
-    flags = os.O_RDONLY
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(path, flags | nofollow)
     except (OSError, ValueError) as exc:
         raise CleanRoomError("source_path_invalid") from exc
     try:
-        stat = os.fstat(fd)
-        if not os.path.isfile(path) or not __import__("stat").S_ISREG(stat.st_mode):
+        initial = os.fstat(fd)
+        if not stat.S_ISREG(initial.st_mode):
             _fail("source_path_invalid")
-        if stat.st_size < 0 or stat.st_size > maximum:
+        if initial.st_size < 0 or initial.st_size > maximum:
             _fail("source_invalid")
         chunks: list[bytes] = []
-        remaining = stat.st_size
+        remaining = initial.st_size
         while remaining:
             chunk = os.read(fd, min(1024 * 1024, remaining))
             if not chunk:
@@ -158,7 +160,10 @@ def _read_nofollow(path: Path, maximum: int) -> bytes:
             chunks.append(chunk)
             remaining -= len(chunk)
         content = b"".join(chunks)
-        if len(content) != stat.st_size:
+        final = os.fstat(fd)
+        identity = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if (len(content) != initial.st_size or os.read(fd, 1)
+                or any(getattr(initial, key) != getattr(final, key) for key in identity)):
             _fail("source_invalid")
         return content
     finally:
@@ -460,6 +465,7 @@ class CleanRoomVerifier:
             # A candidate/evaluator must not rewrite the material that was bound before launch.
             if (
                 _read_nofollow(source_path, MAX_SOURCE_BYTES) != source
+                or _read_nofollow(public_input_path, MAX_TASK_INPUT_BYTES) != request.task_input
                 or _dependency_digest(
                     tuple((name, _read_nofollow(dependency_dir / name, MAX_DEPENDENCY_BYTES))
                           for name, _ in request.candidate.dependency_bytes)
@@ -470,6 +476,8 @@ class CleanRoomVerifier:
                 evaluation = None
             evidence_payload: object = {
                 "episode_id": request.episode_id,
+                "contract_sha256": request.contract_sha256,
+                "private_input_sha256": request.private_input_sha256,
                 "source_sha256": source_digest,
                 "dependency_sha256": dependency_digest,
                 "task_input_sha256": request.task_input_sha256,
@@ -552,6 +560,8 @@ class CleanRoomVerifier:
         evidence_digest = _canonical_digest(
             {
                 "episode_id": request.episode_id,
+                "contract_sha256": request.contract_sha256,
+                "private_input_sha256": request.private_input_sha256,
                 "source_sha256": source_digest,
                 "dependency_sha256": dependency_digest,
                 "task_input_sha256": request.task_input_sha256,

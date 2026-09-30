@@ -828,6 +828,63 @@ class RSILearningController:
     def snapshot(self) -> MemorySnapshot:
         return self.memory_store.snapshot
 
+    def _failure_curriculum_state(self) -> dict[str, Any] | None:
+        """Return optional mutable failure-driven curriculum state for a run checkpoint."""
+
+        # Import lazily because rsi_curriculum imports CurriculumDecision from this module.
+        from .rsi_curriculum import FailureDrivenCurriculum
+
+        if not isinstance(self.curriculum, FailureDrivenCurriculum):
+            return None
+        try:
+            ledger = list(self.curriculum.to_ledger())
+            seed = self.curriculum.seed
+            budget = self.curriculum.budget_limit
+            digest = self.curriculum.ledger_digest()
+        except (AttributeError, TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_curriculum_checkpoint_invalid") from exc
+        return {
+            "protocol": "rsi-failure-driven-curriculum-v1",
+            "seed": seed,
+            "budget": budget,
+            "ledger": ledger,
+            "ledger_digest": digest,
+        }
+
+    def _restore_failure_curriculum(self, state: Mapping[str, Any]) -> None:
+        """Restore failure-driven ledger state before any resumed callback executes."""
+
+        raw = state.get("curriculum_state")
+        if raw is None:
+            return
+        from .rsi_curriculum import FailureDrivenCurriculum
+
+        if not isinstance(self.curriculum, FailureDrivenCurriculum):
+            raise RSILearningError("rsi_resume_curriculum_drift")
+        if (not isinstance(raw, Mapping)
+                or set(raw) != {"protocol", "seed", "budget", "ledger", "ledger_digest"}
+                or raw.get("protocol") != "rsi-failure-driven-curriculum-v1"):
+            raise RSILearningError("rsi_curriculum_checkpoint_corrupt")
+        try:
+            restored = FailureDrivenCurriculum.from_ledger(
+                raw["ledger"], seed=raw["seed"], budget=raw["budget"],
+            )
+            if restored.ledger_digest() != raw["ledger_digest"]:
+                raise RSILearningError("rsi_curriculum_checkpoint_corrupt")
+            if (restored.seed != self.curriculum.seed
+                    or restored.budget_limit != self.curriculum.budget_limit):
+                raise RSILearningError("rsi_resume_curriculum_drift")
+        except RSILearningError:
+            raise
+        except (TypeError, ValueError, KeyError) as exc:
+            raise RSILearningError("rsi_curriculum_checkpoint_corrupt") from exc
+        self.curriculum = restored
+
+    def _sync_curriculum_checkpoint(self, state: dict[str, Any]) -> None:
+        curriculum_state = self._failure_curriculum_state()
+        if curriculum_state is not None:
+            state["curriculum_state"] = curriculum_state
+
     def callback_checkpoint(self, run_id: str, callback_id: str) -> tuple[str, dict[str, Any]] | None:
         """Inspect one durable callback without executing it or changing the learning run."""
         if self.ledger is None:
@@ -962,6 +1019,7 @@ class RSILearningController:
             self._validate_resume_identity(record, None, None)
             self._check_budget_history(record)
             state = checkpoint[1]
+            self._restore_failure_curriculum(state)
             if state.get("callback_protocol_version") != "1":
                 raise RSILearningError("rsi_callback_migration_required")
             binding = self._callback_binding_for_run(state, callback_id)
@@ -1149,6 +1207,9 @@ class RSILearningController:
                 "run_fingerprint": run_fingerprint.to_dict(),
             },
         }
+        curriculum_state = self._failure_curriculum_state()
+        if curriculum_state is not None:
+            payload["curriculum_state"] = curriculum_state
         request_sha256 = _record_digest({"run_id": run_id, **payload})
         existing = self.ledger.get(run_id)
         if existing is not None:
@@ -1333,6 +1394,7 @@ class RSILearningController:
 
     def _save_flow(self, record: RSIRecord | None, state: dict[str, Any]) -> None:
         """Publish the whole recovery boundary before permitting the next side effect."""
+        self._sync_curriculum_checkpoint(state)
         if self.ledger is None or record is None:
             return
         previous = self.ledger.controller_checkpoint(record.logical_id)
@@ -1344,7 +1406,9 @@ class RSILearningController:
 
     def _flow_state(self, record: RSIRecord | None, *, run_id: str, plan: dict[str, Any],
                     pins: dict[str, str], budget: Mapping[str, Any]) -> dict[str, Any]:
-        return {
+        if record is not None:
+            self._restore_failure_curriculum(record.payload)
+        state = {
             "schema_version": "2", "kind": "rsi_run_checkpoint", "run_id": run_id,
             "callback_protocol_version": "1",
             "mode": plan["mode"], "plan": plan, "pins": pins, "status": "running",
@@ -1354,6 +1418,8 @@ class RSILearningController:
                              else RSIRunBudget.create(budget).to_dict()), "intents": {},
             "executions": {}, "decisions": {}, "judgments": {},
         }
+        self._sync_curriculum_checkpoint(state)
+        return state
 
     @staticmethod
     def _decision_from_dict(value: Mapping[str, Any]) -> CurriculumDecision:
@@ -1493,12 +1559,22 @@ class RSILearningController:
                 break
             practice_id = f"{run_id}-practice-{attempt}-0"
             if practice_id not in state["decisions"]:
+                def choose_curriculum(execution=execution, diagnosis=diagnosis, attempt=attempt) -> dict[str, Any]:
+                    decision = self.curriculum.choose(
+                        target=execution.episode, diagnosis=diagnosis, wave=attempt, ordinal=0,
+                    )
+                    # Persist the mutable selection ledger while the callback journal is still
+                    # open.  A crash after callback completion but before ``decisions`` is
+                    # published can then replay the completed callback without charging a second
+                    # curriculum selection or budget unit.
+                    self._sync_curriculum_checkpoint(state)
+                    self._save_flow(record, state)
+                    return decision.to_dict()
+
                 state["decisions"][practice_id] = self._invoke_callback(
                     run_id, f"curriculum:{practice_id}", "curriculum",
                     {"target": execution.episode.to_record_dict(), "diagnosis": diagnosis, "wave": attempt, "ordinal": 0},
-                    lambda execution=execution, diagnosis=diagnosis, attempt=attempt: self.curriculum.choose(
-                        target=execution.episode, diagnosis=diagnosis, wave=attempt, ordinal=0,
-                    ).to_dict(),
+                    choose_curriculum,
                     RSIRunBudget.load(state["budget_state"]).check,
                 )
                 self._save_flow(record, state)
@@ -1619,6 +1695,8 @@ class RSILearningController:
             raise RSILearningError("rsi_unknown_reconcile_required")
         self._validate_resume_identity(record, observed_fingerprints, budget_policy)
         if record.state in {"completed", "failed", "cancelled", "budget_exhausted"}:
+            checkpoint = self.ledger.controller_checkpoint(run_id)
+            self._restore_failure_curriculum(checkpoint[1] if checkpoint else record.payload)
             return LearningRunResult(
                 run_id, record.state, MemorySnapshot.from_dict(record.payload["memory_snapshot"]),
                 tuple(self._deserialize_execution(item) for item in record.payload.get("target_attempts", [])),
@@ -1668,6 +1746,7 @@ class RSILearningController:
         if root.digest() != record.payload["fingerprints"]["memory_snapshot_sha256"]:
             raise RSILearningError("rsi_resume_memory_drift")
         self.memory_store = RSIMemoryStore(MemorySnapshot.from_dict(state["memory_snapshot"]))
+        self._restore_failure_curriculum(state)
         if state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
             return self._finish_flow(record, state, state["status"])
         if state.get("callback_protocol_version") != "1":

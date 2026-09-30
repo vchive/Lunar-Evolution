@@ -116,7 +116,7 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 
 ### B2. Memory governance 与 promotion gate
 
-已增加独立 append-only SQLite memory admission control plane，支持 observed → verified → candidate → shadow → approved → active → deprecated/revoked、CAS digest、verifier/pass、holdout/baseline regression 和 compatibility drift gate。它不修改只读 `RSIMemoryStore`，也尚未接入自动 holdout campaign 或 transfer quality suite。
+已增加独立 append-only SQLite memory admission control plane，支持 observed → verified → candidate → shadow → approved → active → deprecated/revoked、CAS digest、verifier/pass、holdout/baseline regression 和 compatibility drift gate；另有显式 `MemoryPromotionAdapter` 接收 transfer report 并强制两步晋级。它不修改只读 `RSIMemoryStore`，也尚未接入自动 holdout campaign 或默认 controller 触发。
 
 最小范围：observed → verified → candidate → shadow → approved → active → deprecated/revoked。candidate 必须绑定 verifier receipt、source episode、scope、compatibility 和 parent snapshot；用 baseline/holdout 决定 promotion；支持冲突、rollback、quarantine。
 
@@ -136,7 +136,7 @@ holdout/baseline evidence。真实 evaluator、跨任务数据集和 controller 
 
 已增加 provider-free `FailureDrivenCurriculum` 窄版本：有界 failure ontology、内容寻址 cluster、
 capability/prerequisite coverage、hard-negative/boundary probe、重复抑制、budget/novelty/reason
-审计和 canonical ledger replay。它保持确定性，不包含 bandit/RL，也尚未由 controller 默认启用。
+审计和 canonical ledger replay；controller 可选地将 ledger 纳入 checkpoint 并在 resume 恢复。它保持确定性，不包含 bandit/RL。
 
 最小范围：能力、前置能力、可观察失败、practice task、transfer task 的基本 ontology；失败模式聚类和去重；任务选择记录 reason、coverage、novelty 和 budget；先保持确定性、可重放，不引入复杂 bandit/RL。
 
@@ -216,9 +216,9 @@ capability/prerequisite coverage、hard-negative/boundary probe、重复抑制�
 ### 阶段 2：可信学习闭环（P1）
 
 当前已完成 provider-free clean-room verifier、provenance/污染检测、transfer regression 窄版本、
-memory promotion 状态机、失败驱动 curriculum 窄版本和统一 adapter contract。剩余顺序为：接入真实
-evaluator/Actor、holdout regression 的 controller 接线、rollback/quarantine 自动触发，以及真实
-process adapter/campaign。
+memory promotion adapter、失败驱动 curriculum 及其可选 resume 接线和统一 adapter contract。剩余
+顺序为：接入真实 evaluator/Actor、holdout regression 的默认 controller 触发、rollback/quarantine
+自动触发，以及真实 process adapter/campaign。
 
 出口：错误或伪造 receipt 无法进入 active memory；局部成功不能冒充迁移能力。
 

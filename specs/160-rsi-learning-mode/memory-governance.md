@@ -59,3 +59,9 @@ This P1 contract does not perform holdout execution, clean-room verification, tr
 artifact garbage collection, or automatic champion/challenger scheduling.  Those callers provide
 the signed/hashed receipts and invoke the explicit gates.  A later feature can add those runners
 without changing the append-only state machine.
+
+The provider-free controller seam is `MemoryPromotionAdapter` (or
+`promote_transfer_report`). It consumes a `TransferRegressionReport` only after its report digest
+and `promotion_evidence()` are validated. It appends `shadow -> approved` with the holdout and
+baseline receipts, and only then may append `approved -> active`; it cannot activate a memory from
+a single pass.

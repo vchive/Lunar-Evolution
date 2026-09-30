@@ -627,6 +627,16 @@ from .rsi_learning import (
 from .rsi_learning import (
     VerifierDecision as RSIVerifierDecision,
 )
+from .rsi_memory_governance import (
+    MemoryAdmissionRecord,
+    MemoryGovernanceError,
+    MemoryGovernanceStore,
+)
+from .rsi_memory_promotion import (
+    MemoryPromotionAdapter,
+    MemoryPromotionError,
+    promote_transfer_report,
+)
 from .rsi_store import (
     EpisodeState,
     RSILedger,
@@ -879,6 +889,11 @@ __all__ = [
     "LinuxSealedExecutable",
     "LocalExactVerifier",
     "LoopStrategy",
+    "MemoryAdmissionRecord",
+    "MemoryGovernanceError",
+    "MemoryGovernanceStore",
+    "MemoryPromotionAdapter",
+    "MemoryPromotionError",
     "ModelIdentity",
     "ModelProfile",
     "MultiFileCandidatePipeline",
@@ -1153,6 +1168,7 @@ __all__ = [
     "prepare_producer_seed_manifest",
     "producer_bundle_dependency_sha256",
     "profile_sha256",
+    "promote_transfer_report",
     "publish_acceptance_observation_binding",
     "publish_native_campaign_audit",
     "publish_producer_bundle_publication",

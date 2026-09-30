@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -36,6 +38,13 @@ def evaluator_fail(context):
 def evaluator_mutates(context):
     context.source_path.chmod(0o600)
     context.source_path.write_bytes(b"tampered")
+    return {"outcome": "pass", "evidence": {"checked": True}}
+
+
+def evaluator_mutates_input(context):
+    path = context.workspace / "input" / "task.bin"
+    path.chmod(0o600)
+    path.write_bytes(b"changed task")
     return {"outcome": "pass", "evidence": {"checked": True}}
 
 
@@ -118,6 +127,43 @@ def test_candidate_workspace_mutation_is_unresolved():
 
     assert verdict.outcome == "unresolved"
     assert verdict.contamination_reason == "candidate_workspace_mutated"
+
+
+def test_public_input_mutation_cannot_authorize_pass():
+    verdict = CleanRoomVerifier().verify(make_request(evaluator_mutates_input))
+    assert verdict.outcome == "unresolved"
+    assert verdict.contamination_reason == "candidate_workspace_mutated"
+
+
+@pytest.mark.parametrize("evaluator", [evaluator_pass, evaluator_raises])
+def test_contract_and_private_input_are_bound_to_verdict(evaluator):
+    request = make_request(evaluator)
+    verifier = CleanRoomVerifier()
+    original = verifier.verify(request)
+    changed_contract = verifier.verify(replace(
+        request, contract_sha256="f" * 64, actor_evidence=dict(request.actor_evidence),
+    ))
+    changed_private_input = verifier.verify(replace(
+        request, private_input_sha256="e" * 64, actor_evidence=dict(request.actor_evidence),
+    ))
+    assert len({verdict.receipt_sha256 for verdict in (
+        original, changed_contract, changed_private_input,
+    )}) == 3
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFO unavailable")
+def test_fifo_source_is_rejected_without_waiting_for_writer(tmp_path):
+    fifo = tmp_path / "fifo"
+    os.mkfifo(fifo)
+    verdict = CleanRoomVerifier().verify(make_request(candidate=CandidateArtifact(source_path=fifo)))
+    assert verdict.outcome == "unresolved"
+    assert verdict.contamination_reason == "source_path_invalid"
+
+
+@pytest.mark.parametrize("name", [".", "a//b", "a/./b", "a/"])
+def test_dependency_aliases_are_rejected_before_materialization(name):
+    with pytest.raises(CleanRoomError, match="dependency_path_invalid"):
+        CandidateArtifact(source=b"x", dependencies={name: b"dependency"})
 
 
 def test_expected_artifact_digest_detects_changed_source():

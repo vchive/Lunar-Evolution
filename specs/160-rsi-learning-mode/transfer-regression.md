@@ -9,13 +9,15 @@ remote service; the caller supplies a deterministic fixture runner.
 
 ## Contract
 
-`TransferRegressionSuite.run()` evaluates every task under three immutable arms:
+`TransferRegressionSuite.run()` emits schema version 2 and evaluates every task under three immutable arms:
 
 - `no_memory`: the canonical empty snapshot;
 - `old_memory`: the currently active/previous snapshot;
 - `current_memory`: the candidate snapshot being considered for promotion.
 
-Each arm runs each task at least twice. A task has a stable input digest, family, seen/unseen split,
+Each report also binds the old and current memory snapshot digests used by the run. The promotion
+adapter rejects a report whose snapshot pair does not match the admission's current snapshot and
+parent snapshot. Each arm runs each task at least twice. A task has a stable input digest, family, seen/unseen split,
 and target identity. The manifest must contain both seen and unseen tasks, and at least two distinct unseen targets across at least two task families. Reusing one input digest across the two splits is rejected before execution.
 
 The fixture runner receives `(task, memory_snapshot, repetition)` and returns a bounded
@@ -27,8 +29,11 @@ and fails promotion.
 A report is eligible for promotion only when the current snapshot does not regress against either
 empty or old memory on unseen tasks, does not regress on seen tasks, and improves the unseen score
 against empty memory. `promotion_evidence()` produces the holdout and baseline receipt digests and the
-boolean accepted by `MemoryGovernanceStore.transition(..., state="approved")`. A rejected report can
-still be inspected; it must not be used to set `regression_passed=True`.
+boolean accepted by `MemoryGovernanceStore.transition(..., state="approved")`. The explicit
+`MemoryPromotionAdapter` is the controller-facing bridge: it validates the report digest and all
+three evidence fields, then appends `approved`; an explicit activation request appends `active` as
+a second revision. A rejected report can still be inspected; it must not be used to set
+`regression_passed=True`.
 
 ## Failure matrix
 

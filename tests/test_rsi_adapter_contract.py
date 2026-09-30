@@ -53,6 +53,37 @@ def test_provider_free_named_solver_fixture_is_declaration_only() -> None:
     assert capability.solver_id == "openevolve"
 
 
+def test_implicit_capability_uses_fixture_factory() -> None:
+    class NamedGateway:
+        solver_id = "fixture"
+
+        def run(self, solver_request):
+            return DeterministicMockSolver().run(solver_request)
+
+    capability = validate_lifecycle(NamedGateway())
+    assert capability.fixture is True
+    assert capability.solver_id == "fixture"
+
+
+def test_named_hooks_receive_request_and_zero_arg_hooks_remain_zero_arg() -> None:
+    seen: list[object] = []
+
+    class HookGateway:
+        def register(self, request=None):
+            seen.append(request)
+
+        def preflight(self):
+            seen.append("zero")
+
+        def run(self, solver_request):
+            return DeterministicMockSolver().run(solver_request)
+
+    result = AdapterContractHarness(HookGateway(), capability=fixture_capability("fixture")).run(request())
+    assert result.status == "completed"
+    assert isinstance(seen[0], AdapterRequest)
+    assert seen[1] == "zero"
+
+
 def test_provider_free_gateway_uses_same_receipt_boundary() -> None:
     solver_request = request("shinka")
     gateway = fixture_solver_gateway("shinka")
@@ -88,6 +119,41 @@ def test_unknown_result_is_preserved_and_recovery_is_called() -> None:
     result = AdapterContractHarness(UnknownGateway(), capability=fixture_capability("fixture")).run(request())
     assert result.status == "unknown"
     assert calls == ["execute", "recover", "close"]
+
+
+def test_execute_exception_invokes_recovery_before_close() -> None:
+    calls: list[str] = []
+
+    class FailingGateway:
+        def run(self, _solver_request):
+            calls.append("execute")
+            raise RuntimeError("worker failed")
+
+        def recover(self, _request, result):
+            calls.append(f"recover:{result.status}")
+
+        def close(self, _request, result):
+            calls.append(f"close:{result.status}")
+
+    result = AdapterContractHarness(FailingGateway(), capability=fixture_capability("fixture")).run(request())
+    assert result.status == "failed"
+    assert calls == ["execute", "recover:failed", "close:failed"]
+
+
+def test_close_failure_is_best_effort_and_not_retried() -> None:
+    calls: list[str] = []
+
+    class ClosingGateway:
+        def run(self, solver_request):
+            return DeterministicMockSolver().run(solver_request)
+
+        def close(self, _request, _result):
+            calls.append("close")
+            raise OSError("cleanup failed")
+
+    result = AdapterContractHarness(ClosingGateway(), capability=fixture_capability("fixture")).run(request())
+    assert result.status == "completed"
+    assert calls == ["close"]
 
 
 def test_adapter_memory_write_authority_is_rejected() -> None:

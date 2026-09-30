@@ -29,7 +29,8 @@
 - [x] T160-14 增加独立 memory admission governance 控制面：append-only admission history、CAS 状态转移、verifier/pass、holdout/baseline regression gate、compatibility drift 和 revoke fail-closed；不修改只读 RSIMemoryStore。
 - [x] T160-15 统一 provider-free solver adapter contract：生命周期、request pins、预算/deadline、terminal status、recovery 和 ownership receipt；OpenEvolve/Shinka 仅声明 fixture capability，不启动真实项目。
 - [x] T160-16 增加 provider-free frozen-memory transfer regression 窄版本：no/old/current memory 对照、seen/unseen 多目标、重复试验、污染检查和 promotion evidence；真实 evaluator/controller 自动触发仍待接线。
-- [x] T160-17 增加 provider-free failure-driven curriculum 窄版本：failure cluster、capability coverage、hard-negative/boundary probe、重复抑制、预算审计和 canonical ledger replay；默认 controller 接线和复杂 bandit/RL 后置。
+- [x] T160-17 增加 provider-free failure-driven curriculum 窄版本：failure cluster、capability coverage、hard-negative/boundary probe、重复抑制、预算审计和 canonical ledger replay；可选 controller checkpoint/resume 接线已完成，复杂 bandit/RL 后置。
+- [x] T160-18 增加显式 transfer-report → memory-governance promotion adapter：校验 report digest、holdout/baseline/regression evidence 和 CAS，强制 shadow → approved → active 两步晋级。
 
 ## 本轮边界
 

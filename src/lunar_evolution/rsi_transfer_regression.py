@@ -206,6 +206,8 @@ class TransferRegressionReport:
     holdout_receipt_sha256: str
     baseline_receipt_sha256: str
     report_sha256: str
+    old_memory_sha256: str = ""
+    current_memory_sha256: str = ""
 
     @property
     def by_arm(self) -> Mapping[str, TransferArmSummary]:
@@ -214,7 +216,7 @@ class TransferRegressionReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "protocol": "lunar-rsi-transfer-regression-v1",
-            "schema_version": "1",
+            "schema_version": "2",
             "tasks": [task.to_dict() for task in self.tasks],
             "repetitions": self.repetitions,
             "summaries": [summary.to_dict() for summary in self.summaries],
@@ -224,6 +226,8 @@ class TransferRegressionReport:
             "holdout_receipt_sha256": self.holdout_receipt_sha256,
             "baseline_receipt_sha256": self.baseline_receipt_sha256,
             "report_sha256": self.report_sha256,
+            "old_memory_sha256": self.old_memory_sha256,
+            "current_memory_sha256": self.current_memory_sha256,
         }
 
     def assert_promotable(self) -> None:
@@ -366,18 +370,26 @@ class TransferRegressionSuite:
             reasons.append("current_regressed_vs_old_memory")
         # Keep these values in the report digest, making the pre/post promotion decision auditable.
         del seen_delta
-        holdout_receipt = _hash({"arm": "current_memory", "split": "unseen", "summary": current.to_dict()})
-        baseline_receipt = _hash({"arm": "no_memory", "split": "unseen", "summary": baseline.to_dict()})
+        holdout_receipt = _hash({
+            "arm": "current_memory", "split": "unseen", "summary": current.to_dict(),
+            "memory_snapshot_sha256": current_memory.digest(),
+        })
+        baseline_receipt = _hash({
+            "arm": "no_memory", "split": "unseen", "summary": baseline.to_dict(),
+            "memory_snapshot_sha256": EMPTY_MEMORY_SNAPSHOT.digest(),
+        })
         payload = {
             "tasks": [task.to_dict() for task in manifest], "repetitions": self.policy.repetitions,
             "summaries": [summary.to_dict() for summary in summaries], "contamination": contamination,
             "promotion_eligible": not reasons, "rejection_reasons": reasons,
             "holdout_receipt_sha256": holdout_receipt, "baseline_receipt_sha256": baseline_receipt,
+            "old_memory_sha256": old_memory.digest(), "current_memory_sha256": current_memory.digest(),
         }
         report_digest = _hash(payload)
         return TransferRegressionReport(
             manifest, self.policy.repetitions, summaries, tuple(contamination), not reasons,
             tuple(reasons), holdout_receipt, baseline_receipt, report_digest,
+            old_memory.digest(), current_memory.digest(),
         )
 
     def evaluate(
