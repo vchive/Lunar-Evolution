@@ -1,12 +1,12 @@
 # Validation: RSI learning mode
 
-This file records the local acceptance boundary. The DRS/BRS interruption matrix, CLI repeat-run
-checks and frozen-transfer recovery tests have passed locally. On 2026-09-30 the RSI suite passed
-**289 tests**, with no failures or skips (`/tmp/lunar-rsi-final-combined02.xml`). Ruff, compileall
-and `git diff --check` passed. T160-13 stage 1 still has open recovery interfaces listed below.
-An isolated export of the staged source also passed all **289 tests**
-(`/tmp/lunar-rsi-index-validation.xml`), source compilation, Ruff and an import check of every
-public API export. This excludes unrelated, uncommitted producer source from the evidence.
+This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **438 tests**,
+with no failures or skips (`/tmp/lunar-rsi-callback-release01.xml`). The run includes DRS/BRS callback
+crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery and append-only
+unknown receipt failure settlement. Ruff, compileall and `git diff --check` passed.
+An isolated export of the staged source also passed all **438 tests**
+(`/tmp/lunar-rsi-callback-index.xml`), Ruff, compilation and an import check of every public API
+export. Unrelated, uncommitted producer changes were absent from that source snapshot.
 A passing fixture matrix is not evidence that every external worker or callback recovery path has
 been implemented.
 
@@ -31,12 +31,15 @@ been implemented.
 - Transfer evidence is retained as a receipt and cannot retroactively promote memory. Transfer
   recovery must preserve the original request, snapshot, component fingerprints and budget; a
   published receipt is replayed without a second gateway/verifier/judge invocation.
-- `FrozenMemoryTransferRunner` persists a started gate before verifier/judge callbacks. If the
-  callback starts but its result is not persisted, recovery stops at the gate instead of blindly
-  repeating it. This specific gate is not yet implemented for DRS/BRS verifier/curriculum/judge.
-- A published unknown transfer receipt remains immutable after an explicit worker settlement.
-  The current runner returns `rsi_transfer_unknown_receipt_reconcile_required`; a dedicated receipt
-  reconciliation path has not been implemented.
+- DRS/BRS verifier/judge/curriculum and frozen-transfer verifier/judge persist started gates.
+  Unknown callbacks stop recovery; dedicated `reconcile_callback` APIs bind observed results to
+  original inputs, current components and explicit local evidence, without invoking the callback.
+- A published unknown transfer receipt remains in history after worker failure settlement.
+  `reconcile_receipt` atomically appends a failed revision and updated checkpoint; original worker
+  results are unchanged. No unknown-to-passed promotion is inferred from a caller declaration.
+- Controller callback evidence identifies an independent observation receipt. Transfer callback
+  evidence instead binds the verifier receipt (or canonical judgment digest). Both are trusted
+  local evidence admission, not authentication of an external system; see `callback-recovery.md`.
 
 ## Recovery and scheduling
 
@@ -59,6 +62,11 @@ been implemented.
 - Persisted planned/consumed/remaining budgets and the absolute `deadline_unix` survive restart.
   Atomic launch reservations cover solver/evaluator/verifier stages; exhausted budgets stop before
   new work, and replay does not charge the same reservation again.
+- Callback reconciliation reserves unknown-retry budget once before publishing the result. A crash
+  between reservation and result publication reuses that reservation; invalid schema/evidence/CAS
+  cannot charge budget. Evidence may be recorded after deadline without authorizing new work.
+- New runs fix `callback_protocol_version=1`. Older uncertain runs lacking started-call evidence
+  require migration; old terminal records remain replayable without re-executing callbacks.
 
 ## Integration regression
 
@@ -92,6 +100,10 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | Fingerprint/config drift and supplied-old-fingerprint rejection | `test_rsi_identity_drift.py`, `test_rsi_fingerprint.py`, `test_rsi_durable_flow.py` |
 | Planned/consumed/remaining, deadline, atomic reservation and depth/cycle primitives | `test_rsi_budget.py`, `test_rsi_durable_flow.py` |
 | Frozen transfer publication/replay and side-effect recovery gates | `test_rsi_transfer_recovery.py` |
+| Callback journal, result admission, CAS/hash-chain and concurrent execution | `test_rsi_callbacks.py` |
+| DRS/BRS callback crash, reconcile, budget reservation and old-version migration | `test_rsi_controller_callbacks.py` |
+| CLI callback inspection, strict input admission and explicit continuation | `test_rsi_callback_cli.py` |
+| Transfer callback/receipt reconciliation and atomic failure settlement | `test_rsi_transfer_reconcile.py` |
 | Existing local protocol, actor, CLI and backend fixtures | Remaining `test_rsi_*.py` tests |
 
 The CLI diagnostics only use local fixture solver IDs and persist to `rsi.sqlite3`; they do not
@@ -99,12 +111,11 @@ constitute evidence for real OpenEvolve, Shinka, OSWorld, or remote evaluator pe
 
 ## Still outside this acceptance claim
 
-- Dedicated evidence-bound APIs for resuming a transfer verifier/judge that started without
-  persisting a result, and for resolving an already published unknown transfer receipt. These
-  cases currently fail closed instead of repeating callbacks or rewriting receipts.
-- DRS/BRS verifier/curriculum/judge callbacks can recompute a local deterministic fixture after an
-  interruption inside the callback and before its result is saved. Their real external-callback
-  started gates, idempotency/reconciliation and exactly-once semantics are not implemented.
+- External authenticity and ownership for callback observations, distributed idempotency and
+  evidence-based migration of old uncertain calls without started logs. The local admission APIs
+  preserve evidence bindings; they do not establish external exactly-once semantics.
+- Admission of independently trusted successful completion after an unknown transfer result.
+  This round implements explicit failure settlement only, not unknown-to-passed publication.
 - Real producer launch/ownership/heartbeat, cancellation/cleanup and unknown-worker inspection;
   real OpenEvolve/Shinka/native campaigns and provider performance.
 - A clean-room verifier that reopens candidate inputs/dependencies and independently runs an

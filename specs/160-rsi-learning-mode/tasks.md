@@ -21,9 +21,10 @@
   - [x] 阶段 1 预算基础：planned/consumed/remaining、绝对 `deadline_unix`、原子 solver/evaluator/verifier 预留和 budget-exhausted 终态；预算模块提供 depth/cycle 与 unknown-retry gate。
   - [x] 阶段 1 本地集成矩阵：DRS/BRS 中断、显式 unknown 失败/无结果取消、memory publication、terminal journal 优先于恢复 deadline、逐 verifier deadline、并发锁，以及 CLI 重复 `rsi run` 的 fixture 回归。
   - [x] 阶段 1 frozen transfer 基础恢复：请求/组件/预算绑定、结果与 receipt publication 中断恢复、terminal receipt 重放和未知 callback 隔离；最终测试数量由集成报告补充。
-  - [ ] 阶段 1 剩余恢复接口：transfer verifier/judge 已 started 但没有持久结果时，提供专用 evidence-bound reconcile/续接 API；当前明确隔离，不能自动重试。
-  - [ ] 阶段 1 真实 callback 语义：DRS/BRS verifier/curriculum/judge 在调用内部中断、结果未保存时，当前允许重算本地 deterministic fixture；真实 callback 的 started gate、外部幂等或 evidence-bound reconcile 尚未接通，不能宣称 exactly-once。
-  - [ ] 阶段 1 剩余 transfer 分支：已发布 unknown transfer receipt 后，即使 worker 已显式 settle，仍返回 `rsi_transfer_unknown_receipt_reconcile_required`；后续需定义显式 receipt reconcile 语义，不能覆盖旧 receipt。
+  - [x] 阶段 1 callback 恢复接口：transfer verifier/judge 已 started 但没有持久结果时，通过专用 evidence-bound `reconcile_callback` 登记已有结果，再续接原流程；不自动重试。
+  - [x] 阶段 1 控制器 callback 语义：DRS/BRS verifier/curriculum/judge 先写 started、后写已校验结果；未知调用隔离整条 run，显式对账及精确重放不重复调用或扣预算。CLI 支持 inspect 和只登记结果的对账；旧版本缺少 started 协议的非终态记录需迁移，不能推断未执行。
+  - [x] 阶段 1 unknown transfer 失败处置：worker 已显式 settle 为失败/取消/超时/放弃后，`reconcile_receipt` 原子追加 failed revision 与 checkpoint；保留旧 unknown 收据和原始 worker result，禁止通用 transition 绕过。
+  - [ ] 后续真实接线：上述对账采用可信本地证据；外部来源真实性、worker ownership 和外部幂等协议仍需 adapter 验收。unknown→passed 需要独立可信完成证据协议，本轮不得从 unknown 声明推导成功。
   - [ ] 阶段 2：diversity/failure-boundary curriculum policy（仍待实现）。
 
 ## 本轮边界
@@ -33,4 +34,4 @@
 - 本轮验证只使用本地 fixture。OpenEvolve/Shinka/native 的 fixture ID 和 receipt 协议通过，不等于真实 producer campaign 或模型效果已经验收。
 - `RSIRunBudget` 的 depth/cycle API 不代表已实现 solver→RSI 嵌套调度；当前 DRS/BRS 是 depth 0。真实递归、嵌套资源预算与 token/成本统计保留在后续任务。
 - T160-12 的真实 Actor、clean-room verifier、真实 producer lifecycle/adapter 接线、memory governance、holdout/transfer regression 和复杂 curriculum 仍按阶段报告独立推进；不增加分布式平台、自修改 Agent 或模型训练实现范围。
-- 真实 worker ownership/heartbeat/workspace 检查及 callback 不确定结果的专用恢复接口仍有开放边界；阶段 1 整体不能因本地矩阵通过而标成全部完成。
+- 专用 callback 恢复接口已具备；真实 worker ownership/heartbeat/workspace 检查和旧不确定记录的迁移仍有开放边界，不能由本地矩阵推导生产恢复或分布式 exactly-once。

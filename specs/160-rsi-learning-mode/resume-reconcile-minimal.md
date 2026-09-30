@@ -34,10 +34,11 @@ episode head 和持久化 request/result。新启动的 v2 run 保存完整 DRS/
 真实 producer 的 PID/ownership、heartbeat、workspace、evaluator receipt 与进程仍存活判定，
 属于后续受控 adapter/lifecycle 接线；本地 result fixture 不替代这些生产证据。
 
-Frozen transfer 另有持久 checkpoint 和恢复测试。其 verifier/judge 已 started 却无结果时仍需
-显式 reconcile，当前尚无专用续接 API；已发布 unknown receipt 后即使 worker settle，仍报
-`rsi_transfer_unknown_receipt_reconcile_required` 并保留原 receipt。这些开放边界不得算作阶段 1 全部完成。
+Frozen transfer 的 verifier/judge 已 started 却无结果时，通过 `reconcile_callback` 登记
+带输入/结果/收据绑定的本地证据后续接，不重新调用 callback。已发布 unknown receipt 的
+worker 明确失败后，`reconcile_receipt` 原子追加 failed revision，保留旧 receipt/result。
 
-DRS/BRS 的 verifier/curriculum/judge 如果在 callback 内部中断且尚未保存结果，当前可重算本地
-deterministic fixture；只有已持久化的结果可以保证直接复用。真实 callback 的 started gate、
-外部幂等和专用 reconcile 尚未接通，不能把 solver 不重发的保证扩大为所有 callback exactly-once。
+DRS/BRS 的 verifier/curriculum/judge 也已接入独立 started/result journal 和显式对账 API。
+未知 callback 隔离整条 run；CLI 对账只登记结果，不自动续跑。对账预留一次 unknown 预算，
+deadline 后允许收录已有结果，但不放宽后续工作期限。没有新 callback 协议标记的旧不确定
+记录停在迁移门，不再把缺日志当作“从未调用”。这不认证真实外部来源，也不声称分布式 exactly-once。

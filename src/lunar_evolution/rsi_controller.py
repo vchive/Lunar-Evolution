@@ -18,6 +18,7 @@ from typing import Any, Protocol
 
 from .candidate_evaluation_spec import canonical_json
 from .rsi_budget import RSIRunBudget
+from .rsi_callbacks import DurableCallbackJournal
 from .rsi_fingerprint import RSIFingerprintContract, ensure_fingerprint_compatible
 from .rsi_gateway import (
     LocalExactVerifier,
@@ -325,7 +326,7 @@ class FrozenMemoryTransferRunner:
             "run_id", "target_id", "memory_snapshot_sha256", "evaluator_sha256",
             "solver_fingerprint", "status", "official_evaluation_receipt_sha256",
         )})
-        if receipt.to_dict() != value:
+        if receipt.to_dict() != {key: item for key, item in value.items() if key != "reconciliation"}:
             raise RSILearningError("rsi_transfer_checkpoint_corrupt")
         return receipt
 
@@ -367,6 +368,239 @@ class FrozenMemoryTransferRunner:
             or (episode.status == "completed" and episode.verifier != execution.verifier)
         ):
             raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+
+    def _components(self) -> dict[str, str]:
+        return {
+            "gateway": _component_digest(self.gateway, name="solver"),
+            "verifier": _component_digest(self.verifier, name="verifier"),
+            "judge": _component_digest(self.target_judge, name="target_judge"),
+        }
+
+    def _reconcile_state(self, run_id: str, target_id: str) -> tuple[str, dict[str, Any], SolverRequest]:
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        previous = self.ledger.controller_checkpoint(self._identity(run_id, target_id))
+        if previous is None:
+            raise RSILearningError("rsi_transfer_recovery_required")
+        digest, state = previous
+        intent = state.get("intent", {})
+        if (state.get("kind") != "rsi_transfer_checkpoint" or state.get("schema_version") != "1"
+                or intent.get("run_id") != run_id or intent.get("target_id") != target_id):
+            raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+        if intent.get("components") != self._components():
+            raise RSILearningError("rsi_transfer_fingerprint_drift")
+        request = SolverRequest.from_dict(intent["request"])
+        snapshot = MemorySnapshot.from_dict(intent["snapshot"])
+        if (request.episode_id != self._identity(run_id, target_id) + "-target"
+                or request.memory_snapshot_sha256 != snapshot.digest()
+                or dict(request.budget) != state["budget_policy"]):
+            raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+        current_budget = RSIRunBudget.load(state["budget_state"])
+        current_budget.assert_matches(state["budget_policy"])
+        consumed: dict[str, int] = {}
+        for _old_digest, old in self.ledger.controller_checkpoint_history(self._identity(run_id, target_id)):
+            old_budget = RSIRunBudget.load(old["budget_state"])
+            counters = old_budget.to_dict()["consumed"]
+            if (old.get("intent") != intent or old.get("budget_policy") != state["budget_policy"]
+                    or old_budget.to_dict()["planned"] != current_budget.to_dict()["planned"]
+                    or any(used > counters[key] for key, used in consumed.items())):
+                raise RSILearningError("rsi_resume_budget_drift")
+            consumed = counters
+        return digest, state, request
+
+    @staticmethod
+    def _callback_evidence(intent: Mapping[str, Any], result: Mapping[str, Any], stage: str,
+                           evidence: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(evidence, Mapping) or set(evidence) != {
+            "source", "binding_sha256", "result_sha256", "receipt_sha256",
+        }:
+            raise RSILearningError("rsi_transfer_reconcile_evidence_invalid")
+        _bounded_text(evidence["source"], "reconcile_source")
+        receipt = result.get("receipt_sha256") if stage == "verifier" else _record_digest(result)
+        if (evidence["binding_sha256"] != _record_digest(intent)
+                or evidence["result_sha256"] != _record_digest(result)
+                or evidence["receipt_sha256"] != receipt):
+            raise RSILearningError("rsi_transfer_reconcile_evidence_invalid")
+        return dict(evidence)
+
+    @staticmethod
+    def _validate_verifier_result(value: Mapping[str, Any], episode: PracticeEpisode,
+                                  request: SolverRequest, result: SolverResult) -> VerifierDecision:
+        try:
+            decision = FrozenMemoryTransferRunner._verdict(value)
+        except (TypeError, KeyError, ValueError) as exc:
+            raise RSILearningError("rsi_transfer_verifier_result_invalid") from exc
+        receipts = ("candidate_receipt_sha256", "execution_receipt_sha256",
+                    "official_evaluation_receipt_sha256")
+        expected_evidence = _record_digest({
+            **{key: getattr(result, key) for key in receipts}, "trace_digest": result.trace_digest,
+        })
+        if (decision.to_dict() != value or decision.episode_id != episode.episode_id
+                or any(getattr(decision, key) != getattr(request, key) for key in (
+                    "contract_sha256", "evaluator_sha256", "environment_sha256"))
+                or any(getattr(decision, key) != getattr(result, key) for key in receipts)
+                or decision.evidence_sha256 != expected_evidence
+                or (decision.outcome == "pass" and (
+                    result.status != "completed" or not decision.independent_of_actor
+                    or any(getattr(result, key) is None for key in receipts)
+                    or any(check.outcome != "pass" for check in decision.checks)))):
+            raise RSILearningError("rsi_transfer_verifier_result_invalid")
+        return decision
+
+    def reconcile_callback(
+        self, run_id: str, target_id: str, *, stage: str, expected_checkpoint_sha256: str,
+        result: Mapping[str, Any], evidence: Mapping[str, Any],
+    ) -> str:
+        """Record an externally observed callback result without invoking any callback.
+
+        Evidence binds the complete frozen transfer intent, the canonical callback result and
+        its receipt (a verifier receipt, or the judgment's canonical digest). This is trusted
+        local evidence admission, not an attestation of a remote verifier's authenticity.
+        """
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        if stage not in {"verifier", "judge"} or not isinstance(result, Mapping):
+            raise RSILearningError("rsi_transfer_callback_stage_invalid")
+        _digest(expected_checkpoint_sha256, "expected_checkpoint_sha256")
+        internal_id = self._identity(run_id, target_id)
+        with self.ledger.controller_lock(internal_id):
+            current, state, request = self._reconcile_state(run_id, target_id)
+            field = "verifier" if stage == "verifier" else "judgment"
+            clean_result = dict(result)
+            clean_evidence = self._callback_evidence(state["intent"], clean_result, stage, evidence)
+            reconciliation = {
+                "stage": stage, "parent_checkpoint_sha256": expected_checkpoint_sha256,
+                "result": clean_result, "evidence": clean_evidence,
+            }
+            previous = state.get("callback_reconciliations", {}).get(stage)
+            if previous is not None:
+                # Exact old-CAS replay is allowed after later phases; differing evidence is not.
+                if all(previous.get(key) == value for key, value in reconciliation.items()):
+                    saved = self.ledger.episode_result(request.episode_id)
+                    records = self.ledger.history(request.episode_id)
+                    if (saved is None or saved[0] != request
+                            or _record_digest(saved[1].to_dict()) != previous.get("solver_result_sha256")
+                            or previous.get("episode_record_sha256") not in {
+                                item.record_sha256 for item in records}):
+                        raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+                    return current
+                raise RSILearningError("rsi_transfer_reconcile_conflict")
+            if current != expected_checkpoint_sha256:
+                raise RSILearningError("rsi_controller_checkpoint_conflict")
+            if not state.get(stage + "_started") or state.get(field) is not None:
+                raise RSILearningError("rsi_transfer_callback_reconcile_not_required")
+            head = self.ledger.get_episode(request.episode_id)
+            persisted = self.ledger.episode_result(request.episode_id)
+            if head is None or persisted is None:
+                raise RSILearningError("rsi_transfer_recovery_required")
+            saved_request, saved_result = persisted
+            episode = PracticeEpisode.from_dict(head.payload)
+            if (saved_request != request or episode.status != saved_result.status
+                    or episode.run_id != internal_id or episode.request_sha256 != request.digest()
+                    or any(getattr(episode, key) != getattr(request, key) for key in (
+                        "contract_sha256", "evaluator_sha256", "environment_sha256",
+                        "memory_snapshot_sha256", "solver_id"))):
+                raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+            if stage == "verifier":
+                self._validate_verifier_result(clean_result, episode, request, saved_result)
+            else:
+                if (set(clean_result) != {"accepted", "diagnosis"}
+                        or type(clean_result["accepted"]) is not bool):
+                    raise RSILearningError("rsi_transfer_judgment_invalid")
+                _bounded_text(clean_result["diagnosis"], "transfer_judgment")
+                if state.get("execution") is None:
+                    raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+                execution = RSILearningController._deserialize_execution(state["execution"])
+                self._validate_execution(execution, request, internal_id)
+                if execution.result != saved_result or execution.episode != episode:
+                    raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+                if clean_result["accepted"] and not execution.passed:
+                    raise RSILearningError("rsi_transfer_judgment_invalid")
+            budget = RSIRunBudget.load(state["budget_state"])
+            budget.reserve_unknown_reconcile_evidence()
+            reconciliation.update(episode_record_sha256=head.record_sha256,
+                                  solver_result_sha256=_record_digest(saved_result.to_dict()))
+            state.setdefault("callback_reconciliations", {})[stage] = reconciliation
+            state.update({field: clean_result, "budget_state": budget.to_dict(),
+                          "phase": "verified" if stage == "verifier" else "judged"})
+            return self.ledger.write_transfer_reconciliation_checkpoint(
+                internal_id, state, expected_sha256=current,
+                episode_id=request.episode_id, expected_episode_sha256=head.record_sha256,
+            )
+
+    def reconcile_receipt(
+        self, run_id: str, target_id: str, *, expected_record_sha256: str,
+        evidence: Mapping[str, Any],
+    ) -> RSIRecord:
+        """Append a failed revision after explicit failure settlement of an unknown worker."""
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        internal_id = self._identity(run_id, target_id)
+        with self.ledger.controller_lock(internal_id):
+            current, state, request = self._reconcile_state(run_id, target_id)
+            published = self.ledger.get_transfer(run_id, target_id)
+            if published is None:
+                raise RSILearningError("rsi_record_missing")
+            previous = published.payload.get("reconciliation")
+            if previous is not None:
+                if (previous.get("parent_record_sha256") == expected_record_sha256
+                        and previous.get("evidence") == evidence):
+                    self.ledger.validate_transfer_reconciliation(published)
+                    if (state.get("receipt") != published.payload
+                            or state.get("receipt_reconciliation") != previous):
+                        raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+                    return published
+                raise RSILearningError("rsi_transfer_reconcile_conflict")
+            if published.record_sha256 != expected_record_sha256:
+                raise RSILearningError("rsi_record_parent_conflict")
+            if published.state != "unknown" or state.get("receipt") != published.payload:
+                raise RSILearningError("rsi_transfer_receipt_reconcile_not_required")
+            head = self.ledger.get_episode(request.episode_id)
+            journals = self.ledger.episode_reconciliation(request.episode_id)
+            if (head is None or head.state not in {"failed", "cancelled", "timed_out", "abandoned"}
+                    or not journals or journals[-1]["worker_state"] != head.state
+                    or head.parent_record_sha256 != journals[-1]["parent_record_sha256"]):
+                raise RSILearningError("rsi_unknown_reconcile_required")
+            if (not isinstance(evidence, Mapping) or set(evidence) != {
+                "source", "receipt_record_sha256", "episode_record_sha256", "journal_sha256",
+            } or evidence.get("receipt_record_sha256") != expected_record_sha256
+                    or evidence.get("episode_record_sha256") != head.record_sha256
+                    or evidence.get("journal_sha256") != journals[-1]["journal_sha256"]):
+                raise RSILearningError("rsi_transfer_reconcile_evidence_invalid")
+            _bounded_text(evidence["source"], "reconcile_source")
+            original = RSILearningController._deserialize_execution(state["execution"])
+            self._validate_execution(original, request, internal_id)
+            saved = self.ledger.episode_result(request.episode_id)
+            if (original.result.status != "unknown" or saved is None
+                    or saved != (request, original.result)):
+                raise RSILearningError("rsi_transfer_checkpoint_corrupt")
+            episode = PracticeEpisode.from_dict(head.payload)
+            result = replace(original.result, status=head.state, terminal_reason=episode.terminal_reason)
+            decision = VerifierDecision(
+                episode.episode_id, "unresolved", journals[-1]["journal_sha256"],
+                "worker explicitly reconciled to " + head.state,
+                _record_digest({"verifier": "reconciled-transfer-failure-v1"}),
+                (VerifierCheck("terminal_failure", "unresolved", journals[-1]["journal_sha256"]),),
+                contract_sha256=request.contract_sha256, evaluator_sha256=request.evaluator_sha256,
+                environment_sha256=request.environment_sha256,
+            )
+            execution = EpisodeExecution(episode, request, result, decision)
+            self._validate_execution(execution, request, internal_id)
+            receipt = replace(self._receipt(published.payload), status="failed")
+            budget = RSIRunBudget.load(state["budget_state"])
+            budget.reserve_unknown_reconcile_evidence()
+            metadata = {
+                "parent_record_sha256": expected_record_sha256,
+                "episode_id": request.episode_id, "episode_record_sha256": head.record_sha256,
+                "journal_sha256": journals[-1]["journal_sha256"], "evidence": dict(evidence),
+            }
+            state.update(phase="terminal", execution=RSILearningController._serialize_execution(execution),
+                         receipt=receipt.to_dict() | {"reconciliation": metadata},
+                         budget_state=budget.to_dict(), receipt_reconciliation=metadata)
+            return self.ledger.reconcile_transfer_receipt(
+                receipt, internal_run_id=internal_id, expected_record_sha256=expected_record_sha256,
+                reconciliation=metadata, state=state, expected_checkpoint_sha256=current,
+            )
 
     def run(
         self,
@@ -454,6 +688,7 @@ class FrozenMemoryTransferRunner:
                 raise RSILearningError("rsi_resume_budget_drift")
             if state.get("intent") != intent:
                 raise RSILearningError("rsi_transfer_fingerprint_drift")
+            _validated_digest, state, _validated_request = self._reconcile_state(run_id, target_id)
             run_budget = RSIRunBudget.load(state["budget_state"])
             run_budget.assert_matches(budget)
         checkpoint_digest = previous[0] if previous else None
@@ -469,6 +704,10 @@ class FrozenMemoryTransferRunner:
                 raise RSILearningError("rsi_transfer_checkpoint_corrupt")
             execution = RSILearningController._deserialize_execution(state["execution"])
             self._validate_execution(execution, request, internal_id)
+            if "reconciliation" in published.payload:
+                ledger.validate_transfer_reconciliation(published)
+                if state.get("receipt_reconciliation") != published.payload["reconciliation"]:
+                    raise RSILearningError("rsi_transfer_checkpoint_corrupt")
             if published.state == "unknown":
                 head = ledger.get_episode(episode.episode_id)
                 if head is None or head.state != "unknown":
@@ -589,6 +828,208 @@ class RSILearningController:
     def snapshot(self) -> MemorySnapshot:
         return self.memory_store.snapshot
 
+    def callback_checkpoint(self, run_id: str, callback_id: str) -> tuple[str, dict[str, Any]] | None:
+        """Inspect one durable callback without executing it or changing the learning run."""
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        return DurableCallbackJournal(self.ledger).inspect(run_id, callback_id)
+
+    @staticmethod
+    def _callback_result(binding: Mapping[str, Any], value: Mapping[str, Any]) -> None:
+        """Validate an observed callback result against its original, persisted inputs."""
+        try:
+            stage, inputs = binding["stage"], binding["input"]
+            if stage == "verifier":
+                request = SolverRequest.from_dict(inputs["request"])
+                result = SolverResult.from_dict(inputs["result"])
+                raw = dict(value)
+                raw["checks"] = tuple(VerifierCheck(**item) for item in raw["checks"])
+                decision = VerifierDecision(**raw)
+                if decision.to_dict() != value or decision.episode_id != request.episode_id:
+                    raise ValueError("verifier identity")
+                if any(getattr(decision, key) != getattr(request, key) for key in (
+                    "contract_sha256", "evaluator_sha256", "environment_sha256",
+                )) or any(getattr(decision, key) != getattr(result, key) for key in (
+                    "candidate_receipt_sha256", "execution_receipt_sha256", "official_evaluation_receipt_sha256",
+                )):
+                    raise ValueError("verifier pins")
+                evidence = {key: getattr(result, key) for key in (
+                    "candidate_receipt_sha256", "execution_receipt_sha256",
+                    "official_evaluation_receipt_sha256", "trace_digest",
+                )}
+                if decision.evidence_sha256 != _record_digest(evidence):
+                    raise ValueError("verifier evidence")
+                if decision.outcome == "pass" and (result.status != "completed" or any(
+                    getattr(result, key) is None for key in (
+                        "candidate_receipt_sha256", "execution_receipt_sha256", "official_evaluation_receipt_sha256",
+                    )
+                )):
+                    raise ValueError("unverified success")
+            elif stage == "judge":
+                execution = RSILearningController._deserialize_execution(inputs["execution"])
+                if (set(value) != {"accepted", "diagnosis"} or type(value["accepted"]) is not bool
+                        or type(value["diagnosis"]) is not str or not value["diagnosis"].strip()
+                        or len(value["diagnosis"].encode()) > 8192
+                        or (value["accepted"] and not execution.passed)):
+                    raise ValueError("judgment")
+            elif stage == "curriculum":
+                decision = RSILearningController._decision_from_dict(value)
+                target = PracticeEpisode.from_dict(inputs["target"])
+                if decision.to_dict() != value or target.solver_id not in decision.compatible_solvers:
+                    raise ValueError("curriculum")
+            else:
+                raise ValueError("callback stage")
+        except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_callback_result_invalid") from exc
+
+    def _callback_binding(self, stage: str, inputs: Mapping[str, Any]) -> dict[str, Any]:
+        component = {"verifier": self.verifier, "judge": self.target_judge, "curriculum": self.curriculum}[stage]
+        return {"stage": stage, "input": dict(inputs),
+                "component_sha256": _component_digest(component, name=stage)}
+
+    def _invoke_callback(self, run_id: str, callback_id: str, stage: str, inputs: Mapping[str, Any],
+                         call: Callable[[], Mapping[str, Any]],
+                         before_call: Callable[[], None] | None = None) -> dict[str, Any]:
+        if self.ledger is None:
+            if before_call is not None:
+                before_call()
+            result = dict(call())
+            self._callback_result({"stage": stage, "input": inputs}, result)
+            return result
+        binding = self._callback_binding(stage, inputs)
+        return DurableCallbackJournal(self.ledger).invoke(
+            run_id, callback_id, binding=binding, call=call,
+            validate=lambda value: self._callback_result(binding, value), before_call=before_call,
+        )
+
+    def _verify_episode(self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult,
+                        before_call: Callable[[], None] | None = None) -> VerifierDecision:
+        if result.status != "completed":
+            # A failure diagnosis cannot promote memory and needs no external verification.
+            # In particular, settling an unknown worker does not repeat a verifier callback.
+            return LocalExactVerifier().verify(episode, request, result)
+        value = self._invoke_callback(
+            episode.run_id, f"verifier:{episode.episode_id}", "verifier",
+            {"request": request.to_dict(), "result": result.to_dict()},
+            lambda: self.verifier.verify(episode, request, result).to_dict(), before_call,
+        )
+        raw = dict(value)
+        raw["checks"] = tuple(VerifierCheck(**item) for item in raw["checks"])
+        return VerifierDecision(**raw)
+
+    def _callback_binding_for_run(self, state: Mapping[str, Any], callback_id: str) -> dict[str, Any]:
+        stage, separator, episode_id = callback_id.partition(":")
+        if not separator or stage not in {"verifier", "judge", "curriculum"}:
+            raise RSILearningError("rsi_callback_identity_invalid")
+        if stage == "verifier":
+            intent = state["intents"].get(episode_id)
+            saved = self.ledger.episode_result(episode_id)
+            head = self.ledger.get_episode(episode_id)
+            if (intent is None or saved is None or head is None or head.state != "completed"
+                    or head.payload["run_id"] != state["run_id"] or saved[0].to_dict() != intent["request"]
+                    or saved[1].status != "completed"):
+                raise RSILearningError("rsi_callback_input_mismatch")
+            inputs = {"request": saved[0].to_dict(), "result": saved[1].to_dict()}
+        elif stage == "judge":
+            execution = state["executions"].get(episode_id)
+            if execution is None or execution["episode"]["episode_kind"] != "target":
+                raise RSILearningError("rsi_callback_input_mismatch")
+            inputs = {"execution": execution}
+        else:
+            inputs = None
+            for target_id, execution in state["executions"].items():
+                target = PracticeEpisode.from_dict(execution["episode"])
+                if (target.episode_kind == "target" and
+                        episode_id == f"{state['run_id']}-practice-{target.wave}-0"
+                        and target_id in state["judgments"]):
+                    inputs = {"target": target.to_record_dict(), "diagnosis": state["judgments"][target_id][1],
+                              "wave": target.wave, "ordinal": 0}
+                    break
+            if inputs is None:
+                raise RSILearningError("rsi_callback_input_mismatch")
+        return self._callback_binding(stage, inputs)
+
+    def reconcile_callback(self, run_id: str, callback_id: str, *, expected_checkpoint_sha256: str,
+                           result: Mapping[str, Any], evidence: Mapping[str, Any]) -> dict[str, Any]:
+        """Record an explicit callback result; never retry the uncertain external operation."""
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        with self.ledger.controller_lock(run_id):
+            record = self.ledger.get_run(run_id)
+            checkpoint = self.ledger.controller_checkpoint(run_id)
+            if record is None or checkpoint is None or checkpoint[1].get("schema_version") != "2":
+                raise RSILearningError("rsi_resume_checkpoint_unavailable")
+            self._validate_resume_identity(record, None, None)
+            self._check_budget_history(record)
+            state = checkpoint[1]
+            if state.get("callback_protocol_version") != "1":
+                raise RSILearningError("rsi_callback_migration_required")
+            binding = self._callback_binding_for_run(state, callback_id)
+            self._callback_result(binding, result)
+            journal = DurableCallbackJournal(self.ledger)
+            clean_evidence = journal.validate_evidence(binding, result, evidence)
+            callback = journal.inspect(run_id, callback_id)
+            if callback is None:
+                raise RSILearningError("rsi_callback_missing")
+            if callback[1]["binding"] != binding:
+                raise RSILearningError("rsi_callback_binding_drift")
+            if callback[1]["status"] == "completed":
+                return journal.reconcile(
+                    run_id, callback_id, expected_checkpoint_sha256=expected_checkpoint_sha256,
+                    binding=binding, result=result, evidence=clean_evidence,
+                    validate=lambda value: self._callback_result(binding, value),
+                )
+            if callback[0] != expected_checkpoint_sha256:
+                raise RSILearningError("rsi_callback_checkpoint_conflict")
+            if record.state in {"completed", "failed", "cancelled", "budget_exhausted"}:
+                raise RSILearningError("rsi_callback_terminal_run")
+            reservation = {"checkpoint_sha256": expected_checkpoint_sha256,
+                           "result_sha256": journal.digest(result), "evidence_sha256": journal.digest(clean_evidence)}
+            reservations = state.setdefault("callback_reconciliation_reservations", {})
+            if callback_id in reservations:
+                if reservations[callback_id] != reservation:
+                    raise RSILearningError("rsi_callback_checkpoint_conflict")
+            else:
+                run_budget = RSIRunBudget.load(state["budget_state"])
+                run_budget.assert_matches(record.payload["budget"])
+                run_budget.reserve_unknown_reconcile_evidence()
+                state["budget_state"] = run_budget.to_dict()
+                reservations[callback_id] = reservation
+                self._save_flow(record, state)
+            return journal.reconcile(
+                run_id, callback_id, expected_checkpoint_sha256=expected_checkpoint_sha256,
+                binding=binding, result=result, evidence=clean_evidence,
+                validate=lambda value: self._callback_result(binding, value),
+            )
+
+    def _check_callback_quarantine(self, state: Mapping[str, Any]) -> None:
+        """Check the entire known wave before recovery performs another callback or merge."""
+        for episode_id, intent in state["intents"].items():
+            keys = [f"verifier:{episode_id}"]
+            if intent["episode"]["episode_kind"] == "target":
+                keys.extend((f"judge:{episode_id}",
+                             f"curriculum:{state['run_id']}-practice-{intent['episode']['wave']}-0"))
+            for key in keys:
+                callback = self.callback_checkpoint(state["run_id"], key)
+                if callback is not None and callback[1]["status"] == "started":
+                    raise RSILearningError("rsi_callback_reconcile_required")
+
+    def _check_budget_history(self, record: RSIRecord) -> None:
+        initial_record = self.ledger.history(record.logical_id)[0]
+        previous_budget = RSIRunBudget.load(initial_record.payload["budget_state"]).to_dict()
+        previous_intents: dict[str, Any] = {}
+        for _, journal_state in self.ledger.controller_checkpoint_history(record.logical_id):
+            if journal_state.get("schema_version") != "2":
+                raise RSILearningError("rsi_resume_checkpoint_corrupt")
+            current_budget = RSIRunBudget.load(journal_state["budget_state"]).to_dict()
+            if (current_budget["planned"] != previous_budget["planned"]
+                    or any(current_budget["consumed"][key] < used
+                           for key, used in previous_budget["consumed"].items())):
+                raise RSILearningError("rsi_resume_budget_drift")
+            if any(journal_state["intents"].get(key) != value for key, value in previous_intents.items()):
+                raise RSILearningError("rsi_resume_episode_drift")
+            previous_budget, previous_intents = current_budget, journal_state["intents"]
+
     def _run_fingerprint(
         self,
         *,
@@ -686,6 +1127,7 @@ class RSILearningController:
         )
         payload = {
             "mode": mode,
+            "callback_protocol_version": "1",
             "contract_sha256": contract_sha256,
             "evaluator_sha256": evaluator_sha256,
             "environment_sha256": environment_sha256,
@@ -854,18 +1296,14 @@ class RSILearningController:
             raise RSILearningError("rsi_resume_checkpoint_unavailable")
 
         if result.status == "completed" and episode.status == "completed" and episode.verifier is None:
-            if before_verify is not None:
-                before_verify()
-            decision = self.verifier.verify(episode, request, result)
+            decision = self._verify_episode(episode, request, result, before_verify)
             verified = episode.attach_verifier(decision)
             head = self.ledger.append_episode_record(verified, expected_record_sha256=head.record_sha256)
             episode = verified
         if episode.verifier is not None:
             decision = episode.verifier
         else:
-            if before_verify is not None:
-                before_verify()
-            decision = self.verifier.verify(episode, request, result)
+            decision = self._verify_episode(episode, request, result, before_verify)
         return EpisodeExecution(episode, request, result, decision)
 
     @staticmethod
@@ -908,6 +1346,7 @@ class RSILearningController:
                     pins: dict[str, str], budget: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "schema_version": "2", "kind": "rsi_run_checkpoint", "run_id": run_id,
+            "callback_protocol_version": "1",
             "mode": plan["mode"], "plan": plan, "pins": pins, "status": "running",
             "phase": "created", "current_episode_id": None,
             "root_snapshot": self.snapshot.to_dict(), "memory_snapshot": self.snapshot.to_dict(),
@@ -974,8 +1413,14 @@ class RSILearningController:
         # only an intent with no episode head proves that the solver has not been invoked yet.
         budget = RSIRunBudget.load(state["budget_state"])
         budget.check()
+        controller = self
+
+        class ControllerVerifier:
+            def verify(self, episode, request, result):
+                return controller._verify_episode(episode, request, result, budget.check)
+
         return PracticeEpisodeRunner(
-            self.gateway, self.verifier, self.ledger, before_verify=budget.check,
+            self.gateway, ControllerVerifier(), self.ledger,
         ).run(episode, request)
 
     def _flow_episode(self, record: RSIRecord | None, state: dict[str, Any],
@@ -1029,9 +1474,17 @@ class RSILearningController:
             if uncertain:
                 return self._finish_flow(record, state, uncertain)
             if target_id not in state["judgments"]:
-                RSIRunBudget.load(state["budget_state"]).check()
-                accepted, diagnosis = self.target_judge(execution)
-                state["judgments"][target_id] = [bool(accepted and execution.passed), diagnosis]
+                def judge(execution=execution) -> dict[str, Any]:
+                    accepted, diagnosis = self.target_judge(execution)
+                    if type(accepted) is not bool:
+                        raise RSILearningError("rsi_callback_result_invalid")
+                    return {"accepted": accepted and execution.passed, "diagnosis": diagnosis}
+
+                judgment = self._invoke_callback(
+                    run_id, f"judge:{target_id}", "judge", {"execution": self._serialize_execution(execution)},
+                    judge, RSIRunBudget.load(state["budget_state"]).check,
+                )
+                state["judgments"][target_id] = [judgment["accepted"], judgment["diagnosis"]]
                 self._save_flow(record, state)
             accepted, diagnosis = state["judgments"][target_id]
             if accepted:
@@ -1040,10 +1493,14 @@ class RSILearningController:
                 break
             practice_id = f"{run_id}-practice-{attempt}-0"
             if practice_id not in state["decisions"]:
-                RSIRunBudget.load(state["budget_state"]).check()
-                decision = self.curriculum.choose(target=execution.episode, diagnosis=diagnosis,
-                                                  wave=attempt, ordinal=0)
-                state["decisions"][practice_id] = decision.to_dict()
+                state["decisions"][practice_id] = self._invoke_callback(
+                    run_id, f"curriculum:{practice_id}", "curriculum",
+                    {"target": execution.episode.to_record_dict(), "diagnosis": diagnosis, "wave": attempt, "ordinal": 0},
+                    lambda execution=execution, diagnosis=diagnosis, attempt=attempt: self.curriculum.choose(
+                        target=execution.episode, diagnosis=diagnosis, wave=attempt, ordinal=0,
+                    ).to_dict(),
+                    RSIRunBudget.load(state["budget_state"]).check,
+                )
                 self._save_flow(record, state)
             decision = self._decision_from_dict(state["decisions"][practice_id])
             if practice_id in state["intents"]:
@@ -1186,8 +1643,14 @@ class RSILearningController:
         if state is None or state.get("schema_version") != "2":
             # Pre-journal records do not contain a complete launch plan.  Reconcile evidence but
             # never guess a missing BRS wave or issue new solver calls from a legacy checkpoint.
-            executions = [self._resume_episode_execution(self.ledger.get_episode(key))
-                          for key in self.ledger.episode_ids_for_run(run_id)]
+            heads = [self.ledger.get_episode(key) for key in self.ledger.episode_ids_for_run(run_id)]
+            if record.payload.get("callback_protocol_version") != "1":
+                for head in heads:
+                    saved = self.ledger.episode_result(head.logical_id)
+                    if (head.payload.get("verifier") is None and saved is not None
+                            and saved[1].status == "completed"):
+                        raise RSILearningError("rsi_callback_migration_required")
+            executions = [self._resume_episode_execution(head) for head in heads]
             targets, practices = self._merge_resume_executions(record, executions)
             return LearningRunResult(
                 run_id, record.state, MemorySnapshot.from_dict(record.payload["memory_snapshot"])
@@ -1200,26 +1663,21 @@ class RSILearningController:
                 )}):
             raise RSILearningError("rsi_resume_checkpoint_corrupt")
         RSIRunBudget.load(state["budget_state"]).assert_matches(record.payload["budget"])
-        initial_record = self.ledger.history(run_id)[0]
-        previous_budget = RSIRunBudget.load(initial_record.payload["budget_state"]).to_dict()
-        previous_intents: dict[str, Any] = {}
-        for _, journal_state in self.ledger.controller_checkpoint_history(run_id):
-            if journal_state.get("schema_version") != "2":
-                raise RSILearningError("rsi_resume_checkpoint_corrupt")
-            current_budget = RSIRunBudget.load(journal_state["budget_state"]).to_dict()
-            if (current_budget["planned"] != previous_budget["planned"]
-                    or any(current_budget["consumed"][key] < used
-                           for key, used in previous_budget["consumed"].items())):
-                raise RSILearningError("rsi_resume_budget_drift")
-            if any(journal_state["intents"].get(key) != value for key, value in previous_intents.items()):
-                raise RSILearningError("rsi_resume_episode_drift")
-            previous_budget, previous_intents = current_budget, journal_state["intents"]
+        self._check_budget_history(record)
         root = MemorySnapshot.from_dict(state["root_snapshot"])
         if root.digest() != record.payload["fingerprints"]["memory_snapshot_sha256"]:
             raise RSILearningError("rsi_resume_memory_drift")
         self.memory_store = RSIMemoryStore(MemorySnapshot.from_dict(state["memory_snapshot"]))
         if state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
             return self._finish_flow(record, state, state["status"])
+        if state.get("callback_protocol_version") != "1":
+            if (record.payload.get("callback_protocol_version") is not None
+                    or self.ledger.episode_ids_for_run(run_id)):
+                raise RSILearningError("rsi_callback_migration_required")
+            # An older run with no episode head has never reached a solver or callback.
+            state["callback_protocol_version"] = "1"
+            self._save_flow(record, state)
+        self._check_callback_quarantine(state)
         # Quarantine the entire run before verifying, merging, or launching any other child.
         heads = [self.ledger.get_episode(key) for key in self.ledger.episode_ids_for_run(run_id)]
         for head in heads:

@@ -1,5 +1,36 @@
 # Lunar Evolution 交接记录
 
+## 2026-09-30 RSI callback 显式对账与 unknown transfer 处置
+
+继续 Feature 160 阶段 1，补齐上一轮留下的本地恢复接口。新增 `rsi_callbacks.py`，
+DRS/BRS verifier、target judge、curriculum 在调用前写 started，校验结果后写 completed。
+调用内部中断会隔离整条 run；已持久化结果只读复用。`reconcile_callback` 绑定原输入、当前
+组件、结果和本地观察证据，先持久化一次 unknown-retry 预留，再收录结果；两个步骤之间
+再次中断可幂等恢复。过 deadline 只允许登记已发生的结果，不放宽后续工作期限。
+
+Frozen transfer 保留 v1 journal，增加 callback 对账；原 unknown receipt 的 worker 已显式
+settle 为 failed/cancelled/timed_out/abandoned 后，可用 `reconcile_receipt` 在同一事务内
+追加 failed revision 和 checkpoint。旧收据、原始 unknown result 均保留，精确重放不再
+调用 callback 或扣预算。没有 unknown→passed 的推断或证据补造。
+
+CLI 支持 `rsi inspect RUN_ID --callback-id ID` 和 `rsi run CONTRACT --run-id ID
+--reconcile-callback ID --expected-checkpoint-sha256 SHA --callback-result RESULT.json
+--callback-evidence EVIDENCE.json`。后者只登记结果，返回 reconciled，另行运行原命令续跑。
+新 run 固定 callback protocol marker；旧非终态缺 started 协议且存在执行证据时停在
+`rsi_callback_migration_required`，旧终态仍可只读重放，避免升级后重复旧 callback。
+
+本地 RSI 全组合 **438 passed / 0 failed / 0 skipped**，报告
+`/tmp/lunar-rsi-callback-release01.xml`；Ruff、compileall、diff check 通过。
+仅导出准备提交的源码独立验证，同样 **438 passed**（`/tmp/lunar-rsi-callback-index.xml`）；
+Ruff、编译和所有公开 API 导入检查通过，不依赖工作区的未提交 producer 文件。
+未运行真实模型、WebAgent、远程 evaluator、公司评测或 producer campaign。
+契约及接口见 `specs/160-rsi-learning-mode/callback-recovery.md`。
+
+剩余：真实外部来源认证、进程 ownership/heartbeat/cleanup、旧不确定记录的证据迁移、
+unknown transfer 的可信成功证据协议，以及后续 clean-room verifier、memory governance、
+holdout 收益回归、真实 solver 接线和用量/成本统计。当前对账是 local trusted evidence，
+不代表生产 exactly-once。工作区 producer 文件和其导出仍保留未提交；不要 `git add .`。
+
 ## 2026-09-30 RSI 持久计划续跑与中断回归
 
 继续 Feature 160 阶段 1，纠正此前把基础 resume/replay 等同于完整可恢复控制流的结论。

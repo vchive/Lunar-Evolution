@@ -485,6 +485,148 @@ class RSILedger:
             return RSIRecord(logical_id, 0, "transfer", receipt.status, receipt.solver_fingerprint,
                              None, payload, digest, created_at)
 
+    def _append_transfer_checkpoint_tx(
+        self, connection: sqlite3.Connection, run_id: str, state: Mapping[str, Any], *, expected_sha256: str,
+    ) -> str:
+        self._assert_controller_lock(run_id)
+        clean = json.loads(canonical_json(dict(state), maximum=8 * 1024 * 1024))
+        row = connection.execute(
+            "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
+            "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,),
+        ).fetchone()
+        if row is None or row["checkpoint_sha256"] != expected_sha256:
+            raise RSILearningError("rsi_controller_checkpoint_conflict")
+        revision = row["revision"] + 1
+        digest = self._checkpoint_digest(run_id, revision, expected_sha256, clean)
+        connection.execute(
+            "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
+            (run_id, revision, expected_sha256, json.dumps(clean, sort_keys=True), digest),
+        )
+        return digest
+
+    def write_transfer_reconciliation_checkpoint(
+        self, run_id: str, state: Mapping[str, Any], *, expected_sha256: str,
+        episode_id: str, expected_episode_sha256: str,
+    ) -> str:
+        """Atomically bind a callback reconciliation to both current checkpoint and episode."""
+        self._assert_controller_lock(run_id)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            episode = self._head(connection, episode_id)
+            if episode is None or episode.record_sha256 != expected_episode_sha256:
+                raise RSILearningError("rsi_record_parent_conflict")
+            if not self._is_canonical_episode(episode) or episode.payload.get("run_id") != run_id:
+                raise RSILearningError("rsi_episode_identity_conflict")
+            return self._append_transfer_checkpoint_tx(connection, run_id, state, expected_sha256=expected_sha256)
+
+    def validate_transfer_reconciliation(self, record: RSIRecord) -> None:
+        """Verify a failure revision against its immutable unknown receipt and worker journal."""
+        metadata = record.payload.get("reconciliation")
+        if record.kind != "transfer" or record.state != "failed" or not isinstance(metadata, dict):
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        if set(metadata) != {
+            "parent_record_sha256", "episode_id", "episode_record_sha256", "journal_sha256", "evidence",
+        }:
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        receipts = self.history(record.logical_id)
+        if (record.revision != 1 or len(receipts) != 2 or receipts[-1] != record
+                or receipts[0].state != "unknown"
+                or record.parent_record_sha256 != receipts[0].record_sha256
+                or metadata["parent_record_sha256"] != receipts[0].record_sha256):
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        expected_payload = receipts[0].payload | {"status": "failed", "reconciliation": metadata}
+        if record.payload != expected_payload or record.request_sha256 != receipts[0].request_sha256:
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        self._validate_transfer_failure_binding(record.payload, metadata)
+
+    def _validate_transfer_failure_binding(
+        self, payload: Mapping[str, Any], metadata: Mapping[str, Any],
+    ) -> tuple[RSIRecord, dict[str, Any]]:
+        episode = self.get_episode(metadata["episode_id"])
+        journal = self.episode_reconciliation(metadata["episode_id"])
+        if (episode is None or episode.record_sha256 != metadata["episode_record_sha256"]
+                or episode.state not in {"failed", "cancelled", "timed_out", "abandoned"}
+                or not journal or journal[-1]["worker_state"] != episode.state
+                or journal[-1]["journal_sha256"] != metadata["journal_sha256"]
+                or journal[-1]["parent_record_sha256"] != episode.parent_record_sha256):
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        canonical = PracticeEpisode.from_dict(episode.payload)
+        saved = self.episode_result(canonical.episode_id)
+        if (saved is None or saved[1].status != "unknown"
+                or saved[0].digest() != canonical.request_sha256):
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        internal_id = "rsi-transfer-" + hashlib.sha256(canonical_json({
+            "run_id": payload["run_id"], "target_id": payload["target_id"],
+        }, maximum=128 * 1024)).hexdigest()
+        if (canonical.run_id != internal_id or canonical.episode_id != internal_id + "-target"
+                or canonical.request_sha256 != payload["solver_fingerprint"]
+                or canonical.memory_snapshot_sha256 != payload["memory_snapshot_sha256"]
+                or canonical.evaluator_sha256 != payload["evaluator_sha256"]):
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        expected_evidence = {
+            "receipt_record_sha256": metadata["parent_record_sha256"],
+            "episode_record_sha256": episode.record_sha256,
+            "journal_sha256": journal[-1]["journal_sha256"],
+        }
+        evidence = metadata["evidence"]
+        if (not isinstance(evidence, dict) or set(evidence) != {"source", *expected_evidence}
+                or any(evidence[key] != value for key, value in expected_evidence.items())
+                or type(evidence["source"]) is not str or not evidence["source"].strip()
+                or "\x00" in evidence["source"]):
+            raise RSILearningError("rsi_transfer_reconcile_evidence_invalid")
+        return episode, journal[-1]
+
+    def reconcile_transfer_receipt(
+        self, receipt: TransferReceipt, *, internal_run_id: str, expected_record_sha256: str,
+        reconciliation: Mapping[str, Any], state: Mapping[str, Any], expected_checkpoint_sha256: str,
+    ) -> RSIRecord:
+        """Append only unknown-to-failed transfer settlement and its checkpoint in one transaction."""
+        self._assert_controller_lock(internal_run_id)
+        if not isinstance(receipt, TransferReceipt) or receipt.status != "failed":
+            raise RSILearningError("rsi_transfer_receipt_reconcile_not_required")
+        metadata = _payload(reconciliation)
+        if (set(metadata) != {"parent_record_sha256", "episode_id", "episode_record_sha256",
+                             "journal_sha256", "evidence"}
+                or metadata["parent_record_sha256"] != expected_record_sha256):
+            raise RSILearningError("rsi_transfer_reconcile_evidence_invalid")
+        payload = receipt.to_dict() | {"reconciliation": metadata}
+        episode, journal = self._validate_transfer_failure_binding(payload, metadata)
+        if episode.payload["run_id"] != internal_run_id or state.get("receipt") != payload:
+            raise RSILearningError("rsi_transfer_reconciliation_corrupt")
+        logical_id = f"transfer:{receipt.run_id}:{receipt.target_id}"
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            head = self._head(connection, logical_id)
+            if head is None or head.record_sha256 != expected_record_sha256:
+                raise RSILearningError("rsi_record_parent_conflict")
+            if (head.kind != "transfer" or head.state != "unknown" or head.revision != 0
+                    or head.payload | {"status": "failed", "reconciliation": metadata} != payload
+                    or head.request_sha256 != receipt.solver_fingerprint):
+                raise RSILearningError("rsi_transfer_receipt_reconcile_not_required")
+            episode_head = self._head(connection, metadata["episode_id"])
+            journal_head = connection.execute(
+                "SELECT journal_sha256 FROM rsi_episode_reconciliations "
+                "WHERE episode_id = ? ORDER BY revision DESC LIMIT 1", (metadata["episode_id"],),
+            ).fetchone()
+            if (episode_head is None or episode_head.record_sha256 != episode.record_sha256
+                    or journal_head is None or journal_head["journal_sha256"] != journal["journal_sha256"]):
+                raise RSILearningError("rsi_record_parent_conflict")
+            self._append_transfer_checkpoint_tx(
+                connection, internal_run_id, state, expected_sha256=expected_checkpoint_sha256,
+            )
+            digest = self._record_digest(
+                logical_id=logical_id, revision=1, kind="transfer", state="failed",
+                request_sha256=head.request_sha256, parent_record_sha256=head.record_sha256, payload=payload,
+            )
+            created_at = utc_now()
+            connection.execute(
+                "INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (logical_id, 1, "transfer", "failed", head.request_sha256, head.record_sha256,
+                 json.dumps(payload, sort_keys=True), digest, created_at),
+            )
+            return RSIRecord(logical_id, 1, "transfer", "failed", head.request_sha256,
+                             head.record_sha256, payload, digest, created_at)
+
     def save_episode_result(self, request: SolverRequest, result: SolverResult) -> None:
         """Persist one immutable, request-bound solver result exactly once.
 
@@ -783,6 +925,8 @@ class RSILedger:
             head = self._head(connection, logical_id)
             if head is None:
                 raise RSILearningError("rsi_record_missing")
+            if head.kind == "transfer":
+                raise RSILearningError("rsi_transfer_canonical_transition_required")
             if self._is_canonical_episode(head):
                 raise RSILearningError("rsi_episode_canonical_transition_required")
             allowed = _RUN_TRANSITIONS if head.kind == "run" else _EPISODE_TRANSITIONS

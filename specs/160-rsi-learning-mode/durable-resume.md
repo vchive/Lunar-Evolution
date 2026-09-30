@@ -1,6 +1,6 @@
 # Feature 160 阶段 1：可恢复 RSI 契约
 
-**状态：本地 RSI 组合 289 项通过，包含 v2 DRS/BRS、CLI 和 transfer 基础恢复矩阵；尚有 callback/unknown transfer receipt 恢复接口开放，详见 validation.md。**
+**状态：v2 DRS/BRS、CLI、callback 显式对账和 unknown transfer 失败处置已实现；当前集成结果见 validation.md。真实外部来源与进程恢复不在本地验收结论内。**
 
 本文规定 `RSILearningController` 的本地可恢复行为。当前代码已有 append-only ledger、CAS、controller lock、持久化 request/result、v2 DRS/BRS plan 和恢复驱动，不能再把它描述为只有只读 resume。与此同时，模块存在不等于整份验收矩阵已经完成；`tasks.md` 将阶段 1 的实现和最终集成验收分开记录。
 
@@ -86,7 +86,9 @@ controller.resume(
 
 同一个幂等键收到字节不同的 receipt、不同的 request 或不同的 fingerprint 时必须 fail closed，并保留冲突原因。成功 resume 不得通过复制旧 receipt、清空预算、换用新的 episode ID 或省略 evidence 来绕过幂等检查。
 
-表中的 verifier 复用保证适用于已经持久化的 decision。DRS/BRS 的 verifier/curriculum/judge 在调用内部中断、结果尚未保存时仍可能重算本地 deterministic fixture，真实外部 callback 的 exactly-once 尚未实现。显式 started gate 当前仅在 frozen transfer 的 verifier/judge 上提供；该 gate 的不确定结果还缺少专用 evidence-bound 续接 API。
+DRS/BRS 的 verifier/curriculum/judge 与 transfer 的 verifier/judge 都在调用前持久化 started。结果未知时恢复停在 gate，显式 `reconcile_callback` 只登记已有结果，随后另行续跑。控制器使用独立 callback journal；transfer 沿用 v1 checkpoint。二者都验证输入、组件、返回结构、证据与 CAS，精确重放不重复扣 unknown 预算。详见 `callback-recovery.md`。
+
+新 run 固定 `callback_protocol_version=1`。旧版本非终态 v2 记录已有 episode 却缺少该标记时，返回 `rsi_callback_migration_required`；pre-v2 缺少已验证结果时也不得启动未知 verifier。旧终态继续只读重放；旧 run 没有任何 episode head 时才可安全补齐协议标记。此 gate 不自动捏造旧调用是否发生的证据。
 
 ## 5. Unknown reconcile gate
 
@@ -148,4 +150,4 @@ mutable instance 需显式配置 hook；函数默认值、closure 和 bound owne
 
 阶段 1 完成判据是实际 crash injection 和副作用计数断言通过，不以占位 `xfail`、仅抛固定异常的测试或只读 receipt replay 代替。每轮测试结果在 `validation.md`/交接中记录；`tasks.md` 只勾选本地实际覆盖的边界，未实现的 callback 和外部证据恢复接口继续保持未完成。
 
-当前本地 DRS/BRS 矩阵、显式 unknown 终止证据、memory publication、末态 journal/deadline、逐 verifier deadline、并发锁和 CLI 重复运行已通过；`tasks.md` 分别记录这些已覆盖项。Frozen transfer 的启动后未知 verifier/judge 尚无专用 evidence-bound 续接 API；已经发布 unknown transfer receipt 后显式 settle worker 仍停在 `rsi_transfer_unknown_receipt_reconcile_required`。保留这些 gate 是正确的保守行为，但不是对应恢复能力已经完成。
+当前本地 DRS/BRS、显式 unknown 终止证据、memory publication、末态 journal/deadline、逐 verifier deadline、并发锁、CLI 和 callback 中断对账均有回归。`reconcile_receipt` 允许已发布 unknown transfer 在 worker 明确失败后原子追加 failed revision 与 checkpoint，旧收据与原始 result 保留；unknown→passed 不在此接口内。外部证据真实性、真实进程恢复和旧不确定记录迁移仍需单独验收。

@@ -336,6 +336,17 @@ class RSIRunBudget:
     def reserve_unknown_reconcile(self) -> None:
         self.consume("unknown_retries")
 
+    def reserve_unknown_reconcile_evidence(self) -> None:
+        """Charge recording an already-observed result without extending the dispatch deadline."""
+        with self._lock:
+            self._validate()
+            used = self.state["consumed"]["unknown_retries"]
+            limit = self.state["planned"]["max_unknown_retries"]
+            if limit is not None and used >= limit:
+                _error("rsi_budget_exhausted")
+            self.state["consumed"]["unknown_retries"] = used + 1
+            self._refresh()
+
     def assert_matches(self, value: Mapping[str, Any] | None) -> None:
         expected = self.create(value)
         if expected.state["planned"] != self.state["planned"]:

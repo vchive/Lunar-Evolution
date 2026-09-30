@@ -90,6 +90,7 @@ from .policy import MasterPolicy, PlanDocument, PlanPatch
 from .producer_handoff import ProducerHandoffError
 from .profiles import ModelProfile
 from .rsi_adapters import fixture_solver_gateway
+from .rsi_callbacks import DurableCallbackJournal
 from .rsi_controller import DeterministicCurriculum, RSILearningController
 from .rsi_store import RSILedger
 from .runtime import OpenAICompatibleRuntime, build_runtime
@@ -1145,6 +1146,10 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_run_parser.add_argument("--mode", choices=("drs", "brs"), default="drs")
     rsi_run_parser.add_argument("--solver", choices=("mock", "native_population", "openevolve", "shinka"), default="mock")
     rsi_run_parser.add_argument("--run-id", help="explicit durable RSI run ID")
+    rsi_run_parser.add_argument("--reconcile-callback", help="record an explicit result for one uncertain callback")
+    rsi_run_parser.add_argument("--expected-checkpoint-sha256", help="observed started callback checkpoint")
+    rsi_run_parser.add_argument("--callback-result", type=Path, help="strict JSON object containing the callback result")
+    rsi_run_parser.add_argument("--callback-evidence", type=Path, help="strict JSON object binding local recovery evidence")
     rsi_run_parser.add_argument("--contract-sha256", help="explicit contract pin; defaults to file bytes")
     rsi_run_parser.add_argument("--evaluator-sha256", help="evaluator pin; defaults to local exact fixture")
     rsi_run_parser.add_argument("--environment-sha256", help="environment pin; defaults to local fixture")
@@ -1162,6 +1167,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     rsi_inspect_parser = rsi_commands.add_parser("inspect", help="inspect one RSI run or episode ledger")
     rsi_inspect_parser.add_argument("logical_id")
+    rsi_inspect_parser.add_argument("--callback-id", help="inspect a callback checkpoint in this run")
     _add_home(rsi_inspect_parser)
     _add_json(rsi_inspect_parser)
 
@@ -5390,6 +5396,20 @@ def _rsi_record_payload(record) -> dict[str, object]:
     }
 
 
+def _rsi_callback_json(path: Path, *, maximum: int, name: str) -> dict[str, object]:
+    error = f"rsi_callback_{name}_file_invalid"
+    if path.name == ".env" or path.name.startswith(".env."):
+        raise ValueError(error)
+    content = _read_bounded_regular_file(path, maximum, error=error)
+    try:
+        value = _strict_json_loads(content)
+    except (ValueError, UnicodeError, RecursionError) as exc:
+        raise ValueError(error) from exc
+    if not isinstance(value, dict):
+        raise TypeError(error)
+    return value
+
+
 def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, object]:
     """Run only the deterministic local RSI fixture from the CLI.
 
@@ -5397,6 +5417,15 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
     the same controller later through ``SolverGateway`` adapters after their receipt contract is
     implemented.
     """
+    reconciliation_options = (
+        args.reconcile_callback, args.expected_checkpoint_sha256,
+        args.callback_result, args.callback_evidence,
+    )
+    reconcile_requested = any(value is not None for value in reconciliation_options)
+    if reconcile_requested and (
+        any(value is None for value in reconciliation_options) or not args.run_id or not args.run_id.strip()
+    ):
+        raise ValueError("rsi_callback_reconcile_options_required")
     try:
         contract_bytes = args.contract.read_bytes()
     except OSError as exc:
@@ -5422,6 +5451,28 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
         target_judge=target_judge,
         ledger=ledger,
     )
+    if reconcile_requested:
+        record = ledger.get_run(run_id)
+        if record is None:
+            raise ValueError("rsi_callback_run_missing")
+        for field, observed in (
+            ("mode", args.mode), ("contract_sha256", contract_sha256),
+            ("evaluator_sha256", evaluator_sha256), ("environment_sha256", environment_sha256),
+            ("solver_id", args.solver),
+        ):
+            if record.payload.get(field) != observed:
+                raise ValueError(f"rsi_resume_{field}_drift")
+        result = controller.reconcile_callback(
+            run_id, args.reconcile_callback,
+            expected_checkpoint_sha256=args.expected_checkpoint_sha256,
+            result=_rsi_callback_json(args.callback_result, maximum=1024 * 1024, name="result"),
+            evidence=_rsi_callback_json(args.callback_evidence, maximum=128 * 1024, name="evidence"),
+        )
+        return {
+            "run_id": run_id, "mode": args.mode, "status": "reconciled",
+            "callback_id": args.reconcile_callback, "result": result,
+            "ledger": str(config.home / "rsi.sqlite3"),
+        }
     if args.mode == "drs":
         result = controller.run_drs(
             run_id=run_id,
@@ -6207,8 +6258,15 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             if args.rsi_command == "run":
                 payload = _rsi_run_payload(config, args)
                 _emit(payload, args.json)
-                return 0 if payload["status"] == "completed" else 1
+                return 0 if payload["status"] in {"completed", "reconciled"} else 1
             if args.rsi_command == "inspect":
+                if args.callback_id is not None:
+                    checkpoint = DurableCallbackJournal(ledger).inspect(args.logical_id, args.callback_id)
+                    if checkpoint is None:
+                        _emit_error("rsi_callback_missing", args.json)
+                        return 2
+                    _emit({"checkpoint_sha256": checkpoint[0], "state": checkpoint[1]}, args.json)
+                    return 0
                 record = ledger.get(args.logical_id)
                 if record is None:
                     _emit_error(f"unknown RSI record: {args.logical_id}", args.json)
