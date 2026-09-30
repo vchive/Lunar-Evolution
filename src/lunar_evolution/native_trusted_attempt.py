@@ -108,9 +108,15 @@ class NativeTrustedAttemptObservation:
 def _terminal_receipt(
     registration: Mapping[str, object], *, handoff_sha256: str,
     evidence_sha256: str, gate_released: bool, target_started: bool,
-    exit_code: int, cleanup_status: str,
+    exit_code: int | None, cleanup_status: str, cancelled: bool = False,
 ) -> dict[str, object]:
-    process_status = "exited_zero" if exit_code == 0 else "exited_nonzero"
+    if cancelled and exit_code is not None:
+        raise NativeTrustedAttemptError("native_trusted_attempt_terminal_invalid")
+    if not cancelled and (isinstance(exit_code, bool) or not isinstance(exit_code, int)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_terminal_invalid")
+    process_status = "cancelled" if cancelled else (
+        "exited_zero" if exit_code == 0 else "exited_nonzero"
+    )
     receipt: dict[str, object] = {
         "schema_version": "1", "protocol": _TERMINAL_PROTOCOL,
         **{key: registration[key] for key in (
@@ -425,6 +431,7 @@ def run_native_trusted_attempt(
         output_capture_sha256: str | None = None
         handoff_sha256: str | None = None
         claimed = False
+        cancellation_requested = False
         fds: set[int] = set()
         broker_thread: threading.Thread | None = None
         broker_ready: threading.Event | None = None
@@ -574,11 +581,7 @@ def run_native_trusted_attempt(
                 fds.remove(gate_write)
                 gate_released = True
                 session.release(launch.gate_nonce)
-                # Keep a small slice of the attempt budget available for the owner-checked
-                # cleanup path. This remains inside the caller deadline; it only makes a
-                # late frame timeout conservative instead of entering cleanup with no budget.
-                execution_deadline = deadline - _CLEANUP_RESERVE_SECONDS
-                started = _read_attempt_frame(frame_read, execution_deadline, monotonic, cancelled)
+                started = _read_attempt_frame(frame_read, deadline, monotonic, cancelled)
                 session.accept_frame(started)
                 if (
                     started.kind != "target_started" or started.sequence != 2
@@ -589,6 +592,11 @@ def run_native_trusted_attempt(
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_target_start_unknown")
                 target_started = True
+                # Keep a small slice of the attempt budget available for the owner-checked
+                # cleanup path. This remains inside the caller deadline; it only makes a
+                # late terminal frame timeout conservative instead of entering cleanup with
+                # no budget.
+                execution_deadline = deadline - _CLEANUP_RESERVE_SECONDS
                 terminal = _read_attempt_frame(frame_read, execution_deadline, monotonic, cancelled)
                 session.accept_frame(terminal)
                 if (
@@ -614,6 +622,7 @@ def run_native_trusted_attempt(
             if not claimed:
                 raise NativeTrustedAttemptError("native_trusted_attempt_claim_failed") from exc
             reason = getattr(exc, "code", "native_trusted_attempt_unknown")
+            cancellation_requested = reason == "native_trusted_attempt_cancelled"
         finally:
             for fd in tuple(fds):
                 try:
@@ -665,6 +674,61 @@ def run_native_trusted_attempt(
                         raise ProducerProcessError("native_trusted_attempt_evidence_write_unknown")
                 except ProducerProcessError:
                     reason = "native_trusted_attempt_evidence_write_unknown"
+        # A verified active cancellation is a durable process-only terminal.  It is
+        # deliberately narrower than a normal terminal: the target has started and the
+        # owner-checked group cleanup succeeded, but no exit code or producer output is
+        # claimed.  The bootstrap evidence may therefore still be ``unknown``; the
+        # evidence digest remains bound so recovery can inspect the exact record.
+        if (
+            registration is not None and session is not None and handoff_sha256 is not None
+            and cancellation_requested
+            and reason == "native_trusted_attempt_cancelled"
+            and gate_released and target_started
+            and exit_code is None
+            and cleanup_status in {"cleaned", "already_exited"}
+        ):
+            try:
+                observed = observe_trusted_bootstrap_attempt(
+                    root, launch=launch, descriptor=installed.descriptor,
+                    intent=intent, attestation=attestation, require_handoff=True,
+                    deadline=deadline, monotonic=monotonic,
+                )
+                evidence_sha = observed.get("evidence_sha256")
+                valid_unknown = (
+                    observed.get("status") == "recovery_required"
+                    and observed.get("reason") == "trusted_bootstrap_evidence_unknown"
+                )
+                valid_passed = (
+                    observed.get("status") == "evidence_available"
+                    and observed.get("bootstrap_status") == "passed"
+                )
+                if (
+                    not (valid_unknown or valid_passed)
+                    or not isinstance(evidence_sha, str)
+                    or observed.get("registration_sha256") != registration["registration_sha256"]
+                    or observed.get("handoff_sha256") != handoff_sha256
+                ):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_terminal_evidence_unknown")
+                receipt = _terminal_receipt(
+                    registration, handoff_sha256=handoff_sha256,
+                    evidence_sha256=evidence_sha,
+                    gate_released=gate_released, target_started=target_started,
+                    exit_code=None, cleanup_status=cleanup_status, cancelled=True,
+                )
+                # Receipt publication must consume the caller deadline, but must not
+                # call the cancellation callback again after cleanup has been verified.
+                _remaining(deadline, monotonic)
+                _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
+                stored = _read_durable_json(
+                    batch / _TERMINAL_NAME, code="native_trusted_attempt_terminal_write_unknown",
+                )
+                if stored != receipt:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_terminal_write_unknown")
+                terminal_sha256 = str(receipt["terminal_sha256"])
+            except (NativeTrustedAttemptError, ProducerBootstrapError) as exc:
+                reason = exc.code
+            except ProducerProcessError:
+                reason = "native_trusted_attempt_terminal_write_unknown"
         if (
             registration is not None and session is not None and handoff_sha256 is not None
             and reason == "native_trusted_attempt_terminal_receipt_missing"
@@ -819,24 +883,53 @@ def recover_native_trusted_attempt(
             receipt = _read_durable_json(path, code="native_trusted_recovery_terminal_invalid")
         except (ProducerBootstrapError, ProducerProcessError) as exc:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
-        if (
-            bound.get("status") != "evidence_available"
-            or bound.get("bootstrap_status") != "passed"
-            or set(receipt) != _TERMINAL_FIELDS
-            or isinstance(receipt.get("exit_code"), bool)
-            or not isinstance(receipt.get("exit_code"), int)
-            or not -255 <= receipt["exit_code"] <= 255
-            or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
-            or receipt.get("gate_released") is not True
-            or receipt.get("target_started") is not True
-        ):
+        if set(receipt) != _TERMINAL_FIELDS:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
-        expected = _terminal_receipt(
-            registration, handoff_sha256=str(bound["handoff_sha256"]),
-            evidence_sha256=str(bound["evidence_sha256"]),
-            gate_released=True, target_started=True,
-            exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
-        )
+        cancelled_receipt = receipt.get("process_status") == "cancelled"
+        if cancelled_receipt:
+            valid_unknown = (
+                bound.get("status") == "recovery_required"
+                and bound.get("reason") == "trusted_bootstrap_evidence_unknown"
+            )
+            valid_passed = (
+                bound.get("status") == "evidence_available"
+                and bound.get("bootstrap_status") == "passed"
+            )
+            if (
+                not (valid_unknown or valid_passed)
+                or not isinstance(bound.get("handoff_sha256"), str)
+                or not isinstance(bound.get("evidence_sha256"), str)
+                or receipt.get("exit_code") is not None
+                or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
+                or receipt.get("gate_released") is not True
+                or receipt.get("target_started") is not True
+                or receipt.get("bootstrap_evidence_sha256") != bound["evidence_sha256"]
+            ):
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+            expected = _terminal_receipt(
+                registration, handoff_sha256=str(bound["handoff_sha256"]),
+                evidence_sha256=str(bound["evidence_sha256"]),
+                gate_released=True, target_started=True,
+                exit_code=None, cleanup_status=str(receipt["cleanup_status"]), cancelled=True,
+            )
+        else:
+            if (
+                bound.get("status") != "evidence_available"
+                or bound.get("bootstrap_status") != "passed"
+                or isinstance(receipt.get("exit_code"), bool)
+                or not isinstance(receipt.get("exit_code"), int)
+                or not -255 <= receipt["exit_code"] <= 255
+                or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
+                or receipt.get("gate_released") is not True
+                or receipt.get("target_started") is not True
+            ):
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+            expected = _terminal_receipt(
+                registration, handoff_sha256=str(bound["handoff_sha256"]),
+                evidence_sha256=str(bound["evidence_sha256"]),
+                gate_released=True, target_started=True,
+                exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
+            )
         if receipt != expected:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
         return receipt

@@ -29,6 +29,12 @@
   and leader-wait boundaries; exceptions or non-boolean values fail closed before spawn. These
   controls must be covered by native-attempt fixtures before the task can be considered complete.
 
+  The supporting native attempt now persists a verified post-gate cancellation as a
+  process-only terminal (`process_status=cancelled`, `exit_code=null`) and recovers it read-only;
+  unknown cleanup, callback errors, deadline expiry, and pre-gate cancellation remain without a
+  cancelled terminal. This closes the local cancellation evidence slice but not the formal
+  Feature 156 execution receipt, broker, or post-crash integration required by T158-04.
+
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
   and isolation-policy call are implemented and covered by provider-free subprocess tests. This

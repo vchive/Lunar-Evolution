@@ -57,6 +57,13 @@ cleanup is verified; otherwise the attempt remains `unknown`/`recovery_required`
 runtime controls, not launch/attestation identities, and are not allowed to widen budgets or
 authorize a replay.
 
+When cancellation is observed after the gate and target start, the native attempt may persist the
+same process-only terminal schema with `process_status=cancelled` and `exit_code=null`. The receipt
+continues to bind registration, handoff, and the exact bootstrap evidence digest; unknown evidence
+is retained as unknown and is never upgraded to passed. Read-only recovery returns this receipt
+without signaling again. A callback error, expired deadline, pre-gate cancellation, or unverified
+cleanup cannot produce the cancelled terminal.
+
 `kind` is one of `bootstrap_ready`, `target_started`, `target_start_failed`, or `terminal`. Frames
 are bounded, canonical, ordered, and no-follow transport records; they contain no producer text,
 prompt, credential, provider response, or score. A successful evidence record requires the pinned

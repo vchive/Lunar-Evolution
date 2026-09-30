@@ -16,9 +16,15 @@ identity fields and cannot authorize a retry or publication.
 
 The native fixture suite now covers active cancellation after target start, cleanup uncertainty, a
 parent deadline that narrows the intent budget, and invalid callback/deadline inputs. The focused
-native attempt suite passes 24 tests on the local Darwin host. This is supporting evidence for the
+native attempt suite passes 26 tests on the local Darwin host. This is supporting evidence for the
 control boundary only; the acceptance matrix keeps the row `supporting-only` until T158-04 connects
 the attempt to the formal Feature 156 registration, broker, terminal receipt, and recovery runner.
+
+The same suite now verifies the durable cancellation variant: a verified post-gate cancellation
+writes `native-trusted-process-terminal.json` with `process_status=cancelled` and `exit_code=null`,
+recovery returns the exact receipt without signaling, and tampering, callback errors, deadline
+expiry, or cleanup uncertainty do not create that terminal. This remains process-only evidence;
+it does not authorize bundle publication or replace the formal execution receipt.
 
 ## Native pre-gate handoff reread (2026-09-28)
 

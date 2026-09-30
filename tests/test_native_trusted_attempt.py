@@ -609,6 +609,40 @@ def test_recovery_rejects_tampered_native_terminal_receipt(tmp_path: Path):
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_recovery_rejects_tampered_native_cancelled_receipt(tmp_path: Path):
+    """A self-digested receipt cannot change cancellation into a known exit."""
+    from lunar_evolution import producer_process
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, timeout=5, target_sleep=10, mark_started_before_sleep=True,
+    )
+    marker_seen_at: float | None = None
+
+    def cancelled() -> bool:
+        nonlocal marker_seen_at
+        if (batch / "work" / "marker").is_file():
+            marker_seen_at = marker_seen_at or time.monotonic()
+        return marker_seen_at is not None and time.monotonic() - marker_seen_at >= 0.2
+
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact, cancelled=cancelled,
+    )
+    assert result.reason == "native_trusted_attempt_cancelled"
+    path = batch / "native-trusted-process-terminal.json"
+    receipt = json.loads(path.read_bytes())
+    assert receipt["process_status"] == "cancelled"
+    receipt["process_status"] = "exited_zero"
+    receipt["terminal_sha256"] = producer_process._digest_without(receipt, "terminal_sha256")
+    path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    with pytest.raises(NativeTrustedAttemptError) as tampered:
+        recover_native_trusted_attempt(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert tampered.value.code == "native_trusted_recovery_terminal_invalid"
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_native_attempt_invalid_terminal_frame_persists_failed_evidence(tmp_path: Path, monkeypatch):
     import lunar_evolution.native_trusted_attempt as runner
 
@@ -646,7 +680,9 @@ def test_native_attempt_invalid_terminal_frame_persists_failed_evidence(tmp_path
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
-def test_native_attempt_active_cancellation_terminates_owned_group(tmp_path: Path):
+def test_native_attempt_active_cancellation_terminates_owned_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
     """An active cancellation must stop a registered target before terminal evidence."""
     workspace, producer_root, intent, attestation, artifact, batch = _attempt(
         tmp_path, timeout=5, target_sleep=10, mark_started_before_sleep=True,
@@ -673,6 +709,37 @@ def test_native_attempt_active_cancellation_terminates_owned_group(tmp_path: Pat
     assert result.exit_code is None
     assert (batch / "work" / "marker").read_text(encoding="utf-8") == "started"
     assert time.monotonic() - started < intent.wall_timeout_seconds
+
+    # Verified cancellation is a durable process-only terminal variant. Recovery is
+    # read-only by default and idempotent; explicit cleanup must also avoid signalling a
+    # process a second time once the terminal receipt exists.
+    terminal_path = batch / "native-trusted-process-terminal.json"
+    assert terminal_path.is_file()
+    terminal = json.loads(terminal_path.read_bytes())
+    assert terminal["process_status"] == "cancelled"
+    assert terminal["exit_code"] is None
+    assert terminal["receipt_scope"] == "process_only"
+    assert terminal["publication_eligible"] is False
+    assert result.terminal_sha256 == terminal["terminal_sha256"]
+    assert recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    ) == terminal
+    assert recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    ) == terminal
+
+    import lunar_evolution.native_trusted_attempt as runner
+
+    def must_not_signal(*args, **kwargs):
+        pytest.fail("read-only recovery of a terminal cancellation must not signal")
+
+    # The terminal branch must not enter _cleanup_recovered_attempt, even when the caller
+    # explicitly asks for cleanup. Patch the low-level signal helper to make that contract
+    # deterministic and visible.
+    monkeypatch.setattr(runner, "cleanup_registered_process", must_not_signal)
+    assert recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact, cleanup=True,
+    ) == terminal
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
@@ -706,6 +773,7 @@ def test_native_attempt_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Pa
     assert result.reason == "native_trusted_attempt_cleanup_unknown"
     assert result.cleanup_status == "kill_failed"
     assert result.exit_code is None
+    assert not (batch / "native-trusted-process-terminal.json").exists()
 
     # The test deliberately replaced lifecycle cleanup; remove the sleeping fixture
     # after assertions so no child survives the test process.
@@ -719,6 +787,31 @@ def test_native_attempt_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Pa
         os.waitpid(pid, 0)
     except ChildProcessError:
         pass
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_attempt_active_cancellation_callback_error_has_no_cancelled_receipt(
+    tmp_path: Path,
+):
+    """A callback error after registration remains unknown and cannot publish cancelled."""
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, timeout=5, target_sleep=10, mark_started_before_sleep=True,
+    )
+
+    def cancelled() -> bool:
+        if (batch / "work" / "marker").is_file():
+            raise RuntimeError("callback failed")
+        return False
+
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact, cancelled=cancelled,
+    )
+    assert result.status == "recovery_required"
+    assert result.reason == "native_trusted_attempt_cancellation_unknown"
+    assert result.cleanup_status in {"cleaned", "already_exited"}
+    assert result.exit_code is None
+    assert not (batch / "native-trusted-process-terminal.json").exists()
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
@@ -740,6 +833,7 @@ def test_native_attempt_parent_deadline_narrows_intent_wall_budget(tmp_path: Pat
     assert result.gate_released
     assert time.monotonic() - started < intent.wall_timeout_seconds
     assert not (batch / "work" / "marker").exists()
+    assert not (batch / "native-trusted-process-terminal.json").exists()
 
 
 @pytest.mark.parametrize(

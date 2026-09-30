@@ -17,6 +17,13 @@ acceptance matrix 的 L158-05 已更新为 `supporting-only`。这条 supporting
 integration 边界不能由 cooperative L156-12 的离线证据代替；仍需与 Feature 156/157 的正式
 registration、broker、terminal receipt 和 recovery 生命周期一起验收。
 
+随后补齐 native trusted 的已验证取消持久化：目标已启动、owner-checked cleanup 成功且取消
+回调为真时，写入同一 process-only terminal schema（`process_status=cancelled`、`exit_code=null`），
+绑定原 handoff 与 unknown-or-passed bootstrap evidence；只读 recovery 幂等返回，cleanup
+uncertainty、callback error、deadline expiry 和 pre-gate cancellation 不会伪造 cancelled 终态。
+新增 tamper/recovery/no-terminal 回归，native trusted focused suite **26 passed**。这仍是
+supporting-only 证据，不等于 Feature 156 正式 execution receipt、broker 或 post-crash 生产接线。
+
 ## 2026-09-30 RSI/producer 本地闭环增量
 
 已推送 `31f0098`（RSI）和 `d1ae8bc`（producer）。RSI 新增 spawn 进程级 clean-room verifier：
