@@ -25,6 +25,11 @@ machine restart recovery、外部 worker 来源/ownership 和真实 campaign。�
 成功推断为已验收。新 head 的 Ubuntu 3.11/3.12/3.13 CI 仍须由 PR #2 独立通过；本段本地结果
 不能代替 CI。PR #2 不得在没有新的用户授权时合入 main。
 
+推送后的 Ubuntu CI 首轮发现 Linux Landlock 对跨目录 `rename/link` 的拒绝可返回 `EXDEV`；
+native input fixture 原先只接受 `EACCES/EPERM`，因此误报 3 个版本失败。测试拒绝谓词已补齐
+`EXDEV`，本地 native-input/lifeline/permission focused 回归为 **86 项，84 passed、2 skip**，
+Ruff、compileall 和 diff check 通过；修复已单独提交，需以新 head CI 为准。
+
 ## 2026-10-02 Retained native evidence and controller-death broker regression
 
 延续 Feature 160/157，工作分支仍为 `codex/rsi-native-worker-recovery`，PR #2 为 draft，

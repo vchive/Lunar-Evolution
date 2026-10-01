@@ -430,7 +430,8 @@ def _real_target(prepared, *, target_delay: int = 0) -> None:
     source.write_text(
         '#include <errno.h>\n#include <fcntl.h>\n#include <stdio.h>\n#include <string.h>\n'
         '#include <sys/stat.h>\n#include <unistd.h>\n'
-        'static int denied(void){return errno==EACCES||errno==EPERM;}\n'
+        '/* Landlock reports some cross-tree rename/link denials as EXDEV. */\n'
+        'static int denied(void){return errno==EACCES||errno==EPERM||errno==EXDEV;}\n'
         'static int exact(const char *path,const char *expected){char data[32768];'
         'int fd=open(path,O_RDONLY);if(fd<0)return 0;ssize_t n=read(fd,data,sizeof(data)-1);'
         'if(close(fd)!=0||n<0)return 0;data[n]=0;return strcmp(data,expected)==0;}\n'
