@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import subprocess
 import sys
 import time
 from dataclasses import replace
@@ -14,6 +13,7 @@ from types import SimpleNamespace
 from urllib.parse import urlparse
 
 import pytest
+from _native_target_fixture import compile_native_target
 from test_bundle_population import MAIN_SOURCE, build_context
 from test_http_transport_deadline import clear_proxy_environment, local_http
 from test_producer_bundle_transaction import _archive_projection, _initialize_native_population
@@ -120,8 +120,7 @@ def fixture(tmp_path: Path, endpoint: str, *, delay: int = 0, candidate_delay: i
     source_path = producer / "target.c"
     source_path.write_text(program)
     target = producer / "target"
-    subprocess.run(["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(source_path), "-o", str(target)],
-                   check=True, capture_output=True)
+    compile_native_target(source_path, target)
     artifact = build_native_bootstrap_artifact(tmp_path / "bootstrap")
     intent = build_producer_launch_intent(
         producer_root=producer, launch_id="local-launch", journal_id="local-journal", run_id="local-run",
@@ -131,7 +130,9 @@ def fixture(tmp_path: Path, endpoint: str, *, delay: int = 0, candidate_delay: i
         dependency_sha256=authority.dependency_sha256, environment_sha256=authority.environment_sha256,
         producer_id="local-formal-fixture", producer_fingerprint=producer_pin, executable_relative="target",
         argv=("target", str(urlparse(endpoint).port)), working_directory="work", output_directory="output",
-        request_timeout_seconds=1, max_requests=1, output_max_bytes=65536, wall_timeout_seconds=12,
+        # This suite asserts scheduler/publication cancellation, not one-second HTTP timing.
+        # Keep local worker startup bounded with room for a loaded CI runner.
+        request_timeout_seconds=5, max_requests=1, output_max_bytes=65536, wall_timeout_seconds=12,
     )
     # This nonce certifies only this local fixture target's observed execution bytes and inode.
     attestation = build_producer_launch_attestation(intent, "local-fixture-once")

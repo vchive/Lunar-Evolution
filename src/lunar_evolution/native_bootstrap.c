@@ -175,9 +175,24 @@ static int hash_path_or_fd(const control_t *c, unsigned char digest[32], int *op
     int fd = c->target_fd >= 0 ? dup(c->target_fd) : open(c->target_path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) return -1;
     struct stat st;
-    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) ||
         st.st_size < 1 || st.st_size > 128 * 1024 * 1024 || !(st.st_mode & 0111)) {
         close(fd); return -1;
+    }
+    if (st.st_nlink != 1) {
+#if defined(__linux__)
+        /* Anonymous memfds deliberately have no pathname link.  Only an
+           inherited, fully sealed descriptor may use this execution route;
+           deleted or mutable files must not stand in for attested bytes. */
+        int required_seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+        int seals = fcntl(fd, F_GET_SEALS);
+        if (c->target_fd < 0 || st.st_nlink != 0 || seals < 0 ||
+            (seals & required_seals) != required_seals) {
+            close(fd); return -1;
+        }
+#else
+        close(fd); return -1;
+#endif
     }
     if (hash_fd(fd, digest) != 0) { close(fd); return -1; }
     *opened = fd; return 0;

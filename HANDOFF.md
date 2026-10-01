@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Main integration and cross-platform corrections
+
+已创建并关联 [PR #1](https://github.com/vchive/Lunar-Evolution/pull/1)，base 为实际主分支
+`main`，head 为 `codex/feature-156-producer-lifecycle`。开始时 `origin/main` 是 head 的祖先，
+0 behind / 81 ahead；merge-tree 无冲突。PR 暂为 draft，未合入主分支；Ubuntu Python
+3.11/3.12/3.13 的当前、历史和冻结回归仍是合入门槛。PR CI 增加取消旧提交运行的配置。
+
+并行审查修复 deterministic draft 目录的 active replacement 窗口，创建/chmod/fsync 改为
+held no-follow descriptor，复核 parent/run/children inode；新增 7 条替换/私有/create-only
+测试。Linux bootstrap 的匿名 zero-link target FD 必须具有全部 4 项 seals，普通 unlinked
+文件和 incomplete seals 拒绝；Landlock regular read path 不再使用目录专用 READ_DIR。
+Linux C fixtures 使用 static 编译，不扩大生产 runtime allowlist；新增 9 条 native/isolation
+回归，其中 8 条在本机 Darwin 跳过，必须由 Ubuntu 执行。
+
+旧 main CI 的 handoff 测试把全局 os.stat 禁用到自身 rglob/pytest JUnit 阶段；现在仅在
+handoff 调用内禁用，3.11/3.12 focused 各 100 passed。cooperative producer 的 Linux test
+现在精确要求 gate + sealed executable 两个 FD。整个分支 diff 的 3 处文档空白已修复。
+
+本轮 required runner 的 archived 2,294 与 frozen 24 均通过；starting current 9,179 cases
+为 9,171 passed / 7 platform skips / 1 preparation preflight failure，overall exit 1；该未改
+node 和整个 preparation file 后续分别 1/48 passed。组合 focused 183 cases 的一个 native
+loopback request 保留 admitted-only journal，target exit 12；独立重跑通过，scheduler fixture
+把 request budget 从 1 调到 5 秒，native wall 仍为 12 秒。不得把这些失败报告改称全量绿灯。
+完整诊断、报告路径与合入/发布边界见 Feature 156 `main-integration-validation.md`。
+
+最终 E2E 13 passed / 17.75s；逐 node-ID 核对最终 9,195 current cases 全覆盖，最新结果为
+9,180 passed / 15 Darwin platform skips / 0 failed/errors，无遗漏/额外节点。原失败完整
+runner/focused 报告仍保留，这是 starting full run + final focused reconciliation，不是
+immutable final-tree 单次零失败运行。Ubuntu PR head 矩阵必须独立通过后才可合入。
+
 ## 2026-10-01 Shared budget, governed generations and local producer completion
 
 延续现有 SDD，并行完成本轮可本地验收的 P0/P1/P2 实现。当前代码和本节优先于下方旧缺口：

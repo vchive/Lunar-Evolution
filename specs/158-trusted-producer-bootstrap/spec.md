@@ -138,6 +138,13 @@ extending the attempt with an unbounded wait.
 
 ## Proof limits
 
+Linux inherited anonymous target descriptors may have zero pathname links only when `F_GET_SEALS`
+proves `F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK` and `F_SEAL_SEAL`. Unsealed or partially sealed
+memfds and ordinary unlinked files are rejected; pathname targets retain the one-link requirement.
+Exact regular-file Landlock rules grant file read/execute rights without directory-only `READ_DIR`.
+The local Linux native fixtures use static binaries because the current lifecycle does not grant
+an ELF interpreter or library runtime allowlist. This does not authorize dynamic external projects.
+
 The protocol proves ordering only under the trusted-bootstrap threat model: the pinned bootstrap
 bytes run as declared, the local owner and filesystem are not compromised, and the target handoff
 uses the platform-supported exact-byte mechanism. It does not prove the absence of work by an

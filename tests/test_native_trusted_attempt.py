@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -11,6 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from _native_target_fixture import compile_native_target
 from test_http_transport_deadline import clear_proxy_environment, local_http
 
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
@@ -91,8 +91,7 @@ def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_
             f'return close(fd) == 0 ? {target_exit} : 4; }}\n',
             encoding="utf-8",
         )
-    subprocess.run(["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(target)],
-                   check=True, capture_output=True)
+    compile_native_target(source, target)
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
     digest = "a" * 64
     intent = build_producer_launch_intent(

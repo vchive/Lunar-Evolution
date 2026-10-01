@@ -79,13 +79,16 @@ def test_handoff_is_provider_free_and_does_not_touch_filesystem(tmp_path: Path, 
     def forbidden(*_args: object, **_kwargs: object) -> None:
         pytest.fail("handoff must not perform filesystem or process operations")
 
-    monkeypatch.setattr("os.open", forbidden)
-    monkeypatch.setattr("os.stat", forbidden)
-    monkeypatch.setattr("subprocess.Popen", forbidden)
-    receipt = build_trusted_bootstrap_process_registration_handoff(
-        launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
-        consumption=claim, registration=registration,
-    )
+    # Restore OS operations before our filesystem assertion and pytest's error/JUnit handling.
+    # Path.rglob itself calls os.stat on supported older Python versions.
+    with monkeypatch.context() as guard:
+        guard.setattr("os.open", forbidden)
+        guard.setattr("os.stat", forbidden)
+        guard.setattr("subprocess.Popen", forbidden)
+        receipt = build_trusted_bootstrap_process_registration_handoff(
+            launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
+            consumption=claim, registration=registration,
+        )
     assert receipt.get("status", "detached")
     assert before == sorted(str(path.relative_to(tmp_path)) for path in tmp_path.rglob("*"))
 

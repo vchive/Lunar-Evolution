@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _native_target_fixture import compile_native_target
 
 from lunar_evolution.native_bootstrap import (
     NativeBootstrapError,
@@ -37,7 +38,7 @@ def _launch(target: Path) -> TrustedBootstrapLaunch:
 def _start(
     tmp_path: Path, *, gate_payload: bytes = b"1", target: Path | None = None,
     target_contents: str | None = None, isolation_policy: object | None = None,
-    prepare_target: bool = True,
+    prepare_target: bool = True, target_fd: int | None = None,
 ):
     target = target or (tmp_path / "target")
     marker = tmp_path / "marker"
@@ -50,14 +51,15 @@ def _start(
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
     control = encode_native_bootstrap_control(
         launch, target_path=target, target_argv=(str(target),), target_cwd=tmp_path,
-        isolation_policy=isolation_policy,
+        isolation_policy=isolation_policy, target_fd=target_fd,
     )
     control_r, control_w = os.pipe()
     gate_r, gate_w = os.pipe()
     frame_r, frame_w = os.pipe()
     process = subprocess.Popen(
         native_bootstrap_command(artifact, control_fd=control_r, gate_fd=gate_r, frame_fd=frame_w),
-        pass_fds=(control_r, gate_r, frame_w), close_fds=True,
+        pass_fds=(control_r, gate_r, frame_w, *((target_fd,) if target_fd is not None else ())),
+        close_fds=True,
         env={"PATH": os.defpath},
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
     )
@@ -122,6 +124,100 @@ def test_native_artifact_load_rejects_replacement(tmp_path: Path):
             artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
         )
     assert exc.value.code == "native_bootstrap_artifact_changed"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="requires Linux anonymous sealed descriptors")
+@pytest.mark.parametrize("missing_seal", [None, "all", "write", "grow", "shrink", "seal"])
+def test_native_bootstrap_accepts_only_fully_sealed_anonymous_target(tmp_path: Path, missing_seal):
+    import fcntl
+
+    source = tmp_path / "target.c"
+    target = tmp_path / "target"
+    source.write_text(
+        '#include <fcntl.h>\n#include <unistd.h>\n'
+        'int main(void){int fd=open("marker",O_CREAT|O_WRONLY,0600);'
+        'if(fd<0)return 2;if(write(fd,"started",7)!=7)return 3;return close(fd);}\n',
+    )
+    compile_native_target(source, target)
+    fd = os.memfd_create("local-bootstrap-seal-fixture", os.MFD_ALLOW_SEALING | os.MFD_CLOEXEC)
+    try:
+        os.write(fd, target.read_bytes())
+        os.fchmod(fd, 0o700)
+        seal_options = {"write": fcntl.F_SEAL_WRITE, "grow": fcntl.F_SEAL_GROW,
+                        "shrink": fcntl.F_SEAL_SHRINK, "seal": fcntl.F_SEAL_SEAL}
+        seals = sum(value for name, value in seal_options.items() if missing_seal != name)
+        if missing_seal == "all":
+            seals = 0
+        fcntl.fcntl(fd, fcntl.F_ADD_SEALS, seals)
+        assert os.fstat(fd).st_nlink == 0
+        target.unlink()
+        process, gate_w, frame_r, marker, _artifact = _start(
+            tmp_path, target=Path(f"/proc/self/fd/{fd}"), prepare_target=False, target_fd=fd,
+        )
+        try:
+            assert _read_frame(frame_r).kind == "bootstrap_ready"
+            os.write(gate_w, b"1")
+            os.close(gate_w)
+            exit_code = process.wait(timeout=5)
+            frames = _read_remaining_frames(frame_r)
+            if missing_seal is None:
+                assert exit_code == 0
+                assert [frame.kind for frame in frames] == ["target_started", "terminal"]
+                assert marker.read_bytes() == b"started"
+            else:
+                assert exit_code == 69
+                assert [frame.kind for frame in frames] == ["target_start_failed"]
+                assert not marker.exists()
+        finally:
+            os.close(frame_r)
+            process.stderr.close()
+    finally:
+        os.close(fd)
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_native_bootstrap_path_target_rejects_multiple_links(tmp_path: Path):
+    target = tmp_path / "target"
+    target.write_text('#!/bin/sh\nprintf started > marker\n')
+    target.chmod(0o700)
+    os.link(target, tmp_path / "second-name")
+    process, gate_w, frame_r, marker, _artifact = _start(tmp_path, target=target, prepare_target=False)
+    try:
+        assert _read_frame(frame_r).kind == "bootstrap_ready"
+        os.write(gate_w, b"1")
+        os.close(gate_w)
+        assert process.wait(timeout=5) == 69
+        assert [frame.kind for frame in _read_remaining_frames(frame_r)] == ["target_start_failed"]
+        assert not marker.exists()
+    finally:
+        os.close(frame_r)
+        process.stderr.close()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux unlinked descriptor fixture")
+def test_native_bootstrap_rejects_unlinked_ordinary_target_descriptor(tmp_path: Path):
+    target = tmp_path / "target"
+    target.write_text('#!/bin/sh\nprintf started > marker\n')
+    target.chmod(0o700)
+    fd = os.open(target, os.O_RDONLY)
+    target.unlink()
+    try:
+        assert os.fstat(fd).st_nlink == 0
+        process, gate_w, frame_r, marker, _artifact = _start(
+            tmp_path, target=Path(f"/proc/self/fd/{fd}"), prepare_target=False, target_fd=fd,
+        )
+        try:
+            assert _read_frame(frame_r).kind == "bootstrap_ready"
+            os.write(gate_w, b"1")
+            os.close(gate_w)
+            assert process.wait(timeout=5) == 69
+            assert [frame.kind for frame in _read_remaining_frames(frame_r)] == ["target_start_failed"]
+            assert not marker.exists()
+        finally:
+            os.close(frame_r)
+            process.stderr.close()
+    finally:
+        os.close(fd)
 
 
 def test_control_rejects_argv_path_that_was_not_hashed(tmp_path: Path):

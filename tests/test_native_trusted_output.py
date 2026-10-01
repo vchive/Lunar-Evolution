@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import sys
 import time
 from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
+from _native_target_fixture import compile_native_target
 from test_http_transport_deadline import clear_proxy_environment, local_http
 
 from lunar_evolution import producer_process
@@ -311,10 +311,7 @@ def test_prepares_output_from_actual_native_trusted_attempt(
         ' return 0;\n}\n',
         encoding="utf-8",
     )
-    subprocess.run(
-        ["/usr/bin/clang", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(target)],
-        check=True, capture_output=True,
-    )
+    compile_native_target(source, target)
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
     intent = build_producer_launch_intent(
         producer_root=producer_root, launch_id="launch-001", journal_id="journal-001",

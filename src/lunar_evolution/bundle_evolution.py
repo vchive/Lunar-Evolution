@@ -40,7 +40,11 @@ from .candidate_execution_evidence import (
 )
 from .candidate_input_staging import stage_candidate_execution_inputs
 from .candidate_workspace import materialize_candidate_source_bundle
-from .candidate_workspace_plan import build_candidate_workspace_plan, parse_candidate_workspace_plan
+from .candidate_workspace_plan import (
+    CandidateWorkspaceError,
+    build_candidate_workspace_plan,
+    parse_candidate_workspace_plan,
+)
 from .source_constraints import validate_source_capabilities
 
 _PROTOCOL = "lunar-population-bundle-v1"
@@ -585,13 +589,68 @@ class MultiFileCandidatePipeline:
                     os.mkdir(name, 0o700, dir_fd=parent.fd)
                 except FileExistsError:
                     _fail("run_exists")
-                os.fsync(parent.fd)
-                path = parent_path / name
-                for child in ("workspaces", "inputs", "evaluations"):
-                    (path / child).mkdir(mode=0o700)
-                for child in ("workspaces", "inputs", "evaluations"):
-                    os.chmod(path / child, 0o700)
-                return path
+                run_fd = None
+                children = []
+                try:
+                    before = os.stat(name, dir_fd=parent.fd, follow_symlinks=False)
+                    if not stat.S_ISDIR(before.st_mode):
+                        _fail("destination_changed")
+                    run_fd = os.open(
+                        name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        dir_fd=parent.fd,
+                    )
+                    opened = os.fstat(run_fd)
+                    run_identity = (opened.st_dev, opened.st_ino)
+                    if (before.st_dev, before.st_ino) != run_identity:
+                        _fail("destination_changed")
+
+                    def check_run():
+                        parent.check()
+                        current = os.stat(name, dir_fd=parent.fd, follow_symlinks=False)
+                        if not stat.S_ISDIR(current.st_mode) or (
+                            current.st_dev, current.st_ino,
+                        ) != run_identity:
+                            _fail("destination_changed")
+                        for child_name, child_fd in children:
+                            named = os.stat(child_name, dir_fd=run_fd, follow_symlinks=False)
+                            held = os.fstat(child_fd)
+                            if not stat.S_ISDIR(named.st_mode) or (
+                                named.st_dev, named.st_ino,
+                            ) != (held.st_dev, held.st_ino):
+                                _fail("destination_changed")
+
+                    check_run()
+                    os.fchmod(run_fd, 0o700)
+                    for child in ("workspaces", "inputs", "evaluations"):
+                        check_run()
+                        os.mkdir(child, 0o700, dir_fd=run_fd)
+                        before_child = os.stat(child, dir_fd=run_fd, follow_symlinks=False)
+                        if not stat.S_ISDIR(before_child.st_mode):
+                            _fail("destination_changed")
+                        child_fd = os.open(
+                            child, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                            dir_fd=run_fd,
+                        )
+                        children.append((child, child_fd))
+                        opened_child = os.fstat(child_fd)
+                        if (before_child.st_dev, before_child.st_ino) != (
+                            opened_child.st_dev, opened_child.st_ino,
+                        ):
+                            _fail("destination_changed")
+                        check_run()
+                        os.fchmod(child_fd, 0o700)
+                        os.fsync(child_fd)
+                    os.fsync(run_fd)
+                    os.fsync(parent.fd)
+                    check_run()
+                    return parent_path / name
+                except (OSError, CandidateWorkspaceError):
+                    _fail("destination_changed")
+                finally:
+                    for _child_name, child_fd in reversed(children):
+                        os.close(child_fd)
+                    if run_fd is not None:
+                        os.close(run_fd)
             finally:
                 parent.close()
         finally:

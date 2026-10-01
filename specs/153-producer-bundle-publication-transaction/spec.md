@@ -192,3 +192,7 @@ are separate work.
 11. Mixed admitted/rejected candidates publish the admitted subset once; an unknown attempt,
     cleanup uncertainty, deadline expiry, cancellation, or archive-prefix drift publishes none.
     Recovery inspection does not replay a started execution or evaluator.
+12. Deterministic draft run allocation creates directories relative to held no-follow directory
+    descriptors, binds device/inode identity, and rechecks the parent, run and child names before
+    returning. Active directory or symlink replacement fails with `destination_changed` without
+    writing or changing permissions through the replacement. Existing run IDs remain create-only.

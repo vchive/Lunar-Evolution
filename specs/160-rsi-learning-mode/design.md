@@ -1,7 +1,9 @@
 # Lunar Agent 总体架构与 RSI 接入设计草案
 
-**状态：设计草案，暂不落地**  
-**Feature：160 — RSI learning mode**  
+**状态：设计草案，暂不落地**
+
+**Feature：160 — RSI learning mode**
+
 **目的：供 SDD 审阅，不代表本文所述的新增能力已经全部实现。**
 
 ## 1. 设计结论

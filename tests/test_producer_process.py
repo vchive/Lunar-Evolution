@@ -231,7 +231,13 @@ def test_process_creation_uses_isolated_no_shell_contract(tmp_path: Path):
     assert observed["stdout"] is subprocess.PIPE
     assert observed["stderr"] is subprocess.PIPE
     assert observed["cwd"] == str(tmp_path / "evolution/producer-batches/journal-001/work")
-    assert len(observed["pass_fds"]) == 1
+    gate_fd = int(observed["env"]["LUNAR_PRODUCER_GATE_FD"])
+    if sys.platform.startswith("linux"):
+        executable_fd = int(observed["executable"].removeprefix("/proc/self/fd/"))
+        assert executable_fd != gate_fd
+        assert set(observed["pass_fds"]) == {gate_fd, executable_fd}
+    else:
+        assert tuple(observed["pass_fds"]) == (gate_fd,)
 
 
 def test_attestation_nonce_is_consumed_once(tmp_path: Path):

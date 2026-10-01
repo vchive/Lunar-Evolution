@@ -85,6 +85,18 @@ static int lunar_apply_isolation(const char *profile,
             int fd = open(path, O_PATH | O_CLOEXEC);
             if (fd < 0) { close(ruleset_fd); return errno ? errno : EACCES; }
             struct landlock_path_beneath_attr rule = { .parent_fd = fd, .allowed_access = i < read_count ? read_access : write_access };
+            struct stat st;
+            if (fstat(fd, &st) != 0) {
+                int error = errno; close(fd); close(ruleset_fd); return error ? error : EACCES;
+            }
+            /* READ_DIR is valid only for directory rules.  An exact regular
+               read/execute path stays exact and never grants directory access. */
+            if (!S_ISDIR(st.st_mode)) {
+                if (i >= read_count || !S_ISREG(st.st_mode)) {
+                    close(fd); close(ruleset_fd); return EINVAL;
+                }
+                rule.allowed_access &= ~LANDLOCK_ACCESS_FS_READ_DIR;
+            }
             if (syscall(__NR_landlock_add_rule, ruleset_fd, LANDLOCK_RULE_PATH_BENEATH, &rule, 0) < 0) {
                 int error = errno; close(fd); close(ruleset_fd); return error ? error : EACCES;
             }

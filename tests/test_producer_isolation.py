@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _native_target_fixture import compile_native_target
 
 from lunar_evolution.producer_isolation import (
     ProducerIsolationError,
@@ -51,6 +52,37 @@ def test_policy_rejects_unsupported_platform(tmp_path: Path):
     with pytest.raises(ProducerIsolationError) as exc:
         build_producer_isolation_policy(read_paths=[item], platform="windows-job-object-v1")
     assert exc.value.code == "producer_isolation_platform_unsupported"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux Landlock exact-file fixture")
+def test_linux_exact_read_file_policy_keeps_network_and_outside_paths_denied(tmp_path: Path):
+    work = tmp_path / "work"
+    work.mkdir()
+    allowed = tmp_path / "allowed"
+    allowed.write_text("local fixture")
+    other = tmp_path / "other"
+    other.write_text("denied")
+    source = tmp_path / "policy.c"
+    binary = tmp_path / "policy"
+    source.write_text(
+        '#define _GNU_SOURCE\n#include <fcntl.h>\n#include <sys/socket.h>\n#include <unistd.h>\n'
+        '#include "native_producer_isolation.h"\n'
+        'int main(int argc,char **argv){if(argc!=4)return 2;'
+        'const char *r[]={argv[1]},*w[]={argv[3]};'
+        'if(lunar_apply_isolation("linux-landlock-seccomp-v1",r,1,w,1)!=0)return 3;'
+        'int fd=open(argv[1],O_RDONLY);if(fd<0)return 4;close(fd);'
+        'fd=open(argv[1],O_WRONLY|O_TRUNC);if(fd>=0){close(fd);return 5;}'
+        'fd=open(argv[2],O_RDONLY);if(fd>=0){close(fd);return 6;}'
+        'fd=socket(AF_INET,SOCK_STREAM,0);if(fd>=0){close(fd);return 7;}'
+        'if(chdir(argv[3])!=0)return 8;'
+        'fd=open("ok",O_CREAT|O_WRONLY,0600);if(fd<0)return 9;return close(fd);}\n',
+    )
+    compile_native_target(source, binary, "-I", str(Path(__file__).parents[1] / "src/lunar_evolution"))
+    result = subprocess.run([str(binary), str(allowed), str(other), str(work)],
+                            check=False, timeout=5, capture_output=True)
+    assert result.returncode == 0
+    assert allowed.read_text() == "local fixture"
+    assert (work / "ok").is_file()
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Darwin sandbox fixture")

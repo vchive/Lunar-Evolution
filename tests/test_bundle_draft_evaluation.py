@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -258,3 +259,83 @@ def test_draft_evaluation_rejects_extra_evaluation_directory_on_retry(tmp_path):
             strategy, draft, journal_id="journal-eval-extra", candidate_id="candidate-1",
             iteration=0, generation=0, island_id=0,
         )
+
+
+@pytest.mark.parametrize(
+    "replacement_stage",
+    ["root_created", "root_opened", "root_inode_replaced", "child_created", "parent_replaced", "child_replaced"],
+)
+def test_deterministic_run_allocation_rejects_active_directory_replacement(
+    tmp_path, monkeypatch, replacement_stage,
+):
+    context = build_context(tmp_path)
+    archive = CandidateArchive(context.workspace)
+    archive._ensure_layout()
+    run_id = "a" * 24
+    parent = archive.root / "bundle-attempts"
+    parent.mkdir()
+    run_root = parent / (".bundle-run-" + run_id)
+    outside = tmp_path / "outside"
+    outside.mkdir(mode=0o755)
+    (outside / "sentinel").write_bytes(b"unchanged")
+    before = _files(outside)
+    before_mode = outside.stat().st_mode
+    original_mkdir, original_open = os.mkdir, os.open
+    replaced = False
+
+    def replace_directory():
+        nonlocal replaced
+        replaced = True
+        if replacement_stage == "parent_replaced":
+            parent.rename(archive.root / "bundle-attempts-original")
+            parent.symlink_to(outside, target_is_directory=True)
+        elif replacement_stage == "child_replaced":
+            child = run_root / "workspaces"
+            child.rename(run_root / "workspaces-original")
+            child.symlink_to(outside, target_is_directory=True)
+        else:
+            run_root.rename(parent / "run-original")
+            if replacement_stage == "root_inode_replaced":
+                run_root.mkdir(mode=0o755)
+            else:
+                run_root.symlink_to(outside, target_is_directory=True)
+
+    def mkdir(path, *args, **kwargs):
+        original_mkdir(path, *args, **kwargs)
+        if not replaced and (
+            (Path(path).name == run_root.name and replacement_stage in {"root_created", "parent_replaced"})
+            or (Path(path).name == "workspaces" and replacement_stage in {"child_created", "child_replaced"})
+        ):
+            replace_directory()
+
+    def open_directory(path, *args, **kwargs):
+        descriptor = original_open(path, *args, **kwargs)
+        if not replaced and Path(path).name == run_root.name and replacement_stage in {"root_opened", "root_inode_replaced"}:
+            replace_directory()
+        return descriptor
+
+    monkeypatch.setattr(os, "mkdir", mkdir)
+    monkeypatch.setattr(os, "open", open_directory)
+    with pytest.raises(EvolutionError, match="bundle_candidate_destination_changed"):
+        context.bundle_pipeline._allocate_run(archive, run_id)
+    assert replaced
+    assert _files(outside) == before
+    assert outside.stat().st_mode == before_mode
+    if replacement_stage == "root_inode_replaced":
+        assert list(run_root.iterdir()) == []
+        assert run_root.stat().st_mode & 0o777 == 0o755
+
+
+def test_deterministic_run_allocation_is_private_and_create_only(tmp_path):
+    context = build_context(tmp_path)
+    archive = CandidateArchive(context.workspace)
+    run_id = "b" * 24
+    run_root = context.bundle_pipeline._allocate_run(archive, run_id)
+    assert run_root.name == ".bundle-run-" + run_id
+    assert sorted(path.name for path in run_root.iterdir()) == ["evaluations", "inputs", "workspaces"]
+    assert run_root.stat().st_mode & 0o777 == 0o700
+    assert all(path.stat().st_mode & 0o777 == 0o700 for path in run_root.iterdir())
+    before = _files(run_root)
+    with pytest.raises(EvolutionError, match="bundle_candidate_run_exists"):
+        context.bundle_pipeline._allocate_run(archive, run_id)
+    assert _files(run_root) == before
