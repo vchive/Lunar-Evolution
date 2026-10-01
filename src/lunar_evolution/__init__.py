@@ -646,6 +646,12 @@ from .rsi_curriculum import (
     FailureObservation,
 )
 from .rsi_durable_adapter import DurableSolverGateway, DurableSolverGatewayError
+from .rsi_native_gateway import (
+    NativeRSIExecutionConfig,
+    NativeRSIReceiptBundle,
+    NativeRSISolverGateway,
+    NativeRSISolverGatewayError,
+)
 from .rsi_fingerprint import (
     FingerprintComparison,
     FingerprintContract,
@@ -1000,6 +1006,10 @@ __all__ = [
     "DurableRegressionCampaign",
     "DurableSolverGateway",
     "DurableSolverGatewayError",
+    "NativeRSIExecutionConfig",
+    "NativeRSIReceiptBundle",
+    "NativeRSISolverGateway",
+    "NativeRSISolverGatewayError",
     "EffectAdapterError",
     "EffectKitError",
     "EffectPreflightError",

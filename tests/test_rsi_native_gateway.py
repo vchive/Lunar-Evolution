@@ -4,8 +4,8 @@ import hashlib
 
 import pytest
 
-from lunar_evolution.rsi_learning import EMPTY_MEMORY_SNAPSHOT
 from lunar_evolution.rsi_gateway import SolverRequest
+from lunar_evolution.rsi_learning import EMPTY_MEMORY_SNAPSHOT
 from lunar_evolution.rsi_native_candidate import (
     NativeCandidateRecord,
     NativeEvaluationReceipt,
@@ -46,7 +46,6 @@ def make_plan(request: SolverRequest, memory) -> NativeRSIExecutionPlan:
 def plan_factory(request: SolverRequest, memory):
     # The gateway only needs a validated plan identity; use a small object built through the
     # existing constructor helper in the test fixture's fake native inputs.
-    from dataclasses import replace
     from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
 
     zeros = {"intent_sha256": digest("intent"), "attestation_sha256": digest("attestation"),
@@ -61,11 +60,11 @@ def plan_factory(request: SolverRequest, memory):
 
 
 def bundle(request: SolverRequest, plan: NativeRSIExecutionPlan) -> NativeRSIReceiptBundle:
-    common = dict(
-        candidate_id="candidate", request_sha256=request.digest(), contract_sha256=request.contract_sha256,
-        evaluator_sha256=request.evaluator_sha256, environment_sha256=request.environment_sha256,
-        memory_snapshot_sha256=request.memory_snapshot_sha256,
-    )
+    common = {
+        "candidate_id": "candidate", "request_sha256": request.digest(), "contract_sha256": request.contract_sha256,
+        "evaluator_sha256": request.evaluator_sha256, "environment_sha256": request.environment_sha256,
+        "memory_snapshot_sha256": request.memory_snapshot_sha256,
+    }
     candidate = NativeCandidateRecord(
         **common, candidate_receipt_sha256=digest("candidate-receipt"),
         candidate_source_sha256=digest("candidate-source"),
