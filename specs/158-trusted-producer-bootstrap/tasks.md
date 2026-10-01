@@ -1,5 +1,12 @@
 # Tasks
 
+Latest 2026-10-01 evidence: the actual local scheduler now joins native attempt, gate, byte-bound
+target, host broker, formal receipt, strict output, native publication and read-only recovery.
+Parent deadline, cancellation and interrupted/unknown publication fixtures are in Feature 156
+`local-native-scheduler-validation.md`. Historical slices below remain useful provenance, but
+their earlier formal-receipt/scheduler-open statements are superseded for this local composition.
+Full production/cross-platform recovery and actual project launch trust remain separate.
+
 - [x] T158-01 Define canonical trusted-bootstrap descriptor, protocol version, launch record, and bounded handshake/evidence DTOs.
 - [x] T158-02 Define exact-byte/bootstrap allowlisting and platform execution modes without papering over Feature 156 T156-11. A native artifact build/allowlist supporting slice is now implemented; production lifecycle integration remains deferred.
 - [x] T158-03 Specify and implement the ready/block/release/target-start state machine in a trusted bootstrap runtime fixture.

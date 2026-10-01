@@ -7,6 +7,12 @@ run-scoped local directory. It does **not** require a machine-wide Hermes, OpenC
 installation. A natural-language answer is only the audit trail; an algorithm mission is complete
 only when its declared output files pass independent checks and are delivered as hashed artifacts.
 
+RSI learning runs support durable DRS/BRS recovery, governed memory generations, shared
+learning/holdout budgets, optional regression before dispatch, and retained independent Actor
+verification evidence. See the [local RSI runtime guide](docs/rsi-local-runtime.md) for runnable
+fixtures, explicit recovery, cross-solver translation and confidence analysis. Official evaluator
+and real external producer campaign acceptance remain separate from these local fixtures.
+
 The project is being developed with Spec-Driven Development (SDD). The current executable
 deep-evolution effect-measurement boundary is captured in
 [`specs/051-deep-evolution-effect-trial/`](specs/051-deep-evolution-effect-trial/), with the

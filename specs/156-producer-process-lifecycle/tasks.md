@@ -1,5 +1,13 @@
 # Tasks
 
+Latest local integration evidence: `local-native-scheduler-validation.md` exercises the actual
+native bootstrap/isolated target/host broker/formal receipt/strict output/candidate evaluator/
+publication/recovery chain. It also covers active candidate/evaluator cancellation, retained parent
+deadline, receipt-fsync interruption and partial-commit unknown. Existing tasks below retain their
+broader production/cross-platform requirements; historical "integration open" statements do not
+mean these local composed paths are absent. External project trust and complete transport crash/
+bypass coverage must still be established independently.
+
 - [x] T156-01 Define canonical lifecycle, attestation-consumption, registration, stream, envelope, and execution-receipt DTOs with bounded fixed failure codes.
 - [x] T156-02 Implement no-follow atomic consume-once nonce claims and exact revalidation of intent, authority IDs, attestation, and source executable identity.
 - [x] T156-03 Implement the gate-aware no-shell `Popen` path with a new session, closed descriptors, derived cwd, and exact PID/PGID owner registration for cooperating local producers.

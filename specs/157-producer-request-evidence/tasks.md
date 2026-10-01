@@ -1,5 +1,10 @@
 # Tasks
 
+Latest 2026-10-01 local scheduler regression is documented in Feature 156
+`local-native-scheduler-validation.md`: actual host broker/journal coverage now composes through
+formal receipt and native publication; the local target cannot write the host journal or connect
+directly. T157-05/06 still require complete bypass and active transport crash/ownership coverage.
+
 - [x] T157-01 Define bounded request event/evidence DTOs, canonical self-digest, and fixed parser errors.
 - [x] T157-02 Bind evidence to the exact Feature 156 launch tuple, intent digest, and repeated budgets.
 - [x] T157-03 Add conservative declaration-only assessment that never claims host enforcement.

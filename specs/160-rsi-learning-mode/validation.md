@@ -1,5 +1,25 @@
 # Validation: RSI learning mode
 
+Final 2026-10-01 current-tree inventory: **9,172 passed / 0 failed / 0 errors / 7 skipped**,
+covering all **9,179** currently collected cases. The full current-tree run collected 9,178 cases
+and passed 9,171 with seven skips in 908.410 seconds
+(`/tmp/lunar-current-complete-20261001.xml`). The final added independent-publication-guard case
+then passed in 2.169 seconds (`/tmp/lunar-final-publication-guard-20261001.xml`). Exact node-ID
+inventory reconciliation found no missing or extra cases; aggregate JUnit is
+`/tmp/lunar-current-final-inventory-20261001.xml` (910.579 seconds combined).
+
+Six skips require Linux sealed-memfd/runner capabilities absent on this Darwin host; one requires
+a distinct filesystem case alias. No modified local RSI or native scheduler cases were skipped.
+The current-tree run does not rerun archived/frozen Git snapshot suites from `tools/run_tests.py`.
+Final `ruff check src tests tools`, compileall over those directories and `git diff --check` pass.
+After final control composition changes, six affected native suites separately passed 104 cases;
+dispatch revalidation/generation/gate/parent reconciliation separately passed 88 cases. The
+earlier complete RSI-only run passed 968 cases before dispatch revalidation was added.
+
+Implemented local interfaces and release boundaries are described in `docs/rsi-local-runtime.md`,
+HANDOFF and the local SDDs. No WebAgent, remote evaluator, company platform, real model or actual
+OpenEvolve/Shinka project campaign was invoked; keys were neither read nor changed.
+
 Latest 2026-10-01 priority regression: **890 passed / 0 failed / 0 skipped in 49.42s**, including
 773 RSI cases and 117 producer/native cases (`/tmp/lunar-priority-regression-20261001.xml`).
 After that run, three additional alias/corrupt-intent/legacy-v1 approval regression cases passed

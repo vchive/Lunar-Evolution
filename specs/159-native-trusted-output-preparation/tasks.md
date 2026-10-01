@@ -1,5 +1,10 @@
 # Tasks
 
+Latest local integration evidence: Feature 156 `local-native-scheduler-validation.md` verifies
+contemporaneous output, formal receipt and host request coverage through actual native publication
+and repeated read-only recovery. T159-05 remains open for the complete egress/crash coverage matrix;
+these observed local paths are implemented, rather than merely synthetic projections.
+
 - [x] T159-01 Add read-only preparation requiring a recovered successful native process terminal.
 - [x] T159-02 Verify bounded stable envelope bytes, authority pins and declared request ceiling.
 - [x] T159-03 Reuse explicit multi-file verification, draft projection and admission planning.

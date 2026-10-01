@@ -41,7 +41,14 @@ runtime allowlist/default project registration、worker 来源/ownership/可信 
 防护或远程原子 lease；模型训练仍为独立轨道，后台/分布式 scheduler 不在当前本地主线。
 
 工作分支仍为 `codex/feature-156-producer-lifecycle`，推送不等于合入 main/master。不要覆盖
-未提交工作。最终本轮测试结果记录在 Feature 160 `validation.md`。
+未提交工作。实现提交 `3a2dcde`（RSI）和 `74afaf7`（producer）已推送该分支。
+最终本地 current-tree 清单 **9,179 cases** 全部有执行结果：**9,172 passed / 0 failed /
+0 errors / 7 skipped**。六项需要本机不具备的 Linux sealed-memfd/runner，一项要求独立大小写
+文件别名；改动的本地 RSI/native scheduler 用例无 skip。完整 run 9,178 cases 加最终新增
+publication guard 单条，逐 node-ID 核对无遗漏，合计 910.579 秒；aggregate JUnit
+`/tmp/lunar-current-final-inventory-20261001.xml`。这不是 archived/frozen snapshot runner 的重跑。
+最终 Ruff（src/tests/tools）、compileall 和 diff check 均通过；详情见 Feature 160
+`validation.md`。
 
 ## 2026-10-01 P0/P1/P2 execution and local runtime composition
 

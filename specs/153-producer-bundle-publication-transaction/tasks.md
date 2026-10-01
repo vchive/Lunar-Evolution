@@ -5,13 +5,17 @@
 - [x] T153-03 Implement staged all-or-nothing publication with a durable recovery marker.
 - [x] T153-04 Implement exact-match resume and terminal unknown-publication rejection.
 - [x] T153-05 Add provider-free focused regression and static validation.
-- [ ] T153-06 Add non-publishing native draft execution/evaluation under journal-derived IDs and
+- [x] T153-06 Add non-publishing native draft execution/evaluation under journal-derived IDs and
       the shared deadline. Bind each retained run to its batch and keep it at the original native
       `bundle-attempts` path; do not allocate a sequential ID or write the final archive/state.
       Implemented: planned-ID draft execution, immutable prepared intent, exact retained-evidence
       retry and unchanged live archive/state before commit. Caller-owned active deadline,
       bounded lock waits, stage-boundary cancellation, actual policy pins and same-boot durable
-      deadline restoration are implemented. Still open: active-process cancellation.
+      deadline restoration are implemented. Active candidate/evaluator process cancellation now
+      checks caller guards in the existing bounded polling loop, including cancellation-only and
+      independent publication guards; owned group cleanup precedes typed failure propagation.
+      Local scheduler composition is verified in Feature 156 `local-native-scheduler-validation.md`;
+      real project launch trust and campaigns remain T153-07.
 - [x] T153-06a Prepare native records/receipts for planned final source paths and extend staging
       to verify the complete retained run evidence without copying or rewriting path/inode
       bindings. Derive active state from frozen population state and adjudications.
@@ -26,7 +30,9 @@
       Added: durable all-rejected terminal receipts, exact no-evaluation retry, receipt/identity
       tampering rejection, budget downgrade rejection, deadline/cancellation before commit and
       successful completion after entering the commit critical region.
-      Still open: full unknown/interruption recovery and active-process cancellation.
+      Added: real scheduler publication/recovery, active candidate/evaluator cancellation,
+      receipt-fsync interruption, partial-commit unknown blocking and repeated published replay.
+      Still open: the complete cross-platform unknown/interruption recovery matrix.
 - [x] T153-06c Persist and independently inspect native all-rejected terminal batches without
       publishing candidates; rebuild portable receipts from retained original evidence.
 - [x] T153-06d Compose caller-owned active execution controls with tighter parent controls,
