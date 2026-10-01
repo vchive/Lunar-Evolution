@@ -1,5 +1,33 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 RSI curriculum policy, quarantine and durable promotion identity
+
+本轮继续现有 Feature 160，未扩大到真实 producer/evaluator。已提交的 `2be9651` 增加失败
+transfer report → governance revoke 边界，`3507df3` 增加显式 `FailureBoundaryPolicy`：
+未覆盖 capability/prerequisite 优先、hard-negative 阈值、单 cluster 预算与 novelty。新选择
+记录 diagnosis/policy digest，恢复重演 cluster、task、reason、coverage 和预算；ledger digest
+绑定完整 policy，controller checkpoint 持久化 policy，legacy 无 policy 仅按默认 v1 和旧摘要
+公式验证。contract 见 `specs/160-rsi-learning-mode/curriculum-policy.md`。
+
+独立审查后进一步收紧晋级和撤销：caller fingerprint 不得替换 controller 观测 pins；
+revoked/pre-shadow admission 在 runner 前拒绝；每次 trial 前后和最终写入前复核组件。
+controller approval 在同次 governance CAS 中，把观测组件与 external pins digest 写入
+`reason=controller_transfer_promotion:<sha256>`，所有 approved/active replay 都检查该绑定。
+新 controller 可复用原批准收据而不重跑 runner，但组件漂移或 legacy 无绑定记录会停止。
+direct promotion adapter 保持显式本地 API；这里不是外部来源认证或 Python/OS sandbox。
+quarantine 的 revoke reason 绑定 rejected report digest，手工撤销/不同报告不得冒充同一次
+重放；撤销后 admission 不可检索，但没有修改 immutable `RSIMemoryStore`。
+
+最终本地 RSI 回归 **584 passed / 0 failed / 0 skipped in 6.17s**，JUnit 报告
+`/tmp/lunar-rsi-release-20261001-v2.xml`；focused promotion/governance/transfer **51 passed**，
+curriculum/resume **33 passed**；`ruff check src tests`、compileall 和 diff check 通过。
+本轮更新 tasks、validation、stage-gap、curriculum-policy 与 memory-promotion 规格。
+T160-13 的 provider-free policy 子项已关闭，真实 adapter/worker 来源、ownership 和可信
+unknown 完成证据仍开放。下一步仍是受控默认 holdout/quarantine 调度、真实 Actor/evaluator
+artifact handoff，以及 Feature 156/157/158 的正式 producer 生命周期接线；不运行 WebAgent、
+远程 evaluator、公司平台或真实 OpenEvolve/Shinka campaign。当前工作在
+`codex/feature-156-producer-lifecycle`，不等于已合入 master/main。
+
 ## 2026-10-01 RSI clean-room admission and controller promotion composition
 
 Feature 160 新增两条本地 provider-free 组合边界。`CleanRoomAdmissionGate`（见

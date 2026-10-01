@@ -8,7 +8,8 @@ mutates :class:`~lunar_evolution.rsi_gateway.RSIMemoryStore`.
 An eligible transfer report can advance an existing ``shadow`` admission to ``approved``.
 Callers may request activation as a second, explicit step; the adapter always appends the
 ``approved`` revision first, so a single practice or transfer pass can never jump directly to
-``active``.  Rejected reports and malformed evidence fail before any governance write.
+``active``.  Rejected reports and malformed evidence cannot promote an admission.  An explicit
+quarantine entry point binds a failed regression report before revoking an admission.
 """
 
 from __future__ import annotations
@@ -102,6 +103,7 @@ class MemoryPromotionAdapter:
         *,
         expected_record_sha256: str,
         compatibility: Mapping[str, object] | None = None,
+        approval_reason: str | None = None,
     ) -> MemoryAdmissionRecord:
         """Append ``shadow -> approved`` using the report's holdout/baseline evidence."""
         evidence = _evidence(report)
@@ -118,6 +120,7 @@ class MemoryPromotionAdapter:
             "approved",
             expected_record_sha256=expected_record_sha256,
             compatibility=compatibility,
+            reason=approval_reason,
             **evidence,
         )
 
@@ -128,6 +131,7 @@ class MemoryPromotionAdapter:
         *,
         expected_record_sha256: str,
         compatibility: Mapping[str, object] | None = None,
+        approval_reason: str | None = None,
     ) -> MemoryAdmissionRecord:
         """Approve and then activate, retaining both durable lifecycle revisions.
 
@@ -138,6 +142,8 @@ class MemoryPromotionAdapter:
         # continue that exact lifecycle edge instead of attempting to append ``approved`` twice.
         current = self.governance.get(admission_id)
         if current is not None and current.state == "approved":
+            if approval_reason is not None and current.reason != approval_reason:
+                raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
             evidence = _evidence(report)
             _report_snapshot_matches(current, report)
             return self.governance.transition(
@@ -152,6 +158,7 @@ class MemoryPromotionAdapter:
             report,
             expected_record_sha256=expected_record_sha256,
             compatibility=compatibility,
+            approval_reason=approval_reason,
         )
         return self.governance.transition(
             admission_id,
@@ -215,22 +222,24 @@ class MemoryPromotionAdapter:
         if current.record_sha256 != expected_record_sha256:
             raise MemoryGovernanceError("rsi_memory_governance_cas_conflict")
         _report_snapshot_matches(current, report)
+        bound_reason = "transfer_regression_rejected:" + report.report_sha256
+        if reason is not None:
+            if type(reason) is not str or not reason.strip() or any(char in reason for char in "\x00\r\n"):
+                raise MemoryPromotionError("rsi_memory_promotion_quarantine_reason_invalid")
+            bound_reason += ";" + reason
+            try:
+                if len(bound_reason.encode("utf-8")) > 512:
+                    raise MemoryPromotionError("rsi_memory_promotion_quarantine_reason_invalid")
+            except UnicodeEncodeError as exc:
+                raise MemoryPromotionError("rsi_memory_promotion_quarantine_reason_invalid") from exc
         if current.state == "revoked":
+            if current.reason != bound_reason:
+                raise MemoryPromotionError("rsi_memory_promotion_quarantine_report_conflict")
             return current
-        if reason is None:
-            reason = "transfer_regression_rejected:" + ",".join(report.rejection_reasons)
-        if type(reason) is not str or not reason.strip() or "\x00" in reason:
-            raise MemoryPromotionError("rsi_memory_promotion_quarantine_reason_invalid")
-        try:
-            encoded_reason = reason.encode("utf-8")
-        except UnicodeEncodeError as exc:
-            raise MemoryPromotionError("rsi_memory_promotion_quarantine_reason_invalid") from exc
-        if len(encoded_reason) > 512 or "\r" in reason or "\n" in reason:
-            raise MemoryPromotionError("rsi_memory_promotion_quarantine_reason_invalid")
         return self.governance.revoke(
             admission_id,
             expected_record_sha256=expected_record_sha256,
-            reason=reason,
+            reason=bound_reason,
         )
 
     def promote(
@@ -241,6 +250,7 @@ class MemoryPromotionAdapter:
         expected_record_sha256: str,
         compatibility: Mapping[str, object] | None = None,
         activate: bool = False,
+        approval_reason: str | None = None,
     ) -> MemoryAdmissionRecord:
         """Promote to ``approved`` or, when explicitly requested, through ``active``."""
         if type(activate) is not bool:
@@ -251,12 +261,14 @@ class MemoryPromotionAdapter:
                 report,
                 expected_record_sha256=expected_record_sha256,
                 compatibility=compatibility,
+                approval_reason=approval_reason,
             )
         return self.approve(
             admission_id,
             report,
             expected_record_sha256=expected_record_sha256,
             compatibility=compatibility,
+            approval_reason=approval_reason,
         )
 
 
@@ -268,6 +280,7 @@ def promote_transfer_report(
     expected_record_sha256: str,
     compatibility: Mapping[str, object] | None = None,
     activate: bool = False,
+    approval_reason: str | None = None,
 ) -> MemoryAdmissionRecord:
     """Functional convenience wrapper for :class:`MemoryPromotionAdapter`."""
     return MemoryPromotionAdapter(governance).promote(
@@ -276,6 +289,7 @@ def promote_transfer_report(
         expected_record_sha256=expected_record_sha256,
         compatibility=compatibility,
         activate=activate,
+        approval_reason=approval_reason,
     )
 
 

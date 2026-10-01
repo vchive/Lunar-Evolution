@@ -32,7 +32,7 @@
 - [x] T160-17 增加 provider-free failure-driven curriculum 窄版本：failure cluster、capability coverage、hard-negative/boundary probe、重复抑制、预算审计和 canonical ledger replay；可选 controller checkpoint/resume 接线及显式可配置 policy、policy-bound digest/replay 已完成（见 `curriculum-policy.md`），复杂 bandit/RL 后置。
 - [x] T160-18 增加显式 transfer-report → memory-governance promotion adapter：校验 report digest、holdout/baseline/regression evidence 和 CAS，强制 shadow → approved → active 两步晋级。
 - [x] T160-19 增加 provider-free 用量/成本 accounting 窄版本：run/episode/adapter-stage append-only JSON receipt、CAS/hash-chain、未知 token/time fail-closed、可配置估算成本、预算摘要和 durable reopen。真实 provider billing、GPU 计量和真实 process adapter 接线仍待后续。
-- [x] T160-20 增加 controller-level transfer promotion 组合入口：冻结当前/parent memory，执行本地 transfer regression，校验 solver/verifier/curriculum/judge fingerprint 与 CAS，并通过 `MemoryPromotionAdapter` 强制 `shadow → approved`（可选 `approved → active`）；重复调用只读重放，不重复 runner 或 governance revision。该入口为显式 opt-in 的 provider-free 路径，不等于默认自动调度或真实 evaluator 接线。
+- [x] T160-20 增加 controller-level transfer promotion 组合入口：冻结当前/parent memory，执行本地 transfer regression，逐 trial 校验 solver/verifier/curriculum/judge fingerprint 与 CAS，并通过 `MemoryPromotionAdapter` 强制 `shadow → approved`（可选 `approved → active`）；approved revision 同次 CAS 绑定观测指纹，重启和重复调用只读重放，不重复 runner 或 governance revision；调用方不能覆盖观测 pins，legacy unbound approved/active 需显式迁移。该入口为显式 opt-in 的 provider-free 路径，不等于默认自动调度或真实 evaluator 接线。
 - [x] T160-21 增加 clean-room verdict admission bridge：严格校验 episode、source/dependency/task/evaluator provenance 与 `pass` verdict，幂等写入 governance 的 `observed → verified`；不修改 `RSIMemoryStore`，不自动推进 candidate/shadow，也不提供外部真实性证明。
 
 ## 本轮边界

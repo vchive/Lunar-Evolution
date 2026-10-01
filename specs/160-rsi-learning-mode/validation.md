@@ -1,15 +1,14 @@
 # Validation: RSI learning mode
 
-This file records the local acceptance boundary. On 2026-09-30 the RSI suite passed **523 tests**,
-with no failures or skips (`/tmp/lunar-rsi-release-current`). The run includes DRS/BRS callback
-crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery and append-only
-unknown receipt failure settlement. Ruff, compileall and `git diff --check` passed.
-The process-level clean-room fixtures are included in that count; they use only local module-level
-evaluators and do not establish an official evaluator or external authenticity. The clean-room
-admission bridge and controller promotion composition added after that baseline require the focused
-tests listed below to be rerun before this document is cited as a release artifact. A passing
-fixture matrix is not evidence that every external worker or callback recovery path has been
-implemented.
+This file records the local acceptance boundary. On 2026-10-01 the RSI suite passed **584 tests**,
+with no failures or skips in 6.17 seconds (`/tmp/lunar-rsi-release-20261001-v2.xml`). It includes
+DRS/BRS callback crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery,
+unknown receipt failure settlement, clean-room admission, policy-bound curriculum replay, transfer
+quarantine and controller promotion identity gates. Ruff over `src tests`, compileall and
+`git diff --check` passed. The previous 2026-09-30 baseline was 523 tests.
+The process-level clean-room fixtures use only local module-level evaluators. This local regression
+does not establish an official evaluator, external worker authenticity, real producer campaign or
+model end-to-end acceptance, nor prove that every external recovery path has been implemented.
 
 ## Data and authority
 
@@ -105,6 +104,14 @@ implemented.
   `shadow -> approved` and optional `approved -> active`. Replaying a completed promotion on the
   same controller does not rerun the suite or append another governance revision. It is not a
   default scheduler, official evaluator integration, or external producer acceptance.
+- Caller fingerprints cannot overwrite observed component identities. The controller checks
+  component/snapshot identity at each trial boundary and binds observed pins to the approved
+  record's reason in the same CAS append as regression evidence. Changed components or external
+  pins stop approved/active replay, including a fresh controller with empty compatibility. Legacy
+  unbound approved records require explicit identity migration and cannot be auto-activated.
+- Failed-report quarantine binds the report digest in the revocation reason. Passing, tampered,
+  snapshot-drifted or stale-CAS reports cannot revoke a record; a manual or different-report
+  revocation cannot be mistaken for idempotent replay of this operation.
 - Ruff, compileall and focused Feature 160 tests pass without provider credentials or WebAgent.
 
 ## Local regression entry points

@@ -972,6 +972,10 @@ class RSILearningController:
             raise MemoryPromotionError("rsi_memory_governance_missing")
         if admission.record_sha256 != expected_record_sha256:
             raise MemoryPromotionError("rsi_memory_governance_cas_conflict")
+        if admission.state == "revoked":
+            raise MemoryPromotionError("rsi_memory_governance_revoked")
+        if admission.state not in {"shadow", "approved", "active"}:
+            raise MemoryPromotionError("rsi_memory_governance_transition_invalid")
 
         # A candidate admission is bound to exactly the frozen current snapshot.  The parent
         # digest is also checked before spending any holdout calls, including the empty parent
@@ -983,17 +987,36 @@ class RSILearningController:
         if (admission.parent_snapshot_sha256 or EMPTY_MEMORY_SNAPSHOT_SHA256) != expected_parent:
             raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
 
-        observed_fingerprints: dict[str, object] = {
-            "memory_snapshot_sha256": current_memory.digest(),
-            "solver_fingerprint": _component_digest(self.gateway, name="solver"),
-            "verifier_fingerprint": _component_digest(self.verifier, name="verifier"),
-            "curriculum_fingerprint": _component_digest(self.curriculum, name="curriculum"),
-            "target_judge_fingerprint": _component_digest(self.target_judge, name="target_judge"),
-        }
-        observed_fingerprints.update(dict(fingerprints or {}))
+        def component_pins() -> dict[str, object]:
+            return {
+                "memory_snapshot_sha256": self.snapshot.digest(),
+                "solver_fingerprint": _component_digest(self.gateway, name="solver"),
+                "verifier_fingerprint": _component_digest(self.verifier, name="verifier"),
+                "curriculum_fingerprint": _component_digest(self.curriculum, name="curriculum"),
+                "target_judge_fingerprint": _component_digest(self.target_judge, name="target_judge"),
+            }
+
+        observed_fingerprints = component_pins()
+        supplied_fingerprints = dict(fingerprints or {})
+        # Caller-owned external pins may supplement component identity, but cannot replace the
+        # controller's independent observations with stale or fabricated component digests.
+        for key, value in supplied_fingerprints.items():
+            if key in observed_fingerprints and value != observed_fingerprints[key]:
+                raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
+        pinned_components = dict(observed_fingerprints)
+        observed_fingerprints.update(supplied_fingerprints)
         for key, value in observed_fingerprints.items():
             declared = admission.compatibility.get(key)
             if declared is not None and declared != value:
+                raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
+        try:
+            approval_reason = "controller_transfer_promotion:" + _record_digest(observed_fingerprints)
+        except Exception as exc:
+            raise MemoryPromotionError("rsi_memory_promotion_fingerprint_invalid") from exc
+        if admission.state in {"approved", "active"}:
+            if admission.reason is None or not admission.reason.startswith("controller_transfer_promotion:"):
+                raise MemoryPromotionError("rsi_memory_promotion_identity_missing")
+            if admission.reason != approval_reason:
                 raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
 
         # Do not rerun a completed promotion.  CAS is checked above so a caller cannot turn an
@@ -1017,22 +1040,38 @@ class RSILearningController:
                 expected_record_sha256=expected_record_sha256,
                 compatibility=admission.compatibility,
                 activate=True,
+                approval_reason=approval_reason,
             )
             return cached_report, promoted
 
+        def check_components() -> None:
+            if self.snapshot.digest() != current_memory.digest():
+                raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
+            if component_pins() != pinned_components:
+                raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
+
+        if not callable(runner):
+            raise MemoryPromotionError("rsi_memory_promotion_runner_invalid")
+
+        def checked_runner(task: Any, memory: MemorySnapshot, repetition: int) -> Any:
+            check_components()
+            result = runner(task, memory, repetition)
+            check_components()
+            return result
+
         report = TransferRegressionSuite(policy=policy).run(
-            tasks, old_memory=old_memory, current_memory=current_memory, runner=runner,
+            tasks, old_memory=old_memory, current_memory=current_memory, runner=checked_runner,
         )
         # A malicious or accidental runner must not mutate the controller's memory between the
         # frozen suite and the governance write.
-        if self.snapshot.digest() != current_memory.digest():
-            raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
+        check_components()
         promoted = MemoryPromotionAdapter(governance).promote(
             admission_id,
             report,
             expected_record_sha256=expected_record_sha256,
             compatibility=admission.compatibility,
             activate=activate,
+            approval_reason=approval_reason,
         )
         self._transfer_promotion_reports[admission_id] = report
         return report, promoted
@@ -1049,6 +1088,7 @@ class RSILearningController:
             ledger = list(self.curriculum.to_ledger())
             seed = self.curriculum.seed
             budget = self.curriculum.budget_limit
+            policy = self.curriculum.policy.to_dict()
             digest = self.curriculum.ledger_digest()
         except (AttributeError, TypeError, ValueError, RSILearningError) as exc:
             raise RSILearningError("rsi_curriculum_checkpoint_invalid") from exc
@@ -1056,6 +1096,7 @@ class RSILearningController:
             "protocol": "rsi-failure-driven-curriculum-v1",
             "seed": seed,
             "budget": budget,
+            "policy": policy,
             "ledger": ledger,
             "ledger_digest": digest,
         }
@@ -1066,22 +1107,35 @@ class RSILearningController:
         raw = state.get("curriculum_state")
         if raw is None:
             return
-        from .rsi_curriculum import FailureDrivenCurriculum
+        from .rsi_curriculum import FailureBoundaryPolicy, FailureDrivenCurriculum
 
         if not isinstance(self.curriculum, FailureDrivenCurriculum):
             raise RSILearningError("rsi_resume_curriculum_drift")
         if (not isinstance(raw, Mapping)
-                or set(raw) != {"protocol", "seed", "budget", "ledger", "ledger_digest"}
+                or not {"protocol", "seed", "budget", "ledger", "ledger_digest"}.issubset(raw)
+                or set(raw) - {"protocol", "seed", "budget", "policy", "ledger", "ledger_digest"}
                 or raw.get("protocol") != "rsi-failure-driven-curriculum-v1"):
             raise RSILearningError("rsi_curriculum_checkpoint_corrupt")
         try:
+            current_policy = self.curriculum.policy
+            # A legacy checkpoint predates configurable policies and therefore has the fixed
+            # default policy.  Never reinterpret it under a caller's custom policy.
+            checkpoint_policy = FailureBoundaryPolicy.from_dict(raw["policy"]) if "policy" in raw else FailureBoundaryPolicy()
+            if checkpoint_policy.to_dict() != current_policy.to_dict():
+                raise RSILearningError("rsi_resume_curriculum_drift")
             restored = FailureDrivenCurriculum.from_ledger(
-                raw["ledger"], seed=raw["seed"], budget=raw["budget"],
+                raw["ledger"], seed=raw["seed"], budget=raw["budget"], policy=current_policy,
             )
-            if restored.ledger_digest() != raw["ledger_digest"]:
+            # The legacy digest covered only seed/budget/ledger.  Accept that exact formula
+            # only when the checkpoint has no configurable policy field.
+            expected_digest = restored.ledger_digest() if "policy" in raw else _record_digest({
+                "seed": restored.seed, "budget": restored.budget_limit, "ledger": list(restored.to_ledger()),
+            })
+            if expected_digest != raw["ledger_digest"]:
                 raise RSILearningError("rsi_curriculum_checkpoint_corrupt")
             if (restored.seed != self.curriculum.seed
-                    or restored.budget_limit != self.curriculum.budget_limit):
+                    or restored.budget_limit != self.curriculum.budget_limit
+                    or restored.policy.to_dict() != current_policy.to_dict()):
                 raise RSILearningError("rsi_resume_curriculum_drift")
         except RSILearningError:
             raise

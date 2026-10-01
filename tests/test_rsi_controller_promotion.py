@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from lunar_evolution.rsi_controller import RSILearningController
-from lunar_evolution.rsi_gateway import DeterministicMockSolver, RSIMemoryStore
+from lunar_evolution.rsi_controller import DeterministicCurriculum, RSILearningController
+from lunar_evolution.rsi_gateway import DeterministicMockSolver, LocalExactVerifier, RSIMemoryStore
+from lunar_evolution.rsi_identity import component_fingerprint
 from lunar_evolution.rsi_learning import MemoryItem, MemorySnapshot
 from lunar_evolution.rsi_memory_governance import MemoryAdmissionRecord, MemoryGovernanceStore
 from lunar_evolution.rsi_memory_promotion import MemoryPromotionError
@@ -205,4 +206,211 @@ def test_controller_fingerprint_binding_fails_closed(tmp_path: Path) -> None:
             expected_record_sha256=shadow.record_sha256, old_memory=old,
             tasks=manifest(), runner=lambda *_args: TransferObservation(True, 1.0),
         )
+    assert governance.get(shadow.admission_id) == shadow
+
+
+@pytest.mark.parametrize("key", [
+    "memory_snapshot_sha256", "solver_fingerprint", "verifier_fingerprint",
+    "curriculum_fingerprint", "target_judge_fingerprint",
+])
+def test_supplied_fingerprints_cannot_replace_controller_observations(tmp_path: Path, key: str) -> None:
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    with pytest.raises(MemoryPromotionError, match="fingerprint_drift"):
+        controller.promote_transfer_regression(
+            governance=governance, admission_id=shadow.admission_id,
+            expected_record_sha256=shadow.record_sha256, old_memory=old,
+            tasks=manifest(), runner=lambda *_args: pytest.fail("invalid pins must stop evaluation"),
+            fingerprints={key: digest("fabricated-component")},
+        )
+    assert governance.get(shadow.admission_id) == shadow
+
+
+def test_matching_component_fingerprints_remain_valid(tmp_path: Path) -> None:
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    report, approved = controller.promote_transfer_regression(
+        governance=governance, admission_id=shadow.admission_id,
+        expected_record_sha256=shadow.record_sha256, old_memory=old, tasks=manifest(),
+        runner=lambda _task, memory, _repeat: TransferObservation(
+            True, 0.9 if memory.snapshot_id == "current" else 0.5,
+        ),
+        fingerprints={"solver_fingerprint": component_fingerprint(controller.gateway)},
+    )
+    assert report.promotion_eligible is True
+    assert approved.state == "approved"
+
+
+class AlternateVerifier(LocalExactVerifier):
+    def rsi_fingerprint_config(self):
+        return {"verifier": "changed-exact-v2"}
+
+
+def alternate_judge(_execution):
+    return True, "changed target policy"
+
+
+@pytest.mark.parametrize("attribute,replacement", [
+    ("gateway", DeterministicMockSolver(terminal_status="failed")),
+    ("verifier", AlternateVerifier()),
+    ("curriculum", DeterministicCurriculum(practice_family="changed-family")),
+    ("target_judge", alternate_judge),
+])
+def test_component_drift_during_suite_cannot_promote(
+    tmp_path: Path, attribute: str, replacement: object,
+) -> None:
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+
+    def runner(_task, memory, _repetition):
+        setattr(controller, attribute, replacement)
+        return TransferObservation(True, 0.9 if memory.snapshot_id == "current" else 0.5)
+
+    with pytest.raises(MemoryPromotionError, match="fingerprint_drift"):
+        controller.promote_transfer_regression(
+            governance=governance, admission_id=shadow.admission_id,
+            expected_record_sha256=shadow.record_sha256, old_memory=old,
+            tasks=manifest(), runner=runner,
+        )
+    assert governance.get(shadow.admission_id) == shadow
+
+
+@pytest.mark.parametrize("state", ["candidate", "revoked"])
+def test_ineligible_admission_state_does_not_start_regression(tmp_path: Path, state: str) -> None:
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    if state == "revoked":
+        record = governance.revoke(
+            shadow.admission_id, expected_record_sha256=shadow.record_sha256, reason="manual rollback",
+        )
+    else:
+        record = governance.create(MemoryAdmissionRecord(
+            admission_id="unshadowed", memory_snapshot_sha256=current.digest(),
+            memory_item_sha256=digest("item"), source_episode_id="episode",
+            verifier_receipt_sha256=digest("verifier"), parent_snapshot_sha256=old.digest(),
+            scope="fixture", compatibility={},
+        ))
+        record = governance.transition(record.admission_id, "verified", expected_record_sha256=record.record_sha256)
+        record = governance.transition(record.admission_id, "candidate", expected_record_sha256=record.record_sha256)
+    error = "governance_revoked" if state == "revoked" else "transition_invalid"
+    with pytest.raises(MemoryPromotionError, match=error):
+        controller.promote_transfer_regression(
+            governance=governance, admission_id=record.admission_id,
+            expected_record_sha256=record.record_sha256, old_memory=old, tasks=manifest(),
+            runner=lambda *_args: pytest.fail("ineligible admission must stop evaluation"),
+        )
+    assert governance.get(record.admission_id) == record
+
+
+@pytest.mark.parametrize("state", ["approved", "active"])
+def test_durable_promotion_binding_rejects_restarted_component_drift(tmp_path: Path, state: str) -> None:
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    _report, promoted = controller.promote_transfer_regression(
+        governance=governance, admission_id=shadow.admission_id,
+        expected_record_sha256=shadow.record_sha256, old_memory=old, tasks=manifest(),
+        runner=lambda _task, memory, _repeat: TransferObservation(
+            True, 0.9 if memory.snapshot_id == "current" else 0.5,
+        ),
+        activate=state == "active",
+    )
+    assert promoted.compatibility == {}
+    assert promoted.reason.startswith("controller_transfer_promotion:")
+    reopened = MemoryGovernanceStore(governance.database)
+    changed_controller = RSILearningController(
+        DeterministicMockSolver(terminal_status="failed"), memory_store=RSIMemoryStore(current),
+    )
+    with pytest.raises(MemoryPromotionError, match="fingerprint_drift"):
+        changed_controller.promote_transfer_regression(
+            governance=reopened, admission_id=promoted.admission_id,
+            expected_record_sha256=promoted.record_sha256, old_memory=old,
+            tasks=manifest(), runner=lambda *_args: pytest.fail("drift must stop recovery"),
+            activate=True,
+        )
+    assert reopened.get(promoted.admission_id) == promoted
+
+
+def test_controller_cannot_invent_identity_for_unbound_approved_admission(tmp_path: Path) -> None:
+    from lunar_evolution.rsi_memory_promotion import MemoryPromotionAdapter
+    from lunar_evolution.rsi_transfer_regression import TransferRegressionSuite
+
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    report = TransferRegressionSuite().run(
+        manifest(), old_memory=old, current_memory=current,
+        runner=lambda _task, memory, _repeat: TransferObservation(
+            True, 0.9 if memory.snapshot_id == "current" else 0.5,
+        ),
+    )
+    approved = MemoryPromotionAdapter(governance).approve(
+        shadow.admission_id, report, expected_record_sha256=shadow.record_sha256,
+    )
+    assert approved.reason is None
+    with pytest.raises(MemoryPromotionError, match="identity_missing"):
+        controller.promote_transfer_regression(
+            governance=governance, admission_id=approved.admission_id,
+            expected_record_sha256=approved.record_sha256, old_memory=old,
+            tasks=manifest(), runner=lambda *_args: pytest.fail("legacy identity cannot be inferred"),
+            activate=True,
+        )
+    assert governance.get(approved.admission_id) == approved
+
+
+def test_durable_promotion_binding_preserves_external_pins(tmp_path: Path) -> None:
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    _report, approved = controller.promote_transfer_regression(
+        governance=governance, admission_id=shadow.admission_id,
+        expected_record_sha256=shadow.record_sha256, old_memory=old, tasks=manifest(),
+        runner=lambda _task, memory, _repeat: TransferObservation(
+            True, 0.9 if memory.snapshot_id == "current" else 0.5,
+        ),
+        fingerprints={"task_input_sha256": digest("original-input")},
+    )
+    restarted = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    with pytest.raises(MemoryPromotionError, match="fingerprint_drift"):
+        restarted.promote_transfer_regression(
+            governance=governance, admission_id=approved.admission_id,
+            expected_record_sha256=approved.record_sha256, old_memory=old,
+            tasks=manifest(), runner=lambda *_args: pytest.fail("input drift must stop activation"),
+            activate=True, fingerprints={"task_input_sha256": digest("changed-input")},
+        )
+    assert governance.get(approved.admission_id) == approved
+
+
+def test_transient_component_drift_stops_at_first_trial(tmp_path: Path) -> None:
+    old = snapshot("old", "old-item")
+    current = snapshot("current", "current-item")
+    original = DeterministicMockSolver()
+    controller = RSILearningController(original, memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    calls = 0
+
+    def runner(_task, memory, _repeat):
+        nonlocal calls
+        calls += 1
+        controller.gateway = DeterministicMockSolver(terminal_status="failed") if calls < 18 else original
+        return TransferObservation(True, 0.9 if memory.snapshot_id == "current" else 0.5)
+
+    with pytest.raises(MemoryPromotionError, match="fingerprint_drift"):
+        controller.promote_transfer_regression(
+            governance=governance, admission_id=shadow.admission_id,
+            expected_record_sha256=shadow.record_sha256, old_memory=old,
+            tasks=manifest(), runner=runner,
+        )
+    assert calls == 1
     assert governance.get(shadow.admission_id) == shadow

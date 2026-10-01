@@ -1,5 +1,12 @@
 # Lunar RSI 阶段性能力差距报告
 
+2026-10-01 更新：controller durable resume、unknown/callback reconcile gate、预算和指纹
+恢复已通过本地矩阵；显式 diversity/failure-boundary policy、失败 transfer report quarantine、
+晋级时的逐 trial drift gate 与 durable approval identity 也已实现。当前 RSI 回归为 **584 passed**。
+下面 A1/A2/A3/A5 的“现状证据”保留原始缺口分析，当前完成度以 `tasks.md`、`validation.md`
+和代码为准。真实 Actor/官方 evaluator、外部 worker 来源和 ownership、默认 holdout/quarantine
+调度、真实 process adapter/campaign 仍开放；fixture 通过不等于这些生产能力完成。
+
 > 目的：为后续 SDD 提供经过代码、规格和测试核对的建设清单。本文只把当前确实缺失、且会阻塞 RSI 正确运行或真实评估的能力列入近期计划；通用平台最佳实践与远期研究能力单独标记，避免过度设计。
 >
 > 核对依据：Feature 160 代码、测试、tasks.md、validation.md、research.md，以及 153/154/156/157/158/159 producer 规格。本报告不代表真实模型、WebAgent、OpenEvolve 或 Shinka campaign 已经运行成功。
@@ -119,6 +126,11 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 已增加独立 append-only SQLite memory admission control plane，支持 observed → verified → candidate → shadow → approved → active → deprecated/revoked、CAS digest、verifier/pass、holdout/baseline regression 和 compatibility drift gate；另有显式 `MemoryPromotionAdapter` 接收 transfer report 并强制两步晋级。`RSILearningController.promote_transfer_regression()` 现在提供一个**显式 opt-in 的 provider-free 组合入口**：冻结 controller 当前 snapshot，执行本地 transfer regression，再经 adapter 做 `shadow → approved`（可选继续 `approved → active`），并在 snapshot、parent snapshot、solver/verifier/curriculum/judge fingerprint 或 CAS 漂移时 fail-closed；已完成的 promotion 可幂等重放，不重复 runner 或 governance revision。它不修改只读 `RSIMemoryStore`，也不代表真实 evaluator、自动 holdout campaign 或默认 controller 触发已经接通。
 
 `MemoryPromotionAdapter.quarantine_failed_report()` 现在补齐 provider-free 的失败回滚边界：对已批准或激活的 admission，只有 canonical、快照绑定且带非空 rejection reasons 的失败 transfer report 才能通过 CAS 原子追加 `revoked`；撤销后不再可检索，使用新 head digest 重放只读返回，不重复写 revision。它不提供真实 evaluator 真实性，也不把失败报告升级为默认自动调度。
+
+失败撤销的 reason 绑定 canonical report digest；手工撤销或另一份失败报告不得冒充同一次
+重放。controller 晋级在每次 runner 前后复核组件，approval 同次 CAS 以 reason digest 绑定
+观测 pins；重启后即使 compatibility 为空也不能激活漂移组件，旧无绑定 approval 不自动补造
+身份。这仍是可信本地 callback 边界，不保证观察 callback 内瞬时更改后原地恢复的状态。
 
 最小范围：observed → verified → candidate → shadow → approved → active → deprecated/revoked。candidate 必须绑定 verifier receipt、source episode、scope、compatibility 和 parent snapshot；用 baseline/holdout 决定 promotion；支持冲突、rollback、quarantine。
 

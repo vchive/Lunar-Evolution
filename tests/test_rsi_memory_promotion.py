@@ -264,3 +264,102 @@ def test_quarantine_requires_rejected_bound_report(tmp_path: Path) -> None:
         )
     assert drift.value.code == "rsi_memory_promotion_snapshot_drift"
     assert governance.get(shadow.admission_id) == shadow
+
+
+def test_quarantine_replay_cannot_hide_manual_or_different_report_revocation(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    manually_revoked = governance.revoke(
+        shadow.admission_id, expected_record_sha256=shadow.record_sha256, reason="manual rollback",
+    )
+    with pytest.raises(MemoryPromotionError) as conflict:
+        MemoryPromotionAdapter(governance).quarantine_failed_report(
+            manually_revoked.admission_id,
+            report(eligible=False),
+            expected_record_sha256=manually_revoked.record_sha256,
+        )
+    assert conflict.value.code == "rsi_memory_promotion_quarantine_report_conflict"
+    assert governance.get(shadow.admission_id) == manually_revoked
+
+
+def test_quarantine_report_drift_or_stale_cas_writes_no_revision(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    adapter = MemoryPromotionAdapter(governance)
+    rejected = report(eligible=False)
+    with pytest.raises(MemoryPromotionError) as report_drift:
+        adapter.quarantine_failed_report(
+            shadow.admission_id,
+            replace(rejected, rejection_reasons=("changed",)),
+            expected_record_sha256=shadow.record_sha256,
+        )
+    assert report_drift.value.code == "rsi_memory_promotion_report_drift"
+    with pytest.raises(MemoryGovernanceError) as cas:
+        adapter.quarantine_failed_report(
+            shadow.admission_id,
+            rejected,
+            expected_record_sha256="f" * 64,
+        )
+    assert cas.value.code == "rsi_memory_governance_cas_conflict"
+    assert governance.get(shadow.admission_id) == shadow
+
+
+def test_quarantine_replay_rejects_another_canonical_failed_report(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    adapter = MemoryPromotionAdapter(governance)
+    rejected = report(eligible=False)
+    revoked = adapter.quarantine_failed_report(
+        shadow.admission_id, rejected, expected_record_sha256=shadow.record_sha256,
+    )
+    other_report = TransferRegressionSuite().run(
+        tasks(), old_memory=snapshot("old", "old-item"),
+        current_memory=snapshot("current", "current-item"),
+        runner=lambda *_args: TransferObservation(False, 0.0),
+    )
+    assert other_report.promotion_eligible is False
+    assert other_report.report_sha256 != rejected.report_sha256
+    with pytest.raises(MemoryPromotionError, match="quarantine_report_conflict"):
+        adapter.quarantine_failed_report(
+            revoked.admission_id, other_report, expected_record_sha256=revoked.record_sha256,
+        )
+    assert governance.get(shadow.admission_id) == revoked
+
+
+def test_approved_activation_cannot_replace_approval_reason(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    adapter = MemoryPromotionAdapter(governance)
+    evidence = report()
+    approved = adapter.approve(
+        shadow.admission_id, evidence, expected_record_sha256=shadow.record_sha256,
+        approval_reason="controller_transfer_promotion:" + digest("original-components"),
+    )
+    with pytest.raises(MemoryPromotionError, match="fingerprint_drift"):
+        adapter.activate(
+            approved.admission_id, evidence, expected_record_sha256=approved.record_sha256,
+            approval_reason="controller_transfer_promotion:" + digest("changed-components"),
+        )
+    assert governance.get(approved.admission_id) == approved
+
+
+def test_quarantine_reason_annotation_retains_report_binding(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    adapter = MemoryPromotionAdapter(governance)
+    rejected = report(eligible=False)
+    revoked = adapter.quarantine_failed_report(
+        shadow.admission_id, rejected, expected_record_sha256=shadow.record_sha256,
+        reason="unseen task regression",
+    )
+    assert revoked.reason == "transfer_regression_rejected:" + rejected.report_sha256 + ";unseen task regression"
+    assert adapter.quarantine_failed_report(
+        revoked.admission_id, rejected, expected_record_sha256=revoked.record_sha256,
+        reason="unseen task regression",
+    ) == revoked
+
+
+@pytest.mark.parametrize("reason", ["", "bad\nreason", object(), "x" * 513])
+def test_quarantine_invalid_reason_annotation_does_not_revoke(tmp_path: Path, reason: object) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    with pytest.raises(MemoryPromotionError, match="quarantine_reason_invalid"):
+        MemoryPromotionAdapter(governance).quarantine_failed_report(
+            shadow.admission_id, report(eligible=False),
+            expected_record_sha256=shadow.record_sha256, reason=reason,
+        )
+    assert governance.get(shadow.admission_id) == shadow
