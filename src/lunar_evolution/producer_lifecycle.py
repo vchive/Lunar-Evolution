@@ -15,6 +15,7 @@ from pathlib import Path
 
 from . import _benchmark_files as _files
 from .algorithm import AlgorithmProblemContract
+from .automatic_solve_lifecycle import SolveExecutionControl
 from .native_bootstrap import NativeBootstrapArtifact
 from .native_trusted_scheduler import (
     NativeTrustedProducerRecovery,
@@ -220,9 +221,9 @@ def _project_native_preparation(
             terminal_status=receipt.status,
             cleanup_status=receipt.cleanup_status,
             execution_outcome="completed",
-            # The scheduler's preparation and optional publication are outside the producer's
-            # one-shot native attempt deadline; callers must not treat this as a renewed budget.
-            deadline_scope="native_attempt_only",
+            # The intent budget stays process-only. A supplied caller deadline additionally
+            # constrains preparation and publication without allocating another allowance.
+            deadline_scope=getattr(run, "deadline_scope", "native_attempt_only"),
             request_coverage=output.request_coverage,
             broker_coverage=broker_coverage,
             publication_status=publication_status,
@@ -249,7 +250,7 @@ def run_native_trusted_lifecycle(
     dependency_sha256: str,
     environment_sha256: str,
     strategy: object | None = None,
-    execution_control: object | None = None,
+    execution_control: SolveExecutionControl | None = None,
     cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
 ) -> ProducerLifecyclePreparation:
@@ -259,7 +260,8 @@ def run_native_trusted_lifecycle(
     broker, receipt, and strict output verification to ``native_trusted_scheduler`` and keeps
     publication explicit through the existing optional ``strategy`` argument.  Omitting the
     strategy returns a prepared, publication-free result; supplying it runs the existing atomic
-    publication transaction after the formal receipt is bound.
+    publication transaction after the formal receipt is bound. Caller cancellation and deadline
+    controls constrain every new stage and retain their typed cancellation/timeout exceptions.
     """
     try:
         run = run_native_trusted_producer(

@@ -25,7 +25,7 @@ from .rsi_memory_governance import (
     MemoryGovernanceError,
     MemoryGovernanceStore,
 )
-from .rsi_transfer_regression import TransferRegressionReport
+from .rsi_transfer_regression import TransferRegressionError, TransferRegressionReport
 
 
 class MemoryPromotionError(MemoryGovernanceError):
@@ -45,6 +45,14 @@ def _evidence(report: TransferRegressionReport) -> dict[str, Any]:
         # Keep the report inspectable to callers, but never allow a rejected report to write a
         # governance revision (in particular, never turn rejection into regression_passed=True).
         raise MemoryPromotionError("rsi_memory_promotion_report_rejected")
+    try:
+        report.validate_policy_evidence()
+    except TransferRegressionError as exc:
+        if exc.code == "rsi_transfer_regression_policy_evidence_missing":
+            raise MemoryPromotionError("rsi_memory_promotion_policy_evidence_missing") from exc
+        raise MemoryPromotionError("rsi_memory_promotion_policy_evidence_drift") from exc
+    except (AttributeError, TypeError, ValueError, KeyError) as exc:
+        raise MemoryPromotionError("rsi_memory_promotion_evidence_invalid") from exc
     evidence = report.promotion_evidence()
     if not isinstance(evidence, Mapping):
         raise MemoryPromotionError("rsi_memory_promotion_evidence_invalid")
@@ -62,11 +70,11 @@ def _validate_report(report: TransferRegressionReport) -> None:
     """Check the canonical report envelope before any governance side effect."""
     if not isinstance(report, TransferRegressionReport):
         raise MemoryPromotionError("rsi_memory_promotion_report_invalid")
-    payload = report.to_dict()
-    report_digest = payload.pop("report_sha256", None)
-    payload.pop("protocol", None)
-    payload.pop("schema_version", None)
     try:
+        payload = report.to_dict()
+        report_digest = payload.pop("report_sha256", None)
+        payload.pop("protocol", None)
+        payload.pop("schema_version", None)
         expected_digest = hashlib.sha256(canonical_json(payload, maximum=128 * 1024)).hexdigest()
     except Exception as exc:
         raise MemoryPromotionError("rsi_memory_promotion_report_invalid") from exc

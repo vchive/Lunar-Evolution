@@ -180,6 +180,9 @@ class RegressionPolicy:
     require_unseen_improvement: bool = True
     max_unseen_regression: float = 0.0
     max_seen_regression: float = 0.0
+    min_unseen_pass_rate: float = 1.0
+    max_unseen_pass_rate_regression: float = 0.0
+    max_seen_pass_rate_regression: float = 0.0
 
     def __post_init__(self) -> None:
         if type(self.repetitions) is not int or self.repetitions < 2:
@@ -191,8 +194,25 @@ class RegressionPolicy:
         if type(self.require_unseen_improvement) is not bool:
             raise TransferRegressionError("rsi_transfer_regression_policy_invalid")
         for value, name in ((self.max_unseen_regression, "max_unseen_regression"), (self.max_seen_regression, "max_seen_regression")):
-            if type(value) not in {int, float} or isinstance(value, bool) or not math.isfinite(value) or value < 0:
+            if type(value) not in {int, float} or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
                 raise TransferRegressionError(f"rsi_transfer_regression_{name}_invalid")
+        for name in ("min_unseen_pass_rate", "max_unseen_pass_rate_regression", "max_seen_pass_rate_regression"):
+            value = getattr(self, name)
+            if type(value) not in {int, float} or isinstance(value, bool) or not math.isfinite(value) or not 0 <= value <= 1:
+                raise TransferRegressionError(f"rsi_transfer_regression_{name}_invalid")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "repetitions": self.repetitions,
+            "min_unseen_targets": self.min_unseen_targets,
+            "min_task_families": self.min_task_families,
+            "require_unseen_improvement": self.require_unseen_improvement,
+            "max_unseen_regression": float(self.max_unseen_regression),
+            "max_seen_regression": float(self.max_seen_regression),
+            "min_unseen_pass_rate": float(self.min_unseen_pass_rate),
+            "max_unseen_pass_rate_regression": float(self.max_unseen_pass_rate_regression),
+            "max_seen_pass_rate_regression": float(self.max_seen_pass_rate_regression),
+        }
 
 
 @dataclass(frozen=True)
@@ -208,15 +228,16 @@ class TransferRegressionReport:
     report_sha256: str
     old_memory_sha256: str = ""
     current_memory_sha256: str = ""
+    policy: RegressionPolicy | None = None
 
     @property
     def by_arm(self) -> Mapping[str, TransferArmSummary]:
         return {summary.arm: summary for summary in self.summaries}
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "protocol": "lunar-rsi-transfer-regression-v1",
-            "schema_version": "2",
+            "schema_version": "3" if self.policy is not None else "2",
             "tasks": [task.to_dict() for task in self.tasks],
             "repetitions": self.repetitions,
             "summaries": [summary.to_dict() for summary in self.summaries],
@@ -229,18 +250,121 @@ class TransferRegressionReport:
             "old_memory_sha256": self.old_memory_sha256,
             "current_memory_sha256": self.current_memory_sha256,
         }
+        if self.policy is not None:
+            payload["policy"] = self.policy.to_dict()
+        return payload
 
     def assert_promotable(self) -> None:
         if not self.promotion_eligible:
             raise TransferRegressionError("rsi_transfer_regression_promotion_rejected")
+        self.validate_policy_evidence()
+
+    def validate_policy_evidence(self) -> None:
+        """Require the report's own immutable policy, pass gates and receipt bindings."""
+        if not isinstance(self.policy, RegressionPolicy):
+            raise TransferRegressionError("rsi_transfer_regression_policy_evidence_missing")
+        _digest(self.old_memory_sha256, "memory_sha256")
+        _digest(self.current_memory_sha256, "memory_sha256")
+        TransferRegressionSuite._validate_tasks(self.tasks, self.policy)
+        if self.repetitions != self.policy.repetitions:
+            raise TransferRegressionError("rsi_transfer_regression_policy_evidence_drift")
+        by_arm = self.by_arm
+        if len(self.summaries) != 3 or set(by_arm) != {"no_memory", "old_memory", "current_memory"}:
+            raise TransferRegressionError("rsi_transfer_regression_policy_evidence_drift")
+        task_map = {task.task_id: task for task in self.tasks}
+        expected_trials = {(task.task_id, repetition) for task in self.tasks for repetition in range(self.repetitions)}
+        inferred_contamination: set[str] = set()
+        for arm, summary in by_arm.items():
+            if (
+                len(summary.trials) != len(expected_trials)
+                or {(trial.task.task_id, trial.repetition) for trial in summary.trials} != expected_trials
+                or any(trial.arm != arm or task_map.get(trial.task.task_id) != trial.task for trial in summary.trials)
+                or TransferRegressionSuite._summary(arm, summary.trials).to_dict() != summary.to_dict()
+            ):
+                raise TransferRegressionError("rsi_transfer_regression_policy_evidence_drift")
+            for trial in summary.trials:
+                inferred_contamination.update(
+                    f"{arm}:{trial.task.task_id}:unexpected_task:{task_id}"
+                    for task_id in set(trial.observation.accessed_task_ids) - {trial.task.task_id}
+                )
+                # The empty arm's allowed memory IDs are independently known. Other arms only
+                # retain their snapshot digests here; their material is checked by the runner.
+                if arm == "no_memory":
+                    inferred_contamination.update(
+                        f"{arm}:{trial.task.task_id}:unexpected_memory:{memory_id}"
+                        for memory_id in trial.observation.memory_ids_used
+                    )
+        if not inferred_contamination.issubset(self.contamination):
+            raise TransferRegressionError("rsi_transfer_regression_policy_evidence_drift")
+        reasons = _rejection_reasons(by_arm, self.policy, self.contamination)
+        if reasons != self.rejection_reasons or self.promotion_eligible is not (not reasons):
+            raise TransferRegressionError("rsi_transfer_regression_policy_evidence_drift")
+        if (
+            self.holdout_receipt_sha256 != _arm_receipt(
+                by_arm["current_memory"], self.current_memory_sha256, self.tasks, self.policy,
+            )
+            or self.baseline_receipt_sha256 != _arm_receipt(
+                by_arm["no_memory"], EMPTY_MEMORY_SNAPSHOT.digest(), self.tasks, self.policy,
+            )
+        ):
+            raise TransferRegressionError("rsi_transfer_regression_receipt_drift")
 
     def promotion_evidence(self) -> dict[str, Any]:
         """Return fields accepted by ``MemoryGovernanceStore.transition``."""
+        if self.promotion_eligible:
+            self.validate_policy_evidence()
         return {
             "holdout_receipt_sha256": self.holdout_receipt_sha256,
             "baseline_receipt_sha256": self.baseline_receipt_sha256,
             "regression_passed": self.promotion_eligible,
         }
+
+
+def _arm_receipt(
+    summary: TransferArmSummary,
+    memory_snapshot_sha256: str,
+    tasks: Sequence[TransferTask],
+    policy: RegressionPolicy,
+) -> str:
+    """Bind the evaluated inputs, thresholds, immutable arm and observations."""
+    return _hash({
+        "arm": summary.arm,
+        "manifest": [task.to_dict() for task in tasks],
+        "policy": policy.to_dict(),
+        "memory_snapshot_sha256": _digest(memory_snapshot_sha256, "memory_sha256"),
+        "summary": summary.to_dict(),
+        "trials_sha256": _hash([trial.to_dict() for trial in summary.trials]),
+    })
+
+
+def _rejection_reasons(
+    by_arm: Mapping[str, TransferArmSummary], policy: RegressionPolicy, contamination: Sequence[str],
+) -> tuple[str, ...]:
+    baseline, old, current = by_arm["no_memory"], by_arm["old_memory"], by_arm["current_memory"]
+    reasons: list[str] = []
+    if contamination:
+        reasons.append("contamination_detected")
+    if current.unseen_score < baseline.unseen_score - policy.max_unseen_regression:
+        reasons.append("unseen_regression_vs_no_memory")
+    if current.unseen_score < old.unseen_score - policy.max_unseen_regression:
+        reasons.append("unseen_regression_vs_old_memory")
+    if current.seen_score < baseline.seen_score - policy.max_seen_regression:
+        reasons.append("seen_regression_vs_no_memory")
+    if current.seen_score < old.seen_score - policy.max_seen_regression:
+        reasons.append("seen_regression_vs_old_memory")
+    if policy.require_unseen_improvement and current.unseen_score - baseline.unseen_score <= policy.max_unseen_regression:
+        reasons.append("unseen_no_improvement")
+    if current.unseen_score - old.unseen_score < -policy.max_unseen_regression:
+        reasons.append("current_regressed_vs_old_memory")
+    if current.unseen_pass_rate < policy.min_unseen_pass_rate:
+        reasons.append("unseen_pass_rate_below_minimum")
+    for split in ("seen", "unseen"):
+        tolerance = getattr(policy, f"max_{split}_pass_rate_regression")
+        actual = getattr(current, f"{split}_pass_rate")
+        for comparison, name in ((baseline, "no_memory"), (old, "old_memory")):
+            if actual < getattr(comparison, f"{split}_pass_rate") - tolerance:
+                reasons.append(f"{split}_pass_rate_regression_vs_{name}")
+    return tuple(reasons)
 
 
 Runner = Callable[[TransferTask, MemorySnapshot, int], TransferObservation]
@@ -250,6 +374,8 @@ class TransferRegressionSuite:
     """Run a deterministic no/old/current memory comparison over a task split."""
 
     def __init__(self, *, policy: RegressionPolicy | None = None) -> None:
+        if policy is not None and not isinstance(policy, RegressionPolicy):
+            raise TransferRegressionError("rsi_transfer_regression_policy_invalid")
         self.policy = policy or RegressionPolicy()
 
     @staticmethod
@@ -349,47 +475,22 @@ class TransferRegressionSuite:
                     all_trials.append(TransferTrial(arm, task, repetition, observation))
         summaries = tuple(self._summary(arm, tuple(trial for trial in all_trials if trial.arm == arm)) for arm, _snapshot in arms)
         by_arm = {summary.arm: summary for summary in summaries}
-        baseline, old, current = by_arm["no_memory"], by_arm["old_memory"], by_arm["current_memory"]
-        reasons: list[str] = []
-        unseen_delta = current.unseen_score - baseline.unseen_score
-        old_delta = current.unseen_score - old.unseen_score
-        seen_delta = current.seen_score - baseline.seen_score
-        if contamination:
-            reasons.append("contamination_detected")
-        if current.unseen_score < baseline.unseen_score - self.policy.max_unseen_regression:
-            reasons.append("unseen_regression_vs_no_memory")
-        if current.unseen_score < old.unseen_score - self.policy.max_unseen_regression:
-            reasons.append("unseen_regression_vs_old_memory")
-        if current.seen_score < baseline.seen_score - self.policy.max_seen_regression:
-            reasons.append("seen_regression_vs_no_memory")
-        if current.seen_score < old.seen_score - self.policy.max_seen_regression:
-            reasons.append("seen_regression_vs_old_memory")
-        if self.policy.require_unseen_improvement and unseen_delta <= self.policy.max_unseen_regression:
-            reasons.append("unseen_no_improvement")
-        if old_delta < -self.policy.max_unseen_regression:
-            reasons.append("current_regressed_vs_old_memory")
-        # Keep these values in the report digest, making the pre/post promotion decision auditable.
-        del seen_delta
-        holdout_receipt = _hash({
-            "arm": "current_memory", "split": "unseen", "summary": current.to_dict(),
-            "memory_snapshot_sha256": current_memory.digest(),
-        })
-        baseline_receipt = _hash({
-            "arm": "no_memory", "split": "unseen", "summary": baseline.to_dict(),
-            "memory_snapshot_sha256": EMPTY_MEMORY_SNAPSHOT.digest(),
-        })
+        reasons = _rejection_reasons(by_arm, self.policy, contamination)
+        holdout_receipt = _arm_receipt(by_arm["current_memory"], current_memory.digest(), manifest, self.policy)
+        baseline_receipt = _arm_receipt(by_arm["no_memory"], EMPTY_MEMORY_SNAPSHOT.digest(), manifest, self.policy)
         payload = {
             "tasks": [task.to_dict() for task in manifest], "repetitions": self.policy.repetitions,
             "summaries": [summary.to_dict() for summary in summaries], "contamination": contamination,
-            "promotion_eligible": not reasons, "rejection_reasons": reasons,
+            "promotion_eligible": not reasons, "rejection_reasons": list(reasons),
             "holdout_receipt_sha256": holdout_receipt, "baseline_receipt_sha256": baseline_receipt,
             "old_memory_sha256": old_memory.digest(), "current_memory_sha256": current_memory.digest(),
+            "policy": self.policy.to_dict(),
         }
         report_digest = _hash(payload)
         return TransferRegressionReport(
             manifest, self.policy.repetitions, summaries, tuple(contamination), not reasons,
             tuple(reasons), holdout_receipt, baseline_receipt, report_digest,
-            old_memory.digest(), current_memory.digest(),
+            old_memory.digest(), current_memory.digest(), self.policy,
         )
 
     def evaluate(

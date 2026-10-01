@@ -1,5 +1,55 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 P0/P1/P2 execution and local runtime composition
+
+延续 Feature 160 与 producer lifecycle SDD，本轮优先级清单见
+`specs/160-rsi-learning-mode/priority-execution.md`。开始时工作区干净，之后并行完成如下增量：
+
+- P0：native caller cancellation/parent deadline 在 attempt、receipt、output、publication 的
+  新阶段持续检查；保留 intent 的 native-attempt-only timeout 和 publication commit 临界区。
+  transfer schema v3 绑定 manifest/input、policy、memory 和 raw trials，默认要求 unseen 全部
+  pass 且无 pass-rate regression。原始跨任务/no-memory 污染标记不能靠重算 report digest 删除。
+- P0：`rsi_regression_campaign.py` 提供 controller-ledger-backed holdout。每 trial 持久
+  reservation → started → completed，transfer/evaluator 原子预留，未知调用必须显式
+  evidence-bound reconcile；unknown-retry 预留幂等，原绝对 deadline 不刷新，最多 1024 trials。
+  approval reason 升级到 `controller_transfer_promotion_v2:<digest>`，绑定 actual manifest、
+  policy、parent、components/external pins 和 planned budget；legacy v1 批准不自动激活。
+  完成报告按治理库/收据缓存；nested caller pins 冻结并在 trial 边界检查。
+- P1：`AgentLoopCleanRoomVerifier` 显式接入 controller verifier 协议。候选和依赖用
+  bounded/no-follow 读取，拒绝文件/目录替换；分别校验 Actor manifest SHA 和 clean-room
+  raw artifact SHA，冻结 public input，再用独立 spawn 重验。DRS practice → memory → retry
+  和 terminal resume fixture 已通过；完成 callback 不重复 evaluator。
+- P1：`GovernedMemorySnapshotGate` 通过 `memory_admission_gate=` 接入 controller：新 intent
+  和 solver dispatch 前要求 exact frozen snapshot 的全部 admissions 为 active 且来源、
+  scope、compatibility、item/verifier/holdout evidence 匹配；revoked 拒绝整份快照。
+  治理读取后重新检查 deadline；gate 配置绑定 run fingerprint，完成记录仍可只读重放。
+- P2：`rsi usage PATH [--run-id ... --episode-id ... --adapter-stage ...] --json` 只读诊断，
+  在 home/SQLite 初始化前处理，不建锁或目录；输出 nullable totals、未知 receipt 数、
+  stage breakdown 和明确标记的成本估算。缺失/损坏不解释成零用量。
+
+本轮组合回归 **890 passed / 0 failed / 0 skipped in 49.42s**，含 **773 RSI cases** 与
+117 producer/native cases，JUnit `/tmp/lunar-priority-regression-20261001.xml`。之后仅新增
+嵌套 pin alias、malformed-memory intent 和 legacy-v1 approval 三条回归，campaign/promotion
+focused **43 passed in 0.84s**，JUnit `/tmp/lunar-rsi-campaign-final-20261001.xml`。
+最终 `ruff check src tests`、compileall 与 diff check 通过。没有运行 WebAgent、远程
+evaluator、公司平台、真实模型或真实 OpenEvolve/Shinka campaign，也没有读取/修改密钥配置。
+
+未完成的重点必须保留：
+
+1. P0 接线：holdout 使用同一 RSI budget schema，但 campaign budget 尚未从 parent DRS/BRS
+   已消耗预算扣减；仍需 shared parent/run budget 与自动 holdout/quarantine 调度。
+2. P1：governance gate 消费一个 frozen generation。practice commit 后的新 snapshot 必须
+   re-admit + 新 run；同 run 跨代自动治理仍未完成。gate 只验证 trusted local latest heads，
+   不防数据库历史删除/rollback，也不提供横跨远程 solver 的原子 lease。
+3. P1：完整 Actor clean-room evidence 自动持久化/admission、真实官方 evaluator、外部 worker
+   来源/ownership、可信 unknown→passed completion，以及完整 producer recovery/transport/
+   scheduler 和真实 campaign。T153-06/06b/07、T156-05/06/09/11/12/14、T157-05/06、
+   T158-04、T159-05 的完整验收仍开放，supporting fixture 不替代生产完成。
+4. P2：跨 solver memory 翻译、噪声 confidence policy 与共享控制原语；模型训练仍是独立轨道。
+
+当前工作分支仍为 `codex/feature-156-producer-lifecycle`，推送该分支不等于合入 main/master。
+不要覆盖未提交修改；继续开发先读本节、priority-execution、tasks 和局部 SDD。
+
 ## 2026-10-01 RSI curriculum policy, quarantine and durable promotion identity
 
 本轮继续现有 Feature 160，未扩大到真实 producer/evaluator。已提交的 `2be9651` 增加失败

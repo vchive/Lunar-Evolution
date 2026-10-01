@@ -10,6 +10,10 @@ import pytest
 
 from lunar_evolution import producer_lifecycle
 from lunar_evolution.algorithm import AlgorithmProblemContract
+from lunar_evolution.automatic_solve_lifecycle import (
+    SolveExecutionBudgetExceeded,
+    SolveExecutionCancelled,
+)
 from lunar_evolution.native_trusted_scheduler import NativeTrustedSchedulerError
 from lunar_evolution.producer_bundle_handoff import BundleGroup
 from lunar_evolution.producer_launcher import (
@@ -333,4 +337,21 @@ def test_native_trusted_lifecycle_preserves_fixed_scheduler_error(
             intent=object(), attestation=object(), artifact=object(), broker_config=object(),
             contract=object(), groups=(), evaluator_kind="local", evaluator_fingerprint=PIN,
             runner_fingerprint=PIN, dependency_sha256=PIN, environment_sha256=PIN,
+        )
+
+
+@pytest.mark.parametrize("error", [SolveExecutionCancelled("native_producer_receipt"), SolveExecutionBudgetExceeded(
+    "native_producer_output", started_at=100.0, deadline=110.0, observed_at=110.0,
+)])
+def test_native_lifecycle_preserves_typed_caller_control_errors(tmp_path, monkeypatch, error):
+    def stop(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(producer_lifecycle, "run_native_trusted_producer", stop)
+    with pytest.raises(type(error)):
+        run_native_trusted_lifecycle(
+            tmp_path, producer_root=tmp_path, intent=object(), attestation=object(),
+            artifact=object(), broker_config=object(), contract=object(), groups=(),
+            evaluator_kind="local", evaluator_fingerprint=PIN, runner_fingerprint=PIN,
+            dependency_sha256=PIN, environment_sha256=PIN,
         )

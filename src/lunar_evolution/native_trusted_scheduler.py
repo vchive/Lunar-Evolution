@@ -15,12 +15,18 @@ while giving the local fixture path one formal entry point for future scheduler 
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .algorithm import AlgorithmProblemContract
+from .automatic_solve_lifecycle import (
+    SolveExecutionBudgetExceeded,
+    SolveExecutionCancelled,
+    SolveExecutionControl,
+)
 from .native_bootstrap import NativeBootstrapArtifact
 from .native_trusted_attempt import (
     NativeTrustedAttemptError,
@@ -71,6 +77,7 @@ class NativeTrustedProducerRun:
     output: NativeTrustedOutputPreparation
     publication: NativeProducerBundleTransactionResult | None = None
     status: str = "prepared"
+    deadline_scope: str = "native_attempt_only"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +134,64 @@ def _check_parent_deadline(parent_deadline: float | None) -> None:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_parent_deadline_invalid")
 
 
+def _lifecycle_control(
+    execution_control: SolveExecutionControl | None,
+    cancelled: Callable[[], bool] | None,
+    parent_deadline: float | None,
+) -> tuple[SolveExecutionControl | None, Callable[[str], None]]:
+    """Compose caller controls once, without widening or mutating any parent budget."""
+    if execution_control is not None and not isinstance(execution_control, SolveExecutionControl):
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_control_invalid")
+
+    def caller_cancelled() -> bool:
+        if cancelled is None:
+            return False
+        try:
+            observed = cancelled()
+        except Exception as exc:
+            raise NativeTrustedSchedulerError("native_trusted_scheduler_cancellation_unknown") from exc
+        if type(observed) is not bool:
+            raise NativeTrustedSchedulerError("native_trusted_scheduler_cancellation_invalid")
+        return observed
+
+    stage = "native_producer_admission"
+    if caller_cancelled():
+        raise SolveExecutionCancelled(stage)
+    if execution_control is not None:
+        execution_control.check(stage)
+    control = execution_control
+    if parent_deadline is not None or (execution_control is not None and cancelled is not None):
+        clock = time.monotonic if execution_control is None else execution_control._clock
+        started = clock() if execution_control is None else execution_control.started_at
+        deadline = parent_deadline
+        if execution_control is not None:
+            deadline = min(execution_control.deadline, deadline) if deadline is not None else execution_control.deadline
+        observed_at = clock()
+        if deadline is None or deadline <= observed_at:
+            raise SolveExecutionBudgetExceeded(
+                stage, started_at=started, deadline=deadline or observed_at, observed_at=observed_at,
+            )
+        callbacks = [caller_cancelled]
+        if execution_control is not None:
+            callbacks.append(execution_control.is_cancelled)
+        control = SolveExecutionControl(
+            deadline - started, clock=clock, started_at=started,
+            cancellation_callbacks=callbacks,
+            observe_stage=(execution_control._observe_stage if execution_control is not None else None),
+        )
+        # Preserve the supplied absolute timestamp exactly instead of recomputing it after
+        # floating-point subtraction/addition at a large monotonic start.
+        control.deadline = deadline
+
+    def check(stage: str) -> None:
+        if control is not None:
+            control.check(stage)
+        elif caller_cancelled():
+            raise SolveExecutionCancelled(stage)
+
+    return control, check
+
+
 def run_native_trusted_producer(
     workspace: str | Path,
     *,
@@ -143,7 +208,7 @@ def run_native_trusted_producer(
     dependency_sha256: str,
     environment_sha256: str,
     strategy: Any | None = None,
-    execution_control: Any | None = None,
+    execution_control: SolveExecutionControl | None = None,
     cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
 ) -> NativeTrustedProducerRun:
@@ -169,8 +234,10 @@ def run_native_trusted_producer(
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_cancellation_invalid")
     _check_parent_deadline(parent_deadline)
+    control, checkpoint = _lifecycle_control(execution_control, cancelled, parent_deadline)
     root = _workspace_root(workspace)
 
+    checkpoint("native_producer_attempt")
     try:
         attempt = run_native_trusted_attempt(
             root,
@@ -179,13 +246,19 @@ def run_native_trusted_producer(
             attestation=attestation,
             artifact=artifact,
             broker_config=broker_config,
-            cancelled=cancelled,
-            parent_deadline=parent_deadline,
+            cancelled=control.is_cancelled if control is not None else cancelled,
+            parent_deadline=control.deadline if control is not None else None,
+            monotonic=control._clock if control is not None else time.monotonic,
         )
     except NativeTrustedAttemptError as exc:
+        if exc.code == "native_trusted_attempt_cancelled":
+            raise SolveExecutionCancelled("native_producer_attempt") from exc
+        checkpoint("native_producer_after_attempt_error")
         raise NativeTrustedSchedulerError("native_trusted_scheduler_attempt_failed") from exc
+    checkpoint("native_producer_after_attempt")
     _check_attempt(attempt)
 
+    checkpoint("native_producer_receipt")
     try:
         receipt = persist_native_trusted_execution_receipt(
             root,
@@ -196,7 +269,9 @@ def run_native_trusted_producer(
         )
     except NativeTrustedReceiptError as exc:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_receipt_unverified") from exc
+    checkpoint("native_producer_after_receipt")
 
+    checkpoint("native_producer_output")
     try:
         output = prepare_native_trusted_output(
             root,
@@ -215,12 +290,14 @@ def run_native_trusted_producer(
         )
     except NativeTrustedOutputError as exc:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_output_unverified") from exc
+    checkpoint("native_producer_after_output")
     if output.execution_receipt_sha256 != receipt.receipt_sha256:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_receipt_binding_mismatch")
 
     publication: NativeProducerBundleTransactionResult | None = None
     status = "prepared"
     if strategy is not None:
+        checkpoint("native_producer_publication")
         try:
             publication = run_native_producer_bundle_publication_transaction(
                 root,
@@ -232,8 +309,11 @@ def run_native_trusted_producer(
                 parent_task_id=intent.parent_task_id,
                 task_id=intent.task_id,
                 native_execution_receipt_sha256=receipt.receipt_sha256,
-                execution_control=execution_control,
+                execution_control=control,
+                continuation_guard=checkpoint,
             )
+        except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
+            raise
         except Exception as exc:  # transaction exposes fixed local ``code`` values
             raise NativeTrustedSchedulerError(
                 "native_trusted_scheduler_publication_failed"
@@ -245,6 +325,7 @@ def run_native_trusted_producer(
         output=output,
         publication=publication,
         status=status,
+        deadline_scope="caller_lifecycle" if control is not None else "native_attempt_only",
     )
 
 

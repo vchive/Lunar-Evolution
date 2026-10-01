@@ -43,7 +43,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _read_json(path: Path) -> object:
     """Read one bounded regular file without following the final symlink."""
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError as exc:
         raise RSIUsageError("rsi_usage_ledger_corrupt") from exc
     try:
@@ -53,8 +53,12 @@ def _read_json(path: Path) -> object:
         data = os.read(fd, identity.st_size + 1)
         if len(data) != identity.st_size or os.read(fd, 1):
             raise RSIUsageError("rsi_usage_ledger_corrupt")
+        after = os.fstat(fd)
+        if any(getattr(identity, name) != getattr(after, name) for name in
+               ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")):
+            raise RSIUsageError("rsi_usage_ledger_corrupt")
         return json.loads(data.decode("utf-8"), object_pairs_hook=_reject_duplicate_keys)
-    except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError, RecursionError) as exc:
         if isinstance(exc, RSIUsageError):
             raise
         raise RSIUsageError("rsi_usage_ledger_corrupt") from exc
@@ -284,6 +288,45 @@ class _Record:
     record_sha256: str
 
 
+def _usage_record_digest(revision: int, parent: str | None, receipt: UsageReceipt) -> str:
+    return hashlib.sha256(canonical_json({
+        "schema_version": _SCHEMA, "revision": revision, "parent_sha256": parent,
+        "receipt": receipt.to_dict(),
+    }, maximum=_MAX_BYTES)).hexdigest()
+
+
+def _validated_usage_state(raw: object, *, expected_pricing: UsagePricing | None = None) -> tuple[UsagePricing, list[_Record]]:
+    """Validate one already-read snapshot for both writable reopen and diagnostics."""
+    allowed = {"schema_version", "pricing", "head_sha256", "records"}
+    if (not isinstance(raw, dict) or set(raw) != allowed or raw.get("schema_version") != _SCHEMA
+            or not isinstance(raw.get("records"), list)):
+        _error("ledger_corrupt")
+    persisted = UsagePricing.from_dict(raw.get("pricing", {}))
+    if expected_pricing is not None and expected_pricing != persisted:
+        _error("pricing_drift")
+    parent: str | None = None
+    seen_events: set[str] = set()
+    records: list[_Record] = []
+    for revision, item in enumerate(raw["records"]):
+        if (not isinstance(item, dict)
+                or set(item) != {"revision", "parent_sha256", "receipt", "record_sha256"}
+                or type(item.get("revision")) is not int
+                or item.get("revision") != revision or item.get("parent_sha256") != parent):
+            _error("ledger_corrupt")
+        receipt = UsageReceipt.from_dict(item["receipt"])
+        if receipt.event_id in seen_events:
+            _error("ledger_corrupt")
+        digest = _usage_record_digest(revision, parent, receipt)
+        if item.get("record_sha256") != digest:
+            _error("ledger_corrupt")
+        records.append(_Record(revision, parent, receipt, digest))
+        seen_events.add(receipt.event_id)
+        parent = digest
+    if raw.get("head_sha256") != parent:
+        _error("ledger_corrupt")
+    return persisted, records
+
+
 class UsageLedger:
     """Append-only JSON usage ledger with hash-chain and compare-and-swap append."""
 
@@ -303,10 +346,7 @@ class UsageLedger:
         return self._pricing or UsagePricing()
 
     def _record_digest(self, revision: int, parent: str | None, receipt: UsageReceipt) -> str:
-        return hashlib.sha256(canonical_json({
-            "schema_version": _SCHEMA, "revision": revision, "parent_sha256": parent,
-            "receipt": receipt.to_dict(),
-        }, maximum=_MAX_BYTES)).hexdigest()
+        return _usage_record_digest(revision, parent, receipt)
 
     def _state(self) -> dict[str, Any]:
         return {
@@ -324,34 +364,7 @@ class UsageLedger:
         if not self.path.exists():
             return
         raw = _read_json(self.path)
-        allowed = {"schema_version", "pricing", "head_sha256", "records"}
-        if (not isinstance(raw, dict) or set(raw) != allowed or raw.get("schema_version") != _SCHEMA
-                or not isinstance(raw.get("records"), list)):
-            _error("ledger_corrupt")
-        persisted = UsagePricing.from_dict(raw.get("pricing", {}))
-        if self._pricing is not None and self._pricing != persisted:
-            _error("pricing_drift")
-        self._pricing = persisted
-        parent: str | None = None
-        seen_events: set[str] = set()
-        records: list[_Record] = []
-        for revision, item in enumerate(raw["records"]):
-            if (not isinstance(item, dict)
-                    or set(item) != {"revision", "parent_sha256", "receipt", "record_sha256"}
-                    or item.get("revision") != revision or item.get("parent_sha256") != parent):
-                _error("ledger_corrupt")
-            receipt = UsageReceipt.from_dict(item["receipt"])
-            if receipt.event_id in seen_events:
-                _error("ledger_corrupt")
-            digest = self._record_digest(revision, parent, receipt)
-            if item.get("record_sha256") != digest:
-                _error("ledger_corrupt")
-            records.append(_Record(revision, parent, receipt, digest))
-            seen_events.add(receipt.event_id)
-            parent = digest
-        if raw.get("head_sha256") != parent:
-            _error("ledger_corrupt")
-        self._records = records
+        self._pricing, self._records = _validated_usage_state(raw, expected_pricing=self._pricing)
 
     def _write_locked(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -476,4 +489,73 @@ class UsageLedger:
         return json.loads(canonical_json(self._state(), maximum=_MAX_BYTES))
 
 
-__all__ = ["RSIUsageError", "UsageLedger", "UsagePricing", "UsageReceipt", "UsageSummary"]
+def _usage_diagnostic_scope(receipts: list[UsageReceipt], pricing: UsagePricing) -> dict[str, Any]:
+    metrics = {
+        "input_tokens": [item.input_tokens for item in receipts],
+        "output_tokens": [item.output_tokens for item in receipts],
+        "total_tokens": [item.total_tokens for item in receipts],
+        "wall_time_ms": [item.wall_time_ms for item in receipts],
+        "cpu_time_ms": [item.cpu_time_ms for item in receipts],
+        "estimated_cost_micros": [item.estimated_cost_micros if item.estimated_cost_micros is not None
+                                  else pricing.estimate(item) for item in receipts],
+    }
+    completeness = {
+        name: {"known_receipt_count": sum(value is not None for value in values),
+               "unknown_receipt_count": sum(value is None for value in values)}
+        for name, values in metrics.items()
+    }
+    complete = bool(receipts) and all(item["unknown_receipt_count"] == 0 for item in completeness.values())
+    totals = {name: sum(value for value in values if value is not None)
+              if receipts and all(value is not None for value in values) else None
+              for name, values in metrics.items()}
+    return {
+        "evidence_status": "no_receipts" if not receipts else "complete" if complete else "partial",
+        "receipt_count": len(receipts), "request_count": sum(item.request_count for item in receipts),
+        "usage_complete": complete, "totals": totals, "metric_completeness": completeness,
+    }
+
+
+def inspect_usage_ledger(
+    path: str | Path, *, run_id: str | None = None, episode_id: str | None = None,
+    adapter_stage: str | None = None,
+) -> dict[str, Any]:
+    """Read and explain an existing local ledger without creating or changing any state.
+
+    This report is observational. Receipt request counts are adapter-stage observations, cost
+    remains an estimate, and neither missing receipts nor partial totals authorize a budget.
+    """
+    if run_id is not None:
+        _id(run_id, "run_id")
+    if episode_id is not None:
+        _id(episode_id, "episode_id")
+    if adapter_stage is not None:
+        _stage(adapter_stage)
+    # Preserve the original final path component for O_NOFOLLOW. UsageLedger's writable path
+    # constructor resolves symlinks, and must not be used for this read-only operation.
+    raw = _read_json(Path(path).expanduser())
+    try:
+        pricing, records = _validated_usage_state(raw)
+    except RSIUsageError:
+        raise
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise RSIUsageError("rsi_usage_ledger_corrupt") from exc
+    selected = [record.receipt for record in records if
+                (run_id is None or record.receipt.run_id == run_id)
+                and (episode_id is None or record.receipt.episode_id == episode_id)
+                and (adapter_stage is None or record.receipt.adapter_stage == adapter_stage)]
+    return {
+        "protocol": "rsi-usage-diagnostics-v1",
+        "head_sha256": records[-1].record_sha256 if records else None,
+        "scope": {"run_id": run_id, "episode_id": episode_id, "adapter_stage": adapter_stage},
+        "cost_basis": "estimate", "request_count_semantics": "adapter_stage_receipts",
+        "aggregate": _usage_diagnostic_scope(selected, pricing),
+        "stages": [
+            {"adapter_stage": stage, **_usage_diagnostic_scope(
+                [item for item in selected if item.adapter_stage == stage], pricing,
+            )}
+            for stage in sorted({item.adapter_stage for item in selected})
+        ],
+    }
+
+
+__all__ = ["RSIUsageError", "UsageLedger", "UsagePricing", "UsageReceipt", "UsageSummary", "inspect_usage_ledger"]

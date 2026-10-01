@@ -119,6 +119,33 @@ def test_controller_runs_suite_and_promotes_only_after_explicit_activation(tmp_p
     ]
 
 
+def test_cached_reports_are_scoped_to_governance_and_receipts(tmp_path: Path) -> None:
+    old, current = snapshot("old", "old-item"), snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    retained = []
+    for name, score in (("first", 0.8), ("second", 0.9)):
+        directory = tmp_path / name
+        directory.mkdir()
+        governance, shadow = shadow_admission(directory, old, current)
+        report, active = controller.promote_transfer_regression(
+            governance=governance, admission_id=shadow.admission_id,
+            expected_record_sha256=shadow.record_sha256, old_memory=old, tasks=manifest(),
+            runner=lambda _task, memory, _repeat, score=score: TransferObservation(
+                True, score if memory.snapshot_id == "current" else 0.5,
+            ), activate=True,
+        )
+        retained.append((governance, active, report))
+    assert retained[0][2].holdout_receipt_sha256 != retained[1][2].holdout_receipt_sha256
+    for governance, active, expected_report in retained:
+        replay, _active = controller.promote_transfer_regression(
+            governance=governance, admission_id=active.admission_id,
+            expected_record_sha256=active.record_sha256, old_memory=old, tasks=manifest(),
+            runner=lambda *_args: pytest.fail("active regression must not repeat"),
+        )
+        assert replay is expected_report
+        assert replay.holdout_receipt_sha256 == active.holdout_receipt_sha256
+
+
 def test_controller_resumes_approved_activation_without_in_memory_report(tmp_path: Path) -> None:
     old = snapshot("old", "old-item")
     current = snapshot("current", "current-item")
@@ -245,6 +272,25 @@ def test_matching_component_fingerprints_remain_valid(tmp_path: Path) -> None:
     assert approved.state == "approved"
 
 
+def test_nested_external_fingerprint_mutation_cannot_promote(tmp_path: Path) -> None:
+    old, current = snapshot("old", "old-item"), snapshot("current", "current-item")
+    controller = RSILearningController(DeterministicMockSolver(), memory_store=RSIMemoryStore(current))
+    governance, shadow = shadow_admission(tmp_path, old, current)
+    pins = {"external": {"mode": "frozen"}}
+
+    def runner(_task, memory, _repeat):
+        pins["external"]["mode"] = "changed"
+        return TransferObservation(True, 0.9 if memory.snapshot_id == "current" else 0.5)
+
+    with pytest.raises(MemoryPromotionError, match="fingerprint_drift"):
+        controller.promote_transfer_regression(
+            governance=governance, admission_id=shadow.admission_id,
+            expected_record_sha256=shadow.record_sha256, old_memory=old, tasks=manifest(),
+            runner=runner, fingerprints=pins,
+        )
+    assert governance.get(shadow.admission_id) == shadow
+
+
 class AlternateVerifier(LocalExactVerifier):
     def rsi_fingerprint_config(self):
         return {"verifier": "changed-exact-v2"}
@@ -325,7 +371,7 @@ def test_durable_promotion_binding_rejects_restarted_component_drift(tmp_path: P
         activate=state == "active",
     )
     assert promoted.compatibility == {}
-    assert promoted.reason.startswith("controller_transfer_promotion:")
+    assert promoted.reason.startswith("controller_transfer_promotion_v2:")
     reopened = MemoryGovernanceStore(governance.database)
     changed_controller = RSILearningController(
         DeterministicMockSolver(terminal_status="failed"), memory_store=RSIMemoryStore(current),
@@ -340,7 +386,8 @@ def test_durable_promotion_binding_rejects_restarted_component_drift(tmp_path: P
     assert reopened.get(promoted.admission_id) == promoted
 
 
-def test_controller_cannot_invent_identity_for_unbound_approved_admission(tmp_path: Path) -> None:
+@pytest.mark.parametrize("approval_reason", [None, "controller_transfer_promotion:" + digest("legacy-v1")])
+def test_controller_cannot_invent_identity_for_unbound_approved_admission(tmp_path: Path, approval_reason: str | None) -> None:
     from lunar_evolution.rsi_memory_promotion import MemoryPromotionAdapter
     from lunar_evolution.rsi_transfer_regression import TransferRegressionSuite
 
@@ -356,8 +403,9 @@ def test_controller_cannot_invent_identity_for_unbound_approved_admission(tmp_pa
     )
     approved = MemoryPromotionAdapter(governance).approve(
         shadow.admission_id, report, expected_record_sha256=shadow.record_sha256,
+        approval_reason=approval_reason,
     )
-    assert approved.reason is None
+    assert approved.reason == approval_reason
     with pytest.raises(MemoryPromotionError, match="identity_missing"):
         controller.promote_transfer_regression(
             governance=governance, admission_id=approved.admission_id,

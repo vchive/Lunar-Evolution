@@ -10,6 +10,7 @@ then commits results in ordinal order against one frozen parent snapshot.
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -190,12 +191,14 @@ class PracticeEpisodeRunner:
         ledger: RSILedger | None = None,
         usage_ledger: RSIUsageLedger | None = None,
         *, before_verify: Callable[[], None] | None = None,
+        before_run: Callable[[], None] | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
         self.ledger = ledger
         self.usage_ledger = usage_ledger
         self.before_verify = before_verify
+        self.before_run = before_run
 
     @staticmethod
     def _usage_event_id(episode: PracticeEpisode, request: SolverRequest) -> str:
@@ -289,6 +292,8 @@ class PracticeEpisodeRunner:
             raise RSILearningError("rsi_episode_request_mismatch")
         if request.environment_sha256 != episode.environment_sha256 or request.memory_snapshot_sha256 != episode.memory_snapshot_sha256:
             raise RSILearningError("rsi_episode_request_mismatch")
+        if self.before_run is not None:
+            self.before_run()
         running = episode.transition("running", request_sha256=request.digest())
         ledger_head = self._create_running_record(running)
         started_ns = time.monotonic_ns()
@@ -900,6 +905,7 @@ class RSILearningController:
         target_judge: TargetJudge = default_target_judge,
         ledger: RSILedger | None = None,
         usage_ledger: RSIUsageLedger | None = None,
+        memory_admission_gate: Any | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -910,10 +916,16 @@ class RSILearningController:
         if usage_ledger is not None and not isinstance(usage_ledger, RSIUsageLedger):
             raise TypeError("usage_ledger must be an RSI usage UsageLedger")
         self.usage_ledger = usage_ledger
+        if memory_admission_gate is not None:
+            from .rsi_memory_snapshot_gate import GovernedMemorySnapshotGate
+
+            if not isinstance(memory_admission_gate, GovernedMemorySnapshotGate):
+                raise TypeError("memory_admission_gate must be a governed frozen snapshot gate")
+        self.memory_admission_gate = memory_admission_gate
         # Transfer reports are retained only as a local idempotency aid.  The governance
         # admission record remains the durable source of truth; a fresh process may return
         # ``None`` for an already-approved report when the report itself was not persisted.
-        self._transfer_promotion_reports: dict[str, Any] = {}
+        self._transfer_promotion_reports: dict[tuple[str, str, str, str], Any] = {}
 
     @property
     def snapshot(self) -> MemorySnapshot:
@@ -931,6 +943,7 @@ class RSILearningController:
         policy: Any | None = None,
         activate: bool = False,
         fingerprints: Mapping[str, object] | None = None,
+        budget: Mapping[str, Any] | None = None,
     ) -> tuple[Any | None, Any]:
         """Run local transfer regression and apply the explicit memory promotion gate.
 
@@ -948,6 +961,7 @@ class RSILearningController:
         # governance/transfer modules and avoid making this composition mandatory for DRS/BRS.
         from .rsi_memory_governance import MemoryGovernanceStore
         from .rsi_memory_promotion import MemoryPromotionAdapter, MemoryPromotionError
+        from .rsi_regression_campaign import DurableRegressionCampaign
         from .rsi_transfer_regression import TransferRegressionSuite
 
         if not isinstance(governance, MemoryGovernanceStore):
@@ -962,6 +976,9 @@ class RSILearningController:
             raise MemoryPromotionError("rsi_memory_promotion_memory_invalid")
         if type(activate) is not bool:
             raise MemoryPromotionError("rsi_memory_promotion_activate_invalid")
+        suite = TransferRegressionSuite(policy=policy)
+        manifest = suite._validate_tasks(tasks, suite.policy)
+        planned_budget = RSIRunBudget.create(budget)
         if fingerprints is not None and (
             not isinstance(fingerprints, Mapping) or any(type(key) is not str for key in fingerprints)
         ):
@@ -988,16 +1005,23 @@ class RSILearningController:
             raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
 
         def component_pins() -> dict[str, object]:
-            return {
+            pins: dict[str, object] = {
                 "memory_snapshot_sha256": self.snapshot.digest(),
                 "solver_fingerprint": _component_digest(self.gateway, name="solver"),
                 "verifier_fingerprint": _component_digest(self.verifier, name="verifier"),
                 "curriculum_fingerprint": _component_digest(self.curriculum, name="curriculum"),
                 "target_judge_fingerprint": _component_digest(self.target_judge, name="target_judge"),
             }
+            if self.memory_admission_gate is not None:
+                pins["memory_admission_gate_fingerprint"] = _component_digest(self.memory_admission_gate, name="memory_admission_gate")
+            return pins
 
         observed_fingerprints = component_pins()
-        supplied_fingerprints = dict(fingerprints or {})
+        try:
+            supplied_fingerprints = json.loads(canonical_json(dict(fingerprints or {}), maximum=128 * 1024))
+            supplied_digest = _record_digest(supplied_fingerprints)
+        except Exception as exc:
+            raise MemoryPromotionError("rsi_memory_promotion_fingerprint_invalid") from exc
         # Caller-owned external pins may supplement component identity, but cannot replace the
         # controller's independent observations with stale or fabricated component digests.
         for key, value in supplied_fingerprints.items():
@@ -1010,24 +1034,45 @@ class RSILearningController:
             if declared is not None and declared != value:
                 raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
         try:
-            approval_reason = "controller_transfer_promotion:" + _record_digest(observed_fingerprints)
+            approval_reason = "controller_transfer_promotion_v2:" + _record_digest({
+                "fingerprints": observed_fingerprints,
+                "old_memory_sha256": old_memory.digest(),
+                "manifest": [task.to_dict() for task in manifest],
+                "policy": suite.policy.to_dict(),
+                "planned_budget": planned_budget.to_dict()["planned"],
+            })
         except Exception as exc:
             raise MemoryPromotionError("rsi_memory_promotion_fingerprint_invalid") from exc
         if admission.state in {"approved", "active"}:
-            if admission.reason is None or not admission.reason.startswith("controller_transfer_promotion:"):
+            if admission.reason is None or not admission.reason.startswith("controller_transfer_promotion_v2:"):
                 raise MemoryPromotionError("rsi_memory_promotion_identity_missing")
             if admission.reason != approval_reason:
                 raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
 
+        def report_key(head: Any) -> tuple[str, str, str, str]:
+            return (str(governance.database), head.admission_id,
+                    head.holdout_receipt_sha256 or "", head.baseline_receipt_sha256 or "")
+
+        def cached_report() -> Any | None:
+            report = self._transfer_promotion_reports.get(report_key(admission))
+            if report is not None and (
+                report.current_memory_sha256 != current_memory.digest()
+                or report.old_memory_sha256 != old_memory.digest()
+                or report.holdout_receipt_sha256 != admission.holdout_receipt_sha256
+                or report.baseline_receipt_sha256 != admission.baseline_receipt_sha256
+            ):
+                raise MemoryPromotionError("rsi_memory_promotion_report_drift")
+            return report
+
         # Do not rerun a completed promotion.  CAS is checked above so a caller cannot turn an
         # old expected digest into an idempotent success after another process changed the head.
         if admission.state == "active":
-            return self._transfer_promotion_reports.get(admission_id), admission
+            return cached_report(), admission
         if admission.state == "approved" and not activate:
-            return self._transfer_promotion_reports.get(admission_id), admission
+            return cached_report(), admission
         if admission.state == "approved" and activate:
-            cached_report = self._transfer_promotion_reports.get(admission_id)
-            if cached_report is None:
+            retained_report = cached_report()
+            if retained_report is None:
                 promoted = MemoryPromotionAdapter(governance).activate_approved(
                     admission_id,
                     expected_record_sha256=expected_record_sha256,
@@ -1036,18 +1081,24 @@ class RSILearningController:
                 return None, promoted
             promoted = MemoryPromotionAdapter(governance).promote(
                 admission_id,
-                cached_report,
+                retained_report,
                 expected_record_sha256=expected_record_sha256,
                 compatibility=admission.compatibility,
                 activate=True,
                 approval_reason=approval_reason,
             )
-            return cached_report, promoted
+            return retained_report, promoted
 
         def check_components() -> None:
             if self.snapshot.digest() != current_memory.digest():
                 raise MemoryPromotionError("rsi_memory_promotion_snapshot_drift")
             if component_pins() != pinned_components:
+                raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
+            try:
+                external_digest = _record_digest(dict(fingerprints or {}))
+            except Exception as exc:
+                raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift") from exc
+            if external_digest != supplied_digest:
                 raise MemoryPromotionError("rsi_memory_promotion_fingerprint_drift")
 
         if not callable(runner):
@@ -1055,13 +1106,24 @@ class RSILearningController:
 
         def checked_runner(task: Any, memory: MemorySnapshot, repetition: int) -> Any:
             check_components()
+            if self.ledger is None:
+                planned_budget.reserve_stages(("transfer", "evaluator"))
             result = runner(task, memory, repetition)
             check_components()
             return result
 
-        report = TransferRegressionSuite(policy=policy).run(
-            tasks, old_memory=old_memory, current_memory=current_memory, runner=checked_runner,
-        )
+        if self.ledger is not None:
+            report = DurableRegressionCampaign(self.ledger).run(
+                admission_id=admission_id, initial_record_sha256=expected_record_sha256,
+                tasks=manifest, old_memory=old_memory, current_memory=current_memory,
+                runner=runner, policy=suite.policy, controller_pins=observed_fingerprints,
+                check_components=check_components, budget=budget,
+            )
+        else:
+            report = suite.run(
+                manifest, old_memory=old_memory, current_memory=current_memory, runner=checked_runner,
+            )
+            planned_budget.check()
         # A malicious or accidental runner must not mutate the controller's memory between the
         # frozen suite and the governance write.
         check_components()
@@ -1073,7 +1135,7 @@ class RSILearningController:
             activate=activate,
             approval_reason=approval_reason,
         )
-        self._transfer_promotion_reports[admission_id] = report
+        self._transfer_promotion_reports[report_key(promoted)] = report
         return report, promoted
 
     def _failure_curriculum_state(self) -> dict[str, Any] | None:
@@ -1363,6 +1425,8 @@ class RSILearningController:
         """Build one complete identity contract for a new or resumed controller run."""
 
         solver_settings: dict[str, Any] = {}
+        if self.memory_admission_gate is not None:
+            solver_settings["memory_admission_gate_fingerprint"] = _component_digest(self.memory_admission_gate, name="memory_admission_gate")
         # The gateway is the executable solver/actor boundary.  Include its source identity and
         # immutable request settings; runtime counters and process state are excluded by the
         # identity helper.
@@ -1722,6 +1786,7 @@ class RSILearningController:
             if state["intents"][key] != expected:
                 raise RSILearningError("rsi_resume_episode_drift")
             return
+        self._check_memory_admission(request)
         budget = RSIRunBudget.load(state["budget_state"])
         self._reserve_episode_budget(budget, episode_kind=episode.episode_kind, depth=0, ancestry=(key,))
         state["budget_state"] = budget.to_dict()
@@ -1752,8 +1817,15 @@ class RSILearningController:
             def verify(self, episode, request, result):
                 return controller._verify_episode(episode, request, result, budget.check)
 
+        def before_run() -> None:
+            self._check_memory_admission(request)
+            # Governance reads may wait for a SQLite reader. Recheck the same absolute
+            # deadline immediately afterwards before persisting running or dispatching.
+            budget.check()
+
         return PracticeEpisodeRunner(
             self.gateway, ControllerVerifier(), self.ledger, self.usage_ledger,
+            before_run=before_run,
         ).run(episode, request)
 
     def _flow_episode(self, record: RSIRecord | None, state: dict[str, Any],
@@ -2137,6 +2209,14 @@ class RSILearningController:
             budget=budget, practice_charter=charter,
         )
 
+    def _check_memory_admission(self, request: SolverRequest) -> None:
+        if self.memory_admission_gate is None:
+            return
+        snapshot = self.snapshot
+        if request.memory_snapshot_sha256 != snapshot.digest():
+            raise RSILearningError("rsi_memory_snapshot_gate_request_drift")
+        self.memory_admission_gate.validate(snapshot)
+
     def _practice(self, *, run_id: str, target: PracticeEpisode, decision: CurriculumDecision, wave: int, ordinal: int) -> EpisodeExecution:
         episode = PracticeEpisode(
             f"{run_id}-practice-{wave}-{ordinal}", run_id, target.contract_sha256, target.evaluator_sha256,
@@ -2146,6 +2226,7 @@ class RSILearningController:
         request = self._request(episode, charter={**decision.to_dict(), "decision_sha256": decision.digest()})
         return PracticeEpisodeRunner(
             self.gateway, self.verifier, self.ledger, self.usage_ledger,
+            before_run=lambda: self._check_memory_admission(request),
         ).run(episode, request)
 
     def _commit(

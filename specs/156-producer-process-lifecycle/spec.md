@@ -223,6 +223,30 @@ the only result exposed to downstream publication code.
 
 ## Implementation checkpoint (2026-10-01): lifecycle composition wrapper
 
+### Caller-owned control across the native lifecycle
+
+`intent.wall_timeout_seconds` remains the native process-attempt limit. An explicitly supplied
+`execution_control`, `parent_deadline`, or `cancelled` callback also constrains the scheduler's
+receipt, output-preparation, and optional publication stages. These caller controls are composed
+before any attempt is admitted: the earliest caller deadline wins and cancellation from any caller
+source stops new work. All supplied monotonic deadlines must use the execution control's clock
+domain, or the native monotonic clock when no control is supplied. Composition never changes the
+caller's original control or allocates a fresh budget after producer execution.
+
+The scheduler checks the effective caller control before spawning and before/after receipt and
+output preparation. Publication receives that same effective control and continuation guard,
+including a cancellation-only guard when no caller deadline exists. Cancellation and timeout
+retain their typed `SolveExecutionCancelled` and `SolveExecutionBudgetExceeded` exceptions through
+the lifecycle wrapper. A receipt already persisted remains diagnostic/recoverable after a later
+caller cancellation; no later publication stage is admitted. Read-only terminal recovery can
+inspect retained evidence after the original process budget expires and does not allocate a new
+producer attempt or admit publication.
+
+The publication transaction remains responsible for its commit boundary. Caller cancellation is
+checked before entering new preparation/evaluation/staging/commit work. After its durable unknown
+marker, commit completes or retains an unknown outcome; the scheduler does not add a post-return
+cancellation check that would relabel a completed atomic publication as a failed operation.
+
 The provider-free implementation now exposes `run_native_trusted_lifecycle` and
 `recover_native_trusted_lifecycle` from `producer_lifecycle`. The run entry point delegates one
 native trusted attempt to the scheduler, persists and verifies the formal execution receipt,

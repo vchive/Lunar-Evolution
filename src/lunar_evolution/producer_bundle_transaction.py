@@ -341,6 +341,7 @@ def run_native_producer_bundle_publication_transaction(
     budget_sha256: str | None = None,
     native_execution_receipt_sha256: str | None = None,
     execution_control: SolveExecutionControl | None = None,
+    continuation_guard: Callable[[str], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
     """Evaluate imported material and atomically publish the valid native subset.
 
@@ -352,6 +353,8 @@ def run_native_producer_bundle_publication_transaction(
     """
     if not isinstance(strategy, PopulationStrategy):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
+    if continuation_guard is not None and not callable(continuation_guard):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_guard_invalid")
     options = {"journal_id": journal_id, "run_id": run_id, "parent_task_id": parent_task_id,
                "task_id": task_id, "budget_sha256": budget_sha256,
                "native_execution_receipt_sha256": native_execution_receipt_sha256}
@@ -361,12 +364,22 @@ def run_native_producer_bundle_publication_transaction(
     options["budget_sha256"] = derived_budget
     if execution_control is not None:
         with bind_native_producer_bundle_control(strategy, execution_control) as checkpoint:
+            if continuation_guard is not None:
+                original_checkpoint = checkpoint
+
+                def checkpoint(stage: str) -> object:
+                    continuation_guard(stage)
+                    return original_checkpoint(stage)
+
+                checkpoint.bind_retained_deadline = original_checkpoint.bind_retained_deadline
             return _run_native_producer_bundle_publication_transaction(
                 workspace, strategy, drafts, admission_plan, checkpoint=checkpoint,
                 execution_control=execution_control, **options,
             )
 
     def checkpoint(stage: str) -> None:
+        if continuation_guard is not None:
+            continuation_guard(stage)
         if strategy._cancelled():
             raise SolveExecutionCancelled(stage)
         strategy._check_stage(stage)

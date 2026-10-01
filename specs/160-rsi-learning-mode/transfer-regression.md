@@ -9,7 +9,7 @@ remote service; the caller supplies a deterministic fixture runner.
 
 ## Contract
 
-`TransferRegressionSuite.run()` emits schema version 2 and evaluates every task under three immutable arms:
+`TransferRegressionSuite.run()` emits schema version 3 and evaluates every task under three immutable arms:
 
 - `no_memory`: the canonical empty snapshot;
 - `old_memory`: the currently active/previous snapshot;
@@ -28,7 +28,33 @@ and fails promotion.
 
 A report is eligible for promotion only when the current snapshot does not regress against either
 empty or old memory on unseen tasks, does not regress on seen tasks, and improves the unseen score
-against empty memory. `promotion_evidence()` produces the holdout and baseline receipt digests and the
+against empty memory. The default additionally requires every current-memory unseen trial to have
+`passed=True` (`min_unseen_pass_rate=1.0`), and allows no seen/unseen pass-rate regression against
+either baseline. A high score cannot substitute for a failing official pass outcome. Explicit
+noise policy may lower the minimum or increase `max_unseen_pass_rate_regression` /
+`max_seen_pass_rate_regression`; these finite thresholds are bounded to 0..1, remain immutable for
+the report, and must be supplied deliberately.
+
+The canonical report includes the complete `RegressionPolicy`. Holdout and baseline receipt
+digests bind the complete ordered manifest (including input/family/split/target identities), policy,
+arm snapshot digest and arm evidence. Changing inputs or a threshold changes the receipts even if
+aggregate scores happen to remain identical. The adapter revalidates those bindings and pass gates
+before appending approval or activation.
+
+Revalidation also derives foreign-task access from every raw trial and memory access from the
+empty arm. Every such access must remain represented in `contamination`; clearing the flags and
+rehashing the envelope cannot hide those observations. Schema v3 retains only old/current snapshot
+digests, so report-only revalidation cannot reconstruct their allowed memory IDs. The suite checks
+those against the actual frozen snapshots while recording the observations. These consistency
+checks do not authenticate the local runner's assertions about what it accessed.
+
+Policy-less legacy report objects retain their schema version 2 serialized shape and digest for
+read-only inspection and failed-report quarantine. They cannot provide new promotion evidence:
+the historical score-only eligibility flag does not establish the stricter pass gate. Existing
+approved governance rows hold opaque receipt digests; migrating or revalidating those rows is a
+separate durable promotion integration task, not an inference from the old digests.
+
+`promotion_evidence()` produces the holdout and baseline receipt digests and the
 boolean accepted by `MemoryGovernanceStore.transition(..., state="approved")`. The explicit
 `MemoryPromotionAdapter` is the controller-facing bridge: it validates the report digest and all
 three evidence fields, then appends `approved`; an explicit activation request appends `active` as
@@ -45,6 +71,11 @@ a second revision. A rejected report can still be inspected; it must not be used
 | Runner reads another task or foreign memory | Report retained with contamination and rejected |
 | Current unseen score regresses vs no/old memory | Report rejected |
 | Current unseen score does not improve over no memory | Report rejected |
+| Current unseen pass rate below configured minimum, including high-score failing trials | Report rejected |
+| Seen/unseen pass rate regresses beyond configured tolerance | Report rejected |
+| Inputs/policy/arm evidence change after receipt creation | Promotion evidence rejected |
+| Raw foreign-task or no-memory access omitted from contamination, even in a rehashed envelope | Promotion evidence rejected |
+| Legacy report lacks policy-bound pass evidence | New promotion rejected; inspection remains available |
 | All gates pass | Report is promotable; governance still performs its own CAS and verifier checks |
 
 ## Boundary

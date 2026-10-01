@@ -1171,6 +1171,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_home(rsi_inspect_parser)
     _add_json(rsi_inspect_parser)
 
+    rsi_usage_parser = rsi_commands.add_parser("usage", help="read an existing RSI usage ledger without initializing local state")
+    rsi_usage_parser.add_argument("ledger", type=Path, help="existing local usage JSON ledger")
+    rsi_usage_parser.add_argument("--run-id", help="limit receipts to one run")
+    rsi_usage_parser.add_argument("--episode-id", help="limit receipts to one episode")
+    rsi_usage_parser.add_argument("--adapter-stage", help="limit receipts to one adapter stage")
+    _add_json(rsi_usage_parser)
+
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
     rsi_reconcile_parser.add_argument(
@@ -6249,6 +6256,15 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             payload = _evolve_bundle(args)
             _emit(payload, args.json)
             return 0 if payload["status"] in {"completed", "stagnated"} else 1
+        if args.command == "rsi" and args.rsi_command == "usage":
+            from .rsi_usage import inspect_usage_ledger
+
+            # Read-only diagnostics must precede all home/SQLite initialization.
+            _emit(inspect_usage_ledger(
+                args.ledger, run_id=args.run_id, episode_id=args.episode_id,
+                adapter_stage=args.adapter_stage,
+            ), args.json)
+            return 0
         config = _config(args)
         if args.command == "init":
             _emit({"home": str(config.home), "status": "initialized"}, args.json)

@@ -1,8 +1,12 @@
 # Lunar RSI 阶段性能力差距报告
 
-2026-10-01 更新：controller durable resume、unknown/callback reconcile gate、预算和指纹
-恢复已通过本地矩阵；显式 diversity/failure-boundary policy、失败 transfer report quarantine、
-晋级时的逐 trial drift gate 与 durable approval identity 也已实现。当前 RSI 回归为 **584 passed**。
+2026-10-01 最新更新：controller durable resume、unknown/callback reconcile gate、预算和指纹
+恢复已通过本地矩阵；另补 schema v3 holdout pass/policy/input gate、ledger-backed durable
+regression trials、v2 promotion identity、Actor→clean-room verifier、governed frozen-snapshot
+下一次 dispatch gate 和只读 usage CLI。本轮组合 **890 passed**（其中 RSI 773），之后新增三条
+alias/corruption/legacy-v1 回归的 focused 组合 **43 passed**。详细边界见 `priority-execution.md`。
+campaign budget 尚未与 parent learning run 合账，gate 跨代需要 re-admit + 新 run，默认
+holdout/quarantine 和完整桥接证据自动持久化仍开放；这些不能从本地 fixture 推导生产完成。
 下面 A1/A2/A3/A5 的“现状证据”保留原始缺口分析，当前完成度以 `tasks.md`、`validation.md`
 和代码为准。真实 Actor/官方 evaluator、外部 worker 来源和 ownership、默认 holdout/quarantine
 调度、真实 process adapter/campaign 仍开放；fixture 通过不等于这些生产能力完成。

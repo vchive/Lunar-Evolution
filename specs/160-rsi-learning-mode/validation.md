@@ -1,6 +1,14 @@
 # Validation: RSI learning mode
 
-This file records the local acceptance boundary. On 2026-10-01 the RSI suite passed **584 tests**,
+Latest 2026-10-01 priority regression: **890 passed / 0 failed / 0 skipped in 49.42s**, including
+773 RSI cases and 117 producer/native cases (`/tmp/lunar-priority-regression-20261001.xml`).
+After that run, three additional alias/corrupt-intent/legacy-v1 approval regression cases passed
+in the final campaign/promotion focused run: **43 passed in 0.84s**
+(`/tmp/lunar-rsi-campaign-final-20261001.xml`). Final Ruff over `src tests`, compileall and diff
+checks pass. Source changes were covered by the combined run; only regression tests were added
+after it. See HANDOFF and priority-execution.md for completed local slices and open integrations.
+
+The previous 2026-10-01 RSI baseline passed **584 tests**,
 with no failures or skips in 6.17 seconds (`/tmp/lunar-rsi-release-20261001-v2.xml`). It includes
 DRS/BRS callback crash/reconcile, CLI inspect/reconcile/resume, frozen-transfer callback recovery,
 unknown receipt failure settlement, clean-room admission, policy-bound curriculum replay, transfer
@@ -9,6 +17,15 @@ quarantine and controller promotion identity gates. Ruff over `src tests`, compi
 The process-level clean-room fixtures use only local module-level evaluators. This local regression
 does not establish an official evaluator, external worker authenticity, real producer campaign or
 model end-to-end acceptance, nor prove that every external recovery path has been implemented.
+
+New focused evidence covers native caller cancellation/deadline continuation, policy-bound
+pass-rate/contamination gates, durable holdout reservations/callbacks/reconcile, actual manifest
+and v2 approval identity, governance-scoped report caching, nested pin mutation, bounded trial
+cardinality, controller Actor clean-room memory/retry/replay, next-use revocation and post-gate
+deadline checks, and strictly read-only usage diagnostics. The campaign budget remains separate
+from a parent learning run's counters. The opt-in snapshot gate consumes a single governed
+generation and reads trusted latest heads; same-run cross-generation promotion and historical
+database rollback protection are not established.
 
 ## Data and authority
 

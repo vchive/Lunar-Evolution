@@ -64,6 +64,77 @@ def _batch(context, journal_id):
     return context.workspace / "evolution" / "producer-batches" / journal_id
 
 
+def test_cancellation_only_guard_stops_before_any_transaction_write(tmp_path, monkeypatch):
+    fixture = _fixture(tmp_path)
+    context, _strategy, _drafts, _plan, journal_id = fixture
+    before = _prefix(context)
+
+    def stop(stage):
+        raise SolveExecutionCancelled(stage)
+
+    monkeypatch.setattr(context.bundle_pipeline, "evaluate_draft_non_publishing", lambda *a, **k: pytest.fail("cancelled"))
+    with pytest.raises(SolveExecutionCancelled):
+        _call(fixture, None, continuation_guard=stop)
+    assert _prefix(context) == before
+    assert list(_batch(context, journal_id).iterdir()) == []
+
+
+def test_cancellation_only_guard_rechecks_before_commit(tmp_path, monkeypatch):
+    fixture = _fixture(tmp_path)
+    context, _strategy, _drafts, _plan, journal_id = fixture
+    before = _prefix(context)
+    stopped = [False]
+    original_stage = producer_bundle_transaction.stage_producer_bundle_publication
+
+    def stage_then_stop(*args, **kwargs):
+        result = original_stage(*args, **kwargs)
+        stopped[0] = True
+        return result
+
+    def guard(stage):
+        if stopped[0]:
+            raise SolveExecutionCancelled(stage)
+
+    monkeypatch.setattr(producer_bundle_transaction, "stage_producer_bundle_publication", stage_then_stop)
+    monkeypatch.setattr(producer_bundle_transaction, "commit_producer_bundle_publication", lambda *a, **k: pytest.fail("cancelled"))
+    with pytest.raises(SolveExecutionCancelled):
+        _call(fixture, None, continuation_guard=guard)
+    assert _prefix(context) == before
+    assert not (_batch(context, journal_id) / "execution.deadline.json").exists()
+    assert not (_batch(context, journal_id) / "terminal.json").exists()
+
+
+def test_cancellation_only_guard_does_not_interrupt_after_unknown_marker(tmp_path, monkeypatch):
+    fixture = _fixture(tmp_path)
+    context, _strategy, _drafts, _plan, journal_id = fixture
+    stopped = [False]
+    original_replace = producer_bundle_staging._replace_existing
+
+    def stop_after_unknown(path, content, **kwargs):
+        result = original_replace(path, content, **kwargs)
+        if path.name == "producer-publication.json" and json.loads(content)["status"] == "unknown":
+            stopped[0] = True
+        return result
+
+    def guard(stage):
+        if stopped[0]:
+            raise SolveExecutionCancelled(stage)
+
+    monkeypatch.setattr(producer_bundle_staging, "_replace_existing", stop_after_unknown)
+    result = _call(fixture, None, continuation_guard=guard)
+    assert stopped[0] is True
+    assert result.publication_status == "published"
+    assert not (_batch(context, journal_id) / "execution.deadline.json").exists()
+
+
+def test_guard_composes_with_retained_publication_deadline(tmp_path):
+    fixture = _fixture(tmp_path)
+    stages = []
+    result = _call(fixture, SolveExecutionControl(30, clock=FakeClock()), continuation_guard=stages.append)
+    assert result.publication_status == "published"
+    assert "producer_preparation" in stages and "producer_commit" in stages
+
+
 def test_shared_control_policy_is_bound_to_prepared_and_published_journal(tmp_path) -> None:
     fixture = _fixture(tmp_path)
     context, strategy, _drafts, _plan, journal_id = fixture

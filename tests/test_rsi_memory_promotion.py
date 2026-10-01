@@ -16,6 +16,7 @@ from lunar_evolution.rsi_memory_governance import (
 )
 from lunar_evolution.rsi_memory_promotion import MemoryPromotionAdapter, MemoryPromotionError
 from lunar_evolution.rsi_transfer_regression import (
+    RegressionPolicy,
     TransferObservation,
     TransferRegressionSuite,
     TransferTask,
@@ -363,3 +364,103 @@ def test_quarantine_invalid_reason_annotation_does_not_revoke(tmp_path: Path, re
             expected_record_sha256=shadow.record_sha256, reason=reason,
         )
     assert governance.get(shadow.admission_id) == shadow
+
+
+@pytest.mark.parametrize("activate", [False, True])
+def test_high_score_failed_holdout_cannot_approve_or_activate(tmp_path: Path, activate: bool) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    failed = TransferRegressionSuite().run(
+        tasks(), old_memory=snapshot("old", "old-item"), current_memory=snapshot("current", "current-item"),
+        runner=lambda _task, memory, _repeat: TransferObservation(
+            False, 0.9 if memory.snapshot_id == "current" else 0.2,
+        ),
+    )
+    with pytest.raises(MemoryPromotionError, match="report_rejected"):
+        MemoryPromotionAdapter(governance).promote(
+            shadow.admission_id, failed, expected_record_sha256=shadow.record_sha256, activate=activate,
+        )
+    assert governance.get(shadow.admission_id) == shadow
+
+
+def _rehash_report(value):
+    from lunar_evolution.candidate_evaluation_spec import canonical_json
+
+    payload = value.to_dict()
+    for field in ("protocol", "schema_version", "report_sha256"):
+        payload.pop(field)
+    return replace(value, report_sha256=hashlib.sha256(canonical_json(payload, maximum=128 * 1024)).hexdigest())
+
+
+def test_legacy_policy_less_report_remains_inspectable_but_cannot_promote(tmp_path: Path) -> None:
+    from lunar_evolution.rsi_transfer_regression import TransferRegressionError
+
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    legacy = _rehash_report(replace(report(), policy=None))
+    assert legacy.to_dict()["schema_version"] == "2"
+    assert "policy" not in legacy.to_dict()
+    with pytest.raises(TransferRegressionError, match="policy_evidence_missing"):
+        legacy.promotion_evidence()
+    with pytest.raises(MemoryPromotionError, match="policy_evidence_missing"):
+        MemoryPromotionAdapter(governance).approve(
+            shadow.admission_id, legacy, expected_record_sha256=shadow.record_sha256,
+        )
+    assert governance.get(shadow.admission_id) == shadow
+
+
+def test_rejected_legacy_report_can_still_be_quarantined(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    legacy = _rehash_report(replace(report(eligible=False), policy=None))
+    assert legacy.to_dict()["schema_version"] == "2"
+    revoked = MemoryPromotionAdapter(governance).quarantine_failed_report(
+        shadow.admission_id, legacy, expected_record_sha256=shadow.record_sha256,
+    )
+    assert revoked.state == "revoked"
+
+
+def test_canonical_policy_substitution_cannot_reuse_old_receipts(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    substituted = _rehash_report(replace(report(), policy=RegressionPolicy(min_unseen_pass_rate=0.9)))
+    with pytest.raises(MemoryPromotionError, match="policy_evidence_drift"):
+        MemoryPromotionAdapter(governance).approve(
+            shadow.admission_id, substituted, expected_record_sha256=shadow.record_sha256,
+        )
+    assert governance.get(shadow.admission_id) == shadow
+
+
+def test_canonical_eligibility_substitution_cannot_hide_failing_pass_gate(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    failed = TransferRegressionSuite().run(
+        tasks(), old_memory=snapshot("old", "old-item"), current_memory=snapshot("current", "current-item"),
+        runner=lambda _task, memory, _repeat: TransferObservation(False, 0.9 if memory.snapshot_id == "current" else 0.2),
+    )
+    substituted = _rehash_report(replace(failed, promotion_eligible=True, rejection_reasons=()))
+    with pytest.raises(MemoryPromotionError, match="policy_evidence_drift"):
+        MemoryPromotionAdapter(governance).approve(
+            shadow.admission_id, substituted, expected_record_sha256=shadow.record_sha256,
+        )
+    assert governance.get(shadow.admission_id) == shadow
+
+
+@pytest.mark.parametrize("access_kind", ["foreign_task", "no_memory"])
+@pytest.mark.parametrize("activate", [False, True])
+def test_rehashed_contamination_omission_cannot_promote(tmp_path: Path, access_kind: str, activate: bool) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+
+    def runner(task, memory, _repeat):
+        return TransferObservation(
+            True, 0.9 if memory.snapshot_id == "current" else 0.5,
+            accessed_task_ids=(task.task_id, "foreign-task") if access_kind == "foreign_task" else (task.task_id,),
+            memory_ids_used=("foreign-memory",) if access_kind == "no_memory" and memory.snapshot_id == "rsi-empty-memory-v1" else (),
+        )
+
+    contaminated = TransferRegressionSuite().run(
+        tasks(), old_memory=snapshot("old", "old-item"), current_memory=snapshot("current", "current-item"),
+        runner=runner,
+    )
+    substituted = _rehash_report(replace(contaminated, contamination=(), promotion_eligible=True, rejection_reasons=()))
+    with pytest.raises(MemoryPromotionError, match="policy_evidence_drift"):
+        MemoryPromotionAdapter(governance).promote(
+            shadow.admission_id, substituted, expected_record_sha256=shadow.record_sha256, activate=activate,
+        )
+    assert governance.get(shadow.admission_id) == shadow
+    assert len(governance.history(shadow.admission_id)) == 4
