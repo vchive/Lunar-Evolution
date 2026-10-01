@@ -128,6 +128,33 @@ class RSIRecord:
     created_at: str
 
 
+@dataclass(frozen=True)
+class NativeEpisodeClaim:
+    """The durable pre-launch identity for one native RSI episode.
+
+    A claim binds the complete ``SolverRequest`` digest to the controller's frozen
+    execution-plan digest.  The claim itself carries no success authority: a terminal
+    status is projected only from an exact, already-persisted ``SolverResult``.
+    """
+
+    episode_id: str
+    request_sha256: str
+    plan_sha256: str
+    status: str
+    claim_sha256: str
+    created_at: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "episode_id": self.episode_id,
+            "request_sha256": self.request_sha256,
+            "plan_sha256": self.plan_sha256,
+            "status": self.status,
+            "claim_sha256": self.claim_sha256,
+            "created_at": self.created_at,
+        }
+
+
 _MEMORY_STATES = frozenset({"approved"})
 _TRANSFER_STATES = frozenset({"passed", "failed", "unknown"})
 
@@ -176,6 +203,12 @@ class RSILedger:
                 "episode_id TEXT NOT NULL PRIMARY KEY, request_sha256 TEXT NOT NULL, "
                 "request_payload TEXT NOT NULL, result_payload TEXT NOT NULL, "
                 "result_sha256 TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS rsi_native_episode_claims ("
+                "episode_id TEXT NOT NULL PRIMARY KEY, request_sha256 TEXT NOT NULL, "
+                "plan_sha256 TEXT NOT NULL, claim_sha256 TEXT NOT NULL UNIQUE, "
+                "created_at TEXT NOT NULL)"
             )
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS rsi_episode_reconciliations ("
@@ -626,6 +659,178 @@ class RSILedger:
             )
             return RSIRecord(logical_id, 1, "transfer", "failed", head.request_sha256,
                              head.record_sha256, payload, digest, created_at)
+
+    @staticmethod
+    def _native_claim_digest(episode_id: str, request_sha256: str, plan_sha256: str) -> str:
+        return hashlib.sha256(canonical_json({
+            "protocol": "lunar-rsi-native-episode-claim-v1",
+            "episode_id": episode_id,
+            "request_sha256": request_sha256,
+            "plan_sha256": plan_sha256,
+        }, maximum=128 * 1024)).hexdigest()
+
+    @staticmethod
+    def _native_claim_plan(plan_sha256: object) -> str:
+        return _digest(plan_sha256, name="native_plan_sha256")
+
+    def _native_result_status(
+        self, connection: sqlite3.Connection, episode_id: str, request_sha256: str,
+    ) -> str | None:
+        """Return the exact saved result status, rejecting a mismatched publication."""
+        row = connection.execute(
+            "SELECT request_sha256, request_payload, result_payload, result_sha256 "
+            "FROM rsi_episode_results WHERE episode_id = ?", (episode_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            request = SolverRequest.from_dict(json.loads(row["request_payload"]))
+            result = SolverResult.from_dict(json.loads(row["result_payload"]))
+        except (TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_native_episode_result_corrupt") from exc
+        actual_result_sha256 = hashlib.sha256(
+            canonical_json(result.to_dict(), maximum=128 * 1024)
+        ).hexdigest()
+        if (
+            row["request_sha256"] != request_sha256
+            or request.episode_id != episode_id
+            or request.digest() != request_sha256
+            or result.episode_id != episode_id
+            or result.request_sha256 != request_sha256
+            or row["result_sha256"] != actual_result_sha256
+        ):
+            raise RSILearningError("rsi_native_episode_result_binding_drift")
+        return result.status
+
+    @staticmethod
+    def _native_claim_row(
+        row: sqlite3.Row, *, status: str,
+    ) -> NativeEpisodeClaim:
+        episode_id = _id(row["episode_id"], name="episode_id")
+        request_sha256 = _digest(row["request_sha256"], name="native_request_sha256")
+        plan_sha256 = _digest(row["plan_sha256"], name="native_plan_sha256")
+        claim_sha256 = _digest(row["claim_sha256"], name="native_claim_sha256")
+        if claim_sha256 != RSILedger._native_claim_digest(episode_id, request_sha256, plan_sha256):
+            raise RSILearningError("rsi_native_episode_claim_corrupt")
+        if type(row["created_at"]) is not str or not row["created_at"].strip():
+            raise RSILearningError("rsi_native_episode_claim_corrupt")
+        if type(status) is not str or not status.strip():
+            raise RSILearningError("rsi_native_episode_claim_corrupt")
+        return NativeEpisodeClaim(
+            episode_id, request_sha256, plan_sha256, status, claim_sha256, row["created_at"],
+        )
+
+    def inspect_native_episode_claim(
+        self, request: SolverRequest, *, plan_sha256: str,
+    ) -> NativeEpisodeClaim | None:
+        """Inspect a native claim without starting work or changing the ledger."""
+        if not isinstance(request, SolverRequest):
+            raise RSILearningError("rsi_native_episode_request_invalid")
+        plan_sha256 = self._native_claim_plan(plan_sha256)
+        request_sha256 = request.digest()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
+                (request.episode_id,),
+            ).fetchone()
+            if row is None:
+                result_status = self._native_result_status(connection, request.episode_id, request_sha256)
+                if result_status is not None:
+                    raise RSILearningError("rsi_native_episode_unclaimed_result")
+                return None
+            if row["request_sha256"] != request_sha256 or row["plan_sha256"] != plan_sha256:
+                raise RSILearningError("rsi_native_episode_claim_binding_drift")
+            status = self._native_result_status(connection, request.episode_id, request_sha256) or "started"
+            return self._native_claim_row(row, status=status)
+
+    def claim_native_episode(
+        self, request: SolverRequest, *, plan_sha256: str,
+    ) -> NativeEpisodeClaim:
+        """Atomically claim one episode before native launch.
+
+        The operation is create-only.  An existing started claim is a recovery gate and
+        never causes a second launch; an existing terminal result is replayable only when
+        both request and plan digests match exactly.
+        """
+        if not isinstance(request, SolverRequest):
+            raise RSILearningError("rsi_native_episode_request_invalid")
+        plan_sha256 = self._native_claim_plan(plan_sha256)
+        request_sha256 = request.digest()
+        claim_sha256 = self._native_claim_digest(request.episode_id, request_sha256, plan_sha256)
+        created_at = utc_now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
+                (request.episode_id,),
+            ).fetchone()
+            if row is not None:
+                if row["request_sha256"] != request_sha256 or row["plan_sha256"] != plan_sha256:
+                    raise RSILearningError("rsi_native_episode_claim_binding_drift")
+                status = self._native_result_status(connection, request.episode_id, request_sha256)
+                claim = self._native_claim_row(row, status=status or "started")
+                if status is None:
+                    raise RSILearningError("rsi_native_episode_recovery_required")
+                return claim
+            if self._native_result_status(connection, request.episode_id, request_sha256) is not None:
+                raise RSILearningError("rsi_native_episode_unclaimed_result")
+            connection.execute(
+                "INSERT INTO rsi_native_episode_claims VALUES (?, ?, ?, ?, ?)",
+                (request.episode_id, request_sha256, plan_sha256, claim_sha256, created_at),
+            )
+        return NativeEpisodeClaim(
+            request.episode_id, request_sha256, plan_sha256, "started", claim_sha256, created_at,
+        )
+
+    def publish_native_episode_result(
+        self, request: SolverRequest, *, plan_sha256: str, result: SolverResult,
+    ) -> NativeEpisodeClaim:
+        """Publish an exact result for a native claim and return its projected state."""
+        if not isinstance(request, SolverRequest) or not isinstance(result, SolverResult):
+            raise RSILearningError("rsi_native_episode_result_invalid")
+        if result.episode_id != request.episode_id or result.request_sha256 != request.digest():
+            raise RSILearningError("rsi_native_episode_result_request_mismatch")
+        plan_sha256 = self._native_claim_plan(plan_sha256)
+        request_sha256 = request.digest()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
+                (request.episode_id,),
+            ).fetchone()
+            if row is None:
+                raise RSILearningError("rsi_native_episode_claim_missing")
+            if row["request_sha256"] != request_sha256 or row["plan_sha256"] != plan_sha256:
+                raise RSILearningError("rsi_native_episode_claim_binding_drift")
+            existing = self._native_result_status(connection, request.episode_id, request_sha256)
+            if existing is not None:
+                saved = self.episode_result(request.episode_id)
+                if saved != (request, result):
+                    raise RSILearningError("rsi_native_episode_result_conflict")
+            else:
+                request_wire = canonical_json(request.to_dict(), maximum=128 * 1024).decode("utf-8")
+                result_wire = canonical_json(result.to_dict(), maximum=128 * 1024).decode("utf-8")
+                result_digest = hashlib.sha256(result_wire.encode("utf-8")).hexdigest()
+                connection.execute(
+                    "INSERT INTO rsi_episode_results VALUES (?, ?, ?, ?, ?, ?)",
+                    (request.episode_id, request_sha256, request_wire, result_wire, result_digest, utc_now()),
+                )
+            row = connection.execute(
+                "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
+                (request.episode_id,),
+            ).fetchone()
+            return self._native_claim_row(row, status=result.status)
+
+    def recover_native_episode_claim(
+        self, request: SolverRequest, *, plan_sha256: str,
+    ) -> NativeEpisodeClaim:
+        """Read a previously published terminal result; pending claims remain quarantined."""
+        claim = self.inspect_native_episode_claim(request, plan_sha256=plan_sha256)
+        if claim is None:
+            raise RSILearningError("rsi_native_episode_claim_missing")
+        if claim.status == "started":
+            raise RSILearningError("rsi_native_episode_recovery_required")
+        return claim
 
     def save_episode_result(self, request: SolverRequest, result: SolverResult) -> None:
         """Persist one immutable, request-bound solver result exactly once.
