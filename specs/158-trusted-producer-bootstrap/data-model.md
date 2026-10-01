@@ -41,6 +41,85 @@ TrustedBootstrapEvidence
   evidence_sha256
 ```
 
+Native attempt control inputs are deliberately outside the durable identity model:
+
+```text
+NativeTrustedAttemptControl (runtime input, not persisted as identity)
+  cancelled?            # process-local callback returning bool
+  parent_deadline?      # absolute monotonic timestamp in the caller's clock domain
+  effective_deadline    # min(intent_deadline, parent_deadline when supplied)
+
+The effective budget is retained before attestation consumption in a separate
+`native-trusted-attempt-deadline.json` record. It contains the launch, journal, intent and
+attestation bindings, the monotonic start and absolute deadline, the current OS boot identity,
+and a self-digest. The record is exclusive and immutable for the attempt. Recovery accepts it
+only on the same boot and passes the retained absolute deadline to cleanup; it never allocates a
+replacement deadline.
+```
+
+The effective deadline is consumed by every native control/frame wait, process wait, cleanup
+phase, broker wait, and receipt write. A callback exception or non-boolean result fails closed. A
+true cancellation observation can only become a `cancelled` process receipt after owner-checked
+cleanup is verified; otherwise the attempt remains `unknown`/`recovery_required`. These values are
+runtime controls, not launch/attestation identities, and are not allowed to widen budgets or
+authorize a replay.
+
+Native attempts drain stdout and stderr concurrently through bounded pipes. The
+`native-trusted-stream-capture.json` sidecar records one `ProducerStreamEvidence` object per
+stream, the output limit, launch/registration/deadline bindings, and a self-digest. The
+process-only terminal carries `stream_capture_sha256`; recovery rejects overflow, incomplete
+capture, digest rebinding, or malformed stream fields. This evidence is diagnostic and remains
+`publication_eligible=false`.
+
+After owner-checked cleanup, the attempt writes the create-only
+`native-trusted-cleanup.json` sidecar. It binds the registration, retained deadline, PID/PGID,
+cleanup status, TERM/KILL/alive flags, and a self-digest. The terminal carries
+`cleanup_sha256`, and recovery rechecks the sidecar before returning a terminal observation.
+Cleanup evidence cannot authorize a signal or publication by itself.
+
+`build_native_trusted_execution_receipt` is a strict projection into the formal Feature 156
+`ProducerExecutionReceipt`. It requires a passed native terminal, complete bounded streams,
+stable envelope evidence, complete host-broker coverage by default, target execution binding, and
+verified cleanup. The projection is side-effect free. The companion
+`persist_native_trusted_execution_receipt` is the create-only persistence boundary: it calls the
+same projection, writes `execution-receipt.json` with the existing bounded fsync/atomic
+no-follow writer using `exclusive=true`, then performs a bounded reread and validates the exact
+canonical self-digest and all bound evidence again. A missing receipt may be created once; an
+existing receipt is accepted only when its canonical bytes and `receipt_sha256` are exactly the
+same result (idempotent read-only replay). Any collision, changed bytes, symlink, non-regular
+file, digest mismatch, or failed reread is rejected and never replaced. This persists the formal
+receipt but does not enter population admission or publication; the publication transaction
+remains a separate integration step.
+
+The native process-only terminal includes `deadline_sha256` alongside the registration, handoff,
+and bootstrap-evidence digests. Recovery reconstructs the expected terminal against the retained
+deadline record, so a valid but rebound budget cannot detach from the original terminal.
+
+When the process terminal and same-attempt output capture both verify, an optional
+`native-trusted-execution-audit.json` sidecar may be created exactly once. It binds the launch,
+intent, attestation, formal registration, retained deadline, process terminal, and output-capture
+digests, records broker coverage, and fixes `publication_eligible=false`. This sidecar is a
+read-only lifecycle audit projection; it is not Feature 156's `execution-receipt.json` and cannot
+authorize publication or recovery signals.
+
+Consumers must use the read-only audit recovery API, which rechecks the underlying terminal,
+capture, deadline, and registration chain before accepting the sidecar. A missing, changed, or
+self-rehashed sidecar is invalid even when its summarized process records remain valid.
+
+The formal `execution-receipt.json` is the downstream handoff object. Feature 153 may require its
+`receipt_sha256` and must find the same receipt under the journal's derived batch directory with
+matching task identity and a completed, cleaned, broker-covered terminal. The publication journal
+stores only that digest; it does not copy or mutate the receipt. Legacy publication journals may
+omit the link, and this optional handoff does not authorize scheduler execution or bypass native
+recovery checks.
+
+When cancellation is observed after the gate and target start, the native attempt may persist the
+same process-only terminal schema with `process_status=cancelled` and `exit_code=null`. The receipt
+continues to bind registration, handoff, and the exact bootstrap evidence digest; unknown evidence
+is retained as unknown and is never upgraded to passed. Read-only recovery returns this receipt
+without signaling again. A callback error, expired deadline, pre-gate cancellation, or unverified
+cleanup cannot produce the cancelled terminal.
+
 `kind` is one of `bootstrap_ready`, `target_started`, `target_start_failed`, or `terminal`. Frames
 are bounded, canonical, ordered, and no-follow transport records; they contain no producer text,
 prompt, credential, provider response, or score. A successful evidence record requires the pinned

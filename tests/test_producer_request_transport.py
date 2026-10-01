@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -217,6 +218,8 @@ def test_durable_journal_replays_completed_and_uncertain_requests(tmp_path):
         ledger.finish(first, status="completed")
     assert os.stat(path).st_mode & 0o777 == 0o600
     recovery = read_host_request_journal(path, expected_identity=identity)
+    assert recovery.journal_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert recovery.journal_bytes == path.stat().st_size
     assert recovery.snapshot.admitted_count == 2
     assert recovery.snapshot.active_count == 1
     assert [(event.sequence, event.status, event.duration_ms) for event in recovery.snapshot.events] == [
@@ -224,6 +227,12 @@ def test_durable_journal_replays_completed_and_uncertain_requests(tmp_path):
     ]
     assert recovery.uncertain_request_ids == ("request-002",)
     assert not recovery.snapshot.within_broker_limits
+    _error(
+        "producer_request_transport_wall_timeout",
+        lambda: read_host_request_journal(
+            path, expected_identity=identity, deadline=1.0, monotonic=lambda: 1.0,
+        ),
+    )
 
 
 def test_journal_recovery_checks_identity_and_detects_tampering(tmp_path):
@@ -254,6 +263,62 @@ def test_journal_recovery_checks_identity_and_detects_tampering(tmp_path):
     )
 
 
+def test_journal_recovery_can_bind_to_original_file_identity(tmp_path):
+    path = tmp_path / "requests.log"
+    identity = _identity()
+    with HostRequestJournal.create(path, identity) as journal:
+        admission = HostRequestLedger(
+            request_timeout_seconds=1, max_requests=2, journal=journal,
+        ).admit("request-001")
+        assert admission.sequence == 1
+    original_identity = (
+        path.stat().st_dev,
+        path.stat().st_ino,
+    )
+    recovery = read_host_request_journal(
+        path, expected_identity=identity, expected_file_identity=original_identity,
+    )
+    assert recovery.journal_file_identity == original_identity
+
+    replacement = tmp_path / "replacement.log"
+    replacement.write_bytes(path.read_bytes())
+    replacement.chmod(0o600)
+    path.unlink()
+    replacement.rename(path)
+    _error(
+        "producer_request_transport_journal_replaced",
+        lambda: read_host_request_journal(
+            path, expected_identity=identity, expected_file_identity=original_identity,
+        ),
+    )
+
+
+def test_partial_append_is_recovery_invalid_and_never_admitted(tmp_path, monkeypatch):
+    path = tmp_path / "requests.log"
+    identity = _identity()
+    with HostRequestJournal.create(path, identity) as journal:
+        ledger = HostRequestLedger(
+            request_timeout_seconds=1, max_requests=2, journal=journal,
+        )
+        original_write_all = transport._write_all
+
+        def partial_write(fd, value):
+            os.write(fd, value[:3])
+            raise OSError("fixture partial append")
+
+        monkeypatch.setattr(transport, "_write_all", partial_write)
+        _error(
+            "producer_request_transport_journal_write_failed",
+            lambda: ledger.admit("request-001"),
+        )
+        assert ledger.snapshot().admitted_count == 0
+        monkeypatch.setattr(transport, "_write_all", original_write_all)
+    _error(
+        "producer_request_transport_journal_invalid",
+        lambda: read_host_request_journal(path, expected_identity=identity),
+    )
+
+
 def test_journal_rejects_existing_path_and_symbolic_links(tmp_path):
     identity = _identity()
     path = tmp_path / "requests.log"
@@ -277,6 +342,53 @@ def test_journal_rejects_existing_path_and_symbolic_links(tmp_path):
         "producer_request_transport_journal_path_invalid",
         lambda: HostRequestJournal.create(ancestor_link / "new.log", identity),
     )
+
+
+def test_journal_requires_private_owner_directory_and_file(tmp_path):
+    identity = _identity()
+    shared = tmp_path / "shared"
+    shared.mkdir(mode=0o755)
+    shared.chmod(0o755)
+    _error(
+        "producer_request_transport_journal_path_invalid",
+        lambda: HostRequestJournal.create(shared / "requests.log", identity),
+    )
+    assert not (shared / "requests.log").exists()
+
+    path = tmp_path / "requests.log"
+    with HostRequestJournal.create(path, identity):
+        pass
+    path.chmod(0o644)
+    _error(
+        "producer_request_transport_journal_path_invalid",
+        lambda: read_host_request_journal(path, expected_identity=identity),
+    )
+    path.chmod(0o600)
+    tmp_path.chmod(0o750)
+    _error(
+        "producer_request_transport_journal_path_invalid",
+        lambda: read_host_request_journal(path, expected_identity=identity),
+    )
+    tmp_path.chmod(0o700)
+
+
+@pytest.mark.parametrize("drift", ["file", "directory"])
+def test_journal_permission_drift_poisoned_before_next_admission(tmp_path, drift):
+    path = tmp_path / "requests.log"
+    with HostRequestJournal.create(path, _identity()) as journal:
+        ledger = HostRequestLedger(request_timeout_seconds=1, max_requests=2, journal=journal)
+        changed = path if drift == "file" else tmp_path
+        changed.chmod(0o644 if drift == "file" else 0o755)
+        _error(
+            "producer_request_transport_journal_path_invalid",
+            lambda: ledger.admit("request-001"),
+        )
+        assert ledger.snapshot().admitted_count == 0
+        changed.chmod(0o600 if drift == "file" else 0o700)
+        _error(
+            "producer_request_transport_journal_unavailable",
+            lambda: ledger.admit("request-001"),
+        )
 
 
 def test_journal_write_failure_poison_and_does_not_advance_ledger(tmp_path, monkeypatch):

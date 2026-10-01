@@ -5487,6 +5487,9 @@ class _BaseStrategy:
         seed_admission = existing.get("seed_admission")
         if seed_admission is not None:
             payload["seed_admission"] = seed_admission
+        producer_admissions = existing.get("producer_admissions")
+        if producer_admissions is not None:
+            payload["producer_admissions"] = producer_admissions
         for name in (
             "outcome_schema_version",
             "outcome_start_iteration",
@@ -5738,7 +5741,18 @@ class LoopStrategy:
         raise self._retired()
 
 
-def _tokens(candidate: Candidate, workspace: Path) -> set[str]:
+def _tokens(
+    candidate: Candidate,
+    workspace: Path,
+    source_overrides: Mapping[str, Mapping[str, bytes]] | None = None,
+) -> set[str]:
+    override = source_overrides.get(candidate.candidate_id) if source_overrides is not None else None
+    if override is not None:
+        try:
+            text = "\n".join(value.decode("utf-8") for value in override.values())
+        except (AttributeError, UnicodeDecodeError):
+            return set()
+        return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*|\d+", text))
     if candidate.bundle_evidence is not None:
         from .bundle_evolution import read_candidate_source_files
 
@@ -5761,13 +5775,18 @@ def _tokens(candidate: Candidate, workspace: Path) -> set[str]:
     return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*|\d+", text))
 
 
-def _novelty(candidate: Candidate, peers: Iterable[Candidate], workspace: Path) -> float:
-    current = _tokens(candidate, workspace)
+def _novelty(
+    candidate: Candidate,
+    peers: Iterable[Candidate],
+    workspace: Path,
+    source_overrides: Mapping[str, Mapping[str, bytes]] | None = None,
+) -> float:
+    current = _tokens(candidate, workspace, source_overrides)
     if not current:
         return 0.0
     distances = []
     for peer in peers:
-        other = _tokens(peer, workspace)
+        other = _tokens(peer, workspace, source_overrides)
         union = current | other
         distances.append(1.0 if not union else 1.0 - len(current & other) / len(union))
     return min(distances, default=1.0)
@@ -5836,10 +5855,12 @@ class PopulationStrategy(_BaseStrategy):
             and item.code == "evaluated"
             and item.candidate_id is not None
         }
+        producer_ids = self._producer_admission_ids(state, records)
         return frozenset(
             candidate.candidate_id
             for candidate in records
             if candidate.strategy == "population"
+            and candidate.candidate_id not in producer_ids
             and candidate.parent_id is None
             and candidate.generation == 0
             and candidate.iteration > 0
@@ -5855,6 +5876,128 @@ class PopulationStrategy(_BaseStrategy):
     def _capacity(self, island: int) -> int:
         base, remainder = divmod(self.config.population_size, self.config.num_islands)
         return base + (1 if island < remainder else 0)
+
+    def _producer_admission_events(
+        self,
+        state: Mapping[str, Any],
+        records: Sequence[Candidate],
+    ) -> tuple[tuple[int, tuple[str, ...]], ...]:
+        """Validate producer imports and return their ordered replay checkpoints."""
+
+        raw = state.get("producer_admissions")
+        if raw is None:
+            return ()
+        if (
+            not isinstance(raw, dict)
+            or set(raw) != {"schema_version", "events"}
+            or raw.get("schema_version") != "1"
+            or not isinstance(raw.get("events"), list)
+            or not raw["events"]
+            or len(raw["events"]) > 10_000
+        ):
+            raise EvolutionError("population_producer_admissions_invalid")
+        current_iteration = state.get("iteration")
+        if (
+            isinstance(current_iteration, bool)
+            or not isinstance(current_iteration, int)
+            or current_iteration < 0
+        ):
+            raise EvolutionError("population_producer_admissions_invalid")
+
+        records_by_id = {candidate.candidate_id: candidate for candidate in records}
+        admitted_ids: set[str] = set()
+        events: list[tuple[int, tuple[str, ...]]] = []
+        previous_iteration = -1
+        for event in raw["events"]:
+            if (
+                not isinstance(event, dict)
+                or set(event) != {"after_iteration", "candidate_ids"}
+            ):
+                raise EvolutionError("population_producer_admissions_invalid")
+            after_iteration = event["after_iteration"]
+            candidate_ids = event["candidate_ids"]
+            if (
+                isinstance(after_iteration, bool)
+                or not isinstance(after_iteration, int)
+                or not 0 <= after_iteration <= current_iteration
+                or after_iteration < previous_iteration
+                or not isinstance(candidate_ids, list)
+                or not candidate_ids
+                or len(candidate_ids) > 10_000
+            ):
+                raise EvolutionError("population_producer_admissions_invalid")
+            normalized_ids: list[str] = []
+            for candidate_id in candidate_ids:
+                try:
+                    candidate_id = _safe_id(candidate_id, "producer admission candidate_id")
+                except EvolutionError as exc:
+                    raise EvolutionError("population_producer_admissions_invalid") from exc
+                candidate = records_by_id.get(candidate_id)
+                if (
+                    candidate_id in admitted_ids
+                    or candidate is None
+                    or candidate.strategy != "population"
+                    or candidate.iteration != 0
+                    or candidate.generation != 0
+                    or candidate.parent_id is not None
+                    or candidate.evaluation.validity != 1
+                    or candidate.island_id is None
+                    or candidate.island_id >= self.config.num_islands
+                    or not isinstance(candidate.metadata, dict)
+                    or not isinstance(candidate.metadata.get("producer_bundle"), dict)
+                ):
+                    raise EvolutionError("population_producer_admissions_invalid")
+                admitted_ids.add(candidate_id)
+                normalized_ids.append(candidate_id)
+            events.append((after_iteration, tuple(normalized_ids)))
+            previous_iteration = after_iteration
+
+        marked_ids = {
+            candidate.candidate_id
+            for candidate in records
+            if isinstance(candidate.metadata, dict)
+            and "producer_bundle" in candidate.metadata
+        }
+        if marked_ids != admitted_ids:
+            raise EvolutionError("population_producer_admissions_invalid")
+        return tuple(events)
+
+    def _producer_admission_ids(
+        self,
+        state: Mapping[str, Any],
+        records: Sequence[Candidate],
+    ) -> frozenset[str]:
+        return frozenset(
+            candidate_id
+            for _after_iteration, candidate_ids in self._producer_admission_events(
+                state, records
+            )
+            for candidate_id in candidate_ids
+        )
+
+    def _apply_producer_admissions(
+        self,
+        candidate_ids: Sequence[str],
+        active: dict[int, list[str]],
+        records_by_id: Mapping[str, Candidate],
+        best_score: float | None,
+        stagnation: int,
+        *,
+        source_overrides: Mapping[str, Mapping[str, bytes]] | None = None,
+        records: Sequence[Candidate] | None = None,
+    ) -> tuple[float | None, int]:
+        for candidate_id in candidate_ids:
+            candidate = records_by_id[candidate_id]
+            assert candidate.island_id is not None
+            active[candidate.island_id].append(candidate_id)
+        if candidate_ids:
+            self._trim(active, source_overrides=source_overrides, records=records)
+            for candidate_id in candidate_ids:
+                score = records_by_id[candidate_id].evaluation.combined_score
+                if best_score is None or score > best_score:
+                    best_score = score
+                    stagnation = 0
+        return best_score, stagnation
 
     def _initial_seed_active(
         self,
@@ -6023,6 +6166,8 @@ class PopulationStrategy(_BaseStrategy):
         self,
         state: Mapping[str, Any],
         records: Sequence[Candidate],
+        *,
+        source_overrides: Mapping[str, Mapping[str, bytes]] | None = None,
     ) -> tuple[dict[int, list[str]], str | None, int, int]:
         """Replay deterministic active, best, migration, and stagnation state."""
 
@@ -6033,6 +6178,16 @@ class PopulationStrategy(_BaseStrategy):
             or current_iteration < 0
         ):
             raise EvolutionError("population state projection mismatch")
+        producer_events = self._producer_admission_events(state, records)
+        producer_ids = {
+            candidate_id
+            for _after_iteration, candidate_ids in producer_events
+            for candidate_id in candidate_ids
+        }
+        records_by_id = {candidate.candidate_id: candidate for candidate in records}
+        events_by_iteration: dict[int, list[str]] = {}
+        for after_iteration, candidate_ids in producer_events:
+            events_by_iteration.setdefault(after_iteration, []).extend(candidate_ids)
         active = {island: [] for island in range(self.config.num_islands)}
         seeds = [candidate for candidate in records if self.archive._is_seed_candidate(candidate)]
         initial = [
@@ -6040,6 +6195,7 @@ class PopulationStrategy(_BaseStrategy):
             for candidate in records
             if candidate.strategy == "population"
             and not self.archive._is_seed_candidate(candidate)
+            and candidate.candidate_id not in producer_ids
             and candidate.iteration == 0
         ]
         if seeds and initial:
@@ -6063,24 +6219,35 @@ class PopulationStrategy(_BaseStrategy):
                 if island is None or island not in active:
                     raise EvolutionError("population state projection mismatch")
                 active[island].append(candidate.candidate_id)
-            self._trim(active)
+            self._trim(active, source_overrides=source_overrides, records=records)
 
         initial_valid_scores = [
             candidate.evaluation.combined_score
             for candidate in records
             if candidate.strategy == "population"
+            and candidate.candidate_id not in producer_ids
             and candidate.iteration == 0
             and candidate.evaluation.validity == 1
         ]
         best_score = max(initial_valid_scores, default=None)
         stagnation = 0
         last_migration_iteration = 0
+        best_score, stagnation = self._apply_producer_admissions(
+            events_by_iteration.get(0, ()),
+            active,
+            records_by_id,
+            best_score,
+            stagnation,
+            source_overrides=source_overrides,
+            records=records,
+        )
         for iteration in range(1, current_iteration + 1):
             batch = [
                 candidate
                 for candidate in records
                 if candidate.strategy == "population"
                 and not self.archive._is_seed_candidate(candidate)
+                and candidate.candidate_id not in producer_ids
                 and candidate.iteration == iteration
             ]
             if not batch:
@@ -6109,6 +6276,15 @@ class PopulationStrategy(_BaseStrategy):
             else:
                 stagnation += 1
             best_score = current_score
+            best_score, stagnation = self._apply_producer_admissions(
+                events_by_iteration.get(iteration, ()),
+                active,
+                records_by_id,
+                best_score,
+                stagnation,
+                source_overrides=source_overrides,
+                records=records,
+            )
 
         visible_valid = [
             candidate
@@ -6317,17 +6493,36 @@ class PopulationStrategy(_BaseStrategy):
             )
         return active
 
-    def _candidates(self, ids: Iterable[str]) -> list[Candidate]:
-        by_id = {candidate.candidate_id: candidate for candidate in self.archive.records()}
+    def _candidates(
+        self,
+        ids: Iterable[str],
+        *,
+        records: Sequence[Candidate] | None = None,
+    ) -> list[Candidate]:
+        by_id = {
+            candidate.candidate_id: candidate
+            for candidate in (records if records is not None else self.archive.records())
+        }
         return [by_id[item] for item in ids if item in by_id]
 
-    def _rank(self, candidates: list[Candidate], all_active: list[Candidate]) -> list[Candidate]:
+    def _rank(
+        self,
+        candidates: list[Candidate],
+        all_active: list[Candidate],
+        *,
+        source_overrides: Mapping[str, Mapping[str, bytes]] | None = None,
+    ) -> list[Candidate]:
         return sorted(
             candidates,
             key=lambda item: (
                 item.evaluation.validity,
                 item.evaluation.combined_score,
-                _novelty(item, [peer for peer in all_active if peer.candidate_id != item.candidate_id], self.context.workspace),
+                _novelty(
+                    item,
+                    [peer for peer in all_active if peer.candidate_id != item.candidate_id],
+                    self.context.workspace,
+                    source_overrides,
+                ),
                 item.candidate_id,
             ),
             reverse=True,
@@ -6354,10 +6549,14 @@ class PopulationStrategy(_BaseStrategy):
         )
 
     def _family_elites(
-        self, candidates: list[Candidate], all_active: list[Candidate]
+        self,
+        candidates: list[Candidate],
+        all_active: list[Candidate],
+        *,
+        source_overrides: Mapping[str, Mapping[str, bytes]] | None = None,
     ) -> list[Candidate]:
         """Return the best valid candidate for every recognized family."""
-        ranked = self._rank(candidates, all_active)
+        ranked = self._rank(candidates, all_active, source_overrides=source_overrides)
         elites: list[Candidate] = []
         seen: set[str] = set()
         for candidate in ranked:
@@ -6370,11 +6569,19 @@ class PopulationStrategy(_BaseStrategy):
             elites.append(candidate)
         return elites
 
-    def _trim(self, active: dict[int, list[str]]) -> None:
-        all_active = self._candidates(item for ids in active.values() for item in ids)
+    def _trim(
+        self,
+        active: dict[int, list[str]],
+        *,
+        source_overrides: Mapping[str, Mapping[str, bytes]] | None = None,
+        records: Sequence[Candidate] | None = None,
+    ) -> None:
+        all_active = self._candidates(
+            (item for ids in active.values() for item in ids), records=records
+        )
         for island in range(self.config.num_islands):
-            candidates = self._candidates(active[island])
-            ranked = self._rank(candidates, all_active)
+            candidates = self._candidates(active[island], records=records)
+            ranked = self._rank(candidates, all_active, source_overrides=source_overrides)
             capacity = self._capacity(island)
             selected: list[Candidate] = []
             selected_ids: set[str] = set()
@@ -6383,7 +6590,9 @@ class PopulationStrategy(_BaseStrategy):
             if valid:
                 selected.append(valid[0])
                 selected_ids.add(valid[0].candidate_id)
-            for elite in self._family_elites(candidates, all_active):
+            for elite in self._family_elites(
+                candidates, all_active, source_overrides=source_overrides,
+            ):
                 if len(selected) >= capacity:
                     break
                 if elite.candidate_id not in selected_ids:
@@ -6519,6 +6728,7 @@ class PopulationStrategy(_BaseStrategy):
                 raise EvolutionError("population_outcome_state_mismatch")
         if any(candidate.strategy != "population" for candidate in validated_records):
             raise EvolutionError("population_outcome_state_mismatch")
+        producer_ids = self._producer_admission_ids(state, validated_records)
         pending = self._pending_offspring(state)
         failed_iteration = state.get("failed_offspring_iteration")
         failed_digest = state.get("failed_offspring_sha256")
@@ -6649,7 +6859,10 @@ class PopulationStrategy(_BaseStrategy):
         if self._outcome_digest(completed_prefix) != watermark_digest:
             raise EvolutionError("population_outcome_state_mismatch")
         baseline = [
-            candidate for candidate in validated_records if candidate.iteration < start_iteration
+            candidate
+            for candidate in validated_records
+            if candidate.iteration < start_iteration
+            and candidate.candidate_id not in producer_ids
         ]
         if self._candidate_digest(baseline) != baseline_digest:
             raise EvolutionError("population_outcome_state_mismatch")
@@ -6743,6 +6956,8 @@ class PopulationStrategy(_BaseStrategy):
                 candidate
                 for candidate in records
                 if candidate.iteration < start_iteration
+                and candidate.candidate_id
+                not in self._producer_admission_ids(state, records)
             ),
         )
         current = self.archive.best()

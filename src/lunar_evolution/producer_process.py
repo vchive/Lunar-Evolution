@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
+import re
 import secrets
 import selectors
 import stat
@@ -36,6 +38,7 @@ from .producer_launcher import (
     ProducerLaunchIntent,
     verify_producer_launch_attestation,
 )
+from .producer_request_evidence import MAX_REQUEST_EVENTS
 
 PRODUCER_PROCESS_PROTOCOL = "lunar-producer-process-execution-v1"
 GATE_ENV = "LUNAR_PRODUCER_GATE_FD"
@@ -50,6 +53,19 @@ _SNAPSHOT_PATHS = {
     "target": ".producer-snapshots/target",
 }
 _RECOVERY_LOCK_PROTOCOL = "journal-flock-v1"
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+_RECEIPT_FIELDS = frozenset({
+    "schema_version", "protocol", "launch_id", "journal_id", "run_id", "parent_task_id",
+    "task_id", "intent_sha256", "attestation_sha256", "consumption_sha256",
+    "registration_sha256", "executable_identity", "pid", "pgid", "owner_identity",
+    "gate_released", "request_timeout_seconds", "max_requests", "output_max_bytes",
+    "wall_timeout_seconds", "request_count", "exit_code", "stdout_evidence", "stderr_evidence",
+    "envelope_evidence", "cleanup_status", "cleanup_sha256", "execution_binding",
+    "execution_snapshot_relative_path", "execution_snapshot_sha256", "execution_snapshot_size",
+    "status", "failure_code", "previous_receipt_sha256", "receipt_sha256",
+})
+_RECEIPT_OPTIONAL_FIELDS = frozenset({"trusted_execution"})
 
 
 class ProducerProcessError(ValueError):
@@ -766,6 +782,147 @@ class ProducerExecutionReceipt:
         return _digest_without(self.to_dict(), "receipt_sha256")
 
 
+def parse_producer_execution_receipt(value: object) -> ProducerExecutionReceipt:
+    """Parse one complete, self-authenticating process receipt.
+
+    Publication code must consume the formal Feature 156 DTO rather than trusting a
+    handful of copied status fields.  The parser therefore rejects unknown or missing
+    fields and rebuilds the nested evidence objects before the DTO verifies its own
+    canonical digest.
+    """
+    if not isinstance(value, dict):
+        _fail("producer_process_receipt_schema_invalid")
+    keys = set(value)
+    if keys - (_RECEIPT_FIELDS | _RECEIPT_OPTIONAL_FIELDS) or not _RECEIPT_FIELDS <= keys:
+        _fail("producer_process_receipt_schema_invalid")
+
+    def _nested(raw: object, expected: frozenset[str], code: str) -> dict[str, object]:
+        if not isinstance(raw, dict) or set(raw) != expected:
+            _fail(code)
+        return raw
+
+    stream_fields = frozenset({"stream", "bytes_observed", "sha256", "truncated", "capture_status"})
+    stdout = _nested(value.get("stdout_evidence"), stream_fields, "producer_process_receipt_stream_invalid")
+    stderr = _nested(value.get("stderr_evidence"), stream_fields, "producer_process_receipt_stream_invalid")
+    envelope_value = value.get("envelope_evidence")
+    envelope = None
+    if envelope_value is not None:
+        envelope_fields = frozenset({
+            "relative_path", "sha256", "bytes", "device", "inode", "mtime_ns", "ctime_ns",
+            "identity_before", "identity_after", "read_status",
+        })
+        envelope = _nested(envelope_value, envelope_fields, "producer_process_receipt_envelope_invalid")
+    owner = value.get("owner_identity")
+    if not isinstance(owner, dict):
+        _fail("producer_process_receipt_owner_identity_invalid")
+    trusted = value.get("trusted_execution")
+    if trusted is not None:
+        _validate_trusted_execution(trusted, value)
+    try:
+        return ProducerExecutionReceipt(
+            **{
+                **value,
+                "stdout_evidence": ProducerStreamEvidence(**stdout),
+                "stderr_evidence": ProducerStreamEvidence(**stderr),
+                "envelope_evidence": None if envelope is None else ProducerEnvelopeEvidence(**envelope),
+                "owner_identity": owner,
+                "trusted_execution": trusted,
+            }
+        )
+    except ProducerProcessError:
+        raise
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ProducerProcessError("producer_process_receipt_schema_invalid") from exc
+
+
+def _validate_trusted_execution(value: object, receipt: Mapping[str, object]) -> None:
+    """Validate the native receipt's broker projection as a closed schema.
+
+    ``trusted_execution`` is optional for portable process receipts, but once present it is
+    consumed as formal evidence by native publication.  In particular, a brokered receipt
+    must retain the journal's device/inode pair and the exact journal identity.  Accepting a
+    same-content replacement here would let a recovery caller bind evidence to a different
+    file after a crash, so all nested keys and bindings are checked before the DTO is built.
+    """
+    if not isinstance(value, dict):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    base = {
+        "terminal_sha256", "stream_capture_sha256", "output_capture_sha256", "cleanup_sha256",
+        "broker_coverage",
+    }
+    if not base <= set(value):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field in ("terminal_sha256", "stream_capture_sha256", "output_capture_sha256", "cleanup_sha256"):
+        item = value.get(field)
+        if type(item) is not str or _SHA256.fullmatch(item) is None:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    coverage = value.get("broker_coverage")
+    if coverage == "none":
+        if set(value) != base:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+        return
+    broker_fields = {
+        "broker_journal_relative_path", "broker_journal_identity", "broker_journal_file_identity",
+        "broker_journal_sha256", "broker_journal_bytes", "broker_admitted_count",
+        "broker_declared_count_matches",
+    }
+    if coverage != "brokered_requests_only" or set(value) != base | broker_fields:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    if value.get("broker_journal_relative_path") != ".host-request-journal/requests":
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    journal_sha = value.get("broker_journal_sha256")
+    if type(journal_sha) is not str or _SHA256.fullmatch(journal_sha) is None:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    file_identity = value.get("broker_journal_file_identity")
+    if (
+        type(file_identity) is not list or len(file_identity) != 2
+        or any(type(item) is not int or item < 0 for item in file_identity)
+    ):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field in ("broker_journal_bytes", "broker_admitted_count"):
+        item = value.get(field)
+        if type(item) is not int or item < 0:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    if type(value.get("broker_declared_count_matches")) is not bool:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    identity = value.get("broker_journal_identity")
+    if not isinstance(identity, dict):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    # The journal identity is serialized by HostRequestJournalIdentity.to_dict().  Keep the
+    # parser independent of that implementation while enforcing its canonical key set.
+    identity_keys = {
+        "launch_id", "journal_id", "run_id", "parent_task_id", "task_id", "intent_sha256",
+        "request_timeout_seconds", "max_requests", "wall_deadline_ns",
+    }
+    if set(identity) != identity_keys:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field in ("launch_id", "journal_id", "run_id", "parent_task_id", "task_id"):
+        item = identity.get(field)
+        if type(item) is not str or not item or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", item):
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    if type(identity.get("intent_sha256")) is not str or _SHA256.fullmatch(identity["intent_sha256"]) is None:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    for field, lower, upper in (("request_timeout_seconds", 1, 86_400), ("max_requests", 1, MAX_REQUEST_EVENTS)):
+        item = identity.get(field)
+        if type(item) is not int or not lower <= item <= upper:
+            _fail("producer_process_receipt_trusted_execution_invalid")
+    deadline = identity.get("wall_deadline_ns")
+    if type(deadline) is not int or not 0 < deadline < 2**63:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    bindings = {
+        "launch_id": receipt.get("launch_id"), "journal_id": receipt.get("journal_id"),
+        "run_id": receipt.get("run_id"), "parent_task_id": receipt.get("parent_task_id"),
+        "task_id": receipt.get("task_id"), "intent_sha256": receipt.get("intent_sha256"),
+        "request_timeout_seconds": receipt.get("request_timeout_seconds"),
+        "max_requests": receipt.get("max_requests"),
+    }
+    if any(identity.get(field) != expected for field, expected in bindings.items()):
+        _fail("producer_process_receipt_trusted_execution_invalid")
+    receipt_max_requests = receipt.get("max_requests")
+    if type(receipt_max_requests) is not int or value["broker_admitted_count"] > receipt_max_requests:
+        _fail("producer_process_receipt_trusted_execution_invalid")
+
+
 def _stream_evidence(name: str, state: dict[str, object]) -> ProducerStreamEvidence:
     return ProducerStreamEvidence(
         stream=name,
@@ -776,6 +933,13 @@ def _stream_evidence(name: str, state: dict[str, object]) -> ProducerStreamEvide
     )
 
 
+def _empty_stream_evidence(name: str) -> ProducerStreamEvidence:
+    return ProducerStreamEvidence(
+        stream=name, bytes_observed=0, sha256=hashlib.sha256(b"").hexdigest(),
+        truncated=False, capture_status="complete",
+    )
+
+
 def _capture(
     process: subprocess.Popen[bytes],
     *,
@@ -783,6 +947,7 @@ def _capture(
     deadline: float,
     monotonic: Callable[[], float],
     on_exited_leader: Callable[[], bool] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[ProducerStreamEvidence, ProducerStreamEvidence, bool, bool]:
     selector = selectors.DefaultSelector()
     states: dict[str, dict[str, object]] = {
@@ -798,6 +963,8 @@ def _capture(
     exited_leader_handled = False
     try:
         while True:
+            if cancel_check is not None and cancel_check():
+                break
             leader_exited = process.poll() is not None
             if not selector.get_map() and leader_exited:
                 break
@@ -924,12 +1091,43 @@ def _cleanup(
         registration, grace_seconds=remaining, monotonic=monotonic,
         deadline=deadline,
         allow_exited_leader_initial=process.poll() is not None,
+        reap_child=process.poll,
     )
 
 
 def _remaining_timeout(deadline: float, monotonic: Callable[[], float]) -> float:
     """Return a wait timeout that cannot extend the lifecycle deadline."""
     return max(0.0, deadline - monotonic())
+
+
+def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
+    """Observe caller cancellation without allowing a faulty callback to escape ambiguity."""
+    if cancelled is None:
+        return False
+    try:
+        value = cancelled()
+    except Exception as exc:
+        raise ProducerProcessError("producer_process_cancellation_unknown") from exc
+    if not isinstance(value, bool):
+        raise ProducerProcessError("producer_process_cancellation_invalid")
+    return value
+
+
+def _compose_parent_deadline(
+    intent: ProducerLaunchIntent,
+    monotonic: Callable[[], float],
+    parent_deadline: float | None,
+) -> float:
+    """Compose an optional caller deadline in the same monotonic clock domain."""
+    started = monotonic()
+    if type(started) not in (int, float) or not math.isfinite(float(started)):
+        _fail("producer_process_clock_invalid")
+    own_deadline = float(started) + float(intent.wall_timeout_seconds)
+    if parent_deadline is None:
+        return own_deadline
+    if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
+        _fail("producer_process_parent_deadline_invalid")
+    return min(own_deadline, float(parent_deadline))
 
 
 def _run_producer_process(
@@ -942,13 +1140,19 @@ def _run_producer_process(
     expected_parent_task_id: str | None = None,
     expected_task_id: str | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
     popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
     recovery_lock_identity: tuple[int, int],
 ) -> ProducerExecutionReceipt:
     """Run one exact producer attempt and return a durable terminal receipt."""
     if not isinstance(intent, ProducerLaunchIntent):
         _fail("producer_process_intent_invalid")
-    deadline = monotonic() + float(intent.wall_timeout_seconds)
+    if cancelled is not None and not callable(cancelled):
+        _fail("producer_process_cancellation_invalid")
+    if _observe_cancellation(cancelled):
+        _fail("producer_process_cancelled")
+    deadline = _compose_parent_deadline(intent, monotonic, parent_deadline)
     try:
         verify_producer_launch_attestation(intent, attestation)
     except ProducerLaunchError as exc:
@@ -1022,6 +1226,8 @@ def _run_producer_process(
     registration_digest = ""
     registration: RegisteredProcess | None = None
     try:
+        if _observe_cancellation(cancelled):
+            _fail("producer_process_cancelled")
         if monotonic() >= deadline:
             _fail("producer_process_wall_timeout")
         env = {"PATH": os.defpath, "LANG": "C", GATE_ENV: str(gate_read)}
@@ -1096,6 +1302,16 @@ def _run_producer_process(
         registration_payload["registration_sha256"] = _digest_without(registration_payload, "registration_sha256")
         _atomic_json(batch / "process-registration.json", registration_payload, exclusive=True)
         registration_digest = str(registration_payload["registration_sha256"])
+        if _observe_cancellation(cancelled):
+            cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+            verified = cleanup_result.status in {ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED}
+            return _persist_receipt(
+                batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                process.pid, pgid, gate_released, _empty_stream_evidence("stdout"),
+                _empty_stream_evidence("stderr"), None, cleanup_result,
+                "cancelled" if verified else "unknown",
+                None if verified else "producer_process_cleanup_unknown",
+            )
         if monotonic() >= deadline:
             _fail("producer_process_wall_timeout")
         os.write(gate_write, b"1")
@@ -1111,10 +1327,28 @@ def _run_producer_process(
                 ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED,
             }
 
+        cancellation_observed = False
+
+        def observe_capture_cancellation() -> bool:
+            nonlocal cancellation_observed
+            cancellation_observed = _observe_cancellation(cancelled)
+            return cancellation_observed
+
         stdout, stderr, overflow, timed_out = _capture(
             process, limit=intent.output_max_bytes, deadline=deadline, monotonic=monotonic,
-            on_exited_leader=cleanup_exited_leader,
+            on_exited_leader=cleanup_exited_leader, cancel_check=observe_capture_cancellation,
         )
+        if cancellation_observed:
+            cleanup_result = exited_leader_cleanup or _cleanup(
+                registration, process, deadline=deadline, monotonic=monotonic,
+            )
+            verified = cleanup_result.status in {ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED}
+            return _persist_receipt(
+                batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                process.pid, pgid, gate_released, stdout, stderr, None, cleanup_result,
+                "cancelled" if verified else "unknown",
+                None if verified else "producer_process_cleanup_unknown",
+            )
         if exited_leader_cleanup is not None and exited_leader_cleanup.status not in {
             ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED,
         }:
@@ -1143,14 +1377,29 @@ def _run_producer_process(
                 batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot, process.pid, pgid,
                 gate_released, stdout, stderr, None, cleanup_result, status, failure,
             )
-        try:
-            exit_code = process.wait(timeout=_remaining_timeout(deadline, monotonic))
-        except subprocess.TimeoutExpired:
-            cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
-            return _persist_receipt(
-                batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot, process.pid, pgid,
-                gate_released, stdout, stderr, None, cleanup_result, "unknown", "producer_process_wall_timeout",
-            )
+        while True:
+            if _observe_cancellation(cancelled):
+                cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+                verified = cleanup_result.status in {ProcessCleanupStatus.ALREADY_EXITED, ProcessCleanupStatus.CLEANED}
+                return _persist_receipt(
+                    batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                    process.pid, pgid, gate_released, stdout, stderr, None, cleanup_result,
+                    "cancelled" if verified else "unknown",
+                    None if verified else "producer_process_cleanup_unknown",
+                )
+            remaining = _remaining_timeout(deadline, monotonic)
+            if remaining <= 0:
+                cleanup_result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+                return _persist_receipt(
+                    batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot,
+                    process.pid, pgid, gate_released, stdout, stderr, None, cleanup_result,
+                    "unknown", "producer_process_wall_timeout",
+                )
+            try:
+                exit_code = process.wait(timeout=min(0.05, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
         cleanup_result = exited_leader_cleanup or _cleanup(
             registration, process, deadline=deadline, monotonic=monotonic,
         )
@@ -1225,6 +1474,8 @@ def run_producer_process(
     expected_parent_task_id: str | None = None,
     expected_task_id: str | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
     popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
 ) -> ProducerExecutionReceipt:
     """Hold the per-journal ownership lock through the entire process attempt."""
@@ -1239,7 +1490,8 @@ def run_producer_process(
         return _run_producer_process(
             workspace, intent=intent, attestation=attestation, producer_root=producer_root,
             expected_run_id=expected_run_id, expected_parent_task_id=expected_parent_task_id,
-            expected_task_id=expected_task_id, monotonic=monotonic,
+            expected_task_id=expected_task_id, monotonic=monotonic, cancelled=cancelled,
+            parent_deadline=parent_deadline,
             popen_factory=popen_factory, recovery_lock_identity=lock_identity,
         )
 
@@ -1303,6 +1555,8 @@ class ProducerProcessRunner:
         expected_parent_task_id: str | None = None,
         expected_task_id: str | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        cancelled: Callable[[], bool] | None = None,
+        parent_deadline: float | None = None,
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
     ) -> ProducerExecutionReceipt:
         workspace_path = Path(workspace)
@@ -1316,6 +1570,8 @@ class ProducerProcessRunner:
             expected_parent_task_id=expected_parent_task_id,
             expected_task_id=expected_task_id,
             monotonic=monotonic,
+            cancelled=cancelled,
+            parent_deadline=parent_deadline,
             popen_factory=popen_factory,
         )
 
@@ -1582,9 +1838,18 @@ execute_producer_process = run_producer_process
 
 
 __all__ = [
-    "GATE_ENV", "PRODUCER_PROCESS_PROTOCOL",
-    "ProducerAttestationConsumption", "ProducerEnvelopeEvidence", "ProducerExecutionReceipt",
-    "ProducerProcessError", "ProducerProcessRegistration", "ProducerProcessRunner",
-    "ProducerStreamEvidence", "execute_producer_process", "launch_producer_process",
-    "recover_producer_process", "run_producer_process",
+    "GATE_ENV",
+    "PRODUCER_PROCESS_PROTOCOL",
+    "ProducerAttestationConsumption",
+    "ProducerEnvelopeEvidence",
+    "ProducerExecutionReceipt",
+    "ProducerProcessError",
+    "ProducerProcessRegistration",
+    "ProducerProcessRunner",
+    "ProducerStreamEvidence",
+    "execute_producer_process",
+    "launch_producer_process",
+    "parse_producer_execution_receipt",
+    "recover_producer_process",
+    "run_producer_process",
 ]

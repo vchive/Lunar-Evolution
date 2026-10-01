@@ -39,13 +39,15 @@ _JOURNAL_FIELDS = {
     "population_config_sha256", "num_islands", "candidates", "state", "publication_phase",
     "terminal_marker_sha256", "archive_after_sha256", "state_after_sha256", "journal_sha256",
 }
-_STATES = frozenset({"prepared", "executing", "publishing", "published", "failed", "unknown"})
+_JOURNAL_OPTIONAL_FIELDS = {"native_execution_receipt_sha256"}
+_STATES = frozenset({"prepared", "executing", "publishing", "published", "all_rejected", "failed", "unknown"})
 _PHASES = frozenset({"preflight", "staged", "committed", "recovery_required"})
 _STATE_PHASES = {
     "prepared": "preflight",
     "executing": "staged",
     "publishing": "staged",
     "published": "committed",
+    "all_rejected": "committed",
     "failed": "recovery_required",
     "unknown": "recovery_required",
 }
@@ -206,6 +208,9 @@ class ProducerBundlePublicationJournal:
     terminal_marker_sha256: str | None = None
     archive_after_sha256: str | None = None
     state_after_sha256: str | None = None
+    # Optional Feature 156 formal process receipt identity.  It is omitted from legacy
+    # journals when absent so their canonical bytes and digest remain unchanged.
+    native_execution_receipt_sha256: str | None = None
     journal_sha256: str | None = None
     schema_version: str = _SCHEMA_VERSION
     protocol: str = _PROTOCOL
@@ -265,6 +270,7 @@ class ProducerBundlePublicationJournal:
             ("terminal_marker_sha256", self.terminal_marker_sha256),
             ("archive_after_sha256", self.archive_after_sha256),
             ("state_after_sha256", self.state_after_sha256),
+            ("native_execution_receipt_sha256", self.native_execution_receipt_sha256),
             ("journal_sha256", self.journal_sha256),
         ):
             if value is not None:
@@ -282,10 +288,23 @@ class ProducerBundlePublicationJournal:
             not statuses <= {"admitted", "rejected"} or "admitted" not in statuses
         ):
             _fail("producer_bundle_publication_state_candidates_invalid")
+        if self.state == "all_rejected" and statuses != {"rejected"}:
+            _fail("producer_bundle_publication_state_candidates_invalid")
         if self.state not in {"unknown", "failed"} and "unknown" in statuses:
             _fail("producer_bundle_publication_state_candidates_invalid")
         terminal = (self.terminal_marker_sha256, self.archive_after_sha256, self.state_after_sha256)
-        if self.state == "published":
+        if self.state == "all_rejected":
+            if (
+                any(value is None for value in terminal)
+                or self.archive_after_sha256 != self.base_archive_sha256
+                or self.state_after_sha256 != self.base_state_sha256
+                or any(item.execution_receipt_sha256 is None
+                       or item.evaluation_receipt_sha256 is None
+                       or item.publication_receipt_sha256 is not None
+                       for item in self.candidates)
+            ):
+                _fail("producer_bundle_publication_terminal_evidence_invalid")
+        elif self.state == "published":
             if any(value is None for value in terminal) or any(
                 item.status == "admitted" and item.publication_receipt_sha256 is None
                 for item in self.candidates
@@ -337,6 +356,8 @@ class ProducerBundlePublicationJournal:
             "archive_after_sha256": self.archive_after_sha256,
             "state_after_sha256": self.state_after_sha256,
         }
+        if self.native_execution_receipt_sha256 is not None:
+            value["native_execution_receipt_sha256"] = self.native_execution_receipt_sha256
         if include_journal_sha256:
             value["journal_sha256"] = self.journal_sha256
         return value
@@ -352,7 +373,14 @@ class ProducerBundlePublicationJournal:
 
     @classmethod
     def from_dict(cls, value: object) -> ProducerBundlePublicationJournal:
-        raw = _object(value, _JOURNAL_FIELDS, "producer_bundle_publication_schema_invalid")
+        if not isinstance(value, dict):
+            _fail("producer_bundle_publication_schema_invalid")
+        keys = set(value)
+        if keys != _JOURNAL_FIELDS and keys != _JOURNAL_FIELDS | _JOURNAL_OPTIONAL_FIELDS:
+            _fail("producer_bundle_publication_schema_invalid")
+        raw = value
+        if "native_execution_receipt_sha256" in raw and raw["native_execution_receipt_sha256"] is None:
+            _fail("producer_bundle_publication_execution_receipt_link_invalid")
         _digest(raw["journal_sha256"], "producer_bundle_publication_journal_sha256_invalid")
         if not isinstance(raw["candidates"], list) or not 1 <= len(raw["candidates"]) <= MAX_PUBLICATION_CANDIDATES:
             _fail("producer_bundle_publication_candidates_invalid")

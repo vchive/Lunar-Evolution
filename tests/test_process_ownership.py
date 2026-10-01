@@ -84,6 +84,73 @@ def test_absolute_deadline_bounds_both_cleanup_phases(monkeypatch: pytest.Monkey
     assert sent == [(654, signal.SIGTERM), (654, signal.SIGKILL)]
 
 
+@pytest.mark.parametrize("exit_signal", [signal.SIGTERM, signal.SIGKILL])
+def test_owned_child_is_reaped_before_every_group_probe_without_deadline_extension(monkeypatch, exit_signal):
+    state = {"terminated": False, "reaped": False}
+    events = []
+    registration = RegisteredProcess(321, 321, owner_check=lambda: True)
+    monkeypatch.setattr("lunar_evolution.process_ownership.os.getpgid", lambda _pid: 321)
+
+    def poll_child():
+        events.append("poll")
+        if state["terminated"]:
+            state["reaped"] = True
+        return 0 if state["reaped"] else None
+
+    def group_alive(_pgid):
+        assert events[-1] == "poll"
+        events.append("probe")
+        return not state["reaped"]
+
+    def send(_pgid, sig):
+        events.append(sig)
+        if sig == exit_signal:
+            state["terminated"] = True
+
+    monkeypatch.setattr("lunar_evolution.process_ownership._group_alive", group_alive)
+    monkeypatch.setattr("lunar_evolution.process_ownership.os.killpg", send)
+    result = cleanup_registered_process(
+        registration, deadline=0.0, monotonic=lambda: 1.0,
+        reap_child=poll_child, sleep=lambda _seconds: pytest.fail("expired deadline must not wait"),
+    )
+    assert result.status is ProcessCleanupStatus.CLEANED
+    assert result.term_sent
+    assert result.kill_sent is (exit_signal == signal.SIGKILL)
+    assert state["reaped"]
+
+
+@pytest.mark.parametrize("failed_probe", [1, 2, 3])
+def test_child_reap_callback_failure_remains_unknown_and_preserves_signal_history(monkeypatch, failed_probe):
+    polls = 0
+    sent = []
+    registration = RegisteredProcess(321, 321, owner_check=lambda: True)
+    monkeypatch.setattr("lunar_evolution.process_ownership.os.getpgid", lambda _pid: 321)
+    monkeypatch.setattr("lunar_evolution.process_ownership._group_alive", lambda _pgid: True)
+    monkeypatch.setattr("lunar_evolution.process_ownership.os.killpg", lambda _pgid, sig: sent.append(sig))
+
+    def poll_child():
+        nonlocal polls
+        polls += 1
+        if polls == failed_probe:
+            raise RuntimeError("private callback detail")
+
+    result = cleanup_registered_process(
+        registration, deadline=0.0, monotonic=lambda: 1.0, reap_child=poll_child,
+    )
+    assert result.status is ProcessCleanupStatus.CALLBACK_FAILED
+    assert result.alive_after
+    assert result.error == "RuntimeError"
+    assert sent == [signal.SIGTERM, signal.SIGKILL][:failed_probe - 1]
+    assert result.term_sent is (failed_probe > 1)
+    assert result.kill_sent is (failed_probe > 2)
+
+
+def test_invalid_child_reap_hook_is_rejected_before_probe(monkeypatch):
+    monkeypatch.setattr("lunar_evolution.process_ownership._group_alive", lambda _pgid: pytest.fail("must not probe"))
+    result = cleanup_registered_process(RegisteredProcess(321, 321), reap_child=True)
+    assert result.status is ProcessCleanupStatus.INVALID_REGISTRATION
+
+
 def test_term_signal_failure_is_uncertain_and_does_not_escalate(monkeypatch: pytest.MonkeyPatch) -> None:
     registration = RegisteredProcess(321, 654, owner_check=lambda: True)
     monkeypatch.setattr("lunar_evolution.process_ownership.os.getpgid", lambda _pid: 654)

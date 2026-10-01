@@ -1,5 +1,39 @@
 # Feature 156 validation
 
+## Active cancellation follow-up (2026-09-30)
+
+The cooperative local runner accepts an optional process-local `cancelled` callback and observes it
+before launch, after registration, inside the nonblocking capture loop, and during leader wait. A
+verified owner-checked cleanup produces one durable `cancelled` execution receipt; cleanup
+uncertainty remains `unknown`, and callback exceptions or non-boolean values fail closed before
+spawn. It also accepts an optional caller `parent_deadline` in the same monotonic clock domain and
+takes the earlier of the intent and parent deadlines. Focused producer-process/lifecycle tests pass
+**83 passed, 2 skipped** after this slice.
+This does not claim trusted bootstrap admission, host-observed requests, scheduler integration or
+real producer acceptance.
+
+## Cooperative preparation terminal checkpoint (2026-09-28)
+
+`run_producer_lifecycle` now returns explicit terminal, cleanup, execution-outcome and deadline-scope
+fields only after the process receipt is completed with zero exit, gate release, verified cleanup,
+stable envelope evidence, and a matching durable terminal receipt chain. The focused provider-free
+tests cover success, unknown terminal, unverified cleanup, missing envelope evidence, receipt-chain
+drift and post-execution envelope replacement. The wall-clock deadline covers the process attempt;
+the later bundle/draft/plan preparation is outside that deadline. This is supporting cooperative
+preparation only, without trusted bootstrap admission, host-observed request enforcement, evaluator
+execution or publication.
+
+## Native process-terminal follow-up (2026-09-28)
+
+The provider-free native attempt now persists a process-only terminal receipt after a known exit,
+verified process-group cleanup, and durable cross-record bootstrap evidence. Its recovery reader
+checks the exact registration/handoff/evidence chain and rejects receipt tampering. A missing
+terminal permits only explicit owner-checked cleanup and an unknown recovery receipt, never a
+replacement launch. The native attempt focused suite passes **13 tests** on Darwin, including a
+live registered group left by an interrupted cleanup. This does
+not close broader Feature 156 acceptance: stdout/stderr capture, result-envelope validation,
+host-observed requests, and scheduler/publication integration remain open.
+
 ## Cross-feature lifecycle acceptance matrix (`2026-09-28`)
 
 The provider-free lifecycle evidence is now indexed in the [acceptance matrix](acceptance-matrix.md).
@@ -101,6 +135,45 @@ The current provider-free matrix includes simultaneous stdout/stderr overflow wi
 explicit shell/session/stdin/environment assertions, and a hostile executable that writes a durable
 side effect before reading the gate. The hostile case is intentionally negative evidence: the
 ordinary runner cannot prove pre-gate non-execution, so it does not satisfy T156-12 or T158-04.
+
+The native formal-receipt acceptance row additionally requires create-only persistence after the
+strict evidence projection. The first call must durably create one canonical `execution-receipt.json`
+and a bounded reread must recover the identical receipt digest. A second call with unchanged
+evidence must succeed without rewriting bytes. Existing different bytes, self-digest tampering,
+symlink/non-regular destinations, and any missing or rebound evidence must fail closed without
+replacement or a second attestation claim. The receipt remains a lifecycle artifact until the
+separate Feature 153 publication/admission transaction accepts it.
+
+## 2026-10-01 receipt-to-publication handoff
+
+The formal native receipt persistence tests now cover the downstream handoff contract: a
+completed `execution-receipt.json` can be supplied to Feature 153 by digest, appears in the
+canonical publication journal, and is rejected when missing, malformed, self-digest-tampered,
+or terminally unsuccessful. The publication transaction performs this check before creating its
+prepared intent, so an invalid receipt leaves no publication side effect. This validates the
+handoff only; trusted-bootstrap lifecycle integration, complete request evidence, unknown
+recovery, scheduler entry points, and real campaign acceptance remain out of scope.
+
+The new provider-free scheduler regression covers the explicit native trusted one-shot entrypoint
+and its read-only recovery projection. The normal path orders attempt, formal receipt persistence,
+strict same-attempt output preparation, and optional publication; the recovery path rereads the
+same receipt/output evidence and fails closed on digest drift. The six tests use local doubles to
+assert that recovery never starts a process or consumes a second attestation. This is a supporting
+composition test only; it does not satisfy the full Feature 156 lifecycle acceptance or connect
+the controller-owned request transport and post-crash process recovery.
+
+## Lifecycle composition wrapper (2026-10-01)
+
+`tests/test_producer_lifecycle.py` covers the native wrapper's ordering and projection boundary:
+the scheduler result is retained in the preparation DTO, explicit publication is reflected only
+when a strategy is supplied, preparation-only mode remains unpublished, recovery is read-only, and
+fixed scheduler errors are namespaced without leaking arbitrary exception text. These tests use
+provider-free scheduler doubles and do not establish production trusted-bootstrap admission.
+
+The wrapper validation passed together with `tests/test_native_trusted_scheduler.py`. Ruff,
+`compileall`, and `git diff --check` are required for this checkpoint. The remaining risks are the
+same as T158-04: production registration/cleanup and crash recovery, complete host-observed broker
+coverage, and real campaign/scheduler wiring.
 
 ## Implementation checkpoint (2026-09-24)
 

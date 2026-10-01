@@ -26,6 +26,10 @@ admission, bounded descriptor-relative reads must verify every retained byte, or
 single-link/private-file modes, the materials directory identity/mode, and the exact inventory.
 Missing, extra, replaced or altered evidence cannot produce a successful return. Admission does
 not make the root immutable; the future runner must revalidate retained evidence before using it.
+That revalidation rebuilds the exact material, registration, seal, preflight and remote-main
+bytes from the committed checkout and current remote observation. It compares the rebuilt
+ordered file pins and each retained file byte-for-byte, so rewriting both a retained file and
+the unkeyed admission digest cannot authorize a launch.
 
 Any failure after root creation leaves that root reserved, including incomplete evidence. A new
 call refuses it rather than repairing or granting a fresh slot. The future runner must handle an

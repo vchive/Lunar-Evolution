@@ -1,17 +1,15 @@
-"""Provider-free native trusted-bootstrap attempt, without publication authority.
-
-This runner joins the pre-gate production records. It deliberately does not emit a
-Feature 156 terminal receipt or claim that producer requests were host-observed.
-"""
+"""Provider-free native trusted-bootstrap attempt, without publication authority."""
 
 from __future__ import annotations
 
+import math
 import os
 import selectors
 import subprocess
 import sys
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -22,14 +20,39 @@ from .native_bootstrap import (
     load_native_bootstrap_artifact,
     native_bootstrap_command,
 )
-from .process_ownership import ProcessCleanupStatus, RegisteredProcess
+from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
+from .native_trusted_cleanup import (
+    NativeTrustedCleanupError,
+    persist_native_trusted_cleanup,
+    recover_native_trusted_cleanup,
+)
+from .native_trusted_streams import (
+    NativeTrustedStreamCapture,
+    NativeTrustedStreamError,
+    NativeTrustedStreamObservation,
+    persist_native_trusted_stream_capture,
+    recover_native_trusted_stream_capture,
+    start_native_trusted_stream_capture,
+)
+from .process_ownership import (
+    ProcessCleanupStatus,
+    RegisteredProcess,
+    cleanup_registered_process,
+)
 from .producer_bootstrap import (
     BootstrapHandshakeFrame,
     ProducerBootstrapError,
     TrustedBootstrapSession,
     build_trusted_bootstrap_launch,
+    observe_trusted_bootstrap_attempt,
     parse_bootstrap_handshake_frame,
 )
+from .producer_broker_ipc import (
+    ProducerBrokerConfig,
+    ProducerBrokerObservation,
+    serve_producer_broker,
+)
+from .producer_bundle_deadline import _boot_id as _producer_boot_id
 from .producer_isolation import ProducerIsolationError, build_producer_isolation_policy
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_process import (
@@ -38,11 +61,14 @@ from .producer_process import (
     _cleanup,
     _current_process_owned,
     _current_recovery_lock_identity,
+    _digest_without,
+    _process_owner_identity,
     _read_durable_json,
     _recovery_lock,
     _relative_path,
     _safe_dir,
     _safe_root,
+    _sha,
 )
 from .trusted_bootstrap_binding import TrustedBootstrapBindingError, prepare_trusted_executable_pair
 from .trusted_bootstrap_registration import (
@@ -60,6 +86,32 @@ class NativeTrustedAttemptError(ValueError):
         super().__init__(code)
 
 
+_TERMINAL_PROTOCOL = "lunar-native-trusted-process-terminal-v1"
+_TERMINAL_NAME = "native-trusted-process-terminal.json"
+_RECOVERY_PROTOCOL = "lunar-native-trusted-process-recovery-v1"
+_RECOVERY_NAME = "native-trusted-process-recovery.json"
+_DEADLINE_PROTOCOL = "lunar-native-trusted-attempt-deadline-v1"
+_DEADLINE_NAME = "native-trusted-attempt-deadline.json"
+_AUDIT_PROTOCOL = "lunar-native-trusted-execution-audit-v1"
+_AUDIT_NAME = "native-trusted-execution-audit.json"
+_CLEANUP_RESERVE_SECONDS = 0.25
+_TERMINAL_FIELDS = frozenset({
+    "schema_version", "protocol", "launch_id", "journal_id", "run_id",
+    "parent_task_id", "task_id", "intent_sha256", "attestation_sha256",
+    "consumption_sha256", "registration_sha256", "launch_sha256",
+    "bootstrap_descriptor_sha256", "pid", "pgid", "owner_identity_sha256",
+    "handoff_sha256", "bootstrap_evidence_sha256", "deadline_sha256", "gate_released",
+    "target_started", "exit_code", "cleanup_status", "process_status",
+    "receipt_scope", "publication_eligible", "previous_receipt_sha256",
+    "terminal_sha256", "stream_capture_sha256", "cleanup_sha256",
+})
+_DEADLINE_FIELDS = frozenset({
+    "schema_version", "protocol", "launch_id", "journal_id", "launch_sha256",
+    "intent_sha256", "attestation_sha256",
+    "started_monotonic", "deadline_monotonic", "boot_id", "deadline_sha256",
+})
+
+
 @dataclass(frozen=True, slots=True)
 class NativeTrustedAttemptObservation:
     launch_id: str
@@ -71,22 +123,327 @@ class NativeTrustedAttemptObservation:
     target_started: bool
     exit_code: int | None
     cleanup_status: str | None
+    terminal_sha256: str | None = None
+    output_capture_sha256: str | None = None
+    stream_capture_sha256: str | None = None
+    stream_observation: NativeTrustedStreamObservation | None = None
+    broker_observation: ProducerBrokerObservation | None = None
 
 
-def _remaining(deadline: float, monotonic: Callable[[], float]) -> float:
+def _terminal_receipt(
+    registration: Mapping[str, object], *, handoff_sha256: str,
+    evidence_sha256: str, gate_released: bool, target_started: bool,
+    exit_code: int | None, cleanup_status: str, deadline_sha256: str,
+    cancelled: bool = False, stream_capture_sha256: str | None = None,
+    cleanup_sha256: str | None = None,
+) -> dict[str, object]:
+    if cancelled and exit_code is not None:
+        raise NativeTrustedAttemptError("native_trusted_attempt_terminal_invalid")
+    if not cancelled and (isinstance(exit_code, bool) or not isinstance(exit_code, int)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_terminal_invalid")
+    process_status = "cancelled" if cancelled else (
+        "exited_zero" if exit_code == 0 else "exited_nonzero"
+    )
+    receipt: dict[str, object] = {
+        "schema_version": "1", "protocol": _TERMINAL_PROTOCOL,
+        **{key: registration[key] for key in (
+            "launch_id", "journal_id", "run_id", "parent_task_id", "task_id",
+            "intent_sha256", "attestation_sha256", "consumption_sha256",
+            "registration_sha256", "launch_sha256", "bootstrap_descriptor_sha256",
+            "pid", "pgid", "owner_identity_sha256",
+        )},
+        "handoff_sha256": handoff_sha256,
+        "bootstrap_evidence_sha256": evidence_sha256,
+        "deadline_sha256": deadline_sha256,
+        "gate_released": gate_released, "target_started": target_started,
+        "exit_code": exit_code, "cleanup_status": cleanup_status,
+        "process_status": process_status, "receipt_scope": "process_only",
+        "publication_eligible": False,
+        "previous_receipt_sha256": registration["registration_sha256"],
+        "stream_capture_sha256": stream_capture_sha256,
+        "cleanup_sha256": cleanup_sha256,
+    }
+    receipt["terminal_sha256"] = _digest_without(receipt, "terminal_sha256")
+    return receipt
+
+
+def _compose_attempt_budget(
+    intent: ProducerLaunchIntent,
+    monotonic: Callable[[], float],
+    parent_deadline: float | None,
+) -> tuple[float, float]:
+    """Return the attempt start and its single effective monotonic deadline."""
+    started = monotonic()
+    if type(started) not in (int, float) or not math.isfinite(float(started)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    own_deadline = float(started) + float(intent.wall_timeout_seconds)
+    if parent_deadline is None:
+        return float(started), own_deadline
+    if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_parent_deadline_invalid")
+    return float(started), min(own_deadline, float(parent_deadline))
+
+
+def _deadline_record(
+    launch: object,
+    *,
+    started: float,
+    deadline: float,
+) -> dict[str, object]:
+    if type(started) not in (int, float) or not math.isfinite(float(started)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    if type(deadline) not in (int, float) or not math.isfinite(float(deadline)):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    if float(deadline) <= float(started):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    try:
+        boot_id = _producer_boot_id()
+    except Exception as exc:
+        raise NativeTrustedAttemptError("native_trusted_attempt_boot_identity_unknown") from exc
+    record: dict[str, object] = {
+        "schema_version": "1", "protocol": _DEADLINE_PROTOCOL,
+        "launch_id": launch.launch_id, "journal_id": launch.journal_id,
+        "launch_sha256": launch.launch_sha256,
+        "intent_sha256": launch.intent_sha256,
+        "attestation_sha256": launch.attestation_sha256,
+        "started_monotonic": float(started), "deadline_monotonic": float(deadline),
+        "boot_id": boot_id,
+    }
+    record["deadline_sha256"] = _digest_without(record, "deadline_sha256")
+    return record
+
+
+def _persist_deadline(
+    batch: Path, launch: object, *, started: float, deadline: float,
+) -> dict[str, object]:
+    record = _deadline_record(launch, started=started, deadline=deadline)
+    try:
+        _atomic_json(batch / _DEADLINE_NAME, record, exclusive=True)
+        stored = _read_durable_json(
+            batch / _DEADLINE_NAME, code="native_trusted_attempt_deadline_write_unknown",
+        )
+    except ProducerProcessError as exc:
+        if exc.code == "producer_process_attestation_replayed":
+            # A retained deadline is evidence that this launch already entered the
+            # admission path. Never replace it with a newly allocated budget.
+            raise NativeTrustedAttemptError("native_trusted_attempt_claim_failed") from exc
+        raise NativeTrustedAttemptError("native_trusted_attempt_deadline_write_unknown") from exc
+    if stored != record:
+        raise NativeTrustedAttemptError("native_trusted_attempt_deadline_write_unknown")
+    return record
+
+
+def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str, object]:
+    try:
+        record = _read_durable_json(
+            batch / _DEADLINE_NAME, code="native_trusted_recovery_deadline_invalid",
+        )
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
+    if set(record) != _DEADLINE_FIELDS:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    if (
+        record.get("schema_version") != "1"
+        or record.get("protocol") != _DEADLINE_PROTOCOL
+        or record.get("launch_id") != registration.get("launch_id")
+        or record.get("journal_id") != registration.get("journal_id")
+        or record.get("launch_sha256") != registration.get("launch_sha256")
+        or record.get("intent_sha256") != registration.get("intent_sha256")
+        or record.get("attestation_sha256") != registration.get("attestation_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    started = record.get("started_monotonic")
+    deadline = record.get("deadline_monotonic")
+    if (
+        type(started) not in (int, float)
+        or type(deadline) not in (int, float)
+        or not math.isfinite(float(started))
+        or not math.isfinite(float(deadline))
+        or float(deadline) <= float(started)
+        or not isinstance(record.get("boot_id"), str)
+        or record.get("deadline_sha256") != _digest_without(record, "deadline_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    try:
+        current_boot_id = _producer_boot_id()
+    except Exception as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
+    if record["boot_id"] != current_boot_id:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    return record
+
+
+def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> dict[str, object] | None:
+    path = batch / _RECOVERY_NAME
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_receipt_invalid") from exc
+    try:
+        receipt = _read_durable_json(path, code="native_trusted_recovery_receipt_invalid")
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_receipt_invalid") from exc
+    bound = (
+        "launch_id", "journal_id", "run_id", "parent_task_id", "task_id",
+        "intent_sha256", "attestation_sha256", "consumption_sha256",
+        "registration_sha256", "pid", "pgid", "owner_identity_sha256",
+    )
+    if (
+        set(receipt) != {
+            "schema_version", "protocol", "status", "execution_outcome", "reason",
+            *bound, "previous_receipt_sha256", "cleanup_status", "term_sent",
+            "kill_sent", "alive_after", "recovery_sha256",
+        }
+        or receipt.get("schema_version") != "1"
+        or receipt.get("protocol") != _RECOVERY_PROTOCOL
+        or receipt.get("status") != "recovery_required"
+        or receipt.get("execution_outcome") != "unknown"
+        or receipt.get("reason") != "native_trusted_attempt_terminal_receipt_missing"
+        or receipt.get("previous_receipt_sha256") != registration["registration_sha256"]
+        or any(receipt.get(key) != registration[key] for key in bound)
+        or receipt.get("cleanup_status") not in {status.value for status in ProcessCleanupStatus}
+        or any(not isinstance(receipt.get(key), bool) for key in (
+            "term_sent", "kill_sent", "alive_after",
+        ))
+        or receipt.get("recovery_sha256") != _digest_without(receipt, "recovery_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_receipt_invalid")
+    return receipt
+
+
+def _cleanup_recovered_attempt(
+    batch: Path, registration: Mapping[str, object], lock_identity: tuple[int, int],
+) -> dict[str, object]:
+    if _read_recovery_receipt(batch, registration) is not None:
+        raise NativeTrustedAttemptError("native_trusted_recovery_already_recorded")
+    deadline_record = _read_deadline(batch, registration)
+    pid = registration["pid"]
+    pgid = registration["pgid"]
+    owner_identity = registration["owner_identity"]
+    if (
+        not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1
+        or pgid != pid or not isinstance(owner_identity, dict)
+        or registration.get("owner_identity_sha256") != _sha(owner_identity)
+        or registration.get("recovery_lock_protocol") != "journal-flock-v1"
+        or (registration.get("recovery_lock_device"), registration.get("recovery_lock_inode"))
+        != lock_identity
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_registration_invalid")
+
+    def owned() -> bool:
+        try:
+            current = _read_durable_json(
+                batch / "process-registration.json",
+                code="native_trusted_recovery_registration_invalid",
+            )
+            return (
+                current == registration
+                and _current_recovery_lock_identity(batch) == lock_identity
+                and _process_owner_identity(pid) == owner_identity
+            )
+        except ProducerProcessError:
+            return False
+
+    result = cleanup_registered_process(
+        RegisteredProcess(pid, pgid, owner_check=owned, label=str(registration["launch_id"])),
+        # Recovery must consume the original attempt budget.  Passing the retained
+        # absolute deadline prevents a post-crash cleanup from receiving a fresh grace
+        # window after the original wall budget has expired.
+        grace_seconds=_CLEANUP_RESERVE_SECONDS,
+        deadline=float(deadline_record["deadline_monotonic"]),
+    )
+    receipt: dict[str, object] = {
+        "schema_version": "1", "protocol": _RECOVERY_PROTOCOL,
+        "status": "recovery_required", "execution_outcome": "unknown",
+        "reason": "native_trusted_attempt_terminal_receipt_missing",
+        **{key: registration[key] for key in (
+            "launch_id", "journal_id", "run_id", "parent_task_id", "task_id",
+            "intent_sha256", "attestation_sha256", "consumption_sha256",
+            "registration_sha256", "pid", "pgid", "owner_identity_sha256",
+        )},
+        "previous_receipt_sha256": registration["registration_sha256"],
+        "cleanup_status": result.status.value,
+        "term_sent": result.term_sent, "kill_sent": result.kill_sent,
+        "alive_after": result.alive_after,
+    }
+    receipt["recovery_sha256"] = _digest_without(receipt, "recovery_sha256")
+    try:
+        _atomic_json(batch / _RECOVERY_NAME, receipt, exclusive=True)
+        if _read_recovery_receipt(batch, registration) != receipt:
+            raise NativeTrustedAttemptError("native_trusted_recovery_receipt_write_unknown")
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_receipt_write_unknown") from exc
+    return receipt
+
+
+def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
+    """Observe caller cancellation without allowing a faulty callback to escape."""
+    if cancelled is None:
+        return False
+    try:
+        value = cancelled()
+    except Exception as exc:
+        raise NativeTrustedAttemptError(
+            "native_trusted_attempt_cancellation_unknown"
+        ) from exc
+    if not isinstance(value, bool):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
+    return value
+
+
+def _remaining(
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> float:
+    if _observe_cancellation(cancelled):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
     remaining = deadline - monotonic()
     if remaining <= 0:
         raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
     return remaining
 
 
-def _write_control(fd: int, data: bytes, deadline: float, monotonic: Callable[[], float]) -> None:
+def _compose_parent_deadline(
+    intent: ProducerLaunchIntent,
+    monotonic: Callable[[], float],
+    parent_deadline: float | None,
+) -> float:
+    """Compose the attempt budget with an optional caller-owned deadline."""
+    return _compose_attempt_budget(intent, monotonic, parent_deadline)[1]
+
+
+def _wait_event(
+    event: threading.Event,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> bool:
+    """Wait in bounded slices so cancellation is observed during broker startup."""
+    while True:
+        remaining = _remaining(deadline, monotonic, cancelled)
+        if event.wait(timeout=min(0.05, remaining)):
+            return True
+
+
+def _write_control(
+    fd: int,
+    data: bytes,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> None:
     os.set_blocking(fd, False)
     with selectors.DefaultSelector() as selector:
         selector.register(fd, selectors.EVENT_WRITE)
         offset = 0
         while offset < len(data):
-            if not selector.select(_remaining(deadline, monotonic)):
+            remaining = _remaining(deadline, monotonic, cancelled)
+            if not selector.select(min(0.05, remaining) if cancelled is not None else remaining):
+                if cancelled is not None:
+                    continue
                 raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
             try:
                 offset += os.write(fd, data[offset:])
@@ -94,12 +451,20 @@ def _write_control(fd: int, data: bytes, deadline: float, monotonic: Callable[[]
                 continue
 
 
-def _read_frame(fd: int, deadline: float, monotonic: Callable[[], float]) -> BootstrapHandshakeFrame:
+def _read_frame(
+    fd: int,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None = None,
+) -> BootstrapHandshakeFrame:
     data = bytearray()
     with selectors.DefaultSelector() as selector:
         selector.register(fd, selectors.EVENT_READ)
         while True:
-            if not selector.select(_remaining(deadline, monotonic)):
+            remaining = _remaining(deadline, monotonic, cancelled)
+            if not selector.select(min(0.05, remaining) if cancelled is not None else remaining):
+                if cancelled is not None:
+                    continue
                 raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
             part = os.read(fd, 1)
             if not part:
@@ -114,6 +479,32 @@ def _read_frame(fd: int, deadline: float, monotonic: Callable[[], float]) -> Boo
                 raise NativeTrustedAttemptError("native_trusted_attempt_frame_invalid")
 
 
+def _read_attempt_frame(
+    fd: int,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None,
+) -> BootstrapHandshakeFrame:
+    # Keep the historical three-argument call shape when no callback is supplied;
+    # a few embedders instrument this private helper in their local harnesses.
+    if cancelled is None:
+        return _read_frame(fd, deadline, monotonic)
+    return _read_frame(fd, deadline, monotonic, cancelled)
+
+
+def _write_attempt_control(
+    fd: int,
+    data: bytes,
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None,
+) -> None:
+    if cancelled is None:
+        _write_control(fd, data, deadline, monotonic)
+    else:
+        _write_control(fd, data, deadline, monotonic, cancelled)
+
+
 def run_native_trusted_attempt(
     workspace: str | Path,
     *,
@@ -121,7 +512,10 @@ def run_native_trusted_attempt(
     intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation,
     artifact: NativeBootstrapArtifact,
+    broker_config: ProducerBrokerConfig | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
 
@@ -132,7 +526,14 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_admission_invalid")
     if not isinstance(artifact, NativeBootstrapArtifact):
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
-    deadline = monotonic() + float(intent.wall_timeout_seconds)
+    if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
+        raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
+    if cancelled is not None and not callable(cancelled):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
+    if _observe_cancellation(cancelled):
+        raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
+    started_monotonic, deadline = _compose_attempt_budget(intent, monotonic, parent_deadline)
+    _remaining(deadline, monotonic, cancelled)
     try:
         installed = load_native_bootstrap_artifact(
             artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
@@ -158,10 +559,27 @@ def run_native_trusted_attempt(
         target_started = False
         exit_code: int | None = None
         cleanup_status: str | None = None
+        cleanup_sha256: str | None = None
+        cleanup_record: dict[str, object] | None = None
         reason = "native_trusted_attempt_terminal_receipt_missing"
+        terminal_sha256: str | None = None
+        output_capture_sha256: str | None = None
+        stream_capture_sha256: str | None = None
+        stream_observation: NativeTrustedStreamObservation | None = None
+        stream_capture: NativeTrustedStreamCapture | None = None
+        stream_capture_failed = False
+        handoff_sha256: str | None = None
         claimed = False
+        cancellation_requested = False
         fds: set[int] = set()
+        broker_thread: threading.Thread | None = None
+        broker_ready: threading.Event | None = None
+        broker_state: dict[str, object] = {}
         try:
+            deadline_record = _persist_deadline(
+                batch, launch, started=started_monotonic, deadline=deadline,
+            )
+            deadline_sha256 = str(deadline_record["deadline_sha256"])
             consume_trusted_bootstrap_attestation(
                 root, producer_root=target_root, intent=intent, attestation=attestation,
                 descriptor=installed.descriptor, launch=launch,
@@ -191,25 +609,71 @@ def run_native_trusted_attempt(
                 fds.update((gate_read, gate_write))
                 frame_read, frame_write = os.pipe()
                 fds.update((frame_read, frame_write))
+                broker_child_fds: tuple[int, int] = ()
+                broker_env = {"PATH": os.defpath, "LANG": "C"}
+                if broker_config is not None:
+                    request_read, request_write = os.pipe()
+                    response_read, response_write = os.pipe()
+                    fds.update((request_read, request_write, response_read, response_write))
+                    broker_child_fds = (request_write, response_read)
+                    broker_env["LUNAR_PRODUCER_REQUEST_FD"] = str(request_write)
+                    broker_env["LUNAR_PRODUCER_RESPONSE_FD"] = str(response_read)
+                    broker_ready = threading.Event()
+                    broker_deadline_ns = time.monotonic_ns() + int(
+                        _remaining(deadline, monotonic, cancelled) * 1_000_000_000
+                    )
+
+                    def serve() -> None:
+                        try:
+                            broker_state["observation"] = serve_producer_broker(
+                                request_read, response_write, intent=intent,
+                                journal_dir=batch / ".host-request-journal",
+                                config=broker_config, deadline_ns=broker_deadline_ns,
+                                ready=broker_ready,
+                            )
+                        except Exception:  # noqa: BLE001 - fixed-code thread boundary
+                            broker_state["error"] = "native_trusted_attempt_broker_unknown"
+                        finally:
+                            broker_ready.set()
+                            for fd in (request_read, response_write):
+                                try:
+                                    os.close(fd)
+                                except OSError:
+                                    broker_state["error"] = "native_trusted_attempt_broker_unknown"
+
                 command = native_bootstrap_command(
                     pair.bootstrap.executable, control_fd=control_read,
                     gate_fd=gate_read, frame_fd=frame_write,
                 )
-                _remaining(deadline, monotonic)
+                _remaining(deadline, monotonic, cancelled)
                 process = subprocess.Popen(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
-                    pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds),
-                    cwd=str(working), env={"PATH": os.defpath, "LANG": "C"},
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
+                              *broker_child_fds),
+                    cwd=str(working), env=broker_env,
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                stream_capture = start_native_trusted_stream_capture(
+                    process, limit=intent.output_max_bytes,
+                    deadline=deadline, monotonic=monotonic,
                 )
                 for fd in (control_read, gate_read, frame_write):
                     os.close(fd)
                     fds.remove(fd)
-                _write_control(control_write, control, deadline, monotonic)
+                if broker_config is not None:
+                    for fd in broker_child_fds:
+                        os.close(fd)
+                        fds.remove(fd)
+                    broker_thread = threading.Thread(target=serve, daemon=True)
+                    broker_thread.start()
+                    # Only the broker thread closes its controller-side descriptors.
+                    fds.remove(request_read)
+                    fds.remove(response_write)
+                _write_attempt_control(control_write, control, deadline, monotonic, cancelled)
                 os.close(control_write)
                 fds.remove(control_write)
-                ready = _read_frame(frame_read, deadline, monotonic)
+                ready = _read_attempt_frame(frame_read, deadline, monotonic, cancelled)
                 if ready.kind != "bootstrap_ready" or ready.sequence != 1:
                     raise NativeTrustedAttemptError("native_trusted_attempt_ready_invalid")
                 published = publish_trusted_bootstrap_registration(
@@ -218,6 +682,19 @@ def run_native_trusted_attempt(
                     recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
                 )
                 registration = published.registration
+                handoff_sha256 = str(published.handoff["handoff_sha256"])
+                observed = observe_trusted_bootstrap_attempt(
+                    root, launch=launch, descriptor=installed.descriptor,
+                    intent=intent, attestation=attestation, require_handoff=True,
+                    deadline=deadline, monotonic=monotonic,
+                )
+                if (
+                    observed.get("status") != "recovery_required"
+                    or observed.get("reason") != "trusted_bootstrap_terminal_evidence_missing"
+                    or observed.get("registration_sha256") != registration["registration_sha256"]
+                    or observed.get("handoff_sha256") != published.handoff["handoff_sha256"]
+                ):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_handoff_unknown")
                 session = TrustedBootstrapSession(launch, str(registration["registration_sha256"]))
                 session.accept_frame(ready)
                 pid = process.pid
@@ -238,13 +715,20 @@ def run_native_trusted_attempt(
                         return False
 
                 owner = RegisteredProcess(pid, pid, owner_check=owned, label=launch.launch_id)
-                _remaining(deadline, monotonic)
+                if broker_ready is not None and (
+                    not _wait_event(broker_ready, deadline, monotonic, cancelled)
+                    or "error" in broker_state
+                ):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_broker_unknown")
+                _remaining(deadline, monotonic, cancelled)
+                if _observe_cancellation(cancelled):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
                 gate_released = True
                 session.release(launch.gate_nonce)
-                started = _read_frame(frame_read, deadline, monotonic)
+                started = _read_attempt_frame(frame_read, deadline, monotonic, cancelled)
                 session.accept_frame(started)
                 if (
                     started.kind != "target_started" or started.sequence != 2
@@ -255,7 +739,12 @@ def run_native_trusted_attempt(
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_target_start_unknown")
                 target_started = True
-                terminal = _read_frame(frame_read, deadline, monotonic)
+                # Keep a small slice of the attempt budget available for the owner-checked
+                # cleanup path. This remains inside the caller deadline; it only makes a
+                # late terminal frame timeout conservative instead of entering cleanup with
+                # no budget.
+                execution_deadline = deadline - _CLEANUP_RESERVE_SECONDS
+                terminal = _read_attempt_frame(frame_read, execution_deadline, monotonic, cancelled)
                 session.accept_frame(terminal)
                 if (
                     terminal.kind != "terminal" or terminal.sequence != 3
@@ -263,13 +752,29 @@ def run_native_trusted_attempt(
                     or terminal.intent_sha256 != launch.intent_sha256
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_terminal_unknown")
-                exit_code = process.wait(timeout=_remaining(deadline, monotonic))
+                while True:
+                    remaining = _remaining(deadline, monotonic, cancelled)
+                    if remaining <= _CLEANUP_RESERVE_SECONDS:
+                        raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                    try:
+                        exit_code = process.wait(
+                            timeout=min(0.05, remaining)
+                        )
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
                 TrustedBootstrapBindingError, NativeBootstrapError, ProducerIsolationError,
                 ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
             if not claimed:
+                if isinstance(exc, NativeTrustedAttemptError) and exc.code in {
+                    "native_trusted_attempt_deadline_write_unknown",
+                    "native_trusted_attempt_boot_identity_unknown",
+                }:
+                    raise
                 raise NativeTrustedAttemptError("native_trusted_attempt_claim_failed") from exc
             reason = getattr(exc, "code", "native_trusted_attempt_unknown")
+            cancellation_requested = reason == "native_trusted_attempt_cancelled"
         finally:
             for fd in tuple(fds):
                 try:
@@ -290,10 +795,34 @@ def run_native_trusted_attempt(
                     cleanup_status = result.status.value
                     if result.status not in {ProcessCleanupStatus.CLEANED, ProcessCleanupStatus.ALREADY_EXITED}:
                         reason = "native_trusted_attempt_cleanup_unknown"
+                    if registration is not None:
+                        try:
+                            cleanup_record = persist_native_trusted_cleanup(
+                                root,
+                                intent=intent,
+                                registration_sha256=str(registration["registration_sha256"]),
+                                deadline_sha256=deadline_sha256,
+                                cleanup=result,
+                            )
+                            cleanup_sha256 = str(cleanup_record["cleanup_sha256"])
+                        except NativeTrustedCleanupError:
+                            reason = "native_trusted_attempt_cleanup_evidence_unknown"
                 try:
                     process.wait(timeout=max(0.0, deadline - monotonic()))
                 except subprocess.TimeoutExpired:
-                    reason = "native_trusted_attempt_reap_unknown"
+                    if reason == "native_trusted_attempt_terminal_receipt_missing":
+                        reason = "native_trusted_attempt_reap_unknown"
+            if stream_capture is not None:
+                try:
+                    stream_observation = stream_capture.finish(deadline=deadline)
+                    if not stream_observation.complete and reason == "native_trusted_attempt_terminal_receipt_missing":
+                        stream_capture_failed = True
+                except NativeTrustedStreamError:
+                    stream_capture_failed = True
+            if broker_thread is not None:
+                broker_thread.join(timeout=max(0.0, deadline - monotonic()))
+                if broker_thread.is_alive() or "error" in broker_state:
+                    reason = "native_trusted_attempt_broker_unknown"
             if session is not None and registration is not None:
                 evidence = session.evidence()
                 if evidence.status == "passed" and (
@@ -316,15 +845,532 @@ def run_native_trusted_attempt(
                         raise ProducerProcessError("native_trusted_attempt_evidence_write_unknown")
                 except ProducerProcessError:
                     reason = "native_trusted_attempt_evidence_write_unknown"
+        # A verified active cancellation is a durable process-only terminal.  It is
+        # deliberately narrower than a normal terminal: the target has started and the
+        # owner-checked group cleanup succeeded, but no exit code or producer output is
+        # claimed.  The bootstrap evidence may therefore still be ``unknown``; the
+        # evidence digest remains bound so recovery can inspect the exact record.
+        if (
+            registration is not None and session is not None and handoff_sha256 is not None
+            and cancellation_requested
+            and reason == "native_trusted_attempt_cancelled"
+            and gate_released and target_started
+            and exit_code is None
+            and cleanup_status in {"cleaned", "already_exited"}
+        ):
+            try:
+                observed = observe_trusted_bootstrap_attempt(
+                    root, launch=launch, descriptor=installed.descriptor,
+                    intent=intent, attestation=attestation, require_handoff=True,
+                    deadline=deadline, monotonic=monotonic,
+                )
+                evidence_sha = observed.get("evidence_sha256")
+                valid_unknown = (
+                    observed.get("status") == "recovery_required"
+                    and observed.get("reason") == "trusted_bootstrap_evidence_unknown"
+                )
+                valid_passed = (
+                    observed.get("status") == "evidence_available"
+                    and observed.get("bootstrap_status") == "passed"
+                )
+                if (
+                    not (valid_unknown or valid_passed)
+                    or not isinstance(evidence_sha, str)
+                    or observed.get("registration_sha256") != registration["registration_sha256"]
+                    or observed.get("handoff_sha256") != handoff_sha256
+                ):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_terminal_evidence_unknown")
+                if stream_observation is not None and stream_observation.complete:
+                    try:
+                        stream_record = persist_native_trusted_stream_capture(
+                            batch, intent=intent,
+                            attestation_sha256=attestation.attestation_sha256,
+                            registration_sha256=str(registration["registration_sha256"]),
+                            deadline_sha256=deadline_sha256,
+                            observation=stream_observation,
+                        )
+                        stream_capture_sha256 = str(stream_record["stream_capture_sha256"])
+                    except NativeTrustedStreamError:
+                        stream_capture_failed = True
+                receipt = _terminal_receipt(
+                    registration, handoff_sha256=handoff_sha256,
+                    evidence_sha256=evidence_sha,
+                    gate_released=gate_released, target_started=target_started,
+                    exit_code=None, cleanup_status=cleanup_status,
+                    deadline_sha256=deadline_sha256, cancelled=True,
+                    stream_capture_sha256=stream_capture_sha256,
+                    cleanup_sha256=cleanup_sha256,
+                )
+                # Receipt publication must consume the caller deadline, but must not
+                # call the cancellation callback again after cleanup has been verified.
+                _remaining(deadline, monotonic)
+                _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
+                stored = _read_durable_json(
+                    batch / _TERMINAL_NAME, code="native_trusted_attempt_terminal_write_unknown",
+                )
+                if stored != receipt:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_terminal_write_unknown")
+                terminal_sha256 = str(receipt["terminal_sha256"])
+            except (NativeTrustedAttemptError, ProducerBootstrapError) as exc:
+                reason = exc.code
+            except ProducerProcessError:
+                reason = "native_trusted_attempt_terminal_write_unknown"
+        if (
+            registration is not None and session is not None and handoff_sha256 is not None
+            and reason == "native_trusted_attempt_terminal_receipt_missing"
+            and exit_code is not None
+            and cleanup_status in {"cleaned", "already_exited"}
+        ):
+            try:
+                observed = observe_trusted_bootstrap_attempt(
+                    root, launch=launch, descriptor=installed.descriptor,
+                    intent=intent, attestation=attestation, require_handoff=True,
+                    deadline=deadline, monotonic=monotonic,
+                )
+                if (
+                    observed.get("status") != "evidence_available"
+                    or observed.get("bootstrap_status") != "passed"
+                    or observed.get("registration_sha256") != registration["registration_sha256"]
+                    or observed.get("handoff_sha256") != handoff_sha256
+                ):
+                    raise NativeTrustedAttemptError("native_trusted_attempt_terminal_evidence_unknown")
+                if stream_observation is not None and stream_observation.complete:
+                    try:
+                        stream_record = persist_native_trusted_stream_capture(
+                            batch, intent=intent,
+                            attestation_sha256=attestation.attestation_sha256,
+                            registration_sha256=str(registration["registration_sha256"]),
+                            deadline_sha256=deadline_sha256,
+                            observation=stream_observation,
+                        )
+                        stream_capture_sha256 = str(stream_record["stream_capture_sha256"])
+                    except NativeTrustedStreamError:
+                        stream_capture_failed = True
+                receipt = _terminal_receipt(
+                    registration, handoff_sha256=handoff_sha256,
+                    evidence_sha256=str(observed["evidence_sha256"]),
+                    gate_released=gate_released, target_started=target_started,
+                    exit_code=exit_code, cleanup_status=cleanup_status,
+                    deadline_sha256=deadline_sha256,
+                    stream_capture_sha256=stream_capture_sha256,
+                    cleanup_sha256=cleanup_sha256,
+                )
+                _remaining(deadline, monotonic, cancelled)
+                _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
+                stored = _read_durable_json(
+                    batch / _TERMINAL_NAME, code="native_trusted_attempt_terminal_write_unknown",
+                )
+                if stored != receipt:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_terminal_write_unknown")
+                terminal_sha256 = str(receipt["terminal_sha256"])
+                reason = (
+                    "native_trusted_attempt_request_and_output_unverified"
+                    if exit_code == 0 else "native_trusted_attempt_exit_failed"
+                )
+                if stream_capture_sha256 is None:
+                    stream_capture_failed = True
+            except (NativeTrustedAttemptError, ProducerBootstrapError) as exc:
+                reason = exc.code
+            except ProducerProcessError:
+                reason = "native_trusted_attempt_terminal_write_unknown"
+        broker_observation = broker_state.get("observation")
+        if (
+            broker_config is not None and gate_released
+            and reason == "native_trusted_attempt_request_and_output_unverified"
+            and (not isinstance(broker_observation, ProducerBrokerObservation)
+                 or not broker_observation.complete)
+        ):
+            reason = "native_trusted_attempt_broker_unknown"
+        if (
+            terminal_sha256 is not None and exit_code == 0
+            and reason == "native_trusted_attempt_request_and_output_unverified"
+        ):
+            try:
+                captured = capture_native_trusted_output(
+                    batch, intent=intent, terminal_sha256=terminal_sha256,
+                    broker=(broker_observation if isinstance(
+                        broker_observation, ProducerBrokerObservation,
+                    ) else None),
+                    deadline=deadline, monotonic=monotonic,
+                )
+                output_capture_sha256 = str(captured["capture_sha256"])
+            except NativeTrustedCaptureError:
+                reason = "native_trusted_attempt_output_capture_unknown"
+        if stream_capture_failed and reason == "native_trusted_attempt_request_and_output_unverified":
+            reason = "native_trusted_attempt_stream_capture_unknown"
         return NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
             registration_sha256=(str(registration["registration_sha256"]) if registration else None),
             gate_released=gate_released, target_started=target_started,
             exit_code=exit_code, cleanup_status=cleanup_status,
+            terminal_sha256=terminal_sha256,
+            output_capture_sha256=output_capture_sha256,
+            stream_capture_sha256=stream_capture_sha256,
+            stream_observation=stream_observation,
+            broker_observation=(broker_observation if isinstance(
+                broker_observation, ProducerBrokerObservation,
+            ) else None),
         )
 
 
+def recover_native_trusted_attempt(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+    cleanup: bool = False,
+) -> dict[str, object]:
+    """Inspect one native attempt; explicit cleanup never relaunches its target.
+
+    A process-only terminal receipt is diagnostic. It never authorizes bundle
+    publication because request and output evidence are outside this slice.
+    """
+    if not isinstance(cleanup, bool) or not isinstance(artifact, NativeBootstrapArtifact):
+        raise NativeTrustedAttemptError("native_trusted_recovery_context_invalid")
+    try:
+        launch = build_trusted_bootstrap_launch(intent, attestation, artifact.descriptor)
+        root = _safe_root(workspace)
+        batch = root / "evolution" / "producer-batches" / launch.journal_id
+    except (ProducerBootstrapError, ProducerProcessError, TypeError, ValueError) as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_context_invalid") from exc
+
+    def inspect(lock_identity: tuple[int, int] | None = None) -> dict[str, object]:
+        try:
+            observed = observe_trusted_bootstrap_attempt(
+                root, launch=launch, descriptor=artifact.descriptor,
+                intent=intent, attestation=attestation, require_handoff=False,
+            )
+        except ProducerBootstrapError as exc:
+            if exc.code in {
+                "producer_bootstrap_attempt_claim_missing",
+                "producer_bootstrap_attempt_registration_missing",
+            }:
+                return {
+                    "status": "recovery_required", "reason": exc.code,
+                    "launch_id": launch.launch_id, "journal_id": launch.journal_id,
+                }
+            raise NativeTrustedAttemptError("native_trusted_recovery_evidence_invalid") from exc
+        registration = _read_durable_json(
+            batch / "process-registration.json", code="native_trusted_recovery_registration_invalid",
+        )
+        if registration.get("registration_sha256") != observed.get("registration_sha256"):
+            raise NativeTrustedAttemptError("native_trusted_recovery_registration_invalid")
+        if lock_identity is not None and (
+            registration.get("recovery_lock_device"), registration.get("recovery_lock_inode")
+        ) != lock_identity:
+            raise NativeTrustedAttemptError("native_trusted_recovery_registration_invalid")
+        # Every recovery observation, including an already-written terminal, must
+        # validate the retained attempt budget. Otherwise a tampered sidecar could
+        # silently detach the terminal from the original wall-clock authority.
+        deadline_record = _read_deadline(batch, registration)
+        path = batch / _TERMINAL_NAME
+        try:
+            os.lstat(path)
+        except FileNotFoundError:
+            prior = _read_recovery_receipt(batch, registration)
+            if prior is not None:
+                if cleanup:
+                    raise NativeTrustedAttemptError("native_trusted_recovery_already_recorded")
+                return prior
+            if cleanup:
+                if lock_identity is None:
+                    raise NativeTrustedAttemptError("native_trusted_recovery_lock_required")
+                return _cleanup_recovered_attempt(batch, registration, lock_identity)
+            return {
+                "status": "recovery_required",
+                "reason": "native_trusted_attempt_terminal_receipt_missing",
+                "launch_id": launch.launch_id, "journal_id": launch.journal_id,
+                "registration_sha256": registration["registration_sha256"],
+                "pid": registration["pid"], "pgid": registration["pgid"],
+            }
+        except OSError as exc:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
+        if _read_recovery_receipt(batch, registration) is not None:
+            raise NativeTrustedAttemptError("native_trusted_recovery_conflicting_receipts")
+        try:
+            bound = observe_trusted_bootstrap_attempt(
+                root, launch=launch, descriptor=artifact.descriptor,
+                intent=intent, attestation=attestation, require_handoff=True,
+            )
+            receipt = _read_durable_json(path, code="native_trusted_recovery_terminal_invalid")
+        except (ProducerBootstrapError, ProducerProcessError) as exc:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
+        if set(receipt) != _TERMINAL_FIELDS:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        cancelled_receipt = receipt.get("process_status") == "cancelled"
+        if cancelled_receipt:
+            valid_unknown = (
+                bound.get("status") == "recovery_required"
+                and bound.get("reason") == "trusted_bootstrap_evidence_unknown"
+            )
+            valid_passed = (
+                bound.get("status") == "evidence_available"
+                and bound.get("bootstrap_status") == "passed"
+            )
+            if (
+                not (valid_unknown or valid_passed)
+                or not isinstance(bound.get("handoff_sha256"), str)
+                or not isinstance(bound.get("evidence_sha256"), str)
+                or receipt.get("exit_code") is not None
+                or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
+                or receipt.get("gate_released") is not True
+                or receipt.get("target_started") is not True
+                or receipt.get("bootstrap_evidence_sha256") != bound["evidence_sha256"]
+            ):
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+            expected = _terminal_receipt(
+                registration, handoff_sha256=str(bound["handoff_sha256"]),
+                evidence_sha256=str(bound["evidence_sha256"]),
+                gate_released=True, target_started=True,
+                exit_code=None, cleanup_status=str(receipt["cleanup_status"]),
+                deadline_sha256=str(deadline_record["deadline_sha256"]), cancelled=True,
+                stream_capture_sha256=receipt.get("stream_capture_sha256"),
+                cleanup_sha256=receipt.get("cleanup_sha256"),
+            )
+        else:
+            if (
+                bound.get("status") != "evidence_available"
+                or bound.get("bootstrap_status") != "passed"
+                or isinstance(receipt.get("exit_code"), bool)
+                or not isinstance(receipt.get("exit_code"), int)
+                or not -255 <= receipt["exit_code"] <= 255
+                or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
+                or receipt.get("gate_released") is not True
+                or receipt.get("target_started") is not True
+            ):
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+            expected = _terminal_receipt(
+                registration, handoff_sha256=str(bound["handoff_sha256"]),
+                evidence_sha256=str(bound["evidence_sha256"]),
+                gate_released=True, target_started=True,
+                exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
+                deadline_sha256=str(deadline_record["deadline_sha256"]),
+                stream_capture_sha256=receipt.get("stream_capture_sha256"),
+                cleanup_sha256=receipt.get("cleanup_sha256"),
+            )
+        if receipt != expected:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        cleanup_digest = receipt.get("cleanup_sha256")
+        if not isinstance(cleanup_digest, str) or len(cleanup_digest) != 64:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        try:
+            cleanup_record = recover_native_trusted_cleanup(
+                root, intent=intent, terminal=receipt,
+            )
+        except NativeTrustedCleanupError as exc:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
+        if cleanup_record.get("cleanup_sha256") != cleanup_digest:
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        stream_digest = receipt.get("stream_capture_sha256")
+        if stream_digest is not None:
+            if not isinstance(stream_digest, str) or len(stream_digest) != 64:
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+            try:
+                recover_native_trusted_stream_capture(
+                    batch, intent=intent, terminal=receipt,
+                )
+            except NativeTrustedStreamError as exc:
+                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
+        return receipt
+
+    if cleanup:
+        try:
+            with _recovery_lock(batch) as lock_identity:
+                return inspect(lock_identity)
+        except ProducerProcessError as exc:
+            raise NativeTrustedAttemptError("native_trusted_recovery_cleanup_unknown") from exc
+    try:
+        return inspect()
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_evidence_invalid") from exc
+
+
+def audit_native_trusted_lifecycle(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+) -> dict[str, object]:
+    """Read-only audit of the native process/output evidence chain.
+
+    This composes the durable process terminal with the optional same-attempt output
+    capture and broker journal. It never launches, cleans up, or publishes. A valid
+    process-only terminal remains ``process_only`` when output capture is absent;
+    changed or malformed capture evidence is ``recovery_required``.
+    """
+    terminal = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    result: dict[str, object] = {
+        "status": "process_only", "reason": "native_trusted_lifecycle_process_verified",
+        "launch_id": intent.launch_id, "journal_id": intent.journal_id,
+        "launch_sha256": terminal.get("launch_sha256"),
+        "intent_sha256": terminal.get("intent_sha256"),
+        "attestation_sha256": terminal.get("attestation_sha256"),
+        "registration_sha256": terminal.get("registration_sha256"),
+        "deadline_sha256": None,
+        "terminal_sha256": terminal.get("terminal_sha256"),
+        "stream_capture_sha256": None, "output_capture_sha256": None,
+        "broker_coverage": "not_observed",
+        "publication_eligible": False,
+    }
+    if (
+        terminal.get("protocol") != _TERMINAL_PROTOCOL
+        or not isinstance(terminal.get("terminal_sha256"), str)
+        or terminal.get("process_status") not in {"exited_zero", "exited_nonzero", "cancelled"}
+    ):
+        result["status"] = "recovery_required"
+        result["reason"] = "native_trusted_lifecycle_process_terminal_unverified"
+        return result
+    if terminal.get("process_status") != "exited_zero":
+        result["reason"] = "native_trusted_lifecycle_process_terminal_unpublishable"
+        return result
+    batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    try:
+        deadline = _read_deadline(batch, terminal)
+    except NativeTrustedAttemptError:
+        result["status"] = "recovery_required"
+        result["reason"] = "native_trusted_recovery_deadline_invalid"
+        return result
+    result["deadline_sha256"] = deadline["deadline_sha256"]
+    stream_digest = terminal.get("stream_capture_sha256")
+    if stream_digest is not None:
+        try:
+            stream = recover_native_trusted_stream_capture(
+                batch, intent=intent, terminal=terminal,
+            )
+        except NativeTrustedStreamError as exc:
+            result["status"] = "recovery_required"
+            result["reason"] = exc.code
+            return result
+        result["stream_capture_sha256"] = stream["stream_capture_sha256"]
+    capture_path = batch / "native-trusted-output-capture.json"
+    try:
+        os.lstat(capture_path)
+    except FileNotFoundError:
+        result["reason"] = "native_trusted_lifecycle_capture_missing"
+        return result
+    except OSError as exc:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_capture_invalid") from exc
+    try:
+        # Import lazily: native_trusted_output imports this module's recovery API.
+        from .native_trusted_capture import (
+            NativeTrustedCaptureError,
+            recover_native_trusted_output_capture,
+        )
+
+        capture = recover_native_trusted_output_capture(
+            batch, intent=intent, terminal=terminal,
+        )
+    except NativeTrustedCaptureError as exc:
+        result["status"] = "recovery_required"
+        result["reason"] = exc.code
+        return result
+    except Exception:  # noqa: BLE001 - fixed read-only audit boundary.
+        result["status"] = "recovery_required"
+        result["reason"] = "native_trusted_lifecycle_capture_invalid"
+        return result
+    result["output_capture_sha256"] = capture["capture_sha256"]
+    broker = capture.get("broker_evidence")
+    if isinstance(broker, dict):
+        result["broker_coverage"] = broker.get("coverage", "unknown")
+    else:
+        result["broker_coverage"] = "producer_declaration_only"
+    result["reason"] = "native_trusted_lifecycle_capture_verified"
+    return result
+
+
+def persist_native_trusted_lifecycle_audit(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+) -> dict[str, object]:
+    """Persist a create-only, publication-ineligible cross-record audit sidecar."""
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    if audit.get("reason") != "native_trusted_lifecycle_capture_verified":
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_not_verified")
+    required = (
+        "launch_sha256", "intent_sha256", "attestation_sha256", "registration_sha256",
+        "deadline_sha256", "terminal_sha256", "stream_capture_sha256", "output_capture_sha256",
+    )
+    if any(not isinstance(audit.get(key), str) for key in required):
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_context_invalid")
+    record: dict[str, object] = {
+        "schema_version": "1", "protocol": _AUDIT_PROTOCOL,
+        "launch_id": audit["launch_id"], "journal_id": audit["journal_id"],
+        "launch_sha256": audit["launch_sha256"], "intent_sha256": audit["intent_sha256"],
+        "attestation_sha256": audit["attestation_sha256"],
+        "registration_sha256": audit["registration_sha256"],
+        "deadline_sha256": audit["deadline_sha256"],
+        "terminal_sha256": audit["terminal_sha256"],
+        "stream_capture_sha256": audit["stream_capture_sha256"],
+        "capture_sha256": audit["output_capture_sha256"],
+        "broker_coverage": audit["broker_coverage"],
+        "publication_eligible": False,
+    }
+    record["audit_sha256"] = _digest_without(record, "audit_sha256")
+    batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    try:
+        _atomic_json(batch / _AUDIT_NAME, record, exclusive=True)
+        stored = _read_durable_json(batch / _AUDIT_NAME, code="native_trusted_lifecycle_audit_write_unknown")
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_write_unknown") from exc
+    if stored != record:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_write_unknown")
+    return record
+
+
+def recover_native_trusted_lifecycle_audit(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+) -> dict[str, object]:
+    """Revalidate the audit sidecar and all of the evidence it summarizes."""
+    audit = audit_native_trusted_lifecycle(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    if audit.get("reason") != "native_trusted_lifecycle_capture_verified":
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_not_verified")
+    batch = Path(workspace).expanduser().absolute() / "evolution" / "producer-batches" / intent.journal_id
+    try:
+        record = _read_durable_json(
+            batch / _AUDIT_NAME, code="native_trusted_lifecycle_audit_invalid",
+        )
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_invalid") from exc
+    expected_fields = {
+        "schema_version", "protocol", "launch_id", "journal_id", "launch_sha256",
+        "intent_sha256", "attestation_sha256", "registration_sha256", "deadline_sha256",
+        "terminal_sha256", "capture_sha256", "broker_coverage", "publication_eligible",
+        "stream_capture_sha256", "audit_sha256",
+    }
+    if (
+        set(record) != expected_fields
+        or record.get("schema_version") != "1"
+        or record.get("protocol") != _AUDIT_PROTOCOL
+        or record.get("publication_eligible") is not False
+        or record.get("audit_sha256") != _digest_without(record, "audit_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_invalid")
+    expected = {
+        "launch_id": audit["launch_id"], "journal_id": audit["journal_id"],
+        "launch_sha256": audit["launch_sha256"], "intent_sha256": audit["intent_sha256"],
+        "attestation_sha256": audit["attestation_sha256"],
+        "registration_sha256": audit["registration_sha256"],
+        "deadline_sha256": audit["deadline_sha256"],
+        "terminal_sha256": audit["terminal_sha256"],
+        "stream_capture_sha256": audit["stream_capture_sha256"],
+        "capture_sha256": audit["output_capture_sha256"],
+        "broker_coverage": audit["broker_coverage"],
+    }
+    if any(record.get(key) != value for key, value in expected.items()):
+        raise NativeTrustedAttemptError("native_trusted_lifecycle_audit_invalid")
+    return record
+
+
 __all__ = [
-    "NativeTrustedAttemptError", "NativeTrustedAttemptObservation", "run_native_trusted_attempt",
+    "NativeTrustedAttemptError",
+    "NativeTrustedAttemptObservation",
+    "audit_native_trusted_lifecycle",
+    "persist_native_trusted_lifecycle_audit",
+    "recover_native_trusted_attempt",
+    "recover_native_trusted_lifecycle_audit",
+    "run_native_trusted_attempt",
 ]

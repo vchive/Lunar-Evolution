@@ -1,5 +1,10 @@
 # Tasks
 
+Latest 2026-10-01 local scheduler regression is documented in Feature 156
+`local-native-scheduler-validation.md`: actual host broker/journal coverage now composes through
+formal receipt and native publication; the local target cannot write the host journal or connect
+directly. T157-05/06 still require complete bypass and active transport crash/ownership coverage.
+
 - [x] T157-01 Define bounded request event/evidence DTOs, canonical self-digest, and fixed parser errors.
 - [x] T157-02 Bind evidence to the exact Feature 156 launch tuple, intent digest, and repeated budgets.
 - [x] T157-03 Add conservative declaration-only assessment that never claims host enforcement.
@@ -18,3 +23,24 @@ identity-bound, append-only, fsynced events and read-only crash recovery. A POSI
 now supplies real brokered POST I/O, bounded IPC, process-backed cancellation, and an
 in-memory response result. Complete egress coverage, protected production journal ownership,
 and Feature 156 integration are still required.
+
+The native trusted attempt now optionally gives its isolated target a bounded anonymous-pipe
+request/response protocol. The controller creates a private journal before gate release,
+applies the immutable intent budgets through the existing broker and HTTP worker, and keeps
+the configured endpoint and headers outside the target environment. A local native fixture
+proves one completed request; malformed frames and a second request beyond the budget reach
+no provider I/O. This is a request-exit integration slice, not T157-05/06 closure: the
+process-only receipt does not bind the journal, and a production scheduler cannot yet treat
+the broker observation as publication authority.
+
+The completed native evidence projection now carries the broker coverage into the formal Feature
+156 execution receipt, and Feature 153's publication transaction can require that receipt by
+digest before writing its prepared intent. This is a narrow receipt/journal handoff; T157-05 and
+T157-06 remain open for protected journal ownership, crash-safe transport recovery, bypass
+coverage tests, and production scheduler integration.
+
+The broker now also exposes a read-only `recover_producer_broker_observation()` boundary. It
+replays the controller-owned journal under a caller deadline, binds an optional retained digest
+and byte count, and keeps active or timed-out requests at `recovery_required`; it never reopens
+the journal for append or retries provider I/O. This is supporting crash-recovery evidence for
+T157-05/T157-06. It does not establish complete egress coverage or authorize a resumed producer.

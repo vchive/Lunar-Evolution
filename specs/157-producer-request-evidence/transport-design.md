@@ -23,9 +23,16 @@ exact launch/journal/run/parent/task tuple, intent digest, and request budgets. 
 write poisons that journal handle. Read-only recovery validates every line and reports
 unclosed admissions and timed-out records as uncertain, without resuming them. A deadline
 record alone does not establish that provider I/O stopped. It rejects symlinked file and
-ancestor paths. The controller must place this file in an OS-protected directory that the
-producer cannot write; a hash chain alone does not authenticate bytes against a child
-that can edit the journal with the controller's credentials.
+ancestor paths. Creation and replay require a current-user-owned `0700` leaf directory
+and `0600` journal file; every append rechecks both modes and owners. These checks
+exclude shared filesystem access but cannot distinguish a producer running under the
+same user. The controller must also isolate the producer from this directory; a hash
+same user. Replay also returns the opened file's device/inode identity and can require
+the identity captured by the original controller, so a same-content journal replacement
+is rejected before recovery is accepted. The controller must also isolate the producer
+from this directory; a hash chain alone does not authenticate bytes against a child that
+can edit the journal with
+the controller's credentials.
 
 `ControllerOwnedRequestBroker` now provides the provider-free transport boundary. It passes
 the exact controller-issued admission and deadline to a controlled transport handle, and
@@ -72,10 +79,24 @@ proof of a production-wide request deadline.
    one that crashes the controller after admission. Until then, retain the existing
    declaration-only and process-wall-time semantics.
 
-The current implementation completes bounded host accounting, a fixture-level durable
-journal, and a real HTTP worker for requests explicitly routed through the broker. It does
-not prove complete provider egress coverage, own a protected production journal directory,
-or integrate with Feature 156, so T157-05 and T157-06 remain open.
+The native trusted attempt can now pass anonymous request/response descriptors to its
+network-isolated target. A controller thread initializes the private host journal before
+the release gate opens and routes bounded target frames through the existing broker and
+HTTP worker. The target environment contains descriptor numbers, not the endpoint,
+credential, or journal path. A fixed endpoint is chosen by the controller for the whole
+attempt; target frames provide only opaque request ID and body. Malformed or over-budget
+frames stop the bridge without outbound I/O. Its observation still has
+`coverage=brokered_requests_only`, and the process-only terminal receipt does not yet
+bind a replayed journal. The completed formal Feature 156 receipt binds the canonical broker
+journal identity and admitted-count coverage, and Feature 153 may require that receipt before
+publication staging. T157-05 and T157-06 therefore remain open for crash-safe ownership,
+complete egress coverage, and scheduler integration.
+
+The target SDK validates that both descriptor handoffs are live anonymous pipes and rejects
+regular files, sockets, reused descriptors, invalid request IDs, and non-2xx/5xx response
+status values before attempting a frame. This closes accidental alternate-file and
+descriptor-reuse paths at the SDK boundary; it still does not prove that a process started
+outside the trusted native bootstrap cannot open an unrelated provider connection.
 
 ## Native producer isolation boundary
 

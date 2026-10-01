@@ -2,7 +2,7 @@
 
 **Created**: 2026-09-24
 
-**Status**: declaration DTO and fixture-level host ledger/journal implemented; lifecycle integration deferred
+**Status**: host broker wired to optional isolated native attempt; durable lifecycle receipt integration deferred
 
 ## Problem
 
@@ -49,11 +49,22 @@ Reading a file written by an arbitrary child after it exits is still a declarati
 upgrade the receipt to `request_timeout_enforced`. The existing wall-clock deadline and output
 capture remain the only host-enforced limits until that contract exists.
 
-The provider-free `HostRequestLedger` and `HostRequestJournal` provide bounded controller-side
-admission, monotonic timing, fsynced append-only records, and read-only crash recovery for
-brokered requests. Their snapshot explicitly says `brokered_requests_only`; they do not
-perform outbound I/O, cancel a hung request, or prevent producer egress outside the broker.
-See `transport-design.md` for the production transport and isolation requirements.
+`HostRequestLedger` and `HostRequestJournal` provide bounded controller-side admission,
+monotonic timing, fsynced append-only records, and read-only crash recovery for brokered
+requests. The optional native attempt now passes only anonymous request/response pipes to
+the isolated target. Its controller thread accepts bounded canonical JSON frames, sends
+each accepted body to one host-configured endpoint through `ControllerOwnedRequestBroker`
+and `ControllerHttpTransport`, and returns a bounded response over the pipe. The target
+receives neither endpoint nor credential. The journal is created outside target write
+directories before the release gate opens. Missing initialization closes the gate.
+
+This path is still `brokered_requests_only`. The process-only native terminal receipt
+does not bind a broker journal or authorize publication. The later formal Feature 156 execution
+receipt now carries the verified broker-coverage summary when the native evidence projection is
+complete; Feature 153 can require that receipt before staging, but this does not by itself prove
+complete egress or scheduler admission. A recovery-safe broker handoff and production scheduler
+integration remain deferred. See
+`transport-design.md` for the production transport and isolation requirements.
 
 ## Non-goals
 

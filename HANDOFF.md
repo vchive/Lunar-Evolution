@@ -1,5 +1,579 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Final-head local validation and remaining Ubuntu audit failure
+
+`36899fe` 的完整、固定源码本地 current 回归已独立通过：9,230 unique cases，
+9,215 passed / 15 Darwin/filesystem skips / 0 failed/errors，exit 0，924.505 秒。
+JUnit `/tmp/lunar-current-clean-head-36899fe-20261001.xml`；不是初跑与 focused 的拼接。
+同 head wheel 的170运行时文件和 sdist 的504源码/测试文件逐字节匹配；隔离安装后的
+mock DRS/BRS、inspect 和不新增账本的终态重放均通过。证据
+`/tmp/lunar-package-verification-36899fe-20261001.json`、
+`/tmp/lunar-installed-wheel-36899fe-20261001-validation.json`。
+
+Ubuntu run `36855386837` 在 Python 3.12/3.13 完整成功；3.11 current 唯一失败为
+`test_native_campaign_audits_all_candidates_and_is_read_only`，报告 preparation_success=1/1，
+status=failed。原失败必须保留，PR #1 仍为 draft，尚未合入 main。完整 annotations 在
+`/tmp/lunar-linux-ci-36899fe-annotations-20261001.json`。
+正式 acceptance runner 已在审计前 `_quiesce_native_database`，而 fixture 缺少这个步骤且
+在 before inventory 前又通过 Store.list_events 重新开启 WAL。受控 Python 3.11 GC
+交错已复现：原库 WAL/SHM 删除、DB 字节变化，candidate2/holdout8 均通过但审计以
+audit_inventory_changed 拒绝；fixture 已复用正式 quiesce gate，并增加正反交错回归。
+原 CI 的省略报告不足以重建全部原字段；不能把受控复现改称原调用的完整 trace。
+CI 的早期 native focus 现在包括 campaign audit，用于提前暴露该边界。
+该 fixture 完整7项在 managed Python 3.11/3.12/3.13 均通过，强制GC正例仍要求全文件字节
+不变；反例必须保留 inventory_changed。生产 auditor 未改，未知/身份/预算 gate 未放宽。
+报告 `/tmp/lunar-campaign-quiesce-py311-20261001.xml` 与 `py312`/`py313` 同名报告。
+最后仍需本修复 head 的完整 Ubuntu 三版 CI，不能用 parent head 的两版绿灯代替。
+
+## 2026-10-01 Ubuntu cancellation cleanup correction
+
+PR #1 的 `0c5cc3a` Ubuntu run `36846543906` 实际出现 7 项取消/超时清理失败；3.13
+current 9,195 cases、30 platform skips、0 errors，archived 2,294 与 frozen 24 均通过。
+原失败保留，不能称该 head 合入就绪。Linux zombie 的 `/proc` owner identity 仍可读取，
+而旧 cleanup 没有在 TERM/KILL 后回收 live caller 的直接子进程，killpg0 因此保持 alive。
+
+修复增加可选 `reap_child` 非阻塞 hook；live producer/native launcher 传原始 Popen.poll，
+每次 group probe 前回收，不用返回值授予 cleanup/kill 权限，不改变原绝对 deadline，
+恢复路径没有原 child handle 所以不传 hook。活 descendants、归属漂移、hook 异常仍拒绝。
+更快 cleanup 暴露 native cleanup reserve 提前停止后的 scheduler 分类错误；明确 wall_timeout
+现在按原始 tighter caller budget 传播 typed budget exception，独立更紧的 intent limit 保持
+native timeout code，unknown 不变为可发布。
+
+本地 producer 79 passed / 2 Linux skip；related 84 passed；native timeout 五套件 105 passed；
+最终 ownership/scheduler units 68 passed；3.11/3.12 hook focus 各 5 passed。Ruff、compileall、
+YAML 和 whole-branch diff check 均通过。CI 增加 full runner 前的 native cleanup focus 和
+artifact；仍需新 PR head 三版 Ubuntu current/archived/frozen 全部成功，尚未合入 main。
+详细证据和保留的失败见 Feature 156 `main-integration-validation.md`。
+
+上述修复 `87ea0ce` 的 early Ubuntu focus（run `36851401335`）把失败缩至三版同一项
+active cancellation E2E。目标的 marker 可以早于 host 接受 target_started frame；仅看该
+文件立即取消时，控制器按契约保留 unknown，不能写 verified cancelled terminal。
+E2E 现在精确等原 accept_frame 成功验证目标启动，再结合实际 marker 取消，全部原断言
+保留；新增确定性“marker 已写但 start frame 未被 host 接受”回归，确认只保留 unknown。
+E2E 13 与该负例 1 均 passed，没有生产行为放宽或新增等待预算。最新 wheel 源码/资源
+170 文件逐字节匹配，安装后 mock DRS/BRS、inspect 与不重复落盘的 terminal replay 均通过，
+证据 `/tmp/lunar-installed-wheel-cleanup-20261001-validation.json`；仍需新 head Ubuntu 完整矩阵。
+
+`aa66d89` 的 early Linux cleanup 在 3.11/3.12 通过；3.13 只出现时间断言的浮点减法
+精度失败（133.55416034799998 - 125.554160348 ≠ 整数 8）。现在精确验证原 deadline 加法
+构造，不使用宽松容差或改变预算；负例同步也等待 marker 完整字节以固定目标写入与取消
+顺序。最终 attempt/E2E focused 51 passed / 0 skip，Ruff、compileall、diff check 通过。
+
+`121ba4e` early cleanup 在 Linux 3.11/3.13 通过；3.12 暴露 cancellation composition 的
+真实预算漂移：原25秒通过 deadline-start 重算变成24.999999999999986，prepared deadline
+的 budget/journal 指纹与原 control 恢复不一致。现同 deadline 的组合精确保留原 allowance，
+更窄 parent 仍收窄，不放宽 journal gate。新增11项浮点边界/原始 budget pin 恢复回归，
+五套件含全部 E2E 119 passed / 0 skip；静态检查通过。接下来以新 head 的完整 Ubuntu
+current/archived/frozen 三版结果为准，原失败证据继续保留。
+
+## 2026-10-01 Main integration and cross-platform corrections
+
+已创建并关联 [PR #1](https://github.com/vchive/Lunar-Evolution/pull/1)，base 为实际主分支
+`main`，head 为 `codex/feature-156-producer-lifecycle`。开始时 `origin/main` 是 head 的祖先，
+0 behind / 81 ahead；merge-tree 无冲突。PR 暂为 draft，未合入主分支；Ubuntu Python
+3.11/3.12/3.13 的当前、历史和冻结回归仍是合入门槛。PR CI 增加取消旧提交运行的配置。
+
+并行审查修复 deterministic draft 目录的 active replacement 窗口，创建/chmod/fsync 改为
+held no-follow descriptor，复核 parent/run/children inode；新增 7 条替换/私有/create-only
+测试。Linux bootstrap 的匿名 zero-link target FD 必须具有全部 4 项 seals，普通 unlinked
+文件和 incomplete seals 拒绝；Landlock regular read path 不再使用目录专用 READ_DIR。
+Linux C fixtures 使用 static 编译，不扩大生产 runtime allowlist；新增 9 条 native/isolation
+回归，其中 8 条在本机 Darwin 跳过，必须由 Ubuntu 执行。
+
+旧 main CI 的 handoff 测试把全局 os.stat 禁用到自身 rglob/pytest JUnit 阶段；现在仅在
+handoff 调用内禁用，3.11/3.12 focused 各 100 passed。cooperative producer 的 Linux test
+现在精确要求 gate + sealed executable 两个 FD。整个分支 diff 的 3 处文档空白已修复。
+
+本轮 required runner 的 archived 2,294 与 frozen 24 均通过；starting current 9,179 cases
+为 9,171 passed / 7 platform skips / 1 preparation preflight failure，overall exit 1；该未改
+node 和整个 preparation file 后续分别 1/48 passed。组合 focused 183 cases 的一个 native
+loopback request 保留 admitted-only journal，target exit 12；独立重跑通过，scheduler fixture
+把 request budget 从 1 调到 5 秒，native wall 仍为 12 秒。不得把这些失败报告改称全量绿灯。
+完整诊断、报告路径与合入/发布边界见 Feature 156 `main-integration-validation.md`。
+
+最终 E2E 13 passed / 17.75s；逐 node-ID 核对最终 9,195 current cases 全覆盖，最新结果为
+9,180 passed / 15 Darwin platform skips / 0 failed/errors，无遗漏/额外节点。原失败完整
+runner/focused 报告仍保留，这是 starting full run + final focused reconciliation，不是
+immutable final-tree 单次零失败运行。Ubuntu PR head 矩阵必须独立通过后才可合入。
+
+## 2026-10-01 Shared budget, governed generations and local producer completion
+
+延续现有 SDD，并行完成本轮可本地验收的 P0/P1/P2 实现。当前代码和本节优先于下方旧缺口：
+
+- P0：`ParentRunBudget` 把 learning 与 holdout/evaluator/unknown-retry 合账。原计划/绝对
+  deadline 不刷新，事件先持久再调用；parent→child charge 中断幂等。外层 generation 对账
+  也独立扣 unknown 预算。跨库、删除/换绑/未扣费 external receipt 和终态恢复均拒绝。
+- P0：controller generation marker 绑定独立 admission checkpoint、原 candidate/source proof
+  以及实际 approved/active admission heads；改写 controller checkpoint 的 memory/status/
+  terminal 字段不能绕过准入。之后 revoked 的历史结果可只读诊断，但不授权新 solver。
+- P1：`RSIGovernanceCoordinator` 冻结 generation、parent、逐项 source/继承 lineage、manifest、
+  runner 与原 parent budget；配置后自动 post-practice holdout 和整代准入。同一 DRS/BRS run
+  可跨多代；rejected 保留 parent，unknown 阻止整 run 且不重发调用。
+- P1：`generation_revalidate_before_dispatch=True` 可选地在每个新 episode 前自动复检一次，
+  固定 request digest ID、共享预算，失败 quarantine，unknown 显式恢复，before-run 完成
+  重放不再调用/扣费。BRS controller 准备验证，worker 只读复用，避免 parent-lock 争用。
+- P1：完整 Actor clean-room evidence create-only sidecar + first-call claim。未知 claim 不
+  重跑 evaluator，完整 pins/decision/raw verdict 可恢复并显式喂给 admission；controller DRS
+  完整落盘、retry/memory 与终态不重复 spawn 均通过本地 fixture。
+- P1：实际本地 native bootstrap + C target + loopback broker 经过正式 receipt/strict output/
+  native candidate/evaluator/archive/population/delivery/只读恢复。新增父 deadline、active
+  cancellation、receipt 后中断、partial-commit unknown 和精确 published replay fixture。
+  候选和 evaluator 现在在现有轮询中检查 caller guard、先清理进程组再传播取消/预算错误；
+  cancellation-only/shared-wall/独立 publication guard 均接通，commit 临界区保留。
+- P2：显式跨 solver translation 只输出 provenance-bound unresolved draft；repeat-pass
+  confidence 提供 bounded bool observations、Wilson marginal interval 和完整 pin 恢复。
+  二者不授予 active memory 权限，不替代真实 campaign raw receipts。
+
+API/恢复顺序和可运行本地示例见 `docs/rsi-local-runtime.md`。局部契约：
+`shared-parent-budget.md`、`generation-governance.md`、`controller-generation-governance.md`、
+`controller-dispatch-revalidation.md`、`actor-evidence-persistence.md`、`memory-translation.md`、
+`noise-confidence.md`，均位于 Feature 160；producer 证据见 Feature 156
+`local-native-scheduler-validation.md`。
+
+本轮没有运行 WebAgent、远程 evaluator、公司平台、真实模型或真实 OpenEvolve/Shinka campaign，
+没有读取/修改密钥。剩余重点是正式官方 evaluator/模型效果验收、外部 project launch trust/
+runtime allowlist/default project registration、worker 来源/ownership/可信 unknown completion、
+完整跨平台及 active transport crash/bypass 矩阵。trusted local SQLite 不提供历史删除/rollback
+防护或远程原子 lease；模型训练仍为独立轨道，后台/分布式 scheduler 不在当前本地主线。
+
+工作分支仍为 `codex/feature-156-producer-lifecycle`，推送不等于合入 main/master。不要覆盖
+未提交工作。实现提交 `3a2dcde`（RSI）和 `74afaf7`（producer）已推送该分支。
+最终本地 current-tree 清单 **9,179 cases** 全部有执行结果：**9,172 passed / 0 failed /
+0 errors / 7 skipped**。六项需要本机不具备的 Linux sealed-memfd/runner，一项要求独立大小写
+文件别名；改动的本地 RSI/native scheduler 用例无 skip。完整 run 9,178 cases 加最终新增
+publication guard 单条，逐 node-ID 核对无遗漏，合计 910.579 秒；aggregate JUnit
+`/tmp/lunar-current-final-inventory-20261001.xml`。这不是 archived/frozen snapshot runner 的重跑。
+最终 Ruff（src/tests/tools）、compileall 和 diff check 均通过；详情见 Feature 160
+`validation.md`。
+
+## 2026-10-01 P0/P1/P2 execution and local runtime composition
+
+延续 Feature 160 与 producer lifecycle SDD，本轮优先级清单见
+`specs/160-rsi-learning-mode/priority-execution.md`。开始时工作区干净，之后并行完成如下增量：
+
+- P0：native caller cancellation/parent deadline 在 attempt、receipt、output、publication 的
+  新阶段持续检查；保留 intent 的 native-attempt-only timeout 和 publication commit 临界区。
+  transfer schema v3 绑定 manifest/input、policy、memory 和 raw trials，默认要求 unseen 全部
+  pass 且无 pass-rate regression。原始跨任务/no-memory 污染标记不能靠重算 report digest 删除。
+- P0：`rsi_regression_campaign.py` 提供 controller-ledger-backed holdout。每 trial 持久
+  reservation → started → completed，transfer/evaluator 原子预留，未知调用必须显式
+  evidence-bound reconcile；unknown-retry 预留幂等，原绝对 deadline 不刷新，最多 1024 trials。
+  approval reason 升级到 `controller_transfer_promotion_v2:<digest>`，绑定 actual manifest、
+  policy、parent、components/external pins 和 planned budget；legacy v1 批准不自动激活。
+  完成报告按治理库/收据缓存；nested caller pins 冻结并在 trial 边界检查。
+- P1：`AgentLoopCleanRoomVerifier` 显式接入 controller verifier 协议。候选和依赖用
+  bounded/no-follow 读取，拒绝文件/目录替换；分别校验 Actor manifest SHA 和 clean-room
+  raw artifact SHA，冻结 public input，再用独立 spawn 重验。DRS practice → memory → retry
+  和 terminal resume fixture 已通过；完成 callback 不重复 evaluator。
+- P1：`GovernedMemorySnapshotGate` 通过 `memory_admission_gate=` 接入 controller：新 intent
+  和 solver dispatch 前要求 exact frozen snapshot 的全部 admissions 为 active 且来源、
+  scope、compatibility、item/verifier/holdout evidence 匹配；revoked 拒绝整份快照。
+  治理读取后重新检查 deadline；gate 配置绑定 run fingerprint，完成记录仍可只读重放。
+- P2：`rsi usage PATH [--run-id ... --episode-id ... --adapter-stage ...] --json` 只读诊断，
+  在 home/SQLite 初始化前处理，不建锁或目录；输出 nullable totals、未知 receipt 数、
+  stage breakdown 和明确标记的成本估算。缺失/损坏不解释成零用量。
+
+本轮组合回归 **890 passed / 0 failed / 0 skipped in 49.42s**，含 **773 RSI cases** 与
+117 producer/native cases，JUnit `/tmp/lunar-priority-regression-20261001.xml`。之后仅新增
+嵌套 pin alias、malformed-memory intent 和 legacy-v1 approval 三条回归，campaign/promotion
+focused **43 passed in 0.84s**，JUnit `/tmp/lunar-rsi-campaign-final-20261001.xml`。
+最终 `ruff check src tests`、compileall 与 diff check 通过。没有运行 WebAgent、远程
+evaluator、公司平台、真实模型或真实 OpenEvolve/Shinka campaign，也没有读取/修改密钥配置。
+
+未完成的重点必须保留：
+
+1. P0 接线：holdout 使用同一 RSI budget schema，但 campaign budget 尚未从 parent DRS/BRS
+   已消耗预算扣减；仍需 shared parent/run budget 与自动 holdout/quarantine 调度。
+2. P1：governance gate 消费一个 frozen generation。practice commit 后的新 snapshot 必须
+   re-admit + 新 run；同 run 跨代自动治理仍未完成。gate 只验证 trusted local latest heads，
+   不防数据库历史删除/rollback，也不提供横跨远程 solver 的原子 lease。
+3. P1：完整 Actor clean-room evidence 自动持久化/admission、真实官方 evaluator、外部 worker
+   来源/ownership、可信 unknown→passed completion，以及完整 producer recovery/transport/
+   scheduler 和真实 campaign。T153-06/06b/07、T156-05/06/09/11/12/14、T157-05/06、
+   T158-04、T159-05 的完整验收仍开放，supporting fixture 不替代生产完成。
+4. P2：跨 solver memory 翻译、噪声 confidence policy 与共享控制原语；模型训练仍是独立轨道。
+
+当前工作分支仍为 `codex/feature-156-producer-lifecycle`，推送该分支不等于合入 main/master。
+不要覆盖未提交修改；继续开发先读本节、priority-execution、tasks 和局部 SDD。
+
+## 2026-10-01 RSI curriculum policy, quarantine and durable promotion identity
+
+本轮继续现有 Feature 160，未扩大到真实 producer/evaluator。已提交的 `2be9651` 增加失败
+transfer report → governance revoke 边界，`3507df3` 增加显式 `FailureBoundaryPolicy`：
+未覆盖 capability/prerequisite 优先、hard-negative 阈值、单 cluster 预算与 novelty。新选择
+记录 diagnosis/policy digest，恢复重演 cluster、task、reason、coverage 和预算；ledger digest
+绑定完整 policy，controller checkpoint 持久化 policy，legacy 无 policy 仅按默认 v1 和旧摘要
+公式验证。contract 见 `specs/160-rsi-learning-mode/curriculum-policy.md`。
+
+独立审查后进一步收紧晋级和撤销：caller fingerprint 不得替换 controller 观测 pins；
+revoked/pre-shadow admission 在 runner 前拒绝；每次 trial 前后和最终写入前复核组件。
+controller approval 在同次 governance CAS 中，把观测组件与 external pins digest 写入
+`reason=controller_transfer_promotion:<sha256>`，所有 approved/active replay 都检查该绑定。
+新 controller 可复用原批准收据而不重跑 runner，但组件漂移或 legacy 无绑定记录会停止。
+direct promotion adapter 保持显式本地 API；这里不是外部来源认证或 Python/OS sandbox。
+quarantine 的 revoke reason 绑定 rejected report digest，手工撤销/不同报告不得冒充同一次
+重放；撤销后 admission 不可检索，但没有修改 immutable `RSIMemoryStore`。
+
+最终本地 RSI 回归 **584 passed / 0 failed / 0 skipped in 6.17s**，JUnit 报告
+`/tmp/lunar-rsi-release-20261001-v2.xml`；focused promotion/governance/transfer **51 passed**，
+curriculum/resume **33 passed**；`ruff check src tests`、compileall 和 diff check 通过。
+本轮更新 tasks、validation、stage-gap、curriculum-policy 与 memory-promotion 规格。
+T160-13 的 provider-free policy 子项已关闭，真实 adapter/worker 来源、ownership 和可信
+unknown 完成证据仍开放。下一步仍是受控默认 holdout/quarantine 调度、真实 Actor/evaluator
+artifact handoff，以及 Feature 156/157/158 的正式 producer 生命周期接线；不运行 WebAgent、
+远程 evaluator、公司平台或真实 OpenEvolve/Shinka campaign。当前工作在
+`codex/feature-156-producer-lifecycle`，不等于已合入 master/main。
+
+## 2026-10-01 RSI clean-room admission and controller promotion composition
+
+Feature 160 新增两条本地 provider-free 组合边界。`CleanRoomAdmissionGate`（见
+`src/lunar_evolution/rsi_cleanroom_admission.py`）只接受 outcome 为 `pass` 且 episode、source、
+dependency、task input、evaluator provenance 与调用方 pins 完全一致的
+`CleanRoomVerdict`，以幂等方式把 governance admission 从 `observed` 推进到 `verified`。
+它不修改只读 `RSIMemoryStore`，不直接推进 candidate/shadow，也不提供外部 evaluator 或
+worker 真实性证明。
+
+`RSILearningController.promote_transfer_regression()`（见
+`src/lunar_evolution/rsi_controller.py`）是显式 opt-in 的 controller 组合入口：冻结当前
+snapshot 和传入的 parent snapshot，运行本地 `TransferRegressionSuite`，检查
+solver/verifier/curriculum/target-judge fingerprint、snapshot/parent digest 与 governance
+CAS，再交给 `MemoryPromotionAdapter` 执行 `shadow -> approved`，可选继续
+`approved -> active`。同一 controller 对已完成 promotion 只读重放，不重复 runner 或
+governance revision；入口不会自动调度 holdout、调用真实 evaluator、修改 memory store 或
+接入 OpenEvolve/Shinka campaign。`activate=True` 仍保留 approved revision，失败、漂移和
+rejected report 均 fail-closed。
+
+本轮文档同步更新 `specs/160-rsi-learning-mode/stage-gap-report.md`、`tasks.md`、
+`validation.md` 和 `memory-promotion.md`。实现仍属于本地 fixture 边界；提交前必须运行
+controller-promotion、memory-promotion、transfer-regression、clean-room admission/clean-room
+focused tests，以及 Ruff、compileall、`git diff --check`。不要把这些结果描述成真实模型、
+官方 evaluator、外部 producer 或 WebAgent 验收；当前分支也不等于已合入 `master`。
+
+## 2026-10-01 Broker journal recovery and scheduler boundary hardening
+
+当前 feature 分支已推送 `2248cf7`、`816c283` 和 `2a9f16d`。scheduler 在消耗一次性
+attestation 前拒绝 NaN、无穷大和其他非法 `parent_deadline`，并保留 cancellation/deadline
+向 native attempt 的原样传播。Feature 157 broker 增加只读
+`recover_producer_broker_observation()`：它在调用方 deadline 内重放 controller-owned journal，
+绑定 journal digest、字节数以及打开文件的 device/inode，拒绝 same-content replacement、
+partial append、非法 descriptor handoff 和无效 HTTP 状态；活动或超时请求保持
+`recovery_required`，不会重开 journal、重试 provider 请求或恢复 producer。
+
+本轮 focused broker/request/native scheduler 回归、Ruff、compileall 和 diff check 均通过。
+这些是 T157-05/T157-06 的 supporting evidence，仍未完成完整 egress coverage、跨进程生产
+scheduler/launcher、Feature 156 正式生命周期接线和真实 OpenEvolve/Shinka campaign；当前仍只
+使用本地 fixture，不运行 WebAgent、远程 evaluator 或公司评测平台。
+
+## 2026-10-01 Native trusted scheduler and read-only recovery supporting slice
+
+新增 `src/lunar_evolution/native_trusted_scheduler.py`，提供两个明确的本地 supporting
+入口：`run_native_trusted_producer()` 按一次性顺序串起 native trusted attempt、正式
+`execution-receipt.json` 持久化、严格同尝试 output preparation，并在显式传入 strategy 时
+调用 Feature 153 publication transaction；publication journal 绑定同一 journal/run/task
+身份和 `native_execution_receipt_sha256`。未传 strategy 时只返回 prepared 结果，不隐式发布。
+
+`recover_native_trusted_producer()` 是只读恢复入口：只重新验证原 launch/attestation、正式
+receipt 和 output evidence，不重新启动进程、不消费第二次 attestation、不刷新预算，也不
+发布 population。缺失、漂移或不完整证据均 fail-closed；恢复结果只有在 receipt digest 与
+strict output projection 一致时才返回。
+
+`tests/test_native_trusted_scheduler.py` 的 provider-free focused regression **6 passed**，
+覆盖顺序、输入 gate、显式 publication 绑定、不完整 attempt 拒绝、只读 recovery 和 receipt
+binding drift。测试通过 boundary doubles 验证调度边界，不能替代真实 native bootstrap、host
+observed request transport、跨进程 crash recovery 或 OpenEvolve/Shinka campaign 验收。
+因此这是 Feature 153/156/158 的 supporting slice；正式 launcher/scheduler 生产接线、
+unknown/interruption recovery、Feature 157 controller-owned transport、完整生命周期验收和
+真实 campaign 仍保持开放。当前仍只运行本地 fixture/provider-free 回归。
+
+## 2026-10-01 Formal native execution receipt to publication journal
+
+Feature 156/157/158 的 native trusted evidence 现在已有正式收据闭环：在 terminal、并发有界
+stream、稳定 envelope、host broker coverage、target execution binding、durable deadline 和
+owner-checked cleanup 全部复核通过后，create-only `execution-receipt.json` 才会持久化；重复
+调用只读复用完全相同的 canonical bytes，漂移、冲突、symlink、非 regular 文件或不完整证据
+均 fail-closed。Feature 153 的 publication transaction 可通过
+`native_execution_receipt_sha256` 接收该收据摘要，在写入 `journal.prepared.json` 之前读取并
+校验同一 batch 下的正式收据、任务身份、成功终态、gate release、cleanup 和 broker coverage，
+并把摘要写入 canonical publication journal。未提供该可选字段的 legacy journal 保持原有字节
+兼容性。
+
+这条链已经有 provider-free focused regression，覆盖有效 receipt 的 journal round-trip 以及
+缺失、格式错误、自摘要篡改、失败终态和错误任务身份的零写入拒绝。它只证明“正式执行收据
+→发布 journal”的持久边界，不等于完整 receipt schema 在发布边界重新投影，也不等于 trusted
+bootstrap 的生产 runner、crash-safe broker recovery、scheduler/default producer entrypoint 或
+真实 OpenEvolve/Shinka campaign 已完成。后续仍需完成 T153-06f、T156-05/06/09/12/14、
+T157-05/06、T158-04 的生产接线与真实 campaign 验收；当前仍不运行 WebAgent 或远程 evaluator。
+
+## 2026-10-01 Native trusted stream, envelope, cleanup, and receipt projection
+
+Feature 158/156 的 native trusted supporting slice 已继续推进。native bootstrap 现在以非阻塞
+并发管道读取 stdout/stderr，按每个流的 `output_max_bytes` 限制生成
+`native-trusted-stream-capture.json`，并把 `stream_capture_sha256` 绑定到 process-only
+terminal；恢复会校验流状态、摘要、边界和同一 launch/registration/deadline。输出 capture
+现在记录 envelope 的 `identity_before`、`identity_after`、`read_status=stable`，broker
+记录绑定 canonical host journal identity、摘要、大小和 admitted-count coverage。
+
+owner-checked cleanup 现在生成 create-only `native-trusted-cleanup.json`，terminal 绑定
+`cleanup_sha256`，恢复重新验证 cleanup sidecar，不能借 sidecar 自己的摘要伪造另一种 cleanup
+结果。`native_trusted_receipt.py` 的严格 projection 只有在 terminal、bounded streams、stable
+envelope、完整 broker coverage、target execution binding 和 cleanup 全部闭合时，才构造
+Feature 156 `ProducerExecutionReceipt`。新增的
+`persist_native_trusted_execution_receipt` 在同一严格检查之后，以 exclusive bounded
+fsync/atomic no-follow 方式 create-only 写正式 `execution-receipt.json`，随后 bounded reread
+并复核 canonical self-digest；完全一致的已存在 receipt 只读幂等重放，冲突、篡改、symlink、
+非 regular 文件或 evidence 漂移 fail-closed。该持久化仍不会开启 population admission 或
+publication，后续发布事务继续独立负责放行。
+
+本轮已推送的增量包括 `fba0cf3`、`fcf9f87`、`fa46ba2`、`af5e5c5` 和本分支的 receipt/cleanup
+实现。focused native attempt/output/stream/cleanup/receipt fixtures、Ruff、compileall 和
+diff check 通过；未运行 WebAgent、远程 evaluator、真实 OpenEvolve/Shinka campaign。T158-04
+仍未完全关闭：formal receipt 持久化、Feature 157 production journal 接线、publication
+transaction、scheduler/default producer entrypoint 和真实 campaign 仍在后续范围。
+
+## 2026-09-30 Native trusted durable attempt deadline
+
+native trusted attempt 现在在消费 attestation 前，把本次尝试的有效 monotonic 起点和
+`min(intent deadline, parent deadline)` 写入同一 batch 的
+`native-trusted-attempt-deadline.json`，带当前 OS boot id 和自摘要。文件采用独占写入，
+重复 launch 不会分配新的预算；恢复时必须验证 launch/intent/boot/摘要，恢复 cleanup
+把原始绝对 deadline 传给 owner-checked cleanup，因此崩溃后的显式 recovery 不会刷新或扩大
+原始墙钟预算。新增 focused 回归覆盖 sidecar 绑定、恢复 deadline 传递、篡改拒绝；native
+trusted attempt suite **27 passed**。这仍是 Feature 158 T158-04 的 supporting slice，
+尚未接入正式 Feature 156 execution receipt、发布事务或 scheduler。
+
+## 2026-09-30 Native trusted control propagation audit
+
+Feature 156 的 cooperative runner 已有 `cancelled` 回调和同一 monotonic 时钟域的
+`parent_deadline` 组合（取 intent 与 parent 的较小值），并在捕获、leader wait 和清理阶段保留
+`cancelled`/`unknown` 终态。此次文档审计把相同边界明确写入 Feature 158：native trusted
+attempt 接入时必须在 spawn 前、登记后、bootstrap/target frame wait 和 leader wait 观察回调，
+所有等待、cleanup 与 receipt 写入共用有效 deadline；回调异常、非法返回值、deadline 到期或
+清理不确定都保持 fail-closed。
+
+native trusted attempt 已接入 `cancelled`/`parent_deadline` 接口和 fail-closed 语义；selector、
+broker、frame、leader wait 都使用短轮询，且为 owner-checked cleanup 预留同一 deadline 内的
+收尾窗口。native-attempt focused suite **24 passed**，覆盖 active cancellation、cleanup
+uncertainty、parent deadline 提前终止和非法控制输入；Ruff、compileall、diff check 通过。
+acceptance matrix 的 L158-05 已更新为 `supporting-only`。这条 supporting-only/production
+integration 边界不能由 cooperative L156-12 的离线证据代替；仍需与 Feature 156/157 的正式
+registration、broker、terminal receipt 和 recovery 生命周期一起验收。
+
+随后补齐 native trusted 的已验证取消持久化：目标已启动、owner-checked cleanup 成功且取消
+回调为真时，写入同一 process-only terminal schema（`process_status=cancelled`、`exit_code=null`），
+绑定原 handoff 与 unknown-or-passed bootstrap evidence；只读 recovery 幂等返回，cleanup
+uncertainty、callback error、deadline expiry 和 pre-gate cancellation 不会伪造 cancelled 终态。
+新增 tamper/recovery/no-terminal 回归，native trusted focused suite **26 passed**。这仍是
+supporting-only 证据，不等于 Feature 156 正式 execution receipt、broker 或 post-crash 生产接线。
+
+## 2026-09-30 RSI/producer 本地闭环增量
+
+已推送 `31f0098`（RSI）和 `d1ae8bc`（producer）。RSI 新增 spawn 进程级 clean-room verifier：
+私有 JSON IPC、结果大小限制、硬超时 terminate/kill、异常隔离、fingerprint/工作区篡改
+fail-closed；新增 provider-free 用量账本的严格 JSON/CAS/hash-chain、估算成本和按指标
+fail-closed 预算摘要。`RSILearningController` 可选注入 usage ledger，solver 调用记录确定性
+event ID 与本地 monotonic wall time；恢复时缺少 sidecar 会登记未知时长，不伪造成本或精确时长。
+当前 RSI 本地组合 **523 passed**，未运行 WebAgent、远程 evaluator 或公司平台。
+
+Feature 153 新增同一 OS boot 内的 durable monotonic deadline：在 prepared intent 前写入
+`execution.deadline.json`，绑定 journal digest、boot、clock、inode 和原始 deadline，重启后
+只能恢复同一 deadline；锁替换和写入中的身份漂移 fail-closed。producer bundle 回归 **208
+passed**，全量相关选择此前 **1328 passed / 2 skipped**；未运行真实 producer campaign。
+
+当前仍开放：真实 Actor/官方 evaluator 和 artifact handoff、usage provider billing/GPU truth、
+完整 unknown/interruption recovery、evolved/seeded/repeated population admission、
+launcher/scheduler 接线和真实 OpenEvolve/Shinka campaign。Feature 153 transaction 尚未自动
+把该取消回调接到外部 producer 生命周期。
+
+随后补齐 Feature 156 cooperative runner 的运行中取消窄切片：`run_producer_process`/
+`ProducerProcessRunner.run` 接受 process-local `cancelled` 回调，在启动前、登记后、非阻塞
+capture 循环和 leader wait 中观察；owner-checked cleanup 成功时写入一次 `cancelled` 终态，
+清理不确定保留 `unknown`，回调异常或非布尔值在 spawn 前 fail-closed。新增本地 fixture
+覆盖 active cancellation、cleanup uncertainty 和回调错误，producer-process/lifecycle
+专项 **81 passed、2 skipped**。随后增加同一 monotonic 时钟域的可选 `parent_deadline`，runner
+与 intent deadline 取较小值，并覆盖窄预算终止和非法 deadline fail-closed。当前专项为
+**83 passed、2 skipped**。这不等于 Feature 153 transaction 已自动接入该回调，也不关闭
+trusted bootstrap、host-observed request、post-crash recovery、launcher/scheduler 或真实
+campaign 边界。
+
+## 2026-09-30 RSI callback 显式对账与 unknown transfer 处置
+
+继续 Feature 160 阶段 1，补齐上一轮留下的本地恢复接口。新增 `rsi_callbacks.py`，
+DRS/BRS verifier、target judge、curriculum 在调用前写 started，校验结果后写 completed。
+调用内部中断会隔离整条 run；已持久化结果只读复用。`reconcile_callback` 绑定原输入、当前
+组件、结果和本地观察证据，先持久化一次 unknown-retry 预留，再收录结果；两个步骤之间
+再次中断可幂等恢复。过 deadline 只允许登记已发生的结果，不放宽后续工作期限。
+
+Frozen transfer 保留 v1 journal，增加 callback 对账；原 unknown receipt 的 worker 已显式
+settle 为 failed/cancelled/timed_out/abandoned 后，可用 `reconcile_receipt` 在同一事务内
+追加 failed revision 和 checkpoint。旧收据、原始 unknown result 均保留，精确重放不再
+调用 callback 或扣预算。没有 unknown→passed 的推断或证据补造。
+
+CLI 支持 `rsi inspect RUN_ID --callback-id ID` 和 `rsi run CONTRACT --run-id ID
+--reconcile-callback ID --expected-checkpoint-sha256 SHA --callback-result RESULT.json
+--callback-evidence EVIDENCE.json`。后者只登记结果，返回 reconciled，另行运行原命令续跑。
+新 run 固定 callback protocol marker；旧非终态缺 started 协议且存在执行证据时停在
+`rsi_callback_migration_required`，旧终态仍可只读重放，避免升级后重复旧 callback。
+
+本地 RSI 全组合 **438 passed / 0 failed / 0 skipped**，报告
+`/tmp/lunar-rsi-callback-release01.xml`；Ruff、compileall、diff check 通过。
+仅导出准备提交的源码独立验证，同样 **438 passed**（`/tmp/lunar-rsi-callback-index.xml`）；
+Ruff、编译和所有公开 API 导入检查通过，不依赖工作区的未提交 producer 文件。
+未运行真实模型、WebAgent、远程 evaluator、公司评测或 producer campaign。
+契约及接口见 `specs/160-rsi-learning-mode/callback-recovery.md`。
+
+剩余：真实外部来源认证、进程 ownership/heartbeat/cleanup、旧不确定记录的证据迁移、
+unknown transfer 的可信成功证据协议，以及后续 clean-room verifier、memory governance、
+holdout 收益回归、真实 solver 接线和用量/成本统计。当前对账是 local trusted evidence，
+不代表生产 exactly-once。工作区 producer 文件和其导出仍保留未提交；不要 `git add .`。
+
+## 2026-09-30 RSI 持久计划续跑与中断回归
+
+继续 Feature 160 阶段 1，纠正此前把基础 resume/replay 等同于完整可恢复控制流的结论。
+DRS/BRS 现在共用持久 v2 plan、launch intent、决策、执行证据、memory 和预算 checkpoint；
+首次启动及恢复持有同一运行锁。已知结果复用后可继续原计划中尚未发起的 episode；缺少结果
+的已发起请求保持隔离，不重复调用 solver。BRS 整波冻结父快照、统一预留预算并按 ordinal 合并。
+
+显式 unknown→failed/cancelled 对账可恢复控制流，原始 unknown 或缺失的 result 保持原样；
+run 对账绑定 episode journal 并消耗持久 unknown-retry 预算。恢复重算当前组件配置/代码指纹，
+拒绝旧 observed 指纹掩盖漂移，检查预算历史不能回退和 execution 各层身份一致性。
+已完成 journal 在 run head 更新前中断时，恢复不会因后来超时而改判。
+
+Frozen transfer 使用独立 namespace、锁和 journal，复用已落盘结果、验证/判定与收据；
+宽松 judge 不能让失败或 unknown 通过。DRS/BRS 重复 CLI 运行复用学习和 transfer 结果。
+本地 RSI 组合 **289 passed / 0 failed**，JUnit：`/tmp/lunar-rsi-final-combined02.xml`；
+Ruff、compileall、diff check 通过。没有运行真实模型、WebAgent、远程 evaluator 或 producer campaign。
+
+独立导出暂存区源码再次 **289 passed**（`/tmp/lunar-rsi-index-validation.xml`），公开 API
+全部可导入。检查发现旧提交 `38086ac` 提前导出了未提交的 producer 模块；本轮提交修正
+该导出清单，工作区中的 producer 文件及其新导出保持原样，作为未提交工作留给对应开发线。
+
+仍开放：真实进程 ownership/heartbeat/cleanup 与 unknown 观测；transfer callback 已启动但结果
+未落盘时的显式对账入口、已发布 unknown transfer 收据的后续处置；DRS/BRS 本地确定性
+verifier/curriculum/judge 的调用内部中断与真实外部 callback 不重复执行保证。clean-room
+verifier、memory governance、holdout 收益回归、真实 solver adapter、嵌套递归与用量/成本统计
+仍按阶段报告推进。阶段 1 不笼统标记全部完成。本轮只提交 RSI 文件，保留未提交的 producer 工作。
+
+## 2026-09-29 Shinka 共享运行预算与全拒绝终态
+
+在独立分支 `codex/shinka-native-publication` 继续 Feature 153，不扩展或提交 RSI。
+事务新增 caller-owned `SolveExecutionControl`，复用同一个运行时钟，组合更紧的父级预算，
+在候选、暂存、获得发布锁及提交前检查。锁等待支持取消/到期退出；超时、取消保留明确类型。
+提交越过持久 unknown marker 后完成原有提交协议，避免已发布却被误报超时。
+预算摘要由实际执行/评估/墙钟限额生成，重试不能通过省略 control 或复制旧摘要来放宽政策。
+
+全拒绝批次现在写入独立拒绝收据及 `all_rejected/committed` 终态 journal，archive/state
+保持原字节。只读检查从原始 native evidence 重建完整收据，拒绝仅重算便携摘要的篡改。
+精确重试只检查终态，不再运行候选或评分；部分落盘或证据缺失保留现场并要求恢复。
+该终态目前覆盖执行成功后本地评估 validity=0，不把未知/超时/非零执行当作已完成拒绝。
+
+隔离树最终组合回归 **510 passed / 0 failed / 0 skipped**，JUnit 位于
+`/tmp/lunar-shinka-20260929-controls.xml`；全树 Ruff、compileall、diff check 通过。
+未运行真实模型、WebAgent、远程 evaluator 或真实 OpenEvolve/Shinka campaign。
+
+仍开放：跨进程剩余墙钟持久化、运行中子进程即时取消、完整 unknown/中断恢复、演化后/有 seed/
+多次 producer 导入、launcher/scheduler 接线、真实 producer campaign 和全量三阶段 release
+runner。P1 完整生产验收尚未完成。主工作区继续保留并行 RSI 改动；选择性同步本轮 Shinka
+文件，不要用整目录覆盖或 `git add .`。
+
+## 2026-09-29 Shinka 原生离线发布链路
+
+继续现有 Feature 153，保留并行 RSI 工作，未扩展其实现。Shinka SQLite fixture 已打通
+导出、分组、原生隔离草稿执行/独立评分、原子发布、archive/state 回读、种群 resume 和交付包
+读取校验。生产者分数不作为 Lunar 分数；低分但有效的候选可入库，同时由原生选择规则控制
+活动种群。事务仅接受 iteration=0、running、无 offspring/seed/既有 producer admission 的种群。
+
+执行前新增 `journal.prepared.json`，冻结完整任务、预算、来源与 archive 前缀；草稿证据绑定
+该摘要。相同请求中断重试复用已完成证据，不重新执行或评分；修改任务/预算、缺少或篡改 intent
+均拒绝。stage/commit/recovery 独立校验该绑定，删除证据描述不能绕过。最终独立分支回归：
+319 项导入/种群/演化、44 项发布/恢复/事务通过；另一个先行证据组合为 64 项通过（集合重叠，
+不累加）。Ruff、compileall、diff check 通过。没有运行 WebAgent、远程 evaluator 或真实模型/producer。
+
+共享 HEAD `0504739` 中 RSI adapter 测试依赖尚未提交的 RSI 模块，因此发布使用独立 worktree
+`/tmp/lunar-shinka-publication-20260929`、分支 `codex/shinka-native-publication`，基于 `f012b20`，
+只包含 Shinka/native 改动；原工作区及 RSI 文件原样保留。后续请避免把这些已发布改动重复实现。
+
+仍未完成：事务总墙钟/取消、all-rejected 持久终态、完整 unknown/中断恢复、更晚演化窗口导入、
+launcher/scheduler 接线及真实 OpenEvolve/Shinka 验收。详见 Feature 153 tasks/validation；
+本轮完成的是可回归的本地接入切片，不代表 P1 整体完成。
+
+## 2026-09-28 ShinkaEvolve 离线接入与 RSI 并行状态
+
+ShinkaEvolve 当前已接入为**离线 SQLite 导入器**：Lunar 可只读解析 Shinka 结果、导出候选，
+再通过本地 warm-start/bundle transaction 路径评测和发布。Feature 153 的 mixed/all-rejected
+以及发布后 `resume()` 回归已通过；当前事务边界只支持尚未开始 offspring 轮次的初始种群，
+带有既有演化历史或 seed admission 的种群会 fail-closed（`producer_bundle_transaction_population_history_unsupported`）。
+这不等于完整 Shinka 生产接线：尚未自动启动 Shinka、接入调度器或运行真实 Shinka campaign，
+也未调用 WebAgent 或远程评测。
+
+RSI（Feature 160）由并行工作流推进，现有 provider-free 本地 MVP、调研/规格/任务文档和
+fixture 回归保持不变；本条交接不扩大 RSI 的真实 provider、LLM curriculum 或远程评测范围。
+
+## 2026-09-28 开源 producer 接线与发布边界
+
+“外部 producer”仅指 OpenEvolve、ShinkaEvolve 等开源演化器，不存在需要用户提供的私有
+producer 服务或专用命令。OpenEvolve 现有显式本地单候选 wrapper；ShinkaEvolve 现有 SQLite
+结果的离线导出/导入。用户的模型密钥在私有 `.env`，不得输出或提交；Feature 142 的真实模型
+验收已经通过，无需重复跑该登记，也不运行 WebAgent。
+
+本轮已推送 `9c1fedb`：批次 staging 在任何写入前重验完整 preflight receipt 及 archive
+record count。已推送 `35850fb`：真实验收 revalidation 从已提交材料重建留存证据，拒绝同时
+伪造材料和 admission 摘要。原生 broker 线程的管道所有权及墙钟 join 已收紧；相关原生
+专项回归和线程异常严格检查通过。当前 `publication_eligible=false`，因为多文件流水线
+评测时直接写目标 archive、分配顺序 ID，证据留在 `evolution/bundle-attempts`，不能直接
+接到 Feature 153 的零写入、确定性 ID、原子批次发布。后续必须先完成隔离草稿评测、原位
+执行证据的完整绑定和发布收据、完整请求出口及真实 OpenEvolve/ShinkaEvolve 独立验收，
+方可声明 P1 完成。
+
+## 2026-09-28 P1 同次捕获接入候选准备
+
+原生多文件候选的只读准备增加显式 `require_same_attempt_capture` 严格路径：准备前后都恢复并
+复核原尝试内持久化的输出收据和宿主请求日志，结果带收据摘要；broker 不完整或 producer 声明
+的请求数与宿主记录不一致时拒绝。真实本地两文件 fixture 在有、无 broker 两种模式下通过，
+输出或日志篡改后的严格准备会拒绝。旧的只读检查入口仍可用于支持性诊断，不能被当作发布许可。
+输出、原生尝试、请求传输/证据、生命周期矩阵及隔离组合回归 **90 passed**；Ruff、compileall、
+diff check 通过。全仓回归因测试规模较大中止，未将其记为通过。
+
+当前 `publication_eligible` 仍为 false。Feature 157/158 的完整请求出口覆盖、候选本地执行
+评分与原子发布、调度接线以及 OpenEvolve/ShinkaEvolve 的真实生产验收继续开放。本轮未调用
+真实开源 producer 或新的模型 campaign。
+
+## 2026-09-28 P1 原生输出与请求日志同次捕获
+
+外部 producer 指 OpenEvolve、ShinkaEvolve 等开源候选生成器，不需要用户提供私有命令。
+当前 OpenEvolve 的显式 wrapper 只接单候选，Shinka 的 SQLite exporter 是离线导入；
+二者均未完成可信外部进程的全自动生产验收。
+
+原生 trusted runner 现在在原尝试墙钟截止前，稳定读取 envelope 和所有声明的候选源文件，
+把字节摘要、文件身份及进程终态摘要绑定到独占持久收据。使用宿主 broker 时，关闭后的
+请求 journal 会在同一截止前重放校验；journal 身份、字节摘要、大小、请求数及声明请求数
+是否一致也进入收据。恢复检查输出和 journal 是否改变。受控双文件 fixture 覆盖有无
+broker 的成功链及源文件、journal 篡改；过期 deadline 不创建收据。
+相关 native output/attempt、请求、生命周期及隔离回归 **87 passed**；Ruff、compileall、
+diff check 通过。
+
+这只是 P1 的证据切片：收据仍标记 `publication_eligible=false`，broker 覆盖仅为
+`brokered_requests_only`。Feature 157/158 的全出口约束及请求执行证明、候选执行评分和
+发布事务、调度及真实开源项目验收继续开放，T159-05 不勾选。未调用真实开源 producer、
+provider 或新的 campaign。
+
+## 2026-09-28 Feature 142 真实模型验收通过
+
+第二套独立登记 `native-142-20260928-02` 固定产品 `94f6e0e`，登记提交 `3f877fe`，
+在 clean remote `main` 上运行唯一一次 `glm-5.2` 尝试，退出码 0。共 9 次模型请求
+（上限 20），观测 token 95,545（上限 160,000，usage 已知）。父任务 ID 为
+`248522b8cd934e61a94c4b2de2cbc090`。不能在此登记下再启动或重试。
+
+发布审计为 `verified`：准备、主目标、联合目标均 **1/1**，8 个固定 holdout 全通过；
+2 个候选均完成生成、执行与评分。进程退出后，单独调用只读审计验证器核对了结果/报告摘要
+及完整 campaign inventory；重新从登记、数据库和父任务 ID 生成的独立审计与发布报告
+完全一致，审计过程未调用模型、执行评测或修改 campaign。证据位于
+`.lunar/acceptance-campaigns-20260928/native-142-20260928-02` 及相邻 `-audit` 目录。
+Feature 142 T040 对该固定任务和模型已完成。这是一次真实样本，不代表普遍成功率，
+也不能代替 P1 外部 producer 验收。
+
+首次失败登记 `native-142-20260928-01` 及其审计仍原样保留。P1 的宿主请求出口、
+输出包验证、调度/发布链路仍在开发，当前不得宣称外部 producer 可发布。
+
 ## 2026-09-28 首次真实模型验收及修复
 
 用户已在私有 `.env` 配置模型 endpoint/key；不要打印或提交。已从 clean remote `main`
@@ -4457,3 +5031,81 @@ target 转发显式 broker fd，不转发控制器环境或凭据。
 production journal。T040 的真实一次 attempt、独立 postrun/holdout audit、T156-05/06/09/12/14、
 T157-05/06、T158-04 的完整生产接线仍开放；下一步必须从新的 registration、冻结材料、clean
 `origin/main` 和唯一 campaign root 开始，离线准入与 runner 全部通过后才能启动真实验收。
+
+## 2026-09-30 Native lifecycle audit increment
+
+继续在当前 `codex/feature-156-producer-lifecycle` 分支推进 T158-04 的可观测性切片。原生
+attempt 的 deadline sidecar 现在同时绑定 `launch_sha256` 与 `attestation_sha256`，因此只读
+恢复和 cleanup recovery 都会拒绝换绑到另一份有效预算的 sidecar。
+
+新增只读 `audit_native_trusted_lifecycle`：先验证正式 native process terminal，再按同一
+attempt 复核可选 output capture 与 broker journal。没有 capture 时返回 `process_only`；有效
+capture 返回 capture 摘要和 request coverage，但仍保持 `publication_eligible=false`；capture
+receipt、broker journal 或其他持久证据改变时返回 `recovery_required`。若底层恢复只有
+recovery/unknown 记录，不会再被误报成 process terminal。该 API 不 spawn、不 signal、不 cleanup、
+不 publish。
+
+本轮补充了 process-only、有效 capture、capture receipt 篡改和 broker journal 篡改回归，
+并同步更新 Feature 158 data-model/tasks/validation。专项 native attempt 回归通过，Ruff、
+compileall、`git diff --check` 通过；Darwin immutable snapshot 测试仍可能产生 pytest 清理
+warning。没有运行 provider、WebAgent、外部 producer 或真实 campaign。
+
+T158-04 仍未闭合：正式 Feature 156 `execution-receipt.json`、native terminal 与 broker journal
+的生产绑定、publication admission、scheduler 接线以及 post-crash owner-checked cleanup/
+recovery 仍待实现。
+
+## 2026-09-30 Native execution-audit sidecar
+
+在不复用正式 `execution-receipt.json` 的前提下，增加了可选的
+`native-trusted-execution-audit.json` create-only sidecar。只有 process terminal、同一 attempt
+的 output capture、deadline sidecar 和 registration 全部重新验证后才会写入；记录并绑定
+launch/intent/attestation、registration、deadline、terminal、capture 摘要和 broker coverage，
+固定 `publication_eligible=false`。缺少 capture、重复写入或任何证据篡改都不会得到 sidecar。
+
+新增回归覆盖完整摘要链、create-only 冲突和 process-only 拒绝写入，并同步 Feature 158
+data-model/tasks/validation。该 sidecar 只是后续正式接线的只读投影，不能替代 Feature 156
+execution receipt，也不改变 scheduler、publication 或外部 producer admission。
+
+同时增加了 sidecar 的只读 recovery verifier：它先重新验证底层 terminal/capture/deadline/
+registration，再检查 sidecar 的固定字段、自摘要和逐项绑定；缺失、改写或仅重新计算自摘要
+的 sidecar 都会被拒绝。
+
+随后把 deadline 摘要继续绑定进 `native-trusted-process-terminal.json`。恢复会用当前 retained
+deadline digest 重建 terminal；即使攻击者把 deadline sidecar 换成同一 launch 下另一份自摘要
+正确的预算，也会得到 `native_trusted_recovery_terminal_invalid`。相关 native attempt/output
+回归、Ruff、compileall 与 `git diff --check` 均通过。
+
+## 2026-10-01 Producer lifecycle composition wrapper
+
+On `codex/feature-156-producer-lifecycle`, the native trusted scheduler is now composed behind
+the public `producer_lifecycle` API. `run_native_trusted_lifecycle` performs one provider-free
+native attempt, persists the formal execution receipt, projects strict output preparation, and
+optionally invokes the existing publication transaction when the caller supplies a strategy.
+`recover_native_trusted_lifecycle` is read-only and revalidates retained evidence without spawning
+or consuming another attestation. The preparation DTO retains native run/recovery observations
+and reports request/broker/publication coverage explicitly; the cooperative entry point remains
+unchanged.
+
+Focused lifecycle and scheduler tests pass after the projection double fix; Ruff, compileall and
+`git diff --check` are the required follow-up checks. This is an orchestration boundary only.
+Feature 156/158 still have open production gaps: integrated bootstrap registration and
+post-crash owner-checked cleanup/recovery, complete host-observed broker enforcement, and real
+scheduler/campaign wiring. No provider, WebAgent, external producer, or remote evaluator is run.
+
+## 2026-10-01 RSI transfer promotion composition
+
+Feature 160 now includes an explicit provider-free `RSILearningController.promote_transfer_regression`
+composition entry. It freezes the controller's current memory and supplied parent snapshot, runs the
+local frozen transfer regression, checks snapshot/CAS and solver/verifier/curriculum/judge fingerprints,
+then uses `MemoryPromotionAdapter` for the explicit `shadow -> approved` gate and optional
+`approved -> active` step. Repeated calls do not rerun the suite or append duplicate governance
+revisions. If a process dies after `shadow -> approved`, a fresh controller can resume the durable
+`approved -> active` edge from persisted holdout/baseline evidence without replaying the regression.
+
+The clean-room verdict bridge is also committed: `CleanRoomAdmissionGate` accepts only a strict
+provider-free pass with matching episode/source/dependency/task/evaluator provenance and idempotently
+records `observed -> verified`; it does not mutate `RSIMemoryStore` or skip candidate/shadow gates.
+
+Focused RSI promotion, transfer, governance, clean-room, Ruff, compileall, and diff checks pass.
+These are local fixture capabilities only; default automatic holdout scheduling, real evaluator/Actor,
+external producer lifecycle, and real OpenEvolve/Shinka campaigns remain outside this handoff.

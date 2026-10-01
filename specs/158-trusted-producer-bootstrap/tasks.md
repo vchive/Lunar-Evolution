@@ -1,9 +1,24 @@
 # Tasks
 
+Latest 2026-10-01 evidence: the actual local scheduler now joins native attempt, gate, byte-bound
+target, host broker, formal receipt, strict output, native publication and read-only recovery.
+Parent deadline, cancellation and interrupted/unknown publication fixtures are in Feature 156
+`local-native-scheduler-validation.md`. Historical slices below remain useful provenance, but
+their earlier formal-receipt/scheduler-open statements are superseded for this local composition.
+Full production/cross-platform recovery and actual project launch trust remain separate.
+
 - [x] T158-01 Define canonical trusted-bootstrap descriptor, protocol version, launch record, and bounded handshake/evidence DTOs.
 - [x] T158-02 Define exact-byte/bootstrap allowlisting and platform execution modes without papering over Feature 156 T156-11. A native artifact build/allowlist supporting slice is now implemented; production lifecycle integration remains deferred.
 - [x] T158-03 Specify and implement the ready/block/release/target-start state machine in a trusted bootstrap runtime fixture.
 - [ ] T158-04 Bind bootstrap and target identities to Feature 156 registration, cleanup, recovery, and one monotonic attempt.
+
+  The native attempt now rereads the durable claim, nonce ledger, registration, and handoff
+  under held no-follow directory chains before releasing its private gate. The handoff is
+  verified against the same launch, descriptor, intent, attestation, claim, and registration;
+  the reread consumes the attempt's existing monotonic deadline. Missing, changed, or invalid
+  handoff bytes keep the target unstarted and leave recovery required. This closes the pre-gate
+  handoff reread only; terminal Feature 156 receipt, host-observed broker requests, and
+  post-crash process recovery remain open.
 
   The formal pre-gate registration publisher now reads matching durable batch/nonce claims,
   validates the observed native ready frame and live PID/PGID owner, checks both byte-binding
@@ -12,6 +27,82 @@
   not release the gate. The production runner must still consume the attestation, spawn the
   native artifact with inherited bindings, pass one deadline through cleanup/receipt/recovery,
   and connect the broker before T158-04 can close.
+
+  The native attempt's control surface is also part of this integration task: accept an optional
+  process-local `cancelled` callback and caller-owned monotonic `parent_deadline`, use the earlier
+  of the parent and intent deadlines for every frame wait, process wait, cleanup, and receipt
+  write, and preserve `cancelled` versus `unknown`/`recovery_required` according to verified
+  owner-checked cleanup. The callback must be checked at pre-spawn, post-registration, frame-wait,
+  and leader-wait boundaries; exceptions or non-boolean values fail closed before spawn. These
+  controls must be covered by native-attempt fixtures before the task can be considered complete.
+
+  The supporting native attempt now persists a verified post-gate cancellation as a
+  process-only terminal (`process_status=cancelled`, `exit_code=null`) and recovers it read-only;
+  unknown cleanup, callback errors, deadline expiry, and pre-gate cancellation remain without a
+  cancelled terminal. This closes the local cancellation evidence slice but not the formal
+  Feature 156 execution receipt, broker, or post-crash integration required by T158-04.
+
+  The attempt now persists `native-trusted-attempt-deadline.json` before attestation consumption.
+  It binds the launch and intent, records the effective monotonic start/deadline and current boot
+  identity, and refuses to replace an existing sidecar. Explicit post-crash cleanup validates this
+  record and passes its original absolute deadline into owner-checked cleanup, so recovery cannot
+  obtain a fresh grace window. This closes the durable-budget slice only; cross-boot recovery and
+  the formal Feature 156 execution receipt remain open.
+
+  The native process-only terminal now carries `deadline_sha256` and recovery reconstructs the
+  terminal against the retained deadline digest. Replacing a sidecar with another self-valid,
+  same-launch budget therefore fails terminal recovery instead of changing the attempt's authority.
+
+  The native attempt now captures stdout/stderr concurrently with bounded nonblocking drains and
+  persists `native-trusted-stream-capture.json`; its digest is bound into the process terminal
+  and checked on recovery. Envelope evidence now includes before/after identity digests and stable
+  read status, while broker evidence binds the canonical host journal identity and admitted-count
+  coverage. Owner-checked cleanup is persisted in `native-trusted-cleanup.json` and bound through
+  `cleanup_sha256`. A strict read-only projection can construct a Feature 156 execution receipt
+  only after all of these records verify; it still does not write the formal receipt or authorize
+  publication.
+
+  The native attempt now exposes a read-only `audit_native_trusted_lifecycle` composition point.
+  It first requires a verified process terminal, then optionally revalidates the same-attempt
+  output capture and broker journal. Missing capture is reported as `process_only`; valid capture
+  returns its digest and request-coverage classification while remaining unpublished; changed or
+  malformed capture/journal evidence returns `recovery_required`. A recovery/unknown record is
+  never mistaken for a process terminal. This adds lifecycle observability only and does not
+  publish output, authorize cleanup, or close the formal Feature 156 receipt path.
+
+  A verified audit can now be persisted once as
+  `native-trusted-execution-audit.json`. The create-only sidecar binds the terminal, capture,
+  retained deadline, registration, launch, intent, and attestation digests and records broker
+  coverage while forcing `publication_eligible=false`. It is an explicit projection for later
+  integration; it is not the formal `execution-receipt.json` and does not widen admission.
+
+  The current persistence slice exposes `persist_native_trusted_execution_receipt`. It writes
+  only the formal `execution-receipt.json` after the strict projection has closed terminal,
+  stream, envelope, broker, target-binding, deadline, and cleanup evidence. The write is
+  create-only and uses the existing bounded fsync/atomic no-follow writer with an exclusive
+  destination. A bounded reread must validate canonical bytes and the receipt self-digest. An
+  existing identical receipt is a successful idempotent replay; a collision, tamper, symlink,
+  non-regular destination, or changed projection is a fixed failure. This step does not authorize
+  publication, population admission, scheduler execution, or a retry with a new attestation.
+
+  The persisted formal receipt is now accepted by Feature 153 through an optional
+  `native_execution_receipt_sha256` journal link. Publication validates the receipt before its
+  prepared intent and carries the digest into the canonical journal. This closes only the
+  receipt-to-publication handoff; T158-04 remains open for the integrated bootstrap/runner,
+  crash recovery, protected broker ownership, and scheduler entry point.
+
+  The provider-free `native_trusted_scheduler` adds a narrow composition boundary over the existing
+  attempt and receipt/output projections. `run_native_trusted_producer` performs one attested local
+  attempt, persists the formal receipt, verifies strict same-attempt output, and optionally hands the
+  result to publication with journal/run/task and receipt-digest bindings. Its companion recovery
+  entrypoint is read-only and cannot relaunch, consume another attestation, widen the deadline, or
+  publish. The six focused tests cover this ordering and fail-closed binding behavior. This remains
+  supporting evidence for T158-04; the production Feature 156 registration/cleanup/recovery path,
+  host-observed broker transport, and real producer scheduler/campaign are still unconnected.
+
+  The sidecar has a matching read-only recovery verifier. It requires the sidecar's exact schema
+  and self-digest, then reruns the terminal/capture/deadline chain and compares every bound digest;
+  it never treats the sidecar alone as process or publication authority.
 
   Native artifact increment (supporting slice): checked-in C source, private build/allowlist
   loader, bounded target handoff control record, exact-one-byte gate close, post-exec error pipe,
@@ -34,6 +125,12 @@
 - [x] T158-05 Add controlled fixtures proving target-marker absence before release, receipt-fsync ordering, post-release start, duplicate-token and early-EOF rejection, and group retention.
 - [x] T158-06 Add a hostile direct-producer negative fixture; do not accept cooperative gate behavior as proof for arbitrary executables.
 - [x] T158-07 Defer Feature 154/156/157 integration, scheduler/default entry points, publication, and external campaign validation to a later feature.
+
+The provider-free scheduler is now reachable through the formal lifecycle wrapper in
+`producer_lifecycle`. This is a callable composition boundary with explicit publication and
+read-only recovery; it does not change the status of T158-04. Production bootstrap registration,
+cross-process cleanup/recovery, protected broker ownership, and real campaign validation remain
+required before this feature can be marked complete.
 
 The runtime fixture now propagates one absolute monotonic deadline through normal and exceptional
 cleanup and bounds the final leader reap. This is supporting evidence for T158-04; it does not

@@ -61,6 +61,23 @@ under the system-derived launch directory; updates use bounded temp files, `fsyn
 no-follow rename. Receipt transitions bind the previous receipt digest, so a later launch cannot
 overwrite an earlier attempt.
 
+The native trusted path has a distinct create-only formalization boundary. After all native
+terminal, bounded stream, stable envelope, complete host-broker, target execution-binding,
+deadline, and owner-checked cleanup evidence has been revalidated, the controller may project and
+persist exactly one `ProducerExecutionReceipt` at `execution-receipt.json`. Persistence uses the
+same bounded fsync/atomic no-follow writer with an exclusive destination, followed by a bounded
+reread and canonical self-digest check. A byte-identical existing receipt is an idempotent
+read-only replay; any collision or altered receipt is rejected and never replaced. This receipt
+is still evidence for the later admission transaction: writing it does not by itself authorize
+population admission, publication, scheduler retry, or a second attestation.
+
+When Feature 153 receives the receipt digest, it must point to the same
+`evolution/producer-batches/<journal_id>/execution-receipt.json` object and matching
+`journal_id/run_id/parent_task_id/task_id`. Feature 153 records the digest in its canonical
+publication journal; it does not rewrite or replace this lifecycle receipt. A missing, changed,
+or cross-task receipt blocks publication before any stage write. This downstream link is optional
+for legacy offline journals and does not turn the cooperative runner into a trusted bootstrap.
+
 `consumed_at_unix_ns` is audit metadata only and never replaces the monotonic execution deadline.
 `session_id` and `owner_lock_sha256` identify the local registration; they do not grant authority
 to signal another process. Producer output, stdout, and stderr are represented by bounded sizes
@@ -71,3 +88,12 @@ unchanged into the terminal receipt. Darwin uses `libproc` start seconds and mic
 uses the boot ID and `/proc` start tick. An unavailable or changed identity cannot authorize
 signalling a live process. The live controller may still clean descendants after it has reaped
 the exact child; recovery cannot borrow that in-memory observation.
+
+The native trusted-bootstrap attempt also has a narrower
+`lunar-native-trusted-process-terminal-v1` receipt. It binds the formal registration digest,
+trusted handoff digest, bootstrap evidence digest, exit code, and verified cleanup status.
+Its fixed `receipt_scope=process_only` and `publication_eligible=false` prevent downstream
+consumers from treating it as the full `ProducerExecutionReceipt`: request counts and output
+envelope bytes have not been host-verified. Missing terminal evidence remains unknown; explicit
+recovery uses the registration's lifecycle lock and OS start identity and writes a separate
+recovery receipt without relaunch.

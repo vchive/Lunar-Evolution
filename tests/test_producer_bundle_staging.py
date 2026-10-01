@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from lunar_evolution.producer_bundle_preflight import ProducerBundlePreflightReceipt
+from lunar_evolution.producer_bundle_preflight import (
+    ProducerBundlePreflightReceipt,
+    _authority_digest,
+)
 from lunar_evolution.producer_bundle_publication import (
     ProducerBundlePublicationCandidate,
     build_producer_bundle_publication_journal,
@@ -47,9 +51,9 @@ def fixture(tmp_path: Path):
         candidates=(candidate,),
     )
     receipt = ProducerBundlePreflightReceipt(
-        journal_id="journal-1", run_id="run-1", task_id="task-1", plan_sha256=d("7"),
+        journal_id="journal-1", run_id="run-1", task_id="task-1", plan_sha256=journal.admission_sha256,
         archive_prefix_sha256=d("d"), base_archive_sha256=journal.base_archive_sha256,
-        base_state_sha256=journal.base_state_sha256, authority_sha256=d("8"),
+        base_state_sha256=journal.base_state_sha256, authority_sha256=_authority_digest(journal),
         candidate_ids=(candidate.candidate_id,), record_count=0,
         workspace_relative="evolution/producer-batches/journal-1",
     )
@@ -99,6 +103,53 @@ def test_stage_rejects_missing_receipt_sequence_without_marker(tmp_path: Path) -
     assert not (workspace / "evolution" / "producer-publication.json").exists()
 
 
+@pytest.mark.parametrize("field,value", [
+    ("journal_id", "journal-other"), ("run_id", "run-other"), ("task_id", "task-other"),
+    ("plan_sha256", d("f")), ("archive_prefix_sha256", d("f")),
+    ("base_archive_sha256", d("f")), ("base_state_sha256", d("f")),
+    ("authority_sha256", d("f")), ("candidate_ids", ("candidate-other",)),
+])
+def test_stage_rejects_foreign_preflight_without_writes(
+    tmp_path: Path, field: str, value: object,
+) -> None:
+    workspace, journal, preflight, artifact = fixture(tmp_path)
+    changes = {field: value, "receipt_sha256": None}
+    if field == "journal_id":
+        changes["workspace_relative"] = "evolution/producer-batches/" + str(value)
+    changed = replace(preflight, **changes)
+    before = {path.relative_to(workspace): path.read_bytes()
+              for path in workspace.rglob("*") if path.is_file()}
+    with pytest.raises(ProducerBundlePublicationStagingError, match="^producer_bundle_publication_preflight_mismatch$"):
+        stage_producer_bundle_publication(
+            workspace, journal, changed, (artifact,), state_after={"strategy": "population"},
+        )
+    after = {path.relative_to(workspace): path.read_bytes()
+             for path in workspace.rglob("*") if path.is_file()}
+    assert before == after
+    assert not (workspace / "evolution/producer-batches/journal-1/stage").exists()
+
+
+def test_stage_revalidates_preflight_receipt_digest(tmp_path: Path) -> None:
+    workspace, journal, preflight, artifact = fixture(tmp_path)
+    object.__setattr__(preflight, "receipt_sha256", d("f"))
+    with pytest.raises(ProducerBundlePublicationStagingError, match="^producer_bundle_publication_preflight_invalid$"):
+        stage_producer_bundle_publication(
+            workspace, journal, preflight, (artifact,), state_after={"strategy": "population"},
+        )
+    assert not (workspace / "evolution/producer-publication.lock").exists()
+
+
+def test_stage_rejects_wrong_preflight_record_count(tmp_path: Path) -> None:
+    workspace, journal, preflight, artifact = fixture(tmp_path)
+    changed = replace(preflight, record_count=1, receipt_sha256=None)
+    with pytest.raises(ProducerBundlePublicationStagingError, match="^producer_bundle_publication_preflight_mismatch$"):
+        stage_producer_bundle_publication(
+            workspace, journal, changed, (artifact,), state_after={"strategy": "population"},
+        )
+    assert not (workspace / "evolution/producer-batches/journal-1/stage").exists()
+    assert not (workspace / "evolution/producer-publication.json").exists()
+
+
 def test_commit_with_tampered_stage_is_unknown_and_marker_remains(tmp_path: Path) -> None:
     workspace, journal, receipt, artifact = fixture(tmp_path)
     stage_producer_bundle_publication(
@@ -123,6 +174,7 @@ def test_mixed_batch_records_rejected_without_publishing_it(tmp_path: Path) -> N
         **{**journal.to_dict(), "journal_sha256": None,
            "num_islands": 1, "candidates": (journal.candidates[0], rejected)},
     )
+    receipt = replace(receipt, candidate_ids=("candidate-1", "candidate-2"), receipt_sha256=None)
     stage_producer_bundle_publication(
         workspace, journal, receipt, (artifact,), rejected_candidate_ids=("candidate-2",),
         state_after={"strategy": "population"},

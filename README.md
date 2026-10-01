@@ -7,6 +7,12 @@ run-scoped local directory. It does **not** require a machine-wide Hermes, OpenC
 installation. A natural-language answer is only the audit trail; an algorithm mission is complete
 only when its declared output files pass independent checks and are delivered as hashed artifacts.
 
+RSI learning runs support durable DRS/BRS recovery, governed memory generations, shared
+learning/holdout budgets, optional regression before dispatch, and retained independent Actor
+verification evidence. See the [local RSI runtime guide](docs/rsi-local-runtime.md) for runnable
+fixtures, explicit recovery, cross-solver translation and confidence analysis. Official evaluator
+and real external producer campaign acceptance remain separate from these local fixtures.
+
 The project is being developed with Spec-Driven Development (SDD). The current executable
 deep-evolution effect-measurement boundary is captured in
 [`specs/051-deep-evolution-effect-trial/`](specs/051-deep-evolution-effect-trial/), with the
@@ -1085,8 +1091,17 @@ boundary only: it does not launch OpenEvolve/Shinka, import a population, evalua
 claim a real producer campaign result. Feature [151](specs/151-producer-bundle-population/) now
 projects those verified groups into native multi-file `CandidateDraft` values, preserving the
 entrypoint, source files, and provenance-only metadata without writing or evaluating anything.
-Automatic external admission, archive publication, delivery, and producer launchers remain future
-work under a separately specified contract.
+Feature [152](specs/152-producer-bundle-admission-descriptor/) binds the drafts to local authority.
+Feature [153](specs/153-producer-bundle-publication-transaction/quickstart.md) now connects imported
+Shinka SQLite material to non-publishing native local evaluation, retained prepared intent and
+receipts, and atomic stage/commit of the admitted subset. The transaction checks archive integrity
+and active population read-back; offline coverage also verifies native resume and delivery through
+the existing delivery APIs. Entry is limited to an initialized iteration-zero running population
+with no offspring history, seed admission, or prior producer admission. The transaction supports
+a caller-owned active deadline/cancellation control, durable all-rejected terminal journaling
+with exact no-evaluation retry, and bounded publication-lock waiting. Cross-process deadline
+restoration, full unknown/interruption recovery, and the external launcher/scheduler/remote
+campaign connection remain open.
 
 For a native Shinka result directory, `lunar_evolution.export_shinka_result(...)` is a read-only, offline
 exporter. It opens `programs.sqlite` (with an explicit legacy `evolution_db.sqlite` fallback) in
@@ -1100,12 +1115,15 @@ rows that Shinka marked incorrect so Lunar Evolution can make the authoritative 
 defaults to one convenience row and otherwise selects rows with `correct = 1`, ordered
 deterministically by the producer's `combined_score`, generation, and ID. The exporter prefers
 `gen_<generation>/main.<ext>` and uses `best/main.<ext>` only when that generation file is absent,
-after checking exact UTF-8 bytes against the database row. Call `admit_producer_result(export_root,
-...)` afterwards; Shinka scores, correctness, metrics, and SQLite/generation metadata are reduced
-to bounded external evidence and never become Lunar Evolution iteration, score, or rank authority. The
-exporter does not launch ShinkaEvolve, a model, a scheduler, or a remote backend.
+after checking exact UTF-8 bytes against the database row. The export can feed
+`admit_producer_result(export_root, ...)` for the existing seed route, or explicit bundle grouping,
+draft preparation and the Feature 153 Python transaction above. Shinka scores, correctness, metrics,
+and SQLite/generation metadata remain bounded external evidence and never become Lunar Evolution
+iteration, score, or rank authority. The exporter does not launch ShinkaEvolve, a model, a scheduler,
+or a remote backend.
 
-Feature [096](specs/096-producer-cli-warm-start/) exposes that workflow directly through the CLI:
+Feature [096](specs/096-producer-cli-warm-start/) exposes the existing seed warm-start route through
+the CLI; the Feature 153 native bundle transaction has a separate Python integration entry point:
 
 ```bash
 lunar-evolution export-shinka-result ./shinka-run --output ./shinka-export \
@@ -1477,13 +1495,13 @@ completed **0/2** tasks: both failed at contract intake, before evaluator or can
 See the [113 report](docs/history-archive.md). Current-version reliability
 still needs successful real-model validation; local fixtures do not establish effectiveness or
 relative WebAgent performance. Active-process cancellation orchestration and the full OpenEvolve/
-Shinka external-bundle admission, archive publication, and delivery path remain future work;
-Feature 150 supplies grouping/source verification and Feature 151 supplies the provider-free native
-`CandidateDraft` projection. Feature 152 adds a provider-free, read-only admission plan that binds
-the draft batch to contract/evaluator/runner authority and yields a canonical resume digest. It
-does not publish or execute candidates; Feature 153 now provides the canonical journal DTO/parser
-and a provider-free zero-write preflight, while specifying the separate staged publication
-transaction needed before that step. No launcher or real producer campaign is implied.
+Shinka launcher, scheduler, remote and real-campaign connection remain future work. Features 150–152
+supply verified grouping, native draft projection and the local-authority admission plan.
+Feature 153 now covers the bounded offline imported-material transaction described above, including
+native execution, retained intent/evidence, caller-owned active deadline/cancellation, durable
+all-rejected terminal state, archive publication, population read-back/resume and existing delivery
+API verification. Cross-process deadline restoration and full unknown-result recovery remain open.
+No real producer campaign is implied.
 
 Feature 114 fixes the confirmed intake integration problem: contract compilation uses a stateless
 protocol call when supported and receives explicit JSON field/type guidance. Ordinary solving

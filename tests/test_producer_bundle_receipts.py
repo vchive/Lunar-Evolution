@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from test_bundle_population import build_context
+from test_bundle_population import build_context, draft_for_score
 from test_producer_bundle_staging import fixture as publication_fixture
 
 from lunar_evolution import (
@@ -14,7 +16,11 @@ from lunar_evolution import (
     build_producer_bundle_execution_receipt,
     build_producer_bundle_publication_artifact,
 )
+from lunar_evolution.candidate_bundle import parse_candidate_source_bundle
 from lunar_evolution.evolution import CandidateArchive, PopulationStrategy
+from lunar_evolution.producer_bundle_receipts import (
+    build_native_producer_bundle_publication_artifact,
+)
 from lunar_evolution.producer_bundle_staging import (
     ProducerBundlePublicationArtifact,
     ProducerBundlePublicationStagingError,
@@ -100,6 +106,79 @@ def test_pipeline_receipt_projection_refuses_unknown_cleanup(tmp_path: Path) -> 
     candidate = CandidateArchive(context.workspace).records()[0]
     with pytest.raises(ProducerBundleReceiptError):
         build_producer_bundle_execution_receipt(context.workspace, candidate)
+
+
+def test_native_publication_artifact_carries_bundle_manifest(tmp_path: Path) -> None:
+    context = build_context(tmp_path)
+    strategy = PopulationStrategy(context)
+    result = context.bundle_pipeline.evaluate_draft_non_publishing(
+        strategy, draft_for_score(7),
+        journal_id="journal-native-artifact", candidate_id="candidate-native-artifact",
+        iteration=0, generation=0, island_id=0,
+    )
+
+    artifact = build_native_producer_bundle_publication_artifact(
+        context.workspace, result, authority=strategy.integrity_authority,
+    )
+    assert "bundle-manifest.json" not in artifact.source_files
+    manifest = artifact.bundle_manifest
+    assert isinstance(manifest, dict)
+    assert parse_candidate_source_bundle(manifest).digest() == result.bundle.digest()
+    assert artifact.record["bundle_evidence"]["bundle_path"] == (
+        "evolution/candidates/candidate-native-artifact/bundle-manifest.json"
+    )
+
+
+def _native_result(tmp_path: Path):
+    context = build_context(tmp_path)
+    strategy = PopulationStrategy(context)
+    result = context.bundle_pipeline.evaluate_draft_non_publishing(
+        strategy, draft_for_score(7),
+        journal_id="journal-native-negative", candidate_id="candidate-native-negative",
+        iteration=0, generation=0, island_id=0,
+    )
+    return context, strategy, result
+
+
+def test_native_publication_artifact_rejects_authority_drift(tmp_path: Path) -> None:
+    context, strategy, result = _native_result(tmp_path)
+    authority = replace(strategy.integrity_authority, evaluator_fingerprint=digest("f"))
+    with pytest.raises(ProducerBundleReceiptError, match="^producer_bundle_receipt_authority_mismatch$"):
+        build_native_producer_bundle_publication_artifact(context.workspace, result, authority=authority)
+
+
+def test_native_publication_artifact_rejects_source_byte_drift(tmp_path: Path) -> None:
+    context, strategy, result = _native_result(tmp_path)
+    source = result.source_root / result.bundle.files[0].path
+    source.write_bytes(source.read_bytes() + b"\n# tampered\n")
+    with pytest.raises(ProducerBundleReceiptError, match="^producer_bundle_receipt_source_invalid$"):
+        build_native_producer_bundle_publication_artifact(
+            context.workspace, result, authority=strategy.integrity_authority,
+        )
+
+
+def test_native_publication_artifact_rejects_duplicate_manifest_keys(tmp_path: Path) -> None:
+    context, strategy, result = _native_result(tmp_path)
+    manifest_path = result.source_root / "bundle-manifest.json"
+    manifest = manifest_path.read_bytes().rstrip()
+    assert manifest.endswith(b"}")
+    manifest_path.write_bytes(manifest[:-1] + b',"schema_version":"1"}')
+    with pytest.raises(ProducerBundleReceiptError, match="^producer_bundle_receipt_source_invalid$"):
+        build_native_producer_bundle_publication_artifact(
+            context.workspace, result, authority=strategy.integrity_authority,
+        )
+
+
+def test_native_publication_artifact_rejects_plan_evidence_drift(tmp_path: Path) -> None:
+    context, strategy, result = _native_result(tmp_path)
+    plan_path = result.run_root / "plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["timeout_seconds"] = plan["timeout_seconds"] + 1
+    plan_path.write_text(json.dumps(plan, sort_keys=True), encoding="utf-8")
+    with pytest.raises(ProducerBundleReceiptError, match="^producer_bundle_receipt_evidence_invalid$"):
+        build_native_producer_bundle_publication_artifact(
+            context.workspace, result, authority=strategy.integrity_authority,
+        )
 
 
 def test_publication_stages_native_nested_sidecars(tmp_path: Path) -> None:

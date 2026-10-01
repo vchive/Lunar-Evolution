@@ -22,3 +22,9 @@ are unique. Self-digests are SHA-256 over canonical JSON with `evidence_sha256` 
 `ProducerRequestEvidenceAssessment` contains a fixed status and `enforcement=cooperative_declaration`.
 It is diagnostic evidence only and cannot be substituted for a controller-owned timeout receipt.
 
+For the native broker path, the host journal identity and admitted-count coverage are projected
+into the Feature 156 formal `ProducerExecutionReceipt`; the process-only terminal and this DTO
+remain separate records. Feature 153 accepts the receipt digest as an optional publication-journal
+link and checks `broker_coverage=brokered_requests_only` before staging. This records the observed
+broker boundary without claiming that requests bypassing the broker were impossible or that a
+post-crash transport was recovered.

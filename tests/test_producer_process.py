@@ -231,7 +231,13 @@ def test_process_creation_uses_isolated_no_shell_contract(tmp_path: Path):
     assert observed["stdout"] is subprocess.PIPE
     assert observed["stderr"] is subprocess.PIPE
     assert observed["cwd"] == str(tmp_path / "evolution/producer-batches/journal-001/work")
-    assert len(observed["pass_fds"]) == 1
+    gate_fd = int(observed["env"]["LUNAR_PRODUCER_GATE_FD"])
+    if sys.platform.startswith("linux"):
+        executable_fd = int(observed["executable"].removeprefix("/proc/self/fd/"))
+        assert executable_fd != gate_fd
+        assert set(observed["pass_fds"]) == {gate_fd, executable_fd}
+    else:
+        assert tuple(observed["pass_fds"]) == (gate_fd,)
 
 
 def test_attestation_nonce_is_consumed_once(tmp_path: Path):
@@ -768,6 +774,119 @@ def test_cleanup_passes_absolute_deadline_and_rechecks_exited_leader(
 
     assert observed["deadline"] == 10.0
     assert observed["allow_exited_leader_initial"] is True
+    assert observed["reap_child"] is process.poll
+
+
+def test_cleanup_reaps_exact_child_before_verifying_group_exit(monkeypatch):
+    owner_identity = {"kind": "test-starttime", "pid": 321, "start": 1}
+    state = {"term_sent": False, "reaped": False, "polls": 0}
+    signals = []
+
+    def poll():
+        state["polls"] += 1
+        if state["term_sent"]:
+            state["reaped"] = True
+            return -signal.SIGTERM
+        return None
+
+    def group_signal(pgid, value):
+        assert pgid == 321
+        if value == 0:
+            if state["reaped"]:
+                raise ProcessLookupError()
+        else:
+            signals.append(value)
+            state["term_sent"] = value == signal.SIGTERM
+
+    process = SimpleNamespace(poll=poll)
+    registration = producer_process.RegisteredProcess(
+        321, 321, owner_check=lambda: producer_process._current_process_owned(321, owner_identity, process),
+    )
+    monkeypatch.setattr(producer_process, "_process_owner_identity", lambda _pid: owner_identity)
+    monkeypatch.setattr(producer_process.os, "getpgid", lambda _pid: 321)
+    monkeypatch.setattr(producer_process.os, "killpg", group_signal)
+    result = producer_process._cleanup(registration, process, deadline=10.0, monotonic=lambda: 9.0)
+    assert result.status == ProcessCleanupStatus.CLEANED
+    assert result.alive_after is False
+    assert signals == [signal.SIGTERM]
+    assert state["polls"] >= 3
+
+
+def test_cleanup_reaped_leader_does_not_hide_live_descendants_or_refresh_deadline(monkeypatch):
+    owner_identity = {"kind": "test-starttime", "pid": 321, "start": 1}
+    state = {"reaped": False, "polls": 0}
+    signals = []
+
+    def poll():
+        state["polls"] += 1
+        if signals:
+            state["reaped"] = True
+            return -signal.SIGTERM
+        return None
+
+    def leader_group(_pid):
+        if state["reaped"]:
+            raise ProcessLookupError()
+        return 321
+
+    def group_signal(pgid, value):
+        assert pgid == 321
+        if value:
+            signals.append(value)
+
+    process = SimpleNamespace(poll=poll)
+    registration = producer_process.RegisteredProcess(
+        321, 321, owner_check=lambda: producer_process._current_process_owned(321, owner_identity, process),
+    )
+    monkeypatch.setattr(producer_process, "_process_owner_identity", lambda _pid: None if state["reaped"] else owner_identity)
+    monkeypatch.setattr(producer_process.os, "getpgid", leader_group)
+    monkeypatch.setattr(producer_process.os, "killpg", group_signal)
+    result = producer_process._cleanup(registration, process, deadline=10.0, monotonic=lambda: 10.0)
+    assert result.status == ProcessCleanupStatus.CLEANUP_UNVERIFIED
+    assert result.alive_after is True
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    assert state["polls"] >= 4
+
+
+def test_cleanup_poll_does_not_override_changed_process_identity(monkeypatch):
+    owner_identity = {"kind": "test-starttime", "pid": 321, "start": 1}
+    process = SimpleNamespace(poll=lambda: 0)
+    registration = producer_process.RegisteredProcess(
+        321, 321, owner_check=lambda: producer_process._current_process_owned(321, owner_identity, process),
+    )
+    monkeypatch.setattr(producer_process, "_process_owner_identity", lambda _pid: {**owner_identity, "start": 2})
+    monkeypatch.setattr(producer_process.os, "getpgid", lambda _pid: 321)
+    signals = []
+    monkeypatch.setattr(producer_process.os, "killpg", lambda _pgid, value: signals.append(value))
+    result = producer_process._cleanup(registration, process, deadline=10.0, monotonic=lambda: 9.0)
+    assert result.status == ProcessCleanupStatus.OWNERSHIP_LOST
+    assert result.alive_after is True
+    assert signals == [0]
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires OS process identity")
+def test_cleanup_reaps_owned_direct_child_in_real_process_group():
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        owner_identity = producer_process._process_owner_identity(process.pid)
+        assert owner_identity is not None
+        registration = producer_process.RegisteredProcess(
+            process.pid, process.pid,
+            owner_check=lambda: producer_process._current_process_owned(process.pid, owner_identity, process),
+        )
+        result = producer_process._cleanup(
+            registration, process, deadline=time.monotonic() + 2, monotonic=time.monotonic,
+        )
+        assert result.status == ProcessCleanupStatus.CLEANED
+        assert result.alive_after is False
+        assert process.returncode is not None
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=2)
 
 
 def test_preparation_time_counts_toward_wall_deadline(tmp_path: Path):
@@ -816,6 +935,98 @@ def test_timeout_is_terminal_without_relaunch(tmp_path: Path):
     receipt = run_producer_process(tmp_path, intent=intent, attestation=attestation, producer_root=producer_root)
     assert receipt.status in {"failed", "unknown"}
     assert receipt.failure_code in {"producer_process_wall_timeout", "producer_process_cleanup_unknown"}
+
+
+def test_active_cancellation_terminates_child_and_persists_cancelled_receipt(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path, mode="timeout")
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        # The first three observations happen before/around registration; the next one is
+        # reached by the nonblocking capture loop while the sleeping child is still running.
+        return calls >= 5
+
+    started = time.monotonic()
+    receipt = run_producer_process(
+        tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+        cancelled=cancelled,
+    )
+    assert receipt.status == "cancelled"
+    assert receipt.failure_code is None
+    assert receipt.cleanup_status in {"cleaned", "already_exited"}
+    assert calls >= 5
+    assert time.monotonic() - started < intent.wall_timeout_seconds
+    assert recover_producer_process(tmp_path, journal_id=intent.journal_id) == receipt.to_dict()
+
+
+def test_active_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    producer_root, intent, attestation = _fixture(tmp_path, mode="timeout")
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls >= 5
+
+    def uncertain_cleanup(registration, **kwargs):
+        return ProcessCleanupResult(
+            label=registration.label,
+            pid=registration.pid,
+            pgid=registration.pgid,
+            status=ProcessCleanupStatus.KILL_FAILED,
+            alive_after=True,
+        )
+
+    monkeypatch.setattr(producer_process, "cleanup_registered_process", uncertain_cleanup)
+    receipt = run_producer_process(
+        tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+        cancelled=cancelled,
+    )
+    assert receipt.status == "unknown"
+    assert receipt.failure_code == "producer_process_cleanup_unknown"
+
+
+def test_parent_deadline_narrows_intent_wall_budget(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path, mode="timeout")
+    started = time.monotonic()
+    receipt = run_producer_process(
+        tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+        parent_deadline=started + 0.2,
+    )
+    assert receipt.status == "unknown"
+    assert receipt.failure_code in {"producer_process_wall_timeout", "producer_process_cleanup_unknown"}
+    assert time.monotonic() - started < intent.wall_timeout_seconds
+
+
+def test_invalid_parent_deadline_fails_before_attestation_consumption(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path)
+    with pytest.raises(ProducerProcessError, match="parent_deadline_invalid"):
+        run_producer_process(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            parent_deadline=float("nan"), popen_factory=lambda *args, **kwargs: pytest.fail("must not spawn"),
+        )
+    assert not (tmp_path / "evolution/producer-batches/journal-001/attestation-consumption.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("callback", "code"),
+    [
+        (lambda: 1, "producer_process_cancellation_invalid"),
+        (lambda: (_ for _ in ()).throw(RuntimeError("callback failed")), "producer_process_cancellation_unknown"),
+    ],
+)
+def test_cancellation_callback_failure_is_fail_closed_before_spawn(
+    tmp_path: Path, callback, code: str,
+):
+    producer_root, intent, attestation = _fixture(tmp_path)
+    with pytest.raises(ProducerProcessError) as exc:
+        run_producer_process(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            cancelled=callback, popen_factory=lambda *args, **kwargs: pytest.fail("must not spawn"),
+        )
+    assert exc.value.code == code
 
 
 def test_symlink_envelope_is_rejected_with_terminal_receipt(tmp_path: Path):

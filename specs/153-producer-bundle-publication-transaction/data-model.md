@@ -15,11 +15,12 @@ ProducerBundlePublicationJournal
   budget_sha256
   strategy / population_config_sha256 / num_islands
   candidates[]                  # plan order, fixed candidate IDs and state mapping
-  state                         # prepared | executing | publishing | published | failed | unknown
+  state                         # prepared | executing | publishing | published | all_rejected | failed | unknown
   publication_phase             # preflight | staged | committed | recovery_required
   terminal_marker_sha256?
   archive_after_sha256?
   state_after_sha256?
+  native_execution_receipt_sha256? # Feature 156 formal receipt bound to this batch
   journal_sha256                 # hash payload with this field omitted
 
 ProducerBundlePublicationCandidate
@@ -45,3 +46,23 @@ The legal phase projection is strict: `prepared/preflight` contains only planned
 only rejected/admitted items and at least one admitted item; `published/committed` requires an
 admitted item, publication receipts, terminal marker, and after digests. `failed/recovery_required`
 records a known failure, while `unknown/recovery_required` is terminal and cannot be resumed.
+
+`all_rejected/committed` requires every candidate to be rejected, with execution/evaluation
+receipt digests and no publication receipt. Its archive/state after digests equal the original
+base digests. `terminal_marker_sha256` identifies the canonical `rejections.json` payload, which
+binds prepared intent, preflight, candidate order, and byte/inode descriptors of each retained
+`rejections/<candidate_id>.json` file. The terminal `journal.json` is written last. There is no
+publication stage or workspace marker for this outcome.
+
+The active control policy digest covers zero preparation requests, native execution budget,
+independent evaluator timeout, and the optional total wall allowance. The live monotonic start
+and cancellation callbacks are process-local controls, not portable journal fields.
+
+`native_execution_receipt_sha256` is an optional cross-feature link. When present, the
+transaction reads `evolution/producer-batches/<journal_id>/execution-receipt.json` before its
+first write and requires the receipt's self-digest, protocol, task identity, successful exit,
+released gate, verified cleanup, and broker coverage to agree with the request. The digest is
+then carried into the canonical journal and every staged/committed journal rewrite. Omitting the
+field preserves legacy journal bytes and remains supported for offline material that has no
+trusted native receipt. This link is an admission precondition; it does not create the receipt,
+replace native evidence recovery, or itself prove that a producer campaign was scheduled.

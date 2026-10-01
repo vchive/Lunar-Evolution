@@ -132,6 +132,12 @@ class HostRequestRecovery:
 
     snapshot: HostRequestSnapshot
     uncertain_request_ids: tuple[str, ...]
+    journal_sha256: str
+    journal_bytes: int
+    # The journal's device/inode pair is captured while the file descriptor is
+    # open.  Callers that retain a broker observation can bind replay to this
+    # exact file and reject a same-content replacement after a crash.
+    journal_file_identity: tuple[int, int]
 
 
 def _canonical(value: object) -> bytes:
@@ -166,7 +172,15 @@ def _parent_fd(path: Path):
 
 def _checked_file(fd: int) -> None:
     info = os.fstat(fd)
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or info.st_uid != os.geteuid() or info.st_mode & 0o777 != 0o600):
+        _fail("producer_request_transport_journal_path_invalid")
+
+
+def _checked_parent(fd: int) -> None:
+    info = os.fstat(fd)
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+            or info.st_mode & 0o777 != 0o700):
         _fail("producer_request_transport_journal_path_invalid")
 
 
@@ -185,9 +199,10 @@ class HostRequestJournal:
     record exists. The path is never reopened for appending after a crash.
     """
 
-    def __init__(self, fd: int, identity: HostRequestJournalIdentity, initial_size: int,
-                 head: str) -> None:
+    def __init__(self, fd: int, parent_fd: int, identity: HostRequestJournalIdentity,
+                 initial_size: int, head: str) -> None:
         self._fd = fd
+        self._parent_fd = parent_fd
         self.identity = identity
         self._size = initial_size
         self._head = head
@@ -204,6 +219,11 @@ class HostRequestJournal:
         if not _REQUEST_ID.fullmatch(target.name):
             _fail("producer_request_transport_journal_path_invalid")
         with _parent_fd(target) as parent:
+            _checked_parent(parent)
+            try:
+                parent_copy = os.dup(parent)
+            except OSError as exc:
+                raise ProducerRequestTransportError("producer_request_transport_journal_path_invalid") from exc
             try:
                 fd = os.open(
                     target.name,
@@ -212,6 +232,7 @@ class HostRequestJournal:
                     dir_fd=parent,
                 )
             except OSError as exc:
+                os.close(parent_copy)
                 raise ProducerRequestTransportError("producer_request_transport_journal_path_invalid") from exc
             try:
                 _checked_file(fd)
@@ -227,16 +248,19 @@ class HostRequestJournal:
                 os.fsync(parent)
             except Exception as exc:
                 os.close(fd)
+                os.close(parent_copy)
                 if isinstance(exc, ProducerRequestTransportError):
                     raise
                 raise ProducerRequestTransportError("producer_request_transport_journal_write_failed") from exc
-        return cls(fd, identity, len(header), head)
+        return cls(fd, parent_copy, identity, len(header), head)
 
     def close(self) -> None:
         with self._lock:
             if self._fd >= 0:
                 os.close(self._fd)
                 self._fd = -1
+                os.close(self._parent_fd)
+                self._parent_fd = -1
 
     def __enter__(self) -> Self:
         return self
@@ -262,6 +286,7 @@ class HostRequestJournal:
         if self._size + len(line) > MAX_HOST_REQUEST_JOURNAL_BYTES:
             _fail("producer_request_transport_journal_too_large")
         try:
+            _checked_parent(self._parent_fd)
             _checked_file(self._fd)
             _write_all(self._fd, line)
             os.fsync(self._fd)
@@ -338,6 +363,8 @@ def _journal_record(line: bytes, ordinal: int, head: str) -> dict[str, object]:
 
 def read_host_request_journal(
     path: str | Path, *, expected_identity: HostRequestJournalIdentity,
+    deadline: float | None = None, monotonic: Callable[[], float] = time.monotonic,
+    expected_file_identity: tuple[int, int] | None = None,
 ) -> HostRequestRecovery:
     """Read a closed journal without changing it or resuming uncertain requests."""
     if type(expected_identity) is not HostRequestJournalIdentity:
@@ -346,30 +373,53 @@ def read_host_request_journal(
     if not _REQUEST_ID.fullmatch(target.name):
         _fail("producer_request_transport_journal_path_invalid")
     with _parent_fd(target) as parent:
+        _checked_parent(parent)
         try:
             fd = os.open(target.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
         except OSError as exc:
             raise ProducerRequestTransportError("producer_request_transport_journal_path_invalid") from exc
         try:
             _checked_file(fd)
-            size = os.fstat(fd).st_size
+            before = os.fstat(fd)
+            file_identity = (before.st_dev, before.st_ino)
+            if (
+                expected_file_identity is not None
+                and (
+                    type(expected_file_identity) is not tuple
+                    or len(expected_file_identity) != 2
+                    or any(type(item) is not int or item < 0 for item in expected_file_identity)
+                    or file_identity != expected_file_identity
+                )
+            ):
+                _fail("producer_request_transport_journal_replaced")
+            size = before.st_size
             if size <= 0 or size > MAX_HOST_REQUEST_JOURNAL_BYTES:
                 _fail("producer_request_transport_journal_too_large")
             chunks: list[bytes] = []
             remaining = size
             while remaining:
+                if deadline is not None and monotonic() >= deadline:
+                    _fail("producer_request_transport_wall_timeout")
                 chunk = os.read(fd, min(remaining, 64 * 1024))
                 if not chunk:
                     _fail("producer_request_transport_journal_invalid")
                 chunks.append(chunk)
                 remaining -= len(chunk)
-            if os.fstat(fd).st_size != size:
+            after = os.fstat(fd)
+            current = os.stat(target.name, dir_fd=parent, follow_symlinks=False)
+            identity = lambda info: (
+                info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+                info.st_ctime_ns, info.st_nlink,
+            )
+            if identity(before) != identity(after) or identity(before) != identity(current):
                 _fail("producer_request_transport_journal_invalid")
         except OSError as exc:
             raise ProducerRequestTransportError("producer_request_transport_journal_read_failed") from exc
         finally:
             os.close(fd)
     data = b"".join(chunks)
+    if deadline is not None and monotonic() >= deadline:
+        _fail("producer_request_transport_wall_timeout")
     if not data.endswith(b"\n"):
         _fail("producer_request_transport_journal_invalid")
     lines = data.splitlines(keepends=True)
@@ -382,6 +432,8 @@ def read_host_request_journal(
     admitted = 0
     last_timestamp = -1
     for ordinal, line in enumerate(lines):
+        if deadline is not None and monotonic() >= deadline:
+            _fail("producer_request_transport_wall_timeout")
         record = _journal_record(line, ordinal, head)
         head = record["record_sha256"]
         kind = record.get("kind")
@@ -401,21 +453,21 @@ def read_host_request_journal(
             sequence = record.get("sequence")
             request_id = record.get("request_id")
             started = record.get("started_ns")
-            deadline = record.get("deadline_ns")
+            request_deadline = record.get("deadline_ns")
             if (set(record) != fields or type(sequence) is not int or sequence != admitted + 1
                     or sequence > expected_identity.max_requests
                     or type(request_id) is not str or _REQUEST_ID.fullmatch(request_id) is None
                     or request_id in used_ids or type(started) is not int
                     or not last_timestamp <= started <= (2**63 - 1) - _MAX_NS
-                    or type(deadline) is not int
-                    or deadline != min(
+                    or type(request_deadline) is not int
+                    or request_deadline != min(
                         started + expected_identity.request_timeout_seconds * 1_000_000_000,
                         expected_identity.wall_deadline_ns or 2**63 - 1,
-                    ) or deadline <= started):
+                    ) or request_deadline <= started):
                 _fail("producer_request_transport_journal_invalid")
             admitted += 1
             used_ids.add(request_id)
-            active[sequence] = (request_id, started, deadline)
+            active[sequence] = (request_id, started, request_deadline)
             last_timestamp = started
         elif kind == "terminal":
             fields = {"protocol", "ordinal", "kind", "previous_sha256", "record_sha256",
@@ -425,12 +477,12 @@ def read_host_request_journal(
             if (set(record) != fields or type(sequence) is not int or sequence not in active
                     or type(ended) is not int or not last_timestamp <= ended <= 2**63 - 1):
                 _fail("producer_request_transport_journal_invalid")
-            request_id, started, deadline = active.pop(sequence)
+            request_id, started, request_deadline = active.pop(sequence)
             status = record.get("status")
             duration_ms = record.get("duration_ms")
             if (record.get("request_id") != request_id
                     or type(status) is not str or status not in _TERMINAL | {"timed_out"}
-                    or (status == "timed_out") != (ended >= deadline)
+                    or (status == "timed_out") != (ended >= request_deadline)
                     or type(duration_ms) is not int
                     or duration_ms != (ended - started + 999_999) // 1_000_000):
                 _fail("producer_request_transport_journal_invalid")
@@ -443,6 +495,8 @@ def read_host_request_journal(
         (sequence, event.request_id)
         for sequence, event in events.items() if event.status == "timed_out"
     )
+    if deadline is not None and monotonic() >= deadline:
+        _fail("producer_request_transport_wall_timeout")
     return HostRequestRecovery(
         snapshot=HostRequestSnapshot(
             events=tuple(events[key] for key in sorted(events)),
@@ -452,6 +506,8 @@ def read_host_request_journal(
             max_requests=expected_identity.max_requests,
         ),
         uncertain_request_ids=tuple(uncertain[key] for key in sorted(uncertain)),
+        journal_sha256=hashlib.sha256(data).hexdigest(), journal_bytes=len(data),
+        journal_file_identity=file_identity,
     )
 
 

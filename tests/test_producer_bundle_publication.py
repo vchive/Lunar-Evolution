@@ -72,10 +72,22 @@ def test_builds_canonical_journal_and_excludes_its_own_digest() -> None:
 
 def test_round_trip_mapping_and_file_are_stable(tmp_path: Path) -> None:
     journal = _journal(_candidate())
+    assert "native_execution_receipt_sha256" not in journal.to_dict()
     assert parse_producer_bundle_publication_journal(journal.to_dict()).to_dict() == journal.to_dict()
     path = tmp_path / "journal.json"
     path.write_text(json.dumps(journal.to_dict()), encoding="utf-8")
     assert parse_producer_bundle_publication_journal(path).digest() == journal.digest()
+
+
+def test_optional_native_execution_receipt_round_trip_changes_digest() -> None:
+    legacy = _journal(_candidate())
+    linked = _journal(_candidate(), native_execution_receipt_sha256=_digest("9"))
+
+    payload = linked.to_dict()
+    assert payload["native_execution_receipt_sha256"] == _digest("9")
+    assert parse_producer_bundle_publication_journal(payload).to_dict() == payload
+    assert linked.digest() == linked.journal_sha256
+    assert linked.digest() != legacy.digest()
 
 
 def test_rejects_digest_tampering_and_unknown_fields() -> None:
@@ -119,6 +131,45 @@ def test_rejects_invalid_candidate_receipts_and_island_mapping() -> None:
     with pytest.raises(ProducerBundlePublicationError) as caught:
         _journal(_candidate(), num_islands=0)
     assert caught.value.code == "producer_bundle_publication_num_islands_invalid"
+
+
+def test_all_rejected_terminal_binds_receipts_and_unchanged_after_digests() -> None:
+    candidate = _candidate(0)
+    candidate = ProducerBundlePublicationCandidate(
+        **{
+            **candidate.to_dict(),
+            "status": "rejected",
+            "execution_receipt_sha256": _digest("8"),
+            "evaluation_receipt_sha256": _digest("9"),
+        }
+    )
+    journal = _journal(
+        candidate,
+        state="all_rejected",
+        publication_phase="committed",
+        terminal_marker_sha256=_digest("a"),
+        archive_after_sha256=_digest("e"),
+        state_after_sha256=_digest("f"),
+    )
+    assert journal.state == "all_rejected"
+    assert journal.archive_after_sha256 == journal.base_archive_sha256
+    assert journal.state_after_sha256 == journal.base_state_sha256
+    assert journal.candidates[0].status == "rejected"
+
+
+def test_all_rejected_terminal_requires_both_native_receipts() -> None:
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        _journal(
+            ProducerBundlePublicationCandidate(
+                **{**_candidate(0).to_dict(), "status": "rejected"}
+            ),
+            state="all_rejected",
+            publication_phase="committed",
+            terminal_marker_sha256=_digest("a"),
+            archive_after_sha256=_digest("e"),
+            state_after_sha256=_digest("f"),
+        )
+    assert caught.value.code == "producer_bundle_publication_terminal_evidence_invalid"
 
 
 def test_rejects_duplicate_json_keys_and_oversized_files(tmp_path: Path) -> None:

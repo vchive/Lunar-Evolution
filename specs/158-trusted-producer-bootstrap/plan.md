@@ -8,7 +8,11 @@
    failure. The bootstrap must perform no target work before release.
 4. Bind Feature 156 registration and receipt chaining to the bootstrap PID/PGID, target pin,
    launch/intent/attestation digests, and one monotonic execution attempt. No second attestation
-   or budget widening is allowed.
+   or budget widening is allowed. The integrated native attempt must compose an optional caller
+   `parent_deadline` with the intent deadline by taking the earlier value and observe an optional
+   process-local `cancelled` callback at pre-spawn, post-registration, frame-wait, and leader-wait
+   boundaries. Verified cancellation cleanup may be recorded as `cancelled`; callback errors,
+   invalid results, deadline expiry, and cleanup uncertainty remain unknown/recovery-required.
 5. Add controlled provider-free fixtures: trusted bootstrap with pre-gate marker, target with
    post-release marker, hostile direct producer, duplicate token, early EOF, target group escape,
    and registration fsync failure. Assert no successful trusted-bootstrap receipt for invalid

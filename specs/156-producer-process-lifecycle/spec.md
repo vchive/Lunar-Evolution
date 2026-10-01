@@ -34,6 +34,7 @@ This feature covers:
 * no-shell process creation with a new process session and exact PID/PGID ownership;
 * a registration-before-work gate and durable launch receipt;
 * monotonic wall-clock and request/output ceilings, with no budget reset;
+* caller-owned cancellation observed during capture and process wait, with bounded cleanup;
 * bounded, concurrent stdout/stderr capture;
 * no-follow output-envelope reads with byte, size, inode, and digest rechecks;
 * owner-checked SIGTERM/SIGKILL process-group cleanup using the existing primitives; and
@@ -41,6 +42,16 @@ This feature covers:
 
 It does not define provider calls, candidate scoring, Feature 150--153 admission/publication,
 automatic solve defaults, remote transport, or an external campaign acceptance claim.
+
+The native trusted path now has a create-only formal receipt boundary: once terminal, bounded
+streams, stable envelope, host-broker, target-binding, deadline, and cleanup evidence all verify,
+it persists `execution-receipt.json` and exposes its canonical digest. Feature 153 may consume
+that digest before staging and record it in the publication journal. The handoff is deliberately
+one-way: publication does not rewrite the receipt. A provider-free native trusted scheduler now
+composes one attempt, receipt persistence, strict output projection, and optional publication, with
+a read-only recovery projection that cannot relaunch or consume another attestation. This is a
+supporting composition boundary only and does not close the trusted-bootstrap, production
+controller transport, cross-process recovery, or real-campaign gaps listed below.
 
 ## Lifecycle state machine
 
@@ -135,15 +146,28 @@ receipt digest.
 The intent's `request_timeout_seconds`, `max_requests`, `output_max_bytes`, and
 `wall_timeout_seconds` remain independent ceilings. The launcher derives one monotonic deadline at
 the launch gate and passes the remaining time to every wait, pipe-drain, cleanup, and output-read
-operation. No retry, signal grace period, receipt write, or recovery inspection resets or widens
-that deadline. A request counter is observed from the bounded producer envelope; missing,
+operation. An optional caller-owned `parent_deadline` in the same monotonic clock domain is
+composed by taking the earlier deadline; it cannot widen the intent allowance. No retry, signal
+grace period, receipt write, or recovery inspection resets or widens that deadline. A request counter is observed from the bounded producer envelope; missing,
 negative, contradictory, or over-limit counters produce `failed` when observed deterministically
 and `unknown` when observation itself is incomplete.
 
-Wall-clock expiry causes an owner-checked SIGTERM followed by bounded SIGKILL escalation through
+Wall-clock expiry or an observed caller cancellation causes an owner-checked SIGTERM followed by bounded SIGKILL escalation through
 `process_ownership.cleanup_registered_process`. The process group is probed after each step. If
 ownership or liveness cannot be proven, the result is `unknown`/`recovery_required`; no signal is
 sent to a reused PID or PGID and no replacement launch is attempted.
+
+A live launcher supplies only its original child's nonblocking `Popen.poll` before each group
+probe, including probes after TERM/KILL and after the deadline. This reaps an exited direct
+child so Linux zombie presence does not prevent group-exit verification. The poll result itself
+does not prove group cleanup; live descendants and ownership drift still fail closed. A faulty
+poll hook is `callback_failed`, and recovery without the original child handle has no such hook.
+No poll allocates additional wait time or extends a deadline.
+
+The optional `cancelled` callback is process-local authority supplied by the caller. It is checked
+before launch, after durable registration, during nonblocking stdout/stderr capture, and while
+waiting for the leader. A callback that raises or returns a non-boolean value fails closed. A
+verified cleanup produces one durable `cancelled` receipt; uncertain cleanup remains `unknown`.
 
 ## Bounded output capture
 
@@ -203,3 +227,61 @@ the only result exposed to downstream publication code.
    un-attested bytes while producing a successful execution receipt.
 9. A hostile direct target that performs a side effect before reading the gate cannot produce a
    completed receipt; external admission uses only an attested Lunar-owned bootstrap.
+
+## Implementation checkpoint (2026-10-01): lifecycle composition wrapper
+
+### Caller-owned control across the native lifecycle
+
+`intent.wall_timeout_seconds` remains the native process-attempt limit. An explicitly supplied
+`execution_control`, `parent_deadline`, or `cancelled` callback also constrains the scheduler's
+receipt, output-preparation, and optional publication stages. These caller controls are composed
+before any attempt is admitted: the earliest caller deadline wins and cancellation from any caller
+source stops new work. All supplied monotonic deadlines must use the execution control's clock
+domain, or the native monotonic clock when no control is supplied. Composition never changes the
+caller's original control or allocates a fresh budget after producer execution.
+
+Adding cancellation sources, or an equal/later parent deadline, retains the original declared
+`timeout_seconds` exactly as well as its start, clock and deadline. Recomputing an unchanged
+allowance through floating-point subtraction must not drift its durable budget fingerprint.
+Only an actually narrower parent deadline derives a narrower allowance; the prepared-journal
+identity gate remains exact.
+
+The scheduler checks the effective caller control before spawning and before/after receipt and
+output preparation. Publication receives that same effective control and continuation guard,
+including a cancellation-only guard when no caller deadline exists. Cancellation and timeout
+retain their typed `SolveExecutionCancelled` and `SolveExecutionBudgetExceeded` exceptions through
+the lifecycle wrapper. A receipt already persisted remains diagnostic/recoverable after a later
+caller cancellation; no later publication stage is admitted. Read-only terminal recovery can
+inspect retained evidence after the original process budget expires and does not allocate a new
+producer attempt or admit publication.
+
+If the native runner stops at its cleanup reserve with an explicit wall-timeout reason, the
+scheduler does not admit a later stage merely because cleanup completed before the absolute
+deadline. A tighter caller deadline retains `SolveExecutionBudgetExceeded` with that original
+deadline and actual observation time. An independently tighter native intent ceiling retains
+`native_trusted_scheduler_attempt_wall_timeout`; cleanup/broker/stream uncertainty remains
+unpublishable and is not relabeled as a successful timeout cleanup.
+
+The publication transaction remains responsible for its commit boundary. Caller cancellation is
+checked before entering new preparation/evaluation/staging/commit work. After its durable unknown
+marker, commit completes or retains an unknown outcome; the scheduler does not add a post-return
+cancellation check that would relabel a completed atomic publication as a failed operation.
+
+The provider-free implementation now exposes `run_native_trusted_lifecycle` and
+`recover_native_trusted_lifecycle` from `producer_lifecycle`. The run entry point delegates one
+native trusted attempt to the scheduler, persists and verifies the formal execution receipt,
+projects strict same-attempt output preparation, and invokes the existing publication transaction
+only when a caller explicitly supplies its strategy. The recovery entry point is read-only: it
+revalidates retained receipt and output evidence and cannot spawn, consume a second attestation,
+widen a deadline, or publish.
+
+The existing cooperative `run_producer_lifecycle` contract is unchanged. The projected DTO now
+also exposes native run/recovery observations, broker coverage, request coverage, and publication
+status so callers cannot mistake preparation for publication eligibility. Focused tests cover
+projection, explicit publication, preparation-only mode, read-only recovery, and fixed scheduler
+error mapping.
+
+This is an orchestration boundary, not a claim that Feature 156 is complete. Full production
+registration/cleanup and cross-process recovery, host-observed broker enforcement, real scheduler
+campaign wiring, and external producer acceptance remain open. All validation in this checkpoint
+uses local provider-free doubles and fixtures.
