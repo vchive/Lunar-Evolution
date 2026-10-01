@@ -257,6 +257,23 @@ constitute evidence for real OpenEvolve, Shinka, OSWorld, or remote evaluator pe
 
 ## Still outside this acceptance claim
 
+### 2026-10-02 native launch delivery regression
+
+The current branch also has a local native controller-lifeline and pre-launch RSI input-binding
+slice. The focused cross-boundary command covered 14 modules and recorded **280 tests: 271 passed,
+9 platform skips, zero failures/errors**, in
+`/private/tmp/lunar-input-lifeline-final-20261002.xml`. Ruff, `compileall`, and
+`git diff main --check` passed for that tree. This evidence is local/provider-free only and does
+not replace the final-head Ubuntu Python 3.11/3.12/3.13 workflow.
+
+The C fixture consumes the exact canonical `SolverRequest` and approved frozen `MemorySnapshot`
+behind the native gate. The original launch, one-shot attestation, bootstrap, manifest and file
+identities are bound before consumption; mutation and inode-substitution cases fail closed. The
+lifeline stops the original contained native group on controller death while missing terminal
+evidence remains unknown. This slice has not composed an RSI-native `SolverGateway`, original
+episode claim, trusted `SolverResult` mapping, independent evaluator/verifier, controller-level
+success reconciliation, complete egress, or machine-restart recovery.
+
 - External authenticity and ownership for callback observations, distributed idempotency and
   evidence-based migration of old uncertain calls without started logs. The local admission APIs
   preserve evidence bindings; they do not establish external exactly-once semantics.

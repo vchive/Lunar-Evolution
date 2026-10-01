@@ -70,6 +70,11 @@ from .producer_process import (
     _safe_root,
     _sha,
 )
+from .rsi_native_inputs import (
+    NativeRSIInputDescriptor,
+    NativeRSIInputError,
+    validate_native_rsi_launch_inputs,
+)
 from .trusted_bootstrap_binding import TrustedBootstrapBindingError, prepare_trusted_executable_pair
 from .trusted_bootstrap_registration import (
     TrustedBootstrapRegistrationError,
@@ -182,6 +187,33 @@ def _compose_attempt_budget(
     if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
         raise NativeTrustedAttemptError("native_trusted_attempt_parent_deadline_invalid")
     return float(started), min(own_deadline, float(parent_deadline))
+
+
+def _native_rsi_inputs(
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+    require_unexpired: bool,
+) -> NativeRSIInputDescriptor | None:
+    try:
+        return validate_native_rsi_launch_inputs(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+            require_unexpired=require_unexpired,
+        )
+    except NativeRSIInputError as exc:
+        raise NativeTrustedAttemptError(exc.code) from exc
+
+
+def _revalidate_native_rsi_inputs(
+    expected: NativeRSIInputDescriptor | None,
+    workspace: str | Path, *, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+    require_unexpired: bool,
+) -> None:
+    if _native_rsi_inputs(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+        require_unexpired=require_unexpired,
+    ) != expected:
+        raise NativeTrustedAttemptError("rsi_native_inputs_binding_changed")
 
 
 def _deadline_record(
@@ -533,6 +565,19 @@ def run_native_trusted_attempt(
     if _observe_cancellation(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
     started_monotonic, deadline = _compose_attempt_budget(intent, monotonic, parent_deadline)
+    inputs = _native_rsi_inputs(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+        require_unexpired=True,
+    )
+    if inputs is not None and inputs.deadline_unix is not None:
+        # Sample monotonic before wall time, once, so setup cannot extend the original
+        # absolute RSI deadline. Later admission checks may reject expiry but never remap it.
+        sampled_monotonic = monotonic()
+        sampled_unix = time.time()
+        if any(type(value) not in (int, float) or not math.isfinite(float(value))
+               for value in (sampled_monotonic, sampled_unix)):
+            raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+        deadline = min(deadline, float(sampled_monotonic) + (inputs.deadline_unix - sampled_unix))
     _remaining(deadline, monotonic, cancelled)
     try:
         installed = load_native_bootstrap_artifact(
@@ -575,8 +620,13 @@ def run_native_trusted_attempt(
         broker_thread: threading.Thread | None = None
         broker_ready: threading.Event | None = None
         broker_stop: threading.Event | None = None
+        controller_lifeline_writer: int | None = None
         broker_state: dict[str, object] = {}
         try:
+            _revalidate_native_rsi_inputs(
+                inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                require_unexpired=True,
+            )
             deadline_record = _persist_deadline(
                 batch, launch, started=started_monotonic, deadline=deadline,
             )
@@ -595,6 +645,8 @@ def run_native_trusted_attempt(
                 # Linux executes the inherited sealed FD. Landlock must not
                 # grant a second pathname route to the mutable source file.
                 read_paths = [pair.target.executable] if sys.platform == "darwin" else []
+                if inputs is not None:
+                    read_paths.extend(inputs.read_paths)
                 policy = build_producer_isolation_policy(
                     read_paths=read_paths, write_dirs=[working, output],
                 )
@@ -610,6 +662,8 @@ def run_native_trusted_attempt(
                 fds.update((gate_read, gate_write))
                 frame_read, frame_write = os.pipe()
                 fds.update((frame_read, frame_write))
+                lifeline_read, controller_lifeline_writer = os.pipe()
+                fds.add(lifeline_read)
                 broker_child_fds: tuple[int, int] = ()
                 broker_env = {"PATH": os.defpath, "LANG": "C"}
                 if broker_config is not None:
@@ -647,13 +701,14 @@ def run_native_trusted_attempt(
                 command = native_bootstrap_command(
                     pair.bootstrap.executable, control_fd=control_read,
                     gate_fd=gate_read, frame_fd=frame_write,
+                    controller_lifeline_fd=lifeline_read,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 process = subprocess.Popen(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
                     pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
-                              *broker_child_fds),
+                              *broker_child_fds, lifeline_read),
                     cwd=str(working), env=broker_env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
@@ -661,7 +716,7 @@ def run_native_trusted_attempt(
                     process, limit=intent.output_max_bytes,
                     deadline=deadline, monotonic=monotonic,
                 )
-                for fd in (control_read, gate_read, frame_write):
+                for fd in (control_read, gate_read, frame_write, lifeline_read):
                     os.close(fd)
                     fds.remove(fd)
                 if broker_config is not None:
@@ -726,6 +781,11 @@ def run_native_trusted_attempt(
                 _remaining(deadline, monotonic, cancelled)
                 if _observe_cancellation(cancelled):
                     raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
+                _revalidate_native_rsi_inputs(
+                    inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                    require_unexpired=True,
+                )
+                _remaining(deadline, monotonic, cancelled)
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
@@ -790,37 +850,47 @@ def run_native_trusted_attempt(
                     os.close(fd)
                 except OSError:
                     pass
-            if process is not None:
-                if owner is None:
-                    # The native child has not passed the registration gate, so
-                    # no target has been started. Its unreaped Popen PID cannot be reused.
-                    if process.poll() is None:
-                        try:
-                            process.kill()
-                        except ProcessLookupError:
-                            pass
-                else:
-                    result = _cleanup(owner, process, deadline=deadline, monotonic=monotonic)
-                    cleanup_status = result.status.value
-                    if result.status not in {ProcessCleanupStatus.CLEANED, ProcessCleanupStatus.ALREADY_EXITED}:
-                        reason = "native_trusted_attempt_cleanup_unknown"
-                    if registration is not None:
-                        try:
-                            cleanup_record = persist_native_trusted_cleanup(
-                                root,
-                                intent=intent,
-                                registration_sha256=str(registration["registration_sha256"]),
-                                deadline_sha256=deadline_sha256,
-                                cleanup=result,
-                            )
-                            cleanup_sha256 = str(cleanup_record["cleanup_sha256"])
-                        except NativeTrustedCleanupError:
-                            reason = "native_trusted_attempt_cleanup_evidence_unknown"
-                try:
-                    process.wait(timeout=max(0.0, deadline - monotonic()))
-                except subprocess.TimeoutExpired:
-                    if reason == "native_trusted_attempt_terminal_receipt_missing":
-                        reason = "native_trusted_attempt_reap_unknown"
+            try:
+                if process is not None:
+                    if owner is None:
+                        # The native child has not passed the registration gate, so
+                        # no target has been started. Its unreaped Popen PID cannot be reused.
+                        if process.poll() is None:
+                            try:
+                                process.kill()
+                            except ProcessLookupError:
+                                pass
+                    else:
+                        result = _cleanup(owner, process, deadline=deadline, monotonic=monotonic)
+                        cleanup_status = result.status.value
+                        if result.status not in {ProcessCleanupStatus.CLEANED, ProcessCleanupStatus.ALREADY_EXITED}:
+                            reason = "native_trusted_attempt_cleanup_unknown"
+                        if registration is not None:
+                            try:
+                                cleanup_record = persist_native_trusted_cleanup(
+                                    root,
+                                    intent=intent,
+                                    registration_sha256=str(registration["registration_sha256"]),
+                                    deadline_sha256=deadline_sha256,
+                                    cleanup=result,
+                                )
+                                cleanup_sha256 = str(cleanup_record["cleanup_sha256"])
+                            except NativeTrustedCleanupError:
+                                reason = "native_trusted_attempt_cleanup_evidence_unknown"
+                    try:
+                        process.wait(timeout=max(0.0, deadline - monotonic()))
+                    except subprocess.TimeoutExpired:
+                        if reason == "native_trusted_attempt_terminal_receipt_missing":
+                            reason = "native_trusted_attempt_reap_unknown"
+            finally:
+                if controller_lifeline_writer is not None:
+                    # Retain the writer through live owner-checked cleanup. Abrupt controller
+                    # death closes it in the OS; the bootstrap guardian then stops its group.
+                    try:
+                        os.close(controller_lifeline_writer)
+                    except OSError:
+                        reason = "native_trusted_attempt_lifeline_close_unknown"
+                    controller_lifeline_writer = None
             if stream_capture is not None:
                 try:
                     stream_observation = stream_capture.finish(deadline=deadline)
@@ -861,6 +931,13 @@ def run_native_trusted_attempt(
         # owner-checked group cleanup succeeded, but no exit code or producer output is
         # claimed.  The bootstrap evidence may therefore still be ``unknown``; the
         # evidence digest remains bound so recovery can inspect the exact record.
+        try:
+            _revalidate_native_rsi_inputs(
+                inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                require_unexpired=False,
+            )
+        except NativeTrustedAttemptError as exc:
+            reason = exc.code
         if (
             registration is not None and session is not None and handoff_sha256 is not None
             and cancellation_requested
@@ -914,6 +991,10 @@ def run_native_trusted_attempt(
                 )
                 # Receipt publication must consume the caller deadline, but must not
                 # call the cancellation callback again after cleanup has been verified.
+                _revalidate_native_rsi_inputs(
+                    inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                    require_unexpired=False,
+                )
                 _remaining(deadline, monotonic)
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
                 stored = _read_durable_json(
@@ -965,6 +1046,10 @@ def run_native_trusted_attempt(
                     deadline_sha256=deadline_sha256,
                     stream_capture_sha256=stream_capture_sha256,
                     cleanup_sha256=cleanup_sha256,
+                )
+                _revalidate_native_rsi_inputs(
+                    inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                    require_unexpired=False,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
@@ -1043,6 +1128,10 @@ def recover_native_trusted_attempt(
         batch = root / "evolution" / "producer-batches" / launch.journal_id
     except (ProducerBootstrapError, ProducerProcessError, TypeError, ValueError) as exc:
         raise NativeTrustedAttemptError("native_trusted_recovery_context_invalid") from exc
+    inputs = _native_rsi_inputs(
+        root, intent=intent, attestation=attestation, artifact=artifact,
+        require_unexpired=False,
+    )
 
     def inspect(lock_identity: tuple[int, int] | None = None) -> dict[str, object]:
         try:
@@ -1186,11 +1275,25 @@ def recover_native_trusted_attempt(
     if cleanup:
         try:
             with _recovery_lock(batch) as lock_identity:
-                return inspect(lock_identity)
+                _revalidate_native_rsi_inputs(
+                    inputs, root, intent=intent, attestation=attestation, artifact=artifact,
+                    require_unexpired=False,
+                )
+                result = inspect(lock_identity)
+                _revalidate_native_rsi_inputs(
+                    inputs, root, intent=intent, attestation=attestation, artifact=artifact,
+                    require_unexpired=False,
+                )
+                return result
         except ProducerProcessError as exc:
             raise NativeTrustedAttemptError("native_trusted_recovery_cleanup_unknown") from exc
     try:
-        return inspect()
+        result = inspect()
+        _revalidate_native_rsi_inputs(
+            inputs, root, intent=intent, attestation=attestation, artifact=artifact,
+            require_unexpired=False,
+        )
+        return result
     except ProducerProcessError as exc:
         raise NativeTrustedAttemptError("native_trusted_recovery_evidence_invalid") from exc
 

@@ -104,9 +104,21 @@ static int lunar_apply_isolation(const char *profile,
         }
         if (syscall(__NR_landlock_restrict_self, ruleset_fd, 0) < 0) { int error = errno; close(ruleset_fd); return error ? error : EPERM; }
         close(ruleset_fd);
-        /* A compact architecture-neutral seccomp filter.  Network and process
-           namespace/ptrace escape calls fail with EPERM; other calls remain
-           governed by Landlock and the target's normal runtime. */
+        /* Landlock does not mediate chmod. With bound read inputs, deny these
+           permission APIs for the entire target (including writable work
+           files); open/mkdir creation modes and ordinary output writes remain
+           available. This is deliberately not path-sensitive metadata control.
+           fchmodat2 is syscall 452 on every supported Linux architecture, even
+           when the build host's older headers do not name the newer syscall. */
+        #if defined(__NR_fchmodat2)
+        #define LUNAR_NR_FCHMODAT2 __NR_fchmodat2
+        #elif defined(__x86_64__) || defined(__aarch64__) || defined(__i386__)
+        #define LUNAR_NR_FCHMODAT2 452
+        #else
+        return ENOTSUP;
+        #endif
+        /* Network and process namespace/ptrace calls fail with EPERM. Other
+           calls remain governed by Landlock and the target's normal runtime. */
         struct sock_filter filter[] = {
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 4),
             #if defined(__x86_64__)
@@ -150,6 +162,16 @@ static int lunar_apply_isolation(const char *profile,
             #ifdef __NR_unshare
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_unshare, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
             #endif
+            #ifdef __NR_chmod
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_chmod, 0, 1), BPF_STMT(BPF_RET | BPF_K, read_count ? SECCOMP_RET_ERRNO | EPERM : SECCOMP_RET_ALLOW),
+            #endif
+            #ifdef __NR_fchmod
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_fchmod, 0, 1), BPF_STMT(BPF_RET | BPF_K, read_count ? SECCOMP_RET_ERRNO | EPERM : SECCOMP_RET_ALLOW),
+            #endif
+            #ifdef __NR_fchmodat
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_fchmodat, 0, 1), BPF_STMT(BPF_RET | BPF_K, read_count ? SECCOMP_RET_ERRNO | EPERM : SECCOMP_RET_ALLOW),
+            #endif
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_FCHMODAT2, 0, 1), BPF_STMT(BPF_RET | BPF_K, read_count ? SECCOMP_RET_ERRNO | EPERM : SECCOMP_RET_ALLOW),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         };
         struct sock_fprog program = { .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])), .filter = filter };

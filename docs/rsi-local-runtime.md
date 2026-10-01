@@ -297,12 +297,66 @@ metadata = evidence.to_dict()  # 原生证据身份和材料 hash/size，不含�
 它要求当前 archive/state 仍匹配原 transaction 的发布摘要；后来推进过的 population 需要
 单独的历史证据读取协议。该 API 不创建 workspace、lock 或收据，重复读取保持原文件不变。
 
-原 native launch 没有绑定 RSI episode、memory 或完整 SolverRequest，因此这里返回的是
+此前未绑定输入的 native launch 没有 RSI episode、memory 或完整 SolverRequest，因此这里返回的是
 `NativeRetainedCandidateEvidence`，不能拿它追认某次 RSI 求解或记忆的效果。bundle digest、
 入口源码 digest、producer execution、candidate execution、evaluation receipt/result 均有独立
 字段；`native_dependency_sha256` 也不等于 Actor dependency manifest。候选分数保留为来源
 信息，RSI 学习仍需要独立 verifier 和 holdout。完整契约见
 [`native-retained-evidence.md`](../specs/160-rsi-learning-mode/native-retained-evidence.md)。
+
+### 4.3 在 native 启动前交付 RSI 请求与冻结记忆
+
+`prepare_native_rsi_inputs` 保存原始完整 `SolverRequest` 和 approved `MemorySnapshot`，
+返回只含两个精确文件的 read paths。输入保存在独立 `.rsi-input` 目录，不能放进 target
+可写的 work/output 中。先准备输入，再把 manifest 摘要加入原 intent 的末尾 argv，最后
+构造一次性 attestation 并绑定原 launch：
+
+```python
+from lunar_evolution import (
+    bind_native_rsi_launch,
+    prepare_native_rsi_inputs,
+    validate_native_rsi_launch_inputs,
+)
+from lunar_evolution.producer_launcher import (
+    build_producer_launch_attestation,
+    build_producer_launch_intent,
+)
+
+inputs = prepare_native_rsi_inputs(
+    workspace, journal_id=journal_id, request=request, memory=approved_snapshot,
+)
+intent = build_producer_launch_intent(
+    **launch_options,  # 原 launch/contract/evaluator/environment 等配置。
+    journal_id=journal_id,
+    argv=(*target_argv, *inputs.argv_fragment),
+    working_directory="work", output_directory="output",
+)
+attestation = build_producer_launch_attestation(intent, once_id)
+bound = bind_native_rsi_launch(
+    workspace, intent=intent, attestation=attestation, artifact=artifact, inputs=inputs,
+)
+retained = validate_native_rsi_launch_inputs(
+    workspace, intent=intent, attestation=attestation, artifact=artifact,
+)
+assert retained == bound
+```
+
+target 从 `work` 读取 `../.rsi-input/request.json` 和 `../.rsi-input/memory.json`，需要明确
+支持这两个输入及保留的 argv 标记。manifest/binding 的原 inode 和摘要都会复验；只复制
+相同 bytes 到另一个 inode、去掉 argv 标记、事后补绑定或修改任何输入都不能继续执行。
+Linux 含只读输入的 profile 也拒绝 chmod/fchmod/fchmodat/fchmodat2；work/output 仍可创建
+和写入文件，不能依赖运行中修改权限。
+
+正式 native attempt 在消费前、gate 前、终态写入前及恢复时复验输入。原 `deadline_unix`
+仅映射一次到本次 monotonic deadline，再与 caller/intent 取更早边界。历史只读恢复允许
+原 deadline 已过，不刷新预算、不重新执行。求解/评测计数仍由 RSI controller 管理。
+
+正式 native bootstrap 现在持有 controller lifeline：单独杀死 controller 会停止原进程组
+内的 target。缺少终态确认仍保留 unknown；该机制不提供恢复进程额外的 signal 权限。
+这些 API 只完成启动前输入交付，不生成 `SolverResult`，不证明记忆改善效果，也未接通
+controller cancellation 或 unknown-to-success 对账。完整契约见
+[`native-launch-inputs.md`](../specs/160-rsi-learning-mode/native-launch-inputs.md) 和
+[`native-controller-lifeline.md`](../specs/157-producer-request-evidence/native-controller-lifeline.md)。
 
 ## 5. P2：显式 memory 翻译与重复评测置信策略
 

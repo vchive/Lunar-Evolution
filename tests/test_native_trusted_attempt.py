@@ -757,14 +757,17 @@ def test_terminal_write_failure_allows_explicit_unknown_recovery(tmp_path: Path,
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
-def test_explicit_recovery_cleans_live_registered_native_group(tmp_path: Path, monkeypatch):
+def test_lifeline_stops_unverified_cleanup_group_before_explicit_recovery(tmp_path: Path, monkeypatch):
     import lunar_evolution.native_trusted_attempt as runner
 
     workspace, producer_root, intent, attestation, artifact, batch = _attempt(
         tmp_path, timeout=1, target_sleep=10,
     )
 
+    children = []
+
     def interrupted_cleanup(owner, process, **kwargs):
+        children.append(process)
         return ProcessCleanupResult(
             label=owner.label, pid=owner.pid, pgid=owner.pgid,
             status=ProcessCleanupStatus.CLEANUP_UNVERIFIED, alive_after=True,
@@ -778,6 +781,13 @@ def test_explicit_recovery_cleans_live_registered_native_group(tmp_path: Path, m
     assert result.status == "recovery_required"
     assert result.terminal_sha256 is None
     assert not (batch / "native-trusted-process-terminal.json").exists()
+    # Returning from the attempt closes the lifeline even if live cleanup was
+    # interrupted. Observe the original child stopping without any fixture signal.
+    assert len(children) == 1
+    stopped_by = time.monotonic() + 2
+    while children[0].poll() is None and time.monotonic() < stopped_by:
+        time.sleep(0.01)
+    assert children[0].poll() is not None
     cleanup_deadlines: list[float | None] = []
     original_recovery_cleanup = runner.cleanup_registered_process
 
@@ -790,8 +800,9 @@ def test_explicit_recovery_cleans_live_registered_native_group(tmp_path: Path, m
         workspace, intent=intent, attestation=attestation, artifact=artifact, cleanup=True,
     )
     assert recovered["execution_outcome"] == "unknown"
-    assert recovered["term_sent"] is True
-    assert recovered["cleanup_status"] in {"cleaned", "cleanup_unverified", "ownership_lost"}
+    assert recovered["term_sent"] is False
+    assert recovered["kill_sent"] is False
+    assert recovered["cleanup_status"] in {"already_exited", "ownership_lost"}
     assert recovered["pid"] == recovered["pgid"]
     assert cleanup_deadlines and cleanup_deadlines[0] is not None
     deadline_record = json.loads(

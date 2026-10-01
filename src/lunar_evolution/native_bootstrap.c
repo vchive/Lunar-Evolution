@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <poll.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -254,10 +256,69 @@ static int parse_fd_arg(const char *arg, int *out) {
     *out = (int)value; return 0;
 }
 
+typedef struct {
+    int enabled;
+    int fd;
+    pid_t pid;
+    pthread_t thread;
+} controller_guard_t;
+
+static void stop_own_guarded_group(const controller_guard_t *guard) {
+    /* Select only this still-private kernel group, never a persisted/recovered PID. */
+    if (guard->enabled && getpid() == guard->pid && getpgrp() == guard->pid &&
+        getsid(0) == guard->pid) {
+        (void)kill(0, SIGKILL);
+    }
+    _exit(78);
+}
+
+static void *watch_controller(void *value) {
+    controller_guard_t *guard = (controller_guard_t *)value;
+    unsigned char token;
+    ssize_t observed;
+    do { observed = read(guard->fd, &token, 1); } while (observed < 0 && errno == EINTR);
+    /* The owner never sends data. EOF, an unexpected byte, or a read error stops work. */
+    stop_own_guarded_group(guard);
+    return NULL;
+}
+
+static int start_controller_guard(controller_guard_t *guard, int fd) {
+    struct stat info;
+    int flags = fcntl(fd, F_GETFL);
+    pid_t pid = getpid();
+    if (flags < 0 || (flags & O_ACCMODE) != O_RDONLY || (flags & O_NONBLOCK) != 0 ||
+        fstat(fd, &info) != 0 || !S_ISFIFO(info.st_mode) || getpgrp() != pid || getsid(0) != pid ||
+        fcntl(fd, F_SETFD, FD_CLOEXEC) != 0) return -1;
+    struct sigaction ignored;
+    memset(&ignored, 0, sizeof(ignored));
+    ignored.sa_handler = SIG_IGN;
+    if (sigemptyset(&ignored.sa_mask) != 0 || sigaction(SIGPIPE, &ignored, NULL) != 0) return -1;
+    guard->enabled = 1; guard->fd = fd; guard->pid = pid;
+    if (pthread_create(&guard->thread, NULL, watch_controller, guard) != 0) return -1;
+    return 0;
+}
+
+static int finish_controller_guard(controller_guard_t *guard) {
+    if (!guard->enabled) return 0;
+    void *result = NULL;
+    if (pthread_cancel(guard->thread) != 0 || pthread_join(guard->thread, &result) != 0 ||
+        result != PTHREAD_CANCELED) return -1;
+    close(guard->fd);
+    guard->enabled = 0;
+    return 0;
+}
+
 int main(int argc, char **argv) {
-    if (argc != 7 || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
+    if ((argc != 7 && argc != 9) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
     int control_fd, gate_fd, frame_fd;
     if (parse_fd_arg(argv[2], &control_fd) || parse_fd_arg(argv[4], &gate_fd) || parse_fd_arg(argv[6], &frame_fd)) return 64;
+    controller_guard_t guard; memset(&guard, 0, sizeof(guard)); guard.fd = -1;
+    if (argc == 9) {
+        int lifeline_fd;
+        if (strcmp(argv[7], "--controller-lifeline-fd") != 0 || parse_fd_arg(argv[8], &lifeline_fd) != 0 ||
+            lifeline_fd == control_fd || lifeline_fd == gate_fd || lifeline_fd == frame_fd ||
+            start_controller_guard(&guard, lifeline_fd) != 0) return 64;
+    }
     unsigned char *raw = (unsigned char *)calloc(MAX_CONTROL + 1, 1); if (!raw) return 65;
     size_t used = 0; ssize_t n;
     while (used <= MAX_CONTROL && (n = read(control_fd, raw + used, MAX_CONTROL + 1 - used)) > 0) used += (size_t)n;
@@ -285,6 +346,16 @@ int main(int argc, char **argv) {
     if (child < 0) { close(exec_pipe[0]); close(exec_pipe[1]); close(target_fd); emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0); free_control(&c); return 71; }
     if (child == 0) {
         close(exec_pipe[0]);
+        if (guard.enabled) {
+            /* Cover controller EOF racing fork after the guardian's group signal.
+               A just-created child must not exec after missing that signal. */
+            struct pollfd owner_pipe = {guard.fd, POLLIN, 0};
+            if (poll(&owner_pipe, 1, 0) != 0) _exit(73);
+            close(guard.fd);
+            struct sigaction restored;
+            memset(&restored, 0, sizeof(restored)); restored.sa_handler = SIG_DFL;
+            if (sigemptyset(&restored.sa_mask) != 0 || sigaction(SIGPIPE, &restored, NULL) != 0) _exit(73);
+        }
         if (c.target_fd >= 0) {
             if (dup2(target_fd, c.target_fd) < 0) { int e=errno; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(73); }
         }
@@ -327,6 +398,7 @@ int main(int argc, char **argv) {
     do { exec_read = read(exec_pipe[0], &exec_error, sizeof(exec_error)); } while (exec_read < 0 && errno == EINTR);
     close(exec_pipe[0]);
     if (exec_read != 0) {
+        if (guard.enabled) stop_own_guarded_group(&guard);
         kill(child, SIGKILL); waitpid(child, NULL, 0);
         emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
         free_control(&c); return 76;
@@ -334,9 +406,16 @@ int main(int argc, char **argv) {
     pid_t target_group = getpgid(child);
     if (target_group < 0 || target_group != getpgrp() ||
         emit_frame(frame_fd, c.launch, c.intent, 2, "target_started", target_hex, child, target_group) != 0) {
+        if (guard.enabled) stop_own_guarded_group(&guard);
         kill(child, SIGKILL); waitpid(child, NULL, 0); free_control(&c); return 77;
     }
-    int status; waitpid(child, &status, 0);
+    int status; pid_t waited;
+    do { waited = waitpid(child, &status, 0); } while (waited < 0 && errno == EINTR);
+    if (waited != child) {
+        if (guard.enabled) stop_own_guarded_group(&guard);
+        free_control(&c); return 77;
+    }
+    if (finish_controller_guard(&guard) != 0) stop_own_guarded_group(&guard);
     emit_frame(frame_fd, c.launch, c.intent, 3, "terminal", NULL, 0, 0);
     free_control(&c); close(frame_fd);
     if (WIFEXITED(status)) return WEXITSTATUS(status); if (WIFSIGNALED(status)) return 128 + WTERMSIG(status); return 77;

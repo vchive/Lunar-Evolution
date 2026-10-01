@@ -1,8 +1,27 @@
-# RSI remaining work by priority — 2026-10-01
+# RSI remaining work by priority — 2026-10-02
 
 This is the current execution list, extending Feature 160 and the producer lifecycle SDD.
 Code and HANDOFF evidence take precedence over historical gap descriptions and design drafts.
 All validation in this iteration is local and provider-free.
+
+## Current open priorities
+
+- **P0**: final-head Ubuntu Python 3.11/3.12/3.13 full current/archived/frozen CI;
+  independently trusted completion for an uncertain external execution, exact worker ownership,
+  complete native containment/egress and controller-independent deadline enforcement. The local
+  native lifeline stops active targets in its original group after controller death, but missing
+  durable terminal acknowledgement remains unknown. It is not successful reconciliation.
+- **P1**: compose the bound native request into a real RSI solver gateway with the original
+  episode claim, independent verifier/result mapping and explicit cancellation channel. New
+  create-only complete request/frozen-memory inputs now reach an actual local C target before
+  gate release; this is delivery, not SolverResult authority. Real OpenEvolve/Shinka project
+  trust/runtime profiles/default registration, official evaluators and actual campaigns remain
+  open. Existing controller unknown result records cannot be overwritten with completed results.
+- **P2**: connect diagnostics/confidence/translation to actual campaign receipts and actual cost
+  sources after the execution boundary is accepted. Web UI, distributed scheduling and model
+  adaptation are separate later tracks, not required to close this local delivery slice.
+
+The sections below record implemented local progress and the limits of each contract.
 
 ## P0 — correctness and interruption safety
 
@@ -55,7 +74,8 @@ All validation in this iteration is local and provider-free.
   caller-selected published native candidate, with original launch pins, expected journal/formal
   receipt digests and before/after integrity checks. It is supporting evidence only: existing
   native launch records cannot establish an RSI request/memory attribution. A future real gateway
-  must bind the full RSI request before launch and still pass independent verification.
+  now has a create-only full request/memory launch binding available, but still requires the
+  original episode admission, result mapping and independent verification.
 
 ## P2 — local diagnostics and later composition
 
@@ -66,7 +86,7 @@ All validation in this iteration is local and provider-free.
   marginal confidence evidence never replaces source/holdout/admission authority. Provider billing
   and model weight training remain separate acceptance/research work.
 
-The local P0/P1/P2 slices are implemented; validation is recorded in tasks.md, validation.md and
+The named local slices have validation recorded in tasks.md, validation.md and
 HANDOFF.md. Official evaluators, external project launch trust/default project registration and
 real campaigns remain open. Revalidation is a configured local policy/API, not a distributed or
 background scheduler. The governance gates read trusted local latest heads and do not establish

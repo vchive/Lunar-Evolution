@@ -59,3 +59,11 @@ before outbound I/O or during blocked headers stops the local worker; retained a
 active/unknown. Recovery rejects hash/bytes/budget/inode drift without append, retry, signals or
 transport. The six new cases pass locally; broader native process crash ownership, complete
 egress and external project acceptance remain open. See `controller-death-contract.md`.
+
+T157-06 native lifetime slice: formal attempts now always provide a controller-owned anonymous
+lifeline to the trusted bootstrap. Its guardian stops the original fresh session/group on EOF,
+without recovery-loaded PID authority or extra persisted claims; the target does not inherit
+the pipe. Live cleanup retains the writer until ownership checks finish. Lost terminal evidence
+remains unknown. This is active direct-target protection while bootstrap is alive, not supervision
+after normal bootstrap exit, independent deadline enforcement, machine-restart recovery or
+complete malicious containment. See `native-controller-lifeline.md`; T157-05/06 remain open.

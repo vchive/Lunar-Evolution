@@ -151,7 +151,7 @@ def build_native_bootstrap_artifact(
         linker_hardening = ["-Wl,-z,relro", "-Wl,-z,now"] if platform.system().lower() == "linux" else []
         subprocess.run(
             [compiler_path, "-std=c11", "-O2", "-fstack-protector-strong", "-D_FORTIFY_SOURCE=2",
-             "-Wall", "-Wextra", "-Werror", "-Wno-deprecated-declarations", *linker_hardening,
+             "-Wall", "-Wextra", "-Werror", "-Wno-deprecated-declarations", "-pthread", *linker_hardening,
              "-o", str(output), str(source)],
             check=True, stdin=subprocess.DEVNULL, capture_output=True,
             timeout=30, env={"PATH": os.defpath, "LANG": "C"},
@@ -295,12 +295,21 @@ def native_bootstrap_command(
     control_fd: int,
     gate_fd: int,
     frame_fd: int,
+    controller_lifeline_fd: int | None = None,
 ) -> tuple[str, ...]:
-    """Return the argv used to start an already-validated bootstrap artifact."""
+    """Build a guarded command; omitting the lifeline is for direct fixtures only."""
     executable = artifact.path if isinstance(artifact, NativeBootstrapArtifact) else Path(artifact)
-    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in (control_fd, gate_fd, frame_fd)):
+    descriptors = (control_fd, gate_fd, frame_fd)
+    if controller_lifeline_fd is not None:
+        descriptors += (controller_lifeline_fd,)
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in descriptors):
         _fail("native_bootstrap_fd_invalid")
-    return (str(executable), "--control-fd", str(control_fd), "--gate-fd", str(gate_fd), "--frame-fd", str(frame_fd))
+    if controller_lifeline_fd is not None and controller_lifeline_fd in descriptors[:3]:
+        _fail("native_bootstrap_fd_invalid")
+    command = (str(executable), "--control-fd", str(control_fd), "--gate-fd", str(gate_fd), "--frame-fd", str(frame_fd))
+    if controller_lifeline_fd is not None:
+        command += ("--controller-lifeline-fd", str(controller_lifeline_fd))
+    return command
 
 
 __all__ = [

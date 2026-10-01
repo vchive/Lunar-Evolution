@@ -1,5 +1,30 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-02 Native controller lifeline and RSI launch-input binding
+
+继续在 `codex/rsi-native-worker-recovery` 推进 Feature 157/160。本轮完成两个本地安全边界：
+
+- 正式 native attempt 给 trusted bootstrap 一个匿名 controller lifeline。控制器异常死亡时，
+  guardian 只停止自己仍持有的原始 session/process group；target 不继承 lifeline。live
+  owner-checked cleanup 期间 writer 保持打开。缺失 terminal 仍为 `unknown`/
+  `recovery_required`，不会合成成功或取消回执。
+- RSI launch 在消费 attestation 前绑定完整 canonical `SolverRequest` 和 approved frozen
+  `MemorySnapshot`，并绑定 manifest、原始 intent/attestation/bootstrap 与文件 inode/hash。
+  输入仅以两个精确只读路径交给 native target，gate 释放和 receipt/recovery 前重验；原始
+  `deadline_unix` 只映射一次并收窄 native attempt。Linux 对有只读输入的 profile 同时拒绝
+  chmod 系统调用，避免 target 改写输入权限。
+- provider-free 合并回归 14 个模块：**280 项，271 passed、9 平台 skip、0 failures/errors**，
+  JUnit `/private/tmp/lunar-input-lifeline-final-20261002.xml`。Ruff、compileall、
+  `git diff main --check` 通过。回归使用本地 C/bootstrap、fixture 和 loopback；没有调用
+  WebAgent、远程 evaluator、公司平台或真实模型。
+
+这不是可发布的 native RSI SolverGateway：episode claim、native receipt 到 `SolverResult` 的
+可信映射、独立 verifier/evaluator 结果、controller resume/reconcile 仍未组合。也未解决
+完整 egress、恶意 namespace/signal containment、bootstrap 退出后的 deadline enforcement、
+machine restart recovery、外部 worker 来源/ownership 和真实 campaign。上述限制不得用 fixture
+成功推断为已验收。新 head 的 Ubuntu 3.11/3.12/3.13 CI 仍须由 PR #2 独立通过；本段本地结果
+不能代替 CI。PR #2 不得在没有新的用户授权时合入 main。
+
 ## 2026-10-02 Retained native evidence and controller-death broker regression
 
 延续 Feature 160/157，工作分支仍为 `codex/rsi-native-worker-recovery`，PR #2 为 draft，
