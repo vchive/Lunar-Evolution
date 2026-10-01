@@ -118,6 +118,8 @@ OpenEvolve/Shinka 的本地 fixture/adapters 已存在，但 launcher、schedule
 
 已增加独立 append-only SQLite memory admission control plane，支持 observed → verified → candidate → shadow → approved → active → deprecated/revoked、CAS digest、verifier/pass、holdout/baseline regression 和 compatibility drift gate；另有显式 `MemoryPromotionAdapter` 接收 transfer report 并强制两步晋级。`RSILearningController.promote_transfer_regression()` 现在提供一个**显式 opt-in 的 provider-free 组合入口**：冻结 controller 当前 snapshot，执行本地 transfer regression，再经 adapter 做 `shadow → approved`（可选继续 `approved → active`），并在 snapshot、parent snapshot、solver/verifier/curriculum/judge fingerprint 或 CAS 漂移时 fail-closed；已完成的 promotion 可幂等重放，不重复 runner 或 governance revision。它不修改只读 `RSIMemoryStore`，也不代表真实 evaluator、自动 holdout campaign 或默认 controller 触发已经接通。
 
+`MemoryPromotionAdapter.quarantine_failed_report()` 现在补齐 provider-free 的失败回滚边界：对已批准或激活的 admission，只有 canonical、快照绑定且带非空 rejection reasons 的失败 transfer report 才能通过 CAS 原子追加 `revoked`；撤销后不再可检索，使用新 head digest 重放只读返回，不重复写 revision。它不提供真实 evaluator 真实性，也不把失败报告升级为默认自动调度。
+
 最小范围：observed → verified → candidate → shadow → approved → active → deprecated/revoked。candidate 必须绑定 verifier receipt、source episode、scope、compatibility 和 parent snapshot；用 baseline/holdout 决定 promotion；支持冲突、rollback、quarantine。
 
 验收标准：单次 pass 只能产生 candidate 或 approved-pending，不能直接 active；holdout 失败、回归或 fingerprint 不兼容时不能晋级；撤销后新 episode 不再检索该 memory。
@@ -217,7 +219,7 @@ capability/prerequisite coverage、hard-negative/boundary probe、重复抑制�
 
 ### 阶段 2：可信学习闭环（P1）
 
-当前已完成 provider-free clean-room verifier（含本地 spawn 进程生命周期/超时边界）、provenance/污染检测、clean-room verdict → governance 的 verified admission bridge、transfer regression 窄版本、memory promotion adapter、controller 的显式 transfer promotion 组合入口、失败驱动 curriculum 及其可选 resume 接线和统一 adapter contract。剩余顺序为：接入真实 evaluator/Actor、将 holdout regression 接到受控的默认调度策略、rollback/quarantine 自动触发，以及真实 process adapter/campaign。
+当前已完成 provider-free clean-room verifier（含本地 spawn 进程生命周期/超时边界）、provenance/污染检测、clean-room verdict → governance 的 verified admission bridge、transfer regression 窄版本、memory promotion adapter、controller 的显式 transfer promotion 组合入口、失败驱动 curriculum 及其可选 resume 接线和统一 adapter contract。剩余顺序为：接入真实 evaluator/Actor、将 holdout regression 接到受控的默认调度策略、把 provider-free quarantine 接到默认调度（当前仍是显式调用），以及真实 process adapter/campaign。
 
 出口：错误或伪造 receipt 无法进入 active memory；局部成功不能冒充迁移能力。
 

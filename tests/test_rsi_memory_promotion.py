@@ -210,3 +210,57 @@ def test_revoked_admission_cannot_be_promoted(tmp_path: Path) -> None:
         )
     assert rejected.value.code == "rsi_memory_governance_revoked"
     assert governance.get(revoked.admission_id).state == "revoked"
+
+
+def test_failed_transfer_report_quarantines_active_memory_idempotently(tmp_path: Path) -> None:
+    governance, shadow, compatibility = shadow_admission(tmp_path)
+    adapter = MemoryPromotionAdapter(governance)
+    active = adapter.promote(
+        shadow.admission_id,
+        report(),
+        expected_record_sha256=shadow.record_sha256,
+        compatibility=compatibility,
+        activate=True,
+    )
+    rejected = report(eligible=False)
+
+    revoked = adapter.quarantine_failed_report(
+        active.admission_id,
+        rejected,
+        expected_record_sha256=active.record_sha256,
+    )
+    assert revoked.state == "revoked"
+    assert governance.list_retrievable(scope="problem-family:test", compatibility={}) == ()
+    assert [record.state for record in governance.history(active.admission_id)] == [
+        "observed", "verified", "candidate", "shadow", "approved", "active", "revoked"
+    ]
+
+    replay = adapter.quarantine_failed_report(
+        active.admission_id,
+        rejected,
+        expected_record_sha256=revoked.record_sha256,
+    )
+    assert replay == revoked
+    assert len(governance.history(active.admission_id)) == 7
+
+
+def test_quarantine_requires_rejected_bound_report(tmp_path: Path) -> None:
+    governance, shadow, _compatibility = shadow_admission(tmp_path)
+    adapter = MemoryPromotionAdapter(governance)
+    with pytest.raises(MemoryPromotionError) as passed:
+        adapter.quarantine_failed_report(
+            shadow.admission_id,
+            report(),
+            expected_record_sha256=shadow.record_sha256,
+        )
+    assert passed.value.code == "rsi_memory_promotion_quarantine_requires_rejection"
+    assert governance.get(shadow.admission_id) == shadow
+
+    with pytest.raises(MemoryPromotionError) as drift:
+        adapter.quarantine_failed_report(
+            shadow.admission_id,
+            report(eligible=False, old_name="other-old", current_name="other-current"),
+            expected_record_sha256=shadow.record_sha256,
+        )
+    assert drift.value.code == "rsi_memory_promotion_snapshot_drift"
+    assert governance.get(shadow.admission_id) == shadow

@@ -15,6 +15,14 @@ fields (`holdout_receipt_sha256`, `baseline_receipt_sha256`, and `regression_pas
 calling the governance transition. A rejected report, a tampered report, stale CAS digest,
 compatibility drift, or revoked admission fails closed without appending a revision.
 
+`MemoryPromotionAdapter.quarantine_failed_report(...)` is the provider-free rollback boundary for
+an already-approved or active admission. It accepts only a canonical report with
+`promotion_eligible=False`, non-empty rejection reasons, and matching current/parent snapshot
+digests. It atomically appends `revoked` through the governance CAS transition, so failed unseen
+holdout, regression, or contamination evidence is removed from retrieval. Replaying the call with
+the resulting head digest returns the existing revoked record without a second revision; stale
+CAS, report drift, snapshot drift, or a passing report fails before any write.
+
 `promote(..., activate=True)` always appends `approved` first and then `active`; a single practice
 or transfer pass cannot skip the approved gate. The controller may pass an expected compatibility
 map explicitly; when omitted, the adapter binds the immutable map already recorded on the admission
