@@ -20,6 +20,15 @@ YAML 和 whole-branch diff check 均通过。CI 增加 full runner 前的 native
 artifact；仍需新 PR head 三版 Ubuntu current/archived/frozen 全部成功，尚未合入 main。
 详细证据和保留的失败见 Feature 156 `main-integration-validation.md`。
 
+上述修复 `87ea0ce` 的 early Ubuntu focus（run `36851401335`）把失败缩至三版同一项
+active cancellation E2E。目标的 marker 可以早于 host 接受 target_started frame；仅看该
+文件立即取消时，控制器按契约保留 unknown，不能写 verified cancelled terminal。
+E2E 现在精确等原 accept_frame 成功验证目标启动，再结合实际 marker 取消，全部原断言
+保留；新增确定性“marker 已写但 start frame 未被 host 接受”回归，确认只保留 unknown。
+E2E 13 与该负例 1 均 passed，没有生产行为放宽或新增等待预算。最新 wheel 源码/资源
+170 文件逐字节匹配，安装后 mock DRS/BRS、inspect 与不重复落盘的 terminal replay 均通过，
+证据 `/tmp/lunar-installed-wheel-cleanup-20261001-validation.json`；仍需新 head Ubuntu 完整矩阵。
+
 ## 2026-10-01 Main integration and cross-platform corrections
 
 已创建并关联 [PR #1](https://github.com/vchive/Lunar-Evolution/pull/1)，base 为实际主分支

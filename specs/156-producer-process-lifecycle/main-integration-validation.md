@@ -100,3 +100,19 @@ The installed wheel at the preceding packaging head completed mock DRS and BRS C
 read-only inspect and exact terminal replay without additional ledger writes. Validation used
 an isolated temporary home and an explicit minimal environment; no model endpoint or key was
 read. Evidence: `/var/folders/kt/ygjlhpbx6sq1mk2912c3fzt80000gn/T/lunar-installed-rsi-20261001-cidgj9lf/validation.json`.
+
+The following early Ubuntu focus at `87ea0ce` (run `36851401335`) removed the six cleanup
+failures, leaving one identical active-cancellation E2E failure across all three Python versions.
+Its target-written marker could precede the host accepting the start handshake. Cancellation
+at that interleaving correctly keeps the terminal unknown. The active-cancellation fixture now
+waits for the original session method to validate `target_started` and for the actual marker;
+all cancelled receipt, cleanup, no-request/no-publication assertions remain. A deterministic
+negative interleaving verifies that a marker without an accepted start frame cannot create a
+known cancellation terminal. Local E2E 13 and negative 1 passed; neither production permissions
+nor unknown-result semantics were loosened. Exact early annotations are retained in
+`/tmp/lunar-linux-ci-reap-annotations-20261001.json`.
+
+The wheel rebuilt after the cleanup corrections matches all 170 runtime source/resource files,
+and its sdist retains the native fixture helper. Its isolated installed CLI completed mock DRS
+and BRS, inspect and exact terminal replay without additional ledger writes. Final wheel CLI
+evidence: `/tmp/lunar-installed-wheel-cleanup-20261001-validation.json`.

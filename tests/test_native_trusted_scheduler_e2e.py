@@ -32,6 +32,7 @@ from lunar_evolution.bundle_evolution import read_bundle_delivery_materials
 from lunar_evolution.evolution import CandidateArchive, EvolutionError, PopulationStrategy
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
 from lunar_evolution.native_trusted_attempt import recover_native_trusted_attempt
+from lunar_evolution.producer_bootstrap import TrustedBootstrapSession
 from lunar_evolution.producer_broker_ipc import ProducerBrokerConfig
 from lunar_evolution.producer_bundle_handoff import BundleGroup
 from lunar_evolution.producer_bundle_publication import parse_producer_bundle_publication_journal
@@ -197,15 +198,38 @@ def test_real_scheduler_broker_receipt_publication_and_readonly_recovery(tmp_pat
 
 
 def test_real_active_cancellation_cleans_owner_without_request_or_publication(tmp_path: Path, monkeypatch):
+    """Cancel an observed active target; target-authored bytes alone are not handshake proof."""
     clear_proxy_environment(monkeypatch)
     with local_http() as (endpoint, requests):
         prepared = fixture(tmp_path, endpoint, delay=3)
         before = _archive_projection(prepared.context.workspace)
+        accepted_starts = []
+        active_cancellations = []
+        accept_frame = TrustedBootstrapSession.accept_frame
+
+        def cancelled():
+            active = bool(accepted_starts) and (prepared.batch / "work" / "started").exists()
+            if active:
+                active_cancellations.append(True)
+            return active
+
+        def accept_then_observe(session, frame):
+            if frame.kind == "target_started":
+                # A fast static target may already have written its marker. Cancellation
+                # must still wait until the controller accepts the authenticated frame.
+                assert cancelled() is False
+            accept_frame(session, frame)
+            if frame.kind == "target_started":
+                assert session.state == "target_started" and session.target_start_count == 1
+                accepted_starts.append(frame)
+
+        monkeypatch.setattr(TrustedBootstrapSession, "accept_frame", accept_then_observe)
         with pytest.raises(SolveExecutionCancelled):
             scheduler.run_native_trusted_producer(
                 prepared.context.workspace, **prepared.arguments,
-                cancelled=lambda: (prepared.batch / "work" / "started").exists(),
+                cancelled=cancelled,
             )
+    assert len(accepted_starts) == 1 and active_cancellations
     terminal = recover_native_trusted_attempt(prepared.context.workspace, intent=prepared.intent,
                                               attestation=prepared.attestation, artifact=prepared.artifact)
     assert terminal["process_status"] == "cancelled"

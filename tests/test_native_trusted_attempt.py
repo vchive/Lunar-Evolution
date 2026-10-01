@@ -1001,6 +1001,49 @@ def test_native_attempt_invalid_terminal_frame_persists_failed_evidence(tmp_path
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
+def test_cancellation_before_host_accepts_start_frame_cannot_claim_known_terminal(tmp_path, monkeypatch):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    workspace, producer_root, intent, attestation, artifact, batch = _attempt(
+        tmp_path, timeout=5, target_sleep=10, mark_started_before_sleep=True,
+    )
+    marker = batch / "work" / "marker"
+    read_frame = runner._read_attempt_frame
+    reads = 0
+
+    def interleaved_read(fd, deadline, monotonic, cancelled):
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            # The target really runs, but cancellation wins before the host consumes its
+            # start frame. A target-written file does not replace verified handshake evidence.
+            while not marker.exists():
+                assert monotonic() < deadline
+                time.sleep(0.005)
+        return read_frame(fd, deadline, monotonic, cancelled)
+
+    monkeypatch.setattr(runner, "_read_attempt_frame", interleaved_read)
+    result = run_native_trusted_attempt(
+        workspace, producer_root=producer_root, intent=intent,
+        attestation=attestation, artifact=artifact, cancelled=marker.exists,
+    )
+    assert reads == 2 and marker.read_bytes() == b"started"
+    assert result.gate_released and not result.target_started
+    assert result.reason == "native_trusted_attempt_cancelled"
+    assert result.cleanup_status in {"cleaned", "already_exited"}
+    assert result.terminal_sha256 is None
+    assert not (batch / "native-trusted-process-terminal.json").exists()
+    evidence = parse_trusted_bootstrap_evidence((batch / "trusted-bootstrap-evidence.json").read_bytes())
+    assert evidence.status == "unknown"
+    recovered = recover_native_trusted_attempt(
+        workspace, intent=intent, attestation=attestation, artifact=artifact,
+    )
+    assert recovered["status"] == "recovery_required"
+    assert recovered["reason"] == "native_trusted_attempt_terminal_receipt_missing"
+    assert "process_status" not in recovered
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_native_attempt_active_cancellation_terminates_owned_group(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
