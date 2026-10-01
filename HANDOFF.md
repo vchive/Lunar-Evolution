@@ -1,5 +1,27 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-02 Native RSI composition seams
+
+按用户授权继续推进 PR #2，当前 head 为 `3af6f89`，仍未合入 `main`。本轮完成并推送三项
+provider-free composition seam：
+
+- `NativeRSIExecutionPlan`：冻结完整 `SolverRequest`/memory digest、launch/attestation/
+  bootstrap/input manifest、selector/evaluator fingerprints 和原始 deadline，支持严格
+  canonical replay 与 drift refusal。
+- `RSILedger` native episode claim：attestation 前 create-only claim，绑定 episode/request/
+  plan digest；started 或 unknown 只进入 recovery，绝不二次 launch；完整 terminal result
+  可幂等发布和只读恢复。
+- `rsi_native_candidate`：校验 request/contract/evaluator/environment/memory 全部 pins，只选
+  一个 admitted candidate；execution completed、独立 evaluation pass、publication published
+  三类证据全部匹配后才构造 `SolverResult`。
+
+联合本地回归 **229 项，220 passed、9 平台 skip、0 failures/errors**，JUnit
+`/private/tmp/lunar-native-p1-final-20261002.xml`；Ruff、compileall、`git diff main --check`
+通过。当前仍未把这些 seam 接到真实 native scheduler：完整 `NativeRSISolverGateway.run`、
+真实 candidate/evaluator receipt 读取、controller resume/reconcile、完整 egress 和外部
+worker ownership 仍开放。PR #2 新 head 的 Ubuntu Python 3.11/3.12/3.13 CI 必须独立通过后
+才能合入；本地 fixture 结果不代表真实模型或 campaign 验收。
+
 ## 2026-10-02 Native controller lifeline and RSI launch-input binding
 
 继续在 `codex/rsi-native-worker-recovery` 推进 Feature 157/160。本轮完成两个本地安全边界：
