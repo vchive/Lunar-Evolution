@@ -142,6 +142,13 @@ evaluator、跨任务数据集或生产 campaign。
 capability/prerequisite coverage、hard-negative/boundary probe、重复抑制、budget/novelty/reason
 审计和 canonical ledger replay；controller 可选地将 ledger 纳入 checkpoint 并在 resume 恢复。它保持确定性，不包含 bandit/RL。
 
+已补齐显式 `FailureBoundaryPolicy`：未覆盖 capability/prerequisite 优先、可配置 hard-negative
+阈值、单 cluster 选择上限与 novelty。新 selection 绑定 diagnosis 和 policy digest，恢复按
+同一 policy 重演 cluster/task/reason/coverage/预算；ledger digest 即使没有 selection 也绑定
+policy。旧无 policy checkpoint 只解释为默认 v1，不能采用当前自定义 policy，旧 digest 和
+selection 派生字段均复核。详见 `curriculum-policy.md`；这仍是 opt-in 的本地 provider-free
+能力，不代表默认调度或真实 evaluator 已接通。
+
 最小范围：能力、前置能力、可观察失败、practice task、transfer task 的基本 ontology；失败模式聚类和去重；任务选择记录 reason、coverage、novelty 和 budget；先保持确定性、可重放，不引入复杂 bandit/RL。
 
 验收标准：相同 ledger 和 seed 得到相同选择；连续重复失败会生成诊断或边界任务，而非无限重复同一 practice；选择理由可查询。

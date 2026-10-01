@@ -40,6 +40,74 @@ def _digest(value: object) -> str:
 
 
 @dataclass(frozen=True)
+class FailureBoundaryPolicy:
+    """Bounded, deterministic contract for diversity and boundary probing.
+
+    The policy is intentionally provider-free: it only controls how already observed failure
+    clusters are selected.  It does not score candidates, call an evaluator, or mutate memory.
+    A policy with the same configuration must make the same choice from the same ledger.
+    """
+
+    policy_id: str = "failure-boundary-v1"
+    prefer_uncovered_capability: bool = True
+    hard_negative_after: int = 1
+    max_cluster_selections: int = 32
+    normal_novelty: int = 100
+    hard_negative_novelty: int = 80
+
+    def __post_init__(self) -> None:
+        if self.policy_id != "failure-boundary-v1":
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        if type(self.prefer_uncovered_capability) is not bool:
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        for value in (self.hard_negative_after, self.max_cluster_selections):
+            if type(value) is not int or value < 1 or value > _MAX_ITEMS:
+                raise RSILearningError("rsi_curriculum_policy_invalid")
+        if self.hard_negative_after > self.max_cluster_selections:
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        for value in (self.normal_novelty, self.hard_negative_novelty):
+            if type(value) is not int or value < 0 or value > 100:
+                raise RSILearningError("rsi_curriculum_policy_invalid")
+        if self.hard_negative_novelty > self.normal_novelty:
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "policy_id": self.policy_id,
+            "prefer_uncovered_capability": self.prefer_uncovered_capability,
+            "hard_negative_after": self.hard_negative_after,
+            "max_cluster_selections": self.max_cluster_selections,
+            "normal_novelty": self.normal_novelty,
+            "hard_negative_novelty": self.hard_negative_novelty,
+        }
+
+    def digest(self) -> str:
+        return _digest(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> FailureBoundaryPolicy:
+        if not isinstance(value, Mapping) or set(value) != set(cls().to_dict()):
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        return cls(**value)
+
+    def novelty(self, *, hard_negative: bool) -> int:
+        if type(hard_negative) is not bool:
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        return self.hard_negative_novelty if hard_negative else self.normal_novelty
+
+    def boundary_required(self, *, cluster_selections: int) -> bool:
+        if type(cluster_selections) is not int or cluster_selections < 0:
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        return cluster_selections >= self.hard_negative_after
+
+    def ensure_cluster_budget(self, *, cluster_selections: int) -> None:
+        if type(cluster_selections) is not int or cluster_selections < 0:
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        if cluster_selections >= self.max_cluster_selections:
+            raise RSILearningError("rsi_curriculum_cluster_budget_exhausted")
+
+
+@dataclass(frozen=True)
 class FailureObservation:
     """Public, bounded failure ontology used by the narrow curriculum policy."""
 
@@ -201,10 +269,14 @@ class FailureDrivenCurriculum:
         budget: int = 32,
         failures: Sequence[FailureObservation] = (),
         ledger: Sequence[Mapping[str, Any]] | None = None,
+        policy: FailureBoundaryPolicy | None = None,
     ) -> None:
         if type(seed) not in {str, int}:
             raise RSILearningError("rsi_curriculum_seed_invalid")
         self.seed = str(seed)
+        if policy is not None and not isinstance(policy, FailureBoundaryPolicy):
+            raise RSILearningError("rsi_curriculum_policy_invalid")
+        self.policy = policy or FailureBoundaryPolicy()
         if type(budget) is not int or budget < 1 or budget > _MAX_ITEMS:
             raise RSILearningError("rsi_curriculum_budget_invalid")
         self.budget_limit = budget
@@ -223,7 +295,12 @@ class FailureDrivenCurriculum:
     def rsi_fingerprint_config(self) -> dict[str, Any]:
         # Ledger state belongs to the durable run checkpoint; component identity must remain
         # stable while selections are appended, otherwise a normal resume looks like code drift.
-        return {"policy": "failure-driven-v1", "seed": self.seed, "budget": self.budget_limit}
+        return {
+            "policy": "failure-driven-v1",
+            "seed": self.seed,
+            "budget": self.budget_limit,
+            "failure_boundary_policy": self.policy.to_dict(),
+        }
 
     @property
     def remaining_budget(self) -> int:
@@ -261,6 +338,24 @@ class FailureDrivenCurriculum:
             cluster.representative.practice_task,
         }]
         if matches:
+            matches = [
+                cluster for cluster in matches
+                if sum(cluster_id == cluster.cluster_id for cluster_id, _ in self._selected_tasks)
+                < self.policy.max_cluster_selections
+            ]
+            if not matches:
+                raise RSILearningError("rsi_curriculum_cluster_budget_exhausted")
+            if self.policy.prefer_uncovered_capability:
+                def uncovered(cluster: FailureCluster) -> int:
+                    representative = cluster.representative
+                    return sum(
+                        item not in self._covered
+                        for item in {representative.capability, *representative.prerequisites}
+                    )
+
+                # Prefer a matching cluster that expands capability/prerequisite coverage.  The
+                # stable cluster id tie-break preserves replay when coverage is equal.
+                return min(matches, key=lambda item: (-uncovered(item), item.cluster_id))
             return min(matches, key=lambda item: item.cluster_id)
         synthetic = FailureObservation(
             failure_code=text, capability=text, observable=text,
@@ -276,46 +371,56 @@ class FailureDrivenCurriculum:
         if self.remaining_budget <= 0:
             raise RSILearningError("rsi_curriculum_budget_exhausted")
         cluster = self._find_cluster(diagnosis)
+        selected = self._plan_selection(cluster, ordinal=ordinal)
+        self._record_selection(selected, diagnosis=_text(diagnosis or "target capability gap", "diagnosis"))
+        return selected
+
+    def _plan_selection(self, cluster: FailureCluster, *, ordinal: int) -> CurriculumSelection:
+        """Compute one selection without mutating state, including during ledger replay."""
+        if self.remaining_budget <= 0:
+            raise RSILearningError("rsi_curriculum_budget_exhausted")
         representative = cluster.representative
         repeat_count = sum(1 for cluster_id, _task in self._selected_tasks if cluster_id == cluster.cluster_id)
+        self.policy.ensure_cluster_budget(cluster_selections=repeat_count)
         base_task = representative.practice_task
-        task = base_task
-        hard_negative = False
-        reason_code = "failure_cluster_gap"
-        if (cluster.cluster_id, task) in self._selected_tasks or repeat_count >= 1:
-            hard_negative = True
-            reason_code = "failure_boundary_probe" if repeat_count >= 1 else "hard_negative"
-            task = representative.hard_negative_task or f"{base_task}:boundary"
+        hard_negative = self.policy.boundary_required(cluster_selections=repeat_count)
+        task = (representative.hard_negative_task or f"{base_task}:boundary") if hard_negative else base_task
+        reason_code = "failure_boundary_probe" if hard_negative else "failure_cluster_gap"
         if (cluster.cluster_id, task) in self._selected_tasks:
             # Never emit a duplicate practice task.  The suffix is deterministic and carries the
             # repeated-failure ordinal into a new boundary probe identity.
-            boundary_count = sum(
-                1 for cluster_id, selected_task in self._selected_tasks
-                if cluster_id == cluster.cluster_id and selected_task.startswith(task + ":")
-            )
-            task = f"{task}:{boundary_count + 2}"
-            reason_code = "failure_boundary_probe"
+            if hard_negative:
+                boundary_count = sum(
+                    1 for cluster_id, selected_task in self._selected_tasks
+                    if cluster_id == cluster.cluster_id and selected_task.startswith(task + ":")
+                )
+                task = f"{task}:{boundary_count + 2}"
+            else:
+                task = f"{base_task}:diversity:{repeat_count + 1}"
+                reason_code = "failure_cluster_diversity"
         coverage = tuple(sorted({representative.capability, *representative.prerequisites}))
         new_coverage = tuple(item for item in coverage if item not in self._covered)
-        novelty = 100 if (cluster.cluster_id, task) not in self._selected_tasks else 0
-        if hard_negative and novelty == 100:
-            novelty = 80
+        novelty = self.policy.novelty(hard_negative=hard_negative)
         before = self.remaining_budget
-        self._budget_used += 1
         selection_id = "rsi-selection-" + _digest({
             "seed": self.seed, "cluster_id": cluster.cluster_id, "task": task,
-            "ordinal": ordinal, "used": self._budget_used,
+            "ordinal": ordinal, "used": self._budget_used + 1,
         })
-        selected = CurriculumSelection(
+        return CurriculumSelection(
             selection_id, cluster.cluster_id, task, representative.transfer_task, reason_code,
-            new_coverage, novelty, self.budget_limit, before, self.remaining_budget,
+            new_coverage, novelty, self.budget_limit, before, before - 1,
             hard_negative, self.seed, ordinal,
         )
-        self._selected_tasks.add((cluster.cluster_id, task))
-        self._covered.update(coverage)
+
+    def _record_selection(self, selected: CurriculumSelection, *, diagnosis: str | None = None) -> None:
+        self._budget_used += 1
+        self._selected_tasks.add((selected.cluster_id, selected.practice_task))
+        self._covered.update(selected.coverage)
         self._selections.append(selected)
-        self._ledger.append({"kind": "selection", **selected.to_dict()})
-        return selected
+        event = {"kind": "selection", **selected.to_dict()}
+        if diagnosis is not None:
+            event.update(diagnosis=diagnosis, policy_sha256=self.policy.digest())
+        self._ledger.append(event)
 
     def choose(self, *, target: PracticeEpisode, diagnosis: str, wave: int, ordinal: int) -> CurriculumDecision:
         selected = self.select(target=target, diagnosis=diagnosis, wave=wave, ordinal=ordinal)
@@ -339,12 +444,15 @@ class FailureDrivenCurriculum:
         return tuple(json.loads(json.dumps(item, sort_keys=True, separators=(",", ":"))) for item in self._ledger)
 
     def ledger_digest(self) -> str:
-        return _digest({"seed": self.seed, "budget": self.budget_limit, "ledger": self._ledger})
+        return _digest({
+            "seed": self.seed, "budget": self.budget_limit,
+            "policy": self.policy.to_dict(), "ledger": self._ledger,
+        })
 
     @classmethod
     def from_ledger(
         cls, ledger: Sequence[Mapping[str, Any]] | bytes | str, *, seed: str | int,
-        budget: int | None = None,
+        budget: int | None = None, policy: FailureBoundaryPolicy | None = None,
     ) -> FailureDrivenCurriculum:
         if isinstance(ledger, bytes):
             try:
@@ -368,7 +476,7 @@ class FailureDrivenCurriculum:
                 budget = next(iter(limits))
             else:
                 budget = 32
-        return cls(seed=seed, budget=budget, ledger=ledger)
+        return cls(seed=seed, budget=budget, ledger=ledger, policy=policy)
 
     def _load_ledger(self, ledger: Sequence[Mapping[str, Any]]) -> None:
         if len(ledger) > _MAX_ITEMS:
@@ -385,10 +493,22 @@ class FailureDrivenCurriculum:
                     raise RSILearningError("rsi_curriculum_ledger_invalid")
                 self.record_failure(failure)
                 continue
-            # Selection events are restored as evidence, not replayed as a new budget charge.
+            # Recompute each recorded selection under the supplied immutable policy before
+            # restoring it.  Evidence cannot bypass a tighter cluster budget or drifted rule.
             required = {"selection_id", "cluster_id", "practice_task", "transfer_task", "reason_code", "coverage", "novelty", "budget", "hard_negative", "seed", "ordinal"}
-            if set(raw) - ({"kind"} | required) or not required.issubset(raw):
+            context_fields = {"diagnosis", "policy_sha256"}
+            if set(raw) - ({"kind"} | required | context_fields) or not required.issubset(raw):
                 raise RSILearningError("rsi_curriculum_ledger_invalid")
+            if context_fields.intersection(raw) and not context_fields.issubset(raw):
+                raise RSILearningError("rsi_curriculum_ledger_invalid")
+            diagnosis = _text(raw["diagnosis"], "diagnosis") if "diagnosis" in raw else None
+            if diagnosis is not None:
+                if raw["policy_sha256"] != self.policy.digest():
+                    raise RSILearningError("rsi_curriculum_ledger_identity_mismatch")
+            elif self.policy != FailureBoundaryPolicy():
+                # Old events predate policy configuration.  They can be replayed only with the
+                # default behavior that produced them, never reinterpreted as a custom policy.
+                raise RSILearningError("rsi_curriculum_ledger_identity_mismatch")
             budget = raw["budget"]
             if (not isinstance(budget, Mapping)
                     or set(budget) != {"limit", "before", "after", "remaining"}
@@ -404,26 +524,18 @@ class FailureDrivenCurriculum:
                 raw["reason_code"], tuple(raw["coverage"]), raw["novelty"], self.budget_limit,
                 before, after, raw["hard_negative"], raw["seed"], raw["ordinal"],
             )
-            expected_id = "rsi-selection-" + _digest({
-                "seed": self.seed, "cluster_id": selected.cluster_id,
-                "task": selected.practice_task, "ordinal": selected.ordinal,
-                "used": self.budget_limit - selected.budget_after,
-            })
-            expected_novelty = 80 if selected.hard_negative else 100
-            expected_before = self.budget_limit - len(self._selections)
-            if (selected.cluster_id not in self._clusters
-                    or selected.selection_id in {item.selection_id for item in self._selections}
-                    or selected.selection_id != expected_id
-                    or selected.novelty != expected_novelty
-                    or selected.budget_before != expected_before):
+            cluster = next((item for item in self.clusters() if item.cluster_id == selected.cluster_id), None)
+            if cluster is None:
                 raise RSILearningError("rsi_curriculum_ledger_invalid")
-            self._selections.append(selected)
-            self._selected_tasks.add((selected.cluster_id, selected.practice_task))
-            self._covered.update(selected.coverage)
-            self._budget_used += 1
-            if self._budget_used > self.budget_limit:
-                raise RSILearningError("rsi_curriculum_budget_invalid")
-            self._ledger.append(dict(raw))
+            try:
+                if diagnosis is not None and self._find_cluster(diagnosis).cluster_id != selected.cluster_id:
+                    raise RSILearningError("rsi_curriculum_ledger_invalid")
+                expected = self._plan_selection(cluster, ordinal=selected.ordinal)
+            except RSILearningError as exc:
+                raise RSILearningError("rsi_curriculum_ledger_invalid") from exc
+            if selected.to_dict() != expected.to_dict():
+                raise RSILearningError("rsi_curriculum_ledger_invalid")
+            self._record_selection(selected, diagnosis=diagnosis)
 
 
-__all__ = ["CurriculumSelection", "FailureCluster", "FailureDrivenCurriculum", "FailureObservation"]
+__all__ = ["CurriculumSelection", "FailureBoundaryPolicy", "FailureCluster", "FailureDrivenCurriculum", "FailureObservation"]

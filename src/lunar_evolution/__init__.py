@@ -633,6 +633,7 @@ from .rsi_controller import (
 )
 from .rsi_curriculum import (
     CurriculumSelection,
+    FailureBoundaryPolicy,
     FailureCluster,
     FailureDrivenCurriculum,
     FailureObservation,
@@ -948,6 +949,7 @@ __all__ = [
     "EvolutionError",
     "EvolutionStrategy",
     "ExecutionAwareCandidateEvaluator",
+    "FailureBoundaryPolicy",
     "FailureCluster",
     "FailureDrivenCurriculum",
     "FailureObservation",

@@ -89,6 +89,13 @@ implemented.
 - The adapter contract exposes one lifecycle and receipt vocabulary for those fixtures. Adapter
   capabilities cannot enable direct memory writes; timeout, cancellation and unknown outcomes stay
   terminal and recovery is explicit.
+- Failure-driven curriculum accepts a bounded immutable `FailureBoundaryPolicy` for coverage
+  preference, hard-negative threshold, cluster budget and novelty. New selection events bind the
+  public diagnosis and policy digest; replay repeats cluster choice and all derived selection
+  fields rather than trusting recorded reason/coverage/budget. The ledger digest binds policy even
+  before any selection. Checkpoint policy drift stops resume; legacy checkpoints without policy
+  mean the default v1 configuration and use the historical digest formula only for validation.
+  This remains caller-selected local policy, with no real evaluator or automatic scheduler.
 - Memory admission is a separate append-only SQLite control plane. Only a passing episode with a
   verifier receipt can reach candidate state; holdout and baseline regression evidence are required
   before approval/activation, and compatibility drift or revocation makes retrieval fail closed.
@@ -134,8 +141,8 @@ including DRS/BRS CLI replay and transfer recovery; it is not a full repository 
 | Unified solver adapter lifecycle, budget/deadline and terminal receipt contract | `test_rsi_adapter_contract.py` |
 | Provider-free usage receipts, unknown fail-closed summaries, CAS/hash-chain and durable reopen | `test_rsi_usage.py` |
 | Optional controller/episode solver sidecar, monotonic wall time, concurrent append and replay idempotency | `test_rsi_usage_controller.py` |
-| Failure clustering, capability coverage, hard-negative selection and curriculum replay | `test_rsi_curriculum.py` |
-| Controller checkpoint/resume of failure-driven curriculum ledger | `test_rsi_curriculum_resume.py` |
+| Failure clustering, prerequisite diversity, threshold/cluster budget, policy-bound digest and tamper-resistant deterministic replay | `test_rsi_curriculum.py` |
+| Controller custom-policy checkpoint/resume, drift refusal and default-only legacy recovery | `test_rsi_curriculum_resume.py` |
 | Transfer report to memory-governance promotion and two-step activation gate | `test_rsi_memory_promotion.py`, `test_rsi_controller_promotion.py` |
 | Existing local protocol, actor, CLI and backend fixtures | Remaining `test_rsi_*.py` tests |
 

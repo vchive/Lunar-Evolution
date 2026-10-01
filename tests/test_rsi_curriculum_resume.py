@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
 
 from lunar_evolution import (
     DeterministicMockSolver,
+    FailureBoundaryPolicy,
     FailureDrivenCurriculum,
     FailureObservation,
     LocalExactVerifier,
     RSILearningController,
+    RSILearningError,
     RSILedger,
 )
 
@@ -158,3 +161,75 @@ def test_deterministic_curriculum_keeps_legacy_checkpoint_shape(tmp_path: Path):
     assert result.status == "failed"
     state = ledger.controller_checkpoint("deterministic-shape")[1]
     assert "curriculum_state" not in state
+
+
+def test_custom_failure_boundary_policy_survives_controller_checkpoint(tmp_path: Path):
+    policy = FailureBoundaryPolicy(normal_novelty=90, hard_negative_novelty=60, max_cluster_selections=4)
+    run_id = "failure-policy-resume"
+    ledger = RSILedger(tmp_path / "policy.sqlite3")
+    gateway = Gateway()
+    learner = controller(ledger, gateway, FailureDrivenCurriculum(
+        seed="resume-seed", budget=4, failures=(), policy=policy,
+    ))
+    result = learner.run_drs(run_id=run_id, **PINS, max_practice_rounds=1, max_target_attempts=2)
+    assert result.status == "completed"
+    state = ledger.controller_checkpoint(run_id)[1]
+    assert state["curriculum_state"]["policy"] == policy.to_dict()
+
+    restarted = controller(
+        RSILedger(ledger.database), gateway,
+        FailureDrivenCurriculum(seed="resume-seed", budget=4, policy=policy),
+    )
+    assert restarted.resume(run_id).status == "completed"
+    assert restarted.curriculum.policy.to_dict() == policy.to_dict()
+    assert restarted.curriculum.selections[0].novelty == 90
+
+
+def test_controller_rejects_policy_drift_before_resumed_side_effects(tmp_path: Path):
+    run_id = "policy-drift"
+    ledger = RSILedger(tmp_path / "drift.sqlite3")
+    gateway = Gateway()
+    learner = controller(ledger, gateway, curriculum())
+    assert learner.run_drs(run_id=run_id, **PINS, max_practice_rounds=1, max_target_attempts=2).status == "completed"
+    calls = len(gateway.requests)
+    restarted = controller(
+        RSILedger(ledger.database), gateway,
+        FailureDrivenCurriculum(seed="resume-seed", budget=4, policy=FailureBoundaryPolicy(max_cluster_selections=2)),
+    )
+    with pytest.raises(RSILearningError, match="rsi_resume_fingerprint_drift"):
+        restarted.resume(run_id)
+    assert len(gateway.requests) == calls
+
+
+def test_legacy_checkpoint_missing_policy_cannot_adopt_custom_configuration(tmp_path: Path):
+    ledger = RSILedger(tmp_path / "legacy.sqlite3")
+    gateway = Gateway()
+    original = controller(ledger, gateway, curriculum())
+    state = {"curriculum_state": original._failure_curriculum_state()}
+    del state["curriculum_state"]["policy"]
+    from lunar_evolution.candidate_evaluation_spec import canonical_json
+
+    state["curriculum_state"]["ledger_digest"] = hashlib.sha256(canonical_json({
+        "seed": original.curriculum.seed, "budget": original.curriculum.budget_limit,
+        "ledger": list(original.curriculum.to_ledger()),
+    })).hexdigest()
+
+    compatible = controller(ledger, gateway, FailureDrivenCurriculum(seed="resume-seed", budget=4))
+    compatible._restore_failure_curriculum(state)
+    assert compatible.curriculum.to_ledger() == original.curriculum.to_ledger()
+
+    custom = controller(ledger, gateway, FailureDrivenCurriculum(
+        seed="resume-seed", budget=4, policy=FailureBoundaryPolicy(max_cluster_selections=2),
+    ))
+    with pytest.raises(RSILearningError, match="rsi_resume_curriculum_drift"):
+        custom._restore_failure_curriculum(state)
+    assert gateway.requests == []
+
+
+def test_checkpoint_policy_rejects_boolean_integer_substitution(tmp_path: Path):
+    ledger = RSILedger(tmp_path / "policy-types.sqlite3")
+    learner = controller(ledger, Gateway(), curriculum())
+    state = {"curriculum_state": learner._failure_curriculum_state()}
+    state["curriculum_state"]["policy"]["prefer_uncovered_capability"] = 1
+    with pytest.raises(RSILearningError, match="rsi_curriculum_policy_invalid"):
+        learner._restore_failure_curriculum(state)
