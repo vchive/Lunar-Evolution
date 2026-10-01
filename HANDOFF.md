@@ -1,5 +1,25 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Ubuntu cancellation cleanup correction
+
+PR #1 的 `0c5cc3a` Ubuntu run `36846543906` 实际出现 7 项取消/超时清理失败；3.13
+current 9,195 cases、30 platform skips、0 errors，archived 2,294 与 frozen 24 均通过。
+原失败保留，不能称该 head 合入就绪。Linux zombie 的 `/proc` owner identity 仍可读取，
+而旧 cleanup 没有在 TERM/KILL 后回收 live caller 的直接子进程，killpg0 因此保持 alive。
+
+修复增加可选 `reap_child` 非阻塞 hook；live producer/native launcher 传原始 Popen.poll，
+每次 group probe 前回收，不用返回值授予 cleanup/kill 权限，不改变原绝对 deadline，
+恢复路径没有原 child handle 所以不传 hook。活 descendants、归属漂移、hook 异常仍拒绝。
+更快 cleanup 暴露 native cleanup reserve 提前停止后的 scheduler 分类错误；明确 wall_timeout
+现在按原始 tighter caller budget 传播 typed budget exception，独立更紧的 intent limit 保持
+native timeout code，unknown 不变为可发布。
+
+本地 producer 79 passed / 2 Linux skip；related 84 passed；native timeout 五套件 105 passed；
+最终 ownership/scheduler units 68 passed；3.11/3.12 hook focus 各 5 passed。Ruff、compileall、
+YAML 和 whole-branch diff check 均通过。CI 增加 full runner 前的 native cleanup focus 和
+artifact；仍需新 PR head 三版 Ubuntu current/archived/frozen 全部成功，尚未合入 main。
+详细证据和保留的失败见 Feature 156 `main-integration-validation.md`。
+
 ## 2026-10-01 Main integration and cross-platform corrections
 
 已创建并关联 [PR #1](https://github.com/vchive/Lunar-Evolution/pull/1)，base 为实际主分支

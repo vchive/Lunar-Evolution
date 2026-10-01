@@ -774,6 +774,119 @@ def test_cleanup_passes_absolute_deadline_and_rechecks_exited_leader(
 
     assert observed["deadline"] == 10.0
     assert observed["allow_exited_leader_initial"] is True
+    assert observed["reap_child"] is process.poll
+
+
+def test_cleanup_reaps_exact_child_before_verifying_group_exit(monkeypatch):
+    owner_identity = {"kind": "test-starttime", "pid": 321, "start": 1}
+    state = {"term_sent": False, "reaped": False, "polls": 0}
+    signals = []
+
+    def poll():
+        state["polls"] += 1
+        if state["term_sent"]:
+            state["reaped"] = True
+            return -signal.SIGTERM
+        return None
+
+    def group_signal(pgid, value):
+        assert pgid == 321
+        if value == 0:
+            if state["reaped"]:
+                raise ProcessLookupError()
+        else:
+            signals.append(value)
+            state["term_sent"] = value == signal.SIGTERM
+
+    process = SimpleNamespace(poll=poll)
+    registration = producer_process.RegisteredProcess(
+        321, 321, owner_check=lambda: producer_process._current_process_owned(321, owner_identity, process),
+    )
+    monkeypatch.setattr(producer_process, "_process_owner_identity", lambda _pid: owner_identity)
+    monkeypatch.setattr(producer_process.os, "getpgid", lambda _pid: 321)
+    monkeypatch.setattr(producer_process.os, "killpg", group_signal)
+    result = producer_process._cleanup(registration, process, deadline=10.0, monotonic=lambda: 9.0)
+    assert result.status == ProcessCleanupStatus.CLEANED
+    assert result.alive_after is False
+    assert signals == [signal.SIGTERM]
+    assert state["polls"] >= 3
+
+
+def test_cleanup_reaped_leader_does_not_hide_live_descendants_or_refresh_deadline(monkeypatch):
+    owner_identity = {"kind": "test-starttime", "pid": 321, "start": 1}
+    state = {"reaped": False, "polls": 0}
+    signals = []
+
+    def poll():
+        state["polls"] += 1
+        if signals:
+            state["reaped"] = True
+            return -signal.SIGTERM
+        return None
+
+    def leader_group(_pid):
+        if state["reaped"]:
+            raise ProcessLookupError()
+        return 321
+
+    def group_signal(pgid, value):
+        assert pgid == 321
+        if value:
+            signals.append(value)
+
+    process = SimpleNamespace(poll=poll)
+    registration = producer_process.RegisteredProcess(
+        321, 321, owner_check=lambda: producer_process._current_process_owned(321, owner_identity, process),
+    )
+    monkeypatch.setattr(producer_process, "_process_owner_identity", lambda _pid: None if state["reaped"] else owner_identity)
+    monkeypatch.setattr(producer_process.os, "getpgid", leader_group)
+    monkeypatch.setattr(producer_process.os, "killpg", group_signal)
+    result = producer_process._cleanup(registration, process, deadline=10.0, monotonic=lambda: 10.0)
+    assert result.status == ProcessCleanupStatus.CLEANUP_UNVERIFIED
+    assert result.alive_after is True
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    assert state["polls"] >= 4
+
+
+def test_cleanup_poll_does_not_override_changed_process_identity(monkeypatch):
+    owner_identity = {"kind": "test-starttime", "pid": 321, "start": 1}
+    process = SimpleNamespace(poll=lambda: 0)
+    registration = producer_process.RegisteredProcess(
+        321, 321, owner_check=lambda: producer_process._current_process_owned(321, owner_identity, process),
+    )
+    monkeypatch.setattr(producer_process, "_process_owner_identity", lambda _pid: {**owner_identity, "start": 2})
+    monkeypatch.setattr(producer_process.os, "getpgid", lambda _pid: 321)
+    signals = []
+    monkeypatch.setattr(producer_process.os, "killpg", lambda _pgid, value: signals.append(value))
+    result = producer_process._cleanup(registration, process, deadline=10.0, monotonic=lambda: 9.0)
+    assert result.status == ProcessCleanupStatus.OWNERSHIP_LOST
+    assert result.alive_after is True
+    assert signals == [0]
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires OS process identity")
+def test_cleanup_reaps_owned_direct_child_in_real_process_group():
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        owner_identity = producer_process._process_owner_identity(process.pid)
+        assert owner_identity is not None
+        registration = producer_process.RegisteredProcess(
+            process.pid, process.pid,
+            owner_check=lambda: producer_process._current_process_owned(process.pid, owner_identity, process),
+        )
+        result = producer_process._cleanup(
+            registration, process, deadline=time.monotonic() + 2, monotonic=time.monotonic,
+        )
+        assert result.status == ProcessCleanupStatus.CLEANED
+        assert result.alive_after is False
+        assert process.returncode is not None
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=2)
 
 
 def test_preparation_time_counts_toward_wall_deadline(tmp_path: Path):

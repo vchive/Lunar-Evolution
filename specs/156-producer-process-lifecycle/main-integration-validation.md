@@ -65,3 +65,38 @@ evaluator/model acceptance, authenticated external project launch/runtime/depend
 real campaign acceptance remain separate release work. Trusted local SQLite is not a remote
 lease service or protection against historical database rollback; optional local RSI APIs do
 not claim those properties.
+
+## Ubuntu cancellation correction
+
+PR run [36846543906](https://github.com/vchive/Lunar-Evolution/actions/runs/36846543906),
+head `0c5cc3a`, exposed seven Linux cancellation/timeout cleanup failures in Python 3.13. The
+current phase executed 9,195 cases with 30 platform skips and no errors; archived 2,294 and
+frozen 24 passed. Its failure remains recorded. Exact public annotations are retained locally
+at `/tmp/lunar-linux-ci-cleanup-annotations-20261001.json`.
+
+The cleanup primitive previously probed `killpg(pgid, 0)` without reaping its live caller's
+direct child after TERM/KILL. Linux zombies retain their process identity, so a stopped child
+could keep the group probe alive until cleanup returned unverified. Live launchers now supply
+their exact child's nonblocking `Popen.poll` before every probe. The poll return never proves
+group exit or grants signal authority; the existing group and ownership checks remain, and
+recovery without the original handle receives no poll hook. Hook failures remain uncertain.
+Neither exhausted budgets nor active descendants receive additional grace or permission.
+
+Faster verified cleanup also exposed a scheduler classification race in the local native
+focus: native execution stopped at the cleanup reserve, but the caller deadline had not yet
+expired, producing `attempt_unpublishable`. Explicit native wall timeout now preserves the
+original caller-budget exception when that ceiling is tighter; an independently tighter intent
+ceiling has a fixed native timeout code. Unknown cleanup/broker/stream results still reject
+publication. The original failed focus is `/tmp/lunar-cleanup-native-focused-20261001.xml`.
+
+Final local checks: producer 79 passed / 2 Linux-only skips; related cleanup/diagnostics/runtime
+84 passed; five native timeout suites 105 passed / no skips; final ownership + scheduler units
+68 passed. Managed Python 3.11/3.12 producer hook focus each passed five cases. Ruff, compileall,
+YAML structure and whole branch diff checks pass. CI now runs the native cleanup focus before
+the full required runner and retains its JUnit artifact, to expose platform failures sooner.
+A fresh PR head matrix is still required; these focused results do not relabel the failed run.
+
+The installed wheel at the preceding packaging head completed mock DRS and BRS CLI runs,
+read-only inspect and exact terminal replay without additional ledger writes. Validation used
+an isolated temporary home and an explicit minimal environment; no model endpoint or key was
+read. Evidence: `/var/folders/kt/ygjlhpbx6sq1mk2912c3fzt80000gn/T/lunar-installed-rsi-20261001-cidgj9lf/validation.json`.

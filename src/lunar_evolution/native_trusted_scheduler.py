@@ -19,7 +19,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from .algorithm import AlgorithmProblemContract
 from .automatic_solve_lifecycle import (
@@ -114,6 +114,23 @@ def _check_attempt(attempt: NativeTrustedAttemptObservation) -> None:
         or not attempt.target_started
     ):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_attempt_unpublishable")
+
+
+def _raise_attempt_wall_timeout(
+    control: SolveExecutionControl | None, *, caller_limited: bool,
+) -> NoReturn:
+    if control is not None and caller_limited:
+        # Native execution stops early to reserve cleanup inside this same caller deadline.
+        # A quick cleanup may leave positive wall remainder; none admits another stage after
+        # the lower-level runner has reported budget exhaustion. Preserve the exact deadline
+        # and actual observation instead of waiting it out or fabricating an expired clock.
+        raise SolveExecutionBudgetExceeded(
+            "native_producer_attempt", started_at=control.started_at, deadline=control.deadline,
+            observed_at=control._now(),
+        )
+    # An independently tighter intent ceiling is a native attempt timeout, not exhaustion of
+    # a wider caller allowance. Neither classification projects a receipt or permits publish.
+    raise NativeTrustedSchedulerError("native_trusted_scheduler_attempt_wall_timeout")
 
 
 def _check_parent_deadline(parent_deadline: float | None) -> None:
@@ -238,6 +255,7 @@ def run_native_trusted_producer(
     root = _workspace_root(workspace)
 
     checkpoint("native_producer_attempt")
+    caller_limited = control is not None and control.deadline <= control._now() + intent.wall_timeout_seconds
     try:
         attempt = run_native_trusted_attempt(
             root,
@@ -254,8 +272,12 @@ def run_native_trusted_producer(
         if exc.code == "native_trusted_attempt_cancelled":
             raise SolveExecutionCancelled("native_producer_attempt") from exc
         checkpoint("native_producer_after_attempt_error")
+        if exc.code == "native_trusted_attempt_wall_timeout":
+            _raise_attempt_wall_timeout(control, caller_limited=caller_limited)
         raise NativeTrustedSchedulerError("native_trusted_scheduler_attempt_failed") from exc
     checkpoint("native_producer_after_attempt")
+    if attempt.reason == "native_trusted_attempt_wall_timeout":
+        _raise_attempt_wall_timeout(control, caller_limited=caller_limited)
     _check_attempt(attempt)
 
     checkpoint("native_producer_receipt")

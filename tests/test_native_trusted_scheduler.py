@@ -348,6 +348,88 @@ def test_expired_parent_deadline_cannot_start_attempt(tmp_path, monkeypatch):
     assert events == []
 
 
+@pytest.mark.parametrize("delivery", ["observation", "exception"])
+@pytest.mark.parametrize("authority", ["parent", "control", "combined"])
+def test_caller_limited_native_timeout_reserve_preserves_typed_budget(tmp_path, monkeypatch, delivery, authority):
+    context = _context(tmp_path)
+    ticks = [100.0]
+    monkeypatch.setattr(scheduler.time, "monotonic", lambda: ticks[0])
+    events = []
+    _stub_stages(monkeypatch, events)
+    control = SolveExecutionControl(2 if authority == "control" else 10, clock=lambda: ticks[0])
+    options = {}
+    if authority != "parent":
+        options["execution_control"] = control
+    if authority != "control":
+        options["parent_deadline"] = 102.0
+    original_deadline = control.deadline
+
+    def timed_out(*args, **kwargs):
+        events.append("attempt")
+        assert kwargs["parent_deadline"] == 102.0
+        # The producer consumed its usable budget; cleanup returns before the absolute
+        # caller deadline, so a normal caller checkpoint still has positive remainder.
+        ticks[0] = 101.8
+        if delivery == "exception":
+            raise scheduler.NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+        return replace(_attempt(), reason="native_trusted_attempt_wall_timeout", exit_code=None,
+                       terminal_sha256=None, output_capture_sha256=None)
+
+    monkeypatch.setattr(scheduler, "run_native_trusted_attempt", timed_out)
+    with pytest.raises(SolveExecutionBudgetExceeded) as caught:
+        _call_context(context, strategy=object(), **options)
+    assert caught.value.stage == "native_producer_attempt"
+    assert caught.value.started_at == 100.0 and caught.value.deadline == 102.0
+    assert caught.value.observed_at == 101.8
+    assert control.deadline == original_deadline
+    assert events == ["attempt"]
+
+
+@pytest.mark.parametrize("delivery", ["observation", "exception"])
+@pytest.mark.parametrize("has_control", [False, True])
+def test_tighter_native_wall_ceiling_is_not_relabelled_as_caller_exhaustion(tmp_path, monkeypatch, delivery, has_control):
+    context = _context(tmp_path)
+    ticks = [100.0]
+    monkeypatch.setattr(scheduler.time, "monotonic", lambda: ticks[0])
+    events = []
+    _stub_stages(monkeypatch, events)
+    control = SolveExecutionControl(20, clock=lambda: ticks[0])
+
+    def timed_out(*args, **kwargs):
+        events.append("attempt")
+        ticks[0] = 104.8  # The five-second native limit reserves time for cleanup.
+        if delivery == "exception":
+            raise scheduler.NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+        return replace(_attempt(), reason="native_trusted_attempt_wall_timeout", exit_code=None,
+                       terminal_sha256=None, output_capture_sha256=None)
+
+    monkeypatch.setattr(scheduler, "run_native_trusted_attempt", timed_out)
+    with pytest.raises(NativeTrustedSchedulerError, match="attempt_wall_timeout"):
+        _call_context(context, strategy=object(), **({"execution_control": control} if has_control else {}))
+    assert control.deadline == 120.0
+    assert events == ["attempt"]
+
+
+@pytest.mark.parametrize("reason", ["cleanup_unknown", "broker_unknown", "stream_capture_unknown"])
+def test_unknown_native_outcome_is_not_upgraded_to_timeout_or_receipt(tmp_path, monkeypatch, reason):
+    context = _context(tmp_path)
+    ticks = [100.0]
+    events = []
+    _stub_stages(monkeypatch, events)
+    control = SolveExecutionControl(2, clock=lambda: ticks[0])
+
+    def uncertain(*args, **kwargs):
+        events.append("attempt")
+        ticks[0] = 101.8
+        return replace(_attempt(), reason="native_trusted_attempt_" + reason, exit_code=None,
+                       terminal_sha256=None, output_capture_sha256=None)
+
+    monkeypatch.setattr(scheduler, "run_native_trusted_attempt", uncertain)
+    with pytest.raises(NativeTrustedSchedulerError, match="attempt_unpublishable"):
+        _call_context(context, execution_control=control, strategy=object())
+    assert control.deadline == 102.0 and events == ["attempt"]
+
+
 @pytest.mark.parametrize("callback,code", [
     (lambda: 1, "cancellation_invalid"),
     (lambda: (_ for _ in ()).throw(RuntimeError("callback error")), "cancellation_unknown"),

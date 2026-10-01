@@ -157,6 +157,13 @@ Wall-clock expiry or an observed caller cancellation causes an owner-checked SIG
 ownership or liveness cannot be proven, the result is `unknown`/`recovery_required`; no signal is
 sent to a reused PID or PGID and no replacement launch is attempted.
 
+A live launcher supplies only its original child's nonblocking `Popen.poll` before each group
+probe, including probes after TERM/KILL and after the deadline. This reaps an exited direct
+child so Linux zombie presence does not prevent group-exit verification. The poll result itself
+does not prove group cleanup; live descendants and ownership drift still fail closed. A faulty
+poll hook is `callback_failed`, and recovery without the original child handle has no such hook.
+No poll allocates additional wait time or extends a deadline.
+
 The optional `cancelled` callback is process-local authority supplied by the caller. It is checked
 before launch, after durable registration, during nonblocking stdout/stderr capture, and while
 waiting for the leader. A callback that raises or returns a non-boolean value fails closed. A
@@ -241,6 +248,13 @@ the lifecycle wrapper. A receipt already persisted remains diagnostic/recoverabl
 caller cancellation; no later publication stage is admitted. Read-only terminal recovery can
 inspect retained evidence after the original process budget expires and does not allocate a new
 producer attempt or admit publication.
+
+If the native runner stops at its cleanup reserve with an explicit wall-timeout reason, the
+scheduler does not admit a later stage merely because cleanup completed before the absolute
+deadline. A tighter caller deadline retains `SolveExecutionBudgetExceeded` with that original
+deadline and actual observation time. An independently tighter native intent ceiling retains
+`native_trusted_scheduler_attempt_wall_timeout`; cleanup/broker/stream uncertainty remains
+unpublishable and is not relabeled as a successful timeout cleanup.
 
 The publication transaction remains responsible for its commit boundary. Caller cancellation is
 checked before entering new preparation/evaluation/staging/commit work. After its durable unknown

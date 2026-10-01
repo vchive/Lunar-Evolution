@@ -146,12 +146,19 @@ def cleanup_registered_process(
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
     allow_exited_leader_initial: bool = False,
+    reap_child: Callable[[], object] | None = None,
 ) -> ProcessCleanupResult:
     """Terminate one registered group without signalling a reused/unowned identity.
 
     A caller that observed and reaped its own private group leader may extend its
     registration authority to the retained group. An unrelated or reused leader PID
     still fails the OS identity check.
+
+    Live callers may supply their exact child's nonblocking ``Popen.poll``. Reaping
+    before each group probe prevents an exited Linux child from remaining a zombie
+    during cleanup. The hook's return value grants no cleanup or signal authority;
+    the group probe and ownership checks still determine the result. Recovery callers
+    without the original child handle must omit it.
     """
     if (
         isinstance(grace_seconds, bool)
@@ -164,13 +171,30 @@ def cleanup_registered_process(
             or not isinstance(deadline, (int, float))
             or not math.isfinite(float(deadline))
         )
-    ) or not _valid_registration(registration):
+    ) or not _valid_registration(registration) or (reap_child is not None and not callable(reap_child)):
         return _result(registration, ProcessCleanupStatus.INVALID_REGISTRATION)
 
-    try:
-        alive = _group_alive(registration.pgid)
-    except OSError as exc:
-        return _result(registration, ProcessCleanupStatus.PROBE_FAILED, error=type(exc).__name__)
+    def probe_group(*, term_sent: bool = False, kill_sent: bool = False) -> bool | ProcessCleanupResult:
+        flags = {"term_sent": term_sent, "kill_sent": kill_sent, "alive_after": True}
+        if reap_child is not None:
+            try:
+                reap_child()
+            except Exception as exc:  # noqa: BLE001 - a failed child observation cannot prove cleanup.
+                return _result(
+                    registration, ProcessCleanupStatus.CALLBACK_FAILED,
+                    error=type(exc).__name__, **flags,
+                )
+        try:
+            return _group_alive(registration.pgid)
+        except OSError as exc:
+            return _result(
+                registration, ProcessCleanupStatus.PROBE_FAILED,
+                error=type(exc).__name__, **flags,
+            )
+
+    alive = probe_group()
+    if isinstance(alive, ProcessCleanupResult):
+        return alive
     if not alive:
         return _result(registration, ProcessCleanupStatus.ALREADY_EXITED)
     owned, failure = _check_owner(
@@ -190,13 +214,9 @@ def cleanup_registered_process(
     if deadline is not None:
         cleanup_deadline = min(cleanup_deadline, float(deadline))
     while True:
-        try:
-            alive = _group_alive(registration.pgid)
-        except OSError as exc:
-            return _result(
-                registration, ProcessCleanupStatus.PROBE_FAILED,
-                term_sent=True, alive_after=True, error=type(exc).__name__,
-            )
+        alive = probe_group(term_sent=True)
+        if isinstance(alive, ProcessCleanupResult):
+            return alive
         if not alive:
             return _result(registration, ProcessCleanupStatus.CLEANED, term_sent=True)
         remaining = cleanup_deadline - monotonic()
@@ -224,13 +244,9 @@ def cleanup_registered_process(
     if deadline is not None:
         kill_deadline = min(kill_deadline, float(deadline))
     while True:
-        try:
-            alive = _group_alive(registration.pgid)
-        except OSError as exc:
-            return _result(
-                registration, ProcessCleanupStatus.PROBE_FAILED,
-                term_sent=True, kill_sent=True, alive_after=True, error=type(exc).__name__,
-            )
+        alive = probe_group(term_sent=True, kill_sent=True)
+        if isinstance(alive, ProcessCleanupResult):
+            return alive
         if not alive:
             break
         remaining = kill_deadline - monotonic()

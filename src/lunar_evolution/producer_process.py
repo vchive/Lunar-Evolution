@@ -1091,6 +1091,7 @@ def _cleanup(
         registration, grace_seconds=remaining, monotonic=monotonic,
         deadline=deadline,
         allow_exited_leader_initial=process.poll() is not None,
+        reap_child=process.poll,
     )
 
 
