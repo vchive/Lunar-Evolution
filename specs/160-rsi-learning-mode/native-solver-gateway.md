@@ -51,3 +51,18 @@ The provider-free fixture must prove:
 No WebAgent, remote evaluator, company platform, real model, or OpenEvolve/Shinka campaign is part
 of this slice. The official evaluator and external worker authenticity remain separate acceptance
 work.
+
+## Candidate selector and receipt mapper (T160-35 seam)
+
+The provider-free `rsi_native_candidate` module now defines the control-plane seam used by the
+future native gateway. `select_native_candidate(request, candidates)` validates every candidate's
+request, contract, evaluator, environment and frozen-memory pins, rejects duplicate IDs and drift,
+and admits exactly one `state=admitted` record. Rejected or unknown records remain evidence and are
+never selected; zero or multiple admitted records fail closed.
+
+`map_native_receipts_to_solver_result(...)` accepts only the selected candidate plus independently
+bound execution, evaluator and publication receipts. All four records must carry the same request
+and candidate identity. Execution must be `completed`, independent evaluation must be `pass`, and
+publication must be `published`; otherwise the mapper raises a fixed contract error and does not
+fabricate a solver result. The mapper carries only receipt digests and bounded provenance into the
+existing immutable `SolverResult`; it cannot write memory or grant verifier authority.

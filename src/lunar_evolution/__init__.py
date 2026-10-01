@@ -665,16 +665,6 @@ from .rsi_gateway import (
     SolverRequest,
     SolverResult,
 )
-from .rsi_native_candidate import (
-    NativeCandidateContractError,
-    NativeCandidateRecord,
-    NativeCandidateSelection,
-    NativeEvaluationReceipt,
-    NativeExecutionReceipt,
-    NativePublicationReceipt,
-    map_native_receipts_to_solver_result,
-    select_native_candidate,
-)
 from .rsi_generation_campaign import GenerationCampaignRunner
 from .rsi_governance_coordinator import (
     GenerationAdmissionResult,
@@ -731,6 +721,16 @@ from .rsi_memory_translation import (
     TranslatedMemoryCandidate,
     recover_translation,
     translate_memory,
+)
+from .rsi_native_candidate import (
+    NativeCandidateContractError,
+    NativeCandidateRecord,
+    NativeCandidateSelection,
+    NativeEvaluationReceipt,
+    NativeExecutionReceipt,
+    NativePublicationReceipt,
+    map_native_receipts_to_solver_result,
+    select_native_candidate,
 )
 from .rsi_native_inputs import (
     NATIVE_RSI_INPUT_MARKER,
@@ -1059,9 +1059,15 @@ __all__ = [
     "ModelIdentity",
     "ModelProfile",
     "MultiFileCandidatePipeline",
+    "NativeCandidateContractError",
+    "NativeCandidateRecord",
+    "NativeCandidateSelection",
     "NativeEpisodeClaim",
+    "NativeEvaluationReceipt",
+    "NativeExecutionReceipt",
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
+    "NativePublicationReceipt",
     "NativeRSIExecutionPlan",
     "NativeRSIExecutionPlanError",
     "NativeRSIInputDescriptor",
@@ -1334,6 +1340,7 @@ __all__ = [
     "load_evaluator_bundle",
     "load_memory_snapshot",
     "manifest_sha256",
+    "map_native_receipts_to_solver_result",
     "materialize_candidate_source_bundle",
     "native_producer_bundle_budget_sha256",
     "normalize_feedback",
@@ -1427,6 +1434,7 @@ __all__ = [
     "run_registered_acceptance",
     "run_subject_adapter",
     "sealed_linux_executable",
+    "select_native_candidate",
     "source_only_dependency_sha256",
     "stage_acceptance_attempt",
     "stage_candidate_execution_inputs",
