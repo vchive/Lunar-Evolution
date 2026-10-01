@@ -191,8 +191,15 @@ def _lifecycle_control(
         callbacks = [caller_cancelled]
         if execution_control is not None:
             callbacks.append(execution_control.is_cancelled)
+        # Cancellation composition does not change a declared allowance. Reconstructing it
+        # by deadline subtraction can drift across float boundaries and change durable budget
+        # fingerprints even when the exact deadline is unchanged. Only a narrower parent
+        # deadline derives a new allowance.
+        allowance = (execution_control.timeout_seconds
+                     if execution_control is not None and deadline == execution_control.deadline
+                     else deadline - started)
         control = SolveExecutionControl(
-            deadline - started, clock=clock, started_at=started,
+            allowance, clock=clock, started_at=started,
             cancellation_callbacks=callbacks,
             observe_stage=(execution_control._observe_stage if execution_control is not None else None),
         )

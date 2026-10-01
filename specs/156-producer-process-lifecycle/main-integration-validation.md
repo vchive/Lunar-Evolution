@@ -124,3 +124,15 @@ the integer 8. The assertion now checks the original exact deadline construction
 negative marker interleaving also waits for its complete bytes before cancelling. Final local
 native attempt/E2E focus: 51 passed, no skips, report
 `/tmp/lunar-native-handshake-final-20261001.xml`. A fresh complete supported matrix remains required.
+
+The early focus at `121ba4e` passed Python 3.11/3.13, but Python 3.12 exposed a genuine
+cancellation-composition budget drift: an unchanged 25-second allowance was reconstructed by
+deadline subtraction as `24.999999999999986`. Its publication budget/journal fingerprint then
+disagreed with the caller's original control during exact retry. Cancellation composition now
+retains the original allowance when its effective deadline is unchanged, including equal/later
+parent deadlines. A genuinely earlier parent still narrows the budget. The deadline/journal
+identity check is not loosened. Eleven deterministic cases cover float boundaries, tighter
+parents and actual prepared-journal retry. Five focused suites including all native E2E cases
+passed 119 tests without skips; Ruff, compileall and diff checks passed. Report:
+`.lunar-evolution/test-results/native-budget-composition.xml`. The failed Ubuntu annotation is
+retained at `/tmp/lunar-linux-ci-121ba4e-annotations-20261001.json`.

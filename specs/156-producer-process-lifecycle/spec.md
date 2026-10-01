@@ -240,6 +240,12 @@ source stops new work. All supplied monotonic deadlines must use the execution c
 domain, or the native monotonic clock when no control is supplied. Composition never changes the
 caller's original control or allocates a fresh budget after producer execution.
 
+Adding cancellation sources, or an equal/later parent deadline, retains the original declared
+`timeout_seconds` exactly as well as its start, clock and deadline. Recomputing an unchanged
+allowance through floating-point subtraction must not drift its durable budget fingerprint.
+Only an actually narrower parent deadline derives a narrower allowance; the prepared-journal
+identity gate remains exact.
+
 The scheduler checks the effective caller control before spawning and before/after receipt and
 output preparation. Publication receives that same effective control and continuation guard,
 including a cancellation-only guard when no caller deadline exists. Cancellation and timeout

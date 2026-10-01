@@ -34,6 +34,13 @@ E2E 13 与该负例 1 均 passed，没有生产行为放宽或新增等待预算
 构造，不使用宽松容差或改变预算；负例同步也等待 marker 完整字节以固定目标写入与取消
 顺序。最终 attempt/E2E focused 51 passed / 0 skip，Ruff、compileall、diff check 通过。
 
+`121ba4e` early cleanup 在 Linux 3.11/3.13 通过；3.12 暴露 cancellation composition 的
+真实预算漂移：原25秒通过 deadline-start 重算变成24.999999999999986，prepared deadline
+的 budget/journal 指纹与原 control 恢复不一致。现同 deadline 的组合精确保留原 allowance，
+更窄 parent 仍收窄，不放宽 journal gate。新增11项浮点边界/原始 budget pin 恢复回归，
+五套件含全部 E2E 119 passed / 0 skip；静态检查通过。接下来以新 head 的完整 Ubuntu
+current/archived/frozen 三版结果为准，原失败证据继续保留。
+
 ## 2026-10-01 Main integration and cross-platform corrections
 
 已创建并关联 [PR #1](https://github.com/vchive/Lunar-Evolution/pull/1)，base 为实际主分支

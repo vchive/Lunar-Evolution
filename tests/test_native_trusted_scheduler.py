@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_producer_bundle_transaction_control import _call as _call_publication
+from test_producer_bundle_transaction_control import _fixture as _publication_fixture
 
 import lunar_evolution.native_trusted_scheduler as scheduler
 from lunar_evolution.algorithm import AlgorithmProblemContract
@@ -24,6 +26,8 @@ from lunar_evolution.native_trusted_scheduler import (
 )
 from lunar_evolution.producer_bootstrap import TrustedBootstrapDescriptor
 from lunar_evolution.producer_broker_ipc import ProducerBrokerConfig
+from lunar_evolution.producer_bundle_control import native_producer_bundle_budget_sha256
+from lunar_evolution.producer_bundle_transaction import NativeProducerBundleTransactionError
 from lunar_evolution.producer_launcher import (
     build_producer_launch_attestation,
     build_producer_launch_intent,
@@ -305,6 +309,69 @@ def test_publication_reuses_effective_caller_deadline_without_reset(tmp_path, mo
     assert observed["attempt"]["monotonic"] is effective._clock
     assert control.deadline == 110.0 and control.timeout_seconds == 10.0
     assert result.status == "published" and result.deadline_scope == "caller_lifecycle"
+
+
+@pytest.mark.parametrize("started", [125.554160348, 127.99999999999999, 16777215.99])
+@pytest.mark.parametrize("parent", ["absent", "equal", "later"])
+def test_unchanged_caller_deadline_keeps_original_allowance_and_cancellation_authorities(started, parent):
+    ticks = [started]
+    external_cancelled = [False]
+    original = SolveExecutionControl(25, clock=lambda: ticks[0])
+    assert original.deadline - started != original.timeout_seconds  # Exercise actual float drift.
+    deadline = None if parent == "absent" else original.deadline + (1 if parent == "later" else 0)
+    ticks[0] += 3  # Composing cancellation consumes the same live budget, not a fresh allowance.
+    effective, check = scheduler._lifecycle_control(original, lambda: external_cancelled[0], deadline)
+    assert effective is not original
+    assert effective.timeout_seconds == original.timeout_seconds == 25
+    assert effective.started_at == original.started_at == started
+    assert effective.deadline == original.deadline == started + 25
+    assert effective._clock is original._clock
+    check("publication")
+    external_cancelled[0] = True
+    with pytest.raises(SolveExecutionCancelled):
+        check("publication")
+    assert original.is_cancelled() is False
+    external_cancelled[0] = False
+    original.cancel()
+    with pytest.raises(SolveExecutionCancelled):
+        check("publication")
+
+
+def test_narrowed_parent_deadline_still_narrows_declared_allowance_at_float_boundary():
+    started = 125.554160348
+    original = SolveExecutionControl(25, clock=lambda: started)
+    parent_deadline = original.deadline - 0.25
+    effective, check = scheduler._lifecycle_control(original, lambda: False, parent_deadline)
+    assert effective.timeout_seconds == parent_deadline - started < original.timeout_seconds
+    assert effective.deadline == parent_deadline and effective.started_at == started
+    assert original.timeout_seconds == 25 and original.deadline == started + 25
+    check("publication")
+
+
+def test_composed_cancellation_retains_budget_pin_and_exact_prepared_replay(tmp_path, monkeypatch):
+    fixture = _publication_fixture(tmp_path)
+    context, strategy, _drafts, _plan, journal_id = fixture
+    ticks = [125.554160348]
+    original = SolveExecutionControl(25, clock=lambda: ticks[0])
+    effective, _check = scheduler._lifecycle_control(original, lambda: False, None)
+    assert native_producer_bundle_budget_sha256(strategy, effective) == native_producer_bundle_budget_sha256(strategy, original)
+    evaluations = []
+
+    def interrupted(*_args, **_kwargs):
+        evaluations.append(True)
+        raise RuntimeError("fixed local interruption before candidate evaluation")
+
+    monkeypatch.setattr(context.bundle_pipeline, "evaluate_draft_non_publishing", interrupted)
+    with pytest.raises(NativeProducerBundleTransactionError, match="recovery_required"):
+        _call_publication(fixture, effective)
+    batch = context.workspace / "evolution/producer-batches" / journal_id
+    retained_paths = [batch / name for name in ("journal.prepared.json", "execution.deadline.json")]
+    retained = [(path.read_bytes(), path.stat().st_ino) for path in retained_paths]
+    with pytest.raises(NativeProducerBundleTransactionError, match="recovery_required"):
+        _call_publication(fixture, original)
+    assert len(evaluations) == 2  # The exact retry passed both prepared-intent and deadline gates.
+    assert [(path.read_bytes(), path.stat().st_ino) for path in retained_paths] == retained
+    assert original.timeout_seconds == 25 and original.deadline == ticks[0] + 25
 
 
 def test_cancellation_only_is_forwarded_without_inventing_publication_budget(tmp_path, monkeypatch):
