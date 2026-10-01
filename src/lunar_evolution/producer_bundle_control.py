@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
@@ -71,6 +72,47 @@ def _distinct_callbacks(*callbacks):
 
 
 @contextmanager
+def bind_native_producer_bundle_checkpoint(
+    strategy: PopulationStrategy, checkpoint: Callable[[str], object],
+) -> Iterator[None]:
+    """Poll the cancellation-only transaction guard without inventing a wall budget."""
+    pipeline = _pipeline(strategy)
+    if not callable(checkpoint):
+        raise ProducerBundleControlError("producer_bundle_transaction_guard_invalid")
+    previous_timeout = pipeline._remaining_timeout
+    previous_guard = pipeline._continuation_guard
+    callbacks = tuple(_distinct_callbacks(previous_timeout, strategy.context.remaining_timeout))
+    if any(not callable(callback) for callback in (*callbacks, *tuple(_distinct_callbacks(previous_guard)))):
+        raise ProducerBundleControlError("producer_bundle_transaction_parent_control_invalid")
+
+    def check(stage: str) -> float:
+        checkpoint(stage)
+        if previous_guard is not None and previous_guard is not strategy.context.continuation_guard:
+            previous_guard()
+        deadlines = []
+        for callback in callbacks:
+            sampled_at = time.monotonic()
+            remaining = callback(stage)
+            if (isinstance(remaining, bool) or not isinstance(remaining, (int, float))
+                    or not math.isfinite(float(remaining)) or remaining <= 0):
+                raise ProducerBundleControlError("producer_bundle_transaction_parent_budget_invalid")
+            deadlines.append((sampled_at, sampled_at + float(remaining)))
+        checkpoint(stage)
+        observed_at = time.monotonic()
+        for sampled_at, deadline in deadlines:
+            if deadline <= observed_at:
+                raise SolveExecutionBudgetExceeded(stage, started_at=sampled_at, deadline=deadline,
+                                                  observed_at=observed_at)
+        return min([pipeline.timeout_seconds, *(deadline - observed_at for _, deadline in deadlines)])
+
+    pipeline.set_remaining_timeout(check)
+    try:
+        yield
+    finally:
+        pipeline.set_remaining_timeout(previous_timeout)
+
+
+@contextmanager
 def bind_native_producer_bundle_control(
     strategy: PopulationStrategy,
     execution_control: SolveExecutionControl,
@@ -79,9 +121,9 @@ def bind_native_producer_bundle_control(
 
     The yielded checkpoint must also be called before preparing, staging, and committing the
     batch, including paths that reuse retained evidence. Native subprocesses receive the positive
-    remaining time as their timeout. Cancellation is checked at each stage boundary; this helper
-    does not introduce a separate process watcher. Previous pipeline hooks are restored even when
-    a draft or checkpoint raises.
+    remaining time as their timeout and recheck this callback during their existing polling
+    loop. Cancellation stops active candidate/evaluator work through the runner's bounded
+    cleanup. Previous pipeline hooks are restored even when a draft or checkpoint raises.
     """
     pipeline = _pipeline(strategy)
     if not isinstance(execution_control, SolveExecutionControl):
@@ -141,6 +183,7 @@ def bind_native_producer_bundle_control(
 
 __all__ = [
     "ProducerBundleControlError",
+    "bind_native_producer_bundle_checkpoint",
     "bind_native_producer_bundle_control",
     "native_producer_bundle_budget_sha256",
 ]

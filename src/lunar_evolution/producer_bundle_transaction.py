@@ -28,6 +28,7 @@ from .producer_bundle_admission import (
     build_producer_bundle_admission_plan,
 )
 from .producer_bundle_control import (
+    bind_native_producer_bundle_checkpoint,
     bind_native_producer_bundle_control,
     native_producer_bundle_budget_sha256,
 )
@@ -372,6 +373,7 @@ def run_native_producer_bundle_publication_transaction(
                     return original_checkpoint(stage)
 
                 checkpoint.bind_retained_deadline = original_checkpoint.bind_retained_deadline
+                strategy.context.bundle_pipeline.set_remaining_timeout(checkpoint)
             return _run_native_producer_bundle_publication_transaction(
                 workspace, strategy, drafts, admission_plan, checkpoint=checkpoint,
                 execution_control=execution_control, **options,
@@ -384,9 +386,10 @@ def run_native_producer_bundle_publication_transaction(
             raise SolveExecutionCancelled(stage)
         strategy._check_stage(stage)
 
-    return _run_native_producer_bundle_publication_transaction(
-        workspace, strategy, drafts, admission_plan, checkpoint=checkpoint, **options,
-    )
+    with bind_native_producer_bundle_checkpoint(strategy, checkpoint):
+        return _run_native_producer_bundle_publication_transaction(
+            workspace, strategy, drafts, admission_plan, checkpoint=checkpoint, **options,
+        )
 
 
 def _run_native_producer_bundle_publication_transaction(

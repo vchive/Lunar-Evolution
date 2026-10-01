@@ -638,6 +638,7 @@ def evaluate_candidate_execution(
                         output_limit=MAX_REPORT_BYTES, capture_limit=MAX_REPORT_BYTES,
                         process_observer=process_observer,
                         process_released=process_released,
+                        continuation_guard=effective_timeout if remaining_timeout is not None else None,
                     )
                 except OSError:
                     _fail("process_start_failed")

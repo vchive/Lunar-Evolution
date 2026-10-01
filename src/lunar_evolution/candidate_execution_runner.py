@@ -116,6 +116,7 @@ def _bounded_process_bytes(
     capture_limit: int, process_observer: Callable[[int, int | None], None] | None = None,
     process_released: Callable[[int, int | None], None] | None = None,
     process_exit_observed: Callable[[int | None], None] | None = None,
+    continuation_guard: Callable[[], object] | None = None,
 ) -> tuple[bytes, bytes, Literal["succeeded", "failed", "timed_out"], int | None, str | None]:
     """Run a process while keeping each captured stream bounded in memory.
 
@@ -124,6 +125,8 @@ def _bounded_process_bytes(
     that inherited the pipes.  A short post-kill grace period captures ordinary trailing output;
     pipes are then closed even if a detached descendant still holds them open. Callers validate
     the limits, including ``0 < capture_limit <= output_limit``; returned bytes are never decoded.
+    An active continuation guard is checked before launch and at each polling iteration. Guard
+    failures propagate only after the same bounded group cleanup; they never become a result.
     """
     process: subprocess.Popen[bytes] | None = None
     process_identity: tuple[int, int | None] | None = None
@@ -147,6 +150,8 @@ def _bounded_process_bytes(
         cleanup_deadline = time.monotonic() + PROCESS_CLEANUP_GRACE_SECONDS
 
     try:
+        if continuation_guard is not None:
+            continuation_guard()
         process = subprocess.Popen(
             command,
             cwd=cwd,
@@ -172,6 +177,8 @@ def _bounded_process_bytes(
         selector.register(process.stderr, selectors.EVENT_READ, "stderr")
         deadline = started + timeout
         while True:
+            if reason is None and cleanup_deadline is None and continuation_guard is not None:
+                continuation_guard()
             now = time.monotonic()
             if reason is None:
                 if now >= deadline:
@@ -271,6 +278,7 @@ def _bounded_process(
     process_observer: Callable[[int, int | None], None] | None = None,
     process_released: Callable[[int, int | None], None] | None = None,
     process_exit_observed: Callable[[int | None], None] | None = None,
+    continuation_guard: Callable[[], object] | None = None,
 ) -> tuple[str, str, Literal["succeeded", "failed", "timed_out"], int | None, str | None]:
     """Keep the candidate runner's historical bounded, replacement-decoded text projection."""
     raw_stdout, raw_stderr, status, exit_code, error = _bounded_process_bytes(
@@ -278,6 +286,7 @@ def _bounded_process(
         capture_limit=min(output_limit, MAX_RESULT_OUTPUT_BYTES),
         process_observer=process_observer, process_released=process_released,
         process_exit_observed=process_exit_observed,
+        continuation_guard=continuation_guard,
     )
     stdout, stdout_overflow = _bounded(raw_stdout, output_limit)
     stderr, stderr_overflow = _bounded(raw_stderr, output_limit)
@@ -536,6 +545,7 @@ class CandidateExecutionRunner:
                     timeout=effective_timeout, output_limit=output_limit,
                     process_observer=process_observer, process_released=process_released,
                     process_exit_observed=process_exit_observed,
+                    continuation_guard=operational_timeout if remaining_timeout is not None else None,
                 )
             except (SolveExecutionBudgetExceeded, SolveExecutionCancelled):
                 raise
