@@ -1,5 +1,33 @@
 # Validation: RSI learning mode
 
+## 2026-10-01 Durable solver handoff and active HTTP cancellation
+
+Final stable source/tests local combined regression: **1,875 passed / 4 Darwin platform skips /
+0 failures / 0 errors**, 1,879 cases, exit 0, 211.727 seconds. Report:
+`/tmp/lunar-worker-recovery-final-20261001.xml`. It covers all RSI, native trusted, producer,
+controller transport, trusted bootstrap, process ownership and lifecycle matrix modules. This is
+not a full current/archived/frozen runner or Ubuntu matrix run. The earlier 1,878-case combination
+passed 1,874 with four skips while the final cancellation-observer elapsed-budget case was being
+added; it is retained separately at `/tmp/lunar-worker-recovery-combined-20261001.xml`.
+
+The new durable gateway has 54 local unit cases and three controller integrations: full result
+publication interruption recovers DRS without another call/charge; BRS partial restoration blocks
+the entire frozen wave before deterministic merge; started-only results never dispatch or recover
+success. Scope/request/component/run callable/ledger drift, alias mutation, concurrent invocation,
+all result statuses and failure-only reconciliation are covered. Local source fingerprints do not
+authenticate an external worker, and the wrapper delegates budget authority to its controller.
+
+Actual native blocked-loopback cancellation has both confirmed and acknowledgement-lost branches.
+Both verify the exact HTTP worker was killed/reaped, native group exited, no formal success or
+publication was written, and repeated recovery performs no launch/I/O. Lost acknowledgement keeps
+the journal active/unknown. Broker cancellation/IPC/HTTP focused suites passed 69 cases on each of
+Python 3.11/3.12/3.13. Full final source static Ruff, compileall, branch diff checks and eight local
+runtime Python example syntax checks pass. Ubuntu CI now runs these new cases in the early stage
+before the complete runner; that final-head matrix remains a separate integration gate.
+
+Only local provider-free fixtures were run. External ownership/source authentication, controller
+death recovery, complete egress, official evaluator and real campaign acceptance remain open.
+
 Final 2026-10-01 current-tree inventory: **9,172 passed / 0 failed / 0 errors / 7 skipped**,
 covering all **9,179** currently collected cases. The full current-tree run collected 9,178 cases
 and passed 9,171 with seven skips in 908.410 seconds

@@ -30,10 +30,10 @@ jobs:
           python -m venv .venv
           uv pip install --python .venv/bin/python -e '.[dev,lint]'
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
-      - name: Verify native cancellation, process ownership and campaign audit
+      - name: Verify native cancellation, durable solver replay and campaign audit
         run: |
           mkdir -p .lunar-evolution/test-results
-          python -m pytest -q tests/test_process_ownership.py tests/test_producer_process.py tests/test_native_trusted_attempt.py tests/test_native_trusted_scheduler_e2e.py tests/test_acceptance_campaign_audit.py --junitxml=.lunar-evolution/test-results/native-cleanup.xml
+          python -m pytest -q tests/test_process_ownership.py tests/test_producer_process.py tests/test_native_trusted_attempt.py tests/test_native_trusted_scheduler_e2e.py tests/test_native_trusted_broker_cancellation_e2e.py tests/test_controller_broker_cancellation.py tests/test_rsi_durable_gateway.py tests/test_rsi_durable_gateway_controller.py tests/test_acceptance_campaign_audit.py --junitxml=.lunar-evolution/test-results/native-cleanup.xml
       - name: Run tests
         shell: bash
         run: |

@@ -1,5 +1,43 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Main merged; durable solver handoff and active broker cancellation
+
+PR #1 已按用户明确授权合入 `main`，merge commit 为
+`01db0aaa58af3832db45df1e2b276d5101034cd6`，保留原分支88条提交。
+最终 PR head `fe0246a` 的 Ubuntu Python 3.11/3.12/3.13 完整 current/archived/frozen CI
+全部成功，run `36875156874`。下方 draft/未合入/等待该 head CI 的段落是历史记录，
+不能作为当前状态。生产发布和真实效果验收仍未完成。
+
+本轮从实际 `origin/main` 新开 `codex/rsi-native-worker-recovery`，延续 Feature 160/157：
+
+- `DurableSolverGateway` 为受信本地 gateway 增加全局 episode claim，固定完整请求、scope、
+  gateway/run 实际指纹与 ledger inode。started 先持久化，完整结果后才返回；重复完成记录
+  不执行或追加应用记录。`restore_result` 显式补登已有完整结果，接通原 controller resume；
+  DRS/BRS 原预算不重复扣、冻结 wave 部分恢复不合并。只有 started 时停止；显式对账仅允许
+  failed/timed_out/cancelled/abandoned，拒绝 completed/unknown。不是外部 worker 认证。
+- 修复真实 active broker cancellation 缺口：原代码在请求中取消 target 后仍等 provider
+  response/request timeout，本地阻塞3秒复现取消返回2.996秒。现在 native main 设置 stop
+  Event，broker 在原 admission deadline 下轮询，确认 exact HTTP worker cancelled 后回收。
+  用户 callback 不在 broker 线程调用；pipe FD 仍由 broker 独占。丢确认保留 active/unknown；
+  两种路径都无 formal success receipt/候选发布，重复恢复无新进程/I/O。
+
+局部契约：Feature 160 `durable-adapter.md`，Feature 157 `active-cancellation-contract.md`；
+本地用法见 `docs/rsi-local-runtime.md`。单元54项、controller组合3项已通过；broker重点69项
+在Python3.11/3.12/3.13各通过。初次组合1878项为1874 passed/4平台skip，无failure/error，
+217.278秒；该轮期间broker最后补了observer耗时计入剩余预算，最终稳定树组合报告另行记录。
+最终固定源码/测试组合为1879项：1875 passed / 4 Darwin平台skip / 0 failure/error，
+exit 0，211.727秒，报告 `/tmp/lunar-worker-recovery-final-20261001.xml`。覆盖完整 RSI、
+native trusted、producer、controller transport、bootstrap、ownership 与 acceptance matrix；
+不是完整 current/archived/frozen runner。最终 Ruff(src/tests/tools)、compileall、whole-branch
+diff check通过，8个本地指南Python示例语法有效。新增测试已放入Ubuntu早期检查；本轮最终
+head完整Ubuntu三版CI须独立通过，不能沿用PR #1绿灯。
+
+继续保持只用本地 fixture，不运行 WebAgent、真实模型、远程 evaluator、公司平台或实际
+OpenEvolve/Shinka campaign，不读取或修改 `.env`/密钥。T160-13、T157-05/06 等整体任务仍
+开放：外部来源/ownership/独立可信成功对账、controller死亡后的活跃transport恢复、完整
+egress、真实project trust/runtime/default registration、官方evaluator与实际campaign验收。
+保留 native publication → RSI 的只读已发布结果投影为后续 P1；本轮没有实现该桥接。
+
 ## 2026-10-01 Final-head local validation and remaining Ubuntu audit failure
 
 `36899fe` 的完整、固定源码本地 current 回归已独立通过：9,230 unique cases，

@@ -574,6 +574,7 @@ def run_native_trusted_attempt(
         fds: set[int] = set()
         broker_thread: threading.Thread | None = None
         broker_ready: threading.Event | None = None
+        broker_stop: threading.Event | None = None
         broker_state: dict[str, object] = {}
         try:
             deadline_record = _persist_deadline(
@@ -619,6 +620,7 @@ def run_native_trusted_attempt(
                     broker_env["LUNAR_PRODUCER_REQUEST_FD"] = str(request_write)
                     broker_env["LUNAR_PRODUCER_RESPONSE_FD"] = str(response_read)
                     broker_ready = threading.Event()
+                    broker_stop = threading.Event()
                     broker_deadline_ns = time.monotonic_ns() + int(
                         _remaining(deadline, monotonic, cancelled) * 1_000_000_000
                     )
@@ -630,6 +632,7 @@ def run_native_trusted_attempt(
                                 journal_dir=batch / ".host-request-journal",
                                 config=broker_config, deadline_ns=broker_deadline_ns,
                                 ready=broker_ready,
+                                stop=broker_stop,
                             )
                         except Exception:  # noqa: BLE001 - fixed-code thread boundary
                             broker_state["error"] = "native_trusted_attempt_broker_unknown"
@@ -776,6 +779,12 @@ def run_native_trusted_attempt(
             reason = getattr(exc, "code", "native_trusted_attempt_unknown")
             cancellation_requested = reason == "native_trusted_attempt_cancelled"
         finally:
+            if broker_stop is not None and (
+                reason != "native_trusted_attempt_terminal_receipt_missing" or exit_code != 0
+            ):
+                # The main thread owns caller cancellation. The broker observes only
+                # this stop event and keeps ownership of its descriptors and HTTP handle.
+                broker_stop.set()
             for fd in tuple(fds):
                 try:
                     os.close(fd)
@@ -820,6 +829,8 @@ def run_native_trusted_attempt(
                 except NativeTrustedStreamError:
                     stream_capture_failed = True
             if broker_thread is not None:
+                if broker_stop is not None and reason != "native_trusted_attempt_terminal_receipt_missing":
+                    broker_stop.set()
                 broker_thread.join(timeout=max(0.0, deadline - monotonic()))
                 if broker_thread.is_alive() or "error" in broker_state:
                     reason = "native_trusted_attempt_broker_unknown"

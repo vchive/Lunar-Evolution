@@ -24,6 +24,7 @@ from .producer_request_transport import (
 )
 
 _MAX_CANCEL_GRACE_SECONDS = 60.0
+_CANCELLATION_POLL_SECONDS = 0.05
 _TERMINAL = frozenset({"completed", "failed", "cancelled"})
 _ResponseT_co = TypeVar("_ResponseT_co", covariant=True)
 
@@ -104,19 +105,28 @@ class ControllerOwnedRequestBroker(Generic[_ResponseT_co]):
         self._clock = monotonic_ns
         self._cancel_grace_seconds = cancel_grace_seconds
 
-    def execute(self, request_id: str, payload: object) -> BrokerRequestResult[_ResponseT_co]:
+    def execute(
+        self, request_id: str, payload: object, *,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> BrokerRequestResult[_ResponseT_co]:
         """Admit, run, and finish one controller-owned request.
 
         The transport receives the exact controller-issued admission, including
         its deadline.  Invalid transport behavior fails the request before any
-        result can be treated as complete.
+        result can be treated as complete. An optional cancellation observer must
+        return promptly; the native bridge passes its controller-owned stop event.
         """
+        if self._observe_cancellation(cancelled):
+            raise ControllerRequestBrokerError("producer_request_broker_cancelled")
         admission = self._ledger.admit(request_id)
         try:
             self._remaining_seconds(admission)
         except ControllerRequestBrokerError:
             self._finish_failed(admission)
             raise
+        if self._observe_cancellation(cancelled):
+            event = self._finish(admission, "cancelled")
+            return BrokerRequestResult(admission, event, True, False, False)
         try:
             handle = self._transport.start(admission, payload)
         except Exception as exc:
@@ -140,13 +150,40 @@ class ControllerOwnedRequestBroker(Generic[_ResponseT_co]):
         except ControllerRequestBrokerError:
             self._abort_unreliable_handle(admission, handle)
             raise
-        try:
-            status = handle.wait(remaining)
-        except Exception as exc:
-            event = self._abort_unreliable_handle(admission, handle)
-            raise ControllerRequestBrokerError(
-                "producer_request_broker_wait_failed", event=event,
-            ) from exc
+        while True:
+            try:
+                stopping = self._observe_cancellation(cancelled)
+            except ControllerRequestBrokerError:
+                # Cleanup does not turn an invalid observer into a known terminal.
+                self._confirm_cancellation(handle)
+                raise
+            if stopping:
+                if not self._confirm_cancellation(handle):
+                    raise ControllerRequestBrokerError(
+                        "producer_request_broker_cancellation_unconfirmed",
+                    )
+                event = self._finish(admission, "cancelled")
+                return BrokerRequestResult(admission, event, True, True, False)
+            if cancelled is not None:
+                try:
+                    remaining = self._remaining_seconds(admission)
+                except ControllerRequestBrokerError:
+                    self._abort_unreliable_handle(admission, handle)
+                    raise
+                if remaining <= 0:
+                    status = None
+                    break
+            try:
+                status = handle.wait(
+                    remaining if cancelled is None else min(remaining, _CANCELLATION_POLL_SECONDS),
+                )
+            except Exception as exc:
+                event = self._abort_unreliable_handle(admission, handle)
+                raise ControllerRequestBrokerError(
+                    "producer_request_broker_wait_failed", event=event,
+                ) from exc
+            if status is not None or cancelled is None:
+                break
         if type(status) is str and status in _TERMINAL:
             response = None
             if status == "completed":
@@ -209,6 +246,31 @@ class ControllerOwnedRequestBroker(Generic[_ResponseT_co]):
                 "producer_request_broker_deadline_not_reached", event=event,
             )
         return BrokerRequestResult(admission, event, True, True, event.status == "timed_out")
+
+    @staticmethod
+    def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
+        if cancelled is None:
+            return False
+        if not callable(cancelled):
+            raise ControllerRequestBrokerError("producer_request_broker_cancellation_invalid")
+        try:
+            value = cancelled()
+        except Exception as exc:
+            raise ControllerRequestBrokerError(
+                "producer_request_broker_cancellation_unknown",
+            ) from exc
+        if type(value) is not bool:
+            raise ControllerRequestBrokerError("producer_request_broker_cancellation_invalid")
+        return value
+
+    def _confirm_cancellation(self, handle: ControllerRequestHandle[_ResponseT_co]) -> bool:
+        try:
+            if handle.cancel() is not True:
+                return False
+            terminal = handle.wait(self._cancel_grace_seconds)
+        except Exception:  # noqa: BLE001 - an unconfirmed stop remains unknown
+            return False
+        return type(terminal) is str and terminal == "cancelled"
 
     def _remaining_seconds(self, admission: RequestAdmission) -> float:
         try:

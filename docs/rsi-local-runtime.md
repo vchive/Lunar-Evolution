@@ -248,6 +248,31 @@ child 与 outer 的每次显式 reconciliation 分别扣除一个 parent `unknow
 [`test_rsi_controller_generation.py`](../tests/test_rsi_controller_generation.py) 和
 [`test_rsi_controller_revalidation.py`](../tests/test_rsi_controller_revalidation.py)。
 
+### 4.1 Solver 调用的持久记录
+
+`DurableSolverGateway` 是显式启用的本地包装器。它在调用前记录 started，保存完整结果后
+才返回；重复请求复用原结果。它与 controller 使用同一个 `RSILedger`，不再分配 solver
+预算。调用方必须保持 `scope_id` 和完整请求不变；同一 episode 换 scope、配置或请求都会拒绝。
+
+```python
+from lunar_evolution import DurableSolverGateway, RSILearningController, RSILedger
+from lunar_evolution.rsi_gateway import DeterministicMockSolver
+
+ledger = RSILedger("/tmp/lunar-durable-example.sqlite3")
+gateway = DurableSolverGateway(DeterministicMockSolver(), ledger, scope_id="my-learning-run")
+controller = RSILearningController(gateway, ledger=ledger)
+# 使用现有 controller.run_drs(...) 或 controller.run_brs(...)。
+```
+
+如果 adapter 的完整结果已落盘、controller 的结果登记尚未完成，可用原始请求调用
+`gateway.restore_result(request)`，再调用 `controller.resume(run_id)`。这一步只复核并登记
+已保存的结果，不启动 worker。若只有 started、没有完整结果，恢复会停止；显式
+`reconcile(...)` 只接受失败、取消、超时或放弃，不接受 completed 或 unknown。
+
+这套协议依赖受信本地代码和 SQLite，不能认证外部 worker，也不承诺远程调用 exactly-once。
+候选与 evaluator 收据仍需独立验证；包装器不授予记忆晋级权限。详细契约见
+[`durable-adapter.md`](../specs/160-rsi-learning-mode/durable-adapter.md)。
+
 ## 5. P2：显式 memory 翻译与重复评测置信策略
 
 两个 API 都已从 `lunar_evolution` 导出，目前是独立、显式入口，不会自动替换 controller

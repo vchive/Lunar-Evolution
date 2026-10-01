@@ -44,6 +44,7 @@
 - [x] T160-29 显式跨 solver translation：冻结 source item/snapshot/receipt/causal mapping，输出 target-only unresolved draft，恢复绑定调用方完整 pins；不自动激活，仍需 target fresh verification + holdout。
 - [x] T160-30 repeated-pass confidence：有界官方 bool observations、配对任务/重复/seed、Wilson marginal interval、样本不足/不确定 unresolved、raw receipt/policy/manifest/evaluator 绑定和只读恢复。该分析 API 不能取代实际 campaign 的 source/holdout/admission 凭据。
 - [x] T160-31 配置后的派发前自动 revalidation：每个新 episode 以 request digest 生成固定 validation ID，整代复检共用 parent budget，completed 只读重放；失败隔离整代、unknown 阻止求解并要求显式对账，BRS worker 不争用 controller-owned parent lock。默认关闭，不启动后台或真实 evaluator。
+- [x] T160-32 显式本地 `DurableSolverGateway`：同 ledger 全局 episode claim、完整 request/source/config/run callable 绑定、started 前持久化、完整结果后才返回；重复完成记录不执行或追加应用记录。`restore_result` 补登已有完整结果，DRS/BRS 原预算和冻结 wave 恢复不重复调用；started 无结果停止，显式对账仅四种失败终态。SQLite/WAL/lock 文件不承诺字节只读；外部来源/ownership/可信成功对账仍属 T160-13 未完成部分。见 `durable-adapter.md`。
 
 ## 本轮边界
 

@@ -40,6 +40,14 @@ All validation in this iteration is local and provider-free.
 - Still open: external worker source/ownership and trusted
   unknown completion, complete producer recovery/transport coverage and real campaign acceptance.
   These must not be closed by fixture evidence.
+- The opt-in local `DurableSolverGateway` now claims an episode before execution and persists
+  full results before controller handoff. Completed application records replay without another
+  call; `restore_result` repairs a missing controller wire. Pending claims never retry and only
+  failure settlements are accepted. This local delegate/SQLite boundary does not authenticate
+  external workers or implement unknown-to-success reconciliation.
+- Active native broker cancellation now stops real blocked loopback HTTP I/O and reaps its
+  exact worker; lost acknowledgement remains unknown. Original request deadlines/counts and
+  publication gates are preserved. Controller process death and complete egress remain open.
 
 ## P2 — local diagnostics and later composition
 

@@ -30,6 +30,7 @@ from .producer_request_transport import (
 _MAX_FRAME_BYTES = MAX_REQUEST_BYTES * 4 // 3 + 4096
 _MAX_RESPONSE_FRAME_BYTES = MAX_RESULT_BYTES * 4 // 3 + 4096
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+_STOP_POLL_SECONDS = 0.05
 
 
 class ProducerBrokerIpcError(ValueError):
@@ -110,15 +111,28 @@ def _body(value: object, *, maximum: int) -> bytes:
     return body
 
 
-def _read_line(fd: int, deadline_ns: int, limit: int) -> bytes | None:
+def _check_stop(stop: threading.Event | None) -> None:
+    if stop is not None and stop.is_set():
+        raise ProducerBrokerIpcError("producer_broker_cancelled")
+
+
+def _read_line(
+    fd: int, deadline_ns: int, limit: int, *, stop: threading.Event | None = None,
+) -> bytes | None:
     data = bytearray()
     os.set_blocking(fd, False)
     with selectors.DefaultSelector() as watcher:
         watcher.register(fd, selectors.EVENT_READ)
         while True:
+            _check_stop(stop)
             remaining = (deadline_ns - time.monotonic_ns()) / 1_000_000_000
-            if remaining <= 0 or not watcher.select(remaining):
+            if remaining <= 0:
                 raise ProducerBrokerIpcError("producer_broker_wall_timeout")
+            if not watcher.select(remaining if stop is None else min(remaining, _STOP_POLL_SECONDS)):
+                if stop is not None:
+                    continue
+                raise ProducerBrokerIpcError("producer_broker_wall_timeout")
+            _check_stop(stop)
             try:
                 part = os.read(fd, min(65536, limit + 1 - len(data)))
             except BlockingIOError:
@@ -136,15 +150,23 @@ def _read_line(fd: int, deadline_ns: int, limit: int) -> bytes | None:
                 return bytes(data)
 
 
-def _write_line(fd: int, data: bytes, deadline_ns: int) -> None:
+def _write_line(
+    fd: int, data: bytes, deadline_ns: int, *, stop: threading.Event | None = None,
+) -> None:
     os.set_blocking(fd, False)
     offset = 0
     with selectors.DefaultSelector() as watcher:
         watcher.register(fd, selectors.EVENT_WRITE)
         while offset < len(data):
+            _check_stop(stop)
             remaining = (deadline_ns - time.monotonic_ns()) / 1_000_000_000
-            if remaining <= 0 or not watcher.select(remaining):
+            if remaining <= 0:
                 raise ProducerBrokerIpcError("producer_broker_wall_timeout")
+            if not watcher.select(remaining if stop is None else min(remaining, _STOP_POLL_SECONDS)):
+                if stop is not None:
+                    continue
+                raise ProducerBrokerIpcError("producer_broker_wall_timeout")
+            _check_stop(stop)
             try:
                 offset += os.write(fd, data[offset:offset + 65536])
             except BlockingIOError:
@@ -178,6 +200,7 @@ def serve_producer_broker(
     request_fd: int, response_fd: int, *, intent: ProducerLaunchIntent,
     journal_dir: Path, config: ProducerBrokerConfig, deadline_ns: int,
     ready: threading.Event | None = None,
+    stop: threading.Event | None = None,
 ) -> ProducerBrokerObservation:
     """Serve one isolated target through a controller-owned, fixed-endpoint broker.
 
@@ -188,6 +211,8 @@ def serve_producer_broker(
         raise ProducerBrokerIpcError("producer_broker_input_invalid")
     if type(deadline_ns) is not int or deadline_ns <= time.monotonic_ns():
         raise ProducerBrokerIpcError("producer_broker_deadline_invalid")
+    if stop is not None and not isinstance(stop, threading.Event):
+        raise ProducerBrokerIpcError("producer_broker_stop_invalid")
     journal_dir.mkdir(mode=0o700)
     journal_path = journal_dir / "requests"
     identity = HostRequestJournalIdentity(
@@ -208,7 +233,7 @@ def serve_producer_broker(
             ready.set()
         while True:
             try:
-                raw = _read_line(request_fd, deadline_ns, _MAX_FRAME_BYTES)
+                raw = _read_line(request_fd, deadline_ns, _MAX_FRAME_BYTES, stop=stop)
                 if raw is None:
                     break
                 frame = _decode(raw, limit=_MAX_FRAME_BYTES)
@@ -220,7 +245,12 @@ def serve_producer_broker(
                     raise ProducerBrokerIpcError("producer_broker_frame_invalid")
                 result = broker.execute(
                     request_id, ControllerHttpRequest(config.endpoint, config.headers, body),
+                    cancelled=stop.is_set if stop is not None else None,
                 )
+                if result.cancellation_requested and not result.host_timeout_enforced:
+                    reason = "cancelled"
+                    break
+                _check_stop(stop)
                 response = result.response
                 data = _encode({
                     "protocol": "lunar-producer-broker-ipc-v1", "request_id": request_id,
@@ -228,15 +258,20 @@ def serve_producer_broker(
                     "http_status": response.status if response is not None else None,
                     "body_base64": base64.b64encode(response.body).decode("ascii") if response is not None else None,
                 }, limit=_MAX_RESPONSE_FRAME_BYTES)
-                _write_line(response_fd, data, deadline_ns)
+                _write_line(response_fd, data, deadline_ns, stop=stop)
                 if result.event.status == "timed_out":
                     reason = (
                         "request_timed_out" if result.host_timeout_enforced
                         else "request_boundary_unknown"
                     )
                     break
-            except (ProducerBrokerIpcError, ControllerRequestBrokerError, ProducerRequestTransportError,
-                    OSError, ValueError):
+            except (ProducerBrokerIpcError, ControllerRequestBrokerError) as exc:
+                reason = (
+                    "cancelled" if exc.code in {"producer_broker_cancelled", "producer_request_broker_cancelled"}
+                    else "request_boundary_unknown"
+                )
+                break
+            except (ProducerRequestTransportError, OSError, ValueError):
                 reason = "request_boundary_unknown"
                 break
         snapshot = ledger.snapshot()

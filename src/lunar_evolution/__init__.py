@@ -645,6 +645,7 @@ from .rsi_curriculum import (
     FailureDrivenCurriculum,
     FailureObservation,
 )
+from .rsi_durable_adapter import DurableSolverGateway, DurableSolverGatewayError
 from .rsi_fingerprint import (
     FingerprintComparison,
     FingerprintContract,
@@ -971,6 +972,8 @@ __all__ = [
     "DeterministicMockSolver",
     "DurableActorCleanRoomVerifier",
     "DurableRegressionCampaign",
+    "DurableSolverGateway",
+    "DurableSolverGatewayError",
     "EffectAdapterError",
     "EffectKitError",
     "EffectPreflightError",

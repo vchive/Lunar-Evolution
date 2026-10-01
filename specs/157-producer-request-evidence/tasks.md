@@ -44,3 +44,11 @@ replays the controller-owned journal under a caller deadline, binds an optional 
 and byte count, and keeps active or timed-out requests at `recovery_required`; it never reopens
 the journal for append or retries provider I/O. This is supporting crash-recovery evidence for
 T157-05/T157-06. It does not establish complete egress coverage or authorize a resumed producer.
+
+T157-06 local active cancellation slice is implemented: the native main thread owns a stop event,
+the broker polls the same admitted request under its original deadline, and an exact HTTP worker
+stop requires both cancellation acknowledgement and a confirmed cancelled terminal. Idle pipe
+read/write also stop without transferring descriptor ownership. Actual blocked loopback I/O is
+killed/reaped; lost acknowledgement preserves an active/unknown journal and blocks formal success
+and publication. Repeated recovery performs no launch/I/O. See `active-cancellation-contract.md`.
+This does not close controller-death recovery, complete egress or external project ownership.
