@@ -665,6 +665,16 @@ from .rsi_gateway import (
     SolverRequest,
     SolverResult,
 )
+from .rsi_native_candidate import (
+    NativeCandidateContractError,
+    NativeCandidateRecord,
+    NativeCandidateSelection,
+    NativeEvaluationReceipt,
+    NativeExecutionReceipt,
+    NativePublicationReceipt,
+    map_native_receipts_to_solver_result,
+    select_native_candidate,
+)
 from .rsi_generation_campaign import GenerationCampaignRunner
 from .rsi_governance_coordinator import (
     GenerationAdmissionResult,
@@ -730,6 +740,7 @@ from .rsi_native_inputs import (
     prepare_native_rsi_inputs,
     validate_native_rsi_launch_inputs,
 )
+from .rsi_native_plan import NativeRSIExecutionPlan, NativeRSIExecutionPlanError
 from .rsi_native_retained import (
     NativeRetainedCandidateEvidence,
     NativeRetainedEvidenceError,
@@ -748,6 +759,7 @@ from .rsi_parent_budget import ParentRunBudget
 from .rsi_regression_campaign import DurableRegressionCampaign
 from .rsi_store import (
     EpisodeState,
+    NativeEpisodeClaim,
     RSILedger,
     RSIRecord,
     RunState,
@@ -1047,8 +1059,11 @@ __all__ = [
     "ModelIdentity",
     "ModelProfile",
     "MultiFileCandidatePipeline",
+    "NativeEpisodeClaim",
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
+    "NativeRSIExecutionPlan",
+    "NativeRSIExecutionPlanError",
     "NativeRSIInputDescriptor",
     "NativeRSIInputError",
     "NativeRetainedCandidateEvidence",
