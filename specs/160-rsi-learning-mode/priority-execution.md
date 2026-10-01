@@ -47,7 +47,15 @@ All validation in this iteration is local and provider-free.
   external workers or implement unknown-to-success reconciliation.
 - Active native broker cancellation now stops real blocked loopback HTTP I/O and reaps its
   exact worker; lost acknowledgement remains unknown. Original request deadlines/counts and
-  publication gates are preserved. Controller process death and complete egress remain open.
+  publication gates are preserved. The existing HTTP lifeline now has a real controller-only
+  hard-death/broker journal combination regression: local I/O stops but durable admission remains
+  active/unknown, and recovery neither retries nor signals. Full native crash ownership and
+  complete egress remain open.
+- `read_native_retained_candidate` exposes immutable portable materials from exactly one
+  caller-selected published native candidate, with original launch pins, expected journal/formal
+  receipt digests and before/after integrity checks. It is supporting evidence only: existing
+  native launch records cannot establish an RSI request/memory attribution. A future real gateway
+  must bind the full RSI request before launch and still pass independent verification.
 
 ## P2 — local diagnostics and later composition
 

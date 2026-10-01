@@ -1,5 +1,46 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-02 Retained native evidence and controller-death broker regression
+
+延续 Feature 160/157，工作分支仍为 `codex/rsi-native-worker-recovery`，PR #2 为 draft，
+未合入 `main`。提交前复核 head `8c4b4de` 的 Ubuntu run `36886879470`，Python3.11/3.12/
+3.13 完整 current/archived/frozen CI均成功；该结果不能替代本轮新 head 的独立完整验证。
+
+- P1：新增 `read_native_retained_candidate` 与 immutable `NativeRetainedCandidateEvidence`，
+  显式指定 candidate 和 published journal/formal producer receipt 摘要，复验原 launch
+  intent/attestation/bootstrap/contract/evaluator/runner/dependency/environment。读取链复用
+  strict native recovery、publication recovery、archive integrity 和 portable bundle bytes，
+  材料复制后再次校验。bundle/entrypoint、producer/candidate execution、completion、
+  evaluation receipt/result、publication receipt 分字段保留。38项实际本地 native fixture
+  通过，含 prepared/all-rejected/unknown 拒绝、来源/材料/中途漂移和重复不改文件。
+  原 native launch 没有 RSI episode/memory/完整 SolverRequest，故该 API 不返回 SolverResult，
+  不追认 memory 使用，不启动/评测/发布，不授予 RSI 晋级；正式 gateway 仍须启动前绑定。
+  当前 archive/state 必须仍精确匹配原发布后态，历史 population 读取另需协议。
+- P0：现有 HTTP lifeline 已能在控制器死亡后停止实际 worker，无需再造 guardian。本轮补
+  真实独立 controller + broker + fsynced journal 的6项组合回归：请求前/blocked headers 时
+  仅 SIGKILL controller PID，worker absent/Z、连接关闭；无终态确认的 admission 仍 active/
+  unknown。恢复原 inode/hash/bytes/budget，不写、不发信号、不启动或重试。新6项在
+  Python3.11/3.12 各 passed（复用3.13的pure-Python test依赖，不代表独立完整环境矩阵），
+  3.13相关focus34 passed。本地 orphan stop 不等于由恢复进程 reap，也不证明 provider outcome。
+
+最终固定源码/测试组合 **1,923 unique cases：1,919 passed / 4 Darwin平台skip / 0 failed/
+errors，exit0，260.168秒**；JUnit
+`/private/tmp/lunar-retained-recovery-combined-20261002.xml`。覆盖全部 RSI/native trusted/
+producer/controller transport/bootstrap/ownership/acceptance matrix；不是完整 current/
+archived/frozen runner。Ruff(src/tests/tools)、compileall、whole-branch diff check，以及9段
+指南Python示例语法/3个公开导出检查均通过。CI early stage已加入两组新测试，最终 head
+Ubuntu三版完整回归仍需独立通过。
+
+新增契约：Feature160 `native-retained-evidence.md`、Feature157
+`controller-death-contract.md`；指南 `docs/rsi-local-runtime.md` 4.2。T160-33仅关闭已发布证据
+读取；T160-13、T157-05/06整体保持开放。下一重点是完整 RSI launch request 前置绑定和
+真实 solver gateway、native controller crash ownership/reconcile、外部project trust/runtime/
+default registration、完整egress，以及官方evaluator/真实campaign验收。只读trusted local
+证据不提供远程认证、历史删除/rollback保护或原子filesystem lease。
+
+本轮只运行本地 C/bootstrap/loopback 与 provider-free fixture；没有运行 WebAgent、远程
+evaluator/公司平台、真实模型或 OpenEvolve/Shinka campaign，没有读取/修改 `.env`/密钥。
+
 ## 2026-10-01 Main merged; durable solver handoff and active broker cancellation
 
 PR #1 已按用户明确授权合入 `main`，merge commit 为

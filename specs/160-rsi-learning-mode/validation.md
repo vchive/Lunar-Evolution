@@ -1,5 +1,32 @@
 # Validation: RSI learning mode
 
+## 2026-10-02 Retained native materials and hard-death recovery
+
+Final fixed source/tests combined regression: **1,919 passed / 4 Darwin platform skips /
+0 failures/errors**, **1,923 unique cases**, exit 0, **260.168 seconds**. JUnit:
+`/private/tmp/lunar-retained-recovery-combined-20261002.xml`. This covers all RSI, native trusted,
+producer, controller transport, bootstrap, process ownership and lifecycle matrix cases, including
+the new 38 retained-reader and six actual controller-death cases. It is not a full
+current/archived/frozen runner or final-head Ubuntu matrix.
+
+Retained-reader focused: 38 passed, no skips/failures/errors, 39.794 seconds. It tests an actual
+local native publication and distinct receipt/source identities; prepared/all-rejected/unknown,
+candidate substitution, expected-pin/missing/tampered evidence and mid-read mutation reject.
+Repeated reads leave byte/inode inventories unchanged and do not execute/evaluate/publish.
+Returned evidence has no RSI request/memory attribution or solver/verifier authority.
+
+Controller-death focus: six actual child-controller cases; Python 3.11/3.12 each pass, with
+3.13 transport/recovery combination passing 34. Compatibility runs reuse pure-Python pytest
+dependencies from the local 3.13 environment, so they are not independent full environment runs.
+Controller-only death stops the existing HTTP worker before I/O or during blocked headers;
+missing journal acknowledgement remains active/unknown, and replay has no I/O, append or signals.
+Local absent/zombie observation is not orphan reaping or proof of the provider's outcome.
+
+Final Ruff(src/tests/tools), compileall and whole-branch diff checks pass; nine guide Python
+blocks parse and all three exports import. The new cases are included in the early Ubuntu CI
+stage. Final-head three-version complete CI and the wider real-project release gates remain open.
+Only local provider-free fixtures were run; no secrets or real model/campaign were used.
+
 ## 2026-10-01 Durable solver handoff and active HTTP cancellation
 
 Final stable source/tests local combined regression: **1,875 passed / 4 Darwin platform skips /

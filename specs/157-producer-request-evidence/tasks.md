@@ -52,3 +52,10 @@ read/write also stop without transferring descriptor ownership. Actual blocked l
 killed/reaped; lost acknowledgement preserves an active/unknown journal and blocks formal success
 and publication. Repeated recovery performs no launch/I/O. See `active-cancellation-contract.md`.
 This does not close controller-death recovery, complete egress or external project ownership.
+
+T157-06 local controller-death slice: the existing HTTP lifeline is now tested together with a
+real broker and fsynced host journal in a separate controller process. Controller-only SIGKILL
+before outbound I/O or during blocked headers stops the local worker; retained admission stays
+active/unknown. Recovery rejects hash/bytes/budget/inode drift without append, retry, signals or
+transport. The six new cases pass locally; broader native process crash ownership, complete
+egress and external project acceptance remain open. See `controller-death-contract.md`.

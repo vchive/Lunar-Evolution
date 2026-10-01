@@ -45,6 +45,7 @@
 - [x] T160-30 repeated-pass confidence：有界官方 bool observations、配对任务/重复/seed、Wilson marginal interval、样本不足/不确定 unresolved、raw receipt/policy/manifest/evaluator 绑定和只读恢复。该分析 API 不能取代实际 campaign 的 source/holdout/admission 凭据。
 - [x] T160-31 配置后的派发前自动 revalidation：每个新 episode 以 request digest 生成固定 validation ID，整代复检共用 parent budget，completed 只读重放；失败隔离整代、unknown 阻止求解并要求显式对账，BRS worker 不争用 controller-owned parent lock。默认关闭，不启动后台或真实 evaluator。
 - [x] T160-32 显式本地 `DurableSolverGateway`：同 ledger 全局 episode claim、完整 request/source/config/run callable 绑定、started 前持久化、完整结果后才返回；重复完成记录不执行或追加应用记录。`restore_result` 补登已有完整结果，DRS/BRS 原预算和冻结 wave 恢复不重复调用；started 无结果停止，显式对账仅四种失败终态。SQLite/WAL/lock 文件不承诺字节只读；外部来源/ownership/可信成功对账仍属 T160-13 未完成部分。见 `durable-adapter.md`。
+- [x] T160-33 已发布 native 候选证据只读接口：复用 strict native recovery、publication recovery、archive integrity 与 portable materials，完整固定原 launch/evaluator/environment 和指定 candidate/terminal journal/formal receipt。区分 bundle/entrypoint、producer/candidate execution、evaluation receipt/result 等摘要。不得把未绑定 RSI request/memory 的旧 launch 改称 RSI solver success，不产生 SolverResult 或 memory 权限；见 `native-retained-evidence.md`。实际本地 producer 的38项 focused 验收通过，包括 prepared/all-rejected/unknown、漂移和重复只读。
 
 ## 本轮边界
 

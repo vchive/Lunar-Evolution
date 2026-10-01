@@ -273,6 +273,37 @@ controller = RSILearningController(gateway, ledger=ledger)
 候选与 evaluator 收据仍需独立验证；包装器不授予记忆晋级权限。详细契约见
 [`durable-adapter.md`](../specs/160-rsi-learning-mode/durable-adapter.md)。
 
+### 4.2 读取已发布 native 候选的证据
+
+`read_native_retained_candidate` 供调用方显式读取已经发布的候选及其完整材料。调用方需要
+原始 native recovery 参数、指定 candidate ID、原 published journal 和正式 producer
+execution receipt 的摘要；它不会选 best、启动 solver、重新评测或修改账本。
+
+```python
+from lunar_evolution import read_native_retained_candidate
+
+evidence = read_native_retained_candidate(
+    workspace,
+    candidate_id=candidate_id,
+    expected_journal_sha256=published_journal_sha256,
+    expected_producer_execution_receipt_sha256=producer_execution_receipt_sha256,
+    **native_recovery_pins,  # 原 intent/attestation/artifact/contract/groups 和 evaluator 等 pins。
+)
+materials = dict(evidence.portable_materials)  # 独立字典；值是已验证的不可变 bytes。
+metadata = evidence.to_dict()  # 原生证据身份和材料 hash/size，不含原始源码。
+```
+
+只接受精确匹配的 published 终态；prepared、unknown、部分提交和缺失/漂移的证据都会拒绝。
+它要求当前 archive/state 仍匹配原 transaction 的发布摘要；后来推进过的 population 需要
+单独的历史证据读取协议。该 API 不创建 workspace、lock 或收据，重复读取保持原文件不变。
+
+原 native launch 没有绑定 RSI episode、memory 或完整 SolverRequest，因此这里返回的是
+`NativeRetainedCandidateEvidence`，不能拿它追认某次 RSI 求解或记忆的效果。bundle digest、
+入口源码 digest、producer execution、candidate execution、evaluation receipt/result 均有独立
+字段；`native_dependency_sha256` 也不等于 Actor dependency manifest。候选分数保留为来源
+信息，RSI 学习仍需要独立 verifier 和 holdout。完整契约见
+[`native-retained-evidence.md`](../specs/160-rsi-learning-mode/native-retained-evidence.md)。
+
 ## 5. P2：显式 memory 翻译与重复评测置信策略
 
 两个 API 都已从 `lunar_evolution` 导出，目前是独立、显式入口，不会自动替换 controller

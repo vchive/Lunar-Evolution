@@ -1,5 +1,12 @@
 # Lunar RSI 阶段性能力差距报告
 
+2026-10-02 补充：T160-33已接通实际已发布 native 候选的只读证据接口，保留完整源码/
+execution/evaluation/publication 链，前后复验，38项本地focused通过。它不追认未绑定的
+RSI request/memory，也不实现真实 SolverGateway；正式launch前置绑定仍需补齐。现有HTTP
+lifeline已有真实 controller-only死亡+broker journal组合回归，恢复保持active/unknown，
+不重试/写入/发信号。最终相关组合1,919 passed/4 Darwin skip/零失败；不代表完整Ubuntu
+最终head验证或真实项目验收。详见 HANDOFF、本feature validation和两个局部契约。
+
 2026-10-01 最新更新：本地可恢复 RSI 主链已接通。P0 增加 parent learning/holdout 合账、
 外层/子 trial unknown 预算与独立 generation admission checkpoint 绑定；P1 增加同 run 跨代
 准入、配置后的自动 post-practice holdout、完整 Actor clean-room evidence 持久化，以及实际

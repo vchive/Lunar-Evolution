@@ -722,6 +722,11 @@ from .rsi_memory_translation import (
     recover_translation,
     translate_memory,
 )
+from .rsi_native_retained import (
+    NativeRetainedCandidateEvidence,
+    NativeRetainedEvidenceError,
+    read_native_retained_candidate,
+)
 from .rsi_noise_confidence import (
     ConfidencePolicy,
     ConfidenceReport,
@@ -1035,6 +1040,8 @@ __all__ = [
     "MultiFileCandidatePipeline",
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
+    "NativeRetainedCandidateEvidence",
+    "NativeRetainedEvidenceError",
     "NativeTrustedCleanupError",
     "NativeTrustedProducerRecovery",
     "NativeTrustedProducerRun",
@@ -1358,6 +1365,7 @@ __all__ = [
     "read_bundle_delivery_materials",
     "read_candidate_source_files",
     "read_host_request_journal",
+    "read_native_retained_candidate",
     "reconcile_remote_state",
     "recover_confidence_report",
     "recover_native_trusted_cleanup",
