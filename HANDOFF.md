@@ -1,5 +1,48 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Shared budget, governed generations and local producer completion
+
+延续现有 SDD，并行完成本轮可本地验收的 P0/P1/P2 实现。当前代码和本节优先于下方旧缺口：
+
+- P0：`ParentRunBudget` 把 learning 与 holdout/evaluator/unknown-retry 合账。原计划/绝对
+  deadline 不刷新，事件先持久再调用；parent→child charge 中断幂等。外层 generation 对账
+  也独立扣 unknown 预算。跨库、删除/换绑/未扣费 external receipt 和终态恢复均拒绝。
+- P0：controller generation marker 绑定独立 admission checkpoint、原 candidate/source proof
+  以及实际 approved/active admission heads；改写 controller checkpoint 的 memory/status/
+  terminal 字段不能绕过准入。之后 revoked 的历史结果可只读诊断，但不授权新 solver。
+- P1：`RSIGovernanceCoordinator` 冻结 generation、parent、逐项 source/继承 lineage、manifest、
+  runner 与原 parent budget；配置后自动 post-practice holdout 和整代准入。同一 DRS/BRS run
+  可跨多代；rejected 保留 parent，unknown 阻止整 run 且不重发调用。
+- P1：`generation_revalidate_before_dispatch=True` 可选地在每个新 episode 前自动复检一次，
+  固定 request digest ID、共享预算，失败 quarantine，unknown 显式恢复，before-run 完成
+  重放不再调用/扣费。BRS controller 准备验证，worker 只读复用，避免 parent-lock 争用。
+- P1：完整 Actor clean-room evidence create-only sidecar + first-call claim。未知 claim 不
+  重跑 evaluator，完整 pins/decision/raw verdict 可恢复并显式喂给 admission；controller DRS
+  完整落盘、retry/memory 与终态不重复 spawn 均通过本地 fixture。
+- P1：实际本地 native bootstrap + C target + loopback broker 经过正式 receipt/strict output/
+  native candidate/evaluator/archive/population/delivery/只读恢复。新增父 deadline、active
+  cancellation、receipt 后中断、partial-commit unknown 和精确 published replay fixture。
+  候选和 evaluator 现在在现有轮询中检查 caller guard、先清理进程组再传播取消/预算错误；
+  cancellation-only/shared-wall/独立 publication guard 均接通，commit 临界区保留。
+- P2：显式跨 solver translation 只输出 provenance-bound unresolved draft；repeat-pass
+  confidence 提供 bounded bool observations、Wilson marginal interval 和完整 pin 恢复。
+  二者不授予 active memory 权限，不替代真实 campaign raw receipts。
+
+API/恢复顺序和可运行本地示例见 `docs/rsi-local-runtime.md`。局部契约：
+`shared-parent-budget.md`、`generation-governance.md`、`controller-generation-governance.md`、
+`controller-dispatch-revalidation.md`、`actor-evidence-persistence.md`、`memory-translation.md`、
+`noise-confidence.md`，均位于 Feature 160；producer 证据见 Feature 156
+`local-native-scheduler-validation.md`。
+
+本轮没有运行 WebAgent、远程 evaluator、公司平台、真实模型或真实 OpenEvolve/Shinka campaign，
+没有读取/修改密钥。剩余重点是正式官方 evaluator/模型效果验收、外部 project launch trust/
+runtime allowlist/default project registration、worker 来源/ownership/可信 unknown completion、
+完整跨平台及 active transport crash/bypass 矩阵。trusted local SQLite 不提供历史删除/rollback
+防护或远程原子 lease；模型训练仍为独立轨道，后台/分布式 scheduler 不在当前本地主线。
+
+工作分支仍为 `codex/feature-156-producer-lifecycle`，推送不等于合入 main/master。不要覆盖
+未提交工作。最终本轮测试结果记录在 Feature 160 `validation.md`。
+
 ## 2026-10-01 P0/P1/P2 execution and local runtime composition
 
 延续 Feature 160 与 producer lifecycle SDD，本轮优先级清单见

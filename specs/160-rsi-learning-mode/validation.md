@@ -18,14 +18,21 @@ The process-level clean-room fixtures use only local module-level evaluators. Th
 does not establish an official evaluator, external worker authenticity, real producer campaign or
 model end-to-end acceptance, nor prove that every external recovery path has been implemented.
 
-New focused evidence covers native caller cancellation/deadline continuation, policy-bound
-pass-rate/contamination gates, durable holdout reservations/callbacks/reconcile, actual manifest
-and v2 approval identity, governance-scoped report caching, nested pin mutation, bounded trial
-cardinality, controller Actor clean-room memory/retry/replay, next-use revocation and post-gate
-deadline checks, and strictly read-only usage diagnostics. The campaign budget remains separate
-from a parent learning run's counters. The opt-in snapshot gate consumes a single governed
-generation and reads trusted latest heads; same-run cross-generation promotion and historical
-database rollback protection are not established.
+New local composition covers shared parent learning/holdout/unknown accounting, immutable external
+reservation replay and terminal history corruption gates; automatic configured generation admission,
+explicit inherited lineage and independent authority checkpoints; optional per-episode revalidation,
+unknown recovery and quarantine; full Actor clean-room evidence sidecars and claims; explicit
+cross-solver unresolved translations and repeated-pass marginal confidence analysis. A real local
+native producer now exercises bootstrap, broker, formal receipt, strict output, independent
+candidate evaluation, publication, archive/population/delivery and read-only recovery. These local
+interfaces are exported from `lunar_evolution` and documented in `docs/rsi-local-runtime.md`.
+
+The final current-tree regression below supersedes older counts above. Official evaluator and
+real project campaign acceptance, external worker authenticity/ownership, historical database
+delete/rollback protection, remote atomic leases and cross-platform production coverage remain
+separate. The optional revalidation policy is a local dispatch gate, not a background scheduler.
+Confidence analysis does not establish a real campaign's observation provenance or grant memory
+activation.
 
 ## Data and authority
 

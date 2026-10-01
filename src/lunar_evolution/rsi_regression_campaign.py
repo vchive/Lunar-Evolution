@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from typing import Any
 
 from .candidate_evaluation_spec import canonical_json
@@ -11,6 +12,7 @@ from .rsi_budget import RSIRunBudget
 from .rsi_callbacks import DurableCallbackJournal
 from .rsi_identity import RSIIdentityError, component_fingerprint
 from .rsi_learning import EMPTY_MEMORY_SNAPSHOT, MemorySnapshot, RSILearningError
+from .rsi_parent_budget import ParentRunBudget
 from .rsi_store import RSILedger
 from .rsi_transfer_regression import (
     RegressionPolicy,
@@ -84,13 +86,18 @@ class DurableRegressionCampaign:
                 if set(state) != {
                     "protocol", "intent", "intent_sha256", "budget_state", "reservations",
                     "phase", "report_sha256", "reconciliations",
-                } or state["protocol"] != "rsi-regression-campaign-v1":
+                } or state["protocol"] not in {"rsi-regression-campaign-v1", "rsi-regression-campaign-v2"}:
                     raise ValueError("shape")
                 intent = state["intent"]
-                if set(intent) != {
+                fields = {
                     "admission_id", "initial_record_sha256", "manifest", "policy", "memories",
                     "controller_pins", "runner_fingerprint", "planned_budget",
-                } or self.scope(intent["admission_id"]) != scope:
+                }
+                if state["protocol"] == "rsi-regression-campaign-v2":
+                    fields.add("parent_budget")
+                    if not isinstance(intent.get("parent_budget"), dict):
+                        raise ValueError("parent budget")
+                if set(intent) != fields or self.scope(intent["admission_id"]) != scope:
                     raise ValueError("intent")
                 if state["intent_sha256"] != DurableCallbackJournal.digest(intent):
                     raise ValueError("digest")
@@ -161,7 +168,11 @@ class DurableRegressionCampaign:
     ) -> dict[str, Any]:
         """Register an observed result without rerunning a trial or refunding its charge."""
         scope = self.scope(admission_id)
-        with self.ledger.controller_lock(scope):
+        initial = self._load(scope)
+        parent = None
+        if initial is not None and "parent_budget" in initial[1]["intent"]:
+            parent = ParentRunBudget(self.ledger, initial[1]["intent"]["parent_budget"]["run_id"])
+        with (parent.guard() if parent is not None else nullcontext()), self.ledger.controller_lock(scope):
             checkpoint = self._load(scope)
             if checkpoint is None:
                 raise RSILearningError("rsi_regression_not_started")
@@ -193,6 +204,10 @@ class DurableRegressionCampaign:
                     raise RSILearningError("rsi_regression_reconcile_not_required")
                 run_budget = RSIRunBudget.load(state["budget_state"])
                 run_budget.reserve_unknown_reconcile_evidence()
+                if parent is not None:
+                    if parent.identity() != state["intent"]["parent_budget"]:
+                        raise RSILearningError("rsi_parent_budget_identity_drift")
+                    parent.reserve(scope, callback_id, {"result": dict(result), "evidence": clean_evidence}, reconcile=True)
                 reservations[callback_id] = reservation_pin
                 state["budget_state"] = run_budget.to_dict()
                 self.ledger.write_controller_checkpoint(scope, state, expected_sha256=campaign_digest)
@@ -207,7 +222,10 @@ class DurableRegressionCampaign:
         tasks: Sequence[TransferTask], old_memory: MemorySnapshot, current_memory: MemorySnapshot,
         policy: RegressionPolicy, runner: Callable[..., Any], controller_pins: Mapping[str, Any],
         check_components: Callable[[], None], budget: Mapping[str, Any] | None = None,
+        parent_budget: ParentRunBudget | None = None,
     ) -> TransferRegressionReport:
+        if parent_budget is not None and (not isinstance(parent_budget, ParentRunBudget) or parent_budget.ledger is not self.ledger):
+            raise RSILearningError("rsi_parent_budget_ledger_mismatch")
         scope = self.scope(admission_id)
         policy = RegressionPolicy(**policy.to_dict())
         manifest = tuple(TransferTask(**task.to_dict()) for task in TransferRegressionSuite._validate_tasks(tasks, policy))
@@ -223,16 +241,18 @@ class DurableRegressionCampaign:
             "controller_pins": dict(controller_pins), "runner_fingerprint": runner_pin,
             "planned_budget": planned_budget.to_dict()["planned"],
         }
+        if parent_budget is not None:
+            intent["parent_budget"] = parent_budget.identity()
         intent_sha256 = DurableCallbackJournal.digest(intent)
         # Store immutable JSON projections, never nested caller-owned aliases.
         intent = json.loads(canonical_json(intent, maximum=1024 * 1024))
         controller_pin_digest = DurableCallbackJournal.digest(intent["controller_pins"])
-        with self.ledger.controller_lock(scope):
+        with (parent_budget.guard() if parent_budget is not None else nullcontext()), self.ledger.controller_lock(scope):
             previous = self._load(scope)
             if previous is None:
                 checkpoint_sha256 = None
                 state = {
-                    "protocol": "rsi-regression-campaign-v1", "intent": intent,
+                    "protocol": "rsi-regression-campaign-v2" if parent_budget is not None else "rsi-regression-campaign-v1", "intent": intent,
                     "intent_sha256": intent_sha256, "budget_state": planned_budget.to_dict(),
                     "reservations": [], "reconciliations": {}, "phase": "running", "report_sha256": None,
                 }
@@ -279,7 +299,15 @@ class DurableRegressionCampaign:
                         raise RSILearningError("rsi_regression_checkpoint_corrupt")
                     try:
                         run_budget.check()
+                        if parent_budget is not None:
+                            parent_budget.check_dispatch()
                         if callback_id not in state["reservations"]:
+                            run_budget.check(counter="transfer_invocations")
+                            run_budget.check(counter="evaluator_invocations")
+                            if parent_budget is not None:
+                                if parent_budget.identity() != intent["parent_budget"]:
+                                    raise RSILearningError("rsi_parent_budget_identity_drift")
+                                parent_budget.reserve(scope, callback_id, binding)
                             run_budget.reserve_stages(("transfer", "evaluator"))
                             state["reservations"].append(callback_id)
                             checkpoint()
@@ -290,6 +318,15 @@ class DurableRegressionCampaign:
                         raise
 
                 def call() -> Mapping[str, Any]:
+                    try:
+                        run_budget.check()
+                        if parent_budget is not None:
+                            parent_budget.check_dispatch()
+                    except RSILearningError as exc:
+                        if str(exc) == "rsi_budget_exhausted":
+                            state["phase"] = "budget_exhausted"
+                            checkpoint()
+                        raise
                     observed = TransferRegressionSuite._normalise_observation(runner(task, memory, repetition))
                     check_live_components()
                     if _runner_digest(runner) != runner_pin:
@@ -320,6 +357,8 @@ class DurableRegressionCampaign:
                 return report
             try:
                 run_budget.check()
+                if parent_budget is not None:
+                    parent_budget.check_dispatch()
             except RSILearningError as exc:
                 if str(exc) == "rsi_budget_exhausted":
                     state["phase"] = "budget_exhausted"

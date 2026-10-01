@@ -1,15 +1,16 @@
 # Lunar RSI 阶段性能力差距报告
 
-2026-10-01 最新更新：controller durable resume、unknown/callback reconcile gate、预算和指纹
-恢复已通过本地矩阵；另补 schema v3 holdout pass/policy/input gate、ledger-backed durable
-regression trials、v2 promotion identity、Actor→clean-room verifier、governed frozen-snapshot
-下一次 dispatch gate 和只读 usage CLI。本轮组合 **890 passed**（其中 RSI 773），之后新增三条
-alias/corruption/legacy-v1 回归的 focused 组合 **43 passed**。详细边界见 `priority-execution.md`。
-campaign budget 尚未与 parent learning run 合账，gate 跨代需要 re-admit + 新 run，默认
-holdout/quarantine 和完整桥接证据自动持久化仍开放；这些不能从本地 fixture 推导生产完成。
-下面 A1/A2/A3/A5 的“现状证据”保留原始缺口分析，当前完成度以 `tasks.md`、`validation.md`
-和代码为准。真实 Actor/官方 evaluator、外部 worker 来源和 ownership、默认 holdout/quarantine
-调度、真实 process adapter/campaign 仍开放；fixture 通过不等于这些生产能力完成。
+2026-10-01 最新更新：本地可恢复 RSI 主链已接通。P0 增加 parent learning/holdout 合账、
+外层/子 trial unknown 预算与独立 generation admission checkpoint 绑定；P1 增加同 run 跨代
+准入、配置后的自动 post-practice holdout、完整 Actor clean-room evidence 持久化，以及实际
+本地 native producer 从 bootstrap/broker 到候选评估/发布/只读恢复的整链；P2 增加显式
+跨 solver translation 与 repeated-pass confidence API。详细接口和证据见 `tasks.md`、
+`validation.md`、`priority-execution.md` 及本轮局部 SDD。
+
+下面 A1/A2/A3/A5 的“现状证据”保留原始缺口分析，并非当前实现仍缺这些基础能力。
+真实官方 evaluator、外部 worker 来源/ownership/可信 unknown completion、真实 project launch
+trust 与默认项目 scheduler 注册、完整跨平台生产恢复和真实 campaign 仍须单独验收。
+本地 fixture 不替代这些证据；不增加远程平台、自修改 Agent 或模型训练主线。
 
 > 目的：为后续 SDD 提供经过代码、规格和测试核对的建设清单。本文只把当前确实缺失、且会阻塞 RSI 正确运行或真实评估的能力列入近期计划；通用平台最佳实践与远期研究能力单独标记，避免过度设计。
 >

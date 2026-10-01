@@ -906,6 +906,9 @@ class RSILearningController:
         ledger: RSILedger | None = None,
         usage_ledger: RSIUsageLedger | None = None,
         memory_admission_gate: Any | None = None,
+        generation_regression_tasks: Sequence[Any] | None = None,
+        generation_regression_runner: Callable[..., Any] | None = None,
+        generation_revalidate_before_dispatch: bool = False,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -916,12 +919,33 @@ class RSILearningController:
         if usage_ledger is not None and not isinstance(usage_ledger, RSIUsageLedger):
             raise TypeError("usage_ledger must be an RSI usage UsageLedger")
         self.usage_ledger = usage_ledger
+        from .rsi_governance_coordinator import RSIGovernanceCoordinator
+
         if memory_admission_gate is not None:
             from .rsi_memory_snapshot_gate import GovernedMemorySnapshotGate
 
-            if not isinstance(memory_admission_gate, GovernedMemorySnapshotGate):
-                raise TypeError("memory_admission_gate must be a governed frozen snapshot gate")
+            if not isinstance(memory_admission_gate, (GovernedMemorySnapshotGate, RSIGovernanceCoordinator)):
+                raise TypeError("memory_admission_gate must be a governed snapshot gate or coordinator")
         self.memory_admission_gate = memory_admission_gate
+        self.generation_regression_tasks: tuple[Any, ...] = ()
+        self.generation_regression_runner = generation_regression_runner
+        if type(generation_revalidate_before_dispatch) is not bool:
+            raise RSILearningError("rsi_generation_controller_config_invalid")
+        self.generation_revalidate_before_dispatch = generation_revalidate_before_dispatch
+        if generation_regression_tasks is not None or generation_regression_runner is not None:
+            from .rsi_transfer_regression import TransferRegressionSuite, TransferTask
+
+            if (not isinstance(memory_admission_gate, RSIGovernanceCoordinator)
+                    or ledger is None or memory_admission_gate.ledger is not ledger
+                    or not callable(generation_regression_runner)):
+                raise RSILearningError("rsi_generation_controller_config_invalid")
+            manifest = TransferRegressionSuite._validate_tasks(
+                generation_regression_tasks, memory_admission_gate.policy.regression,
+            )
+            self.generation_regression_tasks = tuple(TransferTask(**task.to_dict()) for task in manifest)
+            _component_digest(generation_regression_runner, name="generation_regression_runner")
+        if generation_revalidate_before_dispatch and not self.generation_regression_tasks:
+            raise RSILearningError("rsi_generation_controller_config_invalid")
         # Transfer reports are retained only as a local idempotency aid.  The governance
         # admission record remains the durable source of truth; a fresh process may return
         # ``None`` for an already-approved report when the report itself was not persisted.
@@ -930,6 +954,41 @@ class RSILearningController:
     @property
     def snapshot(self) -> MemorySnapshot:
         return self.memory_store.snapshot
+
+    def generation_campaign_runner(self, run_id: str) -> Any:
+        """Build the exact child campaign used for explicit generation recovery."""
+        from .rsi_generation_campaign import GenerationCampaignRunner
+
+        if self.ledger is None or not self.generation_regression_tasks:
+            raise RSILearningError("rsi_generation_controller_config_invalid")
+
+        return GenerationCampaignRunner(
+            self.ledger, run_id, tasks=self.generation_regression_tasks,
+            runner=self.generation_regression_runner, component_pins=self._generation_component_pins,
+        )
+
+    def _generation_component_pins(self) -> dict[str, str]:
+        components = {"solver": self.gateway, "verifier": self.verifier, "curriculum": self.curriculum,
+                      "judge": self.target_judge, "governance": self.memory_admission_gate,
+                      "runner": self.generation_regression_runner}
+        return {**{name: _component_digest(value, name=name) for name, value in components.items()},
+                "manifest": _record_digest([task.to_dict() for task in self.generation_regression_tasks])}
+
+    def _generation_campaign_config_readonly(self, parent_run_id: str) -> dict[str, Any]:
+        """Project the same helper identity without acquiring a controller-owned parent lock."""
+        if self.ledger is None:
+            raise RSILearningError("rsi_generation_controller_config_invalid")
+        parent = self.ledger.get_run(parent_run_id)
+        if parent is None:
+            raise RSILearningError("rsi_parent_budget_missing")
+        identity = self.ledger.database.stat()
+        return {"protocol": "rsi-generation-campaign-v1", "parent": {
+            "run_id": parent_run_id, "request_sha256": parent.request_sha256,
+            "ledger": str(self.ledger.database), "device": identity.st_dev, "inode": identity.st_ino,
+            "planned_budget": RSIRunBudget.load(parent.payload["budget_state"]).to_dict()["planned"],
+        }, "manifest": [task.to_dict() for task in self.generation_regression_tasks],
+            "runner": _component_digest(self.generation_regression_runner, name="generation_regression_runner"),
+            "components": self._generation_component_pins()}
 
     def promote_transfer_regression(
         self,
@@ -944,6 +1003,7 @@ class RSILearningController:
         activate: bool = False,
         fingerprints: Mapping[str, object] | None = None,
         budget: Mapping[str, Any] | None = None,
+        parent_run_id: str | None = None,
     ) -> tuple[Any | None, Any]:
         """Run local transfer regression and apply the explicit memory promotion gate.
 
@@ -961,6 +1021,7 @@ class RSILearningController:
         # governance/transfer modules and avoid making this composition mandatory for DRS/BRS.
         from .rsi_memory_governance import MemoryGovernanceStore
         from .rsi_memory_promotion import MemoryPromotionAdapter, MemoryPromotionError
+        from .rsi_parent_budget import ParentRunBudget
         from .rsi_regression_campaign import DurableRegressionCampaign
         from .rsi_transfer_regression import TransferRegressionSuite
 
@@ -979,6 +1040,12 @@ class RSILearningController:
         suite = TransferRegressionSuite(policy=policy)
         manifest = suite._validate_tasks(tasks, suite.policy)
         planned_budget = RSIRunBudget.create(budget)
+        parent_budget = None
+        if parent_run_id is not None:
+            if self.ledger is None:
+                raise RSILearningError("rsi_parent_budget_requires_ledger")
+            parent_budget = ParentRunBudget(self.ledger, parent_run_id)
+            parent_budget.identity()
         if fingerprints is not None and (
             not isinstance(fingerprints, Mapping) or any(type(key) is not str for key in fingerprints)
         ):
@@ -1014,6 +1081,8 @@ class RSILearningController:
             }
             if self.memory_admission_gate is not None:
                 pins["memory_admission_gate_fingerprint"] = _component_digest(self.memory_admission_gate, name="memory_admission_gate")
+            if parent_budget is not None:
+                pins["parent_budget_identity"] = parent_budget.identity()
             return pins
 
         observed_fingerprints = component_pins()
@@ -1118,6 +1187,7 @@ class RSILearningController:
                 tasks=manifest, old_memory=old_memory, current_memory=current_memory,
                 runner=runner, policy=suite.policy, controller_pins=observed_fingerprints,
                 check_components=check_components, budget=budget,
+                parent_budget=parent_budget,
             )
         else:
             report = suite.run(
@@ -1401,7 +1471,8 @@ class RSILearningController:
         initial_record = self.ledger.history(record.logical_id)[0]
         previous_budget = RSIRunBudget.load(initial_record.payload["budget_state"]).to_dict()
         previous_intents: dict[str, Any] = {}
-        for _, journal_state in self.ledger.controller_checkpoint_history(record.logical_id):
+        checkpoint_history = self.ledger.controller_checkpoint_history(record.logical_id)
+        for _, journal_state in checkpoint_history:
             if journal_state.get("schema_version") != "2":
                 raise RSILearningError("rsi_resume_checkpoint_corrupt")
             current_budget = RSIRunBudget.load(journal_state["budget_state"]).to_dict()
@@ -1412,6 +1483,107 @@ class RSILearningController:
             if any(journal_state["intents"].get(key) != value for key, value in previous_intents.items()):
                 raise RSILearningError("rsi_resume_episode_drift")
             previous_budget, previous_intents = current_budget, journal_state["intents"]
+        if checkpoint_history:
+            from .rsi_parent_budget import ParentRunBudget
+
+            ParentRunBudget(self.ledger, record.logical_id).validate_history()
+        if self.generation_regression_tasks:
+            self._check_generation_history(record)
+
+    def _check_generation_history(self, record: RSIRecord) -> None:
+        """A hash-valid append cannot erase pending admission or replace frozen candidates."""
+        previous: dict[str, Any] = {}
+        effective = record.payload["fingerprints"]["memory_snapshot_sha256"]
+        for _, state in self.ledger.controller_checkpoint_history(record.logical_id):
+            try:
+                entries = state.get("generations", {})
+                if not isinstance(entries, dict) or set(previous) - set(entries):
+                    raise ValueError("deleted generation")
+                changes = []
+                for key, entry in entries.items():
+                    if (set(entry) != {"generation_id", "parent_memory", "candidate_memory", "status", "admission_checkpoint_sha256"}
+                            or entry["status"] not in {"pending", "active", "rejected"}
+                            or entry["generation_id"] != "controller-generation:" + _record_digest({"run": record.logical_id, "episode": key})):
+                        raise ValueError("generation shape")
+                    execution = self._deserialize_execution(state["executions"][key])
+                    if execution.episode.episode_kind != "practice" or not execution.passed:
+                        raise ValueError("source execution")
+                    decision_wire = (state["decisions"][key] if state["mode"] == "drs" else
+                                     state["plan"]["practices"][execution.episode.ordinal])
+                    parent = MemorySnapshot.from_dict(entry["parent_memory"])
+                    candidate = MemorySnapshot.from_dict(entry["candidate_memory"])
+                    expected = MemorySnapshot(
+                        f"snapshot-memory-{key}", parent.digest(),
+                        parent.items + (self._memory_item(execution, self._decision_from_dict(decision_wire)),),
+                    )
+                    persisted = self.ledger.get("memory:" + candidate.snapshot_id)
+                    if candidate != expected or persisted is None or persisted.payload != candidate.to_dict():
+                        raise ValueError("candidate binding")
+                    if entry["status"] == "pending":
+                        if entry["admission_checkpoint_sha256"] is not None:
+                            raise ValueError("pending authority")
+                    else:
+                        self._generation_admission_checkpoint(entry, execution)
+                    old = previous.get(key)
+                    if old is None:
+                        if entry["status"] != "pending" or parent.digest() != effective:
+                            raise ValueError("new generation")
+                        changes.append(entry)
+                    elif old != entry:
+                        if (old["status"] != "pending" or entry["status"] not in {"active", "rejected"}
+                                or {name: value for name, value in old.items() if name not in {"status", "admission_checkpoint_sha256"}}
+                                != {name: value for name, value in entry.items() if name not in {"status", "admission_checkpoint_sha256"}}
+                                or parent.digest() != effective):
+                            raise ValueError("generation drift")
+                        changes.append(entry)
+                        if entry["status"] == "active":
+                            effective = candidate.digest()
+                if len(changes) > 1 or MemorySnapshot.from_dict(state["memory_snapshot"]).digest() != effective:
+                    raise ValueError("effective generation drift")
+                previous = entries
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                raise RSILearningError("rsi_generation_controller_checkpoint_corrupt") from exc
+
+    def _generation_admission_checkpoint(self, entry: Mapping[str, Any], execution: EpisodeExecution) -> None:
+        """Verify recorded admission authority while allowing later revocation on read-only replay."""
+        coordinator = self.memory_admission_gate
+        if coordinator.inspect(entry["generation_id"]) is None:
+            raise ValueError("generation missing")
+        states = dict(self.ledger.controller_checkpoint_history(coordinator._namespace(entry["generation_id"])))
+        authority = states.get(entry["admission_checkpoint_sha256"])
+        if (authority is None or authority["phase"] != entry["status"]
+                or authority["intent"]["parent_memory"] != entry["parent_memory"]
+                or authority["intent"]["current_memory"] != entry["candidate_memory"]
+                or authority["intent"]["provenance"][f"memory-{execution.episode.episode_id}"]
+                != {"kind": "verified", "verifier": execution.verifier.to_dict()}
+                or authority["report"] is None):
+            raise ValueError("generation authority drift")
+        candidate = MemorySnapshot.from_dict(entry["candidate_memory"])
+        if set(authority["heads"]) != {item.memory_id for item in candidate.items}:
+            raise ValueError("generation heads incomplete")
+        report = coordinator.deserialize_report(authority["report"])
+        expected_state = "active" if entry["status"] == "active" else "shadow"
+        for item in candidate.items:
+            admission_id = authority["intent"]["admissions"][item.memory_id]
+            retained = next((record for record in coordinator.governance.history(admission_id)
+                             if record.record_sha256 == authority["heads"][item.memory_id]), None)
+            if (retained is None or retained.state != expected_state
+                    or retained.memory_snapshot_sha256 != candidate.digest()
+                    or retained.memory_item_sha256 != _record_digest(item.to_dict())
+                    or retained.source_episode_id != item.episode_id
+                    or retained.verifier_receipt_sha256 != item.receipt_sha256
+                    or retained.parent_snapshot_sha256 != candidate.parent_snapshot_sha256
+                    or retained.scope != coordinator.scope
+                    or dict(retained.compatibility) != coordinator.rsi_fingerprint_config()["compatibility"]
+                    or retained.reason != "generation:" + authority["intent_sha256"]
+                    + (":report:" + report.report_sha256 if expected_state == "active" else "")):
+                raise ValueError("generation admission drift")
+            if expected_state == "active" and (
+                not retained.regression_passed
+                or retained.holdout_receipt_sha256 != report.holdout_receipt_sha256
+                or retained.baseline_receipt_sha256 != report.baseline_receipt_sha256
+            ):
+                raise ValueError("generation regression drift")
 
     def _run_fingerprint(
         self,
@@ -1427,6 +1599,12 @@ class RSILearningController:
         solver_settings: dict[str, Any] = {}
         if self.memory_admission_gate is not None:
             solver_settings["memory_admission_gate_fingerprint"] = _component_digest(self.memory_admission_gate, name="memory_admission_gate")
+        if self.generation_regression_tasks:
+            solver_settings["generation_manifest"] = [task.to_dict() for task in self.generation_regression_tasks]
+            solver_settings["generation_revalidate_before_dispatch"] = self.generation_revalidate_before_dispatch
+            solver_settings["generation_runner_fingerprint"] = _component_digest(
+                self.generation_regression_runner, name="generation_regression_runner",
+            )
         # The gateway is the executable solver/actor boundary.  Include its source identity and
         # immutable request settings; runtime counters and process state are excluded by the
         # identity helper.
@@ -1729,6 +1907,10 @@ class RSILearningController:
         if self.ledger is None or record is None:
             return
         previous = self.ledger.controller_checkpoint(record.logical_id)
+        if previous is not None:
+            from .rsi_parent_budget import ParentRunBudget
+
+            ParentRunBudget.synchronize(state, previous[1])
         if previous is not None and previous[1] == state:
             return
         self.ledger.write_controller_checkpoint(
@@ -1786,7 +1968,13 @@ class RSILearningController:
             if state["intents"][key] != expected:
                 raise RSILearningError("rsi_resume_episode_drift")
             return
-        self._check_memory_admission(request)
+        self._check_memory_admission(request, parent_run_id=state["run_id"])
+        if self.ledger is not None:
+            persisted = self.ledger.controller_checkpoint(state["run_id"])
+            if persisted is not None:
+                from .rsi_parent_budget import ParentRunBudget
+
+                ParentRunBudget.synchronize(state, persisted[1])
         budget = RSIRunBudget.load(state["budget_state"])
         self._reserve_episode_budget(budget, episode_kind=episode.episode_kind, depth=0, ancestry=(key,))
         state["budget_state"] = budget.to_dict()
@@ -1818,7 +2006,7 @@ class RSILearningController:
                 return controller._verify_episode(episode, request, result, budget.check)
 
         def before_run() -> None:
-            self._check_memory_admission(request)
+            self._check_memory_admission(request, parent_run_id=state["run_id"])
             # Governance reads may wait for a SQLite reader. Recheck the same absolute
             # deadline immediately afterwards before persisting running or dispatching.
             budget.check()
@@ -1844,6 +2032,9 @@ class RSILearningController:
                      decision: CurriculumDecision, *, frozen_parent: str | None = None) -> None:
         if not execution.passed:
             return
+        if self.generation_regression_tasks:
+            self._commit_governed_flow(record, state, execution, decision, frozen_parent=frozen_parent)
+            return
         memory_id = f"memory-{execution.episode.episode_id}"
         if any(item.memory_id == memory_id for item in self.snapshot.items):
             return
@@ -1854,6 +2045,65 @@ class RSILearningController:
                      source_snapshot_sha256=frozen_parent)
         state["memory_snapshot"] = self.snapshot.to_dict()
         state["phase"] = "committed"
+        self._save_flow(record, state)
+
+    def _commit_governed_flow(self, record: RSIRecord | None, state: dict[str, Any],
+                              execution: EpisodeExecution, decision: CurriculumDecision,
+                              *, frozen_parent: str | None) -> None:
+        """Keep immutable candidate publication separate from effective memory admission."""
+        key = execution.episode.episode_id
+        generations = state.setdefault("generations", {})
+        entry = generations.get(key)
+        completed = entry is not None and entry.get("status") in {"active", "rejected"}
+        if entry is None:
+            RSIRunBudget.load(state["budget_state"]).check()
+            state.update(phase="commit", current_episode_id=key)
+            self._save_flow(record, state)
+            parent = self.snapshot
+            try:
+                candidate = self._commit(execution, decision, expected_episode_snapshot_sha256=frozen_parent,
+                                         source_snapshot_sha256=frozen_parent)
+            finally:
+                self.memory_store = RSIMemoryStore(parent)
+            entry = {"generation_id": "controller-generation:" + _record_digest({"run": state["run_id"], "episode": key}),
+                     "parent_memory": parent.to_dict(), "candidate_memory": candidate.to_dict(), "status": "pending",
+                     "admission_checkpoint_sha256": None}
+            generations[key] = entry
+            self._save_flow(record, state)
+        else:
+            try:
+                parent = MemorySnapshot.from_dict(entry["parent_memory"])
+                candidate = MemorySnapshot.from_dict(entry["candidate_memory"])
+                expected = MemorySnapshot(
+                    f"snapshot-memory-{key}", parent.digest(), parent.items + (self._memory_item(execution, decision),),
+                )
+                persisted = self.ledger.get("memory:" + candidate.snapshot_id)
+                if (set(entry) != {"generation_id", "parent_memory", "candidate_memory", "status", "admission_checkpoint_sha256"}
+                        or entry["generation_id"] != "controller-generation:" + _record_digest({"run": state["run_id"], "episode": key})
+                        or candidate != expected or persisted is None or persisted.payload != candidate.to_dict()
+                        or entry["status"] not in {"pending", "active", "rejected"}):
+                    raise ValueError("generation drift")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RSILearningError("rsi_generation_controller_checkpoint_corrupt") from exc
+        if completed:
+            try:
+                self._generation_admission_checkpoint(entry, execution)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise RSILearningError("rsi_generation_controller_checkpoint_corrupt") from exc
+            return
+        result = self.memory_admission_gate.admit_generation(
+            entry["generation_id"], candidate, parent,
+            {f"memory-{key}": execution.verifier}, self.generation_campaign_runner(state["run_id"]),
+        )
+        if result.status not in {"active", "rejected"}:
+            self.memory_store = RSIMemoryStore(parent)
+            state.update(memory_snapshot=parent.to_dict(), phase="generation_pending")
+            self._save_flow(record, state)
+            raise RSILearningError("rsi_generation_reconcile_required")
+        self.memory_store = RSIMemoryStore(result.effective_snapshot)
+        entry["status"] = result.status
+        entry["admission_checkpoint_sha256"] = self.memory_admission_gate.inspect(entry["generation_id"])[0]
+        state.update(memory_snapshot=self.snapshot.to_dict(), phase="committed")
         self._save_flow(record, state)
 
     @staticmethod
@@ -2035,6 +2285,8 @@ class RSILearningController:
         self._validate_resume_identity(record, observed_fingerprints, budget_policy)
         if record.state in {"completed", "failed", "cancelled", "budget_exhausted"}:
             checkpoint = self.ledger.controller_checkpoint(run_id)
+            if checkpoint and checkpoint[1].get("schema_version") == "2":
+                self._check_budget_history(record)
             terminal_executions = checkpoint[1].get("executions", {}).values() if checkpoint else ()
             if not terminal_executions:
                 terminal_executions = (
@@ -2209,12 +2461,58 @@ class RSILearningController:
             budget=budget, practice_charter=charter,
         )
 
-    def _check_memory_admission(self, request: SolverRequest) -> None:
+    def _check_memory_admission(self, request: SolverRequest, *, parent_run_id: str | None = None) -> None:
         if self.memory_admission_gate is None:
             return
         snapshot = self.snapshot
         if request.memory_snapshot_sha256 != snapshot.digest():
             raise RSILearningError("rsi_memory_snapshot_gate_request_drift")
+        if parent_run_id is not None and self.ledger is not None:
+            parent = self.ledger.get_run(parent_run_id)
+            if parent is None:
+                raise RSILearningError("rsi_parent_budget_missing")
+            self._validate_resume_identity(parent, None, None)
+        if self.generation_revalidate_before_dispatch and snapshot.items:
+            if parent_run_id is None or self.ledger is None:
+                raise RSILearningError("rsi_generation_controller_config_invalid")
+            gate = self.memory_admission_gate
+            generation_id = gate._snapshot_generation(snapshot)
+            checkpoint = gate.inspect(generation_id)
+            if checkpoint is None:
+                raise RSILearningError("rsi_generation_controller_admission_drift")
+            validation_id = "dispatch:" + request.digest()
+            state = checkpoint[1]
+            known = state["validations"].get(validation_id)
+            if state["phase"] == "quarantined":
+                raise RSILearningError("rsi_generation_revalidation_rejected")
+            if state["phase"] == "revalidating" and (
+                state["pending_validation"] != validation_id or known is None
+                or known["status"] == "started"
+                or not self.ledger.controller_lock_held(parent_run_id)
+            ):
+                raise RSILearningError("rsi_generation_revalidation_reconcile_required")
+            if known is not None and known["status"] == "completed" and state["phase"] == "active":
+                # BRS dispatch workers cannot acquire the parent lock held by their controller.
+                # Completed validation replay is read-only and checks live configuration again.
+                from .rsi_generation_campaign import GenerationCampaignRunner
+
+                config = self._generation_campaign_config_readonly(parent_run_id)
+                if (known["runner_fingerprint"] != component_fingerprint(GenerationCampaignRunner, config=config)
+                        or known["runner_parent"] != config["parent"] or known["runner_manifest"] != config["manifest"]):
+                    raise RSILearningError("rsi_generation_controller_admission_drift")
+                report = gate.deserialize_report(known["report"])
+                if not report.promotion_eligible:
+                    raise RSILearningError("rsi_generation_revalidation_rejected")
+            else:
+                result = gate.revalidate_generation(
+                    generation_id, validation_id, self.generation_campaign_runner(parent_run_id),
+                )
+                if result.status in {"rejected", "quarantined"}:
+                    raise RSILearningError("rsi_generation_revalidation_rejected")
+                if result.status != "active":
+                    raise RSILearningError("rsi_generation_revalidation_reconcile_required")
+                if result.effective_snapshot != snapshot:
+                    raise RSILearningError("rsi_generation_controller_admission_drift")
         self.memory_admission_gate.validate(snapshot)
 
     def _practice(self, *, run_id: str, target: PracticeEpisode, decision: CurriculumDecision, wave: int, ordinal: int) -> EpisodeExecution:
@@ -2226,20 +2524,12 @@ class RSILearningController:
         request = self._request(episode, charter={**decision.to_dict(), "decision_sha256": decision.digest()})
         return PracticeEpisodeRunner(
             self.gateway, self.verifier, self.ledger, self.usage_ledger,
-            before_run=lambda: self._check_memory_admission(request),
+            before_run=lambda: self._check_memory_admission(request, parent_run_id=episode.run_id),
         ).run(episode, request)
 
-    def _commit(
-        self,
-        execution: EpisodeExecution,
-        decision: CurriculumDecision,
-        *,
-        expected_episode_snapshot_sha256: str | None = None,
-        source_snapshot_sha256: str | None = None,
-    ) -> MemorySnapshot:
-        if not execution.passed:
-            return self.snapshot
-        memory = MemoryItem(
+    @staticmethod
+    def _memory_item(execution: EpisodeExecution, decision: CurriculumDecision) -> MemoryItem:
+        return MemoryItem(
             memory_id=f"memory-{execution.episode.episode_id}",
             problem_family=decision.practice_family,
             trigger=decision.capability_gap,
@@ -2256,6 +2546,18 @@ class RSILearningController:
             receipt_sha256=execution.verifier.receipt_sha256,
             episode_id=execution.episode.episode_id,
         )
+
+    def _commit(
+        self,
+        execution: EpisodeExecution,
+        decision: CurriculumDecision,
+        *,
+        expected_episode_snapshot_sha256: str | None = None,
+        source_snapshot_sha256: str | None = None,
+    ) -> MemorySnapshot:
+        if not execution.passed:
+            return self.snapshot
+        memory = self._memory_item(execution, decision)
         if self.ledger is not None:
             existing = self.ledger.get(f"memory:snapshot-{memory.memory_id}")
             if existing is not None:
