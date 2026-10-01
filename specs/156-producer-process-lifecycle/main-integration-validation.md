@@ -19,6 +19,8 @@ merge it; the PR stays a draft until the supported Ubuntu/Python matrix passes.
   reporting, fixing the observed Python 3.11/3.12 JUnit crash.
 - PR CI cancels superseded runs. The same current, archived and frozen regression phases and
   Python 3.11/3.12/3.13 matrix remain required.
+- The source distribution explicitly retains the native target fixture helper imported by its
+  included tests; setuptools' default `test*.py` selection otherwise omits underscore helpers.
 
 ## Local evidence and limits
 
