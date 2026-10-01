@@ -1,5 +1,34 @@
 # Main integration — 2026-10-01
 
+## Latest immutable local run and Ubuntu result
+
+At `36899fe`, an independent immutable-source current-tree run completed with exit 0:
+9,230 unique cases, 9,215 passed, 15 expected Darwin/filesystem skips, no failures or errors,
+924.505 seconds. Report: `/tmp/lunar-current-clean-head-36899fe-20261001.xml`.
+The matching wheel verifies all 170 runtime files; the sdist verifies 504 source/test files.
+Installed mock DRS/BRS, inspect and exact terminal replay preserve the complete ledger history.
+Evidence: `/tmp/lunar-package-verification-36899fe-20261001.json` and
+`/tmp/lunar-installed-wheel-36899fe-20261001-validation.json`.
+
+Ubuntu run `36855386837` passed the complete Python 3.12 and 3.13 jobs, but Python 3.11
+retained one current-test failure in
+`test_native_campaign_audits_all_candidates_and_is_read_only`. Preparation succeeded;
+the read-only audit returned failed. Full public annotations are retained at
+`/tmp/lunar-linux-ci-36899fe-annotations-20261001.json`. The failed run is not merge-ready.
+The campaign fixture lacks the formal runner's pre-audit SQLite quiescence gate and opens
+additional WAL connections before inventory. A controlled Python 3.11 interleaving now
+reproduces source WAL/SHM deletion and changed DB bytes during audit: candidate2/holdout8
+remain successful, but status is failed with `audit_inventory_changed`. The fixture now
+uses the formal quiescence gate, with positive/negative forced-GC regressions. The
+abbreviated original CI report does not establish every original field; this controlled
+reproduction is retained separately from the original trace.
+The early native CI focus now includes this campaign audit suite. Original inventory,
+verification and no-execution assertions remain required.
+The complete seven-case campaign audit file passes managed Python 3.11, 3.12 and 3.13; reports
+are `/tmp/lunar-campaign-quiesce-py311-20261001.xml` and the matching `py312`/`py313` reports.
+No production auditor, budget or ownership gate changed. A complete supported Ubuntu
+matrix on the resulting new head is still the merge gate.
+
 The integration target is `main`, not `master`. The original feature head `f40679d` is 81
 commits ahead of `d88e098`, with no commits behind and no merge conflicts. The reviewable change
 is [PR #1](https://github.com/vchive/Lunar-Evolution/pull/1). Pushing the feature branch does not

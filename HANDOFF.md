@@ -1,5 +1,30 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-01 Final-head local validation and remaining Ubuntu audit failure
+
+`36899fe` 的完整、固定源码本地 current 回归已独立通过：9,230 unique cases，
+9,215 passed / 15 Darwin/filesystem skips / 0 failed/errors，exit 0，924.505 秒。
+JUnit `/tmp/lunar-current-clean-head-36899fe-20261001.xml`；不是初跑与 focused 的拼接。
+同 head wheel 的170运行时文件和 sdist 的504源码/测试文件逐字节匹配；隔离安装后的
+mock DRS/BRS、inspect 和不新增账本的终态重放均通过。证据
+`/tmp/lunar-package-verification-36899fe-20261001.json`、
+`/tmp/lunar-installed-wheel-36899fe-20261001-validation.json`。
+
+Ubuntu run `36855386837` 在 Python 3.12/3.13 完整成功；3.11 current 唯一失败为
+`test_native_campaign_audits_all_candidates_and_is_read_only`，报告 preparation_success=1/1，
+status=failed。原失败必须保留，PR #1 仍为 draft，尚未合入 main。完整 annotations 在
+`/tmp/lunar-linux-ci-36899fe-annotations-20261001.json`。
+正式 acceptance runner 已在审计前 `_quiesce_native_database`，而 fixture 缺少这个步骤且
+在 before inventory 前又通过 Store.list_events 重新开启 WAL。受控 Python 3.11 GC
+交错已复现：原库 WAL/SHM 删除、DB 字节变化，candidate2/holdout8 均通过但审计以
+audit_inventory_changed 拒绝；fixture 已复用正式 quiesce gate，并增加正反交错回归。
+原 CI 的省略报告不足以重建全部原字段；不能把受控复现改称原调用的完整 trace。
+CI 的早期 native focus 现在包括 campaign audit，用于提前暴露该边界。
+该 fixture 完整7项在 managed Python 3.11/3.12/3.13 均通过，强制GC正例仍要求全文件字节
+不变；反例必须保留 inventory_changed。生产 auditor 未改，未知/身份/预算 gate 未放宽。
+报告 `/tmp/lunar-campaign-quiesce-py311-20261001.xml` 与 `py312`/`py313` 同名报告。
+最后仍需本修复 head 的完整 Ubuntu 三版 CI，不能用 parent head 的两版绿灯代替。
+
 ## 2026-10-01 Ubuntu cancellation cleanup correction
 
 PR #1 的 `0c5cc3a` Ubuntu run `36846543906` 实际出现 7 项取消/超时清理失败；3.13

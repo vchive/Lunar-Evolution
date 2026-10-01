@@ -1,10 +1,11 @@
 """Fresh offline campaign audit: real native preparation, execution, scoring and delivery."""
 from __future__ import annotations
 
+import gc
 import importlib.util
 import json
 import subprocess
-from contextlib import redirect_stdout
+from contextlib import closing, contextmanager, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
@@ -12,6 +13,7 @@ import pytest
 from test_acceptance_runtime_binding import _SOURCE, _contract, _registration
 
 from lunar_evolution import cli
+from lunar_evolution.acceptance_native_runner import _quiesce_native_database
 from lunar_evolution.acceptance_observation_binding import publish_acceptance_observation_binding
 from lunar_evolution.acceptance_registration import build_acceptance_registration
 from lunar_evolution.acceptance_runtime_binding import prepare_acceptance_runtime_binding
@@ -19,7 +21,7 @@ from lunar_evolution.runtime import MockRuntime, RuntimeResult
 from lunar_evolution.store import Store
 
 
-def native_campaign(tmp_path, monkeypatch, *, fail_generation=False):
+def native_campaign(tmp_path, monkeypatch, *, fail_generation=False, quiesce_database=True):
     spec = importlib.util.spec_from_file_location(
         "audit_case", Path(__file__).resolve().parents[1]
         / "specs/142-automatic-solve-lifecycle/measurement/case.py",
@@ -104,26 +106,78 @@ def native_campaign(tmp_path, monkeypatch, *, fail_generation=False):
     # `solve` reports a completed run with a failed evolution as an execution
     # failure (exit 1); argument and admission errors remain exit 2.
     assert code == (1 if fail_generation else 0)
-    return registration, campaign, campaign / "native-home/state.db", observed["parent_run_id"]
+    database = campaign / "native-home/state.db"
+    if quiesce_database:
+        # Match the registered native runner's seal boundary before taking any inventory.
+        _quiesce_native_database(database)
+    return registration, campaign, database, observed["parent_run_id"]
 
 
 def test_native_campaign_audits_all_candidates_and_is_read_only(tmp_path, monkeypatch):
-    from lunar_evolution.acceptance_campaign_audit import audit_native_campaign
+    from lunar_evolution import acceptance_campaign_audit as audit
 
     registration, campaign, database, parent_id = native_campaign(tmp_path, monkeypatch)
     store = Store(database)
     child = next(e["payload"]["evolution_run_id"] for e in store.list_events(parent_id)
                  if e["type"] == "evolution_linked")
     assert len([e for e in store.list_events(child) if e["type"] == "agent_candidate_generation"]) == 2
+    # The source Store reads reopen WAL mode, so finish them before sealing the inventory.
+    _quiesce_native_database(database)
     before = {p.relative_to(campaign): p.read_bytes() for p in campaign.rglob("*") if p.is_file()}
+    original_snapshot = audit.audit_snapshot
+
+    @contextmanager
+    def collect_after_inventory(source):
+        gc.collect()
+        with original_snapshot(source) as snapshot:
+            yield snapshot
+
+    monkeypatch.setattr(audit, "audit_snapshot", collect_after_inventory)
     monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: pytest.fail("audit executed a process"))
-    report = audit_native_campaign(registration, campaign_root=campaign, database=database, parent_run_id=parent_id)
-    assert report["status"] == "verified", report
+    report = audit.audit_native_campaign(registration, campaign_root=campaign, database=database, parent_run_id=parent_id)
+    assert report["status"] == "verified", json.dumps(report, sort_keys=True)
     assert report["preparation_success"] == report["primary_success"] == report["joint_success"] == "1/1"
     assert report["candidate_counts"] == {"observed": 2, "parser_complete": 2, "executed": 2, "scored": 2}
     assert report["holdout_counts"] == {"passed": 8, "failed": 0, "unknown": 0, "missing": 0}
     assert report["provider_called_during_audit"] is False
     assert before == {p.relative_to(campaign): p.read_bytes() for p in campaign.rglob("*") if p.is_file()}
+
+
+def test_unquiesced_campaign_fails_closed_when_source_connections_are_collected(tmp_path, monkeypatch):
+    from lunar_evolution import acceptance_campaign_audit as audit
+
+    automatic_gc = gc.isenabled()
+    gc.disable()
+    try:
+        registration, campaign, database, parent_id = native_campaign(
+            tmp_path, monkeypatch, quiesce_database=False,
+        )
+        wal = database.with_name(database.name + "-wal")
+        shm = database.with_name(database.name + "-shm")
+        assert wal.is_file() and shm.is_file()
+        database_before = database.read_bytes()
+        original_snapshot = audit.audit_snapshot
+
+        @contextmanager
+        def collect_after_inventory(source):
+            gc.collect()
+            with original_snapshot(source) as snapshot:
+                yield snapshot
+
+        monkeypatch.setattr(audit, "audit_snapshot", collect_after_inventory)
+        monkeypatch.setattr(subprocess, "Popen", lambda *_a, **_k: pytest.fail("audit executed a process"))
+        report = audit.audit_native_campaign(
+            registration, campaign_root=campaign, database=database, parent_run_id=parent_id,
+        )
+        assert report["status"] == "failed", json.dumps(report, sort_keys=True)
+        assert report["reason"] == "audit_inventory_changed"
+        assert report["mutated_during_audit"] is True
+        assert report["primary_success"] == "1/1"
+        assert not wal.exists() and not shm.exists()
+        assert database.read_bytes() != database_before
+    finally:
+        if automatic_gc:
+            gc.enable()
 
 
 def test_bad_retained_probe_cannot_inherit_native_success(tmp_path, monkeypatch):
@@ -150,8 +204,9 @@ def test_missing_preparation_does_not_count_unrun_holdouts_as_failed(tmp_path, m
     from lunar_evolution.acceptance_campaign_audit import audit_native_campaign
 
     registration, campaign, database, parent_id = native_campaign(tmp_path, monkeypatch)
-    with Store(database)._connect() as connection:
+    with closing(Store(database)._connect()) as connection, connection:
         connection.execute("DELETE FROM events WHERE run_id = ? AND type = 'bundle_profile_prepared'", (parent_id,))
+    _quiesce_native_database(database)
     report = audit_native_campaign(registration, campaign_root=campaign, database=database, parent_run_id=parent_id)
     assert report["status"] == "failed"
     assert report["preparation_success"] == "0/1"
