@@ -29,6 +29,11 @@ E2E 13 与该负例 1 均 passed，没有生产行为放宽或新增等待预算
 170 文件逐字节匹配，安装后 mock DRS/BRS、inspect 与不重复落盘的 terminal replay 均通过，
 证据 `/tmp/lunar-installed-wheel-cleanup-20261001-validation.json`；仍需新 head Ubuntu 完整矩阵。
 
+`aa66d89` 的 early Linux cleanup 在 3.11/3.12 通过；3.13 只出现时间断言的浮点减法
+精度失败（133.55416034799998 - 125.554160348 ≠ 整数 8）。现在精确验证原 deadline 加法
+构造，不使用宽松容差或改变预算；负例同步也等待 marker 完整字节以固定目标写入与取消
+顺序。最终 attempt/E2E focused 51 passed / 0 skip，Ruff、compileall、diff check 通过。
+
 ## 2026-10-01 Main integration and cross-platform corrections
 
 已创建并关联 [PR #1](https://github.com/vchive/Lunar-Evolution/pull/1)，base 为实际主分支

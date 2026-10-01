@@ -181,7 +181,7 @@ def test_native_attempt_registers_before_release_but_remains_unpublishable(tmp_p
     assert deadline_record["intent_sha256"] == intent.intent_sha256
     assert deadline_record["attestation_sha256"] == attestation.attestation_sha256
     assert terminal["deadline_sha256"] == deadline_record["deadline_sha256"]
-    assert deadline_record["deadline_monotonic"] - deadline_record["started_monotonic"] == intent.wall_timeout_seconds
+    assert deadline_record["deadline_monotonic"] == deadline_record["started_monotonic"] + intent.wall_timeout_seconds
     assert recover_native_trusted_attempt(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
     ) == terminal
@@ -1017,7 +1017,7 @@ def test_cancellation_before_host_accepts_start_frame_cannot_claim_known_termina
         if reads == 2:
             # The target really runs, but cancellation wins before the host consumes its
             # start frame. A target-written file does not replace verified handshake evidence.
-            while not marker.exists():
+            while not marker.exists() or marker.read_bytes() != b"started":
                 assert monotonic() < deadline
                 time.sleep(0.005)
         return read_frame(fd, deadline, monotonic, cancelled)

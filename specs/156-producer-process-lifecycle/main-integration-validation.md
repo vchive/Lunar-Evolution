@@ -116,3 +116,11 @@ The wheel rebuilt after the cleanup corrections matches all 170 runtime source/r
 and its sdist retains the native fixture helper. Its isolated installed CLI completed mock DRS
 and BRS, inspect and exact terminal replay without additional ledger writes. Final wheel CLI
 evidence: `/tmp/lunar-installed-wheel-cleanup-20261001-validation.json`.
+
+At `aa66d89`, the Linux cleanup focus passed on Python 3.11/3.12. Python 3.13 only failed an
+exact floating-point subtraction assertion: `133.55416034799998 - 125.554160348` is not exactly
+the integer 8. The assertion now checks the original exact deadline construction
+`deadline == started + intent_budget`, without tolerance or a production budget change. The
+negative marker interleaving also waits for its complete bytes before cancelling. Final local
+native attempt/E2E focus: 51 passed, no skips, report
+`/tmp/lunar-native-handshake-final-20261001.xml`. A fresh complete supported matrix remains required.
