@@ -8,9 +8,11 @@ All validation in this iteration is local and provider-free.
 
 - **P0**: final-head Ubuntu Python 3.11/3.12/3.13 full current/archived/frozen CI;
   independently trusted completion for an uncertain external execution, exact worker ownership,
-  complete native containment/egress and controller-independent deadline enforcement. The local
+  complete native containment/egress and post-bootstrap descendant deadline supervision. The local
   native lifeline stops active targets in its original group after controller death, but missing
   durable terminal acknowledgement remains unknown. It is not successful reconciliation.
+  The native original-deadline guard now also stops contained work while bootstrap lives when
+  the controller is suspended with its lifeline still open; it does not outlive bootstrap.
 - **P1**: compose the bound native request into a real RSI solver gateway with the original
   episode claim, independent verifier/result mapping and explicit cancellation channel. New
   create-only complete request/frozen-memory inputs now reach an actual local C target before

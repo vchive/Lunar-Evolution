@@ -296,8 +296,9 @@ def native_bootstrap_command(
     gate_fd: int,
     frame_fd: int,
     controller_lifeline_fd: int | None = None,
+    deadline_monotonic_ns: int | None = None,
 ) -> tuple[str, ...]:
-    """Build a guarded command; omitting the lifeline is for direct fixtures only."""
+    """Build a guarded command; omitted lifeline/deadline are direct fixture interfaces."""
     executable = artifact.path if isinstance(artifact, NativeBootstrapArtifact) else Path(artifact)
     descriptors = (control_fd, gate_fd, frame_fd)
     if controller_lifeline_fd is not None:
@@ -306,9 +307,16 @@ def native_bootstrap_command(
         _fail("native_bootstrap_fd_invalid")
     if controller_lifeline_fd is not None and controller_lifeline_fd in descriptors[:3]:
         _fail("native_bootstrap_fd_invalid")
+    if deadline_monotonic_ns is not None and (
+        controller_lifeline_fd is None or type(deadline_monotonic_ns) is not int
+        or deadline_monotonic_ns <= 0 or deadline_monotonic_ns > 0xFFFFFFFFFFFFFFFF
+    ):
+        _fail("native_bootstrap_deadline_invalid")
     command = (str(executable), "--control-fd", str(control_fd), "--gate-fd", str(gate_fd), "--frame-fd", str(frame_fd))
     if controller_lifeline_fd is not None:
         command += ("--controller-lifeline-fd", str(controller_lifeline_fd))
+    if deadline_monotonic_ns is not None:
+        command += ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
     return command
 
 

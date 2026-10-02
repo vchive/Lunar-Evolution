@@ -1,5 +1,12 @@
 # Tasks
 
+The 2026-10-02 original-deadline guard maps the frozen intent/parent/RSI budget once before
+preflight into an absolute native clock bound, shared by bootstrap and broker. Formal attempts
+always configure the guard; it stops contained work even with a suspended controller and an open
+lifeline. See Feature 157 `native-deadline-guard.md`. It covers only bootstrap lifetime; direct
+target completion still retires supervision. Post-bootstrap descendants, malicious containment,
+cross-boot reconciliation and external project ownership keep T156-05/06/09 overall open.
+
 Latest local integration evidence: `local-native-scheduler-validation.md` exercises the actual
 native bootstrap/isolated target/host broker/formal receipt/strict output/candidate evaluator/
 publication/recovery chain. It also covers active candidate/evaluator cancellation, retained parent

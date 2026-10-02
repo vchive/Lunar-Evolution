@@ -353,10 +353,14 @@ Linux 含只读输入的 profile 也拒绝 chmod/fchmod/fchmodat/fchmodat2；wor
 
 正式 native bootstrap 现在持有 controller lifeline：单独杀死 controller 会停止原进程组
 内的 target。缺少终态确认仍保留 unknown；该机制不提供恢复进程额外的 signal 权限。
+正式 attempt 还将原 intent/parent/RSI deadline 一次映射给 bootstrap 和 broker；控制器
+暂停而管道仍打开时，bootstrap 也会在原到期时间停止自己的组。直接 target 退出后
+guardian 会随 bootstrap 结束，遗留 descendants 的持续监督仍需后续清理协议。
 这些 API 只完成启动前输入交付，不生成 `SolverResult`，不证明记忆改善效果，也未接通
 controller cancellation 或 unknown-to-success 对账。完整契约见
 [`native-launch-inputs.md`](../specs/160-rsi-learning-mode/native-launch-inputs.md) 和
-[`native-controller-lifeline.md`](../specs/157-producer-request-evidence/native-controller-lifeline.md)。
+[`native-controller-lifeline.md`](../specs/157-producer-request-evidence/native-controller-lifeline.md) 和
+[`native-deadline-guard.md`](../specs/157-producer-request-evidence/native-deadline-guard.md)。
 
 ## 5. P2：显式 memory 翻译与重复评测置信策略
 

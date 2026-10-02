@@ -40,11 +40,13 @@ or successful receipts, never publishes a candidate and never retries an executi
 zombie orphan observations do not prove recovery caller reaping or remote operation cancellation.
 
 This slice stops targets contained in the original native group. Complete malicious producer
-namespace/signal escape protection, controller-independent original-deadline enforcement, machine
-restart and independently trusted successful reconciliation remain separate acceptance work.
+namespace/signal escape protection, machine restart and independently trusted successful
+reconciliation remain separate acceptance work. `native-deadline-guard.md` extends this slice
+with an independent original-deadline timer while bootstrap remains alive; formal attempts now
+always pass that absolute native clock bound along with the lifeline.
 The guardian is retired when the direct target completes and the bootstrap emits its terminal;
 it does not supervise descendants after bootstrap exit. Live owner-checked cleanup retains its
-existing conservative authority. The guardian thread only performs a pipe read; this slice does
+existing conservative authority. The guardian thread polls the pipe and deadline; this slice does
 not claim general POSIX async-safe behavior for every platform sandbox library called after fork.
 
 ## Validation

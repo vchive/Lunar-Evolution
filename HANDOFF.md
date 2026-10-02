@@ -1,5 +1,38 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-02 Main merged; native original-deadline guard
+
+PR #2 已合入 `main`，merge commit 为 `9e71d40944b3f083f6ae2f8ebec5f941194b0634`。
+该最终 head 的 Ubuntu Python 3.11/3.12/3.13 完整 CI 全部成功（run `36976747523`），
+本地完整发布回归为 **11,777 passed、17 skipped、0 failures/errors**。下方 PR #2
+pre-merge/未合入描述是历史记录。
+
+本轮从实际 `origin/main` 开启 `codex/native-deadline-guard`，延续 Feature 156/157。
+正式 attempt 在 preflight/attestation 前，将已冻结 intent/parent/RSI deadline 一次保守映射
+为 native absolute nanoseconds；bootstrap 和 broker 共用，不在 gate/接收/retry 时续预算。
+Darwin 用 `mach_absolute_time` 整数 timebase，Linux 用 `CLOCK_MONOTONIC`。guardian 在
+control read 前启动，管道异常/EOF 或到期时仅停止自己原 session/group；child 在 exec
+前重查。控制器暂停但 writer 仍打开也不能延长运行。旧 runtime 拒绝新 formal argv；
+不传 deadline 的旧接口仅供直接 fixture。缺少 durable terminal 仍是 unknown，只读恢复
+不执行、不发信号、不改字节/inode，也不合成成功或取消回执。
+
+联合 focused 回归 **252 项：243 passed、9 平台 skip、0 failures/errors**，JUnit
+`/private/tmp/lunar-native-deadline-combined-20261002.xml`；新增 deadline 模块27项全部通过。
+Ruff `src tests tools`、compileall 和 diff check 通过。完整发布回归和新 head 三版 CI
+须独立完成后再合入；当前 focused 不能代替它们。
+
+该监督仍只覆盖 bootstrap 存活期。direct target 退出后的 descendants 需独立退出/清理
+握手；bootstrap 自身被暂停、恶意 signal/session/namespace、完整 egress、cross-boot
+reconcile、外部项目 ownership/真实 campaign 仍开放。T156-05/06/09 和 T160-35 不整体关闭。
+并行 P1 审查确认下一切片为 scheduler-backed receipt provider + 同次输入/launch/plan/
+candidate/evaluation/publication provenance sidecar；每 episode 必须使用独立预绑定
+intent/attestation/journal，不能将旧 `not_bound` retained evidence 追认为 RSI 请求成果。
+controller 还需显式交付 approved memory 和稳定 gateway fingerprint，不能直接把双参数
+facade 塞入现有单参数 `PracticeEpisodeRunner`。
+
+本轮仅运行本地 C/bootstrap/fixture/loopback，不运行 WebAgent、远程 evaluator、公司平台、
+真实模型或 OpenEvolve/Shinka campaign，也不读取或修改 `.env`/密钥。
+
 ## 2026-10-02 PR #2 gateway facade and pre-merge fixes
 
 当前工作分支为 `codex/rsi-native-worker-recovery`。PR #2 已按用户“直至合入 main”的明确

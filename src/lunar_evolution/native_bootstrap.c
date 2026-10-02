@@ -20,8 +20,14 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #include "native_producer_isolation.h"
+
+#if defined(__APPLE__)
+#include <mach/mach_time.h>
+static mach_timebase_info_data_t native_timebase;
+#endif
 
 #if !defined(__APPLE__) && !defined(__linux__)
 #error "native trusted bootstrap supports Darwin and Linux only"
@@ -260,8 +266,48 @@ typedef struct {
     int enabled;
     int fd;
     pid_t pid;
+    uint64_t deadline_ns;
     pthread_t thread;
 } controller_guard_t;
+
+static int parse_deadline_arg(const char *arg, uint64_t *out) {
+    uint64_t value = 0;
+    if (!arg[0]) return -1;
+    for (const char *p = arg; *p; p++) {
+        if (*p < '0' || *p > '9') return -1;
+        uint64_t digit = (uint64_t)(*p - '0');
+        if (value > (UINT64_MAX - digit) / 10) return -1;
+        value = value * 10 + digit;
+    }
+    if (!value) return -1;
+    *out = value;
+    return 0;
+}
+
+static int native_monotonic_ns(uint64_t *out) {
+#if defined(__APPLE__)
+    /* Python monotonic_ns uses this clock, not Darwin CLOCK_MONOTONIC. The
+       timebase is initialized before creating any thread or forking a target. */
+    if (!native_timebase.denom) return -1;
+    __uint128_t scaled = (__uint128_t)mach_absolute_time() * native_timebase.numer;
+    scaled /= native_timebase.denom;
+    if (scaled > UINT64_MAX) return -1;
+    *out = (uint64_t)scaled;
+#else
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0 || now.tv_sec < 0 ||
+        now.tv_nsec < 0 || now.tv_nsec >= 1000000000 ||
+        (uint64_t)now.tv_sec > (UINT64_MAX - (uint64_t)now.tv_nsec) / 1000000000) return -1;
+    *out = (uint64_t)now.tv_sec * 1000000000 + (uint64_t)now.tv_nsec;
+#endif
+    return 0;
+}
+
+static int guard_deadline_expired(const controller_guard_t *guard) {
+    uint64_t now;
+    return guard->deadline_ns &&
+        (native_monotonic_ns(&now) != 0 || now >= guard->deadline_ns);
+}
 
 static void stop_own_guarded_group(const controller_guard_t *guard) {
     /* Select only this still-private kernel group, never a persisted/recovered PID. */
@@ -274,15 +320,27 @@ static void stop_own_guarded_group(const controller_guard_t *guard) {
 
 static void *watch_controller(void *value) {
     controller_guard_t *guard = (controller_guard_t *)value;
-    unsigned char token;
-    ssize_t observed;
-    do { observed = read(guard->fd, &token, 1); } while (observed < 0 && errno == EINTR);
-    /* The owner never sends data. EOF, an unexpected byte, or a read error stops work. */
-    stop_own_guarded_group(guard);
+    for (;;) {
+        int timeout_ms = -1;
+        if (guard->deadline_ns) {
+            uint64_t now;
+            if (native_monotonic_ns(&now) != 0 || now >= guard->deadline_ns)
+                stop_own_guarded_group(guard);
+            uint64_t remaining = guard->deadline_ns - now;
+            /* Round only the poll wait, never the deadline. Recheck after every
+               wakeup/EINTR; no reception-time or retry-time timeout is allocated. */
+            timeout_ms = remaining >= 100000000 ? 100 : (int)((remaining + 999999) / 1000000);
+        }
+        struct pollfd owner_pipe = {guard->fd, POLLIN, 0};
+        int observed = poll(&owner_pipe, 1, timeout_ms);
+        if (observed < 0 && errno == EINTR) continue;
+        /* The owner never sends data. EOF, unexpected bytes and errors stop work. */
+        if (observed != 0) stop_own_guarded_group(guard);
+    }
     return NULL;
 }
 
-static int start_controller_guard(controller_guard_t *guard, int fd) {
+static int start_controller_guard(controller_guard_t *guard, int fd, uint64_t deadline_ns) {
     struct stat info;
     int flags = fcntl(fd, F_GETFL);
     pid_t pid = getpid();
@@ -293,7 +351,12 @@ static int start_controller_guard(controller_guard_t *guard, int fd) {
     memset(&ignored, 0, sizeof(ignored));
     ignored.sa_handler = SIG_IGN;
     if (sigemptyset(&ignored.sa_mask) != 0 || sigaction(SIGPIPE, &ignored, NULL) != 0) return -1;
-    guard->enabled = 1; guard->fd = fd; guard->pid = pid;
+#if defined(__APPLE__)
+    if (deadline_ns && (mach_timebase_info(&native_timebase) != KERN_SUCCESS ||
+        !native_timebase.numer || !native_timebase.denom)) return -1;
+#endif
+    guard->enabled = 1; guard->fd = fd; guard->pid = pid; guard->deadline_ns = deadline_ns;
+    if (guard_deadline_expired(guard)) stop_own_guarded_group(guard);
     if (pthread_create(&guard->thread, NULL, watch_controller, guard) != 0) return -1;
     return 0;
 }
@@ -309,15 +372,18 @@ static int finish_controller_guard(controller_guard_t *guard) {
 }
 
 int main(int argc, char **argv) {
-    if ((argc != 7 && argc != 9) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
+    if ((argc != 7 && argc != 9 && argc != 11) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
     int control_fd, gate_fd, frame_fd;
     if (parse_fd_arg(argv[2], &control_fd) || parse_fd_arg(argv[4], &gate_fd) || parse_fd_arg(argv[6], &frame_fd)) return 64;
     controller_guard_t guard; memset(&guard, 0, sizeof(guard)); guard.fd = -1;
-    if (argc == 9) {
+    if (argc >= 9) {
         int lifeline_fd;
+        uint64_t deadline_ns = 0;
+        if (argc == 11 && (strcmp(argv[9], "--deadline-monotonic-ns") != 0 ||
+            parse_deadline_arg(argv[10], &deadline_ns) != 0)) return 64;
         if (strcmp(argv[7], "--controller-lifeline-fd") != 0 || parse_fd_arg(argv[8], &lifeline_fd) != 0 ||
             lifeline_fd == control_fd || lifeline_fd == gate_fd || lifeline_fd == frame_fd ||
-            start_controller_guard(&guard, lifeline_fd) != 0) return 64;
+            start_controller_guard(&guard, lifeline_fd, deadline_ns) != 0) return 64;
     }
     unsigned char *raw = (unsigned char *)calloc(MAX_CONTROL + 1, 1); if (!raw) return 65;
     size_t used = 0; ssize_t n;
@@ -350,7 +416,7 @@ int main(int argc, char **argv) {
             /* Cover controller EOF racing fork after the guardian's group signal.
                A just-created child must not exec after missing that signal. */
             struct pollfd owner_pipe = {guard.fd, POLLIN, 0};
-            if (poll(&owner_pipe, 1, 0) != 0) _exit(73);
+            if (guard_deadline_expired(&guard) || poll(&owner_pipe, 1, 0) != 0) _exit(73);
             close(guard.fd);
             struct sigaction restored;
             memset(&restored, 0, sizeof(restored)); restored.sa_handler = SIG_DFL;

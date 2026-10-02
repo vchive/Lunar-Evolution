@@ -438,6 +438,30 @@ def _remaining(
     return remaining
 
 
+def _native_guard_deadline(
+    deadline: float,
+    monotonic: Callable[[], float],
+    cancelled: Callable[[], bool] | None,
+) -> int:
+    """Map the frozen budget once, sampling native time before the caller clock.
+
+    Sampling in this order is conservative even if a trusted harness clock has a
+    different epoch or is slow to return. Setup consumes this absolute native budget;
+    bootstrap reception and the broker must never reissue the remaining duration.
+    """
+    native_sample = time.monotonic_ns()
+    remaining = _remaining(deadline, monotonic, cancelled)
+    if type(native_sample) is not int or native_sample < 0 or not math.isfinite(remaining):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    remaining_ns = remaining * 1_000_000_000
+    if not math.isfinite(remaining_ns):
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    native_deadline = native_sample + int(remaining_ns)
+    if not 0 < native_deadline <= 0xFFFFFFFFFFFFFFFF:
+        raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
+    return native_deadline
+
+
 def _compose_parent_deadline(
     intent: ProducerLaunchIntent,
     monotonic: Callable[[], float],
@@ -579,6 +603,7 @@ def run_native_trusted_attempt(
             raise NativeTrustedAttemptError("native_trusted_attempt_clock_invalid")
         deadline = min(deadline, float(sampled_monotonic) + (inputs.deadline_unix - sampled_unix))
     _remaining(deadline, monotonic, cancelled)
+    native_deadline_ns = _native_guard_deadline(deadline, monotonic, cancelled)
     try:
         installed = load_native_bootstrap_artifact(
             artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
@@ -675,9 +700,7 @@ def run_native_trusted_attempt(
                     broker_env["LUNAR_PRODUCER_RESPONSE_FD"] = str(response_read)
                     broker_ready = threading.Event()
                     broker_stop = threading.Event()
-                    broker_deadline_ns = time.monotonic_ns() + int(
-                        _remaining(deadline, monotonic, cancelled) * 1_000_000_000
-                    )
+                    broker_deadline_ns = native_deadline_ns
 
                     def serve() -> None:
                         try:
@@ -702,6 +725,7 @@ def run_native_trusted_attempt(
                     pair.bootstrap.executable, control_fd=control_read,
                     gate_fd=gate_read, frame_fd=frame_write,
                     controller_lifeline_fd=lifeline_read,
+                    deadline_monotonic_ns=native_deadline_ns,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 process = subprocess.Popen(
