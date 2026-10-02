@@ -646,12 +646,6 @@ from .rsi_curriculum import (
     FailureObservation,
 )
 from .rsi_durable_adapter import DurableSolverGateway, DurableSolverGatewayError
-from .rsi_native_gateway import (
-    NativeRSIExecutionConfig,
-    NativeRSIReceiptBundle,
-    NativeRSISolverGateway,
-    NativeRSISolverGatewayError,
-)
 from .rsi_fingerprint import (
     FingerprintComparison,
     FingerprintContract,
@@ -737,6 +731,12 @@ from .rsi_native_candidate import (
     NativePublicationReceipt,
     map_native_receipts_to_solver_result,
     select_native_candidate,
+)
+from .rsi_native_gateway import (
+    NativeRSIExecutionConfig,
+    NativeRSIReceiptBundle,
+    NativeRSISolverGateway,
+    NativeRSISolverGatewayError,
 )
 from .rsi_native_inputs import (
     NATIVE_RSI_INPUT_MARKER,
@@ -1006,10 +1006,6 @@ __all__ = [
     "DurableRegressionCampaign",
     "DurableSolverGateway",
     "DurableSolverGatewayError",
-    "NativeRSIExecutionConfig",
-    "NativeRSIReceiptBundle",
-    "NativeRSISolverGateway",
-    "NativeRSISolverGatewayError",
     "EffectAdapterError",
     "EffectKitError",
     "EffectPreflightError",
@@ -1078,10 +1074,14 @@ __all__ = [
     "NativeProducerBundleTransactionError",
     "NativeProducerBundleTransactionResult",
     "NativePublicationReceipt",
+    "NativeRSIExecutionConfig",
     "NativeRSIExecutionPlan",
     "NativeRSIExecutionPlanError",
     "NativeRSIInputDescriptor",
     "NativeRSIInputError",
+    "NativeRSIReceiptBundle",
+    "NativeRSISolverGateway",
+    "NativeRSISolverGatewayError",
     "NativeRetainedCandidateEvidence",
     "NativeRetainedEvidenceError",
     "NativeTrustedCleanupError",
