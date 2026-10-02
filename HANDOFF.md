@@ -1,5 +1,28 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-02 PR #2 gateway facade and pre-merge fixes
+
+当前工作分支为 `codex/rsi-native-worker-recovery`。PR #2 已按用户“直至合入 main”的明确
+授权转为 Ready for review；下方 Draft 和未授权说明是历史状态。`7ab62ed` CI 的三版测试
+阶段通过，但 Static checks 因本次新增 `__init__.py` 导出顺序失败；`2c01189` 修复后 Ubuntu
+Python 3.11/3.12/3.13 完整 CI 全部成功（run `36971547726`）。后续修改仍须以新 head 为准。
+
+新增 `NativeRSISolverGateway` facade：显式注入纯只读 `plan_factory` 和受信
+`receipt_provider`，组合 request/memory/plan 校验、native episode claim、唯一候选选择、
+receipt 映射与 durable result publication。重复调用仍重建并校验 plan，但不再次调用
+provider。合并前复查同时补齐 claim 并发窗口：竞争者的 started claim 阻止调用，竞争者
+已发布的 terminal result 只读重放；`RSILearningError` 按其现有字符串契约处理。
+
+固定代码的全部 RSI 回归 **1,179 passed、0 skipped/failures/errors**，JUnit
+`/private/tmp/lunar-pr2-rsi-final.xml`；其中 gateway/claim 并发 focus 为17项。完整 Ruff
+`src tests tools`、compileall 和 diff check 通过。新提交需重新通过三版 CI 后再合入。
+
+这不是完整 native RSI E2E：facade 尚未直接调用 `run_native_trusted_producer`，未读取并证明
+同一 plan/run/launch 的 native artifact provenance，也没有 controller、deadline/cancel
+接线。T160-35 保持开放，不能将手造 receipt fixture 描述为真实 solver/campaign 验收。
+P0 trusted lifecycle/完整 egress/外部 ownership 和 P2 官方 evaluator/真实 campaign/计费
+计量仍按原规格继续。本轮继续仅使用本地 fixture，不访问真实模型、远程 evaluator 或密钥。
+
 ## 2026-10-02 Native RSI composition seams
 
 按用户授权继续推进 PR #2，当前 head 为 `3af6f89`，仍未合入 `main`。本轮完成并推送三项

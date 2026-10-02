@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
+from threading import Barrier, Event
 
 import pytest
 
@@ -37,17 +40,8 @@ def make_request() -> SolverRequest:
     )
 
 
-def make_plan(request: SolverRequest, memory) -> NativeRSIExecutionPlan:
-    values = {"request": request, "memory": memory, "inputs": None}
-    del values  # plan construction is injected by the fixture below
-    return object()  # pragma: no cover
-
-
 def plan_factory(request: SolverRequest, memory):
-    # The gateway only needs a validated plan identity; use a small object built through the
-    # existing constructor helper in the test fixture's fake native inputs.
-    from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
-
+    # Deterministic, read-only reconstruction of the caller-owned frozen launch identities.
     zeros = {"intent_sha256": digest("intent"), "attestation_sha256": digest("attestation"),
              "bootstrap_descriptor_sha256": digest("descriptor"), "bootstrap_artifact_sha256": digest("artifact"),
              "manifest_sha256": digest("manifest"), "candidate_selector_sha256": digest("selector"),
@@ -118,3 +112,156 @@ def test_native_gateway_started_claim_is_recovery_gate(tmp_path) -> None:
     with pytest.raises(NativeRSISolverGatewayError, match="recovery_required"):
         gateway.run(request, EMPTY_MEMORY_SNAPSHOT)
     assert calls == 0
+
+
+def synchronize_unclaimed_inspection(monkeypatch, ledgers, barrier) -> None:
+    for ledger in ledgers:
+        inspect = ledger.inspect_native_episode_claim
+
+        def synchronized(request, *, plan_sha256, inspect=inspect):
+            claim = inspect(request, plan_sha256=plan_sha256)
+            assert claim is None
+            barrier.wait(timeout=10)
+            return claim
+
+        monkeypatch.setattr(ledger, "inspect_native_episode_claim", synchronized)
+
+
+def test_native_gateway_started_claim_race_runs_provider_once(tmp_path, monkeypatch) -> None:
+    request = make_request()
+    ledgers = [RSILedger(tmp_path / "ledger.sqlite") for _ in range(2)]
+    synchronize_unclaimed_inspection(monkeypatch, ledgers, Barrier(2))
+    release_provider = Event()
+    provider_started = Event()
+    provider_calls = []
+
+    def provider(req, plan):
+        provider_calls.append(req.digest())
+        provider_started.set()
+        assert release_provider.wait(timeout=10)
+        return bundle(req, plan)
+
+    gateways = [NativeRSISolverGateway(NativeRSIExecutionConfig(ledger, plan_factory, provider))
+                for ledger in ledgers]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(gateway.run, request, EMPTY_MEMORY_SNAPSHOT) for gateway in gateways]
+        try:
+            loser = next(as_completed(futures, timeout=10))
+            with pytest.raises(NativeRSISolverGatewayError, match="recovery_required"):
+                loser.result()
+            assert provider_started.wait(timeout=10)
+            assert provider_calls == [request.digest()]
+        finally:
+            release_provider.set()
+        winner = next(future for future in futures if future is not loser)
+        assert winner.result(timeout=10).status == "completed"
+    assert provider_calls == [request.digest()]
+
+
+def test_native_gateway_terminal_claim_race_replays_without_provider(tmp_path, monkeypatch) -> None:
+    request = make_request()
+    winner_ledger = RSILedger(tmp_path / "ledger.sqlite")
+    replay_ledger = RSILedger(tmp_path / "ledger.sqlite")
+    synchronize_unclaimed_inspection(monkeypatch, [winner_ledger, replay_ledger], Barrier(2))
+    winner_done = Event()
+    original_claim = replay_ledger.claim_native_episode
+
+    def delayed_claim(req, *, plan_sha256):
+        assert winner_done.wait(timeout=10)
+        return original_claim(req, plan_sha256=plan_sha256)
+
+    monkeypatch.setattr(replay_ledger, "claim_native_episode", delayed_claim)
+    provider_calls = []
+
+    def provider(req, plan):
+        provider_calls.append(req.digest())
+        return bundle(req, plan)
+
+    def unexpected_provider(*_):
+        pytest.fail("a terminal claim must replay without invoking the provider")
+
+    winner = NativeRSISolverGateway(NativeRSIExecutionConfig(winner_ledger, plan_factory, provider))
+    replay = NativeRSISolverGateway(NativeRSIExecutionConfig(replay_ledger, plan_factory, unexpected_provider))
+
+    def run_winner():
+        try:
+            return winner.run(request, EMPTY_MEMORY_SNAPSHOT)
+        finally:
+            winner_done.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        winner_future = pool.submit(run_winner)
+        replay_future = pool.submit(replay.run, request, EMPTY_MEMORY_SNAPSHOT)
+        result = winner_future.result(timeout=10)
+        assert replay_future.result(timeout=10) == result
+    assert provider_calls == [request.digest()]
+
+
+def test_native_gateway_provider_failure_preserves_claim_and_refuses_retry(tmp_path) -> None:
+    request = make_request()
+    ledger = RSILedger(tmp_path / "ledger.sqlite")
+    calls = 0
+
+    def provider(*_):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("incomplete native evidence")
+
+    gateway = NativeRSISolverGateway(NativeRSIExecutionConfig(ledger, plan_factory, provider))
+    with pytest.raises(NativeRSISolverGatewayError, match="attempt_unknown"):
+        gateway.run(request, EMPTY_MEMORY_SNAPSHOT)
+    assert ledger.episode_result(request.episode_id) is None
+    with pytest.raises(NativeRSISolverGatewayError, match="recovery_required"):
+        gateway.run(request, EMPTY_MEMORY_SNAPSHOT)
+    assert calls == 1
+
+
+@pytest.mark.parametrize("record", ["candidate", "execution", "evaluation", "publication"])
+def test_native_gateway_receipt_drift_cannot_publish_or_retry(tmp_path, record) -> None:
+    request = make_request()
+    ledger = RSILedger(tmp_path / "ledger.sqlite")
+    calls = 0
+
+    def provider(req, plan):
+        nonlocal calls
+        calls += 1
+        receipts = bundle(req, plan)
+        drifted = replace(getattr(receipts, record), environment_sha256=digest("drifted-environment"))
+        return replace(receipts, **{record: drifted})
+
+    gateway = NativeRSISolverGateway(NativeRSIExecutionConfig(ledger, plan_factory, provider))
+    with pytest.raises(NativeRSISolverGatewayError, match="attempt_unknown"):
+        gateway.run(request, EMPTY_MEMORY_SNAPSHOT)
+    assert ledger.episode_result(request.episode_id) is None
+    with pytest.raises(NativeRSISolverGatewayError, match="recovery_required"):
+        gateway.run(request, EMPTY_MEMORY_SNAPSHOT)
+    assert calls == 1
+
+
+@pytest.mark.parametrize("drift", ["request", "plan"])
+def test_native_gateway_replay_rejects_request_or_plan_drift(tmp_path, drift) -> None:
+    request = make_request()
+    ledger = RSILedger(tmp_path / "ledger.sqlite")
+    calls = 0
+
+    def provider(req, plan):
+        nonlocal calls
+        calls += 1
+        return bundle(req, plan)
+
+    gateway = NativeRSISolverGateway(NativeRSIExecutionConfig(ledger, plan_factory, provider))
+    result = gateway.run(request, EMPTY_MEMORY_SNAPSHOT)
+    if drift == "request":
+        changed_request = replace(request, environment_sha256=digest("drifted-environment"))
+        changed_factory = plan_factory
+    else:
+        changed_request = request
+
+        def changed_factory(req, memory):
+            return replace(plan_factory(req, memory), manifest_sha256=digest("drifted-manifest"), plan_sha256=None)
+
+    replay = NativeRSISolverGateway(NativeRSIExecutionConfig(ledger, changed_factory, provider))
+    with pytest.raises(NativeRSISolverGatewayError, match="claim_invalid"):
+        replay.run(changed_request, EMPTY_MEMORY_SNAPSHOT)
+    assert ledger.episode_result(request.episode_id) == (request, result)
+    assert calls == 1

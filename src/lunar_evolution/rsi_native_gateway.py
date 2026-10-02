@@ -43,9 +43,11 @@ class NativeRSIReceiptBundle:
 class NativeRSIExecutionConfig:
     """Immutable dependencies required to compose one native gateway.
 
-    ``plan_factory`` is called only for a new episode. ``receipt_provider`` is called after the
-    native launch has been completed by the caller's scheduler integration. Both are explicit so
-    the facade cannot accidentally reuse an unbound legacy producer receipt.
+    ``plan_factory`` rebuilds the frozen plan on every call, including replay and recovery checks.
+    It must be pure and read-only: it cannot stage inputs, consume an attestation, or launch work.
+    ``receipt_provider`` is invoked only after a new claim is acquired; scheduler integration and
+    reading same-attempt evidence remain its caller-owned responsibilities. Both dependencies are
+    explicit so the facade cannot accidentally reuse an unbound legacy producer receipt.
     """
 
     ledger: RSILedger
@@ -90,6 +92,12 @@ class NativeRSISolverGateway:
             raise NativeRSISolverGatewayError("rsi_native_gateway_plan_binding_mismatch") from exc
         return plan
 
+    def _replay(self, request: SolverRequest) -> SolverResult:
+        saved = self.ledger.episode_result(request.episode_id)
+        if saved is None or saved[0] != request:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_replay_missing")
+        return saved[1]
+
     def run(self, request: SolverRequest, memory: MemorySnapshot) -> SolverResult:
         """Claim, execute through an injected provider, map, and durably publish one result.
 
@@ -103,18 +111,19 @@ class NativeRSISolverGateway:
         except RSILearningError as exc:
             raise NativeRSISolverGatewayError("rsi_native_gateway_claim_invalid") from exc
         if claim is not None and claim.status != "started":
-            saved = self.ledger.episode_result(request.episode_id)
-            if saved is None or saved[0] != request:
-                raise NativeRSISolverGatewayError("rsi_native_gateway_replay_missing")
-            return saved[1]
+            return self._replay(request)
         if claim is not None:
             raise NativeRSISolverGatewayError("rsi_native_gateway_recovery_required")
         try:
-            self.ledger.claim_native_episode(request, plan_sha256=plan.plan_sha256)
+            claim = self.ledger.claim_native_episode(request, plan_sha256=plan.plan_sha256)
         except RSILearningError as exc:
-            if exc.code == "rsi_native_episode_recovery_required":
+            if str(exc) == "rsi_native_episode_recovery_required":
                 raise NativeRSISolverGatewayError("rsi_native_gateway_recovery_required") from exc
             raise NativeRSISolverGatewayError("rsi_native_gateway_claim_failed") from exc
+        if claim.status != "started":
+            # Another controller may have published after our initial read. Acquiring an
+            # existing terminal claim grants replay authority only, never a second execution.
+            return self._replay(request)
         try:
             bundle = self.config.receipt_provider(request, plan)
             if not isinstance(bundle, NativeRSIReceiptBundle):

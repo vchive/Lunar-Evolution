@@ -66,3 +66,19 @@ and candidate identity. Execution must be `completed`, independent evaluation mu
 publication must be `published`; otherwise the mapper raises a fixed contract error and does not
 fabricate a solver result. The mapper carries only receipt digests and bounded provenance into the
 existing immutable `SolverResult`; it cannot write memory or grant verifier authority.
+
+## Injectable gateway facade
+
+`rsi_native_gateway.NativeRSISolverGateway.run(request, memory)` now composes the plan,
+native ledger claim, candidate selection, receipt mapper and durable result publication for a
+trusted local caller. Its `plan_factory` must rebuild a deterministic plan without performing I/O
+side effects, staging inputs, consuming attestations or launching work. It runs on every call so
+the existing claim can be checked against the current pins. Only `receipt_provider` executes work,
+after a new claim has been acquired. A competing started claim stops the call; a competing terminal
+claim replays its saved result without invoking the provider.
+
+This facade does not yet implement the scheduler-backed adapter above. The receipt provider is an
+explicit trusted seam: these DTOs bind request and candidate pins but do not independently prove
+the plan/run/launch provenance of a native attempt. Reading and validating same-attempt artifacts,
+calling `run_native_trusted_producer`, composing deadline/cancellation, and connecting the controller
+remain required before T160-35 or native RSI end-to-end acceptance can be closed.
