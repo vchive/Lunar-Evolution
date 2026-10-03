@@ -25,6 +25,7 @@ from .native_trusted_scheduler import (
     NativeTrustedProducerRun,
     run_native_trusted_producer,
 )
+from .official_evaluator_evidence import OfficialEvaluationReceipt, OfficialEvaluatorProfile
 from .producer_broker_ipc import ProducerBrokerConfig
 from .producer_bundle_handoff import BundleGroup
 from .producer_bundle_publication import parse_producer_bundle_publication_journal
@@ -213,6 +214,17 @@ def _journal_for_published_run(run: NativeTrustedProducerRun):
     return publication, journal
 
 
+def _official_evaluator_receipt(request: SolverRequest, source: str, execution: str, publication: str, evaluation: str) -> OfficialEvaluationReceipt:
+    return OfficialEvaluationReceipt(
+        OfficialEvaluatorProfile(
+            "native-local-evaluator", "1", request.evaluator_sha256,
+            hashlib.sha256(b"native-local-evaluator-config-v1").hexdigest(),
+            request.contract_sha256, hashlib.sha256(request.digest().encode()).hexdigest(),
+            hashlib.sha256(b"native-local-holdout-v1").hexdigest(), hashlib.sha256(b"native-local-seed-v1").hexdigest(),
+        ), request.digest(), source, execution, publication, "pass", evaluation,
+    )
+
+
 def _build_receipts(
     request: SolverRequest,
     context: NativeRSISchedulerContext,
@@ -324,7 +336,7 @@ def _build_receipts(
         raise
     except Exception as exc:
         raise NativeRSISchedulerProviderError("rsi_native_scheduler_receipt_invalid") from exc
-    return NativeRSIReceiptBundle(candidate, execution, evaluation, publication_receipt)
+    return NativeRSIReceiptBundle(candidate, execution, evaluation, publication_receipt, worker_terminal_status="completed", official_evaluator_receipt=_official_evaluator_receipt(request, candidate.candidate_source_sha256, execution.receipt_sha256, publication_receipt.receipt_sha256, evaluation.receipt_sha256))
 
 
 def _bundle_wire(bundle: NativeRSIReceiptBundle) -> dict[str, Any]:
@@ -358,6 +370,11 @@ def _retained_bundle(
         ),
         NativeEvaluationReceipt(**common, receipt_sha256=evidence.candidate_evaluation_receipt_sha256),
         NativePublicationReceipt(**common, receipt_sha256=evidence.candidate_publication_receipt_sha256),
+        worker_terminal_status="completed",
+        official_evaluator_receipt=_official_evaluator_receipt(
+            request, evidence.entrypoint_source_sha256, evidence.candidate_execution_receipt_sha256,
+            evidence.candidate_publication_receipt_sha256, evidence.candidate_evaluation_receipt_sha256,
+        ),
     )
 
 

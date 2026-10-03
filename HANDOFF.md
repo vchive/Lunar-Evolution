@@ -5338,3 +5338,15 @@ historical memory snapshot from immutable run/checkpoint history before cached n
 fails closed on retained/result drift. Local native E2E and controller replay suites pass; no remote
 models, WebAgent, official evaluator, or external campaign were run. Remaining scope is external
 worker ownership/authenticity, official evaluator/real campaign acceptance, and full CI/PR merge.
+
+
+## 2026-10-04 Feature 169 local evidence boundary
+
+Feature 169 local provider-free slice is implemented on `main` through commits `23f6018`,
+`2a2df70`, and `a7a34a1`. `ExternalWorkerEvidenceStore` records immutable worker profile pins,
+claim/heartbeat/terminal lifecycle through the RSI hash-chain callback journal, cleanup-gated terminal
+states, and unknown quarantine. `OfficialEvaluatorProfile`/`OfficialEvaluationReceipt` binds evaluator
+code/config/contract/task/holdout/seed with candidate source/execution/publication and raw verdict.
+Native gateway mapping now requires both worker completed evidence and independent evaluator pass evidence.
+The scheduler provider emits the same local fixture evidence, preserving native E2E replay. Remote evaluator,
+external project authentication, multi-host ownership, and real OpenEvolve/Shinka campaigns remain out of scope.
