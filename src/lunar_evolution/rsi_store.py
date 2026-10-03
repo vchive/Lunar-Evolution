@@ -172,7 +172,13 @@ class RSILedger:
         self.database.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.database, timeout=30)
         connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode = WAL")
+        # Switching to WAL is an initialization concern.  Re-issuing the mode-changing
+        # pragma on every read connection can dirty the database header on some SQLite/Python
+        # combinations, which makes read-only replay appear to have appended ledger state.
+        # Inspect the current mode first and only change it for a new/non-WAL database.
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+        if journal_mode.lower() != "wal":
+            connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = FULL")
         return connection
 
