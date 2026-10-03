@@ -5296,3 +5296,33 @@ records `observed -> verified`; it does not mutate `RSIMemoryStore` or skip cand
 Focused RSI promotion, transfer, governance, clean-room, Ruff, compileall, and diff checks pass.
 These are local fixture capabilities only; default automatic holdout scheduling, real evaluator/Actor,
 external producer lifecycle, and real OpenEvolve/Shinka campaigns remain outside this handoff.
+
+## 2026-10-03 Native deadline guard merged
+
+PR #3 (`f7f547f`) is merged into `main` after the Ubuntu Python 3.11/3.12/3.13 CI matrix passed.
+The native independent deadline guard is now on `origin/main`: intent/parent/RSI deadlines are
+mapped once to an absolute native clock, the guardian supervises the lifeline and deadline, and
+children recheck both before `exec`. The guard preserves `unknown/recovery_required` when terminal
+evidence is missing. Remaining P1 work starts from this clean main: bind scheduler-backed execution
+receipts to one RSI request's request/memory/launch/plan/candidate/evaluation/publication provenance
+sidecar, retaining per-episode intent/attestation/journal isolation.
+
+
+## 2026-10-03 Scheduler-backed native RSI composition
+
+Feature 160/T160-35 now has a provider-free scheduler composition slice. `NativeRSISchedulerContext`
+and `NativeRSISchedulerProvider` validate the already-admitted request/memory input descriptor,
+recheck the immutable execution plan and launch/attestation/bootstrap/manifest/evaluator/environment
+bindings, pass the request's original absolute deadline into the native scheduler, and map one
+published same-journal candidate into the existing candidate, execution, evaluation and publication
+receipt DTOs. Entry-point source and same-attempt output-capture digests are retained when available;
+detached or all-rejected publication remains rejected. The native gateway exposes a stable wiring
+fingerprint, and `PracticeEpisodeRunner`/`RSILearningController` require the native gateway and
+controller to share the same durable ledger and memory snapshot.
+
+Focused native gateway/plan/candidate/controller/scheduler tests pass, with Ruff, compileall and
+diff checks clean. This is still local fixture composition: the context requires pre-staged native
+launch inputs and does not claim external worker ownership, real evaluator authenticity, or real
+OpenEvolve/Shinka campaign acceptance. The next acceptance slice is a full local native fixture
+launch through this provider and read-only recovery, followed by updating T160-35 only after that
+end-to-end evidence exists.

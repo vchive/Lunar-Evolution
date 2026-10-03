@@ -77,8 +77,16 @@ the existing claim can be checked against the current pins. Only `receipt_provid
 after a new claim has been acquired. A competing started claim stops the call; a competing terminal
 claim replays its saved result without invoking the provider.
 
-This facade does not yet implement the scheduler-backed adapter above. The receipt provider is an
-explicit trusted seam: these DTOs bind request and candidate pins but do not independently prove
-the plan/run/launch provenance of a native attempt. Reading and validating same-attempt artifacts,
-calling `run_native_trusted_producer`, composing deadline/cancellation, and connecting the controller
-remain required before T160-35 or native RSI end-to-end acceptance can be closed.
+The provider-free scheduler composition is now available through
+`rsi_native_scheduler.NativeRSISchedulerContext` and
+`make_native_rsi_scheduler_provider`. It validates the pre-staged request/memory input descriptor,
+rechecks plan, launch, attestation, bootstrap, manifest, evaluator and environment bindings, passes
+the request's original absolute deadline into `run_native_trusted_producer`, and maps only a single
+published same-journal candidate with independent execution/evaluation/publication receipts. The
+controller now requires the native gateway and controller to share one ledger and one approved memory
+snapshot, and native gateway/provider configuration participates in the resume fingerprint.
+
+This is still a local fixture composition boundary. The context deliberately requires launch inputs
+to have been staged by the existing native-input admission layer; a future staging helper may own
+that write transaction. The provider does not prove external worker ownership, real evaluator
+authenticity, or a real OpenEvolve/Shinka campaign. Those remain separate acceptance work.

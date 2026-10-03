@@ -190,6 +190,7 @@ class PracticeEpisodeRunner:
         verifier: Any | None = None,
         ledger: RSILedger | None = None,
         usage_ledger: RSIUsageLedger | None = None,
+        memory_snapshot: MemorySnapshot | None = None,
         *, before_verify: Callable[[], None] | None = None,
         before_run: Callable[[], None] | None = None,
     ) -> None:
@@ -197,8 +198,27 @@ class PracticeEpisodeRunner:
         self.verifier = verifier or LocalExactVerifier()
         self.ledger = ledger
         self.usage_ledger = usage_ledger
+        if memory_snapshot is not None and not isinstance(memory_snapshot, MemorySnapshot):
+            raise RSILearningError("rsi_runner_memory_snapshot_invalid")
+        self.memory_snapshot = memory_snapshot
+        # Native RSI is an explicit capability. It owns the durable native claim and result
+        # records, so both layers must point at the same ledger for recovery to be authoritative.
+        if getattr(gateway, "requires_memory_snapshot", False) is True:
+            native_ledger = getattr(gateway, "ledger", None)
+            if memory_snapshot is None:
+                raise RSILearningError("rsi_native_gateway_memory_snapshot_required")
+            if not isinstance(native_ledger, RSILedger) or ledger is not native_ledger:
+                raise RSILearningError("rsi_native_gateway_ledger_mismatch")
         self.before_verify = before_verify
         self.before_run = before_run
+
+    def _invoke_gateway(self, request: SolverRequest) -> SolverResult:
+        if getattr(self.gateway, "requires_memory_snapshot", False) is True:
+            memory = self.memory_snapshot
+            if memory is None or memory.digest() != request.memory_snapshot_sha256:
+                raise RSILearningError("rsi_native_gateway_memory_binding_mismatch")
+            return self.gateway.run(request, memory)
+        return self.gateway.run(request)
 
     @staticmethod
     def _usage_event_id(episode: PracticeEpisode, request: SolverRequest) -> str:
@@ -298,7 +318,7 @@ class PracticeEpisodeRunner:
         ledger_head = self._create_running_record(running)
         started_ns = time.monotonic_ns()
         try:
-            result = self.gateway.run(request)
+            result = self._invoke_gateway(request)
         except Exception as gateway_error:
             # Preserve the gateway exception if accounting itself cannot be appended.  A missing
             # sidecar record is explicit incomplete evidence; it must not be mistaken for a
@@ -730,7 +750,9 @@ class FrozenMemoryTransferRunner:
                     run_budget.check()
                     return runner.verifier.verify(episode, request, result)
 
-            execution = PracticeEpisodeRunner(self.gateway, BudgetVerifier()).run(episode, request)
+            execution = PracticeEpisodeRunner(
+                self.gateway, BudgetVerifier(), memory_snapshot=snapshot,
+            ).run(episode, request)
             run_budget.check()
             accepted, _diagnosis = self.target_judge(execution)
             return self._make_receipt(run_id, target_id, snapshot, execution, accepted), execution
@@ -831,7 +853,9 @@ class FrozenMemoryTransferRunner:
         else:
             head = ledger.get_episode(episode.episode_id)
             if head is None:
-                execution = PracticeEpisodeRunner(self.gateway, verifier, ledger).run(episode, request)
+                execution = PracticeEpisodeRunner(
+                    self.gateway, verifier, ledger, memory_snapshot=snapshot,
+                ).run(episode, request)
             else:
                 persisted = ledger.episode_result(episode.episode_id)
                 if persisted is None:
@@ -916,6 +940,10 @@ class RSILearningController:
         self.memory_store = memory_store or RSIMemoryStore(EMPTY_MEMORY_SNAPSHOT)
         self.target_judge = target_judge
         self.ledger = ledger
+        if getattr(gateway, "requires_memory_snapshot", False) is True:
+            native_ledger = getattr(gateway, "ledger", None)
+            if not isinstance(native_ledger, RSILedger) or ledger is not native_ledger:
+                raise RSILearningError("rsi_native_gateway_ledger_mismatch")
         if usage_ledger is not None and not isinstance(usage_ledger, RSIUsageLedger):
             raise TypeError("usage_ledger must be an RSI usage UsageLedger")
         self.usage_ledger = usage_ledger
@@ -2013,6 +2041,7 @@ class RSILearningController:
 
         return PracticeEpisodeRunner(
             self.gateway, ControllerVerifier(), self.ledger, self.usage_ledger,
+            memory_snapshot=self.snapshot,
             before_run=before_run,
         ).run(episode, request)
 
@@ -2524,6 +2553,7 @@ class RSILearningController:
         request = self._request(episode, charter={**decision.to_dict(), "decision_sha256": decision.digest()})
         return PracticeEpisodeRunner(
             self.gateway, self.verifier, self.ledger, self.usage_ledger,
+            memory_snapshot=self.snapshot,
             before_run=lambda: self._check_memory_admission(request, parent_run_id=episode.run_id),
         ).run(episode, request)
 

@@ -752,6 +752,12 @@ from .rsi_native_retained import (
     NativeRetainedEvidenceError,
     read_native_retained_candidate,
 )
+from .rsi_native_scheduler import (
+    NativeRSISchedulerContext,
+    NativeRSISchedulerProvider,
+    NativeRSISchedulerProviderError,
+    make_native_rsi_scheduler_provider,
+)
 from .rsi_noise_confidence import (
     ConfidencePolicy,
     ConfidenceReport,
@@ -1080,6 +1086,9 @@ __all__ = [
     "NativeRSIInputDescriptor",
     "NativeRSIInputError",
     "NativeRSIReceiptBundle",
+    "NativeRSISchedulerContext",
+    "NativeRSISchedulerProvider",
+    "NativeRSISchedulerProviderError",
     "NativeRSISolverGateway",
     "NativeRSISolverGatewayError",
     "NativeRetainedCandidateEvidence",
@@ -1349,6 +1358,7 @@ __all__ = [
     "load_episode_record",
     "load_evaluator_bundle",
     "load_memory_snapshot",
+    "make_native_rsi_scheduler_provider",
     "manifest_sha256",
     "map_native_receipts_to_solver_result",
     "materialize_candidate_source_bundle",

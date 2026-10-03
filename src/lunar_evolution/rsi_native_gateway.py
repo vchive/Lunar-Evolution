@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from .rsi_gateway import SolverRequest, SolverResult
+from .rsi_identity import RSIIdentityError, component_fingerprint
 from .rsi_learning import MemorySnapshot, RSILearningError
 from .rsi_native_candidate import (
     NativeCandidateRecord,
@@ -64,6 +66,11 @@ class NativeRSIExecutionConfig:
 class NativeRSISolverGateway:
     """Durable native RSI gateway with strict claim, replay and receipt binding."""
 
+    # Explicit capability consumed by ``PracticeEpisodeRunner``. Keeping this opt-in rather
+    # than inspecting a callable signature preserves the legacy one-argument SolverGateway
+    # protocol for all existing adapters.
+    requires_memory_snapshot = True
+
     def __init__(self, config: NativeRSIExecutionConfig) -> None:
         if not isinstance(config, NativeRSIExecutionConfig):
             raise NativeRSISolverGatewayError("rsi_native_gateway_configuration_invalid")
@@ -72,6 +79,32 @@ class NativeRSISolverGateway:
     @property
     def ledger(self) -> RSILedger:
         return self.config.ledger
+
+    def rsi_fingerprint_config(self) -> dict[str, Any]:
+        """Expose stable native wiring identity without hashing mutable runtime state.
+
+        The controller persists this projection as part of the run identity.  It binds the
+        durable ledger identity and the executable plan/receipt dependencies, while deliberately
+        excluding counters, caches, and in-flight receipt state.  ``component_fingerprint``
+        rejects mutable callable captures unless the callable provides an explicit stable config,
+        so a gateway cannot silently resume with an unpinned provider.
+        """
+        try:
+            identity = self.ledger.database.stat()
+            plan_fingerprint = component_fingerprint(self.config.plan_factory)
+            receipt_fingerprint = component_fingerprint(self.config.receipt_provider)
+        except (OSError, RSIIdentityError) as exc:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_fingerprint_invalid") from exc
+        return {
+            "protocol": "lunar-native-rsi-gateway-v1",
+            "ledger": {
+                "database": str(self.ledger.database),
+                "device": identity.st_dev,
+                "inode": identity.st_ino,
+            },
+            "plan_factory_sha256": plan_fingerprint,
+            "receipt_provider_sha256": receipt_fingerprint,
+        }
 
     def _plan(self, request: SolverRequest, memory: MemorySnapshot) -> NativeRSIExecutionPlan:
         if not isinstance(request, SolverRequest) or not isinstance(memory, MemorySnapshot):
