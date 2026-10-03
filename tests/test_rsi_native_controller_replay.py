@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import replace
 from pathlib import Path
 
@@ -72,7 +73,13 @@ def _run(controller: RSILearningController, *, rounds: int = 0):
 
 def _image(ledger: RSILedger):
     info = ledger.database.stat()
-    return ledger.database.read_bytes(), info.st_dev, info.st_ino
+    # SQLite may checkpoint a WAL into the main file when a read connection closes.  That
+    # layout detail differs between SQLite versions (notably 3.50 vs 3.52), even though no
+    # ledger row was appended.  Compare the canonical logical database dump and file identity
+    # instead of raw main-file bytes.
+    with sqlite3.connect(ledger.database) as connection:
+        logical_dump = tuple(connection.iterdump())
+    return logical_dump, info.st_dev, info.st_ino
 
 
 def _judge_after_practice(execution):
