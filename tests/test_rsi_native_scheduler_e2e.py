@@ -362,6 +362,7 @@ def test_real_native_rsi_completed_replay_rejects_provenance_tampering(tmp_path,
             source.chmod(0o600)
             source.write_bytes(source.read_bytes() + b"\n# changed after completion\n")
             source.chmod(mode)
+            # Retained evidence must refuse source drift before any process or evaluator call.
         before = _retained_bytes(fixture.workspace)
         counts = _ledger_counts(fixture.ledger)
         restarted_provider = make_native_rsi_scheduler_provider(fixture.context)
