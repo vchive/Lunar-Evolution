@@ -12,6 +12,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
+from .official_evaluator_evidence import (
+    OfficialEvaluationReceipt,
+    verify_official_evaluation,
+)
 from .rsi_gateway import SolverRequest, SolverResult
 from .rsi_identity import RSIIdentityError, component_fingerprint
 from .rsi_learning import MemorySnapshot, RSILearningError
@@ -40,6 +44,8 @@ class NativeRSIReceiptBundle:
     evaluation: NativeEvaluationReceipt
     publication: NativePublicationReceipt
     provenance_sha256: str | None = None
+    worker_terminal_status: str | None = None
+    official_evaluator_receipt: OfficialEvaluationReceipt | None = None
 
     def __post_init__(self) -> None:
         if self.provenance_sha256 is not None and (
@@ -47,6 +53,14 @@ class NativeRSIReceiptBundle:
             or any(char not in "0123456789abcdef" for char in self.provenance_sha256)
         ):
             raise NativeRSISolverGatewayError("rsi_native_gateway_provenance_invalid")
+        if self.worker_terminal_status is not None and self.worker_terminal_status not in {
+            "completed", "failed", "timed_out", "cancelled", "abandoned", "unknown",
+        }:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_worker_status_invalid")
+        if self.official_evaluator_receipt is not None and not isinstance(
+            self.official_evaluator_receipt, OfficialEvaluationReceipt,
+        ):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_evaluator_receipt_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +168,21 @@ class NativeRSISolverGateway:
     def _map_bundle(
         request: SolverRequest, plan: NativeRSIExecutionPlan, bundle: NativeRSIReceiptBundle,
     ) -> SolverResult:
+        if bundle.worker_terminal_status != "completed":
+            raise NativeRSISolverGatewayError("rsi_native_gateway_worker_evidence_incomplete")
+        if bundle.official_evaluator_receipt is None:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_official_evaluator_missing")
+        try:
+            verify_official_evaluation(
+                bundle.official_evaluator_receipt,
+                request_sha256=request.digest(), contract_sha256=request.contract_sha256,
+                evaluator_sha256=request.evaluator_sha256,
+                candidate_source_sha256=bundle.candidate.candidate_source_sha256,
+                execution_receipt_sha256=bundle.execution.receipt_sha256,
+                publication_receipt_sha256=bundle.publication.receipt_sha256,
+            )
+        except Exception as exc:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_official_evaluator_invalid") from exc
         result = map_native_receipts_to_solver_result(
             request, select_native_candidate(request, [bundle.candidate]),
             bundle.execution, bundle.evaluation, bundle.publication,

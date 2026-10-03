@@ -7,6 +7,10 @@ from threading import Barrier, Event
 
 import pytest
 
+from lunar_evolution.official_evaluator_evidence import (
+    OfficialEvaluationReceipt,
+    OfficialEvaluatorProfile,
+)
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_learning import EMPTY_MEMORY_SNAPSHOT
 from lunar_evolution.rsi_native_candidate import (
@@ -68,6 +72,13 @@ def bundle(request: SolverRequest, plan: NativeRSIExecutionPlan) -> NativeRSIRec
         execution=NativeExecutionReceipt(**common, receipt_sha256=digest("execution"), trace_digest=digest("trace")),
         evaluation=NativeEvaluationReceipt(**common, receipt_sha256=digest("evaluation")),
         publication=NativePublicationReceipt(**common, receipt_sha256=digest("publication")),
+        worker_terminal_status="completed",
+        official_evaluator_receipt=OfficialEvaluationReceipt(
+            OfficialEvaluatorProfile("fixture", "1", request.evaluator_sha256, digest("config"),
+                                     request.contract_sha256, digest("task"), digest("holdout"), digest("seed")),
+            request.digest(), candidate.candidate_source_sha256, digest("execution"), digest("publication"),
+            "pass", digest("raw-verdict"),
+        ),
     )
 
 

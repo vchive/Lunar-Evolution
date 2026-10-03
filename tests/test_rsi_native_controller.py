@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from lunar_evolution.official_evaluator_evidence import (
+    OfficialEvaluationReceipt,
+    OfficialEvaluatorProfile,
+)
 from lunar_evolution.rsi_controller import RSILearningController
 from lunar_evolution.rsi_gateway import LocalExactVerifier, SolverRequest
 from lunar_evolution.rsi_learning import EMPTY_MEMORY_SNAPSHOT, MemorySnapshot, RSILearningError
@@ -83,6 +87,14 @@ def receipt_bundle(request: SolverRequest, _plan: NativeRSIExecutionPlan) -> Nat
         ),
         publication=NativePublicationReceipt(
             **common, receipt_sha256=digest("publication-receipt:" + request.episode_id),
+        ),
+        worker_terminal_status="completed",
+        official_evaluator_receipt=OfficialEvaluationReceipt(
+            OfficialEvaluatorProfile("fixture", "1", request.evaluator_sha256, digest("config"),
+                                     request.contract_sha256, digest("task"), digest("holdout"), digest("seed")),
+            request.digest(), digest("candidate-source:" + request.episode_id),
+            digest("execution-receipt:" + request.episode_id), digest("publication-receipt:" + request.episode_id),
+            "pass", digest("raw-verdict" + request.episode_id),
         ),
     )
 
