@@ -5326,3 +5326,15 @@ launch inputs and does not claim external worker ownership, real evaluator authe
 OpenEvolve/Shinka campaign acceptance. The next acceptance slice is a full local native fixture
 launch through this provider and read-only recovery, followed by updating T160-35 only after that
 end-to-end evidence exists.
+
+## 2026-10-03 Native RSI local acceptance continuation
+
+Feature 160 T160-35 local composition is now implemented on branch `codex/native-rsi-local-acceptance`:
+`NativeRSISchedulerProvider` performs read-only plan/recovery, strict retained evidence checks,
+create-only provenance sidecar persistence, original deadline/cancellation propagation, and exact
+receipt projection. `NativeRSISolverGateway` anchors the provenance and plan digests into the durable
+`SolverResult` and validates evidence again during replay. `RSILearningController` reconstructs the
+historical memory snapshot from immutable run/checkpoint history before cached native replay and
+fails closed on retained/result drift. Local native E2E and controller replay suites pass; no remote
+models, WebAgent, official evaluator, or external campaign were run. Remaining scope is external
+worker ownership/authenticity, official evaluator/real campaign acceptance, and full CI/PR merge.

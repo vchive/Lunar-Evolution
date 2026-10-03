@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from lunar_evolution.bundle_evolution import derive_native_draft_run_id
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_learning import EMPTY_MEMORY_SNAPSHOT
 from lunar_evolution.rsi_native_candidate import (
@@ -65,8 +66,8 @@ def published_run(req: SolverRequest):
     evaluation = SimpleNamespace(
         candidate_id=candidate_id,
         journal_id="journal",
-        run_id="run",
-        journal_sha256=digest("publication-journal"),
+        run_id=derive_native_draft_run_id("journal", candidate_id, digest("bundle")),
+        journal_sha256=digest("prepared-journal"),
         evaluation=SimpleNamespace(report={"validity": 1}),
         execution=SimpleNamespace(to_dict=lambda: {
             "candidate_id": candidate_id,
@@ -78,6 +79,7 @@ def published_run(req: SolverRequest):
         ),
     )
     publication = SimpleNamespace(
+        journal=SimpleNamespace(digest=lambda: digest("prepared-journal")),
         publication_status="published",
         admitted_candidate_ids=(candidate_id,),
         evaluations=(evaluation,),
@@ -161,6 +163,7 @@ def test_scheduler_plan_binding_rejects_manifest_drift() -> None:
         journal_id="journal", launch_id="launch", run_id="run",
         parent_task_id="parent", task_id="task", contract_sha256=req.contract_sha256,
         evaluator_fingerprint=req.evaluator_sha256, environment_sha256=req.environment_sha256,
+        evaluator_kind="local", runner_fingerprint=sha("runner"), dependency_sha256=sha("dependency"),
         digest=lambda: sha("intent"),
     )
     context = SimpleNamespace(
@@ -174,6 +177,7 @@ def test_scheduler_plan_binding_rejects_manifest_drift() -> None:
         evaluator_fingerprint=req.evaluator_sha256,
         contract=SimpleNamespace(digest=lambda: req.contract_sha256),
         environment_sha256=req.environment_sha256,
+        runner_fingerprint=sha("runner"), dependency_sha256=sha("dependency"),
     )
     inputs = SimpleNamespace(
         manifest_sha256=sha("manifest"), deadline_unix=None, request=req, memory=memory,

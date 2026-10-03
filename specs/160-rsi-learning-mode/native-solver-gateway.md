@@ -86,7 +86,7 @@ published same-journal candidate with independent execution/evaluation/publicati
 controller now requires the native gateway and controller to share one ledger and one approved memory
 snapshot, and native gateway/provider configuration participates in the resume fingerprint.
 
-This is still a local fixture composition boundary. The context deliberately requires launch inputs
+This is still a local fixture composition boundary. The current local acceptance also persists a create-only provenance sidecar and revalidates retained artifacts on gateway and controller replay; sidecar digest/inode identity is anchored into the durable SolverResult. The context deliberately requires launch inputs
 to have been staged by the existing native-input admission layer; a future staging helper may own
 that write transaction. The provider does not prove external worker ownership, real evaluator
 authenticity, or a real OpenEvolve/Shinka campaign. Those remain separate acceptance work.

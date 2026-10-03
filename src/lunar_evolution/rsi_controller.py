@@ -1802,6 +1802,46 @@ class RSILearningController:
             raise RSILearningError("rsi_resume_execution_conflict")
         return EpisodeExecution(episode, request, result, verifier)
 
+    def _validate_native_replay(
+        self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult,
+    ) -> None:
+        """Revalidate retained native evidence against the episode's original memory.
+
+        A completed controller checkpoint is not authority to skip the native evidence reader.
+        Recover the historical snapshot by its request digest from this run's immutable journal,
+        rather than substituting the controller's current memory after later practice commits.
+        This path never invokes ``gateway.run`` or appends controller/episode evidence.
+        """
+        if getattr(self.gateway, "requires_memory_snapshot", False) is not True:
+            return
+        validate = getattr(self.gateway, "validate_replay", None)
+        if not callable(validate):
+            raise RSILearningError("rsi_native_gateway_replay_validation_required")
+        if self.ledger is None or getattr(self.gateway, "ledger", None) is not self.ledger:
+            raise RSILearningError("rsi_native_gateway_ledger_mismatch")
+        record = self.ledger.get_run(episode.run_id)
+        if record is None:
+            raise RSILearningError("rsi_native_replay_run_missing")
+        snapshots = [record.payload.get("memory_snapshot")]
+        for _digest, state in self.ledger.controller_checkpoint_history(episode.run_id):
+            snapshots.extend((state.get("root_snapshot"), state.get("memory_snapshot")))
+            for generation in state.get("generations", {}).values():
+                snapshots.extend((generation.get("parent_memory"), generation.get("candidate_memory")))
+        for raw_snapshot in snapshots:
+            if raw_snapshot is None:
+                continue
+            snapshot = MemorySnapshot.from_dict(raw_snapshot)
+            if snapshot.digest() != request.memory_snapshot_sha256:
+                continue
+            verified = validate(request, snapshot, result)
+            if not isinstance(verified, SolverResult) or verified != result:
+                raise RSILearningError("rsi_native_replay_result_conflict")
+            return
+        raise RSILearningError("rsi_native_replay_memory_snapshot_missing")
+
+    def _validate_native_cached_execution(self, execution: EpisodeExecution) -> None:
+        self._validate_native_replay(execution.episode, execution.request, execution.result)
+
     def _resume_episode_execution(
         self, episode_record: RSIRecord, *, request_hint: SolverRequest | None = None,
         before_verify: Callable[[], None] | None = None,
@@ -1853,6 +1893,8 @@ class RSILearningController:
             or request.solver_id != episode.solver_id
         ):
             raise RSILearningError("rsi_episode_result_conflict")
+        if result.status != "unknown":
+            self._validate_native_replay(episode, request, result)
         self._usage_replay_marker(episode, request)
         if result.status == "unknown":
             raise RSILearningError("rsi_unknown_reconcile_required")
@@ -2049,7 +2091,9 @@ class RSILearningController:
                       episode: PracticeEpisode, request: SolverRequest) -> EpisodeExecution:
         key = episode.episode_id
         if key in state["executions"]:
-            return self._deserialize_execution(state["executions"][key])
+            execution = self._deserialize_execution(state["executions"][key])
+            self._validate_native_cached_execution(execution)
+            return execution
         self._prepare_intent(record, state, episode, request)
         execution = self._execute_intent(state, key)
         state["executions"][key] = self._serialize_execution(execution)
@@ -2250,6 +2294,9 @@ class RSILearningController:
                     state.update(phase="evaluated", current_episode_id=key)
                     self._save_flow(record, state)
         results = [self._deserialize_execution(state["executions"][key]) for key in episode_ids]
+        for execution in results:
+            if execution.episode.episode_id not in pending:
+                self._validate_native_cached_execution(execution)
         uncertain = [self._uncertain_status(item) for item in results]
         if any(uncertain):
             return self._finish_flow(record, state, "unknown" if "unknown" in uncertain else "failed")
@@ -2324,7 +2371,16 @@ class RSILearningController:
                 )
             for raw_execution in terminal_executions:
                 execution = self._deserialize_execution(raw_execution)
+                self._validate_native_cached_execution(execution)
                 self._usage_replay_marker(execution.episode, execution.request)
+            if getattr(self.gateway, "requires_memory_snapshot", False) is True and checkpoint:
+                # The public return comes from the run payload. Check it as well when a
+                # checkpoint is present so an unrelated cached result cannot bypass recovery.
+                for raw_execution in (
+                    *record.payload.get("target_attempts", ()),
+                    *record.payload.get("practice_episodes", ()),
+                ):
+                    self._validate_native_cached_execution(self._deserialize_execution(raw_execution))
             self._restore_failure_curriculum(checkpoint[1] if checkpoint else record.payload)
             return LearningRunResult(
                 run_id, record.state, MemorySnapshot.from_dict(record.payload["memory_snapshot"]),
@@ -2377,6 +2433,8 @@ class RSILearningController:
         self.memory_store = RSIMemoryStore(MemorySnapshot.from_dict(state["memory_snapshot"]))
         self._restore_failure_curriculum(state)
         if state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
+            for raw_execution in state["executions"].values():
+                self._validate_native_cached_execution(self._deserialize_execution(raw_execution))
             return self._finish_flow(record, state, state["status"])
         if state.get("callback_protocol_version") != "1":
             if (record.payload.get("callback_protocol_version") is not None
@@ -2396,6 +2454,10 @@ class RSILearningController:
                                            else "rsi_resume_recovery_required")
             if head.logical_id not in state["intents"]:
                 raise RSILearningError("rsi_resume_episode_drift")
+            if getattr(self.gateway, "requires_memory_snapshot", False) is True:
+                saved = self.ledger.episode_result(head.logical_id)
+                if saved is not None and saved[1].status != "unknown":
+                    self._validate_native_replay(PracticeEpisode.from_dict(head.payload), *saved)
         try:
             run_budget = RSIRunBudget.load(state["budget_state"])
             run_budget.check(now=now)
