@@ -89,6 +89,7 @@ def test_terminal_native_resume_validates_without_dispatch_or_ledger_write(tmp_p
     assert resumed == first
     assert len(gateway.runs) == 1
     assert gateway.replays
+    assert len(gateway.replays) == 1
     assert all(memory == EMPTY_MEMORY_SNAPSHOT for _, memory in gateway.replays)
     assert _image(ledger) == before
 

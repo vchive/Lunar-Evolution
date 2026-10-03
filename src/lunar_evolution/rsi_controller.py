@@ -2369,18 +2369,27 @@ class RSILearningController:
                     *record.payload.get("target_attempts", ()),
                     *record.payload.get("practice_episodes", ()),
                 )
+            validated_native_executions: set[str] = set()
             for raw_execution in terminal_executions:
                 execution = self._deserialize_execution(raw_execution)
-                self._validate_native_cached_execution(execution)
+                if getattr(self.gateway, "requires_memory_snapshot", False) is True:
+                    wire_digest = _record_digest(raw_execution)
+                    if wire_digest not in validated_native_executions:
+                        self._validate_native_cached_execution(execution)
+                        validated_native_executions.add(wire_digest)
                 self._usage_replay_marker(execution.episode, execution.request)
             if getattr(self.gateway, "requires_memory_snapshot", False) is True and checkpoint:
                 # The public return comes from the run payload. Check it as well when a
                 # checkpoint is present so an unrelated cached result cannot bypass recovery.
+                # Identical checkpoint and payload wires share one read-only validation.
                 for raw_execution in (
                     *record.payload.get("target_attempts", ()),
                     *record.payload.get("practice_episodes", ()),
                 ):
-                    self._validate_native_cached_execution(self._deserialize_execution(raw_execution))
+                    wire_digest = _record_digest(raw_execution)
+                    if wire_digest not in validated_native_executions:
+                        self._validate_native_cached_execution(self._deserialize_execution(raw_execution))
+                        validated_native_executions.add(wire_digest)
             self._restore_failure_curriculum(checkpoint[1] if checkpoint else record.payload)
             return LearningRunResult(
                 run_id, record.state, MemorySnapshot.from_dict(record.payload["memory_snapshot"]),
