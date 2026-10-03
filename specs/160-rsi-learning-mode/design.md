@@ -1,6 +1,6 @@
 # Lunar Agent 总体架构与 RSI 接入设计草案
 
-**状态：设计草案，暂不落地**
+**状态：设计草案；以下实现状态以当前代码、HANDOFF 与 stage-gap-report 为准。**
 
 **Feature：160 — RSI learning mode**
 
@@ -38,8 +38,8 @@ RSI 还要拆成两个互补部分：
 | RSI 协议数据模型 | 已有 provider-free MVP | `rsi_learning.py`、`rsi_store.py`、Feature 160 |
 | RSI BRS/DRS fixture | 已有 | `rsi_controller.py`、相关测试 |
 | RSI CLI | 已有本地 fixture 入口 | `rsi run|inspect|reconcile`；不会启动真实 producer |
-| 真实 Actor 环境和独立重开 evaluator | 尚未完成 | Feature 160 T160-12 |
-| RSI controller 级 durable resume | 尚未完成 | Feature 160 T160-13、阶段差距报告 A1/A2 |
+| 真实 Actor 环境和独立重开 evaluator | 本地 clean-room/sidecar 已完成；真实官方 evaluator 与生产环境仍开放 | Feature 160 T160-12 |
+| RSI controller 级 durable resume | 本地 durable resume、unknown gate、fingerprint drift 与 native replay 已完成；外部 worker ownership/可信对账仍开放 | Feature 160 T160-13、阶段差距报告 A1/A2 |
 | 普通 `MemoryStore` 与 RSI memory 隔离 | 设计上已确定 | RSI spec/data-model；仍需继续强化接线 |
 
 因此，本文不把 provider-free fixture、已有协议或本地 adapter 描述成真实 OpenEvolve、Shinka 或外部环境评测已经完成。

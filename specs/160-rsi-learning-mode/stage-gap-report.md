@@ -7,7 +7,7 @@ lifeline已有真实 controller-only死亡+broker journal组合回归，恢复�
 不重试/写入/发信号。最终相关组合1,919 passed/4 Darwin skip/零失败；不代表完整Ubuntu
 最终head验证或真实项目验收。详见 HANDOFF、本feature validation和两个局部契约。
 
-2026-10-01 最新更新：本地可恢复 RSI 主链已接通。P0 增加 parent learning/holdout 合账、
+2026-10-03 最新更新：native RSI SolverGateway composition、provenance sidecar 和 controller historical replay 已接通并合入 main；本地可恢复 RSI 主链已接通。P0 增加 parent learning/holdout 合账、
 外层/子 trial unknown 预算与独立 generation admission checkpoint 绑定；P1 增加同 run 跨代
 准入、配置后的自动 post-practice holdout、完整 Actor clean-room evidence 持久化，以及实际
 本地 native producer 从 bootstrap/broker 到候选评估/发布/只读恢复的整链；P2 增加显式
