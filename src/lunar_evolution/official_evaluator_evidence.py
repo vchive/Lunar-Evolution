@@ -101,7 +101,7 @@ class OfficialEvaluationReceipt:
         return hashlib.sha256(_canonical({k: v for k, v in self.to_dict().items() if k != "receipt_sha256"})).hexdigest()
 
     @classmethod
-    def from_dict(cls, value: object) -> "OfficialEvaluationReceipt":
+    def from_dict(cls, value: object) -> OfficialEvaluationReceipt:
         if type(value) is not dict or set(value) != {"schema_version", "protocol", "profile", "profile_sha256", "request_sha256", "candidate_source_sha256", "execution_receipt_sha256", "publication_receipt_sha256", "outcome", "raw_verdict_sha256", "receipt_sha256"}:
             raise OfficialEvaluatorEvidenceError("wire_invalid")
         if value["schema_version"] != "1" or value["protocol"] != _PROTOCOL:
@@ -138,4 +138,4 @@ def verify_official_evaluation(
         raise OfficialEvaluatorEvidenceError("not_pass")
 
 
-__all__ = ["OfficialEvaluatorProfile", "OfficialEvaluationReceipt", "OfficialEvaluatorEvidenceError", "verify_official_evaluation"]
+__all__ = ["OfficialEvaluationReceipt", "OfficialEvaluatorEvidenceError", "OfficialEvaluatorProfile", "verify_official_evaluation"]
