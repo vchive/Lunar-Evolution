@@ -68,3 +68,49 @@ def test_bad_owner_or_heartbeat_digest_rejected_before_claim(tmp_path):
     store = ExternalWorkerEvidenceStore(RSILedger(tmp_path / "rsi.sqlite"), scope_id="worker-scope")
     with pytest.raises(ExternalWorkerEvidenceError, match="heartbeat_invalid"):
         store.claim(profile(), heartbeat_sha256="bad")
+
+
+def test_verified_inspection_is_read_only_and_classifies_running(tmp_path):
+    ledger = RSILedger(tmp_path / "rsi.sqlite")
+    store = ExternalWorkerEvidenceStore(ledger, scope_id="worker-scope")
+    worker = profile()
+    claim = store.claim(worker, heartbeat_sha256=H)
+    before = ledger.controller_checkpoint_history(
+        store.journal.identity("worker-scope", "episode:claim")
+    )
+    inspected = store.inspect_verified(worker)
+    after = ledger.controller_checkpoint_history(
+        store.journal.identity("worker-scope", "episode:claim")
+    )
+    assert inspected.status == "running"
+    assert inspected.quarantine is False
+    assert inspected.claim_checkpoint_sha256 == claim.checkpoint_sha256
+    assert store.reconcile_status(worker) == "needs_terminal_observation"
+    assert before == after
+
+
+def test_verified_inspection_marks_unknown_as_quarantined(tmp_path):
+    store = ExternalWorkerEvidenceStore(RSILedger(tmp_path / "rsi.sqlite"), scope_id="worker-scope")
+    worker = profile()
+    claim = store.claim(worker, heartbeat_sha256=H)
+    store.settle(worker, checkpoint_sha256=claim.checkpoint_sha256, status="unknown",
+                 terminal_receipt_sha256="2" * 64, controller_observed_terminal=False,
+                 cleanup_confirmed=False)
+    inspected = store.inspect_verified(worker)
+    assert inspected.status == "unknown"
+    assert inspected.quarantine is True
+    assert inspected.terminal_receipt_sha256 == "2" * 64
+    assert store.reconcile_status(worker) == "quarantined"
+
+
+def test_verified_inspection_classifies_observed_terminal(tmp_path):
+    store = ExternalWorkerEvidenceStore(RSILedger(tmp_path / "rsi.sqlite"), scope_id="worker-scope")
+    worker = profile()
+    claim = store.claim(worker, heartbeat_sha256=H)
+    store.settle(worker, checkpoint_sha256=claim.checkpoint_sha256, status="failed",
+                 terminal_receipt_sha256="2" * 64, controller_observed_terminal=True,
+                 cleanup_confirmed=True)
+    inspected = store.inspect_verified(worker)
+    assert inspected.status == "failed"
+    assert inspected.quarantine is False
+    assert store.reconcile_status(worker) == "terminal_verified"
