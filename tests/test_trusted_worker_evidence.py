@@ -5,6 +5,7 @@ import json
 
 from test_producer_bootstrap import _attempt_records
 
+from lunar_evolution.producer_bootstrap import TrustedBootstrapEvidence
 from lunar_evolution.trusted_bootstrap_handoff import (
     build_trusted_bootstrap_process_registration_handoff,
 )
@@ -39,6 +40,24 @@ def test_unified_verifier_keeps_missing_terminal_unknown(tmp_path):
     )
     assert result.status == "unknown_recovery_required"
     assert result.reason_code == "terminal_evidence_missing"
+
+
+def test_unified_verifier_classifies_independently_observed_failure(tmp_path):
+    launch, descriptor, intent, attestation, claim, registration, handoff, _ = _chain(tmp_path)
+    failed = TrustedBootstrapEvidence(
+        launch_sha256=launch.launch_sha256,
+        registration_sha256=registration["registration_sha256"],
+        bootstrap_ready_observed=True, release_observed=True,
+        target_started_observed=False, target_start_count=0,
+        target_group_identity=None, target_pid=None, target_pgid=None,
+        pre_gate_target_work_observed=False, status="failed", failure_code="target_start_failed",
+    )
+    result = verify_trusted_worker_evidence(
+        launch=launch, descriptor=descriptor, intent=intent, attestation=attestation,
+        consumption=claim, registration=registration, handoff=handoff, evidence=failed,
+    )
+    assert result.status == "trusted_failed"
+    assert result.reason_code == "verified"
 
 
 def test_unified_verifier_rejects_registration_drift_as_non_authoritative(tmp_path):
