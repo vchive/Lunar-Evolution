@@ -5,6 +5,8 @@ import json
 
 from test_producer_bootstrap import _attempt_records
 
+from lunar_evolution import TrustedWorkerEvidenceResult
+from lunar_evolution import verify_trusted_worker_evidence as public_verify
 from lunar_evolution.producer_bootstrap import TrustedBootstrapEvidence
 from lunar_evolution.trusted_bootstrap_handoff import (
     build_trusted_bootstrap_process_registration_handoff,
@@ -30,6 +32,8 @@ def test_unified_verifier_accepts_completed_chain_without_side_effects(tmp_path)
     assert result.status == "trusted_completed"
     assert result.reason_code == "verified"
     assert result.registration_sha256 == registration["registration_sha256"]
+    assert public_verify is verify_trusted_worker_evidence
+    assert isinstance(result, TrustedWorkerEvidenceResult)
 
 
 def test_unified_verifier_keeps_missing_terminal_unknown(tmp_path):

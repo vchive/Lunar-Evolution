@@ -832,6 +832,11 @@ from .trusted_bootstrap_handoff import (
     parse_trusted_bootstrap_process_registration_handoff,
     verify_trusted_bootstrap_process_registration_handoff,
 )
+from .trusted_worker_evidence import (
+    TrustedWorkerEvidenceError,
+    TrustedWorkerEvidenceResult,
+    verify_trusted_worker_evidence,
+)
 from .workers import WorkerService
 from .workflow_checkpoint import (
     AggregateUsage,
@@ -1240,6 +1245,8 @@ __all__ = [
     "TrustedBootstrapLaunch",
     "TrustedBootstrapRegistration",
     "TrustedBootstrapSession",
+    "TrustedWorkerEvidenceError",
+    "TrustedWorkerEvidenceResult",
     "UsageLedger",
     "UsagePricing",
     "UsageReceipt",
@@ -1477,5 +1484,6 @@ __all__ = [
     "verify_trusted_bootstrap_process_registration",
     "verify_trusted_bootstrap_process_registration_handoff",
     "verify_trusted_bootstrap_registration",
+    "verify_trusted_worker_evidence",
     "worker_to_episode_state",
 ]
