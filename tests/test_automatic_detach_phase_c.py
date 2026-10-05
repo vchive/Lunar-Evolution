@@ -417,8 +417,19 @@ def test_cancel_stops_real_detached_candidate_in_its_independent_group(offline_c
 
     def candidate_started():
         case.observe_processes()
-        for path in case.workspace.rglob("phase-c-candidate-ready"):
-            value = path.read_text()
+        # Evaluator preparation publishes a temporary bundle directory and atomically
+        # renames/removes it.  The detached candidate can start while that directory is
+        # disappearing, so a recursive pathlib scan may observe a vanished entry on
+        # Python 3.11.  Treat that observation as a transient poll miss and retry.
+        try:
+            paths = tuple(case.workspace.rglob("phase-c-candidate-ready"))
+        except FileNotFoundError:
+            return None
+        for path in paths:
+            try:
+                value = path.read_text()
+            except FileNotFoundError:
+                continue
             if value:
                 return int(value)
         return None
