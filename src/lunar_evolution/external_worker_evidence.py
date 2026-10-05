@@ -93,6 +93,38 @@ class ExternalWorkerState:
     checkpoint_sha256: str
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalWorkerInspection:
+    """Read-only, controller-verifiable projection of worker evidence.
+
+    This projection deliberately contains no process liveness claim.  It only
+    reports what is durably present in the local callback journal and whether
+    the terminal evidence is quarantined.  Callers must still perform any
+    platform-specific PID/PGID checks before trusting an external worker.
+    """
+
+    profile_sha256: str
+    status: str
+    quarantine: bool
+    claim_checkpoint_sha256: str
+    latest_checkpoint_sha256: str
+    terminal_receipt_sha256: str | None
+    controller_observed_terminal: bool | None
+    cleanup_confirmed: bool | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "profile_sha256": self.profile_sha256,
+            "status": self.status,
+            "quarantine": self.quarantine,
+            "claim_checkpoint_sha256": self.claim_checkpoint_sha256,
+            "latest_checkpoint_sha256": self.latest_checkpoint_sha256,
+            "terminal_receipt_sha256": self.terminal_receipt_sha256,
+            "controller_observed_terminal": self.controller_observed_terminal,
+            "cleanup_confirmed": self.cleanup_confirmed,
+        }
+
+
 class ExternalWorkerEvidenceStore:
     """Append-only worker claim, heartbeat and terminal receipts in the RSI ledger."""
 
@@ -208,5 +240,68 @@ class ExternalWorkerEvidenceStore:
         _digest, current = self._state(profile)
         return ExternalWorkerState(profile, current["status"], 0, current["event"], _digest)
 
+    def inspect_verified(self, profile: ExternalWorkerTrustProfile) -> ExternalWorkerInspection:
+        """Inspect all local worker evidence without writing or relaunching.
 
-__all__ = ["ExternalWorkerEvidenceError", "ExternalWorkerEvidenceStore", "ExternalWorkerState", "ExternalWorkerTrustProfile"]
+        Unlike :meth:`inspect`, this returns a stable diagnostic projection for
+        operators and tests.  It validates the claim and any heartbeat/terminal
+        records through the callback journal, then marks ``unknown`` terminal
+        evidence as quarantined.  A missing claim remains an error because no
+        worker identity can be established from an unclaimed episode.
+        """
+        if not isinstance(profile, ExternalWorkerTrustProfile):
+            raise ExternalWorkerEvidenceError("external_worker_profile_invalid")
+        claim = self.journal.inspect(self.scope_id, profile.episode_id + ":claim")
+        if claim is None:
+            raise ExternalWorkerEvidenceError("external_worker_claim_missing")
+        claim_digest, claim_state = claim
+        binding = self._binding(profile)
+        if self.journal.digest(claim_state["binding"]) != self.journal.digest(binding):
+            raise ExternalWorkerEvidenceError("external_worker_profile_drift")
+        claim_result = None
+        if claim_state["status"] == "completed":
+            claim_result = claim_state["result"]
+            self._validate_event(binding, claim_result["status"], claim_result)
+        terminal = self.journal.inspect(self.scope_id, profile.episode_id + ":terminal")
+        latest_digest = claim_digest
+        status = "running" if claim_result is None else claim_result["status"]
+        event: Mapping[str, Any] = claim_result["event"] if claim_result else {}
+        if terminal is not None:
+            latest_digest, terminal_state = terminal
+            if terminal_state["status"] != "completed":
+                raise ExternalWorkerEvidenceError("external_worker_terminal_corrupt")
+            terminal_result = terminal_state["result"]
+            self._validate_event(binding, terminal_result["status"], terminal_result)
+            status = terminal_result["status"]
+            event = terminal_result["event"]
+        return ExternalWorkerInspection(
+            profile_sha256=profile.digest(),
+            status=status,
+            quarantine=status == "unknown",
+            claim_checkpoint_sha256=claim_digest,
+            latest_checkpoint_sha256=latest_digest,
+            terminal_receipt_sha256=event.get("terminal_receipt_sha256"),
+            controller_observed_terminal=event.get("controller_observed_terminal"),
+            cleanup_confirmed=event.get("cleanup_confirmed"),
+        )
+
+    def reconcile_status(self, profile: ExternalWorkerTrustProfile) -> str:
+        """Return a read-only reconciliation classification.
+
+        ``unknown`` is intentionally reported as ``quarantined`` and never
+        converted into a successful state by this method.
+        """
+        inspection = self.inspect_verified(profile)
+        if inspection.quarantine:
+            return "quarantined"
+        if inspection.status == "running":
+            return "needs_terminal_observation"
+        if inspection.status in _TERMINAL and inspection.controller_observed_terminal and inspection.cleanup_confirmed:
+            return "terminal_verified"
+        return "unresolved"
+
+
+__all__ = [
+    "ExternalWorkerEvidenceError", "ExternalWorkerEvidenceStore", "ExternalWorkerInspection",
+    "ExternalWorkerState", "ExternalWorkerTrustProfile",
+]

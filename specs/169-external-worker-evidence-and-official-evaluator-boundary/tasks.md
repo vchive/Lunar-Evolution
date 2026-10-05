@@ -7,6 +7,9 @@
 - [x] T169-05 将两类 receipt 绑定到 NativeRSISolverGateway 的 same-attempt mapping；任一缺失只返回 unresolved/unknown。
 - [x] T169-06 增加本地 subprocess/loopback fixture，运行 ownership、crash、cancel、timeout、recovery 和 tamper 矩阵。
 - [x] T169-07 更新 Feature 160、priority-execution、HANDOFF，记录本地完成边界和真实 campaign 非目标。
+- [x] T169-08 增加统一只读 worker evidence verifier，将 attestation、registration、handoff
+  和 terminal evidence 重新绑定并分类为 completed/failed/unknown/identity drift；不授予
+  外部认证或多机 ownership 权限。
 
 
 ## 当前边界

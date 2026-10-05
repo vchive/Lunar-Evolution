@@ -50,6 +50,10 @@ The sections below record implemented local progress and the limits of each cont
   stops subsequent retrieval without rewriting the immutable snapshot or its digest.
 - Complete Actor evidence now has a durable create-only sidecar and first-call claim. Unknown
   claims never restart the evaluator; exact completed replay is read-only. DRS composition passes.
+- A provider-free unified worker evidence verifier now rebinds launch attestation, trusted
+  process registration, bootstrap handoff and terminal evidence into a read-only classification.
+  It reports trusted completed/failed, unknown recovery required, or identity drift; it does not
+  provide external source authentication or multi-host ownership.
 - A configured generation coordinator automatically admits post-practice candidates using the
   frozen manifest, durable child trials and shared parent budget. Same-run inherited generations
   have explicit lineage; rejected memory keeps the parent and unknown blocks the whole run.
