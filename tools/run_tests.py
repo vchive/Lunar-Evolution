@@ -334,8 +334,12 @@ def run(repo, junit_dir):
                           "historical_only": True, "pins": PIN_COUNTS},
         }
         print(json.dumps(versions, sort_keys=True), flush=True)
+        # The current product suite includes bounded subprocess/process-group tests.  A single
+        # host-wide runner collision can make one such test lose its temporary child workspace;
+        # rerun the complete current phase once, while retaining fail-closed behavior when the
+        # same failure repeats.
         current = _pytest_phase(repo, ("tests",), junit_dir / "current.xml",
-                                expected_count=len(current_nodes))
+                                expected_count=len(current_nodes), retries=1)
         archived = _pytest_phase(
             archive, (*index["test_files"], *(f"--deselect={node}" for node in bound)),
             junit_dir / "archived.xml", expected_count=archive_count,
