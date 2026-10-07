@@ -9,7 +9,7 @@ import signal
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -123,32 +123,37 @@ def test_c_guard_rejects_invalid_descriptor_or_nonprivate_session(tmp_path, inva
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
     read_fd, write_fd = os.pipe()
     extra_fd = None
-    try:
+    with ExitStack() as stack:
+        stack.callback(os.close, read_fd)
+        stack.callback(os.close, write_fd)
+        control_r, control_w = os.pipe()
+        os.close(control_w)  # Empty control reaches 66 if the guard refusal is lost.
+        gate_r, gate_w = os.pipe()
+        frame_r, frame_w = os.pipe()
+        for fd in (control_r, gate_r, gate_w, frame_r, frame_w):
+            stack.callback(os.close, fd)
         selected = read_fd
         if invalid == "regular":
             path = tmp_path / "regular"
             path.write_bytes(b"fixture")
             extra_fd = selected = os.open(path, os.O_RDONLY)
+            stack.callback(os.close, extra_fd)
         elif invalid == "write":
             selected = write_fd
         elif invalid == "nonblocking":
             os.set_blocking(read_fd, False)
-        command = [str(artifact.path), "--control-fd", "0", "--gate-fd", "1",
-                   "--frame-fd", "2", "--controller-lifeline-fd",
-                   str(0 if invalid == "alias" else selected)]
+        command = [str(artifact.path), "--control-fd", str(control_r), "--gate-fd", str(gate_r),
+                   "--frame-fd", str(frame_w), "--controller-lifeline-fd",
+                   str(control_r if invalid == "alias" else selected)]
         process = subprocess.Popen(
-            command, pass_fds=(read_fd, write_fd, *((extra_fd,) if extra_fd is not None else ())),
+            command, pass_fds=(control_r, gate_r, frame_w, read_fd, write_fd,
+                               *((extra_fd,) if extra_fd is not None else ())),
             start_new_session=invalid != "not-private", stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={"PATH": os.defpath},
         )
         stdout, _ = process.communicate(timeout=5)
         assert process.returncode == 64
         assert stdout == b""
-    finally:
-        os.close(read_fd)
-        os.close(write_fd)
-        if extra_fd is not None:
-            os.close(extra_fd)
 
 
 def test_guard_eof_before_gate_stops_without_target_start(tmp_path):
@@ -223,6 +228,11 @@ def test_guarded_exec_error_stops_group_without_success_frame(tmp_path):
         assert _frame(fixture.frame).kind == "bootstrap_ready"
         _release(fixture)
         assert fixture.process.wait(timeout=3) in {-signal.SIGKILL, 78}
+        if sys.platform == "linux":
+            refused = _frame(fixture.frame)
+            assert refused.kind == "target_start_failed"
+            assert refused.observed_pid is None
+            assert refused.observed_pgid is None
         assert os.read(fixture.frame, 8192) == b""
 
 

@@ -14,17 +14,19 @@ containment. Feature173 passed its own final-head three-version CI run3766952851
 phases first attempt without retries, and merged at d3f4fbf with the tested tree. Historical
 pending statements below are superseded.
 
-- **P0 current**: Feature174 is merged through PR9 after its own eight-phase three-version CI
-  run37678220566, no retries, merge4fa526c with the tested tree. Feature175 now implements
-  known failed/cancelled process-only registration/recovery with original broker, ledger/claim,
-  deadline and controller CAS/budget evidence; final-head full CI and merge remain required.
-  Full local filesystem/FD/egress containment and independent stop supervision after bootstrap
-  death/pause remain separate P0 work. Abandoned is an explicit disposition, not an inferred
-  outcome. Feature173 remains complete in its own original-deadline anchor scope.
-- **P1 next**: immutable runtime layout and complete import inventory, versioned native runtime
-  binding, local Python inherited-pipe broker fixture, real OpenEvolve/Shinka project adapters and
-  production RSI CLI solvers. Feature171's ABI/import/environment are declarations and unlisted
-  files/writable runtime loads remain outside its proof.
+- **P0 current**: Feature174 and Feature175 are merged through PR9/PR10 after their own
+  final-head three-version raw CI audits. Feature175 known failed/cancelled process-only
+  settlement does not infer outcomes from missing evidence. Feature176 input mutation gates
+  and Feature177 closed-layout preflight are implemented in PR11; its final-head CI/merge
+  must be confirmed independently. Feature178 adds a bounded Linux child inherited-FD handoff
+  in a separate branch, with original broker/control/deadline semantics. Full grant-object/path
+  identity, writable/read overlap, allowed-FD/ioctl/egress closure and independent stop supervision
+  after bootstrap death/pause remain open P0 work. Abandoned is an explicit disposition.
+- **P1 next**: immutable runtime/load protection, archive/loader/import completeness, versioned
+  delivery, local Python inherited-pipe broker fixture, real OpenEvolve/Shinka project adapters
+  and production RSI CLI solvers. Feature177 inventories complete finite filesystem membership
+  but runtime_load_protection/archive_contents_complete/loader_dependencies_complete remain
+  explicitly false; it does not supply read grants or launch authority. Feature171 wire is unchanged.
 - **P2**: multi-host ownership, services and distributed scheduling stay deferred.
 
 ## Historical execution note — 2026-10-07

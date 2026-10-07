@@ -15,7 +15,7 @@ import signal
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,7 +25,7 @@ from test_native_bootstrap import _launch
 from test_native_trusted_controller_death import _frame, _state, _stopped
 
 from lunar_evolution.native_bootstrap import (
-    LINUX_INPUT_MUTATION_IMPLEMENTATION,
+    LINUX_FD_HANDOFF_IMPLEMENTATION,
     NativeBootstrapError,
     build_native_bootstrap_artifact,
     encode_native_bootstrap_control,
@@ -268,7 +268,7 @@ def test_terminal_waits_for_all_waitable_descendants_and_preserves_direct_status
 ):
     count = 3 if kind == 2 else 1
     with _supervised(tmp_path, kind=kind, direct_exit=direct_exit) as fixture:
-        assert fixture.artifact.descriptor.implementation_version == LINUX_INPUT_MUTATION_IMPLEMENTATION
+        assert fixture.artifact.descriptor.implementation_version == LINUX_FD_HANDOFF_IMPLEMENTATION
         _started, descendants = _started_with_descendants(fixture, tmp_path, count=count)
         (tmp_path / "release-descendants").touch()
         terminal = _frame(fixture.frame)
@@ -559,11 +559,20 @@ static int fixture_pthread_join(pthread_t thread, void **result) {
 @pytest.mark.parametrize("fault", [1, 2, 3, 4], ids=["set-fails", "get-fails", "get-disabled", "sigchld-fails"])
 def test_subreaper_setup_failures_stop_before_ready_or_control_consumption(tmp_path, fault):
     bootstrap = _fault_bootstrap(tmp_path, fault)
-    process = subprocess.run(
-        [str(bootstrap), "--control-fd", "0", "--gate-fd", "1", "--frame-fd", "2"],
-        stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=3,
-        env={"PATH": os.defpath},
-    )
+    with ExitStack() as stack:
+        control_r, control_w = os.pipe()
+        os.close(control_w)
+        gate_r, gate_w = os.pipe()
+        frame_r, frame_w = os.pipe()
+        for fd in (control_r, gate_r, gate_w, frame_r, frame_w):
+            stack.callback(os.close, fd)
+        process = subprocess.run(
+            [str(bootstrap), "--control-fd", str(control_r), "--gate-fd", str(gate_r),
+             "--frame-fd", str(frame_w)],
+            pass_fds=(control_r, gate_r, frame_w), close_fds=True,
+            stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=3,
+            env={"PATH": os.defpath},
+        )
     assert process.returncode == 64  # Empty control would otherwise produce 66.
     assert process.stdout == process.stderr == b""
 

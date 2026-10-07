@@ -1,5 +1,40 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Linux native target FD handoff SDD
+
+PR #10 已合入 main：head1d87ba685327a585ea02b6b25f6bfe6cb2891d37，merge
+`e17608eb35efea408d78134f44ac197ac632956b`，tree83e86e8683888cb4eea15aecb40f50eaae57a274。
+最终run37685452481三版九阶段全部通过、无重试；各版current10521/32skip，完整原始XML/
+日志与tested merge parents/tree经独立复核。main postmerge run37691786270仍单独审计。
+
+PR #11 继承该exact175，最终修复head `e56140a8156ad1b463f3ff0c5cf1cc5a19e24f05`，
+tree5ff1b1138ec683d20348153172b78f84e9afab3e；run37691648336完整三版CI/merge待核验。
+初始000d540/run37690178144由实际scalar/aggregate验证work-budget修复取代，保留原始
+证据，不追认为最终head成功。新177+旧171专项361passed/0skip/failure/error，独立复核同样361。
+
+独立 `codex/native-fd-handoff` 从PR11 exacthead延续Feature178。新Linux default/formal
+selector为native-bootstrap-linux-fd-handoff-v1，旧版本在budget/input/nonce/spawn前拒绝，
+旧load/recovery保持原scope。子进程有限close_range keep集至UINT_MAX，不用RLIMIT/proc census，
+保留hoststdio、必要targetFD及broker双端；exec-error writer checked CLOEXEC。保留sealed
+shebang targetFD继承语义。broker以strictnumbers/reserved/FIFO/PIPEFS/direction/O_PATH/
+distinctinode拒绝错误端点；fresh来源仍属于既有trustedhost，不升级外部来源认证。
+新受控拒绝明确报告error及Linux target_start_failed，Darwin保留原negativeframe顺序。
+guardian/deadline/drain/control/frame/receipt/publication协议不变，历史证据不升级。
+
+本地Darwin lifecycle等195cases为92passed/103skip，最终75Linux FDcases全部skip；修正旧
+9个fault覆盖后的84cases为5passed/79skip。原scheduler/broker/OpenEvolve/nativefailure/
+RSIgateway/controller组合153passed/0skip/failure/error；Ruff/compileall/diff、YAML与684
+exports通过。独立审查关闭highFD未真正lowerRLIMIT、旧stdioFD提前拦截原fault路径两项
+夹具问题；首轮编译与Darwinframe expectation失败原XML仍保留。各suite有重叠不能相加。
+Linux真实enforcement及本轮finalhead三版完整CI/merge仍需独立核验，不能借PR10/11结果。
+
+P0仍开放grant-object/path/inode/overlap、allowedFD/ioctl/完整egress及bootstrap death/pause后
+独立停止监督。P1仍为immutable runtime/load protection、archive/loader/import completeness、
+versioned delivery、Python inheritedpipefixture、实际OpenEvolve/Shinka adapters和生产RSI CLI。
+P2多机ownership/服务化/分布式调度后置。继续只用local inert/C/filesystem/pipe/loopback/
+provider-free tests及既有GitHub CI，不读.env/密钥，不运行模型、WebAgent、远程/公司evaluator
+或真实campaign，保留他人修改。实际merge状态读取各PR与ignored report。
+
 ## 2026-10-08 Native input mutation and closed runtime tree SDD
 
 独立分支 `codex/native-runtime-closure` 从 Feature175 exact head `1d87ba6` 延续两项

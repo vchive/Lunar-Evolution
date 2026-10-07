@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .native_bootstrap import (
     LINUX_CHILD_SUPERVISION,
+    LINUX_FD_HANDOFF_IMPLEMENTATION,
     LINUX_INPUT_MUTATION_IMPLEMENTATION,
     NativeBootstrapArtifact,
     NativeBootstrapError,
@@ -684,11 +685,18 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version != LINUX_INPUT_MUTATION_IMPLEMENTATION
+        and artifact.descriptor.implementation_version not in {
+            LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION,
+        }
     ):
         # Reject before budget persistence, nonce consumption or spawn. Read-only recovery
         # deliberately keeps its historical descriptor and process-only evidence contract.
         raise NativeTrustedAttemptError("native_trusted_attempt_input_mutation_required")
+    if (
+        artifact.descriptor.platform_execution_mode == "linux-fd-bound"
+        and artifact.descriptor.implementation_version != LINUX_FD_HANDOFF_IMPLEMENTATION
+    ):
+        raise NativeTrustedAttemptError("native_trusted_attempt_fd_handoff_required")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
     if cancelled is not None and not callable(cancelled):
