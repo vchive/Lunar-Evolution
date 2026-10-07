@@ -6,4 +6,4 @@
 - [x] Formal attempt/recovery/cleanup and pure worker evidence binding.
 - [x] Drift, crash, signal-ordering, legacy and read-only replay tests.
 - [x] Focused tests, Ruff, compileall and diff checks.
-- [ ] Final-head complete three-version CI and main merge, independently recorded.
+- [x] Final-head complete three-version CI and main merge, independently recorded.

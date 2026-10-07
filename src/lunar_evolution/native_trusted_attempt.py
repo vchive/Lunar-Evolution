@@ -15,6 +15,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .native_bootstrap import (
+    LINUX_CHILD_SUPERVISION,
+    LINUX_SUBREAPER_IMPLEMENTATION,
     NativeBootstrapArtifact,
     NativeBootstrapError,
     encode_native_bootstrap_control,
@@ -680,6 +682,13 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_admission_invalid")
     if not isinstance(artifact, NativeBootstrapArtifact):
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
+    if (
+        artifact.descriptor.platform_execution_mode == "linux-fd-bound"
+        and artifact.descriptor.implementation_version != LINUX_SUBREAPER_IMPLEMENTATION
+    ):
+        # Reject before budget persistence, nonce consumption or spawn. Read-only recovery
+        # deliberately keeps its historical descriptor and process-only evidence contract.
+        raise NativeTrustedAttemptError("native_trusted_attempt_child_supervision_required")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
     if cancelled is not None and not callable(cancelled):
@@ -837,6 +846,10 @@ def run_native_trusted_attempt(
                     gate_fd=gate_read, frame_fd=frame_write,
                     controller_lifeline_fd=lifeline_read,
                     deadline_monotonic_ns=native_deadline_ns,
+                    child_supervision=(
+                        LINUX_CHILD_SUPERVISION
+                        if installed.descriptor.platform_execution_mode == "linux-fd-bound" else None
+                    ),
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()

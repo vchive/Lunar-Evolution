@@ -10,7 +10,8 @@ Combine existing attempt/deadline/controller-death, worker verifier, scheduler/R
 local composition regressions. Platform skips must be distinguished from enforcement. No model,
 WebAgent, remote/company evaluator, upstream campaign or credential access is part of validation.
 
-Implementation and verification are in progress; earlier PR7 CI does not validate this feature.
+Feature173 is merged; its own final-head CI evidence is recorded below. Earlier PR7 CI does
+not validate this feature.
 
 Local installed Python3.11: final deadline/helper/claim/registration/worker suite358 passed,
 0 skips/failures/errors, no cleanup warnings (`/tmp/lunar-deadline-anchor-final-v5-oct8.xml`).
@@ -27,6 +28,10 @@ recovery publication. Ruff `src tests tools`, compileall and diff checks passed.
 change, model, campaign or remote evaluator was used. CI now retains `deadline-anchor.xml`
 independently, alongside the existing phases and original immutable archive retry policy.
 
-Final-head complete Ubuntu3.11/3.12/3.13 CI and main merge remain pending at this source commit;
-the subsequent PR checks and merge record supply actual status. Earlier PR7 CI is not this
-feature's evidence.
+PR #8 final head `f870cb95c10825e49129e50629731adb3a773595` passed complete Ubuntu
+Python3.11/3.12/3.13 CI run `37669528518`. Each version's independently audited original XML
+contains deadline358/1skip, runtime240/1skip, adapters173, native403/6skips, current10317/31skips,
+archived2294 and frozen24; all0failure/error, all first attempt, no archive/current retries.
+Merged at `d3f4fbf0ae531d3299ae6736382867d60fee1cc4`; main tree equals the tested head tree.
+Post-merge main CI `37675779160` is a separate in-progress run at this update. This evidence
+does not validate subsequent Feature174 or establish actual project/campaign acceptance.

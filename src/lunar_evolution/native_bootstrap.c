@@ -22,6 +22,9 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif
 #include "native_producer_isolation.h"
 
 #if defined(__APPLE__)
@@ -318,6 +321,68 @@ static void stop_own_guarded_group(const controller_guard_t *guard) {
     _exit(78);
 }
 
+static void check_controller_guard(const controller_guard_t *guard) {
+    if (!guard->enabled) return;
+    for (;;) {
+        if (getpid() != guard->pid || getpgrp() != guard->pid ||
+            getsid(0) != guard->pid || guard_deadline_expired(guard))
+            stop_own_guarded_group(guard);
+        struct pollfd owner_pipe = {guard->fd, POLLIN, 0};
+        int observed = poll(&owner_pipe, 1, 0);
+        if (observed < 0 && errno == EINTR) continue;
+        if (observed != 0 || guard_deadline_expired(guard))
+            stop_own_guarded_group(guard);
+        return;
+    }
+}
+
+static int setup_child_supervision(void) {
+#if defined(__linux__)
+    int enabled = 0;
+    if (prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0 ||
+        prctl(PR_GET_CHILD_SUBREAPER, &enabled, 0, 0, 0) != 0 || enabled != 1)
+        return -1;
+    /* An inherited ignored SIGCHLD/SA_NOCLDWAIT could auto-reap children and
+       destroy waitable-tree evidence. Targets cannot change this disposition
+       in the separate bootstrap process. */
+    struct sigaction restored;
+    memset(&restored, 0, sizeof(restored)); restored.sa_handler = SIG_DFL;
+    if (sigemptyset(&restored.sa_mask) != 0 || sigaction(SIGCHLD, &restored, NULL) != 0)
+        return -1;
+#endif
+    return 0;
+}
+
+static int drain_supervised_children(const controller_guard_t *guard) {
+#if defined(__linux__)
+    for (;;) {
+        check_controller_guard(guard);
+        int status;
+        /* __WALL also covers inherited non-SIGCHLD clone children. ECHILD,
+           not a group probe which includes this leader, establishes drain. */
+        pid_t waited = waitpid(-1, &status, __WALL | WNOHANG);
+        if (waited > 0) continue;
+        if (waited < 0) {
+            if (errno == EINTR) continue;
+            if (errno == ECHILD) return 0;
+            return -1;
+        }
+        /* Reuse the original guardian and absolute deadline. The legacy
+           unguarded fixture interface offers cooperative drain only. */
+        struct pollfd owner_pipe = {guard->fd, POLLIN, 0};
+        int observed = poll(guard->enabled ? &owner_pipe : NULL, guard->enabled ? 1 : 0, 10);
+        if (observed < 0 && errno == EINTR) continue;
+        if (observed != 0) {
+            if (guard->enabled) stop_own_guarded_group(guard);
+            return -1;
+        }
+    }
+#else
+    (void)guard;
+    return 0;
+#endif
+}
+
 static void *watch_controller(void *value) {
     controller_guard_t *guard = (controller_guard_t *)value;
     for (;;) {
@@ -366,20 +431,34 @@ static int finish_controller_guard(controller_guard_t *guard) {
     void *result = NULL;
     if (pthread_cancel(guard->thread) != 0 || pthread_join(guard->thread, &result) != 0 ||
         result != PTHREAD_CANCELED) return -1;
+    /* Joining observes cancellation completion; it does not validate the owner
+       or clock across that wait. Keep the original reader until this check. */
+    check_controller_guard(guard);
     close(guard->fd);
     guard->enabled = 0;
     return 0;
 }
 
 int main(int argc, char **argv) {
-    if ((argc != 7 && argc != 9 && argc != 11) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
+    if ((argc != 7 && argc != 9 && argc != 11 && argc != 13) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
     int control_fd, gate_fd, frame_fd;
     if (parse_fd_arg(argv[2], &control_fd) || parse_fd_arg(argv[4], &gate_fd) || parse_fd_arg(argv[6], &frame_fd)) return 64;
+    if (argc == 13) {
+#if defined(__linux__)
+        if (strcmp(argv[11], "--child-supervision") != 0 ||
+            strcmp(argv[12], "linux-subreaper-v1") != 0) return 64;
+#else
+        return 64;
+#endif
+    }
+    /* All Linux entrypoints in this artifact share the same drain semantics;
+       the explicit flag negotiates formal guardian/deadline supervision. */
+    if (setup_child_supervision() != 0) return 64;
     controller_guard_t guard; memset(&guard, 0, sizeof(guard)); guard.fd = -1;
     if (argc >= 9) {
         int lifeline_fd;
         uint64_t deadline_ns = 0;
-        if (argc == 11 && (strcmp(argv[9], "--deadline-monotonic-ns") != 0 ||
+        if (argc >= 11 && (strcmp(argv[9], "--deadline-monotonic-ns") != 0 ||
             parse_deadline_arg(argv[10], &deadline_ns) != 0)) return 64;
         if (strcmp(argv[7], "--controller-lifeline-fd") != 0 || parse_fd_arg(argv[8], &lifeline_fd) != 0 ||
             lifeline_fd == control_fd || lifeline_fd == gate_fd || lifeline_fd == frame_fd ||
@@ -481,8 +560,19 @@ int main(int argc, char **argv) {
         if (guard.enabled) stop_own_guarded_group(&guard);
         free_control(&c); return 77;
     }
+    if (drain_supervised_children(&guard) != 0) {
+        if (guard.enabled) stop_own_guarded_group(&guard);
+        free_control(&c); return 77;
+    }
+    /* Keep the guardian active across terminal publication. A frame observed
+       just before EOF/deadline cannot turn a failed bootstrap exit into zero. */
+    check_controller_guard(&guard);
+    if (emit_frame(frame_fd, c.launch, c.intent, 3, "terminal", NULL, 0, 0) != 0) {
+        if (guard.enabled) stop_own_guarded_group(&guard);
+        free_control(&c); close(frame_fd); return 77;
+    }
+    check_controller_guard(&guard);
     if (finish_controller_guard(&guard) != 0) stop_own_guarded_group(&guard);
-    emit_frame(frame_fd, c.launch, c.intent, 3, "terminal", NULL, 0, 0);
     free_control(&c); close(frame_fd);
     if (WIFEXITED(status)) return WEXITSTATUS(status); if (WIFSIGNALED(status)) return 128 + WTERMSIG(status); return 77;
 }

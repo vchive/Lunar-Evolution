@@ -25,6 +25,8 @@ _SOURCE = Path(__file__).with_name("native_bootstrap.c")
 _MAX_BYTES = 8 * 1024 * 1024
 _MAX_PATH_BYTES = 4096
 _MAX_ARGC = 64
+LINUX_CHILD_SUPERVISION = "linux-subreaper-v1"
+LINUX_SUBREAPER_IMPLEMENTATION = "native-bootstrap-linux-subreaper-v1"
 
 
 class NativeBootstrapError(ValueError):
@@ -124,10 +126,16 @@ def build_native_bootstrap_artifact(
     *,
     compiler: str | Path | None = None,
     allowlist_id: str = "lunar-native-bootstrap-v1",
-    implementation_version: str = "native-bootstrap-v1",
+    implementation_version: str | None = None,
 ) -> NativeBootstrapArtifact:
     """Compile one private native artifact and return its exact descriptor."""
     mode = _platform_mode()
+    if implementation_version is None:
+        implementation_version = (
+            LINUX_SUBREAPER_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
+        )
+    if implementation_version == LINUX_SUBREAPER_IMPLEMENTATION and mode != "linux-fd-bound":
+        _fail("native_bootstrap_child_supervision_unsupported")
     if not isinstance(allowlist_id, str) or not allowlist_id:
         _fail("native_bootstrap_allowlist_invalid")
     source = _SOURCE
@@ -297,6 +305,7 @@ def native_bootstrap_command(
     frame_fd: int,
     controller_lifeline_fd: int | None = None,
     deadline_monotonic_ns: int | None = None,
+    child_supervision: str | None = None,
 ) -> tuple[str, ...]:
     """Build a guarded command; omitted lifeline/deadline are direct fixture interfaces."""
     executable = artifact.path if isinstance(artifact, NativeBootstrapArtifact) else Path(artifact)
@@ -312,15 +321,31 @@ def native_bootstrap_command(
         or deadline_monotonic_ns <= 0 or deadline_monotonic_ns > 0xFFFFFFFFFFFFFFFF
     ):
         _fail("native_bootstrap_deadline_invalid")
+    if (
+        child_supervision is None and isinstance(artifact, NativeBootstrapArtifact)
+        and artifact.descriptor.implementation_version == LINUX_SUBREAPER_IMPLEMENTATION
+        and controller_lifeline_fd is not None and deadline_monotonic_ns is not None
+    ):
+        child_supervision = LINUX_CHILD_SUPERVISION
+    if child_supervision is not None:
+        if child_supervision != LINUX_CHILD_SUPERVISION or (
+            controller_lifeline_fd is None or deadline_monotonic_ns is None
+        ):
+            _fail("native_bootstrap_child_supervision_invalid")
+        if platform.system().lower() != "linux":
+            _fail("native_bootstrap_child_supervision_unsupported")
     command = (str(executable), "--control-fd", str(control_fd), "--gate-fd", str(gate_fd), "--frame-fd", str(frame_fd))
     if controller_lifeline_fd is not None:
         command += ("--controller-lifeline-fd", str(controller_lifeline_fd))
     if deadline_monotonic_ns is not None:
         command += ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
+    if child_supervision is not None:
+        command += ("--child-supervision", child_supervision)
     return command
 
 
 __all__ = [
+    "LINUX_CHILD_SUPERVISION", "LINUX_SUBREAPER_IMPLEMENTATION",
     "NativeBootstrapArtifact", "NativeBootstrapError", "build_native_bootstrap_artifact",
     "encode_native_bootstrap_control", "load_native_bootstrap_artifact", "native_bootstrap_command",
     "native_bootstrap_source_path",

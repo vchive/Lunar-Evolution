@@ -1,5 +1,36 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 PR #8 merged; Linux descendants drain SDD
+
+PR #8 已合入 main：tested head `f870cb95c10825e49129e50629731adb3a773595`，merge
+`d3f4fbf0ae531d3299ae6736382867d60fee1cc4`。最终 run `37669528518` 的 Ubuntu
+Python3.11/3.12/3.13 七阶段全部首轮通过、无重试：各版 deadline358/1skip、runtime240/
+1skip、adapters173、native403/6skips、current10317/31skips、archive2294、frozen24，均
+0failure/error。原始XML独立核验，main tree等于tested tree。postmerge main run
+`37675779160` 在本次更新时仍运行，不能冒称通过；下方Feature173 pending为历史状态。
+
+当前从该tested tree在独立worktree延续 `codex/native-descendants-drain` / Feature174：
+Linux bootstrap 在target fork前verify subreaper与waitable SIGCHLD，direct child退出后保留
+原guardian，使用 `waitpid(-1, __WALL | WNOHANG)` 回收直到ECHILD，仍受原lifeline及absolute
+deadline约束。新默认Linuxdescriptor与正式 `--child-supervision linux-subreaper-v1` 明确
+绑定；旧Linuxdescriptor在预算持久化/nonce/spawn前拒绝，但旧只读recovery仍保留原scope。
+所有新Linuxbinary fixture入口同样自然drain，缺guardian时不声称bounded监督。
+
+v1控制/帧/process_only terminal不扩authority，不从generic passed/EOF或descriptoralone
+追认tree-drain。common terminal-write与guardian join-tail复验也加固Darwin收尾，但Darwin
+没有subreaper/drain能力。bootstrap自身终止/暂停（包括cleanup SIGTERM、SIGKILL/SIGSTOP）、
+完整containment/egress仍开放。
+本轮focused/static和实际Linux final-headCI/merge分别记录在Feature174 validation；本地
+Darwin skip不能证明Linux执行。不要把PR8证据追认为Feature174通过。
+
+下一P0为可信failed/cancelled settlement bridge与完整containment；abandoned处置需独立
+协议，不能从unknown/清理成功合成失败。P1仍为sealed Python runtime/import inventory、
+versioned runtime delivery、Python inherited-pipe broker fixture、真实OpenEvolve/Shinka
+adapters和RSI CLI生产solver。P2多机ownership/服务化/分布式调度继续后置。
+
+只用本地inert/C/bootstrap/fixture/loopback/provider-free evaluator，不运行模型、WebAgent、
+远程/公司evaluator或真实campaign，不读取/修改.env与密钥。并行改动不得覆盖他人工作。
+
 ## 2026-10-08 PR #7 merged; original deadline anchor SDD
 
 PR #7 已合入 main：tested head `16fb8ac0b0f00233a8aee60208fc5a9ba767b966`，merge
