@@ -42,3 +42,16 @@ CI preserves a dedicated `descendants-drain.xml` before existing phases, origina
 frozen XML and any sole permitted historical archive retry. Complete final-head three-version
 CI and main merge remain pending at this source commit; the PR checks and merge record supply
 actual status. No real model, campaign or remote/company evaluator was used.
+
+## First Linux CI failure and correction
+
+PR #9 first head `f22dd22d44ad67993fa0c1464ec2d9405042afc3`, run `37677320223`, preserves
+all three versions' original descendants XML:47 cases,38 passed,8 failed,1 Darwin-only skip,
+0errors. The eight fault-wrapper fixtures failed compilation; all other cases executed.
+The wrapper's five-argument `prctl` macro also affected the real isolation header's three-argument
+seccomp call. The fixture now compiles that real header before defining its subreaper-only
+fault macro and reports compiler stderr on failure. Production C and warning enforcement are
+unchanged. Later phases did not run on that head; it is not a full regression success.
+
+The corrected head must run the complete matrix independently. The original failed run is
+retained; it is not retried, overwritten or relabelled as a successful result.

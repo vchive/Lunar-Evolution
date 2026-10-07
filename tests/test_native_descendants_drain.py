@@ -460,12 +460,17 @@ def _fault_bootstrap(tmp_path: Path, fault: int) -> Path:
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+''' + f'\n#include {json.dumps(str(native_bootstrap_source_path().with_name("native_producer_isolation.h")))}\n' + r'''
+/* Compile the real isolation helper before syscall fault macros. Its variadic
+   three-argument PR_SET_SECCOMP call is not part of this setup/drain seam. */
 static int fixture_prctl(int option, unsigned long a, unsigned long b,
                          unsigned long c, unsigned long d) {
     if ((FIXTURE_FAULT == 1 && option == PR_SET_CHILD_SUBREAPER) ||
@@ -537,9 +542,15 @@ static int fixture_pthread_join(pthread_t thread, void **result) {
 #define waitpid fixture_waitpid
 #define pthread_join fixture_pthread_join
 ''' + f'\n#include {json.dumps(str(native_bootstrap_source_path()))}\n')
-    compile_native_target(
-        source, target, f"-DFIXTURE_FAULT={fault}", "-pthread", "-Wno-deprecated-declarations",
-    )
+    try:
+        compile_native_target(
+            source, target, f"-DFIXTURE_FAULT={fault}", "-pthread", "-Wno-deprecated-declarations",
+        )
+    except subprocess.CalledProcessError as error:
+        pytest.fail(
+            "native bootstrap fault fixture failed strict compilation:\n"
+            + error.stderr.decode("utf-8", errors="replace"), pytrace=False,
+        )
     return target
 
 
