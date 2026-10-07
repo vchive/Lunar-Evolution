@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .native_bootstrap import (
     LINUX_CHILD_SUPERVISION,
-    LINUX_SUBREAPER_IMPLEMENTATION,
+    LINUX_INPUT_MUTATION_IMPLEMENTATION,
     NativeBootstrapArtifact,
     NativeBootstrapError,
     encode_native_bootstrap_control,
@@ -684,11 +684,11 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version != LINUX_SUBREAPER_IMPLEMENTATION
+        and artifact.descriptor.implementation_version != LINUX_INPUT_MUTATION_IMPLEMENTATION
     ):
         # Reject before budget persistence, nonce consumption or spawn. Read-only recovery
         # deliberately keeps its historical descriptor and process-only evidence contract.
-        raise NativeTrustedAttemptError("native_trusted_attempt_child_supervision_required")
+        raise NativeTrustedAttemptError("native_trusted_attempt_input_mutation_required")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
     if cancelled is not None and not callable(cancelled):

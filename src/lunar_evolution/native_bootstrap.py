@@ -27,6 +27,7 @@ _MAX_PATH_BYTES = 4096
 _MAX_ARGC = 64
 LINUX_CHILD_SUPERVISION = "linux-subreaper-v1"
 LINUX_SUBREAPER_IMPLEMENTATION = "native-bootstrap-linux-subreaper-v1"
+LINUX_INPUT_MUTATION_IMPLEMENTATION = "native-bootstrap-linux-input-mutation-v1"
 
 
 class NativeBootstrapError(ValueError):
@@ -132,9 +133,11 @@ def build_native_bootstrap_artifact(
     mode = _platform_mode()
     if implementation_version is None:
         implementation_version = (
-            LINUX_SUBREAPER_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
+            LINUX_INPUT_MUTATION_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
         )
-    if implementation_version == LINUX_SUBREAPER_IMPLEMENTATION and mode != "linux-fd-bound":
+    if implementation_version in {
+        LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION,
+    } and mode != "linux-fd-bound":
         _fail("native_bootstrap_child_supervision_unsupported")
     if not isinstance(allowlist_id, str) or not allowlist_id:
         _fail("native_bootstrap_allowlist_invalid")
@@ -323,7 +326,9 @@ def native_bootstrap_command(
         _fail("native_bootstrap_deadline_invalid")
     if (
         child_supervision is None and isinstance(artifact, NativeBootstrapArtifact)
-        and artifact.descriptor.implementation_version == LINUX_SUBREAPER_IMPLEMENTATION
+        and artifact.descriptor.implementation_version in {
+            LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION,
+        }
         and controller_lifeline_fd is not None and deadline_monotonic_ns is not None
     ):
         child_supervision = LINUX_CHILD_SUPERVISION
@@ -345,7 +350,7 @@ def native_bootstrap_command(
 
 
 __all__ = [
-    "LINUX_CHILD_SUPERVISION", "LINUX_SUBREAPER_IMPLEMENTATION",
+    "LINUX_CHILD_SUPERVISION", "LINUX_INPUT_MUTATION_IMPLEMENTATION", "LINUX_SUBREAPER_IMPLEMENTATION",
     "NativeBootstrapArtifact", "NativeBootstrapError", "build_native_bootstrap_artifact",
     "encode_native_bootstrap_control", "load_native_bootstrap_artifact", "native_bootstrap_command",
     "native_bootstrap_source_path",
