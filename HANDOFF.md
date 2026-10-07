@@ -1,5 +1,32 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 PR #7 merged; original deadline anchor SDD
+
+PR #7 已合入 main：tested head `16fb8ac0b0f00233a8aee60208fc5a9ba767b966`，merge
+`009691a13d2fd99ee141659216f1e7f13eaff63b`。最终 CI `37660700817` Ubuntu3.11/3.12/3.13
+全部首轮通过、无重试；各版 runtime240/1 skip、trusted173、native403/6 skips、current10108/
+31 skips、archive2294、frozen24 均0 failure/error。原始XML独立核对，合入后的main tree与
+tested head一致。Feature171/172 对各自限定范围完成，不能追认为完整runtime或containment。
+
+当前从该main延续 `codex/native-deadline-anchor` / Feature173：同一publishing FD持有到
+create-only deadline fsync与original bytes/inode/stat指纹冻结；native consumption v2两份
+claim保存原deadline binding，并沿原registration/handoff digest链传递。正式gate、cleanup/
+evidence/terminal/output与只读recovery复验；missing-terminal explicit cleanup每个signal前
+复验，继续使用原absolute deadline。v2 recovery receipt仍为unknown，不重启、不重评、不发布
+候选。旧v1 complete terminal保留只读边界；旧v1 unknown不得获得新清理authority。
+
+本轮规格、代码和测试验证见 specs/173-native-deadline-anchor/。本分支独立完整CI/merge
+尚需完成；PR7证据不代表Feature173通过。部分发表证据保留，不能补claim或重建预算。
+未更改C control/guardian协议、候选admission/commit或read grants。
+
+下一P0仍为post-direct-target descendants监督、完整containment/egress、可信failure/
+abandoned settlement bridge。P1仍为sealed Python runtime与完整import inventory、versioned
+native runtime binding、Python inherited-pipe broker fixture、实际OpenEvolve/Shinka adapters
+及RSI CLI生产solver。P2多机ownership/服务化/分布式调度继续后置。
+
+只运行本地inert/C/bootstrap/fixture/loopback/provider-free evaluator，不运行真实模型、
+WebAgent、远程/公司evaluator或真实campaign，不读取或修改.env/密钥。
+
 ## 2026-10-08 PR #6 merged; runtime inventory and Linux target control
 
 PR #6 已合入 main：tested head `25035895751061abce6d0c1a166363e29704cd79`，merge commit

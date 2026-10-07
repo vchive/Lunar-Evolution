@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import signal
 import subprocess
@@ -9,8 +10,11 @@ import time
 from pathlib import Path
 
 import pytest
-from test_producer_bootstrap import _attempt_records
+from test_producer_bootstrap import _attempt_records, _rehash_record
+from test_trusted_bootstrap_claim import _deadline_fixture, _drift_deadline
 
+from lunar_evolution import trusted_bootstrap_registration as registration_module
+from lunar_evolution.native_deadline_binding import NATIVE_CONSUMPTION_PROTOCOL
 from lunar_evolution.producer_bootstrap import BootstrapHandshakeFrame
 from lunar_evolution.producer_process import (
     ProducerExecutableSnapshot,
@@ -49,6 +53,32 @@ def _inputs(workspace: Path):
     return batch, launch, descriptor, intent, attestation, pair, ready
 
 
+def _native_inputs(workspace: Path):
+    inputs = _inputs(workspace)
+    batch, _, _, _, attestation, _, _ = inputs
+    _, binding = _deadline_fixture(batch)
+    claim = json.loads((batch / "attestation-consumption.json").read_bytes())
+    claim.update({
+        "schema_version": "2", "protocol": NATIVE_CONSUMPTION_PROTOCOL,
+        "deadline_binding": binding,
+    })
+    _rehash_record(claim, "consumption_sha256")
+    nonce_key = hashlib.sha256(attestation.nonce.encode()).hexdigest()
+    _atomic_json(batch / "attestation-consumption.json", claim)
+    _atomic_json(workspace / "evolution" / "producer-nonces" / f"{nonce_key}.json", claim)
+    return inputs, binding
+
+
+def _publish_native(workspace: Path, inputs: tuple, lock_identity: tuple, process, binding):
+    _, launch, descriptor, intent, attestation, pair, ready = inputs
+    return publish_trusted_bootstrap_registration(
+        workspace, launch=launch, descriptor=descriptor, intent=intent,
+        attestation=attestation, pair=pair, process=process, ready_frame=ready,
+        recovery_lock_identity=lock_identity, deadline=time.monotonic() + 5,
+        expected_deadline_binding=binding,
+    )
+
+
 @pytest.fixture
 def blocked_process():
     process = subprocess.Popen(
@@ -79,6 +109,97 @@ def test_publishes_formal_registration_and_handoff_before_gate_release(tmp_path:
     assert result.handoff["registration_sha256"] == result.registration["registration_sha256"]
     assert (batch / "process-registration.json").is_file()
     assert (batch / "trusted-bootstrap-handoff.json").is_file()
+    assert blocked_process.poll() is None
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires process owner identity")
+@pytest.mark.parametrize("supply_expected", [False, True])
+def test_native_registration_binds_both_claims_to_the_frozen_deadline(
+    tmp_path: Path, blocked_process, supply_expected: bool,
+):
+    inputs, binding = _native_inputs(tmp_path)
+    batch = inputs[0]
+    with _recovery_lock(batch) as lock_identity:
+        result = _publish_native(
+            tmp_path, inputs, lock_identity, blocked_process,
+            binding if supply_expected else None,
+        )
+    claim = json.loads((batch / "attestation-consumption.json").read_bytes())
+    assert result.registration["consumption_sha256"] == claim["consumption_sha256"]
+    assert result.handoff["consumption_sha256"] == claim["consumption_sha256"]
+    assert blocked_process.poll() is None
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires process owner identity")
+@pytest.mark.parametrize("kind", ["bytes", "replacement", "missing", "mode", "expected_pin", "legacy"])
+def test_native_registration_refuses_prepublication_deadline_drift(
+    tmp_path: Path, blocked_process, kind: str,
+):
+    if kind == "legacy":
+        inputs = _inputs(tmp_path)
+        _, binding = _deadline_fixture(inputs[0])
+    else:
+        inputs, binding = _native_inputs(tmp_path)
+        if kind == "expected_pin":
+            binding = {**binding, "inode": binding["inode"] + 1}
+        else:
+            _drift_deadline(inputs[0], kind)
+    batch = inputs[0]
+    with _recovery_lock(batch) as lock_identity, pytest.raises(TrustedBootstrapRegistrationError) as failure:
+        _publish_native(tmp_path, inputs, lock_identity, blocked_process, binding)
+    assert failure.value.code.startswith("trusted_registration_deadline_binding_")
+    assert not (batch / "process-registration.json").exists()
+    assert not (batch / "trusted-bootstrap-handoff.json").exists()
+    assert blocked_process.poll() is None
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires process owner identity")
+@pytest.mark.parametrize("stage", ["registration", "handoff"])
+@pytest.mark.parametrize("kind", ["bytes", "replacement", "missing", "mode"])
+def test_native_registration_retains_partial_records_after_deadline_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, blocked_process, stage: str, kind: str,
+):
+    inputs, binding = _native_inputs(tmp_path)
+    batch = inputs[0]
+    original = registration_module._atomic_json
+    selected_name = "process-registration.json" if stage == "registration" else "trusted-bootstrap-handoff.json"
+
+    def drift_after_write(path: Path, value: dict[str, object], *, exclusive: bool = False):
+        original(path, value, exclusive=exclusive)
+        if path.name == selected_name:
+            _drift_deadline(batch, kind)
+
+    monkeypatch.setattr(registration_module, "_atomic_json", drift_after_write)
+    with _recovery_lock(batch) as lock_identity, pytest.raises(TrustedBootstrapRegistrationError) as failure:
+        _publish_native(tmp_path, inputs, lock_identity, blocked_process, binding)
+    assert failure.value.code.startswith("trusted_registration_deadline_binding_")
+    assert (batch / "process-registration.json").exists()
+    assert (batch / "trusted-bootstrap-handoff.json").exists() is (stage == "handoff")
+    assert blocked_process.poll() is None
+
+
+@pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="requires process owner identity")
+@pytest.mark.parametrize("verification", [2, 4])
+def test_native_registration_rechecks_pin_immediately_before_each_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, blocked_process, verification: int,
+):
+    inputs, binding = _native_inputs(tmp_path)
+    batch = inputs[0]
+    original = registration_module.verify_native_deadline_binding
+    calls = 0
+
+    def drift_before_verify(path: Path, *, binding):
+        nonlocal calls
+        calls += 1
+        if calls == verification:
+            _drift_deadline(batch)
+        return original(path, binding=binding)
+
+    monkeypatch.setattr(registration_module, "verify_native_deadline_binding", drift_before_verify)
+    with _recovery_lock(batch) as lock_identity, pytest.raises(TrustedBootstrapRegistrationError):
+        _publish_native(tmp_path, inputs, lock_identity, blocked_process, binding)
+    assert (batch / "process-registration.json").exists() is (verification == 4)
+    assert not (batch / "trusted-bootstrap-handoff.json").exists()
     assert blocked_process.poll() is None
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from dataclasses import replace
@@ -17,7 +18,7 @@ from lunar_evolution.producer_bootstrap import (
     TrustedBootstrapEvidence,
     build_trusted_bootstrap_launch,
 )
-from lunar_evolution.producer_process import _digest_without
+from lunar_evolution.producer_process import _canonical, _digest_without
 from lunar_evolution.trusted_bootstrap_handoff import (
     build_trusted_bootstrap_process_registration_handoff,
 )
@@ -74,6 +75,66 @@ def test_handshake_pass_alone_cannot_establish_completion(tmp_path):
     assert result.status == 'unknown_recovery_required'
     assert result.reason_code == 'process_terminal_missing'
     assert result.terminal_sha256 is None
+
+
+def _native_v2_chain(tmp_path):
+    chain = _terminal_chain(tmp_path)
+    raw = _canonical(chain['deadline'])
+    binding = {
+        'schema_version': '1', 'protocol': 'lunar-native-deadline-file-binding-v1',
+        'name': 'native-trusted-attempt-deadline.json',
+        'deadline_sha256': chain['deadline']['deadline_sha256'],
+        'raw_sha256': hashlib.sha256(raw).hexdigest(), 'size': len(raw),
+        'device': 1, 'inode': 2, 'mode': 0o600, 'mtime_ns': 3, 'ctime_ns': 4,
+    }
+    claim = chain['consumption']
+    claim.update(schema_version='2', protocol='lunar-native-trusted-attestation-consumption-v2',
+                 deadline_binding=binding)
+    _rehash(claim, 'consumption_sha256')
+    registration = chain['registration']
+    registration['consumption_sha256'] = claim['consumption_sha256']
+    _rehash(registration, 'registration_sha256')
+    chain['handoff'] = build_trusted_bootstrap_process_registration_handoff(
+        launch=chain['launch'], descriptor=chain['descriptor'], intent=chain['intent'],
+        attestation=chain['attestation'], consumption=claim, registration=registration,
+    )
+    chain['evidence'] = replace(chain['evidence'], registration_sha256=registration['registration_sha256'],
+                                evidence_sha256=None)
+    chain['cleanup']['registration_sha256'] = registration['registration_sha256']
+    _rehash(chain['cleanup'], 'cleanup_sha256')
+    chain['terminal'] = _terminal_receipt(
+        registration, handoff_sha256=chain['handoff']['handoff_sha256'],
+        evidence_sha256=chain['evidence'].evidence_sha256,
+        gate_released=True, target_started=True, exit_code=0,
+        cleanup_status=chain['cleanup']['cleanup_status'],
+        deadline_sha256=chain['deadline']['deadline_sha256'],
+        cleanup_sha256=chain['cleanup']['cleanup_sha256'],
+    )
+    return chain
+
+
+def test_native_v2_worker_projection_is_pure_and_binds_original_deadline(tmp_path, monkeypatch):
+    chain = _native_v2_chain(tmp_path)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail('pure worker projection must not inspect filesystem or execute')
+
+    monkeypatch.setattr('os.open', forbidden)
+    monkeypatch.setattr('os.stat', forbidden)
+    assert verify_trusted_worker_evidence(**chain).status == 'trusted_completed'
+
+
+@pytest.mark.parametrize('new_deadline', [10.5, 12.0])
+@pytest.mark.parametrize('missing_terminal', [False, True])
+def test_native_v2_worker_refuses_valid_rehashed_deadline(tmp_path, new_deadline, missing_terminal):
+    chain = _native_v2_chain(tmp_path)
+    chain['deadline']['deadline_monotonic'] = new_deadline
+    _rehash(chain['deadline'], 'deadline_sha256')
+    if missing_terminal:
+        chain['terminal'] = None
+    result = verify_trusted_worker_evidence(**chain)
+    assert result.status == 'identity_drift'
+    assert result.reason_code == 'native_deadline_binding_mismatch'
 
 
 @pytest.mark.parametrize(('exit_code', 'cancelled', 'status'), [

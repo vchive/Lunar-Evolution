@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import os
 import selectors
@@ -19,6 +20,12 @@ from .native_bootstrap import (
     encode_native_bootstrap_control,
     load_native_bootstrap_artifact,
     native_bootstrap_command,
+)
+from .native_deadline_binding import (
+    NativeDeadlineBindingError,
+    deadline_binding_digest,
+    persist_native_deadline_binding,
+    verify_native_deadline_binding,
 )
 from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
 from .native_trusted_cleanup import (
@@ -65,6 +72,7 @@ from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_process import (
     ProducerProcessError,
     _atomic_json,
+    _canonical,
     _cleanup,
     _current_process_owned,
     _current_recovery_lock_identity,
@@ -86,6 +94,7 @@ from .rsi_native_inputs import (
 from .trusted_bootstrap_binding import TrustedBootstrapBindingError, prepare_trusted_executable_pair
 from .trusted_bootstrap_registration import (
     TrustedBootstrapRegistrationError,
+    _claim_bytes,
     consume_trusted_bootstrap_attestation,
     publish_trusted_bootstrap_registration,
 )
@@ -102,6 +111,7 @@ class NativeTrustedAttemptError(ValueError):
 _TERMINAL_PROTOCOL = "lunar-native-trusted-process-terminal-v1"
 _TERMINAL_NAME = "native-trusted-process-terminal.json"
 _RECOVERY_PROTOCOL = "lunar-native-trusted-process-recovery-v1"
+_RECOVERY_PROTOCOL_V2 = "lunar-native-trusted-process-recovery-v2"
 _RECOVERY_NAME = "native-trusted-process-recovery.json"
 _DEADLINE_PROTOCOL = "lunar-native-trusted-attempt-deadline-v1"
 _DEADLINE_NAME = "native-trusted-attempt-deadline.json"
@@ -273,22 +283,39 @@ def _deadline_record(
 
 def _persist_deadline(
     batch: Path, launch: object, *, started: float, deadline: float,
-) -> dict[str, object]:
+) -> tuple[dict[str, object], dict[str, object]]:
     record = _deadline_record(launch, started=started, deadline=deadline)
     try:
-        _atomic_json(batch / _DEADLINE_NAME, record, exclusive=True)
-        stored = _read_durable_json(
-            batch / _DEADLINE_NAME, code="native_trusted_attempt_deadline_write_unknown",
-        )
-    except ProducerProcessError as exc:
-        if exc.code == "producer_process_attestation_replayed":
+        binding = persist_native_deadline_binding(batch, record=record)
+    except NativeDeadlineBindingError as exc:
+        if exc.code == "native_deadline_binding_conflict":
             # A retained deadline is evidence that this launch already entered the
             # admission path. Never replace it with a newly allocated budget.
             raise NativeTrustedAttemptError("native_trusted_attempt_claim_failed") from exc
         raise NativeTrustedAttemptError("native_trusted_attempt_deadline_write_unknown") from exc
-    if stored != record:
-        raise NativeTrustedAttemptError("native_trusted_attempt_deadline_write_unknown")
-    return record
+    return record, binding
+
+
+def _check_live_deadline(
+    root: Path, batch: Path, *, attestation: ProducerLaunchAttestation,
+    binding: Mapping[str, object], record: Mapping[str, object],
+    claim: Mapping[str, object] | None,
+) -> None:
+    """Recheck admission's frozen file and both original claim bytes without recapturing."""
+    try:
+        verify_native_deadline_binding(batch, binding=binding, expected_record=record)
+        if claim is not None:
+            nonce_key = hashlib.sha256(attestation.nonce.encode("utf-8")).hexdigest()
+            expected = _canonical(claim)
+            for path in (
+                batch / "attestation-consumption.json",
+                root / "evolution" / "producer-nonces" / f"{nonce_key}.json",
+            ):
+                if _claim_bytes(path)[0] != expected:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_deadline_binding_changed")
+        verify_native_deadline_binding(batch, binding=binding, expected_record=record)
+    except (NativeDeadlineBindingError, TrustedBootstrapRegistrationError) as exc:
+        raise NativeTrustedAttemptError("native_trusted_attempt_deadline_binding_changed") from exc
 
 
 def _verify_deadline_record(
@@ -330,12 +357,17 @@ def _verify_deadline_record(
     return dict(record)
 
 
-def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str, object]:
+def _read_deadline(
+    batch: Path, registration: Mapping[str, object], *, binding: Mapping[str, object] | None = None,
+) -> dict[str, object]:
     try:
-        record = _read_durable_json(
-            batch / _DEADLINE_NAME, code="native_trusted_recovery_deadline_invalid",
-        )
-    except ProducerProcessError as exc:
+        if binding is not None:
+            record = verify_native_deadline_binding(batch, binding=binding)
+        else:
+            record = _read_durable_json(
+                batch / _DEADLINE_NAME, code="native_trusted_recovery_deadline_invalid",
+            )
+    except (ProducerProcessError, NativeDeadlineBindingError) as exc:
         raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
     record = _verify_deadline_record(record, registration)
     try:
@@ -344,10 +376,17 @@ def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str,
         raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
     if record["boot_id"] != current_boot_id:
         raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    if binding is not None:
+        try:
+            verify_native_deadline_binding(batch, binding=binding, expected_record=record)
+        except NativeDeadlineBindingError as exc:
+            raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
     return record
 
 
-def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> dict[str, object] | None:
+def _read_recovery_receipt(
+    batch: Path, registration: Mapping[str, object], *, binding: Mapping[str, object] | None = None,
+) -> dict[str, object] | None:
     path = batch / _RECOVERY_NAME
     try:
         os.lstat(path)
@@ -364,14 +403,15 @@ def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> d
         "intent_sha256", "attestation_sha256", "consumption_sha256",
         "registration_sha256", "pid", "pgid", "owner_identity_sha256",
     )
+    pin_fields = {"deadline_sha256", "deadline_binding_sha256"} if binding is not None else set()
     if (
         set(receipt) != {
             "schema_version", "protocol", "status", "execution_outcome", "reason",
             *bound, "previous_receipt_sha256", "cleanup_status", "term_sent",
-            "kill_sent", "alive_after", "recovery_sha256",
+            "kill_sent", "alive_after", "recovery_sha256", *pin_fields,
         }
-        or receipt.get("schema_version") != "1"
-        or receipt.get("protocol") != _RECOVERY_PROTOCOL
+        or receipt.get("schema_version") != ("2" if binding is not None else "1")
+        or receipt.get("protocol") != (_RECOVERY_PROTOCOL_V2 if binding is not None else _RECOVERY_PROTOCOL)
         or receipt.get("status") != "recovery_required"
         or receipt.get("execution_outcome") != "unknown"
         or receipt.get("reason") != "native_trusted_attempt_terminal_receipt_missing"
@@ -384,15 +424,21 @@ def _read_recovery_receipt(batch: Path, registration: Mapping[str, object]) -> d
         or receipt.get("recovery_sha256") != _digest_without(receipt, "recovery_sha256")
     ):
         raise NativeTrustedAttemptError("native_trusted_recovery_receipt_invalid")
+    if binding is not None and (
+        receipt["deadline_sha256"] != binding["deadline_sha256"]
+        or receipt["deadline_binding_sha256"] != deadline_binding_digest(binding)
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_receipt_invalid")
     return receipt
 
 
 def _cleanup_recovered_attempt(
     batch: Path, registration: Mapping[str, object], lock_identity: tuple[int, int],
+    *, binding: Mapping[str, object], verify_context: Callable[[], dict[str, object]],
 ) -> dict[str, object]:
-    if _read_recovery_receipt(batch, registration) is not None:
+    deadline_record = verify_context()
+    if _read_recovery_receipt(batch, registration, binding=binding) is not None:
         raise NativeTrustedAttemptError("native_trusted_recovery_already_recorded")
-    deadline_record = _read_deadline(batch, registration)
     pid = registration["pid"]
     pgid = registration["pgid"]
     owner_identity = registration["owner_identity"]
@@ -408,16 +454,19 @@ def _cleanup_recovered_attempt(
 
     def owned() -> bool:
         try:
+            verify_context()
             current = _read_durable_json(
                 batch / "process-registration.json",
                 code="native_trusted_recovery_registration_invalid",
             )
-            return (
+            matches = (
                 current == registration
                 and _current_recovery_lock_identity(batch) == lock_identity
                 and _process_owner_identity(pid) == owner_identity
             )
-        except ProducerProcessError:
+            verify_context()
+            return matches
+        except (ProducerProcessError, NativeTrustedAttemptError):
             return False
 
     result = cleanup_registered_process(
@@ -428,8 +477,11 @@ def _cleanup_recovered_attempt(
         grace_seconds=_CLEANUP_RESERVE_SECONDS,
         deadline=float(deadline_record["deadline_monotonic"]),
     )
+    # ALREADY_EXITED bypasses the owner predicate. A TERM already sent cannot be undone,
+    # but later drift must still forbid another signal or a trusted recovery receipt.
+    verify_context()
     receipt: dict[str, object] = {
-        "schema_version": "1", "protocol": _RECOVERY_PROTOCOL,
+        "schema_version": "2", "protocol": _RECOVERY_PROTOCOL_V2,
         "status": "recovery_required", "execution_outcome": "unknown",
         "reason": "native_trusted_attempt_terminal_receipt_missing",
         **{key: registration[key] for key in (
@@ -441,11 +493,15 @@ def _cleanup_recovered_attempt(
         "cleanup_status": result.status.value,
         "term_sent": result.term_sent, "kill_sent": result.kill_sent,
         "alive_after": result.alive_after,
+        "deadline_sha256": binding["deadline_sha256"],
+        "deadline_binding_sha256": deadline_binding_digest(binding),
     }
     receipt["recovery_sha256"] = _digest_without(receipt, "recovery_sha256")
     try:
+        verify_context()
         _atomic_json(batch / _RECOVERY_NAME, receipt, exclusive=True)
-        if _read_recovery_receipt(batch, registration) != receipt:
+        verify_context()
+        if _read_recovery_receipt(batch, registration, binding=binding) != receipt:
             raise NativeTrustedAttemptError("native_trusted_recovery_receipt_write_unknown")
     except ProducerProcessError as exc:
         raise NativeTrustedAttemptError("native_trusted_recovery_receipt_write_unknown") from exc
@@ -689,21 +745,34 @@ def run_native_trusted_attempt(
         broker_stop: threading.Event | None = None
         controller_lifeline_writer: int | None = None
         broker_state: dict[str, object] = {}
+        deadline_binding: dict[str, object] | None = None
+        consumption: dict[str, object] | None = None
+
+        def check_deadline() -> None:
+            if deadline_binding is None:
+                raise NativeTrustedAttemptError("native_trusted_attempt_deadline_binding_changed")
+            _check_live_deadline(
+                root, batch, attestation=attestation, binding=deadline_binding,
+                record=deadline_record, claim=consumption,
+            )
+
         try:
             _revalidate_native_launch_inputs(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
                 require_unexpired=True,
             )
-            deadline_record = _persist_deadline(
+            deadline_record, deadline_binding = _persist_deadline(
                 batch, launch, started=started_monotonic, deadline=deadline,
             )
             deadline_sha256 = str(deadline_record["deadline_sha256"])
-            consume_trusted_bootstrap_attestation(
+            consumption = consume_trusted_bootstrap_attestation(
                 root, producer_root=target_root, intent=intent, attestation=attestation,
                 descriptor=installed.descriptor, launch=launch,
                 recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
+                deadline_binding=deadline_binding,
             )
             claimed = True
+            check_deadline()
             with prepare_trusted_executable_pair(
                 bootstrap_source=installed.path, producer_root=target_root, batch=batch,
                 descriptor=installed.descriptor, launch=launch, intent=intent,
@@ -770,6 +839,7 @@ def run_native_trusted_attempt(
                     deadline_monotonic_ns=native_deadline_ns,
                 )
                 _remaining(deadline, monotonic, cancelled)
+                check_deadline()
                 process = subprocess.Popen(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
@@ -778,6 +848,7 @@ def run_native_trusted_attempt(
                     cwd=str(working), env=broker_env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
+                check_deadline()
                 stream_capture = start_native_trusted_stream_capture(
                     process, limit=intent.output_max_bytes,
                     deadline=deadline, monotonic=monotonic,
@@ -804,6 +875,7 @@ def run_native_trusted_attempt(
                     root, launch=launch, descriptor=installed.descriptor, intent=intent,
                     attestation=attestation, pair=pair, process=process, ready_frame=ready,
                     recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
+                    expected_deadline_binding=deadline_binding,
                 )
                 registration = published.registration
                 handoff_sha256 = str(published.handoff["handoff_sha256"])
@@ -826,16 +898,19 @@ def run_native_trusted_attempt(
 
                 def owned() -> bool:
                     try:
+                        check_deadline()
                         current = _read_durable_json(
                             batch / "process-registration.json",
                             code="native_trusted_attempt_registration_unknown",
                         )
-                        return (
+                        matches = (
                             current == registration
                             and _current_recovery_lock_identity(batch) == lock_identity
                             and _current_process_owned(pid, owner_identity, process)
                         )
-                    except ProducerProcessError:
+                        check_deadline()
+                        return matches
+                    except (ProducerProcessError, NativeTrustedAttemptError):
                         return False
 
                 owner = RegisteredProcess(pid, pid, owner_check=owned, label=launch.launch_id)
@@ -852,11 +927,15 @@ def run_native_trusted_attempt(
                     require_unexpired=True,
                 )
                 _remaining(deadline, monotonic, cancelled)
+                check_deadline()
+                if _current_recovery_lock_identity(batch) != lock_identity:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_registration_unknown")
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
                 gate_released = True
                 session.release(launch.gate_nonce)
+                check_deadline()
                 started = _read_attempt_frame(frame_read, deadline, monotonic, cancelled)
                 session.accept_frame(started)
                 if (
@@ -933,6 +1012,7 @@ def run_native_trusted_attempt(
                             reason = "native_trusted_attempt_cleanup_unknown"
                         if registration is not None:
                             try:
+                                check_deadline()
                                 cleanup_record = persist_native_trusted_cleanup(
                                     root,
                                     intent=intent,
@@ -940,7 +1020,10 @@ def run_native_trusted_attempt(
                                     deadline_sha256=deadline_sha256,
                                     cleanup=result,
                                 )
+                                check_deadline()
                                 cleanup_sha256 = str(cleanup_record["cleanup_sha256"])
+                            except NativeTrustedAttemptError as exc:
+                                reason = exc.code
                             except NativeTrustedCleanupError:
                                 reason = "native_trusted_attempt_cleanup_evidence_unknown"
                     try:
@@ -977,6 +1060,7 @@ def run_native_trusted_attempt(
                 ):
                     evidence = replace(evidence, status="unknown", evidence_sha256=None)
                 try:
+                    check_deadline()
                     current = _read_durable_json(
                         batch / "process-registration.json",
                         code="native_trusted_attempt_registration_unknown",
@@ -984,12 +1068,15 @@ def run_native_trusted_attempt(
                     if current != registration or _current_recovery_lock_identity(batch) != lock_identity:
                         raise ProducerProcessError("native_trusted_attempt_registration_unknown")
                     _atomic_json(batch / "trusted-bootstrap-evidence.json", evidence.to_dict(), exclusive=True)
+                    check_deadline()
                     persisted = _read_durable_json(
                         batch / "trusted-bootstrap-evidence.json",
                         code="native_trusted_attempt_evidence_write_unknown",
                     )
                     if persisted != evidence.to_dict():
                         raise ProducerProcessError("native_trusted_attempt_evidence_write_unknown")
+                except NativeTrustedAttemptError as exc:
+                    reason = exc.code
                 except ProducerProcessError:
                     reason = "native_trusted_attempt_evidence_write_unknown"
         # A verified active cancellation is a durable process-only terminal.  It is
@@ -1002,6 +1089,8 @@ def run_native_trusted_attempt(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
                 require_unexpired=False,
             )
+            if deadline_binding is not None:
+                check_deadline()
         except NativeTrustedAttemptError as exc:
             reason = exc.code
         if (
@@ -1062,7 +1151,9 @@ def run_native_trusted_attempt(
                     require_unexpired=False,
                 )
                 _remaining(deadline, monotonic)
+                check_deadline()
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
+                check_deadline()
                 stored = _read_durable_json(
                     batch / _TERMINAL_NAME, code="native_trusted_attempt_terminal_write_unknown",
                 )
@@ -1118,7 +1209,9 @@ def run_native_trusted_attempt(
                     require_unexpired=False,
                 )
                 _remaining(deadline, monotonic, cancelled)
+                check_deadline()
                 _atomic_json(batch / _TERMINAL_NAME, receipt, exclusive=True)
+                check_deadline()
                 stored = _read_durable_json(
                     batch / _TERMINAL_NAME, code="native_trusted_attempt_terminal_write_unknown",
                 )
@@ -1148,6 +1241,7 @@ def run_native_trusted_attempt(
             and reason == "native_trusted_attempt_request_and_output_unverified"
         ):
             try:
+                check_deadline()
                 captured = capture_native_trusted_output(
                     batch, intent=intent, terminal_sha256=terminal_sha256,
                     broker=(broker_observation if isinstance(
@@ -1155,11 +1249,19 @@ def run_native_trusted_attempt(
                     ) else None),
                     deadline=deadline, monotonic=monotonic,
                 )
+                check_deadline()
                 output_capture_sha256 = str(captured["capture_sha256"])
+            except NativeTrustedAttemptError as exc:
+                reason = exc.code
             except NativeTrustedCaptureError:
                 reason = "native_trusted_attempt_output_capture_unknown"
         if stream_capture_failed and reason == "native_trusted_attempt_request_and_output_unverified":
             reason = "native_trusted_attempt_stream_capture_unknown"
+        if deadline_binding is not None:
+            try:
+                check_deadline()
+            except NativeTrustedAttemptError as exc:
+                reason = exc.code
         return NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
@@ -1285,8 +1387,10 @@ def recover_native_trusted_attempt(
         root, intent=intent, attestation=attestation, artifact=artifact,
         require_unexpired=False,
     )
+    final_deadline_check: Callable[[], dict[str, object]] | None = None
 
     def inspect(lock_identity: tuple[int, int] | None = None) -> dict[str, object]:
+        nonlocal final_deadline_check
         try:
             observed = observe_trusted_bootstrap_attempt(
                 root, launch=launch, descriptor=artifact.descriptor,
@@ -1314,12 +1418,45 @@ def recover_native_trusted_attempt(
         # Every recovery observation, including an already-written terminal, must
         # validate the retained attempt budget. Otherwise a tampered sidecar could
         # silently detach the terminal from the original wall-clock authority.
-        deadline_record = _read_deadline(batch, registration)
+        binding = observed.get("deadline_binding")
+        if binding is not None and not isinstance(binding, Mapping):
+            raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+
+        def verify_context() -> dict[str, object]:
+            try:
+                current = observe_trusted_bootstrap_attempt(
+                    root, launch=launch, descriptor=artifact.descriptor,
+                    intent=intent, attestation=attestation, require_handoff=binding is not None,
+                )
+                if any(current.get(key) != observed.get(key) for key in (
+                    "consumption_sha256", "registration_sha256", "deadline_binding",
+                )):
+                    raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+                if lock_identity is not None and _current_recovery_lock_identity(batch) != lock_identity:
+                    raise NativeTrustedAttemptError("native_trusted_recovery_registration_invalid")
+                # The pure projection binds this descriptor to the original registration;
+                # filesystem checks compare the original bytes/inode, never a newly captured pin.
+                return _read_deadline(batch, registration, binding=binding)
+            except ProducerBootstrapError as exc:
+                raise NativeTrustedAttemptError("native_trusted_recovery_evidence_invalid") from exc
+
+        deadline_record = verify_context()
+        final_deadline_check = verify_context
         path = batch / _TERMINAL_NAME
         try:
             os.lstat(path)
         except FileNotFoundError:
-            prior = _read_recovery_receipt(batch, registration)
+            if binding is None:
+                if cleanup:
+                    raise NativeTrustedAttemptError("native_trusted_recovery_legacy_deadline_unanchored")
+                return {
+                    "status": "recovery_required",
+                    "reason": "native_trusted_recovery_legacy_deadline_unanchored",
+                    "launch_id": launch.launch_id, "journal_id": launch.journal_id,
+                    "registration_sha256": registration["registration_sha256"],
+                    "pid": registration["pid"], "pgid": registration["pgid"],
+                }
+            prior = _read_recovery_receipt(batch, registration, binding=binding)
             if prior is not None:
                 if cleanup:
                     raise NativeTrustedAttemptError("native_trusted_recovery_already_recorded")
@@ -1327,7 +1464,9 @@ def recover_native_trusted_attempt(
             if cleanup:
                 if lock_identity is None:
                     raise NativeTrustedAttemptError("native_trusted_recovery_lock_required")
-                return _cleanup_recovered_attempt(batch, registration, lock_identity)
+                return _cleanup_recovered_attempt(
+                    batch, registration, lock_identity, binding=binding, verify_context=verify_context,
+                )
             return {
                 "status": "recovery_required",
                 "reason": "native_trusted_attempt_terminal_receipt_missing",
@@ -1337,7 +1476,7 @@ def recover_native_trusted_attempt(
             }
         except OSError as exc:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
-        if _read_recovery_receipt(batch, registration) is not None:
+        if _read_recovery_receipt(batch, registration, binding=binding) is not None:
             raise NativeTrustedAttemptError("native_trusted_recovery_conflicting_receipts")
         try:
             bound = observe_trusted_bootstrap_attempt(
@@ -1379,6 +1518,10 @@ def recover_native_trusted_attempt(
                     inputs, root, intent=intent, attestation=attestation, artifact=artifact,
                     require_unexpired=False,
                 )
+                if final_deadline_check is not None:
+                    current_deadline = final_deadline_check()
+                    if result.get("deadline_sha256", current_deadline["deadline_sha256"]) != current_deadline["deadline_sha256"]:
+                        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
                 return result
         except ProducerProcessError as exc:
             raise NativeTrustedAttemptError("native_trusted_recovery_cleanup_unknown") from exc
@@ -1388,6 +1531,10 @@ def recover_native_trusted_attempt(
             inputs, root, intent=intent, attestation=attestation, artifact=artifact,
             require_unexpired=False,
         )
+        if final_deadline_check is not None:
+            current_deadline = final_deadline_check()
+            if result.get("deadline_sha256", current_deadline["deadline_sha256"]) != current_deadline["deadline_sha256"]:
+                raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
         return result
     except ProducerProcessError as exc:
         raise NativeTrustedAttemptError("native_trusted_recovery_evidence_invalid") from exc

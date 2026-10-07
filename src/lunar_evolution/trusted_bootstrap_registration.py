@@ -17,11 +17,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .native_deadline_binding import (
+    NATIVE_CONSUMPTION_PROTOCOL,
+    NativeDeadlineBindingError,
+    validate_native_deadline_binding,
+    verify_native_deadline_binding,
+)
 from .producer_bootstrap import (
     BootstrapHandshakeFrame,
     ProducerBootstrapError,
     TrustedBootstrapDescriptor,
     TrustedBootstrapLaunch,
+    _parse_trusted_bootstrap_consumption,
     build_trusted_bootstrap_launch,
     parse_bootstrap_handshake_frame,
     verify_trusted_bootstrap_process_registration,
@@ -69,6 +76,19 @@ class PublishedTrustedBootstrapRegistration:
 
 def _fail(code: str) -> None:
     raise TrustedBootstrapRegistrationError(code)
+
+
+def _deadline_binding_error(exc: NativeDeadlineBindingError) -> TrustedBootstrapRegistrationError:
+    return TrustedBootstrapRegistrationError(exc.code.replace("native_", "trusted_registration_", 1))
+
+
+def _verify_deadline_pin(batch: Path, binding: dict[str, object] | None) -> None:
+    if binding is None:
+        return
+    try:
+        verify_native_deadline_binding(batch, binding=binding)
+    except NativeDeadlineBindingError as exc:
+        raise _deadline_binding_error(exc) from exc
 
 
 def _claim_bytes(path: Path) -> tuple[bytes, dict[str, object]]:
@@ -125,6 +145,7 @@ def consume_trusted_bootstrap_attestation(
     launch: TrustedBootstrapLaunch,
     recovery_lock_identity: tuple[int, int],
     deadline: float,
+    deadline_binding: object | None = None,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> dict[str, object]:
     """Consume the target attestation once before preparing or spawning a bootstrap.
@@ -165,6 +186,13 @@ def consume_trusted_bootstrap_attestation(
     }
     if identity != expected_identity:
         _fail("trusted_registration_target_changed")
+    frozen_binding = None
+    if deadline_binding is not None:
+        try:
+            frozen_binding = validate_native_deadline_binding(deadline_binding)
+        except NativeDeadlineBindingError as exc:
+            raise _deadline_binding_error(exc) from exc
+        _verify_deadline_pin(batch, frozen_binding)
     if monotonic() >= deadline:
         _fail("trusted_registration_wall_timeout")
     claim: dict[str, object] = {
@@ -176,11 +204,21 @@ def consume_trusted_bootstrap_attestation(
         "attestation_sha256": attestation.attestation_sha256 or attestation.digest(),
         "nonce": attestation.nonce, "executable_identity": _identity_digest(identity),
     }
+    if frozen_binding is not None:
+        claim.update({
+            "schema_version": "2", "protocol": NATIVE_CONSUMPTION_PROTOCOL,
+            "deadline_binding": frozen_binding,
+        })
     claim["consumption_sha256"] = _digest_without(claim, "consumption_sha256")
     nonce_key = hashlib.sha256(attestation.nonce.encode("utf-8")).hexdigest()
     try:
-        _atomic_json(root / "evolution" / "producer-nonces" / f"{nonce_key}.json", claim, exclusive=True)
-        _atomic_json(batch / "attestation-consumption.json", claim, exclusive=True)
+        for path in (
+            root / "evolution" / "producer-nonces" / f"{nonce_key}.json",
+            batch / "attestation-consumption.json",
+        ):
+            _verify_deadline_pin(batch, frozen_binding)
+            _atomic_json(path, claim, exclusive=True)
+            _verify_deadline_pin(batch, frozen_binding)
     except ProducerProcessError as exc:
         raise TrustedBootstrapRegistrationError("trusted_registration_claim_conflict") from exc
     return claim
@@ -198,6 +236,7 @@ def publish_trusted_bootstrap_registration(
     ready_frame: BootstrapHandshakeFrame | object,
     recovery_lock_identity: tuple[int, int],
     deadline: float,
+    expected_deadline_binding: object | None = None,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> PublishedTrustedBootstrapRegistration:
     """Publish registration and handoff while the native child remains gated.
@@ -238,6 +277,19 @@ def publish_trusted_bootstrap_registration(
     ledger_bytes, _ = _claim_bytes(root / "evolution" / "producer-nonces" / f"{nonce_key}.json")
     if claim_bytes != ledger_bytes:
         _fail("trusted_registration_claim_mismatch")
+    try:
+        claim = _parse_trusted_bootstrap_consumption(claim)
+    except ProducerBootstrapError as exc:
+        raise TrustedBootstrapRegistrationError("trusted_registration_claim_unknown") from exc
+    frozen_binding = claim.get("deadline_binding")
+    if expected_deadline_binding is not None:
+        try:
+            expected_binding = validate_native_deadline_binding(expected_deadline_binding)
+        except NativeDeadlineBindingError as exc:
+            raise _deadline_binding_error(exc) from exc
+        if frozen_binding != expected_binding:
+            _fail("trusted_registration_deadline_binding_mismatch")
+    _verify_deadline_pin(batch, frozen_binding)
 
     try:
         pgid = os.getpgid(process.pid)
@@ -291,8 +343,13 @@ def publish_trusted_bootstrap_registration(
     if monotonic() >= deadline or process.poll() is not None:
         _fail("trusted_registration_wall_timeout")
     try:
-        _atomic_json(batch / "process-registration.json", registration, exclusive=True)
-        _atomic_json(batch / "trusted-bootstrap-handoff.json", handoff, exclusive=True)
+        for path, record in (
+            (batch / "process-registration.json", registration),
+            (batch / "trusted-bootstrap-handoff.json", handoff),
+        ):
+            _verify_deadline_pin(batch, frozen_binding)
+            _atomic_json(path, record, exclusive=True)
+            _verify_deadline_pin(batch, frozen_binding)
         stored_registration = _read_durable_json(
             batch / "process-registration.json", code="trusted_registration_publication_unknown",
         )
@@ -303,6 +360,7 @@ def publish_trusted_bootstrap_registration(
         raise TrustedBootstrapRegistrationError("trusted_registration_publication_unknown") from exc
     if stored_registration != registration or stored_handoff != handoff:
         _fail("trusted_registration_publication_unknown")
+    _verify_deadline_pin(batch, frozen_binding)
     if monotonic() >= deadline or process.poll() is not None:
         _fail("trusted_registration_wall_timeout")
     return PublishedTrustedBootstrapRegistration(registration, handoff)

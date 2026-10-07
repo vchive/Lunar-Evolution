@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .native_deadline_binding import verify_native_deadline_record_binding
 from .native_trusted_attempt import (
     NativeTrustedAttemptError,
     _verify_terminal_record,
@@ -19,6 +20,7 @@ from .producer_bootstrap import (
     ProducerBootstrapError,
     TrustedBootstrapDescriptor,
     TrustedBootstrapLaunch,
+    _parse_trusted_bootstrap_consumption,
     verify_trusted_bootstrap_attempt,
     verify_trusted_bootstrap_process_registration,
 )
@@ -96,6 +98,10 @@ def verify_trusted_worker_evidence(
             registration=registration,
         )
         registration_sha = parsed_handoff["registration_sha256"]
+        claim = _parse_trusted_bootstrap_consumption(consumption)
+        if "deadline_binding" in claim and deadline is not None:
+            # Pure bytes projection only. Native recovery separately observes the pinned inode.
+            verify_native_deadline_record_binding(deadline, claim["deadline_binding"])
         if evidence is None:
             return TrustedWorkerEvidenceResult(
                 "unknown_recovery_required", "bootstrap_evidence_missing", launch_sha,
