@@ -10,6 +10,10 @@ directory scalars before root canonical set/hash checks, then invoke the unchang
 Bound retained ancestor pins separately from scanned entries (8320 per root, 10240 aggregate).
 This prevents forced frozen-DTO mutation from entering custom Sequence callbacks or constructing
 an oversized intermediate JSON object; it adds no filesystem authority.
+Apply O(1) exact-string length caps before calling v1 Path/regex/enum validators, including raw
+embedded wire fields and external expected targets. Retain UTF-8 byte checks after encoding.
+Pre-count the sum of all directory children before validating any child to avoid repeated-object
+work amplification. These are local guards; Feature171 implementation and wire remain unchanged.
 
 Keep explicit root directory chains held across a complete snapshot. Traverse child directories
 using dir_fd/O_NOFOLLOW, stream only expected regular files, compare before/opened/after/named stats,

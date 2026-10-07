@@ -56,6 +56,11 @@ manifest JSON. Retained v1 directory pins are additionally limited to 8320 per r
 aggregate, accommodating outside ancestors of the 16 explicit roots without scanning those
 ancestors' contents. Exact tuple/count/nested-field validation runs before serialization or v1
 validation, so caller-forced DTO mutation cannot invoke custom collection callbacks.
+Paths and labels have cheap character caps before parsing or hashing; the existing 4096-byte
+UTF-8 path limit remains enforced. Raw embedded v1 fields and external expected targets use
+the same guards. The sum of all directory child names is limited to 8192 before member validation,
+preventing repeated directory objects from multiplying that work. String JSON inputs are bounded
+before encoding and then checked against the final UTF-8 byte limit.
 The wire protocol is `lunar-python-runtime-closed-tree-v1` and embeds the unchanged
 original manifest. The API raises `PythonRuntimeTreeError` with a fixed `python_runtime_tree_*`
 code on refusal; it never incorporates caller paths into that error message.

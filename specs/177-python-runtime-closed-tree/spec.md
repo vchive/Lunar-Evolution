@@ -16,6 +16,13 @@ trigger custom sequence length/index/iteration/hash callbacks. Relative file/imp
 limited to 64 before serialization. Retained v1 directory pins have at most 8320 entries per root
 and 10240 in aggregate: the closed-tree bound plus up to 128 outside ancestors for each of 16
 explicit roots. Those ancestor pins are metadata evidence; they do not add scan roots or grants.
+Exact-string character length is checked in O(1) before path parsing, encoding, regex or enum
+hashing: paths at most 4096 characters, labels at most 128, and each enum at its maximum legal
+length. The existing 4096-byte UTF-8 path limit remains enforced. Raw embedded v1 dictionaries
+pass the same cheap scalar guards before v1 parsing, and external expected targets are guarded
+before v1 verification. Cumulative child membership is at most 8192 before any member-validation
+loop; repeated directory objects cannot multiply that work. String JSON input has a cheap
+character cap before encoding and retains the final 8MiB UTF-8 byte cap.
 
 Builder and verifier run two complete tree snapshots, including closing membership/stat checks,
 and reverify the original declared-file pin before and after. A final metadata-only tree pass

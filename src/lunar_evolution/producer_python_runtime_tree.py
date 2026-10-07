@@ -34,6 +34,8 @@ _DIRECTORY_FIELDS = {
 }
 _FIELDS = {"schema_version", "protocol", "scope", "declared_manifest", "directories", "tree_sha256", *_CAPABILITIES}
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+_TARGET_TEXT_LIMITS = {"platform": 6, "architecture": 7, "python_version": 4, "abi_tag": 5, "layout": 13}
+_MAX_ROLE_TEXT = max(map(len, declared._ROLE_SLOTS))
 
 
 class PythonRuntimeTreeError(ValueError):
@@ -81,7 +83,26 @@ def _integer(value: object, *, minimum: int = 0, maximum: int = 2**64 - 1) -> in
     return value
 
 
+def _text(value: object, maximum: int) -> str:
+    # Exact str length is O(1). Reject before encoding, scanning, Path or enum hashing.
+    if type(value) is not str or len(value) > maximum:
+        _fail("text_invalid")
+    return value
+
+
+def _target_text(target: declared.PythonRuntimeTarget) -> None:
+    for field, maximum in _TARGET_TEXT_LIMITS.items():
+        _text(getattr(target, field), maximum)
+
+
+def _declaration_text(label: object, path: object, role: object) -> None:
+    _text(label, 128)
+    _text(path, declared._MAX_PATH_BYTES)
+    _text(role, _MAX_ROLE_TEXT)
+
+
 def _relative(value: object, *, root: bool = False) -> str:
+    _text(value, declared._MAX_PATH_BYTES)
     checked = declared._path(value, absolute=False, dot=root)
     if len(Path(checked).parts) > MAX_PYTHON_RUNTIME_TREE_DEPTH:
         _fail("depth_exceeded")
@@ -117,6 +138,7 @@ class PythonRuntimeTreeDirectory(_DTO):
     children: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        _text(self.root_label, 128)
         declared._label(self.root_label)
         _relative(self.relative_path, root=True)
         _integer(self.device)
@@ -169,6 +191,7 @@ class PythonRuntimeTreeObservation(_DTO):
     def __post_init__(self) -> None:
         if type(self.target) is not declared.PythonRuntimeTarget:
             _fail("target_invalid")
+        _target_text(self.target)
         self.target.__post_init__()
         _sha(self.declared_manifest_sha256)
         _sha(self.tree_sha256)
@@ -226,22 +249,30 @@ def _declared_shape(value: object) -> None:
         pinned_roots.append((root, pins))
     # Validate directory scalars before root's canonical set/hash checks.
     for root, pins in pinned_roots:
+        _text(root.label, 128)
+        _text(root.path, declared._MAX_PATH_BYTES)
         for directory in pins:
             if type(directory) is not declared.PythonRuntimeDirectory:
                 _fail("declared_manifest_invalid")
+            _text(directory.path, declared._MAX_PATH_BYTES)
             directory.__post_init__()
         root.__post_init__()
     for file in files:
         if type(file) is not declared.PythonRuntimeFile:
             _fail("declared_manifest_invalid")
+        _declaration_text(file.root_label, file.relative_path, file.role)
         file.__post_init__()
         _relative(file.relative_path)
     for import_root in imports:
         if type(import_root) is not declared.PythonRuntimeImportRoot:
             _fail("declared_manifest_invalid")
+        _text(import_root.root_label, 128)
+        _text(import_root.relative_path, declared._MAX_PATH_BYTES)
         import_root.__post_init__()
         _relative(import_root.relative_path, root=True)
+    _target_text(value.target)
     value.target.__post_init__()
+    _declaration_text(value.entrypoint.root_label, value.entrypoint.relative_path, value.entrypoint.role)
     value.entrypoint.__post_init__()
     for field in ("manifest_sha256", *(slot + "_sha256" for slot in declared._SLOTS)):
         _sha(getattr(value, field))
@@ -258,9 +289,14 @@ def _validate_tree(tree: PythonRuntimeTreeManifest) -> None:
     _declared_shape(tree.declared_manifest)
     if len(directories) + len(tree.declared_manifest.files) > MAX_PYTHON_RUNTIME_TREE_ENTRIES:
         _fail("entries_exceeded")
+    child_count = 0
     for item in directories:
         if type(item) is not PythonRuntimeTreeDirectory:
             _fail("directory_invalid")
+        child_count += len(_collection(item.children, maximum=MAX_PYTHON_RUNTIME_TREE_ENTRIES, empty=True))
+        if child_count > MAX_PYTHON_RUNTIME_TREE_ENTRIES:
+            _fail("entries_exceeded")
+    for item in directories:
         item.__post_init__()
     _sha(tree.tree_sha256)
     original = _declared_manifest(tree.declared_manifest)
@@ -523,6 +559,9 @@ def _observe_snapshot(
 def _pins(
     manifest: declared.PythonRuntimeManifest, digest: str, target: declared.PythonRuntimeTarget,
 ) -> None:
+    if type(target) is not declared.PythonRuntimeTarget:
+        _fail("target_invalid")
+    _target_text(target)
     declared.verify_python_runtime_manifest(manifest, expected_manifest_sha256=digest, expected_target=target)
 
 
@@ -574,11 +613,60 @@ def _pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _wire_list(value: object, *, maximum: int, empty: bool = False) -> list[Any]:
+    if type(value) is not list or not (0 if empty else 1) <= len(value) <= maximum:
+        _fail("schema_invalid")
+    return value
+
+
+def _wire_object(value: object) -> dict[str, Any]:
+    if type(value) is not dict:
+        _fail("schema_invalid")
+    return value
+
+
+def _declared_wire_shape(raw_manifest: object) -> None:
+    """Apply cheap scalar/collection bounds before the unchanged v1 parser."""
+    original = _wire_object(raw_manifest)
+    roots = _wire_list(original.get("roots"), maximum=declared.MAX_PYTHON_RUNTIME_ROOTS)
+    files = _wire_list(original.get("files"), maximum=declared.MAX_PYTHON_RUNTIME_FILES)
+    imports = _wire_list(original.get("import_roots"), maximum=declared._MAX_IMPORT_ROOTS, empty=True)
+    pinned_roots, pin_count = [], 0
+    for value in roots:
+        root = _wire_object(value)
+        pins = _wire_list(root.get("directories"), maximum=min(
+            declared._MAX_DIRECTORY_PINS, MAX_PYTHON_RUNTIME_TREE_ENTRIES + declared._MAX_PATH_PARTS,
+        ))
+        pin_count += len(pins)
+        if pin_count > MAX_PYTHON_RUNTIME_TREE_ENTRIES + declared.MAX_PYTHON_RUNTIME_ROOTS * declared._MAX_PATH_PARTS:
+            _fail("entries_exceeded")
+        pinned_roots.append((root, pins))
+    for root, pins in pinned_roots:
+        _text(root.get("label"), 128)
+        _text(root.get("path"), declared._MAX_PATH_BYTES)
+        for value in pins:
+            _text(_wire_object(value).get("path"), declared._MAX_PATH_BYTES)
+    for value in files:
+        file = _wire_object(value)
+        _declaration_text(file.get("root_label"), file.get("relative_path"), file.get("role"))
+    for value in imports:
+        import_root = _wire_object(value)
+        _text(import_root.get("root_label"), 128)
+        _text(import_root.get("relative_path"), declared._MAX_PATH_BYTES)
+    target = _wire_object(original.get("target"))
+    for field, maximum in _TARGET_TEXT_LIMITS.items():
+        _text(target.get(field), maximum)
+    entrypoint = _wire_object(original.get("entrypoint"))
+    _declaration_text(entrypoint.get("root_label"), entrypoint.get("relative_path"), entrypoint.get("role"))
+
+
 def parse_python_runtime_tree_manifest(value: bytes | str) -> PythonRuntimeTreeManifest:
     """Parse canonical bounded detached evidence without filesystem reads or authority."""
     try:
         if type(value) not in {bytes, str}:
             _fail("json_invalid")
+        if len(value) > MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES:
+            _fail("manifest_too_large")
         raw = value.encode("utf-8") if type(value) is str else value
         if len(raw) > MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES:
             _fail("manifest_too_large")
@@ -589,16 +677,25 @@ def parse_python_runtime_tree_manifest(value: bytes | str) -> PythonRuntimeTreeM
         if (payload["schema_version"] != "1" or payload["protocol"] != _PROTOCOL or payload["scope"] != _SCOPE
                 or any(payload[key] is not False for key in _CAPABILITIES)):
             _fail("schema_invalid")
-        original = declared.parse_python_runtime_manifest(_canonical(payload["declared_manifest"]))
-        values = payload["directories"]
-        if type(values) is not list or len(values) + len(original.files) > MAX_PYTHON_RUNTIME_TREE_ENTRIES:
-            _fail("entries_exceeded")
-        directories = []
+        values = _wire_list(payload["directories"], maximum=MAX_PYTHON_RUNTIME_TREE_ENTRIES)
+        child_count = 0
         for item in values:
             if type(item) is not dict or set(item) != _DIRECTORY_FIELDS or type(item["children"]) is not list:
                 _fail("schema_invalid")
-            if len(item["children"]) > MAX_PYTHON_RUNTIME_TREE_ENTRIES:
+            child_count += len(item["children"])
+            if child_count > MAX_PYTHON_RUNTIME_TREE_ENTRIES:
                 _fail("entries_exceeded")
+        for item in values:
+            _text(item["root_label"], 128)
+            _text(item["relative_path"], declared._MAX_PATH_BYTES)
+            for name in item["children"]:
+                _text(name, declared._MAX_PATH_BYTES)
+        _declared_wire_shape(payload["declared_manifest"])
+        original = declared.parse_python_runtime_manifest(_canonical(payload["declared_manifest"]))
+        if len(values) + len(original.files) > MAX_PYTHON_RUNTIME_TREE_ENTRIES:
+            _fail("entries_exceeded")
+        directories = []
+        for item in values:
             directories.append(PythonRuntimeTreeDirectory(**{**item, "children": tuple(item["children"])}))
         return PythonRuntimeTreeManifest(original, tuple(directories), payload["tree_sha256"])
     except PythonRuntimeTreeError:

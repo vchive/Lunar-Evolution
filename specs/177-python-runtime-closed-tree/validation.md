@@ -18,8 +18,8 @@ Local result, 2026-10-08, Darwin/Python 3.11.15:
 ```bash
 PYTHONPATH=src /Users/liminghan/Documents/lunar_agent/.venv/bin/python -m pytest -q \
   tests/test_producer_python_runtime_tree.py tests/test_producer_python_runtime.py \
-  --basetemp=/tmp/lunar-runtime-tree-bounded-proof-final \
-  --junitxml=/tmp/lunar-runtime-tree-bounded-proof-final.xml
+  --basetemp=/tmp/lunar-runtime-tree-scalars-pin-final \
+  --junitxml=/tmp/lunar-runtime-tree-scalars-pin-final.xml
 /Users/liminghan/miniforge3/bin/ruff check \
   src/lunar_evolution/producer_python_runtime_tree.py tests/test_producer_python_runtime_tree.py
 /Users/liminghan/Documents/lunar_agent/.venv/bin/python -m compileall -q \
@@ -27,7 +27,7 @@ PYTHONPATH=src /Users/liminghan/Documents/lunar_agent/.venv/bin/python -m pytest
 git diff --check
 ```
 
-Final XML: **322 tests, 0 failures, 0 errors, 0 skipped, 8.727 seconds**. This is 112 new closed-tree
+Final XML: **361 tests, 0 failures, 0 errors, 0 skipped, 10.452 seconds**. This is 151 new closed-tree
 tests and 210 unchanged Feature171 tests. Ruff, compileall and diff check passed. Portable/venv
 roundtrips, all declared role drift, empty directory membership, unlisted file refusals, canonical
 parser limits and detached graph binding passed. Read/scandir OSError, KeyboardInterrupt and
@@ -44,6 +44,17 @@ v1 validation. It also bounds ancestor pin metadata (8320 per root, 10240 aggreg
 file/import depth. The 25 added cases reject custom Sequence length/index/iteration callbacks,
 oversized immutable tuples and aggregate pins before serialization, and mutated nested fields
 before hash/set operations. Feature171 source/wire behavior remains unchanged.
+
+The first collection-guard revision passed 322 tests in 8.727 seconds, retained in
+`/tmp/lunar-runtime-tree-bounded-proof-final.xml`. A subsequent audit found two remaining work-bound
+issues: v1 Path/enum validators could receive oversized exact strings before their eventual refusal,
+and repeated directory objects could multiply child validation before graph rejection. The preserved
+scalar reproducer is `/tmp/lunar-runtime-tree-scalar-first.xml` (one test, one failure, no errors/skips,
+0.199 seconds). The final local guard checks exact string lengths before Path/regex/enum work, both
+for DTOs and embedded raw v1 wire fields, and checks expected target shape before entering the v1
+verifier. Cumulative children are checked before all member-validation loops. String JSON input is
+bounded before encoding; actual UTF-8 byte limits remain. The additional 39 cases cover these
+scalar/aggregate gates, target pins and multibyte-path refusal. No existing checks were weakened.
 
 The original pre-audit success XML is retained at `/tmp/lunar-runtime-tree-final.xml`: 297 tests,
 0 failures/errors/skips, 7.179 seconds. The initial independent read-only cross-review also ran

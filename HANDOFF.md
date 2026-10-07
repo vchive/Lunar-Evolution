@@ -17,8 +17,10 @@ Feature177 新独立 closed-tree build/parse/verify API 绑定原 declared manif
 独立 tree SHA，有限 no-follow 目录扫描包括所有文件、目录与 empty membership，首尾 bytes/
 stat/成员复验，拒绝未声明文件、link/special/alias、drift 和超限。Feature171 v1 wire 与原
 unlisted-file 行为不变。序列化前 strict tuple/count/nested DTO 检查拒绝被改写对象的自定义
-迭代/len/index；原 v1 ancestor pins 也有独立边界。新112+旧210 inert inventory tests 共322
-通过，无skip/failure/error；原 native/strategy/RSI 组合73项通过。各 suite 有重叠，不相加。
+迭代/len/index；原 v1 ancestor pins 也有独立边界。DTO、embedded wire 与 caller target 的
+scalar 长度在 Path/encode/enum validation 前检查，累计 child edges 在成员遍历前限8192。
+新151+旧210 inert inventory tests 共361通过，无skip/failure/error；原 native/strategy/RSI
+组合73项通过。各 suite 有重叠，不相加。
 scope 仅 `closed-filesystem-layout`，execution/load protection/archive/loader completeness
 均 false；不增加 read grants、不执行 Python、不产生 launch/admission authority。
 

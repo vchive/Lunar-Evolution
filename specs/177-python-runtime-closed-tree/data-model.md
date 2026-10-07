@@ -18,3 +18,7 @@ aggregate byte bounds, and 8MiB canonical tree JSON. Bounds fail closed rather t
 Exact tuple/count/nested-scalar validation precedes serialization. Embedded v1 root-directory pins
 are bounded to 8320 per root and 10240 aggregate, allowing outside ancestors without widening the
 explicit roots. Declared file/import relative depth also uses the 64-component closed-tree bound.
+Path text has a 4096-character pre-parse cap and still requires at most 4096 UTF-8 bytes. Labels
+have a 128-character cap and target/role enums their finite legal lengths. Tree child-edge count
+is at most 8192 in aggregate before member validation. These bounds apply to forced DTO mutation
+and embedded raw wire fields; expected target text is also checked before v1 verification.

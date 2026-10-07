@@ -16,7 +16,9 @@ mutation APIs available. Add a bounded Linux read-input mutation gate.
    a weaker filesystem ruleset. Known UAPI REFER/TRUNCATE values must remain
    handled with old build headers; the actual kernel query gates support.
 2. Handle REFER and TRUNCATE. Exact regular read grants have neither writable
-   nor truncation authority. Work/output directory grants retain TRUNCATE so
+   nor truncation authority; pathname truncation protection applies to exact read
+   files outside declared writable trees. A read grant does not cancel a containing
+   writable-directory grant. Work/output directory grants retain TRUNCATE so
    ordinary output open/truncate/ftruncate operations continue working.
 3. If any read grant exists, seccomp denies ownership mutation APIs including
    supported legacy 32-bit aliases; timestamp APIs including time64; and all
@@ -40,7 +42,7 @@ mutation APIs available. Add a bounded Linux read-input mutation gate.
 ## Boundaries
 
 This does not establish complete filesystem/FD/egress containment, immutable
-grant inode/path binding, regular-file ioctl closure, runtime/import sealing,
+grant inode/path binding or read/write grant overlap/alias closure, regular-file ioctl closure, runtime/import sealing,
 bootstrap-death/pause supervision or all-request authority. It does not close
 inherited writable file/socket descriptors. No target-FD/control protocol, success
 receipt, cleanup, recovery, evaluator, publication or broker rights are added.

@@ -204,6 +204,157 @@ def test_mutated_declared_depth_refuses_before_serialization(tmp_path, monkeypat
     refused(lambda: build(tree))
 
 
+@pytest.mark.parametrize("field", ["tree-path", "tree-child", "root-path", "pin-path", "file-path", "import-path", "entrypoint-path"])
+def test_oversized_dto_path_refuses_before_path_parsing_or_serialization(tmp_path, monkeypatch, field):
+    tree = fixture(tmp_path)
+    tree.original = tree.closed.declared_manifest
+    oversized = "nested/" * 10000
+    subject, attribute = {
+        "tree-path": (tree.closed.directories[0], "relative_path"),
+        "tree-child": (tree.closed.directories[0], "children"),
+        "root-path": (tree.original.roots[0], "path"),
+        "pin-path": (tree.original.roots[0].directories[0], "path"),
+        "file-path": (tree.original.files[0], "relative_path"),
+        "import-path": (tree.original.import_roots[0], "relative_path"),
+        "entrypoint-path": (tree.original.entrypoint, "relative_path"),
+    }[field]
+    object.__setattr__(subject, attribute, (oversized,) if field == "tree-child" else oversized)
+    actual_path = declared.Path
+
+    def bounded_path(value, *args, **kwargs):
+        if type(value) is str and len(value) > declared._MAX_PATH_BYTES:
+            pytest.fail("oversized scalar reached Path before rejection")
+        return actual_path(value, *args, **kwargs)
+
+    monkeypatch.setattr(declared, "Path", bounded_path)
+    monkeypatch.setattr(runtime, "Path", bounded_path)
+    monkeypatch.setattr(declared.PythonRuntimeManifest, "to_dict", lambda *_a: pytest.fail("oversized DTO serialized"))
+    refused(lambda: verify(tree))
+    if not field.startswith("tree-"):
+        refused(lambda: build(tree))
+
+
+@pytest.mark.parametrize("field", ["tree-label", "root-label", "file-label", "import-label", "entrypoint-label", "file-role", "entrypoint-role", "target-platform", "target-architecture", "target-version", "target-abi", "target-layout"])
+def test_oversized_dto_label_or_enum_refuses_before_v1_validation(tmp_path, monkeypatch, field):
+    tree = fixture(tmp_path)
+    tree.original = tree.closed.declared_manifest
+    subject, attribute = {
+        "tree-label": (tree.closed.directories[0], "root_label"),
+        "root-label": (tree.original.roots[0], "label"),
+        "file-label": (tree.original.files[0], "root_label"),
+        "import-label": (tree.original.import_roots[0], "root_label"),
+        "entrypoint-label": (tree.original.entrypoint, "root_label"),
+        "file-role": (tree.original.files[0], "role"),
+        "entrypoint-role": (tree.original.entrypoint, "role"),
+        "target-platform": (tree.original.target, "platform"),
+        "target-architecture": (tree.original.target, "architecture"),
+        "target-version": (tree.original.target, "python_version"),
+        "target-abi": (tree.original.target, "abi_tag"),
+        "target-layout": (tree.original.target, "layout"),
+    }[field]
+    object.__setattr__(subject, attribute, "x" * 10000)
+    label = declared._label
+    target_check = declared.PythonRuntimeTarget.__post_init__
+    roles = declared._ROLE_SLOTS
+
+    def bounded_label(value):
+        if type(value) is str and len(value) > 128:
+            pytest.fail("oversized label reached regex validation")
+        return label(value)
+
+    def bounded_target(value):
+        if any(type(getattr(value, name)) is str and len(getattr(value, name)) > 128
+               for name in ("platform", "architecture", "python_version", "abi_tag", "layout")):
+            pytest.fail("oversized target reached enum validation")
+        target_check(value)
+
+    class BoundedRoles(dict):
+        def __contains__(self, value):
+            if type(value) is str and len(value) > 128:
+                pytest.fail("oversized role reached enum hashing")
+            return super().__contains__(value)
+
+    monkeypatch.setattr(declared, "_label", bounded_label)
+    monkeypatch.setattr(declared, "_ROLE_SLOTS", BoundedRoles(roles))
+    monkeypatch.setattr(declared.PythonRuntimeTarget, "__post_init__", bounded_target)
+    refused(lambda: verify(tree))
+    if field != "tree-label":
+        refused(lambda: build(tree))
+
+
+def test_aggregate_child_bound_refuses_before_any_child_path_validation(tmp_path, monkeypatch):
+    tree = fixture(tmp_path)
+    limit = 128
+    directory = tree.closed.directories[0]
+    names = tuple(f"member-{index:03}" for index in range(limit))
+    object.__setattr__(directory, "children", names)
+    object.__setattr__(tree.closed, "directories", (directory,) * 8)
+    monkeypatch.setattr(runtime, "MAX_PYTHON_RUNTIME_TREE_ENTRIES", limit)
+    monkeypatch.setattr(runtime, "_name", lambda *_a: pytest.fail("child loop entered before aggregate bound"))
+    refused(lambda: verify(tree))
+
+
+def test_wire_aggregate_child_bound_refuses_before_member_validation_or_v1_parse(tmp_path, monkeypatch):
+    tree = fixture(tmp_path)
+    wire = tree.closed.to_dict()
+    limit = 128
+    wire["directories"][0]["children"] = [f"member-{index:03}" for index in range(limit)]
+    wire["directories"] = [wire["directories"][0]] * 8
+    raw = resign(wire)
+    monkeypatch.setattr(runtime, "MAX_PYTHON_RUNTIME_TREE_ENTRIES", limit)
+    monkeypatch.setattr(runtime, "_name", lambda *_a: pytest.fail("wire child loop entered before aggregate bound"))
+    monkeypatch.setattr(declared, "parse_python_runtime_manifest", lambda *_a: pytest.fail("oversized graph reached v1 parser"))
+    refused(lambda: runtime.parse_python_runtime_tree_manifest(raw))
+
+
+@pytest.mark.parametrize("field", ["platform", "architecture", "python_version", "abi_tag", "layout", "custom-scalar", "custom-target"])
+def test_expected_target_shape_refuses_before_v1_verifier(tmp_path, monkeypatch, field):
+    tree = fixture(tmp_path)
+    expected = replace(tree.target)
+    if field == "custom-target":
+        expected = ForbiddenSequence()
+    elif field == "custom-scalar":
+        object.__setattr__(expected, "platform", ForbiddenSequence())
+    else:
+        object.__setattr__(expected, field, "x" * 10000)
+    monkeypatch.setattr(declared, "verify_python_runtime_manifest", lambda *_a, **_k: pytest.fail("invalid target reached v1 verifier"))
+    refused(lambda: build(tree, expected_target=expected))
+    refused(lambda: verify(tree, expected_target=expected))
+
+
+@pytest.mark.parametrize("field", ["tree-path", "tree-child", "root-path", "pin-path", "file-path", "import-path", "entrypoint-path", "file-role", "target-platform"])
+def test_oversized_wire_scalar_refuses_before_embedded_v1_parse_or_path_work(tmp_path, monkeypatch, field):
+    tree = fixture(tmp_path)
+    wire = tree.closed.to_dict()
+    original = wire["declared_manifest"]
+    subject, attribute = {
+        "tree-path": (wire["directories"][0], "relative_path"),
+        "tree-child": (wire["directories"][0], "children"),
+        "root-path": (original["roots"][0], "path"),
+        "pin-path": (original["roots"][0]["directories"][0], "path"),
+        "file-path": (original["files"][0], "relative_path"),
+        "import-path": (original["import_roots"][0], "relative_path"),
+        "entrypoint-path": (original["entrypoint"], "relative_path"),
+        "file-role": (original["files"][0], "role"),
+        "target-platform": (original["target"], "platform"),
+    }[field]
+    value = "x" * 10000
+    subject[attribute] = [value] if field == "tree-child" else value
+    raw = resign(wire)
+    monkeypatch.setattr(declared, "parse_python_runtime_manifest", lambda *_a: pytest.fail("oversized wire reached v1 parser"))
+    refused(lambda: runtime.parse_python_runtime_tree_manifest(raw))
+
+
+def test_oversized_string_json_refuses_before_encoding():
+    refused(lambda: runtime.parse_python_runtime_tree_manifest("x" * (runtime.MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES + 1)))
+
+
+def test_multibyte_path_still_enforces_encoded_byte_limit(tmp_path):
+    tree = fixture(tmp_path)
+    object.__setattr__(tree.closed.declared_manifest.files[0], "relative_path", "é" * declared._MAX_PATH_BYTES)
+    refused(lambda: verify(tree))
+
+
 @pytest.mark.parametrize("kind", ["declared", "tree", "target"])
 def test_external_pin_drift_refuses_before_tree_observation(tmp_path, monkeypatch, kind):
     tree = fixture(tmp_path)
