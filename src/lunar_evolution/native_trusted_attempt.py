@@ -55,6 +55,12 @@ from .producer_broker_ipc import (
 )
 from .producer_bundle_deadline import _boot_id as _producer_boot_id
 from .producer_isolation import ProducerIsolationError, build_producer_isolation_policy
+from .producer_launch_inputs import (
+    PRODUCER_LAUNCH_INPUT_MARKER,
+    ProducerLaunchInputDescriptor,
+    ProducerLaunchInputError,
+    validate_producer_launch_inputs,
+)
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_process import (
     ProducerProcessError,
@@ -72,6 +78,7 @@ from .producer_process import (
     _sha,
 )
 from .rsi_native_inputs import (
+    NATIVE_RSI_INPUT_MARKER,
     NativeRSIInputDescriptor,
     NativeRSIInputError,
     validate_native_rsi_launch_inputs,
@@ -190,31 +197,49 @@ def _compose_attempt_budget(
     return float(started), min(own_deadline, float(parent_deadline))
 
 
-def _native_rsi_inputs(
+def _native_launch_inputs(
     workspace: str | Path, *, intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
     require_unexpired: bool,
-) -> NativeRSIInputDescriptor | None:
+) -> NativeRSIInputDescriptor | ProducerLaunchInputDescriptor | None:
+    """Inspect optional input delivery without changing legacy launch bytes.
+
+    Each protocol pins its marker in the original attested argv. This first producer-config
+    slice keeps the protocols exclusive, rather than weakening RSI's exact terminal-marker
+    contract. Missing markers cannot downgrade either protocol's retained input binding.
+    """
+    if (NATIVE_RSI_INPUT_MARKER in intent.argv
+            and PRODUCER_LAUNCH_INPUT_MARKER in intent.argv):
+        raise NativeTrustedAttemptError("native_trusted_attempt_launch_inputs_conflict")
     try:
-        return validate_native_rsi_launch_inputs(
+        rsi = validate_native_rsi_launch_inputs(
             workspace, intent=intent, attestation=attestation, artifact=artifact,
             require_unexpired=require_unexpired,
         )
-    except NativeRSIInputError as exc:
+        producer = validate_producer_launch_inputs(
+            workspace, intent=intent, attestation=attestation, artifact=artifact,
+            require_unexpired=require_unexpired,
+        )
+    except (NativeRSIInputError, ProducerLaunchInputError) as exc:
         raise NativeTrustedAttemptError(exc.code) from exc
+    if rsi is not None and producer is not None:
+        raise NativeTrustedAttemptError("native_trusted_attempt_launch_inputs_conflict")
+    return rsi if rsi is not None else producer
 
 
-def _revalidate_native_rsi_inputs(
-    expected: NativeRSIInputDescriptor | None,
+def _revalidate_native_launch_inputs(
+    expected: NativeRSIInputDescriptor | ProducerLaunchInputDescriptor | None,
     workspace: str | Path, *, intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
     require_unexpired: bool,
 ) -> None:
-    if _native_rsi_inputs(
+    if _native_launch_inputs(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
         require_unexpired=require_unexpired,
     ) != expected:
-        raise NativeTrustedAttemptError("rsi_native_inputs_binding_changed")
+        code = ("rsi_native_inputs_binding_changed" if isinstance(expected, NativeRSIInputDescriptor)
+                else "native_trusted_attempt_launch_inputs_binding_changed")
+        raise NativeTrustedAttemptError(code)
 
 
 def _deadline_record(
@@ -606,7 +631,7 @@ def run_native_trusted_attempt(
     if _observe_cancellation(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
     started_monotonic, deadline = _compose_attempt_budget(intent, monotonic, parent_deadline)
-    inputs = _native_rsi_inputs(
+    inputs = _native_launch_inputs(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
         require_unexpired=True,
     )
@@ -665,7 +690,7 @@ def run_native_trusted_attempt(
         controller_lifeline_writer: int | None = None
         broker_state: dict[str, object] = {}
         try:
-            _revalidate_native_rsi_inputs(
+            _revalidate_native_launch_inputs(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
                 require_unexpired=True,
             )
@@ -822,7 +847,7 @@ def run_native_trusted_attempt(
                 _remaining(deadline, monotonic, cancelled)
                 if _observe_cancellation(cancelled):
                     raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
-                _revalidate_native_rsi_inputs(
+                _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
                     require_unexpired=True,
                 )
@@ -973,7 +998,7 @@ def run_native_trusted_attempt(
         # claimed.  The bootstrap evidence may therefore still be ``unknown``; the
         # evidence digest remains bound so recovery can inspect the exact record.
         try:
-            _revalidate_native_rsi_inputs(
+            _revalidate_native_launch_inputs(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
                 require_unexpired=False,
             )
@@ -1032,7 +1057,7 @@ def run_native_trusted_attempt(
                 )
                 # Receipt publication must consume the caller deadline, but must not
                 # call the cancellation callback again after cleanup has been verified.
-                _revalidate_native_rsi_inputs(
+                _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
                     require_unexpired=False,
                 )
@@ -1088,7 +1113,7 @@ def run_native_trusted_attempt(
                     stream_capture_sha256=stream_capture_sha256,
                     cleanup_sha256=cleanup_sha256,
                 )
-                _revalidate_native_rsi_inputs(
+                _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
                     require_unexpired=False,
                 )
@@ -1256,7 +1281,7 @@ def recover_native_trusted_attempt(
         batch = root / "evolution" / "producer-batches" / launch.journal_id
     except (ProducerBootstrapError, ProducerProcessError, TypeError, ValueError) as exc:
         raise NativeTrustedAttemptError("native_trusted_recovery_context_invalid") from exc
-    inputs = _native_rsi_inputs(
+    inputs = _native_launch_inputs(
         root, intent=intent, attestation=attestation, artifact=artifact,
         require_unexpired=False,
     )
@@ -1345,12 +1370,12 @@ def recover_native_trusted_attempt(
     if cleanup:
         try:
             with _recovery_lock(batch) as lock_identity:
-                _revalidate_native_rsi_inputs(
+                _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=artifact,
                     require_unexpired=False,
                 )
                 result = inspect(lock_identity)
-                _revalidate_native_rsi_inputs(
+                _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=artifact,
                     require_unexpired=False,
                 )
@@ -1359,7 +1384,7 @@ def recover_native_trusted_attempt(
             raise NativeTrustedAttemptError("native_trusted_recovery_cleanup_unknown") from exc
     try:
         result = inspect()
-        _revalidate_native_rsi_inputs(
+        _revalidate_native_launch_inputs(
             inputs, root, intent=intent, attestation=attestation, artifact=artifact,
             require_unexpired=False,
         )

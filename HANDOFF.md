@@ -1,5 +1,41 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-07 PR #5 merged; OpenEvolve trusted local composition
+
+PR #5 已合入 `main`：tested head `221540ffaca41cedf284011a5c860f09b52fa4a5`，
+merge commit `83e1f4b50f2aaa0981d19d77342cf363faeaee44`。PR 完整三版 Ubuntu CI
+run `37635168343` 均成功。main post-merge run `37641635284` 最近核对 3.11/3.13
+成功，3.12 仍运行，尚未确认整轮完成。下方旧分支“待 CI/合入”文字保留为历史。
+
+本轮 `codex/openevolve-trusted-launch` 延续 SDD Feature160/169，新增切片 Feature170。
+现有 `OpenEvolveStrategy` 已接入显式 process-local `trusted_native_execution`，默认 legacy
+配置 JSON 不变。冻结完整 config/contract bytes/inode，并由原 intent/attestation/bootstrap
+绑定；native attempt/receipt/recovery 均复验精确只读路径。RSI 与 producer-input marker
+本轮互斥，未扩大 RSI read grants。
+
+实际链路为 companion `.producer-runs/openevolve/` create-only claim → 正式 native lifecycle
+与 broker → 唯一单文件 generic envelope → 一次独立本地 exact seed admission → 原 atomic
+OpenEvolve seed commit → completion ack。native execution 与 generic seed dependency/env
+分别保存，外部分数只作 provenance。完成后直接校验 retained local receipt 与全套发布证据，
+不重新评测。started/unknown/缺 ack 不重启、不刷新预算、不重评、不重提交；移除 injection
+也不能降级 legacy Popen。原总预算保守映射，父预算收窄；active owner loss/cancel/timeout
+清理原 worker。发布前 callback 漂移拒绝，commit critical region 保留既成成功。
+
+本地联合 focused 568 passed；最终 integration 198 passed，constructor/legacy 联合272 passed
+（包含最终 strategy 44项、预算/发布修正与 seed recovery 拒绝），均无
+skip/failure/error，详细 JUnit 和模块验证见 Feature170 validation。Ruff/compileall/diff
+检查通过；此源提交时新 head 仍需完整 CI 后按既有授权合入，之后实际 CI/合并状态以该 PR
+checks 与 merge 记录为准。不能追认 PR #5 CI 为本轮通过。
+
+下一缺口仍是实际 Python OpenEvolve/Shinka 的 interpreter/loader/stdlib/packages/source/
+resources trust inventory、SDK broker 接线与生产 adapter；RSI CLI 仍仅 fixture choices。
+本轮 C fixture 证明 strategy 组合，不代表真实 Python 项目或 campaign 可用。
+P0 完整 containment/egress、bootstrap 后 descendants 与可信 unknown settlement 仍开放。
+P2 多机 ownership/微服务/分布式调度后置。
+
+仍只运行本地 C/bootstrap、fixture/loopback/provider-free evaluator；不运行真实模型、
+WebAgent、远程/公司 evaluator 或真实 campaign，不读取或修改 `.env`/密钥。
+
 ## 2026-10-07 Worker terminal authority and regression evidence
 
 PR #4 已合入 `main`，merge commit `2b8d05e9eaec7a944be8caa4e20e3e5210547ff7`。

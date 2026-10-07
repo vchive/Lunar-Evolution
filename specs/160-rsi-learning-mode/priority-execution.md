@@ -6,6 +6,12 @@ All validation in this iteration is local and provider-free.
 
 ## Current open priorities — 2026-10-07
 
+Feature170 local implementation now composes the existing OpenEvolve strategy with frozen config,
+formal native lifecycle/broker, one local exact seed admission, the established atomic commit and
+strict read-only completed replay. Started/unknown never repeats effects. See Feature170 spec,
+plan and validation; its final-head CI/merge is pending. This does not close Python runtime
+inventories, real project launch trust, production RSI CLI solvers or actual campaigns.
+
 - **P0**: PR #4 merged at `2b8d05e`; its Ubuntu Python 3.11/3.12/3.13 full CI and
   post-merge main CI passed. The next branch must pass its own full matrix. Current work fixes
   the bootstrap-only worker classification: terminal success requires process exit, the original
