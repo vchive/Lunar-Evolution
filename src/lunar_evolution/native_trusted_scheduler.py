@@ -33,6 +33,11 @@ from .native_trusted_attempt import (
     NativeTrustedAttemptObservation,
     run_native_trusted_attempt,
 )
+from .native_trusted_failure import (
+    NativeTrustedFailureError,
+    NativeTrustedProducerFailure,
+    build_native_trusted_failure,
+)
 from .native_trusted_output import (
     NativeTrustedOutputError,
     NativeTrustedOutputPreparation,
@@ -216,7 +221,7 @@ def _lifecycle_control(
     return control, check
 
 
-def run_native_trusted_producer(
+def _run_native_trusted_producer(
     workspace: str | Path,
     *,
     producer_root: str | Path,
@@ -235,7 +240,8 @@ def run_native_trusted_producer(
     execution_control: SolveExecutionControl | None = None,
     cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
-) -> NativeTrustedProducerRun:
+    known_failure: bool = False,
+) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run one pinned native producer through the formal local boundaries.
 
     The operation is intentionally one-shot.  It consumes the supplied attestation exactly once
@@ -282,6 +288,16 @@ def run_native_trusted_producer(
         if exc.code == "native_trusted_attempt_wall_timeout":
             _raise_attempt_wall_timeout(control, caller_limited=caller_limited)
         raise NativeTrustedSchedulerError("native_trusted_scheduler_attempt_failed") from exc
+    if known_failure and attempt.terminal_sha256 is not None and attempt.exit_code != 0:
+        # Only the explicit outcome API records already-observed failure evidence. In
+        # particular, a sticky active cancellation cannot authorize another production
+        # stage, but need not discard a verified process-only cancellation terminal.
+        try:
+            return build_native_trusted_failure(
+                root, intent=intent, attestation=attestation, artifact=artifact, attempt=attempt,
+            )
+        except NativeTrustedFailureError as exc:
+            raise NativeTrustedSchedulerError("native_trusted_scheduler_failure_unverified") from exc
     checkpoint("native_producer_after_attempt")
     if attempt.reason == "native_trusted_attempt_wall_timeout":
         _raise_attempt_wall_timeout(control, caller_limited=caller_limited)
@@ -358,6 +374,50 @@ def run_native_trusted_producer(
     )
 
 
+def run_native_trusted_producer(
+    workspace: str | Path, *, producer_root: str | Path, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+    broker_config: ProducerBrokerConfig, contract: AlgorithmProblemContract, groups: Sequence[BundleGroup],
+    evaluator_kind: str, evaluator_fingerprint: str, runner_fingerprint: str,
+    dependency_sha256: str, environment_sha256: str, strategy: Any | None = None,
+    execution_control: SolveExecutionControl | None = None, cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
+) -> NativeTrustedProducerRun:
+    """Run the historical success-only receipt/output/publication entry point once."""
+    return _run_native_trusted_producer(
+        workspace, producer_root=producer_root, intent=intent, attestation=attestation,
+        artifact=artifact, broker_config=broker_config, contract=contract, groups=groups,
+        evaluator_kind=evaluator_kind, evaluator_fingerprint=evaluator_fingerprint,
+        runner_fingerprint=runner_fingerprint, dependency_sha256=dependency_sha256,
+        environment_sha256=environment_sha256, strategy=strategy, execution_control=execution_control,
+        cancelled=cancelled, parent_deadline=parent_deadline, known_failure=False,
+    )
+
+
+def run_native_trusted_producer_outcome(
+    workspace: str | Path, *, producer_root: str | Path, intent: ProducerLaunchIntent,
+    attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
+    broker_config: ProducerBrokerConfig, contract: AlgorithmProblemContract, groups: Sequence[BundleGroup],
+    evaluator_kind: str, evaluator_fingerprint: str, runner_fingerprint: str,
+    dependency_sha256: str, environment_sha256: str, strategy: Any | None = None,
+    execution_control: SolveExecutionControl | None = None, cancelled: Callable[[], bool] | None = None,
+    parent_deadline: float | None = None,
+) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
+    """Run once, returning verified process failure or the unchanged success result.
+
+    Failure proof is read under the original live broker pins before success-only admission
+    checks. No exception, missing terminal or cancellation callback is mapped to failure.
+    """
+    return _run_native_trusted_producer(
+        workspace, producer_root=producer_root, intent=intent, attestation=attestation,
+        artifact=artifact, broker_config=broker_config, contract=contract, groups=groups,
+        evaluator_kind=evaluator_kind, evaluator_fingerprint=evaluator_fingerprint,
+        runner_fingerprint=runner_fingerprint, dependency_sha256=dependency_sha256,
+        environment_sha256=environment_sha256, strategy=strategy, execution_control=execution_control,
+        cancelled=cancelled, parent_deadline=parent_deadline, known_failure=True,
+    )
+
+
 def recover_native_trusted_producer(
     workspace: str | Path,
     *,
@@ -430,4 +490,5 @@ __all__ = [
     "NativeTrustedSchedulerError",
     "recover_native_trusted_producer",
     "run_native_trusted_producer",
+    "run_native_trusted_producer_outcome",
 ]

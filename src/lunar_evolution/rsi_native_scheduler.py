@@ -10,20 +10,26 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
+from ._candidate_workspace_io import DirectoryChain
 from .algorithm import AlgorithmProblemContract, EvaluationReport
 from .automatic_solve_lifecycle import SolveExecutionControl
 from .bundle_evolution import derive_native_draft_run_id
 from .candidate_evaluation_spec import canonical_json
 from .native_bootstrap import NativeBootstrapArtifact
+from .native_trusted_failure import NativeTrustedProducerFailure, recover_native_trusted_failure
 from .native_trusted_scheduler import (
     NativeTrustedProducerRun,
     run_native_trusted_producer,
+    run_native_trusted_producer_outcome,
 )
 from .official_evaluator_evidence import OfficialEvaluationReceipt, OfficialEvaluatorProfile
 from .producer_broker_ipc import ProducerBrokerConfig
@@ -40,14 +46,25 @@ from .rsi_native_candidate import (
     NativePublicationReceipt,
     select_native_candidate,
 )
+from .rsi_native_failure import (
+    NATIVE_RSI_FAILURE_PROVENANCE_NAME,
+    NativeRSIFailureEvidence,
+    persist_native_rsi_failure_provenance,
+    read_native_rsi_failure_provenance,
+)
 from .rsi_native_gateway import NativeRSIReceiptBundle
 from .rsi_native_inputs import (
     NativeRSIInputDescriptor,
     validate_native_rsi_launch_inputs,
 )
 from .rsi_native_plan import NativeRSIExecutionPlan
-from .rsi_native_provenance import persist_native_rsi_provenance, read_native_rsi_provenance
+from .rsi_native_provenance import (
+    NATIVE_RSI_PROVENANCE_NAME,
+    persist_native_rsi_provenance,
+    read_native_rsi_provenance,
+)
 from .rsi_native_retained import NativeRetainedCandidateEvidence, read_native_retained_candidate
+from .rsi_store import NativeEpisodeClaim, RSILedger
 
 
 class NativeRSISchedulerProviderError(RSILearningError):
@@ -112,6 +129,7 @@ class NativeRSISchedulerContext:
     strategy: Any
     execution_control: SolveExecutionControl | None = None
     cancelled: Callable[[], bool] | None = None
+    failure_ledger: RSILedger | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.intent, ProducerLaunchIntent):
@@ -147,6 +165,8 @@ class NativeRSISchedulerContext:
             _fail("control_invalid")
         if self.cancelled is not None and not callable(self.cancelled):
             _fail("cancellation_invalid")
+        if self.failure_ledger is not None and not isinstance(self.failure_ledger, RSILedger):
+            _fail("failure_ledger_invalid")
 
 
 def _assert_plan_binding(
@@ -429,6 +449,66 @@ class NativeRSISchedulerProvider:
         if not isinstance(context, NativeRSISchedulerContext):
             _fail("context_invalid")
         self.context = context
+        # Freeze before any launch. Recovery compares this prepared pin to the durable sidecar;
+        # neither provider checks nor restart may silently pin a replacement database.
+        self._failure_ledger_identity = (
+            None if context.failure_ledger is None
+            else MappingProxyType(_read_ledger_identity(context.failure_ledger))
+        )
+
+    def assert_failure_ledger(self, ledger: RSILedger) -> None:
+        """Verify explicit failure wiring against the original database, never repin it."""
+        if self._failure_ledger_identity is None:
+            return
+        if (self.context.failure_ledger is None
+                or _read_ledger_identity(self.context.failure_ledger) != self._failure_ledger_identity
+                or _read_ledger_identity(ledger) != self._failure_ledger_identity):
+            _fail("failure_ledger_changed")
+
+    def _failure_claim(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, *, live: bool,
+        expected: NativeEpisodeClaim | None = None,
+    ) -> NativeEpisodeClaim:
+        ledger = self.context.failure_ledger
+        if ledger is None or self._failure_ledger_identity is None:
+            _fail("failure_ledger_missing")
+        self.assert_failure_ledger(ledger)
+        try:
+            claim = ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError("rsi_native_scheduler_failure_claim_invalid") from exc
+        self.assert_failure_ledger(ledger)
+        if (claim is None or claim.status not in {"started", "failed", "cancelled"}
+                or (live and claim.status != "started")):
+            _fail("failure_claim_missing")
+        original = replace(claim, status="started")
+        if expected is not None and original != expected:
+            _fail("failure_claim_changed")
+        return original
+
+    def _provenance_kind(self) -> str:
+        """Both exact terminal files are checked through a held no-follow directory chain."""
+        chain = None
+        try:
+            chain = DirectoryChain(self.provenance_batch, "rsi_native_scheduler_provenance_invalid")
+            present = []
+            for name in (NATIVE_RSI_PROVENANCE_NAME, NATIVE_RSI_FAILURE_PROVENANCE_NAME):
+                try:
+                    os.stat(name, dir_fd=chain.fd, follow_symlinks=False)
+                    present.append(name)
+                except FileNotFoundError:
+                    pass
+            chain.check()
+            if len(present) == 2:
+                _fail("conflicting_provenance")
+            return "failure" if NATIVE_RSI_FAILURE_PROVENANCE_NAME in present else "success"
+        except NativeRSISchedulerProviderError:
+            raise
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError("rsi_native_scheduler_provenance_invalid") from exc
+        finally:
+            if chain is not None:
+                chain.close()
 
     @property
     def provenance_batch(self) -> Path:
@@ -451,6 +531,8 @@ class NativeRSISchedulerProvider:
         """Rebuild the fixed selector plan from original input files without staging or launch."""
         inputs = self._inputs(require_unexpired=False)
         context = self.context
+        if context.failure_ledger is not None:
+            self.assert_failure_ledger(context.failure_ledger)
         plan = NativeRSIExecutionPlan.from_native_inputs(
             request=request, memory=memory, inputs=inputs, intent=context.intent,
             attestation=context.attestation, artifact=context.artifact,
@@ -459,13 +541,21 @@ class NativeRSISchedulerProvider:
             evaluator_kind=context.evaluator_kind, evaluator_fingerprint=context.evaluator_fingerprint,
         )
         _assert_plan_binding(request, memory, plan, context, inputs)
+        if context.failure_ledger is not None:
+            self.assert_failure_ledger(context.failure_ledger)
         return plan
 
-    def recover(self, request: SolverRequest, plan: NativeRSIExecutionPlan) -> NativeRSIReceiptBundle:
+    def recover(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan,
+    ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence:
         """Revalidate existing provenance and artifacts; never launch or settle a started claim."""
         inputs = self._inputs(require_unexpired=False)
         memory = _memory_from_request_inputs(inputs, request)
         _assert_plan_binding(request, memory, plan, self.context, inputs)
+        if self.context.failure_ledger is not None:
+            self.assert_failure_ledger(self.context.failure_ledger)
+        if self._provenance_kind() == "failure":
+            return self._recover_failure(request, plan, inputs)
         try:
             saved = read_native_rsi_provenance(self.provenance_batch)
             candidate = NativeCandidateRecord.from_dict(saved["bundle"]["candidate"])
@@ -480,11 +570,43 @@ class NativeRSISchedulerProvider:
                 _fail("provenance_drift")
             if self._inputs(require_unexpired=False) != inputs or read_native_rsi_provenance(self.provenance_batch) != saved:
                 _fail("provenance_changed")
+            if self._provenance_kind() != "success":
+                _fail("conflicting_provenance")
+            if self.context.failure_ledger is not None:
+                self.assert_failure_ledger(self.context.failure_ledger)
             return replace(bundle, provenance_sha256=saved["provenance_sha256"])
         except NativeRSISchedulerProviderError:
             raise
         except Exception as exc:
             raise NativeRSISchedulerProviderError("rsi_native_scheduler_provenance_invalid") from exc
+
+    def _recover_failure(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, inputs: NativeRSIInputDescriptor,
+    ) -> NativeRSIFailureEvidence:
+        """Reread original failure proof without launch, cleanup, HTTP or evaluator calls."""
+        context = self.context
+        try:
+            saved = read_native_rsi_failure_provenance(self.provenance_batch)
+            if (saved.plan != plan or saved.input_binding_sha256 != inputs.launch_binding_sha256
+                    or dict(saved.ledger_identity) != self._failure_ledger_identity):
+                _fail("failure_provenance_drift")
+            self._failure_claim(request, plan, live=False, expected=saved.claim)
+            recovered = recover_native_trusted_failure(
+                context.workspace, intent=context.intent, attestation=context.attestation,
+                artifact=context.artifact, expected=saved.failure,
+            )
+            if recovered != saved.failure:
+                _fail("failure_evidence_changed")
+            if (self._inputs(require_unexpired=False) != inputs
+                    or read_native_rsi_failure_provenance(self.provenance_batch) != saved
+                    or self._provenance_kind() != "failure"):
+                _fail("failure_provenance_changed")
+            self._failure_claim(request, plan, live=False, expected=saved.claim)
+            return saved
+        except NativeRSISchedulerProviderError:
+            raise
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError("rsi_native_scheduler_failure_provenance_invalid") from exc
 
     def rsi_fingerprint_config(self) -> dict[str, Any]:
         """Expose immutable launch wiring for controller run fingerprints.
@@ -504,7 +626,7 @@ class NativeRSISchedulerProvider:
             raise NativeRSISchedulerProviderError(
                 "rsi_native_scheduler_broker_fingerprint_invalid",
             ) from exc
-        return {
+        projection = {
             "protocol": "lunar-native-rsi-scheduler-provider-v1",
             "workspace": str(Path(context.workspace).expanduser().absolute()),
             "producer_root": str(Path(context.producer_root).expanduser().absolute()),
@@ -529,14 +651,25 @@ class NativeRSISchedulerProvider:
             },
             "cancelled_sha256": None if context.cancelled is None else component_fingerprint(context.cancelled),
         }
+        if context.failure_ledger is not None:
+            self.assert_failure_ledger(context.failure_ledger)
+            projection["failure_ledger"] = dict(self._failure_ledger_identity)
+        return projection
 
-    def __call__(self, request: SolverRequest, plan: NativeRSIExecutionPlan) -> NativeRSIReceiptBundle:
+    def __call__(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan,
+    ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence:
         if not isinstance(request, SolverRequest) or not isinstance(plan, NativeRSIExecutionPlan):
             _fail("input_invalid")
         context = self.context
         inputs = self._inputs(require_unexpired=True)
         memory = _memory_from_request_inputs(inputs, request)
         _assert_plan_binding(request, memory, plan, context, inputs)
+        claim = None
+        if context.failure_ledger is not None:
+            claim = self._failure_claim(request, plan, live=True)
+            if self._provenance_kind() == "failure":
+                _fail("failure_recovery_required")
         parent_deadline = None
         if inputs.deadline_unix is not None:
             mapped_start = time.monotonic()
@@ -547,7 +680,9 @@ class NativeRSISchedulerProvider:
             # deadline once, immediately before dispatch, without widening the request budget.
             parent_deadline = mapped_start + remaining
         try:
-            run = run_native_trusted_producer(
+            scheduler = (run_native_trusted_producer if context.failure_ledger is None
+                         else run_native_trusted_producer_outcome)
+            run = scheduler(
                 context.workspace,
                 producer_root=context.producer_root,
                 intent=context.intent,
@@ -570,6 +705,24 @@ class NativeRSISchedulerProvider:
             raise
         except Exception as exc:
             raise NativeRSISchedulerProviderError("rsi_native_scheduler_attempt_failed") from exc
+        if isinstance(run, NativeTrustedProducerFailure):
+            if claim is None or self._failure_ledger_identity is None:
+                _fail("failure_ledger_missing")
+            self._failure_claim(request, plan, live=True, expected=claim)
+            if self._inputs(require_unexpired=False) != inputs:
+                _fail("failure_input_changed")
+            evidence = NativeRSIFailureEvidence(
+                plan=plan, failure=run, input_binding_sha256=inputs.launch_binding_sha256,
+                ledger_identity=self._failure_ledger_identity, claim=claim,
+            )
+            persisted_sha256 = persist_native_rsi_failure_provenance(self.provenance_batch, evidence)
+            self._failure_claim(request, plan, live=True, expected=claim)
+            recovered = self.recover(request, plan)
+            if (not isinstance(recovered, NativeRSIFailureEvidence)
+                    or recovered.to_dict() != evidence.to_dict()
+                    or recovered.provenance_sha256 != persisted_sha256):
+                _fail("failure_provenance_changed")
+            return recovered
         projected = _build_receipts(request, context, run)
         _publication, journal = _journal_for_published_run(run)
         evidence = _read_retained(
@@ -583,6 +736,43 @@ class NativeRSISchedulerProvider:
             self.provenance_batch, _provenance_payload(plan, inputs, evidence, bundle),
         )
         return self.recover(request, plan)
+
+
+def _read_ledger_identity(ledger: RSILedger) -> dict[str, Any]:
+    """Read one original SQLite inode without following named files or ancestor symlinks.
+
+    SQLite bytes, timestamps and WAL contents remain mutable; only path/device/inode and the
+    immutable original claim are frozen. This does not infer authority from a database digest.
+    """
+    if not isinstance(ledger, RSILedger):
+        _fail("failure_ledger_invalid")
+    path = ledger.database
+    chain = None
+    descriptor = None
+    try:
+        chain = DirectoryChain(path.parent, "rsi_native_scheduler_failure_ledger_invalid")
+        before = os.stat(path.name, dir_fd=chain.fd, follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+            _fail("failure_ledger_invalid")
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                             dir_fd=chain.fd)
+        opened = os.fstat(descriptor)
+        named = os.stat(path.name, dir_fd=chain.fd, follow_symlinks=False)
+        identities = {(info.st_dev, info.st_ino) for info in (before, opened, named)}
+        if (len(identities) != 1 or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
+                or not stat.S_ISREG(named.st_mode) or named.st_nlink != 1):
+            _fail("failure_ledger_changed")
+        chain.check()
+        return {"database": str(path), "device": opened.st_dev, "inode": opened.st_ino}
+    except NativeRSISchedulerProviderError:
+        raise
+    except Exception as exc:
+        raise NativeRSISchedulerProviderError("rsi_native_scheduler_failure_ledger_invalid") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if chain is not None:
+            chain.close()
 
 
 def _memory_from_request_inputs(

@@ -92,12 +92,12 @@ def test_conflicting_existing_valid_payload_is_never_overwritten(tmp_path):
     original = payload()
     persist_native_rsi_provenance(tmp_path, original)
     path = tmp_path / NATIVE_RSI_PROVENANCE_NAME
-    before = path.stat(), path.read_bytes()
+    before = provenance._metadata(path.stat()), path.read_bytes()
     changed = deepcopy(original)
     changed["retained_evidence_sha256"] = digest("different-retained")
     with pytest.raises(NativeRSIProvenanceError, match="conflict"):
         persist_native_rsi_provenance(tmp_path, changed)
-    assert (path.stat(), path.read_bytes()) == before
+    assert (provenance._metadata(path.stat()), path.read_bytes()) == before
 
 
 @pytest.mark.parametrize("kind", ["missing-directory", "missing-file", "symlink-directory", "symlink-file", "hardlink", "mode"])
@@ -163,12 +163,12 @@ def test_existing_corrupt_records_are_read_only_and_cannot_be_repaired(tmp_path,
         write_record(tmp_path, value, raw=json.dumps(value, indent=2).encode())
     else:
         write_record(tmp_path, value, raw=b"x" * (provenance.MAX_NATIVE_RSI_PROVENANCE_BYTES + 1))
-    before = path.stat(), path.read_bytes()
+    before = provenance._metadata(path.stat()), path.read_bytes()
     with pytest.raises(NativeRSIProvenanceError):
         read_native_rsi_provenance(tmp_path)
     with pytest.raises(NativeRSIProvenanceError):
         persist_native_rsi_provenance(tmp_path, original)
-    assert (path.stat(), path.read_bytes()) == before
+    assert (provenance._metadata(path.stat()), path.read_bytes()) == before
 
 
 def test_identical_bytes_copied_to_new_inode_are_rejected(tmp_path):
@@ -220,11 +220,11 @@ def test_partial_write_is_retained_and_never_recreated(tmp_path, monkeypatch):
         persist_native_rsi_provenance(tmp_path, payload())
     path = tmp_path / NATIVE_RSI_PROVENANCE_NAME
     assert path.exists() and path.stat().st_size == 25 and stat.S_IMODE(path.stat().st_mode) == 0o400
-    before = path.stat(), path.read_bytes()
+    before = provenance._metadata(path.stat()), path.read_bytes()
     monkeypatch.setattr(provenance.os, "write", write)
     with pytest.raises(NativeRSIProvenanceError, match="invalid"):
         persist_native_rsi_provenance(tmp_path, payload())
-    assert (path.stat(), path.read_bytes()) == before
+    assert (provenance._metadata(path.stat()), path.read_bytes()) == before
 
 
 def test_provenance_retains_known_failure_without_granting_memory_authority(tmp_path):

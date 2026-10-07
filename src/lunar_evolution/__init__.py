@@ -357,6 +357,12 @@ from .native_trusted_cleanup import (
     persist_native_trusted_cleanup,
     recover_native_trusted_cleanup,
 )
+from .native_trusted_failure import (
+    NativeTrustedFailureError,
+    NativeTrustedProducerFailure,
+    build_native_trusted_failure,
+    recover_native_trusted_failure,
+)
 from .native_trusted_receipt import (
     NativeTrustedReceiptError,
     build_native_trusted_execution_receipt,
@@ -369,6 +375,7 @@ from .native_trusted_scheduler import (
     NativeTrustedSchedulerError,
     recover_native_trusted_producer,
     run_native_trusted_producer,
+    run_native_trusted_producer_outcome,
 )
 from .native_trusted_streams import (
     NativeTrustedStreamCapture,
@@ -764,6 +771,14 @@ from .rsi_native_candidate import (
     map_native_receipts_to_solver_result,
     select_native_candidate,
 )
+from .rsi_native_failure import (
+    NATIVE_RSI_FAILURE_PROVENANCE_NAME,
+    NativeRSIFailureError,
+    NativeRSIFailureEvidence,
+    map_native_failure_to_solver_result,
+    persist_native_rsi_failure_provenance,
+    read_native_rsi_failure_provenance,
+)
 from .rsi_native_gateway import (
     NativeRSIExecutionConfig,
     NativeRSIReceiptBundle,
@@ -921,6 +936,7 @@ __all__ = [
     "MAX_REQUEST_DURATION_MS",
     "MAX_REQUEST_EVENTS",
     "MAX_REQUEST_EVIDENCE_BYTES",
+    "NATIVE_RSI_FAILURE_PROVENANCE_NAME",
     "NATIVE_RSI_INPUT_MARKER",
     "PRODUCER_LAUNCH_INPUT_MARKER",
     "PRODUCER_LAUNCH_PROTOCOL",
@@ -1127,6 +1143,8 @@ __all__ = [
     "NativeRSIExecutionConfig",
     "NativeRSIExecutionPlan",
     "NativeRSIExecutionPlanError",
+    "NativeRSIFailureError",
+    "NativeRSIFailureEvidence",
     "NativeRSIInputDescriptor",
     "NativeRSIInputError",
     "NativeRSIReceiptBundle",
@@ -1138,6 +1156,8 @@ __all__ = [
     "NativeRetainedCandidateEvidence",
     "NativeRetainedEvidenceError",
     "NativeTrustedCleanupError",
+    "NativeTrustedFailureError",
+    "NativeTrustedProducerFailure",
     "NativeTrustedProducerRecovery",
     "NativeTrustedProducerRun",
     "NativeTrustedReceiptError",
@@ -1363,6 +1383,7 @@ __all__ = [
     "build_native_producer_bundle_evaluation_receipt",
     "build_native_producer_bundle_execution_receipt",
     "build_native_trusted_execution_receipt",
+    "build_native_trusted_failure",
     "build_private_input_profile",
     "build_producer_bundle_admission_plan",
     "build_producer_bundle_evaluation_receipt",
@@ -1420,6 +1441,7 @@ __all__ = [
     "load_memory_snapshot",
     "make_native_rsi_scheduler_provider",
     "manifest_sha256",
+    "map_native_failure_to_solver_result",
     "map_native_receipts_to_solver_result",
     "materialize_candidate_source_bundle",
     "native_producer_bundle_budget_sha256",
@@ -1460,6 +1482,7 @@ __all__ = [
     "parse_trusted_bootstrap_process_registration_handoff",
     "parse_trusted_bootstrap_registration",
     "persist_controlled_producer_bundle_intent",
+    "persist_native_rsi_failure_provenance",
     "persist_native_trusted_cleanup",
     "persist_native_trusted_execution_receipt",
     "persist_native_trusted_stream_capture",
@@ -1485,10 +1508,12 @@ __all__ = [
     "read_candidate_source_files",
     "read_host_request_journal",
     "read_native_retained_candidate",
+    "read_native_rsi_failure_provenance",
     "reconcile_remote_state",
     "recover_confidence_report",
     "recover_native_trusted_cleanup",
     "recover_native_trusted_execution_receipt",
+    "recover_native_trusted_failure",
     "recover_native_trusted_lifecycle",
     "recover_native_trusted_producer",
     "recover_native_trusted_stream_capture",
@@ -1514,6 +1539,7 @@ __all__ = [
     "run_native_producer_bundle_publication_transaction",
     "run_native_trusted_lifecycle",
     "run_native_trusted_producer",
+    "run_native_trusted_producer_outcome",
     "run_producer_lifecycle",
     "run_producer_process",
     "run_registered_acceptance",

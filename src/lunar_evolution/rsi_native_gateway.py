@@ -8,6 +8,7 @@ the same native attempt.
 
 from __future__ import annotations
 
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -27,8 +28,9 @@ from .rsi_native_candidate import (
     map_native_receipts_to_solver_result,
     select_native_candidate,
 )
+from .rsi_native_failure import NativeRSIFailureEvidence, map_native_failure_to_solver_result
 from .rsi_native_plan import NativeRSIExecutionPlan
-from .rsi_store import RSILedger
+from .rsi_store import NativeEpisodeClaim, RSILedger
 
 
 class NativeRSISolverGatewayError(RSILearningError):
@@ -76,7 +78,7 @@ class NativeRSIExecutionConfig:
 
     ledger: RSILedger
     plan_factory: Callable[[SolverRequest, MemorySnapshot], NativeRSIExecutionPlan]
-    receipt_provider: Callable[[SolverRequest, NativeRSIExecutionPlan], NativeRSIReceiptBundle]
+    receipt_provider: Callable[[SolverRequest, NativeRSIExecutionPlan], NativeRSIReceiptBundle | NativeRSIFailureEvidence]
 
     def __post_init__(self) -> None:
         if not isinstance(self.ledger, RSILedger):
@@ -97,6 +99,30 @@ class NativeRSISolverGateway:
         if not isinstance(config, NativeRSIExecutionConfig):
             raise NativeRSISolverGatewayError("rsi_native_gateway_configuration_invalid")
         self.config = config
+        try:
+            info = self.ledger.database.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise OSError("invalid ledger path")
+            self._ledger_identity = {
+                "database": str(self.ledger.database.absolute()),
+                "device": info.st_dev, "inode": info.st_ino,
+            }
+        except OSError as exc:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_ledger_invalid") from exc
+
+    def _assert_ledger(self) -> None:
+        """Check the prepared database before any callback or SQLite operation."""
+        try:
+            info = self.ledger.database.lstat()
+            if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or
+                    {"database": str(self.ledger.database.absolute()),
+                     "device": info.st_dev, "inode": info.st_ino} != self._ledger_identity):
+                raise OSError("ledger replaced")
+            check = getattr(self.config.receipt_provider, "assert_failure_ledger", None)
+            if callable(check):
+                check(self.ledger)
+        except Exception as exc:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_ledger_changed") from exc
 
     @property
     def ledger(self) -> RSILedger:
@@ -112,29 +138,27 @@ class NativeRSISolverGateway:
         so a gateway cannot silently resume with an unpinned provider.
         """
         try:
-            identity = self.ledger.database.stat()
+            self._assert_ledger()
             plan_fingerprint = component_fingerprint(self.config.plan_factory)
             receipt_fingerprint = component_fingerprint(self.config.receipt_provider)
         except (OSError, RSIIdentityError) as exc:
             raise NativeRSISolverGatewayError("rsi_native_gateway_fingerprint_invalid") from exc
         return {
             "protocol": "lunar-native-rsi-gateway-v1",
-            "ledger": {
-                "database": str(self.ledger.database),
-                "device": identity.st_dev,
-                "inode": identity.st_ino,
-            },
+            "ledger": dict(self._ledger_identity),
             "plan_factory_sha256": plan_fingerprint,
             "receipt_provider_sha256": receipt_fingerprint,
         }
 
     def _plan(self, request: SolverRequest, memory: MemorySnapshot) -> NativeRSIExecutionPlan:
+        self._assert_ledger()
         if not isinstance(request, SolverRequest) or not isinstance(memory, MemorySnapshot):
             raise NativeRSISolverGatewayError("rsi_native_gateway_input_invalid")
         if memory.digest() != request.memory_snapshot_sha256:
             raise NativeRSISolverGatewayError("rsi_native_gateway_memory_binding_mismatch")
         try:
             plan = self.config.plan_factory(request, memory)
+            self._assert_ledger()
         except NativeRSISolverGatewayError:
             raise
         except Exception as exc:
@@ -148,21 +172,120 @@ class NativeRSISolverGateway:
         return plan
 
     def _replay(self, request: SolverRequest, plan: NativeRSIExecutionPlan) -> SolverResult:
+        self._assert_ledger()
         saved = self.ledger.episode_result(request.episode_id)
+        self._assert_ledger()
         if saved is None or saved[0] != request:
             raise NativeRSISolverGatewayError("rsi_native_gateway_replay_missing")
         recovery = getattr(self.config.receipt_provider, "recover", None)
+        if saved[1].status in {"failed", "cancelled"} and not callable(recovery):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_reader_required")
         if callable(recovery):
             try:
                 bundle = recovery(request, plan)
-                if not isinstance(bundle, NativeRSIReceiptBundle):
-                    raise NativeRSISolverGatewayError("rsi_native_gateway_receipts_invalid")
-                result = self._map_bundle(request, plan, bundle)
+                self._assert_ledger()
+                result = self._map_outcome(request, plan, bundle)
                 if result != saved[1]:
                     raise NativeRSISolverGatewayError("rsi_native_gateway_replay_result_drift")
             except Exception as exc:
                 raise NativeRSISolverGatewayError("rsi_native_gateway_replay_evidence_invalid") from exc
         return saved[1]
+
+    def _map_outcome(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan,
+        evidence: NativeRSIReceiptBundle | NativeRSIFailureEvidence,
+        *, expected_claim: NativeEpisodeClaim | None = None,
+    ) -> SolverResult:
+        if isinstance(evidence, NativeRSIReceiptBundle):
+            return self._map_bundle(request, plan, evidence)
+        if not isinstance(evidence, NativeRSIFailureEvidence):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_receipts_invalid")
+        self._assert_ledger()
+        if not callable(getattr(self.config.receipt_provider, "assert_failure_ledger", None)):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_ledger_required")
+        if dict(evidence.ledger_identity) != self._ledger_identity:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_ledger_mismatch")
+        if expected_claim is not None and replace(expected_claim, status="started") != evidence.claim:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_claim_mismatch")
+        claim = self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        self._assert_ledger()
+        if (claim is None or claim.status not in {"started", "failed", "cancelled"} or
+                replace(claim, status="started") != evidence.claim):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_claim_mismatch")
+        return map_native_failure_to_solver_result(request, plan, evidence)
+
+    def _read_failure(
+        self, request: SolverRequest, memory: MemorySnapshot, *,
+        expected_claim_sha256: str, expected_provenance_sha256: str,
+    ) -> tuple[NativeRSIExecutionPlan, SolverResult, NativeEpisodeClaim]:
+        """Inspect an independently pinned failure without publishing a result."""
+        for digest in (expected_claim_sha256, expected_provenance_sha256):
+            if (type(digest) is not str or len(digest) != 64 or
+                    any(char not in "0123456789abcdef" for char in digest)):
+                raise NativeRSISolverGatewayError("rsi_native_gateway_failure_pin_invalid")
+        plan = self._plan(request, memory)
+        claim = self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        self._assert_ledger()
+        if (claim is None or claim.claim_sha256 != expected_claim_sha256 or
+                claim.status not in {"started", "failed", "cancelled"}):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_claim_mismatch")
+        recovery = getattr(self.config.receipt_provider, "recover", None)
+        if not callable(recovery):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_reader_required")
+        evidence = recovery(request, plan)
+        self._assert_ledger()
+        if (not isinstance(evidence, NativeRSIFailureEvidence) or
+                evidence.provenance_sha256 != expected_provenance_sha256 or
+                evidence.claim_sha256 != expected_claim_sha256):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_proof_mismatch")
+        result = self._map_outcome(request, plan, evidence, expected_claim=claim)
+        saved = self.ledger.episode_result(request.episode_id)
+        self._assert_ledger()
+        if saved is not None and saved != (request, result):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_result_conflict")
+        # Re-read after callback and result inspection, retaining the original proof pin.
+        repeated = recovery(request, plan)
+        self._assert_ledger()
+        if (not isinstance(repeated, NativeRSIFailureEvidence) or
+                repeated.to_dict() != evidence.to_dict() or
+                repeated.provenance_sha256 != expected_provenance_sha256 or
+                self._map_outcome(request, plan, repeated, expected_claim=claim) != result):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_proof_changed")
+        return plan, result, claim
+
+    def inspect_failure(
+        self, request: SolverRequest, memory: MemorySnapshot, *,
+        expected_claim_sha256: str, expected_provenance_sha256: str,
+    ) -> SolverResult:
+        """Read-only preflight for a controller's evidence budget reservation."""
+        return self._read_failure(
+            request, memory, expected_claim_sha256=expected_claim_sha256,
+            expected_provenance_sha256=expected_provenance_sha256,
+        )[1]
+
+    def restore_failure(
+        self, request: SolverRequest, memory: MemorySnapshot, *,
+        expected_claim_sha256: str, expected_provenance_sha256: str,
+        before_publish: Callable[[], None] | None = None,
+    ) -> SolverResult:
+        """Register existing failure proof only; a pending run still never relaunches."""
+        if before_publish is not None and not callable(before_publish):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_guard_invalid")
+        plan, result, claim = self._read_failure(
+            request, memory, expected_claim_sha256=expected_claim_sha256,
+            expected_provenance_sha256=expected_provenance_sha256,
+        )
+        self._assert_ledger()
+        if before_publish is not None:
+            before_publish()
+            self._assert_ledger()
+        self.ledger.publish_native_episode_result(
+            request, plan_sha256=plan.plan_sha256, result=result, expected_claim=claim,
+        )
+        self._assert_ledger()
+        if self._replay(request, plan) != result:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_failure_result_conflict")
+        return result
 
     @staticmethod
     def _map_bundle(
@@ -206,6 +329,7 @@ class NativeRSISolverGateway:
         plan = self._plan(request, memory)
         try:
             claim = self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+            self._assert_ledger()
             if claim is None or claim.status == "started":
                 raise NativeRSISolverGatewayError("rsi_native_gateway_recovery_required")
             saved = self._replay(request, plan)
@@ -227,6 +351,7 @@ class NativeRSISolverGateway:
         plan = self._plan(request, memory)
         try:
             claim = self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+            self._assert_ledger()
         except RSILearningError as exc:
             raise NativeRSISolverGatewayError("rsi_native_gateway_claim_invalid") from exc
         if claim is not None and claim.status != "started":
@@ -235,6 +360,7 @@ class NativeRSISolverGateway:
             raise NativeRSISolverGatewayError("rsi_native_gateway_recovery_required")
         try:
             claim = self.ledger.claim_native_episode(request, plan_sha256=plan.plan_sha256)
+            self._assert_ledger()
         except RSILearningError as exc:
             if str(exc) == "rsi_native_episode_recovery_required":
                 raise NativeRSISolverGatewayError("rsi_native_gateway_recovery_required") from exc
@@ -245,12 +371,24 @@ class NativeRSISolverGateway:
             return self._replay(request, plan)
         try:
             bundle = self.config.receipt_provider(request, plan)
-            if not isinstance(bundle, NativeRSIReceiptBundle):
-                raise NativeRSISolverGatewayError("rsi_native_gateway_receipts_invalid")
-            result = self._map_bundle(request, plan, bundle)
+            self._assert_ledger()
+            result = self._map_outcome(request, plan, bundle, expected_claim=claim)
+            if isinstance(bundle, NativeRSIFailureEvidence):
+                recovery = getattr(self.config.receipt_provider, "recover", None)
+                if not callable(recovery):
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_failure_reader_required")
+                repeated = recovery(request, plan)
+                self._assert_ledger()
+                if (not isinstance(repeated, NativeRSIFailureEvidence) or
+                        repeated.to_dict() != bundle.to_dict() or
+                        repeated.provenance_sha256 != bundle.provenance_sha256 or
+                        self._map_outcome(request, plan, repeated, expected_claim=claim) != result):
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_failure_proof_changed")
+            failure_claim = {"expected_claim": claim} if isinstance(bundle, NativeRSIFailureEvidence) else {}
             self.ledger.publish_native_episode_result(
-                request, plan_sha256=plan.plan_sha256, result=result,
+                request, plan_sha256=plan.plan_sha256, result=result, **failure_claim,
             )
+            self._assert_ledger()
             return result
         except NativeRSISolverGatewayError:
             raise

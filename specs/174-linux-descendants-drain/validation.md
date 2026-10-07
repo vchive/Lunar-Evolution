@@ -55,3 +55,14 @@ unchanged. Later phases did not run on that head; it is not a full regression su
 
 The corrected head must run the complete matrix independently. The original failed run is
 retained; it is not retried, overwritten or relabelled as a successful result.
+
+## Final Linux CI and merge
+
+PR #9 corrected head acfa5bc7e8c3890efa928588460be27529e2fe00 passed run37678220566
+on Ubuntu Python3.11/3.12/3.13 without retries. Each original XML phase: descendants47/1skip,
+deadline358/1skip, runtime240/1skip, adapters173, native403/6skips, current10364/32skips,
+archive2294 and frozen24; all0failure/error. Independent suite/actual-element counts, inventory
+and final pytest.log summaries/SHA match. Actions PR merge eaa2f663 has this exact head as
+parent and the same tree0941df40b5a84bdf634994dc0d5d5a101f17abae. Merged into main at
+4fa526c3b2adedb85231bc178ede32e26c505306 with that tested tree. Earlier pending text is
+source-time history; original first-head failures are retained. Post-merge main CI is separate.
