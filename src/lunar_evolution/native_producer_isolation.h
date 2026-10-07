@@ -34,6 +34,12 @@ static int lunar_apply_isolation(const char *profile,
     }
     return 0;
 #elif defined(__linux__)
+    /* The syscall-number fallbacks and audit/clone layout below are defined
+       only for these ABIs. Reject every other architecture before touching
+       Landlock, even if its recent headers provide the modern syscall names. */
+    #if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__i386__)
+    (void)profile; (void)read_paths; (void)write_dirs; return ENOTSUP;
+    #else
     /* Linux support is compiled only when the host provides both Landlock and
        seccomp headers.  The implementation is intentionally fail-closed on
        older kernels rather than claiming a weaker policy. */
@@ -117,8 +123,50 @@ static int lunar_apply_isolation(const char *profile,
         #else
         return ENOTSUP;
         #endif
-        /* Network and process namespace/ptrace calls fail with EPERM. Other
-           calls remain governed by Landlock and the target's normal runtime. */
+        /* These modern syscall numbers are shared by the supported x86_64,
+           aarch64 and i386 ABIs. Older libc headers must not silently omit a
+           deny rule for a syscall provided by the running kernel. */
+        #if defined(__NR_clone3)
+        #define LUNAR_NR_CLONE3 __NR_clone3
+        #else
+        #define LUNAR_NR_CLONE3 435
+        #endif
+        #if defined(__NR_pidfd_send_signal)
+        #define LUNAR_NR_PIDFD_SEND_SIGNAL __NR_pidfd_send_signal
+        #else
+        #define LUNAR_NR_PIDFD_SEND_SIGNAL 424
+        #endif
+        #if defined(__NR_pidfd_getfd)
+        #define LUNAR_NR_PIDFD_GETFD __NR_pidfd_getfd
+        #else
+        #define LUNAR_NR_PIDFD_GETFD 438
+        #endif
+        #if defined(__NR_io_uring_setup)
+        #define LUNAR_NR_IO_URING_SETUP __NR_io_uring_setup
+        #else
+        #define LUNAR_NR_IO_URING_SETUP 425
+        #endif
+        #if defined(__NR_io_uring_enter)
+        #define LUNAR_NR_IO_URING_ENTER __NR_io_uring_enter
+        #else
+        #define LUNAR_NR_IO_URING_ENTER 426
+        #endif
+        #if defined(__NR_io_uring_register)
+        #define LUNAR_NR_IO_URING_REGISTER __NR_io_uring_register
+        #else
+        #define LUNAR_NR_IO_URING_REGISTER 427
+        #endif
+        /* Legacy clone's flags are argument 0 on every supported ABI. Deny
+           NEWTIME/NEWNS/NEWCGROUP/NEWUTS/NEWIPC/NEWUSER/NEWPID/NEWNET while
+           retaining normal fork, vfork and thread flags. NEWTIME shares the
+           low exit-signal byte, but no valid signal uses its 0x80 bit. */
+        #define LUNAR_CLONE_NAMESPACE_FLAGS 0x7e020080U
+        /* This only narrows the target's control surface; it is not complete
+           containment or a post-bootstrap descendant supervision protocol.
+           Namespace, external signal/memory and network control calls fail
+           with EPERM. clone3 returns ENOSYS so libc can use filtered legacy
+           clone for ordinary threads. Other calls remain governed by Landlock
+           and the target's normal runtime. */
         struct sock_filter filter[] = {
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 4),
             #if defined(__x86_64__)
@@ -127,11 +175,61 @@ static int lunar_apply_isolation(const char *profile,
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_AARCH64, 1, 0),
             #elif defined(__i386__)
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_I386, 1, 0),
-            #else
-            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 1),
             #endif
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
             BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),
+            #if defined(__x86_64__)
+            /* x32 has the same audit architecture but tags syscall numbers;
+               allowing that alternate number space would bypass this list. */
+            BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x40000000U, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_clone
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_clone, 0, 4),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[0])),
+            BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, LUNAR_CLONE_NAMESPACE_FLAGS, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            #endif
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_CLONE3, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
+            #ifdef __NR_setsid
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_setsid, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_setpgid
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_setpgid, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_setns
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_setns, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_kill
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_kill, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_tkill
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_tkill, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_tgkill
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_tgkill, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_rt_sigqueueinfo
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_rt_sigqueueinfo, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_rt_tgsigqueueinfo
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_rt_tgsigqueueinfo, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_PIDFD_SEND_SIGNAL, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_PIDFD_GETFD, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #ifdef __NR_process_vm_readv
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_readv, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            #ifdef __NR_process_vm_writev
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_writev, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_IO_URING_SETUP, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_IO_URING_REGISTER, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_IO_URING_ENTER, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #ifdef __NR_socketcall
+            /* i386 multiplexes network operations through socketcall. */
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketcall, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            #endif
             #ifdef __NR_socket
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
             #endif
@@ -182,6 +280,7 @@ static int lunar_apply_isolation(const char *profile,
       #endif
     #else
       (void)profile; (void)read_paths; (void)write_dirs; return ENOTSUP;
+    #endif
     #endif
 #else
     (void)profile; (void)read_paths; (void)write_dirs; return ENOTSUP;
