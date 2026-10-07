@@ -1,8 +1,9 @@
 """Verified, framework-neutral admission of local seed artifacts.
 
 External evolution engines are material producers at this boundary.  Their scores are provenance;
-only a fresh invocation of the configured local evaluator can admit a seed for population use.
-The adapter deliberately has no archive, generator, backend, or network dependency.
+only the configured local evaluator can create an admission receipt. Retained admissions can be
+recovered without reevaluation against a fresh manifest and an independently pinned receipt.
+The adapter deliberately has no generator, backend, or network dependency.
 """
 
 from __future__ import annotations
@@ -21,10 +22,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from . import _benchmark_files as _files
 from .algorithm import AlgorithmProblemContract, EvaluationReport
 from .evolution import (
+    MAX_ARCHIVE_LINE_BYTES,
     MAX_METADATA_BYTES,
     MAX_SOURCE_BYTES,
+    Candidate,
     CandidateDraft,
     CandidateEvaluator,
     EvolutionError,
@@ -75,6 +79,7 @@ LOCAL_EVALUATION_INVALID = "local_evaluation_invalid"
 LOCAL_SCORE_UNAVAILABLE = "local_score_unavailable"
 EXTERNAL_SCORE_ONLY = "external_score_only"
 NO_USABLE_SEEDS = "no_usable_seeds"
+RETAINED_ADMISSION_MISMATCH = "retained_admission_mismatch"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -1447,6 +1452,147 @@ def _adjudicate_seed(
     )
 
 
+def _retained_seed_snapshot(root: Path, name: str, maximum: int) -> _SourceSnapshot:
+    """Bind a retained file to its bytes and inode without following ancestor symlinks."""
+    content = _files.read_regular_file(root / name, maximum)
+    snapshot = _safe_source_snapshot(root, name)
+    if snapshot.content != content:
+        _raise(RETAINED_ADMISSION_MISMATCH)
+    return snapshot
+
+
+def recover_retained_seed_admission(
+    manifest: SeedManifest,
+    candidate: Candidate,
+    *,
+    candidate_root: str | os.PathLike[str],
+    expected_receipt_sha256: str,
+) -> AdmittedSeed:
+    """Recover one published admission without evaluating, staging, or writing files.
+
+    ``manifest`` must come from freshly recovered producer material with caller-pinned authority.
+    ``expected_receipt_sha256`` must come from a separate retained local admission checkpoint,
+    never from the receipt being inspected. The manifest binds the source, evaluator identities,
+    lineage, metadata, and provenance; the receipt pin binds the original local evaluation.
+
+    This verifies only the candidate's source, record and receipt. Callers must separately verify
+    their publication transaction, for example with ``CandidateArchive.validate_initial_seeds``.
+    Both population and OpenEvolve canonical seed records return the neutral population seed DTO.
+    """
+    try:
+        if not isinstance(manifest, SeedManifest) or not isinstance(candidate, Candidate):
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        # Detach mutable mappings before computing expected authority and metadata.
+        manifest = SeedManifest.from_dict(manifest.to_dict())
+        candidate = Candidate.from_dict(json.loads(_canonical_bytes(candidate.to_dict())))
+        if len(manifest.seeds) != 1:
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        receipt_pin = _digest(expected_receipt_sha256, RETAINED_ADMISSION_MISMATCH)
+        seed = manifest.seeds[0]
+        candidate_id = compute_seed_identity(seed, manifest)
+        filename = Path(seed.source_path).name
+        if (
+            candidate.candidate_id != candidate_id
+            or filename in {"record.json", "receipt.json"}
+            or candidate.code_path != f"evolution/candidates/{candidate_id}/{filename}"
+            or candidate.parent_id is not None
+            or candidate.generation != 0
+            or candidate.source_sha256 is not None
+            or candidate.receipt_sha256 is not None
+            or candidate.integrity is not None
+            or candidate.bundle_evidence is not None
+            or candidate.strategy not in {"population", "openevolve"}
+            or (candidate.strategy == "population" and (
+                candidate.iteration != 0 or candidate.island_id is None
+            ))
+            or (candidate.strategy == "openevolve" and (
+                candidate.iteration != 1 or candidate.island_id is not None
+            ))
+            or (seed.provenance.origin_kind == "external"
+                and manifest.evaluator.kind != EXACT_HARNESS_KIND)
+        ):
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        root = _files.absolute_path(candidate_root)
+        if root.name != candidate_id:
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        limits = {
+            filename: MAX_SOURCE_BYTES,
+            "receipt.json": MAX_ARCHIVE_LINE_BYTES,
+            "record.json": MAX_ARCHIVE_LINE_BYTES,
+        }
+        snapshots = {
+            name: _retained_seed_snapshot(root, name, maximum)
+            for name, maximum in limits.items()
+        }
+        source = snapshots[filename]
+        if source.sha256 != seed.source_sha256 or not source.content:
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        source_text = source.content.decode("utf-8")
+        if not source_text.strip():
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        receipt = EvaluatorReceipt.from_dict(
+            _parse_json_bytes(snapshots["receipt.json"].content)
+        )
+        if receipt.receipt_sha256 != receipt_pin:
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        expected_receipt = EvaluatorReceipt.from_report(
+            candidate.evaluation,
+            candidate_id=candidate_id,
+            source_sha256=seed.source_sha256,
+            contract_sha256=manifest.contract_sha256,
+            evaluator_kind=manifest.evaluator.kind,
+            evaluator_fingerprint=manifest.evaluator.fingerprint,
+            dependency_sha256=manifest.dependency_sha256,
+            environment_sha256=manifest.environment_sha256,
+        )
+        if (
+            receipt.validity != 1
+            or receipt.error_info
+            or _canonical_bytes(receipt.to_dict())
+            != _canonical_bytes(expected_receipt.to_dict())
+        ):
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        handoff_sha256 = compute_handoff_fingerprint(candidate_id, seed.provenance)
+        metadata = _candidate_metadata(
+            seed, manifest, candidate_id=candidate_id,
+            receipt=receipt, handoff_sha256=handoff_sha256,
+        )
+        if _canonical_bytes(candidate.metadata) != _canonical_bytes(metadata):
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        expected_record = {
+            **candidate.to_dict(),
+            "seed_handoff_evidence": {
+                "schema_version": SEED_MANIFEST_SCHEMA_VERSION,
+                "provenance": seed.provenance.compact_projection(),
+                "external_evidence": dict(seed.provenance.external_evidence),
+                "provenance_sha256": seed.provenance.digest(),
+                "handoff_sha256": handoff_sha256,
+                "receipt_sha256": receipt.receipt_sha256,
+            },
+        }
+        record = _parse_json_bytes(snapshots["record.json"].content)
+        if _canonical_bytes(record) != _canonical_bytes(expected_record):
+            _raise(RETAINED_ADMISSION_MISMATCH)
+        recovered = AdmittedSeed(
+            candidate_id=candidate_id,
+            draft=CandidateDraft(source=source_text, filename=filename, metadata=metadata),
+            evaluation=candidate.evaluation,
+            receipt=receipt,
+            provenance=seed.provenance,
+            handoff_sha256=handoff_sha256,
+            island_id=candidate.island_id if candidate.strategy == "population" else 0,
+        )
+        for name, before in snapshots.items():
+            after = _retained_seed_snapshot(root, name, limits[name])
+            if not before.unchanged_from(after):
+                _raise(RETAINED_ADMISSION_MISMATCH)
+        return recovered
+    except (SeedAdmissionError, ValueError, TypeError, OSError, AttributeError) as exc:
+        if isinstance(exc, SeedAdmissionError) and exc.code == RETAINED_ADMISSION_MISMATCH:
+            raise
+        raise SeedAdmissionError(RETAINED_ADMISSION_MISMATCH) from exc
+
+
 def admit_seed_manifest(
     manifest_value: SeedManifest | Mapping[str, Any] | str | os.PathLike[str],
     contract: AlgorithmProblemContract,
@@ -1600,6 +1746,7 @@ __all__ = [
     "METADATA_TOO_LARGE",
     "MISSING_FIELD",
     "NO_USABLE_SEEDS",
+    "RETAINED_ADMISSION_MISMATCH",
     "SEED_MANIFEST_SCHEMA_VERSION",
     "SOURCE_CHANGED",
     "SOURCE_DIGEST_MISMATCH",
@@ -1627,5 +1774,6 @@ __all__ = [
     "compute_handoff_fingerprint",
     "compute_seed_identity",
     "parse_seed_manifest",
+    "recover_retained_seed_admission",
     "seed_identity_material",
 ]

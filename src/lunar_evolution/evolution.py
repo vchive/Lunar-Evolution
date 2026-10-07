@@ -24,7 +24,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from .algorithm import (
     ACTIVE_EVOLUTION_STRATEGIES,
@@ -39,6 +39,9 @@ from .algorithm import (
 )
 from .automatic_solve_lifecycle import SolveExecutionBudgetExceeded, SolveExecutionCancelled
 from .evaluator import evaluate_output_contract
+
+if TYPE_CHECKING:
+    from .openevolve_native import OpenEvolveNativeExecution
 
 MAX_SOURCE_BYTES = 512 * 1024
 MAX_METADATA_BYTES = 8 * 1024
@@ -2180,6 +2183,8 @@ class EvolutionContext:
     process_observer: Callable[[int, int | None], None] | None = None
     process_released: Callable[[int, int | None], None] | None = None
     continuation_guard: Callable[[], None] | None = None
+    # Explicit process-local opt-in. It deliberately does not change legacy config JSON.
+    trusted_native_execution: OpenEvolveNativeExecution | None = None
 
     def __post_init__(self) -> None:
         try:
@@ -2189,6 +2194,12 @@ class EvolutionContext:
         if len(seeds) > 32:
             raise ValueError("initial_seeds exceeds the bounded seed limit")
         object.__setattr__(self, "initial_seeds", seeds)
+        if self.trusted_native_execution is not None:
+            from .openevolve_native import OpenEvolveNativeExecution
+
+            if (self.config.strategy != "openevolve"
+                    or type(self.trusted_native_execution) is not OpenEvolveNativeExecution):
+                raise ValueError("trusted_native_execution requires an OpenEvolve native execution")
         for name, value in (
             ("dependency_sha256", self.dependency_sha256),
             ("environment_sha256", self.environment_sha256),
@@ -7513,6 +7524,17 @@ class OpenEvolveStrategy(_BaseStrategy):
 
     name: Literal["openevolve"] = "openevolve"
 
+    def __init__(self, context: EvolutionContext, *, read_only: bool = False) -> None:
+        runtime = Path(context.workspace).expanduser().absolute() / ".producer-runs" / "openevolve"
+        if context.trusted_native_execution is not None or runtime.exists() or runtime.is_symlink():
+            # The ordinary writable archive constructor repairs seed transactions. A trusted
+            # attempt must reject that ambiguity before it can delete any retained stage/backup.
+            from .producer_process import _held_directory
+
+            with _held_directory(Path(context.workspace).expanduser().absolute()):
+                CandidateArchive(context.workspace, requested_strategy=self.name, read_only=True)
+        super().__init__(context, read_only=read_only)
+
     def _budget(self) -> dict[str, Any]:
         return {
             "max_rounds": self.config.max_rounds,
@@ -7746,6 +7768,14 @@ class OpenEvolveStrategy(_BaseStrategy):
             # Admission publishes one atomic seed tree. Prove that the exact final commit shape is
             # currently possible before paying the irreversible cost of an external producer run.
             self.archive._preflight_seed_commit_root(self.context.contract.digest())
+        if self.context.trusted_native_execution is not None:
+            from .openevolve_native import run_openevolve_native
+
+            return run_openevolve_native(self, state)
+        trusted_runtime = self.context.workspace / ".producer-runs" / "openevolve"
+        if ("trusted_native_admission" in state
+                or trusted_runtime.exists() or trusted_runtime.is_symlink()):
+            raise EvolutionError("openevolve_native_protocol_mismatch")
         if state.get("status") == "completed":
             if "seed_admission" not in state:
                 raise EvolutionError("openevolve_resume_mismatch")

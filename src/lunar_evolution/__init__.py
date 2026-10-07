@@ -384,6 +384,11 @@ from .openevolve_handoff import (
     declared_protocol_environment_sha256,
     source_only_dependency_sha256,
 )
+from .openevolve_native import (
+    OpenEvolveNativeExecution,
+    openevolve_native_workspace,
+    prepare_openevolve_native_inputs,
+)
 from .producer_bootstrap import (
     MAX_BOOTSTRAP_PAYLOAD_BYTES,
     TRUSTED_BOOTSTRAP_PROTOCOL,
@@ -503,6 +508,14 @@ from .producer_handoff import (
     parse_producer_envelope,
     prepare_producer_seed_manifest,
     producer_bundle_dependency_sha256,
+)
+from .producer_launch_inputs import (
+    PRODUCER_LAUNCH_INPUT_MARKER,
+    ProducerLaunchInputDescriptor,
+    ProducerLaunchInputError,
+    bind_producer_launch_inputs,
+    prepare_producer_launch_inputs,
+    validate_producer_launch_inputs,
 )
 from .producer_launcher import (
     PRODUCER_LAUNCH_PROTOCOL,
@@ -812,6 +825,7 @@ from .seed_handoff import (
     compute_handoff_fingerprint,
     compute_seed_identity,
     parse_seed_manifest,
+    recover_retained_seed_admission,
 )
 from .shinka_handoff import (
     ShinkaHandoffError,
@@ -884,6 +898,7 @@ __all__ = [
     "MAX_REQUEST_EVENTS",
     "MAX_REQUEST_EVIDENCE_BYTES",
     "NATIVE_RSI_INPUT_MARKER",
+    "PRODUCER_LAUNCH_INPUT_MARKER",
     "PRODUCER_LAUNCH_PROTOCOL",
     "PRODUCER_LAUNCH_SCHEMA_VERSION",
     "PRODUCER_PROCESS_PROTOCOL",
@@ -1109,6 +1124,7 @@ __all__ = [
     "NoiseConfidenceError",
     "OffspringOutcome",
     "OpenEvolveHandoffError",
+    "OpenEvolveNativeExecution",
     "OpenEvolveStrategy",
     "OutputSpec",
     "ParentRunBudget",
@@ -1152,6 +1168,8 @@ __all__ = [
     "ProducerLaunchAdmission",
     "ProducerLaunchAttestation",
     "ProducerLaunchError",
+    "ProducerLaunchInputDescriptor",
+    "ProducerLaunchInputError",
     "ProducerLaunchIntent",
     "ProducerLaunchPreflight",
     "ProducerLifecycleError",
@@ -1296,6 +1314,7 @@ __all__ = [
     "bind_benchmark_comparison_result_evidence",
     "bind_native_producer_bundle_control",
     "bind_native_rsi_launch",
+    "bind_producer_launch_inputs",
     "build_acceptance_audit_request",
     "build_acceptance_manifest",
     "build_acceptance_registration",
@@ -1373,6 +1392,7 @@ __all__ = [
     "normalize_feedback",
     "observe_acceptance_evidence",
     "observe_trusted_bootstrap_attempt",
+    "openevolve_native_workspace",
     "own_request_budget",
     "parse_acceptance_audit_request",
     "parse_acceptance_manifest",
@@ -1415,8 +1435,10 @@ __all__ = [
     "prepare_acceptance_campaign",
     "prepare_acceptance_runtime_binding",
     "prepare_native_rsi_inputs",
+    "prepare_openevolve_native_inputs",
     "prepare_producer_bundle_drafts",
     "prepare_producer_bundle_manifest",
+    "prepare_producer_launch_inputs",
     "prepare_producer_seed_manifest",
     "producer_bundle_dependency_sha256",
     "profile_sha256",
@@ -1436,6 +1458,7 @@ __all__ = [
     "recover_native_trusted_producer",
     "recover_native_trusted_stream_capture",
     "recover_producer_process",
+    "recover_retained_seed_admission",
     "recover_translation",
     "remote_cancel",
     "remote_continue_experiment",
@@ -1474,6 +1497,7 @@ __all__ = [
     "validate_candidate_source_bundle",
     "validate_candidate_workspace_plan",
     "validate_native_rsi_launch_inputs",
+    "validate_producer_launch_inputs",
     "validate_producer_request_evidence",
     "verify_candidate_source_bundle",
     "verify_native_campaign_audit",
