@@ -24,6 +24,8 @@
 #include <unistd.h>
 #if defined(__linux__)
 #include <sys/prctl.h>
+#include <sys/statfs.h>
+#include <sys/syscall.h>
 #endif
 #include "native_producer_isolation.h"
 
@@ -265,6 +267,99 @@ static int parse_fd_arg(const char *arg, int *out) {
     *out = (int)value; return 0;
 }
 
+#if defined(__linux__)
+/* This capability uses kernel descriptor operations, never a finite RLIMIT or
+   /proc census. The fallback is valid only on the Linux ABIs we support. */
+#if !defined(__NR_close_range) && (defined(__x86_64__) || defined(__aarch64__) || defined(__i386__))
+#define __NR_close_range 436
+#endif
+#define LUNAR_PIPEFS_MAGIC 0x50495045UL
+
+static int parse_handoff_fd(const char *arg, int *out) {
+    unsigned int value = 0;
+    if (!arg || !arg[0] || (arg[0] == '0' && arg[1])) return -1;
+    for (const char *p = arg; *p; ++p) {
+        if (*p < '0' || *p > '9') return -1;
+        unsigned int digit = (unsigned int)(*p - '0');
+        if (value > ((unsigned int)INT_MAX - digit) / 10) return -1;
+        value = value * 10 + digit;
+    }
+    if (value <= 2) return -1;
+    *out = (int)value;
+    return 0;
+}
+
+static int handoff_pipe(int fd, int access, struct stat *info) {
+    struct statfs fs;
+    int flags = fcntl(fd, F_GETFL);
+    /* PIPEFS + FIFO proves an anonymous kernel pipe, not its original owner.
+       Trusted Python creates the two fresh pipes; no durable provenance or
+       authority is inferred from the caller's environment numbers alone. */
+    if (flags < 0 || (flags & O_ACCMODE) != access || (flags & O_PATH) != 0 ||
+        fstat(fd, info) != 0 || !S_ISFIFO(info->st_mode) ||
+        fstatfs(fd, &fs) != 0 || (unsigned long)fs.f_type != LUNAR_PIPEFS_MAGIC)
+        return -1;
+    return 0;
+}
+
+static int handoff_broker(const char *read_arg, const char *write_arg,
+                          const int *reserved, size_t reserved_count, int *r, int *w) {
+    *r = *w = -1;
+    if (!read_arg && !write_arg) return 0;
+    if (parse_handoff_fd(read_arg, r) || parse_handoff_fd(write_arg, w) || *r == *w)
+        return -1;
+    for (size_t i = 0; i < reserved_count; ++i) {
+        if (*r == reserved[i] || *w == reserved[i]) return -1;
+    }
+    struct stat read_info, write_info;
+    if (handoff_pipe(*r, O_RDONLY, &read_info) || handoff_pipe(*w, O_WRONLY, &write_info) ||
+        (read_info.st_dev == write_info.st_dev && read_info.st_ino == write_info.st_ino))
+        return -1;
+    return 0;
+}
+
+static int handoff_cloexec(int fd, int enabled) {
+    int flags = fcntl(fd, F_GETFD);
+    if (flags < 0 || fcntl(fd, F_SETFD, enabled ? flags | FD_CLOEXEC : flags & ~FD_CLOEXEC) != 0)
+        return -1;
+    return 0;
+}
+
+static int handoff_close_extra(int target_fd, int error_fd, int broker_r, int broker_w) {
+    int keep[4]; size_t count = 0;
+    keep[count++] = error_fd;
+    if (target_fd >= 0) keep[count++] = target_fd;
+    if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
+    for (size_t i = 0; i < count; ++i) {
+        if (keep[i] <= 2) return EINVAL;
+        for (size_t j = 0; j < i; ++j) if (keep[j] == keep[i]) return EINVAL;
+        for (size_t j = i; j > 0 && keep[j] < keep[j - 1]; --j) {
+            int swap = keep[j]; keep[j] = keep[j - 1]; keep[j - 1] = swap;
+        }
+    }
+#if defined(__NR_close_range) && (defined(__x86_64__) || defined(__aarch64__) || defined(__i386__))
+    unsigned int first = 3;
+    for (size_t i = 0; i < count; ++i) {
+        unsigned int next = (unsigned int)keep[i];
+        if (first < next && syscall(__NR_close_range, first, next - 1, 0) != 0)
+            return errno ? errno : ENOTSUP;
+        first = next + 1;
+    }
+    if (syscall(__NR_close_range, first, UINT_MAX, 0) != 0)
+        return errno ? errno : ENOTSUP;
+    return 0;
+#else
+    return ENOTSUP;
+#endif
+}
+#endif
+
+static _Noreturn void child_start_failed(int fd, int error, int status) {
+    int reported = error ? error : EINVAL;
+    (void)write_full(fd, &reported, sizeof(reported));
+    _exit(status);
+}
+
 typedef struct {
     int enabled;
     int fd;
@@ -443,6 +538,11 @@ int main(int argc, char **argv) {
     if ((argc != 7 && argc != 9 && argc != 11 && argc != 13) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
     int control_fd, gate_fd, frame_fd;
     if (parse_fd_arg(argv[2], &control_fd) || parse_fd_arg(argv[4], &gate_fd) || parse_fd_arg(argv[6], &frame_fd)) return 64;
+#if defined(__linux__)
+    if (parse_handoff_fd(argv[2], &control_fd) || parse_handoff_fd(argv[4], &gate_fd) ||
+        parse_handoff_fd(argv[6], &frame_fd) || control_fd == gate_fd ||
+        control_fd == frame_fd || gate_fd == frame_fd) return 64;
+#endif
     if (argc == 13) {
 #if defined(__linux__)
         if (strcmp(argv[11], "--child-supervision") != 0 ||
@@ -460,8 +560,12 @@ int main(int argc, char **argv) {
         uint64_t deadline_ns = 0;
         if (argc >= 11 && (strcmp(argv[9], "--deadline-monotonic-ns") != 0 ||
             parse_deadline_arg(argv[10], &deadline_ns) != 0)) return 64;
-        if (strcmp(argv[7], "--controller-lifeline-fd") != 0 || parse_fd_arg(argv[8], &lifeline_fd) != 0 ||
-            lifeline_fd == control_fd || lifeline_fd == gate_fd || lifeline_fd == frame_fd ||
+        if (strcmp(argv[7], "--controller-lifeline-fd") != 0 || parse_fd_arg(argv[8], &lifeline_fd) != 0)
+            return 64;
+#if defined(__linux__)
+        if (parse_handoff_fd(argv[8], &lifeline_fd)) return 64;
+#endif
+        if (lifeline_fd == control_fd || lifeline_fd == gate_fd || lifeline_fd == frame_fd ||
             start_controller_guard(&guard, lifeline_fd, deadline_ns) != 0) return 64;
     }
     unsigned char *raw = (unsigned char *)calloc(MAX_CONTROL + 1, 1); if (!raw) return 65;
@@ -480,29 +584,57 @@ int main(int argc, char **argv) {
     if (extra_read != 0) { free_control(&c); return 68; }
     close(gate_fd);
 
+#if defined(__linux__)
+    int broker_r, broker_w;
+    int reserved[] = {control_fd, gate_fd, frame_fd, guard.fd, c.target_fd};
+    if ((c.target_fd >= 0 && (c.target_fd <= 2 || c.target_fd == control_fd ||
+         c.target_fd == gate_fd || c.target_fd == frame_fd || c.target_fd == guard.fd)) ||
+        handoff_broker(getenv("LUNAR_PRODUCER_RESPONSE_FD"), getenv("LUNAR_PRODUCER_REQUEST_FD"),
+                       reserved, sizeof(reserved) / sizeof(reserved[0]), &broker_r, &broker_w)) {
+        emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
+        free_control(&c); return 73;
+    }
+#endif
+
     int target_fd = -1; unsigned char digest[32]; char target_hex[65];
     if (hash_path_or_fd(&c, digest, &target_fd) != 0) { emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0); free_control(&c); return 69; }
     hex_lower(digest, target_hex);
     if (strcmp(target_hex, c.target_sha) != 0) { close(target_fd); emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0); free_control(&c); return 70; }
     int exec_pipe[2];
     if (pipe(exec_pipe) != 0) { close(target_fd); emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0); free_control(&c); return 71; }
-    fcntl(exec_pipe[1], F_SETFD, FD_CLOEXEC);
+    if (fcntl(exec_pipe[1], F_SETFD, FD_CLOEXEC) != 0) {
+        close(exec_pipe[0]); close(exec_pipe[1]); close(target_fd);
+        emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
+        free_control(&c); return 71;
+    }
     pid_t child = fork();
     if (child < 0) { close(exec_pipe[0]); close(exec_pipe[1]); close(target_fd); emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0); free_control(&c); return 71; }
     if (child == 0) {
+#if defined(__linux__)
+        /* Check live collisions before closing or dup2 can destroy the error
+           channel. Parent validation precedes descriptor number reuse. */
+        if (exec_pipe[0] <= 2 || exec_pipe[1] <= 2 || target_fd <= 2 ||
+            exec_pipe[0] == exec_pipe[1] || exec_pipe[0] == target_fd || exec_pipe[1] == target_fd ||
+            c.target_fd == exec_pipe[0] || c.target_fd == exec_pipe[1] ||
+            broker_r == exec_pipe[0] || broker_r == exec_pipe[1] || broker_r == target_fd ||
+            broker_w == exec_pipe[0] || broker_w == exec_pipe[1] || broker_w == target_fd)
+            child_start_failed(exec_pipe[1], EINVAL, 73);
+#endif
         close(exec_pipe[0]);
         if (guard.enabled) {
             /* Cover controller EOF racing fork after the guardian's group signal.
                A just-created child must not exec after missing that signal. */
             struct pollfd owner_pipe = {guard.fd, POLLIN, 0};
-            if (guard_deadline_expired(&guard) || poll(&owner_pipe, 1, 0) != 0) _exit(73);
+            if (guard_deadline_expired(&guard) || poll(&owner_pipe, 1, 0) != 0)
+                child_start_failed(exec_pipe[1], ECANCELED, 73);
             close(guard.fd);
             struct sigaction restored;
             memset(&restored, 0, sizeof(restored)); restored.sa_handler = SIG_DFL;
-            if (sigemptyset(&restored.sa_mask) != 0 || sigaction(SIGPIPE, &restored, NULL) != 0) _exit(73);
+            if (sigemptyset(&restored.sa_mask) != 0 || sigaction(SIGPIPE, &restored, NULL) != 0)
+                child_start_failed(exec_pipe[1], errno, 73);
         }
         if (c.target_fd >= 0) {
-            if (dup2(target_fd, c.target_fd) < 0) { int e=errno; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(73); }
+            if (dup2(target_fd, c.target_fd) < 0) child_start_failed(exec_pipe[1], errno, 73);
         }
         /* The control and gate descriptors are always private to the bootstrap. */
         close(frame_fd);
@@ -514,18 +646,30 @@ int main(int argc, char **argv) {
         const char *rpc_write = getenv("LUNAR_PRODUCER_REQUEST_FD");
         if (rpc_read || rpc_write) {
             int r, w;
-            if (!rpc_read || !rpc_write || parse_fd_arg(rpc_read, &r) || parse_fd_arg(rpc_write, &w)) _exit(73);
+            if (!rpc_read || !rpc_write || parse_fd_arg(rpc_read, &r) || parse_fd_arg(rpc_write, &w))
+                child_start_failed(exec_pipe[1], EINVAL, 73);
             snprintf(broker_read, sizeof(broker_read), "LUNAR_PRODUCER_RESPONSE_FD=%d", r);
             snprintf(broker_write, sizeof(broker_write), "LUNAR_PRODUCER_REQUEST_FD=%d", w);
             target_env[3] = broker_read; target_env[4] = broker_write;
         }
         if (target_fd != c.target_fd) close(target_fd);
+#if defined(__linux__)
+        /* The necessary target descriptor remains inherited: sealed shebang
+           interpreters may reopen /proc/self/fd/N. Only the private exec-error
+           channel must disappear on exec. Standard streams stay host-controlled. */
+        if (handoff_cloexec(exec_pipe[1], 1) ||
+            (c.target_fd >= 0 && handoff_cloexec(c.target_fd, 0)) ||
+            (broker_r >= 0 && (handoff_cloexec(broker_r, 0) || handoff_cloexec(broker_w, 0))))
+            child_start_failed(exec_pipe[1], errno, 73);
+        int handoff_error = handoff_close_extra(c.target_fd, exec_pipe[1], broker_r, broker_w);
+        if (handoff_error) child_start_failed(exec_pipe[1], handoff_error, 73);
+#endif
         if (strcmp(c.profile, "fixture-none") != 0) {
             int isolation = lunar_apply_isolation(c.profile, (const char *const *)c.read_paths, c.read_count,
                                                   (const char *const *)c.write_dirs, c.write_count);
-            if (isolation != 0) { int e = isolation; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(74); }
+            if (isolation != 0) child_start_failed(exec_pipe[1], isolation, 74);
         }
-        if (chdir(c.cwd) != 0) { int e=errno; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(74); }
+        if (chdir(c.cwd) != 0) child_start_failed(exec_pipe[1], errno, 74);
         if (c.target_fd >= 0) {
 #if defined(__linux__)
             fexecve(c.target_fd, c.argv, target_env);
@@ -535,7 +679,7 @@ int main(int argc, char **argv) {
         } else {
             execve(c.target_path, c.argv, target_env);
         }
-        int e=errno; (void)write(exec_pipe[1], &e, sizeof(e)); _exit(75);
+        child_start_failed(exec_pipe[1], errno, 75);
     }
     close(target_fd);
     close(exec_pipe[1]);
@@ -543,9 +687,16 @@ int main(int argc, char **argv) {
     do { exec_read = read(exec_pipe[0], &exec_error, sizeof(exec_error)); } while (exec_read < 0 && errno == EINTR);
     close(exec_pipe[0]);
     if (exec_read != 0) {
+#if defined(__linux__)
+        /* A pre-exec refusal is not exec's close-on-exec EOF. Publish the
+           negative frame before the guardian stops our private group. */
+        emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
+#endif
         if (guard.enabled) stop_own_guarded_group(&guard);
         kill(child, SIGKILL); waitpid(child, NULL, 0);
+#if !defined(__linux__)
         emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
+#endif
         free_control(&c); return 76;
     }
     pid_t target_group = getpgid(child);
