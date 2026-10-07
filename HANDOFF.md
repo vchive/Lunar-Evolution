@@ -1,5 +1,37 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 PR #9 merged; known native failure settlement SDD
+
+PR #9 已合入 main：head `acfa5bc7e8c3890efa928588460be27529e2fe00`，merge
+`4fa526c3b2adedb85231bc178ede32e26c505306`。最终 CI `37678220566` 三版全部通过、无重试。
+各版 descendants47/1skip、deadline358/1skip、runtime240/1skip、adapters173、native403/
+6skips、current10364/32skips、archive2294、frozen24，均0failure/error。原始XML、日志摘要/
+SHA与跨版inventory独立核对；Actions PR merge `eaa2f663` 与head、实际main的tree一致。
+首轮8个夹具编译失败仍保留，不追认为成功。PR8 postmerge main run37675779160也独立
+完成三版七阶段首轮通过。下方历史pending状态已被这些记录取代。
+
+当前独立分支 `codex/native-known-failure` 从该main实现Feature175：正式原生nonzero/
+cancelled终态重新读原consumption-v2 deadline/registration/handoff/cleanup/stream和原broker
+byte/inode pins后返回distinct process-only failure；success-only入口默认行为不变。
+显式同ledger failure wiring持久化独立canonical create-only failure provenance，冻结原
+publishingFD digest与完整started claim(created_at)。gateway映射failed/cancelled、强制只读
+reader重放，提供inspect/restore；controller以原fingerprints、historical memory、checkpoint/
+episode CAS和单次evidence budget reservation登记；写入前复验controller CAS及SQLite事务内原完整claim，四种crash gap不重launch、不刷新deadline。
+
+本地最终五模块157项及已有claim5项全部通过（合成162项）（包括真实C exit7、host accepted-start取消、DRS/BRS及crash/
+drift/CAS负测），原成功与已有controller/scheduler/producer组合179项通过，Ruff/compileall/
+diff通过。独立审查已关闭persist-return原digest丢失、checkpoint身份与callback CAS窗口。
+本分支最终完整三版CI与merge尚待独立完成，不能借PR9结果关闭Feature175。
+
+缺终态unknown、terminal后首次failure provenance前丢失原broker pin的attempt仍quarantine；
+不推断abandoned/timed_out，不覆盖immutable unknown，不授予新execute/signal/publication/
+memory权。当前process terminal仍v1，v2要求属于带原deadline anchor的consumption。
+下一P0仍为完整本地filesystem/FD/egress闭包和bootstrap death/pause后的独立停止监督。
+P1 sealed Python/import inventory、versioned delivery、本地Python pipe broker、真实项目
+adapters和RSI CLI生产solver仍开放；P2多机ownership/服务化/分布式调度后置。
+只用本地inert/C/bootstrap/fixture/provider-free tests和既有GitHub CI，不访问模型、WebAgent、
+远程/公司evaluator、真实campaign或.env/密钥，保留他人修改。
+
 ## 2026-10-08 PR #8 merged; Linux descendants drain SDD
 
 PR #8 已合入 main：tested head `f870cb95c10825e49129e50629731adb3a773595`，merge

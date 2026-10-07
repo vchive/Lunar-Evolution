@@ -14,11 +14,13 @@ containment. Feature173 passed its own final-head three-version CI run3766952851
 phases first attempt without retries, and merged at d3f4fbf with the tested tree. Historical
 pending statements below are superseded.
 
-- **P0 current**: Feature174 Linux post-direct-target adopted-child drain, original guardian and
-  budget retention, explicit new runtime descriptor/formal argv. See its spec/tasks/validation;
-  actual Linux final-head matrix and merge remain required. Then complete containment/egress and
-  trusted known failed/cancelled settlement bridge; abandoned is a separate explicit disposition,
-  not an inferred process outcome. Feature173 original deadline anchor is complete in its scope.
+- **P0 current**: Feature174 is merged through PR9 after its own eight-phase three-version CI
+  run37678220566, no retries, merge4fa526c with the tested tree. Feature175 now implements
+  known failed/cancelled process-only registration/recovery with original broker, ledger/claim,
+  deadline and controller CAS/budget evidence; final-head full CI and merge remain required.
+  Full local filesystem/FD/egress containment and independent stop supervision after bootstrap
+  death/pause remain separate P0 work. Abandoned is an explicit disposition, not an inferred
+  outcome. Feature173 remains complete in its own original-deadline anchor scope.
 - **P1 next**: immutable runtime layout and complete import inventory, versioned native runtime
   binding, local Python inherited-pipe broker fixture, real OpenEvolve/Shinka project adapters and
   production RSI CLI solvers. Feature171's ABI/import/environment are declarations and unlisted

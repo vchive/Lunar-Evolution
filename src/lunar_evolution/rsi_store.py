@@ -790,12 +790,15 @@ class RSILedger:
 
     def publish_native_episode_result(
         self, request: SolverRequest, *, plan_sha256: str, result: SolverResult,
+        expected_claim: NativeEpisodeClaim | None = None,
     ) -> NativeEpisodeClaim:
         """Publish an exact result for a native claim and return its projected state."""
         if not isinstance(request, SolverRequest) or not isinstance(result, SolverResult):
             raise RSILearningError("rsi_native_episode_result_invalid")
         if result.episode_id != request.episode_id or result.request_sha256 != request.digest():
             raise RSILearningError("rsi_native_episode_result_request_mismatch")
+        if expected_claim is not None and not isinstance(expected_claim, NativeEpisodeClaim):
+            raise RSILearningError("rsi_native_episode_claim_identity_invalid")
         plan_sha256 = self._native_claim_plan(plan_sha256)
         request_sha256 = request.digest()
         with self._connect() as connection:
@@ -808,6 +811,9 @@ class RSILedger:
                 raise RSILearningError("rsi_native_episode_claim_missing")
             if row["request_sha256"] != request_sha256 or row["plan_sha256"] != plan_sha256:
                 raise RSILearningError("rsi_native_episode_claim_binding_drift")
+            if (expected_claim is not None and
+                    self._native_claim_row(row, status="started") != replace(expected_claim, status="started")):
+                raise RSILearningError("rsi_native_episode_claim_identity_drift")
             existing = self._native_result_status(connection, request.episode_id, request_sha256)
             if existing is not None:
                 saved = self.episode_result(request.episode_id)
