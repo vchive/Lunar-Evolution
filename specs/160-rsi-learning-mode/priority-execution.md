@@ -58,6 +58,11 @@ The sections below record implemented local progress and the limits of each cont
 
 ## P0 — correctness and interruption safety
 
+- Feature179 continues Feature178 with an explicit Linux target fcntl/fcntl64/ioctl gate.
+  Private anonymous-pipe SIGIO baseline, filtered refusal and ordinary descriptor/lock/native
+  broker checks are local fixtures; Linux final-head CI and dependent merge remain required.
+  Grant path/inode/overlap, complete egress and independent stop after bootstrap death/pause
+  remain separate open P0 work. P2 multi-host services and scheduling stay deferred.
 - Preserve caller cancellation and parent deadline across native attempt, receipt, output and
   publication boundaries; preserve the existing commit critical region and native-attempt-only
   intent deadline scope.

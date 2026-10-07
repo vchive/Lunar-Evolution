@@ -1,5 +1,41 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Linux target descriptor-control SDD
+
+PR10 postmerge main run37691786270已全三版首轮通过；独立raw九阶段XML、日志摘要/SHA、
+case/skip inventory与actualcheckout e17608eb/tree83e86e8两次复核通过，无重试。
+PR11 exacthead e56140a/run37691648336三版十一阶段全部首轮通过，两次原始独立审计，无
+failure/error/retry；合入main为db5f17113265cf7b9b174bbc516d9b303438215a，tree5ff1b113
+与testedsource一致。PR12 exacthead3016339/run37694796475三版checks全success，原始
+完整审计/merge仍推进；本节不会把前一PR证据追认为后一PR通过。
+
+独立 `codex/native-fd-control` 从PR12 exacthead延续Feature179。新增Linux default/formal
+selector native-bootstrap-linux-fd-control-v1；旧fd-handoff-only在budget/input/nonce/spawn前
+固定fd_control_required，其余旧拒绝顺序不变。historical load/recovery保持原readonlyscope。
+原control/frame/subreaper/guardian/deadline/broker/receipt/publication协议保持不变。
+
+真实header增加intersecting fcntl/fcntl64 command allowlist与ioctl request allowlist：允许
+dup/inheritance/status/nonasync SETFL、POSIX/largefile/OFD locks及GETLEASE/GETPIPE_SZ/
+GET_SEALS；只允许FIONREAD/FIONBIO/FIOCLEX/FIONCLEX ioctl。拒绝O_ASYNC、ownership/
+notification/lease/seal/resize及unknowncontrol，检查完整request/command/SETFLflags高位。
+本地private blockedSIGIOreceiver/anonymouspipe基线、filteredroute、普通IO/locks与sealed
+native brokercomposition已写入Linuxtests，Ubuntu实际执行仍待finalheadCI，不把Darwinskip
+当Linux证据。支持的i386路径需额外原生验收，x64CI明确skip相关cases。
+
+本地Darwincomposition147cases=82passed/65skips/0failure/error；其中新58cases均skip，
+其余7为原有Linuxcase。补强后的finalgates94cases=36passed/58skips，全部0failure/error。
+review补齐i386flags64负测、FIONBIO不能armasync、实际filter下sealedGET_SEALS以及异常
+路径的私有未reap后代清理；成功reap不盲目signal旧PID/PGID。Ruff/compileall/diff通过。
+初次collection因pytest reservedrequest
+变量失败的XML保留/tmp/lunar179-first-local.xml，已改名后验证；suite之间有重叠不能相加。
+独立review已通过；完整finalhead三版CI与mainmerge仍待完成，以实际PR/ignoredreport为准。
+
+P0仍开放grant-object/path/inode/overlap、完整egress与bootstrap death/pause后的独立停止。
+P1仍为immutable runtime/load protection、archive/loader/import completeness、versioned
+delivery、Python pipe fixture、实际OpenEvolve/Shinka adapter与生产RSI CLI。P2多机服务后置。
+只用本地inert/provider-freefixtures与既有GitHubCI，不读.env/密钥，不运行真实模型、
+WebAgent、远程/公司evaluator或真实campaign，保留他人修改。
+
 ## 2026-10-08 Linux native target FD handoff SDD
 
 PR #10 已合入 main：head1d87ba685327a585ea02b6b25f6bfe6cb2891d37，merge

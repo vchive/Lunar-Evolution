@@ -3,7 +3,8 @@
 Feature178 adds an explicit descriptor handoff to the native Linux child. The host already starts
 the bootstrap with close_fds and a pass_fds list. The child now also removes unexpected inherited
 handles, including the bootstrap's own sealed executable descriptor, before producer execution.
-New Linux builds and formal launches select native-bootstrap-linux-fd-handoff-v1. Old descriptors
+Feature178 introduced native-bootstrap-linux-fd-handoff-v1. Feature179 supersedes the new-build/
+formal default with native-bootstrap-linux-fd-control-v1 while retaining this handoff. Old descriptors
 remain available for exact read-only load/recovery at their original scope.
 
 The child keeps host-controlled stdin/stdout/stderr, the internal CLOEXEC exec-error writer, the
