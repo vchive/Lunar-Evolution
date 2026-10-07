@@ -56,6 +56,21 @@ static int lunar_apply_isolation(const char *profile,
         #include <sys/stat.h>
         #include <stdint.h>
         #include <signal.h>
+        /* These stable Landlock UAPI values must not disappear merely because
+           build headers predate ABI 2/3. The runtime ABI query, not conditional
+           compilation of a weaker rights mask, establishes kernel support. */
+        #ifndef LANDLOCK_CREATE_RULESET_VERSION
+        #define LANDLOCK_CREATE_RULESET_VERSION (1U << 0)
+        #endif
+        #ifndef LANDLOCK_ACCESS_FS_REFER
+        #define LANDLOCK_ACCESS_FS_REFER (1ULL << 13)
+        #endif
+        #ifndef LANDLOCK_ACCESS_FS_TRUNCATE
+        #define LANDLOCK_ACCESS_FS_TRUNCATE (1ULL << 14)
+        #endif
+        long landlock_abi = syscall(__NR_landlock_create_ruleset, NULL, 0,
+                                   LANDLOCK_CREATE_RULESET_VERSION);
+        if (landlock_abi < 3) return ENOTSUP;
         /* Landlock requires no-new-privileges before restricting an
            unprivileged process.  Set it before creating/installing the ruleset
            so kernels do not reject the restriction with EPERM. */
@@ -66,10 +81,7 @@ static int lunar_apply_isolation(const char *profile,
                 LANDLOCK_ACCESS_FS_REMOVE_FILE | LANDLOCK_ACCESS_FS_MAKE_CHAR | LANDLOCK_ACCESS_FS_MAKE_DIR |
                 LANDLOCK_ACCESS_FS_MAKE_REG | LANDLOCK_ACCESS_FS_MAKE_SOCK | LANDLOCK_ACCESS_FS_MAKE_FIFO |
                 LANDLOCK_ACCESS_FS_MAKE_BLOCK | LANDLOCK_ACCESS_FS_MAKE_SYM |
-                #ifdef LANDLOCK_ACCESS_FS_REFER
-                LANDLOCK_ACCESS_FS_REFER |
-                #endif
-                0,
+                LANDLOCK_ACCESS_FS_REFER | LANDLOCK_ACCESS_FS_TRUNCATE,
         };
         int ruleset_fd = (int)syscall(__NR_landlock_create_ruleset, &ruleset, sizeof(ruleset), 0);
         if (ruleset_fd < 0) return ENOTSUP;
@@ -82,10 +94,7 @@ static int lunar_apply_isolation(const char *profile,
             #ifdef LANDLOCK_ACCESS_FS_MAKE_FIFO
             LANDLOCK_ACCESS_FS_MAKE_FIFO |
             #endif
-            #ifdef LANDLOCK_ACCESS_FS_REFER
-            LANDLOCK_ACCESS_FS_REFER |
-            #endif
-            0;
+            LANDLOCK_ACCESS_FS_REFER | LANDLOCK_ACCESS_FS_TRUNCATE;
         for (i = 0; i < read_count + write_count; i++) {
             const char *path = i < read_count ? read_paths[i] : write_dirs[i - read_count];
             int fd = open(path, O_PATH | O_CLOEXEC);
@@ -110,9 +119,9 @@ static int lunar_apply_isolation(const char *profile,
         }
         if (syscall(__NR_landlock_restrict_self, ruleset_fd, 0) < 0) { int error = errno; close(ruleset_fd); return error ? error : EPERM; }
         close(ruleset_fd);
-        /* Landlock does not mediate chmod. With bound read inputs, deny these
-           permission APIs for the entire target (including writable work
-           files); open/mkdir creation modes and ordinary output writes remain
+        /* Landlock does not mediate ownership, timestamps or xattrs. With
+           bound read inputs, deny mutation APIs for the entire target
+           (including writable work files); open/mkdir creation modes and writes remain
            available. This is deliberately not path-sensitive metadata control.
            fchmodat2 is syscall 452 on every supported Linux architecture, even
            when the build host's older headers do not name the newer syscall. */
@@ -123,6 +132,44 @@ static int lunar_apply_isolation(const char *profile,
         #else
         return ENOTSUP;
         #endif
+        /* setxattrat/removexattrat arrived after the common syscall headers.
+           Their numbers are shared by all three supported ABIs. i386 also
+           has a separate utimensat time64 entry; it must not bypass the gate. */
+        #if defined(__NR_setxattrat)
+        #define LUNAR_NR_SETXATTRAT __NR_setxattrat
+        #else
+        #define LUNAR_NR_SETXATTRAT 463
+        #endif
+        #if defined(__NR_removexattrat)
+        #define LUNAR_NR_REMOVEXATTRAT __NR_removexattrat
+        #else
+        #define LUNAR_NR_REMOVEXATTRAT 466
+        #endif
+        #if defined(__NR_utimensat_time64)
+        #define LUNAR_NR_UTIMENSAT_TIME64 __NR_utimensat_time64
+        #elif defined(__i386__)
+        #define LUNAR_NR_UTIMENSAT_TIME64 412
+        #endif
+        #if defined(__i386__)
+        #if defined(__NR_chown32)
+        #define LUNAR_NR_CHOWN32 __NR_chown32
+        #else
+        #define LUNAR_NR_CHOWN32 212
+        #endif
+        #if defined(__NR_lchown32)
+        #define LUNAR_NR_LCHOWN32 __NR_lchown32
+        #else
+        #define LUNAR_NR_LCHOWN32 198
+        #endif
+        #if defined(__NR_fchown32)
+        #define LUNAR_NR_FCHOWN32 __NR_fchown32
+        #else
+        #define LUNAR_NR_FCHOWN32 207
+        #endif
+        #endif
+        #define LUNAR_DENY_INPUT_MUTATION(number) \
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, number, 0, 1), \
+            BPF_STMT(BPF_RET | BPF_K, read_count ? SECCOMP_RET_ERRNO | EPERM : SECCOMP_RET_ALLOW)
         /* These modern syscall numbers are shared by the supported x86_64,
            aarch64 and i386 ABIs. Older libc headers must not silently omit a
            deny rule for a syscall provided by the running kernel. */
@@ -270,8 +317,65 @@ static int lunar_apply_isolation(const char *profile,
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_fchmodat, 0, 1), BPF_STMT(BPF_RET | BPF_K, read_count ? SECCOMP_RET_ERRNO | EPERM : SECCOMP_RET_ALLOW),
             #endif
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_FCHMODAT2, 0, 1), BPF_STMT(BPF_RET | BPF_K, read_count ? SECCOMP_RET_ERRNO | EPERM : SECCOMP_RET_ALLOW),
+            #ifdef __NR_chown
+            LUNAR_DENY_INPUT_MUTATION(__NR_chown),
+            #endif
+            #ifdef __NR_lchown
+            LUNAR_DENY_INPUT_MUTATION(__NR_lchown),
+            #endif
+            #ifdef __NR_fchown
+            LUNAR_DENY_INPUT_MUTATION(__NR_fchown),
+            #endif
+            #ifdef __NR_fchownat
+            LUNAR_DENY_INPUT_MUTATION(__NR_fchownat),
+            #endif
+            #ifdef LUNAR_NR_CHOWN32
+            LUNAR_DENY_INPUT_MUTATION(LUNAR_NR_CHOWN32),
+            #endif
+            #ifdef LUNAR_NR_LCHOWN32
+            LUNAR_DENY_INPUT_MUTATION(LUNAR_NR_LCHOWN32),
+            #endif
+            #ifdef LUNAR_NR_FCHOWN32
+            LUNAR_DENY_INPUT_MUTATION(LUNAR_NR_FCHOWN32),
+            #endif
+            #ifdef __NR_utime
+            LUNAR_DENY_INPUT_MUTATION(__NR_utime),
+            #endif
+            #ifdef __NR_utimes
+            LUNAR_DENY_INPUT_MUTATION(__NR_utimes),
+            #endif
+            #ifdef __NR_futimesat
+            LUNAR_DENY_INPUT_MUTATION(__NR_futimesat),
+            #endif
+            #ifdef __NR_utimensat
+            LUNAR_DENY_INPUT_MUTATION(__NR_utimensat),
+            #endif
+            #ifdef LUNAR_NR_UTIMENSAT_TIME64
+            LUNAR_DENY_INPUT_MUTATION(LUNAR_NR_UTIMENSAT_TIME64),
+            #endif
+            #ifdef __NR_setxattr
+            LUNAR_DENY_INPUT_MUTATION(__NR_setxattr),
+            #endif
+            #ifdef __NR_lsetxattr
+            LUNAR_DENY_INPUT_MUTATION(__NR_lsetxattr),
+            #endif
+            #ifdef __NR_fsetxattr
+            LUNAR_DENY_INPUT_MUTATION(__NR_fsetxattr),
+            #endif
+            #ifdef __NR_removexattr
+            LUNAR_DENY_INPUT_MUTATION(__NR_removexattr),
+            #endif
+            #ifdef __NR_lremovexattr
+            LUNAR_DENY_INPUT_MUTATION(__NR_lremovexattr),
+            #endif
+            #ifdef __NR_fremovexattr
+            LUNAR_DENY_INPUT_MUTATION(__NR_fremovexattr),
+            #endif
+            LUNAR_DENY_INPUT_MUTATION(LUNAR_NR_SETXATTRAT),
+            LUNAR_DENY_INPUT_MUTATION(LUNAR_NR_REMOVEXATTRAT),
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         };
+        #undef LUNAR_DENY_INPUT_MUTATION
         struct sock_fprog program = { .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])), .filter = filter };
         if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) return errno ? errno : EPERM;
         return 0;

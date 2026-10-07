@@ -8,9 +8,11 @@ from test_native_trusted_attempt import _attempt
 
 from lunar_evolution.native_bootstrap import (
     LINUX_CHILD_SUPERVISION,
+    LINUX_INPUT_MUTATION_IMPLEMENTATION,
     LINUX_SUBREAPER_IMPLEMENTATION,
     NativeBootstrapError,
     build_native_bootstrap_artifact,
+    load_native_bootstrap_artifact,
     native_bootstrap_command,
 )
 from lunar_evolution.native_trusted_attempt import (
@@ -19,24 +21,26 @@ from lunar_evolution.native_trusted_attempt import (
 )
 
 
-def test_build_versions_actual_linux_supervision_without_relabelling_darwin(tmp_path):
+def test_build_versions_actual_linux_input_mutation_without_relabelling_darwin(tmp_path):
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
-    expected = LINUX_SUBREAPER_IMPLEMENTATION if sys.platform == "linux" else "native-bootstrap-v1"
+    expected = LINUX_INPUT_MUTATION_IMPLEMENTATION if sys.platform == "linux" else "native-bootstrap-v1"
     assert artifact.descriptor.implementation_version == expected
 
 
-def test_build_cannot_label_darwin_as_linux_subreaper(tmp_path, monkeypatch):
+@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION])
+def test_build_cannot_label_darwin_as_linux_capability(tmp_path, monkeypatch, version):
     monkeypatch.setattr("lunar_evolution.native_bootstrap._platform_mode", lambda: "darwin-immutable-snapshot")
     with pytest.raises(NativeBootstrapError, match="native_bootstrap_child_supervision_unsupported"):
-        build_native_bootstrap_artifact(tmp_path / "install", implementation_version=LINUX_SUBREAPER_IMPLEMENTATION)
+        build_native_bootstrap_artifact(tmp_path / "install", implementation_version=version)
     assert not (tmp_path / "install").exists()
 
 
 @pytest.mark.parametrize("mode", ["legacy", "guarded", "formal"])
-def test_new_artifact_command_negotiates_only_with_complete_guard(tmp_path, monkeypatch, mode):
+@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION])
+def test_linux_artifact_command_negotiates_only_with_complete_guard(tmp_path, monkeypatch, mode, version):
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
     artifact = replace(artifact, descriptor=replace(
-        artifact.descriptor, implementation_version=LINUX_SUBREAPER_IMPLEMENTATION,
+        artifact.descriptor, implementation_version=version,
         platform_execution_mode="linux-fd-bound", descriptor_sha256=None,
     ))
     monkeypatch.setattr("lunar_evolution.native_bootstrap.platform.system", lambda: "Linux")
@@ -82,7 +86,9 @@ def test_darwin_command_refuses_linux_capability(monkeypatch):
         )
 
 
-@pytest.mark.parametrize("version", ["native-bootstrap-v1", "fixture", "native-bootstrap-linux-subreaper-v2"])
+@pytest.mark.parametrize("version", [
+    "native-bootstrap-v1", "fixture", "native-bootstrap-linux-subreaper-v2", LINUX_SUBREAPER_IMPLEMENTATION,
+])
 def test_formal_linux_refuses_old_or_unrecognized_descriptor_before_effects(tmp_path, monkeypatch, version):
     workspace, producer, intent, attestation, artifact, batch = _attempt(tmp_path)
     artifact = replace(artifact, descriptor=replace(
@@ -96,9 +102,28 @@ def test_formal_linux_refuses_old_or_unrecognized_descriptor_before_effects(tmp_
     monkeypatch.setattr("lunar_evolution.native_trusted_attempt._compose_attempt_budget", forbidden)
     monkeypatch.setattr("lunar_evolution.native_trusted_attempt.consume_trusted_bootstrap_attestation", forbidden)
     monkeypatch.setattr("lunar_evolution.native_trusted_attempt.subprocess.Popen", forbidden)
-    with pytest.raises(NativeTrustedAttemptError, match="native_trusted_attempt_child_supervision_required"):
+    with pytest.raises(NativeTrustedAttemptError, match="native_trusted_attempt_input_mutation_required"):
         run_native_trusted_attempt(
             workspace, producer_root=producer, intent=intent, attestation=attestation,
             artifact=artifact,
         )
     assert not batch.exists()
+
+
+def test_historical_descriptor_load_preserves_original_subreaper_scope(tmp_path, monkeypatch):
+    # Loading retained artifacts remains read-only. It does not confer new formal
+    # launch rights or upgrade historical evidence to the mutation capability.
+    artifact = build_native_bootstrap_artifact(tmp_path / "install")
+    descriptor = replace(
+        artifact.descriptor, implementation_version=LINUX_SUBREAPER_IMPLEMENTATION,
+        platform_execution_mode="linux-fd-bound", descriptor_sha256=None,
+    )
+    # Exercise the read-only Linux descriptor branch even on a Darwin test host;
+    # this unit does not execute or relabel the binary as Linux enforcement.
+    monkeypatch.setattr("lunar_evolution.native_bootstrap._platform_mode", lambda: "linux-fd-bound")
+    observed = load_native_bootstrap_artifact(
+        artifact.path, descriptor=descriptor, allowlist_id=artifact.allowlist_id,
+    )
+    assert observed.descriptor == descriptor
+    assert observed.descriptor.implementation_version == "native-bootstrap-linux-subreaper-v1"
+    assert observed.descriptor.implementation_version != LINUX_INPUT_MUTATION_IMPLEMENTATION

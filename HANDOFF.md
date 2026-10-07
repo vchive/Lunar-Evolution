@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Native input mutation and closed runtime tree SDD
+
+独立分支 `codex/native-runtime-closure` 从 Feature175 exact head `1d87ba6` 延续两项
+互不扩权的切片；Feature175 最终 CI/merge 状态以 PR #10 原始 checks 与 merge 记录为准。
+
+Feature176 新 Linux build/formal attempt 使用 `native-bootstrap-linux-input-mutation-v1`，
+旧 subreaper descriptor 在预算/nonce/spawn 前拒绝；旧只读 load/recovery 保留原 scope。
+原 child-supervision/control/guardian 协议不变。C boundary 实际查询 Landlock ABI>=3，
+保留 REFER/TRUNCATE 常量与 write-dir TRUNCATE，bound read 启用全进程 ownership/time/
+xattr/chmod deny，包括新 xattr-at、旧 i386/time64 入口。正常 work/output create/read/
+write/truncate 继续允许，bound input 存在时 output metadata mutation 也拒绝。
+本地 Darwin expanded focus81 passed/211 skips；新增150项均 Linux skip，不能当执行证据。
+
+Feature177 新独立 closed-tree build/parse/verify API 绑定原 declared manifest、target 和
+独立 tree SHA，有限 no-follow 目录扫描包括所有文件、目录与 empty membership，首尾 bytes/
+stat/成员复验，拒绝未声明文件、link/special/alias、drift 和超限。Feature171 v1 wire 与原
+unlisted-file 行为不变。序列化前 strict tuple/count/nested DTO 检查拒绝被改写对象的自定义
+迭代/len/index；原 v1 ancestor pins 也有独立边界。新112+旧210 inert inventory tests 共322
+通过，无skip/failure/error；原 native/strategy/RSI 组合73项通过。各 suite 有重叠，不相加。
+scope 仅 `closed-filesystem-layout`，execution/load protection/archive/loader completeness
+均 false；不增加 read grants、不执行 Python、不产生 launch/admission authority。
+
+共享 exports 与 CI 原始 XML 已接线。本轮最终 head 仍需独立三版完整 CI 后按既有授权
+合入 main；源文档 pending 为提交时状态，后续实际状态读取该 PR 与 ignored report。
+完整 FD/grant-object/ioctl/egress 闭包、bootstrap death/pause 后独立停止仍是 P0；P1 下一步
+为真实 load protection、versioned delivery、Python inherited-pipe fixture、真实 OpenEvolve/
+Shinka adapters 和 RSI CLI 生产 solver。P2 多机 ownership/服务化/分布式调度仍后置。
+只用本地 inert/C/fixture/provider-free tests 和既有 GitHub CI，不运行模型、WebAgent、远程/
+公司 evaluator 或真实 campaign，不读取/修改 `.env` 与密钥，保留他人修改。
+
 ## 2026-10-08 PR #9 merged; known native failure settlement SDD
 
 PR #9 已合入 main：head `acfa5bc7e8c3890efa928588460be27529e2fe00`，merge
