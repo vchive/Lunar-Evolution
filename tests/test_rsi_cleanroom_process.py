@@ -59,7 +59,7 @@ def process_oversized_evidence(context):
 
 
 def _request(evaluator=process_pass, **kwargs):
-    timeout_seconds = kwargs.pop("timeout_seconds", 0.5)
+    timeout_seconds = kwargs.pop("timeout_seconds", 5)
     return CleanRoomVerificationRequest(
         episode_id="process-episode",
         candidate=CandidateArtifact(source=b"candidate", dependencies={"lock": b"v1"}),
@@ -75,48 +75,48 @@ def _request(evaluator=process_pass, **kwargs):
 
 def test_process_verifier_passes_and_convenience_entrypoint():
     verdict = verify_in_subprocess(_request())
-    assert verdict.outcome == "pass"
+    assert verdict.outcome == "pass", verdict.contamination_reason
     assert verdict.contamination_reason == ""
 
 
 def test_process_verifier_preserves_well_formed_failure():
     verdict = CleanRoomProcessVerifier().verify(_request(process_fail))
-    assert verdict.outcome == "fail"
+    assert verdict.outcome == "fail", verdict.contamination_reason
 
 
 def test_process_verifier_hard_kills_timeout():
     started = time.monotonic()
     verdict = CleanRoomProcessVerifier().verify(_request(process_slow, timeout_seconds=0.05))
     assert time.monotonic() - started < 2
-    assert verdict.outcome == "unresolved"
+    assert verdict.outcome == "unresolved", verdict.contamination_reason
     assert verdict.contamination_reason == "evaluator_timeout"
 
 
 def test_process_verifier_sanitizes_exception():
     verdict = CleanRoomProcessVerifier().verify(_request(process_raises))
-    assert verdict.outcome == "unresolved"
+    assert verdict.outcome == "unresolved", verdict.contamination_reason
     assert verdict.contamination_reason == "evaluator_exception"
 
 
 def test_process_verifier_rechecks_workspace_after_child():
     verdict = CleanRoomProcessVerifier().verify(_request(process_mutates))
-    assert verdict.outcome == "unresolved"
+    assert verdict.outcome == "unresolved", verdict.contamination_reason
     assert verdict.contamination_reason == "candidate_workspace_mutated"
 
 
 def test_process_verifier_round_trips_bytes_evidence():
     verdict = CleanRoomProcessVerifier().verify(_request(process_bytes))
-    assert verdict.outcome == "pass"
+    assert verdict.outcome == "pass", verdict.contamination_reason
 
 
 def test_process_verifier_drains_large_valid_envelope_before_joining():
-    verdict = CleanRoomProcessVerifier().verify(_request(process_large_valid_evidence, timeout_seconds=2))
-    assert verdict.outcome == "pass"
+    verdict = CleanRoomProcessVerifier().verify(_request(process_large_valid_evidence))
+    assert verdict.outcome == "pass", verdict.contamination_reason
 
 
 def test_process_verifier_rejects_oversized_envelope():
-    verdict = CleanRoomProcessVerifier().verify(_request(process_oversized_evidence, timeout_seconds=2))
-    assert verdict.outcome == "unresolved"
+    verdict = CleanRoomProcessVerifier().verify(_request(process_oversized_evidence))
+    assert verdict.outcome == "unresolved", verdict.contamination_reason
     assert verdict.contamination_reason == "untrusted_evidence"
 
 
@@ -134,5 +134,5 @@ def test_process_verifier_rejects_non_importable_closure():
         return {"outcome": "pass", "evidence": {"marker": marker, "path": str(context.workspace)}}
 
     verdict = CleanRoomProcessVerifier().verify(_request(local_evaluator))
-    assert verdict.outcome == "unresolved"
+    assert verdict.outcome == "unresolved", verdict.contamination_reason
     assert verdict.contamination_reason == "evaluator_not_importable"

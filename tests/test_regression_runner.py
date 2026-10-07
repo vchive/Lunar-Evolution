@@ -5,8 +5,10 @@ import copy
 import hashlib
 import importlib.util
 import json
+import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -262,6 +264,9 @@ def test_all_three_phase_results_propagate_with_distinct_versions(tmp_path, monk
     assert phases[1][1] == (registration, *(f"--deselect={node}" for node in bound))
     assert phases[2][1] == bound
     assert all(row[3]["frozen"] for row in phases[1:])
+    assert "historical_retry" not in phases[0][3]
+    assert phases[1][3]["historical_retry"] is True
+    assert "historical_retry" not in phases[2][3]
     assert closed == [frozen, history]
     assert verifications == ["archive", "frozen", "archive", "frozen"]
 
@@ -380,3 +385,183 @@ def test_native_junit_validation_keeps_platform_skips_visible(tmp_path):
     assert result["exit_code"] == 0
     assert result["tests"] == result["skipped"] == 1
     assert result["failures"] == result["errors"] == 0
+
+
+def _archive_junit(*, failure=True, damage=None):
+    root = ET.Element("testsuites")
+    count = runner.ARCHIVE_EXECUTION_COUNT
+    suite = ET.SubElement(root, "testsuite", {
+        "tests": str(count), "failures": "1" if failure else "0", "errors": "0", "skipped": "0",
+    })
+    known = ET.SubElement(suite, "testcase", {
+        "classname": "tests.test_measurement139_observation",
+        "name": runner.ARCHIVE_RETRY_NODE.split("::", 1)[1],
+    })
+    if failure:
+        ET.SubElement(known, "failure", {"message": "first scheduling failure"}).text = "original trace"
+    for ordinal in range(count - 1):
+        ET.SubElement(suite, "testcase", {
+            "classname": "tests.test_historical", "name": f"test_case[{ordinal}]",
+        })
+    if damage == "other_node":
+        known.set("classname", "tests.test_other")
+    elif damage == "similar_node":
+        known.set("name", known.get("name") + "_similar")
+    elif damage == "wrong_file":
+        known.set("file", "tests/test_other.py")
+    elif damage == "mixed_failures":
+        ET.SubElement(suite[-1], "failure")
+        suite.set("failures", "2")
+    elif damage == "mixed_errors":
+        ET.SubElement(suite[-1], "error")
+        suite.set("errors", "1")
+    elif damage == "skipped":
+        ET.SubElement(suite[-1], "skipped")
+        suite.set("skipped", "1")
+    elif damage == "incomplete_cases":
+        suite.remove(suite[-1])
+    elif damage == "wrong_count":
+        suite.set("tests", str(count - 1))
+    elif damage == "duplicate_failure":
+        ET.SubElement(known, "failure")
+    elif damage == "unreported_error":
+        ET.SubElement(suite[-1], "error")
+    elif damage == "unreported_skip":
+        ET.SubElement(suite[-1], "skipped")
+    elif damage == "missing_counters":
+        del suite.attrib["errors"]
+    return ET.tostring(root)
+
+
+def _pytest_reports(monkeypatch, reports):
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append((command, kwargs))
+        content, exit_code = reports[len(calls) - 1]
+        report = Path(next(item.partition("=")[2] for item in command if item.startswith("--junitxml=")))
+        if content is not None:
+            report.write_bytes(content)
+        return SimpleNamespace(returncode=exit_code)
+
+    monkeypatch.setattr(runner.subprocess, "run", execute)
+    return calls
+
+
+def test_known_archive_retry_preserves_both_junits_and_attempt_results(tmp_path, monkeypatch, capsys):
+    first, second = _archive_junit(), _archive_junit(failure=False)
+    calls = _pytest_reports(monkeypatch, [(first, 1), (second, 0)])
+    report = tmp_path / "archived.xml"
+    retry_report = tmp_path / "archived.retry1.xml"
+    retry_report.write_bytes(b"stale success")
+    selection = ("tests/test_historical.py", "--deselect=tests/test_registration.py::test_original")
+    result = runner._pytest_phase(
+        tmp_path, selection, report, expected_count=runner.ARCHIVE_EXECUTION_COUNT,
+        frozen=True, historical_retry=True,
+    )
+    assert len(calls) == 2
+    assert calls[0][0][-2:] == calls[1][0][-2:] == list(selection)
+    assert report.read_bytes() == first and retry_report.read_bytes() == second
+    assert result["exit_code"] == 0 and result["retry_reason"] == runner.ARCHIVE_RETRY_NODE
+    attempts = result["attempts"]
+    assert [attempt["exit_code"] for attempt in attempts] == [1, 0]
+    assert [attempt["junit"] for attempt in attempts] == [str(report), str(retry_report)]
+    assert [attempt["junit_sha256"] for attempt in attempts] == [
+        hashlib.sha256(first).hexdigest(), hashlib.sha256(second).hexdigest(),
+    ]
+    output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert output[0] == attempts[0]
+    assert output[1]["first_attempt"] == attempts[0]
+    assert output[-1] == result
+
+
+@pytest.mark.parametrize("damage", [
+    "other_node", "similar_node", "wrong_file", "mixed_failures", "mixed_errors", "skipped",
+    "incomplete_cases", "wrong_count", "duplicate_failure", "unreported_error", "unreported_skip",
+    "missing_counters", "malformed_xml", "missing_xml",
+])
+def test_archive_retry_rejects_unrecognized_or_incomplete_failure_evidence(tmp_path, monkeypatch, damage):
+    first = _archive_junit(damage=damage)
+    if damage == "malformed_xml":
+        first = b"<testsuites>"
+    elif damage == "missing_xml":
+        first = None
+    calls = _pytest_reports(monkeypatch, [(first, 1)])
+    result = runner._pytest_phase(
+        tmp_path, ("tests",), tmp_path / "archived.xml",
+        expected_count=runner.ARCHIVE_EXECUTION_COUNT, frozen=True, historical_retry=True,
+    )
+    assert len(calls) == 1 and result["exit_code"] == 1
+    assert "attempts" not in result and not (tmp_path / "archived.retry1.xml").exists()
+
+
+@pytest.mark.parametrize("exit_code", [0, 2, 3, 4, 5, -9])
+def test_archive_retry_requires_actual_pytest_test_failure_exit(tmp_path, monkeypatch, exit_code):
+    calls = _pytest_reports(monkeypatch, [(_archive_junit(), exit_code)])
+    result = runner._pytest_phase(
+        tmp_path, ("tests",), tmp_path / "archived.xml",
+        expected_count=runner.ARCHIVE_EXECUTION_COUNT, frozen=True, historical_retry=True,
+    )
+    assert len(calls) == 1 and result["exit_code"] != 0
+    assert result["pytest_exit_code"] == exit_code and "attempts" not in result
+
+
+@pytest.mark.parametrize("historical_retry,frozen,count", [
+    (False, True, runner.ARCHIVE_EXECUTION_COUNT),
+    (True, False, runner.ARCHIVE_EXECUTION_COUNT),
+    (True, True, runner.ARCHIVE_EXECUTION_COUNT + 1),
+])
+def test_current_and_other_inventory_failures_are_never_retried(
+    tmp_path, monkeypatch, historical_retry, frozen, count,
+):
+    calls = _pytest_reports(monkeypatch, [(_archive_junit(), 1)])
+    result = runner._pytest_phase(
+        tmp_path, ("tests",), tmp_path / "current.xml", expected_count=count,
+        frozen=frozen, historical_retry=historical_retry,
+    )
+    assert len(calls) == 1 and result["exit_code"] == 1 and "attempts" not in result
+
+
+def test_second_known_archive_failure_still_blocks_without_a_third_attempt(tmp_path, monkeypatch):
+    failure = _archive_junit()
+    calls = _pytest_reports(monkeypatch, [(failure, 1), (failure, 1)])
+    result = runner._pytest_phase(
+        tmp_path, ("tests",), tmp_path / "archived.xml",
+        expected_count=runner.ARCHIVE_EXECUTION_COUNT, frozen=True, historical_retry=True,
+    )
+    assert len(calls) == 2 and result["exit_code"] == 1
+    assert [attempt["exit_code"] for attempt in result["attempts"]] == [1, 1]
+    assert all(Path(attempt["junit"]).read_bytes() == failure for attempt in result["attempts"])
+
+
+@pytest.mark.parametrize("damage", ["missing_xml", "mixed_errors", "incomplete_cases"])
+def test_incomplete_archive_retry_still_blocks_and_preserves_first_failure(tmp_path, monkeypatch, damage):
+    first = _archive_junit()
+    second = None if damage == "missing_xml" else _archive_junit(failure=False, damage=damage)
+    calls = _pytest_reports(monkeypatch, [(first, 1), (second, 0)])
+    report = tmp_path / "archived.xml"
+    result = runner._pytest_phase(
+        tmp_path, ("tests",), report, expected_count=runner.ARCHIVE_EXECUTION_COUNT,
+        frozen=True, historical_retry=True,
+    )
+    assert len(calls) == 2 and result["exit_code"] == 1
+    assert [attempt["exit_code"] for attempt in result["attempts"]] == [1, 1]
+    assert result["attempts"][1]["pytest_exit_code"] == 0
+    assert "validation_error" in result["attempts"][1]
+    assert report.read_bytes() == first
+
+
+def test_real_pytest_known_archive_node_matches_the_retry_identity(tmp_path):
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_measurement139_observation.py").write_text(
+        "def test_preparation_ceiling_does_not_leak_between_threads():\n    assert False\n"
+    )
+    result = runner._pytest_phase(
+        tmp_path, ("tests",), tmp_path / "archived.xml", expected_count=1, frozen=True,
+    )
+    assert result["exit_code"] == result["pytest_exit_code"] == 1
+    assert result["failed_testcases"] == [{
+        "classname": "tests.test_measurement139_observation",
+        "name": runner.ARCHIVE_RETRY_NODE.split("::", 1)[1], "file": None,
+    }]

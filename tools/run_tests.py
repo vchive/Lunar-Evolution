@@ -43,6 +43,10 @@ NATIVE_E2E_SELECTION = (
     "tests/test_automatic_runtime_processes.py",
     "tests/test_identity_installation.py",
 )
+ARCHIVE_RETRY_NODE = (
+    "tests/test_measurement139_observation.py::"
+    "test_preparation_ceiling_does_not_leak_between_threads"
+)
 
 
 class RegressionError(RuntimeError):
@@ -245,37 +249,100 @@ def _archive_selection(nodes, bound):
     return ARCHIVE_EXECUTION_COUNT
 
 
-def _pytest_phase(root, selections, report, *, expected_count, frozen=False, python=sys.executable,
-                  retries=0):
+def _junit_summary(report, *, pytest_exit_code, expected_count, frozen=False):
+    """Read one retained report without running tests or changing evidence."""
+    summary = {
+        "exit_code": pytest_exit_code, "pytest_exit_code": pytest_exit_code, "junit": str(report),
+    }
+    try:
+        tree = ET.parse(report).getroot()
+        suites = list(tree.iter("testsuite"))
+        cases = list(tree.iter("testcase"))
+        summary.update({field: sum(int(suite.attrib[field]) for suite in suites)
+                        for field in ("tests", "failures", "errors", "skipped")})
+        summary["failed_testcases"] = [
+            {key: case.attrib.get(key) for key in ("classname", "name", "file")}
+            for case in cases if case.find("failure") is not None
+        ]
+        summary["reported_testcases"] = len(cases)
+        summary["failure_elements"] = len(list(tree.iter("failure")))
+        summary["error_elements"] = len(list(tree.iter("error")))
+        summary["skipped_elements"] = len(list(tree.iter("skipped")))
+        summary["junit_sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+        complete = (
+            bool(suites) and summary["tests"] == expected_count
+            and len(cases) == expected_count
+            and not summary["failures"] and not summary["errors"]
+            and not summary["failure_elements"] and not summary["error_elements"]
+        )
+        if frozen:
+            complete = complete and summary["skipped"] == summary["skipped_elements"] == 0
+        if not complete:
+            summary["exit_code"] = pytest_exit_code or 1
+            summary["validation_error"] = "JUnit did not confirm the expected executed test set"
+    except (OSError, KeyError, ValueError, ET.ParseError):
+        summary["exit_code"] = pytest_exit_code or 1
+        summary["validation_error"] = "pytest did not produce a readable JUnit report"
+    return summary
+
+
+def _pytest_attempt(root, selections, report, *, expected_count, frozen=False, python=sys.executable):
     if report.exists():
         report.unlink()
     command = [str(python), "-m", "pytest", "-o", "addopts=", "-q", "--color=no",
                f"--junitxml={report}", *selections]
     result = subprocess.run(command, cwd=root, env=_environment(root), check=False)
-    summary = {"exit_code": result.returncode, "junit": str(report)}
-    try:
-        suites = list(ET.parse(report).getroot().iter("testsuite"))
-        summary.update({field: sum(int(suite.attrib.get(field, "0")) for suite in suites)
-                        for field in ("tests", "failures", "errors", "skipped")})
-        complete = summary["tests"] == expected_count and not summary["failures"] and not summary["errors"]
-        if frozen:
-            complete = complete and summary["skipped"] == 0
-        if not complete:
-            summary["exit_code"] = result.returncode or 1
-            summary["validation_error"] = "JUnit did not confirm the expected executed test set"
-    except (OSError, ValueError, ET.ParseError):
-        summary["exit_code"] = result.returncode or 1
-        summary["validation_error"] = "pytest did not produce a readable JUnit report"
-    # The immutable historical archive contains one known Python 3.12 scheduling-sensitive
-    # observation test. Retry only that sealed phase once; a second failure remains blocking.
-    if summary["exit_code"] and retries:
-        print(json.dumps({"retry": retries, "phase": "historical_archive"}, sort_keys=True), flush=True)
-        return _pytest_phase(
-            root, selections, report, expected_count=expected_count, frozen=frozen,
-            python=python, retries=retries - 1,
-        )
+    summary = _junit_summary(
+        report, pytest_exit_code=result.returncode, expected_count=expected_count, frozen=frozen,
+    )
     print(json.dumps(summary, sort_keys=True), flush=True)
     return summary
+
+
+def _known_archive_failure(summary, *, expected_count, frozen):
+    failed = summary.get("failed_testcases", [])
+    return (
+        frozen and expected_count == ARCHIVE_EXECUTION_COUNT
+        and summary.get("exit_code") == summary.get("pytest_exit_code") == 1
+        and summary.get("tests") == summary.get("reported_testcases") == expected_count
+        and summary.get("failures") == summary.get("failure_elements") == 1
+        and summary.get("errors") == summary.get("error_elements") == 0
+        and summary.get("skipped") == summary.get("skipped_elements") == 0
+        and len(failed) == 1
+        and failed[0].get("classname") == "tests.test_measurement139_observation"
+        and failed[0].get("name") == ARCHIVE_RETRY_NODE.split("::", 1)[1]
+        and failed[0].get("file") in (None, ARCHIVE_RETRY_NODE.split("::", 1)[0])
+        and isinstance(summary.get("junit_sha256"), str)
+    )
+
+
+def _pytest_phase(root, selections, report, *, expected_count, frozen=False, python=sys.executable,
+                  historical_retry=False):
+    retry_report = report.with_name(f"{report.stem}.retry1{report.suffix}")
+    if historical_retry:
+        # Do not leave a previous invocation's successful retry beside a new failed attempt.
+        retry_report.unlink(missing_ok=True)
+    first = _pytest_attempt(
+        root, selections, report, expected_count=expected_count, frozen=frozen, python=python,
+    )
+    if not historical_retry or not _known_archive_failure(
+        first, expected_count=expected_count, frozen=frozen,
+    ):
+        return first
+    # The fixed archive cannot be edited. Preserve its sole known scheduling failure verbatim,
+    # retry the complete inventory once, and keep both attempts in the final machine report.
+    print(json.dumps({
+        "phase": "historical_archive", "retry": 1,
+        "retry_reason": ARCHIVE_RETRY_NODE, "first_attempt": first,
+    }, sort_keys=True), flush=True)
+    second = _pytest_attempt(
+        root, selections, retry_report, expected_count=expected_count, frozen=frozen, python=python,
+    )
+    result = {
+        **second, "retry_reason": ARCHIVE_RETRY_NODE, "attempts": [first, second],
+    }
+    print(json.dumps(result, sort_keys=True), flush=True)
+    return result
 
 
 def run_native_e2e(repo, junit_dir):
@@ -334,16 +401,12 @@ def run(repo, junit_dir):
                           "historical_only": True, "pins": PIN_COUNTS},
         }
         print(json.dumps(versions, sort_keys=True), flush=True)
-        # The current product suite includes bounded subprocess/process-group tests.  A single
-        # host-wide runner collision can make one such test lose its temporary child workspace;
-        # rerun the complete current phase once, while retaining fail-closed behavior when the
-        # same failure repeats.
         current = _pytest_phase(repo, ("tests",), junit_dir / "current.xml",
-                                expected_count=len(current_nodes), retries=1)
+                                expected_count=len(current_nodes))
         archived = _pytest_phase(
             archive, (*index["test_files"], *(f"--deselect={node}" for node in bound)),
             junit_dir / "archived.xml", expected_count=archive_count,
-            frozen=True, python=archive_python, retries=1,
+            frozen=True, python=archive_python, historical_retry=True,
         )
         registration = _pytest_phase(
             frozen, bound, junit_dir / "frozen123.xml", expected_count=REGISTRATION_COUNT,
