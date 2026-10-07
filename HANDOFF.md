@@ -1,5 +1,32 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 PR #6 merged; runtime inventory and Linux target control
+
+PR #6 已合入 main：tested head `25035895751061abce6d0c1a166363e29704cd79`，merge commit
+`b3b2f132c2843cddf93f347e01182bba92bc714a`。最终 run `37651610902` 的 Ubuntu3.11/3.12/3.13
+完整 current 各9868项/0 failure/error/30 skips，frozen24、trusted173、native403/6 skips通过。
+archived2294 在3.12/3.13首轮通过；3.11仅已知 preparation-ceiling 调度节点失败，按原严格
+规则完整重试一次通过，首次XML保留；current没有重试。下方PR6待CI文字保留为历史。
+
+新分支 `codex/local-runtime-preflight` 从该main延续两项SDD：Feature171独立declared-file
+Python runtime inventory/preflight；Feature172收窄Linux target的session/group/namespace/
+signal/process-memory/io_uring及alternate syscall入口。两者分别有focused测试与明确边界；
+本地inventory210 passed；联合runtime/native/strategy385项为351 passed/34 Darwin skips，
+最终Linux-only收窄增加queued-signals/pidfd_getfd后，control/architecture专项1 passed/29 skips。
+Ruff/compileall/diff、公开exports和文档syntax通过；该1项执行真实unsupported-ABI分支，
+不代表Linuxseccomp执行。最终head完整CI及merge须另行核验，不能借用PR6证据。
+
+Runtime target ABI和launcher政策仅声明；库存不枚举未列imports、不seal writablefiles，
+不授予native read paths、不改RSI/producer markers、不执行Python项目。Linux deny-list
+不等于完整containment/egress，也不修复bootstrap退休后descendants监督。
+P0另确认missing-terminal unknown恢复仍需原deadline bytes/digest/inode独立anchor；可信
+failure/abandoned settlement需独立证据bridge，不从缺回执合成成功或重试。
+后续P1：完整immutable runtime/import inventory、versioned launch binding、本地Python
+pipebroker fixture、实际OpenEvolve/Shinka adapters与RSI CLI生产接线。P2多机服务后置。
+
+继续只用本地inert文件/C/bootstrap/fixture/loopback/provider-free evaluator，不运行真实
+模型、WebAgent、远程/公司evaluator或真实campaign，不读取或修改.env/密钥。
+
 ## 2026-10-07 PR #5 merged; OpenEvolve trusted local composition
 
 PR #5 已合入 `main`：tested head `221540ffaca41cedf284011a5c860f09b52fa4a5`，

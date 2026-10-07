@@ -4,7 +4,28 @@ This is the current execution list, extending Feature 160 and the producer lifec
 Code and HANDOFF evidence take precedence over historical gap descriptions and design drafts.
 All validation in this iteration is local and provider-free.
 
-## Current open priorities — 2026-10-07
+## Current open priorities — 2026-10-08
+
+PR #6 is merged at `b3b2f13` after final-head Ubuntu3.11/3.12/3.13 complete CI
+`37651610902` passed. Current9868 and frozen24 passed without retry; Python3.11 archive2294
+used the single permitted known-node retry, retaining its first report. Feature170 is complete
+for the trusted local C producer composition. Historical pending statements below are superseded.
+
+- **P0 next**: Feature172 narrows Linux target session/group/namespace/signal/memory/io_uring and
+  alternate syscall entrypoints. It still needs actual Linux final-head CI. Complete containment,
+  post-direct-target descendants supervision and trusted unknown settlement remain open. Missing
+  terminal recovery additionally needs an independent original deadline bytes/digest/inode anchor;
+  an internally rehashed sidecar alone cannot establish the original narrower parent budget.
+- **P1 next**: Feature171 adds independent declared-file Python runtime inventory and externally
+  pinned, read-only preflight. Target ABI/import/environment are declarations, unlisted files are
+  not inventoried and writable observed files are not sealed. Complete immutable runtime/import
+  layout, versioned native binding, local Python pipe broker and real project adapters follow.
+- **P2**: multi-host ownership, services and distributed scheduling stay deferred.
+
+Feature171/172 are implementation/validation work at this source revision; their own final-head
+matrix and PR merge are required. PR6 CI does not validate these changes.
+
+## Historical execution note — 2026-10-07
 
 Feature170 local implementation now composes the existing OpenEvolve strategy with frozen config,
 formal native lifecycle/broker, one local exact seed admission, the established atomic commit and

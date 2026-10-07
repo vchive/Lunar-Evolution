@@ -1,5 +1,13 @@
 # Validation
 
+Final corrected head `25035895751061abce6d0c1a166363e29704cd79` passed Ubuntu Python
+3.11/3.12/3.13 complete CI run `37651610902`. Each current suite retained 9868 cases,
+0 failures/errors and30 skips; frozen24, trusted173 and native403/6 skips passed. Archived2294
+passed first run on3.12/3.13. On3.11 exactly the known preparation-ceiling scheduling node
+failed first run, then the permitted single full archive retry passed; both XML reports remain.
+Current was never retried. PR #6 merged as `b3b2f132c2843cddf93f347e01182bba92bc714a`.
+Source-commit pending descriptions below are historical; no result is attributed to later heads.
+
 Only local C/bootstrap, fixture, loopback and provider-free exact evaluators.
 
 Local Python 3.11 installed project environment results:
