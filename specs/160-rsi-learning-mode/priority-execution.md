@@ -6,16 +6,19 @@ All validation in this iteration is local and provider-free.
 
 ## Current open priorities — 2026-10-08
 
-PR #6 and #7 are merged. Feature170 trusted local C composition, Feature171 declared-file
+PR #6, #7 and #8 are merged. Feature170 trusted local C composition, Feature171 declared-file
 runtime inventory and Feature172 Linux target-control restrictions passed their own final-head
 complete Ubuntu3.11/3.12/3.13 matrix. PR7 run37660700817 used no retry and merge009691a
 has the tested tree. These bounded features do not establish actual Python campaigns or complete
-containment. Historical pending statements below are superseded.
+containment. Feature173 passed its own final-head three-version CI run37669528518, all seven
+phases first attempt without retries, and merged at d3f4fbf with the tested tree. Historical
+pending statements below are superseded.
 
-- **P0 current**: Feature173 original deadline bytes/digest/inode anchor for missing-terminal
-  recovery, formal native consumption v2 and every-signal cleanup checks. See its spec/tasks/
-  validation; its own final-head matrix/merge remains required. Then post-direct-target descendants
-  supervision, complete containment/egress and trusted failure/abandoned settlement bridge.
+- **P0 current**: Feature174 Linux post-direct-target adopted-child drain, original guardian and
+  budget retention, explicit new runtime descriptor/formal argv. See its spec/tasks/validation;
+  actual Linux final-head matrix and merge remain required. Then complete containment/egress and
+  trusted known failed/cancelled settlement bridge; abandoned is a separate explicit disposition,
+  not an inferred process outcome. Feature173 original deadline anchor is complete in its scope.
 - **P1 next**: immutable runtime layout and complete import inventory, versioned native runtime
   binding, local Python inherited-pipe broker fixture, real OpenEvolve/Shinka project adapters and
   production RSI CLI solvers. Feature171's ABI/import/environment are declarations and unlisted
