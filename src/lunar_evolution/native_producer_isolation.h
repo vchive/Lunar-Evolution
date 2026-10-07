@@ -56,6 +56,7 @@ static int lunar_apply_isolation(const char *profile,
         #include <sys/stat.h>
         #include <stdint.h>
         #include <signal.h>
+        #include <sys/ioctl.h>
         /* These stable Landlock UAPI values must not disappear merely because
            build headers predate ABI 2/3. The runtime ABI query, not conditional
            compilation of a weaker rights mask, establishes kernel support. */
@@ -378,6 +379,96 @@ static int lunar_apply_isolation(const char *profile,
         #undef LUNAR_DENY_INPUT_MUTATION
         struct sock_fprog program = { .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])), .filter = filter };
         if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) return errno ? errno : EPERM;
+        /* The first filter already validates the native audit architecture and
+           rejects x32. These additional intersecting filters never enlarge it.
+           Explicit signal denials alone do not mediate asynchronous pipe/file
+           ownership, dnotify or leases. Admit ordinary fcntl commands only and
+           reject O_ASYNC even when F_SETFL is otherwise legitimate.
+           Supported ABIs are little-endian; reject upper command/flag words
+           rather than relying on the kernel's later int narrowing. */
+        #if defined(__i386__)
+        #ifdef __NR_fcntl64
+        #define LUNAR_NR_FCNTL64 __NR_fcntl64
+        #else
+        #define LUNAR_NR_FCNTL64 221
+        #endif
+        #else
+        #define LUNAR_NR_FCNTL64 __NR_fcntl
+        #endif
+        #define LUNAR_ALLOW_FCNTL(command) \
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, command, 0, 1), \
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)
+        struct sock_filter fd_control[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_fcntl, 2, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_FCNTL64, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[1]) + 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[1])),
+            LUNAR_ALLOW_FCNTL(F_DUPFD),
+            LUNAR_ALLOW_FCNTL(F_GETFD),
+            LUNAR_ALLOW_FCNTL(F_SETFD),
+            LUNAR_ALLOW_FCNTL(F_GETFL),
+            LUNAR_ALLOW_FCNTL(F_GETLK),
+            LUNAR_ALLOW_FCNTL(F_SETLK),
+            LUNAR_ALLOW_FCNTL(F_SETLKW),
+            #ifdef F_GETLK64
+            LUNAR_ALLOW_FCNTL(F_GETLK64),
+            LUNAR_ALLOW_FCNTL(F_SETLK64),
+            LUNAR_ALLOW_FCNTL(F_SETLKW64),
+            #endif
+            /* Stable Linux UAPI commands, also when build headers are old. */
+            LUNAR_ALLOW_FCNTL(1030), /* F_DUPFD_CLOEXEC */
+            LUNAR_ALLOW_FCNTL(36),   /* F_OFD_GETLK */
+            LUNAR_ALLOW_FCNTL(37),   /* F_OFD_SETLK */
+            LUNAR_ALLOW_FCNTL(38),   /* F_OFD_SETLKW */
+            LUNAR_ALLOW_FCNTL(1025), /* F_GETLEASE */
+            LUNAR_ALLOW_FCNTL(1032), /* F_GETPIPE_SZ */
+            LUNAR_ALLOW_FCNTL(1034), /* F_GET_SEALS */
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, F_SETFL, 0, 7),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[2]) + 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[2])),
+            BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, O_ASYNC, 0, 1),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+        };
+        #undef LUNAR_ALLOW_FCNTL
+        #undef LUNAR_NR_FCNTL64
+        struct sock_fprog fd_program = {
+            .len = (unsigned short)(sizeof(fd_control) / sizeof(fd_control[0])), .filter = fd_control,
+        };
+        if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &fd_program) != 0) return errno ? errno : EPERM;
+        /* Only these fixed descriptor/pipe requests are needed at this local
+           boundary. In particular FIOASYNC/FIOSETOWN, terminal/device controls,
+           filesystem mutations and unknown/future requests cannot pass it.
+           This does not prove complete egress or the identity of host stdio. */
+        #define LUNAR_ALLOW_IOCTL(request) \
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, request, 0, 1), \
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)
+        struct sock_filter ioctl_control[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_ioctl, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[1]) + 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[1])),
+            LUNAR_ALLOW_IOCTL(FIONREAD),
+            LUNAR_ALLOW_IOCTL(FIONBIO),
+            LUNAR_ALLOW_IOCTL(FIOCLEX),
+            LUNAR_ALLOW_IOCTL(FIONCLEX),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+        };
+        #undef LUNAR_ALLOW_IOCTL
+        struct sock_fprog ioctl_program = {
+            .len = (unsigned short)(sizeof(ioctl_control) / sizeof(ioctl_control[0])), .filter = ioctl_control,
+        };
+        if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &ioctl_program) != 0) return errno ? errno : EPERM;
         return 0;
       #else
         (void)profile; (void)read_paths; (void)write_dirs; return ENOTSUP;

@@ -352,7 +352,11 @@ from .models import (
     WorkerResultEnvelope,
     WorkerStopReason,
 )
-from .native_bootstrap import LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION
+from .native_bootstrap import (
+    LINUX_FD_CONTROL_IMPLEMENTATION,
+    LINUX_FD_HANDOFF_IMPLEMENTATION,
+    LINUX_INPUT_MUTATION_IMPLEMENTATION,
+)
 from .native_trusted_cleanup import (
     NativeTrustedCleanupError,
     persist_native_trusted_cleanup,
@@ -934,6 +938,7 @@ __all__ = [
     "HOLDOUT_MAX_SNAPSHOT_BYTES",
     "INVENTORY_PROTOCOL",
     "INVENTORY_SCHEMA_VERSION",
+    "LINUX_FD_CONTROL_IMPLEMENTATION",
     "LINUX_FD_HANDOFF_IMPLEMENTATION",
     "LINUX_INPUT_MUTATION_IMPLEMENTATION",
     "MAX_BOOTSTRAP_PAYLOAD_BYTES",
