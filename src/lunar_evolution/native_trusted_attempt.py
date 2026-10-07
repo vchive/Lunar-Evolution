@@ -25,6 +25,7 @@ from .native_trusted_cleanup import (
     NativeTrustedCleanupError,
     persist_native_trusted_cleanup,
     recover_native_trusted_cleanup,
+    verify_native_trusted_cleanup,
 )
 from .native_trusted_streams import (
     NativeTrustedStreamCapture,
@@ -265,13 +266,12 @@ def _persist_deadline(
     return record
 
 
-def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str, object]:
-    try:
-        record = _read_durable_json(
-            batch / _DEADLINE_NAME, code="native_trusted_recovery_deadline_invalid",
-        )
-    except ProducerProcessError as exc:
-        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
+def _verify_deadline_record(
+    record: object, registration: Mapping[str, object],
+) -> dict[str, object]:
+    """Pure binding check; the filesystem recovery separately verifies the current boot."""
+    if not isinstance(record, Mapping):
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
     if set(record) != _DEADLINE_FIELDS:
         raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
     if (
@@ -286,16 +286,33 @@ def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str,
         raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
     started = record.get("started_monotonic")
     deadline = record.get("deadline_monotonic")
+    if type(started) not in (int, float) or type(deadline) not in (int, float):
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    try:
+        started_value, deadline_value = float(started), float(deadline)
+    except (OverflowError, ValueError) as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
     if (
-        type(started) not in (int, float)
-        or type(deadline) not in (int, float)
-        or not math.isfinite(float(started))
-        or not math.isfinite(float(deadline))
-        or float(deadline) <= float(started)
+        not math.isfinite(started_value)
+        or not math.isfinite(deadline_value)
+        or deadline_value <= started_value
         or not isinstance(record.get("boot_id"), str)
         or record.get("deadline_sha256") != _digest_without(record, "deadline_sha256")
     ):
         raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    if not record["boot_id"]:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid")
+    return dict(record)
+
+
+def _read_deadline(batch: Path, registration: Mapping[str, object]) -> dict[str, object]:
+    try:
+        record = _read_durable_json(
+            batch / _DEADLINE_NAME, code="native_trusted_recovery_deadline_invalid",
+        )
+    except ProducerProcessError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_deadline_invalid") from exc
+    record = _verify_deadline_record(record, registration)
     try:
         current_boot_id = _producer_boot_id()
     except Exception as exc:
@@ -1134,6 +1151,93 @@ def run_native_trusted_attempt(
         )
 
 
+def _verify_terminal_record(
+    receipt: object, *, registration: Mapping[str, object],
+    bound: Mapping[str, object], deadline_record: object,
+    cleanup_record: object, intent: ProducerLaunchIntent,
+) -> dict[str, object]:
+    """Pure process-only check, after the caller has verified registration and handoff.
+
+    Never reads a process, clock or file and never grants publication authority.
+    """
+    if not isinstance(receipt, Mapping):
+        raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+    deadline_record = _verify_deadline_record(deadline_record, registration)
+    if (
+        set(receipt) != _TERMINAL_FIELDS
+        or receipt.get("publication_eligible") is not False
+        or receipt.get("terminal_sha256") != _digest_without(receipt, "terminal_sha256")
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+    cancelled_receipt = receipt.get("process_status") == "cancelled"
+    if cancelled_receipt:
+        valid_unknown = (
+            bound.get("status") == "recovery_required"
+            and bound.get("reason") == "trusted_bootstrap_evidence_unknown"
+        )
+        valid_passed = (
+            bound.get("status") == "evidence_available"
+            and bound.get("bootstrap_status") == "passed"
+        )
+        if (
+            not (valid_unknown or valid_passed)
+            or not isinstance(bound.get("handoff_sha256"), str)
+            or not isinstance(bound.get("evidence_sha256"), str)
+            or receipt.get("exit_code") is not None
+            or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
+            or receipt.get("gate_released") is not True
+            or receipt.get("target_started") is not True
+            or receipt.get("bootstrap_evidence_sha256") != bound["evidence_sha256"]
+        ):
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        expected = _terminal_receipt(
+            registration, handoff_sha256=str(bound["handoff_sha256"]),
+            evidence_sha256=str(bound["evidence_sha256"]),
+            gate_released=True, target_started=True,
+            exit_code=None, cleanup_status=str(receipt["cleanup_status"]),
+            deadline_sha256=str(deadline_record["deadline_sha256"]), cancelled=True,
+            stream_capture_sha256=receipt.get("stream_capture_sha256"),
+            cleanup_sha256=receipt.get("cleanup_sha256"),
+        )
+    else:
+        if (
+            bound.get("status") != "evidence_available"
+            or bound.get("bootstrap_status") != "passed"
+            or isinstance(receipt.get("exit_code"), bool)
+            or not isinstance(receipt.get("exit_code"), int)
+            or not -255 <= receipt["exit_code"] <= 255
+            or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
+            or receipt.get("gate_released") is not True
+            or receipt.get("target_started") is not True
+        ):
+            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        expected = _terminal_receipt(
+            registration, handoff_sha256=str(bound["handoff_sha256"]),
+            evidence_sha256=str(bound["evidence_sha256"]),
+            gate_released=True, target_started=True,
+            exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
+            deadline_sha256=str(deadline_record["deadline_sha256"]),
+            stream_capture_sha256=receipt.get("stream_capture_sha256"),
+            cleanup_sha256=receipt.get("cleanup_sha256"),
+        )
+    if receipt != expected:
+        raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+    cleanup_digest = receipt.get("cleanup_sha256")
+    if not isinstance(cleanup_digest, str) or len(cleanup_digest) != 64:
+        raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+    try:
+        verify_native_trusted_cleanup(cleanup_record, intent=intent, terminal=receipt)
+    except NativeTrustedCleanupError as exc:
+        raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
+    stream_digest = receipt.get("stream_capture_sha256")
+    if stream_digest is not None and (
+        not isinstance(stream_digest, str) or len(stream_digest) != 64
+        or any(c not in "0123456789abcdef" for c in stream_digest)
+    ):
+        raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+    return dict(receipt)
+
+
 def recover_native_trusted_attempt(
     workspace: str | Path, *, intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
@@ -1218,72 +1322,14 @@ def recover_native_trusted_attempt(
             receipt = _read_durable_json(path, code="native_trusted_recovery_terminal_invalid")
         except (ProducerBootstrapError, ProducerProcessError) as exc:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
-        if set(receipt) != _TERMINAL_FIELDS:
-            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
-        cancelled_receipt = receipt.get("process_status") == "cancelled"
-        if cancelled_receipt:
-            valid_unknown = (
-                bound.get("status") == "recovery_required"
-                and bound.get("reason") == "trusted_bootstrap_evidence_unknown"
-            )
-            valid_passed = (
-                bound.get("status") == "evidence_available"
-                and bound.get("bootstrap_status") == "passed"
-            )
-            if (
-                not (valid_unknown or valid_passed)
-                or not isinstance(bound.get("handoff_sha256"), str)
-                or not isinstance(bound.get("evidence_sha256"), str)
-                or receipt.get("exit_code") is not None
-                or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
-                or receipt.get("gate_released") is not True
-                or receipt.get("target_started") is not True
-                or receipt.get("bootstrap_evidence_sha256") != bound["evidence_sha256"]
-            ):
-                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
-            expected = _terminal_receipt(
-                registration, handoff_sha256=str(bound["handoff_sha256"]),
-                evidence_sha256=str(bound["evidence_sha256"]),
-                gate_released=True, target_started=True,
-                exit_code=None, cleanup_status=str(receipt["cleanup_status"]),
-                deadline_sha256=str(deadline_record["deadline_sha256"]), cancelled=True,
-                stream_capture_sha256=receipt.get("stream_capture_sha256"),
-                cleanup_sha256=receipt.get("cleanup_sha256"),
-            )
-        else:
-            if (
-                bound.get("status") != "evidence_available"
-                or bound.get("bootstrap_status") != "passed"
-                or isinstance(receipt.get("exit_code"), bool)
-                or not isinstance(receipt.get("exit_code"), int)
-                or not -255 <= receipt["exit_code"] <= 255
-                or receipt.get("cleanup_status") not in {"cleaned", "already_exited"}
-                or receipt.get("gate_released") is not True
-                or receipt.get("target_started") is not True
-            ):
-                raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
-            expected = _terminal_receipt(
-                registration, handoff_sha256=str(bound["handoff_sha256"]),
-                evidence_sha256=str(bound["evidence_sha256"]),
-                gate_released=True, target_started=True,
-                exit_code=receipt["exit_code"], cleanup_status=str(receipt["cleanup_status"]),
-                deadline_sha256=str(deadline_record["deadline_sha256"]),
-                stream_capture_sha256=receipt.get("stream_capture_sha256"),
-                cleanup_sha256=receipt.get("cleanup_sha256"),
-            )
-        if receipt != expected:
-            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
-        cleanup_digest = receipt.get("cleanup_sha256")
-        if not isinstance(cleanup_digest, str) or len(cleanup_digest) != 64:
-            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
         try:
-            cleanup_record = recover_native_trusted_cleanup(
-                root, intent=intent, terminal=receipt,
-            )
+            cleanup_record = recover_native_trusted_cleanup(root, intent=intent, terminal=receipt)
         except NativeTrustedCleanupError as exc:
             raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid") from exc
-        if cleanup_record.get("cleanup_sha256") != cleanup_digest:
-            raise NativeTrustedAttemptError("native_trusted_recovery_terminal_invalid")
+        receipt = _verify_terminal_record(
+            receipt, registration=registration, bound=bound, deadline_record=deadline_record,
+            cleanup_record=cleanup_record, intent=intent,
+        )
         stream_digest = receipt.get("stream_capture_sha256")
         if stream_digest is not None:
             if not isinstance(stream_digest, str) or len(stream_digest) != 64:

@@ -186,13 +186,35 @@ def recover_native_trusted_cleanup(
         )
     except ProducerProcessError as exc:
         raise NativeTrustedCleanupError("native_trusted_cleanup_invalid") from exc
+    return verify_native_trusted_cleanup(record, intent=intent, terminal=terminal)
+
+
+def verify_native_trusted_cleanup(
+    record: object,
+    *,
+    intent: ProducerLaunchIntent,
+    terminal: Mapping[str, object],
+) -> dict[str, object]:
+    """Pure validation of cleanup bytes bound to an independently verified terminal.
+
+    This checks the observation, not current process liveness or ownership authority.
+    """
+    if (
+        not isinstance(intent, ProducerLaunchIntent)
+        or not isinstance(terminal, Mapping)
+        or not isinstance(record, Mapping)
+    ):
+        raise NativeTrustedCleanupError("native_trusted_cleanup_context_invalid")
     record = _check_record(record, intent)
     for key in ("registration_sha256", "deadline_sha256", "pid", "pgid"):
         if record.get(key) != terminal.get(key):
             raise NativeTrustedCleanupError("native_trusted_cleanup_terminal_mismatch")
     if record.get("cleanup_status") != terminal.get("cleanup_status"):
         raise NativeTrustedCleanupError("native_trusted_cleanup_terminal_mismatch")
-    if terminal.get("process_status") == "cancelled" and record.get("alive_after") is not False:
+    if (
+        record.get("cleanup_sha256") != terminal.get("cleanup_sha256")
+        or record.get("alive_after") is not False
+    ):
         raise NativeTrustedCleanupError("native_trusted_cleanup_terminal_mismatch")
     return record
 
@@ -201,4 +223,5 @@ __all__ = [
     "NativeTrustedCleanupError",
     "persist_native_trusted_cleanup",
     "recover_native_trusted_cleanup",
+    "verify_native_trusted_cleanup",
 ]

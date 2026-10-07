@@ -48,6 +48,7 @@ def test_cleanup_sidecar_is_create_only_and_terminal_bound(tmp_path: Path) -> No
         "pgid": 2001,
         "cleanup_status": "cleaned",
         "process_status": "exited_zero",
+        "cleanup_sha256": record["cleanup_sha256"],
     }
     assert recover_native_trusted_cleanup(tmp_path, intent=intent, terminal=terminal) == record
     with pytest.raises(NativeTrustedCleanupError) as conflict:
