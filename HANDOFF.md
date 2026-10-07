@@ -36,6 +36,14 @@ P2 多机 ownership/微服务/分布式调度后置。
 仍只运行本地 C/bootstrap、fixture/loopback/provider-free evaluator；不运行真实模型、
 WebAgent、远程/公司 evaluator 或真实 campaign，不读取或修改 `.env`/密钥。
 
+PR #6（Feature170）首 head `bb1a4b3` CI run `37647462556` 的 Python3.13 完整 current
+保留9867项/1 failure/30 skips：已有 ownership 测试 `select.select` 遇到FD>=1024，触发
+FD_SETSIZE ValueError。新增173项、原native403项、archive2294和frozen24均无failure。
+current 没有整轮重试。read-only 审查表明新测试执行顺序在该节点之后、focused/current独立
+进程、新模块导入无FD增长；目前不支持把此失效归因于新接线泄漏。
+readiness 改为 DefaultSelector，保留10s与所有实际lock交接断言，额外真实高FD stdout验证。
+纠正后ownership+native联合80 passed，静态检查通过；新 head 仍须完整独立矩阵后合入。
+
 ## 2026-10-07 Worker terminal authority and regression evidence
 
 PR #4 已合入 `main`，merge commit `2b8d05e9eaec7a944be8caa4e20e3e5210547ff7`。

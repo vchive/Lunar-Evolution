@@ -26,6 +26,19 @@ Local Python 3.11 installed project environment results:
 At this source commit the final-head Ubuntu matrix is pending; the PR checks and merge record
 are authoritative for later CI/merge status. Local focused evidence is not a complete release runner.
 
+The first head `bb1a4b3` run `37647462556` Python3.13 retained a real current-suite failure:
+`test_inherited_lock_has_no_gap_after_launcher_exits` used `select.select()` with a descriptor
+above FD_SETSIZE. New trusted adapter173, existing native403, archive2294 and frozen24 phases
+had no failures. Its first `current.xml` retains9867 cases/1 failure/30 skips; no full-phase retry.
+The ownership readiness test now uses DefaultSelector with the same10s deadline and exact lock
+handoff assertions. An actual high-descriptor pipe duplicate exercises the same child handoff;
+no descriptor-table exhaustion or product ownership behavior is changed. The corrected head must
+independently pass the full matrix.
+
+The corrected ownership + native strategy focused run passed80 cases with no skips/failures/errors
+(`/tmp/lunar-pr6-high-fd-focus.xml`); this includes the real child lock adoption with stdout FD>=1024.
+Ruff, compileall and diff check passed again after the correction.
+
 Focused suites must include producer config binding, native input lifecycle, retained seed
 admission, actual OpenEvolve strategy composition and legacy OpenEvolve compatibility. Required
 negative cases: input/intent/executable/owner/deadline drift; repeated started claim; incomplete

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-import select
+import selectors
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -25,7 +25,7 @@ def _assert_closed(fd: int) -> None:
         os.fstat(fd)
 
 
-def test_inherited_lock_has_no_gap_after_launcher_exits(tmp_path: Path) -> None:
+def _assert_inherited_lock_has_no_gap(tmp_path: Path, *, high_stdout: bool = False) -> None:
     program = """
 import os
 import sys
@@ -57,9 +57,23 @@ assert owner.lock_fd is None
         with pytest.raises(AutomaticSolveAlreadyRunning), own_automatic_solve("parent", tmp_path):
             pytest.fail("a competing continuation entered the parent/child launch gap")
         assert process.stdin is not None and process.stdout is not None
+        if high_stdout:
+            fcntl = pytest.importorskip("fcntl")
+            resource = pytest.importorskip("resource")
+            soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+            if soft != resource.RLIM_INFINITY and soft <= 1024:
+                pytest.skip("platform descriptor limit cannot represent a high stdout descriptor")
+            # Duplicate one pipe, rather than exhausting the process descriptor table. Exercise
+            # the same real exec/ownership handoff with a descriptor beyond select's FD_SETSIZE.
+            high_fd = fcntl.fcntl(process.stdout.fileno(), fcntl.F_DUPFD_CLOEXEC, 1024)
+            assert high_fd >= 1024
+            process.stdout.close()
+            process.stdout = os.fdopen(high_fd, "r")
         process.stdin.write("adopt\n")
         process.stdin.flush()
-        assert select.select([process.stdout], [], [], 10)[0], "child did not adopt the lock"
+        with selectors.DefaultSelector() as readiness:
+            readiness.register(process.stdout, selectors.EVENT_READ)
+            assert readiness.select(timeout=10), "child did not adopt the lock"
         assert process.stdout.readline() == "owned\n"
         with pytest.raises(AutomaticSolveAlreadyRunning), own_automatic_solve("parent", tmp_path):
             pytest.fail("a competing continuation entered an active child")
@@ -72,6 +86,14 @@ assert owner.lock_fd is None
             if process.poll() is None:
                 process.kill()
             process.communicate(timeout=10)
+
+
+def test_inherited_lock_has_no_gap_after_launcher_exits(tmp_path: Path) -> None:
+    _assert_inherited_lock_has_no_gap(tmp_path)
+
+
+def test_inherited_lock_adoption_with_high_stdout_descriptor(tmp_path: Path) -> None:
+    _assert_inherited_lock_has_no_gap(tmp_path, high_stdout=True)
 
 
 def test_inherited_descriptor_is_closed_on_registry_conflict(tmp_path: Path) -> None:
