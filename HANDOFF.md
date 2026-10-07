@@ -1,5 +1,37 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-07 Worker terminal authority and regression evidence
+
+PR #4 已合入 `main`，merge commit `2b8d05e9eaec7a944be8caa4e20e3e5210547ff7`。
+该 PR Ubuntu Python 3.11/3.12/3.13 完整 CI（run `37297809715`）和 main 合入后
+CI（run `37302911373`）均通过。下方日期更早的未合入/未授权描述是历史记录。
+
+当前 `codex/worker-terminal-evidence` 从该 main 开发两个纠正切片：
+
+- 统一 worker verifier 原先把 bootstrap handshake `passed` 当 completed，证据不充分。
+  现在必须独立核验 native process terminal、原始 deadline 和 cleanup sidecar，严格
+  绑定 registration/owner/task/launch/digest；cleanup `alive_after` 必须 false。正常 exit0
+  才 completed，nonzero/cancelled 为 failed，握手通过但缺终态/预算/清理仍 unknown。
+  纯 record 校验复用到真实 native recovery；recovery 继续检查 current boot、文件、
+  RSI inputs 和 stream sidecar。process-only classification 不授予发布或 learning 权限。
+- current suite 不再整轮失败重试。immutable archive 只允许 exact known scheduling node
+  在完整 2294 项、仅一个 failure、无 error/skip 时重试一次；首次 XML 不覆盖，第二份
+  独立 `archived.retry1.xml`，每次 exit/count/hash 保留并上传。普通 spawn fixture 使用
+  现实启动预算，显式 0.05 秒 hard-timeout 测试和生产 deadline 不变。
+
+本分支 focused/static 验证与完整 CI 状态见 Feature169 validation；新 head 尚须独立
+通过完整 CI 后按既有用户授权合入。不要把 PR #4 的结果追认为本分支通过。
+
+P1 下一实质缺口：现有 OpenEvolveStrategy 仍直接 Popen、Shinka 只有 retained-source
+exporter、RSI CLI 的 solver choices 仍是 fixture。外部 project/runtime trust profile
+目前是声明字段，没有 host interpreter/package/import inventory 验证，不能声称真实项目
+来源认证/生产 campaign 接通。后续优先改现有 launcher 的显式 trusted 路径，先以本地 C
+producer 证明 launch→receipt→admission→exact replay；Python runtime manifest 独立设计。
+P2 多机 ownership/微服务/远程 evaluator 后置。
+
+本轮只运行本地 C/bootstrap、fixture/loopback/provider-free tests，不运行 WebAgent、真实
+模型、远程/公司 evaluator 或 OpenEvolve/Shinka campaign，不读取或修改 `.env`/密钥。
+
 ## 2026-10-02 Main merged; native original-deadline guard
 
 PR #2 已合入 `main`，merge commit 为 `9e71d40944b3f083f6ae2f8ebec5f941194b0634`。

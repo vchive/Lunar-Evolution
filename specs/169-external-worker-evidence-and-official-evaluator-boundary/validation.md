@@ -12,3 +12,34 @@
 6. 重复完成、只读恢复和 receipt tamper 均幂等或 fail-closed。
 
 禁止运行 WebAgent、远程 evaluator、公司评测平台、真实模型或真实 OpenEvolve/Shinka campaign。
+
+
+## 2026-10-07 terminal authority correction
+
+- Native attempt/cleanup/worker verifier/formal receipt/RSI scheduler/gateway integration:
+  **138 passed, 0 skipped/failures/errors**, `/tmp/lunar-native-terminal-integration-oct7.xml`.
+- CI runner/annotation/cleanroom integration: **113 passed, 0 skipped/failures/errors**,
+  `/tmp/lunar-ci-evidence-integration-oct7.xml`.
+- Independent review found an overflowing integer deadline could escape as `OverflowError`.
+  Pure deadline validation now rejects it with the fixed drift code; the two huge-integer
+  cases are included in the final worker/cleanup focus (**68 passed**, 0 failures/errors),
+  `/tmp/lunar-worker-terminal-final-numeric-oct7.xml`.
+- Ruff (`src tests tools`), compileall and `git diff --check` passed.
+
+Worker focus covers handshake-only pass/failure and absent evidence staying unknown;
+zero/nonzero/signal/cancellation classifications; unknown handshake plus verified cancellation;
+rehashed owner/task/launch/registration/deadline/cleanup/status drift; malformed records;
+cleanup still alive even after linked rehashing; no I/O/process/clock effects; actual local C
+exit0/exit7 matching native read-only recovery with unchanged receipt bytes/inodes.
+The existing native suite covers actual live cancellation and cleanup uncertainty.
+
+Runner focus proves no current retry, narrow known archive failure only, no retry on incomplete
+inventory/mixed failures/errors/other node/pytest crash, independent first/retry XML hashes,
+and no third attempt. Annotation focus retains the known first failure as a warning only after
+complete successful retry, while missing/malformed/failed retry and unrelated failures block.
+Both XML files remain CI artifacts. Archive/frozen commits, manifests and test bytes are unchanged.
+
+A local full regression run started before the final numeric-boundary correction; its result
+cannot stand in for a final-head matrix. The committed head must independently pass Ubuntu
+Python 3.11/3.12/3.13 full current/archive/frozen CI before merge. No model, external project
+campaign, remote/company evaluator or multi-host acceptance is claimed.

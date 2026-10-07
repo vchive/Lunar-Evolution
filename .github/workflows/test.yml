@@ -42,7 +42,7 @@ jobs:
           python tools/run_tests.py --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
       - name: Annotate test failures
         if: ${{ always() }}
-        run: python tools/annotate_test_failures.py .lunar-evolution/test-results/native-cleanup.xml .lunar-evolution/test-results/current.xml .lunar-evolution/test-results/archived.xml .lunar-evolution/test-results/frozen123.xml
+        run: python tools/annotate_test_failures.py .lunar-evolution/test-results/native-cleanup.xml .lunar-evolution/test-results/current.xml .lunar-evolution/test-results/archived.xml .lunar-evolution/test-results/frozen123.xml --archive-retry .lunar-evolution/test-results/archived.retry1.xml
       - name: Preserve test results
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -52,6 +52,7 @@ jobs:
             .lunar-evolution/test-results/native-cleanup.xml
             .lunar-evolution/test-results/current.xml
             .lunar-evolution/test-results/archived.xml
+            .lunar-evolution/test-results/archived.retry1.xml
             .lunar-evolution/test-results/frozen123.xml
             .lunar-evolution/test-results/pytest.log
           include-hidden-files: true

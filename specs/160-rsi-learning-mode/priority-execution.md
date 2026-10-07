@@ -4,24 +4,24 @@ This is the current execution list, extending Feature 160 and the producer lifec
 Code and HANDOFF evidence take precedence over historical gap descriptions and design drafts.
 All validation in this iteration is local and provider-free.
 
-## Current open priorities
+## Current open priorities — 2026-10-07
 
-- **P0**: final-head Ubuntu Python 3.11/3.12/3.13 full current/archived/frozen CI;
-  independently trusted completion for an uncertain external execution, exact worker ownership,
-  complete native containment/egress and post-bootstrap descendant deadline supervision. The local
-  native lifeline stops active targets in its original group after controller death, but missing
-  durable terminal acknowledgement remains unknown. It is not successful reconciliation.
-  The native original-deadline guard now also stops contained work while bootstrap lives when
-  the controller is suspended with its lifeline still open; it does not outlive bootstrap.
-- **P1**: compose the bound native request into a real RSI solver gateway with the original
-  episode claim, independent verifier/result mapping and explicit cancellation channel. New
-  create-only complete request/frozen-memory inputs now reach an actual local C target before
-  gate release; this is delivery, not SolverResult authority. Real OpenEvolve/Shinka project
-  trust/runtime profiles/default registration, official evaluators and actual campaigns remain
-  open. Existing controller unknown result records cannot be overwritten with completed results.
-- **P2**: connect diagnostics/confidence/translation to actual campaign receipts and actual cost
-  sources after the execution boundary is accepted. Web UI, distributed scheduling and model
-  adaptation are separate later tracks, not required to close this local delivery slice.
+- **P0**: PR #4 merged at `2b8d05e`; its Ubuntu Python 3.11/3.12/3.13 full CI and
+  post-merge main CI passed. The next branch must pass its own full matrix. Current work fixes
+  the bootstrap-only worker classification: terminal success requires process exit, the original
+  deadline and owner-checked cleanup. Native recovery shares the pure checks and retains current
+  boot/file/stream checks. Missing terminal stays unknown; complete containment/egress,
+  post-bootstrap descendant supervision and trusted unknown-to-success reconciliation remain open.
+- **P1**: native RSI scheduler/provider/controller composition has local fixture coverage on main.
+  Real OpenEvolve/Shinka project launch trust/runtime manifests and production adapter wiring
+  remain open: the current OpenEvolve launcher uses `Popen`, Shinka imports retained source, and
+  RSI CLI solver choices are fixtures. Next scope is an explicit trusted launch path in the
+  existing adapter with create-only admission and exact replay, proved first using a local C
+  producer. Python project interpreter/package/import provenance requires its own manifest.
+  CI regression retries are being narrowed to one exact immutable historical flake, preserving
+  both reports; no current-product full-phase retry is allowed.
+- **P2**: multi-host ownership, distributed scheduling, remote evaluators, real campaigns and
+  model adaptation are deferred. They do not block this local P0/P1 corrective delivery.
 
 The sections below record implemented local progress and the limits of each contract.
 
@@ -51,7 +51,8 @@ The sections below record implemented local progress and the limits of each cont
 - Complete Actor evidence now has a durable create-only sidecar and first-call claim. Unknown
   claims never restart the evaluator; exact completed replay is read-only. DRS composition passes.
 - A provider-free unified worker evidence verifier now rebinds launch attestation, trusted
-  process registration, bootstrap handoff and terminal evidence into a read-only classification.
+  process registration, bootstrap handoff, native process terminal, original deadline and cleanup into a read-only
+  classification. Handshake-only pass/fail never establishes process terminal authority.
   It reports trusted completed/failed, unknown recovery required, or identity drift; it does not
   provide external source authentication or multi-host ownership.
 - A configured generation coordinator automatically admits post-practice candidates using the
