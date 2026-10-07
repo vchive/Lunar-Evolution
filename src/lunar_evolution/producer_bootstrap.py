@@ -16,6 +16,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from .native_deadline_binding import (
+    NATIVE_CONSUMPTION_PROTOCOL,
+    NativeDeadlineBindingError,
+    validate_native_deadline_binding,
+)
 from .producer_launcher import (
     MAX_OUTPUT_BYTES,
     ProducerLaunchAttestation,
@@ -454,6 +459,32 @@ _FEATURE156_CONSUMPTION_FIELDS = frozenset({
     "parent_task_id", "task_id", "intent_sha256", "attestation_sha256", "nonce",
     "executable_identity", "consumption_sha256",
 })
+_NATIVE_CONSUMPTION_V2_FIELDS = _FEATURE156_CONSUMPTION_FIELDS | {"deadline_binding"}
+
+
+def _parse_trusted_bootstrap_consumption(value: object) -> dict[str, object]:
+    """Parse the exact legacy claim or the native claim with its frozen deadline pin."""
+    encoded: bytes | None = None
+    if isinstance(value, (str, bytes, bytearray)):
+        encoded = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+        value = _strict_json(encoded)
+    if not isinstance(value, dict):
+        _fail("producer_bootstrap_attempt_consumption_schema_invalid")
+    is_native = value.get("schema_version") == "2" and value.get("protocol") == NATIVE_CONSUMPTION_PROTOCOL
+    fields = _NATIVE_CONSUMPTION_V2_FIELDS if is_native else _FEATURE156_CONSUMPTION_FIELDS
+    claim = _object(value, fields, "producer_bootstrap_attempt_consumption_schema_invalid")
+    if encoded is not None and _canonical(claim) != encoded:
+        _fail("producer_bootstrap_attempt_consumption_noncanonical")
+    if is_native:
+        # Bound and detach object input too; a caller cannot retain a mutable nested pin.
+        claim = _strict_json(_canonical(claim))
+        try:
+            claim["deadline_binding"] = validate_native_deadline_binding(claim["deadline_binding"])
+        except NativeDeadlineBindingError as exc:
+            raise ProducerBootstrapError("producer_bootstrap_attempt_deadline_binding_invalid") from exc
+    elif claim["schema_version"] != "1" or claim["protocol"] != PRODUCER_PROCESS_PROTOCOL:
+        _fail("producer_bootstrap_attempt_consumption_schema_invalid")
+    return claim
 
 
 def verify_trusted_bootstrap_process_registration(
@@ -599,16 +630,7 @@ def verify_trusted_bootstrap_attempt(
     if launch != expected_launch:
         _fail("producer_bootstrap_attempt_launch_mismatch")
 
-    encoded: bytes | None = None
-    if isinstance(consumption, (str, bytes, bytearray)):
-        encoded = consumption.encode("utf-8") if isinstance(consumption, str) else bytes(consumption)
-        consumption = _strict_json(encoded)
-    claim = _object(consumption, _FEATURE156_CONSUMPTION_FIELDS,
-                    "producer_bootstrap_attempt_consumption_schema_invalid")
-    if encoded is not None and _canonical(claim) != encoded:
-        _fail("producer_bootstrap_attempt_consumption_noncanonical")
-    if claim["schema_version"] != "1" or claim["protocol"] != PRODUCER_PROCESS_PROTOCOL:
-        _fail("producer_bootstrap_attempt_consumption_schema_invalid")
+    claim = _parse_trusted_bootstrap_consumption(consumption)
     for field in ("launch_id", "journal_id", "run_id", "parent_task_id", "task_id",
                   "intent_sha256", "attestation_sha256"):
         if claim[field] != getattr(launch, field):
@@ -643,6 +665,8 @@ def verify_trusted_bootstrap_attempt(
         "registration_sha256": registered["registration_sha256"],
         "pid": registered["pid"], "pgid": registered["pgid"],
     }
+    if claim["protocol"] == NATIVE_CONSUMPTION_PROTOCOL:
+        result["deadline_binding"] = claim["deadline_binding"]
     if evidence is None:
         return result
     observed = parse_trusted_bootstrap_evidence(

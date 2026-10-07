@@ -6,24 +6,21 @@ All validation in this iteration is local and provider-free.
 
 ## Current open priorities — 2026-10-08
 
-PR #6 is merged at `b3b2f13` after final-head Ubuntu3.11/3.12/3.13 complete CI
-`37651610902` passed. Current9868 and frozen24 passed without retry; Python3.11 archive2294
-used the single permitted known-node retry, retaining its first report. Feature170 is complete
-for the trusted local C producer composition. Historical pending statements below are superseded.
+PR #6 and #7 are merged. Feature170 trusted local C composition, Feature171 declared-file
+runtime inventory and Feature172 Linux target-control restrictions passed their own final-head
+complete Ubuntu3.11/3.12/3.13 matrix. PR7 run37660700817 used no retry and merge009691a
+has the tested tree. These bounded features do not establish actual Python campaigns or complete
+containment. Historical pending statements below are superseded.
 
-- **P0 next**: Feature172 narrows Linux target session/group/namespace/signal/memory/io_uring and
-  alternate syscall entrypoints. It still needs actual Linux final-head CI. Complete containment,
-  post-direct-target descendants supervision and trusted unknown settlement remain open. Missing
-  terminal recovery additionally needs an independent original deadline bytes/digest/inode anchor;
-  an internally rehashed sidecar alone cannot establish the original narrower parent budget.
-- **P1 next**: Feature171 adds independent declared-file Python runtime inventory and externally
-  pinned, read-only preflight. Target ABI/import/environment are declarations, unlisted files are
-  not inventoried and writable observed files are not sealed. Complete immutable runtime/import
-  layout, versioned native binding, local Python pipe broker and real project adapters follow.
+- **P0 current**: Feature173 original deadline bytes/digest/inode anchor for missing-terminal
+  recovery, formal native consumption v2 and every-signal cleanup checks. See its spec/tasks/
+  validation; its own final-head matrix/merge remains required. Then post-direct-target descendants
+  supervision, complete containment/egress and trusted failure/abandoned settlement bridge.
+- **P1 next**: immutable runtime layout and complete import inventory, versioned native runtime
+  binding, local Python inherited-pipe broker fixture, real OpenEvolve/Shinka project adapters and
+  production RSI CLI solvers. Feature171's ABI/import/environment are declarations and unlisted
+  files/writable runtime loads remain outside its proof.
 - **P2**: multi-host ownership, services and distributed scheduling stay deferred.
-
-Feature171/172 are implementation/validation work at this source revision; their own final-head
-matrix and PR merge are required. PR6 CI does not validate these changes.
 
 ## Historical execution note — 2026-10-07
 

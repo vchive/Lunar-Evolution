@@ -903,7 +903,7 @@ def test_recovery_rejects_valid_but_rebound_native_attempt_deadline(tmp_path: Pa
         recover_native_trusted_attempt(
             workspace, intent=intent, attestation=attestation, artifact=artifact,
         )
-    assert failure.value.code == "native_trusted_recovery_terminal_invalid"
+    assert failure.value.code == "native_trusted_recovery_deadline_invalid"
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")

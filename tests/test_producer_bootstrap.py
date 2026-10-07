@@ -400,6 +400,111 @@ def test_attempt_verifier_binds_target_claim_bootstrap_registration_and_evidence
     assert verify_trusted_bootstrap_attempt(*records) == result
 
 
+def _native_v2_records(tmp_path: Path):
+    from lunar_evolution.native_deadline_binding import NATIVE_CONSUMPTION_PROTOCOL
+
+    records = _attempt_records(tmp_path)
+    claim, registration = records[4], records[5]
+    claim.update({
+        "schema_version": "2", "protocol": NATIVE_CONSUMPTION_PROTOCOL,
+        "deadline_binding": {
+            "schema_version": "1", "protocol": "lunar-native-deadline-file-binding-v1",
+            "name": "native-trusted-attempt-deadline.json",
+            "deadline_sha256": "a" * 64, "raw_sha256": "b" * 64,
+            "size": 256, "device": 3, "inode": 4, "mode": 0o600,
+            "mtime_ns": 5, "ctime_ns": 6,
+        },
+    })
+    _rehash_record(claim, "consumption_sha256")
+    registration["consumption_sha256"] = claim["consumption_sha256"]
+    _rehash_record(registration, "registration_sha256")
+    return records
+
+
+def test_native_v2_attempt_projects_detached_pin_without_file_authority(tmp_path: Path):
+    records = _native_v2_records(tmp_path)
+    result = _verify_attempt(records, evidence=None)
+    assert result["status"] == "recovery_required"
+    assert result["deadline_binding"] == records[4]["deadline_binding"]
+    result["deadline_binding"]["inode"] += 1
+    assert result["deadline_binding"] != records[4]["deadline_binding"]
+    # The pure verifier does not manufacture a legacy pin or require a filesystem.
+    (tmp_path / "legacy").mkdir()
+    legacy = _attempt_records(tmp_path / "legacy")
+    assert "deadline_binding" not in _verify_attempt(legacy, evidence=None)
+
+
+def test_native_v2_observer_projects_pin_after_comparing_both_claim_files(tmp_path: Path):
+    records = _native_v2_records(tmp_path)
+    _, ledger, _ = _write_attempt_records(tmp_path, records, evidence=None)
+    observed = _observe_attempt(tmp_path, records)
+    assert observed == _verify_attempt(records, evidence=None)
+    forged = json.loads(ledger.read_bytes())
+    forged["deadline_binding"]["inode"] += 1
+    _rehash_record(forged, "consumption_sha256")
+    ledger.write_bytes(json.dumps(forged, sort_keys=True, separators=(",", ":")).encode())
+    with pytest.raises(ProducerBootstrapError) as failure:
+        _observe_attempt(tmp_path, records)
+    assert failure.value.code == "producer_bootstrap_attempt_nonce_ledger_mismatch"
+
+
+@pytest.mark.parametrize("encoded", [False, True])
+def test_native_v2_attempt_consumption_digest_keeps_independent_registration_pin(tmp_path: Path, encoded: bool):
+    records = list(_native_v2_records(tmp_path))
+    records[4]["deadline_binding"]["inode"] += 1
+    _rehash_record(records[4], "consumption_sha256")
+    if encoded:
+        records[4] = json.dumps(records[4], sort_keys=True, separators=(",", ":")).encode()
+    with pytest.raises(ProducerBootstrapError) as failure:
+        _verify_attempt(tuple(records), evidence=None)
+    assert failure.value.code == "producer_bootstrap_attempt_registration_binding_mismatch"
+
+
+@pytest.mark.parametrize("change", [
+    "v1_with_binding", "v2_without_binding", "v2_old_protocol", "v1_new_protocol",
+    "extra_field", "missing_field", "bad_pin_type", "pin_extra_field", "pin_bool_inode",
+])
+def test_native_v2_attempt_requires_exact_schema_and_strict_pin(tmp_path: Path, change: str):
+    records = _native_v2_records(tmp_path)
+    claim = records[4]
+    if change == "v1_with_binding":
+        claim.update({"schema_version": "1", "protocol": PRODUCER_PROCESS_PROTOCOL})
+    elif change == "v2_without_binding":
+        claim.pop("deadline_binding")
+    elif change == "v2_old_protocol":
+        claim["protocol"] = PRODUCER_PROCESS_PROTOCOL
+    elif change == "v1_new_protocol":
+        claim["schema_version"] = "1"
+    elif change == "extra_field":
+        claim["future"] = True
+    elif change == "missing_field":
+        claim.pop("consumption_id")
+    elif change == "bad_pin_type":
+        claim["deadline_binding"] = None
+    elif change == "pin_extra_field":
+        claim["deadline_binding"]["future"] = True
+    else:
+        claim["deadline_binding"]["inode"] = True
+    _rehash_record(claim, "consumption_sha256")
+    with pytest.raises(ProducerBootstrapError):
+        _verify_attempt(records, evidence=None)
+
+
+def test_native_v2_attempt_rejects_noncanonical_duplicate_and_oversized_claims(tmp_path: Path):
+    records = list(_native_v2_records(tmp_path))
+    claim = records[4]
+    canonical = json.dumps(claim, sort_keys=True, separators=(",", ":")).encode()
+    for encoded in (canonical + b"\n", b'{"schema_version":"2",' + canonical[1:]):
+        records[4] = encoded
+        with pytest.raises(ProducerBootstrapError):
+            _verify_attempt(tuple(records), evidence=None)
+    claim["nonce"] = "n" * (64 * 1024)
+    records[4] = claim
+    with pytest.raises(ProducerBootstrapError) as failure:
+        _verify_attempt(tuple(records), evidence=None)
+    assert failure.value.code == "producer_bootstrap_payload_too_large"
+
+
 def test_attempt_verifier_rejects_rehashed_target_snapshot_size_drift(tmp_path: Path):
     records = _attempt_records(tmp_path)
     registration = records[5]
