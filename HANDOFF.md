@@ -27,7 +27,7 @@ PR15、PR16、PR17已依次合入main：merge2c4b2270736dda6deb19a5bf72efe3f292c
 544b3f9409104052cf9c764334c2f97d46a9a382、7031475756b6af29b909c692ee3586b200db490c。
 最终PR run37709205439/37710527399/37712518759的三版raw XML/ZIP/joblogs及source
 parents/tree和case/skip inventory均已独立审计通过。main14 postmerge37709252012也通过。
-main15/16 push因main推进取消，未追认为通过；main17 postmerge37719212913另行审计。
+main15/16 push因main推进取消，未追认为通过；main17 postmerge37719212913已三版17阶段独立raw审计通过，current11446/88，0failure/error。
 PR15早期两轮失败和PR14 Python3.12 archived有限retry仍保留，不描述为全程无retry。
 
 Feature183在独立codex/native-independent-guardian上实现，PR18尚未合入/验收。Controller
@@ -45,7 +45,9 @@ spawn之前guardian_required，旧只读和Darwin scope不升级。
 Darwin C build/workflow YAML通过；Linux执行必须用本PR最终三版原始CI。独立审查关闭正常D
 后bootstrap退出竞态、group signal失败watcher泄漏及cleanup deadline超时边界。PR18首轮
 37721747456漏watcher cwd、第二轮37722439330旧grant fixture把watcher误当worker均失败并
-保留；修复后bootstrap仍必须继承原grants、watcher必须不继承。当前最终head以PR18为准。
+保留；修复后bootstrap仍必须继承原grants、watcher必须不继承。第三/AEC guardian fixture17fail原材料保留，9714修复后63Linux guardian cases实际通过；
+native-cleanup403仅原cleanup_unknown被guardian原因覆盖1fail，现保留原拒绝优先级，
+该fixture finally仅用原liveowner/process清理，不从registration读取PID授权。当前最终head以PR18为准。
 
 P0仍有POSIXmq/其他kernel egress以及broker有效redirect/proxy目的地。P1已具备可信宿主
 Python pipe fixture，但immutable runtime/load/loader/archive/import闭包、versioned delivery、

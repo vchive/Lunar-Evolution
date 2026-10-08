@@ -1125,6 +1125,8 @@ def test_native_attempt_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Pa
     workspace, producer_root, intent, attestation, artifact, batch = _attempt(
         tmp_path, timeout=1, target_sleep=10, mark_started_before_sleep=True,
     )
+    original_cleanup = runner._cleanup
+    owned_processes = []
     marker_seen_at: float | None = None
 
     def cancelled() -> bool:
@@ -1134,34 +1136,32 @@ def test_native_attempt_cancellation_cleanup_uncertainty_is_unknown(tmp_path: Pa
         return marker_seen_at is not None and time.monotonic() - marker_seen_at >= 0.2
 
     def uncertain_cleanup(owner, process, **kwargs):
+        owned_processes.append((owner, process, kwargs))
         return ProcessCleanupResult(
             label=owner.label, pid=owner.pid, pgid=owner.pgid,
             status=ProcessCleanupStatus.KILL_FAILED, alive_after=True,
         )
 
     monkeypatch.setattr(runner, "_cleanup", uncertain_cleanup)
-    result = run_native_trusted_attempt(
-        workspace, producer_root=producer_root, intent=intent,
-        attestation=attestation, artifact=artifact, cancelled=cancelled,
-    )
-    assert result.status == "recovery_required"
-    assert result.reason == "native_trusted_attempt_cleanup_unknown"
-    assert result.cleanup_status == "kill_failed"
-    assert result.exit_code is None
-    assert not (batch / "native-trusted-process-terminal.json").exists()
-
-    # The test deliberately replaced lifecycle cleanup; remove the sleeping fixture
-    # after assertions so no child survives the test process.
-    registration = json.loads((batch / "process-registration.json").read_bytes())
-    pid = registration["pid"]
     try:
-        os.killpg(pid, 9)
-    except ProcessLookupError:
-        pass
-    try:
-        os.waitpid(pid, 0)
-    except ChildProcessError:
-        pass
+        result = run_native_trusted_attempt(
+            workspace, producer_root=producer_root, intent=intent,
+            attestation=attestation, artifact=artifact, cancelled=cancelled,
+        )
+        assert result.status == "recovery_required"
+        assert result.reason == "native_trusted_attempt_cleanup_unknown"
+        assert result.cleanup_status == "kill_failed"
+        assert result.exit_code is None
+        assert len(owned_processes) == 1
+        assert not (batch / "native-trusted-process-terminal.json").exists()
+    finally:
+        # Retain live original ownership even when the assertions fail. Durable
+        # registration IDs never supply fixture signal or child-wait authority.
+        for owner, process, cleanup_arguments in owned_processes:
+            try:
+                original_cleanup(owner, process, **cleanup_arguments)
+            finally:
+                process.wait(timeout=3)
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")

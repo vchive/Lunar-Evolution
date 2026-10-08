@@ -19,6 +19,15 @@ inherit grants. Head6a75fac distinguishes those roles: bootstrap inherits origin
 grants, watcher inherits none. These are separate failed source heads, not successful
 retries. Original raw materials must remain available alongside subsequent evidence.
 
+Third6a75fac/run37723098095 and AEC/run37723412200 produced17 actual guardian
+fixture failures before cancellation: incorrect ps empty/Z+ handling and noncanonical
+v2 grant order. Head9714bdb corrected those fixture contracts. Run37723854848 then
+actually passed all63guardian cases with0skips, but the native-cleanup403 phase
+failed one older cancellation cleanup-uncertainty reason assertion. The original
+cleanup_unknown priority is now retained; the test also uses captured live original
+ownership for finally teardown instead of reading durable IDs to signal/wait.
+These partial successes are not complete source acceptance.
+
 Final Linux three-version CI, source/tree/parents, case/skip inventories, raw XML,
 logs and ZIP hashes remain required before merge. A platform skip, capability name,
 terminal frame or previous PR's CI cannot establish independent stopping or reap.

@@ -107,8 +107,8 @@ class NativeGuardianOwner:
         """Stop the original group first, then boundedly reap the exact watcher.
 
         The caller closes its original lifeline writer before calling cleanup.
-        An abnormal watcher is never killed before a group-stop signal has been
-        accepted or that original group is confirmed empty by pidfd ESRCH.
+        A group-stop signal is attempted before exact watcher retirement. If
+        that signal fails, the watcher is still reaped but cleanup stays unknown.
         """
         if type(timeout) not in {int, float} or not math.isfinite(timeout) or timeout <= 0:
             raise NativeGuardianError("native_guardian_cleanup_invalid")
