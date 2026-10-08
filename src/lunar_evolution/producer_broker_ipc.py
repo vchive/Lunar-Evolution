@@ -16,7 +16,11 @@ from pathlib import Path
 
 from .controller_http_transport import ControllerHttpRequest, ControllerHttpTransport
 from .controller_request_broker import ControllerOwnedRequestBroker, ControllerRequestBrokerError
-from .http_transport import MAX_REQUEST_BYTES, MAX_RESULT_BYTES
+from .http_transport import (
+    MAX_REQUEST_BYTES,
+    MAX_RESULT_BYTES,
+    _validate_fixed_destination_endpoint,
+)
 from .producer_launcher import ProducerLaunchIntent
 from .producer_request_transport import (
     HostRequestJournal,
@@ -50,6 +54,7 @@ class ProducerBrokerConfig:
 
     def __post_init__(self) -> None:
         ControllerHttpRequest(self.endpoint, self.headers, b"")
+        _validate_fixed_destination_endpoint(self.endpoint)
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,7 +233,7 @@ def serve_producer_broker(
             request_timeout_seconds=intent.request_timeout_seconds,
             max_requests=intent.max_requests, journal=journal,
         )
-        broker = ControllerOwnedRequestBroker(ledger, ControllerHttpTransport())
+        broker = ControllerOwnedRequestBroker(ledger, ControllerHttpTransport(fixed_destination=True))
         if ready is not None:
             ready.set()
         while True:

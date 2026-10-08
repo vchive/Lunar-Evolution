@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import base64
 import http.client
+import ipaddress
 import json
 import math
 import os
+import re
 import selectors
 import sys
 import threading
@@ -37,6 +39,7 @@ _MILESTONES = (
 )
 _PHASE_FIELDS = {"kind", "phase", "status"}
 _TERMINAL_FIELDS = {"kind", "outcome", "reason", "cause", "status", "body"}
+_FIXED_DESTINATION_POLICY = "fixed-direct-no-redirect-v1"
 _CAUSE_REASONS = {
     "timeout": "transport_timeout", "url_timeout": "transport_timeout",
     "opaque_timeout": "transport_timeout", "cause_timeout": "transport_error",
@@ -255,12 +258,53 @@ def _worker_command(lifeline: int) -> list[str]:
     return [sys.executable, "-I", "-S", "-B", str(Path(__file__).resolve()), str(lifeline)]
 
 
-def _configuration():
+def _validate_fixed_destination_endpoint(endpoint: str) -> None:
+    """Validate the original HTTP authority before urllib normalizes its URL."""
+    invalid = "fixed_http_endpoint_invalid"
+    if (type(endpoint) is not str or not endpoint or "#" in endpoint
+            or any(ord(char) <= 32 or 127 <= ord(char) <= 159 for char in endpoint)):
+        raise ValueError(invalid)
+    try:
+        parts = urlsplit(endpoint)
+        host, port = parts.hostname, parts.port
+        if (parts.scheme not in {"http", "https"} or not host or not parts.netloc
+                or parts.username is not None or parts.password is not None
+                or any(char in parts.netloc for char in ("%", "\\", "@"))):
+            raise ValueError(invalid)
+        if parts.netloc.startswith("["):
+            closing = parts.netloc.index("]")
+            ipaddress.IPv6Address(host)
+            tail = parts.netloc[closing + 1:]
+        else:
+            ascii_host = host.encode("idna").decode("ascii")
+            domain = ascii_host.removesuffix(".")
+            if (not domain or len(domain) > 253 or any(
+                re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) is None
+                for label in domain.split(".")
+            )):
+                raise ValueError(invalid)
+            # hostname is lowercased by urlsplit; Unicode case conversion can
+            # change its length. Split the original authority's port delimiter.
+            tail = ":" + parts.netloc.split(":", 1)[1] if ":" in parts.netloc else ""
+        if (tail and (not tail.startswith(":") or not tail[1:].isascii() or not tail[1:].isdigit())
+                or port is not None and not 1 <= port <= 65535):
+            raise ValueError(invalid)
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError(invalid) from exc
+
+
+def _configuration(*, fixed_destination=False):
+    if type(fixed_destination) is not bool:
+        raise ValueError("invalid HTTP destination policy")
+    trust = {name: os.environ[name] for name in ("SSL_CERT_FILE", "SSL_CERT_DIR") if name in os.environ}
+    if fixed_destination:
+        return {"proxies": {}, "proxy_source": "direct", "trust": trust,
+                "policy": _FIXED_DESTINATION_POLICY}
     environment_proxies = getproxies_environment()
     return {
         "proxies": environment_proxies or getproxies(),
         "proxy_source": "environment" if environment_proxies else "system",
-        "trust": {name: os.environ[name] for name in ("SSL_CERT_FILE", "SSL_CERT_DIR") if name in os.environ},
+        "trust": trust,
     }
 
 
@@ -470,6 +514,15 @@ class _ObservedHTTPSHandler(_ObservedHandler, urllib_request.HTTPSHandler):
     pass
 
 
+class _NoRedirectHandler(urllib_request.HTTPRedirectHandler):
+    def http_error_302(self, request, response, code, message, headers):
+        # Refuse before urllib parses Location/URI, including malformed URLs.
+        # Preserve the original response's bounded status/body failure projection.
+        raise HTTPError(request.full_url, code, message, headers, response)
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+
 def _worker(lifeline):
     import resource
 
@@ -493,14 +546,22 @@ def _worker(lifeline):
         raise ValueError("invalid request method/headers")
     body = _bytes(item["body"], MAX_REQUEST_BYTES)
     config = item["configuration"]
-    if type(config) is not dict or set(config) != {"proxies", "proxy_source", "trust"}:
+    legacy_fields = {"proxies", "proxy_source", "trust"}
+    if type(config) is not dict or set(config) not in (legacy_fields, legacy_fields | {"policy"}):
         raise ValueError("invalid HTTP configuration")
     proxies, trust = config["proxies"], config["trust"]
     if (type(proxies) is not dict or type(trust) is not dict
-            or config["proxy_source"] not in {"environment", "system"}
             or set(trust) - {"SSL_CERT_FILE", "SSL_CERT_DIR"}
             or any(type(key) is not str or type(value) is not str
                    for mapping in (proxies, trust) for key, value in mapping.items())):
+        raise ValueError("invalid proxy/trust projection")
+    fixed_destination = "policy" in config
+    if fixed_destination:
+        if (type(config["policy"]) is not str or config["policy"] != _FIXED_DESTINATION_POLICY
+                or config["proxy_source"] != "direct" or proxies):
+            raise ValueError("invalid HTTP destination policy")
+        _validate_fixed_destination_endpoint(item["endpoint"])
+    elif config["proxy_source"] not in ("environment", "system"):
         raise ValueError("invalid proxy/trust projection")
     os.environ.update(trust)
     if config["proxy_source"] == "environment":
@@ -510,10 +571,11 @@ def _worker(lifeline):
     status = None
     _emit({"kind": "phase", "phase": "open_response", "status": None})
     milestones.emit("worker_ready", 0)
-    opener = urllib_request.build_opener(
-        urllib_request.ProxyHandler(proxies),
-        _ObservedHTTPHandler(milestones), _ObservedHTTPSHandler(milestones),
-    )
+    handlers = [urllib_request.ProxyHandler({} if fixed_destination else proxies),
+                _ObservedHTTPHandler(milestones), _ObservedHTTPSHandler(milestones)]
+    if fixed_destination:
+        handlers.append(_NoRedirectHandler())
+    opener = urllib_request.build_opener(*handlers)
     remaining = deadline - monotonic()
     if remaining <= 0:
         _terminal(None, b"", cause="timeout")

@@ -232,11 +232,18 @@ class ControllerHttpHandle:
 class ControllerHttpTransport:
     """Start HTTP I/O only for an already-issued controller admission."""
 
+    def __init__(self, *, fixed_destination: bool = False) -> None:
+        if type(fixed_destination) is not bool:
+            raise ValueError("controller_http_policy_invalid")
+        self._fixed_destination = fixed_destination
+
     def start(self, admission: RequestAdmission, payload: object) -> ControllerHttpHandle:
         if os.name != "posix" or not hasattr(os, "pipe"):
             raise ValueError("controller_http_platform_unsupported")
         if type(admission) is not RequestAdmission or type(payload) is not ControllerHttpRequest:
             raise ValueError("controller_http_request_invalid")
+        if self._fixed_destination:
+            http_transport._validate_fixed_destination_endpoint(payload.endpoint)
         if os.name != "posix":
             raise ValueError("controller_http_platform_unsupported")
         if (
@@ -265,7 +272,8 @@ class ControllerHttpTransport:
             "body": base64.b64encode(payload.body).decode("ascii"),
             "timeout": seconds,
             "deadline": admission.deadline_ns / 1_000_000_000,
-            "configuration": http_transport._configuration(),
+            "configuration": (http_transport._configuration(fixed_destination=True)
+                              if self._fixed_destination else http_transport._configuration()),
         }
         encoded = json.dumps(
             request, ensure_ascii=False, allow_nan=False, separators=(",", ":"),
