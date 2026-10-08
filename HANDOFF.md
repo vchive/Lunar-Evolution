@@ -28,6 +28,12 @@ and live-owner reviews have no open finding. This is not Feature188 Linux
 acceptance. Dedicated runtime-material.xml requires274/0skip on CI. The initial missing-PYTHONPATH collection failure is retained in
 /tmp/lunar188-existing-focused-first.xml. Portable/new focused materials and first failures are persisted in ignored
 reports/feature188-local; final Linux CI/raw audit/merge remain pending.
+PR22 first-source1615a23/run37747268959 had274/1failure/0skip on each Linux
+version; remaining21 phases did not execute. Only the mmap fixture failed: its
+internal duplicate reused an old source-FD number. Revised test checks factory
+anchor closure while mapping is alive, retains EBUSY cause, then closes its own
+mapping before numeric-FD census. No production code changed; first raw failure
+ZIP/XML/logs remain separate and a new final-source full run is required.
 
 All five material capability claims stay false: no CPython launch, native v2
 extension, import/archive/loader closure or production admission. P1 successors

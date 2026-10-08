@@ -29,6 +29,18 @@ on Darwin and still needs Linux size/hash/seal/FD-census acceptance. No provider
 model, WebAgent, remote/company evaluator, .env, credentials or real campaign
 is used. Existing171/177/184 scopes are unchanged.
 
+PR22 first-source1615a23/run37747268959 failed the new focused stage on all
+three Linux versions:274 cases,273 passed/1 failure/0 skips each. Later phases
+were not executed, so this is not complete acceptance. The failure was the
+shared writable mmap fixture treating mmap's independently owned duplicate as a
+leaked factory FD after it reused a closed source FD number. The revised test
+checks the exact original anchor is closed while the mapping remains alive,
+requires the original seal failure's EBUSY cause, then closes the fixture-owned
+mapping before checking all prior numeric acquisitions. Production code and
+274-case inventory are unchanged. Original raw ZIP/XML/job logs are retained
+independently; the repaired source requires a new full run. Repaired local
+focused274 =195 passed/79 Darwin skips/0 failure/error, plus Ruff/compileall/diff.
+
 The following plan defines the required Linux evidence, not a passing result.
 
 ## Parser and bounded work

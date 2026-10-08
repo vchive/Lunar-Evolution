@@ -297,12 +297,17 @@ def test_shared_writable_mapping_blocks_write_seal_and_cleans_owned_fds(tmp_path
 
     monkeypatch.setattr(material.fcntl, "fcntl", mapped)
     try:
-        refused(lambda: enter_only(tree))
+        error = refused(lambda: enter_only(tree), "materialization_failed")
+        assert isinstance(error.__cause__, OSError) and error.__cause__.errno == errno.EBUSY
         assert len(mappings) == 1
-        assert_closed(tracked.descriptors)
+        # mmap owns an internal duplicate that may reuse a previously closed
+        # source FD number. The factory's original anchor must already be closed
+        # while this independently owned writable mapping still exists.
+        assert_closed(tracked.anchors)
     finally:
         for item in mappings:
             item.close()
+    assert_closed(tracked.descriptors)
 
 
 @_LINUX
