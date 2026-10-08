@@ -355,6 +355,8 @@ from .models import (
 from .native_bootstrap import (
     LINUX_FD_CONTROL_IMPLEMENTATION,
     LINUX_FD_HANDOFF_IMPLEMENTATION,
+    LINUX_GRANT_OBJECT_BINDING,
+    LINUX_GRANT_OBJECT_IMPLEMENTATION,
     LINUX_INPUT_MUTATION_IMPLEMENTATION,
 )
 from .native_trusted_cleanup import (
@@ -513,9 +515,12 @@ from .producer_bundle_transaction import (
 from .producer_grant_anchors import (
     HeldProducerGrantPlan,
     ProducerGrantAnchor,
+    ProducerGrantBindingNode,
     ProducerGrantError,
+    ProducerGrantExpectedBinding,
     ProducerGrantIdentity,
     ProducerGrantManifest,
+    ProducerGrantMaterial,
     ProducerGrantRecord,
     ProducerGrantRequest,
     hold_producer_grants,
@@ -950,6 +955,8 @@ __all__ = [
     "INVENTORY_SCHEMA_VERSION",
     "LINUX_FD_CONTROL_IMPLEMENTATION",
     "LINUX_FD_HANDOFF_IMPLEMENTATION",
+    "LINUX_GRANT_OBJECT_BINDING",
+    "LINUX_GRANT_OBJECT_IMPLEMENTATION",
     "LINUX_INPUT_MUTATION_IMPLEMENTATION",
     "MAX_BOOTSTRAP_PAYLOAD_BYTES",
     "MAX_HOLDOUTS",
@@ -1243,9 +1250,12 @@ __all__ = [
     "ProducerEnvelopeEvidence",
     "ProducerExecutionReceipt",
     "ProducerGrantAnchor",
+    "ProducerGrantBindingNode",
     "ProducerGrantError",
+    "ProducerGrantExpectedBinding",
     "ProducerGrantIdentity",
     "ProducerGrantManifest",
+    "ProducerGrantMaterial",
     "ProducerGrantRecord",
     "ProducerGrantRequest",
     "ProducerHandoffError",

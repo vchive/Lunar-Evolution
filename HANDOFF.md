@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Original native grant integration SDD
+
+PR13已合入main7172885d56d18cd310d6c5152baee71c62d6a7a3，tested source c660609、
+tree1d8ca3f68e643d3e048d54d53288e70fe9d5e7cd；三版十三阶段39raw XML/日志及actual
+merge parents/tree两次独立复核通过。PR12 postmerge37698866147也独立通过。PR14
+Feature180 held-owner exact2409206/run37703503332完整三版CI仍推进，未追认为合入；
+实际后续状态以PR及ignored reports为准。
+
+独立codex/native-grant-objects从Feature180 exacthead延续Feature181全链路。新Linux
+formal/default descriptor native-bootstrap-linux-grant-objects-v1，旧fd-control在budget/
+input/nonce/spawn前拒绝，其余旧拒绝顺序不变。Host首次work/output acquisition持有
+至cleanup/receipt/capture结束；仅held batch下创建missing writable组件，original input
+manifest workspace/batch/input parents期待值不增加grants。原config/request/memory
+bytes/mode0400/nlink1/size/time/hash由held-parent temporaryreader复验，不刷新pins。
+
+有界privatecontrolv2只继承leaf FDs，C独立检查完整originalgraph/role/identity与static/
+dynamicFD分离，Landlock用原FD、CWD用fchdir，child两阶段清理grant/temporary/extras，
+保留既有seccomp/inputmutation/lifeline/deadline/subreaper/drain。v1直接fixture、Darwin与
+historical只读load/recovery scope保持；原nonce/deadline/registration/handoff/receipt/
+broker/publication schemas不变。observed ancestor object与read/write冲突独立拒绝；不
+声明任意unobserved bindmount alias完整性、namespace/content freeze或atomic mkdir+FD。
+
+本地验证、独立审查及初次失败材料列于specs181/validation.md；Linux真实执行必须由本轮
+finalhead Ubuntu三版CI证明，不把Darwin skips、前PR通过或read-only DTO当enforcement。
+Final source CI/merge仍开放。完整egress、bootstrapdeath/pause后的独立停止仍是P0；P1
+immutable runtime/loader/archive/import/versioned delivery、nativePythonpipe与真实
+OpenEvolve/Shinka Pythonadapters/productionRSICLI仍开放；P2多机服务/ownership后置。
+只用local inert/provider-free C/filesystem/pipe/loopback及既有GitHubCI，不读.env/密钥，
+不运行模型、WebAgent、远程/公司evaluator或真实campaign，保留他人修改。
+
 ## 2026-10-08 Held producer grant anchors SDD
 
 PR12已合入main：head3016339、merge3b9d7583eda707f8e620fcc09637211570f5fd93，

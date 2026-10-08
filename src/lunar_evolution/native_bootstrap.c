@@ -3,8 +3,8 @@
  *
  * This is intentionally a small, dependency-free executable.  It reads one
  * bounded binary control record, announces readiness, waits for one release
- * byte, and only then forks/execs the already-bound target.  No target path,
- * argv, or environment is inspected before the release byte.
+ * byte, and only then forks/execs the already-bound target. Version2 independently
+ * checks original inherited grant and protocol bindings before announcing readiness.
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -68,9 +68,23 @@ static void SHA_FINAL(unsigned char out[32],SHA_CTX *c){uint64_t bits=c->n*8;siz
 #define MAGIC "LNB1"
 #define PROTOCOL "lunar-trusted-producer-bootstrap-v1"
 #define SCHEMA "1"
+#define MAX_GRANT_NODES 256u
+#define MAX_GRANTS 81u
+
+typedef struct {
+    uint32_t parent, kind, depth;
+    uint64_t device, inode;
+    char *name, *path;
+} grant_node_t;
+
+typedef struct { uint32_t node, role; int fd; } grant_t;
 
 typedef struct {
     char launch[65], intent[65], target_sha[65];
+    uint32_t version, node_count, grant_count, cwd_grant;
+    int bootstrap_fd;
+    grant_node_t *nodes;
+    grant_t *grants;
     int32_t target_fd;
     char *target_path, *cwd, *profile;
     char **read_paths, **write_dirs;
@@ -106,6 +120,31 @@ static uint32_t be32(const unsigned char *p) {
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
+#if defined(__linux__)
+static uint64_t be64(const unsigned char *p) {
+    return ((uint64_t)be32(p) << 32) | be32(p + 4);
+}
+#endif
+
+static int utf8_valid(const char *value) {
+    const unsigned char *p = (const unsigned char *)value;
+    while (*p) {
+        uint32_t point; unsigned int follow;
+        if (*p < 0x80) { ++p; continue; }
+        if (*p >= 0xc2 && *p <= 0xdf) { point = *p & 31; follow = 1; }
+        else if (*p >= 0xe0 && *p <= 0xef) { point = *p & 15; follow = 2; }
+        else if (*p >= 0xf0 && *p <= 0xf4) { point = *p & 7; follow = 3; }
+        else return 0;
+        unsigned int count = follow;
+        ++p;
+        while (follow--) { if ((*p & 0xc0) != 0x80) return 0; point = (point << 6) | (*p++ & 63); }
+        if ((count == 1 && point < 0x80) || (count == 2 && point < 0x800) ||
+            (count == 3 && point < 0x10000) || point > 0x10ffff ||
+            (point >= 0xd800 && point <= 0xdfff)) return 0;
+    }
+    return 1;
+}
+
 static int hex64(const char *s) {
     for (int i = 0; i < 64; i++) {
         char c = s[i];
@@ -132,19 +171,131 @@ static void free_control(control_t *c) {
     if (c->argv) { for (uint32_t i = 0; i < c->argc; i++) free(c->argv[i]); }
     if (c->read_paths) { for (uint32_t i = 0; i < c->read_count; i++) free(c->read_paths[i]); }
     if (c->write_dirs) { for (uint32_t i = 0; i < c->write_count; i++) free(c->write_dirs[i]); }
+    if (c->nodes) for (uint32_t i = 0; i < c->node_count; ++i) { free(c->nodes[i].name); free(c->nodes[i].path); }
+    free(c->nodes); free(c->grants);
     free(c->argv); free(c->read_paths); free(c->write_dirs); memset(c, 0, sizeof(*c));
 }
 
+#if defined(__linux__)
+static int node_identity_equal(const grant_node_t *a, const grant_node_t *b) {
+    return a->device == b->device && a->inode == b->inode;
+}
+
+static int grant_under(const control_t *c, uint32_t node, uint32_t root) {
+    for (;;) {
+        if (node_identity_equal(&c->nodes[node], &c->nodes[root])) return 1;
+        if (node == 0) return 0;
+        node = c->nodes[node].parent;
+    }
+}
+
+static int path_under(const char *path, const char *root) {
+    size_t size = strlen(root);
+    return strcmp(path, root) == 0 || (size == 1 && root[0] == '/') ||
+           (strncmp(path, root, size) == 0 && path[size] == '/');
+}
+
+static int parse_control_v2(const unsigned char *buf, size_t total, size_t *position, control_t *c) {
+    size_t pos = *position;
+    if (pos + 4 > total) return -1;
+    uint32_t bootstrap = be32(buf + pos); pos += 4;
+    if (c->target_fd <= 2 || bootstrap <= 2 || bootstrap > INT_MAX || bootstrap == (uint32_t)c->target_fd) return -1;
+    c->bootstrap_fd = (int)bootstrap;
+    if (read_string(buf, total, &pos, &c->target_path, MAX_PATH_BYTES) ||
+        c->target_path[0] != '/' || !utf8_valid(c->target_path) || pos + 8 > total || be32(buf + pos) != 1) return -1;
+    pos += 4; c->node_count = be32(buf + pos); pos += 4;
+    if (!c->node_count || c->node_count > MAX_GRANT_NODES) return -1;
+    c->nodes = calloc(c->node_count, sizeof(*c->nodes)); if (!c->nodes) return -1;
+    for (uint32_t i = 0; i < c->node_count; ++i) {
+        if (pos + 28 > total) return -1;
+        grant_node_t *node = &c->nodes[i];
+        node->parent = be32(buf + pos); node->kind = be32(buf + pos + 4);
+        node->device = be64(buf + pos + 8); node->inode = be64(buf + pos + 16);
+        uint32_t size = be32(buf + pos + 24); pos += 28;
+        if (!node->inode || (node->kind != 1 && node->kind != 2) || size > MAX_PATH_BYTES || size > total - pos) return -1;
+        node->name = calloc((size_t)size + 1, 1); if (!node->name) return -1;
+        memcpy(node->name, buf + pos, size); pos += size;
+        if (memchr(node->name, 0, size) || !utf8_valid(node->name)) return -1;
+        if (!i) {
+            if (node->parent != UINT32_MAX || node->kind != 1 || size) return -1;
+            node->path = strdup("/");
+        } else {
+            if (node->parent >= i || c->nodes[node->parent].kind != 1 || !size ||
+                strchr(node->name, '/') || !strcmp(node->name, ".") || !strcmp(node->name, "..")) return -1;
+            grant_node_t *parent = &c->nodes[node->parent];
+            node->depth = parent->depth + 1;
+            size_t length = strlen(parent->path) + size + (node->parent ? 1 : 0);
+            if (node->depth > 64 || length > MAX_PATH_BYTES) return -1;
+            node->path = calloc(length + 1, 1);
+            if (node->path) snprintf(node->path, length + 1, "%s%s%s", parent->path, node->parent ? "/" : "", node->name);
+        }
+        if (!node->path || (i && strcmp(c->nodes[i - 1].path, node->path) >= 0)) return -1;
+    }
+    if (pos + 4 > total) return -1;
+    c->grant_count = be32(buf + pos); pos += 4;
+    if (!c->grant_count || c->grant_count > MAX_GRANTS) return -1;
+    c->grants = calloc(c->grant_count, sizeof(*c->grants)); if (!c->grants) return -1;
+    unsigned char used[MAX_GRANT_NODES] = {0}; uint32_t cwd_count = 0;
+    size_t path_bytes = 0;
+    for (uint32_t i = 0; i < c->grant_count; ++i) {
+        if (pos + 12 > total) return -1;
+        grant_t *grant = &c->grants[i];
+        grant->node = be32(buf + pos); grant->role = be32(buf + pos + 4);
+        uint32_t fd = be32(buf + pos + 8); pos += 12;
+        if (grant->node >= c->node_count || fd <= 2 || fd > INT_MAX ||
+            (grant->role != 1 && grant->role != 2 && grant->role != 4 && grant->role != 12)) return -1;
+        grant->fd = (int)fd;
+        grant_node_t *node = &c->nodes[grant->node];
+        if (node->kind != (grant->role == 1 ? 2u : 1u) ||
+            ((grant->role & 4) && (!grant->node || node_identity_equal(node, &c->nodes[0]))) ||
+            (i && strcmp(c->nodes[c->grants[i - 1].node].path, node->path) >= 0)) return -1;
+        if (grant->role & 4) ++c->write_count; else ++c->read_count;
+        if (grant->role & 8) ++cwd_count;
+        path_bytes += strlen(node->path) * ((grant->role & 8) ? 2 : 1);
+        for (uint32_t current = grant->node;; current = c->nodes[current].parent) { used[current] = 1; if (!current) break; }
+        for (uint32_t j = 0; j < i; ++j) {
+            if (c->grants[j].fd == grant->fd || node_identity_equal(node, &c->nodes[c->grants[j].node])) return -1;
+        }
+    }
+    if (c->read_count > 64 || c->write_count > 16 || cwd_count != 1 ||
+        c->read_count + c->write_count + cwd_count > 81 || path_bytes > MAX_CONTROL) return -1;
+    for (uint32_t i = 0; i < c->node_count; ++i) if (!used[i]) return -1;
+    for (uint32_t i = 0; i < c->grant_count; ++i) {
+        grant_t *read = &c->grants[i]; if (read->role & 4) continue;
+        for (uint32_t j = 0; j < c->grant_count; ++j) {
+            grant_t *write = &c->grants[j]; if (!(write->role & 4)) continue;
+            const char *rp = c->nodes[read->node].path, *wp = c->nodes[write->node].path;
+            if (path_under(rp, wp) || grant_under(c, read->node, write->node) ||
+                (read->role == 2 && (path_under(wp, rp) || grant_under(c, write->node, read->node)))) return -1;
+        }
+    }
+    if (pos + 4 > total) return -1;
+    c->cwd_grant = be32(buf + pos); pos += 4;
+    if (c->cwd_grant >= c->grant_count || c->grants[c->cwd_grant].role != 12) return -1;
+    c->cwd = strdup(c->nodes[c->grants[c->cwd_grant].node].path);
+    if (!c->cwd) return -1;
+    *position = pos; return 0;
+}
+#endif
+
 static int parse_control(const unsigned char *buf, size_t total, control_t *c) {
-    if (total < 4 + 2 + 2 + 64 * 3 + 4 || memcmp(buf, MAGIC, 4) != 0) return -1;
+    if (total > MAX_CONTROL || total < 4 + 2 + 2 + 64 * 3 + 4 || memcmp(buf, MAGIC, 4) != 0) return -1;
     /* version and flags are two-byte values; version is encoded at offsets 4..5. */
-    if (buf[4] != 0 || buf[5] != 1 || buf[6] != 0 || buf[7] != 0) return -1;
+    if (buf[4] != 0 || (buf[5] != 1 && buf[5] != 2) || buf[6] != 0 || buf[7] != 0) return -1;
+    c->version = buf[5];
     size_t pos = 8;
     memcpy(c->launch, buf + pos, 64); c->launch[64] = 0; pos += 64;
     memcpy(c->intent, buf + pos, 64); c->intent[64] = 0; pos += 64;
     memcpy(c->target_sha, buf + pos, 64); c->target_sha[64] = 0; pos += 64;
     if (!hex64(c->launch) || !hex64(c->intent) || !hex64(c->target_sha) || pos + 4 > total) return -1;
     c->target_fd = (int32_t)be32(buf + pos); pos += 4;
+    if (c->version == 2) {
+#if defined(__linux__)
+        if (parse_control_v2(buf, total, &pos, c)) return -1;
+#else
+        return -1;
+#endif
+    } else {
     if (read_string(buf, total, &pos, &c->target_path, MAX_PATH_BYTES) != 0 ||
         read_string(buf, total, &pos, &c->cwd, MAX_PATH_BYTES) != 0 ||
         read_string(buf, total, &pos, &c->profile, 32 * 1024) != 0 || pos + 4 > total) return -1;
@@ -163,13 +314,15 @@ static int parse_control(const unsigned char *buf, size_t total, control_t *c) {
     for (uint32_t i = 0; i < c->write_count; i++) {
         if (read_string(buf, total, &pos, &c->write_dirs[i], MAX_PATH_BYTES) != 0) return -1;
     }
+    }
     if (pos + 4 > total) return -1;
     c->argc = be32(buf + pos); pos += 4;
     if (c->argc == 0 || c->argc > MAX_ARGC) return -1;
     c->argv = (char **)calloc(c->argc + 1, sizeof(char *));
     if (!c->argv) return -1;
     for (uint32_t i = 0; i < c->argc; i++) {
-        if (read_string(buf, total, &pos, &c->argv[i], MAX_ARG_BYTES) != 0) return -1;
+        if (read_string(buf, total, &pos, &c->argv[i], MAX_ARG_BYTES) != 0 ||
+            (c->version == 2 && !utf8_valid(c->argv[i]))) return -1;
     }
     return pos == total ? 0 : -1;
 }
@@ -302,6 +455,11 @@ static int handoff_pipe(int fd, int access, struct stat *info) {
     return 0;
 }
 
+static int grant_protocol_pipe(int fd, int access) {
+    struct stat info; int flags = fcntl(fd, F_GETFL);
+    return flags < 0 || (flags & O_ASYNC) || handoff_pipe(fd, access, &info);
+}
+
 static int handoff_broker(const char *read_arg, const char *write_arg,
                           const int *reserved, size_t reserved_count, int *r, int *w) {
     *r = *w = -1;
@@ -325,11 +483,18 @@ static int handoff_cloexec(int fd, int enabled) {
     return 0;
 }
 
+static int handoff_close_keep(int *keep, size_t count);
+
 static int handoff_close_extra(int target_fd, int error_fd, int broker_r, int broker_w) {
     int keep[4]; size_t count = 0;
     keep[count++] = error_fd;
     if (target_fd >= 0) keep[count++] = target_fd;
     if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
+    return handoff_close_keep(keep, count);
+}
+
+static int handoff_close_keep(int *keep, size_t count) {
+    if (!count || count > MAX_GRANTS + 4) return EINVAL;
     for (size_t i = 0; i < count; ++i) {
         if (keep[i] <= 2) return EINVAL;
         for (size_t j = 0; j < i; ++j) if (keep[j] == keep[i]) return EINVAL;
@@ -351,6 +516,33 @@ static int handoff_close_extra(int target_fd, int error_fd, int broker_r, int br
 #else
     return ENOTSUP;
 #endif
+}
+
+static int grant_fds_disjoint(const control_t *c, const int *reserved, size_t count) {
+    for (uint32_t i = 0; i < c->grant_count; ++i) {
+        int fd = c->grants[i].fd;
+        if (fd <= 2) return EINVAL;
+        for (size_t j = 0; j < count; ++j) if (fd == reserved[j]) return EINVAL;
+    }
+    return 0;
+}
+
+static int grant_close_phase1(const control_t *c, int error_fd, int broker_r, int broker_w) {
+    int keep[MAX_GRANTS + 4]; size_t count = 0;
+    keep[count++] = error_fd; keep[count++] = c->target_fd;
+    if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
+    for (uint32_t i = 0; i < c->grant_count; ++i) keep[count++] = c->grants[i].fd;
+    return handoff_close_keep(keep, count);
+}
+
+static int sealed_exec_fd(int fd) {
+    struct stat st; int flags = fcntl(fd, F_GETFL);
+    int seals = fcntl(fd, F_GET_SEALS);
+    int required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+    return fd > 2 && flags >= 0 && (flags & O_ACCMODE) != O_WRONLY && !(flags & O_PATH) &&
+        fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_nlink == 0 &&
+        st.st_size > 0 && st.st_size <= 128 * 1024 * 1024 && (st.st_mode & 0111) &&
+        seals >= 0 && (seals & required) == required;
 }
 #endif
 
@@ -430,6 +622,59 @@ static void check_controller_guard(const controller_guard_t *guard) {
         return;
     }
 }
+
+#if defined(__linux__)
+static int grant_stat_matches(const grant_node_t *node, const struct stat *info) {
+    return (uint64_t)info->st_dev == node->device && (uint64_t)info->st_ino == node->inode &&
+        (node->kind == 1 ? S_ISDIR(info->st_mode) : S_ISREG(info->st_mode));
+}
+
+static int validate_grant_graph(const control_t *c, const controller_guard_t *guard) {
+    int walked[MAX_GRANT_NODES];
+    for (uint32_t i = 0; i < MAX_GRANT_NODES; ++i) walked[i] = -1;
+    int error = EINVAL;
+    for (uint32_t i = 0; i < c->node_count; ++i) {
+        if (guard->enabled && getpid() == guard->pid) check_controller_guard(guard);
+        if (guard_deadline_expired(guard)) { error = ECANCELED; goto done; }
+        const grant_node_t *node = &c->nodes[i]; struct stat before, opened, after;
+        int flags = O_PATH | O_NOFOLLOW | O_CLOEXEC;
+        if (node->kind == 1) flags |= O_DIRECTORY;
+        if (!i) {
+            if (lstat("/", &before)) { error = errno; goto done; }
+            walked[i] = open("/", flags);
+        } else {
+            if (fstatat(walked[node->parent], node->name, &before, AT_SYMLINK_NOFOLLOW)) { error = errno; goto done; }
+            walked[i] = openat(walked[node->parent], node->name, flags);
+        }
+        if (walked[i] < 0 || fstat(walked[i], &opened)) { error = errno; goto done; }
+        if ((!i ? lstat("/", &after) : fstatat(walked[node->parent], node->name, &after, AT_SYMLINK_NOFOLLOW))) {
+            error = errno; goto done;
+        }
+        if (!grant_stat_matches(node, &before) || !grant_stat_matches(node, &opened) || !grant_stat_matches(node, &after)) goto done;
+    }
+    for (uint32_t i = 0; i < c->grant_count; ++i) {
+        const grant_t *grant = &c->grants[i]; struct stat info;
+        int flags = fcntl(grant->fd, F_GETFL);
+        if (flags < 0 || (flags & O_ACCMODE) != O_RDONLY || (flags & O_ASYNC) || fstat(grant->fd, &info) ||
+            !grant_stat_matches(&c->nodes[grant->node], &info) || (grant->role == 1 && info.st_nlink != 1)) goto done;
+    }
+    /* Check every retained original parent link again, not merely the leaf. */
+    for (uint32_t i = 0; i < c->node_count; ++i) {
+        const grant_node_t *node = &c->nodes[i]; struct stat info;
+        if ((!i ? lstat("/", &info) : fstatat(walked[node->parent], node->name, &info, AT_SYMLINK_NOFOLLOW)) ||
+            !grant_stat_matches(node, &info)) goto done;
+    }
+    if (guard->enabled && getpid() == guard->pid) check_controller_guard(guard);
+    error = guard_deadline_expired(guard) ? ECANCELED : 0;
+done:
+    for (uint32_t i = c->node_count; i > 0; --i) if (walked[i - 1] >= 0) close(walked[i - 1]);
+    return error ? error : 0;
+}
+
+static void close_original_grants(const control_t *c) {
+    for (uint32_t i = 0; i < c->grant_count; ++i) close(c->grants[i].fd);
+}
+#endif
 
 static int setup_child_supervision(void) {
 #if defined(__linux__)
@@ -535,7 +780,7 @@ static int finish_controller_guard(controller_guard_t *guard) {
 }
 
 int main(int argc, char **argv) {
-    if ((argc != 7 && argc != 9 && argc != 11 && argc != 13) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
+    if ((argc != 7 && argc != 9 && argc != 11 && argc != 13 && argc != 15) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
     int control_fd, gate_fd, frame_fd;
     if (parse_fd_arg(argv[2], &control_fd) || parse_fd_arg(argv[4], &gate_fd) || parse_fd_arg(argv[6], &frame_fd)) return 64;
 #if defined(__linux__)
@@ -543,10 +788,23 @@ int main(int argc, char **argv) {
         parse_handoff_fd(argv[6], &frame_fd) || control_fd == gate_fd ||
         control_fd == frame_fd || gate_fd == frame_fd) return 64;
 #endif
-    if (argc == 13) {
+    if (argc >= 13) {
 #if defined(__linux__)
         if (strcmp(argv[11], "--child-supervision") != 0 ||
             strcmp(argv[12], "linux-subreaper-v1") != 0) return 64;
+#else
+        return 64;
+#endif
+    }
+    if (argc == 15) {
+#if defined(__linux__)
+        if (strcmp(argv[13], "--grant-object-binding") || strcmp(argv[14], "linux-held-grants-v1")) return 64;
+        int original_lifeline;
+        /* Negotiate v2 before reading or closing any protocol handle. A regular
+           file/FIFO or wrong direction must not become a blocking control route. */
+        if (parse_handoff_fd(argv[8], &original_lifeline) ||
+            grant_protocol_pipe(control_fd, O_RDONLY) || grant_protocol_pipe(gate_fd, O_RDONLY) ||
+            grant_protocol_pipe(frame_fd, O_WRONLY) || grant_protocol_pipe(original_lifeline, O_RDONLY)) return 64;
 #else
         return 64;
 #endif
@@ -571,10 +829,32 @@ int main(int argc, char **argv) {
     unsigned char *raw = (unsigned char *)calloc(MAX_CONTROL + 1, 1); if (!raw) return 65;
     size_t used = 0; ssize_t n;
     while (used <= MAX_CONTROL && (n = read(control_fd, raw + used, MAX_CONTROL + 1 - used)) > 0) used += (size_t)n;
-    close(control_fd);
     control_t c; memset(&c, 0, sizeof(c));
-    if (n < 0 || used > MAX_CONTROL || parse_control(raw, used, &c) != 0) { free(raw); return 66; }
+    if (n < 0 || used > MAX_CONTROL || parse_control(raw, used, &c) != 0) { free(raw); free_control(&c); return 66; }
     free(raw);
+#if defined(__linux__)
+    int broker_r = -1, broker_w = -1;
+    if ((c.version == 2) != (argc == 15)) { free_control(&c); return 66; }
+    if (c.version == 2) {
+        int reserved[] = {control_fd, gate_fd, frame_fd, guard.fd, c.target_fd, c.bootstrap_fd};
+        for (size_t i = 0; i < 4; ++i) {
+            if (c.target_fd == reserved[i] || c.bootstrap_fd == reserved[i]) { free_control(&c); return 73; }
+        }
+        struct stat executable, bootstrap;
+        if (!sealed_exec_fd(c.target_fd) || !sealed_exec_fd(c.bootstrap_fd) ||
+            stat("/proc/self/exe", &executable) || fstat(c.bootstrap_fd, &bootstrap) ||
+            executable.st_dev != bootstrap.st_dev || executable.st_ino != bootstrap.st_ino ||
+            handoff_broker(getenv("LUNAR_PRODUCER_RESPONSE_FD"), getenv("LUNAR_PRODUCER_REQUEST_FD"),
+                           reserved, sizeof(reserved) / sizeof(reserved[0]), &broker_r, &broker_w) ||
+            grant_fds_disjoint(&c, reserved, sizeof(reserved) / sizeof(reserved[0]))) {
+            free_control(&c); return 73;
+        }
+        int broker_reserved[] = {broker_r, broker_w};
+        if ((broker_r >= 0 && (grant_protocol_pipe(broker_r, O_RDONLY) || grant_protocol_pipe(broker_w, O_WRONLY))) ||
+            grant_fds_disjoint(&c, broker_reserved, 2) || validate_grant_graph(&c, &guard)) { free_control(&c); return 73; }
+    }
+#endif
+    close(control_fd);
     if (emit_frame(frame_fd, c.launch, c.intent, 1, "bootstrap_ready", NULL, 0, 0) != 0) { free_control(&c); return 67; }
     unsigned char token;
     if (read_full(gate_fd, &token, 1) != 0 || token != '1') { free_control(&c); return 68; }
@@ -582,10 +862,18 @@ int main(int argc, char **argv) {
     ssize_t extra_read;
     do { extra_read = read(gate_fd, &extra, 1); } while (extra_read < 0 && errno == EINTR);
     if (extra_read != 0) { free_control(&c); return 68; }
+    if (c.version == 2) {
+#if defined(__linux__)
+        if (validate_grant_graph(&c, &guard)) {
+            emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
+            free_control(&c); return 73;
+        }
+#endif
+    }
     close(gate_fd);
 
 #if defined(__linux__)
-    int broker_r, broker_w;
+    if (c.version == 1) {
     int reserved[] = {control_fd, gate_fd, frame_fd, guard.fd, c.target_fd};
     if ((c.target_fd >= 0 && (c.target_fd <= 2 || c.target_fd == control_fd ||
          c.target_fd == gate_fd || c.target_fd == frame_fd || c.target_fd == guard.fd)) ||
@@ -593,6 +881,7 @@ int main(int argc, char **argv) {
                        reserved, sizeof(reserved) / sizeof(reserved[0]), &broker_r, &broker_w)) {
         emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
         free_control(&c); return 73;
+    }
     }
 #endif
 
@@ -607,10 +896,28 @@ int main(int argc, char **argv) {
         emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
         free_control(&c); return 71;
     }
+#if defined(__linux__)
+    if (c.version == 2) {
+        int dynamic[] = {target_fd, exec_pipe[0], exec_pipe[1], c.target_fd, c.bootstrap_fd,
+                         frame_fd, guard.fd, broker_r, broker_w};
+        if (grant_fds_disjoint(&c, dynamic, sizeof(dynamic) / sizeof(dynamic[0])) ||
+            validate_grant_graph(&c, &guard)) {
+            close(exec_pipe[0]); close(exec_pipe[1]); close(target_fd);
+            emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0);
+            free_control(&c); return 73;
+        }
+    }
+#endif
     pid_t child = fork();
     if (child < 0) { close(exec_pipe[0]); close(exec_pipe[1]); close(target_fd); emit_frame(frame_fd, c.launch, c.intent, 2, "target_start_failed", NULL, 0, 0); free_control(&c); return 71; }
     if (child == 0) {
 #if defined(__linux__)
+        if (c.version == 2) {
+            int dynamic[] = {target_fd, exec_pipe[0], exec_pipe[1], c.target_fd, c.bootstrap_fd,
+                             frame_fd, guard.fd, broker_r, broker_w};
+            if (grant_fds_disjoint(&c, dynamic, sizeof(dynamic) / sizeof(dynamic[0])))
+                child_start_failed(exec_pipe[1], EINVAL, 73);
+        }
         /* Check live collisions before closing or dup2 can destroy the error
            channel. Parent validation precedes descriptor number reuse. */
         if (exec_pipe[0] <= 2 || exec_pipe[1] <= 2 || target_fd <= 2 ||
@@ -661,8 +968,24 @@ int main(int argc, char **argv) {
             (c.target_fd >= 0 && handoff_cloexec(c.target_fd, 0)) ||
             (broker_r >= 0 && (handoff_cloexec(broker_r, 0) || handoff_cloexec(broker_w, 0))))
             child_start_failed(exec_pipe[1], errno, 73);
-        int handoff_error = handoff_close_extra(c.target_fd, exec_pipe[1], broker_r, broker_w);
+        int handoff_error = c.version == 2 ? grant_close_phase1(&c, exec_pipe[1], broker_r, broker_w) :
+            handoff_close_extra(c.target_fd, exec_pipe[1], broker_r, broker_w);
         if (handoff_error) child_start_failed(exec_pipe[1], handoff_error, 73);
+        if (c.version == 2) {
+            int checked = validate_grant_graph(&c, &guard);
+            if (checked) child_start_failed(exec_pipe[1], checked, 74);
+            if (fchdir(c.grants[c.cwd_grant].fd)) child_start_failed(exec_pipe[1], errno, 74);
+            lunar_grant_fd_t original[MAX_GRANTS];
+            for (uint32_t i = 0; i < c.grant_count; ++i) {
+                original[i].fd = c.grants[i].fd; original[i].role = c.grants[i].role;
+            }
+            int isolation = lunar_apply_grant_isolation(original, c.grant_count);
+            if (isolation) child_start_failed(exec_pipe[1], isolation, 74);
+            close_original_grants(&c);
+            handoff_error = handoff_close_extra(c.target_fd, exec_pipe[1], broker_r, broker_w);
+            if (handoff_error) child_start_failed(exec_pipe[1], handoff_error, 73);
+            if (guard_deadline_expired(&guard)) child_start_failed(exec_pipe[1], ECANCELED, 74);
+        } else {
 #endif
         if (strcmp(c.profile, "fixture-none") != 0) {
             int isolation = lunar_apply_isolation(c.profile, (const char *const *)c.read_paths, c.read_count,
@@ -670,6 +993,9 @@ int main(int argc, char **argv) {
             if (isolation != 0) child_start_failed(exec_pipe[1], isolation, 74);
         }
         if (chdir(c.cwd) != 0) child_start_failed(exec_pipe[1], errno, 74);
+#if defined(__linux__)
+        }
+#endif
         if (c.target_fd >= 0) {
 #if defined(__linux__)
             fexecve(c.target_fd, c.argv, target_env);
@@ -681,6 +1007,9 @@ int main(int argc, char **argv) {
         }
         child_start_failed(exec_pipe[1], errno, 75);
     }
+#if defined(__linux__)
+    if (c.version == 2) { close_original_grants(&c); close(c.bootstrap_fd); }
+#endif
     close(target_fd);
     close(exec_pipe[1]);
     int exec_error = 0; ssize_t exec_read;
