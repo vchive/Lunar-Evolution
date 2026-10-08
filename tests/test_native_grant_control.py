@@ -213,8 +213,12 @@ def test_formal_grants_exist_before_persist_and_remain_held_through_cleanup(tmp_
         def __init__(self, *args, **kwargs):
             seen["owner"].validate()
             assert kwargs["cwd"] == "/"
-            assert set(seen["fds"]) <= set(kwargs["pass_fds"])
-            assert LINUX_GRANT_OBJECT_BINDING in args[0]
+            if "--group-pidfd" in args[0]:
+                assert not (set(seen["fds"]) & set(kwargs["pass_fds"]))
+                assert "--guardian-finish-fd" in args[0]
+            else:
+                assert set(seen["fds"]) <= set(kwargs["pass_fds"])
+                assert LINUX_GRANT_OBJECT_BINDING in args[0]
             super().__init__(*args, **kwargs)
 
     def checked_cleanup(*args, **kwargs):
