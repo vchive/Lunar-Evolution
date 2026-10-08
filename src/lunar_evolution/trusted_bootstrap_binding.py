@@ -15,7 +15,12 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from .linux_executable_binding import LinuxExecutableBindingError, sealed_linux_executable
+from .linux_executable_binding import (
+    LinuxExecutableBindingError,
+    LinuxSealedExecutable,
+    _validate_original_linux_executable,
+    sealed_linux_executable,
+)
 from .producer_bootstrap import (
     ProducerBootstrapError,
     TrustedBootstrapDescriptor,
@@ -57,6 +62,59 @@ class TrustedExecutablePair:
     @property
     def pass_fds(self) -> tuple[int, ...]:
         return tuple(fd for fd in (self.bootstrap.pass_fd, self.target.pass_fd) if fd is not None)
+
+
+@dataclass(slots=True)
+class _LinuxPairOwner:
+    bootstrap: LinuxSealedExecutable
+    target: LinuxSealedExecutable
+    projections: tuple[tuple[object, ...], tuple[object, ...]]
+    roles: tuple[BoundExecutable, BoundExecutable]
+    snapshots: tuple[ProducerExecutableSnapshot, ProducerExecutableSnapshot]
+
+
+_LINUX_PAIRS: dict[int, tuple[TrustedExecutablePair, _LinuxPairOwner]] = {}
+
+
+def _projection(bound: BoundExecutable) -> tuple[object, ...]:
+    if type(bound) is not BoundExecutable or type(bound.snapshot) is not ProducerExecutableSnapshot:
+        raise TrustedBootstrapBindingError("trusted_binding_owner_invalid")
+    snapshot = bound.snapshot
+    values = (bound.executable, bound.pass_fd, snapshot.relative_path,
+              snapshot.sha256, snapshot.size, snapshot.binding)
+    if (type(values[0]) is not str or type(values[1]) is not int
+            or values[2] is not None or type(values[3]) is not str
+            or type(values[4]) is not int or type(values[5]) is not str):
+        raise TrustedBootstrapBindingError("trusted_binding_owner_invalid")
+    return values
+
+
+def _binding_error(exc: LinuxExecutableBindingError) -> TrustedBootstrapBindingError:
+    code = {
+        "linux_execution_source_changed": "trusted_binding_source_changed",
+        "linux_execution_cleanup_unknown": "trusted_binding_cleanup_unknown",
+    }.get(exc.code, exc.code)
+    mapped = TrustedBootstrapBindingError(code)
+    if "linux_execution_cleanup_unknown" in getattr(exc, "__notes__", ()):
+        mapped.add_note("linux_execution_cleanup_unknown")
+    return mapped
+
+
+def _validate_original_linux_executable_pair(pair: TrustedExecutablePair) -> None:
+    """Validate a live Linux factory pair without reconstructing owner authority."""
+    entry = _LINUX_PAIRS.get(id(pair))
+    if type(pair) is not TrustedExecutablePair or entry is None or entry[0] is not pair:
+        raise TrustedBootstrapBindingError("trusted_binding_owner_invalid")
+    owner = entry[1]
+    for index, bound in enumerate((pair.bootstrap, pair.target)):
+        if (bound is not owner.roles[index] or bound.snapshot is not owner.snapshots[index]
+                or _projection(bound) != owner.projections[index]):
+            raise TrustedBootstrapBindingError("trusted_binding_owner_invalid")
+    try:
+        _validate_original_linux_executable(owner.bootstrap)
+        _validate_original_linux_executable(owner.target)
+    except LinuxExecutableBindingError as exc:
+        raise _binding_error(exc) from exc
 
 
 def _identity_from_descriptor(descriptor: TrustedBootstrapDescriptor) -> dict[str, int | str]:
@@ -218,8 +276,9 @@ def prepare_trusted_executable_pair(
 
     if not sys.platform.startswith("linux"):
         raise TrustedBootstrapBindingError("trusted_binding_platform_unsupported")
-    with ExitStack() as stack:
-        try:
+    body_primary: BaseException | None = None
+    try:
+        with ExitStack() as stack:
             bootstrap_bound = stack.enter_context(sealed_linux_executable(
                 bootstrap_path, bootstrap_identity, deadline=deadline, monotonic=monotonic,
             ))
@@ -228,19 +287,41 @@ def prepare_trusted_executable_pair(
             ))
             if monotonic() >= deadline:
                 raise TrustedBootstrapBindingError("trusted_binding_wall_timeout")
-        except LinuxExecutableBindingError as exc:
-            if exc.code == "linux_execution_source_changed":
-                raise TrustedBootstrapBindingError("trusted_binding_source_changed") from exc
-            raise TrustedBootstrapBindingError(exc.code) from exc
-        yield TrustedExecutablePair(
-            BoundExecutable(
-                bootstrap_bound.executable,
-                ProducerExecutableSnapshot(None, bootstrap_bound.sha256, bootstrap_bound.size, bootstrap_bound.binding),
-                bootstrap_bound.pass_fd,
-            ),
-            BoundExecutable(
-                target_bound.executable,
-                ProducerExecutableSnapshot(None, target_bound.sha256, target_bound.size, target_bound.binding),
-                target_bound.pass_fd,
-            ),
-        )
+            pair = TrustedExecutablePair(
+                BoundExecutable(
+                    bootstrap_bound.executable,
+                    ProducerExecutableSnapshot(None, bootstrap_bound.sha256, bootstrap_bound.size, bootstrap_bound.binding),
+                    bootstrap_bound.pass_fd,
+                ),
+                BoundExecutable(
+                    target_bound.executable,
+                    ProducerExecutableSnapshot(None, target_bound.sha256, target_bound.size, target_bound.binding),
+                    target_bound.pass_fd,
+                ),
+            )
+            owner = _LinuxPairOwner(
+                bootstrap_bound, target_bound,
+                (_projection(pair.bootstrap), _projection(pair.target)),
+                (pair.bootstrap, pair.target),
+                (pair.bootstrap.snapshot, pair.target.snapshot),
+            )
+            _LINUX_PAIRS[id(pair)] = pair, owner
+            try:
+                _validate_original_linux_executable_pair(pair)
+                try:
+                    yield pair
+                except BaseException as exc:
+                    body_primary = exc
+                    raise
+            finally:
+                _LINUX_PAIRS.pop(id(pair), None)
+    except LinuxExecutableBindingError as exc:
+        if exc is body_primary:
+            raise
+        if body_primary is not None:
+            # ExitStack cleanup must not replace the caller's primary error,
+            # including KeyboardInterrupt/SystemExit. Keep the cleanup signal
+            # fixed and non-sensitive on that exact exception object.
+            body_primary.add_note("linux_execution_cleanup_unknown")
+            raise body_primary
+        raise _binding_error(exc) from exc
