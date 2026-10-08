@@ -74,7 +74,10 @@ A read-only bind mount or loop image with writable backing does not qualify:
 another writer can still change the underlying content. No mount, namespace,
 verity device, root privilege or host-image installation is added.
 
-Non-Linux hosts and unavailable sealing support refuse before source observation.
+Non-Linux hosts, missing API support, failed memfd creation and unsupported
+F_GET_SEALS refuse before source observation. Actual F_ADD_SEALS or verification
+failures, including a concurrent shared writable mapping, refuse before yield;
+preflight does not predict later kernel/policy changes or sealing failures.
 The data bundle is not an executable image. Darwin snapshot behavior and old
 read-only scopes remain unchanged and receive no new Linux claim.
 

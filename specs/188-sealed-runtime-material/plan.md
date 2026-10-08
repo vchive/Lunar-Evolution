@@ -24,10 +24,14 @@ DTO or its source/mode/size contract for ordinary data.
 
 1. Validate cheap scalar/count bounds and canonical graph semantics before any
    serialization, hash-set work, source read or source path parsing.
-2. Reverify the original Feature177 tree with the caller's original pins.
-3. Create exactly one owned MFD_CLOEXEC | MFD_ALLOW_SEALING data memfd. Serialize a
-   bounded canonical logical table, then copy payloads in canonical file order.
-   Stream bytes and digests; do not buffer the complete payload in Python memory.
+2. After pure external-pin validation, check the host/API support, create exactly
+   one owned MFD_CLOEXEC | MFD_ALLOW_SEALING data memfd and check F_GET_SEALS before
+   any source observation. Retain its identity immediately. Later sealing can
+   still fail; no extra probe memfd or preflight seal guarantee is introduced.
+3. Reverify the original Feature177 tree with the caller's original pins using
+   the guarded source scan defined in wire-contract.md. Serialize the bounded
+   canonical logical table, then copy payloads in canonical file order. Stream
+   bytes and digests; do not buffer the complete payload in Python memory.
 4. For every source retain a held no-follow parent chain and compare original
    before/opened/after/named stat and digest pins. Refuse links, special files,
    aliases and drift. Reverify the original tree after copying.

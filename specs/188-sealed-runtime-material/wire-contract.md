@@ -107,6 +107,11 @@ retained values or produce a new owner. Public close/reuse refuses verification
 while the private anchor retains the original object for safe cleanup; cleanup
 must still leave any foreign replacement of the borrowed number open.
 
+After pure shape/pin validation, missing host/API support, memfd creation failure
+and unsupported F_GET_SEALS refuse before source observation. Later F_ADD_SEALS
+and verification failures refuse before yield. Creation/GET_SEALS preflight does
+not assert that a later seal will succeed, and introduces no extra probe object.
+
 The verifier requires the original owner, exact object identity/size, all four
 kernel seals, expected frame digest, material version, declared/tree pins and
 target. It uses position-independent reads so verification does not depend on a
