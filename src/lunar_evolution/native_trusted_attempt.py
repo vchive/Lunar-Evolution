@@ -15,6 +15,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from .http_transport import _validate_fixed_destination_endpoint
 from .native_bootstrap import (
     LINUX_CHILD_SUPERVISION,
     LINUX_FD_CONTROL_IMPLEMENTATION,
@@ -767,6 +768,11 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_mq_control_required")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
+    if broker_config is not None:
+        try:
+            _validate_fixed_destination_endpoint(broker_config.endpoint)
+        except ValueError as exc:
+            raise NativeTrustedAttemptError("native_trusted_attempt_broker_endpoint_invalid") from exc
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
     if _observe_cancellation(cancelled):

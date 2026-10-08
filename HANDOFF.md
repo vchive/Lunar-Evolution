@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Feature186 fixed broker destination implementation
+
+codex/broker-fixed-destination 已实现 broker-only fixed direct/no-redirect transport。
+普通 HTTP caller 默认代理和 redirect 行为保持；producer broker 显式选择私有 versioned
+policy=fixed-direct-no-redirect-v1，proxy_source=direct/proxies={}。Parent spawn 前与 worker
+均复验 HTTP(S) endpoint，拒绝 userinfo/fragment/control chars/无效 host 和 port；unknown
+policy 不降级。NoRedirectHandler 在解析 Location/URI 前保留原始 3xx HTTPError/status/body。
+TLS trust、原绝对 deadline、cancel/exact worker reap、request accounting/journal/schema 不变。
+
+本地专项 reviewed81/81 passed，legacy related122/122 passed，均零 skip/failure/error；root
+独立 source review 和 stop fixture5/5 passed。首轮80cases的2个 fixture failure 原 XML/log
+保留，Darwin system bypass 与 generic IPv6 error wording 已修；另补合法 IDN 大小写扩长度
+与 port edge。Ruff/compileall/diff通过。Feature185 code/selector/原资源清理组合进此分支，
+CI 分别保留 broker-destination.xml 和 posix-mq.xml。最终 source CI/raw审计/main merge
+仍待完成，且 PR18 与 PR19 必须各自独立验收并先合入，不借前一 source 的通过结果。
+PR20 首轮 run37727295351 的 trusted-adapters 暴露通用 ProducerBrokerConfig 错误契约被
+fixed helper 提前替换；首轮 XML/log/ZIP 已独立保留。现已将 strict gate 收窄到 native
+attempt admission、serve journal/ready 前和 worker 内，恢复旧 broker_endpoint_invalid
+契约；新增 preflight/no-side-effect tests，root 95-case组合零失败，随后完整新 head CI
+必须重新跑 trusted-adapters 和所有后续阶段。
+Root combined composition191 cases=151 passed/40 Darwin skips，零 failure/error；完整
+Ruff/compileall/diff 与 workflow YAML/三组专项 XML 接线再次通过。
+
+此 policy 不做 DNS/IP pinning；host resolver、TLS trust、原 endpoint 仍是可信输入。
+其他 kernel/keyring egress 是剩余 P0。P1 是 immutable Python runtime/archive/import/loader
+closure、versioned delivery/formal Python admission、OpenEvolve/Shinka Python adapters 和
+production RSI CLI。当前清单见 docs/current-development-work.md；P2 多机 ownership/
+服务化/分布式 scheduler 后置。仅用 inert local/loopback/provider-free fixture 与 GitHub CI，
+不读 .env/密钥，不跑模型、WebAgent、远程/公司 evaluator 或真实 campaign，保留他人修改。
+
 ## 2026-10-08 Feature185 POSIX queue control implementation
 
 Feature185 在 codex/native-named-ipc 实现，Linux default/formal selector 为

@@ -114,6 +114,9 @@ def test_bridge_active_stop_never_writes_response_or_upgrades_uncertain_io(
             return "cancelled"
 
     class Transport:
+        def __init__(self, *, fixed_destination):
+            assert fixed_destination is True
+
         def start(self, admission, payload):
             started.append((admission, payload))
             stop.set()
