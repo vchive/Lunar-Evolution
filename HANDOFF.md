@@ -1,5 +1,41 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Feature187 keyring control development
+
+PR18/Feature183 已独立通过三版 raw run37724953798，并合入 main8f3377f；
+PR19/Feature185 已独立通过三版 raw run37725907868，合入 main22394d26。
+main18 push 被后续推进取消，未追认为通过。main19 push37732165231 三版19阶段
+完整 raw 审计通过，零 failure/error，current11565/92skip，额外ZIP/tree证明通过。
+PR20/Feature186 source5f54309a/treeea358eef 的 final run37732579777 三版20阶段
+完整独立 raw 审计通过：current11652/92skip、broker87/0skip，零 failure/error/retry。
+已合入 mainc6faf365，parents22394d26+5f54309a，tree与tested source一致；本机
+main已fast-forward。先前失败/取消原材料独立保留，不升级为通过。
+
+独立 codex/kernel-object-control 从 merged mainc6faf365 延续 Feature187，规格见
+specs/187-native-keyring-control。实际 header 增加 add_key/request_key/keyctl
+三 syscall 完整拒绝；Linux default/formal 新 selector为
+native-bootstrap-linux-keyring-control-v1，mq-only 在 cancellation/budget/input/
+nonce/broker/spawn 之前固定 keyring_control_required，所有更早拒绝顺序保留。
+不改 guardian/grants/deadline/registration/receipt/recovery/publication schema。
+
+仅用 disposable C subprocess 新建匿名 private session ring 和 bounded user key；
+parent/child baseline/filtered 对照、原 key/ring不变、clear/revoke、无外部 request
+helper、raw/fallback UAPI 与 formal v2 IO/broker/FD closure 52 cases。Local150
+=76passed/74Darwin skips/0failure/error；Ruff/compileall/diff通过，currentcollect11710、
+702 exports present/unique。补充既有integration252=180passed/72Darwin skip/0failure。
+独立source review确认PDEATHSIG+originalparent绑定、clear/revoke独立/primary保留，
+无未关闭finding；真正 Linux keyring admission 尚未验收：必须 private
+baseline实际可用且filtered拒绝，ambient EPERM或Darwin/private skip不能替代。
+独立review已完成；PR21先前stacked preflight6d20238/run37736544121的三版
+native组合已通过，但取消/旧source不代替最终验收。最终head额外加CI的52cases
+零skip早期gate，必须以基于mainc6faf365的新head完整CI/rawaudit/mainmerge为准。
+
+其他 kernel routes仍是 P0；immutable Python runtime/loader/archive/import、versioned
+delivery/formal admission、OpenEvolve/Shinka Python adapters 与 production RSI CLI
+是 P1，P2 多机 ownership/服务化/分布式 scheduler 后置。只用 inert local fixtures
+和既有 GitHub CI，不读.env/密钥，不跑模型、WebAgent、远程/公司 evaluator 或真实 campaign。
+保留他人修改。
+
 ## 2026-10-08 Feature186 fixed broker destination implementation
 
 codex/broker-fixed-destination 已实现 broker-only fixed direct/no-redirect transport。
