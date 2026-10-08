@@ -1,5 +1,34 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Actual native Python pipe fixture SDD
+
+Feature184独立codex/native-python-pipe-fixture从Feature182head7199486/treeaffcde51延续，
+上一PR三版CI/merge单独追踪。只新增fixture/spec/docs/workflow，不改production selector/
+grants/receipt。sealed static C launcher经originalv2/held graph/lifeline/deadline/FDclosure
+exec显式CI CPython -I-S-B；实际Python import现有SDK并用两个private匿名pipe与parent
+交换inertbytes。explicit bounded trusted-host runtime roots仅由fixture声明，不授生产权；
+scope trusted-host-fixture-only、runtime_load_protection=false。
+
+25新Linuxcases为1startup/pipe/flagspositive、15response拒绝、6SDKendpoint拒绝、3v2
+pre-ready拒绝。decoy实际可读排除Landlock混淆-I；前后FD census、原deadline、真实version/
+cachetag、work/output/stderr与no-pyc断言保留。root独立source review/embedded-scriptcompile
+及32case组合7pass/25Darwinskip通过；Ruff/compileall/diff/699exports/XML接线通过。
+首轮Python3.9/missingPYTHONPATH collection、缺Ruff模块与in-progress unused import原输出
+保留；最终正确author25case均Darwinskip，不能称Linux启动/加载通过。finalhead三版CI/
+原XML审计/mainmerge仍待完成，以本轮PR与ignoredreport为准。
+
+Feature183 independentguardian仍为SDD设计待实现。发现CLONE_PARENT在bootstrap交接前
+SIGKILL时有unannounced child/reap窗口，不能用unknown假装清理。新的候选使用controller
+第二个exact-owned Popen watcher，在不同private session持原bootstrap pidfd，以Linux
+PIDFD_SIGNAL_PROCESS_GROUP=4守原group；v6.9起原kernelsource支持，但实际signal0支持探测/
+leader-dead或已reap组仍有成员的Linux验收及完整finish/ack/reap接线尚未完成。
+
+P0剩余完整egress/effectivebroker目的地与独立停止仍开放。P1此fixture不是immutable runtime；
+archive/loader/import闭包、versioned delivery/formal runtime admission、真实OpenEvolve/Shinka
+Python adapters与生产RSI CLI继续后续。P2多机ownership/服务化/distributedscheduler后置。
+只用local inert/C/Python/pipe/provider-free与既有CI，不读.env/credentials，不跑模型、
+WebAgent、远程/公司evaluator或实际campaign；保留他人修改。
+
 ## 2026-10-08 Linux native IPC control SDD
 
 PR14 head2409206/run37703503332已完成三版14阶段原证据及root独立复核，合入main为
