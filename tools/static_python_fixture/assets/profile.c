@@ -7,12 +7,14 @@ PyStatus lunar_preconfig(PyPreConfig *config)
     config->configure_locale = 0; config->coerce_c_locale = 0;
     config->coerce_c_locale_warn = 0; config->utf8_mode = 1; config->dev_mode = 0;
     config->allocator = PYMEM_ALLOCATOR_PYMALLOC;
+    if (config->_config_init != 3) return PyStatus_Error("isolated preconfig mismatch");
     return PyStatus_Ok();
 }
 
 PyStatus lunar_config(PyConfig *config)
 {
     PyConfig_InitIsolatedConfig(config);
+    if (config->_config_init != 3) return PyStatus_Error("isolated config mismatch");
 #define SET(field, value) do { config->field = (value); } while (0)
     SET(isolated, 1); SET(use_environment, 0); SET(dev_mode, 0);
     SET(install_signal_handlers, 0); SET(use_hash_seed, 1); SET(hash_seed, 0UL);
@@ -37,10 +39,18 @@ PyStatus lunar_config(PyConfig *config)
     STR(base_executable, L"/lunar-static-python-fixture"); STR(prefix, L"/lunar-static-fixture");
     STR(base_prefix, L"/lunar-static-fixture"); STR(exec_prefix, L"/lunar-static-fixture");
     STR(base_exec_prefix, L"/lunar-static-fixture");
+    STR(dump_refs_file, NULL); STR(pycache_prefix, NULL); STR(pythonpath_env, NULL);
+    STR(run_command, NULL); STR(run_module, NULL); STR(run_filename, NULL); STR(sys_path_0, NULL);
     wchar_t *argv[] = {L"lunar-static-python-fixture"};
     status = PyConfig_SetWideStringList(config, &config->orig_argv, 1, argv);
     if (PyStatus_Exception(status)) return status;
     status = PyConfig_SetWideStringList(config, &config->argv, 1, argv);
+    if (PyStatus_Exception(status)) return status;
+    status = PyConfig_SetWideStringList(config, &config->xoptions, 0, NULL);
+    if (PyStatus_Exception(status)) return status;
+    status = PyConfig_SetWideStringList(config, &config->warnoptions, 0, NULL);
+    if (PyStatus_Exception(status)) return status;
+    status = PyConfig_SetWideStringList(config, &config->module_search_paths, 0, NULL);
     if (PyStatus_Exception(status)) return status;
     return PyStatus_Ok();
 }

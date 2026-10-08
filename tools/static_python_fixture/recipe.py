@@ -127,7 +127,7 @@ def apply_exact_patch(root: Path, patch: ExactPatch) -> str:
 def _assets() -> dict[str, str]:
     base = Path(__file__).with_name("assets")
     return {name: (base / name).read_text(encoding="utf-8") for name in
-            ("launcher.c", "pipe.c", "profile.c", "lunar_fixture_profile.h", "frozen_main.py")}
+            ("launcher.c", "pipe.c", "profile.c", "getpath.c", "lunar_fixture_profile.h", "frozen_main.py")}
 
 
 def emit_assets(destination: Path) -> tuple[str, ...]:
