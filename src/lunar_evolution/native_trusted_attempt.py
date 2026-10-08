@@ -1183,7 +1183,11 @@ def run_native_trusted_attempt(
                     except OSError:
                         reason = "native_trusted_attempt_lifeline_close_unknown"
                     controller_lifeline_writer = None
-                if guardian is not None and not guardian.cleanup():
+                # An already-unverified original group cleanup remains the
+                # primary refusal; adding the exact watcher cannot relabel
+                # that older process-ownership failure as a clean outcome.
+                if (guardian is not None and not guardian.cleanup()
+                        and reason != "native_trusted_attempt_cleanup_unknown"):
                     reason = "native_trusted_attempt_guardian_cleanup_unknown"
             if stream_capture is not None:
                 try:
