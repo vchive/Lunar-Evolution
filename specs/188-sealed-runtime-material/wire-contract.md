@@ -87,7 +87,8 @@ Schema, protocol, version, target and digests follow the table rules. Scope is
 All sizes/counts are exact integers, never booleans. Require
 `frame_size == 32 + table_size + payload_size`, the individual frame bounds,
 1..16 roots, 1..4096 files and 1..8192 directories, with files plus directories
-at most 8192. The parser validates digest spelling and internal size/count
+at most 8192, directory_count at least root_count, and payload_size at most
+file_count times 256MiB. The parser validates digest spelling and internal size/count
 consistency. It cannot rehash table, payload or frame bytes that it has not
 received. Only actual live verification compares those bytes and kernel seals.
 No serialized immutable-material capability or live ownership field is added.
@@ -114,7 +115,12 @@ not assert that a later seal will succeed, and introduces no extra probe object.
 
 The verifier requires the original owner, exact object identity/size, all four
 kernel seals, expected frame digest, material version, declared/tree pins and
-target. It uses position-independent reads so verification does not depend on a
+target. Its original canonical descriptor is retained privately and every field
+is rederived from the verified frame; no descriptor self-digest is substituted
+for this check. The caller supplies the independent expected_frame_sha256,
+expected_material_version, expected_manifest_sha256, expected_tree_sha256 and
+expected_target. A separate external descriptor digest is not required by v1.
+It uses position-independent reads so verification does not depend on a
 borrower's file offset. Every streaming chunk, directory membership step and
 resource acquisition checks the original deadline; it is never renewed.
 
