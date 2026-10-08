@@ -10,6 +10,15 @@ and lifecycle suites into `python-preparation.xml`: exactly 226 cases with zero
 failures, errors or skips on each supported Python version. This is a pure
 contract gate and does not count as CPython build or runtime startup acceptance.
 
+Final-source run37829395862 at37729c9a passed the preparation gate but its
+Python3.12 broker regression exposed a pre-existing 0.2-second worker-startup
+assumption. The slow-body test now allows two seconds under the original
+absolute deadline and verifies the worker's encoded deadline, deadline expiry,
+single origin/no redirect and exact reap. The 87-case broker suite passes
+locally. Original ZIP/XML/job log and source inventory remain separate in
+ignored reports/pr24-first-failed-head-37729c9a; replacement final-source CI is
+required and this first failure is not reclassified as a pass.
+
 | Area | Required evidence | Refusal cases |
 | --- | --- | --- |
 | Binding parser | **Complete Phase A:** canonical nested DTO round trip, exact type/order/bounds, shape-gate, digest/deadline/limit drift and fixed errors | unknown field, bool-as-int, duplicate key, placeholder digest, callback-bearing collection, path/env/target drift |

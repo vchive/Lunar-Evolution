@@ -333,10 +333,16 @@ def test_slow_fixed_3xx_body_keeps_original_deadline_and_exact_reap(monkeypatch)
     with loopback() as (trap, trap_calls, _), \
             loopback(status=302, location=trap, body=b"slow-error" * 1000, slow=True) as (origin, calls, _):
         began = time.monotonic()
-        handle = ControllerHttpTransport(fixed_destination=True).start(admission(0.2), request(origin))
-        assert handle.wait(2) is None
+        # A fresh isolated worker must import its runtime before reaching the
+        # origin. Leave startup room on loaded runners; the trickled body takes
+        # over a minute, so this still exercises the original absolute deadline.
+        issued = admission(2)
+        handle = ControllerHttpTransport(fixed_destination=True).start(issued, request(origin))
+        assert json.loads(handle._encoded)["deadline"] == issued.deadline_ns / 1_000_000_000
+        assert handle.wait(5) is None
+        assert time.monotonic_ns() >= issued.deadline_ns
         assert handle.cancel() is True
-        assert time.monotonic() - began < 0.8
+        assert time.monotonic() - began < 3
         assert len(calls) == 1 and trap_calls == []
     assert_reaped(processes)
 
