@@ -265,6 +265,16 @@ static int lunar_apply_isolation_internal(const char *profile,
         #define LUNAR_NR_RECVMSG 47
         #define LUNAR_NR_RECVMMSG 299
         #define LUNAR_NR_SOCKETPAIR 53
+        #define LUNAR_NR_BPF 321
+        #define LUNAR_NR_PERF_EVENT_OPEN 298
+        #define LUNAR_NR_USERFAULTFD 323
+        #define LUNAR_NR_FANOTIFY_INIT 300
+        #define LUNAR_NR_NAME_TO_HANDLE_AT 303
+        #define LUNAR_NR_OPEN_BY_HANDLE_AT 304
+        #define LUNAR_NR_MOUNT 165
+        #define LUNAR_NR_UMOUNT2 166
+        #define LUNAR_NR_PIVOT_ROOT 155
+        #define LUNAR_NR_CHROOT 161
         #define LUNAR_NR_MQ_OPEN 240
         #define LUNAR_NR_MQ_UNLINK 241
         #define LUNAR_NR_MQ_TIMEDSEND 242
@@ -288,6 +298,16 @@ static int lunar_apply_isolation_internal(const char *profile,
         #define LUNAR_NR_RECVMSG 212
         #define LUNAR_NR_RECVMMSG 243
         #define LUNAR_NR_SOCKETPAIR 199
+        #define LUNAR_NR_BPF 280
+        #define LUNAR_NR_PERF_EVENT_OPEN 241
+        #define LUNAR_NR_USERFAULTFD 282
+        #define LUNAR_NR_FANOTIFY_INIT 262
+        #define LUNAR_NR_NAME_TO_HANDLE_AT 264
+        #define LUNAR_NR_OPEN_BY_HANDLE_AT 265
+        #define LUNAR_NR_MOUNT 40
+        #define LUNAR_NR_UMOUNT2 39
+        #define LUNAR_NR_PIVOT_ROOT 41
+        #define LUNAR_NR_CHROOT 51
         #define LUNAR_NR_MQ_OPEN 180
         #define LUNAR_NR_MQ_UNLINK 181
         #define LUNAR_NR_MQ_TIMEDSEND 182
@@ -312,6 +332,16 @@ static int lunar_apply_isolation_internal(const char *profile,
         #define LUNAR_NR_RECVMMSG 337
         #define LUNAR_NR_RECVMMSG_TIME64 417
         #define LUNAR_NR_SOCKETPAIR 360
+        #define LUNAR_NR_BPF 357
+        #define LUNAR_NR_PERF_EVENT_OPEN 336
+        #define LUNAR_NR_USERFAULTFD 374
+        #define LUNAR_NR_FANOTIFY_INIT 338
+        #define LUNAR_NR_NAME_TO_HANDLE_AT 341
+        #define LUNAR_NR_OPEN_BY_HANDLE_AT 342
+        #define LUNAR_NR_MOUNT 21
+        #define LUNAR_NR_UMOUNT2 52
+        #define LUNAR_NR_PIVOT_ROOT 217
+        #define LUNAR_NR_CHROOT 61
         #define LUNAR_NR_MQ_OPEN 277
         #define LUNAR_NR_MQ_UNLINK 278
         #define LUNAR_NR_MQ_TIMEDSEND 279
@@ -424,6 +454,23 @@ static int lunar_apply_isolation_internal(const char *profile,
             LUNAR_DENY_IPC(LUNAR_NR_SENDMMSG),
             LUNAR_DENY_IPC(LUNAR_NR_RECVMSG),
             LUNAR_DENY_IPC(LUNAR_NR_RECVMMSG),
+            /* Kernel-global control and filesystem-handle routes have no
+               legitimate producer use in the local contract.  Landlock and
+               path grants do not mediate these entrypoints: bpf/perf can
+               address kernel state, userfaultfd/fanotify create asynchronous
+               kernel objects, and handle/mount APIs bypass ordinary path
+               ownership.  Refuse the complete family before argument
+               validation so malformed probes cannot mask a missing rule. */
+            LUNAR_DENY_IPC(LUNAR_NR_BPF),
+            LUNAR_DENY_IPC(LUNAR_NR_PERF_EVENT_OPEN),
+            LUNAR_DENY_IPC(LUNAR_NR_USERFAULTFD),
+            LUNAR_DENY_IPC(LUNAR_NR_FANOTIFY_INIT),
+            LUNAR_DENY_IPC(LUNAR_NR_NAME_TO_HANDLE_AT),
+            LUNAR_DENY_IPC(LUNAR_NR_OPEN_BY_HANDLE_AT),
+            LUNAR_DENY_IPC(LUNAR_NR_MOUNT),
+            LUNAR_DENY_IPC(LUNAR_NR_UMOUNT2),
+            LUNAR_DENY_IPC(LUNAR_NR_PIVOT_ROOT),
+            LUNAR_DENY_IPC(LUNAR_NR_CHROOT),
             /* POSIX mq_open/unlink use the current IPC namespace's internal
                mqueue mount, not an ordinary granted /dev/mqueue pathname.
                Refuse the entire family, including i386's separate time64

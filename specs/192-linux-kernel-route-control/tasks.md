@@ -1,0 +1,4 @@
+- [x] Freeze the route list and per-ABI syscall table.
+- [x] Add fail-closed native seccomp entries.
+- [x] Add local malformed-probe and compatibility fixtures.
+- [ ] Run final three-version Linux CI and preserve raw evidence before merge.
