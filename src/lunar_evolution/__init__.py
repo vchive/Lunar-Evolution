@@ -679,6 +679,10 @@ from .python_producer_lifecycle import (
     reconcile_python_producer_terminal,
     resume_python_producer_terminal,
 )
+from .python_fixture_observation import (
+    PythonFixtureObservationError,
+    adapt_static_python_observation,
+)
 from .remote_evolution import (
     RemoteCancelRequest,
     RemoteContinueRequest,
@@ -1330,6 +1334,7 @@ __all__ = [
     "ProviderFreeSolverGateway",
     "PythonProducerBinding",
     "PythonProducerBindingError",
+    "PythonFixtureObservationError",
     "PythonProducerLifecycleError",
     "PythonProducerRuntimeObservation",
     "PythonProducerTerminal",
@@ -1505,6 +1510,7 @@ __all__ = [
     "build_python_producer_binding",
     "build_python_producer_runtime_observation",
     "build_python_producer_terminal",
+    "adapt_static_python_observation",
     "build_python_runtime_manifest",
     "build_python_runtime_tree_manifest",
     "build_registration_seal",
