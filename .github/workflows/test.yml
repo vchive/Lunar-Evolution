@@ -33,6 +33,8 @@ jobs:
       - name: Verify native lifeline, producer inputs, trusted adapters and recovery
         run: |
           mkdir -p .lunar-evolution/test-results
+          python -m pytest -q tests/test_native_keyring_control.py --junitxml=.lunar-evolution/test-results/keyring-control.xml
+          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/keyring-control.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '52' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'keyring acceptance requires 52 cases and zero failures, errors or skips')"
           python -m pytest -q tests/test_producer_broker_http_destination.py --junitxml=.lunar-evolution/test-results/broker-destination.xml
           python -m pytest -q tests/test_native_named_ipc_control.py --junitxml=.lunar-evolution/test-results/posix-mq.xml
           python -m pytest -q tests/test_native_python_pipe_fixture.py --junitxml=.lunar-evolution/test-results/python-pipe.xml
@@ -58,13 +60,14 @@ jobs:
           python tools/run_tests.py --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
       - name: Annotate test failures
         if: ${{ always() }}
-        run: python tools/annotate_test_failures.py .lunar-evolution/test-results/broker-destination.xml .lunar-evolution/test-results/posix-mq.xml .lunar-evolution/test-results/python-pipe.xml .lunar-evolution/test-results/ipc-control.xml .lunar-evolution/test-results/grant-objects.xml .lunar-evolution/test-results/grant-anchors.xml .lunar-evolution/test-results/fd-control.xml .lunar-evolution/test-results/fd-handoff.xml .lunar-evolution/test-results/input-mutation.xml .lunar-evolution/test-results/runtime-tree.xml .lunar-evolution/test-results/known-failure.xml .lunar-evolution/test-results/descendants-drain.xml .lunar-evolution/test-results/independent-guardian.xml .lunar-evolution/test-results/deadline-anchor.xml .lunar-evolution/test-results/runtime-preflight.xml .lunar-evolution/test-results/trusted-adapters.xml .lunar-evolution/test-results/native-cleanup.xml .lunar-evolution/test-results/current.xml .lunar-evolution/test-results/archived.xml .lunar-evolution/test-results/frozen123.xml --archive-retry .lunar-evolution/test-results/archived.retry1.xml
+        run: python tools/annotate_test_failures.py .lunar-evolution/test-results/keyring-control.xml .lunar-evolution/test-results/broker-destination.xml .lunar-evolution/test-results/posix-mq.xml .lunar-evolution/test-results/python-pipe.xml .lunar-evolution/test-results/ipc-control.xml .lunar-evolution/test-results/grant-objects.xml .lunar-evolution/test-results/grant-anchors.xml .lunar-evolution/test-results/fd-control.xml .lunar-evolution/test-results/fd-handoff.xml .lunar-evolution/test-results/input-mutation.xml .lunar-evolution/test-results/runtime-tree.xml .lunar-evolution/test-results/known-failure.xml .lunar-evolution/test-results/descendants-drain.xml .lunar-evolution/test-results/independent-guardian.xml .lunar-evolution/test-results/deadline-anchor.xml .lunar-evolution/test-results/runtime-preflight.xml .lunar-evolution/test-results/trusted-adapters.xml .lunar-evolution/test-results/native-cleanup.xml .lunar-evolution/test-results/current.xml .lunar-evolution/test-results/archived.xml .lunar-evolution/test-results/frozen123.xml --archive-retry .lunar-evolution/test-results/archived.retry1.xml
       - name: Preserve test results
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: test-results-python-${{ matrix.python-version }}
           path: |
+            .lunar-evolution/test-results/keyring-control.xml
             .lunar-evolution/test-results/broker-destination.xml
             .lunar-evolution/test-results/posix-mq.xml
             .lunar-evolution/test-results/python-pipe.xml

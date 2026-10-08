@@ -36,3 +36,11 @@ passed: 191 cases, 151 passed, 40 Darwin skips, zero failure/error. Preserved lo
 /tmp/lunar186-root-composition.log. This combines broker destination/stop, mq,
 formal selector bindings and original-owner cancellation. Root full Ruff,
 compileall, diff and workflow YAML/XML wiring checks passed on the combined source.
+
+Final acceptance: rebased source5f54309a/treeea358eef, run37732579777, all three
+Linux Python versions passed20 phases. Independent original/strict-v2 audits
+verified full case/skip inventories, source Git objects, ZIP/API/extracted bytes
+and raw checkout/logs; current11652/92, broker87/0, zero failures/errors/retries.
+Mergec6faf365 has parents22394d26+5f54309a and identical tested source tree; local
+main was fast-forwarded. Original failed/cancelled runs remain separately retained.
+The final affected-module local265-case run also passed with zero skips/errors.

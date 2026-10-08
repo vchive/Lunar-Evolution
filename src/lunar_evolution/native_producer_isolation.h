@@ -232,6 +232,22 @@ static int lunar_apply_isolation_internal(const char *profile,
         /* Stable native UAPI tables, including entries absent from old libc
            headers. i386 semop/time32 semtimedop use ipc, not invented direct
            numbers; the time64 entry and ipc itself are both filtered below. */
+        /* Keyring objects are kernel-resident and are reachable without a
+           filesystem path or inherited descriptor. Deny the complete keyctl
+           family on every supported native ABI. */
+        #if defined(__x86_64__)
+        #define LUNAR_NR_ADD_KEY 248
+        #define LUNAR_NR_REQUEST_KEY 249
+        #define LUNAR_NR_KEYCTL 250
+        #elif defined(__aarch64__)
+        #define LUNAR_NR_ADD_KEY 217
+        #define LUNAR_NR_REQUEST_KEY 218
+        #define LUNAR_NR_KEYCTL 219
+        #else
+        #define LUNAR_NR_ADD_KEY 286
+        #define LUNAR_NR_REQUEST_KEY 287
+        #define LUNAR_NR_KEYCTL 288
+        #endif
         #if defined(__x86_64__)
         #define LUNAR_NR_SHMGET 29
         #define LUNAR_NR_SHMAT 30
@@ -377,6 +393,12 @@ static int lunar_apply_isolation_internal(const char *profile,
             /* i386 multiplexes network operations through socketcall. */
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketcall, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
             #endif
+            /* Kernel keyrings are independent of filesystem grants and
+               inherited descriptors. Refuse add_key/request_key/keyctl as one
+               complete family; no command-specific keyctl operation is admitted. */
+            LUNAR_DENY_IPC(LUNAR_NR_ADD_KEY),
+            LUNAR_DENY_IPC(LUNAR_NR_REQUEST_KEY),
+            LUNAR_DENY_IPC(LUNAR_NR_KEYCTL),
             /* SysV IPC addresses host-namespace objects without inherited FDs
                or filesystem paths. Ancillary socket APIs can acquire/export
                descriptors. These bounded controls are not full egress proof. */
