@@ -1,5 +1,36 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Held producer grant anchors SDD
+
+PR12已合入main：head3016339、merge3b9d7583eda707f8e620fcc09637211570f5fd93，
+tree d6b6f8653ba9d0607b80a292b6148c735a98db5e。完整三版十二阶段首轮通过、raw XML/
+日志及actual tested merge parents/tree两项独立核验。PR11中间postmerge run37697722824
+被main推进取消，材料保留且未追认为通过。PR13 source c660609三版native专项通过，
+完整run37698559519及raw审计仍推进；实际merge与后续postmerge状态以PR/ignoredreports为准。
+
+独立 codex/native-grant-anchors 从PR13 exacthead延续Feature180，仅新增host held-grant
+owner API，不修改C/control/formal selectors/attempt/recovery。原始root/祖先/leaf descriptors
+保留至context退出，no-follow parent-relative links与dev/inode/kind复验，不刷新原期望。
+protected-file必须带original identity并保持nlink1；read-only directory与write subtree两向
+overlap、不同路径同对象alias、role/expected冲突拒绝。合法write+CWD合并成一个anchor。
+资源/DTO有界，borrowedFD误关闭/不同对象复用拒绝且cleanup不误关unrelatedFD。partialopen/
+success/error退出清理保持原bodyexception；detachedmanifest scope仅host-held-grant-anchors，
+execution_enforced=false，无FDnumbers，不转化为launch/recovery/publication权。
+
+focused95项全部通过（原89项已包含，不相加）；旧policy5cases为4passed/1platformskip。
+Ruff/compileall/diff、workflowXML接线、693exports通过；独立review及另95项复核通过（有
+重叠不相加）；文档收窄为dev/inode/type不同的FD复用才检测/不误关，same-objectreopen/
+FDgeneration不在borrow契约内，OScleanupfailure保持拒绝/besteffort。finalhead三版CI/
+merge待完成。只用local inert filesystem，不执行producer。本轮不是Linux grant enforcement。
+
+P0 grant对象绑定仍需完整后续接线：work/output首次创建/检查即held、原inputmanifest
+期望/bytes验证、privatecontrolv2+parentbindings/C reservedFD校验、Landlock原FD、heldcwd、
+exec前两阶段FD清理及新formalcapabilitygate。不得只接host然后保留C pathreopen，却宣布P0
+关闭。完整egress、bootstrapdeath/pause独立停止仍开放；P1 immutable runtime/loader/
+archive/import/versioneddelivery、nativePythonpipe、真实adapters/productionRSICLI仍开放。
+P2多机ownership/服务化/分布式调度后置。不读.env/密钥，不运行模型、WebAgent、远程/
+公司evaluator或真实campaign，保留他人修改。下方pending文字保留为历史提交时状态。
+
 ## 2026-10-08 Linux target descriptor-control SDD
 
 PR10 postmerge main run37691786270已全三版首轮通过；独立raw九阶段XML、日志摘要/SHA、
