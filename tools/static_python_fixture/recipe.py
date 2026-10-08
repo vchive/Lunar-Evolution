@@ -59,7 +59,15 @@ def extract_source(archive: Path, destination: Path,
                    pin: dict[str, object] = CPYTHON_ARCHIVE) -> Path:
     """Containment-only extraction; links, devices, duplicates and traversal fail."""
     verify_archive(archive, pin)
-    destination = Path(destination).resolve()
+    requested = Path(destination)
+    parent = requested.parent
+    while True:
+        if parent.is_symlink():
+            raise RecipeError("destination parent is a symlink")
+        if parent == parent.parent:
+            break
+        parent = parent.parent
+    destination = requested.resolve()
     if destination.exists() or destination.is_symlink():
         raise RecipeError("destination must not exist")
     destination.mkdir(parents=True)
