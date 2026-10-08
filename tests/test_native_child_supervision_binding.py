@@ -12,6 +12,7 @@ from lunar_evolution.native_bootstrap import (
     LINUX_FD_HANDOFF_IMPLEMENTATION,
     LINUX_GRANT_OBJECT_IMPLEMENTATION,
     LINUX_INPUT_MUTATION_IMPLEMENTATION,
+    LINUX_IPC_CONTROL_IMPLEMENTATION,
     LINUX_SUBREAPER_IMPLEMENTATION,
     NativeBootstrapError,
     build_native_bootstrap_artifact,
@@ -24,13 +25,13 @@ from lunar_evolution.native_trusted_attempt import (
 )
 
 
-def test_build_versions_actual_linux_grant_objects_without_relabelling_darwin(tmp_path):
+def test_build_versions_actual_linux_ipc_control_without_relabelling_darwin(tmp_path):
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
-    expected = LINUX_GRANT_OBJECT_IMPLEMENTATION if sys.platform == "linux" else "native-bootstrap-v1"
+    expected = LINUX_IPC_CONTROL_IMPLEMENTATION if sys.platform == "linux" else "native-bootstrap-v1"
     assert artifact.descriptor.implementation_version == expected
 
 
-@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION])
+@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION])
 def test_build_cannot_label_darwin_as_linux_capability(tmp_path, monkeypatch, version):
     monkeypatch.setattr("lunar_evolution.native_bootstrap._platform_mode", lambda: "darwin-immutable-snapshot")
     with pytest.raises(NativeBootstrapError, match="native_bootstrap_child_supervision_unsupported"):
@@ -39,7 +40,7 @@ def test_build_cannot_label_darwin_as_linux_capability(tmp_path, monkeypatch, ve
 
 
 @pytest.mark.parametrize("mode", ["legacy", "guarded", "formal"])
-@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION])
+@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION])
 def test_linux_artifact_command_negotiates_only_with_complete_guard(tmp_path, monkeypatch, mode, version):
     artifact = build_native_bootstrap_artifact(tmp_path / "install")
     artifact = replace(artifact, descriptor=replace(
@@ -113,7 +114,7 @@ def test_formal_linux_refuses_old_or_unrecognized_descriptor_before_effects(tmp_
     assert not batch.exists()
 
 
-@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION])
+@pytest.mark.parametrize("version", [LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION])
 def test_historical_descriptor_load_preserves_original_scope(tmp_path, monkeypatch, version):
     # Loading retained artifacts remains read-only. It does not confer new formal
     # launch rights or upgrade historical evidence to the mutation capability.
@@ -130,7 +131,7 @@ def test_historical_descriptor_load_preserves_original_scope(tmp_path, monkeypat
     )
     assert observed.descriptor == descriptor
     assert observed.descriptor.implementation_version == version
-    assert observed.descriptor.implementation_version != LINUX_GRANT_OBJECT_IMPLEMENTATION
+    assert observed.descriptor.implementation_version != LINUX_IPC_CONTROL_IMPLEMENTATION
 
 
 def test_formal_linux_refuses_input_mutation_only_descriptor_before_effects(tmp_path, monkeypatch):
@@ -191,6 +192,26 @@ def test_formal_linux_refuses_fd_control_only_descriptor_before_effects(tmp_path
                  "consume_trusted_bootstrap_attestation", "subprocess.Popen"):
         monkeypatch.setattr("lunar_evolution.native_trusted_attempt." + name, forbidden)
     with pytest.raises(NativeTrustedAttemptError, match="native_trusted_attempt_grant_objects_required"):
+        run_native_trusted_attempt(
+            workspace, producer_root=producer, intent=intent, attestation=attestation, artifact=artifact,
+        )
+    assert not batch.exists()
+
+
+def test_formal_linux_refuses_grant_objects_only_descriptor_before_effects(tmp_path, monkeypatch):
+    workspace, producer, intent, attestation, artifact, batch = _attempt(tmp_path)
+    artifact = replace(artifact, descriptor=replace(
+        artifact.descriptor, implementation_version=LINUX_GRANT_OBJECT_IMPLEMENTATION,
+        platform_execution_mode="linux-fd-bound", descriptor_sha256=None,
+    ))
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("IPC rejection must precede budget, input staging, nonce and spawn")
+
+    for name in ("_compose_attempt_budget", "_native_launch_inputs", "_persist_deadline",
+                 "consume_trusted_bootstrap_attestation", "subprocess.Popen"):
+        monkeypatch.setattr("lunar_evolution.native_trusted_attempt." + name, forbidden)
+    with pytest.raises(NativeTrustedAttemptError, match="native_trusted_attempt_ipc_control_required"):
         run_native_trusted_attempt(
             workspace, producer_root=producer, intent=intent, attestation=attestation, artifact=artifact,
         )

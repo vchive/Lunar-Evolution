@@ -1,5 +1,40 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Linux native IPC control SDD
+
+PR14 head2409206/run37703503332已完成三版14阶段原证据及root独立复核，合入main为
+697e73e0b8f8cdd10b9922f3d60390ab6f53dbfc，tree2648f8c与tested source一致。
+Python3.12 archived原2294项有1项已知历史measurement线程失败；按既有有限规则完整
+retry一次2294/0failure，原失败与retry均保留，不能称全程无retry。main13 postmerge
+run37704101297也独立完成三版首轮13阶段，0failure/error/retry。
+
+PR15两轮首次失败均保留：e48ac34/run37707855913为1个monkeypatch fixture setup错误；
+4974538/run37708266284前十个native阶段通过，trusted adapters的2个observer仍捕获旧v1
+入口而失败，实际target正常exit0。fbd982e/tree486ea847更新到实际平台control观察点，
+保留精确read grants/no-directory/host-file拒绝/argv不变断言，本地16项通过；新的完整
+run37709205439仍待最终核验。本节不把失败run或Darwinskip升级为Linux通过。
+
+Feature182独立codex/native-ipc-egress在该修复tree上增加Linux default/formal selector
+native-bootstrap-linux-ipc-control-v1。旧拒绝顺序保留，grant-only在budget/input/nonce/
+spawn前固定ipc_control_required。真实C header拒绝SysV shared memory/message queue/
+semaphore全family、i386ipc/time64和遗漏的sendmmsg/recvmsg/recvmmsg；intersecting filter
+只允许精确full-domain AF_UNIX socketpair。ABI literal原表独立核对覆盖x64/ARM64/i386，
+只有实际native CI执行才是平台验收。v2 held grants、FD closure、subreaper/drain、original
+lifeline/deadline/registration/handoff/broker/receipt/publication schema均不变。
+
+新增private0600 IPC parent-owned baseline/filtered/v2 sealed native negatives，SCM_RIGHTS
+传入传出direct-header fixture、普通pipe/file/socketpair/fork/thread及broker/FDclosure
+positives。专门ipc-control XML纳入三版原始保存。当前本地Darwin结果及final Linux CI以
+specs/182-native-ipc-control/validation.md和本轮PR/ignoredreports为准；独立review与exact
+head CI/merge仍待完成，不借PR15/其他head结果。
+
+此slice只关闭已识别SysV/ancillary路径，不是完整egress/information-flow证明。P0仍有
+POSIXmq/其他kernel routes、broker有效redirect/proxy目的地及bootstrap death/pause后独立
+停止。P1 immutable runtime/load、archive/loader/import completeness、versioned delivery、
+实际Python pipe fixture、真实OpenEvolve/Shinka adapters与生产RSI CLI仍开放。P2多机
+ownership/服务化/分布式scheduler后置。只用local inert/C/fixture/provider-free和既有CI；
+不读.env/密钥，不跑模型、WebAgent、远程/公司evaluator或真实campaign，保留他人修改。
+
 ## 2026-10-08 Original native grant integration SDD
 
 PR13已合入main7172885d56d18cd310d6c5152baee71c62d6a7a3，tested source c660609、
