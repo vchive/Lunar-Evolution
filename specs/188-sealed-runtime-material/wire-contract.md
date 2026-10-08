@@ -30,6 +30,12 @@ The table's protocol/version and the frame magic bind their semantics. Original
 declared-manifest/tree digests retain Feature171/177's original domains. Neither
 is recalculated from current source observations as an admission replacement.
 
+[wire-v1-example.json](wire-v1-example.json) fixes an inert encoding vector with
+an empty directory and zero-length file. Its header/table/payload/frame bytes and
+digests were generated directly from this contract, independently of the future
+parser. Its declaration/tree pins are placeholders; it proves no source
+provenance, live kernel seals, ownership, target execution or admission.
+
 ## Canonical logical table
 
 The table is one JSON object. Encode UTF-8 with `ensure_ascii=False`, sorted keys,

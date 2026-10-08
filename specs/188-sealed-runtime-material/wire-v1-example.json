@@ -1,0 +1,16 @@
+{
+  "frame_base64": "TFVOQVJQWU1BVAAAAAAAAQAAAAAAAAOdAAAAAAAAAAZ7ImRlY2xhcmVkX21hbmlmZXN0X3NoYTI1NiI6IjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLCJkaXJlY3RvcmllcyI6W3siY2hpbGRyZW4iOlsiZW1wdHkiLCJpbWFnZS5iaW4iLCJ6ZXJvLmRhdCJdLCJyZWxhdGl2ZV9wYXRoIjoiLiIsInJvb3RfbGFiZWwiOiJhcHAifSx7ImNoaWxkcmVuIjpbXSwicmVsYXRpdmVfcGF0aCI6ImVtcHR5Iiwicm9vdF9sYWJlbCI6ImFwcCJ9XSwiZmlsZXMiOlt7Im9mZnNldCI6MCwicmVsYXRpdmVfcGF0aCI6ImltYWdlLmJpbiIsInJvbGUiOiJpbnRlcnByZXRlciIsInJvb3RfbGFiZWwiOiJhcHAiLCJzaGEyNTYiOiI5YTcyZGM2ZWU1NjY1YWIxMzY0NzA3OTY1YzRiNzVhNmUzYTU4ZTI1MTQ4ZDVlYTAyYjE3YWE3OGIyYTg0ZWI1Iiwic2l6ZSI6Nn0seyJvZmZzZXQiOjYsInJlbGF0aXZlX3BhdGgiOiJ6ZXJvLmRhdCIsInJvbGUiOiJwcm9qZWN0X3Jlc291cmNlIiwicm9vdF9sYWJlbCI6ImFwcCIsInNoYTI1NiI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJzaXplIjowfV0sIm1hdGVyaWFsX3ZlcnNpb24iOiJmaXh0dXJlLXYxIiwicHJvdG9jb2wiOiJsdW5hci1weXRob24tcnVudGltZS1zZWFsZWQtbWF0ZXJpYWwtdjEiLCJyb290cyI6WyJhcHAiXSwic2NoZW1hX3ZlcnNpb24iOiIxIiwidGFyZ2V0Ijp7ImFiaV90YWciOiJjcDMxMyIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsImxheW91dCI6InBvcnRhYmxlLXRyZWUiLCJwbGF0Zm9ybSI6ImxpbnV4IiwicHl0aG9uX3ZlcnNpb24iOiIzLjEzIn0sInRyZWVfc2hhMjU2IjoiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSJ9aW5lcnQK",
+  "frame_sha256": "3bf1cc103c64364169c9870288a732a153a06599acf6839de8c33c934b7614a3",
+  "frame_size": 963,
+  "header_hex": "4c554e415250594d4154000000000001000000000000039d0000000000000006",
+  "kernel_seals_verified": false,
+  "payload_base64": "aW5lcnQK",
+  "payload_sha256": "9a72dc6ee5665ab1364707965c4b75a6e3a58e25148d5ea02b17aa78b2a84eb5",
+  "payload_size": 6,
+  "production_admission": false,
+  "scope": "wire-encoding-example-only",
+  "source_provenance_verified": false,
+  "table_sha256": "bfa76336010bac069908c7f02cfdb5e1a08e909827c335043134d8b58d40beec",
+  "table_size": 925,
+  "table_utf8": "{\"declared_manifest_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"directories\":[{\"children\":[\"empty\",\"image.bin\",\"zero.dat\"],\"relative_path\":\".\",\"root_label\":\"app\"},{\"children\":[],\"relative_path\":\"empty\",\"root_label\":\"app\"}],\"files\":[{\"offset\":0,\"relative_path\":\"image.bin\",\"role\":\"interpreter\",\"root_label\":\"app\",\"sha256\":\"9a72dc6ee5665ab1364707965c4b75a6e3a58e25148d5ea02b17aa78b2a84eb5\",\"size\":6},{\"offset\":6,\"relative_path\":\"zero.dat\",\"role\":\"project_resource\",\"root_label\":\"app\",\"sha256\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"size\":0}],\"material_version\":\"fixture-v1\",\"protocol\":\"lunar-python-runtime-sealed-material-v1\",\"roots\":[\"app\"],\"schema_version\":\"1\",\"target\":{\"abi_tag\":\"cp313\",\"architecture\":\"x86_64\",\"layout\":\"portable-tree\",\"platform\":\"linux\",\"python_version\":\"3.13\"},\"tree_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\"}"
+}
