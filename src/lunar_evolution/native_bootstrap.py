@@ -35,6 +35,7 @@ LINUX_GRANT_OBJECT_IMPLEMENTATION = "native-bootstrap-linux-grant-objects-v1"
 LINUX_GRANT_OBJECT_BINDING = "linux-held-grants-v1"
 LINUX_IPC_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-ipc-control-v1"
 LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION = "native-bootstrap-linux-independent-guardian-v1"
+LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-posix-mq-control-v1"
 
 
 class NativeBootstrapError(ValueError):
@@ -140,11 +141,11 @@ def build_native_bootstrap_artifact(
     mode = _platform_mode()
     if implementation_version is None:
         implementation_version = (
-            LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
+            LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
         )
     if implementation_version in {
         LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION,
-        LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
+        LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
     } and mode != "linux-fd-bound":
         _fail("native_bootstrap_child_supervision_unsupported")
     if not isinstance(allowlist_id, str) or not allowlist_id:
@@ -432,7 +433,7 @@ def native_bootstrap_command(
         child_supervision is None and isinstance(artifact, NativeBootstrapArtifact)
         and artifact.descriptor.implementation_version in {
             LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION,
-            LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
+            LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
         }
         and controller_lifeline_fd is not None and deadline_monotonic_ns is not None
     ):
@@ -481,6 +482,7 @@ __all__ = [
     "LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION",
     "LINUX_INPUT_MUTATION_IMPLEMENTATION",
     "LINUX_IPC_CONTROL_IMPLEMENTATION",
+    "LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION",
     "LINUX_SUBREAPER_IMPLEMENTATION",
     "NativeBootstrapArtifact",
     "NativeBootstrapError",

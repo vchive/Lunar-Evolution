@@ -24,6 +24,7 @@ from .native_bootstrap import (
     LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
     LINUX_INPUT_MUTATION_IMPLEMENTATION,
     LINUX_IPC_CONTROL_IMPLEMENTATION,
+    LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
     NativeBootstrapArtifact,
     NativeBootstrapError,
     encode_native_bootstrap_control,
@@ -726,7 +727,7 @@ def run_native_trusted_attempt(
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
             LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION,
-            LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
+            LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
         }
     ):
         # Reject before budget persistence, nonce consumption or spawn. Read-only recovery
@@ -735,30 +736,35 @@ def run_native_trusted_attempt(
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
-            LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
+            LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
         }
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_fd_handoff_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version not in {LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION}
+        and artifact.descriptor.implementation_version not in {LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_fd_control_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version not in {LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION}
+        and artifact.descriptor.implementation_version not in {LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version not in {LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION}
+        and artifact.descriptor.implementation_version not in {LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_ipc_control_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version != LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION
+        and artifact.descriptor.implementation_version not in {LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION, LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_guardian_required")
+    if (
+        artifact.descriptor.platform_execution_mode == "linux-fd-bound"
+        and artifact.descriptor.implementation_version != LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION
+    ):
+        raise NativeTrustedAttemptError("native_trusted_attempt_mq_control_required")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
     if cancelled is not None and not callable(cancelled):
