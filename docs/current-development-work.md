@@ -11,10 +11,22 @@ immutable terminal view and keeps missing process/cleanup/request evidence in
 launcher and process tests pass. No CPython build/startup, host-runtime
 substitution, external producer, model or evaluator campaign has run.
 
-PR25 adds Feature192's bounded Linux kernel-global route deny contract and a
-dedicated 11-case CI gate. PR24/25 Linux acceptance and merge are still
-pending. Feature191 lifecycle spawn, real runtime observations, loader-negative
-fixture and OpenEvolve/Shinka process adapters remain open.
+PR25/Feature192 is merged as main `e3410109`: final run37820105103 passed all
+three Linux versions, 24 exact phases per version, kernel11/0skip and
+current12124/92 identical platform skips, zero failure/error/retry. Independent
+raw ZIP/XML/log/source/tree and case/skip audits passed; the merge has the
+identical tested source tree. Evidence is retained in ignored
+`.lunar-evolution/reports/persisted-ci-evidence-20261009/pr25-final-ci-audit/`.
+PR24 is rebased onto that main with a reviewed recovery/recipe repair. PR26
+adds a detached observation parser tested against emitted frozen-main assets
+with fake runtime inputs. Their repaired final-source Linux acceptance and
+merge are pending. Real runtime build/startup, loader-negative enforcement,
+lifecycle spawn and OpenEvolve/Shinka Python process adapters remain open.
+
+PR23/Feature190 is also merged at `3a7782c`; replacement final-source
+run37802795693 and main push37814722312 completed successfully. The first
+high-FD test-helper failure remains separate historical evidence. The
+private-owner repair is present in current main.
 
 As of 2026-10-08, PR15–22 are merged into main after independent final-source
 Linux CI/raw audits. Feature188 / PR22 sourcec5973a7/tree61d6f966 passed final
@@ -30,7 +42,8 @@ Feature190 now fixes controller-owned executable handles as a prerequisite for
 Feature189's static CPython fixture. Its first final CI run failed only in two
 3.11 `select()`-based native bootstrap test helpers when the runner assigned
 FDs above `FD_SETSIZE`; production code and dedicated133/material274 gates
-passed. The helper now uses bounded `poll()` and a replacement run is pending.
+passed. The helper now uses bounded `poll()`; the replacement passed and PR23
+is merged as noted above.
 Feature189 has bounded pure ELF/descriptor inspectors plus an offline recipe
 and asset emitter; no toolchain, source archive, image build or CPython launch
 has occurred.
@@ -45,7 +58,7 @@ older feature documents retain their historical submission state.
 | P0 | Native keyring syscall control (Feature187) | Completed: PR21 raw run37738544048; main merge518f1f4 |
 | P0 | Bounded kernel-global routes (Feature192 / PR25) | Completed: three-version raw run37820105103; main mergee341010, tested treeb06470f. This is a bounded deny contract, not complete Linux containment |
 | P1 | Framed immutable runtime material (Feature188) | Completed: PR22 raw run37747759152; main merge4f8576d. All runtime-load/production claims remain false |
-| P0 | Original executable ownership and cleanup (Feature190) | Implementation complete; replacement final Linux CI is pending after the high-FD test-helper fix |
+| P0 | Original executable ownership and cleanup (Feature190 / PR23) | Completed: replacement final run37802795693; main merge3a7782c |
 | P1 | Python archive/import/loader closure and immutable runtime loading | Feature189 preparation adds bounded pure ELF/descriptor gates and an offline pinned recipe; actual source patches, Linux build, startup and native acceptance remain open |
 | P1 | Versioned runtime delivery and formal Python worker admission | Feature191 Phase A binding and Phase C terminal/reconcile gates are implemented; actual launch/runtime observation/admission remain open |
 | P1 | OpenEvolve/Shinka Python process adapters | Existing native composition/export paths remain untrusted provenance; common Python process adapter and local inert fixture remain open |
