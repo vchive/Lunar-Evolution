@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from contextlib import contextmanager
 from dataclasses import replace
 
 import pytest
@@ -110,8 +111,6 @@ def test_second_preparation_failure_releases_first_owner(tmp_path, monkeypatch):
     values = _fixture(tmp_path)
     first = []
     real = binding.sealed_linux_executable
-    from contextlib import contextmanager
-
     @contextmanager
     def fail_second(*args, **kwargs):
         if first:
@@ -128,3 +127,35 @@ def test_second_preparation_failure_releases_first_owner(tmp_path, monkeypatch):
         pytest.fail("second preparation must refuse")
     with pytest.raises(OSError):
         os.fstat(first[0])
+
+
+@linux
+def test_pair_distinguishes_clean_body_refusal_from_secondary_exit_error(tmp_path, monkeypatch):
+    values = _fixture(tmp_path)
+    primary = LinuxExecutableBindingError("caller-owned-refusal")
+    with pytest.raises(LinuxExecutableBindingError) as caught, _prepare(values):
+        raise primary
+    assert caught.value is primary and not getattr(primary, "__notes__", ())
+
+    real = binding.sealed_linux_executable
+    acquired = []
+
+    @contextmanager
+    def secondary_exit(*args, **kwargs):
+        try:
+            with real(*args, **kwargs) as live:
+                acquired.append(live.fd)
+                yield live
+        finally:
+            raise LinuxExecutableBindingError("linux_execution_cleanup_unknown")
+
+    monkeypatch.setattr(binding, "sealed_linux_executable", secondary_exit)
+    interrupt = KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt) as caught, _prepare(values):
+        raise interrupt
+    assert caught.value is interrupt
+    assert interrupt.__notes__ == ["linux_execution_cleanup_unknown"]
+    assert len(acquired) == 2
+    for fd in acquired:
+        with pytest.raises(OSError):
+            os.fstat(fd)

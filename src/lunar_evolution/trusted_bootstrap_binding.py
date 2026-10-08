@@ -316,12 +316,12 @@ def prepare_trusted_executable_pair(
             finally:
                 _LINUX_PAIRS.pop(id(pair), None)
     except LinuxExecutableBindingError as exc:
+        if exc is body_primary:
+            raise
         if body_primary is not None:
             # ExitStack cleanup must not replace the caller's primary error,
             # including KeyboardInterrupt/SystemExit. Keep the cleanup signal
             # fixed and non-sensitive on that exact exception object.
             body_primary.add_note("linux_execution_cleanup_unknown")
             raise body_primary
-        if exc is body_primary:
-            raise
         raise _binding_error(exc) from exc

@@ -34,8 +34,8 @@
 Local evidence: root first182/33 platform skips, second412/194 platform skips,
 final282/123 platform skips, all zero failure/error (overlapping suites are not
 summed). Latest final282=159 passed; no Linux proof follows from Darwin skips.
-Dedicated executable-owner inventory132 = existing binding4 + owner93 + pair21
-+ native7 + legacy7; new current delta128, total current12112. The Linux workflow
+Dedicated executable-owner inventory133 = existing binding4 + owner93 + pair22
++ native7 + legacy7; new current delta129, total current12113. The Linux workflow
 requires dedicated132/0skip and all existing22 phases. Independent source review
 closed the concrete mutable-pin and pre-registration-child/stream cleanup gaps;
 final-source Linux/raw audit and merge remain pending.

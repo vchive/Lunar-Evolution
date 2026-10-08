@@ -1,6 +1,6 @@
 # Validation — proposed evidence only
 
-Local focused tests and portable static checks have run. Dedicated inventory132
+Local focused tests and portable static checks have run. Dedicated inventory133
 is frozen, but no actual Linux execution or final-source acceptance is established. Portable unsupported/refusal checks cannot establish Linux ownership.
 
 ## Live object binding
@@ -85,8 +85,8 @@ retained at /tmp/lunar190-root-final.xml. Wider appropriate composition412:
 218 passed/194 Darwin platform skips/0failure/error; overlaps are not summed.
 Owner author focused93:10 portable passes/83 actual Linux skips. Legacy7 all
 skip on Darwin. Full Ruff, compileall and diff check passed. All new four test
-modules add exactly128 current cases; current collection12112. CI preserves
-executable-owner.xml for132 cases including4 existing binding cases, requiring
+modules add exactly129 current cases; current collection12113. CI preserves
+executable-owner.xml for133 cases including4 existing binding cases, requiring
 zero failures/errors/skips before the original22 phases. Actual Linux source,
 seals, independent C image/FD observations and child reaping still await CI.
 
@@ -96,3 +96,9 @@ registration and gate order remain unchanged. If group observation fails it
 kills/reaps only its original unreaped Popen child, retaining fixed uncertainty
 and granting no group/descendant authority. All escaping BaseExceptions retain
 identity/cause, and both original streams are attempted without masking primary.
+
+Final pair delta regression53:31 passed/22 Darwin Linux skips/0failure/error,
+retained at /tmp/lunar190-pair-delta2.xml. It distinguishes a clean original body
+refusal (no cleanup-unknown note) from a separate typed ExitStack cleanup error.
+The final dedicated inventory is133, current12113; earlier132/12112 preflights
+are separate source evidence and cannot stand in for this final head.
