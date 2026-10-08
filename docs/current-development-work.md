@@ -19,7 +19,7 @@ older feature documents retain their historical submission state.
 | P0 | POSIX message queue syscall control and formal admission gate (Feature 185 / PR19) | Completed: PR19 raw run37725907868; main merge22394d26 |
 | P0 | Fixed producer broker HTTP destination (Feature 186) | Completed: PR20 raw run37732579777; main mergec6faf365 |
 | P0 | Native keyring syscall control (Feature187) | Completed: PR21 raw run37738544048; main merge518f1f4 |
-| P0 | Other remaining kernel routes | A separately bounded route contract and actual native refusal/compatibility acceptance; mq or broker checks alone do not close this item |
+| P0 | Other remaining kernel routes (Feature192) | Bounded contract and local fixture are implemented on `codex/kernel-route-control`; final Linux acceptance and merge remain pending |
 | P1 | Framed immutable runtime material (Feature188) | Completed: PR22 raw run37747759152; main merge4f8576d. All runtime-load/production claims remain false |
 | P0 | Original executable ownership and cleanup (Feature190) | Implementing private anchor/borrowed binding, original deadline/live validation and caller checks; actual Linux owner acceptance remains pending |
 | P1 | Python archive/import/loader closure and immutable runtime loading | Existing declared-file and closed-tree inventories explicitly have runtime_load_protection=false; pinned static CPython and complete delivery/load enforcement need their own contract and native acceptance (Feature189 successor) |
