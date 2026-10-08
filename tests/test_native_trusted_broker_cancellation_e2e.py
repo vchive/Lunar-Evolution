@@ -77,6 +77,7 @@ def observe_live_boundaries(monkeypatch, received):
 
     class ObservedNativeProcess(original_spawn):
         def __init__(self, *args, **kwargs):
+            self.native_guardian = "--group-pidfd" in args[0]
             super().__init__(*args, **kwargs)
             native_processes.append(self)
 
@@ -112,7 +113,12 @@ def observe_live_boundaries(monkeypatch, received):
 
 
 def assert_children_reaped(native_processes, http_processes):
-    assert len(native_processes) == len(http_processes) == 1
+    bootstraps = [process for process in native_processes if not process.native_guardian]
+    guardians = [process for process in native_processes if process.native_guardian]
+    assert len(bootstraps) == len(http_processes) == 1
+    assert len(guardians) == (1 if sys.platform == "linux" else 0)
+    # Linux owns both exact native children. The separately scheduled guardian
+    # must be reaped too; excluding it from the bootstrap count is not cleanup.
     for process in (*native_processes, *http_processes):
         assert process.returncode is not None and process.poll() is not None
         with pytest.raises(ChildProcessError):
@@ -122,7 +128,7 @@ def assert_children_reaped(native_processes, http_processes):
     assert worker.stdin.closed and worker.stdout.closed
     # The bootstrap owns its own group; the HTTP worker belongs to the caller's group.
     with pytest.raises(ProcessLookupError):
-        os.killpg(native_processes[0].pid, 0)
+        os.killpg(bootstraps[0].pid, 0)
 
 
 @pytest.mark.parametrize("acknowledged", [True, False], ids=["confirmed", "acknowledgement_lost"])

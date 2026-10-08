@@ -49,7 +49,9 @@ write may stop deadline monitoring; all R/D/F/EOF waits use poll original deadli
 
 Exceptional cleanup: controller closes original lifeline writer and keeps watcher
 running until its group stop/exact exit/reap is observed, subject to bounded cleanup.
-It must not kill watcher first and leave targets alive. Startup failure before watcher
+The original pidfd group-stop operation is attempted before watcher retirement.
+If that operation fails, bounded exact watcher reap still runs but the attempt
+remains unknown; failed group signaling never becomes clean termination. Startup failure before watcher
 ownership is covered by existing original bootstrap/thread and host-owned process
 cleanup. Failure to reap/normal-exit watcher refuses clean outcome; no persisted PID
 signaling/relaunch/nonce/deadline refresh. Host module never wait(-1)s or signals a
