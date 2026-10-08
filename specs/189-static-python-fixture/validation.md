@@ -1,5 +1,29 @@
 # Validation contract — preparation is not runtime evidence
 
+The offline source-preparation slice has 96 portable cases: 49 exact-source
+transformation checks, 46 finite-table checks and one plan/asset-digest check.
+Root's combined preparation/observation/source run passes365/0failure/0error/0skip;
+full Ruff, compileall and diff checks pass. A separate CI
+`python-source-preparation.xml` gate requires all96 cases without skips and
+retains the XML separately from preparation226 and observation43. Overlapping
+suites are not summed as independent coverage.
+
+Three inert `.source` fixtures retain original reviewed Git bytes and the full
+upstream LICENSE. The patch policy has SHA256
+`f3f740c644165d8c4d2e89840a1e75427806c12c13debf843d3b6fb2cc90f479`.
+It verifies all preimages/unique snippets before returning any patched outputs,
+and rechecks full postimages. Seven extracted fixed loader/finder methods refuse
+before fake callbacks; the full upstream module is never executed. Stock
+zipimport helper code remains, with only its external-init call removed. This
+is not configured loader enforcement, source-archive/signature verification,
+real frozen-header generation, compilation or startup acceptance. Four finite
+table sources and their digests are emitted into the plan, with patch application,
+headers, final linking and runtime acceptance explicitly pending.
+Independent read-only review matched all three fixture preimages and LICENSE to
+the real pinned Git checkout, reproduced all11 unique replacements/full output
+hashes and checked the refusal bodies, C initialization, aliases and recipe
+claims. No actionable finding remains in this preparation slice.
+
 2026-10-09 preparation validation: the offline recipe now preserves literal
 recipe directory names and expands quoted source/output variables for the
 same-source freeze commands. Five portable recipe tests pass, including a
@@ -9,8 +33,9 @@ headers. Without explicit opt-in the driver returns plan-only before any build
 work. This verifies emitted shell argument handling, not a CPython build,
 compiler/toolchain identity, startup, loader closure or production admission.
 
-This /tmp draft adds no build, execution or test pass. Feature188's own pending
-run37747268959 cannot prove189 CPython startup or static-runtime identity.
+The current implementation has local pure parser/recipe/source checks, with
+Feature188 and190 prerequisites separately audited and merged. None supplies
+Feature189 CPython startup or static-runtime identity.
 Use the actual first installation artifact after G0/G1; old184 host Python,
 Darwin behavior, fake ELF metadata, synthetic C replies and a source tag alone
 are not substitutes for the required Linux evidence.
@@ -82,7 +107,8 @@ This foreign-reuse condition requires independent dedicated proof of the selecte
 privately held original target owner, or a separately reviewed owned-target
 recovery implementation. The old public `sealed_linux_executable` closes its
 numeric FD without that original-object check and is not safe-recovery evidence.
-No private-owner implementation is claimed by this draft. Test closed/reused
+Feature190's private original owner is on main3a7782c; Feature189's actual target
+integration remains unaccepted. Test closed/reused
 numbers and same-byte foreign objects, forced public observation mutation and
 interrupted acquisition/release; parsed JSON or public numeric FDs cannot establish
 the owner's cleanup authority. Keep v2's FD schema and keep-list unchanged.

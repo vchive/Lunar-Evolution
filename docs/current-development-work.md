@@ -1,5 +1,24 @@
 # Current development work
 
+## 2026-10-09 offline source preparation continuation
+
+Feature189 now has a pure fixed-source transformation over three reviewed
+CPython3.13.12 files and finite frozen/builtin/stdlib table emitters. The plan
+retains complete preimage/postimage/operation and generated-source digests;
+source application, real bytecode headers, optional-module closure, direct
+compile/link and startup remain pending. The corrected configure argument is
+`--disable-shared`. Root local combined365 cases and source-only96 cases pass
+with zero failures/errors/skips, plus full Ruff/compileall/diff checks. The
+source96 CI gate is separate from preparation226 and observation43.
+
+PR24 first final-source37729c9a/run37829395862 retains a Python3.12 failure in
+the existing slow-HTTP fixture's0.2-second startup assumption. The test now
+allows two seconds while checking the unchanged absolute deadline, its worker
+payload, one origin/no redirect and exact reap; broker87 passes locally. Its
+original failure evidence remains separate. PR24/PR26 repaired final-source
+full Linux CI, independent raw audit and main merge remain required. This
+source slice does not authorize or claim a CPython build or real solver run.
+
 ## 2026-10-09 current head
 
 PR24 now contains the Feature189 pure static-runtime preparation and Feature191
