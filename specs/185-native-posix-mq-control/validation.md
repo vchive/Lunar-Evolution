@@ -31,6 +31,10 @@ Final root composition /tmp/lunar185-root-composition-final.xml has 199 cases:
 74 passed, 125 Darwin skips, zero failure/error. Ruff, compileall and diff checks
 pass. Existing Darwin immutable snapshot pytest cleanup warnings remain; they
 are not queue execution or failed test cases.
+After including Feature183 final 5561c30 as 9269745, focused composition plus the
+original-owner cancellation fixture passed in /tmp/lunar185-root-postsync.xml:
+200 cases, 75 passed, 125 Darwin skips, zero failure/error. The preserved log is
+/tmp/lunar185-root-postsync.log. Ruff, compileall and diff checks passed again.
 The workflow adds dedicated posix-mq.xml pytest/annotation/upload while keeping all
 existing phases. Exact-head three-version Linux raw XML/log/ZIP, source inventory
 and tested parents/tree remain required. PR18 must independently pass before

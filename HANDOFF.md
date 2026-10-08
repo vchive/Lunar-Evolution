@@ -12,6 +12,8 @@ contents/name 不变、formal v2 guardian/broker/普通 IO 和 FD closure。
 首次 fstat 异常清理经独立复核修复：缺 identity 仅从 still-held original FD 补查一次，
 已记录 identity 不刷新，foreign name 不 unlink，primary exception 保留。模块 44 cases
 本地 4 passed/40 Darwin skips；root composition 199 cases=74 passed/125 skips、零失败。
+包含 PR18 最终 5561c30 的 reason/original-owner teardown 修复后，追加 cancellation fixture
+重跑 200 cases=75 passed/125 skips、零失败，Ruff/compileall/diff 再通过。
 Ruff/compileall/diff 通过；Python 3.9 误用的 collection error 材料保留。Linux enforcement
 仍须此最终 head 的三版原始 CI，PR18 必须独立通过后才允许合入此 feature。
 

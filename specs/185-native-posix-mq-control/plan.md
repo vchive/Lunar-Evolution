@@ -1,7 +1,7 @@
 # Plan
 
 Base: Feature183 implementation, with the final 5561c30 cancellation reason and
-original-owner teardown fix to be included before submission. Its PR18
+original-owner teardown fix included as cherry-pick 9269745 before submission. Its PR18
 Linux acceptance/merge is separately tracked; this spec does not borrow it.
 
 1. Native author owns native_producer_isolation.h plus
