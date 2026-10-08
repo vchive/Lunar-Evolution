@@ -194,7 +194,9 @@ def test_fixed_invalid_endpoint_rejected_before_spawn(monkeypatch, endpoint):
         http_transport._validate_fixed_destination_endpoint(endpoint)
     with pytest.raises(ValueError):
         ControllerHttpTransport(fixed_destination=True).start(admission(), request(endpoint))
-    with pytest.raises(ValueError):
+        # The generic DTO preserves its historical light validation and lets the
+        # execution layer return broker_endpoint_invalid. Fixed mode validates
+        # immediately before worker spawn.
         ProducerBrokerConfig(endpoint, {})
 
 

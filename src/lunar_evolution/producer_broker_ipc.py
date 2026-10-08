@@ -19,7 +19,6 @@ from .controller_request_broker import ControllerOwnedRequestBroker, ControllerR
 from .http_transport import (
     MAX_REQUEST_BYTES,
     MAX_RESULT_BYTES,
-    _validate_fixed_destination_endpoint,
 )
 from .producer_launcher import ProducerLaunchIntent
 from .producer_request_transport import (
@@ -54,7 +53,6 @@ class ProducerBrokerConfig:
 
     def __post_init__(self) -> None:
         ControllerHttpRequest(self.endpoint, self.headers, b"")
-        _validate_fixed_destination_endpoint(self.endpoint)
 
 
 @dataclass(frozen=True, slots=True)
