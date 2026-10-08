@@ -664,6 +664,7 @@ from .python_producer_binding import (
     parse_python_producer_binding,
 )
 from .python_producer_lifecycle import (
+    PYTHON_PRODUCER_SCHEMA_VERSION,
     PYTHON_PRODUCER_TERMINAL_PROTOCOL,
     PYTHON_RUNTIME_OBSERVATION_PROTOCOL,
     PythonProducerLifecycleError,
@@ -674,6 +675,7 @@ from .python_producer_lifecycle import (
     build_python_producer_terminal,
     parse_python_producer_runtime_observation,
     parse_python_producer_terminal,
+    parse_python_runtime_observation,
     reconcile_python_producer_terminal,
     resume_python_producer_terminal,
 )
@@ -1026,6 +1028,7 @@ __all__ = [
     "PRODUCER_REQUEST_EVIDENCE_SCHEMA_VERSION",
     "PYTHON_PRODUCER_BINDING_PROTOCOL",
     "PYTHON_PRODUCER_BINDING_SCHEMA_VERSION",
+    "PYTHON_PRODUCER_SCHEMA_VERSION",
     "PYTHON_PRODUCER_TERMINAL_PROTOCOL",
     "PYTHON_RUNTIME_OBSERVATION_PROTOCOL",
     "RSI_PROTOCOL",
@@ -1593,6 +1596,7 @@ __all__ = [
     "parse_python_producer_terminal",
     "parse_python_runtime_manifest",
     "parse_python_runtime_material_descriptor",
+    "parse_python_runtime_observation",
     "parse_python_runtime_tree_manifest",
     "parse_registration_seal",
     "parse_seed_manifest",
