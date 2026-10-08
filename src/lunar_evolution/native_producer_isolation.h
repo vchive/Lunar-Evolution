@@ -10,19 +10,33 @@
 #include <string.h>
 #include <sys/types.h>
 
-static int lunar_apply_isolation(const char *profile,
+typedef struct { int fd; unsigned int role; } lunar_grant_fd_t;
+
+static int lunar_apply_isolation_internal(const char *profile,
                                  const char *const *read_paths, size_t read_count,
-                                 const char *const *write_dirs, size_t write_count) {
+                                 const char *const *write_dirs, size_t write_count,
+                                 const lunar_grant_fd_t *grants, size_t grant_count) {
     size_t i;
+    if (grants) {
+        if (!grant_count || grant_count > 81 || read_paths || write_dirs) return EINVAL;
+        read_count = write_count = 0;
+        for (i = 0; i < grant_count; ++i) {
+            if (grants[i].fd <= 2) return EINVAL;
+            if (grants[i].role == 1 || grants[i].role == 2) ++read_count;
+            else if (grants[i].role == 4 || grants[i].role == 12) ++write_count;
+            else return EINVAL;
+        }
+    } else if (grant_count) return EINVAL;
     if (!profile || !profile[0] || read_count > 64 || write_count > 16 ||
-        (!read_paths && read_count) || (!write_dirs && write_count)) return EINVAL;
-    for (i = 0; i < read_count; i++) {
+        (!grants && ((!read_paths && read_count) || (!write_dirs && write_count)))) return EINVAL;
+    for (i = 0; !grants && i < read_count; i++) {
         if (!read_paths[i] || !read_paths[i][0]) return EINVAL;
     }
-    for (i = 0; i < write_count; i++) {
+    for (i = 0; !grants && i < write_count; i++) {
         if (!write_dirs[i] || !write_dirs[i][0]) return EINVAL;
     }
 #if defined(__APPLE__)
+    if (grants) return ENOTSUP;
     /* sandbox_init applies a deny-default SBPL profile.  The profile is already
        canonicalized and path-bound by Python; paths are revalidated as nonempty
        here so the C boundary cannot silently broaden the policy. */
@@ -96,27 +110,33 @@ static int lunar_apply_isolation(const char *profile,
             LANDLOCK_ACCESS_FS_MAKE_FIFO |
             #endif
             LANDLOCK_ACCESS_FS_REFER | LANDLOCK_ACCESS_FS_TRUNCATE;
-        for (i = 0; i < read_count + write_count; i++) {
-            const char *path = i < read_count ? read_paths[i] : write_dirs[i - read_count];
-            int fd = open(path, O_PATH | O_CLOEXEC);
+        for (i = 0; i < (grants ? grant_count : read_count + write_count); i++) {
+            int is_write = grants ? (grants[i].role & 4) != 0 : i >= read_count;
+            int fd = grants ? grants[i].fd : open(i < read_count ? read_paths[i] : write_dirs[i - read_count], O_PATH | O_CLOEXEC);
             if (fd < 0) { close(ruleset_fd); return errno ? errno : EACCES; }
-            struct landlock_path_beneath_attr rule = { .parent_fd = fd, .allowed_access = i < read_count ? read_access : write_access };
+            unsigned long long access = is_write ? write_access : read_access;
+            if (grants && grants[i].role == 1) access = LANDLOCK_ACCESS_FS_READ_FILE;
+            struct landlock_path_beneath_attr rule = { .parent_fd = fd, .allowed_access = access };
             struct stat st;
             if (fstat(fd, &st) != 0) {
-                int error = errno; close(fd); close(ruleset_fd); return error ? error : EACCES;
+                int error = errno; if (!grants) close(fd); close(ruleset_fd); return error ? error : EACCES;
+            }
+            if (grants && ((grants[i].role == 1 && (!S_ISREG(st.st_mode) || st.st_nlink != 1)) ||
+                           (grants[i].role != 1 && !S_ISDIR(st.st_mode)))) {
+                close(ruleset_fd); return EINVAL;
             }
             /* READ_DIR is valid only for directory rules.  An exact regular
                read/execute path stays exact and never grants directory access. */
             if (!S_ISDIR(st.st_mode)) {
-                if (i >= read_count || !S_ISREG(st.st_mode)) {
-                    close(fd); close(ruleset_fd); return EINVAL;
+                if (is_write || !S_ISREG(st.st_mode)) {
+                    if (!grants) close(fd); close(ruleset_fd); return EINVAL;
                 }
                 rule.allowed_access &= ~LANDLOCK_ACCESS_FS_READ_DIR;
             }
             if (syscall(__NR_landlock_add_rule, ruleset_fd, LANDLOCK_RULE_PATH_BENEATH, &rule, 0) < 0) {
-                int error = errno; close(fd); close(ruleset_fd); return error ? error : EACCES;
+                int error = errno; if (!grants) close(fd); close(ruleset_fd); return error ? error : EACCES;
             }
-            close(fd);
+            if (!grants) close(fd);
         }
         if (syscall(__NR_landlock_restrict_self, ruleset_fd, 0) < 0) { int error = errno; close(ruleset_fd); return error ? error : EPERM; }
         close(ruleset_fd);
@@ -480,5 +500,16 @@ static int lunar_apply_isolation(const char *profile,
 #else
     (void)profile; (void)read_paths; (void)write_dirs; return ENOTSUP;
 #endif
+}
+
+static int lunar_apply_isolation(const char *profile,
+                                 const char *const *read_paths, size_t read_count,
+                                 const char *const *write_dirs, size_t write_count) {
+    return lunar_apply_isolation_internal(profile, read_paths, read_count, write_dirs, write_count, NULL, 0);
+}
+
+static inline int lunar_apply_grant_isolation(const lunar_grant_fd_t *grants, size_t grant_count) {
+    if (!grants) return EINVAL;
+    return lunar_apply_isolation_internal("linux-landlock-seccomp-v1", NULL, 0, NULL, 0, grants, grant_count);
 }
 #endif

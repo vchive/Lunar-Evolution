@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -18,10 +19,13 @@ from .native_bootstrap import (
     LINUX_CHILD_SUPERVISION,
     LINUX_FD_CONTROL_IMPLEMENTATION,
     LINUX_FD_HANDOFF_IMPLEMENTATION,
+    LINUX_GRANT_OBJECT_BINDING,
+    LINUX_GRANT_OBJECT_IMPLEMENTATION,
     LINUX_INPUT_MUTATION_IMPLEMENTATION,
     NativeBootstrapArtifact,
     NativeBootstrapError,
     encode_native_bootstrap_control,
+    encode_native_bootstrap_control_v2,
     load_native_bootstrap_artifact,
     native_bootstrap_command,
 )
@@ -31,6 +35,7 @@ from .native_deadline_binding import (
     persist_native_deadline_binding,
     verify_native_deadline_binding,
 )
+from .native_grant_inputs import NativeGrantInputError, original_native_grant_inputs
 from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
 from .native_trusted_cleanup import (
     NativeTrustedCleanupError,
@@ -65,6 +70,7 @@ from .producer_broker_ipc import (
     serve_producer_broker,
 )
 from .producer_bundle_deadline import _boot_id as _producer_boot_id
+from .producer_grant_anchors import ProducerGrantError, ProducerGrantRequest, hold_producer_grants
 from .producer_isolation import ProducerIsolationError, build_producer_isolation_policy
 from .producer_launch_inputs import (
     PRODUCER_LAUNCH_INPUT_MARKER,
@@ -663,6 +669,35 @@ def _write_attempt_control(
         _write_control(fd, data, deadline, monotonic, cancelled)
 
 
+@contextmanager
+def _original_attempt_grants(inputs, *, batch: Path, working: Path, output: Path, enabled: bool):
+    if not enabled:
+        with nullcontext(None) as owner:
+            yield owner
+        return
+    try:
+        original = original_native_grant_inputs(inputs)
+        requests = tuple(ProducerGrantRequest(path, "writable-directory")
+                         for path in sorted({str(working), str(output)}))
+        requests += (ProducerGrantRequest(str(working), "cwd"), *original.requests)
+        with hold_producer_grants(
+            requests, expected_bindings=original.expected_bindings,
+            create_writable_directories=True, creation_root=str(batch),
+        ) as owner:
+            owner.validate_protected_materials(original.materials)
+            yield owner
+    except (ProducerGrantError, NativeGrantInputError) as exc:
+        raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_changed") from exc
+
+
+def _check_original_attempt_grants(owner, inputs) -> None:
+    if owner is not None:
+        try:
+            owner.validate_protected_materials(original_native_grant_inputs(inputs).materials)
+        except (ProducerGrantError, NativeGrantInputError) as exc:
+            raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_changed") from exc
+
+
 def run_native_trusted_attempt(
     workspace: str | Path,
     *,
@@ -688,6 +723,7 @@ def run_native_trusted_attempt(
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
             LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION,
+            LINUX_GRANT_OBJECT_IMPLEMENTATION,
         }
     ):
         # Reject before budget persistence, nonce consumption or spawn. Read-only recovery
@@ -696,15 +732,20 @@ def run_native_trusted_attempt(
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
-            LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION,
+            LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION,
         }
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_fd_handoff_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version != LINUX_FD_CONTROL_IMPLEMENTATION
+        and artifact.descriptor.implementation_version not in {LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_fd_control_required")
+    if (
+        artifact.descriptor.platform_execution_mode == "linux-fd-bound"
+        and artifact.descriptor.implementation_version != LINUX_GRANT_OBJECT_IMPLEMENTATION
+    ):
+        raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_required")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
     if cancelled is not None and not callable(cancelled):
@@ -738,12 +779,16 @@ def run_native_trusted_attempt(
         _safe_dir(batch, create=True)
         working = _relative_path(batch, intent.working_directory)
         output = _relative_path(batch, intent.output_directory)
-        _safe_dir(working, create=True)
-        _safe_dir(output, create=True)
+        if installed.descriptor.platform_execution_mode != "linux-fd-bound":
+            _safe_dir(working, create=True)
+            _safe_dir(output, create=True)
     except (NativeBootstrapError, ProducerBootstrapError, ProducerProcessError) as exc:
         raise NativeTrustedAttemptError("native_trusted_attempt_preflight_invalid") from exc
 
-    with _recovery_lock(batch) as lock_identity:
+    with _recovery_lock(batch) as lock_identity, _original_attempt_grants(
+        inputs, batch=batch, working=working, output=output,
+        enabled=installed.descriptor.platform_execution_mode == "linux-fd-bound",
+    ) as grant_owner:
         process: subprocess.Popen[bytes] | None = None
         owner: RegisteredProcess | None = None
         registration: dict[str, object] | None = None
@@ -786,6 +831,8 @@ def run_native_trusted_attempt(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
                 require_unexpired=True,
             )
+            _check_original_attempt_grants(grant_owner, inputs)
+            _remaining(deadline, monotonic, cancelled)
             deadline_record, deadline_binding = _persist_deadline(
                 batch, launch, started=started_monotonic, deadline=deadline,
             )
@@ -808,15 +855,6 @@ def run_native_trusted_attempt(
                 read_paths = [pair.target.executable] if sys.platform == "darwin" else []
                 if inputs is not None:
                     read_paths.extend(inputs.read_paths)
-                policy = build_producer_isolation_policy(
-                    read_paths=read_paths, write_dirs=[working, output],
-                )
-                control = encode_native_bootstrap_control(
-                    launch, target_path=pair.target.executable,
-                    target_argv=(pair.target.executable, *intent.argv[1:]),
-                    target_cwd=working, target_fd=pair.target.pass_fd,
-                    isolation_policy=policy,
-                )
                 control_read, control_write = os.pipe()
                 fds.update((control_read, control_write))
                 gate_read, gate_write = os.pipe()
@@ -857,6 +895,22 @@ def run_native_trusted_attempt(
                                 except OSError:
                                     broker_state["error"] = "native_trusted_attempt_broker_unknown"
 
+                if grant_owner is not None:
+                    _check_original_attempt_grants(grant_owner, inputs)
+                    control = encode_native_bootstrap_control_v2(
+                        launch, target_path=pair.target.executable,
+                        target_argv=(pair.target.executable, *intent.argv[1:]),
+                        target_cwd=working, target_fd=pair.target.pass_fd,
+                        bootstrap_fd=pair.bootstrap.pass_fd, held_grants=grant_owner,
+                        reserved_fds=tuple(sorted(fds)) + pair.pass_fds + (controller_lifeline_writer,),
+                    )
+                else:
+                    policy = build_producer_isolation_policy(read_paths=read_paths, write_dirs=[working, output])
+                    control = encode_native_bootstrap_control(
+                        launch, target_path=pair.target.executable,
+                        target_argv=(pair.target.executable, *intent.argv[1:]),
+                        target_cwd=working, target_fd=pair.target.pass_fd, isolation_policy=policy,
+                    )
                 command = native_bootstrap_command(
                     pair.bootstrap.executable, control_fd=control_read,
                     gate_fd=gate_read, frame_fd=frame_write,
@@ -866,15 +920,23 @@ def run_native_trusted_attempt(
                         LINUX_CHILD_SUPERVISION
                         if installed.descriptor.platform_execution_mode == "linux-fd-bound" else None
                     ),
+                    grant_object_binding=LINUX_GRANT_OBJECT_BINDING if grant_owner is not None else None,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
+                _check_original_attempt_grants(grant_owner, inputs)
+                if grant_owner is not None:
+                    _revalidate_native_launch_inputs(
+                        inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                        require_unexpired=True,
+                    )
                 process = subprocess.Popen(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
                     pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
-                              *broker_child_fds, lifeline_read),
-                    cwd=str(working), env=broker_env,
+                              *broker_child_fds, lifeline_read,
+                              *(grant_owner.pass_fds if grant_owner is not None else ())),
+                    cwd="/" if grant_owner is not None else str(working), env=broker_env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
                 check_deadline()
@@ -959,6 +1021,8 @@ def run_native_trusted_attempt(
                 check_deadline()
                 if _current_recovery_lock_identity(batch) != lock_identity:
                     raise NativeTrustedAttemptError("native_trusted_attempt_registration_unknown")
+                _check_original_attempt_grants(grant_owner, inputs)
+                _remaining(deadline, monotonic, cancelled)
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
@@ -1002,7 +1066,7 @@ def run_native_trusted_attempt(
                         continue
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
                 TrustedBootstrapBindingError, NativeBootstrapError, ProducerIsolationError,
-                ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
+                ProducerGrantError, ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
             if not claimed:
                 if isinstance(exc, NativeTrustedAttemptError) and exc.code in {
                     "native_trusted_attempt_deadline_write_unknown",
@@ -1010,7 +1074,10 @@ def run_native_trusted_attempt(
                 }:
                     raise
                 raise NativeTrustedAttemptError("native_trusted_attempt_claim_failed") from exc
-            reason = getattr(exc, "code", "native_trusted_attempt_unknown")
+            reason = (
+                "native_trusted_attempt_grant_objects_changed" if isinstance(exc, ProducerGrantError)
+                else getattr(exc, "code", "native_trusted_attempt_unknown")
+            )
             cancellation_requested = reason == "native_trusted_attempt_cancelled"
         finally:
             if broker_stop is not None and (
@@ -1118,6 +1185,7 @@ def run_native_trusted_attempt(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
                 require_unexpired=False,
             )
+            _check_original_attempt_grants(grant_owner, inputs)
             if deadline_binding is not None:
                 check_deadline()
         except NativeTrustedAttemptError as exc:

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .producer_bootstrap import TrustedBootstrapDescriptor, TrustedBootstrapLaunch
+from .producer_grant_anchors import HeldProducerGrantPlan, ProducerGrantError
 
 _SOURCE = Path(__file__).with_name("native_bootstrap.c")
 _MAX_BYTES = 8 * 1024 * 1024
@@ -30,6 +31,8 @@ LINUX_SUBREAPER_IMPLEMENTATION = "native-bootstrap-linux-subreaper-v1"
 LINUX_INPUT_MUTATION_IMPLEMENTATION = "native-bootstrap-linux-input-mutation-v1"
 LINUX_FD_HANDOFF_IMPLEMENTATION = "native-bootstrap-linux-fd-handoff-v1"
 LINUX_FD_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-fd-control-v1"
+LINUX_GRANT_OBJECT_IMPLEMENTATION = "native-bootstrap-linux-grant-objects-v1"
+LINUX_GRANT_OBJECT_BINDING = "linux-held-grants-v1"
 
 
 class NativeBootstrapError(ValueError):
@@ -135,11 +138,11 @@ def build_native_bootstrap_artifact(
     mode = _platform_mode()
     if implementation_version is None:
         implementation_version = (
-            LINUX_FD_CONTROL_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
+            LINUX_GRANT_OBJECT_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
         )
     if implementation_version in {
         LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION,
-        LINUX_FD_CONTROL_IMPLEMENTATION,
+        LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION,
     } and mode != "linux-fd-bound":
         _fail("native_bootstrap_child_supervision_unsupported")
     if not isinstance(allowlist_id, str) or not allowlist_id:
@@ -303,6 +306,95 @@ def encode_native_bootstrap_control(
     return bytes(result)
 
 
+def encode_native_bootstrap_control_v2(
+    launch: TrustedBootstrapLaunch, *, target_path: str,
+    target_argv: tuple[str, ...], target_cwd: str | Path,
+    target_fd: int, bootstrap_fd: int, held_grants: HeldProducerGrantPlan,
+    reserved_fds: tuple[int, ...] = (),
+) -> bytes:
+    """Encode original live Linux grants; detached observations cannot supply them."""
+    if (type(held_grants) is not HeldProducerGrantPlan
+            or not isinstance(launch, TrustedBootstrapLaunch)):
+        _fail("native_bootstrap_grant_binding_invalid")
+    if (type(target_fd) is not int or not 2 < target_fd <= 0x7fffffff
+            or type(bootstrap_fd) is not int or not 2 < bootstrap_fd <= 0x7fffffff
+            or target_fd == bootstrap_fd):
+        _fail("native_bootstrap_fd_invalid")
+    if (type(target_argv) is not tuple or not 1 <= len(target_argv) <= _MAX_ARGC
+            or any(type(item) is not str or not item for item in target_argv)):
+        _fail("native_bootstrap_control_invalid")
+    if type(target_path) is not str or not target_path.startswith("/"):
+        _fail("native_bootstrap_control_invalid")
+    hashes = (launch.launch_sha256, launch.intent_sha256, launch.target_executable_identity)
+    if any(type(value) is not str or len(value) != 64
+           or any(char not in "0123456789abcdef" for char in value) for value in hashes):
+        _fail("native_bootstrap_control_invalid")
+    if (len(target_path) > _MAX_PATH_BYTES
+            or any(len(item) > _MAX_PATH_BYTES for item in target_argv)
+            or type(target_cwd) not in {str, type(Path())}):
+        _fail("native_bootstrap_control_invalid")
+    try:
+        path_wire = _put_string(target_path, maximum=_MAX_PATH_BYTES)
+        argv_wire = b"".join(_put_string(item, maximum=_MAX_PATH_BYTES) for item in target_argv)
+    except UnicodeError as exc:
+        raise NativeBootstrapError("native_bootstrap_control_invalid") from exc
+    if type(reserved_fds) is not tuple or len(reserved_fds) > 254:
+        _fail("native_bootstrap_fd_invalid")
+    reserved = (*reserved_fds, target_fd, bootstrap_fd)
+    try:
+        held_grants.validate(reserved_fds=reserved)
+        nodes = held_grants.binding_nodes
+        anchors = held_grants.anchors
+        if not 1 <= len(nodes) <= 256 or not 1 <= len(anchors) <= 81:
+            _fail("native_bootstrap_control_invalid")
+        cwd = str(target_cwd)
+        cwd_indices = [i for i, anchor in enumerate(anchors) if "cwd" in anchor.record.roles]
+        if len(cwd_indices) != 1 or anchors[cwd_indices[0]].record.path != cwd:
+            _fail("native_bootstrap_cwd_binding_invalid")
+        result = bytearray(b"LNB1\x00\x02\x00\x00")
+        result.extend("".join(hashes).encode("ascii"))
+        result.extend(_put_u32(target_fd)); result.extend(_put_u32(bootstrap_fd))
+        result.extend(path_wire); result.extend(_put_u32(1)); result.extend(_put_u32(len(nodes)))
+        positions: dict[str, int] = {}
+        for index, node in enumerate(nodes):
+            parent = node.parent_index
+            if (index == 0 and (parent is not None or node.path != "/" or node.name != "")) or (
+                index != 0 and (type(parent) is not int or not 0 <= parent < index)
+            ):
+                _fail("native_bootstrap_control_invalid")
+            node.identity.validate()
+            name = node.name.encode("utf-8")
+            if len(name) > _MAX_PATH_BYTES or b"\x00" in name:
+                _fail("native_bootstrap_control_invalid")
+            if index and (not name or "/" in node.name or node.name in {".", ".."}):
+                _fail("native_bootstrap_control_invalid")
+            if node.path in positions:
+                _fail("native_bootstrap_control_invalid")
+            positions[node.path] = index
+            result.extend(_put_u32(0xffffffff if parent is None else parent))
+            result.extend(_put_u32(1 if node.identity.kind == "directory" else 2))
+            result.extend(node.identity.device.to_bytes(8, "big"))
+            result.extend(node.identity.inode.to_bytes(8, "big"))
+            result.extend(_put_u32(len(name))); result.extend(name)
+        result.extend(_put_u32(len(anchors)))
+        role_bits = {"protected-file": 1, "readonly-directory": 2, "writable-directory": 4, "cwd": 8}
+        for anchor in anchors:
+            node_index = positions.get(anchor.record.path)
+            mask = sum(role_bits[role] for role in anchor.record.roles)
+            if node_index is None or mask not in {1, 2, 4, 12}:
+                _fail("native_bootstrap_control_invalid")
+            result.extend(_put_u32(node_index)); result.extend(_put_u32(mask))
+            result.extend(_put_u32(anchor.fd))
+        result.extend(_put_u32(cwd_indices[0])); result.extend(_put_u32(len(target_argv)))
+        result.extend(argv_wire)
+        if len(result) > 64 * 1024:
+            _fail("native_bootstrap_control_too_large")
+        held_grants.validate(reserved_fds=reserved)
+        return bytes(result)
+    except ProducerGrantError as exc:
+        raise NativeBootstrapError("native_bootstrap_grant_binding_invalid") from exc
+
+
 def native_bootstrap_command(
     artifact: NativeBootstrapArtifact | str | Path,
     *,
@@ -312,6 +404,7 @@ def native_bootstrap_command(
     controller_lifeline_fd: int | None = None,
     deadline_monotonic_ns: int | None = None,
     child_supervision: str | None = None,
+    grant_object_binding: str | None = None,
 ) -> tuple[str, ...]:
     """Build a guarded command; omitted lifeline/deadline are direct fixture interfaces."""
     executable = artifact.path if isinstance(artifact, NativeBootstrapArtifact) else Path(artifact)
@@ -331,7 +424,7 @@ def native_bootstrap_command(
         child_supervision is None and isinstance(artifact, NativeBootstrapArtifact)
         and artifact.descriptor.implementation_version in {
             LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION,
-            LINUX_FD_CONTROL_IMPLEMENTATION,
+            LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION,
         }
         and controller_lifeline_fd is not None and deadline_monotonic_ns is not None
     ):
@@ -343,6 +436,11 @@ def native_bootstrap_command(
             _fail("native_bootstrap_child_supervision_invalid")
         if platform.system().lower() != "linux":
             _fail("native_bootstrap_child_supervision_unsupported")
+    if grant_object_binding is not None and (
+        grant_object_binding != LINUX_GRANT_OBJECT_BINDING
+        or child_supervision != LINUX_CHILD_SUPERVISION or platform.system().lower() != "linux"
+    ):
+        _fail("native_bootstrap_grant_binding_invalid")
     command = (str(executable), "--control-fd", str(control_fd), "--gate-fd", str(gate_fd), "--frame-fd", str(frame_fd))
     if controller_lifeline_fd is not None:
         command += ("--controller-lifeline-fd", str(controller_lifeline_fd))
@@ -350,12 +448,25 @@ def native_bootstrap_command(
         command += ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
     if child_supervision is not None:
         command += ("--child-supervision", child_supervision)
+    if grant_object_binding is not None:
+        command += ("--grant-object-binding", grant_object_binding)
     return command
 
 
 __all__ = [
-    "LINUX_CHILD_SUPERVISION", "LINUX_FD_CONTROL_IMPLEMENTATION", "LINUX_FD_HANDOFF_IMPLEMENTATION", "LINUX_INPUT_MUTATION_IMPLEMENTATION", "LINUX_SUBREAPER_IMPLEMENTATION",
-    "NativeBootstrapArtifact", "NativeBootstrapError", "build_native_bootstrap_artifact",
-    "encode_native_bootstrap_control", "load_native_bootstrap_artifact", "native_bootstrap_command",
+    "LINUX_CHILD_SUPERVISION",
+    "LINUX_FD_CONTROL_IMPLEMENTATION",
+    "LINUX_FD_HANDOFF_IMPLEMENTATION",
+    "LINUX_GRANT_OBJECT_BINDING",
+    "LINUX_GRANT_OBJECT_IMPLEMENTATION",
+    "LINUX_INPUT_MUTATION_IMPLEMENTATION",
+    "LINUX_SUBREAPER_IMPLEMENTATION",
+    "NativeBootstrapArtifact",
+    "NativeBootstrapError",
+    "build_native_bootstrap_artifact",
+    "encode_native_bootstrap_control",
+    "encode_native_bootstrap_control_v2",
+    "load_native_bootstrap_artifact",
+    "native_bootstrap_command",
     "native_bootstrap_source_path",
 ]

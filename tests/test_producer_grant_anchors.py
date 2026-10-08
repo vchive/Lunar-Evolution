@@ -14,9 +14,12 @@ import pytest
 
 import lunar_evolution.producer_grant_anchors as grants
 from lunar_evolution.producer_grant_anchors import (
+    ProducerGrantBindingNode,
     ProducerGrantError,
+    ProducerGrantExpectedBinding,
     ProducerGrantIdentity,
     ProducerGrantManifest,
+    ProducerGrantMaterial,
     ProducerGrantRequest,
     hold_producer_grants,
 )
@@ -593,3 +596,342 @@ def test_close_failure_keeps_original_body_error_and_finishes_other_cleanup(tmp_
     else:
         assert error.value.code == "producer_grant_fd_close_failed"
     assert faulted and all(_fd_closed(fd) for fd in opened)
+
+
+def _material(path, content=b"original protected bytes"):
+    path.write_bytes(content)
+    path.chmod(0o400)
+    info = path.lstat()
+    return ProducerGrantMaterial(str(path), _identity(path), content, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def test_detached_lineage_is_canonical_parent_first_and_expected_parents_are_not_grants(tmp_path):
+    batch = _directory(tmp_path, "batch")
+    inputs = batch / "inputs"
+    inputs.mkdir()
+    source = inputs / "config.json"
+    material = _material(source)
+    work = batch / "work"
+    work.mkdir()
+    bindings = tuple(ProducerGrantExpectedBinding(str(path), _identity(path)) for path in (batch, inputs))
+    with hold_producer_grants((_request(source, "protected-file", expected=True),
+                               _request(work, "writable-directory"), _request(work, "cwd")),
+                              expected_bindings=bindings) as plan:
+        nodes = plan.binding_nodes
+        assert tuple(node.path for node in nodes) == tuple(sorted(node.path for node in nodes))
+        assert nodes[0].path == "/" and nodes[0].name == "" and nodes[0].parent_index is None
+        for index, node in enumerate(nodes):
+            node.validate()
+            assert not hasattr(node, "fd")
+            if index:
+                assert node.parent_index < index
+                parent = nodes[node.parent_index]
+                assert parent.identity.kind == "directory"
+                assert Path(node.path).parent == Path(parent.path)
+                assert node.name == Path(node.path).name
+        assert {anchor.record.path for anchor in plan.anchors} == {str(source), str(work)}
+        assert not {str(batch), str(inputs)} & {record.path for record in plan.manifest.records}
+        plan.validate_protected_materials((material,))
+    assert nodes[-1].identity.kind == "directory"
+    with pytest.raises(ProducerGrantError, match="owner_closed"):
+        _ = plan.binding_nodes
+
+
+@pytest.mark.parametrize("value", [None, [], (object(),), tuple(ProducerGrantExpectedBinding("/x", ProducerGrantIdentity(1, 1, "directory")) for _ in range(257))])
+def test_expected_binding_shapes_are_bounded_before_io(monkeypatch, value):
+    _forbid_filesystem(monkeypatch)
+    with pytest.raises(ProducerGrantError, match="expected_bindings_invalid"), hold_producer_grants(
+        (ProducerGrantRequest("/inert/work", "writable-directory"),), expected_bindings=value,
+    ):
+        pytest.fail("invalid binding acquired owner")
+
+
+@pytest.mark.parametrize("kind", ["duplicate", "unused", "file", "conflict"])
+def test_expected_parent_pins_never_add_authority_or_refresh_conflicts(monkeypatch, kind):
+    _forbid_filesystem(monkeypatch)
+    identity = ProducerGrantIdentity(1, 1, "directory")
+    binding = ProducerGrantExpectedBinding("/inert", identity)
+    requests = (ProducerGrantRequest("/inert/work", "writable-directory"),)
+    bindings = (binding,)
+    if kind == "duplicate":
+        bindings += (binding,)
+    elif kind == "unused":
+        bindings = (replace(binding, path="/unrelated"),)
+    elif kind == "file":
+        bindings = (replace(binding, identity=replace(identity, kind="file")),)
+    else:
+        requests += (ProducerGrantRequest("/inert", "readonly-directory", replace(identity, inode=2)),)
+    with pytest.raises(ProducerGrantError), hold_producer_grants(requests, expected_bindings=bindings):
+        pytest.fail("invalid expectation was adopted")
+
+
+def test_original_parent_expectation_refuses_replaced_ancestor_before_creation(tmp_path, monkeypatch):
+    batch = _directory(tmp_path, "batch")
+    original = _identity(batch)
+    batch.rename(batch.with_name("original-batch"))
+    batch.mkdir()
+    work = batch / "work"
+    opened, _ = _watch_acquisition(monkeypatch)
+    with pytest.raises(ProducerGrantError, match="expected_identity_mismatch"), hold_producer_grants(
+        (ProducerGrantRequest(str(work), "writable-directory"),),
+        expected_bindings=(ProducerGrantExpectedBinding(str(batch), original),),
+        create_writable_directories=True, creation_root=str(batch),
+    ):
+        pytest.fail("refreshed parent pin")
+    assert not work.exists()
+    assert all(_fd_closed(fd) for fd in opened)
+
+
+def test_first_write_creation_uses_held_parents_and_merges_nested_output_cwd(tmp_path, monkeypatch):
+    batch = _directory(tmp_path, "batch")
+    work = batch / "new" / "work"
+    output = work / "output"
+    original_mkdir = os.mkdir
+    calls = []
+
+    def watched(name, mode=0o777, *, dir_fd=None):
+        calls.append((name, mode, dir_fd))
+        return original_mkdir(name, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(grants.os, "mkdir", watched)
+    requests = (ProducerGrantRequest(str(work), "writable-directory"),
+                ProducerGrantRequest(str(work), "cwd"), ProducerGrantRequest(str(output), "writable-directory"))
+    with hold_producer_grants(requests, create_writable_directories=True, creation_root=str(batch),
+                              expected_bindings=(ProducerGrantExpectedBinding(str(batch), _identity(batch)),)) as plan:
+        assert [item[0] for item in calls] == ["new", "work", "output"]
+        assert all(mode == 0o700 and descriptor is not None for _, mode, descriptor in calls)
+        assert all(stat.S_IMODE(path.stat().st_mode) == 0o700 for path in (work.parent, work, output))
+        assert len(plan.anchors) == 2
+        before = plan.manifest
+        (output / "candidate").write_bytes(b"inert output")
+        plan.validate_protected_materials(())
+        assert plan.manifest == before
+
+
+@pytest.mark.parametrize("create,root", [(1, "/inert"), (False, "/inert"), (True, None), (True, "/"), (True, "/unused"), (True, "/inert/other")])
+def test_creation_options_refuse_before_io(monkeypatch, create, root):
+    _forbid_filesystem(monkeypatch)
+    with pytest.raises(ProducerGrantError), hold_producer_grants(
+        (ProducerGrantRequest("/inert/work", "writable-directory"),),
+        create_writable_directories=create, creation_root=root,
+    ):
+        pytest.fail("unbounded creation option")
+
+
+def test_creation_never_makes_read_grants_or_unapproved_ancestors(tmp_path):
+    batch = _directory(tmp_path, "batch")
+    missing_read = batch / "read"
+    work = batch / "work"
+    with pytest.raises(ProducerGrantError), hold_producer_grants(
+        (ProducerGrantRequest(str(missing_read), "readonly-directory"),
+         ProducerGrantRequest(str(work), "writable-directory")),
+        create_writable_directories=True, creation_root=str(batch),
+    ):
+        pytest.fail("read directory created")
+    assert not missing_read.exists()
+
+
+def test_mkdir_eexist_race_refuses_without_adopting_intervening_object(tmp_path, monkeypatch):
+    batch = _directory(tmp_path, "batch")
+    work = batch / "work"
+    original_mkdir = os.mkdir
+    opened, _ = _watch_acquisition(monkeypatch)
+
+    def raced(name, mode=0o777, *, dir_fd=None):
+        original_mkdir(name, mode, dir_fd=dir_fd)
+        raise FileExistsError(errno.EEXIST, "inert creation race")
+
+    monkeypatch.setattr(grants.os, "mkdir", raced)
+    with pytest.raises(ProducerGrantError, match="creation_raced"), hold_producer_grants(
+        (ProducerGrantRequest(str(work), "writable-directory"),),
+        create_writable_directories=True, creation_root=str(batch),
+    ):
+        pytest.fail("raced creation adopted")
+    assert work.is_dir()  # The intervening object is preserved, not owner-deleted.
+    assert all(_fd_closed(fd) for fd in opened)
+
+
+def test_partial_creation_failure_closes_all_first_acquired_objects(tmp_path, monkeypatch):
+    batch = _directory(tmp_path, "batch")
+    output = batch / "work" / "output"
+    original_mkdir = os.mkdir
+    opened, _ = _watch_acquisition(monkeypatch)
+
+    def failed(name, mode=0o777, *, dir_fd=None):
+        if name == "output":
+            raise OSError(errno.EACCES, "inert later creation failure")
+        return original_mkdir(name, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(grants.os, "mkdir", failed)
+    with pytest.raises(ProducerGrantError, match="object_unavailable"), hold_producer_grants(
+        (ProducerGrantRequest(str(output), "writable-directory"),),
+        create_writable_directories=True, creation_root=str(batch),
+    ):
+        pytest.fail("partial creation succeeded")
+    assert output.parent.is_dir() and not output.exists()
+    assert all(_fd_closed(fd) for fd in opened)
+
+
+def test_material_readers_are_relative_temporary_and_never_borrowed(tmp_path, monkeypatch):
+    source = tmp_path.resolve() / "config.json"
+    material = _material(source, b"x" * grants.MAX_PRODUCER_GRANT_MATERIAL_BYTES)
+    with _held((_request(source, "protected-file", expected=True),)) as plan:
+        borrowed = plan.pass_fds
+        original_open = os.open
+        readers = []
+
+        def watched(name, flags, *, dir_fd=None):
+            assert name == source.name and dir_fd is not None
+            assert not flags & getattr(os, "O_PATH", 0)
+            descriptor = original_open(name, flags, dir_fd=dir_fd)
+            readers.append(descriptor)
+            return descriptor
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(grants.os, "open", watched)
+            plan.validate_protected_materials((material,))
+        assert readers and all(_fd_closed(fd) for fd in readers)
+        assert plan.pass_fds == borrowed
+
+
+@pytest.mark.parametrize("change", ["mode", "bytes", "mtime", "ctime", "identity"])
+def test_retained_material_metadata_and_bytes_are_not_refreshed(tmp_path, change):
+    source = tmp_path.resolve() / "config.json"
+    material = _material(source)
+    with _held((_request(source, "protected-file", expected=True),)) as plan:
+        if change == "mode":
+            source.chmod(0o600)
+        elif change == "bytes":
+            # Supply current timestamps but retain old bytes: bytes/SHA are an
+            # independent requirement rather than a timestamp-only check.
+            source.chmod(0o600)
+            source.write_bytes(b"X" + material.content[1:])
+            source.chmod(0o400)
+            info = source.stat()
+            material = replace(material, mtime_ns=info.st_mtime_ns, ctime_ns=info.st_ctime_ns)
+        elif change == "mtime":
+            material = replace(material, mtime_ns=material.mtime_ns + 1)
+        elif change == "ctime":
+            material = replace(material, ctime_ns=material.ctime_ns + 1)
+        else:
+            material = replace(material, identity=replace(material.identity, inode=material.identity.inode + 1))
+        with pytest.raises(ProducerGrantError):
+            plan.validate_protected_materials((material,))
+
+
+@pytest.mark.parametrize("materials", [None, [], (object(),), tuple(object() for _ in range(65))])
+def test_material_shape_limits_refuse_before_io(tmp_path, monkeypatch, materials):
+    work = _directory(tmp_path)
+    with _held((_request(work, "writable-directory"),)) as plan, monkeypatch.context() as scoped:
+        _forbid_filesystem(scoped)
+        with pytest.raises(ProducerGrantError, match="materials_invalid"):
+            plan.validate_protected_materials(materials)
+
+
+@pytest.mark.parametrize("field,value", [("content", bytearray(b"x")), ("content", b"x" * (512 * 1024 + 1)), ("mtime_ns", True), ("ctime_ns", 1 << 63)])
+def test_material_scalar_types_and_byte_limit_refuse_before_io(tmp_path, monkeypatch, field, value):
+    source = tmp_path.resolve() / "config.json"
+    material = _material(source)
+    with _held((_request(source, "protected-file", expected=True),)) as plan, monkeypatch.context() as scoped:
+        _forbid_filesystem(scoped)
+        with pytest.raises(ProducerGrantError, match="material_invalid"):
+            plan.validate_protected_materials((replace(material, **{field: value}),))
+
+
+def test_expected_parent_aggregate_path_bytes_are_bounded_before_io(monkeypatch):
+    _forbid_filesystem(monkeypatch)
+    components = ["a" * 61] * 64
+    path = "/" + "/".join(components)
+    bindings = tuple(ProducerGrantExpectedBinding("/" + "/".join(components[:index]),
+                                                  ProducerGrantIdentity(1, index, "directory"))
+                     for index in range(1, 64))
+    with pytest.raises(ProducerGrantError, match="expected_bindings_invalid"), hold_producer_grants(
+        (ProducerGrantRequest(path, "writable-directory"),), expected_bindings=bindings,
+    ):
+        pytest.fail("oversized expectations acquired objects")
+
+
+@pytest.mark.parametrize("mode", ["missing", "duplicate", "extra"])
+def test_material_set_is_exact_and_duplicate_free_before_io(tmp_path, monkeypatch, mode):
+    source = tmp_path.resolve() / "config.json"
+    material = _material(source)
+    materials = () if mode == "missing" else (material, material)
+    if mode == "extra":
+        materials = (material, replace(material, path=str(source.with_name("extra"))))
+    with _held((_request(source, "protected-file", expected=True),)) as plan, monkeypatch.context() as scoped:
+        _forbid_filesystem(scoped)
+        with pytest.raises(ProducerGrantError):
+            plan.validate_protected_materials(materials)
+
+
+def test_total_material_bytes_boundary_and_overflow_are_bounded(tmp_path, monkeypatch):
+    paths = [tmp_path.resolve() / f"material-{index}" for index in range(3)]
+    materials = tuple(_material(path, b"x" * (512 * 1024 if index < 2 else 1)) for index, path in enumerate(paths))
+    with _held(tuple(_request(path, "protected-file", expected=True) for path in paths[:2])) as plan:
+        plan.validate_protected_materials(materials[:2])
+    with _held(tuple(_request(path, "protected-file", expected=True) for path in paths)) as plan, monkeypatch.context() as scoped:
+        _forbid_filesystem(scoped)
+        with pytest.raises(ProducerGrantError, match="materials_invalid"):
+            plan.validate_protected_materials(materials)
+
+
+def test_temporary_material_reader_closes_after_io_fault_without_losing_owner(tmp_path, monkeypatch):
+    source = tmp_path.resolve() / "config.json"
+    material = _material(source)
+    with _held((_request(source, "protected-file", expected=True),)) as plan:
+        with monkeypatch.context() as scoped:
+            readers, _ = _watch_acquisition(scoped)
+
+            def failed(*args):
+                raise OSError(errno.EIO, "inert reader fault")
+
+            scoped.setattr(grants.os, "read", failed)
+            with pytest.raises(ProducerGrantError, match="material_unavailable"):
+                plan.validate_protected_materials((material,))
+            assert readers and all(_fd_closed(fd) for fd in readers)
+        plan.validate_protected_materials((material,))
+
+
+@pytest.mark.parametrize("case", ["protected-parent", "readonly-write-parent", "root"])
+def test_already_observed_lineage_identity_conflicts_refuse_without_lexical_overlap(tmp_path, case):
+    # An inert graph oracle isolates the observed-identity predicate; this is not
+    # physical bind-mount or namespace acceptance.
+    protected_parent = _directory(tmp_path, "inputs")
+    source = protected_parent / "config.json"
+    source.write_bytes(b"inert")
+    readonly = _directory(tmp_path, "readonly")
+    write_parent = _directory(tmp_path, "outputs")
+    work = write_parent / "work"
+    work.mkdir()
+    requests = (_request(source, "protected-file", expected=True), _request(readonly, "readonly-directory"),
+                _request(work, "writable-directory"))
+    with _held(requests) as plan:
+        original_nodes = dict(plan._nodes)
+        original_records = plan._records
+        try:
+            write_record = next(record for record in plan._records if record.path == str(work))
+            if case == "protected-parent":
+                node = plan._nodes[str(protected_parent)]
+                plan._nodes[str(protected_parent)] = replace(node, identity=write_record.identity)
+            elif case == "readonly-write-parent":
+                aliased = plan._nodes[str(write_parent)].identity
+                node = plan._nodes[str(readonly)]
+                plan._nodes[str(readonly)] = replace(node, identity=aliased)
+                plan._records = tuple(replace(record, identity=aliased) if record.path == str(readonly) else record
+                                      for record in plan._records)
+            else:
+                root_identity = plan._nodes["/"].identity
+                plan._records = tuple(replace(record, identity=root_identity) if record.path == str(work) else record
+                                      for record in plan._records)
+            with pytest.raises(ProducerGrantError, match="root_write_invalid" if case == "root" else "write_overlap"):
+                plan._check_observed_overlap()
+        finally:
+            plan._nodes = original_nodes
+            plan._records = original_records
+
+
+@pytest.mark.parametrize("changes", [{"parent_index": 0}, {"name": "/"}, {"identity": ProducerGrantIdentity(1, 1, "file")}])
+def test_root_binding_observation_has_strict_pure_shape(changes):
+    node = ProducerGrantBindingNode("/", ProducerGrantIdentity(1, 1, "directory"), None, "")
+    with pytest.raises(ProducerGrantError, match="binding_node_invalid"):
+        replace(node, **changes).validate()

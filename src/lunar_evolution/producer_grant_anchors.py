@@ -21,7 +21,12 @@ _MAX_NODES = 256
 _MAX_DEPTH = 64
 _MAX_PATH_BYTES = 4096
 _MAX_TOTAL_PATH_BYTES = 65536
+MAX_PRODUCER_GRANT_MATERIAL_BYTES = 512 * 1024
+MAX_PRODUCER_GRANT_TOTAL_MATERIAL_BYTES = 1024 * 1024
+MAX_PRODUCER_GRANT_MATERIALS = 64
 _U64_MAX = (1 << 64) - 1
+_I64_MIN = -(1 << 63)
+_I64_MAX = (1 << 63) - 1
 _OWNER_TOKEN = object()
 
 
@@ -67,6 +72,68 @@ class ProducerGrantIdentity:
     def to_dict(self) -> dict[str, object]:
         self.validate()
         return {"device": self.device, "inode": self.inode, "kind": self.kind}
+
+
+@dataclass(frozen=True, slots=True)
+class ProducerGrantExpectedBinding:
+    """Original directory expectation which confers no access role."""
+
+    path: str
+    identity: ProducerGrantIdentity
+
+    def validate(self) -> None:
+        _path(self.path)
+        if type(self.identity) is not ProducerGrantIdentity:
+            _fail("identity_invalid")
+        self.identity.validate()
+        if self.identity.kind != "directory":
+            _fail("expected_binding_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ProducerGrantBindingNode:
+    """Detached original lineage observation, without a live descriptor."""
+
+    path: str
+    identity: ProducerGrantIdentity
+    parent_index: int | None
+    name: str
+
+    def validate(self) -> None:
+        parts = _path(self.path)
+        if type(self.identity) is not ProducerGrantIdentity:
+            _fail("identity_invalid")
+        self.identity.validate()
+        if not parts:
+            if (self.parent_index is not None or type(self.name) is not str
+                    or self.name != "" or self.identity.kind != "directory"):
+                _fail("binding_node_invalid")
+        elif (type(self.parent_index) is not int or not 0 <= self.parent_index < _MAX_NODES
+              or type(self.name) is not str or self.name != parts[-1]):
+            _fail("binding_node_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class ProducerGrantMaterial:
+    """Retained expected bytes/metadata, not an execution or immutable-load receipt."""
+
+    path: str
+    identity: ProducerGrantIdentity
+    content: bytes
+    mtime_ns: int
+    ctime_ns: int
+
+    def validate(self) -> None:
+        _path(self.path)
+        if type(self.identity) is not ProducerGrantIdentity:
+            _fail("identity_invalid")
+        self.identity.validate()
+        if self.identity.kind != "file":
+            _fail("material_invalid")
+        if (type(self.content) is not bytes or len(self.content) > MAX_PRODUCER_GRANT_MATERIAL_BYTES
+                or any(type(value) is not int or not _I64_MIN <= value <= _I64_MAX
+                       for value in (self.mtime_ns, self.ctime_ns))):
+            _fail("material_invalid")
 
 
 def _identity(info: os.stat_result) -> ProducerGrantIdentity:
@@ -252,21 +319,102 @@ def _requests(requests: tuple[ProducerGrantRequest, ...]) -> tuple[
     return canonical, expected
 
 
-def _open_node(path: str, nodes: dict[str, _Node], *, directory: bool) -> _Node:
+def _graph_paths(roles: dict[str, tuple[str, ...]]) -> set[str]:
+    paths = {"/"}
+    for path in roles:
+        current = ""
+        for component in _path(path):
+            current += "/" + component
+            paths.add(current)
+    return paths
+
+
+def _acquisition_options(
+    roles: dict[str, tuple[str, ...]], expected: dict[str, ProducerGrantIdentity],
+    bindings: tuple[ProducerGrantExpectedBinding, ...], create: bool, creation_root: str | None,
+) -> tuple[dict[str, ProducerGrantIdentity], set[str]]:
+    if type(bindings) is not tuple or len(bindings) > _MAX_NODES:
+        _fail("expected_bindings_invalid")
+    if type(create) is not bool:
+        _fail("creation_invalid")
+    graph = _graph_paths(roles)
+    combined = dict(expected)
+    seen = set()
+    total = 0
+    for binding in bindings:
+        if type(binding) is not ProducerGrantExpectedBinding:
+            _fail("expected_bindings_invalid")
+        binding.validate()
+        total += len(binding.path.encode())
+        if binding.path in seen:
+            _fail("expected_binding_duplicate")
+        seen.add(binding.path)
+        if binding.path not in graph or "protected-file" in roles.get(binding.path, ()):
+            _fail("expected_binding_invalid")
+        previous = combined.setdefault(binding.path, binding.identity)
+        if previous != binding.identity:
+            _fail("expected_identity_conflict")
+    if total > _MAX_TOTAL_PATH_BYTES:
+        _fail("expected_bindings_invalid")
+    if not create:
+        if creation_root is not None:
+            _fail("creation_invalid")
+        return combined, set()
+    if type(creation_root) is not str:
+        _fail("creation_root_invalid")
+    _path(creation_root)
+    if (creation_root == "/" or creation_root not in graph
+            or "protected-file" in roles.get(creation_root, ())):
+        _fail("creation_root_invalid")
+    allowed = set()
+    for path, items in roles.items():
+        if "writable-directory" not in items:
+            continue
+        if not _below(path, creation_root):
+            _fail("creation_path_invalid")
+        current = ""
+        for component in _path(path):
+            current += "/" + component
+            if current != creation_root and _below(current, creation_root):
+                allowed.add(current)
+    return combined, allowed
+
+
+def _open_node(
+    path: str, nodes: dict[str, _Node], *, directory: bool,
+    expected_identity: ProducerGrantIdentity | None = None, create: bool = False,
+) -> _Node:
     existing = nodes.get(path)
     if existing is not None:
         if directory != (existing.identity.kind == "directory"):
             _fail("object_kind_invalid")
+        if expected_identity is not None and existing.identity != expected_identity:
+            _fail("expected_identity_mismatch")
         return existing
     if len(nodes) >= _MAX_NODES:
         _fail("node_count_invalid")
     parent_path, _, name = path.rpartition("/")
     parent = None if path == "/" else nodes[parent_path or "/"].fd
     node_name = None if path == "/" else name
-    observed = os.stat(path if parent is None else name, dir_fd=parent, follow_symlinks=False)
+    try:
+        observed = os.stat(path if parent is None else name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        if not create or not directory or parent is None or expected_identity is not None:
+            raise
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent)
+        except FileExistsError:
+            _fail("creation_raced")
+        # mkdir does not return an FD: authority starts at the checked opened
+        # object below, not at an unobserved or atomic mkdir identity.
+        observed = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if stat.S_IMODE(observed.st_mode) != 0o700:
+            _fail("creation_mode_invalid")
     identity = _identity(observed)
     if directory != (identity.kind == "directory"):
         _fail("object_kind_invalid")
+    if expected_identity is not None and identity != expected_identity:
+        _fail("expected_identity_mismatch")
     flags = os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
     flags |= os.O_PATH if sys.platform.startswith("linux") and hasattr(os, "O_PATH") else os.O_RDONLY
     if directory:
@@ -300,6 +448,28 @@ class HeldProducerGrantPlan:
         self._records = records
         self._closed = False
 
+    def _lineage(self, path: str) -> tuple[_Node, ...]:
+        result = [self._nodes["/"]]
+        current = ""
+        for component in _path(path):
+            current += "/" + component
+            result.append(self._nodes[current])
+        return tuple(result)
+
+    def _check_observed_overlap(self) -> None:
+        writes = [record for record in self._records if "writable-directory" in record.roles]
+        root_identity = self._nodes["/"].identity
+        for write in writes:
+            if write.identity == root_identity:
+                _fail("root_write_invalid")
+            for record in self._records:
+                if (any(role in record.roles for role in ("protected-file", "readonly-directory"))
+                        and any(node.identity == write.identity for node in self._lineage(record.path))):
+                    _fail("write_overlap")
+                if ("readonly-directory" in record.roles
+                        and any(node.identity == record.identity for node in self._lineage(write.path))):
+                    _fail("write_overlap")
+
     def validate(self, *, reserved_fds: tuple[int, ...] = ()) -> None:
         if self._closed:
             _fail("owner_closed")
@@ -324,8 +494,71 @@ class HeldProducerGrantPlan:
                     _fail("protected_links_invalid")
                 if node.fd <= 2 or node.fd in reserved_fds:
                     _fail("fd_alias")
+            self._check_observed_overlap()
         except OSError as exc:
             raise ProducerGrantError("producer_grant_object_unavailable") from exc
+
+    def validate_protected_materials(self, materials: tuple[ProducerGrantMaterial, ...]) -> None:
+        """Recheck retained original bytes through temporary held-parent readers.
+
+        The formal caller still applies its original config/RSI-specific limits and
+        descriptors. This operation supplies no sealing or execution authority.
+        """
+        if self._closed:
+            _fail("owner_closed")
+        if type(materials) is not tuple or len(materials) > MAX_PRODUCER_GRANT_MATERIALS:
+            _fail("materials_invalid")
+        supplied = {}
+        total = 0
+        for material in materials:
+            if type(material) is not ProducerGrantMaterial:
+                _fail("materials_invalid")
+            material.validate()
+            if material.path in supplied:
+                _fail("material_duplicate")
+            supplied[material.path] = material
+            total += len(material.content)
+        if total > MAX_PRODUCER_GRANT_TOTAL_MATERIAL_BYTES:
+            _fail("materials_invalid")
+        protected = {record.path for record in self._records if "protected-file" in record.roles}
+        if set(supplied) != protected:
+            _fail("material_set_mismatch")
+        self.validate()
+        for path in sorted(supplied):
+            material = supplied[path]
+            node = self._nodes[path]
+            if material.identity != node.identity:
+                _fail("expected_identity_mismatch")
+            try:
+                _check_material_info(os.stat(node.name, dir_fd=node.parent, follow_symlinks=False), material)
+                reader = os.open(node.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                                 dir_fd=node.parent)
+                try:
+                    _check_material_info(os.fstat(reader), material)
+                    chunks = []
+                    remaining = len(material.content) + 1
+                    while remaining:
+                        chunk = os.read(reader, min(65536, remaining))
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                        remaining -= len(chunk)
+                    content = b"".join(chunks)
+                    if (content != material.content
+                            or hashlib.sha256(content).digest() != hashlib.sha256(material.content).digest()):
+                        _fail("material_changed")
+                    _check_material_info(os.fstat(reader), material)
+                    _check_material_info(os.stat(node.name, dir_fd=node.parent, follow_symlinks=False), material)
+                finally:
+                    active_exception = sys.exc_info()[0] is not None
+                    try:
+                        os.close(reader)
+                    except OSError:
+                        if not active_exception:
+                            _fail("fd_close_failed")
+            except OSError as exc:
+                raise ProducerGrantError("producer_grant_material_unavailable") from exc
+            self.validate()
 
     @property
     def anchors(self) -> tuple[ProducerGrantAnchor, ...]:
@@ -337,36 +570,75 @@ class HeldProducerGrantPlan:
         return tuple(anchor.fd for anchor in self.anchors)
 
     @property
+    def binding_nodes(self) -> tuple[ProducerGrantBindingNode, ...]:
+        self.validate()
+        paths = tuple(sorted(self._nodes))
+        indexes = {path: index for index, path in enumerate(paths)}
+        result = []
+        for path in paths:
+            node = self._nodes[path]
+            parent_path = path.rpartition("/")[0] or "/"
+            parent_index = None if path == "/" else indexes[parent_path]
+            binding = ProducerGrantBindingNode(path, node.identity, parent_index, node.name or "")
+            binding.validate()
+            if parent_index is not None and (parent_index >= len(result)
+                                            or result[parent_index].identity.kind != "directory"):
+                _fail("binding_node_invalid")
+            result.append(binding)
+        return tuple(result)
+
+    @property
     def manifest(self) -> ProducerGrantManifest:
         self.validate()
         return ProducerGrantManifest(self._records, _digest(_records_payload(self._records)))
 
 
+def _check_material_info(info: os.stat_result, material: ProducerGrantMaterial) -> None:
+    if (_identity(info) != material.identity or info.st_nlink != 1
+            or stat.S_IMODE(info.st_mode) != 0o400 or info.st_size != len(material.content)
+            or info.st_mtime_ns != material.mtime_ns or info.st_ctime_ns != material.ctime_ns):
+        _fail("material_changed")
+
+
 @contextmanager
-def hold_producer_grants(requests: tuple[ProducerGrantRequest, ...]) -> Iterator[HeldProducerGrantPlan]:
-    """Acquire original no-follow anchors, revalidate on success, always close them.
+def hold_producer_grants(
+    requests: tuple[ProducerGrantRequest, ...], *,
+    expected_bindings: tuple[ProducerGrantExpectedBinding, ...] = (),
+    create_writable_directories: bool = False, creation_root: str | None = None,
+) -> Iterator[HeldProducerGrantPlan]:
+    """Acquire original no-follow anchors, revalidate on success, attempt cleanup.
 
     Directory identities omitted by the caller are first observations at entry, not
     claims about earlier validation. Protected files require supplied original pins.
+    Expected ancestor bindings grant no access. Optional creation starts ownership at
+    the first checked opened directory, without an atomic mkdir/FD identity claim.
     """
     roles, expected = _requests(requests)
+    expected, creation_paths = _acquisition_options(
+        roles, expected, expected_bindings, create_writable_directories, creation_root,
+    )
     if not all(hasattr(os, name) for name in ("O_NOFOLLOW", "O_CLOEXEC", "O_DIRECTORY", "O_NONBLOCK")):
         _fail("platform_unsupported")
     nodes: dict[str, _Node] = {}
     plan: HeldProducerGrantPlan | None = None
     try:
         try:
-            _open_node("/", nodes, directory=True)
+            _open_node("/", nodes, directory=True, expected_identity=expected.get("/"))
+            if create_writable_directories:
+                current = ""
+                for part in _path(creation_root):
+                    current += "/" + part
+                    _open_node(current, nodes, directory=True, expected_identity=expected.get(current))
             records = []
             for path, items in roles.items():
                 current = ""
                 parts = _path(path)
                 for part in parts[:-1]:
                     current += "/" + part
-                    _open_node(current, nodes, directory=True)
-                node = _open_node(path, nodes, directory="protected-file" not in items)
-                if path in expected and node.identity != expected[path]:
-                    _fail("expected_identity_mismatch")
+                    _open_node(current, nodes, directory=True, expected_identity=expected.get(current),
+                               create=current in creation_paths)
+                node = _open_node(path, nodes, directory="protected-file" not in items,
+                                  expected_identity=expected.get(path), create=path in creation_paths)
                 records.append(ProducerGrantRecord(path, items, node.identity))
             original = tuple(records)
             _records_payload(original)
@@ -395,6 +667,18 @@ def hold_producer_grants(requests: tuple[ProducerGrantRequest, ...]) -> Iterator
 
 
 __all__ = [
-    "HeldProducerGrantPlan", "ProducerGrantAnchor", "ProducerGrantError", "ProducerGrantIdentity",
-    "ProducerGrantManifest", "ProducerGrantRecord", "ProducerGrantRequest", "hold_producer_grants",
+    "MAX_PRODUCER_GRANT_MATERIALS",
+    "MAX_PRODUCER_GRANT_MATERIAL_BYTES",
+    "MAX_PRODUCER_GRANT_TOTAL_MATERIAL_BYTES",
+    "HeldProducerGrantPlan",
+    "ProducerGrantAnchor",
+    "ProducerGrantBindingNode",
+    "ProducerGrantError",
+    "ProducerGrantExpectedBinding",
+    "ProducerGrantIdentity",
+    "ProducerGrantManifest",
+    "ProducerGrantMaterial",
+    "ProducerGrantRecord",
+    "ProducerGrantRequest",
+    "hold_producer_grants",
 ]
