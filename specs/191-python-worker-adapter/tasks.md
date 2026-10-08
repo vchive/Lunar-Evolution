@@ -3,15 +3,18 @@
 ## P0 — contract and failure semantics
 
 - [x] Freeze the Phase A `PythonProducerBinding` wire against the existing
-  runtime/launch/budget schemas. Terminal and observation fields remain pending.
+  runtime/launch/budget schemas and the pure terminal/runtime-observation DTO fields.
 - [x] Implement pure exact-shape, bounds, digest, launch fingerprint and path
   validation with no filesystem or subprocess effects. Environment remains the
   existing digest-only intent field until the launch phase adds an allowlist.
 - [x] Bind the existing RSI planned deadline and launch limits; reject deadline,
   fingerprint, intent, source/tree and evaluator drift. Controller reservation
   and episode/request consumption remain pending.
-- [ ] Define durable unknown/reconcile rules for missing terminal, interrupted
-  launch, journal mismatch, callback error and cleanup uncertainty.
+- [x] Implement and test pure terminal resume/reconcile rules: retained digest,
+  identity/journal/time pins, original deadline, complete known-terminal evidence,
+  callback-free exact collection shapes and unsupported publication claims.
+- [ ] Connect these rules to durable runtime/process/journal recovery for missing
+  terminal, interrupted launch, journal mismatch, callback error and cleanup uncertainty.
 - [ ] Specify local exact-evaluator admission and atomic publication handoff;
   external producer score remains provenance only.
 

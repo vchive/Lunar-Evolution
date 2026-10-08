@@ -17,8 +17,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, NoReturn
 
-from .producer_process import ProducerExecutionReceipt
-from .python_producer_binding import PythonProducerBinding
+from .producer_process import (
+    ProducerExecutionReceipt,
+    ProducerProcessError,
+    ProducerStreamEvidence,
+    parse_producer_execution_receipt,
+)
+from .python_producer_binding import (
+    PythonProducerBinding,
+    PythonProducerBindingError,
+    parse_python_producer_binding,
+)
 
 PYTHON_PRODUCER_TERMINAL_PROTOCOL = "lunar-python-producer-terminal-v1"
 PYTHON_RUNTIME_OBSERVATION_PROTOCOL = "lunar-python-runtime-observation-v1"
@@ -76,7 +85,10 @@ def _canonical(value: object, maximum: int) -> bytes:
 def _strict_json(value: bytes | str, maximum: int) -> tuple[object, bytes]:
     if type(value) not in {bytes, str}:
         _fail("json_invalid")
-    raw = value if type(value) is bytes else value.encode("utf-8")
+    try:
+        raw = value if type(value) is bytes else value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise PythonProducerLifecycleError("json_invalid") from exc
     if len(raw) > maximum:
         _fail("record_too_large")
 
@@ -100,7 +112,8 @@ def _strict_json(value: bytes | str, maximum: int) -> tuple[object, bytes]:
 
 
 def _object(value: object, fields: frozenset[str]) -> dict[str, Any]:
-    if type(value) is not dict or set(value) != fields:
+    if (type(value) is not dict or len(value) != len(fields)
+            or any(type(key) is not str for key in value) or set(value) != fields):
         _fail("schema_invalid")
     return value
 
@@ -108,7 +121,7 @@ def _object(value: object, fields: frozenset[str]) -> dict[str, Any]:
 def _sha(value: object, code: str = "digest_invalid", *, allow_none: bool = False) -> str | None:
     if allow_none and value is None:
         return None
-    if type(value) is not str or _SHA.fullmatch(value) is None:
+    if type(value) is not str or _SHA.fullmatch(value) is None or value == "0" * 64:
         _fail(code)
     return value
 
@@ -120,7 +133,12 @@ def _identifier(value: object, code: str = "identity_invalid") -> str:
 
 
 def _text(value: object, code: str = "text_invalid", *, empty: bool = False) -> str:
-    if type(value) is not str or (not empty and not value) or len(value.encode("utf-8")) > MAX_PYTHON_STRING_BYTES:
+    if type(value) is not str or (not empty and not value) or len(value) > MAX_PYTHON_STRING_BYTES:
+        _fail(code)
+    try:
+        if len(value.encode("utf-8")) > MAX_PYTHON_STRING_BYTES:
+            _fail(code)
+    except UnicodeEncodeError:
         _fail(code)
     if any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
         _fail(code)
@@ -146,14 +164,20 @@ def _timestamp(value: object, code: str, *, optional: bool = True) -> float | No
         return None
     if type(value) not in {int, float} or isinstance(value, bool):
         _fail(code)
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError:
+        _fail(code)
     if not math.isfinite(result) or result < 0:
         _fail(code)
     return result
 
 
-def _sequence(value: object, code: str, *, item: str = "text", maximum: int = MAX_PYTHON_SEQUENCE) -> tuple[str, ...]:
-    if type(value) is not list or not 0 <= len(value) <= maximum:
+def _sequence(
+    value: object, code: str, *, item: str = "text", maximum: int = MAX_PYTHON_SEQUENCE,
+    wire: bool = True,
+) -> tuple[str, ...]:
+    if type(value) is not (list if wire else tuple) or not 0 <= len(value) <= maximum:
         _fail(code)
     result: list[str] = []
     for item_value in value:
@@ -174,12 +198,17 @@ def _digest_without(value: Mapping[str, object], field: str, maximum: int) -> st
 
 
 def _expected_binding(value: str | PythonProducerBinding | Mapping[str, object]) -> tuple[str, float]:
-    if isinstance(value, PythonProducerBinding):
-        return value.binding_sha256 or value.digest(), float(value.deadline_unix)
+    if type(value) is PythonProducerBinding:
+        try:
+            parsed = parse_python_producer_binding(value.to_json())
+        except PythonProducerBindingError as exc:
+            raise PythonProducerLifecycleError("binding_invalid") from exc
+        return parsed.binding_sha256, float(parsed.deadline_unix)
     if type(value) is str:
         _sha(value)
         return value, math.nan
-    if isinstance(value, Mapping):
+    if type(value) is dict:
+        _object(value, frozenset({"binding_sha256", "deadline_unix"}))
         digest = value.get("binding_sha256")
         deadline = value.get("deadline_unix")
         _sha(digest)
@@ -221,7 +250,8 @@ class PythonProducerTerminal:
     protocol: str = PYTHON_PRODUCER_TERMINAL_PROTOCOL
 
     def __post_init__(self) -> None:
-        if self.schema_version != PYTHON_PRODUCER_SCHEMA_VERSION or self.protocol != PYTHON_PRODUCER_TERMINAL_PROTOCOL:
+        if (type(self.schema_version) is not str or type(self.protocol) is not str
+                or self.schema_version != PYTHON_PRODUCER_SCHEMA_VERSION or self.protocol != PYTHON_PRODUCER_TERMINAL_PROTOCOL):
             _fail("schema_invalid")
         _sha(self.binding_sha256)
         for value in (self.run_id, self.journal_id, self.launch_id):
@@ -232,10 +262,12 @@ class PythonProducerTerminal:
             _integer(getattr(self, name), f"{name}_invalid", optional=True)
         for name in ("started_unix", "released_unix", "exited_unix"):
             _timestamp(getattr(self, name), f"{name}_invalid")
-        _timestamp(self.deadline_unix, "deadline_unix_invalid", optional=False)
-        if self.status not in _STATUSES:
+        deadline = _timestamp(self.deadline_unix, "deadline_unix_invalid", optional=False)
+        if deadline == 0:
+            _fail("deadline_unix_invalid")
+        if type(self.status) is not str or self.status not in _STATUSES:
             _fail("status_invalid")
-        if self.cleanup_status not in _CLEANUP:
+        if type(self.cleanup_status) is not str or self.cleanup_status not in _CLEANUP:
             _fail("cleanup_status_invalid")
         _integer(self.exit_code, "exit_code_invalid", minimum=-2**31, maximum=2**31 - 1, optional=True)
         _integer(self.signal, "signal_invalid", minimum=1, maximum=255, optional=True)
@@ -244,6 +276,28 @@ class PythonProducerTerminal:
         _sha(self.stderr_sha256)
         if type(self.publication_eligible) is not bool:
             _fail("publication_flag_invalid")
+        # This pure terminal has no envelope/evaluator/publication receipt and
+        # therefore cannot assert publication authority, even for exit 0.
+        if self.publication_eligible:
+            _fail("unsupported_publication_claim")
+        if (self.started_unix is not None and self.released_unix is not None
+                and self.started_unix > self.released_unix) or (
+                self.released_unix is not None and self.exited_unix is not None
+                and self.released_unix > self.exited_unix):
+            _fail("terminal_time_order_invalid")
+        if self.status != "unknown":
+            if any(value is None for value in (
+                self.process_registration_sha256, self.owner_identity_sha256, self.executable_sha256,
+                self.executable_size, self.executable_device, self.executable_inode,
+                self.started_unix, self.released_unix, self.exited_unix, self.request_journal_sha256,
+            )):
+                _fail("terminal_evidence_missing")
+            if self.executable_inode == 0 or self.executable_size == 0:
+                _fail("terminal_executable_identity_invalid")
+            if self.cleanup_status not in {"cleaned", "already_exited"}:
+                _fail("terminal_cleanup_unverified")
+            if self.exit_code is None and self.signal is None:
+                _fail("terminal_exit_evidence_missing")
         if self.status == "unknown":
             if self.publication_eligible:
                 _fail("unknown_publication_eligible")
@@ -252,10 +306,8 @@ class PythonProducerTerminal:
                 _fail("completed_evidence_invalid")
             if any(value is None for value in (self.process_registration_sha256, self.owner_identity_sha256, self.executable_sha256, self.request_journal_sha256, self.exited_unix)):
                 _fail("completed_evidence_missing")
-            if not self.publication_eligible:
-                # A verified terminal is still safe to retain without publishing; callers may
-                # require the flag only after observing an envelope and local exact evaluation.
-                pass
+            if self.exited_unix >= deadline:
+                _fail("completed_deadline_exceeded")
         else:
             if self.publication_eligible:
                 _fail("noncompleted_publication_eligible")
@@ -333,7 +385,8 @@ class PythonProducerRuntimeObservation:
     protocol: str = PYTHON_RUNTIME_OBSERVATION_PROTOCOL
 
     def __post_init__(self) -> None:
-        if self.schema_version != PYTHON_PRODUCER_SCHEMA_VERSION or self.protocol != PYTHON_RUNTIME_OBSERVATION_PROTOCOL:
+        if (type(self.schema_version) is not str or type(self.protocol) is not str
+                or self.schema_version != PYTHON_PRODUCER_SCHEMA_VERSION or self.protocol != PYTHON_RUNTIME_OBSERVATION_PROTOCOL):
             _fail("schema_invalid")
         _sha(self.binding_sha256)
         if type(self.execution_performed) is not bool:
@@ -342,11 +395,11 @@ class PythonProducerRuntimeObservation:
             _integer(getattr(self, name), f"{name}_invalid", maximum=999)
         for name in ("cache_tag", "abi_profile", "filesystem_encoding", "filesystem_errors", "stdio_encoding", "stdio_errors"):
             _text(getattr(self, name), f"{name}_invalid")
-        _sequence(list(self.argv), "argv_invalid")
-        _sequence(list(self.orig_argv), "orig_argv_invalid")
-        _sequence(list(self.flags), "flags_invalid")
-        _sequence(list(self.sys_path), "sys_path_invalid", item="path")
-        _sequence(list(self.startup_modules), "startup_modules_invalid")
+        _sequence(self.argv, "argv_invalid", wire=False)
+        _sequence(self.orig_argv, "orig_argv_invalid", wire=False)
+        _sequence(self.flags, "flags_invalid", wire=False)
+        _sequence(self.sys_path, "sys_path_invalid", item="path", wire=False)
+        _sequence(self.startup_modules, "startup_modules_invalid", wire=False)
         _sha(self.broker_transcript_sha256)
         _sha(self.computation_sha256)
         if type(self.pycache_absent) is not bool:
@@ -400,11 +453,12 @@ class PythonProducerRuntimeObservation:
 
 
 def parse_python_producer_terminal(value: bytes | str | Mapping[str, object]) -> PythonProducerTerminal:
-    if isinstance(value, Mapping):
-        raw = dict(value)
+    if type(value) is dict:
+        raw = value
     else:
         raw, _ = _strict_json(value, MAX_PYTHON_TERMINAL_BYTES)
     fields = _object(raw, _TERMINAL_FIELDS)
+    _sha(fields["terminal_sha256"])
     try:
         return PythonProducerTerminal(
             schema_version=fields["schema_version"], protocol=fields["protocol"], binding_sha256=fields["binding_sha256"],
@@ -425,20 +479,21 @@ def parse_python_producer_terminal(value: bytes | str | Mapping[str, object]) ->
 
 
 def parse_python_producer_runtime_observation(value: bytes | str | Mapping[str, object]) -> PythonProducerRuntimeObservation:
-    if isinstance(value, Mapping):
-        raw = dict(value)
+    if type(value) is dict:
+        raw = value
     else:
         raw, _ = _strict_json(value, MAX_PYTHON_OBSERVATION_BYTES)
     fields = _object(raw, _OBSERVATION_FIELDS)
+    _sha(fields["observation_sha256"])
     try:
         return PythonProducerRuntimeObservation(
             schema_version=fields["schema_version"], protocol=fields["protocol"], binding_sha256=fields["binding_sha256"],
             execution_performed=fields["execution_performed"], version_major=fields["version_major"], version_minor=fields["version_minor"],
             version_micro=fields["version_micro"], cache_tag=fields["cache_tag"], abi_profile=fields["abi_profile"],
-            argv=tuple(fields["argv"]), orig_argv=tuple(fields["orig_argv"]), flags=tuple(fields["flags"]),
+            argv=_sequence(fields["argv"], "argv_invalid"), orig_argv=_sequence(fields["orig_argv"], "orig_argv_invalid"), flags=_sequence(fields["flags"], "flags_invalid"),
             filesystem_encoding=fields["filesystem_encoding"], filesystem_errors=fields["filesystem_errors"],
-            stdio_encoding=fields["stdio_encoding"], stdio_errors=fields["stdio_errors"], sys_path=tuple(fields["sys_path"]),
-            startup_modules=tuple(fields["startup_modules"]), broker_transcript_sha256=fields["broker_transcript_sha256"],
+            stdio_encoding=fields["stdio_encoding"], stdio_errors=fields["stdio_errors"], sys_path=_sequence(fields["sys_path"], "sys_path_invalid", item="path"),
+            startup_modules=_sequence(fields["startup_modules"], "startup_modules_invalid"), broker_transcript_sha256=fields["broker_transcript_sha256"],
             pycache_absent=fields["pycache_absent"], computation_sha256=fields["computation_sha256"],
             runtime_load_protection=fields["runtime_load_protection"], production_admission=fields["production_admission"],
             general_code_origin_protection=fields["general_code_origin_protection"], observation_sha256=fields["observation_sha256"],
@@ -474,30 +529,45 @@ def bind_python_producer_receipt(
     fields already verified by ``ProducerExecutionReceipt`` and deliberately never upgrades a
     missing/uncertain cleanup or request journal into a completed publication.
     """
-    if not isinstance(binding, PythonProducerBinding):
+    if type(binding) is not PythonProducerBinding:
         _fail("binding_invalid")
-    if not isinstance(receipt, ProducerExecutionReceipt):
+    if type(receipt) is not ProducerExecutionReceipt:
         _fail("receipt_invalid")
-    expected_binding = binding.binding_sha256 or binding.digest()
+    expected_binding, _ = _expected_binding(binding)
+    # The process builder may return a fresh DTO before its optional self field
+    # is populated. Reparse its exact wire to validate that construction. An
+    # already retained digest must still match and cannot be silently replaced.
+    if receipt.receipt_sha256 is not None:
+        _sha(receipt.receipt_sha256, "receipt_digest_invalid")
+    if type(receipt.owner_identity) is not dict:
+        _fail("receipt_owner_invalid")
+    if type(receipt.stdout_evidence) is not ProducerStreamEvidence or type(receipt.stderr_evidence) is not ProducerStreamEvidence:
+        _fail("receipt_stream_invalid")
+    try:
+        receipt = parse_producer_execution_receipt(receipt.to_dict())
+    except (ProducerProcessError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("receipt_invalid") from exc
     if receipt.run_id != binding.run_id or receipt.journal_id != binding.intent.journal_id or receipt.launch_id != binding.intent.launch_id:
         _fail("receipt_identity_drift")
     if receipt.intent_sha256 != binding.intent_sha256 or receipt.attestation_sha256 != binding.attestation_sha256:
+        _fail("receipt_binding_drift")
+    if (receipt.parent_task_id != binding.parent_task_id or receipt.task_id != binding.task_id
+            or receipt.execution_snapshot_sha256 != binding.interpreter_sha256
+            or receipt.execution_snapshot_size != binding.interpreter.size
+            or receipt.max_requests != binding.request_budget
+            or receipt.request_timeout_seconds != binding.intent.request_timeout_seconds
+            or receipt.output_max_bytes != binding.output_max_bytes
+            or receipt.wall_timeout_seconds != binding.wall_timeout_seconds):
         _fail("receipt_binding_drift")
     try:
         owner_digest = hashlib.sha256(_canonical(dict(receipt.owner_identity), MAX_PYTHON_TERMINAL_BYTES)).hexdigest()
     except Exception as exc:
         raise PythonProducerLifecycleError("receipt_owner_invalid") from exc
-    status = receipt.status if receipt.status in _STATUSES else "unknown"
-    # A process-only receipt cannot assert publication.  If any terminal or cleanup evidence is
-    # absent, retain unknown so reconciliation is required before any future admission.
-    if status == "recovery_required" or receipt.request_count is None or receipt.cleanup_status not in {"cleaned", "already_exited"}:
-        status = "unknown"
-    if status == "completed" and (receipt.exit_code != 0 or receipt.cleanup_status not in {"cleaned", "already_exited"}):
-        status = "unknown"
     # Feature156's receipt intentionally does not carry wall-clock timestamps.  Keep this
     # projection unknown until a later observation supplies those fields; never fabricate them.
-    if status == "completed":
-        status = "unknown"
+    # No receipt status supplies the missing wall-clock observation. Known
+    # failure/cancellation also needs an observed terminal before reconciliation.
+    status = "unknown"
     return build_python_producer_terminal(
         binding_sha256=expected_binding,
         run_id=receipt.run_id,
@@ -505,8 +575,8 @@ def bind_python_producer_receipt(
         launch_id=receipt.launch_id,
         process_registration_sha256=receipt.registration_sha256,
         owner_identity_sha256=owner_digest,
-        executable_sha256=receipt.executable_identity,
-        executable_size=None,
+        executable_sha256=receipt.execution_snapshot_sha256,
+        executable_size=receipt.execution_snapshot_size,
         executable_device=None,
         executable_inode=None,
         started_unix=None,
@@ -525,6 +595,35 @@ def bind_python_producer_receipt(
     )
 
 
+def _retained_terminal(value: object) -> PythonProducerTerminal:
+    if type(value) is PythonProducerTerminal:
+        # Frozen DTOs can still be changed via object.__setattr__. The retained
+        # digest must be verified whenever a DTO is reused as lifecycle input.
+        value.__post_init__()
+        _sha(value.terminal_sha256)
+        return value
+    return parse_python_producer_terminal(value)
+
+
+def _terminal_binding_pins(item: PythonProducerTerminal, binding: object) -> None:
+    if type(binding) is not PythonProducerBinding:
+        return
+    expected = {
+        "run_id": binding.run_id, "journal_id": binding.intent.journal_id,
+        "launch_id": binding.intent.launch_id,
+        "executable_sha256": binding.interpreter_sha256,
+        "executable_size": binding.interpreter.size,
+        "executable_device": binding.interpreter.device,
+        "executable_inode": binding.interpreter.inode,
+    }
+    for name, pin in expected.items():
+        value = getattr(item, name)
+        if value is not None and value != pin:
+            _fail("binding_identity_drift")
+    if item.request_count > binding.request_budget:
+        _fail("request_budget_exceeded")
+
+
 def reconcile_python_producer_terminal(
     previous: PythonProducerTerminal | bytes | str | Mapping[str, object],
     observed: PythonProducerTerminal | bytes | str | Mapping[str, object],
@@ -532,12 +631,14 @@ def reconcile_python_producer_terminal(
     expected_deadline_unix: float | None = None,
 ) -> PythonProducerTerminal:
     """Reconcile retained terminal evidence without I/O, mutation, retry or publication."""
-    old = previous if isinstance(previous, PythonProducerTerminal) else parse_python_producer_terminal(previous)
-    new = observed if isinstance(observed, PythonProducerTerminal) else parse_python_producer_terminal(observed)
+    old = _retained_terminal(previous)
+    new = _retained_terminal(observed)
     binding, bound_deadline = _expected_binding(expected_binding)
     if expected_deadline_unix is not None:
         parsed = _timestamp(expected_deadline_unix, "deadline_invalid", optional=False)
         assert parsed is not None
+        if not math.isnan(bound_deadline) and parsed != bound_deadline:
+            _fail("deadline_drift")
         bound_deadline = parsed
     for item in (old, new):
         if item.binding_sha256 != binding:
@@ -546,6 +647,9 @@ def reconcile_python_producer_terminal(
             _fail("deadline_drift")
         if item.run_id != old.run_id or item.journal_id != old.journal_id or item.launch_id != old.launch_id:
             _fail("identity_drift")
+        _terminal_binding_pins(item, expected_binding)
+    if new.deadline_unix != old.deadline_unix:
+        _fail("deadline_drift")
     if old.status in {"completed", "failed", "cancelled"}:
         if new != old:
             _fail("terminal_immutable")
@@ -554,6 +658,17 @@ def reconcile_python_producer_terminal(
         _fail("previous_status_invalid")
     if old.publication_eligible:
         _fail("unknown_publication_eligible")
+    for name in (
+        "process_registration_sha256", "owner_identity_sha256", "executable_sha256",
+        "executable_size", "executable_device", "executable_inode", "request_journal_sha256",
+        "started_unix", "released_unix", "exited_unix", "exit_code", "signal",
+    ):
+        pin = getattr(old, name)
+        if pin is not None and getattr(new, name) != pin:
+            _fail("retained_evidence_drift")
+    if new.request_count < old.request_count or (
+            old.request_journal_sha256 is not None and new.request_count != old.request_count):
+        _fail("request_count_drift")
     # Unknown can only be resolved by a terminal record with complete process/cleanup evidence.
     if new.status == "unknown":
         if new != old:
@@ -576,16 +691,19 @@ def resume_python_producer_terminal(
     expected_binding: str | PythonProducerBinding | Mapping[str, object], expected_deadline_unix: float | None = None,
 ) -> PythonProducerTerminal:
     """Validate a retained terminal for resume; unknown state remains reconcile-required."""
-    item = terminal if isinstance(terminal, PythonProducerTerminal) else parse_python_producer_terminal(terminal)
+    item = _retained_terminal(terminal)
     binding, deadline = _expected_binding(expected_binding)
     if expected_deadline_unix is not None:
         parsed = _timestamp(expected_deadline_unix, "deadline_invalid", optional=False)
         assert parsed is not None
+        if not math.isnan(deadline) and parsed != deadline:
+            _fail("deadline_drift")
         deadline = parsed
     if item.binding_sha256 != binding:
         _fail("binding_drift")
     if not math.isnan(deadline) and item.deadline_unix != deadline:
         _fail("deadline_drift")
+    _terminal_binding_pins(item, expected_binding)
     if item.status == "unknown":
         _fail("reconcile_required")
     return item

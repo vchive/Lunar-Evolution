@@ -28,8 +28,11 @@ and `deadline_unix` must equal the existing RSI planned deadline. The complete
 durable RSI checkpoint remains owned by the controller and cannot be replenished
 by parsing or rebuilding a binding.
 
-The terminal, runtime observation and result-envelope records below are design
-contracts only; Phase A does not construct or persist them.
+The terminal and runtime-observation DTO/parser contracts below are implemented
+as pure validation. Terminal resume/reconcile operates on retained values and
+does not read or write durable process/runtime/journal evidence. The existing
+result envelope remains unchanged. Runtime capture, persistence and production
+admission are still open.
 
 ## PythonProducerTerminal
 
@@ -40,13 +43,28 @@ identity/digest, stdout/stderr bounded digests and `publication_eligible`. A
 terminal with missing process or cleanup evidence is `unknown`; process-only
 evidence is never publication eligible.
 
+All known terminal states require registration, owner, executable byte/size/device/
+inode, start/release/exit timestamps, verified cleanup, request-journal digest and
+exit or signal evidence. Timestamps are ordered; completed exit precedes the
+original deadline. Reconcile preserves every already retained identity, journal
+and timestamp pin, and cannot refresh the deadline or journal request count.
+Reused DTOs are revalidated against their retained digest. Missing/zero digest
+placeholders and `publication_eligible=true` are refused because this pure record
+has no evaluator/envelope/publication evidence. A process receipt alone remains
+`unknown` when runtime timestamps or actual executable identity are unavailable.
+
 ## PythonRuntimeObservation
 
 Observed fields include actual version tuple, cache tag, ABI/profile, argv and
 orig_argv, selected flags, filesystem/stdio encoding and errors, `sys.path`,
 startup module names/origins, broker transcript digest, pycache absence and
 fixed computation result. The record carries `execution_performed=true` only
-after the running process emitted these values. Protection claims remain false.
+after the running process emitted these values. The current pure parser can only
+validate this child declaration; it does not prove that a process emitted it.
+The capture/binding path must establish that fact before real acceptance.
+Protection claims remain false. Collection fields are bounded exact lists on
+the wire and immutable exact tuples in DTOs; callback-bearing mappings or
+iterables are rejected before conversion or serialization.
 
 ## ProducerResultEnvelope
 

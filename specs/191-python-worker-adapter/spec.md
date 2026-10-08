@@ -1,10 +1,13 @@
 # Feature191 — Pinned Python producer adapter
 
-Status: Phase A pure binding implemented, 2026-10-09. Priority P1. The
+Status: Phase A pure binding and lifecycle contracts implemented, 2026-10-09. Priority P1. The
 `PythonProducerBinding` DTO/parser now joins already prepared runtime/tree and
-launch evidence without I/O. The lifecycle, process launch, runtime observation
-and adapter phases remain specification-only; this feature still does not start
-a real producer, model, evaluator service or campaign.
+launch evidence without I/O. Pure terminal/runtime-observation DTOs and read-only
+terminal resume/reconcile rules are implemented and tested with inert values.
+These parsers do not authenticate child observations or persist a runtime/journal.
+Process launch, durable recovery integration, real CPython observations and adapter
+execution remain open; this feature still does not start a real producer, model,
+evaluator service or campaign.
 
 ## Problem and outcome
 
