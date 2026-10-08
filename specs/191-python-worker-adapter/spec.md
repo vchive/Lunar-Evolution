@@ -1,9 +1,10 @@
 # Feature191 — Pinned Python producer adapter
 
-Status: specification only, 2026-10-08. Priority P1. This feature defines the
-smallest production boundary for running a pinned Python OpenEvolve or Shinka
-producer as an untrusted local process. It does not start a real producer,
-model, evaluator service or campaign in this feature.
+Status: Phase A pure binding implemented, 2026-10-09. Priority P1. The
+`PythonProducerBinding` DTO/parser now joins already prepared runtime/tree and
+launch evidence without I/O. The lifecycle, process launch, runtime observation
+and adapter phases remain specification-only; this feature still does not start
+a real producer, model, evaluator service or campaign.
 
 ## Problem and outcome
 
@@ -51,6 +52,17 @@ general code-origin guarantee, arbitrary Python admission, or automatic real
 OpenEvolve/Shinka campaign. P2 service/ownership/distributed work remains a
 separate feature. This adapter does not make `runtime_load_protection`,
 `production_admission`, or `general_code_origin_protection` true.
+
+## Current implementation boundary
+
+The implemented Phase A surface is `build_python_producer_binding` and
+`parse_python_producer_binding`. It validates canonical nested
+`PythonRuntimeManifest`, `PythonRuntimeTreeManifest`, `ProducerLaunchIntent` and
+`ProducerLaunchAttestation` DTOs, matches interpreter bytes/stat pins, binds the
+existing RSI planned deadline and launch limits, and computes a digest-without-
+self-field. It performs no filesystem reads, subprocess calls, budget
+consumption, journal creation, or publication. The remaining launch/observe/
+settle/resume behavior below is not implemented by this change.
 
 ## Preconditions and safety gates
 

@@ -8,25 +8,28 @@ missing digest with one computed from current bytes.
 
 ## PythonProducerBinding
 
-Required fields:
+Current Phase A wire fields:
 
 ```text
-schema_version, protocol, run_id, parent_task_id, task_id, fixture_case,
-contract_sha256, producer_id, producer_fingerprint, evaluator_kind,
-evaluator_fingerprint, runtime_manifest_sha256, runtime_tree_sha256,
-interpreter_sha256, interpreter_relative_path, target, argv, environment,
-working_directory, output_directory, config_relative_path, result_relative_path,
-request_budget, output_max_bytes, wall_timeout_seconds, deadline_unix,
-intent_sha256, attestation_sha256, broker_policy, dependency_sha256,
-environment_sha256
+schema_version, protocol, fixture_case, runtime_manifest, runtime_tree, intent,
+attestation, deadline_unix, request_budget, output_max_bytes,
+wall_timeout_seconds, broker_policy, binding_sha256
 ```
 
-`argv` is an exact vector. `environment` is an ordered allowlist of non-secret
-name/value pairs; provider credentials and arbitrary inherited host variables are
-forbidden. Relative paths are portable, non-empty and contain no dot, dot-dot,
-backslash or absolute component. `target` is the existing explicit platform,
-architecture, Python version and ABI declaration. `request_budget` is shared
-with the existing RSI durable budget and cannot be replenished on resume.
+The four nested values are the existing immutable DTO wires; they are reparsed
+and compared before the binding is accepted. The binding does not create a second
+runtime, launch or attestation schema. Convenience properties expose the derived
+`run_id`, identities, target, interpreter digest/path, argv, output paths,
+dependency/environment fingerprints, intent/attestation digests and the three
+launch limits without serializing duplicate fields. The environment remains the
+existing digest-only launch field; no credential or endpoint map is added here.
+`request_budget`/`output_max_bytes`/`wall_timeout_seconds` must equal the intent,
+and `deadline_unix` must equal the existing RSI planned deadline. The complete
+durable RSI checkpoint remains owned by the controller and cannot be replenished
+by parsing or rebuilding a binding.
+
+The terminal, runtime observation and result-envelope records below are design
+contracts only; Phase A does not construct or persist them.
 
 ## PythonProducerTerminal
 

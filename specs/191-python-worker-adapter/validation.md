@@ -1,11 +1,12 @@
 # Validation plan
 
-No validation in this document is a completed acceptance. Until Features189 and
+The Phase A parser checks below are complete and run against inert local
+fixtures. No process/lifecycle acceptance is complete. Until Features189 and
 190 pass their dedicated Linux gates, only provider-free inert fixtures may run.
 
 | Area | Required evidence | Refusal cases |
 | --- | --- | --- |
-| Binding parser | Canonical DTO round trip, exact type/order/bounds and fixed errors | unknown field, bool-as-int, duplicate key, placeholder digest, path/env/target drift |
+| Binding parser | **Complete Phase A:** canonical nested DTO round trip, exact type/order/bounds, shape-gate, digest/deadline/limit drift and fixed errors | unknown field, bool-as-int, duplicate key, placeholder digest, callback-bearing collection, path/env/target drift |
 | Runtime closure | Original manifest/tree digest, no-follow identity snapshots and target ABI | missing interpreter, symlink/hardlink, unlisted file, changed inode/bytes/resource/native input |
 | Launch | Exact argv/env, intent+attestation, private owner and original deadline | host Python substitution, argv/module/path injection, env leak, deadline/nonce drift |
 | Loader policy | Readable decoy source/pyc/extension/zip and unknown codec are refused | permission-only denial, `sys.path` discovery, `.pth`/site/customization/pycache |

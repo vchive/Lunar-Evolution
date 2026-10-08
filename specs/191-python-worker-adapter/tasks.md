@@ -2,12 +2,14 @@
 
 ## P0 — contract and failure semantics
 
-- [ ] Freeze `PythonProducerBinding`, terminal and observation fields against the
-  existing runtime/launch/budget schemas.
-- [ ] Implement pure exact-shape, bounds, digest, environment and path validation
-  with no filesystem or subprocess effects.
-- [ ] Bind Feature160 durable RSI run/episode/request budgets and original
-  deadline; reject fingerprint, intent, source, tree and evaluator drift.
+- [x] Freeze the Phase A `PythonProducerBinding` wire against the existing
+  runtime/launch/budget schemas. Terminal and observation fields remain pending.
+- [x] Implement pure exact-shape, bounds, digest, launch fingerprint and path
+  validation with no filesystem or subprocess effects. Environment remains the
+  existing digest-only intent field until the launch phase adds an allowlist.
+- [x] Bind the existing RSI planned deadline and launch limits; reject deadline,
+  fingerprint, intent, source/tree and evaluator drift. Controller reservation
+  and episode/request consumption remain pending.
 - [ ] Define durable unknown/reconcile rules for missing terminal, interrupted
   launch, journal mismatch, callback error and cleanup uncertainty.
 - [ ] Specify local exact-evaluator admission and atomic publication handoff;

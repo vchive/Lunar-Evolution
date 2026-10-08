@@ -123,3 +123,31 @@ def test_binding_requires_digest_and_validates_mapping_budget_checkpoint(tmp_pat
             runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
             deadline_unix=4102444800.0, budget=mapping,
         )
+
+
+def test_binding_shape_gate_rejects_mutated_callback_collections(tmp_path: Path) -> None:
+    manifest, tree, intent, attestation, budget = _fixture(tmp_path)
+
+    class Forbidden:
+        def __iter__(self):
+            raise AssertionError("callback collection was iterated")
+
+        def __len__(self):
+            raise AssertionError("callback collection was sized")
+
+    object.__setattr__(manifest, "files", Forbidden())
+    with pytest.raises(binding.PythonProducerBindingError):
+        binding.build_python_producer_binding(
+            runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
+            deadline_unix=4102444800.0, budget=budget,
+        )
+
+    second = tmp_path / "second"
+    second.mkdir()
+    manifest, tree, intent, attestation, budget = _fixture(second)
+    object.__setattr__(intent, "argv", Forbidden())
+    with pytest.raises(binding.PythonProducerBindingError):
+        binding.build_python_producer_binding(
+            runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
+            deadline_unix=4102444800.0, budget=budget,
+        )

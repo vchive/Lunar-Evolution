@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, NoReturn
 
+from . import producer_python_runtime_tree as closed_runtime
 from .producer_launcher import (
     PRODUCER_LAUNCH_PROTOCOL,
     ProducerLaunchAttestation,
@@ -123,7 +124,10 @@ def _positive_int(value: object, code: str) -> int:
 def _deadline(value: object) -> float:
     if type(value) not in {int, float} or isinstance(value, bool):
         _fail("deadline_invalid")
-    result = float(value)
+    try:
+        result = float(value)
+    except (ValueError, OverflowError):
+        _fail("deadline_invalid")
     if not math.isfinite(result) or result <= 0:
         _fail("deadline_invalid")
     return result
@@ -139,8 +143,10 @@ def _reparse_runtime(manifest: PythonRuntimeManifest) -> PythonRuntimeManifest:
     if type(manifest) is not PythonRuntimeManifest:
         _fail("runtime_manifest_type_invalid")
     try:
-        # Reparse the detached canonical bytes so object.__setattr__ tampering is
-        # checked by the original validator before this binding becomes durable.
+        # Feature177's exact bounded shape gate refuses callback-bearing nested
+        # collections before the original validator or serialization sees them.
+        closed_runtime._declared_shape(manifest)
+        manifest.__post_init__()
         parsed = parse_python_runtime_manifest(manifest.to_json())
     except Exception as exc:
         if isinstance(exc, PythonProducerBindingError):
@@ -156,6 +162,7 @@ def _reparse_tree(tree: PythonRuntimeTreeManifest) -> PythonRuntimeTreeManifest:
     if type(tree) is not PythonRuntimeTreeManifest:
         _fail("runtime_tree_type_invalid")
     try:
+        tree.__post_init__()
         parsed = parse_python_runtime_tree_manifest(tree.to_json())
     except Exception as exc:
         if isinstance(exc, PythonProducerBindingError):
@@ -167,9 +174,36 @@ def _reparse_tree(tree: PythonRuntimeTreeManifest) -> PythonRuntimeTreeManifest:
     return parsed
 
 
+_LAUNCH_STAT_FIELDS = frozenset({
+    "executable_size", "executable_device", "executable_inode", "executable_mtime_ns",
+    "executable_ctime_ns", "request_timeout_seconds", "max_requests", "output_max_bytes",
+    "wall_timeout_seconds",
+})
+
+
+def _launch_shape(value: ProducerLaunchIntent | ProducerLaunchAttestation, *, attestation: bool) -> None:
+    # Both DTOs predate the exact-shape Python boundary.  Bound their scalar
+    # fields and argv before to_dict() or their isinstance-based validators.
+    from dataclasses import fields
+
+    for field in fields(type(value)):
+        item = getattr(value, field.name)
+        if field.name == "argv":
+            if type(item) is not tuple or not 1 <= len(item) <= 64:
+                _fail("intent_shape_invalid")
+            if any(type(arg) is not str or not 1 <= len(arg) <= 4096 for arg in item):
+                _fail("intent_shape_invalid")
+        elif field.name in _LAUNCH_STAT_FIELDS:
+            if type(item) is not int or not 0 <= item <= 2**64 - 1:
+                _fail("attestation_shape_invalid" if attestation else "intent_shape_invalid")
+        elif type(item) is not str or not 1 <= len(item) <= 4096:
+            _fail("attestation_shape_invalid" if attestation else "intent_shape_invalid")
+
+
 def _reparse_intent(intent: ProducerLaunchIntent) -> ProducerLaunchIntent:
     if type(intent) is not ProducerLaunchIntent:
         _fail("intent_type_invalid")
+    _launch_shape(intent, attestation=False)
     try:
         parsed = parse_producer_launch_intent(intent.to_dict())
     except (ProducerLaunchError, TypeError, ValueError) as exc:
@@ -187,6 +221,7 @@ def _reparse_intent(intent: ProducerLaunchIntent) -> ProducerLaunchIntent:
 def _reparse_attestation(attestation: ProducerLaunchAttestation) -> ProducerLaunchAttestation:
     if type(attestation) is not ProducerLaunchAttestation:
         _fail("attestation_type_invalid")
+    _launch_shape(attestation, attestation=True)
     try:
         parsed = parse_producer_launch_attestation(attestation.to_dict())
     except (ProducerLaunchError, TypeError, ValueError) as exc:
@@ -217,12 +252,14 @@ def _interpreter(manifest: PythonRuntimeManifest) -> PythonRuntimeFile:
 
 def _budget_deadline(budget: RSIRunBudget | Mapping[str, object]) -> float:
     if type(budget) is RSIRunBudget:
+        _budget_shape(budget.state)
         try:
             state = budget.to_dict()
         except Exception as exc:
             raise PythonProducerBindingError("budget_invalid") from exc
         planned = state.get("planned")
     elif type(budget) is dict:
+        _budget_shape(budget)
         try:
             if set(budget) == {"planned", "consumed", "remaining"}:
                 # A complete mapping is accepted only after the same durable
@@ -244,6 +281,19 @@ def _budget_deadline(budget: RSIRunBudget | Mapping[str, object]) -> float:
     if type(planned) is not dict or "deadline_unix" not in planned:
         _fail("budget_deadline_missing")
     return _deadline(planned["deadline_unix"])
+
+
+def _budget_shape(value: object, *, depth: int = 0) -> None:
+    """Refuse callback-bearing values before deepcopy or budget validation."""
+    if type(value) is not dict or depth > 1 or len(value) > 32:
+        _fail("budget_shape_invalid")
+    for key, item in value.items():
+        if type(key) is not str or not 1 <= len(key) <= 128:
+            _fail("budget_shape_invalid")
+        if type(item) is dict:
+            _budget_shape(item, depth=depth + 1)
+        elif item is not None and type(item) not in {int, float} or type(item) is int and item.bit_length() > 4096:
+            _fail("budget_shape_invalid")
 
 
 def _validate_parts(
