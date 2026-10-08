@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 Feature191 binding and terminal/reconcile work
+
+PR24's current head adds a pure `PythonProducerBinding` over the existing
+runtime manifest/tree, launch intent and attestation. It validates canonical
+shape, nested digest/stat identity, RSI planned deadline and launch limits
+without filesystem or subprocess effects. The same head adds a read-only
+terminal/runtime-observation adapter over `ProducerExecutionReceipt`; missing
+process, cleanup or request evidence remains `unknown`, publication is always
+false, and resume/reconcile rejects binding/deadline drift without relaunching.
+Focused tests, Ruff, compileall and diff checks pass. This is not production
+Python admission: static CPython has not been built or started and no external
+producer/model/evaluator campaign has run.
+
+PR25/Feature192 adds bounded Linux kernel-global route controls with a
+dedicated 11-case CI gate. Both PRs require final three-version Linux CI and
+merge. P1 lifecycle spawn, real runtime observations, loader-negative fixture
+and OpenEvolve/Shinka Python process adapters remain open; P2 remote evaluator,
+external authentication and multi-host ownership stay deferred.
+
 ## 2026-10-08 Feature188 merged; Feature190 owner repair
 
 PR22 sourcec5973a7b4ad026182b11e6d65af946ae6d15bd30 / tree
