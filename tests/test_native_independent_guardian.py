@@ -95,7 +95,8 @@ def _wait_file(path, timeout=3):
 def _inactive(pid, timeout=3):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        if _state(pid) in (None, "Z", "X"):
+        state = _state(pid)
+        if not state or state.startswith(("Z", "X")):
             return
         time.sleep(0.01)
     pytest.fail("original fixture descendant remained active")
@@ -404,13 +405,15 @@ def _formal(compiled, tmp_path, *, broker=False, mutate=None, ack_payload=None):
         bootstrap_fd = stack.enter_context(_sealed(artifact.path))
         sentinel = owned(os.open(secret, os.O_RDONLY | os.O_CLOEXEC))
         nodes, indexes = _graph([approved, working, output])
+        paths = sorted((approved, working, output), key=str)
         grants = [{"node": indexes[str(path)], "fd": owned(os.open(path, os.O_PATH | os.O_CLOEXEC)),
                    "role": 1 if path == approved else (12 if path == working else 4)}
-                  for path in (approved, working, output)]
+                  for path in paths]
         info = working.stat()
         data = SimpleNamespace(launch=_launch(target), target=target, target_fd=target_fd,
                                bootstrap_fd=bootstrap_fd, nodes=nodes, grants=grants,
-                               cwd_index=1, isolation_kind=1,
+                               cwd_index=next(i for i, grant in enumerate(grants) if grant["role"] == 12),
+                               isolation_kind=1,
                                argv=[str(target), str(approved), str(secret), str(info.st_dev), str(info.st_ino),
                                      str(target_fd), str(output / "output-marker"), "broker" if broker else "plain"],
                                finish=finish_w, ack=ack_r)
