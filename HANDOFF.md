@@ -1,5 +1,42 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Feature187 merged; Feature188 implementation
+
+PR21/Feature187 source a15895cfc149c986f2f71efbceb634b4c7997ede / tree
+cbb30f09e26de09cc6d615caa924d2d706bf0113 passed final run37738544048:
+three Python versions, 21 phases each, current11710/92 platform skips and
+keyring52/0 skips, zero failure/error/retry. Independent ZIP/XML/log/inventory/
+checkout-parent/tree audit passed. Merge518f1f4d2b920f3c25c744e4062c48a19f8e83ae
+has the identical tested tree; main was fast-forwarded. Cancelled preflight
+37736544121 stays separate. Main20 postmerge37737899242 also passed independent
+raw audit (20 phases, current11652/92 skips). Main21 postmerge is not yet audited.
+Raw final PR21 evidence and merge proof are retained in ignored
+`.lunar-evolution/reports/persisted-ci-evidence-20261008/pr21-final-ci-audit/`.
+
+Feature188 on codex/sealed-runtime-material was rebased onto main518f1f4.
+Its Feature187 implementation gate is satisfied. Parallel work implements the
+bounded canonical frame/parser, guarded held-chain source IO, original private
+anchor plus borrowed CLOEXEC duplicate, full kernel seals, independent pread
+verification and original deadline/cleanup authority. See
+specs/188-sealed-runtime-material and docs/sealed-python-runtime-material.md.
+Root integrated focused635 cases pass as556 passed/79 Darwin platform skips,
+zero failure/error. New inventory274 is parser131 + sourceIO55 + material88;
+79 material cases require actual Linux. Existing171/177 contributes361 of the
+635, so overlapping suites are not summed. Ruff/compileall/diff and708 unique
+present exports pass; collected current inventory11984. Independent sourceIO
+and live-owner reviews have no open finding. This is not Feature188 Linux
+acceptance. Dedicated runtime-material.xml requires274/0skip on CI. The initial missing-PYTHONPATH collection failure is retained in
+/tmp/lunar188-existing-focused-first.xml. Portable/new focused materials and first failures are persisted in ignored
+reports/feature188-local; final Linux CI/raw audit/merge remain pending.
+
+All five material capability claims stay false: no CPython launch, native v2
+extension, import/archive/loader closure or production admission. P1 successors
+remain pinned static CPython, versioned delivery, formal Python admission,
+OpenEvolve/Shinka Python adapters and production RSI CLI. Other kernel routes
+remain bounded P0 follow-up; P2 services/multi-host ownership are deferred.
+Only local inert fixtures and GitHub CI; no .env/credentials, provider/model,
+WebAgent, remote/company evaluator or real solver campaign. Preserve other work.
+
 ## 2026-10-08 Feature187 keyring control development
 
 PR18/Feature183 已独立通过三版 raw run37724953798，并合入 main8f3377f；

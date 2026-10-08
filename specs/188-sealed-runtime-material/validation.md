@@ -1,13 +1,35 @@
 # Validation state
 
-Status: SDD preparation only. No Feature188 source, tests, runtime API, CLI,
-materialization or Linux platform evidence exists from this preparation.
-Only document-content and whitespace checks were performed. No tests, target
-interpreter, provider, model or evaluator were run for these files.
-Existing Feature171/177/184 results establish their original limited scopes only.
+Status: local implementation and portable validation complete; Linux sealing
+acceptance is pending. Feature187 prerequisite PR21/run37738544048 passed an
+independent final-source raw audit and merged as518f1f4 before coding began.
 
-Implementation begins only after Feature187 final-head Linux acceptance.
-The following is the required future validation plan, not a passing result.
+Root integration `/tmp/lunar188-composition-final.xml` contains 635 cases:
+556 passed / 79 Darwin platform skips / zero failure/error. It includes the
+274-case new focused inventory and 361 existing171/177 cases. Do not add these
+overlapping suites to make another acceptance total. The new portable parser
+131/131 and source IO55/55 pass; material owner suite is9/88 passed on Darwin,
+with79 actual-Linux cases skipped. No Linux mechanism pass is claimed.
+
+Ruff (`src tests tools`), compileall and git diff --check pass. The 708 package
+exports are present and unique. Dedicated `runtime-material.xml` is wired into
+CI with an exact274-case, zero failure/error/skip gate before the existing21
+phases. Final exact-head Linux inventories and independent raw audit remain
+required before integration.
+
+First failures remain separate: the root initial missing-PYTHONPATH collection
+is `/tmp/lunar188-existing-focused-first.xml`; source IO first39-case run had
+38 passed/1 failed at `/tmp/lunar188-sourceio-first.xml` because the test injected
+cleanup failure before its intended read failure. Narrowing that test's fault
+injection produced the final passing55-case inventory, without weakening the
+helper contract. Initial Ruff test sentinel/lambda style failures were fixed.
+
+No interpreter is launched by materialization. The inert C reader has not run
+on Darwin and still needs Linux size/hash/seal/FD-census acceptance. No provider,
+model, WebAgent, remote/company evaluator, .env, credentials or real campaign
+is used. Existing171/177/184 scopes are unchanged.
+
+The following plan defines the required Linux evidence, not a passing result.
 
 ## Parser and bounded work
 

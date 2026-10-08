@@ -1,14 +1,14 @@
 # Plan
 
-This directory specifies Feature188 only. Implement no code until Feature187's
-final-head Linux acceptance. Preserve other work and keep the new API independent
+This directory specifies Feature188 only. Feature187's final-head Linux gate was
+met by PR21/run37738544048 and merge518f1f4 on 2026-10-08. Preserve other work and keep the new API independent
 of native admission, selectors and all existing 171/177 wire formats.
 
 ## Proposed implementation
 
-`producer_python_runtime_material.py` owns the strict framed format, immutable
-detached descriptor, factory-owned live context, materializer and live verifier.
-API names are proposed until implementation review:
+`producer_python_runtime_material.py` owns the factory-owned live context,
+materializer and live verifier. The private format module owns the bounded framed
+format and detached descriptor. The following API names are frozen:
 
 - `materialize_sealed_python_runtime_material(...)`: consume original tree/pins,
   explicit version and absolute deadline; yield one live sealed bundle.

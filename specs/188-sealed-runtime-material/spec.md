@@ -1,9 +1,9 @@
 # Feature188 — Sealed Python runtime material
 
-Priority: P1. Status: SDD preparation only, based on Feature187 head
-`6d20238495d3c6aaa430c4a650674bd83200bc48`. No implementation, execution or platform
-acceptance is established. Feature188 implementation must wait for Feature187's
-final-head Linux acceptance. This preparation may proceed in parallel with that CI.
+Priority: P1. Status: implementation in progress, based on merged main
+`518f1f4d2b920f3c25c744e4062c48a19f8e83ae`. The Feature187 prerequisite passed
+final-source Linux run37738544048 and independent raw audit before coding began.
+Feature188's own Linux acceptance and merge remain pending.
 
 Feature171 pins declared files. Feature177 closes selected filesystem membership.
 Feature184 proves trusted-host Python/pipe compatibility. None seals the runtime

@@ -1,7 +1,7 @@
 # Data model
 
-The following names and bounds define the proposed contract; no classes or APIs
-are implemented by this SDD preparation.
+The following names and bounds define the implemented local contract.
+Linux mechanism acceptance and final-source integration remain pending.
 
 ## Detached image descriptor
 
@@ -27,8 +27,8 @@ Wire protocol: `lunar-python-runtime-sealed-material-v1`, schema `1`.
 The frame has a fixed magic/version header, bounded table and payload lengths,
 one canonical UTF-8 table, then contiguous payload bytes in canonical file order.
 Exact header byte widths, table fields and digest domains are frozen in
-[wire-contract.md](wire-contract.md); implementation and platform acceptance remain
-pending. The parser must implement that contract before publication.
+[wire-contract.md](wire-contract.md); the portable parser is implemented and tested; actual Linux platform
+acceptance remains pending.
 
 The table binds the original declared/tree/target/version pins and contains
 sorted logical root labels, all directories including empty membership, and
@@ -38,7 +38,7 @@ paths. Refuse traversal, links, special entries, duplicate or aliased names,
 unsupported path normalization, unknown fields, offset overflow, gaps, overlaps,
 missing/extra entries and trailing bytes. Directories have no payload range.
 
-Suggested retained bounds: 16 roots, 4096 files, 8192 files/directories, depth64,
+Retained bounds: 16 roots, 4096 files, 8192 files/directories, depth64,
 256MiB per file, 1GiB total payload, 8MiB table, 4096-character/UTF-8-byte paths
 and 128-character labels. Framed total is separately bounded by header + table
 + payload. Sum membership edges before per-member work. Cheap exact-type and
@@ -51,8 +51,10 @@ enumerate archive members or imports inside declared opaque file payloads.
 ## Live ownership
 
 `SealedPythonRuntimeMaterial` is factory-created context state for one original
-memfd. It holds original object identity, descriptor/pins, exact bounds/deadline
-and private ownership state that detached parsing cannot recreate.
+memfd. Its public fields are a borrowed CLOEXEC FD and detached descriptor. The factory
+privately retains an anchor CLOEXEC FD, original identity, canonical table/descriptor
+bytes, pins and deadline. Detached parsing or direct construction cannot recreate
+the registered live ownership.
 
 Success requires a regular memfd of exact expected size with all of
 F_SEAL_WRITE, F_SEAL_GROW, F_SEAL_SHRINK and F_SEAL_SEAL. Partial seals, ordinary
@@ -68,8 +70,9 @@ exceptions. Anonymous material creates no durable path to repair or delete.
 ## Observations
 
 `scope=sealed-runtime-material-only`.
-Only successful live kernel/frame verification may set
-`material_bytes_immutable=true`. It describes unchanged underlying material
+Successful live verification returns a detached descriptor rederived from the
+frame; no serialized immutable-material capability is added. Only actual live
+kernel/frame verification establishes immutable bytes. It describes unchanged underlying material
 bytes, not source-tree immutability or process-memory protection.
 
 All observations retain:
