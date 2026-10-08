@@ -178,7 +178,7 @@ def _strict_json(value: bytes | str) -> dict[str, Any]:
 
 
 def _sha(value: object, code: str = "digest_invalid") -> str:
-    if type(value) is not str or _SHA.fullmatch(value) is None:
+    if type(value) is not str or _SHA.fullmatch(value) is None or value == "0" * 64:
         _fail(code)
     return value
 

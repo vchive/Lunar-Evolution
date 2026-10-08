@@ -654,6 +654,10 @@ from .producer_request_transport import (
     read_host_request_journal,
 )
 from .profiles import EvaluatorProfile, ModelProfile, ProfileRegistry, SolverProfile
+from .python_fixture_observation import (
+    PythonFixtureObservationError,
+    adapt_static_python_observation,
+)
 from .python_producer_binding import (
     MAX_PYTHON_PRODUCER_BINDING_BYTES,
     PYTHON_PRODUCER_BINDING_PROTOCOL,
@@ -678,10 +682,6 @@ from .python_producer_lifecycle import (
     parse_python_runtime_observation,
     reconcile_python_producer_terminal,
     resume_python_producer_terminal,
-)
-from .python_fixture_observation import (
-    PythonFixtureObservationError,
-    adapt_static_python_observation,
 )
 from .remote_evolution import (
     RemoteCancelRequest,
@@ -1332,9 +1332,9 @@ __all__ = [
     "ProducerStreamEvidence",
     "ProfileRegistry",
     "ProviderFreeSolverGateway",
+    "PythonFixtureObservationError",
     "PythonProducerBinding",
     "PythonProducerBindingError",
-    "PythonFixtureObservationError",
     "PythonProducerLifecycleError",
     "PythonProducerRuntimeObservation",
     "PythonProducerTerminal",
@@ -1458,6 +1458,7 @@ __all__ = [
     "WorkflowError",
     "WorkflowManifest",
     "WorkflowState",
+    "adapt_static_python_observation",
     "admit_benchmark_comparison_plan",
     "admit_benchmark_comparison_result",
     "admit_benchmark_task_envelope",
@@ -1510,7 +1511,6 @@ __all__ = [
     "build_python_producer_binding",
     "build_python_producer_runtime_observation",
     "build_python_producer_terminal",
-    "adapt_static_python_observation",
     "build_python_runtime_manifest",
     "build_python_runtime_tree_manifest",
     "build_registration_seal",

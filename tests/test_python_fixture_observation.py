@@ -139,6 +139,14 @@ def test_reviewed_profile_and_asset_output_project_to_feature191_dto(asset_obser
     assert _adapt(raw[:-1]) == item
 
 
+def test_placeholder_binding_cannot_project_runtime_evidence(asset_observation):
+    with pytest.raises(PythonFixtureObservationError, match="binding_invalid"):
+        adapt_static_python_observation(
+            asset_observation(), binding_sha256="0" * 64,
+            broker_transcript=BROKER, pycache_absent=True,
+        )
+
+
 def test_loader_negative_asset_requires_all_fixed_routes_to_refuse(asset_observation):
     value = json.loads(asset_observation("loader-negative"))
     assert _adapt(value).startup_modules == STATIC_PYTHON_STARTUP_MODULES
