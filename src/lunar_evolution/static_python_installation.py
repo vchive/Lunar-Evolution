@@ -78,6 +78,12 @@ _STARTUP_MODULES = sorted((
     "encodings", "codecs", "_codecs", "encodings.aliases", "encodings.utf_8",
     "io", "abc", "_abc", "__main__", "_lunar_static_main", "_lunar_fixture_pipe",
 ))
+# Immutable projections of the reviewed finite profile, shared by observation
+# adapters. Available builtins and modules imported at startup are different
+# sets: exposing these separately prevents treating availability as execution.
+STATIC_PYTHON_BUILTIN_NAMES = tuple(sorted(_BUILTINS))
+STATIC_PYTHON_FROZEN_NAMES = tuple(sorted(_FROZEN))
+STATIC_PYTHON_STARTUP_MODULES = tuple(_STARTUP_MODULES)
 _PRECONFIG = {
     "_config_init": 3, "parse_argv": 0, "isolated": 1, "use_environment": 0,
     "configure_locale": 0, "coerce_c_locale": 0, "coerce_c_locale_warn": 0,

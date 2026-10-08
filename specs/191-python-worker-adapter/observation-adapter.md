@@ -18,6 +18,23 @@ cases where any fixed route succeeds. All three protection claims remain
 not a production-admission or evaluator result.
 
 The adapter requires the Feature189 static target (`cpython-313` at
-`/lunar-static-python-fixture`) and the fixed computation/broker request. A
+`/lunar-static-python-fixture`, with prefix and stdlib at `/lunar-static-fixture`)
+and the exact CPython `3.13.12/final/0` version. The finite available builtin and
+frozen inventories are shared immutable projections of the reviewed installation
+profile. The distinct startup module inventory and each module's builtin/frozen
+origin are checked independently. The boolean `safe_path` and `dev_mode` flags
+retain their actual CPython wire types.
+
+Broker evidence must be one complete JSON response frame with the existing
+response keys, top-level completed status, fixed request ID, integer HTTP status
+and valid bounded base64 body. Duplicate keys, nested decoys, multiple frames and
+truncated responses cannot pass substring matching. Stdout accepts canonical
+JSON with exactly one optional final newline from the frozen fixture asset.
+Direct dict inputs pass the same finite exact builtin shape and aggregate bounds
+before serialization; mapping, list and text subclasses cannot execute callbacks.
+
+Focused contract tests generate observations from the reviewed emitted
+`frozen_main.py` asset with explicit fake sys/loader/pipe inputs. This proves
+adapter and encoder compatibility, without claiming real runtime enforcement. A
 later Linux acceptance change can call it after the existing native fixture
 has independently captured raw stdout, transcript, and filesystem evidence.
