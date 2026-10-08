@@ -1,5 +1,14 @@
 # Validation contract — preparation is not runtime evidence
 
+2026-10-09 preparation validation: the offline recipe now preserves literal
+recipe directory names and expands quoted source/output variables for the
+same-source freeze commands. Five portable recipe tests pass, including a
+disposable configure/make/freezer shell-stub exercise with spaces, quotes and a
+literal dollar in the recipe path. The stubs create no image or generated frozen
+headers. Without explicit opt-in the driver returns plan-only before any build
+work. This verifies emitted shell argument handling, not a CPython build,
+compiler/toolchain identity, startup, loader closure or production admission.
+
 This /tmp draft adds no build, execution or test pass. Feature188's own pending
 run37747268959 cannot prove189 CPython startup or static-runtime identity.
 Use the actual first installation artifact after G0/G1; old184 host Python,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shlex
 import stat
 import tarfile
 from dataclasses import dataclass
@@ -163,10 +164,11 @@ def emit_assets(destination: Path) -> tuple[str, ...]:
     return tuple(emitted)
 
 
-def _build_script() -> str:
+def _build_script(destination: Path) -> str:
     return """#!/bin/sh
 set -eu
 umask 022
+__LUNAR_RECIPE_ASSIGNMENT__
 if [ \"${LUNAR_STATIC_EXECUTE:-0}\" != 1 ]; then
   echo 'PLAN ONLY: set LUNAR_STATIC_EXECUTE=1 in pinned Linux CI to run build steps' >&2
   exit 78
@@ -185,7 +187,8 @@ exec env -i PATH=/usr/bin:/bin LC_ALL=C TZ=UTC SOURCE_DATE_EPOCH=0 CONFIG_SITE=/
   LUNAR_STATIC_EXECUTE=\"$LUNAR_STATIC_EXECUTE\" \\
   ac_cv_func_dlopen=no LUNAR_STATIC_CLEAN_ENV=1 \\
   sh \"$LUNAR_STATIC_RECIPE_DIR/linux-build-commands.sh\"
-"""
+""".replace("__LUNAR_RECIPE_ASSIGNMENT__",
+            "LUNAR_STATIC_RECIPE_DIR=" + shlex.quote(str(destination)))
 
 
 def _commands() -> str:
@@ -196,8 +199,8 @@ def _commands() -> str:
         )
         output_name = generator_id + ".h"
         generated.append(
-            f"./Programs/_freeze_module '{generator_id}' '{input_path}' "
-            f"'$LUNAR_STATIC_OUT/generated/{output_name}'"
+            f'./Programs/_freeze_module {shlex.quote(generator_id)} "{input_path}" '
+            f'"$LUNAR_STATIC_OUT/generated/{output_name}"'
         )
     generator_lines = "\n".join(generated)
     return f"""#!/bin/sh
@@ -236,7 +239,7 @@ def emit_build_plan(destination: Path, *, source_archive: Path | None = None,
         json.dumps(facts, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n",
     )
     recipe = destination / "build.sh"
-    recipe.write_text(_build_script().replace("$LUNAR_STATIC_RECIPE_DIR", str(destination)),
+    recipe.write_text(_build_script(destination),
                       encoding="utf-8", newline="\n")
     commands = destination / "linux-build-commands.sh"
     commands.write_text(_commands(), encoding="utf-8", newline="\n")

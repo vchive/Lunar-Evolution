@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -31,6 +33,52 @@ def test_plan_emits_explicit_profile_and_never_claims_build(tmp_path: Path):
     assert "regen-frozen" not in (plan / "build.sh").read_text()
     assert "PLAN ONLY" in (plan / "linux-build-commands.sh").read_text()
     assert len(manifest["frozen"]) == len(FROZEN) == 9
+
+
+def test_build_driver_stays_plan_only_without_explicit_opt_in(tmp_path: Path):
+    plan = emit_build_plan(tmp_path / "plan")
+    result = subprocess.run(
+        ["/bin/sh", str(plan / "build.sh")], cwd=tmp_path,
+        env={"PATH": os.defpath}, capture_output=True, timeout=5, check=False,
+    )
+    assert result.returncode == 78
+    assert b"PLAN ONLY" in result.stderr
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["plan"]
+
+
+def test_emitted_freeze_commands_expand_exact_paths_without_building_python(tmp_path: Path):
+    # Disposable shell stubs exercise the emitted driver only: no source archive,
+    # compiler, target interpreter or real CPython build is used.
+    plan = emit_build_plan(tmp_path / "plan 'quoted' $lunar_literal")
+    source = tmp_path / "source with spaces"
+    zig = tmp_path / "zig with spaces"
+    output = tmp_path / "out with spaces"
+    (source / "Programs").mkdir(parents=True)
+    zig.mkdir()
+    for path in (source / "configure", zig / "zig"):
+        path.write_text("#!/bin/sh\nexit 0\n")
+        path.chmod(0o700)
+    freezer = source / "Programs" / "_freeze_module"
+    freezer.write_text('#!/bin/sh\nprintf "%s\\0" "$@" >> "$PWD/freeze-argv.bin"\n')
+    freezer.chmod(0o700)
+    (source / "Makefile").write_text("Programs/_freeze_module:\n\t@true\n")
+    result = subprocess.run(
+        ["/bin/sh", str(plan / "build.sh")], cwd=tmp_path,
+        env={"PATH": os.defpath, "LUNAR_STATIC_EXECUTE": "1",
+             "LUNAR_STATIC_SOURCE": str(source), "LUNAR_STATIC_ZIG": str(zig),
+             "LUNAR_STATIC_OUT": str(output)},
+        capture_output=True, timeout=5, check=False,
+    )
+    assert result.returncode == 78, result.stderr
+    actual = (source / "freeze-argv.bin").read_bytes().split(b"\0")
+    expected = []
+    for name, generator_id, relative_source, _package in FROZEN:
+        input_path = plan / "assets/frozen_main.py" if name == "_lunar_static_main" else source / relative_source
+        expected.extend(str(item).encode() for item in (
+            generator_id, input_path, output / "generated" / (generator_id + ".h"),
+        ))
+    assert actual == [*expected, b""]
+    assert list((output / "generated").iterdir()) == []
 
 
 def test_exact_patch_checks_hash_and_occurrence(tmp_path: Path):
