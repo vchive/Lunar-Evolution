@@ -5,10 +5,15 @@ run against inert local fixtures. No durable process/runtime lifecycle acceptanc
 is complete. Until Features189 and
 190 pass their dedicated Linux gates, only provider-free inert fixtures may run.
 
+The early CI preparation gate combines the recipe, installation, ELF, binding
+and lifecycle suites into `python-preparation.xml`: exactly 226 cases with zero
+failures, errors or skips on each supported Python version. This is a pure
+contract gate and does not count as CPython build or runtime startup acceptance.
+
 | Area | Required evidence | Refusal cases |
 | --- | --- | --- |
 | Binding parser | **Complete Phase A:** canonical nested DTO round trip, exact type/order/bounds, shape-gate, digest/deadline/limit drift and fixed errors | unknown field, bool-as-int, duplicate key, placeholder digest, callback-bearing collection, path/env/target drift |
-| Pure terminal/reconcile | **Complete contract slice:** 90 focused tests cover canonical DTOs, retained digest recheck, complete known-terminal evidence, original identity/journal/deadline pins and exact collection shapes | mutated reused DTO, missing/zero digest, drifted registration/owner/executable/journal, missing or out-of-order timestamps, refreshed deadline/request count, callback mappings/iterables, publication claim |
+| Pure terminal/reconcile | **Complete contract slice:** 98 focused tests cover canonical DTOs, retained digest recheck, complete known-terminal evidence, original identity/journal/deadline/stream pins and exact collection shapes | mutated reused DTO, missing/zero digest, drifted registration/owner/executable/journal/stream, missing or out-of-order timestamps, refreshed deadline/request count, callback mappings/iterables, publication claim, relabeled attestation consumption or discarded known exit evidence |
 | Runtime closure | Original manifest/tree digest, no-follow identity snapshots and target ABI | missing interpreter, symlink/hardlink, unlisted file, changed inode/bytes/resource/native input |
 | Launch | Exact argv/env, intent+attestation, private owner and original deadline | host Python substitution, argv/module/path injection, env leak, deadline/nonce drift |
 | Loader policy | Readable decoy source/pyc/extension/zip and unknown codec are refused | permission-only denial, `sys.path` discovery, `.pth`/site/customization/pycache |
