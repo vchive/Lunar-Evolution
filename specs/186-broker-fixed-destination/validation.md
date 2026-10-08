@@ -27,3 +27,9 @@ Only local loopback fixtures and GitHub CI are authorized. The dedicated
 broker-destination.xml workflow phase preserves raw results. Final exact-head
 three-version Linux audit and prerequisite Feature183/185 acceptance remain
 required before main merge. No provider or DNS/IP pinning acceptance is claimed.
+
+After composing Feature185, root focused tests in /tmp/lunar186-root-composition.xml
+passed: 191 cases, 151 passed, 40 Darwin skips, zero failure/error. Preserved log:
+/tmp/lunar186-root-composition.log. This combines broker destination/stop, mq,
+formal selector bindings and original-owner cancellation. Root full Ruff,
+compileall, diff and workflow YAML/XML wiring checks passed on the combined source.

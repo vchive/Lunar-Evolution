@@ -2,6 +2,9 @@
 
 Continue from Feature 183 source 5561c30. Its independent Linux acceptance is
 tracked separately; this feature must not borrow earlier source CI evidence.
+Feature185 source 7c733273 is composed before final submission (f9bc2ed/f35ae48
+cherry-picks). Only the additive workflow XML conflict needed manual resolution;
+both broker-destination and posix-mq pytest/annotation/upload entries are retained.
 
 1. Author owns http_transport.py, controller_http_transport.py,
    producer_broker_ipc.py and a new focused local loopback test module.
