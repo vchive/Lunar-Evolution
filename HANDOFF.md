@@ -1,5 +1,31 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 offline exact source preparation continuation
+
+Continue Feature189 G1/G2 per source-preparation.md: pure fixed three-file
+CPython3.13.12 preimage/snippet/postimage transformation, seven fixed loader/finder
+refusals, bootstrap-metadata-only install, skipped zip init call and six UTF8
+aliases. Inert original Git source fixtures retain LICENSE/provenance; no full
+upstream module runs. Patch policy SHAf3f740c6; canonical policy manifestdd4ab441.
+Finite source emitters supply9 frozen entries,2 aliases,19 builtin names, an
+explicit static source/object vector and24 top-level stdlib metadata names.
+The plan records all source-asset digests and pending patch/header/link/runtime
+states; --disable-shared replaces the invalid --without-shared spelling.
+Local source96 and root combined365 XML cases pass without failure/error/skip;
+Ruff/compileall/diff pass. Dedicated source96 CI is added; final-source CI/audit/
+merge are pending. Table test-harness first failures remain separate, not image
+or startup failures. No real frozen headers, build, startup, loader enforcement,
+native Python admission, model/evaluator/solver campaign is claimed.
+
+PR24 first final37729c9a/run37829395862 passed preparation226 but3.12 found the
+old HTTP fixture's0.2s worker-startup assumption. Repairf6ec97c gives2s under the
+original deadline and checks encoded deadline/expiry/single origin/no redirect/
+exact reap. Broker87 passes locally. Original failure ZIP/XML/joblog/source
+inventory is retained in ignored persisted-ci-evidence-20261009/
+pr24-first-failed-head-37729c9a. Replacement PR24/PR26 final sources and full
+Linux CI/raw audit/main merge remain pending; earlier source runs cannot replace
+them. Keep existing P1 real runtime/adapter/RSI CLI gaps and P2 deferral.
+
 ## 2026-10-09 PR25 merged; reviewed Python preparation/recovery follow-up
 
 PR25/Feature192 passed final run37820105103 at sourcef790d803 with all three

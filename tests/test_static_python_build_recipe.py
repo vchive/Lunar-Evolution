@@ -58,6 +58,13 @@ def test_emitted_freeze_commands_expand_exact_paths_without_building_python(tmp_
     for path in (source / "configure", zig / "zig"):
         path.write_text("#!/bin/sh\nexit 0\n")
         path.chmod(0o700)
+    # CPython exposes AC_ARG_ENABLE(shared); --without-shared would silently
+    # select a different configure option. Reject that emitted driver mistake.
+    (source / "configure").write_text(
+        '#!/bin/sh\nfor arg do\n'
+        '  case "$arg" in --without-shared) exit 64;; --disable-shared) found=1;; esac\n'
+        'done\ntest "${found:-0}" = 1\n'
+    )
     freezer = source / "Programs" / "_freeze_module"
     freezer.write_text('#!/bin/sh\nprintf "%s\\0" "$@" >> "$PWD/freeze-argv.bin"\n')
     freezer.chmod(0o700)

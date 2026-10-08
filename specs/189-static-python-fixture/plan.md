@@ -2,9 +2,9 @@
 
 ## Gates and partition
 
-G0: Feature188 final-head raw audit and merge are recorded in spec.md. Feature190
-private original executable-owner final Linux acceptance/merge must be recorded
-before launching any Feature189 target; its final CI is still pending.
+G0: Feature188 final-head raw audit/main merge4f8576d and Feature190 private
+original executable-owner final-source run37802795693/main merge3a7782c are
+complete. Their evidence does not complete Feature189 target acceptance.
 G1: Freeze the installation source, patches, exact toolchain/musl profile, complete
 recipe and generator provenance. No ambient compiler/libc or placeholder hash.
 Freeze the private original target-owner binding/recovery proof before claiming
@@ -29,6 +29,13 @@ linker/binutils, headers, libc/libm and any compiler support archives and their
 sources. Build a non-PIE fully static ET_EXEC target for the first profile; final
 compiler-supported flags and configure cache values are part of the recipe,
 not inferred from a successful `--disable-shared` configure.
+
+The offline source-preparation slice is specified in `source-preparation.md`.
+It supplies pure fixed loader patches and generated finite C tables plus their
+digests. The emitted direct-compile/link source vector is an unapplied plan;
+stock optional-module discovery, real frozen headers and final linking remain
+open. The recipe uses the actual configure option `--disable-shared` and still
+exits78 without compiling/linking the final fixture.
 
 Disable optional extension autodiscovery and supply an explicit static/disabled
 module manifest. Review generated pyconfig.h, Modules/Setup output, inittab,

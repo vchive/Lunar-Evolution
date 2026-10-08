@@ -20,6 +20,8 @@ from .profile import (
     ZIG_ARCHIVE,
     manifest,
 )
+from .source_patches import source_patch_manifest
+from .tables import emit_static_python_tables
 
 
 class RecipeError(ValueError):
@@ -209,7 +211,7 @@ cd \"$LUNAR_STATIC_SOURCE\"
 export CC=\"$LUNAR_STATIC_ZIG/zig cc -target {TARGET}\"
 export AR=\"$LUNAR_STATIC_ZIG/zig ar\"
 export RANLIB=\"$LUNAR_STATIC_ZIG/zig ranlib\"
-./configure --host={TARGET} --build={TARGET} --without-shared --disable-test-modules \\
+./configure --host={TARGET} --build={TARGET} --disable-shared --disable-test-modules \\
   --with-ensurepip=no --with-computed-gotos --with-pymalloc
 # Do not run regen-frozen. Build Programs/_freeze_module from the same object set.
 make Programs/_freeze_module
@@ -235,6 +237,20 @@ def emit_build_plan(destination: Path, *, source_archive: Path | None = None,
     if zig_archive is not None:
         facts["toolchain_archive"] = verify_archive(Path(zig_archive), ZIG_ARCHIVE)
     facts["emitted_assets"] = list(emit_assets(destination / "assets"))
+    facts["source_preparation"] = source_patch_manifest()
+    facts["generated_source_assets"] = []
+    for relative, content in sorted(emit_static_python_tables().items()):
+        path = destination / "generated-sources" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        os.chmod(path, 0o444)
+        facts["generated_source_assets"].append({
+            "path": relative, "sha256": hashlib.sha256(content).hexdigest(),
+            "size": len(content),
+        })
+    facts["source_preparation_applied"] = False
+    facts["frozen_header_state"] = "requires-pinned-freezer"
+    facts["link_state"] = "not-executed"
     (destination / "manifest.json").write_text(
         json.dumps(facts, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n",
     )

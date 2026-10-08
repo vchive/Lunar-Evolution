@@ -1,0 +1,32 @@
+{
+  "build_performed": false,
+  "copy_method": "exact bytes from the previously reviewed Git source checkout",
+  "files": [
+    {
+      "bytes": 15713,
+      "fixture_path": "Lib/encodings/aliases.py.source",
+      "sha256": "cac92d68c7ea5bc0f05b448b9144e3bdf236d0b7d27ab66112e96d43aad15b3f",
+      "source_path": "Lib/encodings/aliases.py"
+    },
+    {
+      "bytes": 73219,
+      "fixture_path": "Lib/importlib/_bootstrap_external.py.source",
+      "sha256": "a97a03ea9f9d38d90c8a50942183382ff5a479e7c4c5163c2ac5bae3561444ae",
+      "source_path": "Lib/importlib/_bootstrap_external.py"
+    },
+    {
+      "bytes": 146770,
+      "fixture_path": "Python/import.c.source",
+      "sha256": "4e18922dc31001c24fd9875746881ab407252bddc6bca544f22403d50e493a61",
+      "source_path": "Python/import.c"
+    }
+  ],
+  "full_source_execution_performed": false,
+  "license": "CPython upstream LICENSE is retained as LICENSE in this directory",
+  "official_python_org_archive_verified": false,
+  "scope": "inert-source-byte-fixtures-only",
+  "source": "https://github.com/python/cpython.git",
+  "source_commit": "1cbe481834751b0125e006042ffbd8cd5eaec8a8",
+  "source_signature_verified": false,
+  "source_tag": "v3.13.12"
+}
