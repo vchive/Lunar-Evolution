@@ -654,6 +654,10 @@ from .producer_request_transport import (
     read_host_request_journal,
 )
 from .profiles import EvaluatorProfile, ModelProfile, ProfileRegistry, SolverProfile
+from .python_fixture_observation import (
+    PythonFixtureObservationError,
+    adapt_static_python_observation,
+)
 from .python_producer_binding import (
     MAX_PYTHON_PRODUCER_BINDING_BYTES,
     PYTHON_PRODUCER_BINDING_PROTOCOL,
@@ -1328,6 +1332,7 @@ __all__ = [
     "ProducerStreamEvidence",
     "ProfileRegistry",
     "ProviderFreeSolverGateway",
+    "PythonFixtureObservationError",
     "PythonProducerBinding",
     "PythonProducerBindingError",
     "PythonProducerLifecycleError",
@@ -1453,6 +1458,7 @@ __all__ = [
     "WorkflowError",
     "WorkflowManifest",
     "WorkflowState",
+    "adapt_static_python_observation",
     "admit_benchmark_comparison_plan",
     "admit_benchmark_comparison_result",
     "admit_benchmark_task_envelope",
