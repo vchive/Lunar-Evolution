@@ -1,5 +1,49 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 PR25 merged; reviewed Python preparation/recovery follow-up
+
+PR25/Feature192 passed final run37820105103 at sourcef790d803 with all three
+Linux Python versions. Each matrix retained24 exact XML phases: kernel11,
+executable-owner133, material274 and keyring52 have no failures/errors/skips;
+current12124 has92 identical platform skips, archive2294 and frozen12324 have
+no failures/errors/skips. Independent raw ZIP/XML/log/source/checkout-parent/
+tree, exact case/skip inventories and no-retry checks passed. Mergee3410109
+has parent3a7782c+f790d803 and tested treeb06470f; primary main fast-forwarded.
+Raw evidence and root merge proof are retained in ignored
+`.lunar-evolution/reports/persisted-ci-evidence-20261009/pr25-final-ci-audit/`.
+
+PR24 is rebased onto this main and includes reviewed pure lifecycle drift and
+evidence gates plus a recipe argument fix. The offline freeze driver now expands
+quoted input/output paths while keeping the recipe directory literal. Five
+shell-stub recipe tests pass without a real compiler, CPython image or startup.
+PR26 adds a provider-free adapter for the actual frozen-main observation format:
+fixed version/profile/path/module inventories, strict one-frame broker response,
+exact flags and loader-negative results. Its portable tests use explicitly fake
+sys/loader/pipe inputs and do not authenticate a running worker. Both repaired
+final-source Linux CI/merge gates remain pending; earlier source results cannot
+replace them. Actual static-runtime build, loader enforcement, local Python
+launch/durable runtime evidence, OpenEvolve/Shinka Python process adapters and
+production RSI CLI remain P1. P2 distributed/service work stays deferred.
+
+## 2026-10-09 Feature191 binding and terminal/reconcile work
+
+PR24's current head adds a pure `PythonProducerBinding` over the existing
+runtime manifest/tree, launch intent and attestation. It validates canonical
+shape, nested digest/stat identity, RSI planned deadline and launch limits
+without filesystem or subprocess effects. The same head adds a read-only
+terminal/runtime-observation adapter over `ProducerExecutionReceipt`; missing
+process, cleanup or request evidence remains `unknown`, publication is always
+false, and resume/reconcile rejects binding/deadline drift without relaunching.
+Focused tests, Ruff, compileall and diff checks pass. This is not production
+Python admission: static CPython has not been built or started and no external
+producer/model/evaluator campaign has run.
+
+PR25/Feature192 adds bounded Linux kernel-global route controls with a
+dedicated 11-case CI gate. Both PRs require final three-version Linux CI and
+merge. P1 lifecycle spawn, real runtime observations, loader-negative fixture
+and OpenEvolve/Shinka Python process adapters remain open; P2 remote evaluator,
+external authentication and multi-host ownership stay deferred.
+
 ## 2026-10-08 Feature188 merged; Feature190 owner repair
 
 PR22 sourcec5973a7b4ad026182b11e6d65af946ae6d15bd30 / tree
