@@ -176,7 +176,17 @@ exec env -i PATH=/usr/bin:/bin LC_ALL=C TZ=UTC SOURCE_DATE_EPOCH=0 CONFIG_SITE=/
 
 
 def _commands() -> str:
-    frozen = " ".join(item[1] for item in FROZEN)
+    generated = []
+    for name, generator_id, source, _package in FROZEN:
+        input_path = "$LUNAR_STATIC_RECIPE_DIR/assets/frozen_main.py" if name == "_lunar_static_main" else (
+            f"$LUNAR_STATIC_SOURCE/{source}"
+        )
+        output_name = generator_id + ".h"
+        generated.append(
+            f"./Programs/_freeze_module '{generator_id}' '{input_path}' "
+            f"'$LUNAR_STATIC_OUT/generated/{output_name}'"
+        )
+    generator_lines = "\n".join(generated)
     return f"""#!/bin/sh
 set -eu
 cd \"$LUNAR_STATIC_SOURCE\"
@@ -184,10 +194,11 @@ export CC=\"$LUNAR_STATIC_ZIG/zig cc -target {TARGET}\"
 export AR=\"$LUNAR_STATIC_ZIG/zig ar\"
 export RANLIB=\"$LUNAR_STATIC_ZIG/zig ranlib\"
 ./configure --host={TARGET} --build={TARGET} --without-shared --disable-test-modules \\
-  --with-ensurepip=no --with-computed-gotos --without-pymalloc=no
+  --with-ensurepip=no --with-computed-gotos --with-pymalloc
 # Do not run regen-frozen. Build Programs/_freeze_module from the same object set.
 make Programs/_freeze_module
-for module in {frozen}; do :; done
+mkdir -p "$LUNAR_STATIC_OUT/generated"
+{generator_lines}
 # Apply reviewed exact patches, compile emitted assets, and direct-link the manifest map.
 # A later verifier must inspect DT_NEEDED/PT_INTERP and enforce image <= {MAX_IMAGE_BYTES} bytes.
 echo 'PLAN ONLY: compile/link requires explicit Linux CI opt-in' >&2
