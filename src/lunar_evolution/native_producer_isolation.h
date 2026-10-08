@@ -229,6 +229,65 @@ static int lunar_apply_isolation_internal(const char *profile,
            retaining normal fork, vfork and thread flags. NEWTIME shares the
            low exit-signal byte, but no valid signal uses its 0x80 bit. */
         #define LUNAR_CLONE_NAMESPACE_FLAGS 0x7e020080U
+        /* Stable native UAPI tables, including entries absent from old libc
+           headers. i386 semop/time32 semtimedop use ipc, not invented direct
+           numbers; the time64 entry and ipc itself are both filtered below. */
+        #if defined(__x86_64__)
+        #define LUNAR_NR_SHMGET 29
+        #define LUNAR_NR_SHMAT 30
+        #define LUNAR_NR_SHMCTL 31
+        #define LUNAR_NR_SHMDT 67
+        #define LUNAR_NR_MSGGET 68
+        #define LUNAR_NR_MSGSND 69
+        #define LUNAR_NR_MSGRCV 70
+        #define LUNAR_NR_MSGCTL 71
+        #define LUNAR_NR_SEMGET 64
+        #define LUNAR_NR_SEMOP 65
+        #define LUNAR_NR_SEMCTL 66
+        #define LUNAR_NR_SEMTIMEDOP 220
+        #define LUNAR_NR_SENDMMSG 307
+        #define LUNAR_NR_RECVMSG 47
+        #define LUNAR_NR_RECVMMSG 299
+        #define LUNAR_NR_SOCKETPAIR 53
+        #elif defined(__aarch64__)
+        #define LUNAR_NR_SHMGET 194
+        #define LUNAR_NR_SHMAT 196
+        #define LUNAR_NR_SHMCTL 195
+        #define LUNAR_NR_SHMDT 197
+        #define LUNAR_NR_MSGGET 186
+        #define LUNAR_NR_MSGSND 189
+        #define LUNAR_NR_MSGRCV 188
+        #define LUNAR_NR_MSGCTL 187
+        #define LUNAR_NR_SEMGET 190
+        #define LUNAR_NR_SEMOP 193
+        #define LUNAR_NR_SEMCTL 191
+        #define LUNAR_NR_SEMTIMEDOP 192
+        #define LUNAR_NR_SENDMMSG 269
+        #define LUNAR_NR_RECVMSG 212
+        #define LUNAR_NR_RECVMMSG 243
+        #define LUNAR_NR_SOCKETPAIR 199
+        #else /* Native i386, not x32 or the compat ABI of a 64-bit process. */
+        #define LUNAR_NR_SHMGET 395
+        #define LUNAR_NR_SHMAT 397
+        #define LUNAR_NR_SHMCTL 396
+        #define LUNAR_NR_SHMDT 398
+        #define LUNAR_NR_MSGGET 399
+        #define LUNAR_NR_MSGSND 400
+        #define LUNAR_NR_MSGRCV 401
+        #define LUNAR_NR_MSGCTL 402
+        #define LUNAR_NR_SEMGET 393
+        #define LUNAR_NR_SEMCTL 394
+        #define LUNAR_NR_IPC 117
+        #define LUNAR_NR_SEMTIMEDOP_TIME64 420
+        #define LUNAR_NR_SENDMMSG 345
+        #define LUNAR_NR_RECVMSG 372
+        #define LUNAR_NR_RECVMMSG 337
+        #define LUNAR_NR_RECVMMSG_TIME64 417
+        #define LUNAR_NR_SOCKETPAIR 360
+        #endif
+        #define LUNAR_DENY_IPC(number) \
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, number, 0, 1), \
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM)
         /* This only narrows the target's control surface; it is not complete
            containment or a post-bootstrap descendant supervision protocol.
            Namespace, external signal/memory and network control calls fail
@@ -298,6 +357,31 @@ static int lunar_apply_isolation_internal(const char *profile,
             /* i386 multiplexes network operations through socketcall. */
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketcall, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
             #endif
+            /* SysV IPC addresses host-namespace objects without inherited FDs
+               or filesystem paths. Ancillary socket APIs can acquire/export
+               descriptors. These bounded controls are not full egress proof. */
+            LUNAR_DENY_IPC(LUNAR_NR_SHMGET),
+            LUNAR_DENY_IPC(LUNAR_NR_SHMAT),
+            LUNAR_DENY_IPC(LUNAR_NR_SHMCTL),
+            LUNAR_DENY_IPC(LUNAR_NR_SHMDT),
+            LUNAR_DENY_IPC(LUNAR_NR_MSGGET),
+            LUNAR_DENY_IPC(LUNAR_NR_MSGSND),
+            LUNAR_DENY_IPC(LUNAR_NR_MSGRCV),
+            LUNAR_DENY_IPC(LUNAR_NR_MSGCTL),
+            LUNAR_DENY_IPC(LUNAR_NR_SEMGET),
+            LUNAR_DENY_IPC(LUNAR_NR_SEMCTL),
+            #ifdef LUNAR_NR_SEMOP
+            LUNAR_DENY_IPC(LUNAR_NR_SEMOP),
+            LUNAR_DENY_IPC(LUNAR_NR_SEMTIMEDOP),
+            #endif
+            #ifdef LUNAR_NR_IPC
+            LUNAR_DENY_IPC(LUNAR_NR_IPC),
+            LUNAR_DENY_IPC(LUNAR_NR_SEMTIMEDOP_TIME64),
+            LUNAR_DENY_IPC(LUNAR_NR_RECVMMSG_TIME64),
+            #endif
+            LUNAR_DENY_IPC(LUNAR_NR_SENDMMSG),
+            LUNAR_DENY_IPC(LUNAR_NR_RECVMSG),
+            LUNAR_DENY_IPC(LUNAR_NR_RECVMMSG),
             #ifdef __NR_socket
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
             #endif
@@ -397,8 +481,28 @@ static int lunar_apply_isolation_internal(const char *profile,
             BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
         };
         #undef LUNAR_DENY_INPUT_MUTATION
+        #undef LUNAR_DENY_IPC
         struct sock_fprog program = { .len = (unsigned short)(sizeof(filter) / sizeof(filter[0])), .filter = filter };
         if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &program) != 0) return errno ? errno : EPERM;
+        /* AF_UNIX socketpair is private internal IPC, useful to fork/thread
+           runtimes. Preserve it without admitting other domains or int-narrowed
+           upper-word encodings. i386 socketcall remains denied wholesale. */
+        struct sock_filter pair_control[] = {
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, 0),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, LUNAR_NR_SOCKETPAIR, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[0]) + 4),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_LD | BPF_W | BPF_ABS, (unsigned int)offsetof(struct seccomp_data, args[0])),
+            BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 1 /* AF_UNIX */, 1, 0),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+            BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        };
+        struct sock_fprog pair_program = {
+            .len = (unsigned short)(sizeof(pair_control) / sizeof(pair_control[0])), .filter = pair_control,
+        };
+        if (prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &pair_program) != 0) return errno ? errno : EPERM;
         /* The first filter already validates the native audit architecture and
            rejects x32. These additional intersecting filters never enlarge it.
            Explicit signal denials alone do not mediate asynchronous pipe/file
