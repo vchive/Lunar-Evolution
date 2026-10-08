@@ -214,6 +214,7 @@ def start_native_guardian(
         watcher = subprocess.Popen(
             command, executable=executable, pass_fds=(group_fd, lifeline_fd, finish_fd, ack_fd, bootstrap_fd),
             close_fds=True, start_new_session=True, env={"PATH": os.defpath, "LANG": "C"},
+            cwd="/",
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         owner = NativeGuardianOwner(process, watcher, group_fd, deadline, monotonic)
