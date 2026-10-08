@@ -25,7 +25,7 @@ from test_native_bootstrap import _launch
 from test_native_trusted_controller_death import _frame, _state, _stopped
 
 from lunar_evolution.native_bootstrap import (
-    LINUX_IPC_CONTROL_IMPLEMENTATION,
+    LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
     NativeBootstrapError,
     build_native_bootstrap_artifact,
     encode_native_bootstrap_control,
@@ -268,7 +268,7 @@ def test_terminal_waits_for_all_waitable_descendants_and_preserves_direct_status
 ):
     count = 3 if kind == 2 else 1
     with _supervised(tmp_path, kind=kind, direct_exit=direct_exit) as fixture:
-        assert fixture.artifact.descriptor.implementation_version == LINUX_IPC_CONTROL_IMPLEMENTATION
+        assert fixture.artifact.descriptor.implementation_version == LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION
         _started, descendants = _started_with_descendants(fixture, tmp_path, count=count)
         (tmp_path / "release-descendants").touch()
         terminal = _frame(fixture.frame)
