@@ -249,6 +249,12 @@ static int lunar_apply_isolation_internal(const char *profile,
         #define LUNAR_NR_RECVMSG 47
         #define LUNAR_NR_RECVMMSG 299
         #define LUNAR_NR_SOCKETPAIR 53
+        #define LUNAR_NR_MQ_OPEN 240
+        #define LUNAR_NR_MQ_UNLINK 241
+        #define LUNAR_NR_MQ_TIMEDSEND 242
+        #define LUNAR_NR_MQ_TIMEDRECEIVE 243
+        #define LUNAR_NR_MQ_NOTIFY 244
+        #define LUNAR_NR_MQ_GETSETATTR 245
         #elif defined(__aarch64__)
         #define LUNAR_NR_SHMGET 194
         #define LUNAR_NR_SHMAT 196
@@ -266,6 +272,12 @@ static int lunar_apply_isolation_internal(const char *profile,
         #define LUNAR_NR_RECVMSG 212
         #define LUNAR_NR_RECVMMSG 243
         #define LUNAR_NR_SOCKETPAIR 199
+        #define LUNAR_NR_MQ_OPEN 180
+        #define LUNAR_NR_MQ_UNLINK 181
+        #define LUNAR_NR_MQ_TIMEDSEND 182
+        #define LUNAR_NR_MQ_TIMEDRECEIVE 183
+        #define LUNAR_NR_MQ_NOTIFY 184
+        #define LUNAR_NR_MQ_GETSETATTR 185
         #else /* Native i386, not x32 or the compat ABI of a 64-bit process. */
         #define LUNAR_NR_SHMGET 395
         #define LUNAR_NR_SHMAT 397
@@ -284,6 +296,14 @@ static int lunar_apply_isolation_internal(const char *profile,
         #define LUNAR_NR_RECVMMSG 337
         #define LUNAR_NR_RECVMMSG_TIME64 417
         #define LUNAR_NR_SOCKETPAIR 360
+        #define LUNAR_NR_MQ_OPEN 277
+        #define LUNAR_NR_MQ_UNLINK 278
+        #define LUNAR_NR_MQ_TIMEDSEND 279
+        #define LUNAR_NR_MQ_TIMEDRECEIVE 280
+        #define LUNAR_NR_MQ_NOTIFY 281
+        #define LUNAR_NR_MQ_GETSETATTR 282
+        #define LUNAR_NR_MQ_TIMEDSEND_TIME64 418
+        #define LUNAR_NR_MQ_TIMEDRECEIVE_TIME64 419
         #endif
         #define LUNAR_DENY_IPC(number) \
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, number, 0, 1), \
@@ -382,6 +402,20 @@ static int lunar_apply_isolation_internal(const char *profile,
             LUNAR_DENY_IPC(LUNAR_NR_SENDMMSG),
             LUNAR_DENY_IPC(LUNAR_NR_RECVMSG),
             LUNAR_DENY_IPC(LUNAR_NR_RECVMMSG),
+            /* POSIX mq_open/unlink use the current IPC namespace's internal
+               mqueue mount, not an ordinary granted /dev/mqueue pathname.
+               Refuse the entire family, including i386's separate time64
+               entries, rather than relying on inherited-FD closure. */
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_OPEN),
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_UNLINK),
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_TIMEDSEND),
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_TIMEDRECEIVE),
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_NOTIFY),
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_GETSETATTR),
+            #ifdef LUNAR_NR_MQ_TIMEDSEND_TIME64
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_TIMEDSEND_TIME64),
+            LUNAR_DENY_IPC(LUNAR_NR_MQ_TIMEDRECEIVE_TIME64),
+            #endif
             #ifdef __NR_socket
             BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 1), BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
             #endif

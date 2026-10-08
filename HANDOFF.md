@@ -1,5 +1,26 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Feature185 POSIX queue control implementation
+
+Feature185 在 codex/native-named-ipc 实现，Linux default/formal selector 为
+native-bootstrap-linux-posix-mq-control-v1。旧 guardian-only descriptor 在预算、input、
+nonce 和 spawn 前固定 mq_control_required；既有更早拒绝顺序、Darwin 和历史只读 scope
+保持。真实 seccomp 拒绝六个 mq syscall family，以及 i386 send/receive time64。
+新 fixture 仅创建 O_EXCL mode0600 有界 parent-owned queue，检查 usable baseline、EPERM、
+contents/name 不变、formal v2 guardian/broker/普通 IO 和 FD closure。
+
+首次 fstat 异常清理经独立复核修复：缺 identity 仅从 still-held original FD 补查一次，
+已记录 identity 不刷新，foreign name 不 unlink，primary exception 保留。模块 44 cases
+本地 4 passed/40 Darwin skips；root composition 199 cases=74 passed/125 skips、零失败。
+Ruff/compileall/diff 通过；Python 3.9 误用的 collection error 材料保留。Linux enforcement
+仍须此最终 head 的三版原始 CI，PR18 必须独立通过后才允许合入此 feature。
+
+仅关闭 POSIX mq 路径；其他 kernel/keyring egress、broker redirect/proxy 仍开放。
+P1 immutable Python runtime/load/loader/archive/import closure、versioned delivery、正式
+Python admission、真实 OpenEvolve/Shinka adapters 与 production RSI CLI 后续。P2 多机
+ownership/服务化/分布式 scheduler 后置。只用 inert local fixtures 和 GitHub CI，不读
+.env/密钥，不跑模型、WebAgent、远程/公司 evaluator 或真实 campaign，保留他人修改。
+
 ## 2026-10-08 PR15–17 merged; independent guardian implementation
 
 PR15、PR16、PR17已依次合入main：merge2c4b2270736dda6deb19a5bf72efe3f292c76f8a、
