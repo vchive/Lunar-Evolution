@@ -26,8 +26,9 @@ A parsed self digest does not replace independent caller pins or kernel evidence
 Wire protocol: `lunar-python-runtime-sealed-material-v1`, schema `1`.
 The frame has a fixed magic/version header, bounded table and payload lengths,
 one canonical UTF-8 table, then contiguous payload bytes in canonical file order.
-Exact header byte widths and canonical digest domains must be frozen during
-implementation review before the parser is published.
+Exact header byte widths, table fields and digest domains are frozen in
+[wire-contract.md](wire-contract.md); implementation and platform acceptance remain
+pending. The parser must implement that contract before publication.
 
 The table binds the original declared/tree/target/version pins and contains
 sorted logical root labels, all directories including empty membership, and
