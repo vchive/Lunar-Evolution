@@ -22,6 +22,9 @@ slow response deadline/exact reap, cancellation accounting and actual private
 pipe broker selection. Invalid private worker policies fail before network I/O.
 Root reviewed code and raw local XML and independently passed the modified
 legacy stop fixture (5 cases, /tmp/lunar186-stop.xml).
+Additional preflight cases prove invalid endpoints are rejected before native
+budget/input/nonce effects, broker journal creation/ready signalling or HTTP
+worker spawn. The generic DTO's historical light validation is covered separately.
 
 Only local loopback fixtures and GitHub CI are authorized. The dedicated
 broker-destination.xml workflow phase preserves raw results. Final exact-head

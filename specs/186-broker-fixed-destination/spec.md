@@ -16,7 +16,12 @@ validated by the isolated worker; missing policy preserves legacy behavior and
 unknown or malformed policy fails closed. TLS trust configuration is preserved.
 
 Do not change original absolute deadlines, cancellation, exact worker ownership,
-admission accounting, broker journal or response schemas. This does not pin DNS
+admission accounting, broker journal or response schemas. The generic
+`ProducerBrokerConfig` retains its historical light validation and error
+contract. Strict fixed-destination validation runs at native attempt admission
+and again in `serve_producer_broker` before journal creation, ready signalling,
+budget/nonce effects or worker spawn; the isolated worker revalidates it too.
+This does not pin DNS
 answers or IP addresses. The host resolver, TLS trust and original endpoint are
 still trusted inputs; arbitrary kernel egress remains a separate work item.
 

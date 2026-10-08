@@ -19,6 +19,7 @@ from .controller_request_broker import ControllerOwnedRequestBroker, ControllerR
 from .http_transport import (
     MAX_REQUEST_BYTES,
     MAX_RESULT_BYTES,
+    _validate_fixed_destination_endpoint,
 )
 from .producer_launcher import ProducerLaunchIntent
 from .producer_request_transport import (
@@ -212,6 +213,10 @@ def serve_producer_broker(
     """
     if type(intent) is not ProducerLaunchIntent or type(config) is not ProducerBrokerConfig:
         raise ProducerBrokerIpcError("producer_broker_input_invalid")
+    try:
+        _validate_fixed_destination_endpoint(config.endpoint)
+    except ValueError as exc:
+        raise ProducerBrokerIpcError("producer_broker_endpoint_invalid") from exc
     if type(deadline_ns) is not int or deadline_ns <= time.monotonic_ns():
         raise ProducerBrokerIpcError("producer_broker_deadline_invalid")
     if stop is not None and not isinstance(stop, threading.Event):

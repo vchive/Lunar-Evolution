@@ -15,6 +15,11 @@ TLS trust、原绝对 deadline、cancel/exact worker reap、request accounting/j
 与 port edge。Ruff/compileall/diff通过。Feature185 code/selector/原资源清理组合进此分支，
 CI 分别保留 broker-destination.xml 和 posix-mq.xml。最终 source CI/raw审计/main merge
 仍待完成，且 PR18 与 PR19 必须各自独立验收并先合入，不借前一 source 的通过结果。
+PR20 首轮 run37727295351 的 trusted-adapters 暴露通用 ProducerBrokerConfig 错误契约被
+fixed helper 提前替换；首轮 XML/log/ZIP 已独立保留。现已将 strict gate 收窄到 native
+attempt admission、serve journal/ready 前和 worker 内，恢复旧 broker_endpoint_invalid
+契约；新增 preflight/no-side-effect tests，root 95-case组合零失败，随后完整新 head CI
+必须重新跑 trusted-adapters 和所有后续阶段。
 Root combined composition191 cases=151 passed/40 Darwin skips，零 failure/error；完整
 Ruff/compileall/diff 与 workflow YAML/三组专项 XML 接线再次通过。
 

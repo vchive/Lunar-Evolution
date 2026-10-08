@@ -194,10 +194,14 @@ def test_fixed_invalid_endpoint_rejected_before_spawn(monkeypatch, endpoint):
         http_transport._validate_fixed_destination_endpoint(endpoint)
     with pytest.raises(ValueError):
         ControllerHttpTransport(fixed_destination=True).start(admission(), request(endpoint))
-        # The generic DTO preserves its historical light validation and lets the
-        # execution layer return broker_endpoint_invalid. Fixed mode validates
-        # immediately before worker spawn.
-        ProducerBrokerConfig(endpoint, {})
+
+
+@pytest.mark.parametrize("endpoint", ["http://user:inert@localhost/", "http://localhost/#inert"])
+def test_generic_broker_dto_retains_historical_light_validation(endpoint):
+    # The generic DTO preserves its historical light validation and lets the
+    # execution layer return broker_endpoint_invalid. Fixed mode validates
+    # immediately before worker spawn.
+    ProducerBrokerConfig(endpoint, {})
 
 
 @pytest.mark.parametrize("endpoint", [
@@ -206,6 +210,50 @@ def test_fixed_invalid_endpoint_rejected_before_spawn(monkeypatch, endpoint):
 ])
 def test_fixed_endpoint_accepts_valid_http_authorities(endpoint):
     http_transport._validate_fixed_destination_endpoint(endpoint)
+
+
+@pytest.mark.parametrize("endpoint", ["http://inert@127.0.0.1:1/", "http://127.0.0.1:1/#inert"])
+def test_broker_invalid_endpoint_refused_before_journal_ready_or_http_spawn(tmp_path, monkeypatch, endpoint):
+    from lunar_evolution import controller_http_transport
+    from lunar_evolution.producer_broker_ipc import ProducerBrokerIpcError
+
+    _, intent = _intent(tmp_path)
+    config = ProducerBrokerConfig(endpoint, {})
+    ready = threading.Event()
+    journal = tmp_path / "invalid-endpoint-journal"
+    monkeypatch.setattr(controller_http_transport, "Popen", lambda *_a, **_kw: pytest.fail("invalid endpoint spawn"))
+    with pytest.raises(ProducerBrokerIpcError, match="producer_broker_endpoint_invalid"):
+        serve_producer_broker(
+            -1, -1, intent=intent, journal_dir=journal, config=config,
+            deadline_ns=time.monotonic_ns() + 2_000_000_000, ready=ready,
+        )
+    assert not ready.is_set() and not journal.exists()
+
+
+@pytest.mark.parametrize("endpoint", ["http://inert@127.0.0.1:1/", "http://127.0.0.1:1/#inert"])
+def test_native_invalid_endpoint_refused_before_budget_nonce_inputs_or_spawn(tmp_path, monkeypatch, endpoint):
+    from test_native_trusted_attempt import _attempt
+
+    from lunar_evolution import native_trusted_attempt as native
+
+    workspace, producer, intent, attestation, artifact, batch = _attempt(tmp_path)
+    before = sorted(str(path.relative_to(workspace)) for path in workspace.rglob("*"))
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("invalid broker endpoint must be rejected before native effects")
+
+    for name in ("_compose_attempt_budget", "_native_launch_inputs", "_observe_cancellation",
+                 "consume_trusted_bootstrap_attestation"):
+        monkeypatch.setattr(native, name, forbidden)
+    monkeypatch.setattr(native.subprocess, "Popen", forbidden)
+    with pytest.raises(native.NativeTrustedAttemptError, match="native_trusted_attempt_broker_endpoint_invalid"):
+        native.run_native_trusted_attempt(
+            workspace=workspace, producer_root=producer, intent=intent,
+            attestation=attestation, artifact=artifact,
+            broker_config=ProducerBrokerConfig(endpoint, {}),
+        )
+    assert sorted(str(path.relative_to(workspace)) for path in workspace.rglob("*")) == before
+    assert not (batch / "native-trusted-deadline.json").exists()
 
 
 def raw_worker(config, endpoint):
