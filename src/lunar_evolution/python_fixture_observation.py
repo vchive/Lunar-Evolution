@@ -207,8 +207,13 @@ def adapt_static_python_observation(
     if raw["sys_path"] != []:
         _fail("sys_path_external")
     modules = _validate_origins(raw["origins"])
-    _strings(raw["builtin_names"], "builtin_inventory_invalid")
-    _strings(raw["frozen_names"], "frozen_inventory_invalid")
+    builtin_names = _strings(raw["builtin_names"], "builtin_inventory_invalid")
+    frozen_names = _strings(raw["frozen_names"], "frozen_inventory_invalid")
+    if (builtin_names != tuple(sorted(set(builtin_names)))
+            or frozen_names != tuple(sorted(set(frozen_names)))
+            or set(builtin_names) & set(frozen_names)
+            or not (set(builtin_names) | set(frozen_names)) <= set(modules)):
+        _fail("module_inventory_drift")
     negative = raw["loader_negative"]
     if raw["fixture_case"] == "loader-negative":
         _validate_negative(negative)
