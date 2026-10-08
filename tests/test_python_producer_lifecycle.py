@@ -230,6 +230,32 @@ def test_reconcile_cannot_refresh_retained_request_journal_count():
         reconcile_python_producer_terminal(old, completed_terminal(request_count=2), expected_binding=D)
 
 
+@pytest.mark.parametrize("field", ["stdout_sha256", "stderr_sha256"])
+def test_reconcile_preserves_retained_stream_digest(field):
+    with pytest.raises(PythonProducerLifecycleError, match="retained_evidence_drift"):
+        reconcile_python_producer_terminal(
+            terminal(), completed_terminal(**{field: "b" * 64}), expected_binding=D,
+        )
+
+
+@pytest.mark.parametrize("previous,current", [
+    ("cleaned", "already_exited"), ("already_exited", "cleaned"),
+])
+def test_reconcile_preserves_known_cleanup(previous, current):
+    with pytest.raises(PythonProducerLifecycleError, match="retained_evidence_drift"):
+        reconcile_python_producer_terminal(
+            terminal(cleanup_status=previous), completed_terminal(cleanup_status=current), expected_binding=D,
+        )
+
+
+@pytest.mark.parametrize("cleanup", ["unknown", "missing"])
+def test_reconcile_can_resolve_absent_cleanup(cleanup):
+    current = completed_terminal()
+    assert reconcile_python_producer_terminal(
+        terminal(cleanup_status=cleanup), current, expected_binding=D,
+    ) == current
+
+
 @pytest.mark.parametrize("record,digest", [
     (terminal, "terminal_sha256"), (observation, "observation_sha256"),
 ])
@@ -333,14 +359,14 @@ def test_reused_binding_digest_is_verified_before_terminal_replay(tmp_path):
         resume_python_producer_terminal(item, expected_binding=binding)
 
 
-def receipt_fixture(binding, *, status="completed"):
+def receipt_fixture(binding, *, status="completed", exit_code=0):
     return ProducerExecutionReceipt(
         launch_id=binding.intent.launch_id, journal_id=binding.intent.journal_id, run_id=binding.run_id,
         parent_task_id=binding.parent_task_id, task_id=binding.task_id,
         intent_sha256=binding.intent_sha256, attestation_sha256=binding.attestation_sha256,
         consumption_sha256=D, registration_sha256=D, executable_identity=D, pid=41, pgid=41,
         owner_identity={"pid": 41}, gate_released=True, request_timeout_seconds=5, max_requests=3,
-        output_max_bytes=4096, wall_timeout_seconds=10, request_count=1, exit_code=0,
+        output_max_bytes=4096, wall_timeout_seconds=10, request_count=1, exit_code=exit_code,
         stdout_evidence=ProducerStreamEvidence("stdout", 0, D, False, "complete"),
         stderr_evidence=ProducerStreamEvidence("stderr", 0, D, False, "complete"),
         envelope_evidence=None, cleanup_status="cleaned", cleanup_sha256=D,
@@ -359,8 +385,37 @@ def test_process_receipt_projection_keeps_missing_runtime_terminal_unknown(tmp_p
     assert item.executable_sha256 == binding.interpreter_sha256
     assert item.executable_size == binding.interpreter.size
     assert item.started_unix is None and item.executable_inode is None
+    assert item.exit_code == receipt.exit_code
+    assert item.cleanup_status == receipt.cleanup_status
+    assert item.request_journal_sha256 is None
     assert item.publication_eligible is False
     assert receipt.status == status
+
+
+def test_failed_receipt_projection_cannot_reconcile_to_success(tmp_path):
+    binding = bound_fixture(tmp_path)
+    receipt = receipt_fixture(binding, status="failed", exit_code=7)
+    previous = bind_python_producer_receipt(binding, receipt)
+    current = bound_terminal(
+        binding, process_registration_sha256=previous.process_registration_sha256,
+        owner_identity_sha256=previous.owner_identity_sha256,
+    )
+    assert previous.status == "unknown" and previous.exit_code == 7
+    with pytest.raises(PythonProducerLifecycleError, match="retained_evidence_drift"):
+        reconcile_python_producer_terminal(previous, current, expected_binding=binding)
+    failed = bound_terminal(
+        binding, process_registration_sha256=previous.process_registration_sha256,
+        owner_identity_sha256=previous.owner_identity_sha256, status="failed", exit_code=7,
+    )
+    assert reconcile_python_producer_terminal(previous, failed, expected_binding=binding) == failed
+
+
+def test_receipt_attestation_consumption_is_not_broker_request_journal(tmp_path):
+    binding = bound_fixture(tmp_path)
+    receipt = receipt_fixture(binding)
+    projected = bind_python_producer_receipt(binding, receipt)
+    assert receipt.consumption_sha256 == D and receipt.request_count == 1
+    assert projected.request_count == 1 and projected.request_journal_sha256 is None
 
 
 def test_process_receipt_projection_rechecks_retained_receipt_digest(tmp_path):
