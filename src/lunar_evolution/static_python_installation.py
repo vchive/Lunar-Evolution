@@ -109,6 +109,7 @@ _BUILD_ENVIRONMENT = {
     "PATH", "LC_ALL", "LANG", "TZ", "SOURCE_DATE_EPOCH", "PYTHONHASHSEED",
     "PYTHONNOUSERSITE", "CC", "AR", "RANLIB", "CFLAGS", "CPPFLAGS", "LDFLAGS",
     "ac_cv_func_dlopen", "ZIG_GLOBAL_CACHE_DIR", "ZIG_LOCAL_CACHE_DIR",
+    "CONFIG_SITE", "LUNAR_STATIC_CLEAN_ENV",
 }
 _ELF_FIELDS = {
     "sha256", "size", "elf_class", "byte_order", "machine", "elf_type", "osabi",
