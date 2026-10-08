@@ -96,3 +96,30 @@ def test_binding_does_not_execute_runtime_or_filesystem_on_parse(tmp_path: Path,
     )
     monkeypatch.setattr(producer_python_runtime_tree, "verify_python_runtime_tree_manifest", lambda *_a, **_k: pytest.fail("filesystem verification"))
     assert binding.parse_python_producer_binding(item.to_json()).binding_sha256 == item.binding_sha256
+
+
+def test_binding_requires_digest_and_validates_mapping_budget_checkpoint(tmp_path: Path) -> None:
+    manifest, tree, intent, attestation, budget = _fixture(tmp_path)
+    item = binding.build_python_producer_binding(
+        runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
+        deadline_unix=4102444800.0, budget=budget,
+    )
+    payload = item.to_dict()
+    payload["binding_sha256"] = None
+    with pytest.raises(binding.PythonProducerBindingError, match="binding_digest_invalid"):
+        binding.parse_python_producer_binding(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    payload["binding_sha256"] = "0" * 64
+    with pytest.raises(binding.PythonProducerBindingError, match="binding_digest_invalid"):
+        binding.parse_python_producer_binding(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+
+    mapping = budget.to_dict()
+    assert binding.build_python_producer_binding(
+        runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
+        deadline_unix=4102444800.0, budget=mapping,
+    ) == item
+    mapping["consumed"]["solver_invocations"] = 1
+    with pytest.raises(binding.PythonProducerBindingError, match="budget_invalid|budget_checkpoint"):
+        binding.build_python_producer_binding(
+            runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
+            deadline_unix=4102444800.0, budget=mapping,
+        )

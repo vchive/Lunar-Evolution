@@ -654,6 +654,15 @@ from .producer_request_transport import (
     read_host_request_journal,
 )
 from .profiles import EvaluatorProfile, ModelProfile, ProfileRegistry, SolverProfile
+from .python_producer_binding import (
+    MAX_PYTHON_PRODUCER_BINDING_BYTES,
+    PYTHON_PRODUCER_BINDING_PROTOCOL,
+    PYTHON_PRODUCER_BINDING_SCHEMA_VERSION,
+    PythonProducerBinding,
+    PythonProducerBindingError,
+    build_python_producer_binding,
+    parse_python_producer_binding,
+)
 from .remote_evolution import (
     RemoteCancelRequest,
     RemoteContinueRequest,
@@ -981,6 +990,7 @@ __all__ = [
     "MAX_INVENTORY_FILES",
     "MAX_INVENTORY_FILE_BYTES",
     "MAX_INVENTORY_TOTAL_BYTES",
+    "MAX_PYTHON_PRODUCER_BINDING_BYTES",
     "MAX_PYTHON_RUNTIME_FILES",
     "MAX_PYTHON_RUNTIME_FILE_BYTES",
     "MAX_PYTHON_RUNTIME_MANIFEST_BYTES",
@@ -1000,6 +1010,8 @@ __all__ = [
     "PRODUCER_PROCESS_PROTOCOL",
     "PRODUCER_REQUEST_EVIDENCE_PROTOCOL",
     "PRODUCER_REQUEST_EVIDENCE_SCHEMA_VERSION",
+    "PYTHON_PRODUCER_BINDING_PROTOCOL",
+    "PYTHON_PRODUCER_BINDING_SCHEMA_VERSION",
     "RSI_PROTOCOL",
     "RSI_SCHEMA_VERSION",
     "SUPPORTED_FIXTURE_SOLVERS",
@@ -1297,6 +1309,8 @@ __all__ = [
     "ProducerStreamEvidence",
     "ProfileRegistry",
     "ProviderFreeSolverGateway",
+    "PythonProducerBinding",
+    "PythonProducerBindingError",
     "PythonRuntimeDirectory",
     "PythonRuntimeError",
     "PythonRuntimeFile",
@@ -1465,6 +1479,7 @@ __all__ = [
     "build_producer_bundle_publication_journal",
     "build_producer_launch_attestation",
     "build_producer_launch_intent",
+    "build_python_producer_binding",
     "build_python_runtime_manifest",
     "build_python_runtime_tree_manifest",
     "build_registration_seal",
@@ -1551,6 +1566,7 @@ __all__ = [
     "parse_producer_launch_intent",
     "parse_producer_launch_preflight",
     "parse_producer_request_evidence",
+    "parse_python_producer_binding",
     "parse_python_runtime_manifest",
     "parse_python_runtime_material_descriptor",
     "parse_python_runtime_tree_manifest",
