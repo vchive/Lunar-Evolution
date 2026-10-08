@@ -252,7 +252,7 @@ def test_formal_pre_persist_original_grant_drift_does_not_consume_attestation(tm
 
     monkeypatch.setattr(runner, "hold_producer_grants", changed_owner)
     for name in ("_persist_deadline", "consume_trusted_bootstrap_attestation", "subprocess.Popen"):
-        monkeypatch.setattr(runner, name, forbidden)
+        monkeypatch.setattr("lunar_evolution.native_trusted_attempt." + name, forbidden)
     with pytest.raises(runner.NativeTrustedAttemptError, match="native_trusted_attempt_grant_objects_changed"):
         run_native_trusted_attempt(workspace, producer_root=producer, intent=intent, attestation=attestation, artifact=artifact)
     assert not (batch / "native-trusted-attempt-deadline.json").exists()

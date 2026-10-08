@@ -34,6 +34,11 @@ owner.close API and a substituted path left in place at owner context exit. The 
 use an actually expired context and restore the inert replacement after asserting refusal.
 C initial compile diagnostics and first pytest XML remain at `/tmp/lunar181-c-first-compile.log`
 and `/tmp/lunar181-c-first-tests.xml`. Initial evidence is not rewritten as success.
+First Linux CI head e48ac34/run37707855913 exposed one fixture setup error: the pre-persist
+drift negative used `monkeypatch.setattr(module, "subprocess.Popen", ...)`, which is not a
+module attribute. Its dotted import path is now patched correctly. The first196case grant
+XML/logs are preserved; the98C cases and other Python cases executed, but the failed job
+does not prove the downstream phases. The fix uses a new source head/run, not a retry.
 Existing immutable-runtime fixture garbage can emit macOS cleanup warnings; they do not
 change XML outcomes. No historical test retry is used to erase a first failure.
 
