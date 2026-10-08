@@ -1,0 +1,675 @@
+{
+  "descriptor": {
+    "abi_profile": "cp313-release-gil",
+    "alias_inventory_sha256": "8ad65fb7a49caf1f99def20f55d7af218ead7036590bd3498df01fd8266286be",
+    "aliases": [
+      {
+        "alias": "importlib._bootstrap",
+        "name": "_frozen_importlib"
+      },
+      {
+        "alias": "importlib._bootstrap_external",
+        "name": "_frozen_importlib_external"
+      }
+    ],
+    "architecture": "x86_64",
+    "artifact_mode": 365,
+    "artifact_sha256": "f8bafef28dbbc79e225c6481014f044211b190335cbecf781581020f3e891887",
+    "artifact_size": 256,
+    "builtin_inventory_sha256": "f13d5bb5355a65301c9fe80558669292df8dd957c43018832721d4166f49f2d9",
+    "builtin_modules": [
+      {
+        "init_symbol": "PyInit__abc",
+        "name": "_abc",
+        "object": {
+          "path": "objects/_abc.o",
+          "sha256": "102000979b958048c3315484b13b568ca84f78efff619a2f91ee35cf5625ff00",
+          "size": 37
+        },
+        "source": {
+          "path": "source/_abc.c",
+          "sha256": "352287d358cf86a12de903e6ecf91454b2640023ce2b206f3c73e2bd0524ecec",
+          "size": 36
+        }
+      },
+      {
+        "init_symbol": "PyInit__ast",
+        "name": "_ast",
+        "object": {
+          "path": "objects/_ast.o",
+          "sha256": "113fc91900662f4d1ac513f1b1b60495265c12195f3fc259b1fd249059875603",
+          "size": 37
+        },
+        "source": {
+          "path": "source/_ast.c",
+          "sha256": "7ecec34756112a8e97cb084aa0709a875e68a5febccc3c5c8493c61d094e5670",
+          "size": 36
+        }
+      },
+      {
+        "init_symbol": "PyInit__codecs",
+        "name": "_codecs",
+        "object": {
+          "path": "objects/_codecs.o",
+          "sha256": "e33813be012e94c746de0f57caf6aa591357d3b728eda5820a062ef9e73d96d7",
+          "size": 40
+        },
+        "source": {
+          "path": "source/_codecs.c",
+          "sha256": "b5a0e6c9a79e5ff802a5fc8539490ca64f07a2055e393d7f86a5e238adbfc3ce",
+          "size": 39
+        }
+      },
+      {
+        "init_symbol": "PyInit__imp",
+        "name": "_imp",
+        "object": {
+          "path": "objects/_imp.o",
+          "sha256": "26bb3f595252b0330da6d531fb8cef8aa93b6db3c8f05738e143ea36ba0c01c5",
+          "size": 37
+        },
+        "source": {
+          "path": "source/_imp.c",
+          "sha256": "4fbe75f0a85896c04c61d1382408a53a043df03508b7be7e59381fd04965a030",
+          "size": 36
+        }
+      },
+      {
+        "init_symbol": "PyInit__io",
+        "name": "_io",
+        "object": {
+          "path": "objects/_io.o",
+          "sha256": "50de347ddbbbc27f6082c5905015d51976c03d1a8eda5b5e46ec735cec6cfc27",
+          "size": 36
+        },
+        "source": {
+          "path": "source/_io.c",
+          "sha256": "1c0f7c62f44003dd5d5f4bef0ddbc0c455956b63340e055a23544a49ac5d9a0f",
+          "size": 35
+        }
+      },
+      {
+        "init_symbol": "PyInit__lunar_fixture_pipe",
+        "name": "_lunar_fixture_pipe",
+        "object": {
+          "path": "objects/_lunar_fixture_pipe.o",
+          "sha256": "acf92e46825a4791b49f63e5a6b7deb73211950a245db63a2546c6dda9685fc7",
+          "size": 52
+        },
+        "source": {
+          "path": "source/_lunar_fixture_pipe.c",
+          "sha256": "9ec663d4f8c66e025c447592ac25ed313b0dc3e347448796eca6222afd7faf4a",
+          "size": 51
+        }
+      },
+      {
+        "init_symbol": "PyInit__signal",
+        "name": "_signal",
+        "object": {
+          "path": "objects/_signal.o",
+          "sha256": "caf4a3c280e18bc43cd3a64591cd3d4eac31d5acd6ac8e8fb73b9f632cdfda20",
+          "size": 40
+        },
+        "source": {
+          "path": "source/_signal.c",
+          "sha256": "a6f59e2dad3a23787e484244479988130874ef3f3918bdf552d2113ceba9a484",
+          "size": 39
+        }
+      },
+      {
+        "init_symbol": "PyInit__string",
+        "name": "_string",
+        "object": {
+          "path": "objects/_string.o",
+          "sha256": "0e254b364a7b7feee06de4a06e9752199ea5fad5f64f6f6a5ea53b916cd75c11",
+          "size": 40
+        },
+        "source": {
+          "path": "source/_string.c",
+          "sha256": "da0764cff4dfb106c2fb6b8bff199de52f059aa9d0609419dc7fb24d90e6575b",
+          "size": 39
+        }
+      },
+      {
+        "init_symbol": "PyInit__thread",
+        "name": "_thread",
+        "object": {
+          "path": "objects/_thread.o",
+          "sha256": "650e0291c72914546df4965e5c1f2017636100ec49235c1905fdd676fde5ca87",
+          "size": 40
+        },
+        "source": {
+          "path": "source/_thread.c",
+          "sha256": "0eac09e401497399fffa1e3b331252157e9b5316d458e8fe49762afefcb64adf",
+          "size": 39
+        }
+      },
+      {
+        "init_symbol": "PyInit__tokenize",
+        "name": "_tokenize",
+        "object": {
+          "path": "objects/_tokenize.o",
+          "sha256": "96367f9bff4e24a8290da6146257c3c2a8e7949c3a22a4dcddb351e13aeed3a0",
+          "size": 42
+        },
+        "source": {
+          "path": "source/_tokenize.c",
+          "sha256": "2f4489f198c108c02741e8dd2d3a1c9746e51f4d3e40a87342d9d0679f912fda",
+          "size": 41
+        }
+      },
+      {
+        "init_symbol": "_PyWarnings_Init",
+        "name": "_warnings",
+        "object": {
+          "path": "objects/_warnings.o",
+          "sha256": "90fca590dda5dc03f105f35f64bdf8f78226d45730a7a9175cd62ff462a2b683",
+          "size": 42
+        },
+        "source": {
+          "path": "source/_warnings.c",
+          "sha256": "f13fa91d6c7aeac64ef10aa6444e459af4553c30756e4b6dfb7f4da4e62aff3a",
+          "size": 41
+        }
+      },
+      {
+        "init_symbol": "PyInit__weakref",
+        "name": "_weakref",
+        "object": {
+          "path": "objects/_weakref.o",
+          "sha256": "146b283151c817182a04ddbb27e3f070a5e9626408ee696a4b12bbdc5ada8eb1",
+          "size": 41
+        },
+        "source": {
+          "path": "source/_weakref.c",
+          "sha256": "417dc226863adfd7331c02424c271f254a2ed6c2a1add34eed30c8990dd75e9f",
+          "size": 40
+        }
+      },
+      {
+        "init_symbol": "PyInit_atexit",
+        "name": "atexit",
+        "object": {
+          "path": "objects/atexit.o",
+          "sha256": "508bffd9aac6aaf70096bd26dcc94526b94b1802e9bd97e0da9b8670f5191257",
+          "size": 39
+        },
+        "source": {
+          "path": "source/atexit.c",
+          "sha256": "392684abfeb26e6c256af11ff99fe9de7ac91f3191471905d6c40ff1db0a580f",
+          "size": 38
+        }
+      },
+      {
+        "init_symbol": "NULL",
+        "name": "builtins",
+        "object": {
+          "path": "objects/builtins.o",
+          "sha256": "c5257087315538c3da9193b79af17cd3aeb64d72522e1c5d207b863474ae2b7a",
+          "size": 41
+        },
+        "source": {
+          "path": "source/builtins.c",
+          "sha256": "390cddec63575415f1541f185988161a2f8feb117f3db15eeaaf7173b6240a4a",
+          "size": 40
+        }
+      },
+      {
+        "init_symbol": "PyInit_faulthandler",
+        "name": "faulthandler",
+        "object": {
+          "path": "objects/faulthandler.o",
+          "sha256": "a2536de0cbfa5ceacea774005654b1cc39407bf13160722c04f9ba42a9faba50",
+          "size": 45
+        },
+        "source": {
+          "path": "source/faulthandler.c",
+          "sha256": "a8b16bb50e929ff8f7e8ea077443bc4030d94b12a92e7602d1760e8d9d8bddee",
+          "size": 44
+        }
+      },
+      {
+        "init_symbol": "PyInit_gc",
+        "name": "gc",
+        "object": {
+          "path": "objects/gc.o",
+          "sha256": "b938b7ee450c1f28f5d97571faeaf23d84dcee8152f43ca7cf66dbe891f86a8f",
+          "size": 35
+        },
+        "source": {
+          "path": "source/gc.c",
+          "sha256": "73f763ea1919fa7788adeec88a3aaa6578dad196e78a39b22dea3b29e2f02298",
+          "size": 34
+        }
+      },
+      {
+        "init_symbol": "PyMarshal_Init",
+        "name": "marshal",
+        "object": {
+          "path": "objects/marshal.o",
+          "sha256": "a96d4ce1d0f09860fdbd101b61754d2f5e2d79d8fd86a58687693c231cd9e9a5",
+          "size": 40
+        },
+        "source": {
+          "path": "source/marshal.c",
+          "sha256": "2542078ed294a92648084ab098eb39c33937282da5da61a05882602bf800a367",
+          "size": 39
+        }
+      },
+      {
+        "init_symbol": "PyInit_posix",
+        "name": "posix",
+        "object": {
+          "path": "objects/posix.o",
+          "sha256": "818b152ecc25b62e47253743e516f392fa2685b363bdd34789078a82fcf29e58",
+          "size": 38
+        },
+        "source": {
+          "path": "source/posix.c",
+          "sha256": "cd786996ea31f61e02520b4f47dd3c5237415adeb3b7a000e6eb0f3d5c3b98d9",
+          "size": 37
+        }
+      },
+      {
+        "init_symbol": "NULL",
+        "name": "sys",
+        "object": {
+          "path": "objects/sys.o",
+          "sha256": "17f939e48274d8966387a01e93bfcde44489f988e8fa5ac5f23a79ec48646fcd",
+          "size": 36
+        },
+        "source": {
+          "path": "source/sys.c",
+          "sha256": "7ce5b735e87463796f8814eb94bc8ddd6bfbe7eecd1be4bcea3047c6ad6c90ce",
+          "size": 35
+        }
+      }
+    ],
+    "cache_tag": "cpython-313",
+    "elf_profile": {
+      "byte_order": "little",
+      "dynamic_entry_count": 0,
+      "dynamic_table_count": 0,
+      "elf_class": 64,
+      "elf_type": "ET_EXEC",
+      "entry_point": 4194432,
+      "executable_load_segment_count": 1,
+      "general_code_origin_protection": false,
+      "has_dt_needed": false,
+      "has_pt_interp": false,
+      "load_segment_count": 1,
+      "machine": "x86_64",
+      "osabi": 0,
+      "production_admission": false,
+      "program_header_count": 1,
+      "runtime_load_protection": false,
+      "section_header_count": 0,
+      "sha256": "f8bafef28dbbc79e225c6481014f044211b190335cbecf781581020f3e891887",
+      "size": 256
+    },
+    "embedded_startup_arrays": [],
+    "execution_performed": false,
+    "frozen_inventory_sha256": "4b943b44dd438c02c124a91f04b1d286d895d8b09a8aa797804d7b570efa7348",
+    "frozen_main": "_lunar_static_main",
+    "frozen_modules": [
+      {
+        "generated": {
+          "path": "generated/_frozen_importlib.h",
+          "sha256": "014a0f7736c3e1c584680df66154d60a1e630bd5113ff94216fa209d3e62fe65",
+          "size": 52
+        },
+        "is_package": false,
+        "name": "_frozen_importlib",
+        "source": {
+          "path": "source/_frozen_importlib.py",
+          "sha256": "193b17939060f41cb7ee06bf4fd929118d17709b0cf02ed45a0e726c41c8b60c",
+          "size": 50
+        },
+        "table": "bootstrap"
+      },
+      {
+        "generated": {
+          "path": "generated/_frozen_importlib_external.h",
+          "sha256": "a68f34b19b4766a3201029d3d981f23a54ca7b28895876bdb54e6be9a6d464fb",
+          "size": 61
+        },
+        "is_package": false,
+        "name": "_frozen_importlib_external",
+        "source": {
+          "path": "source/_frozen_importlib_external.py",
+          "sha256": "600c96437c7e7e3726d2282b43da942f051032db04b7ba5e8c4b31207ca03281",
+          "size": 59
+        },
+        "table": "bootstrap"
+      },
+      {
+        "generated": {
+          "path": "generated/_lunar_static_main.h",
+          "sha256": "05f47e68a42de65674006b1b27bcd7bf3fc772d7689449035f837b33cc1f2415",
+          "size": 53
+        },
+        "is_package": false,
+        "name": "_lunar_static_main",
+        "source": {
+          "path": "source/_lunar_static_main.py",
+          "sha256": "2d82fe785ebec4957156cda8a7da74e05ce352da9519fdb163b5c09cf0e7ed2e",
+          "size": 51
+        },
+        "table": "custom"
+      },
+      {
+        "generated": {
+          "path": "generated/abc.h",
+          "sha256": "a9f43a0306fdb126c83cc1754d03ca40090069f409643719ef5a4cb72fdb627d",
+          "size": 38
+        },
+        "is_package": false,
+        "name": "abc",
+        "source": {
+          "path": "source/abc.py",
+          "sha256": "53ec1d3da7c7bfc6900f0113df0c97d746e6ec0d1b117aeec889317a6fe9273b",
+          "size": 36
+        },
+        "table": "stdlib"
+      },
+      {
+        "generated": {
+          "path": "generated/codecs.h",
+          "sha256": "5fa923083793cc68dc9c50c59d65cd3183cbc38e5ed0cf1ff1943d9a87ef8d38",
+          "size": 41
+        },
+        "is_package": false,
+        "name": "codecs",
+        "source": {
+          "path": "source/codecs.py",
+          "sha256": "9055233b48e227c70d6ac79277ebf7ba431a15ca20419269f6ba3657c8c70673",
+          "size": 39
+        },
+        "table": "stdlib"
+      },
+      {
+        "generated": {
+          "path": "generated/encodings.h",
+          "sha256": "0fbb65e35966429b84112259fbe1549eb6373732918d817ff7330967af69acc5",
+          "size": 44
+        },
+        "is_package": true,
+        "name": "encodings",
+        "source": {
+          "path": "source/encodings.py",
+          "sha256": "bd817180abfde12f34bad6ffb8a928451bc11f5ab5231696aeda5b2ebebfd90b",
+          "size": 42
+        },
+        "table": "stdlib"
+      },
+      {
+        "generated": {
+          "path": "generated/encodings.aliases.h",
+          "sha256": "315f8fe22336bbeb2015a5c30738aaa576c6b05ef33589c29b676249827325be",
+          "size": 52
+        },
+        "is_package": false,
+        "name": "encodings.aliases",
+        "source": {
+          "path": "source/encodings.aliases.py",
+          "sha256": "80a189f6ead31b71042b37121c8d99a2edfcc8f3d27ea7fb8a89538f09a841bf",
+          "size": 50
+        },
+        "table": "stdlib"
+      },
+      {
+        "generated": {
+          "path": "generated/encodings.utf_8.h",
+          "sha256": "23f68045cc5d2fd281590d04943c4ecc3c1e5f2788b99c178525053aed43c532",
+          "size": 50
+        },
+        "is_package": false,
+        "name": "encodings.utf_8",
+        "source": {
+          "path": "source/encodings.utf_8.py",
+          "sha256": "fb370bf8cc13b3bbfa992d431be74e4909f7b5db2fd2a45874390dbaabf0f7cd",
+          "size": 48
+        },
+        "table": "stdlib"
+      },
+      {
+        "generated": {
+          "path": "generated/io.h",
+          "sha256": "e2927625f9e062568a48d7b9b6fde61e54f68ea019ccc4dd077cb0d91e74d464",
+          "size": 37
+        },
+        "is_package": false,
+        "name": "io",
+        "source": {
+          "path": "source/io.py",
+          "sha256": "b81ededd107ea7d7ef1840d9fa9d4f5cb451105d3e232af71093d899b58725d0",
+          "size": 35
+        },
+        "table": "stdlib"
+      }
+    ],
+    "general_code_origin_protection": false,
+    "generator": {
+      "executable_sha256": "5074a0966d73c409063380a89499d541cf225f15c8c290b9803c4bc991012294",
+      "generated_manifest_sha256": "c51aa0675c2f86ec7c5a42a969cde04821acc56fb10063bb2fb52906c9a4cb2f",
+      "host_architecture": "x86_64",
+      "marshal_version": 4,
+      "python_version": "3.13.12",
+      "recipe_sha256": "c9bce86a5906f3a5fce6fd884c6047ab19402214889e7d9c7d98aa5c944efc9e",
+      "source_sha256": "b89d11af7ebad36c7c64f6eca927a4bbd74e3dfa861a897f2ec89045a88eef36"
+    },
+    "initialization_profile": {
+      "config": {
+        "_config_init": 3,
+        "_init_main": 1,
+        "_install_importlib": 1,
+        "_is_python_build": 0,
+        "argv": [
+          "lunar-static-python-fixture"
+        ],
+        "base_exec_prefix": "/lunar-static-fixture",
+        "base_executable": "/lunar-static-python-fixture",
+        "base_prefix": "/lunar-static-fixture",
+        "buffered_stdio": 1,
+        "bytes_warning": 0,
+        "check_hash_pycs_mode": "always",
+        "code_debug_ranges": 1,
+        "configure_c_stdio": 1,
+        "cpu_count": 1,
+        "dev_mode": 0,
+        "dump_refs": 0,
+        "dump_refs_file": "NULL",
+        "exec_prefix": "/lunar-static-fixture",
+        "executable": "/lunar-static-python-fixture",
+        "faulthandler": 0,
+        "filesystem_encoding": "utf-8",
+        "filesystem_errors": "surrogateescape",
+        "hash_seed": 0,
+        "home": "/lunar-static-fixture",
+        "import_time": 0,
+        "inspect": 0,
+        "install_signal_handlers": 0,
+        "int_max_str_digits": 4300,
+        "interactive": 0,
+        "isolated": 1,
+        "malloc_stats": 0,
+        "module_search_paths": [],
+        "module_search_paths_set": 1,
+        "optimization_level": 0,
+        "orig_argv": [
+          "lunar-static-python-fixture"
+        ],
+        "parse_argv": 0,
+        "parser_debug": 0,
+        "pathconfig_warnings": 0,
+        "perf_profiling": 0,
+        "platlibdir": "lib",
+        "prefix": "/lunar-static-fixture",
+        "program_name": "lunar-static-python-fixture",
+        "pycache_prefix": "NULL",
+        "pythonpath_env": "NULL",
+        "quiet": 0,
+        "run_command": "NULL",
+        "run_filename": "NULL",
+        "run_module": "NULL",
+        "safe_path": 1,
+        "show_ref_count": 0,
+        "site_import": 0,
+        "skip_source_first_line": 0,
+        "stdio_encoding": "utf-8",
+        "stdio_errors": "strict",
+        "stdlib_dir": "/lunar-static-fixture",
+        "sys_path_0": "NULL",
+        "tracemalloc": 0,
+        "use_environment": 0,
+        "use_frozen_modules": 1,
+        "use_hash_seed": 1,
+        "user_site_directory": 0,
+        "verbose": 0,
+        "warn_default_encoding": 0,
+        "warnoptions": [],
+        "write_bytecode": 0,
+        "xoptions": []
+      },
+      "dynamic_loader_policy": "dynload-stub-no-dlopen",
+      "expected_startup_modules": [
+        "__main__",
+        "_abc",
+        "_codecs",
+        "_frozen_importlib",
+        "_frozen_importlib_external",
+        "_imp",
+        "_io",
+        "_lunar_fixture_pipe",
+        "_lunar_static_main",
+        "_thread",
+        "_warnings",
+        "_weakref",
+        "abc",
+        "builtins",
+        "codecs",
+        "encodings",
+        "encodings.aliases",
+        "encodings.utf_8",
+        "io",
+        "marshal",
+        "posix",
+        "sys"
+      ],
+      "external_loader_policy": "source-patched-builtin-frozen-only",
+      "preconfig": {
+        "_config_init": 3,
+        "allocator": 5,
+        "coerce_c_locale": 0,
+        "coerce_c_locale_warn": 0,
+        "configure_locale": 0,
+        "dev_mode": 0,
+        "isolated": 1,
+        "parse_argv": 0,
+        "use_environment": 0,
+        "utf8_mode": 1
+      },
+      "separate_startup_code": "none"
+    },
+    "initialization_profile_sha256": "ce61a79101fb5620801b36a4bf9b4e32b6453d4cd0b57157505afc59d3412518",
+    "installation_version": "synthetic-v1",
+    "link_manifest_sha256": "a7b81c0143738728a5f9bfce428bede324afd1fcc1e82ce9908a98d5971b3eb2",
+    "patch_set_sha256": "c1b44c6169c0664340e0841e854b32f9c8a8ca092ce94c2f9c0503f1ce2289d4",
+    "platform": "linux",
+    "production_admission": false,
+    "protocol": "lunar-static-python-installation-v1",
+    "python_version": "3.13.12",
+    "recipe": {
+      "compile_flags": [
+        "-O2",
+        "-fno-PIE"
+      ],
+      "configure_flags": [
+        "--disable-shared",
+        "--without-ensurepip"
+      ],
+      "environment": [
+        {
+          "name": "LC_ALL",
+          "value": "C"
+        },
+        {
+          "name": "SOURCE_DATE_EPOCH",
+          "value": "0"
+        }
+      ],
+      "generated_config_sha256": "fb4ba7ff8a22c547d44c2e4cf8d44d56835122b3bc3b1b6d2435b334481cf301",
+      "link_flags": [
+        "-static",
+        "-no-pie"
+      ],
+      "link_inputs": [
+        {
+          "path": "objects/fixed.o",
+          "sha256": "6bf1fb7cf2e4203ad51c589497e6ff367a49b9cccefdf4a201b6c1b1026b658d",
+          "size": 38
+        }
+      ],
+      "link_map_sha256": "01c40e36c1294611f5763a37502df01322fa4e8d7d8d6a3120dfa938fc787238",
+      "module_config_sha256": "ff96b6115990a54e7ab5a474d2b946df5768871cf713f685d3efebb0e72b9339",
+      "reproducibility": "not-tested"
+    },
+    "recipe_sha256": "95773dab2cf58bd25187d87f51029368c874eb2e786c710423eb1680bdeb747b",
+    "runtime_load_protection": false,
+    "schema_version": "1",
+    "scope": "installation-owned-static-frozen-fixture-only",
+    "source_archive_sha256": "2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593",
+    "source_commit": "1cbe481834751b0125e006042ffbd8cd5eaec8a8",
+    "source_provenance": {
+      "acquisition": "sha256-pinned-public-archive",
+      "annotated_tag_object": "c3024299e68ff061b197b711368c3e1d74beb4c7",
+      "archive_url": "https://www.python.org/ftp/python/3.13.12/Python-3.13.12.tar.xz",
+      "patches": [
+        {
+          "path": "patches/fixture.patch",
+          "sha256": "2616884ef3b9cb267bccd072700eb51747661ef4a616666d9c6f254050360502",
+          "size": 44
+        }
+      ],
+      "signature_verification": "not-performed",
+      "source_archive_sha256": "2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593",
+      "source_commit": "1cbe481834751b0125e006042ffbd8cd5eaec8a8",
+      "source_git_tree": "1e5e19e950c3499dcd7df46f5a87aa05f6434e8e",
+      "source_tag": "v3.13.12",
+      "source_tree_sha256": "08e5df07b8169bcad2116a03f611cb4c57d8f31b6342bb39519ef91bc2f14074",
+      "upstream_url": "https://github.com/python/cpython.git"
+    },
+    "source_tag": "v3.13.12",
+    "source_tree_sha256": "08e5df07b8169bcad2116a03f611cb4c57d8f31b6342bb39519ef91bc2f14074",
+    "toolchain": {
+      "archive_sha256": "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00",
+      "archive_url": "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz",
+      "archives": [
+        {
+          "path": "zig/libc.a",
+          "sha256": "aa896ad0168f12e1b8c9007c921625fd3b2f346470c000e4bf69bcf289860695",
+          "size": 33
+        }
+      ],
+      "executables": [
+        {
+          "path": "zig/zig",
+          "sha256": "99f32b1c2d3fa42431c4ed9e32d948f8b8effe62f8a5991ffb69c8a1ccc4de03",
+          "size": 30
+        }
+      ],
+      "libc_disposition": "zig-musl-and-zig-libc",
+      "llvm_version": "21.1.0",
+      "musl_version": "1.2.5+zig-backports",
+      "patch_manifest_sha256": "98b1a6e0850caf35bc37258233c88f136c4e192fdb2b976c14cc122227e714c2",
+      "profile": "zig-0.16.0-linux-x86_64-musl",
+      "sysroot_manifest_sha256": "e0af11c6c807dc07294942baac5655ff40786eb1e5b85d1799d95ce7529d0201",
+      "target": "x86_64-linux-musl",
+      "version": "0.16.0"
+    },
+    "toolchain_manifest_sha256": "ef949be670ef0c8a81f66bd3bbf83c273bc449dda2e40dca599fcbd20217db97"
+  },
+  "descriptor_sha256": "550e79270a5c402988cda5de415d7329bf54d4836a96a26f8639f0514b60c954",
+  "kind": "synthetic-parser-and-ELF-format-only-never-executed",
+  "synthetic_elf_hex": "7f454c4602010100000000000000000002003e00010000008000400000000000400000000000000000000000000000000000000040003800010000000000000001000000050000000000000000000000000040000000000000004000000000000001000000000000000100000000000000100000000000000000000000000000c300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+}

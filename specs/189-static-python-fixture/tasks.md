@@ -1,0 +1,81 @@
+# Tasks — bounded static installation and fixture
+
+Unchecked boxes are future deliverables, not work already completed by
+171/177/184/188. Preserve the source of every first build/startup/test
+failure and cancelled preflight separately from later successful evidence.
+
+## G0 prerequisite
+
+- [x] Confirm Feature188 final exact source/head/tree, Linux dedicated no-skip
+  acceptance, raw artifacts independent audit and main merge. Record references.
+- [ ] Review/freeze this bounded189 SDD and installation descriptor field/bound
+  contract. Confirm no new v2 FD, general solver adapter or production admission.
+
+## G1 installation inputs and pure admission
+
+- [ ] Verify CPython v3.13.12/source identity and signature/acquisition result;
+  record archive/tree SHA-256 and exact patch set without invented values.
+- [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
+  resolve compiler/binutils/static-library sources, versions and artifact hashes.
+- [ ] Freeze configure/cache/module/compile/link/environment recipe and provenance.
+- [ ] Freeze a private original target-owner binding and independent fixture proof,
+  or complete a separately reviewed owned-target recovery implementation first.
+  Do not cite the old public numeric-FD helper as foreign-FD reuse safety evidence.
+- [ ] Implement bounded pure descriptor/parser/external-pin validation with focused
+  invalid shapes/collections/digest/count/unknown-field tests; no build/FS effects.
+
+## G2 fixed image and complete startup closure
+
+- [ ] Audit actual3.13.12 C headers, all path outputs and frozen-use flags/API;
+  freeze fixed isolated preconfig/config including UTF-8 and locale dispositions.
+- [ ] Close all encodings/importlib/stdio/startup dependencies and stock frozen,
+  alias, separate embedded startup arrays and static inittab dispositions. Replace
+  the seed with an exact finite
+  reviewed inventory; no automatic acceptance of discovered extra modules.
+- [ ] Implement the tiny static pipe builtin and one fixed inert frozen main with
+  real computation/runtime observations and predefined bounded negative cases.
+- [ ] Implement/refuse installed file/zip/dynamic-extension fallback routes; audit
+  needed bootstrap_external code and unsupported codec behavior.
+- [ ] Build matching pinned freezing tools and static target; retain first compiler,
+  linker and startup failures. Record every input/generated table/digest/link map.
+- [ ] Independently inspect final ELF/source/table/configuration/provenance and
+  publish actual installation descriptor and expected image pins. No PT_INTERP /
+  DT_NEEDED, missing input hash, placeholder inventory or host runtime substitute.
+- [ ] Reject final images larger than 128 MiB/134217728 bytes under the existing
+  producer-launch/executable-binding ceiling; no increase or temporary bypass.
+
+## G3 exact sealed-target fixture and acceptance
+
+- [ ] Validate original pins and use existing executable sealing/guardian/v2 target
+  FD with no new inherited FD or host Python exec/runtime roots.
+- [ ] Observe real CPython3.13.12/cache_tag/flags, startup without host stdlib,
+  fixed frozen computation, pipe request/response and absence of pyc.
+- [ ] Verify readable decoys, unknown codec/module and loader refusals, original
+  source/image pin drift, post-seal source replacement and exact inherited FD census.
+- [ ] Verify ready/release/start/terminal, inherited pipe ownership, deadline,
+  cancellation, guardian interruption, process reap and FD cleanup on every path.
+- [ ] Independently validate the selected private target owner's original binding
+  and cleanup/recovery against closed/reused numbers, same-byte foreign objects,
+  forced observation mutation and interrupted acquisition/release. No private
+  API is assumed and no public numeric FD may authorize foreign-object close.
+- [ ] Run focused/static/current/archive/frozen regressions and exact final Linux
+  dedicated gate with zero skips. Preserve raw ZIP/log/XML/source/toolchain/image
+  evidence; require independent final audit before main merge or any completed claim.
+
+## Explicitly later
+
+- [ ] Separate SDD for188 framed bundle delivery/importer, extra native FD/version,
+  C seal/frame/pin checks and generic project-runtime closure.
+- [ ] Separate production Python admission, SDK freezing, real solver adapters and
+  local RSI composition. No campaign is authorized by this fixture acceptance.
+
+## Unknowns to resolve with source review or actual build fixtures
+
+The selected toolchain candidate is pinned Zig0.16.0 Linux x86_64 with bundled
+musl1.2.5 plus backports/Zig-libc replacements; no static artifact exists. Actual
+required core/bootstrap modules/codecs, minimal bootstrap_external disposition,
+frozen-generator build sequence/compatibility, configure/autodetection removals,
+static dependency/symbol closure, PyConfig field values and startup behavior are
+not observed. Build reproducibility, image size/digest, final inventory counts,
+seccomp/landlock interaction and Linux lifecycle timing remain unknown. Resolve
+these as explicit gates; do not turn expected behavior into observed evidence.
