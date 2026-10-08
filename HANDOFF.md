@@ -1,5 +1,39 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 PR15–17 merged; independent guardian implementation
+
+PR15、PR16、PR17已依次合入main：merge2c4b2270736dda6deb19a5bf72efe3f292c76f8a、
+544b3f9409104052cf9c764334c2f97d46a9a382、7031475756b6af29b909c692ee3586b200db490c。
+最终PR run37709205439/37710527399/37712518759的三版raw XML/ZIP/joblogs及source
+parents/tree和case/skip inventory均已独立审计通过。main14 postmerge37709252012也通过。
+main15/16 push因main推进取消，未追认为通过；main17 postmerge37719212913已三版17阶段独立raw审计通过，current11446/88，0failure/error。
+PR15早期两轮失败和PR14 Python3.12 archived有限retry仍保留，不描述为全程无retry。
+
+Feature183在独立codex/native-independent-guardian上实现，PR18尚未合入/验收。Controller
+精确拥有第二个独立session watcher Popen，持原bootstrap pidfd；C实际signal0+flag4探测
+Linux6.9+ PIDFD_SIGNAL_PROCESS_GROUP，无numeric PGID/flags0/clone fallback。原v2 bootstrap
+argc19的finish/ack和watcher argc11通过原deadline/lifeline有界R/F+EOF/D协议；target不继承
+guardianFD，原__WALL/ECHILD drain及nonce/registration/receipt/recovery schemas不变。
+
+Host readiness失败保留exact owner；finish要求bootstrap退出、watcher实际exit0/reap；
+cleanup先用原pidfd group signal，受原deadline限制，signal失败仍有界reap watcher但报告unknown。
+selector为native-bootstrap-linux-independent-guardian-v1，旧IPC-only在budget/input/nonce/
+spawn之前guardian_required，旧只读和Darwin scope不升级。
+
+本地composition149项=64passed/85Darwinskips/0failure/error。Ruff/compileall/diff、strict
+Darwin C build/workflow YAML通过；Linux执行必须用本PR最终三版原始CI。独立审查关闭正常D
+后bootstrap退出竞态、group signal失败watcher泄漏及cleanup deadline超时边界。PR18首轮
+37721747456漏watcher cwd、第二轮37722439330旧grant fixture把watcher误当worker均失败并
+保留；修复后bootstrap仍必须继承原grants、watcher必须不继承。第三/AEC guardian fixture17fail原材料保留，9714修复后63Linux guardian cases实际通过；
+native-cleanup403仅原cleanup_unknown被guardian原因覆盖1fail，现保留原拒绝优先级，
+该fixture finally仅用原liveowner/process清理，不从registration读取PID授权。当前最终head以PR18为准。
+
+P0仍有POSIXmq/其他kernel egress以及broker有效redirect/proxy目的地。P1已具备可信宿主
+Python pipe fixture，但immutable runtime/load/loader/archive/import闭包、versioned delivery、
+正式Python worker admission、真实OpenEvolve/Shinka Python adapters、生产RSI CLI未完成。
+P2多机ownership/服务化/分布式调度后置。只用local inert/provider-free fixtures和既有CI，
+不读.env/密钥，不跑模型、WebAgent、远程/公司evaluator或真实campaign，保留他人修改。
+
 ## 2026-10-08 Actual native Python pipe fixture SDD
 
 Feature184独立codex/native-python-pipe-fixture从Feature182head7199486/treeaffcde51延续，

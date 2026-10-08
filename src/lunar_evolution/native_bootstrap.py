@@ -34,6 +34,7 @@ LINUX_FD_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-fd-control-v1"
 LINUX_GRANT_OBJECT_IMPLEMENTATION = "native-bootstrap-linux-grant-objects-v1"
 LINUX_GRANT_OBJECT_BINDING = "linux-held-grants-v1"
 LINUX_IPC_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-ipc-control-v1"
+LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION = "native-bootstrap-linux-independent-guardian-v1"
 
 
 class NativeBootstrapError(ValueError):
@@ -139,11 +140,11 @@ def build_native_bootstrap_artifact(
     mode = _platform_mode()
     if implementation_version is None:
         implementation_version = (
-            LINUX_IPC_CONTROL_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
+            LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION if mode == "linux-fd-bound" else "native-bootstrap-v1"
         )
     if implementation_version in {
         LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION,
-        LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION,
+        LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
     } and mode != "linux-fd-bound":
         _fail("native_bootstrap_child_supervision_unsupported")
     if not isinstance(allowlist_id, str) or not allowlist_id:
@@ -406,12 +407,18 @@ def native_bootstrap_command(
     deadline_monotonic_ns: int | None = None,
     child_supervision: str | None = None,
     grant_object_binding: str | None = None,
+    guardian_finish_fd: int | None = None,
+    guardian_ack_fd: int | None = None,
 ) -> tuple[str, ...]:
     """Build a guarded command; omitted lifeline/deadline are direct fixture interfaces."""
     executable = artifact.path if isinstance(artifact, NativeBootstrapArtifact) else Path(artifact)
     descriptors = (control_fd, gate_fd, frame_fd)
     if controller_lifeline_fd is not None:
         descriptors += (controller_lifeline_fd,)
+    if guardian_finish_fd is not None:
+        descriptors += (guardian_finish_fd,)
+    if guardian_ack_fd is not None:
+        descriptors += (guardian_ack_fd,)
     if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in descriptors):
         _fail("native_bootstrap_fd_invalid")
     if len(set(descriptors)) != len(descriptors):
@@ -425,7 +432,7 @@ def native_bootstrap_command(
         child_supervision is None and isinstance(artifact, NativeBootstrapArtifact)
         and artifact.descriptor.implementation_version in {
             LINUX_SUBREAPER_IMPLEMENTATION, LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION,
-            LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION,
+            LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
         }
         and controller_lifeline_fd is not None and deadline_monotonic_ns is not None
     ):
@@ -442,6 +449,15 @@ def native_bootstrap_command(
         or child_supervision != LINUX_CHILD_SUPERVISION or platform.system().lower() != "linux"
     ):
         _fail("native_bootstrap_grant_binding_invalid")
+    if (guardian_finish_fd is None) != (guardian_ack_fd is None) or (
+        guardian_finish_fd is not None and (
+            grant_object_binding != LINUX_GRANT_OBJECT_BINDING
+            or child_supervision != LINUX_CHILD_SUPERVISION
+            or platform.system().lower() != "linux"
+            or min(guardian_finish_fd, guardian_ack_fd) <= 2
+        )
+    ):
+        _fail("native_bootstrap_guardian_binding_invalid")
     command = (str(executable), "--control-fd", str(control_fd), "--gate-fd", str(gate_fd), "--frame-fd", str(frame_fd))
     if controller_lifeline_fd is not None:
         command += ("--controller-lifeline-fd", str(controller_lifeline_fd))
@@ -451,6 +467,8 @@ def native_bootstrap_command(
         command += ("--child-supervision", child_supervision)
     if grant_object_binding is not None:
         command += ("--grant-object-binding", grant_object_binding)
+    if guardian_finish_fd is not None:
+        command += ("--guardian-finish-fd", str(guardian_finish_fd), "--guardian-ack-fd", str(guardian_ack_fd))
     return command
 
 
@@ -460,6 +478,7 @@ __all__ = [
     "LINUX_FD_HANDOFF_IMPLEMENTATION",
     "LINUX_GRANT_OBJECT_BINDING",
     "LINUX_GRANT_OBJECT_IMPLEMENTATION",
+    "LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION",
     "LINUX_INPUT_MUTATION_IMPLEMENTATION",
     "LINUX_IPC_CONTROL_IMPLEMENTATION",
     "LINUX_SUBREAPER_IMPLEMENTATION",

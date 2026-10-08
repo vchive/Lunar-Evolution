@@ -21,6 +21,7 @@ from .native_bootstrap import (
     LINUX_FD_HANDOFF_IMPLEMENTATION,
     LINUX_GRANT_OBJECT_BINDING,
     LINUX_GRANT_OBJECT_IMPLEMENTATION,
+    LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
     LINUX_INPUT_MUTATION_IMPLEMENTATION,
     LINUX_IPC_CONTROL_IMPLEMENTATION,
     NativeBootstrapArtifact,
@@ -37,6 +38,7 @@ from .native_deadline_binding import (
     verify_native_deadline_binding,
 )
 from .native_grant_inputs import NativeGrantInputError, original_native_grant_inputs
+from .native_guardian import NativeGuardianError, NativeGuardianOwner, start_native_guardian
 from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
 from .native_trusted_cleanup import (
     NativeTrustedCleanupError,
@@ -724,7 +726,7 @@ def run_native_trusted_attempt(
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
             LINUX_INPUT_MUTATION_IMPLEMENTATION, LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION,
-            LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION,
+            LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
         }
     ):
         # Reject before budget persistence, nonce consumption or spawn. Read-only recovery
@@ -733,25 +735,30 @@ def run_native_trusted_attempt(
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
-            LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION,
+            LINUX_FD_HANDOFF_IMPLEMENTATION, LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION,
         }
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_fd_handoff_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version not in {LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION}
+        and artifact.descriptor.implementation_version not in {LINUX_FD_CONTROL_IMPLEMENTATION, LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_fd_control_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version not in {LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION}
+        and artifact.descriptor.implementation_version not in {LINUX_GRANT_OBJECT_IMPLEMENTATION, LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_required")
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
-        and artifact.descriptor.implementation_version != LINUX_IPC_CONTROL_IMPLEMENTATION
+        and artifact.descriptor.implementation_version not in {LINUX_IPC_CONTROL_IMPLEMENTATION, LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION}
     ):
         raise NativeTrustedAttemptError("native_trusted_attempt_ipc_control_required")
+    if (
+        artifact.descriptor.platform_execution_mode == "linux-fd-bound"
+        and artifact.descriptor.implementation_version != LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION
+    ):
+        raise NativeTrustedAttemptError("native_trusted_attempt_guardian_required")
     if broker_config is not None and type(broker_config) is not ProducerBrokerConfig:
         raise NativeTrustedAttemptError("native_trusted_attempt_broker_invalid")
     if cancelled is not None and not callable(cancelled):
@@ -796,6 +803,8 @@ def run_native_trusted_attempt(
         enabled=installed.descriptor.platform_execution_mode == "linux-fd-bound",
     ) as grant_owner:
         process: subprocess.Popen[bytes] | None = None
+        guardian: NativeGuardianOwner | None = None
+        guardian_finished = installed.descriptor.platform_execution_mode != "linux-fd-bound"
         owner: RegisteredProcess | None = None
         registration: dict[str, object] | None = None
         session: TrustedBootstrapSession | None = None
@@ -869,6 +878,12 @@ def run_native_trusted_attempt(
                 fds.update((frame_read, frame_write))
                 lifeline_read, controller_lifeline_writer = os.pipe()
                 fds.add(lifeline_read)
+                guardian_fds: tuple[int, ...] = ()
+                if grant_owner is not None:
+                    guardian_finish_read, guardian_finish_write = os.pipe()
+                    guardian_ack_read, guardian_ack_write = os.pipe()
+                    guardian_fds = (guardian_finish_write, guardian_ack_read)
+                    fds.update((guardian_finish_read, guardian_finish_write, guardian_ack_read, guardian_ack_write))
                 broker_child_fds: tuple[int, int] = ()
                 broker_env = {"PATH": os.defpath, "LANG": "C"}
                 if broker_config is not None:
@@ -927,6 +942,8 @@ def run_native_trusted_attempt(
                         if installed.descriptor.platform_execution_mode == "linux-fd-bound" else None
                     ),
                     grant_object_binding=LINUX_GRANT_OBJECT_BINDING if grant_owner is not None else None,
+                    guardian_finish_fd=guardian_finish_write if grant_owner is not None else None,
+                    guardian_ack_fd=guardian_ack_read if grant_owner is not None else None,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
@@ -940,12 +957,32 @@ def run_native_trusted_attempt(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
                     pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
-                              *broker_child_fds, lifeline_read,
+                              *broker_child_fds, *guardian_fds, lifeline_read,
                               *(grant_owner.pass_fds if grant_owner is not None else ())),
                     cwd="/" if grant_owner is not None else str(working), env=broker_env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
                 check_deadline()
+                if grant_owner is not None:
+                    try:
+                        guardian = start_native_guardian(
+                            process=process, executable=pair.bootstrap.executable,
+                            bootstrap_fd=pair.bootstrap.pass_fd, lifeline_fd=lifeline_read,
+                            finish_fd=guardian_finish_read, ack_fd=guardian_ack_write,
+                            ack_read_fd=guardian_ack_read, deadline=deadline,
+                            deadline_ns=native_deadline_ns, monotonic=monotonic,
+                        )
+                    except NativeGuardianError as exc:
+                        # Preserve a live original owner if bounded startup cleanup could
+                        # not complete before the caller closes the original writer.
+                        guardian = exc.guardian_owner
+                        raise
+                    # The bootstrap owns the sole finish writer and acknowledgement
+                    # reader after host readiness; the watcher owns the opposite ends.
+                    for fd in (guardian_finish_read, guardian_finish_write, guardian_ack_read, guardian_ack_write):
+                        os.close(fd)
+                        fds.remove(fd)
+                    check_deadline()
                 stream_capture = start_native_trusted_stream_capture(
                     process, limit=intent.output_max_bytes,
                     deadline=deadline, monotonic=monotonic,
@@ -1070,8 +1107,12 @@ def run_native_trusted_attempt(
                         break
                     except subprocess.TimeoutExpired:
                         continue
+                if guardian is not None:
+                    guardian.finish()
+                    guardian_finished = True
+                    check_deadline()
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
-                TrustedBootstrapBindingError, NativeBootstrapError, ProducerIsolationError,
+                TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError, ProducerIsolationError,
                 ProducerGrantError, ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
             if not claimed:
                 if isinstance(exc, NativeTrustedAttemptError) and exc.code in {
@@ -1142,6 +1183,12 @@ def run_native_trusted_attempt(
                     except OSError:
                         reason = "native_trusted_attempt_lifeline_close_unknown"
                     controller_lifeline_writer = None
+                # An already-unverified original group cleanup remains the
+                # primary refusal; adding the exact watcher cannot relabel
+                # that older process-ownership failure as a clean outcome.
+                if (guardian is not None and not guardian.cleanup()
+                        and reason != "native_trusted_attempt_cleanup_unknown"):
+                    reason = "native_trusted_attempt_guardian_cleanup_unknown"
             if stream_capture is not None:
                 try:
                     stream_observation = stream_capture.finish(deadline=deadline)
@@ -1159,6 +1206,7 @@ def run_native_trusted_attempt(
                 evidence = session.evidence()
                 if evidence.status == "passed" and (
                     cleanup_status not in {"cleaned", "already_exited"} or exit_code is None
+                    or not guardian_finished
                 ):
                     evidence = replace(evidence, status="unknown", evidence_sha256=None)
                 try:
@@ -1270,7 +1318,7 @@ def run_native_trusted_attempt(
         if (
             registration is not None and session is not None and handoff_sha256 is not None
             and reason == "native_trusted_attempt_terminal_receipt_missing"
-            and exit_code is not None
+            and exit_code is not None and guardian_finished
             and cleanup_status in {"cleaned", "already_exited"}
         ):
             try:

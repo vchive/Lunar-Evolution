@@ -779,9 +779,195 @@ static int finish_controller_guard(controller_guard_t *guard) {
     return 0;
 }
 
+#if defined(__linux__)
+/* Linux6.9 introduced the process-group signal scope. Header availability is
+   not runtime support: the private watcher must actually probe signal0/flag4.
+   These syscall entries are shared by all supported native ABIs. */
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__i386__)
+#ifndef __NR_pidfd_send_signal
+#define __NR_pidfd_send_signal 424
+#endif
+#define LUNAR_PIDFD_SIGNAL_PROCESS_GROUP 4U
+#endif
+
+typedef struct {
+    int group_fd, owner_fd, finish_fd, ack_fd;
+    pid_t self;
+    uint64_t deadline_ns;
+} independent_guard_t;
+
+static int independent_group_signal(int fd, int sig) {
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__i386__)
+    return (int)syscall(__NR_pidfd_send_signal, fd, sig, NULL, LUNAR_PIDFD_SIGNAL_PROCESS_GROUP);
+#else
+    (void)fd; (void)sig; errno = ENOTSUP; return -1;
+#endif
+}
+
+static _Noreturn void independent_stop(const independent_guard_t *guard) {
+    /* This original pidfd references the original group even after its leader
+       is reaped. Empty-group ESRCH never causes numeric PGID lookup/retry. */
+    (void)independent_group_signal(guard->group_fd, SIGKILL);
+    _exit(78);
+}
+
+static int guardian_timeout(uint64_t deadline_ns) {
+    uint64_t now;
+    if (!deadline_ns || native_monotonic_ns(&now) || now >= deadline_ns) return -1;
+    uint64_t left = deadline_ns - now;
+    return left >= 100000000 ? 100 : (int)((left + 999999) / 1000000);
+}
+
+static int guardian_nonblock(int fd) {
+    int flags = fcntl(fd, F_GETFL);
+    return flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) || handoff_cloexec(fd, 1);
+}
+
+static int guardian_distinct_pipes(const int *fds, const int *access, size_t count) {
+    struct stat info[6];
+    if (!count || count > 6) return -1;
+    for (size_t i = 0; i < count; ++i) {
+        if (grant_protocol_pipe(fds[i], access[i]) || fstat(fds[i], &info[i])) return -1;
+        for (size_t j = 0; j < i; ++j)
+            if (fds[i] == fds[j] || (info[i].st_dev == info[j].st_dev && info[i].st_ino == info[j].st_ino)) return -1;
+    }
+    return 0;
+}
+
+static void independent_check(const independent_guard_t *guard) {
+    if (getpid() != guard->self || getpgrp() != guard->self || getsid(0) != guard->self ||
+        guardian_timeout(guard->deadline_ns) < 0) independent_stop(guard);
+    struct pollfd observed[2] = {{guard->owner_fd, POLLIN, 0}, {guard->group_fd, POLLIN, 0}};
+    int result;
+    do { result = poll(observed, 2, 0); } while (result < 0 && errno == EINTR);
+    if (result != 0 || guardian_timeout(guard->deadline_ns) < 0) independent_stop(guard);
+}
+
+static void independent_poll(const independent_guard_t *guard, int fd, short events) {
+    independent_check(guard);
+    struct pollfd observed[3] = {{guard->owner_fd, POLLIN, 0}, {guard->group_fd, POLLIN, 0}, {fd, events, 0}};
+    int timeout = guardian_timeout(guard->deadline_ns);
+    if (timeout < 0) independent_stop(guard);
+    int result = poll(observed, 3, timeout);
+    if (result < 0 && errno == EINTR) return;
+    if (result < 0 || observed[0].revents || observed[1].revents ||
+        (observed[2].revents & (POLLERR | POLLNVAL))) independent_stop(guard);
+    independent_check(guard);
+}
+
+static void independent_write(const independent_guard_t *guard, unsigned char value, int check_after) {
+    for (;;) {
+        independent_check(guard);
+        ssize_t result = write(guard->ack_fd, &value, 1);
+        if (result == 1) { if (check_after) independent_check(guard); return; }
+        if (result < 0 && errno == EINTR) continue;
+        if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            independent_poll(guard, guard->ack_fd, POLLOUT); continue;
+        }
+        independent_stop(guard);
+    }
+}
+
+static int independent_watch_main(int argc, char **argv) {
+    independent_guard_t guard; memset(&guard, 0, sizeof(guard));
+    if (argc != 11 || strcmp(argv[1], "--group-pidfd") || strcmp(argv[3], "--controller-lifeline-fd") ||
+        strcmp(argv[5], "--guardian-finish-fd") || strcmp(argv[7], "--guardian-ack-fd") ||
+        strcmp(argv[9], "--deadline-monotonic-ns") ||
+        parse_handoff_fd(argv[2], &guard.group_fd) || parse_handoff_fd(argv[4], &guard.owner_fd) ||
+        parse_handoff_fd(argv[6], &guard.finish_fd) || parse_handoff_fd(argv[8], &guard.ack_fd) ||
+        parse_deadline_arg(argv[10], &guard.deadline_ns)) return 64;
+    int pipes[] = {guard.owner_fd, guard.finish_fd, guard.ack_fd};
+    int access[] = {O_RDONLY, O_RDONLY, O_WRONLY};
+    guard.self = getpid();
+    if (getpgrp() != guard.self || getsid(0) != guard.self ||
+        guardian_distinct_pipes(pipes, access, 3)) return 64;
+    for (size_t i = 0; i < 3; ++i) if (pipes[i] == guard.group_fd) return 64;
+    /* Wrong/non-pid descriptors and unsupported kernels refuse before R. No
+       numeric-PGID or flags0 group fallback exists. Host owns exact pre-ready
+       bootstrap/watcher Popen cleanup, including this allocation/probe failure. */
+    if (independent_group_signal(guard.group_fd, 0)) return 64;
+    struct sigaction ignored;
+    memset(&ignored, 0, sizeof(ignored)); ignored.sa_handler = SIG_IGN;
+    if (sigemptyset(&ignored.sa_mask) || sigaction(SIGPIPE, &ignored, NULL) ||
+        guardian_nonblock(guard.finish_fd) || guardian_nonblock(guard.ack_fd)) independent_stop(&guard);
+    independent_check(&guard);
+    int keep[] = {guard.group_fd, guard.owner_fd, guard.finish_fd, guard.ack_fd};
+    if (handoff_close_keep(keep, 4)) independent_stop(&guard);
+    for (int fd = 0; fd <= 2; ++fd) if (close(fd) && errno != EBADF) independent_stop(&guard);
+    independent_write(&guard, 'R', 1);
+    int received = 0;
+    for (;;) {
+        independent_check(&guard);
+        unsigned char bytes[2]; ssize_t size = read(guard.finish_fd, bytes, sizeof(bytes));
+        if (size > 0) {
+            if (received || size != 1 || bytes[0] != 'F') independent_stop(&guard);
+            received = 1;
+        } else if (!size) {
+            if (!received) independent_stop(&guard);
+            break;
+        } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) independent_stop(&guard);
+        independent_poll(&guard, guard.finish_fd, POLLIN);
+    }
+    independent_check(&guard);
+    /* Once the exact D byte is accepted, bootstrap is allowed to retire. A
+       post-write pidfd poll would race that expected clean exit and falsely
+       classify normal watcher retirement as bootstrap death. */
+    independent_write(&guard, 'D', 0);
+    if (close(guard.ack_fd)) independent_stop(&guard);
+    /* Nothing may block here after retiring independent supervision. Bootstrap
+       has drained targets and still observes its original pthread/lifeline. */
+    return 0;
+}
+
+static void bootstrap_guardian_poll(const controller_guard_t *guard, int fd, short events) {
+    check_controller_guard(guard);
+    int timeout = guardian_timeout(guard->deadline_ns);
+    if (timeout < 0) stop_own_guarded_group(guard);
+    struct pollfd observed[2] = {{guard->fd, POLLIN, 0}, {fd, events, 0}};
+    int result = poll(observed, 2, timeout);
+    if (result < 0 && errno == EINTR) return;
+    if (result < 0 || observed[0].revents || (observed[1].revents & (POLLERR | POLLNVAL)))
+        stop_own_guarded_group(guard);
+    check_controller_guard(guard);
+}
+
+static void finish_independent_guardian(const controller_guard_t *guard, int finish_fd, int ack_fd) {
+    for (;;) {
+        check_controller_guard(guard);
+        unsigned char value = 'F'; ssize_t size = write(finish_fd, &value, 1);
+        if (size == 1) break;
+        if (size < 0 && errno == EINTR) continue;
+        if (size < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            bootstrap_guardian_poll(guard, finish_fd, POLLOUT); continue;
+        }
+        stop_own_guarded_group(guard);
+    }
+    if (close(finish_fd)) stop_own_guarded_group(guard);
+    int received = 0;
+    for (;;) {
+        check_controller_guard(guard);
+        unsigned char bytes[2]; ssize_t size = read(ack_fd, bytes, sizeof(bytes));
+        if (size > 0) {
+            if (received || size != 1 || bytes[0] != 'D') stop_own_guarded_group(guard);
+            received = 1;
+        } else if (!size) {
+            if (!received) stop_own_guarded_group(guard);
+            break;
+        } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) stop_own_guarded_group(guard);
+        bootstrap_guardian_poll(guard, ack_fd, POLLIN);
+    }
+    if (close(ack_fd)) stop_own_guarded_group(guard);
+    check_controller_guard(guard);
+}
+#endif
+
 int main(int argc, char **argv) {
-    if ((argc != 7 && argc != 9 && argc != 11 && argc != 13 && argc != 15) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
+#if defined(__linux__)
+    if (argc > 1 && !strcmp(argv[1], "--group-pidfd")) return independent_watch_main(argc, argv);
+#endif
+    if ((argc != 7 && argc != 9 && argc != 11 && argc != 13 && argc != 15 && argc != 19) || strcmp(argv[1], "--control-fd") != 0 || strcmp(argv[3], "--gate-fd") != 0 || strcmp(argv[5], "--frame-fd") != 0) return 64;
     int control_fd, gate_fd, frame_fd;
+    int guardian_finish_fd = -1, guardian_ack_fd = -1;
     if (parse_fd_arg(argv[2], &control_fd) || parse_fd_arg(argv[4], &gate_fd) || parse_fd_arg(argv[6], &frame_fd)) return 64;
 #if defined(__linux__)
     if (parse_handoff_fd(argv[2], &control_fd) || parse_handoff_fd(argv[4], &gate_fd) ||
@@ -796,7 +982,7 @@ int main(int argc, char **argv) {
         return 64;
 #endif
     }
-    if (argc == 15) {
+    if (argc == 15 || argc == 19) {
 #if defined(__linux__)
         if (strcmp(argv[13], "--grant-object-binding") || strcmp(argv[14], "linux-held-grants-v1")) return 64;
         int original_lifeline;
@@ -805,6 +991,14 @@ int main(int argc, char **argv) {
         if (parse_handoff_fd(argv[8], &original_lifeline) ||
             grant_protocol_pipe(control_fd, O_RDONLY) || grant_protocol_pipe(gate_fd, O_RDONLY) ||
             grant_protocol_pipe(frame_fd, O_WRONLY) || grant_protocol_pipe(original_lifeline, O_RDONLY)) return 64;
+        if (argc == 19) {
+            if (strcmp(argv[15], "--guardian-finish-fd") || strcmp(argv[17], "--guardian-ack-fd") ||
+                parse_handoff_fd(argv[16], &guardian_finish_fd) || parse_handoff_fd(argv[18], &guardian_ack_fd)) return 64;
+            int pipes[] = {control_fd, gate_fd, frame_fd, original_lifeline, guardian_finish_fd, guardian_ack_fd};
+            int access[] = {O_RDONLY, O_RDONLY, O_WRONLY, O_RDONLY, O_WRONLY, O_RDONLY};
+            if (guardian_distinct_pipes(pipes, access, 6) || guardian_nonblock(guardian_finish_fd) ||
+                guardian_nonblock(guardian_ack_fd)) return 64;
+        }
 #else
         return 64;
 #endif
@@ -834,10 +1028,11 @@ int main(int argc, char **argv) {
     free(raw);
 #if defined(__linux__)
     int broker_r = -1, broker_w = -1;
-    if ((c.version == 2) != (argc == 15)) { free_control(&c); return 66; }
+    if ((c.version == 2) != (argc == 15 || argc == 19)) { free_control(&c); return 66; }
     if (c.version == 2) {
-        int reserved[] = {control_fd, gate_fd, frame_fd, guard.fd, c.target_fd, c.bootstrap_fd};
-        for (size_t i = 0; i < 4; ++i) {
+        int reserved[] = {control_fd, gate_fd, frame_fd, guard.fd, guardian_finish_fd, guardian_ack_fd,
+                          c.target_fd, c.bootstrap_fd};
+        for (size_t i = 0; i < 6; ++i) {
             if (c.target_fd == reserved[i] || c.bootstrap_fd == reserved[i]) { free_control(&c); return 73; }
         }
         struct stat executable, bootstrap;
@@ -899,7 +1094,7 @@ int main(int argc, char **argv) {
 #if defined(__linux__)
     if (c.version == 2) {
         int dynamic[] = {target_fd, exec_pipe[0], exec_pipe[1], c.target_fd, c.bootstrap_fd,
-                         frame_fd, guard.fd, broker_r, broker_w};
+                         frame_fd, guard.fd, broker_r, broker_w, guardian_finish_fd, guardian_ack_fd};
         if (grant_fds_disjoint(&c, dynamic, sizeof(dynamic) / sizeof(dynamic[0])) ||
             validate_grant_graph(&c, &guard)) {
             close(exec_pipe[0]); close(exec_pipe[1]); close(target_fd);
@@ -914,7 +1109,7 @@ int main(int argc, char **argv) {
 #if defined(__linux__)
         if (c.version == 2) {
             int dynamic[] = {target_fd, exec_pipe[0], exec_pipe[1], c.target_fd, c.bootstrap_fd,
-                             frame_fd, guard.fd, broker_r, broker_w};
+                             frame_fd, guard.fd, broker_r, broker_w, guardian_finish_fd, guardian_ack_fd};
             if (grant_fds_disjoint(&c, dynamic, sizeof(dynamic) / sizeof(dynamic[0])))
                 child_start_failed(exec_pipe[1], EINVAL, 73);
         }
@@ -1052,6 +1247,11 @@ int main(int argc, char **argv) {
         free_control(&c); close(frame_fd); return 77;
     }
     check_controller_guard(&guard);
+#if defined(__linux__)
+    if (guardian_finish_fd >= 0) finish_independent_guardian(&guard, guardian_finish_fd, guardian_ack_fd);
+#else
+    (void)guardian_finish_fd; (void)guardian_ack_fd;
+#endif
     if (finish_controller_guard(&guard) != 0) stop_own_guarded_group(&guard);
     free_control(&c); close(frame_fd);
     if (WIFEXITED(status)) return WEXITSTATUS(status); if (WIFSIGNALED(status)) return 128 + WTERMSIG(status); return 77;
