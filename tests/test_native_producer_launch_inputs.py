@@ -158,21 +158,15 @@ def _tamper(path: Path, kind: str):
 def test_actual_target_reads_only_config_and_cannot_modify_or_read_host_files(tmp_path, artifact, monkeypatch):
     prepared = _prepared(tmp_path, artifact)
     before = _inventory(prepared.descriptor.inputs_path)
-    observed_policies = []
-    build_policy = runner.build_producer_isolation_policy
-
-    def policy(**kwargs):
-        observed_policies.append(tuple(map(str, kwargs["read_paths"])))
-        return build_policy(**kwargs)
-
-    monkeypatch.setattr(runner, "build_producer_isolation_policy", policy)
+    observed_grants = []
+    _observe_control_reads(monkeypatch, lambda _argv, reads: observed_grants.append(reads))
     result = _run(prepared)
     assert result.exit_code == 0 and result.target_started and result.gate_released
     assert result.terminal_sha256 and result.output_capture_sha256
     assert (prepared.batch / "work" / "config-read-marker").read_bytes() == b"config-readonly"
     assert _inventory(prepared.descriptor.inputs_path) == before
-    assert len(observed_policies) == 1
-    declared = set(observed_policies[0])
+    assert len(observed_grants) == 1
+    declared = set(observed_grants[0])
     assert str(prepared.descriptor.config_path) in declared
     assert not any(Path(path).is_dir() for path in declared)
     if sys.platform == "linux":
@@ -296,13 +290,7 @@ def test_dual_protocol_markers_refused_before_validation_or_launch(monkeypatch):
 def test_legacy_launch_keeps_original_target_arguments_and_read_grants(tmp_path, monkeypatch):
     workspace, producer, intent, attestation, artifact, _batch = _attempt(tmp_path)
     seen = []
-    encode = runner.encode_native_bootstrap_control
-
-    def capture(launch, **kwargs):
-        seen.append((kwargs["target_argv"], kwargs["isolation_policy"].read_paths))
-        return encode(launch, **kwargs)
-
-    monkeypatch.setattr(runner, "encode_native_bootstrap_control", capture)
+    _observe_control_reads(monkeypatch, lambda argv, reads: seen.append((argv, reads)))
     assert runner._native_launch_inputs(workspace, intent=intent, attestation=attestation,
                                        artifact=artifact, require_unexpired=True) is None
     result = runner.run_native_trusted_attempt(workspace, producer_root=producer, intent=intent,
@@ -313,3 +301,20 @@ def test_legacy_launch_keeps_original_target_arguments_and_read_grants(tmp_path,
     assert argv[1:] == intent.argv[1:]
     assert len(argv) == len(intent.argv)
     assert len(reads) == (1 if sys.platform == "darwin" else 0)
+
+
+def _observe_control_reads(monkeypatch, observe):
+    """Observe the real platform control boundary without changing its grants."""
+    name = "encode_native_bootstrap_control_v2" if sys.platform == "linux" else "encode_native_bootstrap_control"
+    encode = getattr(runner, name)
+
+    def capture(launch, **kwargs):
+        if sys.platform == "linux":
+            reads = tuple(record.path for record in kwargs["held_grants"].manifest.records
+                          if "protected-file" in record.roles or "readonly-directory" in record.roles)
+        else:
+            reads = tuple(map(str, kwargs["isolation_policy"].read_paths))
+        observe(kwargs["target_argv"], reads)
+        return encode(launch, **kwargs)
+
+    monkeypatch.setattr(runner, name, capture)
