@@ -19,7 +19,14 @@ identical tested source tree. Evidence is retained in ignored
 `.lunar-evolution/reports/persisted-ci-evidence-20261009/pr25-final-ci-audit/`.
 PR24 is rebased onto that main with a reviewed recovery/recipe repair. PR26
 adds a detached observation parser tested against emitted frozen-main assets
-with fake runtime inputs. Their repaired final-source Linux acceptance and
+with fake runtime inputs. PR26 now builds on the final PR24 preparation source
+`f6ec97c660e0cac40615ec989a1c088c057b5972`, preserving its HTTP fixture repair,
+98-case lifecycle,
+6-case binding and 5-case recipe repairs. The early gates retain separate XML
+evidence: `python-preparation.xml` requires 226 pure preparation cases and
+`python-observation.xml` requires 43 pure adapter cases with zero failures,
+errors or skips. Fake runtime inputs do not supply real static CPython/runtime
+observations or loader enforcement evidence. Their repaired final-source Linux CI and
 merge are pending. Real runtime build/startup, loader-negative enforcement,
 lifecycle spawn and OpenEvolve/Shinka Python process adapters remain open.
 
@@ -60,7 +67,7 @@ older feature documents retain their historical submission state.
 | P1 | Framed immutable runtime material (Feature188) | Completed: PR22 raw run37747759152; main merge4f8576d. All runtime-load/production claims remain false |
 | P0 | Original executable ownership and cleanup (Feature190 / PR23) | Completed: replacement final run37802795693; main merge3a7782c |
 | P1 | Python archive/import/loader closure and immutable runtime loading | Feature189 preparation adds bounded pure ELF/descriptor gates and an offline pinned recipe; actual source patches, Linux build, startup and native acceptance remain open |
-| P1 | Versioned runtime delivery and formal Python worker admission | Feature191 Phase A binding and Phase C terminal/reconcile gates are implemented; actual launch/runtime observation/admission remain open |
+| P1 | Versioned runtime delivery and formal Python worker admission | Feature191 Phase A binding, Phase C terminal/reconcile and pure fixture observation adapter gates are implemented; actual launch/runtime observation/admission remain open |
 | P1 | OpenEvolve/Shinka Python process adapters | Existing native composition/export paths remain untrusted provenance; common Python process adapter and local inert fixture remain open |
 | P1 | Production RSI CLI composition | Wire only admitted workers through durable controller resume, unknown/drift/budget gates and retained provenance; verify a repeatable local end-to-end entry |
 | P2 | Multi-host ownership, service operation and distributed scheduling | Deferred by current user scope; these are not prerequisites for the current local fixture work |
