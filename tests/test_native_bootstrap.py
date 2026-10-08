@@ -69,8 +69,11 @@ def _start(
 
 
 def _read_frame(fd: int, timeout: float = 5.0):
-    ready, _, _ = select.select([fd], [], [], timeout)
-    assert ready, "native bootstrap did not emit a bounded handshake frame"
+    poller = select.poll()
+    poller.register(fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+    events = poller.poll(int(timeout * 1000))
+    assert events, "native bootstrap did not emit a bounded handshake frame"
+    assert events[0][1] & (select.POLLIN | select.POLLHUP | select.POLLERR)
     line = os.read(fd, 8192)
     assert line.endswith(b"\n")
     return parse_bootstrap_handshake_frame(line[:-1])
