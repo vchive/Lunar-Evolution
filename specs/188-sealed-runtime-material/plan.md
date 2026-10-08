@@ -17,6 +17,35 @@ API names are proposed until implementation review:
 - `verify_sealed_python_runtime_material(...)`: revalidate original live ownership,
   independent descriptor/frame/version/tree/declared/target pins, seals and bytes.
 
+Implementation review freezes these public argument contracts:
+
+```python
+materialize_sealed_python_runtime_material(
+    manifest, *, expected_tree_sha256, expected_manifest_sha256,
+    expected_target, material_version, deadline,
+)  # context manager yielding SealedPythonRuntimeMaterial
+
+parse_python_runtime_material_descriptor(value)
+    # exact bytes or str -> detached PythonRuntimeMaterialDescriptor
+
+verify_sealed_python_runtime_material(
+    live, *, expected_frame_sha256, expected_tree_sha256,
+    expected_manifest_sha256, expected_target, expected_material_version,
+)  # live observation; source paths are not reobserved
+```
+
+`manifest` is the exact Feature177 DTO. `live.fd` is the borrowed descriptor;
+`live.descriptor` is detached evidence. Verification has no new deadline parameter:
+it retains the original factory deadline. There is no clock callback supplied by
+callers; deadline checkpoints use the controller's monotonic clock. Observation
+serialization may report immutable material bytes only after successful live
+verification, while all five scoped capability fields stay false.
+
+Use a private `_python_runtime_material_format.py` for bounded pure parsing/table/
+header helpers and portable tests, keeping resource ownership/materialization in
+`producer_python_runtime_material.py` with Linux mechanism tests. Integration owns
+exports, workflow XML and docs. The partition does not change the public scope.
+
 Reuse Feature177's external-pin and exact-shape boundary, Feature171's file pins
 and `DirectoryChain` no-follow reads. Reuse the sealing pattern and negative
 fixtures from `linux_executable_binding.py`; do not reuse its executable-only
