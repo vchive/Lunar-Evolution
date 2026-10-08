@@ -123,6 +123,8 @@ expected_target. A separate external descriptor digest is not required by v1.
 It uses position-independent reads so verification does not depend on a
 borrower's file offset. Every streaming chunk, directory membership step and
 resource acquisition checks the original deadline; it is never renewed.
+These are cooperative checkpoints around synchronous filesystem calls; they
+refuse overruns and further work but cannot preempt a blocked kernel call.
 
 Source scans must also be deadline-aware. Calling Feature177's existing
 unguarded multi-pass scanner with only pre/post time checks is insufficient.
@@ -136,8 +138,15 @@ deadline expiry. Before closing an exposed number, compare the original object
 identity. Foreign reuse is an explicit cleanup-unknown result and must not close
 the foreign object. Preserve the primary exception while recording cleanup
 uncertainty; do not let a cleanup error hide the original refusal or interrupt.
+The controller remains trusted. Borrowers must not concurrently close, dup2 or
+rebind either owned number from other threads; fstat followed by close is not an
+atomic conditional-close primitive. Sequential known foreign reuse is refused
+and left open, without claiming protection from hostile controller FD races.
 
 After sealing, live material verification is independent of source availability.
 A separate source-tree verification may report drift while the immutable bundle
 still contains the admitted bytes. Neither result authorizes Python execution,
 runtime loading, native FD inheritance or publication.
+The declared Feature171 target is preserved even for opaque cross-target
+material. Linux is the sealing host requirement, not an observed compatibility
+claim about that target's interpreter, ABI or architecture.
