@@ -584,10 +584,11 @@ def bind_python_producer_receipt(
         exited_unix=None,
         deadline_unix=binding.deadline_unix,
         status=status,
-        exit_code=receipt.exit_code if status != "unknown" else None,
+        exit_code=receipt.exit_code,
         signal=None,
-        cleanup_status=receipt.cleanup_status if status != "unknown" else "unknown",
-        request_journal_sha256=receipt.consumption_sha256 if receipt.request_count is not None else None,
+        cleanup_status=receipt.cleanup_status if type(receipt.cleanup_status) is str and receipt.cleanup_status in _CLEANUP else "unknown",
+        # Attestation consumption is not an authenticated broker request journal.
+        request_journal_sha256=None,
         request_count=receipt.request_count or 0,
         stdout_sha256=receipt.stdout_evidence.sha256,
         stderr_sha256=receipt.stderr_evidence.sha256,
@@ -662,10 +663,13 @@ def reconcile_python_producer_terminal(
         "process_registration_sha256", "owner_identity_sha256", "executable_sha256",
         "executable_size", "executable_device", "executable_inode", "request_journal_sha256",
         "started_unix", "released_unix", "exited_unix", "exit_code", "signal",
+        "stdout_sha256", "stderr_sha256",
     ):
         pin = getattr(old, name)
         if pin is not None and getattr(new, name) != pin:
             _fail("retained_evidence_drift")
+    if old.cleanup_status not in {"unknown", "missing"} and new.cleanup_status != old.cleanup_status:
+        _fail("retained_evidence_drift")
     if new.request_count < old.request_count or (
             old.request_journal_sha256 is not None and new.request_count != old.request_count):
         _fail("request_count_drift")

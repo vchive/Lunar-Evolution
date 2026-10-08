@@ -37,21 +37,34 @@ admission are still open.
 ## PythonProducerTerminal
 
 The terminal record binds `binding_sha256`, process registration/owner identity,
-actual executable identity, start/release/exit timestamps, status (`completed`,
+admitted interpreter source identity, start/release/exit timestamps, status (`completed`,
 `failed`, `cancelled`, `unknown`), exit/signal, cleanup status, request-journal
 identity/digest, stdout/stderr bounded digests and `publication_eligible`. A
 terminal with missing process or cleanup evidence is `unknown`; process-only
 evidence is never publication eligible.
 
-All known terminal states require registration, owner, executable byte/size/device/
+The terminal `executable_device` and `executable_inode` pins are the original
+admitted interpreter source stat from the runtime manifest. They are not the
+sealed memfd target stat and do not establish live-target loading. Actual sealed
+target and owner observations remain in the existing native process receipt;
+this pure DTO adds no live FD or runtime observation.
+
+All known terminal states require registration, owner, interpreter byte/size/device/
 inode, start/release/exit timestamps, verified cleanup, request-journal digest and
 exit or signal evidence. Timestamps are ordered; completed exit precedes the
 original deadline. Reconcile preserves every already retained identity, journal
-and timestamp pin, and cannot refresh the deadline or journal request count.
+and timestamp pin, stdout/stderr digest and any already known cleanup status,
+and cannot refresh the deadline or journal request count. The mandatory stream
+hashes have no absent/partial-evidence flag; replacing them requires a future
+versioned evidence policy. Process receipt projection retains known exit and
+cleanup evidence while remaining `unknown`. Its attestation `consumption_sha256`
+is not a broker request journal, so `request_journal_sha256` remains absent until
+an authentic broker observation supplies it.
 Reused DTOs are revalidated against their retained digest. Missing/zero digest
 placeholders and `publication_eligible=true` are refused because this pure record
 has no evaluator/envelope/publication evidence. A process receipt alone remains
-`unknown` when runtime timestamps or actual executable identity are unavailable.
+`unknown` when runtime timestamps, source identity pins or request-journal evidence
+are unavailable.
 
 ## PythonRuntimeObservation
 
