@@ -39,6 +39,13 @@ drift negative used `monkeypatch.setattr(module, "subprocess.Popen", ...)`, whic
 module attribute. Its dotted import path is now patched correctly. The first196case grant
 XML/logs are preserved; the98C cases and other Python cases executed, but the failed job
 does not prove the downstream phases. The fix uses a new source head/run, not a retry.
+The next head4974538/run37708266284 passed the preceding ten native phases but retained
+two trusted-adapter fixture failures: observers still intercepted the v1 path-policy
+builder/encoder, while Linux now uses original grants/controlv2. The native target itself
+exited zero and produced its verified marker. Observers now inspect the actual platform
+control's read grants and argv, preserving all least-read, no-directory, no-argument-change
+and host-file refusal assertions. All three first XML/logs remain separate; downstream
+native cleanup/current/archive/frozen phases were not executed in that failed run.
 Existing immutable-runtime fixture garbage can emit macOS cleanup warnings; they do not
 change XML outcomes. No historical test retry is used to erase a first failure.
 
