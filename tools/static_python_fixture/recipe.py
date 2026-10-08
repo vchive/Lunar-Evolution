@@ -167,6 +167,10 @@ def _build_script() -> str:
     return """#!/bin/sh
 set -eu
 umask 022
+if [ \"${LUNAR_STATIC_EXECUTE:-0}\" != 1 ]; then
+  echo 'PLAN ONLY: set LUNAR_STATIC_EXECUTE=1 in pinned Linux CI to run build steps' >&2
+  exit 78
+fi
 : \"${LUNAR_STATIC_SOURCE:?set to verified extracted CPython root}\"
 : \"${LUNAR_STATIC_ZIG:?set to verified Zig 0.16.0 root}\"
 : \"${LUNAR_STATIC_OUT:?set to an empty output directory}\"
@@ -178,6 +182,7 @@ test ! -e \"$LUNAR_STATIC_OUT\"; mkdir \"$LUNAR_STATIC_OUT\"
 exec env -i PATH=/usr/bin:/bin LC_ALL=C TZ=UTC SOURCE_DATE_EPOCH=0 CONFIG_SITE=/dev/null \\
   LUNAR_STATIC_SOURCE=\"$LUNAR_STATIC_SOURCE\" LUNAR_STATIC_ZIG=\"$LUNAR_STATIC_ZIG\" \\
   LUNAR_STATIC_OUT=\"$LUNAR_STATIC_OUT\" LUNAR_STATIC_RECIPE_DIR=\"$LUNAR_STATIC_RECIPE_DIR\" \\
+  LUNAR_STATIC_EXECUTE=\"$LUNAR_STATIC_EXECUTE\" \\
   ac_cv_func_dlopen=no LUNAR_STATIC_CLEAN_ENV=1 \\
   sh \"$LUNAR_STATIC_RECIPE_DIR/linux-build-commands.sh\"
 """
