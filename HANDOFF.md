@@ -1,5 +1,41 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-08 Feature188 merged; Feature190 owner repair
+
+PR22 sourcec5973a7b4ad026182b11e6d65af946ae6d15bd30 / tree
+61d6f966278f5e698e5c033b4aa1d0644324e22a passed final run37747759152:
+three versions, 22 phases each, material274/0skip and current11984/92 platform
+skips, zero failure/error/retry. Root independently audited original ZIP/XML/log/
+inventories/checkout parents/tree; report6260a06a004037052ce36cd9abee71d10ae61748335b8be8136543a9818de45e
+passed. Merge4f8576d02f2b3be191f71d8c869e48f704dc7a4a has that identical tested
+tree and parents518f1f4+c5973a7; primary main was fast-forwarded. The first
+run37747268959 (one mmap fixture failure per version) stays separate evidence.
+Main21 push37744640126 independently passed21 phases, current11710/92skip;
+root report560e1f071b5ce4decebf8032744dbda53e29f04ca9d7c98198e5d314b7f9a28c.
+Main22 push37754528167 is separately pending. Raw evidence/tools/review/merge
+proofs are retained in ignored reports/persisted-ci-evidence-20261008.
+
+Feature190 on codex/original-executable-owner follows the188 G0. The static
+CPython draft identified an existing controller cleanup gap: executable sealing
+closed saved numeric FDs and a source-close failure could skip sealed cleanup.
+The bounded SDD fixes private original source/anchor/borrowed ownership, exact
+live-object validation and original budget, independent sealed readback and
+all-role cleanup; trusted pair/native/direct producer checks precede actual
+handoffs. Native C/v2, grants, receipt/registration/recovery schemas and Darwin
+snapshots stay unchanged. Code and focused validation are implemented: root final282=159passed/123
+Darwin skips, wider412=218passed/194Darwin skips, zero failures/errors; overlaps
+are not summed. Dedicated132/0skip gate is wired; currentcollect12112 and708
+exports stay unchanged. Full Ruff/compileall/diff checks passed; no190 Linux
+acceptance, merge or static CPython execution is claimed here. See190 SDD.
+
+Feature189 remains a static CPython installation/frozen-main successor draft,
+not a production runtime or solver adapter. P1 formal delivery/admission,
+OpenEvolve/Shinka Python adapters and production RSI CLI remain open. P2 service/
+multi-host ownership is deferred. Only local inert/provider-free fixtures and
+GitHub CI; no .env, credentials, model, WebAgent, remote/company evaluator or
+real campaign. Preserve other Codex work.
+
+
 ## 2026-10-08 Feature187 merged; Feature188 implementation
 
 PR21/Feature187 source a15895cfc149c986f2f71efbceb634b4c7997ede / tree

@@ -24,7 +24,11 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
-from .linux_executable_binding import LinuxExecutableBindingError, sealed_linux_executable
+from .linux_executable_binding import (
+    LinuxExecutableBindingError,
+    _validate_original_linux_executable,
+    sealed_linux_executable,
+)
 from .process_ownership import (
     ProcessCleanupResult,
     ProcessCleanupStatus,
@@ -1100,6 +1104,30 @@ def _remaining_timeout(deadline: float, monotonic: Callable[[], float]) -> float
     return max(0.0, deadline - monotonic())
 
 
+def _cleanup_failed_spawn(
+    registration: RegisteredProcess | None, process: subprocess.Popen[bytes] | None,
+    primary: BaseException, *, deadline: float, monotonic: Callable[[], float],
+) -> None:
+    """Preserve a pre-terminal refusal while releasing only original child owners."""
+    if process is None:
+        return
+    try:
+        if registration is not None:
+            result = _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+            if result.status not in {ProcessCleanupStatus.CLEANED, ProcessCleanupStatus.ALREADY_EXITED}:
+                primary.add_note("producer_process_cleanup_unknown")
+        else:
+            # Local group identity capture failed before durable registration.
+            # The original unreaped Popen permits only direct-child kill/reap;
+            # this supplies no process-group or descendant cleanup authority.
+            primary.add_note("producer_process_cleanup_unknown")
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=_remaining_timeout(deadline, monotonic))
+    except BaseException:  # noqa: BLE001 - cleanup cannot replace the original refusal
+        primary.add_note("producer_process_cleanup_unknown")
+
+
 def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
     """Observe caller cancellation without allowing a faulty callback to escape ambiguity."""
     if cancelled is None:
@@ -1225,6 +1253,7 @@ def _run_producer_process(
     process: subprocess.Popen[bytes] | None = None
     registration_digest = ""
     registration: RegisteredProcess | None = None
+    outer_primary: BaseException | None = None
     try:
         if _observe_cancellation(cancelled):
             _fail("producer_process_cancelled")
@@ -1247,6 +1276,8 @@ def _run_producer_process(
                     linux_binding.sha256 != snapshot.sha256 or linux_binding.size != snapshot.size
                 ):
                     _fail("producer_process_execution_binding_unknown")
+                if linux_binding is not None:
+                    _validate_original_linux_executable(linux_binding)
                 process = popen_factory(
                     list(intent.argv),
                     executable=linux_binding.executable if linux_binding is not None else str(snapshot_path),
@@ -1256,6 +1287,23 @@ def _run_producer_process(
                     cwd=str(working), env=env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
+                # Capture the original local child owner before executable
+                # cleanup can fail. Durable registration stays below, before
+                # releasing the gate and after successful binding cleanup.
+                try:
+                    pgid = os.getpgid(process.pid)
+                except OSError as exc:
+                    raise ProducerProcessError("producer_process_registration_unknown") from exc
+                if pgid != process.pid:
+                    raise ProducerProcessError("producer_process_registration_mismatch")
+                owner_identity = _process_owner_identity(process.pid)
+                if owner_identity is None:
+                    raise ProducerProcessError("producer_process_owner_identity_unknown")
+                registration = RegisteredProcess(
+                    process.pid, pgid,
+                    owner_check=lambda: _current_process_owned(process.pid, owner_identity, process),
+                    label=intent.launch_id,
+                )
         except LinuxExecutableBindingError as exc:
             code = {
                 "linux_execution_binding_unsupported": "producer_process_execution_binding_unsupported",
@@ -1263,24 +1311,12 @@ def _run_producer_process(
                 "linux_execution_source_invalid": "producer_process_executable_invalid",
                 "linux_execution_source_changed": "producer_process_executable_changed",
             }.get(exc.code, "producer_process_execution_binding_unknown")
-            raise ProducerProcessError(code) from exc
+            mapped = ProducerProcessError(code)
+            if "linux_execution_cleanup_unknown" in getattr(exc, "__notes__", ()):
+                mapped.add_note("linux_execution_cleanup_unknown")
+            raise mapped from exc
         os.close(gate_read)
         gate_read = -1
-        try:
-            pgid = os.getpgid(process.pid)
-        except OSError as exc:
-            raise ProducerProcessError("producer_process_registration_unknown") from exc
-        if pgid != process.pid:
-            raise ProducerProcessError("producer_process_registration_mismatch")
-        owner_identity = _process_owner_identity(process.pid)
-        if owner_identity is None:
-            raise ProducerProcessError("producer_process_owner_identity_unknown")
-
-        registration = RegisteredProcess(
-            process.pid, pgid,
-            owner_check=lambda: _current_process_owned(process.pid, owner_identity, process),
-            label=intent.launch_id,
-        )
         registration_payload = {
             "schema_version": "1", "protocol": _PROTOCOL, "launch_id": intent.launch_id,
             "journal_id": intent.journal_id, "run_id": intent.run_id, "parent_task_id": intent.parent_task_id,
@@ -1431,14 +1467,19 @@ def _run_producer_process(
             batch, intent, attestation, consumption_digest, registration_digest, identity, snapshot, process.pid, pgid,
             gate_released, stdout, stderr, envelope, cleanup_result, status, failure, exit_code, request_count,
         )
-    except ProducerProcessError:
-        if process is not None and registration is not None:
-            _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
+    except ProducerProcessError as exc:
+        outer_primary = exc
+        _cleanup_failed_spawn(registration, process, exc, deadline=deadline, monotonic=monotonic)
         raise
     except (OSError, subprocess.SubprocessError) as exc:
-        if process is not None and registration is not None:
-            _cleanup(registration, process, deadline=deadline, monotonic=monotonic)
-        raise ProducerProcessError("producer_process_launch_unknown") from exc
+        mapped = ProducerProcessError("producer_process_launch_unknown")
+        outer_primary = mapped
+        _cleanup_failed_spawn(registration, process, mapped, deadline=deadline, monotonic=monotonic)
+        raise mapped from exc
+    except BaseException as exc:
+        outer_primary = exc
+        _cleanup_failed_spawn(registration, process, exc, deadline=deadline, monotonic=monotonic)
+        raise
     finally:
         for fd in (gate_read, gate_write):
             if fd >= 0:
@@ -1447,9 +1488,18 @@ def _run_producer_process(
                 except OSError:
                     pass
         if process is not None:
+            stream_error: BaseException | None = None
             for stream in (process.stdout, process.stderr):
                 if stream is not None:
-                    stream.close()
+                    try:
+                        stream.close()
+                    except BaseException as exc:  # noqa: BLE001 - release both, preserve primary
+                        if outer_primary is not None:
+                            outer_primary.add_note("producer_process_cleanup_unknown")
+                        elif stream_error is None:
+                            stream_error = exc
+            if stream_error is not None:
+                raise stream_error
         # Keep an immutable snapshot when no terminal receipt was durably published. A
         # post-spawn exception must leave recovery evidence and must not remove the bytes a
         # still-running child may be executing.

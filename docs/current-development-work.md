@@ -1,13 +1,15 @@
 # Current development work
 
-As of 2026-10-08, PR15–21 are merged into main after independent final-source
-Linux CI/raw audits. Feature186 / PR20 source5f54309a was accepted by run37732579777
-and merged as c6faf365 with the identical tested tree. Main19 postmerge run37732165231
-also passed independent raw auditing. Feature187/PR21 source a15895c passed
-run37738544048 (three versions, 21 phases, keyring52/0 skips) and merged as
-518f1f4 with the identical tree. Main20 postmerge run37737899242 passed a separate
-independent raw audit. Feature188 framed sealed material is now in implementation;
-its own Linux acceptance is pending. Main21 postmerge CI is not yet audited.
+As of 2026-10-08, PR15–22 are merged into main after independent final-source
+Linux CI/raw audits. Feature188 / PR22 sourcec5973a7/tree61d6f966 passed final
+run37747759152: three versions, 22 phases, material274/0 skips and current11984/92
+platform skips, zero failure/error/retry. Root verified original ZIP/XML/log/
+inventory/source/checkout-tree evidence; merge4f8576d has the identical tested
+source tree and expected parents. The first failed mmap-fixture run37747268959
+remains separate evidence. Main21 push37744640126 independently passed all21
+phases (current11710/92); main22 push acceptance is still pending.
+Feature190 now fixes controller-owned executable handles as a prerequisite for
+Feature189's static CPython fixture. Static CPython is not implemented yet.
 The entries below describe current capability gaps;
 older feature documents retain their historical submission state.
 
@@ -18,7 +20,8 @@ older feature documents retain their historical submission state.
 | P0 | Fixed producer broker HTTP destination (Feature 186) | Completed: PR20 raw run37732579777; main mergec6faf365 |
 | P0 | Native keyring syscall control (Feature187) | Completed: PR21 raw run37738544048; main merge518f1f4 |
 | P0 | Other remaining kernel routes | A separately bounded route contract and actual native refusal/compatibility acceptance; mq or broker checks alone do not close this item |
-| P1 | Framed immutable runtime material (Feature188) | Implementing bounded parser, guarded streaming copy, complete Linux seals and original live ownership/deadline; no Python load or production admission claim |
+| P1 | Framed immutable runtime material (Feature188) | Completed: PR22 raw run37747759152; main merge4f8576d. All runtime-load/production claims remain false |
+| P0 | Original executable ownership and cleanup (Feature190) | Implementing private anchor/borrowed binding, original deadline/live validation and caller checks; actual Linux owner acceptance remains pending |
 | P1 | Python archive/import/loader closure and immutable runtime loading | Existing declared-file and closed-tree inventories explicitly have runtime_load_protection=false; pinned static CPython and complete delivery/load enforcement need their own contract and native acceptance (Feature189 successor) |
 | P1 | Versioned runtime delivery and formal Python worker admission | Bind an independently admitted immutable runtime to original launch/grants/attestation/deadline and verify it throughout the actual launch |
 | P1 | OpenEvolve/Shinka Python process adapters | Use formal Python admission and existing lifecycle/request/publication evidence; accept local fixtures before any separately authorized campaign |

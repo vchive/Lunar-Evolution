@@ -107,7 +107,11 @@ from .rsi_native_inputs import (
     NativeRSIInputError,
     validate_native_rsi_launch_inputs,
 )
-from .trusted_bootstrap_binding import TrustedBootstrapBindingError, prepare_trusted_executable_pair
+from .trusted_bootstrap_binding import (
+    TrustedBootstrapBindingError,
+    _validate_original_linux_executable_pair,
+    prepare_trusted_executable_pair,
+)
 from .trusted_bootstrap_registration import (
     TrustedBootstrapRegistrationError,
     _claim_bytes,
@@ -934,6 +938,8 @@ def run_native_trusted_attempt(
                                 except OSError:
                                     broker_state["error"] = "native_trusted_attempt_broker_unknown"
 
+                if sys.platform.startswith("linux"):
+                    _validate_original_linux_executable_pair(pair)
                 if grant_owner is not None:
                     _check_original_attempt_grants(grant_owner, inputs)
                     control = encode_native_bootstrap_control_v2(
@@ -971,6 +977,8 @@ def run_native_trusted_attempt(
                         inputs, root, intent=intent, attestation=attestation, artifact=installed,
                         require_unexpired=True,
                     )
+                if sys.platform.startswith("linux"):
+                    _validate_original_linux_executable_pair(pair)
                 process = subprocess.Popen(
                     command, executable=pair.bootstrap.executable,
                     shell=False, start_new_session=True, close_fds=True,
@@ -983,6 +991,7 @@ def run_native_trusted_attempt(
                 check_deadline()
                 if grant_owner is not None:
                     try:
+                        _validate_original_linux_executable_pair(pair)
                         guardian = start_native_guardian(
                             process=process, executable=pair.bootstrap.executable,
                             bootstrap_fd=pair.bootstrap.pass_fd, lifeline_fd=lifeline_read,
