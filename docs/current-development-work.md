@@ -7,9 +7,17 @@ platform skips, zero failure/error/retry. Root verified original ZIP/XML/log/
 inventory/source/checkout-tree evidence; merge4f8576d has the identical tested
 source tree and expected parents. The first failed mmap-fixture run37747268959
 remains separate evidence. Main21 push37744640126 independently passed all21
-phases (current11710/92); main22 push acceptance is still pending.
+phases (current11710/92). Main22 push37754528167 independently passed all22
+phases (current11984/92, material274/0); its raw evidence and verifier report
+are persisted under `.lunar-evolution/reports/persisted-ci-evidence-20261008/`.
 Feature190 now fixes controller-owned executable handles as a prerequisite for
-Feature189's static CPython fixture. Static CPython is not implemented yet.
+Feature189's static CPython fixture. Its first final CI run failed only in two
+3.11 `select()`-based native bootstrap test helpers when the runner assigned
+FDs above `FD_SETSIZE`; production code and dedicated133/material274 gates
+passed. The helper now uses bounded `poll()` and a replacement run is pending.
+Feature189 has bounded pure ELF/descriptor inspectors plus an offline recipe
+and asset emitter; no toolchain, source archive, image build or CPython launch
+has occurred.
 The entries below describe current capability gaps;
 older feature documents retain their historical submission state.
 
@@ -21,8 +29,8 @@ older feature documents retain their historical submission state.
 | P0 | Native keyring syscall control (Feature187) | Completed: PR21 raw run37738544048; main merge518f1f4 |
 | P0 | Other remaining kernel routes (Feature192) | Bounded contract and local fixture are implemented on `codex/kernel-route-control`; final Linux acceptance and merge remain pending |
 | P1 | Framed immutable runtime material (Feature188) | Completed: PR22 raw run37747759152; main merge4f8576d. All runtime-load/production claims remain false |
-| P0 | Original executable ownership and cleanup (Feature190) | Implementing private anchor/borrowed binding, original deadline/live validation and caller checks; actual Linux owner acceptance remains pending |
-| P1 | Python archive/import/loader closure and immutable runtime loading | Existing declared-file and closed-tree inventories explicitly have runtime_load_protection=false; pinned static CPython and complete delivery/load enforcement need their own contract and native acceptance (Feature189 successor) |
+| P0 | Original executable ownership and cleanup (Feature190) | Implementation complete; replacement final Linux CI is pending after the high-FD test-helper fix |
+| P1 | Python archive/import/loader closure and immutable runtime loading | Feature189 preparation adds bounded pure ELF/descriptor gates and an offline pinned recipe; actual source patches, Linux build, startup and native acceptance remain open |
 | P1 | Versioned runtime delivery and formal Python worker admission | Bind an independently admitted immutable runtime to original launch/grants/attestation/deadline and verify it throughout the actual launch |
 | P1 | OpenEvolve/Shinka Python process adapters | Use formal Python admission and existing lifecycle/request/publication evidence; accept local fixtures before any separately authorized campaign |
 | P1 | Production RSI CLI composition | Wire only admitted workers through durable controller resume, unknown/drift/budget gates and retained provenance; verify a repeatable local end-to-end entry |
