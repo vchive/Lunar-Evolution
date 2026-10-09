@@ -20,8 +20,9 @@ failure and cancelled preflight separately from later successful evidence.
   validator with inert fixtures. It performs no acquisition, extraction, build,
   filesystem traversal or signature verification; passing it does not complete
   either actual input-verification gate below.
-- [ ] Complete final-source three-version Linux CI and independent raw audit for
-  this pure slice before main merge. The dedicated metadata gate requires143
+- [x] Complete final-source three-version Linux CI and independent raw audit for
+  this pure slice before main merge: run37871696368/main1e492dc, exact tested
+  source4ec32b2/treeeb9f9e8e. The dedicated metadata gate requires143
   cases and zero failures/errors/skips; it is not archive or runtime acceptance.
 - [ ] Verify CPython v3.13.12/source identity and signature/acquisition result;
   record archive/tree SHA-256 and exact patch set without invented values.
@@ -44,6 +45,14 @@ safe-extraction or signature-verification result.
 
 ## G2 fixed image and complete startup closure
 
+- [x] Specify the fixed candidate build-input preparation in `build-inputs.md`:
+  separate shared/core/builtin, freezer/target plans, nine adjacent header paths
+  and unresolved configured/static-link inputs. This is not actual build closure.
+- [x] Implement and locally validate pure fixed build-input emission and recipe refusal
+  with inert fixtures; do not run configure/make/freezer under explicit opt-in.
+- [ ] Complete final-source three-version Linux CI and independent raw audit
+  for the build-input slice before main merge; require the dedicated90-case
+  source-only gate and source-preparation100-case gate without failures/errors/skips.
 - [ ] Audit actual3.13.12 C headers, all path outputs and frozen-use flags/API;
   freeze fixed isolated preconfig/config including UTF-8 and locale dispositions.
 - [ ] Close all encodings/importlib/stdio/startup dependencies and stock frozen,

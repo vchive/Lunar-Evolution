@@ -46,6 +46,9 @@ requires actual exit0 in addition to all existing normal terminal/cleanup eviden
 Malformed/truncated/extra F, premature EOF, death, owner data/EOF/error or deadline
 trigger original pidfd group SIGKILL and watcher failure/unknown. No blocking read/
 write may stop deadline monitoring; all R/D/F/EOF waits use poll original deadlines.
+The host R wait uses poll as well, including for FD>=1024. It bounds and rounds
+only the poll timeout, rechecks the same absolute deadline before and after read,
+and rejects error/hangup/foreign or multiple events before consuming any byte.
 
 Exceptional cleanup: controller closes original lifeline writer and keeps watcher
 running until its group stop/exact exit/reap is observed, subject to bounded cleanup.

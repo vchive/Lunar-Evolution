@@ -1,5 +1,71 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 independent guardian readiness follow-up
+
+PR29 `codex/static-python-build-inputs` is being repaired before any new CI rerun.
+The previous two full 3.12 attempts failed during setup of the `extend` deadline
+fixture; their raw XML/log/artifact materials remain preserved and `ci_approval`
+remains false. The failure happened before the test body ran, so its root cause was
+not claimed as proven. Review found a deterministic host defect: `select.select`
+rejects acknowledgement descriptors at or above `FD_SETSIZE`, which can arise
+after a long composition. `start_native_guardian` now waits with `poll`, keeps the
+original absolute monotonic deadline, rejects ambiguous/error/hangup events before
+reading, consumes exactly `R`, and rechecks the same deadline around the read.
+No fallback numeric-PGID, refreshed budget, or altered guardian ownership was added.
+
+Nineteen portable readiness cases cover high-numbered descriptors, valid/invalid
+frames, EOF, timeout, pre-expired and post-poll deadlines, read errors, and cleanup.
+The two early bootstrap fixtures now close gate/frame/stderr handles even when an
+assertion fails. Local focused composition is 26 passes and 16 platform skips;
+the readiness subset has 19 passes. Ruff, compileall and diff check pass. The Linux
+workflow now runs guardian host, independent guardian and readiness together as an
+82-case zero-skip gate. A new full three-version CI run and independent raw
+XML/log/ZIP/source/tree audit are required before PR29 can be merged.
+
+PR30 archive observation remains based on the older PR29 source and must be rebased
+or otherwise synchronized to the repaired PR29 head before it can be accepted.
+Its currently running old-source CI cannot approve the new source. No real release
+archive, static build, runtime, model, evaluator or solver campaign ran.
+
+
+## 2026-10-09 fixed candidate build-input continuation
+
+Feature189 now has a pinned reviewed-input asset and pure detached build-input
+emitter: shared162 (core146/builtin16), distinct freezer2 and target4, prepared
+source postimage pins, four actual upstream control pins, nine pending freeze
+tasks and one installation-owned profile header. The original candidate report
+mislabeled configure.ac as configure; preserve its preparation failure and use
+separate actual pins. Candidate closure is still unobserved: configure/cache,
+optional discovery, generated dependencies, compiler/CRT/libc/libm and remaining
+object substitutions remain explicit future gates.
+
+The plan anchors its compact build-input output and checks actual emitted C,
+expanded frozen main, four tables and profile header bytes against the fixed
+asset pins. Both shell entry points now exit78 before configure/make/freezer,
+including explicit execution requests. The former plan could execute unreviewed
+stock build steps before exit78; this continuation removes that behavior.
+Frozen tasks use generated-sources/Python/frozen_modules adjacent to finite
+Python/frozen.c. The freezer uses reviewed source-owned empty frozen tables;
+stock/target frozen.o and stock getpath/bootstrap/python are not shared inputs.
+
+Root local build-input90 and combined592 cases pass without failure/error/skip;
+full Ruff/compileall/diff pass. An independent review found the profile-header
+pin omission and a version-sensitive deep JSON test reason; both are corrected.
+First metadata/preparation, fixture-collection and reviewer-harness failures are
+retained separately in ignored reports/feature189-build-inputs-20261009.
+Final independent local review passes with no open finding; both3.11.15 and
+3.13.12 pass the same90 cases. The new build-input source still needs final
+Linux CI/raw audit/main merge. PR28 source4ec32b2/run37871696368 passes all
+three versions and28 exact raw XML phases, current12632/92 platform skips,
+verified143/source96/preparation226/observation43 zero failures/errors/skips,
+without retries. Raw and root independent audits pass; merge1e492dc preserves
+the exact tested treeeb9f9e8e and expected parents. Primary main is clean and
+fast-forwarded; its new post-merge CI is pending, not accepted. No actual
+archives, configuration,
+compiler/freezer/static ELF/runtime, .env/credential/model/evaluator or solver
+campaign ran. Runtime/protection/production claims stay false; P2 stays deferred.
+
+
 
 ## 2026-10-09 verified-input metadata continuation
 

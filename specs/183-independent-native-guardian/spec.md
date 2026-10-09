@@ -26,6 +26,10 @@ Keep the independent watcher active through complete drain and guarded terminal
 write. Normal success also requires exact guardian finish/ack and observed normal
 exit/reap, plus existing bootstrap cleanup/output evidence; a terminal frame alone
 does not suffice. All lifecycle waits consume the original execution deadline.
+The host acknowledgement wait must support valid descriptors above `FD_SETSIZE`
+with `poll(2)`. Readiness requires exactly `R`, one matching readable event with
+no error or hangup, and the original deadline still valid before and after the
+read. Integer-millisecond rounding must never renew the absolute deadline.
 
 Every newly created process must have an exact live owner and reap path on startup,
 normal exit, cancellation, malformed handoff, deadline/EOF, bootstrap SIGKILL before

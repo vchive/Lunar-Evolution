@@ -206,7 +206,6 @@ def test_start_consumes_exact_ready_byte_and_returns_live_owner(monkeypatch):
         monkeypatch.setattr(os, "getsid", lambda pid: pid)
         monkeypatch.setattr(signal, "pidfd_send_signal", lambda *args: None)
         monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: watcher)
-        monkeypatch.setattr("lunar_evolution.native_guardian.select.select", lambda *args: ([ackread[0]], [], []))
         owner = start_native_guardian(
             process=process, executable=f"/proc/self/fd/{bootstrap_fd}", bootstrap_fd=bootstrap_fd,
             lifeline_fd=life[0], finish_fd=finish[0], ack_fd=ackread[1], ack_read_fd=ackread[0],

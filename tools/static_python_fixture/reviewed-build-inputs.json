@@ -1,0 +1,1954 @@
+{
+  "compile_requirements": {
+    "builtin_flags": "PY_BUILTIN_MODULE_CFLAGS",
+    "compiler_and_sysroot": "not-observed",
+    "configure_state": "proposal-only-not-configured",
+    "core_flags": "PY_CORE_CFLAGS",
+    "dtoa_aliasing": "review-actual-CFLAGS_ALIASING-retain-no-strict-aliasing",
+    "freezer_frozen_tables": "defined-empty-by-reviewed-Programs/_freeze_module.c",
+    "link_closure": "unresolved",
+    "proposed_AR": "verified-Zig-root/zig ar",
+    "proposed_CC": "verified-Zig-root/zig cc -target x86_64-linux-musl",
+    "proposed_RANLIB": "verified-Zig-root/zig ranlib",
+    "proposed_configure_argv": [
+      "--host=x86_64-linux-musl",
+      "--build=x86_64-linux-musl",
+      "--disable-shared",
+      "--disable-test-modules",
+      "--with-ensurepip=no",
+      "--with-computed-gotos",
+      "--with-pymalloc"
+    ]
+  },
+  "fixture_headers": [
+    {
+      "path": "assets/lunar_fixture_profile.h",
+      "sha256": "f07987ceb32941684d75236910676b53f60e39ec78bfb4f9d34cd6ba7f79095e",
+      "source_size": 179
+    }
+  ],
+  "freeze_tasks": [
+    {
+      "generator_id": "importlib._bootstrap",
+      "name": "_frozen_importlib",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/importlib._bootstrap.h",
+      "package": false,
+      "source": "Lib/importlib/_bootstrap.py",
+      "source_sha256": "b84488f731914f6da30607e10f6f8d4c5c2ff7f4b0e913060aa66999c04f6252",
+      "source_size": 57082,
+      "symbol": "_Py_M__importlib__bootstrap"
+    },
+    {
+      "generator_id": "importlib._bootstrap_external",
+      "name": "_frozen_importlib_external",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/importlib._bootstrap_external.h",
+      "package": false,
+      "source": "Lib/importlib/_bootstrap_external.py",
+      "source_sha256": "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab",
+      "source_size": 64722,
+      "symbol": "_Py_M__importlib__bootstrap_external"
+    },
+    {
+      "generator_id": "abc",
+      "name": "abc",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/abc.h",
+      "package": false,
+      "source": "Lib/abc.py",
+      "source_sha256": "e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287",
+      "source_size": 6538,
+      "symbol": "_Py_M__abc"
+    },
+    {
+      "generator_id": "codecs",
+      "name": "codecs",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/codecs.h",
+      "package": false,
+      "source": "Lib/codecs.py",
+      "source_sha256": "2f278497548b8313580b247a1097a0a304e5087a355ebb11a92ec685fa9e63ff",
+      "source_size": 36978,
+      "symbol": "_Py_M__codecs"
+    },
+    {
+      "generator_id": "io",
+      "name": "io",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/io.h",
+      "package": false,
+      "source": "Lib/io.py",
+      "source_sha256": "7cec3cb8ac004058dd0a5af246e6d950fb59c7ddd0058fda48bcb3fcb98d8822",
+      "source_size": 3582,
+      "symbol": "_Py_M__io"
+    },
+    {
+      "generator_id": "encodings",
+      "name": "encodings",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/encodings.h",
+      "package": true,
+      "source": "Lib/encodings/__init__.py",
+      "source_sha256": "78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8",
+      "source_size": 5884,
+      "symbol": "_Py_M__encodings"
+    },
+    {
+      "generator_id": "encodings.aliases",
+      "name": "encodings.aliases",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/encodings.aliases.h",
+      "package": false,
+      "source": "Lib/encodings/aliases.py",
+      "source_sha256": "43aadac378861c1bbdaaf04be8e1bb7d878529a7641ec123b5df4eccdd4c6106",
+      "source_size": 802,
+      "symbol": "_Py_M__encodings_aliases"
+    },
+    {
+      "generator_id": "encodings.utf_8",
+      "name": "encodings.utf_8",
+      "origin": "reviewed-cpython-git-source",
+      "output": "generated-sources/Python/frozen_modules/encodings.utf_8.h",
+      "package": false,
+      "source": "Lib/encodings/utf_8.py",
+      "source_sha256": "ba0cac060269583523ca9506473a755203037c57d466a11aa89a30a5f6756f3d",
+      "source_size": 1005,
+      "symbol": "_Py_M__encodings_utf_8"
+    },
+    {
+      "generator_id": "_lunar_static_main",
+      "name": "_lunar_static_main",
+      "origin": "expanded-fixture-asset",
+      "output": "generated-sources/Python/frozen_modules/_lunar_static_main.h",
+      "package": false,
+      "source": "assets/frozen_main.py",
+      "source_sha256": "6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d",
+      "source_size": 6794,
+      "symbol": "_Py_M___lunar_static_main"
+    }
+  ],
+  "freezer_units": [
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Programs/_freeze_module.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "50b61a5efbfb6c294e7ff0ffe6a01c0964b8c954285bcbac5d99c7a5483ca9be",
+      "source": "Programs/_freeze_module.c",
+      "source_sha256": "50b61a5efbfb6c294e7ff0ffe6a01c0964b8c954285bcbac5d99c7a5483ca9be",
+      "source_size": 6590
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Modules/getpath_noop.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "8573d6611493b22ad038c1d208ef82755e430afa9a0b0ba9bd146160278a9f74",
+      "source": "Modules/getpath_noop.c",
+      "source_sha256": "8573d6611493b22ad038c1d208ef82755e430afa9a0b0ba9bd146160278a9f74",
+      "source_size": 267
+    }
+  ],
+  "generated_sources": [
+    {
+      "path": "generated-sources/Modules/config.c",
+      "sha256": "f88d5155d330bafa52dba00030fb4c8dfcd4f3844e996b34980f81a30089fb0c",
+      "source_size": 1576
+    },
+    {
+      "path": "generated-sources/Modules/lunar-static-sources.mk",
+      "sha256": "eb9fa5d9ddacd7fd00be2d769e254e3e3e49a5601a63311525162c0628fc19c9",
+      "source_size": 1605
+    },
+    {
+      "path": "generated-sources/Python/frozen.c",
+      "sha256": "70a872d666061c85a17a555aba090689b39c6a4c5786aae82c9d3e41432bcecf",
+      "source_size": 2417
+    },
+    {
+      "path": "generated-sources/Python/stdlib_module_names.h",
+      "sha256": "8ab527614e79550592057fee8eb3da90cd13979511726e121cc988faa61ae696",
+      "source_size": 628
+    }
+  ],
+  "getbuildinfo_requirements": [
+    "DATE",
+    "TIME",
+    "GITVERSION",
+    "GITTAG",
+    "GITBRANCH"
+  ],
+  "profile": {
+    "abi": "cp313-release-gil",
+    "profile_triple": "x86_64-unknown-linux-musl",
+    "source_archive_sha256": "2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593",
+    "target": "x86_64-linux-musl",
+    "toolchain_archive_sha256": "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00"
+  },
+  "required_later_checks": [
+    "DYNLOADFILE=dynload_stub.o via original ac_cv_func_dlopen=no",
+    "Actual musl headers must produce the reviewed PLATFORM_TRIPLET and empty PERF_TRAMPOLINE_OBJ; GNU triplet would add asm_trampoline.o and must not be silently assumed absent",
+    "DTrace/platform/machdep/replacement object substitutions must match a newly frozen actual config",
+    "Builtin9 origins are already in the145 core and must not be duplicated",
+    "getbuildinfo DATE/TIME/GITVERSION/GITTAG/GITBRANCH must be explicit installation-owned constants",
+    "Core uses PY_CORE_CFLAGS; additions use PY_BUILTIN_MODULE_CFLAGS; both inherit actual reviewed nondist/include/config flags",
+    "Actual configured clang CFLAGS_ALIASING must retain dtoa no-strict-aliasing",
+    "Freezer supplies its own empty frozen tables and must not link target finite or stock frozen.o",
+    "Header generation path must be unified with finite frozen.c includes before actual freezing"
+  ],
+  "reviewed_controls": [
+    {
+      "path": "Makefile.pre.in",
+      "sha256": "eece065935a88ca410641df020a4f144d39e1b9154e87fbf2ba7c329a01ca712",
+      "source_size": 121814
+    },
+    {
+      "path": "configure",
+      "sha256": "0495fd50c8441437de8df5bd681b94bda00492ad3cf0d0db07f52f928dc12f20",
+      "source_size": 893475
+    },
+    {
+      "path": "configure.ac",
+      "sha256": "8e47d53509f130d4a300d85ee51d899a21631ba40b83c5c8b32b2b8b33e525b8",
+      "source_size": 255967
+    },
+    {
+      "path": "Misc/platform_triplet.c",
+      "sha256": "ba6d3fccaaf0bf52a59828e7a3baf0405b1724a1445823557c288bf5de6a52e6",
+      "source_size": 7770
+    }
+  ],
+  "schema": "lunar-static-python-reviewed-build-inputs-v1",
+  "shared_units": [
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/token.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "bb984e00f27d524340fe43e889e987ce4685c9cd8a016dce1bab1a631f10aa48",
+      "source": "Parser/token.c",
+      "source_sha256": "bb984e00f27d524340fe43e889e987ce4685c9cd8a016dce1bab1a631f10aa48",
+      "source_size": 4716
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/pegen.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b7b68001085994dae59d01e287c1fc90c0125c11d4b70a15b8e1470d40625436",
+      "source": "Parser/pegen.c",
+      "source_sha256": "b7b68001085994dae59d01e287c1fc90c0125c11d4b70a15b8e1470d40625436",
+      "source_size": 28850
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/pegen_errors.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b6625377a9f847ea459f19a2e107dadf60631f11f79f4159146416d15d209be6",
+      "source": "Parser/pegen_errors.c",
+      "source_sha256": "b6625377a9f847ea459f19a2e107dadf60631f11f79f4159146416d15d209be6",
+      "source_size": 14855
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/action_helpers.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "407dd8b7c4ce34bb54fb2026a1358052ccd965c45d128439ec541e3e54547e13",
+      "source": "Parser/action_helpers.c",
+      "source_sha256": "407dd8b7c4ce34bb54fb2026a1358052ccd965c45d128439ec541e3e54547e13",
+      "source_size": 54267
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/parser.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "16d1b1b827c4340b1b659e4edb948017d759107e4e86adc7bb3365a9a055d891",
+      "source": "Parser/parser.c",
+      "source_sha256": "16d1b1b827c4340b1b659e4edb948017d759107e4e86adc7bb3365a9a055d891",
+      "source_size": 1477981
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/string_parser.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "18ff5130b7c1821a1378072702bfd0cade7ae45b166a48a8bc6b8c4c43d04ed5",
+      "source": "Parser/string_parser.c",
+      "source_sha256": "18ff5130b7c1821a1378072702bfd0cade7ae45b166a48a8bc6b8c4c43d04ed5",
+      "source_size": 10142
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/peg_api.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "14f9872ee37591f7c5e12cd4344007e0c4eb894c21196e8b0cc9166b84198bbb",
+      "source": "Parser/peg_api.c",
+      "source_sha256": "14f9872ee37591f7c5e12cd4344007e0c4eb894c21196e8b0cc9166b84198bbb",
+      "source_size": 1446
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/lexer/buffer.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "2db7af5a21fa0c9d6d830579f1a36628e82966090d5b4094d908ab05f535d8bf",
+      "source": "Parser/lexer/buffer.c",
+      "source_sha256": "2db7af5a21fa0c9d6d830579f1a36628e82966090d5b4094d908ab05f535d8bf",
+      "source_size": 3006
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/lexer/lexer.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "57bfb924baca01035f0a4d7d3127d4fd1779c61d5da5564994853b9933246939",
+      "source": "Parser/lexer/lexer.c",
+      "source_sha256": "57bfb924baca01035f0a4d7d3127d4fd1779c61d5da5564994853b9933246939",
+      "source_size": 53609
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/lexer/state.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "2b40c6a51fde1df68ecfb998b628205149a233c1492c10f3be7fa4c3a87c25e9",
+      "source": "Parser/lexer/state.c",
+      "source_sha256": "2b40c6a51fde1df68ecfb998b628205149a233c1492c10f3be7fa4c3a87c25e9",
+      "source_size": 4151
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/tokenizer/file_tokenizer.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c3d40166be722d30a136f7804f34435873ed323266b037fe0a6887698352a291",
+      "source": "Parser/tokenizer/file_tokenizer.c",
+      "source_sha256": "c3d40166be722d30a136f7804f34435873ed323266b037fe0a6887698352a291",
+      "source_size": 13409
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/tokenizer/readline_tokenizer.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "1d276cd7cbaab079aafd6896aa4a3747e1f886190f78e7066b22bcbb0b031700",
+      "source": "Parser/tokenizer/readline_tokenizer.c",
+      "source_sha256": "1d276cd7cbaab079aafd6896aa4a3747e1f886190f78e7066b22bcbb0b031700",
+      "source_size": 3859
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/tokenizer/string_tokenizer.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c0370df8b376d5ed4b91288a39703c2bb217da6fe343b7921555779c96dd5dab",
+      "source": "Parser/tokenizer/string_tokenizer.c",
+      "source_sha256": "c0370df8b376d5ed4b91288a39703c2bb217da6fe343b7921555779c96dd5dab",
+      "source_size": 3699
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/tokenizer/utf8_tokenizer.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c145feb977a5907c24c8c2f4b806b1cd5f968ca7f31ac440bbb42c867f13b678",
+      "source": "Parser/tokenizer/utf8_tokenizer.c",
+      "source_sha256": "c145feb977a5907c24c8c2f4b806b1cd5f968ca7f31ac440bbb42c867f13b678",
+      "source_size": 1352
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/tokenizer/helpers.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "3ba09ade2d516edbf5abdde06f81ddcb9f6314c24df2c0647e27b5f93752e743",
+      "source": "Parser/tokenizer/helpers.c",
+      "source_sha256": "3ba09ade2d516edbf5abdde06f81ddcb9f6314c24df2c0647e27b5f93752e743",
+      "source_size": 15667
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Parser/myreadline.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b99a7bebef22439df16add04737a9f46e821ead30447474569b5f9d0074bc085",
+      "source": "Parser/myreadline.c",
+      "source_sha256": "b99a7bebef22439df16add04737a9f46e821ead30447474569b5f9d0074bc085",
+      "source_size": 13367
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/abstract.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "1e210a038d059945e45ab6187ae6dc2701611c96b39e4a5ab6b57a495874ee82",
+      "source": "Objects/abstract.c",
+      "source_sha256": "1e210a038d059945e45ab6187ae6dc2701611c96b39e4a5ab6b57a495874ee82",
+      "source_size": 81889
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/boolobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "0ea4f083518710a362bf5db1d05839754f6e97daef695d5fc245f3de36c6b5e8",
+      "source": "Objects/boolobject.c",
+      "source_sha256": "0ea4f083518710a362bf5db1d05839754f6e97daef695d5fc245f3de36c6b5e8",
+      "source_size": 8257
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/bytes_methods.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b2a8bd4a2bf0c5e8baadc6be81d3e9c5b3a03cd480a3b03a7313ed9b8e4e2232",
+      "source": "Objects/bytes_methods.c",
+      "source_sha256": "b2a8bd4a2bf0c5e8baadc6be81d3e9c5b3a03cd480a3b03a7313ed9b8e4e2232",
+      "source_size": 19324
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/bytearrayobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "50f9707baf6d81752c149e75bbf1552069b5989c80aca67720378b91882fe5d7",
+      "source": "Objects/bytearrayobject.c",
+      "source_sha256": "50f9707baf6d81752c149e75bbf1552069b5989c80aca67720378b91882fe5d7",
+      "source_size": 78834
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/bytesobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "36c0115dbb9ab2aec12673e05094ca2843d22ccd967a61f8c33dbc59c3948c88",
+      "source": "Objects/bytesobject.c",
+      "source_sha256": "36c0115dbb9ab2aec12673e05094ca2843d22ccd967a61f8c33dbc59c3948c88",
+      "source_size": 108266
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/call.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9117c9fa4147a5549e590706ddb4599ed2a745bb74ac4ad44436c356dd23bae8",
+      "source": "Objects/call.c",
+      "source_sha256": "9117c9fa4147a5549e590706ddb4599ed2a745bb74ac4ad44436c356dd23bae8",
+      "source_size": 31015
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/capsule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "15d36cc9fb9bf0702c680fc9b474bc2b7b8e64ce1b69fe490cc004eda0b750a7",
+      "source": "Objects/capsule.c",
+      "source_sha256": "15d36cc9fb9bf0702c680fc9b474bc2b7b8e64ce1b69fe490cc004eda0b750a7",
+      "source_size": 8361
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/cellobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "58dd2555f6b051d64bd63f6841c846b2dc23d330734a74ec4afa800f98ee7eb8",
+      "source": "Objects/cellobject.c",
+      "source_sha256": "58dd2555f6b051d64bd63f6841c846b2dc23d330734a74ec4afa800f98ee7eb8",
+      "source_size": 5778
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/classobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "45d07f1fe34432579ce22805331c4d7ab8b8783c813e8a2f3e72d887c56424f2",
+      "source": "Objects/classobject.c",
+      "source_sha256": "45d07f1fe34432579ce22805331c4d7ab8b8783c813e8a2f3e72d887c56424f2",
+      "source_size": 15216
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/codeobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "780e0712c37526e6a09a82b2860701263bd1a8d68674c3df298c6baffb6c8633",
+      "source": "Objects/codeobject.c",
+      "source_sha256": "780e0712c37526e6a09a82b2860701263bd1a8d68674c3df298c6baffb6c8633",
+      "source_size": 85947
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/complexobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "8ae2ed668a1483349abc7edda67d0716172e70b6595611306757ab4f1602a196",
+      "source": "Objects/complexobject.c",
+      "source_sha256": "8ae2ed668a1483349abc7edda67d0716172e70b6595611306757ab4f1602a196",
+      "source_size": 32984
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/descrobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "e3e65c41a248bac714850cfc0248e6ce8062e64addf048ee80dac2a5cde69204",
+      "source": "Objects/descrobject.c",
+      "source_sha256": "e3e65c41a248bac714850cfc0248e6ce8062e64addf048ee80dac2a5cde69204",
+      "source_size": 70295
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/enumobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b1bf03337c8e787c655be3f89b7c1ccbdf70ff7463a6377917b844d4e545083d",
+      "source": "Objects/enumobject.c",
+      "source_sha256": "b1bf03337c8e787c655be3f89b7c1ccbdf70ff7463a6377917b844d4e545083d",
+      "source_size": 17168
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/exceptions.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "3843b1b38ad279cb846956a08c8e2e02af24d5748cd664762171c4aaeb027625",
+      "source": "Objects/exceptions.c",
+      "source_sha256": "3843b1b38ad279cb846956a08c8e2e02af24d5748cd664762171c4aaeb027625",
+      "source_size": 113593
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/genericaliasobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "75137fe5a63959d67087c729ce118107f9e2e2fb63f5d1309f96488fdeb00f57",
+      "source": "Objects/genericaliasobject.c",
+      "source_sha256": "75137fe5a63959d67087c729ce118107f9e2e2fb63f5d1309f96488fdeb00f57",
+      "source_size": 29171
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/genobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "f8acbdbdf76b13b68d36c741437a34e3b50e3f41d42770ba69b20d5455fb7e25",
+      "source": "Objects/genobject.c",
+      "source_sha256": "f8acbdbdf76b13b68d36c741437a34e3b50e3f41d42770ba69b20d5455fb7e25",
+      "source_size": 80432
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/fileobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "6202f3c34fe68086480daf7a0ac117be7d0198150ae673773fc32b9f6960eb91",
+      "source": "Objects/fileobject.c",
+      "source_sha256": "6202f3c34fe68086480daf7a0ac117be7d0198150ae673773fc32b9f6960eb91",
+      "source_size": 15572
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/floatobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "cec592d3d3381175ef197fea0193dcb79ab22f9280205a3dcd61cdc7dd511d93",
+      "source": "Objects/floatobject.c",
+      "source_sha256": "cec592d3d3381175ef197fea0193dcb79ab22f9280205a3dcd61cdc7dd511d93",
+      "source_size": 72258
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/frameobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "174ddfdc24dd4f795ce8cc259f97f01215f4dd0245d44f460d27c5a48591dfba",
+      "source": "Objects/frameobject.c",
+      "source_sha256": "174ddfdc24dd4f795ce8cc259f97f01215f4dd0245d44f460d27c5a48591dfba",
+      "source_size": 66720
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/funcobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c6a336197b8c0c140deb950d40533edb776c36cbaa6dedb3e0c0d79f382562dd",
+      "source": "Objects/funcobject.c",
+      "source_sha256": "c6a336197b8c0c140deb950d40533edb776c36cbaa6dedb3e0c0d79f382562dd",
+      "source_size": 48430
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/iterobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b91a9909e85a6434cbe6ca2a3827abe3cfe987527ae3fc0c948ff3074196ba15",
+      "source": "Objects/iterobject.c",
+      "source_sha256": "b91a9909e85a6434cbe6ca2a3827abe3cfe987527ae3fc0c948ff3074196ba15",
+      "source_size": 16806
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/listobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "fe0a926ac4f1ea51b818b7401696ac23df38569b75216e69084cc8991baaa6c2",
+      "source": "Objects/listobject.c",
+      "source_sha256": "fe0a926ac4f1ea51b818b7401696ac23df38569b75216e69084cc8991baaa6c2",
+      "source_size": 126949
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/longobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "20bcfeba838cb962e72872b3901402436b25cda7eb9212c11eebbc22ed79148d",
+      "source": "Objects/longobject.c",
+      "source_sha256": "20bcfeba838cb962e72872b3901402436b25cda7eb9212c11eebbc22ed79148d",
+      "source_size": 213664
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/dictobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "21332e4131769818f8ad4ce69d1ceb59a1886c542335d23ffb420ac9187c6d43",
+      "source": "Objects/dictobject.c",
+      "source_sha256": "21332e4131769818f8ad4ce69d1ceb59a1886c542335d23ffb420ac9187c6d43",
+      "source_size": 225345
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/odictobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "fd55dc5aa65f61a71ab1d6c47e215937fc113eb77bed42643ffe4422f5a11ef4",
+      "source": "Objects/odictobject.c",
+      "source_sha256": "fd55dc5aa65f61a71ab1d6c47e215937fc113eb77bed42643ffe4422f5a11ef4",
+      "source_size": 73977
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/memoryobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b140a2a13621f5aa5782c8591f0826bc02e9a6eb9b28ec0047ae547408ed75f9",
+      "source": "Objects/memoryobject.c",
+      "source_sha256": "b140a2a13621f5aa5782c8591f0826bc02e9a6eb9b28ec0047ae547408ed75f9",
+      "source_size": 101872
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/methodobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "60bb0980689aabe83f2bf693b2eab01c7751d73f50b969764e2bbdabb4ba796d",
+      "source": "Objects/methodobject.c",
+      "source_sha256": "60bb0980689aabe83f2bf693b2eab01c7751d73f50b969764e2bbdabb4ba796d",
+      "source_size": 17849
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/moduleobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "ed3e5d2c8d3568ca264845c454c5ea5a4070ffde03742dacb3623ad642b0e5eb",
+      "source": "Objects/moduleobject.c",
+      "source_sha256": "ed3e5d2c8d3568ca264845c454c5ea5a4070ffde03742dacb3623ad642b0e5eb",
+      "source_size": 37106
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/namespaceobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "04689df893d6bcd149f097a245effff7e008033b3d654c29510f5070d6749260",
+      "source": "Objects/namespaceobject.c",
+      "source_sha256": "04689df893d6bcd149f097a245effff7e008033b3d654c29510f5070d6749260",
+      "source_size": 9194
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/object.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "f3d49ffbe11bdaa179d39fdf92652f0d6bd409319acadebc1699026e54598390",
+      "source": "Objects/object.c",
+      "source_sha256": "f3d49ffbe11bdaa179d39fdf92652f0d6bd409319acadebc1699026e54598390",
+      "source_size": 85238
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/obmalloc.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "e9986a253c03c7057deaea4a9a9b828fd1f50a8c11a755f154cc12368d3bf7f0",
+      "source": "Objects/obmalloc.c",
+      "source_sha256": "e9986a253c03c7057deaea4a9a9b828fd1f50a8c11a755f154cc12368d3bf7f0",
+      "source_size": 109977
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/picklebufobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "693e48728c7963c053b18cb23ab8bb7fd743d77fc6c8ded15fb1b8c8af7aa327",
+      "source": "Objects/picklebufobject.c",
+      "source_sha256": "693e48728c7963c053b18cb23ab8bb7fd743d77fc6c8ded15fb1b8c8af7aa327",
+      "source_size": 6180
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/rangeobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "070a3e4b29041daf20f86748c56d1cd254a275057a93b7ab16f7a1fbe20e82ea",
+      "source": "Objects/rangeobject.c",
+      "source_sha256": "070a3e4b29041daf20f86748c56d1cd254a275057a93b7ab16f7a1fbe20e82ea",
+      "source_size": 38566
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/setobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "76aeb730a3f7f9d3df64c733d6791b273e82c56a967ea508d5d71d4e00146d27",
+      "source": "Objects/setobject.c",
+      "source_sha256": "76aeb730a3f7f9d3df64c733d6791b273e82c56a967ea508d5d71d4e00146d27",
+      "source_size": 78688
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/sliceobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "6b06835acb641c760e0d4be02f9363111a3ceca613b18ab8006d910b7ecc4f55",
+      "source": "Objects/sliceobject.c",
+      "source_sha256": "6b06835acb641c760e0d4be02f9363111a3ceca613b18ab8006d910b7ecc4f55",
+      "source_size": 21896
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/structseq.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "6c7d8c2dcb639b3a8e700e1191d5cc6e0a5ef1d2f1b33e40b6b5fb11658c9438",
+      "source": "Objects/structseq.c",
+      "source_sha256": "6c7d8c2dcb639b3a8e700e1191d5cc6e0a5ef1d2f1b33e40b6b5fb11658c9438",
+      "source_size": 23982
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/tupleobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "6dce7db55610ae4b4caa6cde981f1a4df2a3235489dc29e22788c7f468d2c949",
+      "source": "Objects/tupleobject.c",
+      "source_sha256": "6dce7db55610ae4b4caa6cde981f1a4df2a3235489dc29e22788c7f468d2c949",
+      "source_size": 35330
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/typeobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "8f703a3fb67f126b416ec13d03b2fa6c60397ddc392dfb4250494ebf55f89a42",
+      "source": "Objects/typeobject.c",
+      "source_sha256": "8f703a3fb67f126b416ec13d03b2fa6c60397ddc392dfb4250494ebf55f89a42",
+      "source_size": 352901
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/typevarobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "1159836aa8a1f6cc70699c8e8b8176c9a4e7257dd3c877a0539f37f2657fc17e",
+      "source": "Objects/typevarobject.c",
+      "source_sha256": "1159836aa8a1f6cc70699c8e8b8176c9a4e7257dd3c877a0539f37f2657fc17e",
+      "source_size": 58301
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/unicodeobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "77ffa6c7c7407207a531890f95e474c812fa1066bb0f22cd92887cf5717e83c7",
+      "source": "Objects/unicodeobject.c",
+      "source_sha256": "77ffa6c7c7407207a531890f95e474c812fa1066bb0f22cd92887cf5717e83c7",
+      "source_size": 474671
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/unicodectype.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9d7a35ac40018ad087c5d2d15f8214d5831456947d858e5b5c0cd9d529e4ce61",
+      "source": "Objects/unicodectype.c",
+      "source_sha256": "9d7a35ac40018ad087c5d2d15f8214d5831456947d858e5b5c0cd9d529e4ce61",
+      "source_size": 7236
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/unionobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "48969fb82caeb14a4a94c6df8de3e6fb32231de2ac9c7ac7e0afe738c195e67a",
+      "source": "Objects/unionobject.c",
+      "source_sha256": "48969fb82caeb14a4a94c6df8de3e6fb32231de2ac9c7ac7e0afe738c195e67a",
+      "source_size": 10083
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Objects/weakrefobject.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "3954c1d4fa64c6b259fc66bcbc7b35461bbbe7907a2de932f32f396e3b586103",
+      "source": "Objects/weakrefobject.c",
+      "source_sha256": "3954c1d4fa64c6b259fc66bcbc7b35461bbbe7907a2de932f32f396e3b586103",
+      "source_size": 32477
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/_warnings.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "bed91ba65456a2bc1ca278a4d320be978487563a566c79a9e57b0bf46c40352d",
+      "source": "Python/_warnings.c",
+      "source_sha256": "bed91ba65456a2bc1ca278a4d320be978487563a566c79a9e57b0bf46c40352d",
+      "source_size": 43088
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/Python-ast.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "83bb456d828d7e3d5fc9a6548a52640d4dccd4a45db86b89efb8a86f6bad5352",
+      "source": "Python/Python-ast.c",
+      "source_sha256": "83bb456d828d7e3d5fc9a6548a52640d4dccd4a45db86b89efb8a86f6bad5352",
+      "source_size": 601218
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/Python-tokenize.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "6c60d93c16a61bdb5a3f22529ccae951bae6da7dfe0f9346b756d659ffd78e91",
+      "source": "Python/Python-tokenize.c",
+      "source_sha256": "6c60d93c16a61bdb5a3f22529ccae951bae6da7dfe0f9346b756d659ffd78e91",
+      "source_size": 12783
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/asdl.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "804b29e5a74ecda3e1a164b48fc8bfe2fb75c5e2cec79e03d4cb52950e3020b6",
+      "source": "Python/asdl.c",
+      "source_sha256": "804b29e5a74ecda3e1a164b48fc8bfe2fb75c5e2cec79e03d4cb52950e3020b6",
+      "source_size": 188
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/assemble.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "239fa411b968ea61d854459459765a88bb667f2d08ca80e02a052d015b196216",
+      "source": "Python/assemble.c",
+      "source_sha256": "239fa411b968ea61d854459459765a88bb667f2d08ca80e02a052d015b196216",
+      "source_size": 24083
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/ast.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "252d53900f724511c7d2f00ab8042f387cbac4ea7abd63633c4f922d618663b2",
+      "source": "Python/ast.c",
+      "source_sha256": "252d53900f724511c7d2f00ab8042f387cbac4ea7abd63633c4f922d618663b2",
+      "source_size": 39788
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/ast_opt.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "1b1184f0c3f40446b266a1a4803939eaa68e727356c3d45e05e0a052da54d7f8",
+      "source": "Python/ast_opt.c",
+      "source_sha256": "1b1184f0c3f40446b266a1a4803939eaa68e727356c3d45e05e0a052da54d7f8",
+      "source_size": 36817
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/ast_unparse.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "0638dc83a3466d0fad2c026297dda8d46959d236ebf541af17a2f7b1cb6e621d",
+      "source": "Python/ast_unparse.c",
+      "source_sha256": "0638dc83a3466d0fad2c026297dda8d46959d236ebf541af17a2f7b1cb6e621d",
+      "source_size": 25398
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/bltinmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "707c3c3e599941828b79d5cfb4d355ad6a97ea72835bdf4510d2a627913b53f5",
+      "source": "Python/bltinmodule.c",
+      "source_sha256": "707c3c3e599941828b79d5cfb4d355ad6a97ea72835bdf4510d2a627913b53f5",
+      "source_size": 95929
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/brc.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "e0d7902c9949a9ad85cdd0206815df59f420f4c5262fd14294b8c8c5465bcb2c",
+      "source": "Python/brc.c",
+      "source_sha256": "e0d7902c9949a9ad85cdd0206815df59f420f4c5262fd14294b8c8c5465bcb2c",
+      "source_size": 7300
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/ceval.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "bacbfb00a03a2e6d7ac8296f080b367ef5c37fabea3080c29eef235b8d60a05b",
+      "source": "Python/ceval.c",
+      "source_sha256": "bacbfb00a03a2e6d7ac8296f080b367ef5c37fabea3080c29eef235b8d60a05b",
+      "source_size": 96668
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/codecs.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "910a58613c8332b1afa6c006595c536ca5ffa56845e65b3cf78b9e32219d511b",
+      "source": "Python/codecs.c",
+      "source_sha256": "910a58613c8332b1afa6c006595c536ca5ffa56845e65b3cf78b9e32219d511b",
+      "source_size": 46160
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/compile.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "5d3e05b7cdf3802044d7d2cc553321b915df780c576aed4c633b9430f18bcc22",
+      "source": "Python/compile.c",
+      "source_sha256": "5d3e05b7cdf3802044d7d2cc553321b915df780c576aed4c633b9430f18bcc22",
+      "source_size": 255383
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/context.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "ee433d59409e3a08de14cb136d425c10f8557bad98b3b6f94e48f8fabd369f4a",
+      "source": "Python/context.c",
+      "source_sha256": "ee433d59409e3a08de14cb136d425c10f8557bad98b3b6f94e48f8fabd369f4a",
+      "source_size": 31222
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/critical_section.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "d11d1d155a842af984ad25a0722d8d448766fd3590b1e37eaf40f7ecbeb66353",
+      "source": "Python/critical_section.c",
+      "source_sha256": "d11d1d155a842af984ad25a0722d8d448766fd3590b1e37eaf40f7ecbeb66353",
+      "source_size": 3422
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/crossinterp.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "edfa787d0bc509a4bda8262c1a531d74dcdff98555975bbc600075cd71069409",
+      "source": "Python/crossinterp.c",
+      "source_sha256": "edfa787d0bc509a4bda8262c1a531d74dcdff98555975bbc600075cd71069409",
+      "source_size": 51950
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/dynamic_annotations.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "a738cbdcc475ad3edf8e1d9dea2b0d81b57c5c923104c0b1fdb3048e0d8c0663",
+      "source": "Python/dynamic_annotations.c",
+      "source_sha256": "a738cbdcc475ad3edf8e1d9dea2b0d81b57c5c923104c0b1fdb3048e0d8c0663",
+      "source_size": 6751
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/errors.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "2fb80a97c0c53d8eb65fc474b8cd6dd2ddd9574a94fc8b7a221142d0b7a93f89",
+      "source": "Python/errors.c",
+      "source_sha256": "2fb80a97c0c53d8eb65fc474b8cd6dd2ddd9574a94fc8b7a221142d0b7a93f89",
+      "source_size": 54897
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/flowgraph.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "0cfcfb5191c9332320af0f5090ec599a5c539069152e610cc9fa07d72a6b6a27",
+      "source": "Python/flowgraph.c",
+      "source_sha256": "0cfcfb5191c9332320af0f5090ec599a5c539069152e610cc9fa07d72a6b6a27",
+      "source_size": 90062
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/frame.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "86e94c2791b089f914c8196029122ad2de1947b559992d286b167cc4180a8e60",
+      "source": "Python/frame.c",
+      "source_sha256": "86e94c2791b089f914c8196029122ad2de1947b559992d286b167cc4180a8e60",
+      "source_size": 5411
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/frozenmain.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "bf1bd37e7e13913864cc6212ecc9229b86780554a45cd86c70e55ed67a9555c6",
+      "source": "Python/frozenmain.c",
+      "source_sha256": "bf1bd37e7e13913864cc6212ecc9229b86780554a45cd86c70e55ed67a9555c6",
+      "source_size": 2250
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/future.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "f1912ba00b2467ce75db2937e7f0d64b4446a5c869e96145232d329bf6a9b99b",
+      "source": "Python/future.c",
+      "source_sha256": "f1912ba00b2467ce75db2937e7f0d64b4446a5c869e96145232d329bf6a9b99b",
+      "source_size": 3987
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/gc.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b219ecdf8aca3ddeb3f5bdfbd94a71f36ca51b408a8093ef63c1896b56bd8b88",
+      "source": "Python/gc.c",
+      "source_sha256": "b219ecdf8aca3ddeb3f5bdfbd94a71f36ca51b408a8093ef63c1896b56bd8b88",
+      "source_size": 67609
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/gc_free_threading.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "61d39f2ec49892e97945216801466ec304a354b8bd8c023623eef942fa5f49cc",
+      "source": "Python/gc_free_threading.c",
+      "source_sha256": "61d39f2ec49892e97945216801466ec304a354b8bd8c023623eef942fa5f49cc",
+      "source_size": 57171
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/gc_gil.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "0067c9d2c49f2e32180654e0c8c973f8ab71ca157a3bb0675452a83f471b32a1",
+      "source": "Python/gc_gil.c",
+      "source_sha256": "0067c9d2c49f2e32180654e0c8c973f8ab71ca157a3bb0675452a83f471b32a1",
+      "source_size": 481
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/getargs.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "5f7793ae70448523902608c055c0ee2665c3bf9e2e4313ba9ea612a637910707",
+      "source": "Python/getargs.c",
+      "source_sha256": "5f7793ae70448523902608c055c0ee2665c3bf9e2e4313ba9ea612a637910707",
+      "source_size": 89726
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/getcompiler.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "99bab19f2092832e8d56481b477096ca5965831b31c82ff25d559a53b4034e82",
+      "source": "Python/getcompiler.c",
+      "source_sha256": "99bab19f2092832e8d56481b477096ca5965831b31c82ff25d559a53b4034e82",
+      "source_size": 534
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/getcopyright.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "dc4983d83de1ed5ffb2656ed3f376fb0eeac30bfe63557866621bf412bb531ee",
+      "source": "Python/getcopyright.c",
+      "source_sha256": "dc4983d83de1ed5ffb2656ed3f376fb0eeac30bfe63557866621bf412bb531ee",
+      "source_size": 511
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/getplatform.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9a35aa63fba4355a90a2cdc78c3472afa1b9969a48a8bc7413e00c4fed68bbee",
+      "source": "Python/getplatform.c",
+      "source_sha256": "9a35aa63fba4355a90a2cdc78c3472afa1b9969a48a8bc7413e00c4fed68bbee",
+      "source_size": 133
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/getversion.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "aaf83e1023f2c70c3869f0a09bbd67ab022386ab2b1df73913cd43f7a7ce51d5",
+      "source": "Python/getversion.c",
+      "source_sha256": "aaf83e1023f2c70c3869f0a09bbd67ab022386ab2b1df73913cd43f7a7ce51d5",
+      "source_size": 733
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/ceval_gil.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "114cf33298da30d1c5f845aa821991e1ecccae0fe6f3e64b725bcb9c0d32de61",
+      "source": "Python/ceval_gil.c",
+      "source_sha256": "114cf33298da30d1c5f845aa821991e1ecccae0fe6f3e64b725bcb9c0d32de61",
+      "source_size": 43256
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/hamt.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b1aa9b2bf94dec934f4d2c8de966fbc130328041aa24bc907b07770f3fc7102f",
+      "source": "Python/hamt.c",
+      "source_sha256": "b1aa9b2bf94dec934f4d2c8de966fbc130328041aa24bc907b07770f3fc7102f",
+      "source_size": 79521
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/hashtable.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "cc7c41607d3039d7b987b889f31a3221a07ed6570549b48971ce147da7fc7eaf",
+      "source": "Python/hashtable.c",
+      "source_sha256": "cc7c41607d3039d7b987b889f31a3221a07ed6570549b48971ce147da7fc7eaf",
+      "source_size": 11614
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/import.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "4e18922dc31001c24fd9875746881ab407252bddc6bca544f22403d50e493a61",
+      "source": "Python/import.c",
+      "source_sha256": "58a5fac8fac5916511f890f3fdd095d817e6f32ab709ebf0ed0becf9328226b1",
+      "source_size": 146559
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/importdl.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "a1851ac8bd93db07e1bbe96ce8b94f5fd7cdc209d3a5c4ca0b33a1bdd68ce1fd",
+      "source": "Python/importdl.c",
+      "source_sha256": "a1851ac8bd93db07e1bbe96ce8b94f5fd7cdc209d3a5c4ca0b33a1bdd68ce1fd",
+      "source_size": 17072
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/initconfig.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "cd994293e560e14e2ceae100c36e7aa7435665dddb08e2038f33ee4e594143ee",
+      "source": "Python/initconfig.c",
+      "source_sha256": "cd994293e560e14e2ceae100c36e7aa7435665dddb08e2038f33ee4e594143ee",
+      "source_size": 93973
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/interpconfig.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "f0bbc4786b8695ebfd4931979d4b21e477097adb63559b56172fa3bbfbcd2874",
+      "source": "Python/interpconfig.c",
+      "source_sha256": "f0bbc4786b8695ebfd4931979d4b21e477097adb63559b56172fa3bbfbcd2874",
+      "source_size": 8191
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/instrumentation.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "edeba80d19f1129192dd89b1f5569eed9cdf0da372d3f740408bf5f43d7541ba",
+      "source": "Python/instrumentation.c",
+      "source_sha256": "edeba80d19f1129192dd89b1f5569eed9cdf0da372d3f740408bf5f43d7541ba",
+      "source_size": 90808
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/instruction_sequence.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "816dff5504b08b1b47d12cbce53aeb804150f766ff0781e33ef93443bcf1d622",
+      "source": "Python/instruction_sequence.c",
+      "source_sha256": "816dff5504b08b1b47d12cbce53aeb804150f766ff0781e33ef93443bcf1d622",
+      "source_size": 13124
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/intrinsics.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "f99dd40886e0abec7f3fb8caa151933959a65cca1ba1ff0249d179abff6886b4",
+      "source": "Python/intrinsics.c",
+      "source_sha256": "f99dd40886e0abec7f3fb8caa151933959a65cca1ba1ff0249d179abff6886b4",
+      "source_size": 9073
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/jit.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "8a3770c49cbc34be78484b4fc1eed758c85a8a5c8fde56744e536c584da6c644",
+      "source": "Python/jit.c",
+      "source_sha256": "8a3770c49cbc34be78484b4fc1eed758c85a8a5c8fde56744e536c584da6c644",
+      "source_size": 16476
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/legacy_tracing.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "48a1ec63a43be799fecdf419e889f1dfce0621081fef7d1fd5abd46940054583",
+      "source": "Python/legacy_tracing.c",
+      "source_sha256": "48a1ec63a43be799fecdf419e889f1dfce0621081fef7d1fd5abd46940054583",
+      "source_size": 24543
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/lock.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "00c3aa89c56f9a53a399caba05421009571c548e9bb805839cc2172483648f70",
+      "source": "Python/lock.c",
+      "source_sha256": "00c3aa89c56f9a53a399caba05421009571c548e9bb805839cc2172483648f70",
+      "source_size": 16919
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/marshal.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "7594109d02671fb2386555d21581a0599d61d519a145405e757e0c4069f6c0bb",
+      "source": "Python/marshal.c",
+      "source_sha256": "7594109d02671fb2386555d21581a0599d61d519a145405e757e0c4069f6c0bb",
+      "source_size": 55154
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/modsupport.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9f8aad6f33d7984f9f6fb66b324a05ece1de4d2eef91ab015202611b3b4409f3",
+      "source": "Python/modsupport.c",
+      "source_sha256": "9f8aad6f33d7984f9f6fb66b324a05ece1de4d2eef91ab015202611b3b4409f3",
+      "source_size": 16356
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/mysnprintf.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9e6454473126467a5c20be90388fa1fd3b3329605313624464d8e0661ba34608",
+      "source": "Python/mysnprintf.c",
+      "source_sha256": "9e6454473126467a5c20be90388fa1fd3b3329605313624464d8e0661ba34608",
+      "source_size": 2546
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/mystrtoul.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b4f39d1cfef4dd4ed2261d922462185e23e44fc5822a30dd9e627526619dfac3",
+      "source": "Python/mystrtoul.c",
+      "source_sha256": "b4f39d1cfef4dd4ed2261d922462185e23e44fc5822a30dd9e627526619dfac3",
+      "source_size": 8533
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/object_stack.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c9a7a19824a22475fa5a77c1adaa8c111702dc4d4710f9d26cab1b179e37c743",
+      "source": "Python/object_stack.c",
+      "source_sha256": "c9a7a19824a22475fa5a77c1adaa8c111702dc4d4710f9d26cab1b179e37c743",
+      "source_size": 2993
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/optimizer.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "eac50eb2465cf9a28a9a2ec2553ab5233c6add8a8e3543088df83be062c2df39",
+      "source": "Python/optimizer.c",
+      "source_sha256": "eac50eb2465cf9a28a9a2ec2553ab5233c6add8a8e3543088df83be062c2df39",
+      "source_size": 59570
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/optimizer_analysis.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "f5c57cb5fb73f3a418d093f86ffd78b27c6730198bb365683cc8df9affe53878",
+      "source": "Python/optimizer_analysis.c",
+      "source_sha256": "f5c57cb5fb73f3a418d093f86ffd78b27c6730198bb365683cc8df9affe53878",
+      "source_size": 20177
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/optimizer_symbols.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "0541e9665ba3fccbbaea1c55fd9732aa9efe3017c084ee861f1cc5c373c2a8e2",
+      "source": "Python/optimizer_symbols.c",
+      "source_sha256": "0541e9665ba3fccbbaea1c55fd9732aa9efe3017c084ee861f1cc5c373c2a8e2",
+      "source_size": 14092
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/parking_lot.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "d3ed9ff299d34bb75e321d5647883902b23b4f8c7b351af0415ef5ab830ccc81",
+      "source": "Python/parking_lot.c",
+      "source_sha256": "d3ed9ff299d34bb75e321d5647883902b23b4f8c7b351af0415ef5ab830ccc81",
+      "source_size": 11583
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pathconfig.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "ddbc2e9662bc526a480d2f66e2df82f09e5aabf5b6c24f2e325c8839e2060ee6",
+      "source": "Python/pathconfig.c",
+      "source_sha256": "ddbc2e9662bc526a480d2f66e2df82f09e5aabf5b6c24f2e325c8839e2060ee6",
+      "source_size": 12620
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/preconfig.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "cf75e44a6d6e55730ecb3dbe18aeedd0ca6140354d1b64d40e50aa2e61ceee1d",
+      "source": "Python/preconfig.c",
+      "source_sha256": "cf75e44a6d6e55730ecb3dbe18aeedd0ca6140354d1b64d40e50aa2e61ceee1d",
+      "source_size": 25604
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pyarena.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "6a116d469a5d7b8376ca4d1dda1dc3f6c1ffccb768318d841c6e2676cc5b4663",
+      "source": "Python/pyarena.c",
+      "source_sha256": "6a116d469a5d7b8376ca4d1dda1dc3f6c1ffccb768318d841c6e2676cc5b4663",
+      "source_size": 5654
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pyctype.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "260df65acc66ddede754bb4d159de5acdf1bb91924ce4475d4d8129f16cbb753",
+      "source": "Python/pyctype.c",
+      "source_sha256": "260df65acc66ddede754bb4d159de5acdf1bb91924ce4475d4d8129f16cbb753",
+      "source_size": 7916
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pyfpe.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c0e4331840c1c6b4902b586ffd1c73d654e570767234098bc0c21ddab3fd1d6a",
+      "source": "Python/pyfpe.c",
+      "source_sha256": "c0e4331840c1c6b4902b586ffd1c73d654e570767234098bc0c21ddab3fd1d6a",
+      "source_size": 374
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pyhash.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "703939f6ce6197d9454fb147092d6854eab598dfc905b811c875d5d3020f2e09",
+      "source": "Python/pyhash.c",
+      "source_sha256": "703939f6ce6197d9454fb147092d6854eab598dfc905b811c875d5d3020f2e09",
+      "source_size": 15249
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pylifecycle.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "21296f86275077e4f19234a2c32691ee087fea961c28745770373a6c4ef70789",
+      "source": "Python/pylifecycle.c",
+      "source_sha256": "21296f86275077e4f19234a2c32691ee087fea961c28745770373a6c4ef70789",
+      "source_size": 106247
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pymath.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "7e7002eafa598ae28999da1189641fa463c5f4ba99d3b9d7edaffc27ceb63f83",
+      "source": "Python/pymath.c",
+      "source_sha256": "7e7002eafa598ae28999da1189641fa463c5f4ba99d3b9d7edaffc27ceb63f83",
+      "source_size": 478
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pystate.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c686fbd38342cca929d6cdaf5047b9afed5ad7c95a660bf0da7fab56e3f44770",
+      "source": "Python/pystate.c",
+      "source_sha256": "c686fbd38342cca929d6cdaf5047b9afed5ad7c95a660bf0da7fab56e3f44770",
+      "source_size": 92012
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pythonrun.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "3e70f55802fa8183a2c811d26f840c035bd5ceac107753f6b7dd1af6de7ff9d7",
+      "source": "Python/pythonrun.c",
+      "source_sha256": "3e70f55802fa8183a2c811d26f840c035bd5ceac107753f6b7dd1af6de7ff9d7",
+      "source_size": 48272
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pytime.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "12c3b1e52d18d88f2d632c47d37751801ccc569d1c7ddd753e33175b16730606",
+      "source": "Python/pytime.c",
+      "source_sha256": "12c3b1e52d18d88f2d632c47d37751801ccc569d1c7ddd753e33175b16730606",
+      "source_size": 31990
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/qsbr.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "5a282b1c932020dc44df9e46b9960dd7dee9d21ec4c6604967bb19c840ce25f7",
+      "source": "Python/qsbr.c",
+      "source_sha256": "5a282b1c932020dc44df9e46b9960dd7dee9d21ec4c6604967bb19c840ce25f7",
+      "source_size": 9250
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/bootstrap_hash.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "dd239752ab373d85f01a00a87a8516ba9feb0fdf510adbca402c78d94245400b",
+      "source": "Python/bootstrap_hash.c",
+      "source_sha256": "dd239752ab373d85f01a00a87a8516ba9feb0fdf510adbca402c78d94245400b",
+      "source_size": 18343
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/specialize.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "175b3b824971a1577da15bc7e8932dd91f96940aa8218f5ca577e2b9fb342ebe",
+      "source": "Python/specialize.c",
+      "source_sha256": "175b3b824971a1577da15bc7e8932dd91f96940aa8218f5ca577e2b9fb342ebe",
+      "source_size": 92845
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/structmember.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "cca9371b09004abf5d9cfdaf69c847dce3b66ef33b95b5e7cd44f519294c50e2",
+      "source": "Python/structmember.c",
+      "source_sha256": "cca9371b09004abf5d9cfdaf69c847dce3b66ef33b95b5e7cd44f519294c50e2",
+      "source_size": 11207
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/symtable.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "e7a90b60b9a3d73e429c3538efcea7fb795c2a35a1a09f0675929dfe1b7ede3d",
+      "source": "Python/symtable.c",
+      "source_sha256": "e7a90b60b9a3d73e429c3538efcea7fb795c2a35a1a09f0675929dfe1b7ede3d",
+      "source_size": 102894
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/sysmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9767ec9be310810126ae10eb4441ca9f0b40f9f7ab64cd26a036da4867790ca1",
+      "source": "Python/sysmodule.c",
+      "source_sha256": "9767ec9be310810126ae10eb4441ca9f0b40f9f7ab64cd26a036da4867790ca1",
+      "source_size": 118571
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/thread.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c09c70c488f9f0b6563f55aed426b71175166bc039be324e655f90af12db77d4",
+      "source": "Python/thread.c",
+      "source_sha256": "c09c70c488f9f0b6563f55aed426b71175166bc039be324e655f90af12db77d4",
+      "source_size": 8163
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/traceback.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "6bb76bb867f91765eeaa7ee38343f05e230c3085a1c3b1d61536314064c22078",
+      "source": "Python/traceback.c",
+      "source_sha256": "6bb76bb867f91765eeaa7ee38343f05e230c3085a1c3b1d61536314064c22078",
+      "source_size": 30729
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/tracemalloc.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "c0f337aab4073fc68c3382d4c279e8bb063471cc104129212f1699fc1ebff657",
+      "source": "Python/tracemalloc.c",
+      "source_sha256": "c0f337aab4073fc68c3382d4c279e8bb063471cc104129212f1699fc1ebff657",
+      "source_size": 41213
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/getopt.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "65f0db353ec829f73eb09af141fcd551f2e2cc169d6f6313f69af12cc42c8670",
+      "source": "Python/getopt.c",
+      "source_sha256": "65f0db353ec829f73eb09af141fcd551f2e2cc169d6f6313f69af12cc42c8670",
+      "source_size": 4817
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pystrcmp.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9b5df35df61dc3125a1ab263c16e8486217f3fecd9e3eca674baa7f5d681691f",
+      "source": "Python/pystrcmp.c",
+      "source_sha256": "9b5df35df61dc3125a1ab263c16e8486217f3fecd9e3eca674baa7f5d681691f",
+      "source_size": 777
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pystrtod.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "4f630125a735cf92b7d24a200fe038ce3957e34ce18152c8648d50f7c1126a0c",
+      "source": "Python/pystrtod.c",
+      "source_sha256": "4f630125a735cf92b7d24a200fe038ce3957e34ce18152c8648d50f7c1126a0c",
+      "source_size": 41092
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/pystrhex.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "7842f6d7d9b58bcbf10cbb24d29f6d1f36668e20f935689e197bbe0abdccd4ed",
+      "source": "Python/pystrhex.c",
+      "source_sha256": "7842f6d7d9b58bcbf10cbb24d29f6d1f36668e20f935689e197bbe0abdccd4ed",
+      "source_size": 5469
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [
+        "-fno-strict-aliasing"
+      ],
+      "object": "Python/dtoa.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "653c4f8703d6bf72626c3c077f25ae5a2c6879934fc212c5eac43801a06a1f77",
+      "source": "Python/dtoa.c",
+      "source_sha256": "653c4f8703d6bf72626c3c077f25ae5a2c6879934fc212c5eac43801a06a1f77",
+      "source_size": 80498
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/formatter_unicode.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "09b094e91a8a27fd5abf9ae3bda37e2a4c2511134a6bea34f60b220cc02fc66b",
+      "source": "Python/formatter_unicode.c",
+      "source_sha256": "09b094e91a8a27fd5abf9ae3bda37e2a4c2511134a6bea34f60b220cc02fc66b",
+      "source_size": 52400
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/fileutils.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "120c3277a0d5557e6fec23396ace2613582dbcea72ca40b5dba202b2073a1788",
+      "source": "Python/fileutils.c",
+      "source_sha256": "120c3277a0d5557e6fec23396ace2613582dbcea72ca40b5dba202b2073a1788",
+      "source_size": 87660
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/suggestions.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9be086dd1db661c46b518d34959d1f2621cbd93d7723f2f246a77534d47d7e55",
+      "source": "Python/suggestions.c",
+      "source_sha256": "9be086dd1db661c46b518d34959d1f2621cbd93d7723f2f246a77534d47d7e55",
+      "source_size": 6267
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/perf_trampoline.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "4871559a670359aaf5bf141d244859fe8d4584c7bded38ac66fefa9e2623b5b0",
+      "source": "Python/perf_trampoline.c",
+      "source_sha256": "4871559a670359aaf5bf141d244859fe8d4584c7bded38ac66fefa9e2623b5b0",
+      "source_size": 20590
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/perf_jit_trampoline.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "14a0e41e148d50a477bb918c77559f58637a219f1189a81e170c0ad7de899aae",
+      "source": "Python/perf_jit_trampoline.c",
+      "source_sha256": "14a0e41e148d50a477bb918c77559f58637a219f1189a81e170c0ad7de899aae",
+      "source_size": 57314
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Modules/config.o",
+      "origin": "installation-owned-table",
+      "reviewed_source_sha256": "f88d5155d330bafa52dba00030fb4c8dfcd4f3844e996b34980f81a30089fb0c",
+      "source": "generated-sources/Modules/config.c",
+      "source_sha256": "f88d5155d330bafa52dba00030fb4c8dfcd4f3844e996b34980f81a30089fb0c",
+      "source_size": 1576
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Modules/main.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "98fefe24f0e6321ceb2d18b0dd0e4cf58f57c3d74c097df514af3c5592da1b86",
+      "source": "Modules/main.c",
+      "source_sha256": "98fefe24f0e6321ceb2d18b0dd0e4cf58f57c3d74c097df514af3c5592da1b86",
+      "source_size": 21580
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Modules/gcmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "55d2cbe2708c72ffd46701e777bd56d7815b57e3ae617924a14efc313f2ae131",
+      "source": "Modules/gcmodule.c",
+      "source_sha256": "55d2cbe2708c72ffd46701e777bd56d7815b57e3ae617924a14efc313f2ae131",
+      "source_size": 15544
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Modules/getbuildinfo.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "0da696d7d7b47ef6a310ed8f199ce71998f1a3a6d3a31010a7079b637e5b22ce",
+      "source": "Modules/getbuildinfo.c",
+      "source_sha256": "0da696d7d7b47ef6a310ed8f199ce71998f1a3a6d3a31010a7079b637e5b22ce",
+      "source_size": 1533
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "Python/dynload_stub.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "e190997f16b2c5e045a6e6be84565c07c3476dc16f3990a4f55cde9ddb9b94ba",
+      "source": "Python/dynload_stub.c",
+      "source_sha256": "e190997f16b2c5e045a6e6be84565c07c3476dc16f3990a4f55cde9ddb9b94ba",
+      "source_size": 193
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/atexitmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "a61f11e295d38463b36524e51b8eba64d5a84022bb7df7b3c0ccd8aa9fe9521b",
+      "source": "Modules/atexitmodule.c",
+      "source_sha256": "a61f11e295d38463b36524e51b8eba64d5a84022bb7df7b3c0ccd8aa9fe9521b",
+      "source_size": 9107
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/faulthandler.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "d9db230f54d4c5d16e176a32cb7f3dc654fa6570f3ebef989bb50377343f8c30",
+      "source": "Modules/faulthandler.c",
+      "source_sha256": "d9db230f54d4c5d16e176a32cb7f3dc654fa6570f3ebef989bb50377343f8c30",
+      "source_size": 41333
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/posixmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "b5cc39c677fca677ee9890dffa7d535ca43ae0cf4a2e8c164595daedacef3417",
+      "source": "Modules/posixmodule.c",
+      "source_sha256": "b5cc39c677fca677ee9890dffa7d535ca43ae0cf4a2e8c164595daedacef3417",
+      "source_size": 488050
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/signalmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "130c8d11f9448ae60199c19d2cfba01d4ba7048e21eaf37f727ff32edba31aa0",
+      "source": "Modules/signalmodule.c",
+      "source_sha256": "130c8d11f9448ae60199c19d2cfba01d4ba7048e21eaf37f727ff32edba31aa0",
+      "source_size": 55016
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_codecsmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "149a20c2d7aee22281ddd8756ae7eae685ae0ef21764138d41f367443182041e",
+      "source": "Modules/_codecsmodule.c",
+      "source_sha256": "149a20c2d7aee22281ddd8756ae7eae685ae0ef21764138d41f367443182041e",
+      "source_size": 33553
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_io/_iomodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "9d04adc6fd2b493f3a7de3b519abbfd60476b209ccd3428eff4ed1cdf06cbaf2",
+      "source": "Modules/_io/_iomodule.c",
+      "source_sha256": "9d04adc6fd2b493f3a7de3b519abbfd60476b209ccd3428eff4ed1cdf06cbaf2",
+      "source_size": 24972
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_io/iobase.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "17f3bd15d2642dab919872eda3c2941caa8eee423fbeb1a4fa23fd587805543e",
+      "source": "Modules/_io/iobase.c",
+      "source_sha256": "17f3bd15d2642dab919872eda3c2941caa8eee423fbeb1a4fa23fd587805543e",
+      "source_size": 28484
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_io/fileio.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "1551be43c2b3b5541c8a23084820ec3c812793b33bbc418d9919beb2eadee54c",
+      "source": "Modules/_io/fileio.c",
+      "source_sha256": "1551be43c2b3b5541c8a23084820ec3c812793b33bbc418d9919beb2eadee54c",
+      "source_size": 32144
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_io/bytesio.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "febc7e747291af0dfb6690216055ed42e832595757ac9795933f40fb5f1a4ecc",
+      "source": "Modules/_io/bytesio.c",
+      "source_sha256": "febc7e747291af0dfb6690216055ed42e832595757ac9795933f40fb5f1a4ecc",
+      "source_size": 30655
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_io/bufferedio.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "ec65527fceaa760abe1aa83c40b12d71ef7e00815eb852a48ce2bdaa244639fb",
+      "source": "Modules/_io/bufferedio.c",
+      "source_sha256": "ec65527fceaa760abe1aa83c40b12d71ef7e00815eb852a48ce2bdaa244639fb",
+      "source_size": 78272
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_io/textio.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "e162a17a1fe9b42c98eab26c87b73928041e271fc42ff0a5e7d2c6e1e8d4bb92",
+      "source": "Modules/_io/textio.c",
+      "source_sha256": "e162a17a1fe9b42c98eab26c87b73928041e271fc42ff0a5e7d2c6e1e8d4bb92",
+      "source_size": 101579
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_io/stringio.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "69ebd26b1dd6f0d7c4cbc33e2cc3f90f32f6cdeda105d061dc2a2b317984ab26",
+      "source": "Modules/_io/stringio.c",
+      "source_sha256": "69ebd26b1dd6f0d7c4cbc33e2cc3f90f32f6cdeda105d061dc2a2b317984ab26",
+      "source_size": 30453
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_threadmodule.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "f55ef723f55e9bb3cc811a20f039662f7cd810dcf50ad9ee7926385e1d7375be",
+      "source": "Modules/_threadmodule.c",
+      "source_sha256": "f55ef723f55e9bb3cc811a20f039662f7cd810dcf50ad9ee7926385e1d7375be",
+      "source_size": 78036
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_weakref.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "d610b1d15befe74646afd2a452514c73707bdc8416ad842c45a43d093510a911",
+      "source": "Modules/_weakref.c",
+      "source_sha256": "d610b1d15befe74646afd2a452514c73707bdc8416ad842c45a43d093510a911",
+      "source_size": 4845
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/_abc.o",
+      "origin": "reviewed-cpython-git-source",
+      "reviewed_source_sha256": "a4abd74e245af77f5a8c40ac8d443153ff8636e4e10a8578e9dddecaa3d0b9e8",
+      "source": "Modules/_abc.c",
+      "source_sha256": "a4abd74e245af77f5a8c40ac8d443153ff8636e4e10a8578e9dddecaa3d0b9e8",
+      "source_size": 27112
+    },
+    {
+      "compile_role": "builtin",
+      "extra_flags": [],
+      "object": "Modules/lunar_fixture_pipe.o",
+      "origin": "fixture-asset",
+      "reviewed_source_sha256": "60af02a3f3a5e5dbfab6926a968acefa41ff2054e6fa0f38e53f4ec883f69cd2",
+      "source": "tools/static_python_fixture/assets/pipe.c",
+      "source_sha256": "60af02a3f3a5e5dbfab6926a968acefa41ff2054e6fa0f38e53f4ec883f69cd2",
+      "source_size": 3030
+    }
+  ],
+  "source_commit": "1cbe481834751b0125e006042ffbd8cd5eaec8a8",
+  "source_preparation": {
+    "files": [
+      {
+        "after_sha256": "43aadac378861c1bbdaaf04be8e1bb7d878529a7641ec123b5df4eccdd4c6106",
+        "after_size": 802,
+        "before_sha256": "cac92d68c7ea5bc0f05b448b9144e3bdf236d0b7d27ab66112e96d43aad15b3f",
+        "before_size": 15713,
+        "path": "Lib/encodings/aliases.py"
+      },
+      {
+        "after_sha256": "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab",
+        "after_size": 64722,
+        "before_sha256": "a97a03ea9f9d38d90c8a50942183382ff5a479e7c4c5163c2ac5bae3561444ae",
+        "before_size": 73219,
+        "path": "Lib/importlib/_bootstrap_external.py"
+      },
+      {
+        "after_sha256": "58a5fac8fac5916511f890f3fdd095d817e6f32ab709ebf0ed0becf9328226b1",
+        "after_size": 146559,
+        "before_sha256": "4e18922dc31001c24fd9875746881ab407252bddc6bca544f22403d50e493a61",
+        "before_size": 146770,
+        "path": "Python/import.c"
+      }
+    ],
+    "patch_set_sha256": "f3f740c644165d8c4d2e89840a1e75427806c12c13debf843d3b6fb2cc90f479"
+  },
+  "source_version": "3.13.12",
+  "states": {
+    "compile_performed": false,
+    "configure_performed": false,
+    "execution_performed": false,
+    "frozen_headers_generated": false,
+    "general_code_origin_protection": false,
+    "link_performed": false,
+    "production_admission": false,
+    "runtime_load_protection": false,
+    "source_archive_verified": false,
+    "toolchain_verified": false
+  },
+  "stock_excluded": {
+    "both": [
+      "Python/frozen.o",
+      "Modules/getpath.o",
+      "Programs/python.o",
+      "Programs/_bootstrap_python.o"
+    ],
+    "freezer": [
+      "installation-owned-finite-frozen.o"
+    ],
+    "optional_module_discovery": "not-disabled-by-this-input-plan",
+    "target": [
+      "Programs/_freeze_module.o",
+      "Modules/getpath_noop.o"
+    ]
+  },
+  "target_units": [
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "installation-owned-launcher.o",
+      "origin": "fixture-asset",
+      "reviewed_source_sha256": "79a4462386f54dfe36ea87838523fe652bbc59e72db4505175fd3b6870837735",
+      "source": "tools/static_python_fixture/assets/launcher.c",
+      "source_sha256": "79a4462386f54dfe36ea87838523fe652bbc59e72db4505175fd3b6870837735",
+      "source_size": 1546
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "installation-owned-profile.o",
+      "origin": "fixture-asset",
+      "reviewed_source_sha256": "3a4b2cbdb57322820aef04aaf55b92a9e085db52818f7cee4e48c33bb5ae98db",
+      "source": "tools/static_python_fixture/assets/profile.c",
+      "source_sha256": "3a4b2cbdb57322820aef04aaf55b92a9e085db52818f7cee4e48c33bb5ae98db",
+      "source_size": 3452
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "installation-owned-strict-getpath.o",
+      "origin": "fixture-asset",
+      "reviewed_source_sha256": "a067fe6dc9a2bd63d5847e29b14c9b7c30d42432dcf1f505bb461feae6b2d722",
+      "source": "tools/static_python_fixture/assets/getpath.c",
+      "source_sha256": "a067fe6dc9a2bd63d5847e29b14c9b7c30d42432dcf1f505bb461feae6b2d722",
+      "source_size": 1288
+    },
+    {
+      "compile_role": "core",
+      "extra_flags": [],
+      "object": "installation-owned-finite-frozen.o",
+      "origin": "installation-owned-table",
+      "reviewed_source_sha256": "70a872d666061c85a17a555aba090689b39c6a4c5786aae82c9d3e41432bcecf",
+      "source": "generated-sources/Python/frozen.c",
+      "source_sha256": "70a872d666061c85a17a555aba090689b39c6a4c5786aae82c9d3e41432bcecf",
+      "source_size": 2417
+    }
+  ],
+  "unresolved_configuration": [
+    "LIBOBJS",
+    "MACHDEP_OBJS",
+    "DTRACE_OBJS",
+    "PLATFORM_OBJS",
+    "PERF_TRAMPOLINE_OBJ",
+    "MODOBJS/MODLIBS",
+    "LIBS/SYSLIBS/compiler-support/CRT/libc/libm"
+  ]
+}
