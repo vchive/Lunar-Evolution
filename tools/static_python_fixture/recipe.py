@@ -11,12 +11,11 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .build_inputs import emit_static_python_build_inputs
 from .profile import (
     BUILTINS,
     CPYTHON_ARCHIVE,
     FROZEN,
-    MAX_IMAGE_BYTES,
-    TARGET,
     ZIG_ARCHIVE,
     manifest,
 )
@@ -167,61 +166,54 @@ def emit_assets(destination: Path) -> tuple[str, ...]:
 
 
 def _build_script(destination: Path) -> str:
+    # No opt-in can authorize an incomplete configure/object/archive closure.
     return """#!/bin/sh
 set -eu
 umask 022
 __LUNAR_RECIPE_ASSIGNMENT__
-if [ \"${LUNAR_STATIC_EXECUTE:-0}\" != 1 ]; then
-  echo 'PLAN ONLY: set LUNAR_STATIC_EXECUTE=1 in pinned Linux CI to run build steps' >&2
+if [ "${LUNAR_STATIC_EXECUTE:-0}" != 1 ]; then
+  echo 'PLAN ONLY: static Python build inputs are not admitted for execution' >&2
   exit 78
 fi
-: \"${LUNAR_STATIC_SOURCE:?set to verified extracted CPython root}\"
-: \"${LUNAR_STATIC_ZIG:?set to verified Zig 0.16.0 root}\"
-: \"${LUNAR_STATIC_OUT:?set to an empty output directory}\"
-case \"$LUNAR_STATIC_SOURCE\" in /*) ;; *) echo 'source must be absolute' >&2; exit 64;; esac
-case \"$LUNAR_STATIC_ZIG\" in /*) ;; *) echo 'zig must be absolute' >&2; exit 64;; esac
-case \"$LUNAR_STATIC_OUT\" in /*) ;; *) echo 'out must be absolute' >&2; exit 64;; esac
-test -d \"$LUNAR_STATIC_SOURCE\" && test -x \"$LUNAR_STATIC_ZIG/zig\"
-test ! -e \"$LUNAR_STATIC_OUT\"; mkdir \"$LUNAR_STATIC_OUT\"
-exec env -i PATH=/usr/bin:/bin LC_ALL=C TZ=UTC SOURCE_DATE_EPOCH=0 CONFIG_SITE=/dev/null \\
-  LUNAR_STATIC_SOURCE=\"$LUNAR_STATIC_SOURCE\" LUNAR_STATIC_ZIG=\"$LUNAR_STATIC_ZIG\" \\
-  LUNAR_STATIC_OUT=\"$LUNAR_STATIC_OUT\" LUNAR_STATIC_RECIPE_DIR=\"$LUNAR_STATIC_RECIPE_DIR\" \\
-  LUNAR_STATIC_EXECUTE=\"$LUNAR_STATIC_EXECUTE\" \\
-  ac_cv_func_dlopen=no LUNAR_STATIC_CLEAN_ENV=1 \\
-  sh \"$LUNAR_STATIC_RECIPE_DIR/linux-build-commands.sh\"
+echo 'PLAN ONLY: configured object/archive closure remains unverified; configure, compiler and freezer are disabled' >&2
+exit 78
 """.replace("__LUNAR_RECIPE_ASSIGNMENT__",
             "LUNAR_STATIC_RECIPE_DIR=" + shlex.quote(str(destination)))
 
 
 def _commands() -> str:
-    generated = []
-    for name, generator_id, source, _package in FROZEN:
-        input_path = "$LUNAR_STATIC_RECIPE_DIR/assets/frozen_main.py" if name == "_lunar_static_main" else (
-            f"$LUNAR_STATIC_SOURCE/{source}"
-        )
-        output_name = generator_id + ".h"
-        generated.append(
-            f'./Programs/_freeze_module {shlex.quote(generator_id)} "{input_path}" '
-            f'"$LUNAR_STATIC_OUT/generated/{output_name}"'
-        )
-    generator_lines = "\n".join(generated)
-    return f"""#!/bin/sh
+    return """#!/bin/sh
 set -eu
-cd \"$LUNAR_STATIC_SOURCE\"
-export CC=\"$LUNAR_STATIC_ZIG/zig cc -target {TARGET}\"
-export AR=\"$LUNAR_STATIC_ZIG/zig ar\"
-export RANLIB=\"$LUNAR_STATIC_ZIG/zig ranlib\"
-./configure --host={TARGET} --build={TARGET} --disable-shared --disable-test-modules \\
-  --with-ensurepip=no --with-computed-gotos --with-pymalloc
-# Do not run regen-frozen. Build Programs/_freeze_module from the same object set.
-make Programs/_freeze_module
-mkdir -p "$LUNAR_STATIC_OUT/generated"
-{generator_lines}
-# Apply reviewed exact patches, compile emitted assets, and direct-link the manifest map.
-# A later verifier must inspect DT_NEEDED/PT_INTERP and enforce image <= {MAX_IMAGE_BYTES} bytes.
-echo 'PLAN ONLY: compile/link requires explicit Linux CI opt-in' >&2
+# The exact candidate inputs and nine pending freezer tasks are in build-inputs.json.
+# They are source-review facts, not an observed configured object/archive closure.
+# Stock make, configure and a host Python freezer cannot substitute for that gate.
+echo 'PLAN ONLY: configure, compiler, linker and freezer remain disabled' >&2
 exit 78
 """
+
+
+def _verify_emitted_source_assets(destination: Path, inputs: dict[str, object]) -> None:
+    """Check local emitted bytes against the separately pinned candidate plan.
+
+    Upstream and prepared CPython inputs have not been acquired here. Only
+    installation-owned source assets actually written by this emitter are read.
+    """
+    records = [*inputs["shared_units"], *inputs["target_units"], *inputs["freeze_tasks"]]
+    for item in records:
+        origin = item["origin"]
+        if origin == "fixture-asset":
+            relative = "assets/" + Path(item["source"]).name
+        elif origin in {"installation-owned-table", "expanded-fixture-asset"}:
+            relative = item["source"]
+        else:
+            continue
+        raw = (destination / relative).read_bytes()
+        if len(raw) != item["source_size"] or hashlib.sha256(raw).hexdigest() != item["source_sha256"]:
+            raise RecipeError(f"emitted source asset drift: {relative}")
+    for item in [*inputs["generated_sources"], *inputs["fixture_headers"]]:
+        raw = (destination / item["path"]).read_bytes()
+        if len(raw) != item["source_size"] or hashlib.sha256(raw).hexdigest() != item["sha256"]:
+            raise RecipeError(f"emitted source asset drift: {item['path']}")
 
 
 def emit_build_plan(destination: Path, *, source_archive: Path | None = None,
@@ -237,6 +229,15 @@ def emit_build_plan(destination: Path, *, source_archive: Path | None = None,
     if zig_archive is not None:
         facts["toolchain_archive"] = verify_archive(Path(zig_archive), ZIG_ARCHIVE)
     facts["emitted_assets"] = list(emit_assets(destination / "assets"))
+    reviewed_inputs = Path(__file__).with_name("reviewed-build-inputs.json").read_bytes()
+    build_inputs = emit_static_python_build_inputs(reviewed_inputs)
+    input_bytes = json.dumps(build_inputs, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    (destination / "build-inputs.json").write_bytes(input_bytes)
+    facts["build_inputs"] = {
+        "path": "build-inputs.json", "sha256": hashlib.sha256(input_bytes).hexdigest(),
+        "size": len(input_bytes), "state": "source-reviewed-candidate-only",
+        "configured_closure_verified": False, "execution_enabled": False,
+    }
     facts["source_preparation"] = source_patch_manifest()
     facts["generated_source_assets"] = []
     for relative, content in sorted(emit_static_python_tables().items()):
@@ -248,6 +249,7 @@ def emit_build_plan(destination: Path, *, source_archive: Path | None = None,
             "path": relative, "sha256": hashlib.sha256(content).hexdigest(),
             "size": len(content),
         })
+    _verify_emitted_source_assets(destination, build_inputs)
     facts["source_preparation_applied"] = False
     facts["frozen_header_state"] = "requires-pinned-freezer"
     facts["link_state"] = "not-executed"

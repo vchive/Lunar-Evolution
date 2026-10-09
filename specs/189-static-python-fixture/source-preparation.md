@@ -3,7 +3,9 @@
 This slice continues G1/G2 of Feature189. It supplies the missing reviewed
 loader patches and finite C table generators. It does not build or run CPython,
 produce frozen bytecode with the host interpreter, or complete runtime admission.
-The Linux build driver remains plan-only and exits 78 after its existing steps.
+The Linux build driver remains plan-only and exits 78 before configure, make or
+freezer work, including when execution is explicitly requested. The configured
+build closure remains unadmitted.
 
 ## Exact source transformations
 

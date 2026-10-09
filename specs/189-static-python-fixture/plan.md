@@ -35,7 +35,17 @@ It supplies pure fixed loader patches and generated finite C tables plus their
 digests. The emitted direct-compile/link source vector is an unapplied plan;
 stock optional-module discovery, real frozen headers and final linking remain
 open. The recipe uses the actual configure option `--disable-shared` and still
-exits78 without compiling/linking the final fixture.
+exits78 before configure/make/freezer work, including with explicit execution
+opt-in; no unresolved stock make closure is executed.
+
+The next pure preparation contract is `build-inputs.md`. Its reviewed shared162
+candidate has146 core-role inputs and16 builtin additions, with separate freezer
+and target extras and source/postimage origins. The freezer retains its own
+empty frozen tables and excludes stock/target frozen objects. All nine intended
+headers stage adjacent to the finite table under
+`generated-sources/Python/frozen_modules/`. Configured object substitutions,
+compiler flags, optional discovery and static-library/CRT inputs remain open;
+the fixed candidate is not an observed configure or complete link closure.
 
 Disable optional extension autodiscovery and supply an explicit static/disabled
 module manifest. Review generated pyconfig.h, Modules/Setup output, inittab,

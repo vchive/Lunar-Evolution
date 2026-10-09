@@ -1,5 +1,35 @@
 # Current development work
 
+## 2026-10-09 build-input candidate continuation
+
+Feature189 continues with a fixed reviewed-input asset and pure source/object
+plan: shared162=core146+builtin16, freezer2, target4, nine pending header tasks
+and the owned profile header. Four source-control pins now distinguish actual
+configure and configure.ac; the earlier candidate mislabel and first refusal
+remain retained. Original and prepared source digests have separate fields.
+The plan checks actual emitted owned assets/tables/main/header bytes against
+these pins and records its output digest. Both build entry points refuse before
+configure/make/freezer even under explicit execution requests. Header tasks use
+generated-sources/Python/frozen_modules adjacent to finite Python/frozen.c.
+No configured object/archive closure or complete CPython header closure is
+claimed; unresolved substitutions and toolchain/link inputs remain open.
+
+Local build-input90 and composition592 cases have zero failures/errors/skips;
+Ruff/compileall/diff pass. Independent local review passes with no open finding;
+both3.11.15 and3.13.12
+pass the same90 cases. Final-source full Linux CI/raw audit/main merge for this
+new candidate slice remain pending. Dedicated gates are
+build-input90, source-preparation100, verified-input143, preparation226 and
+observation43; the first two remain source-only checks. PR28/run37871696368 is
+complete with source4ec32b2 unchanged. All three versions and28 raw phases
+pass, current12632/92 platform skips and zero failures/errors/retry; raw and
+root independent audits pass. PR28 is merged as main1e492dc with tested
+treeeb9f9e8e and expected parents; the new main push CI remains pending.
+Actual acquisition/signature/extraction, Linux static build, nine real headers,
+ELF/link/runtime/lifecycle, solver Python process adapters and production RSI
+CLI remain P1. P0 main work is complete as listed below; P2 is deferred.
+
+
 ## 2026-10-09 verified-input contract continuation
 
 Feature189 now has a pure fixed-source transformation over three reviewed

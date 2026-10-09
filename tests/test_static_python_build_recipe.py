@@ -29,7 +29,8 @@ def test_plan_emits_explicit_profile_and_never_claims_build(tmp_path: Path):
     assert manifest["startup_state"] == "not-executed"
     assert manifest["max_image_bytes"] == 134217728
     assert (stat.S_IMODE((plan / "build.sh").stat().st_mode)) == 0o555
-    assert "exec env -i" in (plan / "build.sh").read_text()
+    assert "configured object/archive closure remains unverified" in (plan / "build.sh").read_text()
+    assert manifest["build_environment"]["ac_cv_func_dlopen"] == "no"
     assert "regen-frozen" not in (plan / "build.sh").read_text()
     assert "PLAN ONLY" in (plan / "linux-build-commands.sh").read_text()
     assert len(manifest["frozen"]) == len(FROZEN) == 9
@@ -46,29 +47,23 @@ def test_build_driver_stays_plan_only_without_explicit_opt_in(tmp_path: Path):
     assert sorted(path.name for path in tmp_path.iterdir()) == ["plan"]
 
 
-def test_emitted_freeze_commands_expand_exact_paths_without_building_python(tmp_path: Path):
-    # Disposable shell stubs exercise the emitted driver only: no source archive,
-    # compiler, target interpreter or real CPython build is used.
-    plan = emit_build_plan(tmp_path / "plan 'quoted' $lunar_literal")
+def test_explicit_opt_in_cannot_execute_an_unverified_build_closure(tmp_path: Path):
+    # These disposable traps prove the plan refuses before configure, a
+    # compiler or a freezer, including for quoted absolute input paths.
+    plan = emit_build_plan(tmp_path / "plan 'quoted' $(touch unreviewed-command-ran)")
     source = tmp_path / "source with spaces"
     zig = tmp_path / "zig with spaces"
     output = tmp_path / "out with spaces"
     (source / "Programs").mkdir(parents=True)
     zig.mkdir()
+    marker = tmp_path / "unreviewed-command-ran"
     for path in (source / "configure", zig / "zig"):
-        path.write_text("#!/bin/sh\nexit 0\n")
+        path.write_text('#!/bin/sh\ntouch "$LUNAR_STATIC_OUT"\nexit 99\n')
         path.chmod(0o700)
-    # CPython exposes AC_ARG_ENABLE(shared); --without-shared would silently
-    # select a different configure option. Reject that emitted driver mistake.
-    (source / "configure").write_text(
-        '#!/bin/sh\nfor arg do\n'
-        '  case "$arg" in --without-shared) exit 64;; --disable-shared) found=1;; esac\n'
-        'done\ntest "${found:-0}" = 1\n'
-    )
     freezer = source / "Programs" / "_freeze_module"
-    freezer.write_text('#!/bin/sh\nprintf "%s\\0" "$@" >> "$PWD/freeze-argv.bin"\n')
+    freezer.write_text('#!/bin/sh\ntouch "$LUNAR_STATIC_OUT"\nexit 99\n')
     freezer.chmod(0o700)
-    (source / "Makefile").write_text("Programs/_freeze_module:\n\t@true\n")
+    (source / "Makefile").write_text('Programs/_freeze_module:\n\ttouch "$(LUNAR_STATIC_OUT)"\n')
     result = subprocess.run(
         ["/bin/sh", str(plan / "build.sh")], cwd=tmp_path,
         env={"PATH": os.defpath, "LUNAR_STATIC_EXECUTE": "1",
@@ -77,15 +72,19 @@ def test_emitted_freeze_commands_expand_exact_paths_without_building_python(tmp_
         capture_output=True, timeout=5, check=False,
     )
     assert result.returncode == 78, result.stderr
-    actual = (source / "freeze-argv.bin").read_bytes().split(b"\0")
-    expected = []
-    for name, generator_id, relative_source, _package in FROZEN:
-        input_path = plan / "assets/frozen_main.py" if name == "_lunar_static_main" else source / relative_source
-        expected.extend(str(item).encode() for item in (
-            generator_id, input_path, output / "generated" / (generator_id + ".h"),
-        ))
-    assert actual == [*expected, b""]
-    assert list((output / "generated").iterdir()) == []
+    assert b"configured object/archive closure remains unverified" in result.stderr
+    assert not output.exists()
+    assert not marker.exists()  # Command substitution in the plan path is inert.
+    assert not (source / "freeze-argv.bin").exists()
+    direct = subprocess.run(
+        ["/bin/sh", str(plan / "linux-build-commands.sh")], cwd=tmp_path,
+        env={"PATH": os.defpath, "LUNAR_STATIC_EXECUTE": "1",
+             "LUNAR_STATIC_SOURCE": str(source), "LUNAR_STATIC_ZIG": str(zig),
+             "LUNAR_STATIC_OUT": str(output)},
+        capture_output=True, timeout=5, check=False,
+    )
+    assert direct.returncode == 78, direct.stderr
+    assert not output.exists() and not marker.exists()
 
 
 def test_exact_patch_checks_hash_and_occurrence(tmp_path: Path):
