@@ -1,9 +1,10 @@
 # Validation plan
 
-The Phase A binding and pure lifecycle contract checks below are complete and
-run against inert local fixtures. No durable process/runtime lifecycle acceptance
-is complete. Until Features189 and
-190 pass their dedicated Linux gates, only provider-free inert fixtures may run.
+The Phase A binding, create-only durable sidecar, and sidecar-aware native recovery gate below
+are complete against inert local fixtures. No real CPython process/runtime lifecycle acceptance
+is complete. Until Features189 and 190 pass their dedicated Linux gates, only provider-free inert
+fixtures may run. The sidecar bound is 2 MiB, synchronized with the binding parser; it is not a
+separate proof of runtime execution or controller checkpoint durability.
 
 The early CI preparation gate combines the recipe, installation, ELF, binding
 and lifecycle suites into `python-preparation.xml`: exactly 226 cases with zero
@@ -32,6 +33,7 @@ workflow annotates both contract reports and retains both XML files separately.
 | Area | Required evidence | Refusal cases |
 | --- | --- | --- |
 | Binding parser | **Complete Phase A:** canonical nested DTO round trip, exact type/order/bounds, shape-gate, digest/deadline/limit drift and fixed errors | unknown field, bool-as-int, duplicate key, placeholder digest, callback-bearing collection, path/env/target drift |
+| Durable binding sidecar | **Complete provider-free slice:** canonical bytes are published create-only through a temporary file and hard-link; final file is regular `0600` with one link; controller-retained digest/size/device/inode/mode/nlink/mtime/ctime pins are checked before workspace I/O and against pre/read/post file observations; sidecar is bounded at 2 MiB | existing sidecar, batch already started, missing batch/sidecar, malformed retained pin, binding mutation, byte/digest drift, replacement, touch, mode/link/inode drift, symlink, oversized record, temporary-file residue |
 | Pure terminal/reconcile | **Complete contract slice:** 98 focused tests cover canonical DTOs, retained digest recheck, complete known-terminal evidence, original identity/journal/deadline/stream pins and exact collection shapes | mutated reused DTO, missing/zero digest, drifted registration/owner/executable/journal/stream, missing or out-of-order timestamps, refreshed deadline/request count, callback mappings/iterables, publication claim, relabeled attestation consumption or discarded known exit evidence |
 | Pure fixture observation adapter | **Complete contract slice:** 43 cases generated from the reviewed frozen-main asset with fake runtime inputs; independently supplied broker bytes and pycache fact | host path/version/ABI substitution, inventory or module-origin drift, wrong exact flag type, invalid/nested/duplicate/multiple/truncated broker frame, extra stdout newline, zero binding digest, callback-bearing dict/list/text, aggregate overflow |
 | Runtime closure | Original manifest/tree digest, no-follow identity snapshots and target ABI | missing interpreter, symlink/hardlink, unlisted file, changed inode/bytes/resource/native input |
@@ -39,7 +41,7 @@ workflow annotates both contract reports and retains both XML files separately.
 | Loader policy | Readable decoy source/pyc/extension/zip and unknown codec are refused | permission-only denial, `sys.path` discovery, `.pth`/site/customization/pycache |
 | Fixture execution | Real CPython version/cache tag/flags, fixed computation, one broker exchange, bounded envelope | fabricated observation, oversized output, second request, malformed response |
 | Lifecycle | registration, ready/release/start/terminal, request journal, reap and FD census | parent loss, cancel, signal, nonzero exit, cleanup uncertainty, missing terminal |
-| Resume | Completed replay is read-only; unknown reconcile is idempotent under original deadline | blind restart, refreshed budget, changed binding/fingerprint, changed journal |
+| Resume/recovery gate | **Complete provider-free slice:** `recover_python_producer_terminal` requires the retained sidecar, verifies it before native inspection and after native inspection, and never creates a recovery lock/marker or consumes a budget; pure resume/reconcile still preserves original deadline, journal and evidence pins | blind restart, refreshed budget, changed binding/fingerprint, changed journal, missing sidecar, sidecar replacement during recovery, cleanup unknown/missing, native recovery-required |
 | Admission | Local exact evaluator receipt and atomic seed/publication evidence | external score/correct/generation used as Lunar rank or validity |
 | Adapters | Explicit OpenEvolve wrapper and Shinka program/result export through common envelope | automatic project discovery/start, remote/Slurm/network campaign |
 

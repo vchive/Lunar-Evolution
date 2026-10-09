@@ -28,11 +28,44 @@ and `deadline_unix` must equal the existing RSI planned deadline. The complete
 durable RSI checkpoint remains owned by the controller and cannot be replenished
 by parsing or rebuilding a binding.
 
-The terminal and runtime-observation DTO/parser contracts below are implemented
-as pure validation. Terminal resume/reconcile operates on retained values and
-does not read or write durable process/runtime/journal evidence. The existing
-result envelope remains unchanged. Runtime capture, persistence and production
-admission are still open.
+The canonical binding bytes may be persisted once per producer batch as the
+`python-producer-binding.json` sidecar. The sidecar is bounded to the same 2 MiB
+maximum as the binding parser, is published as a regular `0600` single-link file,
+and is never overwritten. The controller retains a separate `PythonProducerBindingSidecar`
+pin containing `raw_sha256`, `raw_size`, `file_device`, `file_inode`, `file_mode`,
+`file_nlink`, `file_mtime_ns`, and `file_ctime_ns`. The pin is caller-held evidence;
+the sidecar cannot authenticate itself by carrying a pin read from its own bytes.
+
+`persist_python_producer_binding` validates the binding before opening the workspace,
+serializes through the existing recovery lock, publishes through an owned temporary file
+and hard-link, and cleans up owned temporary or failed-publication files.
+`read_python_producer_binding_sidecar` validates the retained pin before workspace I/O,
+checks no-follow regular-file identity before/during/after the read, compares exact
+canonical bytes and digest, and reparses the binding. A missing, replaced, touched,
+linked, symlinked, mode-drifted, oversized, or mutated sidecar is not recoverable.
+
+The terminal and runtime-observation DTO/parser contracts below are implemented as pure
+validation. `recover_python_producer_terminal` composes native read-only process recovery
+with the sidecar gate: it verifies the retained sidecar before native inspection and once
+more afterwards, and never creates a recovery lock/marker, relaunches, publishes, evaluates,
+or consumes another request budget. Terminal resume/reconcile still operates on retained
+values without mutation. The existing result envelope remains unchanged. Controller
+checkpoint binding, runtime capture, and production admission remain open.
+
+## PythonProducerBindingSidecar
+
+The sidecar filename is fixed to `python-producer-binding.json` inside the binding's
+existing `evolution/producer-batches/<journal_id>` directory. Its bytes are exactly the
+canonical `PythonProducerBinding` wire; there is no second self-describing sidecar schema.
+Publication is create-only and is serialized with the existing recovery lock while the
+batch is still not started. The final retained pin is captured only after the helper hard
+link is removed, so `file_nlink` is exactly one. Recovery does not acquire that lock or
+write a marker: it opens the held batch directory read-only and compares the file's
+no-follow identity and exact bytes to the controller-retained pin.
+
+The sidecar is allowed by the final native launch-input not-started check because it is
+the binding being validated; the initial prepare/bind checks still treat its presence as
+evidence that a binding attempt has started and refuse a second preparation.
 
 ## PythonProducerTerminal
 

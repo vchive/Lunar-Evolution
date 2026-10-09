@@ -195,6 +195,36 @@ def test_started_attempt_cannot_be_bound_or_repaired(tmp_path, native_artifact, 
     assert not (prepared.batch / "native-producer-launch.json").exists()
 
 
+def test_python_binding_sidecar_is_allowed_only_by_final_not_started_gate(
+    tmp_path, native_artifact,
+):
+    """The Python sidecar may accompany a completed native bind, but cannot start one.
+
+    Feature191 publishes its independent binding sidecar around the native binding.  The
+    initial prepare/bind gate must still reject a pre-existing sidecar, while the final
+    post-bind gate permits the two retained binding files to coexist.  Any unrelated
+    artifact continues to fail closed through the same gate.
+    """
+    prepared = _prepared(tmp_path, native_artifact)
+    sidecar = prepared.batch / "python-producer-binding.json"
+    sidecar.write_bytes(b"retained sidecar fixture")
+    before = _inventory(prepared.workspace)
+    with pytest.raises(inputs.ProducerLaunchInputError):
+        _bind(prepared)
+    assert _inventory(prepared.workspace) == before
+    sidecar.unlink()
+
+    _bind(prepared)
+    sidecar.write_bytes(b"retained sidecar fixture")
+    inputs._not_started(prepared.batch, allow_binding=True)
+    with pytest.raises(inputs.ProducerLaunchInputError):
+        inputs._not_started(prepared.batch)
+
+    (prepared.batch / "unexpected-sidecar.json").write_bytes(b"unexpected")
+    with pytest.raises(inputs.ProducerLaunchInputError):
+        inputs._not_started(prepared.batch, allow_binding=True)
+
+
 @pytest.mark.parametrize("field", ["contract_sha256", "task_id", "parent_task_id", "run_id"])
 def test_launch_identity_drift_never_rebinds_original_config(tmp_path, native_artifact, field):
     prepared = _prepared(tmp_path, native_artifact)

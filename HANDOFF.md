@@ -6283,3 +6283,28 @@ code/config/contract/task/holdout/seed with candidate source/execution/publicati
 Native gateway mapping now requires both worker completed evidence and independent evaluator pass evidence.
 The scheduler provider emits the same local fixture evidence, preserving native E2E replay. Remote evaluator,
 external project authentication, multi-host ownership, and real OpenEvolve/Shinka campaigns remain out of scope.
+
+## 2026-10-09 Feature 191 durable Python binding/recovery slice
+
+在 `codex/python-producer-recovery` 分支补齐了 Feature191 的本地 durable binding 边界。新增
+`python-producer-binding.json` create-only sidecar：写入前先 canonical reparse 和大小限制，
+在现有 batch recovery lock 下用临时文件加 hard-link 发布，最终只保留一个 `0600` regular
+file link，并由 controller 单独保留 digest、size、device、inode、mode、nlink、mtime、ctime
+pin。sidecar 上限与 Python binding parser 同步为 2 MiB；失败发布会清理本次拥有的临时文件和
+sidecar，绝不覆盖已有 sidecar。
+
+`read_python_producer_binding_sidecar` 在任何 workspace I/O 前验证 retained pin，并在 no-follow
+目录句柄中对 sidecar 做读前、读中、读后身份检查，再比较精确 canonical bytes、digest 和
+reparse 结果。缺失 batch/sidecar、替换、touch、权限/link/inode 漂移、symlink、binding mutation
+和 malformed retained pin 都 fail closed。`recover_python_producer_terminal` 现在必须接收该
+sidecar，native recovery 前后各重读一次；恢复接口保持 read-only，不创建 `.recovery.lock` 或
+recovery marker，不重启、不刷新 deadline/预算、不发布结果。launch-input 的最终 not-started
+检查允许 sidecar 伴随待启动 binding 留存，初始 prepare/bind 仍把它视为已开始以拒绝重复绑定。
+
+对应 focused 回归位于 `tests/test_python_producer_binding_store.py` 和
+`tests/test_python_producer_recovery.py`，覆盖 round-trip、create-only、临时文件清理、读前
+pin gate、batch/sidecar 缺失、字节和文件身份 drift 以及 native reader 前后 replacement。
+这一切仍是 provider-free/inert fixture 证据；真实 CPython、OpenEvolve/Shinka campaign、真实
+runtime observation、local exact-evaluator admission、controller checkpoint 对 pin 的 durable
+绑定、remote evaluator、外部 worker 认证、多机 ownership、distributed scheduler 和 service
+API 均未完成，也没有运行 WebAgent、远程 evaluator、真实 producer 或凭据。

@@ -30,6 +30,11 @@ from .python_producer_binding import (
     PythonProducerBindingError,
     parse_python_producer_binding,
 )
+from .python_producer_binding_store import (
+    PythonProducerBindingSidecar,
+    PythonProducerBindingStoreError,
+    read_python_producer_binding_sidecar,
+)
 
 PYTHON_PRODUCER_TERMINAL_PROTOCOL = "lunar-python-producer-terminal-v1"
 PYTHON_RUNTIME_OBSERVATION_PROTOCOL = "lunar-python-runtime-observation-v1"
@@ -602,20 +607,30 @@ def recover_python_producer_terminal(
     workspace: str | Path,
     *,
     binding: PythonProducerBinding,
+    sidecar: PythonProducerBindingSidecar,
 ) -> PythonProducerTerminal:
     """Project one retained native process receipt into the Python terminal contract.
 
-    Recovery delegates all durable file, ownership and journal checks to the existing native
-    process recovery boundary.  A missing terminal or an explicit recovery receipt stays a
-    refusal: this adapter never relaunches a producer, consumes an attestation, evaluates an
-    envelope, or turns an ``unknown`` observation into success.  A complete native receipt is
-    still projected as ``unknown`` until the separate wall-clock/runtime observation supplies the
-    fields required by :func:`resume_python_producer_terminal` or reconciliation.
+    Recovery is deliberately read-only. The sidecar is checked before and after the native
+    observation so a concurrent replacement becomes drift, while no recovery lock or marker is
+    created by this facade.
     """
     if type(binding) is not PythonProducerBinding:
         _fail("binding_invalid")
+    try:
+        binding = parse_python_producer_binding(binding.to_json())
+    except PythonProducerBindingError as exc:
+        raise PythonProducerLifecycleError("binding_invalid") from exc
+    if type(sidecar) is not PythonProducerBindingSidecar:
+        _fail("binding_sidecar_invalid")
     if not isinstance(workspace, (str, Path)) or not workspace:
         _fail("workspace_invalid")
+    try:
+        # The caller-provided DTO is not an authority. Require the create-only sidecar that was
+        # persisted in this exact journal batch before selecting any native recovery path.
+        read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+    except PythonProducerBindingStoreError as exc:
+        raise PythonProducerLifecycleError("binding_sidecar_invalid") from exc
     try:
         observed = recover_producer_process(
             workspace, journal_id=binding.intent.journal_id, cleanup=False,
@@ -638,6 +653,12 @@ def recover_python_producer_terminal(
         _fail("recovery_receipt_invalid")
     if cleanup_status in {"unknown", "missing"}:
         _fail("cleanup_unknown")
+    try:
+        # Re-read the independent sidecar after native inspection. A replacement during recovery
+        # is drift, never a reason to refresh the expected pin.
+        read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+    except PythonProducerBindingStoreError as exc:
+        raise PythonProducerLifecycleError("binding_sidecar_invalid") from exc
     try:
         receipt = parse_producer_execution_receipt(observed)
     except (ProducerProcessError, TypeError, ValueError) as exc:

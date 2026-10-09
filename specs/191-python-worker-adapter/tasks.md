@@ -13,8 +13,18 @@
 - [x] Implement and test pure terminal resume/reconcile rules: retained digest,
   identity/journal/time pins, original deadline, complete known-terminal evidence,
   callback-free exact collection shapes and unsupported publication claims.
-- [ ] Connect these rules to durable runtime/process/journal recovery for missing
-  terminal, interrupted launch, journal mismatch, callback error and cleanup uncertainty.
+- [x] Persist one canonical binding sidecar create-only in the producer batch with
+  temporary-file/hard-link publication, `0600` regular-file and single-link checks,
+  an independently retained digest/stat pin, and pre-I/O retained-pin validation.
+- [x] Require the sidecar for Python terminal recovery and re-read it before and after
+  native recovery. Missing, replaced, touched, linked, symlinked, permission-drifted,
+  or byte-drifted sidecars fail closed; recovery remains read-only and does not create
+  a recovery lock or marker.
+- [ ] Connect these rules to the complete durable runtime/process/journal recovery matrix
+  for missing terminal, interrupted launch, journal mismatch, callback error and cleanup
+  uncertainty. The current sidecar/native gate is a prerequisite, not full CPython recovery.
+- [ ] Bind the retained sidecar pin to the controller's durable RSI checkpoint and make
+  checkpoint restore reject a missing or mismatched pin.
 - [ ] Specify local exact-evaluator admission and atomic publication handoff;
   external producer score remains provenance only.
 
@@ -30,6 +40,9 @@
   census and terminal evidence. Keep v2 wire/FD schema unchanged.
 - [ ] Add focused tests for startup, decoys, output bounds, cancellation,
   deadline, parent loss, restart refusal, resume and source/runtime drift.
+- [x] Add focused sidecar tests for round-trip, create-only collision, malformed retained
+  pins before workspace I/O, missing/replaced/touched/mode/link drift, binding mutation,
+  batch-started refusal and temporary-file cleanup.
 
 ## P1 acceptance
 
