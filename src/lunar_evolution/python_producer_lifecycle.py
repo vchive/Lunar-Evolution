@@ -602,7 +602,6 @@ def recover_python_producer_terminal(
     workspace: str | Path,
     *,
     binding: PythonProducerBinding,
-    cleanup: bool = False,
 ) -> PythonProducerTerminal:
     """Project one retained native process receipt into the Python terminal contract.
 
@@ -617,11 +616,9 @@ def recover_python_producer_terminal(
         _fail("binding_invalid")
     if not isinstance(workspace, (str, Path)) or not workspace:
         _fail("workspace_invalid")
-    if type(cleanup) is not bool:
-        _fail("cleanup_invalid")
     try:
         observed = recover_producer_process(
-            workspace, journal_id=binding.intent.journal_id, cleanup=cleanup,
+            workspace, journal_id=binding.intent.journal_id, cleanup=False,
         )
     except ProducerProcessError as exc:
         # Native recovery exposes only fixed process codes.  Keep those details out of the

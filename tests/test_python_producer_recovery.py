@@ -106,7 +106,7 @@ def test_recovery_required_observation_is_a_fixed_refusal(
         },
     )
     with pytest.raises(PythonProducerLifecycleError, match="recovery_required"):
-        recover_python_producer_terminal(tmp_path, binding=binding, cleanup=True)
+        recover_python_producer_terminal(tmp_path, binding=binding)
 
 
 def test_cleanup_unknown_is_rejected_before_python_projection(
@@ -160,3 +160,19 @@ def test_native_recovery_errors_never_become_terminal_success(
     monkeypatch.setattr(lifecycle, "recover_producer_process", fail)
     with pytest.raises(PythonProducerLifecycleError, match="recovery_observation_invalid"):
         recover_python_producer_terminal(tmp_path, binding=binding)
+
+
+def test_recovery_facade_cannot_request_native_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = _binding(tmp_path)
+    calls = []
+
+    def inspect(workspace, *, journal_id, cleanup):
+        calls.append((workspace, journal_id, cleanup))
+        return {"status": "recovery_required"}
+
+    monkeypatch.setattr(lifecycle, "recover_producer_process", inspect)
+    with pytest.raises(TypeError):
+        recover_python_producer_terminal(tmp_path, binding=binding, cleanup=True)
+    assert calls == []
