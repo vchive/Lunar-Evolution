@@ -2088,6 +2088,14 @@ class RSILearningController:
             episode = PracticeEpisode.from_dict(episode_record.payload)
         except RSILearningError as exc:
             raise RSILearningError("rsi_episode_record_invalid") from exc
+        # This helper is also reachable from legacy reconciliation and native failure
+        # recovery, where the caller may have validated the producer proof earlier.  Re-read
+        # the durable controller checkpoint here so a sidecar replacement between that check
+        # and recovery cannot turn into a new accepted execution.
+        checkpoint = self.ledger.controller_checkpoint(episode.run_id)
+        self._validate_producer_checkpoint(
+            episode.run_id, checkpoint[1] if checkpoint is not None else None,
+        )
         saved = self.ledger.episode_result(episode_id)
         settled_failure = episode.status in {"failed", "timed_out", "abandoned", "cancelled"}
         journal = self.ledger.episode_reconciliation(episode_id) if settled_failure else ()
@@ -2211,7 +2219,14 @@ class RSILearningController:
 
             ParentRunBudget.synchronize(state, previous[1])
         if previous is not None and previous[1] == state:
+            # Callers also use _save_flow as a recovery boundary, so an unchanged checkpoint
+            # must not mask sidecar drift.
+            self._validate_producer_checkpoint(record.logical_id, state)
             return
+        # Validate immediately before the checkpoint write as well as at dispatch boundaries.
+        # The sidecar is independently retained evidence; a drift after an earlier check must
+        # leave the controller at its last known-good checkpoint instead of publishing progress.
+        self._validate_producer_checkpoint(record.logical_id, state)
         self.ledger.write_controller_checkpoint(
             record.logical_id, state, expected_sha256=previous[0] if previous else None,
         )
@@ -2264,6 +2279,10 @@ class RSILearningController:
         if record is not None and self.ledger is not None:
             latest = self.ledger.get_run(record.logical_id)
             if latest is not None and latest.state not in {"completed", "failed", "cancelled", "budget_exhausted"}:
+                # Keep terminal run publication behind the same producer proof as its
+                # controller checkpoint.  If the sidecar drifted after _save_flow, leave the
+                # run resumable and fail closed rather than settling an unbound terminal state.
+                self._validate_producer_checkpoint(record.logical_id, state)
                 self._finish_run(latest, result, budget_state=state["budget_state"])
         return result
 

@@ -268,3 +268,81 @@ def test_producer_sidecar_drift_between_episodes_blocks_next_dispatch(tmp_path: 
         )
 
     assert gateway.calls == 1
+
+
+def test_direct_episode_resume_rechecks_producer_sidecar(tmp_path: Path) -> None:
+    binding, sidecar = _sidecar(tmp_path)
+    ledger = RSILedger(tmp_path / "rsi.sqlite3")
+    controller = RSILearningController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+    )
+    result = controller.run_drs(
+        run_id=binding.run_id, contract_sha256=DIGEST, evaluator_sha256=DIGEST,
+        environment_sha256=DIGEST, solver_id="mock", max_practice_rounds=0,
+    )
+    execution = result.target_attempts[0]
+    head = ledger.get_episode(execution.episode.episode_id)
+    assert head is not None
+    sidecar_path = tmp_path / "evolution" / "producer-batches" / binding.intent.journal_id / "python-producer-binding.json"
+    sidecar_path.unlink()
+
+    resumed = RSILearningController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+    )
+    with pytest.raises(RSILearningError, match="producer_checkpoint"):
+        resumed._resume_episode_execution(head, request_hint=execution.request)
+
+
+def test_unchanged_checkpoint_save_still_revalidates_sidecar(tmp_path: Path) -> None:
+    binding, sidecar = _sidecar(tmp_path)
+    ledger = RSILedger(tmp_path / "rsi.sqlite3")
+    controller = RSILearningController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+    )
+    controller.run_drs(
+        run_id=binding.run_id, contract_sha256=DIGEST, evaluator_sha256=DIGEST,
+        environment_sha256=DIGEST, solver_id="mock", max_practice_rounds=0,
+    )
+    record = ledger.get_run(binding.run_id)
+    checkpoint = ledger.controller_checkpoint(binding.run_id)
+    assert record is not None and checkpoint is not None
+    sidecar_path = tmp_path / "evolution" / "producer-batches" / binding.intent.journal_id / "python-producer-binding.json"
+    sidecar_path.unlink()
+
+    with pytest.raises(RSILearningError, match="producer_checkpoint"):
+        controller._save_flow(record, checkpoint[1])
+
+
+class _TerminalSidecarDriftController(RSILearningController):
+    def __init__(self, *args, sidecar_path: Path, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._sidecar_path_for_test = sidecar_path
+
+    def _save_flow(self, record, state):
+        super()._save_flow(record, state)
+        if state.get("phase") == "terminal":
+            self._sidecar_path_for_test.unlink()
+
+
+def test_terminal_run_publication_stops_after_sidecar_drift(tmp_path: Path) -> None:
+    binding, sidecar = _sidecar(tmp_path)
+    sidecar_path = tmp_path / "evolution" / "producer-batches" / binding.intent.journal_id / "python-producer-binding.json"
+    ledger = RSILedger(tmp_path / "rsi.sqlite3")
+    controller = _TerminalSidecarDriftController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+        sidecar_path=sidecar_path,
+    )
+
+    with pytest.raises(RSILearningError, match="producer_checkpoint"):
+        controller.run_drs(
+            run_id=binding.run_id, contract_sha256=DIGEST, evaluator_sha256=DIGEST,
+            environment_sha256=DIGEST, solver_id="mock", max_practice_rounds=0,
+        )
+
+    run = ledger.get_run(binding.run_id)
+    assert run is not None
+    assert run.state == "running"
