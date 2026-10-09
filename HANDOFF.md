@@ -1,5 +1,50 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 PR29/30/31 merged and source-projection chain closed
+
+PR29, PR30 and PR31 are now merged into `main` in order:
+
+- PR29 guardian high-FD readiness fix: merge `cce8e89218a8901ee5eddec4bb86861f112dfaa5`,
+  tested tree `6812af8f15280664b2d237fda8c7d3f6da7cc8cd`, run `37894037150`.
+- PR30 immutable archive observation: merge `68cb31f1add9de4a532653ecc7f3c53a5e8f9425`,
+  tested tree `58e912d6b1b5876e210ad7f863bdaca527bb7c55`, run `37894203485`.
+- PR31 snapshot-bound three-source projection: merge `c48d234bb212af6050ab6ddddb1abcd8d2cb5073`,
+  tested tree `81b2efa37d892a6827dbd7b4d2775d63c9638c2c`, run `37896389062`.
+
+Each final source run passed the Ubuntu 3.11/3.12/3.13 matrix. Independent root
+replay verified the numeric-ID ZIP/API digests, exact test and fixed-skip inventories,
+source archive/tree bindings, original deadline-recovery node execution, and exact
+merge tree before merge. PR29 has 29 XML phases, PR30 30, and PR31 31; the final
+current inventories are 12,735, 12,799, and 12,849 respectively, with the fixed 92
+platform skips and no current/focused failures or errors. The dedicated gates are
+guardian 82, archive observation 64, and source projection 50, all with zero
+failures/errors/skips. No archive retry occurred in these final runs. The earlier
+setup failures and the cancelled post-merge push runs remain separate, immutable
+evidence with `ci_approval=false`.
+
+Accepted raw materials and merge proofs are preserved below the ignored report
+directory; each accepted directory has a create-only payload manifest and final
+completion record:
+
+- `pr29-root-accepted-run37894037150-headce606690fcca`
+- `pr30-root-accepted-run37894203485-head2889dc1670ec`
+- `pr31-root-accepted-run37896389062-head31f335fb8d34`
+
+The main branch is clean at PR31 merge. The post-merge push run `37902613351` is
+still running; it is a branch-health check and is not used as the acceptance basis
+for any of the three PRs.
+
+Remaining scope is unchanged: actual CPython/Zig acquisition and signatures,
+safe staging, configured/static closure, same-source frozen headers, ELF/link/size,
+real sealed runtime lifecycle, and Python runtime stdout/transcript/time evidence
+are P1 gates. Feature191 durable Python binding/recovery and local evaluator/
+publication composition can proceed only with inert fixtures and existing native
+receipt/journal storage. OpenEvolve/Shinka Python execution adapters and production
+RSI CLI remain after those runtime gates. Remote evaluator, external worker
+authentication, multi-host ownership, distributed scheduler and service API remain
+P2. No real release/build/runtime, credentials, model, WebAgent, remote evaluator or
+solver campaign was run.
+
 ## 2026-10-09 snapshot-bound fixed source preparation
 
 Feature189 continues in a separate source-projection worktree based on synchronized
