@@ -1,5 +1,39 @@
 # Validation contract — preparation is not runtime evidence
 
+## Pure archive receipt and extraction manifest
+
+The continuation in `verified-inputs.md` validates bounded caller-supplied
+archive receipts and extraction member manifests against the two fixed
+advertised archive profiles. Portable inert fixtures may exercise exact shape,
+digest/size/profile binding, signature-result honesty, normalized rooted paths,
+duplicates, unsupported member kinds, external receipt/manifest digest drift
+and aggregate bounds. Refuse malformed
+metadata before hashing, serialization or caller callbacks where shape checks
+can decide the result. Keep the original fixture and first focused-test failures
+separate from later passing evidence.
+
+These tests do not download/read the real archives, verify upstream signatures,
+decompress tar members, traverse/extract a filesystem tree, execute the compiler
+or build/start CPython. A parsed receipt or consistent manifest is not independent
+evidence that the advertised bytes were acquired, signatures were checked or
+extraction was safe and complete. No supplied `verified` value can replace
+actual machine receipts. Actual archive bytes, signature/acquisition results,
+extracted source/toolchain provenance and G2/G3 acceptance remain unchecked.
+The implemented dedicated inventory contains143 portable cases. Author and
+independent reviewer runs pass143/0failure/0error/0skip; root's combined
+metadata/preparation/source/observation run passes508/0failure/0error/0skip.
+Full Ruff, compileall and diff checks pass. The first RUF022 lint result was
+retained as a verbatim tool-result copy, explicitly distinct from an original
+process stdout file. Root's broader run also reports existing Darwin pytest
+cleanup warnings for older read-only temporary trees; they are not test failures
+or new metadata-fixture cleanup claims. Evidence is retained in ignored
+`reports/feature189-verified-inputs-20261009/`.
+The new `python-verified-inputs.xml` gate requires all143 without skips and is
+retained separately. Final-source Linux CI, raw audit and main merge remain
+pending; passing local metadata cases cannot complete actual G1/G2/G3 gates.
+
+## Existing offline source preparation
+
 The offline source-preparation slice has 96 portable cases: 49 exact-source
 transformation checks, 46 finite-table checks and one plan/asset-digest check.
 Root's combined preparation/observation/source run passes365/0failure/0error/0skip;
