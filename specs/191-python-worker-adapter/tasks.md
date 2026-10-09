@@ -28,7 +28,19 @@
   independently retained sidecar identity into the flow checkpoint and revalidates it
   before intent preparation, cached execution reuse, native dispatch, and resume; a
   producer-bound legacy checkpoint fails closed.
-- [ ] Specify local exact-evaluator admission and atomic publication handoff;
+- [x] Close initialization and replay recovery hardening: preflight the sidecar before durable
+  run creation; retain canonical producer proof/pin in the immutable run request and its
+  request digest; reconstruct a missing first checkpoint only from that retained proof with
+  original budget/deadline/fingerprints and a revalidated sidecar; reject run/checkpoint proof
+  mismatch symmetrically in both terminal and nonterminal states. Compare the latest run proof
+  to the earliest ledger run revision, refuse retrofitting an originally unbound run and fail
+  closed on pre-fix producer checkpoints without original-run proof. Revalidate checkpoint
+  save/no-op, direct episode recovery, terminal settlement/replay, and callback/native-failure
+  reconcile at entry and before checkpoint/journal publication, including already-reserved
+  branches. Refusal adds no budget consumption or journal and preserves previous durable
+  reservations. Focused regression and independent review are complete; exact-final-source
+  CI remains required for merge acceptance.
+- [x] Specify local exact-evaluator admission and atomic publication handoff;
   external producer score remains provenance only.
 
 ## P1 — inert Python process and local adapters

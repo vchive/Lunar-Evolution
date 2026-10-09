@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-10 PR32 durable producer recovery hardening in progress
+
+PR32 (`codex/python-producer-recovery`) is still under development and final validation;
+it is not yet merged. The current fix makes the immutable RSI run request the earliest durable
+producer-proof anchor: preflight the independently retained sidecar before run creation, retain
+canonical proof/pin in the run request and request digest, and copy the exact proof into flow
+checkpoints. Latest run proof must match the earliest ledger run revision, and run/checkpoint
+comparison is symmetric. Missing-first-checkpoint recovery must use that retained proof and preserve the
+original planned budget/deadline/fingerprints while revalidating the live sidecar. Omitting a
+sidecar must never downgrade a producer-bound run to provider-free execution. Terminal and
+nonterminal run/checkpoint proof mismatch, checkpoint save/no-op, direct episode recovery and
+terminal settlement/replay are included in the required fail-closed regression matrix. An
+originally unbound run cannot be retrofitted with a producer sidecar; pre-fix producer
+checkpoints without original-run proof fail closed without inferred migration. Callback and
+native-failure reconcile revalidate at entry and before checkpoint/journal publication, including
+already-reserved branches. Refusal consumes no additional budget and appends no journal;
+previously durable reservations remain consumed.
+
+The provider-free hardening now passes 61 dedicated recovery cases and 131 controller/replay
+cases with zero failures/errors/skips. The final gates include post-admission and pre-gateway
+dispatch proof checks, native replay/reconcile checks before durable publication, and callback
+completion checks before journal publication; independent boundary review found no remaining
+blocking gap. Exact-final-source Ubuntu 3.11/3.12/3.13 CI must still complete before merge.
+Existing source/test changes are being preserved in the PR worktree. Runtime
+observations, actual sealed CPython launch, complete process/journal recovery and local exact
+evaluator/atomic publication composition remain P1 gates; DTOs and inert fixtures cannot
+establish production admission. External worker authentication, multi-host ownership,
+distributed scheduling, service API and remote evaluator remain P2. No model credentials,
+WebAgent, remote/company evaluator or real producer campaign is part of this slice.
+
 ## 2026-10-09 PR29/30/31 merged and source-projection chain closed
 
 PR29, PR30 and PR31 are now merged into `main` in order:

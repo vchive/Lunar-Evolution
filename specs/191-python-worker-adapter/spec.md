@@ -1,11 +1,14 @@
 # Feature191 — Pinned Python producer adapter
 
 Status: Phase A binding, durable binding sidecar, controller checkpoint binding, and read-only
-recovery gate implemented, 2026-10-10. Priority P1. The `PythonProducerBinding` DTO/parser joins already prepared
+recovery gate implemented; initialization/replay recovery hardening is complete against local
+provider-free fixtures and under final-source CI validation,
+2026-10-10. Priority P1. The `PythonProducerBinding` DTO/parser joins already prepared
 runtime/tree and launch evidence without I/O. The binding can now be persisted once in the
 batch as `python-producer-binding.json`; recovery requires the independently retained sidecar
-pin and rechecks it before and after native process recovery. RSI controller checkpoints also
-retain the same sidecar pin and fail closed on missing or drifted producer evidence. Pure terminal/runtime-observation
+pin and rechecks it before and after native process recovery. The immutable RSI run request is
+the earliest durable producer-proof anchor, and controller checkpoints must retain the same
+proof and fail closed on missing or drifted producer evidence. Pure terminal/runtime-observation
 DTOs and terminal resume/reconcile rules remain provider-free contracts. This slice does not
 start a real producer or CPython runtime, authenticate child observations, run an evaluator
 service, or launch an OpenEvolve/Shinka campaign.
@@ -48,6 +51,10 @@ evaluator before it can become a candidate or a published seed.
 - Treat the sidecar as a durable precondition for Python terminal recovery. Read-only recovery
   checks the sidecar before native inspection and again afterwards; missing, replaced, touched,
   hard-linked, symlinked, permission-drifted, or byte-drifted evidence is refused.
+- Validate the sidecar before creating a durable RSI run. Include the canonical producer proof
+  and retained pin in the immutable run request and its request digest, then copy that exact
+  proof into every controller checkpoint. A crash before the first checkpoint cannot erase the
+  run's producer-bound identity or downgrade it to a provider-free run.
 - Record real interpreter version/cache tag, startup flags, module origins,
   broker exchange and output material from the running process. C or parent code
   must not fabricate Python observations.
@@ -103,7 +110,10 @@ retried, or given a refreshed budget from absence of evidence.
    binding sidecar containing the external runtime/tree digests, launch intent, one-time
    attestation digest, producer/evaluator identities, request and total-wall budgets, and
    original deadline. The sidecar is limited to the binding parser's 2 MiB bound and its
-   retained file pin is held independently by the controller.
+   retained file pin is held independently by the controller. Before creating the durable RSI
+   run, preflight that retained proof against the live sidecar. Store the canonical proof/pin
+   in the immutable run request and include it in `request_sha256`; constructing the first
+   flow checkpoint is not the first durable binding boundary.
 2. **Launch.** Recheck all pins and no-follow runtime identities immediately
    before native release. Pass only an allowlisted environment and the fixed
    broker FD variables. The Python process receives a fixed fixture/protocol
@@ -121,6 +131,24 @@ retried, or given a refreshed budget from absence of evidence.
    evidence under the original deadline, and finally validates the sidecar again. Reconcile
    cannot publish, evaluate again, create a recovery lock/marker, or consume a new request budget.
    A missing sidecar or any sidecar binding/stat drift remains a refusal.
+6. **Controller recovery.** Validate the immutable run proof and live sidecar before restoring
+   or reconstructing a flow. Read the earliest ledger run revision and require the latest run
+   proof to equal that original proof; adding, removing or replacing a proof is drift. If the
+   first checkpoint is absent, reconstruct only from the
+   retained run request, preserving its original budget/deadline, fingerprints and producer
+   proof. A valid independently retained sidecar is still required; omission cannot turn the
+   run into a provider-free run. An originally unbound run cannot acquire a producer sidecar
+   during missing-checkpoint reconstruction. A present checkpoint must carry exactly the
+   run's producer proof, with symmetric equality for terminal and nonterminal states. A
+   pre-fix producer checkpoint lacking proof in the original run request fails closed; there
+   is no inferred migration from a checkpoint or current sidecar. Revalidate before intent
+   preparation, cached execution reuse, native
+   dispatch, direct episode recovery, checkpoint save (including an identical/no-op save), and
+   terminal settlement or replay. Callback reconcile and native failure reconcile also validate
+   on entry and immediately before publishing reconciliation checkpoint/journal state, including
+   branches with a previously reserved budget. Refusal cannot add budget consumption or append
+   a checkpoint/journal, invoke callbacks, dispatch, or mutate terminal state. A reservation
+   already durable before the failed check is preserved; refusal does not roll it back.
 
 ## OpenEvolve and Shinka boundary
 
@@ -135,7 +163,9 @@ unknown-reconcile and result-envelope contracts.
 
 ## Acceptance boundary
 
-The durable sidecar and pre/post recovery gate are complete as a provider-free local slice.
+The durable sidecar, immutable run-request anchor, and controller recovery boundaries are
+complete as a provider-free local slice. Focused regression and independent boundary review
+pass locally; exact-final-source CI remains required before merge acceptance.
 Feature acceptance still requires a dedicated Linux fixture proving the entire binding and
 recovery matrix with the accepted 189 image and 190 owner, including real CPython observations,
 loader-negative behavior, broker evidence, lifecycle timestamps and evaluator admission. A

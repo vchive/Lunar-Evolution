@@ -44,13 +44,47 @@ checks no-follow regular-file identity before/during/after the read, compares ex
 canonical bytes and digest, and reparses the binding. A missing, replaced, touched,
 linked, symlinked, mode-drifted, oversized, or mutated sidecar is not recoverable.
 
+## RSI durable producer proof
+
+`producer_checkpoint_binding` is the canonical `PythonProducerCheckpointBinding` wire
+derived from the independently retained sidecar. Its producer binding, run identity and
+digest/stat pin are validated against that caller-held sidecar; reading the sidecar does not
+create a replacement proof. The proof is inserted into the immutable RSI run request before
+the run record is created and participates in `request_sha256`. Sidecar preflight happens
+before that creation, and later boundaries revalidate because the sidecar can drift after
+preflight. Recovery reads the earliest ledger run revision and compares its proof with the
+latest run record, rejecting addition, removal or replacement. A later run revision is not
+allowed to redefine the original producer-bound identity.
+
+Each controller flow checkpoint copies the exact retained run proof. The run request is the
+earliest durable anchor, including the interval before the first flow checkpoint exists. A
+missing first checkpoint may be reconstructed from the retained run request only after live
+sidecar validation and without changing the original planned budget/deadline, fingerprints or
+proof. A supplied current sidecar cannot substitute a different proof or retrofit a producer
+binding into an originally unbound run during reconstruction. Run/checkpoint proof equality
+is symmetric: addition, removal and replacement are refused in terminal and nonterminal
+states. A pre-fix producer checkpoint whose earliest run revision has no producer proof fails
+closed. No migration proof is inferred from that checkpoint or the current workspace.
+Provider-free run/checkpoint shapes remain unchanged.
+
+The same proof/live-sidecar checks guard intent preparation, cached execution reuse, dispatch,
+direct episode recovery, checkpoint save (including identical/no-op save), and terminal
+settlement/replay. Callback reconcile and native failure reconcile check on entry and before
+publishing reconciliation checkpoint/journal state, even when their request budget was
+previously reserved. A failed guard cannot append a checkpoint/journal, invoke callbacks,
+consume additional budget or settle a terminal state. An earlier durable reservation remains
+consumed and is not rolled back by refusal. A completed checkpoint is not an exemption from
+the retained producer proof contract. Producer-bound legacy checkpoints without proof remain
+refused.
+
 The terminal and runtime-observation DTO/parser contracts below are implemented as pure
 validation. `recover_python_producer_terminal` composes native read-only process recovery
 with the sidecar gate: it verifies the retained sidecar before native inspection and once
 more afterwards, and never creates a recovery lock/marker, relaunches, publishes, evaluates,
 or consumes another request budget. Terminal resume/reconcile still operates on retained
 values without mutation. The existing result envelope remains unchanged. Controller
-checkpoint binding, runtime capture, and production admission remain open.
+checkpoint binding is implemented, with the earliest durable anchor and boundary-hardening
+acceptance pending final validation. Runtime capture and production admission remain open.
 
 ## PythonProducerBindingSidecar
 
