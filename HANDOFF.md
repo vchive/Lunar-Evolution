@@ -1,5 +1,44 @@
 # Lunar Evolution 交接记录
 
+
+## 2026-10-09 verified-input metadata continuation
+
+PR24/26/27 are merged in order as65170f4,407179b,43917d9. Each merge
+preserves the exact final-source tested tree and expected parents. Primary main
+43917d98/treec58dbfbd was clean/fast-forwarded before the current development
+branch. Main27 push37840218111 now also passes all three versions and27 raw
+XML phases, current12489/92 platform skips, zero failure/error/retry. Independent
+raw and root audits pass; source collection was the frozen PR27 source with an
+explicit identical-tree proof, never a later modified branch. Per-PR/main raw
+materials and merge proofs remain in ignored reports/persisted-ci-evidence-20261009.
+Superseded main24/26 push runs remain cancelled, not accepted.
+
+Continuing Feature189 G1 on codex/static-python-verified-inputs, the two pure
+validators accept fixed CPython/Zig archive receipt declarations and bounded
+regular-file/directory member metadata. Mandatory original external canonical
+SHA pins prevent rehashed declaration drift; exact types, paths, collisions,
+byte/count bounds, optional three-file preimage declarations and detached frozen
+DTOs are checked without network/files/tarfile/subprocess. Signature `verified`
+and matching member digests remain caller declarations, not machine observations.
+
+Author and independent reviewer143 cases pass; root composition508 cases passes
+with zero failures/errors/skips. Full Ruff/compileall/diff pass, independent review
+has no open finding, and a separate143-case CI metadata gate is wired. The first
+RUF022 tool output copy is preserved as such; root broader run retains existing
+Darwin pytest read-only temp cleanup warnings. Final-source full Linux CI/raw
+audit/main merge for this new slice remain pending. See189 verified-inputs SDD.
+
+Actual source/toolchain archive acquisition and signature/extraction proof,
+prepared source/config, complete core/freezer/target input closure, nine real
+same-source frozen headers, direct static link/ELF/descriptor and existing
+owner/guardian/v2/deadline/pipe startup/lifecycle acceptance remain G1/G2/G3 work.
+OpenEvolve/Shinka Python process adapters and production RSI CLI follow those
+gates. No real archive/build/runtime, .env/credential, model, WebAgent, remote/
+company evaluator or actual solver campaign ran. Production/runtime-load/general
+code-origin protection claims remain false; P2 multi-host/services stay deferred.
+Preserve all other worktrees and changes.
+
+
 ## 2026-10-09 offline exact source preparation continuation
 
 Continue Feature189 G1/G2 per source-preparation.md: pure fixed three-file

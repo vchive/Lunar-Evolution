@@ -1,6 +1,6 @@
 # Current development work
 
-## 2026-10-09 offline source preparation continuation
+## 2026-10-09 verified-input contract continuation
 
 Feature189 now has a pure fixed-source transformation over three reviewed
 CPython3.13.12 files and finite frozen/builtin/stdlib table emitters. The plan
@@ -11,13 +11,31 @@ compile/link and startup remain pending. The corrected configure argument is
 with zero failures/errors/skips, plus full Ruff/compileall/diff checks. The
 source96 CI gate is separate from preparation226 and observation43.
 
+PR24, PR26 and PR27 are now merged into main `43917d9`. Their final-source runs
+`37831879295`, `37832066397` and `37832142315` passed all three Linux versions
+and independent raw artifact/source/tree audits. The preparation226,
+observation43 and source96 gates have zero failures/errors/skips. Each merge
+preserves its tested source tree. The main push run `37840218111` reports all
+three matrix jobs successful; its independent raw-material and root audits also
+passed all27 phases, current12489/92 platform skips and zero failure/error/retry.
+Its immutable tree matches the frozen PR27 collection; evidence is retained in
+ignored `reports/persisted-ci-evidence-20261009/main27-final-ci-audit`.
+
 PR24 first final-source37729c9a/run37829395862 retains a Python3.12 failure in
 the existing slow-HTTP fixture's0.2-second startup assumption. The test now
 allows two seconds while checking the unchanged absolute deadline, its worker
 payload, one origin/no redirect and exact reap; broker87 passes locally. Its
-original failure evidence remains separate. PR24/PR26 repaired final-source
-full Linux CI, independent raw audit and main merge remain required. This
-source slice does not authorize or claim a CPython build or real solver run.
+original failure evidence remains separate. The current Feature189 continuation
+adds only bounded pure archive-receipt and extraction-manifest validation.
+Its two validators require externally retained canonical SHA pins and return
+immutable detached metadata. The143-case inventory and root508-case composition
+pass with zero failure/error/skip; full Ruff/compileall/diff and independent
+source review pass. A separate143-case CI metadata gate is wired; final-source
+Linux CI/raw audit/main merge are pending for this continuation.
+Advertised archive pins, claimed acquisition/signature results and extraction
+metadata must remain distinct from independently observed release/toolchain
+bytes. No real archive acquisition, extraction, CPython build/startup or solver
+run is performed by this slice; actual G1/G2/G3 evidence remains open.
 
 ## 2026-10-09 current head
 
@@ -45,8 +63,8 @@ with fake runtime inputs. PR26 now builds on the final PR24 preparation source
 evidence: `python-preparation.xml` requires 226 pure preparation cases and
 `python-observation.xml` requires 43 pure adapter cases with zero failures,
 errors or skips. Fake runtime inputs do not supply real static CPython/runtime
-observations or loader enforcement evidence. Their repaired final-source Linux CI and
-merge are pending. Real runtime build/startup, loader-negative enforcement,
+observations or loader enforcement evidence. Their repaired final-source Linux CI
+and merges are complete as recorded above. Real runtime build/startup, loader-negative enforcement,
 lifecycle spawn and OpenEvolve/Shinka Python process adapters remain open.
 
 PR23/Feature190 is also merged at `3a7782c`; replacement final-source
@@ -85,7 +103,7 @@ older feature documents retain their historical submission state.
 | P0 | Bounded kernel-global routes (Feature192 / PR25) | Completed: three-version raw run37820105103; main mergee341010, tested treeb06470f. This is a bounded deny contract, not complete Linux containment |
 | P1 | Framed immutable runtime material (Feature188) | Completed: PR22 raw run37747759152; main merge4f8576d. All runtime-load/production claims remain false |
 | P0 | Original executable ownership and cleanup (Feature190 / PR23) | Completed: replacement final run37802795693; main merge3a7782c |
-| P1 | Python archive/import/loader closure and immutable runtime loading | Feature189 preparation adds bounded pure ELF/descriptor gates and an offline pinned recipe; actual source patches, Linux build, startup and native acceptance remain open |
+| P1 | Python archive/import/loader closure and immutable runtime loading | Feature189 has bounded pure ELF/descriptor gates, exact inert source patches, finite table assets and an offline pinned recipe. The current archive-receipt/extraction-manifest validator is preparation only; observed archive/signature/toolchain evidence, source application, Linux build, startup and native acceptance remain open |
 | P1 | Versioned runtime delivery and formal Python worker admission | Feature191 Phase A binding, Phase C terminal/reconcile and pure fixture observation adapter gates are implemented; actual launch/runtime observation/admission remain open |
 | P1 | OpenEvolve/Shinka Python process adapters | Existing native composition/export paths remain untrusted provenance; common Python process adapter and local inert fixture remain open |
 | P1 | Production RSI CLI composition | Wire only admitted workers through durable controller resume, unknown/drift/budget gates and retained provenance; verify a repeatable local end-to-end entry |
