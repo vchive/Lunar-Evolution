@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -17,8 +18,10 @@ from lunar_evolution.python_producer_binding_store import (
     PYTHON_BINDING_SIDECAR_NAME,
     persist_python_producer_binding,
 )
+from lunar_evolution.python_producer_checkpoint import PythonProducerCheckpointBinding
 from lunar_evolution.python_producer_lifecycle import (
     PythonProducerLifecycleError,
+    build_python_producer_terminal,
     recover_python_producer_terminal,
     resume_python_producer_terminal,
 )
@@ -88,6 +91,34 @@ def _receipt(binding, **changes) -> ProducerExecutionReceipt:
     return ProducerExecutionReceipt(**value)
 
 
+def _completed_terminal(binding):
+    return build_python_producer_terminal(
+        binding_sha256=binding.binding_sha256,
+        run_id=binding.run_id,
+        journal_id=binding.intent.journal_id,
+        launch_id=binding.intent.launch_id,
+        process_registration_sha256=D,
+        owner_identity_sha256=D,
+        executable_sha256=binding.interpreter_sha256,
+        executable_size=binding.interpreter.size,
+        executable_device=binding.interpreter.device,
+        executable_inode=binding.interpreter.inode,
+        started_unix=10.0,
+        released_unix=11.0,
+        exited_unix=12.0,
+        deadline_unix=binding.deadline_unix,
+        status="completed",
+        exit_code=0,
+        signal=None,
+        cleanup_status="cleaned",
+        request_journal_sha256=D,
+        request_count=1,
+        stdout_sha256=D,
+        stderr_sha256=D,
+        publication_eligible=False,
+    )
+
+
 def test_recovery_projects_existing_receipt_without_upgrading_unknown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -106,6 +137,59 @@ def test_recovery_projects_existing_receipt_without_upgrading_unknown(
     assert calls == [(tmp_path, binding.intent.journal_id, False)]
     with pytest.raises(PythonProducerLifecycleError, match="reconcile_required"):
         resume_python_producer_terminal(terminal, expected_binding=binding)
+
+
+def test_checkpoint_aware_recovery_validates_retained_pin_before_and_after_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding, sidecar = _binding(tmp_path)
+    checkpoint = PythonProducerCheckpointBinding.from_sidecar(sidecar)
+    receipt = _receipt(binding)
+    calls = []
+
+    def inspect(workspace, *, journal_id, cleanup):
+        calls.append((workspace, journal_id, cleanup))
+        return receipt.to_dict()
+
+    monkeypatch.setattr(lifecycle, "recover_producer_process", inspect)
+    terminal = _recover(tmp_path, binding, sidecar, checkpoint=checkpoint)
+    assert terminal.status == "unknown"
+    assert calls == [(tmp_path, binding.intent.journal_id, False)]
+
+
+def test_checkpoint_aware_recovery_rejects_forged_pin_before_native_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding, sidecar = _binding(tmp_path)
+    checkpoint = PythonProducerCheckpointBinding.from_sidecar(sidecar)
+    forged = checkpoint.to_dict()
+    forged["sidecar_pin"] = {
+        **forged["sidecar_pin"],
+        "file_inode": forged["sidecar_pin"]["file_inode"] + 1,
+    }
+    calls = []
+    monkeypatch.setattr(lifecycle, "recover_producer_process", lambda *args, **kwargs: calls.append(True))
+    with pytest.raises(PythonProducerLifecycleError, match="checkpoint_binding_invalid"):
+        _recover(tmp_path, binding, sidecar, checkpoint=forged)
+    assert calls == []
+
+
+def test_resume_checkpoint_requires_sidecar_and_rejects_binding_drift(
+    tmp_path: Path,
+) -> None:
+    binding, sidecar = _binding(tmp_path)
+    checkpoint = PythonProducerCheckpointBinding.from_sidecar(sidecar)
+    terminal = _completed_terminal(binding)
+    with pytest.raises(PythonProducerLifecycleError, match="checkpoint_sidecar_required"):
+        resume_python_producer_terminal(terminal, expected_binding=binding, checkpoint=checkpoint)
+    with pytest.raises(PythonProducerLifecycleError, match="checkpoint_binding_invalid"):
+        resume_python_producer_terminal(
+            terminal, expected_binding=binding, checkpoint=checkpoint,
+            sidecar=replace(sidecar, file_inode=sidecar.file_inode + 1),
+        )
+    assert resume_python_producer_terminal(
+        terminal, expected_binding=binding, checkpoint=checkpoint, sidecar=sidecar,
+    ).status == "completed"
 
 
 def test_recovery_required_observation_is_a_fixed_refusal(

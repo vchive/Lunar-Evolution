@@ -675,6 +675,12 @@ from .python_producer_binding_store import (
     persist_python_producer_binding,
     read_python_producer_binding_sidecar,
 )
+from .python_producer_checkpoint import (
+    PYTHON_PRODUCER_CHECKPOINT_PROTOCOL,
+    PYTHON_PRODUCER_CHECKPOINT_SCHEMA_VERSION,
+    PythonProducerCheckpointBinding,
+    PythonProducerCheckpointError,
+)
 from .python_producer_lifecycle import (
     PYTHON_PRODUCER_SCHEMA_VERSION,
     PYTHON_PRODUCER_TERMINAL_PROTOCOL,
@@ -691,6 +697,7 @@ from .python_producer_lifecycle import (
     reconcile_python_producer_terminal,
     recover_python_producer_terminal,
     resume_python_producer_terminal,
+    validate_python_producer_checkpoint,
 )
 from .remote_evolution import (
     RemoteCancelRequest,
@@ -1043,6 +1050,8 @@ __all__ = [
     "PYTHON_BINDING_SIDECAR_NAME",
     "PYTHON_PRODUCER_BINDING_PROTOCOL",
     "PYTHON_PRODUCER_BINDING_SCHEMA_VERSION",
+    "PYTHON_PRODUCER_CHECKPOINT_PROTOCOL",
+    "PYTHON_PRODUCER_CHECKPOINT_SCHEMA_VERSION",
     "PYTHON_PRODUCER_SCHEMA_VERSION",
     "PYTHON_PRODUCER_TERMINAL_PROTOCOL",
     "PYTHON_RUNTIME_OBSERVATION_PROTOCOL",
@@ -1348,6 +1357,8 @@ __all__ = [
     "PythonProducerBindingError",
     "PythonProducerBindingSidecar",
     "PythonProducerBindingStoreError",
+    "PythonProducerCheckpointBinding",
+    "PythonProducerCheckpointError",
     "PythonProducerLifecycleError",
     "PythonProducerRuntimeObservation",
     "PythonProducerTerminal",
@@ -1706,6 +1717,7 @@ __all__ = [
     "validate_native_rsi_launch_inputs",
     "validate_producer_launch_inputs",
     "validate_producer_request_evidence",
+    "validate_python_producer_checkpoint",
     "verify_candidate_source_bundle",
     "verify_native_campaign_audit",
     "verify_native_retained_evidence",
