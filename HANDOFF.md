@@ -1,5 +1,18 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 synchronized archive observation source
+
+The archive-observation branch is now synchronized onto repaired PR29 source
+`ce606690fccade425ff4074d80cda45e3a7fd8e9`, tree
+`6812af8f15280664b2d237fda8c7d3f6da7cc8cd`. The three archive commits were
+replayed intact, with both prior HANDOFF sections retained as historical context.
+PR29 new run `37894037150` is pending. PR30 old-source run `37888747778`
+failed full regression on 3.11/3.12 despite passing its focused gates; the old
+failure materials remain separate and cannot approve this synchronized source.
+Fresh final-source three-version CI and independent raw audits are required for
+both PRs before main merge. The historical statuses below are superseded by this
+entry; no old CI outcome is carried forward as new-source acceptance.
+
 ## 2026-10-09 independent guardian readiness follow-up
 
 PR29 `codex/static-python-build-inputs` is being repaired before any new CI rerun.
@@ -27,6 +40,42 @@ or otherwise synchronized to the repaired PR29 head before it can be accepted.
 Its currently running old-source CI cannot approve the new source. No real release
 archive, static build, runtime, model, evaluator or solver campaign ran.
 
+## 2026-10-09 build-input CI and local archive observation continuation
+
+PR28 is merged as `1e492dc2ab023dba1d99b21520a84ef0653556d4` after
+three-version full CI and independent raw/source/tree audits. PR29 source
+`fd6fe9759b1ec605a49967f51938a8b5d1895471`, tree
+`07bc02b6682570d12a6eb5f75730e4d7532b33c0`, remains pending main merge.
+
+PR29 run `37880437675` attempt1 passed all focused gates and full3.11/3.13.
+Full3.12 had one setup error in the existing deadline-anchor unknown-attempt
+fixture: `native_guardian_ready_invalid` before the intended terminal-write
+failure, so the test body did not execute. This is not a demonstrated build-input
+regression or an established environment cause. Attempt1 raw ZIP/XML/API/logs,
+exact case inventories and failure audit are retained in ignored reports/
+persisted-ci-evidence-20261009/pr29-attempt1-ci-evidence. That material audit has
+`ci_approval=false`. A same-source diagnostic failed-job rerun (attempt2) is
+pending; never erase the first failure or describe a workflow rerun as no retry.
+
+The next bounded Feature189 slice observes one local archive through a held
+directory/file FD and immutable compressed-byte snapshot, then parses only
+reviewed USTAR regular files/directories with bounded XZ/tar/member accounting.
+The implementation and independent review are locally complete in the separate
+`codex/static-python-archive-observation` worktree (d287ffd + 7e965d8). The64
+focused cases and root656-case composition pass with zero failures/errors/skips;
+Ruff/compileall/diff checks pass, and the64-case dedicated CI gate is wired.
+The first root composition missed PYTHONPATH during collection; its original
+XML/log remain separate from the corrected successful run. Exact-source
+three-version CI/audit and main merge remain pending. No real release archive was
+downloaded or extracted, no signature checked, no static image built or run.
+
+Actual source/toolchain acquisition and provenance, configured/static build
+closure, real frozen headers, ELF/link/size audit, fixed-main runtime/lifecycle
+acceptance, Feature191 actual Python lifecycle and OpenEvolve/Shinka Python
+process adapters, then production RSI CLI composition remain P1. P2 multi-host,
+services and distributed scheduling remain deferred. Only inert/provider-free
+local fixtures and GitHub CI; no .env/credentials, model, WebAgent, remote/company
+evaluator or actual solver campaign. Preserve all other worktrees and changes.
 
 ## 2026-10-09 fixed candidate build-input continuation
 
