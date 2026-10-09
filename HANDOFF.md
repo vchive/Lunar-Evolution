@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-10 PR32 durable producer recovery hardening in progress
+
+PR32 (`codex/python-producer-recovery`) is still under development and final validation;
+it is not yet merged. The current fix makes the immutable RSI run request the earliest durable
+producer-proof anchor: preflight the independently retained sidecar before run creation, retain
+canonical proof/pin in the run request and request digest, and copy the exact proof into flow
+checkpoints. Latest run proof must match the earliest ledger run revision, and run/checkpoint
+comparison is symmetric. Missing-first-checkpoint recovery must use that retained proof and preserve the
+original planned budget/deadline/fingerprints while revalidating the live sidecar. Omitting a
+sidecar must never downgrade a producer-bound run to provider-free execution. Terminal and
+nonterminal run/checkpoint proof mismatch, checkpoint save/no-op, direct episode recovery and
+terminal settlement/replay are included in the required fail-closed regression matrix. An
+originally unbound run cannot be retrofitted with a producer sidecar; pre-fix producer
+checkpoints without original-run proof fail closed without inferred migration. Callback and
+native-failure reconcile revalidate at entry and before checkpoint/journal publication, including
+already-reserved branches. Refusal consumes no additional budget and appends no journal;
+previously durable reservations remain consumed.
+
+The provider-free hardening now passes 61 dedicated recovery cases and 131 controller/replay
+cases with zero failures/errors/skips. The final gates include post-admission and pre-gateway
+dispatch proof checks, native replay/reconcile checks before durable publication, and callback
+completion checks before journal publication; independent boundary review found no remaining
+blocking gap. Exact-final-source Ubuntu 3.11/3.12/3.13 CI must still complete before merge.
+Existing source/test changes are being preserved in the PR worktree. Runtime
+observations, actual sealed CPython launch, complete process/journal recovery and local exact
+evaluator/atomic publication composition remain P1 gates; DTOs and inert fixtures cannot
+establish production admission. External worker authentication, multi-host ownership,
+distributed scheduling, service API and remote evaluator remain P2. No model credentials,
+WebAgent, remote/company evaluator or real producer campaign is part of this slice.
+
 ## 2026-10-09 PR29/30/31 merged and source-projection chain closed
 
 PR29, PR30 and PR31 are now merged into `main` in order:
@@ -6283,3 +6313,31 @@ code/config/contract/task/holdout/seed with candidate source/execution/publicati
 Native gateway mapping now requires both worker completed evidence and independent evaluator pass evidence.
 The scheduler provider emits the same local fixture evidence, preserving native E2E replay. Remote evaluator,
 external project authentication, multi-host ownership, and real OpenEvolve/Shinka campaigns remain out of scope.
+
+## 2026-10-09 Feature 191 durable Python binding/recovery slice
+
+在 `codex/python-producer-recovery` 分支补齐了 Feature191 的本地 durable binding 边界。新增
+`python-producer-binding.json` create-only sidecar：写入前先 canonical reparse 和大小限制，
+在现有 batch recovery lock 下用临时文件加 hard-link 发布，最终只保留一个 `0600` regular
+file link，并由 controller 单独保留 digest、size、device、inode、mode、nlink、mtime、ctime
+pin。sidecar 上限与 Python binding parser 同步为 2 MiB；失败发布会清理本次拥有的临时文件和
+sidecar，绝不覆盖已有 sidecar。
+
+`read_python_producer_binding_sidecar` 在任何 workspace I/O 前验证 retained pin，并在 no-follow
+目录句柄中对 sidecar 做读前、读中、读后身份检查，再比较精确 canonical bytes、digest 和
+reparse 结果。缺失 batch/sidecar、替换、touch、权限/link/inode 漂移、symlink、binding mutation
+和 malformed retained pin 都 fail closed。`recover_python_producer_terminal` 现在必须接收该
+sidecar，native recovery 前后各重读一次；恢复接口保持 read-only，不创建 `.recovery.lock` 或
+recovery marker，不重启、不刷新 deadline/预算、不发布结果。launch-input 的最终 not-started
+检查允许 sidecar 伴随待启动 binding 留存，初始 prepare/bind 仍把它视为已开始以拒绝重复绑定。
+
+对应 focused 回归位于 `tests/test_python_producer_binding_store.py` 和
+`tests/test_python_producer_recovery.py`，覆盖 round-trip、create-only、临时文件清理、读前
+pin gate、batch/sidecar 缺失、字节和文件身份 drift 以及 native reader 前后 replacement。
+这一切仍是 provider-free/inert fixture 证据；真实 CPython、OpenEvolve/Shinka campaign、真实
+runtime observation 和 local exact-evaluator admission 仍未完成，也没有运行 WebAgent、远程
+evaluator、真实 producer 或凭据。controller checkpoint 对 pin 的 durable 绑定已在后续 PR32
+工作树补齐：producer-bound flow checkpoint 保留 canonical sidecar binding，并在 fresh run、
+intent preparation、cached execution、dispatch 和 resume 前 fail closed 地重验 sidecar；旧
+checkpoint 缺少 producer proof 时拒绝恢复。remote evaluator、外部 worker 认证、多机 ownership、
+distributed scheduler 和 service API 仍是明确的 P2 范围。

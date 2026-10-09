@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, Protocol
 
 from .candidate_evaluation_spec import canonical_json
@@ -194,6 +195,7 @@ class PracticeEpisodeRunner:
         memory_snapshot: MemorySnapshot | None = None,
         *, before_verify: Callable[[], None] | None = None,
         before_run: Callable[[], None] | None = None,
+        before_dispatch: Callable[[], None] | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -212,6 +214,7 @@ class PracticeEpisodeRunner:
                 raise RSILearningError("rsi_native_gateway_ledger_mismatch")
         self.before_verify = before_verify
         self.before_run = before_run
+        self.before_dispatch = before_dispatch
 
     def _invoke_gateway(self, request: SolverRequest) -> SolverResult:
         if getattr(self.gateway, "requires_memory_snapshot", False) is True:
@@ -317,6 +320,10 @@ class PracticeEpisodeRunner:
             self.before_run()
         running = episode.transition("running", request_sha256=request.digest())
         ledger_head = self._create_running_record(running)
+        if self.before_dispatch is not None:
+            # The running episode is now durable, but the solver side effect has not started.
+            # Keep one final caller-supplied identity/deadline gate at that exact boundary.
+            self.before_dispatch()
         started_ns = time.monotonic_ns()
         try:
             result = self._invoke_gateway(request)
@@ -934,6 +941,8 @@ class RSILearningController:
         generation_regression_tasks: Sequence[Any] | None = None,
         generation_regression_runner: Callable[..., Any] | None = None,
         generation_revalidate_before_dispatch: bool = False,
+        producer_sidecar: Any | None = None,
+        producer_workspace: str | Path | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -948,6 +957,21 @@ class RSILearningController:
         if usage_ledger is not None and not isinstance(usage_ledger, RSIUsageLedger):
             raise TypeError("usage_ledger must be an RSI usage UsageLedger")
         self.usage_ledger = usage_ledger
+        # A Python producer is optional.  When supplied, its independently retained
+        # sidecar pin is copied into every RSI controller checkpoint and must be
+        # revalidated before recovery can proceed.  Keep this boundary opt-in so
+        # ordinary provider-free RSI runs retain their existing schema and behavior.
+        from .python_producer_binding_store import PythonProducerBindingSidecar
+
+        if producer_sidecar is None:
+            if producer_workspace is not None:
+                raise RSILearningError("rsi_producer_workspace_without_sidecar")
+        elif type(producer_sidecar) is not PythonProducerBindingSidecar:
+            raise RSILearningError("rsi_producer_sidecar_invalid")
+        elif producer_workspace is None:
+            raise RSILearningError("rsi_producer_workspace_required")
+        self.producer_sidecar = producer_sidecar
+        self.producer_workspace = Path(producer_workspace).expanduser() if producer_workspace is not None else None
         from .rsi_governance_coordinator import RSIGovernanceCoordinator
 
         if memory_admission_gate is not None:
@@ -979,6 +1003,74 @@ class RSILearningController:
         # admission record remains the durable source of truth; a fresh process may return
         # ``None`` for an already-approved report when the report itself was not persisted.
         self._transfer_promotion_reports: dict[tuple[str, str, str, str], Any] = {}
+
+    def _producer_checkpoint_state(self, *, run_id: str) -> dict[str, Any] | None:
+        """Build the retained producer pin without inspecting the workspace."""
+
+        if self.producer_sidecar is None:
+            return None
+        from .python_producer_checkpoint import PythonProducerCheckpointBinding
+
+        try:
+            checkpoint = PythonProducerCheckpointBinding.from_sidecar(self.producer_sidecar)
+            if checkpoint.run_id != run_id:
+                raise RSILearningError("rsi_producer_checkpoint_run_mismatch")
+            return checkpoint.to_dict()
+        except RSILearningError:
+            raise
+        except Exception as exc:
+            raise RSILearningError("rsi_producer_checkpoint_binding_invalid") from exc
+
+    def _validate_producer_checkpoint(self, run_id: str, state: Mapping[str, Any] | None) -> None:
+        """Fail closed on retained pin or live sidecar drift before any new launch."""
+
+        wire = state.get("producer_checkpoint_binding") if state is not None else None
+        if self.producer_sidecar is None:
+            if wire is not None:
+                raise RSILearningError("rsi_producer_checkpoint_sidecar_missing")
+            return
+        if wire is None:
+            raise RSILearningError("rsi_producer_checkpoint_missing")
+        from .python_producer_binding_store import (
+            PythonProducerBindingStoreError,
+            read_python_producer_binding_sidecar,
+        )
+        from .python_producer_checkpoint import (
+            PythonProducerCheckpointBinding,
+            PythonProducerCheckpointError,
+        )
+
+        try:
+            checkpoint = PythonProducerCheckpointBinding.from_dict(wire)
+            if checkpoint.run_id != run_id:
+                raise PythonProducerCheckpointError("run_mismatch")
+            checkpoint.validate_sidecar(self.producer_sidecar)
+            if self.producer_workspace is None:  # guarded by __init__, kept explicit for type checkers
+                raise PythonProducerCheckpointError("workspace_missing")
+            read_python_producer_binding_sidecar(
+                self.producer_workspace,
+                binding=self.producer_sidecar.binding,
+                expected_sidecar=self.producer_sidecar,
+            )
+        except (PythonProducerCheckpointError, PythonProducerBindingStoreError, OSError, TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_producer_checkpoint_sidecar_invalid") from exc
+
+    def _validate_run_checkpoint_producer_binding(
+        self, record: RSIRecord, state: Mapping[str, Any] | None,
+    ) -> None:
+        """Validate the original run proof, controller proof and current sidecar together."""
+
+        run_binding = record.payload.get("producer_checkpoint_binding")
+        if self.ledger is not None:
+            original = self.ledger.history(record.logical_id)[0]
+            if original.payload.get("producer_checkpoint_binding") != run_binding:
+                raise RSILearningError("rsi_resume_checkpoint_corrupt")
+        if state is not None and state.get("producer_checkpoint_binding") != run_binding:
+            raise RSILearningError("rsi_resume_checkpoint_corrupt")
+        proof = state
+        if proof is None and run_binding is not None:
+            proof = {"producer_checkpoint_binding": run_binding}
+        self._validate_producer_checkpoint(record.logical_id, proof)
 
     @property
     def snapshot(self) -> MemorySnapshot:
@@ -1371,16 +1463,37 @@ class RSILearningController:
     def _invoke_callback(self, run_id: str, callback_id: str, stage: str, inputs: Mapping[str, Any],
                          call: Callable[[], Mapping[str, Any]],
                          before_call: Callable[[], None] | None = None) -> dict[str, Any]:
-        if self.ledger is None:
+        def validate_producer() -> None:
+            if self.ledger is None:
+                return
+            record = self.ledger.get_run(run_id)
+            checkpoint = self.ledger.controller_checkpoint(run_id)
+            if record is None:
+                raise RSILearningError("rsi_resume_checkpoint_unavailable")
+            self._validate_run_checkpoint_producer_binding(
+                record, checkpoint[1] if checkpoint is not None else None,
+            )
+
+        def before_callback() -> None:
+            validate_producer()
             if before_call is not None:
                 before_call()
+
+        def validate_callback(value: Mapping[str, Any]) -> None:
+            # The callback may mutate or remove a retained producer sidecar.  Validate again
+            # immediately before DurableCallbackJournal publishes its completed record.
+            validate_producer()
+            self._callback_result({"stage": stage, "input": inputs}, value)
+
+        if self.ledger is None:
+            before_callback()
             result = dict(call())
-            self._callback_result({"stage": stage, "input": inputs}, result)
+            validate_callback(result)
             return result
         binding = self._callback_binding(stage, inputs)
         return DurableCallbackJournal(self.ledger).invoke(
             run_id, callback_id, binding=binding, call=call,
-            validate=lambda value: self._callback_result(binding, value), before_call=before_call,
+            validate=validate_callback, before_call=before_callback,
         )
 
     def _verify_episode(self, episode: PracticeEpisode, request: SolverRequest, result: SolverResult,
@@ -1443,6 +1556,7 @@ class RSILearningController:
             self._validate_resume_identity(record, None, None)
             self._check_budget_history(record)
             state = checkpoint[1]
+            self._validate_run_checkpoint_producer_binding(record, state)
             self._restore_failure_curriculum(state)
             if state.get("callback_protocol_version") != "1":
                 raise RSILearningError("rsi_callback_migration_required")
@@ -1455,11 +1569,16 @@ class RSILearningController:
                 raise RSILearningError("rsi_callback_missing")
             if callback[1]["binding"] != binding:
                 raise RSILearningError("rsi_callback_binding_drift")
+
+            def validate_result(value: Mapping[str, Any]) -> None:
+                self._validate_run_checkpoint_producer_binding(record, state)
+                self._callback_result(binding, value)
+
             if callback[1]["status"] == "completed":
                 return journal.reconcile(
                     run_id, callback_id, expected_checkpoint_sha256=expected_checkpoint_sha256,
                     binding=binding, result=result, evidence=clean_evidence,
-                    validate=lambda value: self._callback_result(binding, value),
+                    validate=validate_result,
                 )
             if callback[0] != expected_checkpoint_sha256:
                 raise RSILearningError("rsi_callback_checkpoint_conflict")
@@ -1481,7 +1600,7 @@ class RSILearningController:
             return journal.reconcile(
                 run_id, callback_id, expected_checkpoint_sha256=expected_checkpoint_sha256,
                 binding=binding, result=result, evidence=clean_evidence,
-                validate=lambda value: self._callback_result(binding, value),
+                validate=validate_result,
             )
 
     def _check_callback_quarantine(self, state: Mapping[str, Any]) -> None:
@@ -1705,6 +1824,7 @@ class RSILearningController:
         solver_id: str,
         budget: Mapping[str, Any] | None,
         plan: Mapping[str, Any] | None = None,
+        producer_checkpoint_binding: Mapping[str, Any] | None = None,
     ) -> RSIRecord | None:
         if self.ledger is None:
             return None
@@ -1741,6 +1861,12 @@ class RSILearningController:
                 "run_fingerprint": run_fingerprint.to_dict(),
             },
         }
+        if producer_checkpoint_binding is not None:
+            # Keep producer identity in the run record as well as the controller journal.
+            # This closes the crash window between creating a running record and writing
+            # the first controller checkpoint: recovery must never infer provider-free mode
+            # from the absence of that checkpoint.
+            payload["producer_checkpoint_binding"] = dict(producer_checkpoint_binding)
         curriculum_state = self._failure_curriculum_state()
         if curriculum_state is not None:
             payload["curriculum_state"] = curriculum_state
@@ -1876,6 +2002,7 @@ class RSILearningController:
             self._validate_resume_identity(record, None, None)
             self._check_budget_history(record)
             state = checkpoint[1]
+            self._validate_run_checkpoint_producer_binding(record, state)
             if (state.get("run_id") != run_id or head.payload.get("run_id") != run_id or
                     state.get("plan") != record.payload.get("plan") or
                     state.get("pins") != {key: record.payload[key] for key in (
@@ -1941,6 +2068,7 @@ class RSILearningController:
                         current_checkpoint is None or current_checkpoint[0] != checkpoint_pin or
                         current_head is None or current_head.record_sha256 != expected_head):
                     raise RSILearningError("rsi_native_failure_checkpoint_conflict")
+                self._validate_run_checkpoint_producer_binding(current_record, current_checkpoint[1])
 
             # Validate pins before consuming evidence budget; inspection never publishes.
             anticipated = self.gateway.inspect_failure(
@@ -1998,6 +2126,20 @@ class RSILearningController:
             episode = PracticeEpisode.from_dict(episode_record.payload)
         except RSILearningError as exc:
             raise RSILearningError("rsi_episode_record_invalid") from exc
+        # This helper is also reachable from legacy reconciliation and native failure
+        # recovery, where the caller may have validated the producer proof earlier.  Re-read
+        # the durable controller checkpoint here so a sidecar replacement between that check
+        # and recovery cannot turn into a new accepted execution.
+        checkpoint = self.ledger.controller_checkpoint(episode.run_id)
+        run = self.ledger.get_run(episode.run_id)
+        if run is not None:
+            self._validate_run_checkpoint_producer_binding(
+                run, checkpoint[1] if checkpoint is not None else None,
+            )
+        else:
+            self._validate_producer_checkpoint(
+                episode.run_id, checkpoint[1] if checkpoint is not None else None,
+            )
         saved = self.ledger.episode_result(episode_id)
         settled_failure = episode.status in {"failed", "timed_out", "abandoned", "cancelled"}
         journal = self.ledger.episode_reconciliation(episode_id) if settled_failure else ()
@@ -2034,6 +2176,12 @@ class RSILearningController:
             raise RSILearningError("rsi_episode_result_conflict")
         if result.status != "unknown":
             self._validate_native_replay(episode, request, result)
+        # Replay validation can itself observe a replaced sidecar.  Nothing below may append
+        # an unknown-usage marker, reconcile an episode, or attach a verifier until the same
+        # producer proof is checked again.
+        self._validate_producer_checkpoint(
+            episode.run_id, checkpoint[1] if checkpoint is not None else None,
+        )
         self._usage_replay_marker(episode, request)
         if result.status == "unknown":
             raise RSILearningError("rsi_unknown_reconcile_required")
@@ -2044,6 +2192,12 @@ class RSILearningController:
         # previous resume already settled it, simply read the terminal head and replay it.
         head = episode_record
         if episode.status in {"running", "unknown"}:
+            # The usage replay marker is itself durable accounting. Recheck immediately before
+            # the episode reconciliation append so a sidecar drift during that read/append
+            # boundary cannot publish a producer-unbound terminal head.
+            self._validate_producer_checkpoint(
+                episode.run_id, checkpoint[1] if checkpoint is not None else None,
+            )
             result_sha256 = hashlib.sha256(canonical_json(result.to_dict())).hexdigest()
             evidence = {
                 "reconciliation": {
@@ -2073,6 +2227,9 @@ class RSILearningController:
 
         if result.status == "completed" and episode.status == "completed" and episode.verifier is None:
             decision = self._verify_episode(episode, request, result, before_verify)
+            self._validate_producer_checkpoint(
+                episode.run_id, checkpoint[1] if checkpoint is not None else None,
+            )
             verified = episode.attach_verifier(decision)
             head = self.ledger.append_episode_record(verified, expected_record_sha256=head.record_sha256)
             episode = verified
@@ -2115,13 +2272,21 @@ class RSILearningController:
         self._sync_curriculum_checkpoint(state)
         if self.ledger is None or record is None:
             return
+        self._validate_run_checkpoint_producer_binding(record, state)
         previous = self.ledger.controller_checkpoint(record.logical_id)
         if previous is not None:
             from .rsi_parent_budget import ParentRunBudget
 
             ParentRunBudget.synchronize(state, previous[1])
         if previous is not None and previous[1] == state:
+            # Callers also use _save_flow as a recovery boundary, so an unchanged checkpoint
+            # must not mask sidecar drift.
+            self._validate_producer_checkpoint(record.logical_id, state)
             return
+        # Validate immediately before the checkpoint write as well as at dispatch boundaries.
+        # The sidecar is independently retained evidence; a drift after an earlier check must
+        # leave the controller at its last known-good checkpoint instead of publishing progress.
+        self._validate_producer_checkpoint(record.logical_id, state)
         self.ledger.write_controller_checkpoint(
             record.logical_id, state, expected_sha256=previous[0] if previous else None,
         )
@@ -2140,6 +2305,12 @@ class RSILearningController:
                              else RSIRunBudget.create(budget).to_dict()), "intents": {},
             "executions": {}, "decisions": {}, "judgments": {},
         }
+        producer_checkpoint = (
+            record.payload.get("producer_checkpoint_binding")
+            if record is not None else self._producer_checkpoint_state(run_id=run_id)
+        )
+        if producer_checkpoint is not None:
+            state["producer_checkpoint_binding"] = dict(producer_checkpoint)
         self._sync_curriculum_checkpoint(state)
         return state
 
@@ -2166,11 +2337,18 @@ class RSILearningController:
         if record is not None and self.ledger is not None:
             latest = self.ledger.get_run(record.logical_id)
             if latest is not None and latest.state not in {"completed", "failed", "cancelled", "budget_exhausted"}:
+                # Keep terminal run publication behind the same producer proof as its
+                # controller checkpoint.  If the sidecar drifted after _save_flow, leave the
+                # run resumable and fail closed rather than settling an unbound terminal state.
+                self._validate_run_checkpoint_producer_binding(latest, state)
                 self._finish_run(latest, result, budget_state=state["budget_state"])
         return result
 
     def _prepare_intent(self, record: RSIRecord | None, state: dict[str, Any],
                         episode: PracticeEpisode, request: SolverRequest) -> None:
+        # Recheck the retained producer proof before idempotent intent reuse or any
+        # budget reservation/checkpoint write. A sidecar may drift between episodes.
+        self._validate_producer_checkpoint(state["run_id"], state)
         key = episode.episode_id
         expected = {"episode": episode.to_record_dict(), "request": request.to_dict()}
         if key in state["intents"]:
@@ -2192,6 +2370,8 @@ class RSILearningController:
         self._save_flow(record, state)
 
     def _execute_intent(self, state: Mapping[str, Any], episode_id: str) -> EpisodeExecution:
+        # Final gate immediately before native resume or gateway dispatch.
+        self._validate_producer_checkpoint(state["run_id"], state)
         intent = state["intents"][episode_id]
         episode = PracticeEpisode.from_dict(intent["episode"])
         request = SolverRequest.from_dict(intent["request"])
@@ -2216,22 +2396,34 @@ class RSILearningController:
 
         def before_run() -> None:
             self._check_memory_admission(request, parent_run_id=state["run_id"])
+            # Admission reads may race with producer cleanup/replacement. Recheck the retained
+            # proof after admission and immediately before creating the running episode record.
+            self._validate_producer_checkpoint(state["run_id"], state)
             # Governance reads may wait for a SQLite reader. Recheck the same absolute
             # deadline immediately afterwards before persisting running or dispatching.
+            budget.check()
+
+        def before_dispatch() -> None:
+            self._validate_producer_checkpoint(state["run_id"], state)
             budget.check()
 
         return PracticeEpisodeRunner(
             self.gateway, ControllerVerifier(), self.ledger, self.usage_ledger,
             memory_snapshot=self.snapshot,
             before_run=before_run,
+            before_dispatch=before_dispatch,
         ).run(episode, request)
 
     def _flow_episode(self, record: RSIRecord | None, state: dict[str, Any],
                       episode: PracticeEpisode, request: SolverRequest) -> EpisodeExecution:
         key = episode.episode_id
         if key in state["executions"]:
+            self._validate_producer_checkpoint(state["run_id"], state)
             execution = self._deserialize_execution(state["executions"][key])
             self._validate_native_cached_execution(execution)
+            # Native replay may read retained evidence that has drifted since the entry gate;
+            # do not return a cached execution until the producer proof is checked again.
+            self._validate_producer_checkpoint(state["run_id"], state)
             return execution
         self._prepare_intent(record, state, episode, request)
         execution = self._execute_intent(state, key)
@@ -2500,6 +2692,11 @@ class RSILearningController:
         self._validate_resume_identity(record, observed_fingerprints, budget_policy)
         if record.state in {"completed", "failed", "cancelled", "budget_exhausted"}:
             checkpoint = self.ledger.controller_checkpoint(run_id)
+            producer_state = checkpoint[1] if checkpoint else None
+            if producer_state is None and record.payload.get("producer_checkpoint_binding") is not None:
+                producer_state = {"producer_checkpoint_binding": record.payload["producer_checkpoint_binding"]}
+            self._validate_run_checkpoint_producer_binding(record, producer_state)
+            self._validate_producer_checkpoint(run_id, producer_state)
             if checkpoint and checkpoint[1].get("schema_version") == "2":
                 self._check_budget_history(record)
             terminal_executions = checkpoint[1].get("executions", {}).values() if checkpoint else ()
@@ -2516,6 +2713,7 @@ class RSILearningController:
                     if wire_digest not in validated_native_executions:
                         self._validate_native_cached_execution(execution)
                         validated_native_executions.add(wire_digest)
+                    self._validate_producer_checkpoint(run_id, producer_state)
                 self._usage_replay_marker(execution.episode, execution.request)
             if getattr(self.gateway, "requires_memory_snapshot", False) is True and checkpoint:
                 # The public return comes from the run payload. Check it as well when a
@@ -2538,6 +2736,7 @@ class RSILearningController:
             )
         checkpoint = self.ledger.controller_checkpoint(run_id)
         state = checkpoint[1] if checkpoint else None
+        self._validate_run_checkpoint_producer_binding(record, state)
         if state is None and record.payload.get("plan") is not None:
             if self.ledger.episode_ids_for_run(run_id):
                 raise RSILearningError("rsi_resume_checkpoint_corrupt")
@@ -2550,8 +2749,12 @@ class RSILearningController:
                     "contract_sha256", "evaluator_sha256", "environment_sha256", "solver_id",
                 )}, budget=record.payload["budget"],
             )
+            self._validate_producer_checkpoint(run_id, state)
             self._save_flow(record, state)
         if state is None or state.get("schema_version") != "2":
+            # Producer-bound runs cannot use a legacy checkpoint that has no retained
+            # sidecar proof. Provider-free legacy reconciliation remains unchanged.
+            self._validate_producer_checkpoint(run_id, state)
             # Pre-journal records do not contain a complete launch plan.  Reconcile evidence but
             # never guess a missing BRS wave or issue new solver calls from a legacy checkpoint.
             heads = [self.ledger.get_episode(key) for key in self.ledger.episode_ids_for_run(run_id)]
@@ -2568,6 +2771,7 @@ class RSILearningController:
                 if "memory_snapshot" in record.payload else self.snapshot, targets, practices,
                 checkpoint_episode_id=record.payload.get("current_episode_id"),
             )
+        self._validate_producer_checkpoint(run_id, state)
         if (state["run_id"] != run_id or state["plan"] != record.payload.get("plan")
                 or state["pins"] != {key: record.payload[key] for key in (
                     "contract_sha256", "evaluator_sha256", "environment_sha256", "solver_id",
@@ -2583,6 +2787,7 @@ class RSILearningController:
         if state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
             for raw_execution in state["executions"].values():
                 self._validate_native_cached_execution(self._deserialize_execution(raw_execution))
+                self._validate_producer_checkpoint(run_id, state)
             return self._finish_flow(record, state, state["status"])
         if state.get("callback_protocol_version") != "1":
             if (record.payload.get("callback_protocol_version") is not None
@@ -2839,8 +3044,21 @@ class RSILearningController:
                     if prior.payload.get("plan") != plan:
                         raise RSILearningError("rsi_resume_plan_drift")
                     return self._resume_locked(run_id)
-            record = self._start_run(run_id=run_id, mode=plan["mode"], budget=budget, plan=plan, **pins)
+            producer_checkpoint = self._producer_checkpoint_state(run_id=run_id)
+            preflight_state = (
+                {"producer_checkpoint_binding": producer_checkpoint}
+                if producer_checkpoint is not None else None
+            )
+            # Validate the sidecar before creating a durable running record. Retain the
+            # validated binding in that record so a crash before the controller checkpoint
+            # cannot turn this run into an apparently unbound provider-free run.
+            self._validate_producer_checkpoint(run_id, preflight_state)
+            record = self._start_run(
+                run_id=run_id, mode=plan["mode"], budget=budget, plan=plan,
+                producer_checkpoint_binding=producer_checkpoint, **pins,
+            )
             state = self._flow_state(record, run_id=run_id, plan=plan, pins=pins, budget=budget)
+            self._validate_producer_checkpoint(run_id, state)
             self._save_flow(record, state)
             return self._drive(record, state)
 

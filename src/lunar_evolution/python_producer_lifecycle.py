@@ -1,10 +1,10 @@
 """Pure Python producer terminal and runtime-observation lifecycle contracts.
 
-Feature191's process launcher is intentionally not implemented here.  This module only
-validates detached, canonical observations and applies the same fail-closed rules used by the
-native lifecycle: a missing process or cleanup record is ``unknown`` and can never be published;
-resume/reconcile only replays retained records and never starts a process, spends a budget, or
-writes a journal.
+Feature191's process launcher is intentionally not implemented here.  This module validates
+detached, canonical observations and provides a small facade over the existing native recovery
+reader.  It applies the same fail-closed rules used by the native lifecycle: a missing process or
+cleanup record is ``unknown`` and can never be published; resume/reconcile only replays retained
+records and never starts a process, spends a budget, or writes a second journal.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, NoReturn
 
 from .producer_process import (
@@ -22,11 +23,21 @@ from .producer_process import (
     ProducerProcessError,
     ProducerStreamEvidence,
     parse_producer_execution_receipt,
+    recover_producer_process,
 )
 from .python_producer_binding import (
     PythonProducerBinding,
     PythonProducerBindingError,
     parse_python_producer_binding,
+)
+from .python_producer_binding_store import (
+    PythonProducerBindingSidecar,
+    PythonProducerBindingStoreError,
+    read_python_producer_binding_sidecar,
+)
+from .python_producer_checkpoint import (
+    PythonProducerCheckpointBinding,
+    PythonProducerCheckpointError,
 )
 
 PYTHON_PRODUCER_TERMINAL_PROTOCOL = "lunar-python-producer-terminal-v1"
@@ -596,6 +607,84 @@ def bind_python_producer_receipt(
     )
 
 
+def recover_python_producer_terminal(
+    workspace: str | Path,
+    *,
+    binding: PythonProducerBinding,
+    sidecar: PythonProducerBindingSidecar,
+    checkpoint: PythonProducerCheckpointBinding | bytes | str | Mapping[str, object] | None = None,
+) -> PythonProducerTerminal:
+    """Project one retained native process receipt into the Python terminal contract.
+
+    Recovery is deliberately read-only. The sidecar is checked before and after the native
+    observation so a concurrent replacement becomes drift, while no recovery lock or marker is
+    created by this facade.
+    """
+    if type(binding) is not PythonProducerBinding:
+        _fail("binding_invalid")
+    try:
+        binding = parse_python_producer_binding(binding.to_json())
+    except PythonProducerBindingError as exc:
+        raise PythonProducerLifecycleError("binding_invalid") from exc
+    if type(sidecar) is not PythonProducerBindingSidecar:
+        _fail("binding_sidecar_invalid")
+    if not isinstance(workspace, (str, Path)) or not workspace:
+        _fail("workspace_invalid")
+    retained_checkpoint = None
+    if checkpoint is not None:
+        retained_checkpoint = validate_python_producer_checkpoint(
+            checkpoint, binding=binding, sidecar=sidecar,
+        )
+    try:
+        # The caller-provided DTO is not an authority. Require the create-only sidecar that was
+        # persisted in this exact journal batch before selecting any native recovery path.
+        read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+    except PythonProducerBindingStoreError as exc:
+        raise PythonProducerLifecycleError("binding_sidecar_invalid") from exc
+    try:
+        observed = recover_producer_process(
+            workspace, journal_id=binding.intent.journal_id, cleanup=False,
+        )
+    except ProducerProcessError as exc:
+        # Native recovery exposes only fixed process codes.  Keep those details out of the
+        # Python adapter wire while preserving the original exception as a diagnostic cause.
+        raise PythonProducerLifecycleError("recovery_observation_invalid") from exc
+    except (OSError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("recovery_observation_invalid") from exc
+    if type(observed) is not dict:
+        _fail("recovery_observation_invalid")
+    status = observed.get("status")
+    if status == "recovery_required":
+        _fail("recovery_required")
+    if status not in {"completed", "failed", "cancelled", "unknown"}:
+        _fail("journal_mismatch")
+    cleanup_status = observed.get("cleanup_status")
+    if cleanup_status not in {"cleaned", "already_exited", "unknown", "missing"}:
+        _fail("recovery_receipt_invalid")
+    if cleanup_status in {"unknown", "missing"}:
+        _fail("cleanup_unknown")
+    try:
+        # Re-read the independent sidecar after native inspection. A replacement during recovery
+        # is drift, never a reason to refresh the expected pin.
+        read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+        if retained_checkpoint is not None:
+            validate_python_producer_checkpoint(
+                retained_checkpoint, binding=binding, sidecar=sidecar,
+            )
+    except PythonProducerBindingStoreError as exc:
+        raise PythonProducerLifecycleError("binding_sidecar_invalid") from exc
+    try:
+        receipt = parse_producer_execution_receipt(observed)
+    except (ProducerProcessError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("recovery_receipt_invalid") from exc
+    try:
+        return bind_python_producer_receipt(binding, receipt)
+    except PythonProducerLifecycleError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("recovery_binding_invalid") from exc
+
+
 def _retained_terminal(value: object) -> PythonProducerTerminal:
     if type(value) is PythonProducerTerminal:
         # Frozen DTOs can still be changed via object.__setattr__. The retained
@@ -604,6 +693,49 @@ def _retained_terminal(value: object) -> PythonProducerTerminal:
         _sha(value.terminal_sha256)
         return value
     return parse_python_producer_terminal(value)
+
+
+def _retained_checkpoint(
+    value: PythonProducerCheckpointBinding | bytes | str | Mapping[str, object],
+) -> PythonProducerCheckpointBinding:
+    """Parse a checkpoint wire without capturing any current filesystem metadata."""
+    try:
+        if type(value) is PythonProducerCheckpointBinding:
+            value.__post_init__()
+            return value
+        if type(value) is dict:
+            return PythonProducerCheckpointBinding.from_dict(value)
+        return PythonProducerCheckpointBinding.from_json(value)  # type: ignore[arg-type]
+    except (PythonProducerCheckpointError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("checkpoint_invalid") from exc
+
+
+def validate_python_producer_checkpoint(
+    checkpoint: PythonProducerCheckpointBinding | bytes | str | Mapping[str, object],
+    *,
+    binding: PythonProducerBinding,
+    sidecar: PythonProducerBindingSidecar,
+) -> PythonProducerCheckpointBinding:
+    """Validate a durable checkpoint against the original binding and retained sidecar pin.
+
+    This is intentionally a DTO-to-DTO check. It never stats or hashes the current sidecar;
+    callers that have a workspace must use ``read_python_producer_binding_sidecar`` around this
+    gate so replacement is rejected by the independent file pin.
+    """
+    if type(binding) is not PythonProducerBinding:
+        _fail("binding_invalid")
+    if type(sidecar) is not PythonProducerBindingSidecar:
+        _fail("binding_sidecar_invalid")
+    retained = _retained_checkpoint(checkpoint)
+    try:
+        retained.validate_sidecar(sidecar)
+    except PythonProducerCheckpointError as exc:
+        raise PythonProducerLifecycleError("checkpoint_binding_invalid") from exc
+    if retained.binding_sha256 != binding.binding_sha256:
+        _fail("checkpoint_binding_drift")
+    if retained.run_id != binding.run_id or retained.journal_id != binding.intent.journal_id:
+        _fail("checkpoint_identity_drift")
+    return retained
 
 
 def _terminal_binding_pins(item: PythonProducerTerminal, binding: object) -> None:
@@ -693,10 +825,27 @@ def reconcile_python_producer_terminal(
 def resume_python_producer_terminal(
     terminal: PythonProducerTerminal | bytes | str | Mapping[str, object], *,
     expected_binding: str | PythonProducerBinding | Mapping[str, object], expected_deadline_unix: float | None = None,
+    checkpoint: PythonProducerCheckpointBinding | bytes | str | Mapping[str, object] | None = None,
+    sidecar: PythonProducerBindingSidecar | None = None,
 ) -> PythonProducerTerminal:
     """Validate a retained terminal for resume; unknown state remains reconcile-required."""
     item = _retained_terminal(terminal)
-    binding, deadline = _expected_binding(expected_binding)
+    # A checkpoint contains the complete binding identity and sidecar pin.  Keep a
+    # validated DTO around for that gate; the legacy digest/mapping forms remain
+    # accepted for resumes that do not supply a checkpoint.
+    binding_object: PythonProducerBinding | None = None
+    if type(expected_binding) is PythonProducerBinding:
+        try:
+            binding_object = parse_python_producer_binding(expected_binding.to_json())
+        except PythonProducerBindingError as exc:
+            raise PythonProducerLifecycleError("binding_invalid") from exc
+    binding, deadline = _expected_binding(binding_object or expected_binding)
+    if (checkpoint is None) != (sidecar is None):
+        _fail("checkpoint_sidecar_required")
+    if checkpoint is not None and sidecar is not None:
+        if binding_object is None:
+            _fail("checkpoint_binding_required")
+        validate_python_producer_checkpoint(checkpoint, binding=binding_object, sidecar=sidecar)
     if expected_deadline_unix is not None:
         parsed = _timestamp(expected_deadline_unix, "deadline_invalid", optional=False)
         assert parsed is not None
@@ -707,7 +856,7 @@ def resume_python_producer_terminal(
         _fail("binding_drift")
     if not math.isnan(deadline) and item.deadline_unix != deadline:
         _fail("deadline_drift")
-    _terminal_binding_pins(item, expected_binding)
+    _terminal_binding_pins(item, binding_object or expected_binding)
     if item.status == "unknown":
         _fail("reconcile_required")
     return item
@@ -733,5 +882,7 @@ __all__ = [
     "parse_python_producer_terminal",
     "parse_python_runtime_observation",
     "reconcile_python_producer_terminal",
+    "recover_python_producer_terminal",
     "resume_python_producer_terminal",
+    "validate_python_producer_checkpoint",
 ]

@@ -237,7 +237,11 @@ def _not_started(batch: Path, *, allow_binding: bool = False) -> None:
         for entry in entries:
             if entry.name in {_INPUT_DIRECTORY, ".recovery.lock"}:
                 continue
-            if allow_binding and entry.name == _BINDING_NAME:
+            # Feature191's Python binding sidecar is prepared alongside the native
+            # launch binding.  It is allowed to remain when the final binding
+            # validation checks that no launch attempt has started, but it must
+            # still block a fresh prepare/bind pass.
+            if allow_binding and entry.name in {_BINDING_NAME, "python-producer-binding.json"}:
                 continue
             if entry.name in {"work", "output"} and entry.is_dir(follow_symlinks=False):
                 with _held_directory(batch / entry.name) as child, os.scandir(child) as contents:

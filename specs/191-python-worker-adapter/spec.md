@@ -1,13 +1,17 @@
 # Feature191 — Pinned Python producer adapter
 
-Status: Phase A pure binding and lifecycle contracts implemented, 2026-10-09. Priority P1. The
-`PythonProducerBinding` DTO/parser now joins already prepared runtime/tree and
-launch evidence without I/O. Pure terminal/runtime-observation DTOs and read-only
-terminal resume/reconcile rules are implemented and tested with inert values.
-These parsers do not authenticate child observations or persist a runtime/journal.
-Process launch, durable recovery integration, real CPython observations and adapter
-execution remain open; this feature still does not start a real producer, model,
-evaluator service or campaign.
+Status: Phase A binding, durable binding sidecar, controller checkpoint binding, and read-only
+recovery gate implemented; initialization/replay recovery hardening is complete against local
+provider-free fixtures and under final-source CI validation,
+2026-10-10. Priority P1. The `PythonProducerBinding` DTO/parser joins already prepared
+runtime/tree and launch evidence without I/O. The binding can now be persisted once in the
+batch as `python-producer-binding.json`; recovery requires the independently retained sidecar
+pin and rechecks it before and after native process recovery. The immutable RSI run request is
+the earliest durable producer-proof anchor, and controller checkpoints must retain the same
+proof and fail closed on missing or drifted producer evidence. Pure terminal/runtime-observation
+DTOs and terminal resume/reconcile rules remain provider-free contracts. This slice does not
+start a real producer or CPython runtime, authenticate child observations, run an evaluator
+service, or launch an OpenEvolve/Shinka campaign.
 
 ## Problem and outcome
 
@@ -41,6 +45,16 @@ evaluator before it can become a candidate or a published seed.
 - Reuse the existing native lifecycle, guardian, broker pipes, request journal,
   cancellation, process terminal and cleanup evidence. No new inherited FD,
   control protocol, bundle selector or public numeric-FD authority is added.
+- Persist one create-only canonical binding sidecar in the existing producer batch. The sidecar
+  is a regular `0600` single-link file with a bounded size synchronized to the binding parser
+  (2 MiB), and carries an independently retained digest/stat pin for recovery.
+- Treat the sidecar as a durable precondition for Python terminal recovery. Read-only recovery
+  checks the sidecar before native inspection and again afterwards; missing, replaced, touched,
+  hard-linked, symlinked, permission-drifted, or byte-drifted evidence is refused.
+- Validate the sidecar before creating a durable RSI run. Include the canonical producer proof
+  and retained pin in the immutable run request and its request digest, then copy that exact
+  proof into every controller checkpoint. A crash before the first checkpoint cannot erase the
+  run's producer-bound identity or downgrade it to a provider-free run.
 - Record real interpreter version/cache tag, startup flags, module origins,
   broker exchange and output material from the running process. C or parent code
   must not fabricate Python observations.
@@ -58,14 +72,20 @@ separate feature. This adapter does not make `runtime_load_protection`,
 
 ## Current implementation boundary
 
-The implemented Phase A surface is `build_python_producer_binding` and
-`parse_python_producer_binding`. It validates canonical nested
-`PythonRuntimeManifest`, `PythonRuntimeTreeManifest`, `ProducerLaunchIntent` and
-`ProducerLaunchAttestation` DTOs, matches interpreter bytes/stat pins, binds the
-existing RSI planned deadline and launch limits, and computes a digest-without-
-self-field. It performs no filesystem reads, subprocess calls, budget
-consumption, journal creation, or publication. The remaining launch/observe/
-settle/resume behavior below is not implemented by this change.
+The implemented Phase A surface includes `build_python_producer_binding` and
+`parse_python_producer_binding`, `persist_python_producer_binding`,
+`read_python_producer_binding_sidecar`, and the sidecar-aware
+`recover_python_producer_terminal` facade. Binding construction still performs no filesystem
+reads, subprocess calls, budget consumption, journal creation, or publication. Persistence
+validates and reparses the canonical binding before opening the batch, serializes one create-only
+sidecar under the existing recovery lock, publishes it through a temporary file and hard-link,
+then retains the post-publication single-link stat pin. Reads validate the caller-retained pin
+before workspace I/O, check the sidecar identity before/during/after reading, reparse the exact
+canonical bytes, and reject any digest or stat drift. The native recovery facade remains
+read-only, does not create a recovery lock/marker, and performs the sidecar check on both sides
+of native inspection. The launch-input not-started gate allows this sidecar to remain only during
+the final binding validation; a fresh prepare/bind pass still treats it as started. Actual
+launch/observe/settle, real CPython evidence, and publication admission remain open.
 
 ## Preconditions and safety gates
 
@@ -86,10 +106,14 @@ retried, or given a refreshed budget from absence of evidence.
 
 ## Required behavior
 
-1. **Prepare.** Validate exact DTO scalar types and bounded collections. Persist
-   a create-only binding containing the external runtime/tree digests, launch
-   intent, one-time attestation digest, producer/evaluator identities, request
-   and total-wall budgets, and original deadline.
+1. **Prepare.** Validate exact DTO scalar types and bounded collections. Persist a create-only
+   binding sidecar containing the external runtime/tree digests, launch intent, one-time
+   attestation digest, producer/evaluator identities, request and total-wall budgets, and
+   original deadline. The sidecar is limited to the binding parser's 2 MiB bound and its
+   retained file pin is held independently by the controller. Before creating the durable RSI
+   run, preflight that retained proof against the live sidecar. Store the canonical proof/pin
+   in the immutable run request and include it in `request_sha256`; constructing the first
+   flow checkpoint is not the first durable binding boundary.
 2. **Launch.** Recheck all pins and no-follow runtime identities immediately
    before native release. Pass only an allowlisted environment and the fixed
    broker FD variables. The Python process receives a fixed fixture/protocol
@@ -102,10 +126,29 @@ retried, or given a refreshed budget from absence of evidence.
    journal identities. Only a verified exit-0 terminal plus a valid envelope can
    enter local exact evaluation. Nonzero, cancellation, deadline, drift and
    cleanup uncertainty remain failed/unknown according to the existing lifecycle.
-5. **Resume.** A completed acknowledged run is read-only and does not relaunch.
-   An unknown run first reconciles the retained terminal/journal/runtime evidence
-   under the original deadline. Reconcile cannot publish, evaluate again or
-   consume a new request budget.
+5. **Resume.** A completed acknowledged run is read-only and does not relaunch. An unknown run
+   first validates the retained sidecar, then reconciles the retained terminal/journal/runtime
+   evidence under the original deadline, and finally validates the sidecar again. Reconcile
+   cannot publish, evaluate again, create a recovery lock/marker, or consume a new request budget.
+   A missing sidecar or any sidecar binding/stat drift remains a refusal.
+6. **Controller recovery.** Validate the immutable run proof and live sidecar before restoring
+   or reconstructing a flow. Read the earliest ledger run revision and require the latest run
+   proof to equal that original proof; adding, removing or replacing a proof is drift. If the
+   first checkpoint is absent, reconstruct only from the
+   retained run request, preserving its original budget/deadline, fingerprints and producer
+   proof. A valid independently retained sidecar is still required; omission cannot turn the
+   run into a provider-free run. An originally unbound run cannot acquire a producer sidecar
+   during missing-checkpoint reconstruction. A present checkpoint must carry exactly the
+   run's producer proof, with symmetric equality for terminal and nonterminal states. A
+   pre-fix producer checkpoint lacking proof in the original run request fails closed; there
+   is no inferred migration from a checkpoint or current sidecar. Revalidate before intent
+   preparation, cached execution reuse, native
+   dispatch, direct episode recovery, checkpoint save (including an identical/no-op save), and
+   terminal settlement or replay. Callback reconcile and native failure reconcile also validate
+   on entry and immediately before publishing reconciliation checkpoint/journal state, including
+   branches with a previously reserved budget. Refusal cannot add budget consumption or append
+   a checkpoint/journal, invoke callbacks, dispatch, or mutate terminal state. A reservation
+   already durable before the failed check is preserved; refusal does not roll it back.
 
 ## OpenEvolve and Shinka boundary
 
@@ -120,7 +163,11 @@ unknown-reconcile and result-envelope contracts.
 
 ## Acceptance boundary
 
-This feature is complete only after a dedicated Linux fixture proves the entire
-binding and recovery matrix with the accepted 189 image and 190 owner. A passing
-descriptor parser, a C producer, a declared runtime manifest, or a Shinka export
-alone is not Python adapter acceptance.
+The durable sidecar, immutable run-request anchor, and controller recovery boundaries are
+complete as a provider-free local slice. Focused regression and independent boundary review
+pass locally; exact-final-source CI remains required before merge acceptance.
+Feature acceptance still requires a dedicated Linux fixture proving the entire binding and
+recovery matrix with the accepted 189 image and 190 owner, including real CPython observations,
+loader-negative behavior, broker evidence, lifecycle timestamps and evaluator admission. A
+passing descriptor parser, sidecar round-trip, C producer, declared runtime manifest, or a
+Shinka export alone is not Python adapter acceptance.

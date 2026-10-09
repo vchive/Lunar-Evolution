@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from test_rsi_producer_checkpoint_binding import _sidecar
 
 from lunar_evolution.rsi_controller import RSILearningController
 from lunar_evolution.rsi_gateway import SolverRequest, SolverResult
@@ -240,4 +241,37 @@ def test_native_controller_rejects_replay_validator_result_substitution(tmp_path
         controller.resume("native-replay")
 
     assert len(gateway.runs) == 1
+    assert _image(ledger) == before
+
+
+def test_native_replay_sidecar_drift_stops_before_reconciliation_or_verifier_append(tmp_path: Path):
+    binding, sidecar = _sidecar(tmp_path)
+    ledger = RSILedger(tmp_path / "rsi.sqlite")
+    gateway = ReadOnlyNativeGateway(ledger)
+    controller = RSILearningController(
+        gateway, ledger=ledger, producer_sidecar=sidecar, producer_workspace=tmp_path,
+    )
+    first = controller.run_drs(
+        run_id=binding.run_id, contract_sha256=HEX, evaluator_sha256=HEX,
+        environment_sha256=HEX, solver_id="native-fixture", max_practice_rounds=0,
+        max_target_attempts=1,
+    )
+    assert first.status == "completed"
+    before = _image(ledger)
+    sidecar_path = tmp_path / "evolution" / "producer-batches" / binding.intent.journal_id / "python-producer-binding.json"
+    original_validate = gateway.validate_replay
+
+    def drift_after_replay(request, memory, result):
+        value = original_validate(request, memory, result)
+        sidecar_path.unlink()
+        return value
+
+    gateway.validate_replay = drift_after_replay
+    with pytest.raises(RSILearningError, match="producer_checkpoint"):
+        RSILearningController(
+            gateway, ledger=ledger, producer_sidecar=sidecar, producer_workspace=tmp_path,
+        ).resume(binding.run_id)
+
+    assert ledger.get_episode(f"{binding.run_id}-target-0").state == "completed"
+    assert ledger.controller_checkpoint(binding.run_id)[1]["executions"]
     assert _image(ledger) == before
