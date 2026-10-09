@@ -64,6 +64,10 @@ from .producer_process import (
     ProducerProcessError,
     parse_producer_execution_receipt,
 )
+from .python_producer_admission_handoff import (
+    PythonProducerAdmissionHandoffError,
+    read_python_producer_admission_handoff,
+)
 
 
 class NativeProducerBundleTransactionError(RuntimeError):
@@ -105,6 +109,19 @@ def _read_state(workspace: Path) -> tuple[bytes, dict[str, Any]]:
     if not isinstance(state, dict) or state.get("strategy") != "population":
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_state_invalid")
     return raw, state
+
+
+def _validate_batch_identifier(value: object) -> str:
+    """Reject path-bearing journal identifiers before deriving a batch path."""
+    if not isinstance(value, str) or not value or value in {".", ".."}:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_journal_id_invalid"
+        )
+    if Path(value).name != value or any(part in {"", ".", ".."} for part in value.split("/")):
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_journal_id_invalid"
+        )
+    return value
 
 
 def _state_prefix(workspace: Path, archive: bytes, state_bytes: bytes, state: Mapping[str, Any]) -> str:
@@ -153,6 +170,7 @@ def _verify_native_execution_receipt_link(
     """Validate the optional native execution receipt before creating a publication journal."""
     if receipt_sha256 is None:
         return
+    _validate_batch_identifier(journal_id)
     batch = root / "evolution" / "producer-batches" / journal_id
     path = batch / "execution-receipt.json"
     try:
@@ -184,6 +202,60 @@ def _verify_native_execution_receipt_link(
     ):
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_execution_receipt_invalid"
+        )
+
+
+def _verify_python_handoff_link(
+    root: Path,
+    *,
+    journal_id: str,
+    run_id: str,
+    parent_task_id: str,
+    task_id: str,
+    admission_plan: ProducerBundleAdmissionPlan,
+    native_execution_receipt_sha256: str | None,
+    python_handoff_sha256: str | None,
+) -> None:
+    """Require a durable, canonical handoff before accepting the Python path.
+
+    The journal field is an identity reference, not caller-provided authority.  A Python
+    transaction therefore has to read the create-only handoff from the producer batch and
+    compare every authority pin available at this boundary before it can evaluate or publish.
+    Legacy native callers leave the optional field absent and retain their existing behavior.
+    """
+    if python_handoff_sha256 is None:
+        return
+    _validate_batch_identifier(journal_id)
+    if native_execution_receipt_sha256 is None:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_python_handoff_execution_link_missing"
+        )
+    batch = root / "evolution" / "producer-batches" / journal_id
+    path = batch / "python-producer-admission-handoff.json"
+    try:
+        handoff = read_python_producer_admission_handoff(
+            path, expected_handoff_sha256=python_handoff_sha256,
+        )
+    except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_python_handoff_invalid"
+        ) from exc
+    if (
+        handoff.run_id != run_id
+        or handoff.journal_id != journal_id
+        or handoff.parent_task_id != parent_task_id
+        or handoff.task_id != task_id
+        or handoff.native_execution_receipt_sha256 != native_execution_receipt_sha256
+        or handoff.admission_plan_sha256 != admission_plan.digest()
+        or handoff.contract_sha256 != admission_plan.contract_sha256
+        or handoff.evaluator_sha256 != admission_plan.evaluator_fingerprint
+        or handoff.runner_sha256 != admission_plan.runner_fingerprint
+        or handoff.dependency_sha256 != admission_plan.dependency_sha256
+        or handoff.environment_sha256 != admission_plan.environment_sha256
+        or handoff.state != "prepared"
+    ):
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_python_handoff_mismatch"
         )
 
 
@@ -341,6 +413,7 @@ def run_native_producer_bundle_publication_transaction(
     task_id: str = "native-bundle-publication",
     budget_sha256: str | None = None,
     native_execution_receipt_sha256: str | None = None,
+    python_handoff_sha256: str | None = None,
     execution_control: SolveExecutionControl | None = None,
     continuation_guard: Callable[[str], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
@@ -356,9 +429,14 @@ def run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
     if continuation_guard is not None and not callable(continuation_guard):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_guard_invalid")
+    if python_handoff_sha256 is not None and native_execution_receipt_sha256 is None:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_python_handoff_execution_link_missing"
+        )
     options = {"journal_id": journal_id, "run_id": run_id, "parent_task_id": parent_task_id,
                "task_id": task_id, "budget_sha256": budget_sha256,
-               "native_execution_receipt_sha256": native_execution_receipt_sha256}
+               "native_execution_receipt_sha256": native_execution_receipt_sha256,
+               "python_handoff_sha256": python_handoff_sha256}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -404,6 +482,7 @@ def _run_native_producer_bundle_publication_transaction(
     task_id: str,
     budget_sha256: str | None,
     native_execution_receipt_sha256: str | None,
+    python_handoff_sha256: str | None,
     checkpoint: Callable[[str], object],
     execution_control: SolveExecutionControl | None = None,
 ) -> NativeProducerBundleTransactionResult:
@@ -429,6 +508,60 @@ def _run_native_producer_bundle_publication_transaction(
         task_id=task_id,
         receipt_sha256=native_execution_receipt_sha256,
     )
+    _verify_python_handoff_link(
+        root,
+        journal_id=journal_id,
+        run_id=run_id,
+        parent_task_id=parent_task_id,
+        task_id=task_id,
+        admission_plan=admission_plan,
+        native_execution_receipt_sha256=native_execution_receipt_sha256,
+        python_handoff_sha256=python_handoff_sha256,
+    )
+    # Re-read the create-only handoff after every caller-owned checkpoint.  A continuation
+    # guard may mutate or remove the batch file while it is deciding whether to continue; the
+    # boundary check must run after that callback and before any evaluator, stage, or commit.
+    original_checkpoint = checkpoint
+
+    def checkpoint_with_handoff(stage: str) -> object:
+        result = original_checkpoint(stage)
+        _verify_python_handoff_link(
+            root,
+            journal_id=journal_id,
+            run_id=run_id,
+            parent_task_id=parent_task_id,
+            task_id=task_id,
+            admission_plan=admission_plan,
+            native_execution_receipt_sha256=native_execution_receipt_sha256,
+            python_handoff_sha256=python_handoff_sha256,
+        )
+        return result
+
+    if hasattr(original_checkpoint, "bind_retained_deadline"):
+        checkpoint_with_handoff.bind_retained_deadline = original_checkpoint.bind_retained_deadline
+    checkpoint = checkpoint_with_handoff
+    # The bundle evaluator samples the pipeline timeout directly between explicit
+    # transaction checkpoints.  Keep that numeric timeout callback on a handoff-aware
+    # wrapper so a caller continuation guard cannot remove or replace the create-only
+    # handoff after the last explicit checkpoint and still let evaluation proceed.
+    pipeline = strategy.context.bundle_pipeline
+    pipeline_timeout = pipeline._remaining_timeout
+
+    def timeout_with_handoff(stage: str) -> float:
+        remaining = pipeline_timeout(stage)
+        _verify_python_handoff_link(
+            root,
+            journal_id=journal_id,
+            run_id=run_id,
+            parent_task_id=parent_task_id,
+            task_id=task_id,
+            admission_plan=admission_plan,
+            native_execution_receipt_sha256=native_execution_receipt_sha256,
+            python_handoff_sha256=python_handoff_sha256,
+        )
+        return remaining
+
+    pipeline.set_remaining_timeout(timeout_with_handoff)
     base_state_bytes, base_state = _read_state(root)
     base_archive = _read_optional(root / "evolution" / "archive.jsonl")
     try:
@@ -479,6 +612,7 @@ def _run_native_producer_bundle_publication_transaction(
         budget_sha256=budget_sha256, strategy="population", population_config_sha256=_sha(_canonical(base_state["config"])),
         num_islands=num_islands, candidates=tuple(candidates),
         native_execution_receipt_sha256=native_execution_receipt_sha256,
+        python_handoff_sha256=python_handoff_sha256,
     )
     try:
         preflight = preflight_producer_bundle_publication(root, admission_plan, journal, budget_sha256=budget_sha256)
@@ -546,6 +680,7 @@ def _run_native_producer_bundle_publication_transaction(
         try:
             artifacts.append(build_native_producer_bundle_publication_artifact(
                 root, result, authority=strategy.integrity_authority,
+                python_handoff_sha256=python_handoff_sha256,
             ))
         except Exception as exc:
             code = getattr(exc, "code", "producer_bundle_transaction_recovery_required")
@@ -571,6 +706,16 @@ def _run_native_producer_bundle_publication_transaction(
         except Exception as exc:
             code = getattr(exc, "code", "producer_bundle_transaction_recovery_required")
             raise NativeProducerBundleTransactionError(code) from exc
+        _verify_python_handoff_link(
+            root,
+            journal_id=journal_id,
+            run_id=run_id,
+            parent_task_id=parent_task_id,
+            task_id=task_id,
+            admission_plan=admission_plan,
+            native_execution_receipt_sha256=native_execution_receipt_sha256,
+            python_handoff_sha256=python_handoff_sha256,
+        )
         return NativeProducerBundleTransactionResult(
             journal=journal, preflight=preflight, evaluations=tuple(evaluations),
             admitted_candidate_ids=(), rejected_candidate_ids=tuple(rejected), artifacts=(),
@@ -593,6 +738,16 @@ def _run_native_producer_bundle_publication_transaction(
         )
         checkpoint("producer_commit")
         published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint)
+        _verify_python_handoff_link(
+            root,
+            journal_id=journal_id,
+            run_id=run_id,
+            parent_task_id=parent_task_id,
+            task_id=task_id,
+            admission_plan=admission_plan,
+            native_execution_receipt_sha256=native_execution_receipt_sha256,
+            python_handoff_sha256=python_handoff_sha256,
+        )
         archive = CandidateArchive(root, requested_strategy="population", read_only=True)
         records = tuple(archive.records())
         archive.validate_candidate_integrity(require_all=True, records=records)
@@ -601,6 +756,16 @@ def _run_native_producer_bundle_publication_transaction(
             raise NativeProducerBundleTransactionError("producer_bundle_transaction_readback_invalid")
         strategy._validate_candidate_integrity_state(committed_state)
         strategy._active(committed_state)
+        _verify_python_handoff_link(
+            root,
+            journal_id=journal_id,
+            run_id=run_id,
+            parent_task_id=parent_task_id,
+            task_id=task_id,
+            admission_plan=admission_plan,
+            native_execution_receipt_sha256=native_execution_receipt_sha256,
+            python_handoff_sha256=python_handoff_sha256,
+        )
     except (NativeProducerBundleTransactionError, SolveExecutionCancelled, SolveExecutionBudgetExceeded):
         raise
     except Exception as exc:

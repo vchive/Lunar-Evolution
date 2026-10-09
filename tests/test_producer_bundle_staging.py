@@ -6,7 +6,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from test_producer_bundle_native_intent import native_publication as _native_publication_fixture
 
+import lunar_evolution.producer_bundle_staging as staging
 from lunar_evolution.producer_bundle_preflight import (
     ProducerBundlePreflightReceipt,
     _authority_digest,
@@ -21,6 +23,10 @@ from lunar_evolution.producer_bundle_staging import (
     ProducerBundlePublicationStagingError,
     commit_producer_bundle_publication,
     stage_producer_bundle_publication,
+)
+from lunar_evolution.python_producer_admission_handoff import (
+    build_python_producer_admission_handoff,
+    persist_python_producer_admission_handoff,
 )
 
 
@@ -88,6 +94,93 @@ def test_stage_is_zero_exposure_and_commit_publishes_atomically(tmp_path: Path) 
     assert parse_producer_bundle_publication_journal(
         workspace / "evolution" / "producer-batches" / "journal-1" / "journal.json"
     ).state == "published"
+
+
+@pytest.fixture
+def native_publication(tmp_path: Path, monkeypatch):
+    """Reuse the native transaction capture without executing a publication commit."""
+    return _native_publication_fixture.__wrapped__(tmp_path, monkeypatch)
+
+
+def test_stage_rejects_python_handoff_receipt_when_journal_omits_it(native_publication) -> None:
+    value = native_publication
+    artifact = value["artifacts"][0]
+    from lunar_evolution.producer_bundle_receipts import ProducerBundleEvaluationReceipt
+
+    evaluation = ProducerBundleEvaluationReceipt.from_dict(dict(artifact.evaluation_receipt))
+    linked = replace(evaluation, python_handoff_sha256=d("f"), receipt_sha256=None)
+    changed = replace(
+        artifact,
+        evaluation_receipt=linked.to_dict(), evaluation_receipt_sha256=linked.digest(),
+    )
+    with pytest.raises(ProducerBundlePublicationStagingError,
+                       match="^producer_bundle_publication_evidence_invalid$"):
+        stage_producer_bundle_publication(
+            value["workspace"], value["journal"], value["preflight"], (changed,),
+            **value["kwargs"],
+        )
+    assert not (value["workspace"] / "evolution/producer-publication.json").exists()
+
+
+def test_stage_rechecks_durable_python_handoff_after_checkpoint(tmp_path: Path) -> None:
+    workspace, journal, receipt, artifact = fixture(tmp_path)
+    journal = replace(journal, contract_sha256=d("a"), journal_sha256=None)
+    receipt = replace(receipt, authority_sha256=_authority_digest(journal), receipt_sha256=None)
+    handoff = build_python_producer_admission_handoff(
+        run_id=journal.run_id, journal_id=journal.journal_id,
+        parent_task_id=journal.parent_task_id, task_id=journal.task_id,
+        binding_sha256=d("a"), sidecar_raw_sha256=d("b"), sidecar_pin_sha256=d("c"),
+        launch_intent_sha256=d("d"), attestation_sha256=d("e"), runtime_manifest_sha256=d("f"),
+        runtime_tree_sha256=d("1"), executable_owner_sha256=d("2"),
+        native_execution_receipt_sha256=d("3"), terminal_sha256=d("4"),
+        runtime_observation_sha256=d("5"), broker_transcript_sha256=d("6"),
+        envelope_sha256=d("7"), materials_sha256=d("8"), contract_sha256=journal.contract_sha256,
+        evaluator_sha256=journal.evaluator_fingerprint, runner_sha256=journal.runner_fingerprint,
+        dependency_sha256=journal.dependency_sha256, environment_sha256=journal.environment_sha256,
+        admission_plan_sha256=journal.admission_sha256, request_budget=1,
+        wall_timeout_seconds=1, deadline_unix=4102444800.0,
+    )
+    batch = workspace / "evolution" / "producer-batches" / journal.journal_id
+    persist_python_producer_admission_handoff(batch, handoff=handoff)
+    linked = replace(
+        journal, native_execution_receipt_sha256=d("3"),
+        python_handoff_sha256=handoff.digest, journal_sha256=None,
+    )
+
+    def remove_after_lock(stage: str) -> None:
+        if stage == "producer_staging_locked":
+            (batch / "python-producer-admission-handoff.json").unlink()
+
+    with pytest.raises(ProducerBundlePublicationStagingError, match="python_handoff_invalid"):
+        stage_producer_bundle_publication(
+            workspace, linked, receipt, (artifact,),
+            state_after={"strategy": "population", "config": {"strategy": "population", "num_islands": 1}, "active_ids": {"0": ["candidate-1"]}},
+            checkpoint=remove_after_lock,
+        )
+    assert not (workspace / "evolution" / "producer-publication.json").exists()
+
+
+def test_native_artifact_rejects_python_handoff_mismatch_even_with_rehashed_receipt(
+    native_publication,
+) -> None:
+    value = native_publication
+    artifact = value["artifacts"][0]
+    from lunar_evolution.producer_bundle_receipts import ProducerBundleEvaluationReceipt
+    evaluation = ProducerBundleEvaluationReceipt.from_dict(dict(artifact.evaluation_receipt))
+    linked = replace(
+        value["journal"], native_execution_receipt_sha256=d("e"),
+        python_handoff_sha256=d("f"), journal_sha256=None,
+    )
+    changed = replace(evaluation, python_handoff_sha256=d("0"), receipt_sha256=None)
+    changed_artifact = replace(
+        artifact,
+        evaluation_receipt=changed.to_dict(), evaluation_receipt_sha256=changed.digest(),
+    )
+    with pytest.raises(ProducerBundlePublicationStagingError,
+                       match="^producer_bundle_publication_evidence_invalid$"):
+        staging._validate_native_artifact(
+            changed_artifact, linked.candidates[0], linked,
+        )
 
 
 def test_stage_rejects_missing_receipt_sequence_without_marker(tmp_path: Path) -> None:

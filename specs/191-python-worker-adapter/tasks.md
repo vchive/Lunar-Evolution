@@ -42,6 +42,16 @@
   CI remains required for merge acceptance.
 - [x] Specify local exact-evaluator admission and atomic publication handoff;
   external producer score remains provenance only.
+- [x] Add the provider-free Python admission-handoff DTO, create-only batch record,
+  optional journal/evaluation receipt links, and fail-closed synthetic composition tests.
+  This is plumbing and evidence binding only; it does not grant runtime or production
+  admission authority.
+- [ ] Revalidate the immutable handoff file, identity/stat pins, runtime/lifecycle pins and
+  authority links after evaluator callbacks, at staging/commit/unknown boundaries, during
+  terminal settlement, and during read-only recovery/replay.
+- [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime
+  observations to the handoff, then enable runtime-gated local exact evaluation and atomic
+  publication. Until those gates pass, `production_admission` remains false.
 
 ## P1 — inert Python process and local adapters
 

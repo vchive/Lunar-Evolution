@@ -55,6 +55,25 @@ def test_receipts_round_trip_and_bind_canonical_projection() -> None:
         ProducerBundleExecutionReceipt.from_dict(tampered)
 
 
+def test_python_handoff_evaluation_receipt_is_optional_and_bound() -> None:
+    legacy = ProducerBundleEvaluationReceipt(
+        "candidate-1", digest("a"), digest("b"), digest("c"), digest("d"), digest("e"),
+        {"bundle_sha256": digest("a")}, report(), True, True,
+    )
+    linked = ProducerBundleEvaluationReceipt(
+        "candidate-1", digest("a"), digest("b"), digest("c"), digest("d"), digest("e"),
+        {"bundle_sha256": digest("a")}, report(), True, True,
+        python_handoff_sha256=digest("f"),
+    )
+    assert "python_handoff_sha256" not in legacy.to_dict()
+    assert ProducerBundleEvaluationReceipt.from_dict(linked.to_dict()) == linked
+    assert linked.digest() != legacy.digest()
+    tampered = linked.to_dict()
+    tampered["python_handoff_sha256"] = digest("0")
+    with pytest.raises(ProducerBundleReceiptError):
+        ProducerBundleEvaluationReceipt.from_dict(tampered)
+
+
 def test_evaluation_receipt_detaches_nested_report_and_binding() -> None:
     binding = {"runner": {"fingerprint": digest("a")}}
     evaluation_report = report()

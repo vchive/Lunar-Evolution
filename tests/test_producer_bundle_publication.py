@@ -73,6 +73,7 @@ def test_builds_canonical_journal_and_excludes_its_own_digest() -> None:
 def test_round_trip_mapping_and_file_are_stable(tmp_path: Path) -> None:
     journal = _journal(_candidate())
     assert "native_execution_receipt_sha256" not in journal.to_dict()
+    assert journal.digest() == "393756681e2fb529b2c92aab0959988db0f7d2b09c8650ff84a39d4a80600b3b"
     assert parse_producer_bundle_publication_journal(journal.to_dict()).to_dict() == journal.to_dict()
     path = tmp_path / "journal.json"
     path.write_text(json.dumps(journal.to_dict()), encoding="utf-8")
@@ -88,6 +89,21 @@ def test_optional_native_execution_receipt_round_trip_changes_digest() -> None:
     assert parse_producer_bundle_publication_journal(payload).to_dict() == payload
     assert linked.digest() == linked.journal_sha256
     assert linked.digest() != legacy.digest()
+
+
+def test_optional_python_handoff_requires_native_receipt_and_round_trips() -> None:
+    legacy = _journal(_candidate())
+    linked = _journal(
+        _candidate(), native_execution_receipt_sha256=_digest("8"),
+        python_handoff_sha256=_digest("9"),
+    )
+    payload = linked.to_dict()
+    assert payload["python_handoff_sha256"] == _digest("9")
+    assert parse_producer_bundle_publication_journal(payload).to_dict() == payload
+    assert linked.digest() != legacy.digest()
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        _journal(_candidate(), python_handoff_sha256=_digest("9"))
+    assert caught.value.code == "producer_bundle_publication_python_handoff_execution_link_missing"
 
 
 def test_rejects_digest_tampering_and_unknown_fields() -> None:

@@ -56,6 +56,7 @@ from .producer_bundle_staging import (
     _pretty,
     _read,
     _regular,
+    _verify_python_handoff,
     _workspace,
     _write_new,
     verify_native_publication_intent,
@@ -161,6 +162,7 @@ def _verify_receipts(
         or execution.plan_sha256 != evaluation.plan_sha256
         or execution.admission_sha256 != evaluation.admission_sha256
         or execution.completion_sha256 != evaluation.completion_sha256
+        or evaluation.python_handoff_sha256 != journal.python_handoff_sha256
         or evaluation.report["validity"] != 0
     ):
         _fail("producer_bundle_rejection_adjudication_invalid")
@@ -244,7 +246,9 @@ def _verify_receipts(
     )
     if (
         build_native_producer_bundle_execution_receipt(inspected) != execution
-        or build_native_producer_bundle_evaluation_receipt(inspected) != evaluation
+        or build_native_producer_bundle_evaluation_receipt(
+            inspected, python_handoff_sha256=journal.python_handoff_sha256,
+        ) != evaluation
         or _collect_retained_evidence(root, (
             source_root, run_root, binding_path,
             root / "evolution" / "producer-batches" / journal.journal_id / "journal.prepared.json",
@@ -258,6 +262,7 @@ def _inspect(
     root: Path, batch: Path, journal: ProducerBundlePublicationJournal,
     preflight: ProducerBundlePreflightReceipt | None,
 ) -> ProducerBundlePublicationJournal | None:
+    _verify_python_handoff(batch, journal)
     prepared = _prepared(journal)
     terminal_path, evidence_path = batch / "journal.json", batch / "rejections.json"
     present = tuple(_present(path) for path in (terminal_path, evidence_path, batch / "rejections"))
@@ -323,12 +328,15 @@ def inspect_producer_bundle_all_rejected(
     try:
         root = _workspace(workspace)
         batch = _batch(root, journal.journal_id)
+        _verify_python_handoff(batch, journal)
         with _locked(root, checkpoint=checkpoint):
             if checkpoint is not None:
                 checkpoint("producer_rejection_inspect_locked")
+            _verify_python_handoff(batch, journal)
             result = _inspect(root, batch, journal, preflight)
             if checkpoint is not None:
                 checkpoint("producer_rejection_inspected")
+            _verify_python_handoff(batch, journal)
             return result
     except (ProducerBundleRejectionError, SolveExecutionBudgetExceeded, SolveExecutionCancelled):
         raise
@@ -352,12 +360,14 @@ def finalize_producer_bundle_all_rejected(
             _fail("producer_bundle_rejection_adjudication_invalid")
         root = _workspace(workspace)
         batch = _batch(root, prepared.journal_id)
+        _verify_python_handoff(batch, prepared)
         chain = DirectoryChain(batch, "producer_bundle_rejection_path_invalid")
         try:
             with _locked(root, checkpoint=checkpoint):
                 chain.check()
                 if checkpoint is not None:
                     checkpoint("all_rejected")
+                _verify_python_handoff(batch, prepared)
                 existing = _inspect(root, batch, prepared, receipt)
                 if existing is not None:
                     if checkpoint is not None:
@@ -373,7 +383,10 @@ def finalize_producer_bundle_all_rejected(
                         or result.journal_sha256 != prepared.digest() or result.report.validity != 0
                     ):
                         _fail("producer_bundle_rejection_adjudication_invalid")
-                    artifact = build_native_producer_bundle_publication_artifact(root, result, authority=authority)
+                    artifact = build_native_producer_bundle_publication_artifact(
+                        root, result, authority=authority,
+                        python_handoff_sha256=prepared.python_handoff_sha256,
+                    )
                     value = {
                         "candidate_id": candidate.candidate_id,
                         "execution_receipt": artifact.execution_receipt,
@@ -414,8 +427,10 @@ def finalize_producer_bundle_all_rejected(
                 )
                 if checkpoint is not None:
                     checkpoint("all_rejected")
+                _verify_python_handoff(batch, terminal)
                 _write_new(batch / "journal.json", _pretty(terminal.to_dict(), _MAX_BYTES), maximum=_MAX_BYTES)
                 chain.check()
+                _verify_python_handoff(batch, terminal)
                 inspected = _inspect(root, batch, terminal, receipt)
                 if inspected != terminal:
                     _fail("producer_bundle_rejection_terminal_mismatch")

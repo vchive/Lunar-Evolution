@@ -45,6 +45,7 @@ _EVALUATION_FIELDS = {
     "admission_sha256", "completion_sha256", "evaluation_sha256", "binding", "report",
     "output_contract_valid", "harness_invoked", "status", "receipt_sha256",
 }
+_EVALUATION_OPTIONAL_FIELDS = {"python_handoff_sha256"}
 _EXECUTION_PROTOCOL = "lunar-producer-bundle-execution-receipt-v1"
 _EVALUATION_PROTOCOL = "lunar-producer-bundle-evaluation-receipt-v1"
 _RETAINED_EVIDENCE_PROTOCOL = "lunar-native-retained-evidence-v1"
@@ -252,8 +253,13 @@ def verify_native_retained_evidence(workspace: str | Path, value: object) -> dic
     return evidence
 
 
-def _receipt_value(value: object, *, fields: set[str], protocol: str, code: str) -> dict[str, Any]:
-    raw = _object(value, fields, code)
+def _receipt_value(
+    value: object, *, fields: set[str], protocol: str, code: str,
+    optional_fields: set[str] | frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or not fields <= set(value) or not (set(value) - fields) <= optional_fields:
+        _fail(code)
+    raw = value
     if raw.get("schema_version") != "1" or raw.get("protocol") != protocol:
         _fail(code)
     _digest(raw.get("receipt_sha256"), code)
@@ -363,6 +369,9 @@ class ProducerBundleEvaluationReceipt:
     schema_version: str = "1"
     protocol: str = _EVALUATION_PROTOCOL
     receipt_sha256: str | None = None
+    # Feature 191 Python-worker handoff identity.  It is omitted for legacy/native
+    # evaluations so their canonical bytes and receipt digest remain unchanged.
+    python_handoff_sha256: str | None = None
 
     def __post_init__(self) -> None:
         _identifier(self.candidate_id)
@@ -370,6 +379,8 @@ class ProducerBundleEvaluationReceipt:
             "bundle_sha256", "plan_sha256", "admission_sha256", "completion_sha256", "evaluation_sha256",
         ):
             _digest(getattr(self, field), "producer_bundle_evaluation_receipt_digest_invalid")
+        if self.python_handoff_sha256 is not None:
+            _digest(self.python_handoff_sha256, "producer_bundle_evaluation_handoff_invalid")
         if self.schema_version != "1" or self.protocol != _EVALUATION_PROTOCOL:
             _fail("producer_bundle_evaluation_receipt_schema_invalid")
         if self.status != "evaluated" or type(self.output_contract_valid) is not bool or type(self.harness_invoked) is not bool:
@@ -395,6 +406,8 @@ class ProducerBundleEvaluationReceipt:
             "report": self.report, "output_contract_valid": self.output_contract_valid,
             "harness_invoked": self.harness_invoked, "status": self.status,
         }
+        if self.python_handoff_sha256 is not None:
+            value["python_handoff_sha256"] = self.python_handoff_sha256
         if include_receipt_sha256:
             value["receipt_sha256"] = self.receipt_sha256
         return value
@@ -405,7 +418,10 @@ class ProducerBundleEvaluationReceipt:
     @classmethod
     def from_dict(cls, value: object) -> ProducerBundleEvaluationReceipt:
         raw = _receipt_value(value, fields=_EVALUATION_FIELDS, protocol=_EVALUATION_PROTOCOL,
-                             code="producer_bundle_evaluation_receipt_schema_invalid")
+                             code="producer_bundle_evaluation_receipt_schema_invalid",
+                             optional_fields=_EVALUATION_OPTIONAL_FIELDS)
+        if "python_handoff_sha256" in raw and raw["python_handoff_sha256"] is None:
+            _fail("producer_bundle_evaluation_handoff_invalid")
         return cls(**raw)
 
 
@@ -522,6 +538,7 @@ def build_native_producer_bundle_execution_receipt(
 
 def build_native_producer_bundle_evaluation_receipt(
     result: Any, *, candidate_id: str | None = None,
+    python_handoff_sha256: str | None = None,
 ) -> ProducerBundleEvaluationReceipt:
     """Project a retained, non-publishing independent evaluation into a portable receipt."""
     try:
@@ -535,6 +552,7 @@ def build_native_producer_bundle_evaluation_receipt(
             evaluation_sha256=evaluation.digest(), binding=dict(projection["binding"]),
             report=dict(projection["report"]), output_contract_valid=projection["output_contract_valid"],
             harness_invoked=projection["harness_invoked"], status=projection["status"],
+            python_handoff_sha256=python_handoff_sha256,
         )
     except ProducerBundleReceiptError:
         raise
@@ -544,6 +562,7 @@ def build_native_producer_bundle_evaluation_receipt(
 
 def build_native_producer_bundle_publication_artifact(
     workspace: str | Path, result: Any, *, authority: CandidateIntegrityAuthority,
+    python_handoff_sha256: str | None = None,
 ) -> Any:
     """Build a planned publication artifact from a non-publishing native result.
 
@@ -716,7 +735,9 @@ def build_native_producer_bundle_publication_artifact(
             bundle_evidence=bundle_evidence,
         )
         execution = build_native_producer_bundle_execution_receipt(result, candidate_id=candidate_id)
-        evaluation = build_native_producer_bundle_evaluation_receipt(result, candidate_id=candidate_id)
+        evaluation = build_native_producer_bundle_evaluation_receipt(
+            result, candidate_id=candidate_id, python_handoff_sha256=python_handoff_sha256,
+        )
         binding_path = result.source_root.parent / "draft-binding.json"
         evidence_roots = (result.source_root, result.run_root, binding_path)
         if result.journal_sha256 is not None:

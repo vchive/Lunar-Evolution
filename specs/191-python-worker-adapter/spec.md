@@ -84,8 +84,11 @@ before workspace I/O, check the sidecar identity before/during/after reading, re
 canonical bytes, and reject any digest or stat drift. The native recovery facade remains
 read-only, does not create a recovery lock/marker, and performs the sidecar check on both sides
 of native inspection. The launch-input not-started gate allows this sidecar to remain only during
-the final binding validation; a fresh prepare/bind pass still treats it as started. Actual
-launch/observe/settle, real CPython evidence, and publication admission remain open.
+the final binding validation; a fresh prepare/bind pass still treats it as started. The current
+Feature191 addition is provider-free handoff plumbing: a canonical create-only handoff DTO,
+receipt/journal digest links, and synthetic transaction/recovery checks. It does not itself
+establish runtime/process observation or publication authority. Actual launch/observe/settle,
+sealed CPython evidence, and runtime-gated publication admission remain open.
 
 ## Preconditions and safety gates
 
@@ -163,9 +166,10 @@ unknown-reconcile and result-envelope contracts.
 
 ## Acceptance boundary
 
-The durable sidecar, immutable run-request anchor, and controller recovery boundaries are
-complete as a provider-free local slice. Focused regression and independent boundary review
-pass locally; exact-final-source CI remains required before merge acceptance.
+The durable sidecar, immutable run-request anchor, controller recovery boundaries, and
+provider-free handoff/receipt plumbing are complete as local slices. Focused regression and
+independent boundary review pass locally; exact-final-source CI remains required before merge
+acceptance. Runtime-gated Python admission is still open.
 Feature acceptance still requires a dedicated Linux fixture proving the entire binding and
 recovery matrix with the accepted 189 image and 190 owner, including real CPython observations,
 loader-negative behavior, broker evidence, lifecycle timestamps and evaluator admission. A

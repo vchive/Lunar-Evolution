@@ -117,6 +117,19 @@ def test_rehashed_portable_receipts_cannot_replace_native_rejection_evidence(tmp
         )
 
 
+def test_rejection_requires_python_handoff_to_match_journal_even_after_rehash(tmp_path: Path) -> None:
+    context, _strategy, _drafts, _plan, result, terminal, batch, _before = _rejected(tmp_path)
+    path = batch / "rejections" / (terminal.candidates[0].candidate_id + ".json")
+    value = json.loads(path.read_bytes())
+    evaluation = ProducerBundleEvaluationReceipt.from_dict(value["evaluation_receipt"])
+    changed = replace(evaluation, python_handoff_sha256="f" * 64, receipt_sha256=None)
+    value["evaluation_receipt"] = changed.to_dict()
+    with pytest.raises(ProducerBundleRejectionError, match="producer_bundle_rejection_adjudication_invalid"):
+        producer_bundle_rejection._verify_receipts(
+            context.workspace, result.journal, result.journal.candidates[0], value,
+        )
+
+
 @pytest.mark.parametrize("when", [1, 2])
 @pytest.mark.parametrize("kind", ["cancelled", "expired"])
 def test_terminal_checkpoint_stops_before_locked_work_or_terminal_commit(
