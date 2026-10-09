@@ -32,6 +32,15 @@ failure and cancelled preflight separately from later successful evidence.
   for local archive observation before its main merge; require the dedicated
   64-case gate without failures/errors/skips. This fixture gate does not verify
   downloaded releases, release signatures, extracted staging or runtime admission.
+- [x] Specify the snapshot-bound fixed three-source byte projection and preparation
+  contract in `source-projection.md`: mandatory external canonical manifest pin,
+  actual member/preimage/postimage byte bindings and one original deadline.
+- [x] Implement and locally validate this projection with synthetic USTAR/XZ
+  containing the existing inert source fixtures; no pathname reopen, filesystem
+  extraction, source execution, build or runtime operation.
+- [ ] Complete final-source three-version Linux CI and independent raw/source/tree
+  audit for source projection before its main merge. Preserve the existing
+  64-case archive gate and keep release/signature/G1/G2/G3 claims uncompleted.
 - [ ] Verify CPython v3.13.12/source identity and signature/acquisition result;
   record archive/tree SHA-256 and exact patch set without invented values.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
