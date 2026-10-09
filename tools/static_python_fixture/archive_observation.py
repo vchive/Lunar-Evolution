@@ -289,11 +289,14 @@ def snapshot_archive(
             named = os.stat(name, dir_fd=parent, follow_symlinks=False)
             if not _same_identity(original, after) or not _same_identity(original, named):
                 _fail("archive_identity_drift")
+            _checkpoint(checkpoint)
             digest = hashlib.sha256(raw).hexdigest()
+            _checkpoint(checkpoint)
             if digest != profile.sha256:
                 _fail("archive_sha256_mismatch")
             snapshot = _snapshot_bytes(raw, profile, require_profile=True)
-            return StaticPythonArchiveSnapshot(
+            _checkpoint(checkpoint)
+            acquired = StaticPythonArchiveSnapshot(
                 archive=snapshot.archive, root=snapshot.root, version=snapshot.version,
                 expected_size=snapshot.expected_size, expected_sha256=snapshot.expected_sha256,
                 archive_size=snapshot.archive_size, archive_sha256=snapshot.archive_sha256,
@@ -302,6 +305,8 @@ def snapshot_archive(
                 signature_verification=snapshot.signature_verification,
                 snapshot_sha256=snapshot.snapshot_sha256,
             )
+            _checkpoint(checkpoint)
+            return acquired
         except StaticPythonArchiveObservationError:
             raise
         except (OSError, ValueError, TypeError) as exc:

@@ -506,3 +506,46 @@ def test_fifo_path_is_rejected_without_blocking(tmp_path):
     path = tmp_path / "fifo.xz"
     observation.os.mkfifo(path)
     _assert_refused(lambda: snapshot_archive(path, "cpython"), "archive_not_regular")
+
+
+@pytest.mark.parametrize("expire_at", ["digest", "snapshot"])
+def test_deadline_remains_active_after_last_read(monkeypatch, tmp_path, expire_at):
+    compressed = _compressed((_directory(), None))
+    digest = hashlib.sha256(compressed).hexdigest()
+    monkeypatch.setitem(observation._PROFILES, "cpython",
+                        observation._Profile("cpython", ROOT, "3.13.12", len(compressed), digest))
+    (tmp_path / "archive.xz").write_bytes(compressed)
+    monkeypatch.chdir(tmp_path)
+    expired = False
+    closed = []
+    real_close = observation.os.close
+
+    def close(fd):
+        closed.append(fd)
+        real_close(fd)
+
+    monkeypatch.setattr(observation.os, "close", close)
+    if expire_at == "digest":
+        real_sha256 = observation.hashlib.sha256
+
+        def sha256(raw):
+            nonlocal expired
+            result = real_sha256(raw)
+            expired = True
+            return result
+
+        monkeypatch.setattr(observation.hashlib, "sha256", sha256)
+    else:
+        real_snapshot = observation._snapshot_bytes
+
+        def snapshot_bytes(*args, **kwargs):
+            nonlocal expired
+            result = real_snapshot(*args, **kwargs)
+            expired = True
+            return result
+
+        monkeypatch.setattr(observation, "_snapshot_bytes", snapshot_bytes)
+    _assert_refused(lambda: snapshot_archive("archive.xz", "cpython", deadline=1.0,
+                                             monotonic=lambda: 2.0 if expired else 0.0),
+                    "wall_timeout")
+    assert len(closed) == 2

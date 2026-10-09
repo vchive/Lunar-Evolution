@@ -17,7 +17,8 @@ snapshot records `signature_verification="not-performed"`.
 
 The acquisition path is bounded before traversal and rejects literal empty,
 `.` and `..` segments. A supplied deadline is checked before the first open,
-before each parent component, and around each bounded read. Non-finite or
+before each parent component, around each bounded read, and before/after
+hashing and snapshot construction through the final return. Non-finite or
 non-numeric clock results are refusals. Cleanup attempts every known owned
 descriptor and preserves an existing primary refusal; an otherwise successful
 read with an uncertain close fails with `cleanup_unknown`.
