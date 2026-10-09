@@ -1,5 +1,46 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 snapshot-bound fixed source preparation
+
+Feature189 continues in a separate source-projection worktree based on synchronized
+PR30 source `2889dc1670ec72d234cb8825d2d1fe4d307d342a`. The public
+`prepare_archive_sources` API consumes only one immutable compressed snapshot;
+its shared strict USTAR walk captures the three fixed patch inputs, verifies the
+complete external manifest pin in both profile and explicit inert modes, checks
+actual member/preimage bytes, invokes the existing finite source patch function,
+and rechecks actual postimages and policy before returning a frozen byte record.
+Selected file/aggregate caps are checked before hash/copy. The mandatory original
+absolute deadline remains active through decoding, member/tail scan, hashes,
+preparation and final return. No source map, pathname, extraction, generic patch,
+CLI launch or build execution route is introduced.
+
+The 64 existing archive cases remain unchanged. Author focused validation passes
+114 cases (64 archive + 50 projection); root combined input/archive/preparation/
+lifecycle/readiness regression passes 725 with zero failure/error/skip.
+The same 114-case focused scope also passes on cached Python3.11.15. Ruff,
+compileall and diff check pass; independent source review has no open finding.
+The dedicated source-projection CI gate requires 50 cases and zero failures,
+errors or skips. Final-source three-version complete CI and raw/source/tree audit
+are still required before this slice may merge. All original local materials are
+retained in ignored reports/source-projection-20261009.
+
+PR29 repaired source `ce606690` and PR30 synchronized source `2889dc1` have each
+passed their three-version focused gates and are running complete regression.
+They are not yet merged or approved by raw final audit. Earlier failed attempts
+remain independently preserved; the original failure cause is not claimed as
+proven by the separately established FD_SETSIZE defect.
+
+P1 actual release/toolchain acquisition/signatures/safe staging, configured static
+closure, nine same-source frozen headers, ELF/link/size and real runtime/lifecycle
+acceptance remain open. Feature191 should reuse existing native receipt/journal
+persistence; it still lacks durable Python-specific binding and actual runtime
+stdout/broker transcript observations and started/released/exited time evidence.
+Those values must not be guessed from DTOs or the current clock. Production Python
+adapters and RSI CLI follow those actual gates. P2 multi-host/services/distributed
+scheduling remain deferred. No real archive/build/runtime, credentials, model,
+WebAgent, remote/company evaluator or actual solver campaign ran. This in-memory
+record is byte-consistency evidence, not authentication or production admission.
+
 ## 2026-10-09 synchronized archive observation source
 
 The archive-observation branch is now synchronized onto repaired PR29 source

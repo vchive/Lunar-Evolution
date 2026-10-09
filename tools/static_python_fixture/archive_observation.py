@@ -330,7 +330,10 @@ def snapshot_archive(
             raise StaticPythonArchiveObservationError("cleanup_unknown") from cleanup_error
 
 
-def _decompress(snapshot: StaticPythonArchiveSnapshot) -> bytes:
+def _decompress(
+    snapshot: StaticPythonArchiveSnapshot, checkpoint: Callable[[], None] | None = None,
+) -> bytes:
+    _checkpoint(checkpoint)
     source = snapshot.compressed_bytes
     if len(source) > MAX_COMPRESSED_ARCHIVE_BYTES:
         _fail("compressed_budget_exceeded")
@@ -340,11 +343,13 @@ def _decompress(snapshot: StaticPythonArchiveSnapshot) -> bytes:
         chunk = source[start:start + _READ_CHUNK]
         supplied_end = start + len(chunk)
         while True:
+            _checkpoint(checkpoint)
             try:
                 output = decoder.decompress(chunk, max_length=_READ_CHUNK)
             except (lzma.LZMAError, EOFError) as exc:
                 raise StaticPythonArchiveObservationError("xz_invalid") from exc
             result.extend(output)
+            _checkpoint(checkpoint)
             if len(result) > MAX_TAR_STREAM_BYTES:
                 _fail("tar_stream_budget_exceeded")
             if decoder.eof:
@@ -360,6 +365,7 @@ def _decompress(snapshot: StaticPythonArchiveSnapshot) -> bytes:
                 chunk = b""
     if not decoder.eof:
         _fail("xz_truncated")
+    _checkpoint(checkpoint)
     return bytes(result)
 
 
@@ -448,21 +454,28 @@ def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
     return member
 
 
-def _member_bytes(tar_bytes: bytes, member: tarfile.TarInfo) -> str:
+def _member_bytes(
+    tar_bytes: bytes, member: tarfile.TarInfo, checkpoint: Callable[[], None] | None = None,
+) -> str:
+    _checkpoint(checkpoint)
     if member.offset_data < 0 or member.offset_data + member.size > len(tar_bytes):
         _fail("member_bounds_invalid")
     digest = hashlib.sha256()
     count = 0
     while count < member.size:
+        _checkpoint(checkpoint)
         wanted = min(_READ_CHUNK, member.size - count)
         chunk = tar_bytes[member.offset_data + count:member.offset_data + count + wanted]
         if type(chunk) is not bytes or not chunk:
             _fail("member_size_drift")
         count += len(chunk)
         digest.update(chunk)
+        _checkpoint(checkpoint)
     if count != member.size:
         _fail("member_size_drift")
-    return digest.hexdigest()
+    result = digest.hexdigest()
+    _checkpoint(checkpoint)
+    return result
 
 
 def observe_archive_snapshot(
@@ -478,6 +491,25 @@ def observe_archive_snapshot(
     second layer. Inert snapshots may exercise tar grammar with
     ``require_profile=False``; their metadata status remains explicitly skipped.
     """
+    return _observe_archive_snapshot(
+        snapshot, expected_manifest_sha256=expected_manifest_sha256,
+        require_source_preimages=require_source_preimages, require_profile=require_profile,
+    )[0]
+
+
+def _observe_archive_snapshot(
+    snapshot: StaticPythonArchiveSnapshot,
+    *,
+    expected_manifest_sha256: str | None = None,
+    require_source_preimages: bool = False,
+    require_profile: bool = True,
+    checkpoint: Callable[[], None] | None = None,
+    selected_paths: frozenset[str] = frozenset(),
+    selected_max_file_bytes: int = 0,
+    selected_max_total_bytes: int = 0,
+) -> tuple[StaticPythonArchiveObservation, tuple[tuple[str, bytes], ...]]:
+    """One bounded decode/walk with an optional installation-owned projection."""
+    _checkpoint(checkpoint)
     if type(snapshot) is not StaticPythonArchiveSnapshot:
         _fail("snapshot_invalid")
     if type(require_profile) is not bool:
@@ -499,6 +531,7 @@ def observe_archive_snapshot(
             or snapshot.archive_sha256 != hashlib.sha256(snapshot.compressed_bytes).hexdigest()
             or snapshot.snapshot_sha256 != snapshot.archive_sha256):
         _fail("snapshot_integrity_invalid")
+    _checkpoint(checkpoint)
     source = snapshot.source_identity
     if source is not None and (
             type(source) is not ArchiveSourceIdentity
@@ -520,14 +553,17 @@ def observe_archive_snapshot(
         _fail("archive_pin_mismatch")
     if type(require_source_preimages) is not bool:
         _fail("source_preimages_flag_invalid")
-    tar_bytes = _decompress(snapshot)
+    tar_bytes = _decompress(snapshot, checkpoint)
     if len(tar_bytes) < 1024:
         _fail("tar_end_marker_missing")
     members: list[StaticPythonArchiveMember] = []
     paths: set[str] = set()
     total = 0
+    selected_total = 0
+    selected: list[tuple[str, bytes]] = []
     cursor = 0
     while cursor + 512 <= len(tar_bytes):
+        _checkpoint(checkpoint)
         if tar_bytes[cursor:cursor + 512] == bytes(512):
             break
         if len(members) >= MAX_TAR_MEMBERS:
@@ -541,6 +577,15 @@ def observe_archive_snapshot(
         if path in paths:
             _fail("member_duplicate_path")
         paths.add(path)
+        wanted = path in selected_paths
+        if wanted:
+            if is_dir:
+                _fail("selected_source_kind_invalid")
+            if not 0 < member.size <= selected_max_file_bytes:
+                _fail("selected_source_size_invalid")
+            selected_total += member.size
+            if selected_total > selected_max_total_bytes:
+                _fail("selected_source_budget_exceeded")
         if is_dir:
             if member.size != 0:
                 _fail("directory_size_invalid")
@@ -548,25 +593,38 @@ def observe_archive_snapshot(
         else:
             if member.size < 0 or member.size > MAX_FILE_BYTES:
                 _fail("member_size_invalid")
-            digest = _member_bytes(tar_bytes, member)
+            digest = _member_bytes(tar_bytes, member, checkpoint)
             total += member.size
             if total > MAX_TOTAL_FILE_BYTES:
                 _fail("total_byte_budget_exceeded")
+            if wanted:
+                _checkpoint(checkpoint)
+                data = tar_bytes[member.offset_data:member.offset_data + member.size]
+                _checkpoint(checkpoint)
+                selected.append((path, data))
         members.append(StaticPythonArchiveMember(path, "directory" if is_dir else "file",
                                                  member.size, member.mode, digest))
         cursor = ((member.offset_data + member.size + 511) // 512) * 512
-    remainder = tar_bytes[cursor:]
-    if len(remainder) < 1024 or len(remainder) % 512 or any(remainder):
+        _checkpoint(checkpoint)
+    remaining = len(tar_bytes) - cursor
+    if remaining < 1024 or remaining % 512:
         _fail("tar_end_marker_invalid")
+    for offset in range(cursor, len(tar_bytes), _READ_CHUNK):
+        _checkpoint(checkpoint)
+        if any(tar_bytes[offset:offset + _READ_CHUNK]):
+            _fail("tar_end_marker_invalid")
+        _checkpoint(checkpoint)
     if not members or not any(item.path == snapshot.root and item.kind == "directory" for item in members):
         _fail("root_directory_missing")
     by_path = {item.path: item for item in members}
     for path in by_path:
+        _checkpoint(checkpoint)
         parent = path.rpartition("/")[0]
         while parent:
             if parent in by_path and by_path[parent].kind != "directory":
                 _fail("file_directory_collision")
             parent = parent.rpartition("/")[0]
+    _checkpoint(checkpoint)
     ordered = tuple(sorted(members, key=lambda item: item.path))
     manifest = {
         "schema": "lunar-static-python-extraction-manifest-v1", "archive": snapshot.archive,
@@ -576,7 +634,9 @@ def observe_archive_snapshot(
     }
     manifest_json = json.dumps(manifest, sort_keys=True, separators=(",", ":"),
                                ensure_ascii=False, allow_nan=False).encode("utf-8")
+    _checkpoint(checkpoint)
     manifest_sha256 = hashlib.sha256(manifest_json).hexdigest()
+    _checkpoint(checkpoint)
     metadata_status = "skipped-inert-profile"
     source_checked = False
     if require_profile:
@@ -595,7 +655,8 @@ def observe_archive_snapshot(
         source_checked = validated.source_preimages_checked
     elif require_source_preimages:
         _fail("source_preimages_require_profile")
-    return StaticPythonArchiveObservation(
+    _checkpoint(checkpoint)
+    observed = StaticPythonArchiveObservation(
         archive=snapshot.archive, root=snapshot.root, version=snapshot.version,
         archive_sha256=snapshot.archive_sha256, snapshot_sha256=snapshot.snapshot_sha256,
         members=ordered, total_bytes=total, manifest_json=manifest_json,
@@ -603,6 +664,8 @@ def observe_archive_snapshot(
         source_preimages_checked=source_checked,
         signature_verification=snapshot.signature_verification,
     )
+    _checkpoint(checkpoint)
+    return observed, tuple(selected)
 
 
 __all__ = [
