@@ -1049,6 +1049,20 @@ class RSILearningController:
         except (PythonProducerCheckpointError, PythonProducerBindingStoreError, OSError, TypeError, ValueError) as exc:
             raise RSILearningError("rsi_producer_checkpoint_sidecar_invalid") from exc
 
+    @staticmethod
+    def _validate_run_checkpoint_producer_binding(
+        record: RSIRecord, state: Mapping[str, Any] | None,
+    ) -> None:
+        """Reject a controller journal that drops or changes the run's durable producer pin."""
+
+        run_binding = record.payload.get("producer_checkpoint_binding")
+        if (
+            run_binding is not None
+            and state is not None
+            and state.get("producer_checkpoint_binding") != run_binding
+        ):
+            raise RSILearningError("rsi_resume_checkpoint_corrupt")
+
     @property
     def snapshot(self) -> MemorySnapshot:
         return self.memory_store.snapshot
@@ -1774,6 +1788,7 @@ class RSILearningController:
         solver_id: str,
         budget: Mapping[str, Any] | None,
         plan: Mapping[str, Any] | None = None,
+        producer_checkpoint_binding: Mapping[str, Any] | None = None,
     ) -> RSIRecord | None:
         if self.ledger is None:
             return None
@@ -1810,6 +1825,12 @@ class RSILearningController:
                 "run_fingerprint": run_fingerprint.to_dict(),
             },
         }
+        if producer_checkpoint_binding is not None:
+            # Keep producer identity in the run record as well as the controller journal.
+            # This closes the crash window between creating a running record and writing
+            # the first controller checkpoint: recovery must never infer provider-free mode
+            # from the absence of that checkpoint.
+            payload["producer_checkpoint_binding"] = dict(producer_checkpoint_binding)
         curriculum_state = self._failure_curriculum_state()
         if curriculum_state is not None:
             payload["curriculum_state"] = curriculum_state
@@ -2209,9 +2230,14 @@ class RSILearningController:
                              else RSIRunBudget.create(budget).to_dict()), "intents": {},
             "executions": {}, "decisions": {}, "judgments": {},
         }
-        producer_checkpoint = self._producer_checkpoint_state(run_id=run_id)
+        producer_checkpoint = (
+            record.payload.get("producer_checkpoint_binding")
+            if record is not None else None
+        )
+        if producer_checkpoint is None:
+            producer_checkpoint = self._producer_checkpoint_state(run_id=run_id)
         if producer_checkpoint is not None:
-            state["producer_checkpoint_binding"] = producer_checkpoint
+            state["producer_checkpoint_binding"] = dict(producer_checkpoint)
         self._sync_curriculum_checkpoint(state)
         return state
 
@@ -2578,7 +2604,11 @@ class RSILearningController:
         self._validate_resume_identity(record, observed_fingerprints, budget_policy)
         if record.state in {"completed", "failed", "cancelled", "budget_exhausted"}:
             checkpoint = self.ledger.controller_checkpoint(run_id)
-            self._validate_producer_checkpoint(run_id, checkpoint[1] if checkpoint else None)
+            producer_state = checkpoint[1] if checkpoint else None
+            if producer_state is None and record.payload.get("producer_checkpoint_binding") is not None:
+                producer_state = {"producer_checkpoint_binding": record.payload["producer_checkpoint_binding"]}
+            self._validate_run_checkpoint_producer_binding(record, producer_state)
+            self._validate_producer_checkpoint(run_id, producer_state)
             if checkpoint and checkpoint[1].get("schema_version") == "2":
                 self._check_budget_history(record)
             terminal_executions = checkpoint[1].get("executions", {}).values() if checkpoint else ()
@@ -2617,6 +2647,7 @@ class RSILearningController:
             )
         checkpoint = self.ledger.controller_checkpoint(run_id)
         state = checkpoint[1] if checkpoint else None
+        self._validate_run_checkpoint_producer_binding(record, state)
         if state is None and record.payload.get("plan") is not None:
             if self.ledger.episode_ids_for_run(run_id):
                 raise RSILearningError("rsi_resume_checkpoint_corrupt")
@@ -2923,7 +2954,19 @@ class RSILearningController:
                     if prior.payload.get("plan") != plan:
                         raise RSILearningError("rsi_resume_plan_drift")
                     return self._resume_locked(run_id)
-            record = self._start_run(run_id=run_id, mode=plan["mode"], budget=budget, plan=plan, **pins)
+            producer_checkpoint = self._producer_checkpoint_state(run_id=run_id)
+            preflight_state = (
+                {"producer_checkpoint_binding": producer_checkpoint}
+                if producer_checkpoint is not None else None
+            )
+            # Validate the sidecar before creating a durable running record. Retain the
+            # validated binding in that record so a crash before the controller checkpoint
+            # cannot turn this run into an apparently unbound provider-free run.
+            self._validate_producer_checkpoint(run_id, preflight_state)
+            record = self._start_run(
+                run_id=run_id, mode=plan["mode"], budget=budget, plan=plan,
+                producer_checkpoint_binding=producer_checkpoint, **pins,
+            )
             state = self._flow_state(record, run_id=run_id, plan=plan, pins=pins, budget=budget)
             self._validate_producer_checkpoint(run_id, state)
             self._save_flow(record, state)

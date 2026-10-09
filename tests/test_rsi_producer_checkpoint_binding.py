@@ -98,7 +98,114 @@ def test_fresh_producer_run_validates_sidecar_before_controller_checkpoint(tmp_p
             environment_sha256=DIGEST, solver_id="mock", max_practice_rounds=0,
         )
 
+    assert ledger.get_run(binding.run_id) is None
     assert ledger.controller_checkpoint(binding.run_id) is None
+    with pytest.raises(RSILearningError, match="rsi_run_missing"):
+        RSILearningController(fixture_solver_gateway("mock"), ledger=ledger).resume(binding.run_id)
+
+
+def test_run_record_retains_producer_pin_if_sidecar_disappears_before_checkpoint(tmp_path: Path) -> None:
+    binding, sidecar = _sidecar(tmp_path)
+    sidecar_path = tmp_path / "evolution" / "producer-batches" / binding.intent.journal_id / "python-producer-binding.json"
+    ledger = RSILedger(tmp_path / "rsi.sqlite3")
+    controller = RSILearningController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+    )
+    original_validate = controller._validate_producer_checkpoint
+    validations = 0
+
+    def remove_after_preflight(run_id, state):
+        nonlocal validations
+        original_validate(run_id, state)
+        validations += 1
+        if validations == 1:
+            sidecar_path.unlink()
+
+    controller._validate_producer_checkpoint = remove_after_preflight
+    with pytest.raises(RSILearningError, match="producer_checkpoint"):
+        controller.run_drs(
+            run_id=binding.run_id, contract_sha256=DIGEST, evaluator_sha256=DIGEST,
+            environment_sha256=DIGEST, solver_id="mock", max_practice_rounds=0,
+        )
+
+    run = ledger.get_run(binding.run_id)
+    assert run is not None and run.state == "running"
+    assert run.payload["producer_checkpoint_binding"]["run_id"] == binding.run_id
+    assert ledger.controller_checkpoint(binding.run_id) is None
+    assert ledger.episode_ids_for_run(binding.run_id) == ()
+
+    replacement = RSILearningController(fixture_solver_gateway("mock"), ledger=ledger)
+    with pytest.raises(RSILearningError, match="rsi_producer_checkpoint_sidecar_missing"):
+        replacement.resume(binding.run_id)
+    assert ledger.episode_ids_for_run(binding.run_id) == ()
+
+
+def test_producer_run_recovers_missing_first_checkpoint_with_valid_sidecar(tmp_path: Path) -> None:
+    binding, sidecar = _sidecar(tmp_path)
+    ledger = RSILedger(tmp_path / "rsi.sqlite3")
+    controller = RSILearningController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+    )
+
+    def interrupt_before_initial_checkpoint(_record, _state):
+        raise RSILearningError("fixture_initial_checkpoint_interrupt")
+
+    controller._save_flow = interrupt_before_initial_checkpoint
+    with pytest.raises(RSILearningError, match="fixture_initial_checkpoint_interrupt"):
+        controller.run_drs(
+            run_id=binding.run_id, contract_sha256=DIGEST, evaluator_sha256=DIGEST,
+            environment_sha256=DIGEST, solver_id="mock", max_practice_rounds=0,
+        )
+    assert ledger.controller_checkpoint(binding.run_id) is None
+    assert ledger.episode_ids_for_run(binding.run_id) == ()
+
+    recovered = RSILearningController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+    ).resume(binding.run_id)
+    assert recovered.status == "completed"
+    assert ledger.controller_checkpoint(binding.run_id)[1]["producer_checkpoint_binding"]["run_id"] == binding.run_id
+
+
+@pytest.mark.parametrize("completed", [False, True])
+def test_resume_rejects_checkpoint_that_drops_run_producer_binding(tmp_path: Path, completed: bool) -> None:
+    binding, sidecar = _sidecar(tmp_path)
+    ledger = RSILedger(tmp_path / "rsi.sqlite3")
+    controller = RSILearningController(
+        fixture_solver_gateway("mock"), ledger=ledger,
+        producer_sidecar=sidecar, producer_workspace=tmp_path,
+    )
+    if not completed:
+        original_save = controller._save_flow
+
+        def interrupt_after_initial_checkpoint(record, state):
+            original_save(record, state)
+            raise RSILearningError("fixture_initial_checkpoint_interrupt")
+
+        controller._save_flow = interrupt_after_initial_checkpoint
+
+    def run():
+        return controller.run_drs(
+            run_id=binding.run_id, contract_sha256=DIGEST, evaluator_sha256=DIGEST,
+            environment_sha256=DIGEST, solver_id="mock", max_practice_rounds=0,
+        )
+
+    if completed:
+        assert run().status == "completed"
+    else:
+        with pytest.raises(RSILearningError, match="fixture_initial_checkpoint_interrupt"):
+            run()
+    checkpoint = ledger.controller_checkpoint(binding.run_id)
+    assert checkpoint is not None
+    corrupted = dict(checkpoint[1])
+    del corrupted["producer_checkpoint_binding"]
+    with ledger.controller_lock(binding.run_id):
+        ledger.write_controller_checkpoint(binding.run_id, corrupted, expected_sha256=checkpoint[0])
+
+    with pytest.raises(RSILearningError, match="rsi_resume_checkpoint_corrupt"):
+        RSILearningController(fixture_solver_gateway("mock"), ledger=ledger).resume(binding.run_id)
 
 
 def test_producer_bound_legacy_checkpoint_fails_closed_without_sidecar_proof(tmp_path: Path) -> None:
