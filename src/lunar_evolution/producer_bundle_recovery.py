@@ -22,6 +22,10 @@ from .producer_bundle_publication import (
     ProducerBundlePublicationJournal,
     parse_producer_bundle_publication_journal,
 )
+from .python_producer_admission_handoff import (
+    PythonProducerAdmissionHandoffError,
+    read_python_producer_admission_handoff,
+)
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -111,11 +115,42 @@ def _read(path: Path, maximum: int = _MAX_JSON_BYTES) -> bytes:
     try:
         return _files.read_regular_file(_files.absolute_path(path), maximum)
     except _files.BenchmarkFileError as exc:
-        _fail({"missing": "producer_bundle_recovery_missing",
-               "too_large": "producer_bundle_recovery_too_large",
-               "unsafe": "producer_bundle_recovery_path_invalid",
-               "changed": "producer_bundle_recovery_evidence_changed"}.get(
-                   exc.reason, "producer_bundle_recovery_evidence_invalid"))
+        _fail({
+            "missing": "producer_bundle_recovery_missing",
+            "too_large": "producer_bundle_recovery_too_large",
+            "unsafe": "producer_bundle_recovery_path_invalid",
+            "changed": "producer_bundle_recovery_evidence_changed",
+        }.get(exc.reason, "producer_bundle_recovery_evidence_invalid"))
+
+
+def _verify_python_handoff(
+    batch: Path, journal: ProducerBundlePublicationJournal,
+    plan: ProducerBundleAdmissionPlan,
+) -> None:
+    """Re-read the immutable Python handoff before resolving any terminal state."""
+    if journal.python_handoff_sha256 is None:
+        return
+    try:
+        handoff = read_python_producer_admission_handoff(
+            batch / "python-producer-admission-handoff.json",
+            expected_handoff_sha256=journal.python_handoff_sha256,
+        )
+    except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+        raise ProducerBundleRecoveryError("producer_bundle_recovery_python_handoff_invalid") from exc
+    if (
+        handoff.run_id != journal.run_id
+        or handoff.journal_id != journal.journal_id
+        or handoff.parent_task_id != journal.parent_task_id
+        or handoff.task_id != journal.task_id
+        or handoff.native_execution_receipt_sha256 != journal.native_execution_receipt_sha256
+        or handoff.admission_plan_sha256 != plan.digest()
+        or handoff.contract_sha256 != journal.contract_sha256
+        or handoff.evaluator_sha256 != journal.evaluator_fingerprint
+        or handoff.runner_sha256 != journal.runner_fingerprint
+        or handoff.dependency_sha256 != journal.dependency_sha256
+        or handoff.environment_sha256 != journal.environment_sha256
+    ):
+        _fail("producer_bundle_recovery_python_handoff_mismatch")
 
 
 def _read_json(path: Path, maximum: int = _MAX_JSON_BYTES) -> dict[str, object]:
@@ -478,6 +513,8 @@ def resume_producer_bundle_publication(
             durable.dependency_sha256 == journal.dependency_sha256,
             durable.environment_sha256 == journal.environment_sha256,
             durable.budget_sha256 == journal.budget_sha256,
+            durable.native_execution_receipt_sha256 == journal.native_execution_receipt_sha256,
+            durable.python_handoff_sha256 == journal.python_handoff_sha256,
             durable.strategy == journal.strategy,
             durable.population_config_sha256 == journal.population_config_sha256,
             durable.num_islands == journal.num_islands,
@@ -492,6 +529,7 @@ def resume_producer_bundle_publication(
             _fail("producer_bundle_recovery_journal_mismatch")
     if durable.admission_sha256 != plan.digest():
         _fail("producer_bundle_recovery_plan_mismatch")
+    _verify_python_handoff(batch, durable, plan)
     if durable.state == "all_rejected":
         try:
             from .producer_bundle_rejection import inspect_producer_bundle_all_rejected

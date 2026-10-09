@@ -17,6 +17,10 @@ from lunar_evolution.evolution import CandidateArchive, CandidateDraft, Populati
 from lunar_evolution.producer_bundle_admission import build_producer_bundle_admission_plan
 from lunar_evolution.producer_bundle_handoff import BundleGroup, prepare_producer_bundle_manifest
 from lunar_evolution.producer_bundle_population import prepare_producer_bundle_drafts
+from lunar_evolution.producer_bundle_recovery import (
+    ProducerBundleRecoveryError,
+    resume_producer_bundle_publication,
+)
 from lunar_evolution.producer_bundle_transaction import (
     NativeProducerBundleTransactionError,
     run_native_producer_bundle_publication_transaction,
@@ -25,6 +29,10 @@ from lunar_evolution.producer_process import (
     ProducerProcessError,
     _digest_without,
     parse_producer_execution_receipt,
+)
+from lunar_evolution.python_producer_admission_handoff import (
+    build_python_producer_admission_handoff,
+    persist_python_producer_admission_handoff,
 )
 from lunar_evolution.shinka_handoff import export_shinka_result
 
@@ -316,6 +324,183 @@ def test_transaction_links_formal_native_execution_receipt(tmp_path: Path) -> No
         (context.workspace / "evolution" / "producer-batches" / journal_id / "journal.json").read_bytes()
     )
     assert persisted["native_execution_receipt_sha256"] == receipt["receipt_sha256"]
+
+
+def test_transaction_links_durable_python_handoff_to_formal_receipt_and_plan(tmp_path: Path) -> None:
+    context = build_context(tmp_path / "native")
+    strategy = PopulationStrategy(context)
+    _initialize_native_population(strategy)
+    strategy, drafts, plan, _export = _shinka_drafts(tmp_path, context, (9,))
+    journal_id = "transaction-with-python-handoff"
+    _batch_directory(context.workspace, journal_id)
+    receipt = _formal_execution_receipt(journal_id=journal_id)
+    receipt_path = context.workspace / "evolution" / "producer-batches" / journal_id / "execution-receipt.json"
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    digest = "a" * 64
+    handoff = build_python_producer_admission_handoff(
+        run_id=journal_id,
+        journal_id=journal_id,
+        parent_task_id="producer",
+        task_id="native-bundle-publication",
+        binding_sha256=digest,
+        sidecar_raw_sha256=digest,
+        sidecar_pin_sha256=digest,
+        launch_intent_sha256=digest,
+        attestation_sha256=digest,
+        runtime_manifest_sha256=digest,
+        runtime_tree_sha256=digest,
+        executable_owner_sha256=digest,
+        native_execution_receipt_sha256=receipt["receipt_sha256"],
+        terminal_sha256=digest,
+        runtime_observation_sha256=digest,
+        broker_transcript_sha256=digest,
+        envelope_sha256=digest,
+        materials_sha256=digest,
+        contract_sha256=plan.contract_sha256,
+        evaluator_sha256=plan.evaluator_fingerprint,
+        runner_sha256=plan.runner_fingerprint,
+        dependency_sha256=plan.dependency_sha256,
+        environment_sha256=plan.environment_sha256,
+        admission_plan_sha256=plan.digest(),
+        request_budget=10,
+        wall_timeout_seconds=60.0,
+        deadline_unix=4102444800.0,
+    )
+    persist_python_producer_admission_handoff(
+        context.workspace / "evolution" / "producer-batches" / journal_id,
+        handoff=handoff,
+    )
+
+    result = run_native_producer_bundle_publication_transaction(
+        context.workspace, strategy, drafts, plan, journal_id=journal_id,
+        native_execution_receipt_sha256=receipt["receipt_sha256"],
+        python_handoff_sha256=handoff.handoff_sha256,
+    )
+
+    assert result.publication_status == "published"
+    assert result.journal.python_handoff_sha256 == handoff.handoff_sha256
+    persisted = json.loads(
+        (context.workspace / "evolution" / "producer-batches" / journal_id / "journal.json").read_bytes()
+    )
+    assert persisted["python_handoff_sha256"] == handoff.handoff_sha256
+    handoff_path = context.workspace / "evolution" / "producer-batches" / journal_id / "python-producer-admission-handoff.json"
+    handoff_path.unlink()
+    with pytest.raises(ProducerBundleRecoveryError, match="python_handoff_invalid"):
+        resume_producer_bundle_publication(context.workspace, plan, result.published_journal)
+
+
+def test_transaction_rejects_python_handoff_digest_without_durable_matching_record(tmp_path: Path) -> None:
+    context = build_context(tmp_path / "native")
+    strategy = PopulationStrategy(context)
+    _initialize_native_population(strategy)
+    strategy, drafts, plan, _export = _shinka_drafts(tmp_path, context, (9,))
+    journal_id = "transaction-missing-python-handoff"
+    _batch_directory(context.workspace, journal_id)
+    receipt = _formal_execution_receipt(journal_id=journal_id)
+    receipt_path = context.workspace / "evolution" / "producer-batches" / journal_id / "execution-receipt.json"
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+
+    with pytest.raises(NativeProducerBundleTransactionError) as failure:
+        run_native_producer_bundle_publication_transaction(
+            context.workspace, strategy, drafts, plan, journal_id=journal_id,
+            native_execution_receipt_sha256=receipt["receipt_sha256"],
+            python_handoff_sha256="a" * 64,
+        )
+    assert failure.value.code == "producer_bundle_transaction_python_handoff_invalid"
+    assert not (context.workspace / "evolution" / "producer-batches" / journal_id / "journal.prepared.json").exists()
+
+
+def test_transaction_rechecks_python_handoff_after_pipeline_guard_before_evaluator(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """A pipeline-owned timeout callback cannot bypass the handoff gate before evaluation."""
+    context = build_context(tmp_path / "native")
+    strategy = PopulationStrategy(context)
+    _initialize_native_population(strategy)
+    strategy, drafts, plan, _export = _shinka_drafts(tmp_path, context, (9,))
+    journal_id = "transaction-pipeline-handoff-guard"
+    _batch_directory(context.workspace, journal_id)
+    receipt = _formal_execution_receipt(journal_id=journal_id)
+    receipt_path = context.workspace / "evolution" / "producer-batches" / journal_id / "execution-receipt.json"
+    receipt_path.write_text(json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    digest = "a" * 64
+    handoff = build_python_producer_admission_handoff(
+        run_id=journal_id,
+        journal_id=journal_id,
+        parent_task_id="producer",
+        task_id="native-bundle-publication",
+        binding_sha256=digest,
+        sidecar_raw_sha256=digest,
+        sidecar_pin_sha256=digest,
+        launch_intent_sha256=digest,
+        attestation_sha256=digest,
+        runtime_manifest_sha256=digest,
+        runtime_tree_sha256=digest,
+        executable_owner_sha256=digest,
+        native_execution_receipt_sha256=receipt["receipt_sha256"],
+        terminal_sha256=digest,
+        runtime_observation_sha256=digest,
+        broker_transcript_sha256=digest,
+        envelope_sha256=digest,
+        materials_sha256=digest,
+        contract_sha256=plan.contract_sha256,
+        evaluator_sha256=plan.evaluator_fingerprint,
+        runner_sha256=plan.runner_fingerprint,
+        dependency_sha256=plan.dependency_sha256,
+        environment_sha256=plan.environment_sha256,
+        admission_plan_sha256=plan.digest(),
+        request_budget=10,
+        wall_timeout_seconds=60.0,
+        deadline_unix=4102444800.0,
+    )
+    persist_python_producer_admission_handoff(
+        context.workspace / "evolution" / "producer-batches" / journal_id,
+        handoff=handoff,
+    )
+    handoff_path = (
+        context.workspace / "evolution" / "producer-batches" / journal_id
+        / "python-producer-admission-handoff.json"
+    )
+
+    armed = False
+
+    def pipeline_guard() -> None:
+        if armed and handoff_path.exists():
+            handoff_path.unlink()
+
+    pipeline = context.bundle_pipeline
+    pipeline.set_continuation_guard(pipeline_guard)
+    original_effective_timeout = pipeline._effective_timeout
+
+    def effective_timeout(stage: str) -> float:
+        nonlocal armed
+        if stage == "candidate_execution":
+            armed = True
+        try:
+            return original_effective_timeout(stage)
+        finally:
+            armed = False
+
+    monkeypatch.setattr(pipeline, "_effective_timeout", effective_timeout)
+    evaluated: list[bool] = []
+    original_evaluate = bundle_evolution.evaluate_candidate_execution
+
+    def observe_evaluator(*args, **kwargs):
+        evaluated.append(True)
+        return original_evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(bundle_evolution, "evaluate_candidate_execution", observe_evaluator)
+    with pytest.raises(NativeProducerBundleTransactionError, match="python_handoff_invalid"):
+        run_native_producer_bundle_publication_transaction(
+            context.workspace,
+            strategy,
+            drafts,
+            plan,
+            journal_id=journal_id,
+            native_execution_receipt_sha256=receipt["receipt_sha256"],
+            python_handoff_sha256=handoff.handoff_sha256,
+        )
+    assert evaluated == []
 
 
 @pytest.mark.parametrize("mode", ["missing", "invalid", "tampered", "unknown-field"])

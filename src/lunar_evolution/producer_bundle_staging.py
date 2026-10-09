@@ -621,6 +621,7 @@ def _validate_native_artifact(
             or evaluation.admission_sha256 != normalized_evidence["admission_sha256"]
             or evaluation.completion_sha256 != normalized_evidence["completion_sha256"]
             or evaluation.evaluation_sha256 != normalized_evidence["evaluation_sha256"]
+            or evaluation.python_handoff_sha256 != journal.python_handoff_sha256
             or evaluation.report != native_candidate.evaluation.to_dict()
             or artifact.execution_receipt_sha256 != execution.digest()
             or artifact.evaluation_receipt_sha256 != evaluation.digest()

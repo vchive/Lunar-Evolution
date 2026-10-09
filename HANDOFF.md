@@ -1,9 +1,39 @@
 # Lunar Evolution 交接记录
 
-## 2026-10-10 PR32 durable producer recovery hardening in progress
+## 2026-10-10 Feature191 local Python admission handoff (provider-free slice)
 
-PR32 (`codex/python-producer-recovery`) is still under development and final validation;
-it is not yet merged. The current fix makes the immutable RSI run request the earliest durable
+PR32 durable producer recovery is merged in `main` at `6a912609d3e5e9811bc8dbae77b1df077976afe7`.
+The current branch `codex/python-admission-handoff` adds the first provider-free Feature191
+admission boundary on top of that merge.  It is intentionally inert: no sealed CPython
+runtime, producer process, remote evaluator, credentials, WebAgent, or external campaign is
+run by these tests.
+
+Implemented surfaces:
+
+- `python_producer_admission_handoff.py` provides a strict canonical, self-digest DTO with
+  create-only `persist`, read-only `prepare`/`reconcile`/terminal `replay`, mode-600 single-link
+  storage, identity/stat rechecks, and fixed refusal codes.
+- The publication journal carries optional `python_handoff_sha256`; legacy journals omit the
+  field and retain their canonical bytes and digest.  A Python handoff requires the formal
+  native execution receipt.
+- Evaluation receipts, native publication artifacts, staging, all-rejected adjudication and
+  recovery compare the same handoff digest.  Recovery also compares the native receipt link,
+  closing the previous immutable-tuple omission.
+- The transaction verifies the durable batch-local handoff, native receipt, run/task identity,
+  admission plan and authority pins before any state read, evaluator callback or publication
+  side effect.  A bare handoff digest cannot grant authority.
+
+Focused local validation is green: the Feature191 handoff and producer publication/recovery
+composition suites pass with zero failures/errors/skips; `ruff`, `compileall`, and
+`git diff --check` pass.  The handoff remains an evidence contract and does not establish
+production runtime admission.  The next P1 gates are actual sealed CPython acquisition and
+signatures, process/runtime observation and transcript evidence, then an explicit adapter that
+composes those materials into this handoff.  P2 remote evaluator, external-worker
+authentication, multi-host ownership, distributed scheduling and service APIs remain deferred.
+
+## 2026-10-10 PR32 durable producer recovery hardening (merged)
+
+PR32 (`codex/python-producer-recovery`) is merged. The fix makes the immutable RSI run request the earliest durable
 producer-proof anchor: preflight the independently retained sidecar before run creation, retain
 canonical proof/pin in the run request and request digest, and copy the exact proof into flow
 checkpoints. Latest run proof must match the earliest ledger run revision, and run/checkpoint
@@ -22,8 +52,7 @@ The provider-free hardening now passes 61 dedicated recovery cases and 131 contr
 cases with zero failures/errors/skips. The final gates include post-admission and pre-gateway
 dispatch proof checks, native replay/reconcile checks before durable publication, and callback
 completion checks before journal publication; independent boundary review found no remaining
-blocking gap. Exact-final-source Ubuntu 3.11/3.12/3.13 CI must still complete before merge.
-Existing source/test changes are being preserved in the PR worktree. Runtime
+blocking gap. Exact-final-source Ubuntu 3.11/3.12/3.13 CI passed before merge. Runtime
 observations, actual sealed CPython launch, complete process/journal recovery and local exact
 evaluator/atomic publication composition remain P1 gates; DTOs and inert fixtures cannot
 establish production admission. External worker authentication, multi-host ownership,

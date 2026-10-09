@@ -83,6 +83,13 @@ def _workspace(tmp_path: Path, plan, journal):
     (root / "evolution" / "state.json").write_bytes(state_bytes)
     (root / "evolution" / "archive.jsonl").write_text("", encoding="utf-8")
     prepared = _journal(plan, state="prepared")
+    if journal.native_execution_receipt_sha256 is not None or journal.python_handoff_sha256 is not None:
+        prepared = replace(
+            prepared,
+            native_execution_receipt_sha256=journal.native_execution_receipt_sha256,
+            python_handoff_sha256=journal.python_handoff_sha256,
+            journal_sha256=None,
+        )
     (batch / "journal.json").write_text(json.dumps(journal.to_dict(), sort_keys=True), encoding="utf-8")
     receipt = preflight_producer_bundle_publication(root, plan, prepared)
     (batch / "preflight.json").write_text(json.dumps(receipt.to_dict(), sort_keys=True), encoding="utf-8")
@@ -128,6 +135,49 @@ def test_changed_receipt_fails_closed(tmp_path: Path):
     with pytest.raises(ProducerBundleRecoveryError) as caught:
         resume_producer_bundle_publication(root, plan, journal)
     assert caught.value.code == "producer_bundle_recovery_evidence_mismatch"
+
+
+def test_python_handoff_drift_fails_closed_on_resume(tmp_path: Path):
+    plan = _plan()
+    journal = replace(
+        _journal(plan), native_execution_receipt_sha256=_d("8"),
+        python_handoff_sha256=_d("9"), journal_sha256=None,
+    )
+    # Recompute the immutable durable journal with a different handoff identity while keeping
+    # the caller's original journal.  Recovery must reject the drift before reading evidence.
+    root = _workspace(tmp_path, plan, journal)
+    batch_journal = root / "evolution" / "producer-batches" / journal.journal_id / "journal.json"
+    durable = replace(journal, python_handoff_sha256=_d("0"), journal_sha256=None)
+    batch_journal.write_text(json.dumps(durable.to_dict(), sort_keys=True), encoding="utf-8")
+    with pytest.raises(ProducerBundleRecoveryError) as caught:
+        resume_producer_bundle_publication(root, plan, journal)
+    assert caught.value.code == "producer_bundle_recovery_journal_mismatch"
+
+
+@pytest.mark.parametrize("mutation", ["caller_omits", "caller_swaps", "durable_drifts"])
+def test_native_receipt_link_is_immutable_on_resume(tmp_path: Path, mutation: str):
+    plan = _plan()
+    journal = replace(
+        _journal(plan), native_execution_receipt_sha256=_d("8"), journal_sha256=None,
+    )
+    root = _workspace(tmp_path, plan, journal)
+    caller = journal
+    if mutation.startswith("caller"):
+        caller = replace(
+            journal,
+            native_execution_receipt_sha256=None if mutation == "caller_omits" else _d("9"),
+            journal_sha256=None,
+        )
+    else:
+        durable = replace(journal, native_execution_receipt_sha256=_d("9"), journal_sha256=None)
+        batch_journal = root / "evolution" / "producer-batches" / journal.journal_id / "journal.json"
+        batch_journal.write_text(json.dumps(durable.to_dict(), sort_keys=True), encoding="utf-8")
+    before = {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+    # Both projections are individually valid and carry freshly recomputed self-digests.
+    # That cannot authorize changing or omitting the original formal process receipt link.
+    with pytest.raises(ProducerBundleRecoveryError, match="^producer_bundle_recovery_journal_mismatch$"):
+        resume_producer_bundle_publication(root, plan, caller)
+    assert before == {path.relative_to(root): path.read_bytes() for path in root.rglob("*") if path.is_file()}
 
 
 def test_unknown_publication_marker_is_terminal(tmp_path: Path):

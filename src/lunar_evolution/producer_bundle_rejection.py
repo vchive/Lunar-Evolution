@@ -161,6 +161,7 @@ def _verify_receipts(
         or execution.plan_sha256 != evaluation.plan_sha256
         or execution.admission_sha256 != evaluation.admission_sha256
         or execution.completion_sha256 != evaluation.completion_sha256
+        or evaluation.python_handoff_sha256 != journal.python_handoff_sha256
         or evaluation.report["validity"] != 0
     ):
         _fail("producer_bundle_rejection_adjudication_invalid")
@@ -244,7 +245,9 @@ def _verify_receipts(
     )
     if (
         build_native_producer_bundle_execution_receipt(inspected) != execution
-        or build_native_producer_bundle_evaluation_receipt(inspected) != evaluation
+        or build_native_producer_bundle_evaluation_receipt(
+            inspected, python_handoff_sha256=journal.python_handoff_sha256,
+        ) != evaluation
         or _collect_retained_evidence(root, (
             source_root, run_root, binding_path,
             root / "evolution" / "producer-batches" / journal.journal_id / "journal.prepared.json",
@@ -373,7 +376,10 @@ def finalize_producer_bundle_all_rejected(
                         or result.journal_sha256 != prepared.digest() or result.report.validity != 0
                     ):
                         _fail("producer_bundle_rejection_adjudication_invalid")
-                    artifact = build_native_producer_bundle_publication_artifact(root, result, authority=authority)
+                    artifact = build_native_producer_bundle_publication_artifact(
+                        root, result, authority=authority,
+                        python_handoff_sha256=prepared.python_handoff_sha256,
+                    )
                     value = {
                         "candidate_id": candidate.candidate_id,
                         "execution_receipt": artifact.execution_receipt,

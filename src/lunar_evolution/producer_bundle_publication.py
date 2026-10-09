@@ -39,7 +39,12 @@ _JOURNAL_FIELDS = {
     "population_config_sha256", "num_islands", "candidates", "state", "publication_phase",
     "terminal_marker_sha256", "archive_after_sha256", "state_after_sha256", "journal_sha256",
 }
-_JOURNAL_OPTIONAL_FIELDS = {"native_execution_receipt_sha256"}
+_JOURNAL_OPTIONAL_FIELDS = {
+    "native_execution_receipt_sha256",
+    # Feature 191 Python-worker handoff identity.  Optional so legacy/non-Python
+    # journals retain their exact canonical bytes and digest.
+    "python_handoff_sha256",
+}
 _STATES = frozenset({"prepared", "executing", "publishing", "published", "all_rejected", "failed", "unknown"})
 _PHASES = frozenset({"preflight", "staged", "committed", "recovery_required"})
 _STATE_PHASES = {
@@ -214,6 +219,7 @@ class ProducerBundlePublicationJournal:
     journal_sha256: str | None = None
     schema_version: str = _SCHEMA_VERSION
     protocol: str = _PROTOCOL
+    python_handoff_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != _SCHEMA_VERSION or self.protocol != _PROTOCOL:
@@ -271,10 +277,13 @@ class ProducerBundlePublicationJournal:
             ("archive_after_sha256", self.archive_after_sha256),
             ("state_after_sha256", self.state_after_sha256),
             ("native_execution_receipt_sha256", self.native_execution_receipt_sha256),
+            ("python_handoff_sha256", self.python_handoff_sha256),
             ("journal_sha256", self.journal_sha256),
         ):
             if value is not None:
                 _digest(value, f"producer_bundle_publication_{name}_invalid")
+        if self.python_handoff_sha256 is not None and self.native_execution_receipt_sha256 is None:
+            _fail("producer_bundle_publication_python_handoff_execution_link_missing")
         receipts = [value for item in self.candidates for value in (
             item.preparation_receipt_sha256, item.execution_receipt_sha256,
             item.evaluation_receipt_sha256, item.publication_receipt_sha256,
@@ -358,6 +367,8 @@ class ProducerBundlePublicationJournal:
         }
         if self.native_execution_receipt_sha256 is not None:
             value["native_execution_receipt_sha256"] = self.native_execution_receipt_sha256
+        if self.python_handoff_sha256 is not None:
+            value["python_handoff_sha256"] = self.python_handoff_sha256
         if include_journal_sha256:
             value["journal_sha256"] = self.journal_sha256
         return value
@@ -376,11 +387,13 @@ class ProducerBundlePublicationJournal:
         if not isinstance(value, dict):
             _fail("producer_bundle_publication_schema_invalid")
         keys = set(value)
-        if keys != _JOURNAL_FIELDS and keys != _JOURNAL_FIELDS | _JOURNAL_OPTIONAL_FIELDS:
+        if not _JOURNAL_FIELDS <= keys or not (keys - _JOURNAL_FIELDS) <= _JOURNAL_OPTIONAL_FIELDS:
             _fail("producer_bundle_publication_schema_invalid")
         raw = value
         if "native_execution_receipt_sha256" in raw and raw["native_execution_receipt_sha256"] is None:
             _fail("producer_bundle_publication_execution_receipt_link_invalid")
+        if "python_handoff_sha256" in raw and raw["python_handoff_sha256"] is None:
+            _fail("producer_bundle_publication_python_handoff_link_invalid")
         _digest(raw["journal_sha256"], "producer_bundle_publication_journal_sha256_invalid")
         if not isinstance(raw["candidates"], list) or not 1 <= len(raw["candidates"]) <= MAX_PUBLICATION_CANDIDATES:
             _fail("producer_bundle_publication_candidates_invalid")
