@@ -1,10 +1,10 @@
 """Pure Python producer terminal and runtime-observation lifecycle contracts.
 
-Feature191's process launcher is intentionally not implemented here.  This module only
-validates detached, canonical observations and applies the same fail-closed rules used by the
-native lifecycle: a missing process or cleanup record is ``unknown`` and can never be published;
-resume/reconcile only replays retained records and never starts a process, spends a budget, or
-writes a journal.
+Feature191's process launcher is intentionally not implemented here.  This module validates
+detached, canonical observations and provides a small facade over the existing native recovery
+reader.  It applies the same fail-closed rules used by the native lifecycle: a missing process or
+cleanup record is ``unknown`` and can never be published; resume/reconcile only replays retained
+records and never starts a process, spends a budget, or writes a second journal.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, NoReturn
 
 from .producer_process import (
@@ -22,6 +23,7 @@ from .producer_process import (
     ProducerProcessError,
     ProducerStreamEvidence,
     parse_producer_execution_receipt,
+    recover_producer_process,
 )
 from .python_producer_binding import (
     PythonProducerBinding,
@@ -596,6 +598,58 @@ def bind_python_producer_receipt(
     )
 
 
+def recover_python_producer_terminal(
+    workspace: str | Path,
+    *,
+    binding: PythonProducerBinding,
+    cleanup: bool = False,
+) -> PythonProducerTerminal:
+    """Project one retained native process receipt into the Python terminal contract.
+
+    Recovery delegates all durable file, ownership and journal checks to the existing native
+    process recovery boundary.  A missing terminal or an explicit recovery receipt stays a
+    refusal: this adapter never relaunches a producer, consumes an attestation, evaluates an
+    envelope, or turns an ``unknown`` observation into success.  A complete native receipt is
+    still projected as ``unknown`` until the separate wall-clock/runtime observation supplies the
+    fields required by :func:`resume_python_producer_terminal` or reconciliation.
+    """
+    if type(binding) is not PythonProducerBinding:
+        _fail("binding_invalid")
+    if not isinstance(workspace, (str, Path)) or not workspace:
+        _fail("workspace_invalid")
+    if type(cleanup) is not bool:
+        _fail("cleanup_invalid")
+    try:
+        observed = recover_producer_process(
+            workspace, journal_id=binding.intent.journal_id, cleanup=cleanup,
+        )
+    except ProducerProcessError as exc:
+        # Native recovery exposes only fixed process codes.  Keep those details out of the
+        # Python adapter wire while preserving the original exception as a diagnostic cause.
+        raise PythonProducerLifecycleError("recovery_observation_invalid") from exc
+    except (OSError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("recovery_observation_invalid") from exc
+    if type(observed) is not dict:
+        _fail("recovery_observation_invalid")
+    status = observed.get("status")
+    if status == "recovery_required":
+        _fail("recovery_required")
+    if status not in {"completed", "failed", "cancelled", "unknown"}:
+        _fail("journal_mismatch")
+    if observed.get("cleanup_status") in {"unknown", "missing"}:
+        _fail("cleanup_unknown")
+    try:
+        receipt = parse_producer_execution_receipt(observed)
+    except (ProducerProcessError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("recovery_receipt_invalid") from exc
+    try:
+        return bind_python_producer_receipt(binding, receipt)
+    except PythonProducerLifecycleError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("recovery_binding_invalid") from exc
+
+
 def _retained_terminal(value: object) -> PythonProducerTerminal:
     if type(value) is PythonProducerTerminal:
         # Frozen DTOs can still be changed via object.__setattr__. The retained
@@ -733,5 +787,6 @@ __all__ = [
     "parse_python_producer_terminal",
     "parse_python_runtime_observation",
     "reconcile_python_producer_terminal",
+    "recover_python_producer_terminal",
     "resume_python_producer_terminal",
 ]

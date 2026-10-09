@@ -680,6 +680,7 @@ from .python_producer_lifecycle import (
     parse_python_producer_runtime_observation,
     parse_python_producer_terminal,
     parse_python_runtime_observation,
+    recover_python_producer_terminal,
     reconcile_python_producer_terminal,
     resume_python_producer_terminal,
 )
@@ -1603,6 +1604,7 @@ __all__ = [
     "parse_python_runtime_manifest",
     "parse_python_runtime_material_descriptor",
     "parse_python_runtime_observation",
+    "recover_python_producer_terminal",
     "parse_python_runtime_tree_manifest",
     "parse_registration_seal",
     "parse_seed_manifest",
