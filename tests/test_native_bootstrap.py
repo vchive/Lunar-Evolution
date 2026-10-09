@@ -90,32 +90,72 @@ def _read_remaining_frames(fd: int):
 @pytest.mark.skipif(__import__("sys").platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_native_artifact_is_exactly_allowlisted_and_target_waits_for_gate(tmp_path: Path):
     process, gate_w, frame_r, marker, artifact = _start(tmp_path)
-    ready = _read_frame(frame_r)
-    assert ready.kind == "bootstrap_ready"
-    assert not marker.exists()
-    os.write(gate_w, b"1")
-    os.close(gate_w)
-    started = _read_frame(frame_r)
-    terminal = _read_frame(frame_r)
-    assert started.kind == "target_started"
-    assert terminal.kind == "terminal"
-    assert process.wait(timeout=5) == 0
-    assert marker.read_text(encoding="utf-8") == "started"
-    loaded = load_native_bootstrap_artifact(
-        artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
-    )
-    assert loaded.artifact_sha256 == artifact.artifact_sha256
+    try:
+        ready = _read_frame(frame_r)
+        assert ready.kind == "bootstrap_ready"
+        assert not marker.exists()
+        os.write(gate_w, b"1")
+        closing_gate = gate_w
+        gate_w = None
+        os.close(closing_gate)
+        started = _read_frame(frame_r)
+        terminal = _read_frame(frame_r)
+        assert started.kind == "target_started"
+        assert terminal.kind == "terminal"
+        assert process.wait(timeout=5) == 0
+        assert marker.read_text(encoding="utf-8") == "started"
+        loaded = load_native_bootstrap_artifact(
+            artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
+        )
+        assert loaded.artifact_sha256 == artifact.artifact_sha256
+    finally:
+        try:
+            if gate_w is not None:
+                os.close(gate_w)
+        finally:
+            gate_w = None
+            try:
+                if process.poll() is None:
+                    process.kill()
+            finally:
+                try:
+                    process.wait(timeout=5)
+                finally:
+                    try:
+                        os.close(frame_r)
+                    finally:
+                        process.stderr.close()
 
 
 @pytest.mark.skipif(__import__("sys").platform not in {"darwin", "linux"}, reason="native bootstrap platform")
 def test_native_artifact_rejects_duplicate_gate_token(tmp_path: Path):
     process, gate_w, frame_r, marker, _ = _start(tmp_path)
-    assert _read_frame(frame_r).kind == "bootstrap_ready"
-    os.write(gate_w, b"11")
-    os.close(gate_w)
-    assert process.wait(timeout=5) != 0
-    assert not marker.exists()
-    assert os.read(frame_r, 8192) == b""
+    try:
+        assert _read_frame(frame_r).kind == "bootstrap_ready"
+        os.write(gate_w, b"11")
+        closing_gate = gate_w
+        gate_w = None
+        os.close(closing_gate)
+        assert process.wait(timeout=5) != 0
+        assert not marker.exists()
+        assert os.read(frame_r, 8192) == b""
+    finally:
+        try:
+            if gate_w is not None:
+                os.close(gate_w)
+        finally:
+            gate_w = None
+            try:
+                if process.poll() is None:
+                    process.kill()
+            finally:
+                try:
+                    process.wait(timeout=5)
+                finally:
+                    try:
+                        os.close(frame_r)
+                    finally:
+                        process.stderr.close()
 
 
 @pytest.mark.skipif(__import__("sys").platform not in {"darwin", "linux"}, reason="native bootstrap platform")

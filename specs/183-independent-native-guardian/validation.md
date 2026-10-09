@@ -1,5 +1,24 @@
 # Current validation boundary
 
+## Bounded readiness follow-up (2026-10-09)
+
+The host readiness wait now uses `poll(2)` instead of `select(2)`, preserving the
+same absolute monotonic deadline and exact one-byte `R` protocol for descriptors
+above `FD_SETSIZE`. It rejects error, hangup, invalid and ambiguous poll events
+before reading, rechecks the original deadline before and after the read, and does
+not create a second budget. The portable readiness fixture has 19 cases covering
+high-numbered descriptors, valid/invalid frames, EOF, timeout, deadline expiry,
+read errors and cleanup. The focused macOS run passed 19 cases with the existing
+Linux-only guardian cases skipped; this is host-side evidence only.
+
+The two early bootstrap fixtures now close their gate, frame reader and stderr
+handles on every assertion path, preventing descriptor accumulation in a full
+composition. The Linux workflow's dedicated guardian gate includes the 19 new
+readiness cases and requires 82 total cases with zero skips, failures or errors.
+The new source head still requires a fresh three-version Linux CI run and
+independent raw artifact/source/tree audit before merge. The earlier PR29 failure
+attempts remain preserved and are not treated as evidence for this fix.
+
 Feature183 source is implemented on codex/native-independent-guardian and proposed
 in PR18. It is not yet merged or accepted as a Linux production capability. The
 branch was rebased onto main7031475 after independently audited PR15, PR16 and

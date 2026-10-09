@@ -56,6 +56,40 @@ def _pipe(fd: int, direction: int) -> None:
         raise NativeGuardianError("native_guardian_start_invalid")
 
 
+def _wait_ready(
+    ack_read_fd: int, deadline: float, monotonic: Callable[[], float],
+) -> None:
+    """Consume exact readiness within the original budget at any valid FD.
+
+    The acknowledgement reader is shared with bootstrap, which does not read
+    it before host control delivery. Readiness therefore has one consumer and
+    never changes pipe flags or introduces a second reception-time deadline.
+    """
+    code = "native_guardian_ready_invalid"
+    try:
+        remaining = _remaining(deadline, monotonic, code)
+        waiter = select.poll()
+        waiter.register(ack_read_fd, select.POLLIN)
+        # poll uses integer milliseconds and supports descriptors beyond
+        # select's FD_SETSIZE. Round only this wait, then recheck the original
+        # absolute deadline before reading. Bound the platform's signed-int
+        # timeout even if a caller provides an unusually distant deadline.
+        timeout_ms = math.ceil(min(remaining, 2_147_483.647) * 1000)
+        events = waiter.poll(timeout_ms)
+        _remaining(deadline, monotonic, code)
+        if (len(events) != 1 or events[0][0] != ack_read_fd
+                or not events[0][1] & select.POLLIN
+                or events[0][1] & (select.POLLERR | select.POLLNVAL | select.POLLHUP)):
+            raise NativeGuardianError(code)
+        if os.read(ack_read_fd, 2) != b"R":
+            raise NativeGuardianError(code)
+        _remaining(deadline, monotonic, code)
+    except NativeGuardianError:
+        raise
+    except (OSError, ValueError, OverflowError) as exc:
+        raise NativeGuardianError(code) from exc
+
+
 class NativeGuardianOwner:
     """An ephemeral exact-child owner; no reconstruction or PID-based resume."""
 
@@ -218,11 +252,7 @@ def start_native_guardian(
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         owner = NativeGuardianOwner(process, watcher, group_fd, deadline, monotonic)
-        remaining = _remaining(deadline, monotonic, "native_guardian_ready_invalid")
-        readable, _, _ = select.select((ack_read_fd,), (), (), remaining)
-        if not readable or os.read(ack_read_fd, 2) != b"R":
-            raise NativeGuardianError("native_guardian_ready_invalid")
-        _remaining(deadline, monotonic, "native_guardian_ready_invalid")
+        _wait_ready(ack_read_fd, deadline, monotonic)
         if watcher.poll() is not None or process.poll() is not None:
             raise NativeGuardianError("native_guardian_ready_invalid")
         return owner

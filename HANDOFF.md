@@ -1,5 +1,33 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-09 independent guardian readiness follow-up
+
+PR29 `codex/static-python-build-inputs` is being repaired before any new CI rerun.
+The previous two full 3.12 attempts failed during setup of the `extend` deadline
+fixture; their raw XML/log/artifact materials remain preserved and `ci_approval`
+remains false. The failure happened before the test body ran, so its root cause was
+not claimed as proven. Review found a deterministic host defect: `select.select`
+rejects acknowledgement descriptors at or above `FD_SETSIZE`, which can arise
+after a long composition. `start_native_guardian` now waits with `poll`, keeps the
+original absolute monotonic deadline, rejects ambiguous/error/hangup events before
+reading, consumes exactly `R`, and rechecks the same deadline around the read.
+No fallback numeric-PGID, refreshed budget, or altered guardian ownership was added.
+
+Nineteen portable readiness cases cover high-numbered descriptors, valid/invalid
+frames, EOF, timeout, pre-expired and post-poll deadlines, read errors, and cleanup.
+The two early bootstrap fixtures now close gate/frame/stderr handles even when an
+assertion fails. Local focused composition is 26 passes and 16 platform skips;
+the readiness subset has 19 passes. Ruff, compileall and diff check pass. The Linux
+workflow now runs guardian host, independent guardian and readiness together as an
+82-case zero-skip gate. A new full three-version CI run and independent raw
+XML/log/ZIP/source/tree audit are required before PR29 can be merged.
+
+PR30 archive observation remains based on the older PR29 source and must be rebased
+or otherwise synchronized to the repaired PR29 head before it can be accepted.
+Its currently running old-source CI cannot approve the new source. No real release
+archive, static build, runtime, model, evaluator or solver campaign ran.
+
+
 ## 2026-10-09 fixed candidate build-input continuation
 
 Feature189 now has a pinned reviewed-input asset and pure detached build-input
