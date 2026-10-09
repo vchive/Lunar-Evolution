@@ -636,7 +636,10 @@ def recover_python_producer_terminal(
         _fail("recovery_required")
     if status not in {"completed", "failed", "cancelled", "unknown"}:
         _fail("journal_mismatch")
-    if observed.get("cleanup_status") in {"unknown", "missing"}:
+    cleanup_status = observed.get("cleanup_status")
+    if cleanup_status not in {"cleaned", "already_exited", "unknown", "missing"}:
+        _fail("recovery_receipt_invalid")
+    if cleanup_status in {"unknown", "missing"}:
         _fail("cleanup_unknown")
     try:
         receipt = parse_producer_execution_receipt(observed)

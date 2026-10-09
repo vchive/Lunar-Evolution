@@ -119,6 +119,16 @@ def test_cleanup_unknown_is_rejected_before_python_projection(
         recover_python_producer_terminal(tmp_path, binding=binding)
 
 
+def test_unknown_cleanup_label_is_rejected_as_invalid_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding = _binding(tmp_path)
+    receipt = _receipt(binding, cleanup_status="not-a-native-cleanup-state", cleanup_sha256=None)
+    monkeypatch.setattr(lifecycle, "recover_producer_process", lambda *_args, **_kwargs: receipt.to_dict())
+    with pytest.raises(PythonProducerLifecycleError, match="recovery_receipt_invalid"):
+        recover_python_producer_terminal(tmp_path, binding=binding)
+
+
 def test_journal_shape_and_receipt_digest_drift_are_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
