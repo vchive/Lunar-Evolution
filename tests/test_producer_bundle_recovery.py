@@ -24,6 +24,11 @@ from lunar_evolution.producer_bundle_recovery import (
     ProducerBundleRecoveryError,
     resume_producer_bundle_publication,
 )
+from lunar_evolution.python_producer_admission_handoff import (
+    HANDOFF_STATE_PUBLISHED,
+    build_python_producer_admission_handoff,
+    persist_python_producer_admission_handoff,
+)
 
 
 def _d(letter: str) -> str:
@@ -152,6 +157,35 @@ def test_python_handoff_drift_fails_closed_on_resume(tmp_path: Path):
     with pytest.raises(ProducerBundleRecoveryError) as caught:
         resume_producer_bundle_publication(root, plan, journal)
     assert caught.value.code == "producer_bundle_recovery_journal_mismatch"
+
+
+def test_python_handoff_terminal_state_is_not_replayed_as_prepared(tmp_path: Path):
+    plan = replace(_plan(), contract_sha256=_d("a"))
+    prepared = _journal(plan, state="prepared")
+    handoff = build_python_producer_admission_handoff(
+        run_id=prepared.run_id, journal_id=prepared.journal_id,
+        parent_task_id=prepared.parent_task_id, task_id=prepared.task_id,
+        binding_sha256=_d("a"), sidecar_raw_sha256=_d("b"), sidecar_pin_sha256=_d("c"),
+        launch_intent_sha256=_d("d"), attestation_sha256=_d("e"), runtime_manifest_sha256=_d("f"),
+        runtime_tree_sha256=_d("1"), executable_owner_sha256=_d("2"),
+        native_execution_receipt_sha256=_d("8"), terminal_sha256=_d("4"),
+        runtime_observation_sha256=_d("5"), broker_transcript_sha256=_d("6"),
+        envelope_sha256=_d("7"), materials_sha256=_d("9"), contract_sha256=prepared.contract_sha256,
+        evaluator_sha256=prepared.evaluator_fingerprint, runner_sha256=prepared.runner_fingerprint,
+        dependency_sha256=prepared.dependency_sha256, environment_sha256=prepared.environment_sha256,
+        admission_plan_sha256=prepared.admission_sha256, request_budget=1,
+        wall_timeout_seconds=1, deadline_unix=4102444800.0, state=HANDOFF_STATE_PUBLISHED,
+    )
+    journal = replace(
+        prepared, native_execution_receipt_sha256=_d("8"),
+        python_handoff_sha256=handoff.digest, journal_sha256=None,
+    )
+    root = _workspace(tmp_path, plan, journal)
+    persist_python_producer_admission_handoff(
+        root / "evolution" / "producer-batches" / journal.journal_id, handoff=handoff,
+    )
+    with pytest.raises(ProducerBundleRecoveryError, match="python_handoff_mismatch"):
+        resume_producer_bundle_publication(root, plan, journal)
 
 
 @pytest.mark.parametrize("mutation", ["caller_omits", "caller_swaps", "durable_drifts"])

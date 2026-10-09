@@ -35,6 +35,10 @@ from .producer_bundle_publication import (
     ProducerBundlePublicationJournal,
     parse_producer_bundle_publication_journal,
 )
+from .python_producer_admission_handoff import (
+    PythonProducerAdmissionHandoffError,
+    read_python_producer_admission_handoff,
+)
 
 _PROTOCOL = "lunar-producer-bundle-publication-v1"
 _SCHEMA_VERSION = "1"
@@ -194,6 +198,36 @@ def _batch(workspace: Path, journal_id: str) -> Path:
     path = workspace / "evolution" / "producer-batches" / journal_id
     _directory(path, "producer_bundle_publication_batch_missing")
     return path
+
+
+def _verify_python_handoff(batch: Path, journal: ProducerBundlePublicationJournal) -> None:
+    """Re-read the durable Python handoff at every direct staging/commit boundary."""
+    if journal.python_handoff_sha256 is None:
+        return
+    try:
+        handoff = read_python_producer_admission_handoff(
+            batch / "python-producer-admission-handoff.json",
+            expected_handoff_sha256=journal.python_handoff_sha256,
+        )
+    except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+        raise ProducerBundlePublicationStagingError(
+            "producer_bundle_publication_python_handoff_invalid"
+        ) from exc
+    if (
+        handoff.run_id != journal.run_id
+        or handoff.journal_id != journal.journal_id
+        or handoff.parent_task_id != journal.parent_task_id
+        or handoff.task_id != journal.task_id
+        or handoff.native_execution_receipt_sha256 != journal.native_execution_receipt_sha256
+        or handoff.admission_plan_sha256 != journal.admission_sha256
+        or handoff.contract_sha256 != journal.contract_sha256
+        or handoff.evaluator_sha256 != journal.evaluator_fingerprint
+        or handoff.runner_sha256 != journal.runner_fingerprint
+        or handoff.dependency_sha256 != journal.dependency_sha256
+        or handoff.environment_sha256 != journal.environment_sha256
+        or handoff.state != "prepared"
+    ):
+        _fail("producer_bundle_publication_python_handoff_mismatch")
 
 
 def _write_new(path: Path, content: bytes, *, maximum: int) -> None:
@@ -998,6 +1032,7 @@ def stage_producer_bundle_publication(
         _fail("producer_bundle_publication_state_invalid")
     root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
+    _verify_python_handoff(batch, journal)
     stage = batch / _STAGE_NAME
     if _present(stage):
         _fail("producer_bundle_publication_staging_conflict")
@@ -1015,6 +1050,7 @@ def stage_producer_bundle_publication(
     with _locked(root, checkpoint=checkpoint):
         if checkpoint is not None:
             checkpoint("producer_staging_locked")
+        _verify_python_handoff(batch, journal)
         # Reconfirm the base bytes while holding the publication lock; preflight alone is read-only.
         archive = _read(archive_path, MAX_ARCHIVE_BYTES) if _present(archive_path) else b""
         state = _read(state_path, MAX_STATE_BYTES) if _present(state_path) else b""
@@ -1050,6 +1086,7 @@ def stage_producer_bundle_publication(
             _write_new(stage / "state.json", state_after_bytes, maximum=MAX_STATE_BYTES)
             if checkpoint is not None:
                 checkpoint("producer_staging_prepared")
+            _verify_python_handoff(batch, staged_journal)
             # Persist the exact source journal and preflight evidence alongside the stage.
             staged_journal_bytes = _pretty(staged_journal.to_dict(), MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
             _write_new(batch / "journal.json", staged_journal_bytes, maximum=MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
@@ -1171,6 +1208,7 @@ def commit_producer_bundle_publication(
     """Expose one complete staged batch; any uncertain boundary remains terminal."""
     root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
+    _verify_python_handoff(batch, journal)
     evolution = root / "evolution"
     with _locked(root, checkpoint=checkpoint):
         if checkpoint is not None:
@@ -1185,9 +1223,11 @@ def commit_producer_bundle_publication(
             raise ProducerBundlePublicationStagingError("producer_bundle_publication_journal_invalid") from exc
         if staged_journal.journal_id != journal.journal_id or manifest.journal_sha256 != staged_journal.digest():
             _fail("producer_bundle_publication_manifest_invalid")
+        _verify_python_handoff(batch, staged_journal)
         _verify_stage(batch, manifest, staged_journal)
         if checkpoint is not None:
             checkpoint("producer_commit_verified")
+        _verify_python_handoff(batch, staged_journal)
         # Once the first target is moved, all failures are unknown and marker status is durable.
         unknown_marker = marker_payload(journal_id=journal.journal_id, journal_sha256=manifest.journal_sha256,
                                          manifest_sha256=manifest.digest(), status="unknown")
@@ -1216,6 +1256,7 @@ def commit_producer_bundle_publication(
             after_state = _read(evolution / "state.json", MAX_STATE_BYTES)
             if _sha(after_archive) != manifest.archive_after_sha256 or _sha(after_state) != manifest.state_after_sha256:
                 _fail("producer_bundle_publication_after_digest_mismatch")
+            _verify_python_handoff(batch, staged_journal)
             terminal_payload = {"schema_version": _SCHEMA_VERSION, "protocol": _PROTOCOL,
                                 "journal_id": journal.journal_id, "journal_sha256": manifest.journal_sha256,
                                 "staged_journal_sha256": manifest.journal_sha256,
@@ -1232,6 +1273,7 @@ def commit_producer_bundle_publication(
             final_bytes = _pretty(final.to_dict(), MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
             _write_new(batch / "journal.published.json", final_bytes, maximum=MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
             _replace_existing(batch / "journal.json", final_bytes, maximum=MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
+            _verify_python_handoff(batch, final)
             _check_held_publication_lock()
             marker_path.unlink()
             _fsync_dir(evolution)

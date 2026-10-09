@@ -149,6 +149,7 @@ def _verify_python_handoff(
         or handoff.runner_sha256 != journal.runner_fingerprint
         or handoff.dependency_sha256 != journal.dependency_sha256
         or handoff.environment_sha256 != journal.environment_sha256
+        or handoff.state != "prepared"
     ):
         _fail("producer_bundle_recovery_python_handoff_mismatch")
 
