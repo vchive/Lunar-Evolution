@@ -6305,6 +6305,9 @@ recovery marker，不重启、不刷新 deadline/预算、不发布结果。laun
 `tests/test_python_producer_recovery.py`，覆盖 round-trip、create-only、临时文件清理、读前
 pin gate、batch/sidecar 缺失、字节和文件身份 drift 以及 native reader 前后 replacement。
 这一切仍是 provider-free/inert fixture 证据；真实 CPython、OpenEvolve/Shinka campaign、真实
-runtime observation、local exact-evaluator admission、controller checkpoint 对 pin 的 durable
-绑定、remote evaluator、外部 worker 认证、多机 ownership、distributed scheduler 和 service
-API 均未完成，也没有运行 WebAgent、远程 evaluator、真实 producer 或凭据。
+runtime observation 和 local exact-evaluator admission 仍未完成，也没有运行 WebAgent、远程
+evaluator、真实 producer 或凭据。controller checkpoint 对 pin 的 durable 绑定已在后续 PR32
+工作树补齐：producer-bound flow checkpoint 保留 canonical sidecar binding，并在 fresh run、
+intent preparation、cached execution、dispatch 和 resume 前 fail closed 地重验 sidecar；旧
+checkpoint 缺少 producer proof 时拒绝恢复。remote evaluator、外部 worker 认证、多机 ownership、
+distributed scheduler 和 service API 仍是明确的 P2 范围。

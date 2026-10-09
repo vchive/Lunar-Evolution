@@ -23,8 +23,11 @@
 - [ ] Connect these rules to the complete durable runtime/process/journal recovery matrix
   for missing terminal, interrupted launch, journal mismatch, callback error and cleanup
   uncertainty. The current sidecar/native gate is a prerequisite, not full CPython recovery.
-- [ ] Bind the retained sidecar pin to the controller's durable RSI checkpoint and make
-  checkpoint restore reject a missing or mismatched pin.
+- [x] Bind the retained sidecar pin to the controller's durable RSI checkpoint and make
+  checkpoint restore reject a missing or mismatched pin. The controller copies the
+  independently retained sidecar identity into the flow checkpoint and revalidates it
+  before intent preparation, cached execution reuse, native dispatch, and resume; a
+  producer-bound legacy checkpoint fails closed.
 - [ ] Specify local exact-evaluator admission and atomic publication handoff;
   external producer score remains provenance only.
 

@@ -1,10 +1,11 @@
 # Feature191 — Pinned Python producer adapter
 
-Status: Phase A binding, durable binding sidecar, and read-only recovery gate implemented,
-2026-10-09. Priority P1. The `PythonProducerBinding` DTO/parser joins already prepared
+Status: Phase A binding, durable binding sidecar, controller checkpoint binding, and read-only
+recovery gate implemented, 2026-10-10. Priority P1. The `PythonProducerBinding` DTO/parser joins already prepared
 runtime/tree and launch evidence without I/O. The binding can now be persisted once in the
 batch as `python-producer-binding.json`; recovery requires the independently retained sidecar
-pin and rechecks it before and after native process recovery. Pure terminal/runtime-observation
+pin and rechecks it before and after native process recovery. RSI controller checkpoints also
+retain the same sidecar pin and fail closed on missing or drifted producer evidence. Pure terminal/runtime-observation
 DTOs and terminal resume/reconcile rules remain provider-free contracts. This slice does not
 start a real producer or CPython runtime, authenticate child observations, run an evaluator
 service, or launch an OpenEvolve/Shinka campaign.
@@ -77,8 +78,7 @@ canonical bytes, and reject any digest or stat drift. The native recovery facade
 read-only, does not create a recovery lock/marker, and performs the sidecar check on both sides
 of native inspection. The launch-input not-started gate allows this sidecar to remain only during
 the final binding validation; a fresh prepare/bind pass still treats it as started. Actual
-launch/observe/settle, real CPython evidence, controller checkpoint binding, and publication
-admission remain open.
+launch/observe/settle, real CPython evidence, and publication admission remain open.
 
 ## Preconditions and safety gates
 
