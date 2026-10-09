@@ -24,6 +24,14 @@ failure and cancelled preflight separately from later successful evidence.
   this pure slice before main merge: run37871696368/main1e492dc, exact tested
   source4ec32b2/treeeb9f9e8e. The dedicated metadata gate requires143
   cases and zero failures/errors/skips; it is not archive or runtime acceptance.
+- [x] Specify and implement the bounded local archive observation slice in
+  `archive-observation.md`: held O_NOFOLLOW path/file descriptors, immutable
+  compressed bytes, prechecked USTAR file/directory headers, bounded XZ and
+  actual member-size/SHA manifest validation. Validate with inert local fixtures.
+- [ ] Complete final-source three-version Linux CI and independent raw audit
+  for local archive observation before its main merge; require the dedicated
+  64-case gate without failures/errors/skips. This fixture gate does not verify
+  downloaded releases, release signatures, extracted staging or runtime admission.
 - [ ] Verify CPython v3.13.12/source identity and signature/acquisition result;
   record archive/tree SHA-256 and exact patch set without invented values.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
