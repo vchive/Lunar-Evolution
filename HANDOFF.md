@@ -1,5 +1,34 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-10 Feature189 receipt/source-tree consistency continuation
+
+PR37 is merged into main at `c8238ef859e73a7fd7f8f28b9300610e4b7286a9`,
+preserving tested tree `fde29b4475f41e2ec5c87e45aaa291d3629825de` after
+run `38042870910` and independent raw/source/tree audit. The dedicated original
+source-tree workflow gate has 22 cases (the earlier 20-case note was incorrect).
+PR38's detached artifact byte slice at source `3acca4e` is still awaiting its
+own complete CI and raw audit; no PR37 approval is carried forward.
+
+The current narrow continuation is a preparation tool at
+`tools/static_python_fixture/source_provenance.py`. It reuses the existing
+archive-receipt-v1 validator and compares canonical receipt metadata with a
+fully coherent source-tree observation under separate receipt/manifest/tree
+pins. Every observation field, exact retained canonical record/hash and original
+tree wire/hash is rechecked. Results retain frozen file DTOs and keep signature
+work, execution, runtime/origin protection and production admission false.
+Receipt signature dispositions are declarations, preserved separately from the
+observer's `not-performed` state. Inert or unknown observations and stale DTO
+status upgrades refuse. No new runtime `src` API or wheel dependency is added.
+
+Local validation passes34 focused comparator cases and234 related receipt/
+source-tree/artifact cases with zero failures/errors/skips. Ruff, compileall and
+diff checks pass. Provider-free tests exercise coherent hand-constructed
+metadata only for agreement/container behavior, and original inert archive
+observations for refusal. They are not successful actual-release observations or G1 acceptance.
+No actual CPython/Zig acquisition/signature, configure/compiler/freezer, real
+runtime/producer or evaluator campaign ran. G1 real-input provenance, G2 static
+closure/build and G3 exact sealed-target acceptance remain open.
+
 ## 2026-10-10 Feature189 original source-tree observation (provider-free slice)
 
 The snapshot-bound source-tree observer records the complete original regular-file
@@ -12,7 +41,7 @@ signature verification, staging, build, runtime or production admission is infer
 
 The focused 22-case source-tree gate passes locally with zero failures, errors or
 skips; archive/projection/staging/source-tree combined regression, Ruff,
-compileall and diff checks pass. The workflow includes the 20-case gate. This
+compileall and diff checks pass. The workflow includes the 22-case gate. This
 slice is provenance observation only. Real CPython/Zig acquisition and signatures,
 configured static closure, generated headers/ELF, sealed runtime lifecycle and
 Feature191 live producer composition remain open; P2 distributed/service work is
