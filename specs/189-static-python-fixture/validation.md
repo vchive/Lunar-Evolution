@@ -208,3 +208,17 @@ Passing189 records only installation-owned-static-frozen-fixture scope and actua
 known-main execution. Keep runtime_load_protection, production_admission and
 general_code_origin_protection false. Merge requires this feature's own exact
 final-artifact/Linux evidence;188 or184 evidence cannot be relabeled as189.
+## Snapshot-bound original source-tree observation
+
+The source-tree observer consumes one immutable `StaticPythonArchiveSnapshot` and
+reuses the strict archive walker exactly once. It records the complete sorted
+regular-file inventory, original archive modes, sizes and pre-patch byte hashes in
+the separate `lunar-static-python-source-tree-v1` domain. Expected manifest and
+source-tree digests are independently supplied pins. Explicit inert fixtures keep
+`profile_pin_verified=false`; they do not establish acquisition, signature,
+extraction, build or runtime evidence.
+
+The focused gate is `tests/test_static_python_source_tree_observation.py` with 22
+cases and zero failures, errors or skips. It covers canonical/detached records,
+single decode, independent pin drift, fixed-profile refusal, deadline expiry and
+the absence of filesystem, subprocess, network, staging and runtime routes.

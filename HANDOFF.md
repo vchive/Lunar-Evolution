@@ -1,5 +1,23 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-10 Feature189 original source-tree observation (provider-free slice)
+
+The snapshot-bound source-tree observer records the complete original regular-file
+inventory from one immutable archive snapshot. It uses the strict archive walker
+once, retains archive modes, sizes and pre-patch byte hashes in the separate
+`lunar-static-python-source-tree-v1` canonical domain, and requires independently
+retained extraction-manifest and source-tree pins. Explicit inert fixtures keep
+`profile_pin_verified=false`; no receipt, installation descriptor, acquisition,
+signature verification, staging, build, runtime or production admission is inferred.
+
+The focused 22-case source-tree gate passes locally with zero failures, errors or
+skips; archive/projection/staging/source-tree combined regression, Ruff,
+compileall and diff checks pass. The workflow includes the 20-case gate. This
+slice is provenance observation only. Real CPython/Zig acquisition and signatures,
+configured static closure, generated headers/ELF, sealed runtime lifecycle and
+Feature191 live producer composition remain open; P2 distributed/service work is
+still deferred.
+
 ## 2026-10-10 Feature189 snapshot-bound create-only source staging
 
 PR34's pure admission composition gate is merged into main at
