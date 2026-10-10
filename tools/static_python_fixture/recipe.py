@@ -59,7 +59,11 @@ def verify_archive(path: Path, pin: dict[str, object]) -> dict[str, object]:
 
 def extract_source(archive: Path, destination: Path,
                    pin: dict[str, object] = CPYTHON_ARCHIVE) -> Path:
-    """Containment-only extraction; links, devices, duplicates and traversal fail."""
+    """Legacy containment-only helper; not an admitted source-staging route.
+
+    Its pathname reopen does not bind extraction to the verified snapshot. Use
+    source_staging.stage_archive_sources for the snapshot-bound G1 local gate.
+    """
     verify_archive(archive, pin)
     requested = Path(destination)
     parent = requested.parent

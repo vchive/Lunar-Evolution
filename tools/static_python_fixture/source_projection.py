@@ -13,6 +13,7 @@ from typing import NoReturn
 
 from . import source_patches
 from .archive_observation import (
+    StaticPythonArchiveObservation,
     StaticPythonArchiveObservationError,
     StaticPythonArchiveSnapshot,
     _observe_archive_snapshot,
@@ -103,12 +104,38 @@ def prepare_archive_sources(
     Synthetic snapshots use explicit ``require_profile=False`` and retain the
     skipped metadata status; a failed profile check never falls back to inert.
     """
+    return _prepare_archive_sources(
+        snapshot, expected_manifest_sha256=expected_manifest_sha256,
+        require_profile=require_profile, deadline=deadline, monotonic=monotonic,
+    )[0]
+
+
+def _prepare_archive_sources(
+    snapshot: StaticPythonArchiveSnapshot,
+    *,
+    expected_manifest_sha256: str,
+    require_profile: bool = True,
+    deadline: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    capture_all_files: bool = False,
+) -> tuple[
+    StaticPythonArchiveSourcePreparation,
+    StaticPythonArchiveObservation,
+    tuple[tuple[str, bytes], ...],
+]:
+    """Share one validated decode and fixed-source preparation with local staging.
+
+    Full capture adds unchanged regular-file payloads to the private return value;
+    only the three installation-owned paths are ever passed to source patches.
+    """
     if (type(expected_manifest_sha256) is not str
             or _SHA.fullmatch(expected_manifest_sha256) is None
             or expected_manifest_sha256 in {"0" * 64, "f" * 64}):
         _fail("manifest_pin_invalid")
     if type(require_profile) is not bool:
         _fail("profile_flag_invalid")
+    if type(capture_all_files) is not bool:
+        _fail("capture_flag_invalid")
     if type(deadline) is not float or not math.isfinite(deadline) or deadline <= 0:
         _fail("deadline_invalid")
     if not callable(monotonic):
@@ -151,6 +178,7 @@ def prepare_archive_sources(
             selected_paths=fixed_paths,
             selected_max_file_bytes=source_patches.MAX_SOURCE_BYTES,
             selected_max_total_bytes=source_patches.MAX_TOTAL_SOURCE_BYTES,
+            capture_all_files=capture_all_files,
         )
     except StaticPythonArchiveObservationError as exc:
         if type(exc.__cause__) is StaticPythonSourceProjectionError:
@@ -165,8 +193,10 @@ def prepare_archive_sources(
     checkpoint()
     if observed.manifest_sha256 != expected_manifest_sha256:
         _fail("manifest_pin_mismatch")
-    captured = dict(selected)
-    if set(captured) != fixed_paths or len(selected) != len(fixed_paths):
+    captured = {path: raw for path, raw in selected if path in fixed_paths}
+    selected_fixed = tuple(path for path, _raw in selected if path in fixed_paths)
+    if (set(captured) != fixed_paths or len(selected_fixed) != len(fixed_paths)
+            or not capture_all_files and len(selected) != len(fixed_paths)):
         _fail("source_missing")
     by_path = {member.path: member for member in observed.members}
     checkpoint()
@@ -262,7 +292,7 @@ def prepare_archive_sources(
         projection_sha256=digest(canonical),
     )
     checkpoint()
-    return projected
+    return projected, observed, selected
 
 
 __all__ = [

@@ -1,5 +1,54 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-10 Feature189 snapshot-bound create-only source staging
+
+PR34's pure admission composition gate is merged into main at
+`329060d6f2796ce2d4075777a202fb10caeab9cf`, preserving tested tree
+`7b789be92d89516c8ad071fa93da0e4f3875c80f` after run38028949127 and independent
+raw/source/tree audit. The retained handoff file-pin slice remains separate
+Feature191 evidence; neither slice grants production admission.
+
+The current Feature189 continuation adds `source-staging.md` and
+`tools/static_python_fixture/source_staging.py`. One immutable CPython snapshot
+and the original external inventory pin feed the existing strict USTAR walk and
+fixed three-source preimage/postimage policy. A private full-file capture shares
+that same decode; the public three-source projection signature and DTO remain
+unchanged. All validation precedes destination creation. Staging uses existing
+nofollow ancestor handles, create-only private directories/files, original
+identity comparisons, bounded writes, fsync/readback and complete final inventory
+checks. Fixed source postimages are actually written, while unchanged members
+retain their exact original bytes. Archive modes are metadata; actual directory/
+file modes are0700/0600. Implicit directories are bounded before set growth.
+
+Unknown or partial writes are preserved, never deleted, repaired or adopted.
+Reusing any existing destination refuses. The final gate rechecks full stat and
+inventory after the last caller clock, with no further caller callbacks; that
+clock's work, final verification and owned FD cleanup consume the original
+remaining budget. Cleanup errors preserve the operation's actual primary refusal;
+explicit local flags avoid confusing a caller's already-handled exception with
+an error in staging. The mkdir-to-first-stat/open identity window is documented:
+this is trusted local preparation, not atomic directory creation authentication
+against a hostile writer, and the returned DTO does not make the tree immutable.
+
+Local final validation passes101 staging cases and215 combined archive/projection/
+staging cases on Python3.11.15; all static Python fixture suites pass660 cases on
+Python3.13.12. All have zero failures/errors/skips. Ruff, compileall and diff checks
+pass, and independent review has no remaining blocker. The first interim root
+focused refusal (a clock fixture incompatible with the corrected final ordering)
+and earlier review reproductions remain in ignored reports separately from final
+results. The dedicated `python-source-staging.xml` gate requires101 cases without
+skips. Exact final-source Ubuntu3.11/3.12/3.13 complete CI and independent raw/
+source/tree audit are still required before merging this staging slice.
+
+No actual release/toolchain acquisition/signatures, configure/compiler/freezer,
+CPython execution, model, WebAgent, remote/company evaluator or solver campaign
+ran. Source staging now has a local implementation, but complete G1 release/
+toolchain provenance, G2 configured/static closure/generated headers/ELF and G3
+real runtime/owner/lifecycle acceptance remain open. Actual OpenEvolve/Shinka
+Python adapters and production RSI CLI follow those gates; an admission-attempt
+controller anchor belongs with the future live admission flow. P2 distributed/
+service/remote evaluator/external worker authentication remains deferred.
+
 ## 2026-10-10 Feature191 original handoff file pin (provider-free follow-up)
 
 The follow-up branch `codex/feature191-handoff-stat-pin` is based on PR34's frozen
