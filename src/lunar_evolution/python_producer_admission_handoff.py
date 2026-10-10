@@ -27,6 +27,7 @@ PYTHON_PRODUCER_ADMISSION_HANDOFF_PROTOCOL = "lunar-python-producer-admission-ha
 PYTHON_PRODUCER_ADMISSION_HANDOFF_SCHEMA_VERSION = "1"
 PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME = "python-producer-admission-handoff.json"
 MAX_PYTHON_PRODUCER_ADMISSION_HANDOFF_BYTES = 256 * 1024
+PYTHON_PRODUCER_ADMISSION_HANDOFF_FILE_PIN_PROTOCOL = "lunar-python-producer-admission-handoff-file-pin-v1"
 
 HANDOFF_STATE_PREPARED = "prepared"
 HANDOFF_STATE_EVALUATING = "evaluating"
@@ -260,6 +261,134 @@ _FIELD_ORDER = (
     "wall_timeout_seconds", "deadline_unix", "state", "handoff_sha256",
 )
 
+_FILE_PIN_FIELD_ORDER = (
+    "schema_version", "protocol", "run_id", "journal_id", "parent_task_id", "task_id",
+    "handoff_sha256", "raw_sha256", "raw_size", "file_device", "file_inode", "file_mode",
+    "file_nlink", "file_mtime_ns", "file_ctime_ns", "parent_device", "parent_inode", "pin_sha256",
+)
+_FILE_PIN_FIELDS = frozenset(_FILE_PIN_FIELD_ORDER)
+_FILE_PIN_INTEGER_FIELDS = frozenset({
+    "raw_size", "file_device", "file_inode", "file_mode", "file_nlink", "file_mtime_ns",
+    "file_ctime_ns", "parent_device", "parent_inode",
+})
+
+
+def _validate_file_pin_payload(value: object) -> dict[str, object]:
+    if type(value) is not dict or set(value) != _FILE_PIN_FIELDS:
+        _fail("file_pin_schema_invalid")
+    if (type(value["schema_version"]) is not str
+            or value["schema_version"] != PYTHON_PRODUCER_ADMISSION_HANDOFF_SCHEMA_VERSION
+            or type(value["protocol"]) is not str
+            or value["protocol"] != PYTHON_PRODUCER_ADMISSION_HANDOFF_FILE_PIN_PROTOCOL):
+        _fail("file_pin_schema_invalid")
+    for field in ("run_id", "journal_id", "parent_task_id", "task_id"):
+        _identifier(value[field], "file_pin_identity_invalid")
+    for field in ("handoff_sha256", "raw_sha256", "pin_sha256"):
+        _sha(value[field], "file_pin_digest_invalid")
+    for field in _FILE_PIN_INTEGER_FIELDS:
+        if type(value[field]) is not int or not 0 <= value[field] <= 2**64 - 1:
+            _fail("file_pin_integer_invalid")
+    if not 1 <= value["raw_size"] <= MAX_PYTHON_PRODUCER_ADMISSION_HANDOFF_BYTES:
+        _fail("file_pin_size_invalid")
+    if value["file_inode"] == 0 or value["parent_inode"] == 0:
+        _fail("file_pin_inode_invalid")
+    if value["file_mode"] != 0o600 or value["file_nlink"] != 1:
+        _fail("file_pin_metadata_invalid")
+    expected = hashlib.sha256(_canonical({
+        field: value[field] for field in _FILE_PIN_FIELD_ORDER if field != "pin_sha256"
+    })).hexdigest()
+    if value["pin_sha256"] != expected:
+        _fail("file_pin_digest_mismatch")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class PythonProducerAdmissionHandoffFilePin:
+    """Retained original file/parent identity, distinct from handoff content identity.
+
+    Parsing this detached proof does not capture current filesystem metadata or grant
+    executable/runtime authority. The pinned creator derives it from its original FD.
+    """
+
+    run_id: str
+    journal_id: str
+    parent_task_id: str
+    task_id: str
+    handoff_sha256: str
+    raw_sha256: str
+    raw_size: int
+    file_device: int
+    file_inode: int
+    file_mode: int
+    file_nlink: int
+    file_mtime_ns: int
+    file_ctime_ns: int
+    parent_device: int
+    parent_inode: int
+    pin_sha256: str
+    schema_version: str = PYTHON_PRODUCER_ADMISSION_HANDOFF_SCHEMA_VERSION
+    protocol: str = PYTHON_PRODUCER_ADMISSION_HANDOFF_FILE_PIN_PROTOCOL
+
+    def _payload(self) -> dict[str, object]:
+        return {field: getattr(self, field) for field in _FILE_PIN_FIELD_ORDER}
+
+    def __post_init__(self) -> None:
+        _validate_file_pin_payload(self._payload())
+
+    def to_dict(self) -> dict[str, object]:
+        return dict(_validate_file_pin_payload(self._payload()))
+
+    def to_json(self) -> bytes:
+        return _canonical(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, object]) -> PythonProducerAdmissionHandoffFilePin:
+        return parse_python_producer_admission_handoff_file_pin(value)
+
+    @classmethod
+    def from_json(cls, value: bytes | str) -> PythonProducerAdmissionHandoffFilePin:
+        return parse_python_producer_admission_handoff_file_pin(value)
+
+
+def parse_python_producer_admission_handoff_file_pin(
+    value: PythonProducerAdmissionHandoffFilePin | Mapping[str, object] | bytes | str | bytearray,
+) -> PythonProducerAdmissionHandoffFilePin:
+    """Validate a closed retained pin before any path or filesystem access."""
+    encoded = None
+    if type(value) is PythonProducerAdmissionHandoffFilePin:
+        parsed = value._payload()
+    elif type(value) is dict:
+        parsed = value
+    elif type(value) in {bytes, str, bytearray}:
+        parsed, encoded = _strict_json(value)
+    else:
+        _fail("file_pin_schema_invalid")
+    raw = _validate_file_pin_payload(parsed)
+    if encoded is not None and _canonical(raw) != encoded:
+        _fail("file_pin_noncanonical")
+    return PythonProducerAdmissionHandoffFilePin(**{field: raw[field] for field in _FILE_PIN_FIELD_ORDER})
+
+
+@dataclass(frozen=True, slots=True)
+class PythonProducerAdmissionHandoffSidecar:
+    """Handoff content plus its independently retained original file pin."""
+
+    handoff: PythonProducerAdmissionHandoff
+    file_pin: PythonProducerAdmissionHandoffFilePin
+
+    def __post_init__(self) -> None:
+        handoff = parse_python_producer_admission_handoff(self.handoff)
+        pin = parse_python_producer_admission_handoff_file_pin(self.file_pin)
+        if any(getattr(handoff, field) != getattr(pin, field) for field in (
+            "run_id", "journal_id", "parent_task_id", "task_id", "handoff_sha256",
+        )):
+            _fail("file_pin_handoff_mismatch")
+        raw = handoff.to_json()
+        if pin.raw_size != len(raw) or pin.raw_sha256 != hashlib.sha256(raw).hexdigest():
+            _fail("file_pin_raw_mismatch")
+        object.__setattr__(self, "handoff", handoff)
+        object.__setattr__(self, "file_pin", pin)
+
 
 def _validate_payload(value: object, *, check_digest: bool) -> dict[str, object]:
     if type(value) is not dict or set(value) != _FIELDS:
@@ -446,19 +575,40 @@ def _check_directory(chain: DirectoryChain) -> None:
         raise PythonProducerAdmissionHandoffError("parent_changed") from exc
 
 
-def _read_file(
+def _pin_matches_file(pin: PythonProducerAdmissionHandoffFilePin, info: os.stat_result) -> None:
+    if (not stat.S_ISREG(info.st_mode)
+            or (info.st_dev, info.st_ino, info.st_size, stat.S_IMODE(info.st_mode), info.st_nlink,
+                info.st_mtime_ns, info.st_ctime_ns)
+            != (pin.file_device, pin.file_inode, pin.raw_size, pin.file_mode, pin.file_nlink,
+                pin.file_mtime_ns, pin.file_ctime_ns)):
+        _fail("file_pin_identity_drift")
+
+
+def _pin_matches_parent(pin: PythonProducerAdmissionHandoffFilePin, info: os.stat_result) -> None:
+    if (not stat.S_ISDIR(info.st_mode)
+            or (info.st_dev, info.st_ino) != (pin.parent_device, pin.parent_inode)):
+        _fail("file_pin_parent_drift")
+
+
+def _read_file_observation(
     chain: DirectoryChain, name: str, *, expected_inode: tuple[int, int] | None = None,
-) -> bytes:
+    expected_file_pin: PythonProducerAdmissionHandoffFilePin | None = None,
+) -> tuple[bytes, os.stat_result]:
     """Read bounded bytes through one no-follow FD and recheck every held directory."""
     descriptor = -1
     try:
         _check_directory(chain)
+        parent_before = os.fstat(chain.fd)
+        if expected_file_pin is not None:
+            _pin_matches_parent(expected_file_pin, parent_before)
         before = os.stat(name, dir_fd=chain.fd, follow_symlinks=False)
         if (not stat.S_ISREG(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o600
                 or before.st_nlink != 1):
             _fail("file_identity_invalid")
         if expected_inode is not None and (before.st_dev, before.st_ino) != expected_inode:
             _fail("file_identity_drift")
+        if expected_file_pin is not None:
+            _pin_matches_file(expected_file_pin, before)
         if before.st_size > MAX_PYTHON_PRODUCER_ADMISSION_HANDOFF_BYTES:
             _fail("record_too_large")
         descriptor = os.open(
@@ -468,6 +618,8 @@ def _read_file(
         opened = os.fstat(descriptor)
         if _metadata(opened) != _metadata(before):
             _fail("file_identity_drift")
+        if expected_file_pin is not None:
+            _pin_matches_file(expected_file_pin, opened)
         raw = bytearray()
         while len(raw) <= MAX_PYTHON_PRODUCER_ADMISSION_HANDOFF_BYTES:
             chunk = os.read(
@@ -484,8 +636,19 @@ def _read_file(
         if (_metadata(before) != _metadata(after) or _metadata(after) != _metadata(named)
                 or len(raw) != before.st_size):
             _fail("file_identity_drift")
+        if expected_file_pin is not None:
+            _pin_matches_file(expected_file_pin, after)
+            _pin_matches_file(expected_file_pin, named)
+            if (len(raw) != expected_file_pin.raw_size
+                    or hashlib.sha256(raw).hexdigest() != expected_file_pin.raw_sha256):
+                _fail("file_pin_raw_mismatch")
         _check_directory(chain)
-        return bytes(raw)
+        parent_after = os.fstat(chain.fd)
+        if (parent_after.st_dev, parent_after.st_ino) != (parent_before.st_dev, parent_before.st_ino):
+            _fail("parent_changed")
+        if expected_file_pin is not None:
+            _pin_matches_parent(expected_file_pin, parent_after)
+        return bytes(raw), after
     except FileNotFoundError as exc:
         raise PythonProducerAdmissionHandoffError("missing") from exc
     except PythonProducerAdmissionHandoffError:
@@ -497,10 +660,33 @@ def _read_file(
             os.close(descriptor)
 
 
+def _read_file(
+    chain: DirectoryChain, name: str, *, expected_inode: tuple[int, int] | None = None,
+) -> bytes:
+    return _read_file_observation(chain, name, expected_inode=expected_inode)[0]
+
+
 def _read_path(path: Path) -> bytes:
     chain = _directory(path)
     try:
         return _read_file(chain, path.name)
+    finally:
+        chain.close()
+
+
+def read_python_producer_admission_handoff_pinned(
+    path: str | os.PathLike[str],
+    *,
+    expected_file_pin: PythonProducerAdmissionHandoffFilePin | Mapping[str, object] | bytes | str,
+) -> PythonProducerAdmissionHandoffSidecar:
+    """Read the original retained file identity without refreshing any pin or budget."""
+    pin = parse_python_producer_admission_handoff_file_pin(expected_file_pin)
+    destination = _path(path)
+    chain = _directory(destination)
+    try:
+        raw, _info = _read_file_observation(chain, destination.name, expected_file_pin=pin)
+        handoff = parse_python_producer_admission_handoff(raw)
+        return PythonProducerAdmissionHandoffSidecar(handoff, pin)
     finally:
         chain.close()
 
@@ -593,6 +779,110 @@ def persist_python_producer_admission_handoff(
         chain.close()
 
 
+def _created_file_pin(
+    handoff: PythonProducerAdmissionHandoff, raw: bytes,
+    info: os.stat_result, parent: os.stat_result,
+) -> PythonProducerAdmissionHandoffFilePin:
+    """Sign only the original creator's completed FD/readback observation."""
+    payload = {
+        "schema_version": PYTHON_PRODUCER_ADMISSION_HANDOFF_SCHEMA_VERSION,
+        "protocol": PYTHON_PRODUCER_ADMISSION_HANDOFF_FILE_PIN_PROTOCOL,
+        "run_id": handoff.run_id, "journal_id": handoff.journal_id,
+        "parent_task_id": handoff.parent_task_id, "task_id": handoff.task_id,
+        "handoff_sha256": handoff.handoff_sha256,
+        "raw_sha256": hashlib.sha256(raw).hexdigest(), "raw_size": len(raw),
+        "file_device": info.st_dev, "file_inode": info.st_ino,
+        "file_mode": stat.S_IMODE(info.st_mode), "file_nlink": info.st_nlink,
+        "file_mtime_ns": info.st_mtime_ns, "file_ctime_ns": info.st_ctime_ns,
+        "parent_device": parent.st_dev, "parent_inode": parent.st_ino,
+    }
+    payload["pin_sha256"] = hashlib.sha256(_canonical(payload)).hexdigest()
+    return parse_python_producer_admission_handoff_file_pin(payload)
+
+
+def persist_python_producer_admission_handoff_pinned(
+    path: str | os.PathLike[str],
+    *,
+    handoff: PythonProducerAdmissionHandoff | Mapping[str, object],
+    expected_file_pin: PythonProducerAdmissionHandoffFilePin | Mapping[str, object] | bytes | str | None = None,
+) -> PythonProducerAdmissionHandoffSidecar:
+    """Create and pin one original inode, or replay the supplied original pin read-only.
+
+    Existing bytes without original retained proof are never adopted. Any unknown write
+    retains its pathname/partial bytes; this function does not delete or repair evidence.
+    A supplied pin cannot authorize creation if the original file is missing.
+    """
+    pin = None if expected_file_pin is None else parse_python_producer_admission_handoff_file_pin(expected_file_pin)
+    if isinstance(handoff, Mapping):
+        parsed = (
+            parse_python_producer_admission_handoff(handoff)
+            if "handoff_sha256" in handoff
+            else build_python_producer_admission_handoff(handoff)
+        )
+    else:
+        parsed = parse_python_producer_admission_handoff(handoff)
+    if pin is not None:
+        # Validate the requested projection before opening the original file. This is
+        # replay, not an instruction to update either file contents or retained identity.
+        PythonProducerAdmissionHandoffSidecar(parsed, pin)
+        return read_python_producer_admission_handoff_pinned(path, expected_file_pin=pin)
+
+    destination = _path(path)
+    raw = parsed.to_json()
+    chain = _directory(destination)
+    descriptor = -1
+    try:
+        _check_directory(chain)
+        parent = os.fstat(chain.fd)
+        try:
+            descriptor = os.open(
+                destination.name,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600, dir_fd=chain.fd,
+            )
+        except FileExistsError:
+            _fail("file_pin_required")
+        created = os.fstat(descriptor)
+        inode = (created.st_dev, created.st_ino)
+        if (not stat.S_ISREG(created.st_mode) or stat.S_IMODE(created.st_mode) != 0o600
+                or created.st_nlink != 1):
+            _fail("file_identity_drift")
+        offset = 0
+        while offset < len(raw):
+            count = os.write(descriptor, raw[offset:])
+            if count <= 0:
+                _fail("write_unknown")
+            offset += count
+        os.fsync(descriptor)
+        written = os.fstat(descriptor)
+        named = os.stat(destination.name, dir_fd=chain.fd, follow_symlinks=False)
+        if ((written.st_dev, written.st_ino) != inode or _metadata(written) != _metadata(named)
+                or not stat.S_ISREG(written.st_mode) or stat.S_IMODE(written.st_mode) != 0o600
+                or written.st_nlink != 1 or written.st_size != len(raw)):
+            _fail("file_identity_drift")
+        _check_directory(chain)
+        os.fsync(chain.fd)
+        reread, observed = _read_file_observation(chain, destination.name, expected_inode=inode)
+        final = os.fstat(descriptor)
+        final_named = os.stat(destination.name, dir_fd=chain.fd, follow_symlinks=False)
+        final_parent = os.fstat(chain.fd)
+        _check_directory(chain)
+        if (reread != raw or _metadata(observed) != _metadata(written)
+                or _metadata(final) != _metadata(observed) or _metadata(final_named) != _metadata(final)
+                or (final_parent.st_dev, final_parent.st_ino) != (parent.st_dev, parent.st_ino)):
+            _fail("file_identity_drift")
+        pin = _created_file_pin(parsed, reread, final, final_parent)
+        return PythonProducerAdmissionHandoffSidecar(parsed, pin)
+    except PythonProducerAdmissionHandoffError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise PythonProducerAdmissionHandoffError("write_unknown") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        chain.close()
+
+
 def replay_python_producer_admission_handoff_file(
     path: str | os.PathLike[str],
     *,
@@ -608,13 +898,30 @@ def replay_python_producer_admission_handoff_file(
 
 
 __all__ = [
-    "HANDOFF_STATE_EVALUATING", "HANDOFF_STATE_PREPARED", "HANDOFF_STATE_PUBLISHED",
-    "HANDOFF_STATE_REJECTED", "HANDOFF_STATE_STAGED", "HANDOFF_STATE_UNKNOWN",
-    "MAX_PYTHON_PRODUCER_ADMISSION_HANDOFF_BYTES", "PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME",
-    "PYTHON_PRODUCER_ADMISSION_HANDOFF_PROTOCOL", "PYTHON_PRODUCER_ADMISSION_HANDOFF_SCHEMA_VERSION",
-    "PythonProducerAdmissionHandoff", "PythonProducerAdmissionHandoffError",
-    "build_python_producer_admission_handoff", "parse_python_producer_admission_handoff",
-    "persist_python_producer_admission_handoff", "prepare_python_producer_admission_handoff",
-    "read_python_producer_admission_handoff", "reconcile_python_producer_admission_handoff",
-    "replay_python_producer_admission_handoff", "replay_python_producer_admission_handoff_file",
+    "HANDOFF_STATE_EVALUATING",
+    "HANDOFF_STATE_PREPARED",
+    "HANDOFF_STATE_PUBLISHED",
+    "HANDOFF_STATE_REJECTED",
+    "HANDOFF_STATE_STAGED",
+    "HANDOFF_STATE_UNKNOWN",
+    "MAX_PYTHON_PRODUCER_ADMISSION_HANDOFF_BYTES",
+    "PYTHON_PRODUCER_ADMISSION_HANDOFF_FILE_PIN_PROTOCOL",
+    "PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME",
+    "PYTHON_PRODUCER_ADMISSION_HANDOFF_PROTOCOL",
+    "PYTHON_PRODUCER_ADMISSION_HANDOFF_SCHEMA_VERSION",
+    "PythonProducerAdmissionHandoff",
+    "PythonProducerAdmissionHandoffError",
+    "PythonProducerAdmissionHandoffFilePin",
+    "PythonProducerAdmissionHandoffSidecar",
+    "build_python_producer_admission_handoff",
+    "parse_python_producer_admission_handoff",
+    "parse_python_producer_admission_handoff_file_pin",
+    "persist_python_producer_admission_handoff",
+    "persist_python_producer_admission_handoff_pinned",
+    "prepare_python_producer_admission_handoff",
+    "read_python_producer_admission_handoff",
+    "read_python_producer_admission_handoff_pinned",
+    "reconcile_python_producer_admission_handoff",
+    "replay_python_producer_admission_handoff",
+    "replay_python_producer_admission_handoff_file",
 ]

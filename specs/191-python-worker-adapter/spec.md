@@ -90,6 +90,15 @@ receipt/journal digest links, and synthetic transaction/recovery checks. It does
 establish runtime/process observation or publication authority. Actual launch/observe/settle,
 sealed CPython evidence, and runtime-gated publication admission remain open.
 
+The standalone admission path additionally retains an original write-derived handoff file
+pin as specified in [retained-handoff-file-pin.md](retained-handoff-file-pin.md). Protected
+transactions require that pin, carry it unchanged in the immutable prepared journal and
+later projections, and revalidate file identity across callbacks and recovery. Digest-only
+legacy Python journals remain inspection records; they cannot silently adopt current
+filesystem metadata. Non-Python journal bytes stay compatible. A future controller
+admission flow needs its own original admission-attempt anchor; this slice does not
+retroactively change the earlier producer binding/run proof.
+
 ## Preconditions and safety gates
 
 Feature189's accepted Linux static CPython fixture and Feature190's accepted

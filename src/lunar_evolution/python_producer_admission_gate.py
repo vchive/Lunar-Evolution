@@ -32,6 +32,8 @@ from .producer_process import (
 )
 from .python_producer_admission_handoff import (
     PythonProducerAdmissionHandoff,
+    PythonProducerAdmissionHandoffError,
+    PythonProducerAdmissionHandoffSidecar,
     parse_python_producer_admission_handoff,
 )
 from .python_producer_binding import PythonProducerBinding, parse_python_producer_binding
@@ -507,6 +509,14 @@ def verify_python_producer_admission_gate(
                     or (parsed_journal.run_id, parsed_journal.journal_id, parsed_journal.parent_task_id, parsed_journal.task_id) != ids
                     or any(getattr(parsed_journal, field) != expected for field, expected in authority)):
                 return _reject("journal_authority_mismatch", values=values)
+        if parsed_journal is not None and parsed_journal.python_handoff_file_pin is not None:
+            try:
+                # Detached consistency only: no file is opened or original stat observed.
+                PythonProducerAdmissionHandoffSidecar(
+                    parsed_handoff, parsed_journal.python_handoff_file_pin,
+                )
+            except PythonProducerAdmissionHandoffError:
+                return _reject("journal_handoff_file_pin_mismatch", values=values)
         return _ok(parsed_handoff, sidecar_pin_digest, parsed_journal)
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError, OverflowError) as exc:
         code = getattr(exc, "code", "evidence_invalid")

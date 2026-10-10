@@ -32,7 +32,7 @@ from lunar_evolution.producer_process import (
 )
 from lunar_evolution.python_producer_admission_handoff import (
     build_python_producer_admission_handoff,
-    persist_python_producer_admission_handoff,
+    persist_python_producer_admission_handoff_pinned,
 )
 from lunar_evolution.shinka_handoff import export_shinka_result
 
@@ -366,7 +366,7 @@ def test_transaction_links_durable_python_handoff_to_formal_receipt_and_plan(tmp
         wall_timeout_seconds=60.0,
         deadline_unix=4102444800.0,
     )
-    persist_python_producer_admission_handoff(
+    sidecar = persist_python_producer_admission_handoff_pinned(
         context.workspace / "evolution" / "producer-batches" / journal_id,
         handoff=handoff,
     )
@@ -375,6 +375,7 @@ def test_transaction_links_durable_python_handoff_to_formal_receipt_and_plan(tmp
         context.workspace, strategy, drafts, plan, journal_id=journal_id,
         native_execution_receipt_sha256=receipt["receipt_sha256"],
         python_handoff_sha256=handoff.handoff_sha256,
+        python_handoff_file_pin=sidecar.file_pin,
     )
 
     assert result.publication_status == "published"
@@ -453,7 +454,7 @@ def test_transaction_rechecks_python_handoff_after_pipeline_guard_before_evaluat
         wall_timeout_seconds=60.0,
         deadline_unix=4102444800.0,
     )
-    persist_python_producer_admission_handoff(
+    sidecar = persist_python_producer_admission_handoff_pinned(
         context.workspace / "evolution" / "producer-batches" / journal_id,
         handoff=handoff,
     )
@@ -499,6 +500,7 @@ def test_transaction_rechecks_python_handoff_after_pipeline_guard_before_evaluat
             journal_id=journal_id,
             native_execution_receipt_sha256=receipt["receipt_sha256"],
             python_handoff_sha256=handoff.handoff_sha256,
+            python_handoff_file_pin=sidecar.file_pin,
         )
     assert evaluated == []
 
@@ -552,7 +554,7 @@ def test_transaction_rechecks_python_handoff_after_evaluator_callback(
         deadline_unix=4102444800.0,
     )
     batch = context.workspace / "evolution" / "producer-batches" / journal_id
-    persist_python_producer_admission_handoff(batch, handoff=handoff)
+    sidecar = persist_python_producer_admission_handoff_pinned(batch, handoff=handoff)
     handoff_path = batch / "python-producer-admission-handoff.json"
     evaluated: list[bool] = []
     original_evaluate = context.bundle_pipeline.evaluate_draft_non_publishing
@@ -580,6 +582,7 @@ def test_transaction_rechecks_python_handoff_after_evaluator_callback(
             journal_id=journal_id,
             native_execution_receipt_sha256=receipt["receipt_sha256"],
             python_handoff_sha256=handoff.handoff_sha256,
+            python_handoff_file_pin=sidecar.file_pin,
             continuation_guard=continuation_guard,
         )
     assert evaluated == [True]

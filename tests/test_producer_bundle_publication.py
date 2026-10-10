@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,9 @@ from lunar_evolution import (
     ProducerBundlePublicationError,
     build_producer_bundle_publication_journal,
     parse_producer_bundle_publication_journal,
+)
+from lunar_evolution.python_producer_admission_handoff import (
+    parse_python_producer_admission_handoff_file_pin,
 )
 
 
@@ -104,6 +109,120 @@ def test_optional_python_handoff_requires_native_receipt_and_round_trips() -> No
     with pytest.raises(ProducerBundlePublicationError) as caught:
         _journal(_candidate(), python_handoff_sha256=_digest("9"))
     assert caught.value.code == "producer_bundle_publication_python_handoff_execution_link_missing"
+
+
+def _file_pin(**changes: object):
+    payload = {
+        "schema_version": "1",
+        "protocol": "lunar-python-producer-admission-handoff-file-pin-v1",
+        "run_id": "run-1", "journal_id": "journal-1",
+        "parent_task_id": "parent-1", "task_id": "task-1",
+        "handoff_sha256": _digest("9"), "raw_sha256": _digest("a"), "raw_size": 123,
+        "file_device": 0, "file_inode": 101, "file_mode": 0o600, "file_nlink": 1,
+        "file_mtime_ns": 1_000_000, "file_ctime_ns": 1_000_001,
+        "parent_device": 0, "parent_inode": 100,
+    }
+    payload.update(changes)
+    payload["pin_sha256"] = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
+    return parse_python_producer_admission_handoff_file_pin(payload)
+
+
+def test_original_handoff_file_pin_is_bound_by_journal_digest() -> None:
+    digest_only = _journal(native_execution_receipt_sha256=_digest("8"),
+                           python_handoff_sha256=_digest("9"))
+    pin = _file_pin()
+    linked = _journal(native_execution_receipt_sha256=_digest("8"),
+                      python_handoff_sha256=_digest("9"), python_handoff_file_pin=pin)
+    assert linked.python_handoff_file_pin == pin
+    assert linked.to_dict()["python_handoff_file_pin"] == pin.to_dict()
+    assert parse_producer_bundle_publication_journal(linked.to_dict()) == linked
+    assert linked.digest() != digest_only.digest()
+    assert "python_handoff_file_pin" not in digest_only.to_dict()
+    advancing = replace(linked, state="unknown", publication_phase="recovery_required",
+                        journal_sha256=None)
+    assert advancing.python_handoff_file_pin == pin
+    assert advancing.digest() != linked.digest()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("run_id", "run-other"), ("journal_id", "journal-other"),
+    ("parent_task_id", "parent-other"), ("task_id", "task-other"),
+    ("handoff_sha256", _digest("b")),
+])
+def test_journal_refuses_resigned_file_pin_identity_drift(field: str, value: str) -> None:
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        _journal(native_execution_receipt_sha256=_digest("8"),
+                 python_handoff_sha256=_digest("9"),
+                 python_handoff_file_pin=_file_pin(**{field: value}))
+    assert caught.value.code == "producer_bundle_publication_python_handoff_pin_mismatch"
+
+
+def test_journal_pin_cannot_omit_handoff_link_or_adopt_tampered_pin() -> None:
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        _journal(native_execution_receipt_sha256=_digest("8"), python_handoff_file_pin=_file_pin())
+    assert caught.value.code == "producer_bundle_publication_python_handoff_pin_mismatch"
+    pin = _file_pin()
+    object.__setattr__(pin, "file_inode", 999)
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        _journal(native_execution_receipt_sha256=_digest("8"),
+                 python_handoff_sha256=_digest("9"), python_handoff_file_pin=pin)
+    assert caught.value.code == "producer_bundle_publication_python_handoff_pin_invalid"
+
+
+def test_journal_wire_pin_null_or_modified_metadata_refuses() -> None:
+    journal = _journal(native_execution_receipt_sha256=_digest("8"),
+                       python_handoff_sha256=_digest("9"), python_handoff_file_pin=_file_pin())
+    null_pin = {**journal.to_dict(), "python_handoff_file_pin": None}
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        parse_producer_bundle_publication_journal(null_pin)
+    assert caught.value.code == "producer_bundle_publication_python_handoff_pin_invalid"
+    changed = journal.to_dict()
+    changed["python_handoff_file_pin"]["file_inode"] += 1
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        parse_producer_bundle_publication_journal(changed)
+    assert caught.value.code == "producer_bundle_publication_python_handoff_pin_invalid"
+
+
+def test_mutated_journal_pin_cannot_invoke_a_caller_serialization_callback() -> None:
+    journal = _journal(native_execution_receipt_sha256=_digest("8"),
+                       python_handoff_sha256=_digest("9"), python_handoff_file_pin=_file_pin())
+    calls = []
+
+    class CallbackPin:
+        def to_dict(self):
+            calls.append("untrusted")
+            pytest.fail("journal invoked an unvalidated pin callback")
+
+    object.__setattr__(journal, "python_handoff_file_pin", CallbackPin())
+    for operation in (journal.to_dict, journal.digest):
+        with pytest.raises(ProducerBundlePublicationError) as caught:
+            operation()
+        assert caught.value.code == "producer_bundle_publication_python_handoff_pin_invalid"
+    assert calls == []
+
+
+@pytest.mark.parametrize("pin_kind", ["callback-mapping", "json-string"])
+def test_journal_mapping_cannot_normalize_an_invalid_nested_pin(pin_kind: str) -> None:
+    journal = _journal(native_execution_receipt_sha256=_digest("8"),
+                       python_handoff_sha256=_digest("9"), python_handoff_file_pin=_file_pin())
+    calls = []
+
+    class CallbackMapping(dict):
+        def items(self):
+            calls.append("untrusted")
+            pytest.fail("journal normalized a callback pin before validating its type")
+
+    raw = journal.to_dict()
+    raw["python_handoff_file_pin"] = (
+        CallbackMapping(raw["python_handoff_file_pin"]) if pin_kind == "callback-mapping"
+        else json.dumps(raw["python_handoff_file_pin"], sort_keys=True, separators=(",", ":"))
+    )
+    with pytest.raises(ProducerBundlePublicationError) as caught:
+        parse_producer_bundle_publication_journal(raw)
+    assert caught.value.code == "producer_bundle_publication_python_handoff_pin_invalid"
+    assert calls == []
 
 
 def test_rejects_digest_tampering_and_unknown_fields() -> None:
