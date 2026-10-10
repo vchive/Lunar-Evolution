@@ -46,9 +46,25 @@
   optional journal/evaluation receipt links, and fail-closed synthetic composition tests.
   This is plumbing and evidence binding only; it does not grant runtime or production
   admission authority.
-- [ ] Revalidate the immutable handoff file, identity/stat pins, runtime/lifecycle pins and
+- [x] Add the zero-side-effect provider-free admission composition gate. Reparse the
+  binding, sidecar/checkpoint pin, handoff, terminal, runtime observation, native
+  receipt, admission plan and optional publication journal from canonical DTO wires;
+  bind identity, deadline/limits, brokered receipt and authority pins plus explicit
+  caller-supplied detached executable-owner/envelope/material consistency projections;
+  refuse drift, unknown cleanup, unsupported protection claims, unbrokered receipts and
+  missing independent pins. The result is an audit projection only and always keeps
+  `production_admission=false`; it does not independently observe a process/filesystem,
+  start a producer, call an evaluator, consume budget or mutate archive/state.
+- [x] Re-read canonical handoff bytes and authority links after callbacks and at direct
+  staging/commit/terminal/recovery boundaries. Each read checks held directories and
+  pre/open/post/named file metadata. Regression covers handoff loss after evaluator return
+  with no archive or publication side effect.
+- [ ] Complete independent retention/revalidation of handoff identity/stat pins and observed
+  runtime/lifecycle pins and
   authority links after evaluator callbacks, at staging/commit/unknown boundaries, during
-  terminal settlement, and during read-only recovery/replay.
+  terminal settlement, and during read-only recovery/replay. Canonical digest/per-read
+  metadata checks do not establish original handoff-file ownership across distinct reads;
+  sealed-runtime observation remains a separate P1 acceptance gate.
 - [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime
   observations to the handoff, then enable runtime-gated local exact evaluation and atomic
   publication. Until those gates pass, `production_admission` remains false.

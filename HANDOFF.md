@@ -1,10 +1,11 @@
 # Lunar Evolution 交接记录
 
-## 2026-10-10 Feature191 local Python admission handoff (provider-free slice)
+## 2026-10-10 Feature191 local Python admission handoff and composition gate (provider-free slice)
 
 PR32 durable producer recovery is merged in `main` at `6a912609d3e5e9811bc8dbae77b1df077976afe7`.
-The current branch `codex/python-admission-handoff` adds the first provider-free Feature191
-admission boundary on top of that merge.  It is intentionally inert: no sealed CPython
+PR33's provider-free admission handoff is merged at `35ac441`. The current branch
+`codex/feature191-composition-gate` adds the local evidence composition gate on top of it.
+It is intentionally inert: no sealed CPython
 runtime, producer process, remote evaluator, credentials, WebAgent, or external campaign is
 run by these tests.
 
@@ -22,14 +23,29 @@ Implemented surfaces:
 - The transaction verifies the durable batch-local handoff, native receipt, run/task identity,
   admission plan and authority pins before any state read, evaluator callback or publication
   side effect.  A bare handoff digest cannot grant authority.
+- `python_producer_admission_gate.py` now provides a pure in-memory composition gate for the
+  already retained DTOs. It reparses each canonical wire, binds the sidecar raw/checkpoint pin,
+  handoff identity and digest, original deadline/limits, terminal cleanup/timestamps, native
+  receipt and brokered trusted-execution claims, runtime-observation claims, admission-plan/
+  journal authority, and caller-supplied detached executable-owner/envelope/material consistency
+  projections. It does not independently observe a process, owner, filesystem or evaluator.
+  A refusal is fixed-code and side-effect free; an accepted result is only local evidence
+  consistency and always carries `production_admission=false`.
+- The broker deadline is compared against an explicitly retained monotonic nanosecond pin;
+  it is never calculated from the binding's Unix deadline. Canonical envelope and raw-file
+  digests remain separate. Re-signed drift tests reach the semantic gates rather than merely
+  failing a stale self-digest. Post-evaluator handoff removal refuses publication without
+  changing the archive or writing a publication marker.
 
-Focused local validation is green: the Feature191 handoff and producer publication/recovery
-composition suites pass with zero failures/errors/skips; `ruff`, `compileall`, and
-`git diff --check` pass.  The handoff remains an evidence contract and does not establish
-production runtime admission.  The next P1 gates are actual sealed CPython acquisition and
-signatures, process/runtime observation and transcript evidence, then an explicit adapter that
-composes those materials into this handoff.  P2 remote evaluator, external-worker
-authentication, multi-host ownership, distributed scheduling and service APIs remain deferred.
+Focused local validation is green: the Feature191 gate, handoff and lifecycle suites pass 149
+cases with zero failures/errors/skips; `ruff`, `compileall`, and `git diff --check` pass. The
+handoff and gate remain evidence contracts and do not establish production runtime admission.
+The dedicated `python-admission.xml` CI gate requires the same 149-case zero-skip inventory.
+Exact final-source full Ubuntu 3.11/3.12/3.13 CI remains required before merging this follow-up.
+The next P1 gates are actual sealed CPython acquisition and signatures, process/runtime
+observation and transcript evidence, then an explicit adapter that composes those materials
+into this handoff. P2 remote evaluator, external-worker authentication, multi-host ownership,
+distributed scheduling and service APIs remain deferred.
 
 ## 2026-10-10 PR32 durable producer recovery hardening (merged)
 

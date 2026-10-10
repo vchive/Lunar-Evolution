@@ -658,6 +658,11 @@ from .python_fixture_observation import (
     PythonFixtureObservationError,
     adapt_static_python_observation,
 )
+from .python_producer_admission_gate import (
+    PythonProducerAdmissionGateError,
+    PythonProducerAdmissionGateResult,
+    verify_python_producer_admission_gate,
+)
 from .python_producer_admission_handoff import (
     HANDOFF_STATE_EVALUATING,
     HANDOFF_STATE_PREPARED,
@@ -1385,6 +1390,8 @@ __all__ = [
     "ProfileRegistry",
     "ProviderFreeSolverGateway",
     "PythonFixtureObservationError",
+    "PythonProducerAdmissionGateError",
+    "PythonProducerAdmissionGateResult",
     "PythonProducerAdmissionHandoff",
     "PythonProducerAdmissionHandoffError",
     "PythonProducerBinding",
@@ -1765,6 +1772,7 @@ __all__ = [
     "verify_native_retained_evidence",
     "verify_producer_bundle_prepared_intent",
     "verify_producer_launch_attestation",
+    "verify_python_producer_admission_gate",
     "verify_python_runtime_manifest",
     "verify_python_runtime_tree_manifest",
     "verify_sealed_python_runtime_material",

@@ -1,11 +1,31 @@
 # Validation plan
 
-The Phase A binding, create-only durable sidecar, and sidecar-aware native recovery gate below
-are complete against inert local fixtures. No real CPython process/runtime lifecycle acceptance
-is complete. Until Features189 and 190 pass their dedicated Linux gates, only provider-free inert
-fixtures may run. The sidecar bound is 2 MiB, synchronized with the binding parser. The
-controller checkpoint binding is covered by focused provider-free tests; neither slice is a
-proof of runtime execution or CPython observation.
+The Phase A binding, create-only durable sidecar, sidecar-aware native recovery gate, and
+zero-side-effect admission composition gate below are complete against inert local fixtures.
+No real CPython process/runtime lifecycle acceptance is complete. Until Features189 and 190
+pass their dedicated Linux gates, only provider-free inert fixtures may run. The sidecar bound
+is 2 MiB, synchronized with the binding parser. The controller checkpoint binding and the
+composition gate are covered by focused provider-free tests; neither slice is a proof of runtime
+execution, CPython observation, or production admission.
+
+The current focused local command covers the gate, handoff, and lifecycle contracts:
+`tests/test_python_producer_admission_gate.py`,
+`tests/test_python_producer_admission_handoff.py`, and
+`tests/test_python_producer_lifecycle.py`. It passes 149 cases with zero failures,
+errors, or skips under the repository's pinned virtualenv. Ruff, `compileall`, and
+`git diff --check` also pass. This is provider-free DTO and fixture evidence only;
+the gate uses caller-supplied detached owner/envelope/material projections and does not
+independently observe a process, filesystem, or evaluator. It does not enable the real sealed
+runtime or production admission path.
+
+The dedicated CI report `python-admission.xml` requires this 149-case inventory with
+zero failures/errors/skips on Python 3.11/3.12/3.13 and is preserved with the other reports.
+Re-signed drift cases independently exercise timeout, native monotonic deadline,
+runtime target, stable output capture, producer identity/request count and publication
+state checks. Canonical envelope and raw output-file digests intentionally differ;
+the executable-owner projection also intentionally differs from child process ownership.
+The publication matrix includes durable handoff removal after evaluator return and
+verifies refusal without archive changes or a publication marker.
 
 The current controller recovery hardening has passed the focused provider-free matrix and
 independent boundary review; exact-final-source CI remains pending for the final source. Its
@@ -60,7 +80,7 @@ workflow annotates both contract reports and retains both XML files separately.
 | Fixture execution | Real CPython version/cache tag/flags, fixed computation, one broker exchange, bounded envelope | fabricated observation, oversized output, second request, malformed response |
 | Lifecycle | registration, ready/release/start/terminal, request journal, reap and FD census | parent loss, cancel, signal, nonzero exit, cleanup uncertainty, missing terminal |
 | Resume/recovery gate | **Complete provider-free slice:** `recover_python_producer_terminal` requires the retained sidecar, verifies it before native inspection and after native inspection, and never creates a recovery lock/marker or consumes a budget; pure resume/reconcile still preserves original deadline, journal and evidence pins | blind restart, refreshed budget, changed binding/fingerprint, changed journal, missing sidecar, sidecar replacement during recovery, cleanup unknown/missing, native recovery-required |
-| Admission | **Provider-free plumbing only:** the canonical handoff, journal/evaluation links and synthetic native composition are covered by local fixtures; runtime-gated production admission is still false until sealed CPython and lifecycle evidence are accepted | external score/correct/generation used as Lunar rank or validity; DTO/receipt claims without independently observed runtime/process/evaluator evidence |
+| Admission | **Provider-free plumbing and composition gate complete:** canonical handoff, create-only persistence, journal/evaluation links, canonical DTO reparse, sidecar/checkpoint pin, identity/deadline/limit/authority links, brokered native receipt, terminal/runtime claims, and caller-supplied detached envelope/owner/material consistency pins are covered by local synthetic fixtures; the gate is read-only and always returns `production_admission=false` | external score/correct/generation used as Lunar rank or validity; unknown/failed journal or cleanup, drifted DTO/receipt/identity/deadline/authority pin, missing independent pin, unbrokered receipt, protection claim, or any attempt to treat the local gate result as sealed-runtime/production admission |
 | Adapters | Explicit OpenEvolve wrapper and Shinka program/result export through common envelope | automatic project discovery/start, remote/Slurm/network campaign |
 
 The dedicated run must retain raw process terminal, broker journal, runtime

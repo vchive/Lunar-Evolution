@@ -1,8 +1,8 @@
 # Feature191 local exact-evaluator admission handoff
 
-Status: SDD design slice only. This document specifies the next local, provider-free
-composition boundary; it does not implement or claim Python runtime admission. It must
-be implemented only after the Feature189/190 runtime gates described below are accepted.
+Status: production admission design plus implemented provider-free handoff/composition
+contracts. These contracts do not claim Python runtime admission. The production path
+may be enabled only after the Feature189/190 runtime gates below are accepted.
 The existing sidecar, RSI checkpoint binding, native receipt/journal, local exact
 evaluator, and atomic publication code are the sources of truth.
 
@@ -94,6 +94,20 @@ The gate must read and validate, from durable native materials rather than calle
 The observation adapter may validate shape and canonical bytes, but the caller must supply
 independent transcript, filesystem and process evidence. The child record cannot self-attest
 those facts.
+
+The current provider-free helper, `verify_python_producer_admission_gate`, is intentionally
+smaller than this production boundary. It reparses the retained DTO wires and checks digest,
+identity, deadline, authority, terminal and journal coherence in memory. Its executable-owner,
+envelope-evidence and material inputs are caller-supplied detached consistency projections; it
+does not read their source files, inspect a process, invoke an evaluator, or mutate a journal.
+Passing this helper therefore records only local evidence consistency and cannot satisfy the
+independent Feature189/190 observations required for production admission.
+
+The generic envelope's canonical `envelope_sha256` is distinct from the SHA-256 of raw
+output-file bytes (`envelope_evidence_sha256`). Material descriptors are canonically hashed
+from the envelope. The broker's `wall_deadline_ns` uses monotonic time; callers retain it
+separately as `broker_deadline_monotonic_ns`. The helper compares the original pin exactly
+and never derives it from `deadline_unix` or samples a clock during resume.
 
 ### Plan/contract authority
 
@@ -292,4 +306,3 @@ After this SDD is accepted, the smallest implementation should be:
 6. Run focused tests, ruff, compileall and diff check. Do not update production/runtime
    acceptance status until Feature189/190 gates and exact Linux evidence are independently
    complete.
-

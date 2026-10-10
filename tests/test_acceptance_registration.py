@@ -5,8 +5,11 @@ import copy
 import hashlib
 import json
 import os
+import stat
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -295,34 +298,83 @@ def test_preflight_never_follows_material_symlinks(tmp_path: Path, kind: str) ->
     }
 
 
+def _mutate_once_when_material_is_read(
+    path: Path, monkeypatch: pytest.MonkeyPatch, mutate: Callable[[], None],
+) -> list[int]:
+    wanted = path.stat()
+    original_read = os.read
+    changed: list[int] = []
+
+    def read(descriptor: int, maximum: int) -> bytes:
+        content = original_read(descriptor, maximum)
+        observed = os.fstat(descriptor)
+        if (not changed and stat.S_ISREG(observed.st_mode)
+                and (observed.st_dev, observed.st_ino) == (wanted.st_dev, wanted.st_ino)):
+            changed.append(descriptor)
+            mutate()
+        return content
+
+    monkeypatch.setattr("lunar_evolution.acceptance_registration.os.read", read)
+    return changed
+
+
+def test_material_read_fault_injection_ignores_pipe_inode_collision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "material.in"
+    path.write_bytes(b"material\n")
+    wanted = path.stat()
+    original_fstat = os.fstat
+    read_pipe, write_pipe = os.pipe()
+
+    def fstat(descriptor: int):
+        observed = original_fstat(descriptor)
+        if descriptor == read_pipe:
+            # Subprocess.Popen reads a shared os.read error pipe. Even an inode/device
+            # collision there must not trigger a filesystem mutation intended for a file.
+            return SimpleNamespace(
+                st_mode=observed.st_mode, st_dev=wanted.st_dev, st_ino=wanted.st_ino,
+            )
+        return observed
+
+    monkeypatch.setattr(os, "fstat", fstat)
+    mutations: list[bool] = []
+    changed = _mutate_once_when_material_is_read(path, monkeypatch, lambda: mutations.append(True))
+    descriptor = -1
+    try:
+        os.write(write_pipe, b"pipe")
+        assert os.read(read_pipe, 4) == b"pipe"
+        assert mutations == [] and changed == []
+        descriptor = os.open(path, os.O_RDONLY)
+        assert os.read(descriptor, 9) == b"material\n"
+        assert mutations == [True] and changed == [descriptor]
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        os.close(read_pipe)
+        os.close(write_pipe)
+
+
 @pytest.mark.parametrize("mutation", ["replace", "rewrite", "ancestor"])
 def test_preflight_rejects_material_changes_during_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
 ) -> None:
     root, parent, manifest, manifest_path, seal_path = _checkout(tmp_path)
     path = root / manifest["holdout_pins"][0]["input"]["path"]
-    wanted = path.stat().st_ino
-    original_read = os.read
-    changed = False
 
-    def read(descriptor: int, maximum: int) -> bytes:
-        nonlocal changed
-        content = original_read(descriptor, maximum)
-        if os.fstat(descriptor).st_ino == wanted and not changed:
-            changed = True
-            if mutation == "replace":
-                replacement = path.with_suffix(".replacement")
-                replacement.write_bytes(path.read_bytes())
-                replacement.replace(path)
-            elif mutation == "rewrite":
-                path.write_bytes(b"changed!!!\n")
-            else:
-                destination = tmp_path / "moved-holdouts"
-                path.parent.rename(destination)
-                path.parent.symlink_to(destination, target_is_directory=True)
-        return content
+    def mutate() -> None:
+        if mutation == "replace":
+            replacement = path.with_suffix(".replacement")
+            replacement.write_bytes(path.read_bytes())
+            replacement.replace(path)
+        elif mutation == "rewrite":
+            path.write_bytes(b"changed!!!\n")
+        else:
+            destination = tmp_path / "moved-holdouts"
+            path.parent.rename(destination)
+            path.parent.symlink_to(destination, target_is_directory=True)
 
-    monkeypatch.setattr("lunar_evolution.acceptance_registration.os.read", read)
+    changed = _mutate_once_when_material_is_read(path, monkeypatch, mutate)
     with pytest.raises(AcceptanceRegistrationError, match="^preflight_file_changed$"):
         preflight_acceptance_registration(
             manifest_path, seal_path, checkout_root=root, campaign_parent=parent,
