@@ -1,28 +1,40 @@
 # G1 source provenance comparator
 
-`compare_source_provenance` compares a caller-retained canonical receipt with a
-single detached `StaticPythonSourceTreeObservation`. It only proves that the
-receipt and the complete original regular-file source-tree projection agree.
-It does not acquire source, open a path, authenticate a release signature,
-apply patches, build, launch, or grant runtime or production admission.
+`tools.static_python_fixture.source_provenance.compare_source_provenance`
+continues the existing fixture preparation tools. It compares the original
+`lunar-static-python-archive-receipt-v1` canonical receipt with a detached
+`StaticPythonSourceTreeObservation`. It performs no filesystem, network,
+subprocess, acquisition, signature verification, build or runtime operation.
+It is not included in the runtime package and changes no existing runtime API.
 
-The caller supplies independent lowercase SHA-256 pins for the receipt,
-extraction manifest, and source-tree wire. Cheap pin checks run before receipt
-parsing or observation traversal. The receipt is bounded to 256 KiB, uses
-exact keys and duplicate-free canonical UTF-8 JSON, and contains the complete
-source-tree regular-file list. Unknown metadata, noncanonical bytes, digest or
-file-list drift, and unknown status values are fixed refusals.
+The three mandatory external pins bind the archive receipt bytes, extraction
+manifest and independent original source-tree wire. The existing receipt
+validator enforces its fixed CPython profile, 16 KiB byte bound, exact fields,
+duplicate-free canonical JSON and receipt pin. Its four signature dispositions
+(`verified`, `not-performed`, `unavailable`, `failed`) remain caller declarations.
+The output preserves that declaration separately from the observer's
+`not-performed` disposition; `signature_verification_performed` stays false.
 
-Only a fixed-profile observation is accepted: `profile_pin_verified` must be
-true and `metadata_validation` must be exactly `validated`. Inert snapshots
-(`skipped-inert-profile` or unknown status) are refused and can never be
-upgraded by a receipt. `signature_verification` remains exactly
-`not-performed`; this comparator does not claim signatures. The comparator
-recomputes the source-tree canonical digest and total bytes from the frozen
-observation DTO before comparing every receipt field.
+Before agreement, the comparator checks every observation DTO field against
+its exact bounded canonical record and SHA-256. It reconstructs the source-tree
+wire from sorted, bounded frozen regular-file DTOs, verifies exact tree bytes
+and their independent hash, and checks total bytes, all observation identity and
+status fields. Receipt archive/root/version/SHA must agree with the observation;
+its advertised size must agree with the retained source identity size. A fixed
+profile observation requires a retained source identity. It accepts only
+`profile_pin_verified=true` and `metadata_validation=validated`; coherent inert
+or unknown states refuse. Editing an inert DTO's status while retaining its
+original canonical bytes refuses before any upgrade.
 
-The returned frozen DTO contains detached file dictionaries and canonical JSON.
-Its `profile_pin_verified` field records the fixed-profile observation state; it
-does not authorize a build, executable owner, runtime, evaluator, or production
-admission. No filesystem, network, subprocess, compiler, or model operation is
-performed.
+Results retain a tuple of frozen `StaticPythonSourceTreeFile` objects, canonical
+bytes and detached JSON views. Runtime, execution, origin protection and
+production admission flags remain false. Matching caller-supplied detached
+records does not establish that the archive observer acquired them. Actual G1
+acceptance still requires independently retained real archive and acquisition
+proof; this comparator cannot manufacture that proof.
+
+Provider-free tests use the original fixed archive receipt *metadata* plus real
+inert archive observations and require refusal. They test stale DTO upgrades,
+canonical/hash/field drift, signature declarations, exact types, independent
+pins, deeply frozen output containers and absence of external effects. They do
+not fabricate a successful fixed-profile acquisition or claim real G1 success.
