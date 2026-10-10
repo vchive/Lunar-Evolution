@@ -1,5 +1,29 @@
 # Validation contract — preparation is not runtime evidence
 
+## Snapshot-bound create-only source staging
+
+The `source-staging.md` continuation uses inert USTAR/XZ bytes containing the
+three licensed source fixtures plus unchanged/empty files and explicit/implicit
+directories. Its externally retained inventory pin is computed by the fixture
+harness independently from observer output. The101-case dedicated gate verifies
+the actual complete byte-to-postimage-to-filesystem chain and result stat/digest
+pins, one strict decode, scalar/manifest/preimage/profile refusals before I/O,
+create-only destinations, ancestor/inode/link/mode drift, short/partial writes,
+fsync/readback and extra-entry failures, original deadline throughout final
+callback/verification/FD cleanup and detached results. Final callback drift
+tests require actual file/directory drift codes, not a generic clock failure.
+Cleanup uncertainty must preserve a write refusal or refuse a successful path,
+including invocation from within a caller's already-handled exception block.
+
+Final local Python3.11.15 archive64+projection50+staging101 passes215 cases with
+zero failures/errors/skips. Python3.13.12 complete static-fixture suites pass660
+with zero failures/errors/skips. Ruff, compileall and diff checks pass; independent
+review is clear. Failed interim fixture output and first review reproductions
+remain separate ignored records; only final-source CI can approve merging.
+This slice stages local source bytes, not a release signature, compiler/image,
+frozen-header or real runtime. `production_admission` remains false. The legacy
+pathname-reopening `recipe.extract_source` is not used by this gate.
+
 ## Pure build-input preparation
 
 The continuation in `build-inputs.md` checks one fixed reviewed162-object

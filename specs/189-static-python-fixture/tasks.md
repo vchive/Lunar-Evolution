@@ -28,19 +28,29 @@ failure and cancelled preflight separately from later successful evidence.
   `archive-observation.md`: held O_NOFOLLOW path/file descriptors, immutable
   compressed bytes, prechecked USTAR file/directory headers, bounded XZ and
   actual member-size/SHA manifest validation. Validate with inert local fixtures.
-- [ ] Complete final-source three-version Linux CI and independent raw audit
+- [x] Complete final-source three-version Linux CI and independent raw audit
   for local archive observation before its main merge; require the dedicated
   64-case gate without failures/errors/skips. This fixture gate does not verify
   downloaded releases, release signatures, extracted staging or runtime admission.
+  Accepted PR30 run37894203485/main68cb31f, source2889dc1/tree58e912d6.
 - [x] Specify the snapshot-bound fixed three-source byte projection and preparation
   contract in `source-projection.md`: mandatory external canonical manifest pin,
   actual member/preimage/postimage byte bindings and one original deadline.
 - [x] Implement and locally validate this projection with synthetic USTAR/XZ
   containing the existing inert source fixtures; no pathname reopen, filesystem
   extraction, source execution, build or runtime operation.
-- [ ] Complete final-source three-version Linux CI and independent raw/source/tree
+- [x] Complete final-source three-version Linux CI and independent raw/source/tree
   audit for source projection before its main merge. Preserve the existing
   64-case archive gate and keep release/signature/G1/G2/G3 claims uncompleted.
+  Accepted PR31 run37896389062/mainc48d234, source31f335f/tree81b2efa3.
+- [x] Specify snapshot-bound create-only complete source staging and fixed patch
+  application in `source-staging.md`, with bounded implicit directories, retained
+  descriptor identities, readback/inventory gates and preserved partial failures.
+- [x] Implement and locally validate staging using inert USTAR/XZ fixtures only;
+  one strict decode feeds complete inventory and the existing fixed patch policy.
+- [ ] Complete final-source three-version Linux CI and independent raw/source/tree
+  audit for staging before its main merge. This does not complete downloaded
+  release/signature/toolchain provenance, configured build closure or runtime gates.
 - [ ] Verify CPython v3.13.12/source identity and signature/acquisition result;
   record archive/tree SHA-256 and exact patch set without invented values.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
@@ -67,9 +77,10 @@ safe-extraction or signature-verification result.
   and unresolved configured/static-link inputs. This is not actual build closure.
 - [x] Implement and locally validate pure fixed build-input emission and recipe refusal
   with inert fixtures; do not run configure/make/freezer under explicit opt-in.
-- [ ] Complete final-source three-version Linux CI and independent raw audit
+- [x] Complete final-source three-version Linux CI and independent raw audit
   for the build-input slice before main merge; require the dedicated90-case
   source-only gate and source-preparation100-case gate without failures/errors/skips.
+  Accepted PR29 run37894037150/maincce8e892, sourcece606690/tree6812af8f.
 - [ ] Audit actual3.13.12 C headers, all path outputs and frozen-use flags/API;
   freeze fixed isolated preconfig/config including UTF-8 and locale dispositions.
 - [ ] Close all encodings/importlib/stdio/startup dependencies and stock frozen,

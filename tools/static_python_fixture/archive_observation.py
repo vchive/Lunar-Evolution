@@ -507,13 +507,20 @@ def _observe_archive_snapshot(
     selected_paths: frozenset[str] = frozenset(),
     selected_max_file_bytes: int = 0,
     selected_max_total_bytes: int = 0,
+    capture_all_files: bool = False,
 ) -> tuple[StaticPythonArchiveObservation, tuple[tuple[str, bytes], ...]]:
-    """One bounded decode/walk with an optional installation-owned projection."""
+    """One bounded decode/walk with an optional installation-owned byte projection.
+
+    Full capture retains only actual regular-file payloads from this same walk.
+    It does not widen the separate selected-source limits or apply any patches.
+    """
     _checkpoint(checkpoint)
     if type(snapshot) is not StaticPythonArchiveSnapshot:
         _fail("snapshot_invalid")
     if type(require_profile) is not bool:
         _fail("profile_flag_invalid")
+    if type(capture_all_files) is not bool:
+        _fail("capture_flag_invalid")
     if type(snapshot.profile_pin_verified) is not bool:
         _fail("snapshot_profile_drift")
     if (type(snapshot.signature_verification) is not str
@@ -597,7 +604,7 @@ def _observe_archive_snapshot(
             total += member.size
             if total > MAX_TOTAL_FILE_BYTES:
                 _fail("total_byte_budget_exceeded")
-            if wanted:
+            if wanted or capture_all_files:
                 _checkpoint(checkpoint)
                 data = tar_bytes[member.offset_data:member.offset_data + member.size]
                 _checkpoint(checkpoint)
