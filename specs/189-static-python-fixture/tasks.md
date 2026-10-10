@@ -139,3 +139,14 @@ static dependency/symbol closure, PyConfig field values and startup behavior are
 not observed. Build reproducibility, image size/digest, final inventory counts,
 seccomp/landlock interaction and Linux lifecycle timing remain unknown. Resolve
 these as explicit gates; do not turn expected behavior into observed evidence.
+
+## Receipt/source-tree consistency continuation
+
+- [x] Add the pure preparation comparator using original archive-receipt-v1,
+  independent receipt/manifest/tree pins, complete observation/tree canonical
+  consistency and frozen file DTOs; preserve signature declarations separately.
+- [x] Run local focused/refusal/container and related fixture tests, Ruff,
+  compileall and diff checks. Synthetic matching metadata is not G1 evidence.
+- [ ] Complete this final source's own three-version CI and independent raw audit
+  before merge. Actual release acquisition/signature, G2 build and G3 runtime
+  acceptance remain unchecked.

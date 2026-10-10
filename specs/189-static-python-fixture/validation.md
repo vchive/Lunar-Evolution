@@ -222,3 +222,24 @@ The focused gate is `tests/test_static_python_source_tree_observation.py` with 2
 cases and zero failures, errors or skips. It covers canonical/detached records,
 single decode, independent pin drift, fixed-profile refusal, deadline expiry and
 the absence of filesystem, subprocess, network, staging and runtime routes.
+
+## Archive receipt/source-tree consistency comparator
+
+The comparator stays in `tools/static_python_fixture/source_provenance.py` and
+reuses the existing archive-receipt-v1 validator. Focused cases cover complete
+DTO/canonical/hash and tree wire/hash consistency, independent original pins,
+coherent and stale inert refusal, deep file/container immutability, retained
+signature declarations and absence of external effects. Handmade coherent
+metadata checks the successful agreement return only; it is not an observed
+release, successful archive acquisition or G1 acceptance. Original inert archive
+observations deterministically refuse. Execution, signature-verification work,
+load/origin protection and production admission remain false.
+
+PR37 run38042870910 passed independent raw audit and merged mainc8238ef with
+treefde29b44. Its focused source-tree gate is22 cases. PR38's artifact slice and
+this comparator each need their own final-source CI/audit; neither inherits
+PR37 acceptance or completes the remaining actual G1/G2/G3 gates.
+
+Local final check:34 comparator cases and234 receipt/source-tree/artifact cases
+passed with zero failures/errors/skips; full Ruff, compileall and diff checks
+passed. Final-source CI is pending and cannot be claimed from these fixtures.
