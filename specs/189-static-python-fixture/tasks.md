@@ -48,9 +48,14 @@ failure and cancelled preflight separately from later successful evidence.
   descriptor identities, readback/inventory gates and preserved partial failures.
 - [x] Implement and locally validate staging using inert USTAR/XZ fixtures only;
   one strict decode feeds complete inventory and the existing fixed patch policy.
-- [ ] Complete final-source three-version Linux CI and independent raw/source/tree
+- [x] Complete final-source three-version Linux CI and independent raw/source/tree
   audit for staging before its main merge. This does not complete downloaded
   release/signature/toolchain provenance, configured build closure or runtime gates.
+- [x] Observe the complete original regular-file source tree from the same immutable
+  snapshot with independent manifest/tree pins, explicit inert/profile states and
+  deadline coverage. Keep the source-tree digest separate from extraction,
+  projection, staging and Git object digests; this remains provenance observation,
+  not acquisition or release authentication.
 - [ ] Verify CPython v3.13.12/source identity and signature/acquisition result;
   record archive/tree SHA-256 and exact patch set without invented values.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
