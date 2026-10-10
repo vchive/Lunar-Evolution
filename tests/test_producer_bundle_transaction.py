@@ -503,6 +503,91 @@ def test_transaction_rechecks_python_handoff_after_pipeline_guard_before_evaluat
     assert evaluated == []
 
 
+def test_transaction_rechecks_python_handoff_after_evaluator_callback(
+    tmp_path: Path,
+) -> None:
+    """A callback after evaluation cannot bypass the immutable handoff gate."""
+    context = build_context(tmp_path / "native")
+    strategy = PopulationStrategy(context)
+    _initialize_native_population(strategy)
+    strategy, drafts, plan, _export = _shinka_drafts(tmp_path, context, (9,))
+    journal_id = "transaction-post-evaluator-handoff-guard"
+    _batch_directory(context.workspace, journal_id)
+    receipt = _formal_execution_receipt(journal_id=journal_id)
+    receipt_path = (
+        context.workspace / "evolution" / "producer-batches" / journal_id
+        / "execution-receipt.json"
+    )
+    receipt_path.write_text(
+        json.dumps(receipt, sort_keys=True, separators=(",", ":")), encoding="utf-8",
+    )
+    digest = "a" * 64
+    handoff = build_python_producer_admission_handoff(
+        run_id=journal_id,
+        journal_id=journal_id,
+        parent_task_id="producer",
+        task_id="native-bundle-publication",
+        binding_sha256=digest,
+        sidecar_raw_sha256=digest,
+        sidecar_pin_sha256=digest,
+        launch_intent_sha256=digest,
+        attestation_sha256=digest,
+        runtime_manifest_sha256=digest,
+        runtime_tree_sha256=digest,
+        executable_owner_sha256=digest,
+        native_execution_receipt_sha256=receipt["receipt_sha256"],
+        terminal_sha256=digest,
+        runtime_observation_sha256=digest,
+        broker_transcript_sha256=digest,
+        envelope_sha256=digest,
+        materials_sha256=digest,
+        contract_sha256=plan.contract_sha256,
+        evaluator_sha256=plan.evaluator_fingerprint,
+        runner_sha256=plan.runner_fingerprint,
+        dependency_sha256=plan.dependency_sha256,
+        environment_sha256=plan.environment_sha256,
+        admission_plan_sha256=plan.digest(),
+        request_budget=10,
+        wall_timeout_seconds=60.0,
+        deadline_unix=4102444800.0,
+    )
+    batch = context.workspace / "evolution" / "producer-batches" / journal_id
+    persist_python_producer_admission_handoff(batch, handoff=handoff)
+    handoff_path = batch / "python-producer-admission-handoff.json"
+    evaluated: list[bool] = []
+    original_evaluate = context.bundle_pipeline.evaluate_draft_non_publishing
+
+    def observe_evaluator(*args, **kwargs):
+        evaluated.append(True)
+        return original_evaluate(*args, **kwargs)
+
+    context.bundle_pipeline.evaluate_draft_non_publishing = observe_evaluator
+    removed = False
+
+    def continuation_guard(stage: str) -> None:
+        nonlocal removed
+        if stage == "producer_draft_adjudication" and not removed:
+            removed = True
+            handoff_path.unlink()
+
+    before = _archive_projection(context.workspace)
+    with pytest.raises(NativeProducerBundleTransactionError, match="python_handoff_invalid"):
+        run_native_producer_bundle_publication_transaction(
+            context.workspace,
+            strategy,
+            drafts,
+            plan,
+            journal_id=journal_id,
+            native_execution_receipt_sha256=receipt["receipt_sha256"],
+            python_handoff_sha256=handoff.handoff_sha256,
+            continuation_guard=continuation_guard,
+        )
+    assert evaluated == [True]
+    assert removed
+    assert _archive_projection(context.workspace) == before
+    assert not (context.workspace / "evolution" / "producer-publication.json").exists()
+
+
 @pytest.mark.parametrize("mode", ["missing", "invalid", "tampered", "unknown-field"])
 def test_transaction_rejects_missing_invalid_or_tampered_formal_receipt(
     tmp_path: Path, mode: str,
