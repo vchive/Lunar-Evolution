@@ -141,8 +141,8 @@ handoff_sha256
 The handoff digest is a digest of canonical bytes excluding its own digest. Every later
 journal/receipt must carry or immutably reference it:
 
-- the producer-bundle publication journal records `python_handoff_sha256` when this
-  Feature191 path is used;
+- the producer-bundle publication journal records `python_handoff_sha256` and the complete
+  original `python_handoff_file_pin` when this protected Feature191 path is used;
 - the evaluation receipt binds handoff, admission-plan, candidate source, execution and
   local evaluator receipt digests;
 - the publication manifest/terminal marker binds the same journal and state-after digests.
@@ -150,6 +150,16 @@ journal/receipt must carry or immutably reference it:
 Legacy non-Python journals remain byte-compatible and omit the optional field. Omitting
 the handoff field is permitted only for legacy/non-Python callers; a Python admission
 attempt must fail closed if the field is absent or mismatched.
+
+The retained file-pin contract is frozen in
+[retained-handoff-file-pin.md](retained-handoff-file-pin.md). Original exclusive creation
+and stable held-FD readback are the only pin acquisition path. Matching current bytes
+cannot repair a missing original pin. The standalone transaction anchors the complete
+pin in `journal.prepared.json` before evaluation and compares it at callback, staging,
+commit and recovery boundaries. Unpinned read/persist helpers are limited inspection
+surfaces. Digest-only historical Python journals remain parseable but protected admission
+and replay refuse. The pure composition gate checks an optional journal pin's detached
+raw-byte association only and never observes its inode or grants production authority.
 
 ## Admission call chain
 

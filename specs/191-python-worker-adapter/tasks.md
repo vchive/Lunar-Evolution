@@ -59,11 +59,16 @@
   staging/commit/terminal/recovery boundaries. Each read checks held directories and
   pre/open/post/named file metadata. Regression covers handoff loss after evaluator return
   with no archive or publication side effect.
-- [ ] Complete independent retention/revalidation of handoff identity/stat pins and observed
-  runtime/lifecycle pins and
-  authority links after evaluator callbacks, at staging/commit/unknown boundaries, during
-  terminal settlement, and during read-only recovery/replay. Canonical digest/per-read
-  metadata checks do not establish original handoff-file ownership across distinct reads;
+- [x] Retain the original handoff file pin from exclusive creation and stable held-FD
+  readback; compare complete file stat/raw-byte and batch-directory identity across
+  standalone transaction callbacks, staging/commit/unknown boundaries and read-only
+  recovery/replay. Require the unchanged complete pin in the immutable prepared journal;
+  refuse digest-only adoption, latest-journal retrofit and removal of Python links.
+  The frozen contract is in `retained-handoff-file-pin.md`. This is local retained
+  evidence and does not protect against coherent rewriting of all trusted anchors.
+- [ ] Add an original controller admission-attempt anchor when the live admission flow
+  is connected, without retroactively changing its earlier producer binding/run proof.
+  Complete independently observed runtime/lifecycle pin revalidation across that flow;
   sealed-runtime observation remains a separate P1 acceptance gate.
 - [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime
   observations to the handoff, then enable runtime-gated local exact evaluation and atomic

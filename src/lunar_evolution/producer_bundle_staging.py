@@ -37,7 +37,7 @@ from .producer_bundle_publication import (
 )
 from .python_producer_admission_handoff import (
     PythonProducerAdmissionHandoffError,
-    read_python_producer_admission_handoff,
+    read_python_producer_admission_handoff_pinned,
 )
 
 _PROTOCOL = "lunar-producer-bundle-publication-v1"
@@ -200,15 +200,34 @@ def _batch(workspace: Path, journal_id: str) -> Path:
     return path
 
 
+def _validate_python_handoff_pin(journal: ProducerBundlePublicationJournal) -> None:
+    from .producer_bundle_intent import validate_producer_bundle_python_handoff_pin
+
+    try:
+        validate_producer_bundle_python_handoff_pin(journal)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ProducerBundlePublicationStagingError(
+            "producer_bundle_publication_python_handoff_invalid"
+        ) from exc
+
+
 def _verify_python_handoff(batch: Path, journal: ProducerBundlePublicationJournal) -> None:
     """Re-read the durable Python handoff at every direct staging/commit boundary."""
-    if journal.python_handoff_sha256 is None:
-        return
     try:
-        handoff = read_python_producer_admission_handoff(
+        from .producer_bundle_intent import verify_producer_bundle_python_handoff_anchor
+
+        verify_producer_bundle_python_handoff_anchor(batch.parents[2], journal)
+        if journal.python_handoff_sha256 is None:
+            return
+        sidecar = read_python_producer_admission_handoff_pinned(
             batch / "python-producer-admission-handoff.json",
-            expected_handoff_sha256=journal.python_handoff_sha256,
+            expected_file_pin=journal.python_handoff_file_pin,
         )
+        handoff = sidecar.handoff
+        if (sidecar.file_pin != journal.python_handoff_file_pin
+                or handoff.handoff_sha256 != journal.python_handoff_sha256):
+            raise ValueError("handoff pin mismatch")
+        verify_producer_bundle_python_handoff_anchor(batch.parents[2], journal)
     except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
         raise ProducerBundlePublicationStagingError(
             "producer_bundle_publication_python_handoff_invalid"
@@ -1030,6 +1049,7 @@ def stage_producer_bundle_publication(
         _fail("producer_bundle_publication_input_invalid")
     if not isinstance(state_after, Mapping):
         _fail("producer_bundle_publication_state_invalid")
+    _validate_python_handoff_pin(journal)
     root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
     _verify_python_handoff(batch, journal)
@@ -1206,6 +1226,7 @@ def commit_producer_bundle_publication(
     checkpoint: Callable[[str], object] | None = None,
 ) -> ProducerBundlePublicationJournal:
     """Expose one complete staged batch; any uncertain boundary remains terminal."""
+    _validate_python_handoff_pin(journal)
     root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
     _verify_python_handoff(batch, journal)

@@ -24,7 +24,7 @@ from .producer_bundle_publication import (
 )
 from .python_producer_admission_handoff import (
     PythonProducerAdmissionHandoffError,
-    read_python_producer_admission_handoff,
+    read_python_producer_admission_handoff_pinned,
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -128,13 +128,21 @@ def _verify_python_handoff(
     plan: ProducerBundleAdmissionPlan,
 ) -> None:
     """Re-read the immutable Python handoff before resolving any terminal state."""
-    if journal.python_handoff_sha256 is None:
-        return
     try:
-        handoff = read_python_producer_admission_handoff(
+        from .producer_bundle_intent import verify_producer_bundle_python_handoff_anchor
+
+        verify_producer_bundle_python_handoff_anchor(batch.parents[2], journal)
+        if journal.python_handoff_sha256 is None:
+            return
+        sidecar = read_python_producer_admission_handoff_pinned(
             batch / "python-producer-admission-handoff.json",
-            expected_handoff_sha256=journal.python_handoff_sha256,
+            expected_file_pin=journal.python_handoff_file_pin,
         )
+        handoff = sidecar.handoff
+        if (sidecar.file_pin != journal.python_handoff_file_pin
+                or handoff.handoff_sha256 != journal.python_handoff_sha256):
+            raise ValueError("handoff pin mismatch")
+        verify_producer_bundle_python_handoff_anchor(batch.parents[2], journal)
     except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
         raise ProducerBundleRecoveryError("producer_bundle_recovery_python_handoff_invalid") from exc
     if (
@@ -484,11 +492,17 @@ def resume_producer_bundle_publication(
     """
     if not isinstance(plan, ProducerBundleAdmissionPlan):
         _fail("producer_bundle_recovery_plan_invalid")
-    root = _workspace(workspace)
     if journal is None:
         _fail("producer_bundle_recovery_journal_required")
     if not isinstance(journal, ProducerBundlePublicationJournal):
         _fail("producer_bundle_recovery_journal_invalid")
+    try:
+        from .producer_bundle_intent import validate_producer_bundle_python_handoff_pin
+
+        validate_producer_bundle_python_handoff_pin(journal)
+    except (TypeError, ValueError) as exc:
+        raise ProducerBundleRecoveryError("producer_bundle_recovery_python_handoff_invalid") from exc
+    root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
     # A successful commit retains the publishing journal as journal.json and writes the
     # terminal, published projection separately.  Never treat the former as success.
@@ -516,6 +530,7 @@ def resume_producer_bundle_publication(
             durable.budget_sha256 == journal.budget_sha256,
             durable.native_execution_receipt_sha256 == journal.native_execution_receipt_sha256,
             durable.python_handoff_sha256 == journal.python_handoff_sha256,
+            durable.python_handoff_file_pin == journal.python_handoff_file_pin,
             durable.strategy == journal.strategy,
             durable.population_config_sha256 == journal.population_config_sha256,
             durable.num_islands == journal.num_islands,
@@ -546,6 +561,7 @@ def resume_producer_bundle_publication(
                 _fail("producer_bundle_recovery_terminal_mismatch")
             preflight_sha = _check_preflight(manifest["preflight"], durable, plan)
             checked = tuple(entry["path"] for entry in manifest["entries"])
+            _verify_python_handoff(batch, durable, plan)
             return ProducerBundleRecoveryResult(
                 "all_rejected", durable.digest(), marker_sha, preflight_sha, (),
                 ("journal.prepared.json", "journal.json", "rejections.json", *checked),
@@ -573,6 +589,7 @@ def resume_producer_bundle_publication(
     checked = _verify_manifest_files(root, batch, files, durable)
     if durable.state == "published":
         _terminal(root, batch, durable, manifest_sha)
+        _verify_python_handoff(batch, durable, plan)
         return ProducerBundleRecoveryResult("published", durable.journal_sha256, manifest_sha, preflight_sha, ids, checked)
     if durable.state not in {"executing", "publishing", "failed"}:
         _fail("producer_bundle_recovery_journal_state_invalid")
@@ -583,6 +600,7 @@ def resume_producer_bundle_publication(
         _fail("producer_bundle_recovery_after_digest_mismatch")
     if durable.state == "failed" and any(item.status == "unknown" for item in durable.candidates):
         _fail("producer_bundle_recovery_unknown_terminal")
+    _verify_python_handoff(batch, durable, plan)
     return ProducerBundleRecoveryResult("resume", durable.journal_sha256, manifest_sha, preflight_sha, ids, checked)
 
 

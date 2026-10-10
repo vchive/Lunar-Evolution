@@ -19,6 +19,11 @@ from . import _benchmark_files as _files
 from .candidate_evaluation_spec import strict_json
 from .producer_bundle_handoff import ProducerBundleHandoffError
 from .producer_bundle_handoff import _identifier as _producer_identifier
+from .python_producer_admission_handoff import (
+    PythonProducerAdmissionHandoffError,
+    PythonProducerAdmissionHandoffFilePin,
+    parse_python_producer_admission_handoff_file_pin,
+)
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _SCHEMA_VERSION = "1"
@@ -44,6 +49,7 @@ _JOURNAL_OPTIONAL_FIELDS = {
     # Feature 191 Python-worker handoff identity.  Optional so legacy/non-Python
     # journals retain their exact canonical bytes and digest.
     "python_handoff_sha256",
+    "python_handoff_file_pin",
 }
 _STATES = frozenset({"prepared", "executing", "publishing", "published", "all_rejected", "failed", "unknown"})
 _PHASES = frozenset({"preflight", "staged", "committed", "recovery_required"})
@@ -220,6 +226,7 @@ class ProducerBundlePublicationJournal:
     schema_version: str = _SCHEMA_VERSION
     protocol: str = _PROTOCOL
     python_handoff_sha256: str | None = None
+    python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != _SCHEMA_VERSION or self.protocol != _PROTOCOL:
@@ -284,6 +291,23 @@ class ProducerBundlePublicationJournal:
                 _digest(value, f"producer_bundle_publication_{name}_invalid")
         if self.python_handoff_sha256 is not None and self.native_execution_receipt_sha256 is None:
             _fail("producer_bundle_publication_python_handoff_execution_link_missing")
+        if self.python_handoff_file_pin is not None:
+            try:
+                pin = parse_python_producer_admission_handoff_file_pin(self.python_handoff_file_pin)
+            except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+                raise ProducerBundlePublicationError(
+                    "producer_bundle_publication_python_handoff_pin_invalid"
+                ) from exc
+            if (
+                self.python_handoff_sha256 is None
+                or pin.handoff_sha256 != self.python_handoff_sha256
+                or pin.run_id != self.run_id
+                or pin.journal_id != self.journal_id
+                or pin.parent_task_id != self.parent_task_id
+                or pin.task_id != self.task_id
+            ):
+                _fail("producer_bundle_publication_python_handoff_pin_mismatch")
+            object.__setattr__(self, "python_handoff_file_pin", pin)
         receipts = [value for item in self.candidates for value in (
             item.preparation_receipt_sha256, item.execution_receipt_sha256,
             item.evaluation_receipt_sha256, item.publication_receipt_sha256,
@@ -369,6 +393,14 @@ class ProducerBundlePublicationJournal:
             value["native_execution_receipt_sha256"] = self.native_execution_receipt_sha256
         if self.python_handoff_sha256 is not None:
             value["python_handoff_sha256"] = self.python_handoff_sha256
+        if self.python_handoff_file_pin is not None:
+            try:
+                pin = parse_python_producer_admission_handoff_file_pin(self.python_handoff_file_pin)
+            except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+                raise ProducerBundlePublicationError(
+                    "producer_bundle_publication_python_handoff_pin_invalid"
+                ) from exc
+            value["python_handoff_file_pin"] = pin.to_dict()
         if include_journal_sha256:
             value["journal_sha256"] = self.journal_sha256
         return value
@@ -394,6 +426,10 @@ class ProducerBundlePublicationJournal:
             _fail("producer_bundle_publication_execution_receipt_link_invalid")
         if "python_handoff_sha256" in raw and raw["python_handoff_sha256"] is None:
             _fail("producer_bundle_publication_python_handoff_link_invalid")
+        if "python_handoff_file_pin" in raw and raw["python_handoff_file_pin"] is None:
+            _fail("producer_bundle_publication_python_handoff_pin_invalid")
+        if "python_handoff_file_pin" in raw and type(raw["python_handoff_file_pin"]) is not dict:
+            _fail("producer_bundle_publication_python_handoff_pin_invalid")
         _digest(raw["journal_sha256"], "producer_bundle_publication_journal_sha256_invalid")
         if not isinstance(raw["candidates"], list) or not 1 <= len(raw["candidates"]) <= MAX_PUBLICATION_CANDIDATES:
             _fail("producer_bundle_publication_candidates_invalid")
@@ -427,7 +463,20 @@ def parse_producer_bundle_publication_journal(
     """Parse one bounded canonical journal; parsing never performs publication or recovery."""
     try:
         if isinstance(source, Mapping):
-            raw = strict_json(_canonical(dict(source)), MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
+            snapshot = dict(source)
+            if "python_handoff_file_pin" in snapshot:
+                # Validate before JSON can coerce callback dictionaries/scalars into
+                # apparently exact pin wire types. No nested caller callback is invoked.
+                supplied_pin = snapshot["python_handoff_file_pin"]
+                if type(supplied_pin) is not dict:
+                    _fail("producer_bundle_publication_python_handoff_pin_invalid")
+                try:
+                    parse_python_producer_admission_handoff_file_pin(supplied_pin)
+                except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+                    raise ProducerBundlePublicationError(
+                        "producer_bundle_publication_python_handoff_pin_invalid"
+                    ) from exc
+            raw = strict_json(_canonical(snapshot), MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES)
         else:
             try:
                 content = _files.read_regular_file(

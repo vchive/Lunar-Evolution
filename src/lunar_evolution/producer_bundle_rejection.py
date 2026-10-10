@@ -56,6 +56,7 @@ from .producer_bundle_staging import (
     _pretty,
     _read,
     _regular,
+    _validate_python_handoff_pin,
     _verify_python_handoff,
     _workspace,
     _write_new,
@@ -326,6 +327,7 @@ def inspect_producer_bundle_all_rejected(
 ) -> ProducerBundlePublicationJournal | None:
     """Inspect one exact terminal rejection, or return ``None`` before any terminal write."""
     try:
+        _validate_python_handoff_pin(journal)
         root = _workspace(workspace)
         batch = _batch(root, journal.journal_id)
         _verify_python_handoff(batch, journal)
@@ -352,12 +354,14 @@ def finalize_producer_bundle_all_rejected(
 ) -> ProducerBundlePublicationJournal:
     """Retain locally verified rejection evidence and write its terminal journal last."""
     try:
+        _validate_python_handoff_pin(journal)
         prepared = _prepared(journal)
         if journal != prepared or not isinstance(preflight, ProducerBundlePreflightReceipt):
             _fail("producer_bundle_rejection_input_invalid")
         receipt = _preflight(preflight.to_dict(), prepared)
         if isinstance(evaluations, (str, bytes)) or len(evaluations) != len(prepared.candidates):
             _fail("producer_bundle_rejection_adjudication_invalid")
+        _validate_python_handoff_pin(prepared)
         root = _workspace(workspace)
         batch = _batch(root, prepared.journal_id)
         _verify_python_handoff(batch, prepared)
@@ -372,6 +376,7 @@ def finalize_producer_bundle_all_rejected(
                 if existing is not None:
                     if checkpoint is not None:
                         checkpoint("all_rejected")
+                    _verify_python_handoff(batch, prepared)
                     return existing
                 verify_producer_bundle_prepared_intent(root, prepared)
                 _prefix(root, prepared)

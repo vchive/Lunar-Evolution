@@ -11,14 +11,14 @@ execution, CPython observation, or production admission.
 The current focused local command covers the gate, handoff, and lifecycle contracts:
 `tests/test_python_producer_admission_gate.py`,
 `tests/test_python_producer_admission_handoff.py`, and
-`tests/test_python_producer_lifecycle.py`. It passes 149 cases with zero failures,
+`tests/test_python_producer_lifecycle.py`. It passes 198 cases with zero failures,
 errors, or skips under the repository's pinned virtualenv. Ruff, `compileall`, and
 `git diff --check` also pass. This is provider-free DTO and fixture evidence only;
 the gate uses caller-supplied detached owner/envelope/material projections and does not
 independently observe a process, filesystem, or evaluator. It does not enable the real sealed
 runtime or production admission path.
 
-The dedicated CI report `python-admission.xml` requires this 149-case inventory with
+The dedicated CI report `python-admission.xml` requires this 198-case inventory with
 zero failures/errors/skips on Python 3.11/3.12/3.13 and is preserved with the other reports.
 Re-signed drift cases independently exercise timeout, native monotonic deadline,
 runtime target, stable output capture, producer identity/request count and publication
@@ -26,6 +26,23 @@ state checks. Canonical envelope and raw output-file digests intentionally diffe
 the executable-owner projection also intentionally differs from child process ownership.
 The publication matrix includes durable handoff removal after evaluator return and
 verifies refusal without archive changes or a publication marker.
+
+Original handoff identity is a separate retained-file boundary under
+`retained-handoff-file-pin.md`. Fifty-five handoff cases cover original exclusive
+creation, exact read-only replay, pre-I/O pin validation, same-byte inode replacement,
+touch/mode/link/symlink/batch drift, read/write/fsync races and orphan/unknown writes.
+Protected publication retains the complete pin in the immutable prepared journal;
+callback, direct staging, unknown-marker, terminal/rejected replay and recovery cases
+require the same original evidence and assert no evaluator retry or publication on
+refusal. Non-Python golden journal bytes stay unchanged. Mutated DTO/callback pin
+objects and nested callback mappings are refused before serialization can coerce them.
+The dedicated `python-handoff-pin.xml` report includes publication-journal and direct
+publication pin regressions, with a frozen 52-case zero-failure/error/skip inventory. The
+expanded producer-recovery report has 116 cases. These are provider-free local checks;
+controller admission-attempt anchoring and actual sealed CPython evidence remain open.
+The final combined local admission/journal/intent/transaction/staging/rejection/recovery
+regression passes 354 cases with no failures, errors or skips; final-source full CI
+remains required before merge.
 
 The current controller recovery hardening has passed the focused provider-free matrix and
 independent boundary review; exact-final-source CI remains pending for the final source. Its

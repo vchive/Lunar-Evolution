@@ -36,6 +36,7 @@ from .producer_bundle_deadline import persist_controlled_producer_bundle_intent
 from .producer_bundle_intent import (
     persist_producer_bundle_prepared_intent,
     verify_producer_bundle_prepared_intent,
+    verify_producer_bundle_python_handoff_anchor,
 )
 from .producer_bundle_population import ProducerBundleDraft
 from .producer_bundle_preflight import (
@@ -66,7 +67,9 @@ from .producer_process import (
 )
 from .python_producer_admission_handoff import (
     PythonProducerAdmissionHandoffError,
-    read_python_producer_admission_handoff,
+    PythonProducerAdmissionHandoffFilePin,
+    parse_python_producer_admission_handoff_file_pin,
+    read_python_producer_admission_handoff_pinned,
 )
 
 
@@ -215,6 +218,8 @@ def _verify_python_handoff_link(
     admission_plan: ProducerBundleAdmissionPlan,
     native_execution_receipt_sha256: str | None,
     python_handoff_sha256: str | None,
+    python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None,
+    prepared_journal: ProducerBundlePublicationJournal | None = None,
 ) -> None:
     """Require a durable, canonical handoff before accepting the Python path.
 
@@ -224,6 +229,13 @@ def _verify_python_handoff_link(
     Legacy native callers leave the optional field absent and retain their existing behavior.
     """
     if python_handoff_sha256 is None:
+        if prepared_journal is not None:
+            try:
+                verify_producer_bundle_python_handoff_anchor(root, prepared_journal)
+            except ValueError as exc:
+                raise NativeProducerBundleTransactionError(
+                    "producer_bundle_transaction_python_handoff_invalid"
+                ) from exc
         return
     _validate_batch_identifier(journal_id)
     if native_execution_receipt_sha256 is None:
@@ -233,9 +245,16 @@ def _verify_python_handoff_link(
     batch = root / "evolution" / "producer-batches" / journal_id
     path = batch / "python-producer-admission-handoff.json"
     try:
-        handoff = read_python_producer_admission_handoff(
-            path, expected_handoff_sha256=python_handoff_sha256,
+        if prepared_journal is not None:
+            verify_producer_bundle_python_handoff_anchor(root, prepared_journal)
+        sidecar = read_python_producer_admission_handoff_pinned(
+            path, expected_file_pin=python_handoff_file_pin,
         )
+        handoff = sidecar.handoff
+        if sidecar.file_pin != python_handoff_file_pin or handoff.handoff_sha256 != python_handoff_sha256:
+            raise ValueError("handoff pin mismatch")
+        if prepared_journal is not None:
+            verify_producer_bundle_python_handoff_anchor(root, prepared_journal)
     except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_invalid"
@@ -414,6 +433,7 @@ def run_native_producer_bundle_publication_transaction(
     budget_sha256: str | None = None,
     native_execution_receipt_sha256: str | None = None,
     python_handoff_sha256: str | None = None,
+    python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None = None,
     execution_control: SolveExecutionControl | None = None,
     continuation_guard: Callable[[str], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
@@ -433,10 +453,24 @@ def run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_execution_link_missing"
         )
+    if python_handoff_sha256 is not None or python_handoff_file_pin is not None:
+        try:
+            if type(python_handoff_file_pin) is not PythonProducerAdmissionHandoffFilePin:
+                raise ValueError("original handoff pin required")
+            parsed_pin = parse_python_producer_admission_handoff_file_pin(python_handoff_file_pin)
+            if (parsed_pin != python_handoff_file_pin or parsed_pin.handoff_sha256 != python_handoff_sha256
+                    or (parsed_pin.run_id, parsed_pin.journal_id, parsed_pin.parent_task_id, parsed_pin.task_id)
+                    != (journal_id if run_id is None else run_id, journal_id, parent_task_id, task_id)):
+                raise ValueError("handoff pin mismatch")
+        except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+            raise NativeProducerBundleTransactionError(
+                "producer_bundle_transaction_python_handoff_invalid"
+            ) from exc
     options = {"journal_id": journal_id, "run_id": run_id, "parent_task_id": parent_task_id,
                "task_id": task_id, "budget_sha256": budget_sha256,
                "native_execution_receipt_sha256": native_execution_receipt_sha256,
-               "python_handoff_sha256": python_handoff_sha256}
+               "python_handoff_sha256": python_handoff_sha256,
+               "python_handoff_file_pin": python_handoff_file_pin}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -483,6 +517,7 @@ def _run_native_producer_bundle_publication_transaction(
     budget_sha256: str | None,
     native_execution_receipt_sha256: str | None,
     python_handoff_sha256: str | None,
+    python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None,
     checkpoint: Callable[[str], object],
     execution_control: SolveExecutionControl | None = None,
 ) -> NativeProducerBundleTransactionResult:
@@ -517,11 +552,13 @@ def _run_native_producer_bundle_publication_transaction(
         admission_plan=admission_plan,
         native_execution_receipt_sha256=native_execution_receipt_sha256,
         python_handoff_sha256=python_handoff_sha256,
+        python_handoff_file_pin=python_handoff_file_pin,
     )
     # Re-read the create-only handoff after every caller-owned checkpoint.  A continuation
     # guard may mutate or remove the batch file while it is deciding whether to continue; the
     # boundary check must run after that callback and before any evaluator, stage, or commit.
     original_checkpoint = checkpoint
+    anchored_journal: ProducerBundlePublicationJournal | None = None
 
     def checkpoint_with_handoff(stage: str) -> object:
         result = original_checkpoint(stage)
@@ -534,6 +571,8 @@ def _run_native_producer_bundle_publication_transaction(
             admission_plan=admission_plan,
             native_execution_receipt_sha256=native_execution_receipt_sha256,
             python_handoff_sha256=python_handoff_sha256,
+            python_handoff_file_pin=python_handoff_file_pin,
+            prepared_journal=anchored_journal,
         )
         return result
 
@@ -558,6 +597,8 @@ def _run_native_producer_bundle_publication_transaction(
             admission_plan=admission_plan,
             native_execution_receipt_sha256=native_execution_receipt_sha256,
             python_handoff_sha256=python_handoff_sha256,
+            python_handoff_file_pin=python_handoff_file_pin,
+            prepared_journal=anchored_journal,
         )
         return remaining
 
@@ -613,6 +654,7 @@ def _run_native_producer_bundle_publication_transaction(
         num_islands=num_islands, candidates=tuple(candidates),
         native_execution_receipt_sha256=native_execution_receipt_sha256,
         python_handoff_sha256=python_handoff_sha256,
+        python_handoff_file_pin=python_handoff_file_pin,
     )
     try:
         preflight = preflight_producer_bundle_publication(root, admission_plan, journal, budget_sha256=budget_sha256)
@@ -644,6 +686,8 @@ def _run_native_producer_bundle_publication_transaction(
             checkpoint.bind_retained_deadline(retained.check)
             checkpoint("producer_prepared_intent")
             journal_sha256 = journal.digest()
+        anchored_journal = journal
+        verify_producer_bundle_python_handoff_anchor(root, journal)
         terminal = inspect_producer_bundle_all_rejected(
             root, journal, preflight=preflight, checkpoint=checkpoint,
         )
@@ -715,6 +759,8 @@ def _run_native_producer_bundle_publication_transaction(
             admission_plan=admission_plan,
             native_execution_receipt_sha256=native_execution_receipt_sha256,
             python_handoff_sha256=python_handoff_sha256,
+            python_handoff_file_pin=python_handoff_file_pin,
+            prepared_journal=anchored_journal,
         )
         return NativeProducerBundleTransactionResult(
             journal=journal, preflight=preflight, evaluations=tuple(evaluations),
@@ -747,6 +793,8 @@ def _run_native_producer_bundle_publication_transaction(
             admission_plan=admission_plan,
             native_execution_receipt_sha256=native_execution_receipt_sha256,
             python_handoff_sha256=python_handoff_sha256,
+            python_handoff_file_pin=python_handoff_file_pin,
+            prepared_journal=anchored_journal,
         )
         archive = CandidateArchive(root, requested_strategy="population", read_only=True)
         records = tuple(archive.records())
@@ -765,6 +813,8 @@ def _run_native_producer_bundle_publication_transaction(
             admission_plan=admission_plan,
             native_execution_receipt_sha256=native_execution_receipt_sha256,
             python_handoff_sha256=python_handoff_sha256,
+            python_handoff_file_pin=python_handoff_file_pin,
+            prepared_journal=anchored_journal,
         )
     except (NativeProducerBundleTransactionError, SolveExecutionCancelled, SolveExecutionBudgetExceeded):
         raise

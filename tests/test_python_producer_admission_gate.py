@@ -27,6 +27,8 @@ from lunar_evolution.producer_process import (
 from lunar_evolution.python_producer_admission_gate import verify_python_producer_admission_gate
 from lunar_evolution.python_producer_admission_handoff import (
     build_python_producer_admission_handoff,
+    parse_python_producer_admission_handoff_file_pin,
+    persist_python_producer_admission_handoff_pinned,
 )
 from lunar_evolution.python_producer_binding import build_python_producer_binding
 from lunar_evolution.python_producer_binding_store import PythonProducerBindingSidecar
@@ -339,6 +341,36 @@ def _assert_semantic_refusal(kwargs, suffix: str) -> None:
     assert result.reason_code == "python_producer_admission_gate_" + suffix
     assert result.refused is True
     assert result.production_admission is False
+
+
+@pytest.mark.parametrize("drift", [False, True])
+def test_optional_journal_file_pin_checks_only_detached_handoff_bytes(tmp_path, monkeypatch, drift):
+    chain = _chain(tmp_path)
+    sidecar = persist_python_producer_admission_handoff_pinned(
+        tmp_path / "handoff.json", handoff=chain[2],
+    )
+    pin = sidecar.file_pin
+    if drift:
+        payload = pin.to_dict()
+        payload.pop("pin_sha256")
+        payload["raw_sha256"] = "f" * 64
+        payload["pin_sha256"] = _sha(payload)
+        pin = parse_python_producer_admission_handoff_file_pin(payload)
+    journal = replace(chain[7], python_handoff_file_pin=pin, journal_sha256=None)
+    kwargs = _resigned_chain(chain, journal=journal)
+
+    def no_filesystem(*args, **kwargs):
+        pytest.fail("pure gate must not observe a file")
+
+    monkeypatch.setattr("os.open", no_filesystem)
+    monkeypatch.setattr("os.stat", no_filesystem)
+    result = verify_python_producer_admission_gate(**kwargs)
+    assert result.production_admission is False
+    if drift:
+        assert result.reason_code == "python_producer_admission_gate_journal_handoff_file_pin_mismatch"
+        assert result.refused is True
+    else:
+        assert result.eligible is True
 
 
 def test_resigned_request_timeout_drift_reaches_native_receipt_gate(tmp_path: Path) -> None:

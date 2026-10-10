@@ -1,5 +1,46 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-10 Feature191 original handoff file pin (provider-free follow-up)
+
+The follow-up branch `codex/feature191-handoff-stat-pin` is based on PR34's frozen
+`64598cd` source. PR34 is still awaiting its full final-source CI at this checkpoint;
+the isolated follow-up does not change that source or carry its CI forward as acceptance.
+
+The standalone Python admission path now requires an original write-derived handoff
+file pin. `persist_python_producer_admission_handoff_pinned` acquires it only after
+exclusive creation, fsync, original-inode readback and stable final file/parent metadata.
+Existing bytes without original proof cannot be adopted, and supplied-pin persistence
+is read-only exact replay. The pin binds canonical raw bytes, handoff identity, full file
+stat and original batch-directory device/inode. Invalid proofs fail before filesystem
+access; partial or complete orphan writes remain intact for inspection.
+
+The publication journal retains the full optional `python_handoff_file_pin`, bound by
+its self-digest and immutable prepared intent before evaluation. Transaction callbacks,
+timeout checks, evaluator return, direct staging/commit, unknown-marker boundaries and
+terminal/rejected recovery use the same original pin and prepared anchor. Re-signed
+latest-journal pin retrofit or removal of both Python links cannot downgrade that
+anchor. Direct rejected replay rechecks after its final caller checkpoint. Non-Python
+golden journal bytes remain unchanged; digest-only historical Python records are
+inspectable but cannot enter protected publication/recovery. The pure admission gate
+checks an optional journal pin's detached raw-byte consistency without observing a file.
+
+Final local combined regression passes 354 cases, and the expanded producer-recovery
+gate passes 116; both have zero failures/errors/skips. The 354-case inventory includes
+198 admission/lifecycle cases and 52 journal/publication-pin cases, which are required
+as dedicated zero-skip CI reports. Ruff, compileall and diff check pass. Independent
+review confirmed callback rechecks, non-Python compatibility, closed-pin parsing and
+original-anchor downgrade refusal. New final-source Ubuntu 3.11/3.12/3.13 CI is still
+required before this follow-up merges.
+
+Remaining P0/P1 scope is explicit: a controller admission-attempt anchor when the live
+admission flow is connected; actual CPython/toolchain acquisition/signature/staging,
+static build/runtime observations and explicit Python producer composition. The
+standalone Feature190 owner base already has Linux proof, but that is not actual CPython
+target integration. Local retained pins do not resist coherent rewriting of all trusted
+anchors and do not authenticate external workers. Production admission remains false.
+No model credentials, host-Python producer substitution, WebAgent, remote/company
+evaluator or real OpenEvolve/Shinka campaign was run. P2 remains deferred.
+
 ## 2026-10-10 Feature191 local Python admission handoff and composition gate (provider-free slice)
 
 PR32 durable producer recovery is merged in `main` at `6a912609d3e5e9811bc8dbae77b1df077976afe7`.
