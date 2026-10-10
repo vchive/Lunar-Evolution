@@ -994,6 +994,12 @@ from .staged_workflow import (
     StagedWorkflowRunner,
     StagePolicy,
 )
+from .static_python_artifact import (
+    ARTIFACT_VERIFICATION_SCHEMA,
+    StaticPythonArtifactVerification,
+    StaticPythonArtifactVerificationError,
+    verify_static_python_artifact_bytes,
+)
 from .trusted_bootstrap_handoff import (
     TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL,
     TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION,
@@ -1024,6 +1030,7 @@ __version__ = "0.1.0"
 __all__ = [
     "ACCEPTANCE_STAGES",
     "ACTIVE_BENCHMARK_STRATEGIES",
+    "ARTIFACT_VERIFICATION_SCHEMA",
     "BENCHMARK_STRATEGIES",
     "BENCHMARK_TASK_PROTOCOL",
     "BENCHMARK_TASK_SCHEMA_VERSION",
@@ -1483,6 +1490,8 @@ __all__ = [
     "StagedRunResult",
     "StagedWorkflowConfig",
     "StagedWorkflowRunner",
+    "StaticPythonArtifactVerification",
+    "StaticPythonArtifactVerificationError",
     "StoredActorCleanRoomEvidence",
     "StrategyResult",
     "TargetJudge",
@@ -1788,6 +1797,7 @@ __all__ = [
     "verify_python_runtime_manifest",
     "verify_python_runtime_tree_manifest",
     "verify_sealed_python_runtime_material",
+    "verify_static_python_artifact_bytes",
     "verify_trusted_bootstrap_attempt",
     "verify_trusted_bootstrap_process_registration",
     "verify_trusted_bootstrap_process_registration_handoff",
