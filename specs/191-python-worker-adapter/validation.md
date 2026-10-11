@@ -1,5 +1,24 @@
 # Validation plan
 
+## 2026-10-11 independent recovery anchor
+
+The dedicated `python-admission-recovery.xml` gate covers128 local provider-free cases
+with no failures, errors or skips on Python3.13.12. Combined Feature191, producer-bundle,
+handoff-pin and RSI binding compatibility passes796 cases with the same zero counts.
+Independent read-only review reran128 new cases and19 selected existing recovery/pin
+cases without a blocker. Ruff across src/tests/tools, compileall and diff checks pass.
+Each final source still requires its own Ubuntu3.11/3.12/3.13 full CI and raw/source/tree
+audit; local evidence does not establish remote CI or merge status.
+
+The matrix checks all three successful recovery decisions, missing and coherently
+rehashed field-drift anchors, unsafe files, final-return mutations, handoff/prepared
+drift after anchor I/O, original handoff replacement, allowed same-byte content-anchor
+replacement, unknown/prepared no-repair behavior, fractional wire projection and
+stale/subclass/callback-bearing DTO refusal. Expected bytes come from the independently
+pinned handoff; recovery never creates an anchor, launches, evaluates or refreshes budget.
+Non-Python behavior remains unchanged. Late controller/ledger admission and complete
+real-runtime recovery remain open; `production_admission=false`.
+
 ## 2026-10-11 admission content anchor and detached export
 
 The new `python-admission-export.xml` gate covers 127 anchor DTO/I/O, transaction
@@ -13,8 +32,9 @@ required before this new slice merges.
 The anchor is content consistency: same-byte replacement between operations remains
 allowed, while original handoff inode identity is independently pinned. The adapter has
 no evaluator/admission entry point and performs no I/O. Controller/ledger admission
-binding, independent recovery anchoring, exact ABI-profile acceptance and actual sealed
+binding, exact ABI-profile acceptance and actual sealed
 CPython/process observation remain open. `production_admission` stays false.
+The independent standalone recovery requirement is implemented by the later slice above.
 
 ## Existing accepted contract slices
 

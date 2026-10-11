@@ -147,6 +147,7 @@ these as explicit gates; do not turn expected behavior into observed evidence.
   consistency and frozen file DTOs; preserve signature declarations separately.
 - [x] Run local focused/refusal/container and related fixture tests, Ruff,
   compileall and diff checks. Synthetic matching metadata is not G1 evidence.
-- [ ] Complete this final source's own three-version CI and independent raw audit
-  before merge. Actual release acquisition/signature, G2 build and G3 runtime
-  acceptance remain unchecked.
+- [x] Complete this final source's own three-version CI and independent raw audit
+  before merge: PR39 run38049495417, sourceedbe903/tree0df4149, merged into main
+  at89ce5716ca86d6bbdba9fefd751d614a12df1baf. Actual release acquisition/signature,
+  G2 build and G3 runtime acceptance remain unchecked.

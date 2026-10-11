@@ -20,6 +20,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Any, NoReturn
 
+from .python_producer_admission_handoff import (
+    PythonProducerAdmissionHandoff,
+    PythonProducerAdmissionHandoffError,
+    parse_python_producer_admission_handoff,
+)
+
 PYTHON_PRODUCER_ADMISSION_ANCHOR_PROTOCOL = "lunar-python-producer-admission-attempt-anchor-v1"
 PYTHON_PRODUCER_ADMISSION_ANCHOR_SCHEMA_VERSION = "1"
 PYTHON_PRODUCER_ADMISSION_ANCHOR_NAME = "python-producer-admission-anchor.json"
@@ -237,6 +243,43 @@ def build_python_producer_admission_attempt_anchor(**kwargs: Any) -> PythonProdu
     """Build an anchor while deriving its canonical digest once."""
     anchor = PythonProducerAdmissionAttemptAnchor(**kwargs)
     return replace(anchor, anchor_sha256=anchor.digest())
+
+
+def project_python_producer_admission_attempt_anchor(
+    handoff: PythonProducerAdmissionHandoff,
+) -> PythonProducerAdmissionAttemptAnchor:
+    """Derive expected content from an already independently pinned handoff.
+
+    This pure projection grants no authority and never registers an attempt.
+    Reparse the exact DTO so deliberate mutation cannot refresh retained proof.
+    """
+    if type(handoff) is not PythonProducerAdmissionHandoff:
+        _fail("handoff_invalid")
+    try:
+        retained = parse_python_producer_admission_handoff(handoff)
+    except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+        raise PythonProducerAdmissionAnchorError("handoff_invalid") from exc
+    return build_python_producer_admission_attempt_anchor(
+        attempt_id="attempt-" + retained.handoff_sha256[:32],
+        run_id=retained.run_id,
+        journal_id=retained.journal_id,
+        binding_sha256=retained.binding_sha256,
+        handoff_sha256=retained.handoff_sha256,
+        terminal_sha256=retained.terminal_sha256,
+        runtime_observation_sha256=retained.runtime_observation_sha256,
+        native_execution_receipt_sha256=retained.native_execution_receipt_sha256,
+        admission_plan_sha256=retained.admission_plan_sha256,
+        fingerprints={
+            "contract": retained.contract_sha256,
+            "evaluator": retained.evaluator_sha256,
+            "runner": retained.runner_sha256,
+            "dependency": retained.dependency_sha256,
+            "environment": retained.environment_sha256,
+        },
+        request_budget=retained.request_budget,
+        wall_timeout_seconds=retained.wall_timeout_seconds,
+        deadline_unix=retained.deadline_unix,
+    )
 
 
 def parse_python_producer_admission_attempt_anchor(
@@ -470,6 +513,7 @@ __all__ = [
     "build_python_producer_admission_attempt_anchor",
     "parse_python_producer_admission_attempt_anchor",
     "persist_python_producer_admission_attempt_anchor",
+    "project_python_producer_admission_attempt_anchor",
     "read_python_producer_admission_attempt_anchor",
     "verify_python_producer_admission_attempt_anchor",
 ]

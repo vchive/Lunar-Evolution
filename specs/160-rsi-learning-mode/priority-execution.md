@@ -11,11 +11,15 @@ durable recovery and PR33–39 handoff/pin/composition and static source/artifac
 evidence slices are merged. Actual runtime acceptance remains separate from those
 provider-free contracts.
 
-- **P0**: bind the admission-attempt anchor to the live controller/ledger and independent
-  recovery flow; complete the Python process/runtime/journal matrix for interrupted launch,
+- **P0**: bind the admission-attempt anchor to a separate late live controller/ledger
+  admission record; complete the Python process/runtime/journal matrix for interrupted launch,
   missing terminal, callbacks, cleanup uncertainty and fingerprint drift. The standalone
   transaction content anchor is implemented, including both prepared-intent interruption
-  windows, but it is not full controller admission.
+  windows. Independent standalone recovery now checks the same original content at entry
+  and final return, then rechecks the original handoff pin/prepared association;128 focused
+  and796 combined local cases pass with independent review. Both new slices still need
+  their own final-source full CI and merge; neither is full controller admission. Do not
+  retrofit post-execution evidence into the original RSI run request.
 - **P1**: finish Feature189 G1 actual release/toolchain provenance, G2 configured static
   build/closure and G3 exact sealed runtime evidence; compose Feature190 owner/lifecycle
   observations; wire actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI;

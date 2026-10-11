@@ -33,9 +33,45 @@ The anchor pins **content**, not the original anchor inode across operations.
 A same-byte replacement is allowed by this content contract. Original handoff
 inode identity remains owned by `PythonProducerAdmissionHandoffFilePin`.
 Coherent rewriting of every trusted retained anchor is outside this local
-contract. Controller/ledger admission-attempt binding and standalone recovery
-integration are still pending; this change does not retrofit the earlier RSI
-producer binding/run proof.
+contract. Controller/ledger admission-attempt binding is still pending; this
+change does not retrofit the earlier RSI producer binding/run proof.
+
+## Standalone publication recovery
+
+A protected Python journal (one retaining `python_handoff_sha256`) requires the
+original admission-attempt anchor on every read-only recovery path. The expected
+anchor is a deterministic projection of the independently pinned original
+handoff; it is not fresh runtime evidence or new admission authority. A shared
+pure helper reparses the exact handoff DTO before deriving the projection and
+preserves its original request budget, fractional timeout and deadline.
+
+Recovery first applies its existing prepared-intent, handoff inode and semantic
+checks, preserving their existing error precedence. It then reads the retained
+anchor using its expected content digest and compares every projected field.
+Missing, malformed, unsafe or changed anchor evidence refuses with
+`producer_bundle_recovery_python_admission_anchor_invalid`. After successful
+anchor comparison, recovery rereads the original pinned handoff, compares it
+with the initial retained handoff and reverifies the immutable prepared link.
+Handoff deletion, replacement or prepared-link drift during anchor I/O retains
+the existing `producer_bundle_recovery_python_handoff_invalid` refusal. The same
+checks run at entry and after terminal, rejection or staged-manifest inspection
+before a `published`, `all_rejected` or `resume` decision can return.
+
+Recovery never creates, replaces or reconstructs the anchor. Older protected
+Python journals without it remain parseable but cannot pass protected recovery.
+No optional journal wire field or legacy bypass is added. Non-Python recovery
+and canonical wire remain unchanged. Same-byte anchor replacement between
+operations is allowed by the content contract; original handoff inode
+replacement still refuses. Archive, state, budget, prepared intent and unknown
+markers remain untouched, and no producer or evaluator is invoked.
+
+Implementation is limited to the shared projection, transaction reuse and
+read-only recovery gate. Focused provider-free tests must cover all three
+successful decisions, missing/drifted/unsafe anchors, final-return rechecks,
+fractional limits, content-only anchor replacement, pinned handoff replacement
+and unchanged non-Python behavior. Controller/ledger integration, live runtime
+acceptance and real execution remain separate work; `production_admission`
+remains false.
 
 ## Detached producer adapter
 

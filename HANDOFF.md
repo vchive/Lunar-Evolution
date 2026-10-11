@@ -1,5 +1,41 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-11 Feature191 independent admission-anchor recovery
+
+The isolated continuation is based on PR40 source `3c7770df3d6f88624dae1a1cf1326a2070e521dc`.
+PR40 is still open with its own full Ubuntu CI in progress; this slice does not inherit
+that approval. Confirm each final head and actual merge before reporting either merged.
+
+Standalone Python publication recovery now requires the original admission-attempt
+content anchor. Expected content is projected through one pure helper from the
+independently pinned original handoff, preserving fractional limits and rejecting
+stale or mutated DTOs. Entry and final resume, published replay and all-rejected gates
+refuse missing or drifted anchors. After anchor I/O, recovery again verifies the original
+handoff inode/bytes and immutable prepared association. It creates no evidence, repairs
+no journal, invokes no evaluator or producer and consumes no budget. Non-Python journals
+keep their existing behavior; historical protected Python records missing the anchor
+remain inspectable but cannot pass recovery. Same-byte anchor replacement is permitted
+between operations because the anchor proves content; the original handoff pin remains
+a separate inode proof.
+
+Local Python3.13.12 evidence:128 new recovery cases and796 combined Feature191/bundle/
+RSI compatibility cases pass with zero failures, errors or skips. Independent read-only
+review passed the128 cases plus19 selected existing pin/recovery cases with no blocker.
+Ruff across src/tests/tools, compileall and diff checks pass. The new dedicated
+`python-admission-recovery.xml` workflow gate requires128 cases and no skips. This final
+source still requires its own full Ubuntu3.11/3.12/3.13 CI and independent raw/source/tree
+audit before merge.
+
+Remaining P0: a separate late controller/ledger admission record linked to the immutable
+original RSI request, binding and episode claim; complete Python process/runtime/journal
+interruption and cleanup recovery. The post-execution anchor must not be retrofitted into
+the original pre-execution run request. P1 remains actual Feature189 release/toolchain,
+static closure/build and sealed runtime evidence; Feature190 owner/lifecycle composition;
+actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux acceptance.
+P2 distributed/service/remote evaluator/external authentication work remains deferred.
+`production_admission=false`; no actual CPython/toolchain execution, solver campaign,
+model, WebAgent or remote/company evaluator ran.
+
 ## 2026-10-11 Feature191 admission-attempt content anchor and detached export
 
 PR37–39 are merged; current base main is `89ce5716ca86d6bbdba9fefd751d614a12df1baf`.
