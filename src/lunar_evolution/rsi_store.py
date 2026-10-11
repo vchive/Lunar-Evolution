@@ -34,6 +34,8 @@ from .rsi_python_admission import (
     RSIPythonAdmissionError,
     RSIPythonAdmissionRecord,
     parse_rsi_python_admission_record,
+    parse_rsi_python_admission_references,
+    validate_rsi_python_admission_reference_record,
 )
 
 RunState = Literal["created", "running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"]
@@ -324,29 +326,91 @@ class RSILedger:
             "payload": dict(payload),
         }, maximum=8 * 1024 * 1024)).hexdigest()
 
-    def controller_checkpoint_history(self, run_id: str) -> list[tuple[str, dict[str, Any]]]:
-        """Read and verify the append-only controller checkpoint hash chain."""
-        _id(run_id, name="run_id")
-        with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
-                "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (run_id,)
-            ).fetchall()
+    @staticmethod
+    def _checkpoint_python_references(state: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+        try:
+            if "python_admission_refs" not in state:
+                return {}
+            return parse_rsi_python_admission_references(state["python_admission_refs"])
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_python_admission_reference_invalid") from exc
+
+    def _checkpoint_reference_rows_tx(
+        self, connection: sqlite3.Connection, run_id: str, references: dict[str, dict[str, Any]],
+    ) -> None:
+        for episode_id, reference in references.items():
+            row = connection.execute(
+                "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
+                (run_id, episode_id, reference["journal_id"]),
+            ).fetchone()
+            if row is None:
+                raise RSILearningError("rsi_python_admission_record_missing")
+            try:
+                validate_rsi_python_admission_reference_record(
+                    reference, self._python_admission_row(row), run_id=run_id, episode_id=episode_id,
+                )
+            except (TypeError, ValueError) as exc:
+                raise RSILearningError("rsi_python_admission_reference_record_drift") from exc
+
+    def _controller_checkpoint_history_tx(
+        self, connection: sqlite3.Connection, run_id: str,
+    ) -> list[tuple[str, dict[str, Any]]]:
+        rows = connection.execute(
+            "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
+            "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (run_id,),
+        ).fetchall()
         parent: str | None = None
+        references: dict[str, dict[str, Any]] = {}
         history: list[tuple[str, dict[str, Any]]] = []
         for ordinal, row in enumerate(rows):
             try:
                 payload = json.loads(row["payload"])
             except (TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt") from exc
-            if not isinstance(payload, dict):
+            if type(payload) is not dict:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
+            current_refs = self._checkpoint_python_references(payload)
+            if any(key not in current_refs or canonical_json(current_refs[key], maximum=512 * 1024)
+                   != canonical_json(value, maximum=512 * 1024) for key, value in references.items()):
+                raise RSILearningError("rsi_python_admission_reference_history_drift")
             digest = self._checkpoint_digest(run_id, ordinal, parent, payload)
             if row["revision"] != ordinal or row["parent_sha256"] != parent or row["checkpoint_sha256"] != digest:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
+            references = current_refs
             parent = digest
             history.append((digest, payload))
+        self._checkpoint_reference_rows_tx(connection, run_id, references)
         return history
+
+    def controller_checkpoint_history(self, run_id: str) -> list[tuple[str, dict[str, Any]]]:
+        """Read the verified hash chain and its monotonic independently retained obligations."""
+        _id(run_id, name="run_id")
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            return self._controller_checkpoint_history_tx(connection, run_id)
+
+    def _checkpoint_reference_write_tx(
+        self, connection: sqlite3.Connection, run_id: str, state: Mapping[str, Any], *,
+        addition: tuple[str, dict[str, Any]] | None = None,
+    ) -> None:
+        history = self._controller_checkpoint_history_tx(connection, run_id)
+        previous = self._checkpoint_python_references(history[-1][1]) if history else {}
+        expected = dict(previous)
+        if addition is not None:
+            episode_id, reference = addition
+            if episode_id in expected:
+                raise RSILearningError("rsi_python_admission_reference_conflict")
+            expected[episode_id] = reference
+        prospective = self._checkpoint_python_references(state)
+        if canonical_json(prospective, maximum=8 * 1024 * 1024) != canonical_json(expected, maximum=8 * 1024 * 1024):
+            raise RSILearningError("rsi_python_admission_reference_stale")
+        self._checkpoint_reference_rows_tx(connection, run_id, prospective)
+        for episode_id, reference in prospective.items():
+            row = connection.execute(
+                "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
+                (run_id, episode_id, reference["journal_id"]),
+            ).fetchone()
+            self._python_admission_state_tx(connection, self._python_admission_row(row))
 
     def controller_checkpoint(self, run_id: str) -> tuple[str, dict[str, Any]] | None:
         history = self.controller_checkpoint_history(run_id)
@@ -360,6 +424,7 @@ class RSILedger:
         self._assert_controller_lock(run_id)
         if not isinstance(state, Mapping):
             raise RSILearningError("rsi_controller_checkpoint_invalid")
+        self._checkpoint_python_references(state)
         try:
             clean = json.loads(canonical_json(dict(state), maximum=8 * 1024 * 1024))
         except Exception as exc:
@@ -368,6 +433,7 @@ class RSILedger:
             raise RSILearningError("rsi_controller_checkpoint_invalid")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            self._checkpoint_reference_write_tx(connection, run_id, clean)
             row = connection.execute(
                 "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
                 "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,)
@@ -542,6 +608,7 @@ class RSILedger:
             raise RSILearningError("rsi_python_admission_original_proof_drift")
         if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
             raise RSILearningError("rsi_python_admission_run_conflict")
+        self._controller_checkpoint_history_tx(connection, admission.run_id)
         checkpoint_rows = connection.execute(
             "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
             "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (admission.run_id,),
@@ -719,6 +786,66 @@ class RSILedger:
             )
         return retained
 
+    def pin_python_admission_record(
+        self, record: RSIPythonAdmissionRecord, *, reference: object,
+        expected_run_record_sha256: str, expected_checkpoint_sha256: str,
+        expected_episode_record_sha256: str,
+    ) -> tuple[RSIPythonAdmissionRecord, str]:
+        """Atomically retain a late record and append its explicit recovery obligation."""
+        try:
+            retained = parse_rsi_python_admission_record(record)
+            ref = validate_rsi_python_admission_reference_record(
+                reference, retained, run_id=retained.run_id, episode_id=retained.episode_id,
+            )
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_python_admission_reference_invalid") from exc
+        for value in (expected_run_record_sha256, expected_checkpoint_sha256, expected_episode_record_sha256):
+            _digest(value, name="python_admission_expected_head")
+        self._assert_controller_lock(retained.run_id)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current, state, episode_status, claim_status = self._python_admission_state_tx(
+                connection, retained, expected_run_record_sha256=expected_run_record_sha256,
+                expected_checkpoint_sha256=expected_checkpoint_sha256,
+                expected_episode_record_sha256=expected_episode_record_sha256,
+            )
+            references = self._checkpoint_python_references(state)
+            prior = references.get(retained.episode_id)
+            row = connection.execute(
+                "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
+                (retained.run_id, retained.episode_id, retained.journal_id),
+            ).fetchone()
+            existing = self._python_admission_row(row) if row is not None else None
+            if prior is not None:
+                if (existing is None or existing.to_json() != retained.to_json()
+                        or canonical_json(prior, maximum=512 * 1024) != canonical_json(ref, maximum=512 * 1024)):
+                    raise RSILearningError("rsi_python_admission_reference_conflict")
+                self._assert_controller_lock(retained.run_id)
+                return existing, expected_checkpoint_sha256
+            if (current.state != "running" or state.get("status") != "running"
+                    or episode_status != "running" or claim_status != "started"):
+                raise RSILearningError("rsi_python_admission_registration_inactive")
+            if existing is not None and existing.to_json() != retained.to_json():
+                raise RSILearningError("rsi_python_admission_record_conflict")
+            if existing is None:
+                if connection.execute(
+                    "SELECT 1 FROM rsi_python_admissions WHERE attempt_id = ?", (retained.attempt_id,),
+                ).fetchone() is not None:
+                    raise RSILearningError("rsi_python_admission_attempt_conflict")
+                connection.execute(
+                    "INSERT INTO rsi_python_admissions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (retained.run_id, retained.episode_id, retained.journal_id, retained.attempt_id,
+                     retained.to_json().decode("utf-8"), retained.record_sha256, utc_now()),
+                )
+            state["python_admission_refs"] = references | {retained.episode_id: ref}
+            self._assert_controller_lock(retained.run_id)
+            digest = self._append_transfer_checkpoint_tx(
+                connection, retained.run_id, state, expected_sha256=expected_checkpoint_sha256,
+                _python_admission_reference=(retained.episode_id, ref),
+            )
+            self._assert_controller_lock(retained.run_id)
+        return retained, digest
+
     def create_episode(self, episode_id: str, request_sha256: str, payload: Mapping[str, Any]) -> RSIRecord:
         return self._create(logical_id=episode_id, kind="episode", state="planned", request_sha256=request_sha256, payload=payload)
 
@@ -790,9 +917,14 @@ class RSILedger:
 
     def _append_transfer_checkpoint_tx(
         self, connection: sqlite3.Connection, run_id: str, state: Mapping[str, Any], *, expected_sha256: str,
+        _python_admission_reference: tuple[str, dict[str, Any]] | None = None,
     ) -> str:
         self._assert_controller_lock(run_id)
+        self._checkpoint_python_references(state)
         clean = json.loads(canonical_json(dict(state), maximum=8 * 1024 * 1024))
+        self._checkpoint_reference_write_tx(
+            connection, run_id, clean, addition=_python_admission_reference,
+        )
         row = connection.execute(
             "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
             "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,),

@@ -85,9 +85,14 @@
   original run request/first record, producer proof, attributed episode/native claim,
   native plan, prepared journal, content anchor and original handoff pin. Keep original
   run/checkpoint/native-plan wires unchanged and `production_admission=false`.
-- [ ] Require that separate admission identity in the future live controller admission
-  and publication/recovery flow. Ordinary resume does not yet discover a removed late
-  row; a future flow must retain its required identity explicitly. The anchor contains
+- [x] Atomically pin a late admission row and its optional controller checkpoint
+  reference under `durable-admission-reference.md`; require the original reference
+  across checkpoint history and ordinary resume/save/direct recovery boundaries.
+  Keep existing registration semantics, original request/proof/budget/plan and unpinned
+  golden wires unchanged. This explicit pin is not automatic scheduler/runtime wiring.
+- [ ] Automatically require that separate admission identity in the live scheduler
+  and publication/recovery flow. Ordinary resume now requires explicitly pinned rows;
+  automatic scheduling/publication composition remains separate. The anchor contains
   post-execution evidence and cannot become part of the original pre-execution run request.
   Complete independently observed runtime/lifecycle pin revalidation across the live flow;
   sealed-runtime observation remains a separate P1 acceptance gate.

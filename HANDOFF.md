@@ -1,5 +1,57 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-11 durable RSI admission references
+
+Current main includes PR40 at `c0b9bbd` and PR41 at
+`3533dc5cb3010766c02a61afda44beb9dc8eed57`. PR41 source `de3d5328` passed its own
+complete Ubuntu3.11/3.12/3.13 run38125047229 and independent raw/source audit; root
+replayed the retained original evidence without network. The actual merge tree is
+`ef932c0a6b9169f3f6b1691ac2a68f9bb536ffa5` with ordered parents `[c0b9bbd,de3d5328]`,
+independently verified. Its tested merge was `43880fa6` on base `89ce5716`; these are
+different commits with the same accepted tree. Earlier pending PR41 notes are historical.
+PR42 corrected source `5b46e51` has its own run38129577604 in progress; it is not accepted
+by PR41's result. This continuation starts from that corrected source.
+
+`pin_python_admission` now atomically retains the separate late-evidence row and an
+optional `python_admission_refs` checkpoint obligation. The reference retains the exact
+original native-plan/prepared-journal wire for callback-free recovery. All checkpoint
+write/history paths require references to be monotonic: deletion, replacement, a missing
+required row and stale in-memory state refuse rather than adopt or repair evidence.
+Pin-time CAS heads guard the transaction; legitimate later heads are not frozen forever.
+Original run request/proof, budgets/deadlines, native claim/plan and unpinned golden wires
+stay unchanged. First pin requires an active run/checkpoint/episode/native attempt;
+exact existing pin replay remains read-only after terminal/unknown transitions.
+
+Ordinary terminal/unknown/active resume, save/no-op, direct episode recovery, cached native
+replay, callbacks, budget/dispatch and settlement/public-return boundaries revalidate
+required rows and original sidecar/handoff/prepared/anchor evidence. Independent review
+found a BRS worker lock conflict: read-only verification called the public mutation-lock
+API while the parent controller held its lock. The private read-only evidence/CAS helper
+now avoids acquiring that lock; public validate/pin/register and checkpoint writes retain
+their existing ownership semantics. The refs gate rereads durable obligations after
+evidence checks. Cross-thread success and original-file drift are dedicated regressions.
+
+Two further final-review fixes close settlement and callback dispatch gaps. The runner
+checks original evidence before terminal/verifier writes while retaining immutable worker
+result and physical usage records; it preserves the existing known-terminal deadline
+semantics. Callback dispatch rechecks after its durable started write, before the actual
+callback; refusal keeps the started record and invokes no callback.
+
+Validation status and final case counts are recorded in Feature191 `validation.md`.
+Every final source still needs its own complete three-version CI and raw/source/tree
+audit before merge. SQLite and separate file observations are not globally atomic
+against a hostile concurrent writer, and the local trust model does not resist rewriting
+every trusted pin. This explicit API requires callers to reload after a new pin.
+
+Remaining P0: automatic scheduling/publication composition with the retained admission
+identity, plus the complete process/runtime/journal interruption matrix. Remaining P1:
+actual Feature189 release/toolchain/static build/sealed runtime acceptance, Feature190
+runtime/owner composition, Python launch and local OpenEvolve/Shinka lifecycle/export,
+and production RSI CLI/Linux acceptance. P2 authentication, multi-host ownership, remote
+evaluators and distributed/service scheduling remain deferred. `production_admission=false`;
+only local inert fixtures were used, with no real runtime/solver/evaluator campaign.
+The bounded SDD is `specs/191-python-worker-adapter/durable-admission-reference.md`.
+
 ## 2026-10-11 explicit late controller/ledger admission evidence
 
 The isolated branch `codex/python-admission-ledger` starts from PR41 source
