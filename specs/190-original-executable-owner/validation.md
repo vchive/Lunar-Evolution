@@ -1,5 +1,16 @@
 # Validation — proposed evidence only
 
+## Accepted original owner base — 2026-10-11 status correction
+
+The original Feature190 owner implementation passed final-source Ubuntu3.11/3.12/3.13
+run `37802795693` at `6a920cd3ba8729dbb68b7240d514250885883cd8` and merged in
+PR23 at `3a7782cb02b5e504bc9c3186babadb5daa70eaa1`, with the tested tree
+`f694145860ed5033c8d0fcfaaf0f03d853c24f89`. This supersedes the old pending
+acceptance text below, retained as the pre-CI local checkpoint. It proves the bounded
+original Linux owner base under the stated trust model; it does not establish actual
+Feature189 static CPython runtime composition, loader closure, target private-anchor
+census, production admission or a solver campaign.
+
 Local focused tests and portable static checks have run. Dedicated inventory133
 is frozen, but no actual Linux execution or final-source acceptance is established. Portable unsupported/refusal checks cannot establish Linux ownership.
 

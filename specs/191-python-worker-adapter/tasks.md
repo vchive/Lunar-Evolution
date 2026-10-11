@@ -80,11 +80,16 @@
   Re-read the original handoff pin and prepared association after anchor I/O. Local
   validation passes128 focused and796 combined cases without failures/errors/skips;
   independent review has no blocker. Final-source full CI/merge remain required.
-- [ ] Bind that admission-attempt anchor to a separate late controller/ledger admission
-  record when the live admission flow is connected, without retroactively changing its
-  earlier producer binding/run proof. The anchor contains post-execution evidence and
-  cannot become part of the original pre-execution RSI run request.
-  Complete independently observed runtime/lifecycle pin revalidation across that flow;
+- [x] Implement explicit late controller/ledger evidence registration and read-only
+  validation under `late-controller-admission.md`. A separate create-only row binds the
+  original run request/first record, producer proof, attributed episode/native claim,
+  native plan, prepared journal, content anchor and original handoff pin. Keep original
+  run/checkpoint/native-plan wires unchanged and `production_admission=false`.
+- [ ] Require that separate admission identity in the future live controller admission
+  and publication/recovery flow. Ordinary resume does not yet discover a removed late
+  row; a future flow must retain its required identity explicitly. The anchor contains
+  post-execution evidence and cannot become part of the original pre-execution run request.
+  Complete independently observed runtime/lifecycle pin revalidation across the live flow;
   sealed-runtime observation remains a separate P1 acceptance gate.
 - [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime
   observations to the handoff, then enable runtime-gated local exact evaluation and atomic

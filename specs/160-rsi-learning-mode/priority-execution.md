@@ -11,15 +11,21 @@ durable recovery and PR33–39 handoff/pin/composition and static source/artifac
 evidence slices are merged. Actual runtime acceptance remains separate from those
 provider-free contracts.
 
-- **P0**: bind the admission-attempt anchor to a separate late live controller/ledger
-  admission record; complete the Python process/runtime/journal matrix for interrupted launch,
+- **P0**: require a separate late admission identity across the live controller/publication
+  flow; complete the Python process/runtime/journal matrix for interrupted launch,
   missing terminal, callbacks, cleanup uncertainty and fingerprint drift. The standalone
   transaction content anchor is implemented, including both prepared-intent interruption
   windows. Independent standalone recovery now checks the same original content at entry
   and final return, then rechecks the original handoff pin/prepared association;128 focused
-  and796 combined local cases pass with independent review. Both new slices still need
-  their own final-source full CI and merge; neither is full controller admission. Do not
+  and796 combined local cases pass with independent review. PR40 content/export passed
+  its full matrix and independent raw/source/tree audit and merged at c0b9bbd. PR41
+  independent recovery still needs its own full CI/audit/merge; neither is full controller admission. Do not
   retrofit post-execution evidence into the original RSI run request.
+  The explicit controller register/validate API and independent create-only ledger record
+  are now implemented against local fixtures, linking the original run proof and episode
+  claim. They need their own final-source full CI and merge. They do not automatically
+  connect the scheduler, make ordinary resume detect row deletion, or admit a runtime;
+  see Feature191 `late-controller-admission.md`.
 - **P1**: finish Feature189 G1 actual release/toolchain provenance, G2 configured static
   build/closure and G3 exact sealed runtime evidence; compose Feature190 owner/lifecycle
   observations; wire actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI;

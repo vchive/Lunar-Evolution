@@ -1072,6 +1072,253 @@ class RSILearningController:
             proof = {"producer_checkpoint_binding": run_binding}
         self._validate_producer_checkpoint(record.logical_id, proof)
 
+    def _python_admission_inputs(self, native_plan: object, prepared_journal: object, expected_anchor_sha256: object):
+        """Reparse exact caller DTOs before acquiring locks or reading evidence."""
+        from .producer_bundle_publication import (
+            ProducerBundlePublicationCandidate,
+            ProducerBundlePublicationJournal,
+            parse_producer_bundle_publication_journal,
+        )
+        from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
+        from .producer_python_runtime import (
+            PythonRuntimeDirectory,
+            PythonRuntimeFile,
+            PythonRuntimeFileDeclaration,
+            PythonRuntimeImportRoot,
+            PythonRuntimeManifest,
+            PythonRuntimeRoot,
+            PythonRuntimeTarget,
+        )
+        from .producer_python_runtime_tree import (
+            PythonRuntimeTreeDirectory,
+            PythonRuntimeTreeManifest,
+        )
+        from .python_producer_admission_handoff import PythonProducerAdmissionHandoffFilePin
+        from .python_producer_binding import PythonProducerBinding, parse_python_producer_binding
+        from .python_producer_binding_store import PythonProducerBindingSidecar
+        from .rsi_native_plan import NativeRSIExecutionPlan
+        from .rsi_python_admission import (
+            RSIPythonAdmissionError,
+            validate_rsi_python_admission_shapes,
+        )
+
+        try:
+            if type(native_plan) is not NativeRSIExecutionPlan or type(prepared_journal) is not ProducerBundlePublicationJournal:
+                raise RSIPythonAdmissionError("input_invalid")
+            _digest(expected_anchor_sha256, "python_admission_anchor_sha256")
+            if expected_anchor_sha256 == "0" * 64:
+                raise RSIPythonAdmissionError("digest_invalid")
+            validate_rsi_python_admission_shapes(
+                native_plan, dto_types=(NativeRSIExecutionPlan, SolverRequest),
+            )
+            validate_rsi_python_admission_shapes(
+                prepared_journal,
+                dto_types=(ProducerBundlePublicationJournal, ProducerBundlePublicationCandidate,
+                           PythonProducerAdmissionHandoffFilePin),
+            )
+            plan = NativeRSIExecutionPlan.from_dict(native_plan.to_dict())
+            journal = parse_producer_bundle_publication_journal(prepared_journal.to_dict())
+            if (plan != native_plan or journal != prepared_journal or journal.state != "prepared"
+                    or journal.publication_phase != "preflight" or journal.python_handoff_file_pin is None
+                    or journal.python_handoff_sha256 is None or journal.native_execution_receipt_sha256 is None):
+                raise RSIPythonAdmissionError("input_invalid")
+            if type(self.producer_sidecar) is not PythonProducerBindingSidecar or self.producer_workspace is None:
+                raise RSIPythonAdmissionError("producer_missing")
+            validate_rsi_python_admission_shapes(
+                self.producer_sidecar,
+                dto_types=(PythonProducerBindingSidecar, PythonProducerBinding, ProducerLaunchIntent,
+                           ProducerLaunchAttestation, PythonRuntimeManifest, PythonRuntimeTarget,
+                           PythonRuntimeRoot, PythonRuntimeDirectory, PythonRuntimeFile, PythonRuntimeFileDeclaration,
+                           PythonRuntimeImportRoot,
+                           PythonRuntimeTreeManifest, PythonRuntimeTreeDirectory),
+            )
+            binding = parse_python_producer_binding(self.producer_sidecar.binding.to_json())
+            if binding != self.producer_sidecar.binding:
+                raise RSIPythonAdmissionError("binding_drift")
+            return plan, journal, binding
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_input_invalid") from exc
+
+    def _python_admission_evidence(self, run_id: str, episode_id: str, plan, journal, binding, anchor_sha256: str):
+        """Join original durable identities to existing pinned evidence without modifying them."""
+        from .producer_bundle_intent import (
+            verify_producer_bundle_prepared_intent,
+            verify_producer_bundle_python_handoff_anchor,
+        )
+        from .python_producer_admission_anchor import (
+            project_python_producer_admission_attempt_anchor,
+            read_python_producer_admission_attempt_anchor,
+        )
+        from .python_producer_admission_handoff import (
+            PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
+            read_python_producer_admission_handoff_pinned,
+        )
+        from .python_producer_checkpoint import PythonProducerCheckpointBinding
+        from .rsi_python_admission import RSIPythonAdmissionError, build_rsi_python_admission_record
+
+        try:
+            run = self.ledger.get_run(run_id)
+            checkpoint = self.ledger.controller_checkpoint(run_id)
+            episode = self.ledger.get_episode(episode_id)
+            if run is None or checkpoint is None or episode is None:
+                raise RSILearningError("rsi_python_admission_attribution_missing")
+            self._validate_run_checkpoint_producer_binding(run, checkpoint[1])
+            original = self.ledger.history(run_id)[0]
+            proof = PythonProducerCheckpointBinding.from_dict(original.payload.get("producer_checkpoint_binding"))
+            intent = checkpoint[1]["intents"][episode_id]
+            request = SolverRequest.from_dict(intent["request"])
+            planned = PracticeEpisode.from_dict(intent["episode"])
+            attributed = PracticeEpisode.from_dict(episode.payload)
+            original_budget = RSIRunBudget.load(original.payload["budget_state"])
+            original_budget.assert_matches(original.payload["budget"])
+            planned_budget = original_budget.to_dict()["planned"]
+            for state_budget in (run.payload["budget_state"], checkpoint[1]["budget_state"]):
+                budget = RSIRunBudget.load(state_budget)
+                budget.assert_matches(original.payload["budget"])
+                if canonical_json(budget.to_dict()["planned"]) != canonical_json(planned_budget):
+                    raise RSIPythonAdmissionError("budget_drift")
+            if (canonical_json(dict(request.budget)) != canonical_json(planned_budget)
+                    or canonical_json({"deadline_unix": plan.deadline_unix}) != canonical_json(
+                        {"deadline_unix": planned_budget["deadline_unix"]},
+                    ) or canonical_json({"deadline_unix": binding.deadline_unix}) != canonical_json(
+                        {"deadline_unix": planned_budget["deadline_unix"]},
+                    )):
+                raise RSIPythonAdmissionError("budget_drift")
+            claim = self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+            if claim is None:
+                raise RSIPythonAdmissionError("native_claim_missing")
+            identity = (binding.run_id, binding.intent.journal_id, binding.parent_task_id, binding.task_id)
+            if (identity[0] != run_id or proof.run_id != run_id or proof.journal_id != journal.journal_id
+                    or (plan.run_id, plan.journal_id, plan.parent_task_id, plan.task_id) != identity
+                    or (journal.run_id, journal.journal_id, journal.parent_task_id, journal.task_id) != identity
+                    or plan.launch_id != binding.intent.launch_id
+                    or plan.intent_sha256 != binding.intent_sha256 or plan.attestation_sha256 != binding.attestation_sha256
+                    or plan.deadline_unix != binding.deadline_unix
+                    or plan.evaluator_kind != binding.evaluator_kind
+                    or plan.evaluator_fingerprint != binding.evaluator_fingerprint):
+                raise RSIPythonAdmissionError("launch_mismatch")
+            if (plan.request.to_dict() != request.to_dict() or request.episode_id != episode_id
+                    or plan.memory_snapshot_sha256 != request.memory_snapshot_sha256
+                    or episode.request_sha256 != request.digest() or attributed.request_sha256 != request.digest()
+                    or planned.run_id != run_id or attributed.run_id != run_id
+                    or planned.episode_id != episode_id or attributed.episode_id != episode_id):
+                raise RSIPythonAdmissionError("request_mismatch")
+            for field in ("contract_sha256", "evaluator_sha256", "environment_sha256", "memory_snapshot_sha256", "solver_id"):
+                if getattr(attributed, field) != getattr(request, field) or getattr(planned, field) != getattr(request, field):
+                    raise RSIPythonAdmissionError("episode_mismatch")
+            for field, expected in (
+                ("contract_sha256", binding.contract_sha256), ("evaluator_sha256", binding.evaluator_fingerprint),
+                ("environment_sha256", binding.environment_sha256),
+            ):
+                if getattr(request, field) != expected or original.payload.get(field) != expected:
+                    raise RSIPythonAdmissionError("authority_mismatch")
+            batch = Path(self.producer_workspace) / "evolution" / "producer-batches" / journal.journal_id
+            handoff_path = batch / PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME
+            handoff = read_python_producer_admission_handoff_pinned(
+                handoff_path, expected_file_pin=journal.python_handoff_file_pin,
+            ).handoff
+            verify_producer_bundle_prepared_intent(self.producer_workspace, journal)
+            verify_producer_bundle_python_handoff_anchor(self.producer_workspace, journal)
+            pairs = (
+                ("binding_sha256", binding.binding_sha256), ("sidecar_raw_sha256", self.producer_sidecar.raw_sha256),
+                ("sidecar_pin_sha256", _record_digest(dict(proof.sidecar_pin))),
+                ("launch_intent_sha256", binding.intent_sha256), ("attestation_sha256", binding.attestation_sha256),
+                ("runtime_manifest_sha256", binding.runtime_manifest_sha256), ("runtime_tree_sha256", binding.runtime_tree_sha256),
+                ("contract_sha256", binding.contract_sha256), ("evaluator_sha256", binding.evaluator_fingerprint),
+                ("runner_sha256", binding.intent.runner_fingerprint), ("dependency_sha256", binding.dependency_sha256),
+                ("environment_sha256", binding.environment_sha256), ("admission_plan_sha256", journal.admission_sha256),
+                ("native_execution_receipt_sha256", journal.native_execution_receipt_sha256),
+            )
+            if (handoff.state != "prepared" or handoff.handoff_sha256 != journal.python_handoff_sha256
+                    or handoff.request_budget != binding.request_budget
+                    or handoff.wall_timeout_seconds != binding.wall_timeout_seconds or handoff.deadline_unix != binding.deadline_unix
+                    or any(getattr(handoff, field) != expected for field, expected in pairs)):
+                raise RSIPythonAdmissionError("handoff_mismatch")
+            for field, expected in (
+                ("contract_sha256", binding.contract_sha256), ("evaluator_kind", binding.evaluator_kind),
+                ("evaluator_fingerprint", binding.evaluator_fingerprint), ("runner_fingerprint", binding.intent.runner_fingerprint),
+                ("dependency_sha256", binding.dependency_sha256), ("environment_sha256", binding.environment_sha256),
+            ):
+                if getattr(journal, field) != expected:
+                    raise RSIPythonAdmissionError("journal_mismatch")
+            anchor = read_python_producer_admission_attempt_anchor(batch, expected_anchor_sha256=anchor_sha256)
+            projected = project_python_producer_admission_attempt_anchor(handoff)
+            if anchor.to_json() != projected.to_json():
+                raise RSIPythonAdmissionError("anchor_mismatch")
+            retained = build_rsi_python_admission_record(
+                run_id=run_id, episode_id=episode_id, journal_id=journal.journal_id, attempt_id=anchor.attempt_id,
+                original_run_request_sha256=original.request_sha256, original_run_record_sha256=original.record_sha256,
+                producer_checkpoint_sha256=hashlib.sha256(proof.to_json()).hexdigest(),
+                episode_request_sha256=request.digest(), native_claim_sha256=claim.claim_sha256,
+                native_plan_sha256=plan.plan_sha256, prepared_journal_sha256=journal.digest(),
+                admission_anchor=anchor.to_dict(), handoff_file_pin=journal.python_handoff_file_pin.to_dict(),
+            )
+            # Additional evidence reads must not hide sidecar/handoff/prepared drift.
+            final_anchor = read_python_producer_admission_attempt_anchor(batch, expected_anchor_sha256=anchor_sha256)
+            if final_anchor.to_json() != anchor.to_json():
+                raise RSIPythonAdmissionError("anchor_drift")
+            self._validate_run_checkpoint_producer_binding(run, checkpoint[1])
+            final_handoff = read_python_producer_admission_handoff_pinned(
+                handoff_path, expected_file_pin=journal.python_handoff_file_pin,
+            ).handoff
+            if final_handoff.to_json() != handoff.to_json():
+                raise RSIPythonAdmissionError("handoff_drift")
+            verify_producer_bundle_prepared_intent(self.producer_workspace, journal)
+            verify_producer_bundle_python_handoff_anchor(self.producer_workspace, journal)
+            self._validate_run_checkpoint_producer_binding(run, checkpoint[1])
+            return retained, run.record_sha256, checkpoint[0], episode.record_sha256
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_evidence_invalid") from exc
+
+    def register_python_admission(
+        self, run_id: str, episode_id: str, *, native_plan: object, prepared_journal: object,
+        expected_anchor_sha256: str,
+    ):
+        """Explicitly retain existing late evidence; this never admits or launches a worker."""
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        plan, journal, binding = self._python_admission_inputs(native_plan, prepared_journal, expected_anchor_sha256)
+        if self.ledger is None:
+            raise RSILearningError("rsi_python_admission_requires_ledger")
+        guard = nullcontext() if self.ledger.controller_lock_held(run_id) else self.ledger.controller_lock(run_id)
+        with guard:
+            retained, run_head, checkpoint_head, episode_head = self._python_admission_evidence(
+                run_id, episode_id, plan, journal, binding, expected_anchor_sha256,
+            )
+            return self.ledger.register_python_admission_record(
+                retained, expected_run_record_sha256=run_head, expected_checkpoint_sha256=checkpoint_head,
+                expected_episode_record_sha256=episode_head,
+            )
+
+    def validate_python_admission(
+        self, run_id: str, episode_id: str, *, native_plan: object, prepared_journal: object,
+        expected_anchor_sha256: str, expected_record_sha256: str,
+    ):
+        """Read-only replay requiring an independently retained admission-record identity."""
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        _digest(expected_record_sha256, "python_admission_record_sha256")
+        if expected_record_sha256 == "0" * 64:
+            raise RSILearningError("rsi_python_admission_record_sha256_invalid")
+        plan, journal, binding = self._python_admission_inputs(native_plan, prepared_journal, expected_anchor_sha256)
+        if self.ledger is None:
+            raise RSILearningError("rsi_python_admission_requires_ledger")
+        guard = nullcontext() if self.ledger.controller_lock_held(run_id) else self.ledger.controller_lock(run_id)
+        with guard:
+            retained, run_head, checkpoint_head, episode_head = self._python_admission_evidence(
+                run_id, episode_id, plan, journal, binding, expected_anchor_sha256,
+            )
+            self.ledger._assert_controller_lock(run_id)
+            existing = self.ledger.python_admission_record(
+                run_id, episode_id, journal.journal_id, expected_record_sha256=expected_record_sha256,
+                expected_run_record_sha256=run_head, expected_checkpoint_sha256=checkpoint_head,
+                expected_episode_record_sha256=episode_head,
+            )
+            if existing.to_json() != retained.to_json():
+                raise RSILearningError("rsi_python_admission_record_drift")
+            self.ledger._assert_controller_lock(run_id)
+            return existing
+
     @property
     def snapshot(self) -> MemorySnapshot:
         return self.memory_store.snapshot

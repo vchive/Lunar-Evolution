@@ -30,6 +30,11 @@ from .rsi_learning import (
     RSILearningError,
     TransferReceipt,
 )
+from .rsi_python_admission import (
+    RSIPythonAdmissionError,
+    RSIPythonAdmissionRecord,
+    parse_rsi_python_admission_record,
+)
 
 RunState = Literal["created", "running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"]
 EpisodeState = Literal[
@@ -215,6 +220,13 @@ class RSILedger:
                 "episode_id TEXT NOT NULL PRIMARY KEY, request_sha256 TEXT NOT NULL, "
                 "plan_sha256 TEXT NOT NULL, claim_sha256 TEXT NOT NULL UNIQUE, "
                 "created_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS rsi_python_admissions ("
+                "run_id TEXT NOT NULL, episode_id TEXT NOT NULL, journal_id TEXT NOT NULL, "
+                "attempt_id TEXT NOT NULL UNIQUE, payload TEXT NOT NULL, "
+                "record_sha256 TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, "
+                "PRIMARY KEY(run_id, episode_id, journal_id))"
             )
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS rsi_episode_reconciliations ("
@@ -454,6 +466,258 @@ class RSILedger:
 
     def create_run(self, run_id: str, request_sha256: str, payload: Mapping[str, Any]) -> RSIRecord:
         return self._create(logical_id=run_id, kind="run", state="created", request_sha256=request_sha256, payload=payload)
+
+    @staticmethod
+    def _python_admission_row(row: sqlite3.Row) -> RSIPythonAdmissionRecord:
+        try:
+            record = parse_rsi_python_admission_record(row["payload"])
+            if (record.run_id != row["run_id"] or record.episode_id != row["episode_id"]
+                    or record.journal_id != row["journal_id"] or record.attempt_id != row["attempt_id"]
+                    or record.record_sha256 != row["record_sha256"]
+                    or type(row["created_at"]) is not str or not row["created_at"].strip()
+                    or record.to_json().decode("utf-8") != row["payload"]):
+                raise RSIPythonAdmissionError("record_corrupt")
+            return record
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_python_admission_record_corrupt") from exc
+
+    def _python_admission_state_tx(
+        self, connection: sqlite3.Connection, admission: RSIPythonAdmissionRecord, *,
+        expected_run_record_sha256: str | None = None, expected_checkpoint_sha256: str | None = None,
+        expected_episode_record_sha256: str | None = None,
+    ) -> tuple[RSIRecord, dict[str, Any], str, str]:
+        """Recheck immutable origins and current attributed heads in one SQLite snapshot."""
+        from .python_producer_checkpoint import PythonProducerCheckpointBinding
+        from .rsi_budget import RSIRunBudget
+
+        rows = connection.execute(
+            "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (admission.run_id,),
+        ).fetchall()
+        if not rows:
+            raise RSILearningError("rsi_python_admission_run_missing")
+        try:
+            runs = tuple(self._row_to_record(row) for row in rows)
+            if any(type(run.payload) is not dict for run in runs):
+                raise ValueError("run payload is not an object")
+        except (TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_run_corrupt") from exc
+        parent = None
+        for ordinal, run in enumerate(runs):
+            if (run.kind != "run" or run.revision != ordinal or run.parent_record_sha256 != parent
+                    or run.request_sha256 != admission.original_run_request_sha256):
+                raise RSILearningError("rsi_python_admission_run_drift")
+            parent = run.record_sha256
+        original, current = runs[0], runs[-1]
+        original_request_sha256 = hashlib.sha256(canonical_json(
+            {"run_id": original.logical_id, **original.payload}, maximum=128 * 1024,
+        )).hexdigest()
+        if original.request_sha256 != original_request_sha256:
+            raise RSILearningError("rsi_python_admission_original_request_drift")
+        try:
+            original_budget = RSIRunBudget.load(original.payload["budget_state"])
+            original_budget.assert_matches(original.payload["budget"])
+            planned_budget = original_budget.to_dict()["planned"]
+            for run in runs:
+                budget = RSIRunBudget.load(run.payload["budget_state"])
+                budget.assert_matches(original.payload["budget"])
+                if canonical_json(budget.to_dict()["planned"]) != canonical_json(planned_budget):
+                    raise ValueError("planned budget changed")
+            if canonical_json({"deadline_unix": admission.admission_anchor["deadline_unix"]}) != canonical_json(
+                {"deadline_unix": planned_budget["deadline_unix"]},
+            ):
+                raise ValueError("admission deadline changed")
+        except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_budget_drift") from exc
+        proof = original.payload.get("producer_checkpoint_binding")
+        try:
+            parsed_proof = PythonProducerCheckpointBinding.from_dict(proof)
+            proof_digest = hashlib.sha256(parsed_proof.to_json()).hexdigest()
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_python_admission_original_proof_missing") from exc
+        if (original.record_sha256 != admission.original_run_record_sha256
+                or proof_digest != admission.producer_checkpoint_sha256
+                or parsed_proof.run_id != admission.run_id or parsed_proof.journal_id != admission.journal_id
+                or parsed_proof.binding_sha256 != admission.admission_anchor["binding_sha256"]
+                or any(run.payload.get("producer_checkpoint_binding") != proof for run in runs)):
+            raise RSILearningError("rsi_python_admission_original_proof_drift")
+        if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
+            raise RSILearningError("rsi_python_admission_run_conflict")
+        checkpoint_rows = connection.execute(
+            "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
+            "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (admission.run_id,),
+        ).fetchall()
+        if not checkpoint_rows:
+            raise RSILearningError("rsi_python_admission_checkpoint_missing")
+        parent = None
+        state: dict[str, Any] = {}
+        snapshots = [run.payload.get("memory_snapshot") for run in runs]
+        for ordinal, row in enumerate(checkpoint_rows):
+            try:
+                state = json.loads(row["payload"])
+                if type(state) is not dict:
+                    raise ValueError("checkpoint is not an object")
+                digest = self._checkpoint_digest(admission.run_id, ordinal, parent, state)
+                budget = RSIRunBudget.load(state["budget_state"])
+                budget.assert_matches(original.payload["budget"])
+                if canonical_json(budget.to_dict()["planned"]) != canonical_json(planned_budget):
+                    raise ValueError("checkpoint planned budget changed")
+            except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+                raise RSILearningError("rsi_python_admission_checkpoint_drift") from exc
+            if (row["revision"] != ordinal or row["parent_sha256"] != parent
+                    or row["checkpoint_sha256"] != digest
+                    or state.get("producer_checkpoint_binding") != proof
+                    or state.get("run_id") != admission.run_id):
+                raise RSILearningError("rsi_python_admission_checkpoint_drift")
+            parent = digest
+            snapshots.extend((state.get("root_snapshot"), state.get("memory_snapshot")))
+            generations = state.get("generations", {})
+            if type(generations) is not dict:
+                raise RSILearningError("rsi_python_admission_checkpoint_drift")
+            for generation in generations.values():
+                if type(generation) is not dict:
+                    raise RSILearningError("rsi_python_admission_checkpoint_drift")
+                snapshots.extend((generation.get("parent_memory"), generation.get("candidate_memory")))
+        if expected_checkpoint_sha256 is not None and parent != expected_checkpoint_sha256:
+            raise RSILearningError("rsi_python_admission_checkpoint_conflict")
+        try:
+            episode = self._head(connection, admission.episode_id)
+            if episode is not None and type(episode.payload) is not dict:
+                raise ValueError("episode payload is not an object")
+        except (TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_episode_corrupt") from exc
+        if episode is None or not self._is_canonical_episode(episode):
+            raise RSILearningError("rsi_python_admission_episode_missing")
+        if expected_episode_record_sha256 is not None and episode.record_sha256 != expected_episode_record_sha256:
+            raise RSILearningError("rsi_python_admission_episode_conflict")
+        try:
+            attributed = PracticeEpisode.from_dict(episode.payload)
+            intent = state["intents"][admission.episode_id]
+            planned = PracticeEpisode.from_dict(intent["episode"])
+            request = SolverRequest.from_dict(intent["request"])
+            if canonical_json(dict(request.budget)) != canonical_json(planned_budget):
+                raise ValueError("intent planned budget changed")
+        except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_intent_invalid") from exc
+        if (attributed.run_id != admission.run_id or planned.run_id != admission.run_id
+                or attributed.episode_id != admission.episode_id or planned.episode_id != admission.episode_id
+                or request.episode_id != admission.episode_id or request.digest() != admission.episode_request_sha256
+                or episode.request_sha256 != admission.episode_request_sha256
+                or attributed.request_sha256 != admission.episode_request_sha256):
+            raise RSILearningError("rsi_python_admission_episode_drift")
+        for field in ("contract_sha256", "evaluator_sha256", "environment_sha256", "memory_snapshot_sha256", "solver_id"):
+            if getattr(attributed, field) != getattr(request, field) or getattr(planned, field) != getattr(request, field):
+                raise RSILearningError("rsi_python_admission_request_drift")
+        try:
+            memory_found = False
+            for raw_snapshot in snapshots:
+                if raw_snapshot is not None and MemorySnapshot.from_dict(raw_snapshot).digest() == request.memory_snapshot_sha256:
+                    memory_found = True
+                    break
+            if not memory_found:
+                raise ValueError("original episode memory is missing")
+        except (TypeError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_memory_drift") from exc
+        for field, fingerprint in (
+            ("contract_sha256", "contract"), ("evaluator_sha256", "evaluator"),
+            ("environment_sha256", "environment"),
+        ):
+            if (admission.admission_anchor["fingerprints"].get(fingerprint) != getattr(request, field)
+                    or original.payload.get(field) != getattr(request, field)):
+                raise RSILearningError("rsi_python_admission_authority_drift")
+        claim_row = connection.execute(
+            "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (admission.episode_id,),
+        ).fetchone()
+        if claim_row is None:
+            raise RSILearningError("rsi_python_admission_native_claim_missing")
+        claim = self._native_claim_row(claim_row, status="started")
+        if (claim.claim_sha256 != admission.native_claim_sha256
+                or claim.request_sha256 != admission.episode_request_sha256
+                or claim.plan_sha256 != admission.native_plan_sha256):
+            raise RSILearningError("rsi_python_admission_native_claim_drift")
+        claim_status = self._native_result_status(
+            connection, admission.episode_id, admission.episode_request_sha256,
+        ) or "started"
+        if episode.state != attributed.status:
+            raise RSILearningError("rsi_python_admission_episode_drift")
+        return current, state, attributed.status, claim_status
+
+    def python_admission_record(
+        self, run_id: str, episode_id: str, journal_id: str, *, expected_record_sha256: str | None = None,
+        expected_run_record_sha256: str | None = None, expected_checkpoint_sha256: str | None = None,
+        expected_episode_record_sha256: str | None = None,
+    ) -> RSIPythonAdmissionRecord | None:
+        """Inspect existing late evidence without creating or repairing any record."""
+        for value, name in ((run_id, "run_id"), (episode_id, "episode_id"), (journal_id, "journal_id")):
+            _id(value, name=name)
+        if expected_record_sha256 is not None:
+            _digest(expected_record_sha256, name="python_admission_record_sha256")
+        for value in (expected_run_record_sha256, expected_checkpoint_sha256, expected_episode_record_sha256):
+            if value is not None:
+                _digest(value, name="python_admission_expected_head")
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            row = connection.execute(
+                "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
+                (run_id, episode_id, journal_id),
+            ).fetchone()
+            if row is None:
+                if expected_record_sha256 is not None:
+                    raise RSILearningError("rsi_python_admission_record_missing")
+                return None
+            record = self._python_admission_row(row)
+            if expected_record_sha256 is not None and record.record_sha256 != expected_record_sha256:
+                raise RSILearningError("rsi_python_admission_record_drift")
+            self._python_admission_state_tx(
+                connection, record, expected_run_record_sha256=expected_run_record_sha256,
+                expected_checkpoint_sha256=expected_checkpoint_sha256,
+                expected_episode_record_sha256=expected_episode_record_sha256,
+            )
+            return record
+
+    def register_python_admission_record(
+        self, record: RSIPythonAdmissionRecord, *, expected_run_record_sha256: str,
+        expected_checkpoint_sha256: str, expected_episode_record_sha256: str,
+    ) -> RSIPythonAdmissionRecord:
+        """Create one explicit evidence row under the existing controller lock and head CAS."""
+        try:
+            retained = parse_rsi_python_admission_record(record)
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_python_admission_record_invalid") from exc
+        for value in (expected_run_record_sha256, expected_checkpoint_sha256, expected_episode_record_sha256):
+            _digest(value, name="python_admission_expected_head")
+        self._assert_controller_lock(retained.run_id)
+        wire = retained.to_json().decode("utf-8")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current, state, episode_status, claim_status = self._python_admission_state_tx(
+                connection, retained, expected_run_record_sha256=expected_run_record_sha256,
+                expected_checkpoint_sha256=expected_checkpoint_sha256,
+                expected_episode_record_sha256=expected_episode_record_sha256,
+            )
+            row = connection.execute(
+                "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
+                (retained.run_id, retained.episode_id, retained.journal_id),
+            ).fetchone()
+            if row is not None:
+                existing = self._python_admission_row(row)
+                if existing.to_json() != retained.to_json():
+                    raise RSILearningError("rsi_python_admission_record_conflict")
+                self._assert_controller_lock(retained.run_id)
+                return existing
+            if (current.state != "running" or state.get("status") != "running"
+                    or episode_status != "running" or claim_status != "started"):
+                raise RSILearningError("rsi_python_admission_registration_inactive")
+            if connection.execute(
+                "SELECT 1 FROM rsi_python_admissions WHERE attempt_id = ?", (retained.attempt_id,),
+            ).fetchone() is not None:
+                raise RSILearningError("rsi_python_admission_attempt_conflict")
+            self._assert_controller_lock(retained.run_id)
+            connection.execute(
+                "INSERT INTO rsi_python_admissions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (retained.run_id, retained.episode_id, retained.journal_id, retained.attempt_id,
+                 wire, retained.record_sha256, utc_now()),
+            )
+        return retained
 
     def create_episode(self, episode_id: str, request_sha256: str, payload: Mapping[str, Any]) -> RSIRecord:
         return self._create(logical_id=episode_id, kind="episode", state="planned", request_sha256=request_sha256, payload=payload)

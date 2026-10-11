@@ -1,5 +1,57 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-11 explicit late controller/ledger admission evidence
+
+The isolated branch `codex/python-admission-ledger` starts from PR41 source
+`de3d5328c1acdc4205511b10a7d894954120f57e`, whose source parent is PR40 head
+`3c7770df3d6f88624dae1a1cf1326a2070e521dc`. Source parent, tested main base and
+actual ordered merge parents are different identities; verify each independently.
+PR40's full Ubuntu3.11/3.12/3.13 run38123543791 and root offline raw/source/tree replay
+passed. It merged at `c0b9bbdd47a3a24445a5cac270c7b062ec30494f`, preserving tested tree
+`2b872f6b01ee50bfc5a2c437f2ad6ecdce7a7102` and ordered parents `[89ce571,3c7770d]`;
+root verified the actual merge. PR41 run38125047229 remains a separate acceptance run;
+do not inherit approval. Earlier pending PR40 notes below are historical.
+
+`RSILearningController.register_python_admission` and `validate_python_admission`
+now compose an explicit evidence-only gate with a strict canonical DTO and separate
+create-only ledger table. The row binds original run request/first record/producer
+proof, attributed episode/request/historical memory/native claim and plan, prepared
+journal, complete admission anchor and original handoff pin. The controller rechecks
+sidecar, handoff/prepared association and anchor at entry and final boundaries, then
+the store rechecks durable heads under the controller lock and SQLite transaction.
+Original request/proof, checkpoint wire, gateway identity, plan, budget and deadline
+are unchanged. Native-plan and bundle-admission-plan digests are separate domains.
+
+First registration requires running run/checkpoint/episode and a started native claim
+without a persisted terminal result. Missing evidence cannot be backfilled after any
+terminal/unknown disposition. Existing exact rows can still be explicitly validated
+or replayed read-only. Corrupt durable JSON returns fixed RSI errors. Independent review
+identified these two edges; both are fixed and the final read-only review passed.
+No solver/evaluator/launch, budget charge, automatic settlement or evidence repair occurs.
+File observations and the SQLite transaction are not globally atomic against a hostile
+concurrent writer. The existing local trust model does not resist rewriting every pin.
+
+Local evidence: original108 new cases plus143 existing compatibility cases passed
+together (251) before the final review fixes. After those fixes root reran20 added
+regressions plus2 representative successful flows (22), all zero failures/errors/skips.
+The final dedicated CI inventory is128; do not claim all128 were rerun locally after
+the fixes. All newly verified local runs use Python3.11.15. Previous3.13.12 labels for
+the128/796 recovery evidence are historically unverified from raw interpreter metadata;
+version-specific acceptance comes from the actual remote matrix. Ruff, compileall and
+diff checks pass; final source full CI and independent audit remain required.
+
+P0 still requires the live flow to pin and require the new admission identity, so
+ordinary resume can reject a missing row, plus the full Python process/runtime/journal
+crash matrix. This explicit API alone does not wire automatic native scheduling or
+runtime admission. P1 remains actual Feature189 release/toolchain/static build and
+sealed runtime acceptance, Feature190 runtime/owner composition, actual local Python
+OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux acceptance. The Linux
+standalone Feature190 owner base was accepted by PR23 (run37802795693, merge3a7782c),
+not PR25; actual CPython composition/private-anchor target census is still open.
+P2 authentication, multi-host ownership, services/distributed scheduling and remote
+evaluators remain deferred. `production_admission=false`; use local inert fixtures only.
+The bounded SDD contract is `specs/191-python-worker-adapter/late-controller-admission.md`.
+
 ## 2026-10-11 Feature191 independent admission-anchor recovery
 
 The isolated continuation is based on PR40 source `3c7770df3d6f88624dae1a1cf1326a2070e521dc`.

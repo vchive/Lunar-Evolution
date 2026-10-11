@@ -1,5 +1,15 @@
 # Tasks
 
+## Accepted base — status correction, 2026-10-11
+
+Feature190's final owner source `6a920cd3ba8729dbb68b7240d514250885883cd8`
+passed Ubuntu3.11/3.12/3.13 run `37802795693` and merged through PR23 at
+`3a7782cb02b5e504bc9c3186babadb5daa70eaa1`, preserving tree
+`f694145860ed5033c8d0fcfaaf0f03d853c24f89`. Feature189 already records this
+accepted prerequisite. Historical pending statements below refer to the earlier
+implementation checkpoint, not current acceptance. Real Feature189 CPython runtime
+composition and target private-anchor census remain separate open work.
+
 - [x] Record root's188 final exact-source Linux audit and main merge before code.
   Sourcec5973a7/tree61d6f966, run37747759152, root raw report6260a06a,
   merge4f8576d with the same tree.
@@ -28,7 +38,7 @@
 - [x] Freeze actual case identities/counts; add dedicated no-skip Linux owner
   gate. Executing exact-final-head native/current/archive/frozen regressions
   remains pending in the following independent acceptance task.
-- [ ] Obtain independent source/raw/XML/inventory audit and main merge. Only then
+- [x] Obtain independent source/raw/XML/inventory audit and main merge. Only then
   update189 dependency evidence; no fabricated owner, runtime or admission claim.
 
 Local evidence: root first182/33 platform skips, second412/194 platform skips,
@@ -38,4 +48,4 @@ Dedicated executable-owner inventory133 = existing binding4 + owner93 + pair22
 + native7 + legacy7; new current delta129, total current12113. The Linux workflow
 requires dedicated132/0skip and all existing22 phases. Independent source review
 closed the concrete mutable-pin and pre-registration-child/stream cleanup gaps;
-final-source Linux/raw audit and merge remain pending.
+final-source Linux/raw audit and merge are complete as recorded above.
