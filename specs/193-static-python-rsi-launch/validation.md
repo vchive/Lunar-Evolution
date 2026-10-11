@@ -289,5 +289,8 @@ errors or skips. Ruff, compileall and `git diff --check` pass on the final tree.
 This is a provider-free consistency contract: it does not establish CPython or
 ELF build evidence, sealed launch, original owner/lifecycle, authoritative input
 consumption, a bounded producer result, publication eligibility or durable
-interruption recovery. Final-source CI and independent raw/source/tree audit
-remain pending.
+interruption recovery. The complete local `tests/test_static_python*.py` selection collected and
+passed 1,395 cases with exit code zero after this continuation. macOS pytest
+cleanup emitted permission/directory-not-empty warnings for existing protected
+fixture snapshots; no test failure or product exception occurred.
+Final-source CI and independent raw/source/tree audit remain pending.
