@@ -1,5 +1,37 @@
 # Validation plan
 
+## 2026-10-11 controller-bound publication and read-only recovery
+
+The new `rsi-python-publication.xml` gate requires83 cases with zero failures,
+errors or skips:52 facade/reference/row/file/SQLite/callback cases, one actual
+candidate-move interruption case and30 transaction-control cases. Final local
+Python3.11.15 verification passed83 in138.325 seconds (JUnit
+`/tmp/lunar-rsi-python-publication-final83-20261011.xml`). Root also passed193
+existing transaction/control/intent/staging/retained-recovery/active-control/store/
+durable-reference compatibility cases in145.452 seconds (JUnit
+`.lunar-evolution/test-results/publication-compat-final.xml`). The author's19
+control cases overlap that193-case inventory and are not additional cases.
+
+Independent review resolved the stale no-control parent deadline and a caller
+cancellation predicate running after the evidence gate. Dedicated regressions
+cover preparation, numeric timeout and pre-commit row loss; evidence latency is
+charged once and local explicit cancellation during evidence still refuses.
+SQLite read-only mode prevents missing-DB recreation and journal-mode changes;
+tests cover removal before connect, empty replacement, nested exception restoration
+and per-ledger/thread isolation. The interruption case performs a real candidate
+move before injecting failure, then verifies unknown recovery is unchanged and
+invokes no evaluator/producer/retry/repair. Post-commit verification adds no new
+budget/cancellation gate and preserves durable evidence on refusal.
+
+The final independent read-only review found no further blocker. Ruff across
+src/tests/tools, compileall and diff checks pass. Initial failed evidence is retained;
+it is not final acceptance. Final-source Ubuntu3.11/3.12/3.13 full CI and independent
+raw/source/tree audit remain required, including the corrected PR43 dependency.
+This is an explicit existing-pin facade, not automatic first pin, scheduler state
+synchronization or real CPython/runtime acceptance. File/SQLite observations are
+not globally atomic against hostile concurrent writers; coherent rewriting of all
+trusted pins is outside the local model. `production_admission=false`.
+
 ## 2026-10-11 durable RSI admission references
 
 The dedicated `rsi-python-admission-flow.xml` gate requires54 cases and zero failures,

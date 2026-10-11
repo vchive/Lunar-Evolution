@@ -16,7 +16,12 @@ from test_producer_bundle_transaction import (
     _shinka_drafts,
 )
 
-from lunar_evolution import bundle_evolution, producer_bundle_staging, producer_bundle_transaction
+from lunar_evolution import (
+    bundle_evolution,
+    producer_bundle_control,
+    producer_bundle_staging,
+    producer_bundle_transaction,
+)
 from lunar_evolution.automatic_solve_lifecycle import (
     SolveExecutionBudgetExceeded,
     SolveExecutionCancelled,
@@ -480,3 +485,118 @@ def test_strategy_cancelled_after_input_preparation_propagates_typed_cancellatio
     assert _prefix(context) == before
     assert (_batch(context, journal_id) / "journal.prepared.json").exists()
     assert not (context.workspace / "evolution" / "producer-publication.json").exists()
+
+
+@pytest.mark.parametrize("stop", ["deadline", "cancellation"])
+def test_preparation_evidence_rechecks_control_before_any_publication_write(tmp_path, monkeypatch, stop):
+    fixture = _fixture(tmp_path)
+    context, _strategy, _drafts, _plan, journal_id = fixture
+    before = _prefix(context)
+    clock = FakeClock()
+    control = SolveExecutionControl(30, clock=clock)
+
+    def evidence(stage):
+        if stage != "producer_preparation":
+            return
+        if stop == "deadline":
+            clock.value = control.deadline
+        else:
+            control.cancel()
+
+    monkeypatch.setattr(
+        context.bundle_pipeline, "evaluate_draft_non_publishing",
+        lambda *a, **k: pytest.fail("stopped preparation must not evaluate"),
+    )
+    expected = SolveExecutionBudgetExceeded if stop == "deadline" else SolveExecutionCancelled
+    with pytest.raises(expected):
+        _call(fixture, control, evidence_revalidator=evidence)
+
+    assert _prefix(context) == before
+    assert list(_batch(context, journal_id).iterdir()) == []
+    assert not (context.workspace / "evolution" / "producer-publication.json").exists()
+    assert context.bundle_pipeline._remaining_timeout is None
+
+
+@pytest.mark.parametrize("observation", ["latency", "deadline", "cancellation"])
+def test_numeric_timeout_revalidates_evidence_time_and_cancellation_before_return(
+    tmp_path, monkeypatch, observation,
+):
+    fixture = _fixture(tmp_path)
+    context, _strategy, _drafts, _plan, journal_id = fixture
+    before = _prefix(context)
+    clock = FakeClock()
+    control = SolveExecutionControl(30, clock=clock)
+    evidence_stages = []
+
+    def evidence(stage):
+        evidence_stages.append(stage)
+        if stage == "producer_preparation":
+            return
+        if observation == "latency":
+            clock.value += 2
+        elif observation == "deadline":
+            clock.value = control.deadline
+        else:
+            control.cancel()
+
+    class TimeoutProbe(RuntimeError):
+        pass
+
+    numeric_results = []
+    def probe_timeout_then_stop(root):
+        numeric_results.append(context.bundle_pipeline._remaining_timeout("inert_timeout_probe"))
+        raise TimeoutProbe("stop before any transaction write")
+
+    monkeypatch.setattr(producer_bundle_transaction, "_read_state", probe_timeout_then_stop)
+    monkeypatch.setattr(
+        context.bundle_pipeline, "evaluate_draft_non_publishing",
+        lambda *a, **k: pytest.fail("timeout refusal must not evaluate"),
+    )
+    if observation == "latency":
+        with pytest.raises(TimeoutProbe):
+            _call(fixture, control, evidence_revalidator=evidence)
+        assert numeric_results == [28.0]
+        assert evidence_stages == ["producer_preparation", "inert_timeout_probe"]
+    else:
+        expected = SolveExecutionBudgetExceeded if observation == "deadline" else SolveExecutionCancelled
+        with pytest.raises(expected):
+            _call(fixture, control, evidence_revalidator=evidence)
+        assert numeric_results == []
+        assert evidence_stages == ["producer_preparation", "inert_timeout_probe"]
+
+    assert _prefix(context) == before
+    assert list(_batch(context, journal_id).iterdir()) == []
+    assert not (context.workspace / "evolution" / "producer-publication.json").exists()
+    assert context.bundle_pipeline._remaining_timeout is None
+
+
+def test_no_control_checkpoint_reuses_parent_deadline_without_replaying_callback(
+    tmp_path, monkeypatch,
+):
+    fixture = _fixture(tmp_path)
+    context, _strategy, _drafts, _plan, journal_id = fixture
+    before = _prefix(context)
+    clock = FakeClock()
+    callback_calls = []
+    parent_timeout = lambda _stage: callback_calls.append("sample") or 30.0
+    context.bundle_pipeline.set_remaining_timeout(parent_timeout)
+    monkeypatch.setattr(producer_bundle_control.time, "monotonic", clock)
+
+    def evidence(stage):
+        if stage == "producer_preparation":
+            clock.value = 130.0
+
+    monkeypatch.setattr(
+        context.bundle_pipeline, "evaluate_draft_non_publishing",
+        lambda *a, **k: pytest.fail("expired parent deadline must not evaluate"),
+    )
+    with pytest.raises(SolveExecutionBudgetExceeded):
+        _call(fixture, None, evidence_revalidator=evidence)
+
+    # Revalidation uses the sampled absolute parent deadline; it does not invoke the
+    # opaque timeout callback a second time after reading evidence.
+    assert callback_calls == ["sample"]
+    assert _prefix(context) == before
+    assert list(_batch(context, journal_id).iterdir()) == []
+    assert not (context.workspace / "evolution" / "producer-publication.json").exists()
+    assert context.bundle_pipeline._remaining_timeout is parent_timeout

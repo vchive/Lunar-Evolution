@@ -90,9 +90,18 @@
   across checkpoint history and ordinary resume/save/direct recovery boundaries.
   Keep existing registration semantics, original request/proof/budget/plan and unpinned
   golden wires unchanged. This explicit pin is not automatic scheduler/runtime wiring.
+- [x] Compose publication and read-only recovery with an already pinned controller
+  admission under `controller-bound-publication.md`. Require the caller's retained
+  record identity, unchanged complete references and original row/files at entry,
+  after checkpoint/timeout callbacks and before successful return. Refuse a missing
+  ledger without recreating it; preserve prior commit/unknown effects. This explicit
+  facade does not create the first pin or adopt in-memory controller state.
+- [x] Add an actual first-candidate-move interruption regression: perform the move,
+  then inject failure, retain the unknown marker and partial material, and require
+  unchanged read-only recovery with no producer/evaluator/retry/repair.
 - [ ] Automatically require that separate admission identity in the live scheduler
   and publication/recovery flow. Ordinary resume now requires explicitly pinned rows;
-  automatic scheduling/publication composition remains separate. The anchor contains
+  automatic first pin and scheduler state synchronization remain separate. The anchor contains
   post-execution evidence and cannot become part of the original pre-execution run request.
   Complete independently observed runtime/lifecycle pin revalidation across the live flow;
   sealed-runtime observation remains a separate P1 acceptance gate.
