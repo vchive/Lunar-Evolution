@@ -79,8 +79,15 @@ installation/runtime stage.
 
 - [ ] F01 Specify and accept a separately versioned installation profile; retain
   the old argc-one profile/parser behavior without an implicit compatibility bypass.
-- [ ] F02 Verify upstream source/toolchain identity, build closure, matching
-  frozen headers, static link inputs and final ELF/artifact properties.
+- [x] F02a Specify the bounded build-closure wire, independent pins, nine-header
+  projection, static-link projection, ELF cross-check and false-claim boundary.
+- [x] F02b Implement the pure caller-byte DTO/comparator and focused synthetic
+  tests. It performs no filesystem, process, toolchain, freezer, linker or ELF
+  operation and does not establish a completed build.
+- [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,
+  configure the build, generate all frozen headers, retain object/archive/link
+  manifests and verify the final ELF/artifact bytes under a separate controlled
+  build procedure.
 - [ ] F03 Verify actual sealed-image startup, original executable owner/native
   lifecycle, original OS marker intent and fixed Python observation vectors.
 - [ ] F04 Verify authoritative marker-to-manifest/request/memory correspondence,
