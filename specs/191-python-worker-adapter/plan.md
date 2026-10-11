@@ -32,6 +32,12 @@ the refusal so Landlock/permissions are not the only explanation.
 
 ## Phase C — lifecycle and RSI integration
 
+The provider-free standalone transaction now registers an admission-attempt content
+anchor before the prepared intent and rechecks it after callbacks. The detached
+OpenEvolve/Shinka adapter only builds/parses/verifies an evidence envelope. Neither
+completes the live phase below; controller/ledger and independent recovery anchor
+composition are still pending. See `admission-attempt-and-export.md`.
+
 Use the existing native launch lifecycle and owner from Feature190. Persist the
 binding before release, retain the original absolute deadline, map it once to
 monotonic time, and reuse the current broker journal/request accounting. Wire

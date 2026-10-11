@@ -83,8 +83,8 @@ with the sidecar gate: it verifies the retained sidecar before native inspection
 more afterwards, and never creates a recovery lock/marker, relaunches, publishes, evaluates,
 or consumes another request budget. Terminal resume/reconcile still operates on retained
 values without mutation. The existing result envelope remains unchanged. Controller
-checkpoint binding is implemented, with the earliest durable anchor and boundary-hardening
-acceptance pending final validation. Runtime capture and production admission remain open.
+checkpoint binding and earliest-run boundary hardening are merged through PR32
+(`6a912609d3e5e9811bc8dbae77b1df077976afe7`). Runtime capture and production admission remain open.
 
 ## PythonProducerBindingSidecar
 
@@ -152,3 +152,23 @@ Use the existing envelope/material schema. Every candidate file has an explicit
 relative path, size and SHA-256, with bounded count and bytes. External score or
 lineage is normalized to digest-only provenance. The local exact evaluator emits
 the authoritative `EvaluationReport`; producer output cannot construct one.
+
+## Admission-attempt content anchor and adapter envelope
+
+`PythonProducerAdmissionAttemptAnchor` retains a separate first admission request:
+attempt/run/journal IDs, binding/handoff/terminal/runtime-observation/native-receipt/
+admission-plan digests, authority fingerprints, original request budget, timeout and
+absolute deadline, plus `anchor_sha256`. Original fractional numbers are preserved.
+The canonical v1 record is at most 256 KiB. The standalone transaction registers it
+before the prepared intent and revalidates content at callback/publication boundaries.
+An existing prepared intent with a missing anchor refuses read-only. Within-operation
+file identity is checked, but no original anchor inode pin is added across operations.
+Controller/ledger and independent recovery composition remain open.
+
+`PythonProducerAdapterEnvelope` binds one `openevolve` or `shinka` result to the
+binding/intent/attestation/runtime-manifest/tree digests and retained terminal/runtime
+observation records. Its v1 canonical wire is bounded to 4 MiB and retains
+`adapter_sha256` with `production_admission=false`. Build/verify compares the complete
+original-binding projection; parse checks internal consistency only. It performs no
+I/O, evaluator call or admission. See `admission-attempt-and-export.md` for both
+contracts, mutation/refusal rules and pending actual-runtime boundaries.

@@ -65,6 +65,12 @@ from .producer_process import (
     ProducerProcessError,
     parse_producer_execution_receipt,
 )
+from .python_producer_admission_anchor import (
+    PythonProducerAdmissionAttemptAnchor,
+    build_python_producer_admission_attempt_anchor,
+    persist_python_producer_admission_attempt_anchor,
+    read_python_producer_admission_attempt_anchor,
+)
 from .python_producer_admission_handoff import (
     PythonProducerAdmissionHandoffError,
     PythonProducerAdmissionHandoffFilePin,
@@ -220,7 +226,7 @@ def _verify_python_handoff_link(
     python_handoff_sha256: str | None,
     python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None,
     prepared_journal: ProducerBundlePublicationJournal | None = None,
-) -> None:
+) -> object | None:
     """Require a durable, canonical handoff before accepting the Python path.
 
     The journal field is an identity reference, not caller-provided authority.  A Python
@@ -236,7 +242,7 @@ def _verify_python_handoff_link(
                 raise NativeProducerBundleTransactionError(
                     "producer_bundle_transaction_python_handoff_invalid"
                 ) from exc
-        return
+        return None
     _validate_batch_identifier(journal_id)
     if native_execution_receipt_sha256 is None:
         raise NativeProducerBundleTransactionError(
@@ -276,6 +282,58 @@ def _verify_python_handoff_link(
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_mismatch"
         )
+    return handoff
+
+
+def _admission_attempt_anchor(handoff: object) -> PythonProducerAdmissionAttemptAnchor:
+    """Derive the immutable first-attempt projection from the retained handoff."""
+    try:
+        return build_python_producer_admission_attempt_anchor(
+            attempt_id="attempt-" + handoff.handoff_sha256[:32],
+            run_id=handoff.run_id, journal_id=handoff.journal_id,
+            binding_sha256=handoff.binding_sha256, handoff_sha256=handoff.handoff_sha256,
+            terminal_sha256=handoff.terminal_sha256,
+            runtime_observation_sha256=handoff.runtime_observation_sha256,
+            native_execution_receipt_sha256=handoff.native_execution_receipt_sha256,
+            admission_plan_sha256=handoff.admission_plan_sha256,
+            fingerprints={
+                "contract": handoff.contract_sha256, "evaluator": handoff.evaluator_sha256,
+                "runner": handoff.runner_sha256, "dependency": handoff.dependency_sha256,
+                "environment": handoff.environment_sha256,
+            },
+            request_budget=handoff.request_budget,
+            wall_timeout_seconds=handoff.wall_timeout_seconds,
+            deadline_unix=handoff.deadline_unix,
+        )
+    except Exception as exc:
+        raise NativeProducerBundleTransactionError(
+            "producer_bundle_transaction_python_admission_anchor_invalid"
+        ) from exc
+
+
+def _persist_python_admission_attempt_anchor(root: Path, handoff: object) -> PythonProducerAdmissionAttemptAnchor:
+    anchor = _admission_attempt_anchor(handoff)
+    batch = root / "evolution" / "producer-batches" / handoff.journal_id
+    try:
+        return persist_python_producer_admission_attempt_anchor(batch, anchor=anchor)
+    except Exception as exc:
+        code = getattr(exc, "code", "producer_bundle_transaction_python_admission_anchor_invalid")
+        raise NativeProducerBundleTransactionError(code) from exc
+
+
+def _verify_python_admission_attempt_anchor(root: Path, handoff: object) -> PythonProducerAdmissionAttemptAnchor:
+    expected = _admission_attempt_anchor(handoff)
+    batch = root / "evolution" / "producer-batches" / handoff.journal_id
+    try:
+        observed = read_python_producer_admission_attempt_anchor(
+            batch, expected_anchor_sha256=expected.anchor_sha256,
+        )
+        if not observed.matches(expected):
+            raise ValueError("anchor drift")
+        return observed
+    except Exception as exc:
+        code = getattr(exc, "code", "producer_bundle_transaction_python_admission_anchor_invalid")
+        raise NativeProducerBundleTransactionError(code) from exc
 
 
 def _snapshot_drafts(
@@ -543,7 +601,7 @@ def _run_native_producer_bundle_publication_transaction(
         task_id=task_id,
         receipt_sha256=native_execution_receipt_sha256,
     )
-    _verify_python_handoff_link(
+    python_handoff = _verify_python_handoff_link(
         root,
         journal_id=journal_id,
         run_id=run_id,
@@ -559,6 +617,24 @@ def _run_native_producer_bundle_publication_transaction(
     # boundary check must run after that callback and before any evaluator, stage, or commit.
     original_checkpoint = checkpoint
     anchored_journal: ProducerBundlePublicationJournal | None = None
+    admission_anchor: PythonProducerAdmissionAttemptAnchor | None = None
+
+    def prepared_intent_present() -> bool:
+        intent_path = root / "evolution" / "producer-batches" / journal_id / "journal.prepared.json"
+        try:
+            intent_path.lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise NativeProducerBundleTransactionError(
+                "producer_bundle_transaction_python_admission_anchor_invalid"
+            ) from exc
+        return True
+
+    if python_handoff is not None and prepared_intent_present():
+        # A retained intent proves the first registration boundary already passed.
+        # Its missing anchor is uncertainty, never permission to create a fresh one.
+        admission_anchor = _verify_python_admission_attempt_anchor(root, python_handoff)
 
     def checkpoint_with_handoff(stage: str) -> object:
         result = original_checkpoint(stage)
@@ -574,6 +650,8 @@ def _run_native_producer_bundle_publication_transaction(
             python_handoff_file_pin=python_handoff_file_pin,
             prepared_journal=anchored_journal,
         )
+        if admission_anchor is not None and python_handoff is not None:
+            _verify_python_admission_attempt_anchor(root, python_handoff)
         return result
 
     if hasattr(original_checkpoint, "bind_retained_deadline"):
@@ -600,6 +678,8 @@ def _run_native_producer_bundle_publication_transaction(
             python_handoff_file_pin=python_handoff_file_pin,
             prepared_journal=anchored_journal,
         )
+        if admission_anchor is not None and python_handoff is not None:
+            _verify_python_admission_attempt_anchor(root, python_handoff)
         return remaining
 
     pipeline.set_remaining_timeout(timeout_with_handoff)
@@ -677,6 +757,17 @@ def _run_native_producer_bundle_publication_transaction(
     rejected: list[str] = []
     try:
         checkpoint("producer_prepared_intent")
+        if python_handoff is not None:
+            if admission_anchor is None:
+                if prepared_intent_present():
+                    admission_anchor = _verify_python_admission_attempt_anchor(root, python_handoff)
+                else:
+                    # Retain the admission request before its prepared intent.
+                    # A crash on either side of the intent write can then replay
+                    # the same anchor instead of reconstructing a missing one.
+                    admission_anchor = _persist_python_admission_attempt_anchor(root, python_handoff)
+            else:
+                _verify_python_admission_attempt_anchor(root, python_handoff)
         if execution_control is None:
             journal_sha256 = persist_producer_bundle_prepared_intent(root, journal, checkpoint=checkpoint)
         else:
@@ -762,6 +853,8 @@ def _run_native_producer_bundle_publication_transaction(
             python_handoff_file_pin=python_handoff_file_pin,
             prepared_journal=anchored_journal,
         )
+        if admission_anchor is not None and python_handoff is not None:
+            _verify_python_admission_attempt_anchor(root, python_handoff)
         return NativeProducerBundleTransactionResult(
             journal=journal, preflight=preflight, evaluations=tuple(evaluations),
             admitted_candidate_ids=(), rejected_candidate_ids=tuple(rejected), artifacts=(),
@@ -796,6 +889,8 @@ def _run_native_producer_bundle_publication_transaction(
             python_handoff_file_pin=python_handoff_file_pin,
             prepared_journal=anchored_journal,
         )
+        if admission_anchor is not None and python_handoff is not None:
+            _verify_python_admission_attempt_anchor(root, python_handoff)
         archive = CandidateArchive(root, requested_strategy="population", read_only=True)
         records = tuple(archive.records())
         archive.validate_candidate_integrity(require_all=True, records=records)
@@ -816,6 +911,8 @@ def _run_native_producer_bundle_publication_transaction(
             python_handoff_file_pin=python_handoff_file_pin,
             prepared_journal=anchored_journal,
         )
+        if admission_anchor is not None and python_handoff is not None:
+            _verify_python_admission_attempt_anchor(root, python_handoff)
     except (NativeProducerBundleTransactionError, SolveExecutionCancelled, SolveExecutionBudgetExceeded):
         raise
     except Exception as exc:

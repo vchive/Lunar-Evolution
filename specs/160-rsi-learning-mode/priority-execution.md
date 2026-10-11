@@ -4,6 +4,30 @@ This is the current execution list, extending Feature 160 and the producer lifec
 Code and HANDOFF evidence take precedence over historical gap descriptions and design drafts.
 All validation in this iteration is local and provider-free.
 
+## Current open priorities — 2026-10-11
+
+This section supersedes the older execution notes below. PR32 RSI producer-proof
+durable recovery and PR33–39 handoff/pin/composition and static source/artifact
+evidence slices are merged. Actual runtime acceptance remains separate from those
+provider-free contracts.
+
+- **P0**: bind the admission-attempt anchor to the live controller/ledger and independent
+  recovery flow; complete the Python process/runtime/journal matrix for interrupted launch,
+  missing terminal, callbacks, cleanup uncertainty and fingerprint drift. The standalone
+  transaction content anchor is implemented, including both prepared-intent interruption
+  windows, but it is not full controller admission.
+- **P1**: finish Feature189 G1 actual release/toolchain provenance, G2 configured static
+  build/closure and G3 exact sealed runtime evidence; compose Feature190 owner/lifecycle
+  observations; wire actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI;
+  pass dedicated Linux runtime acceptance. The shared adapter evidence envelope is implemented
+  with `production_admission=false`; build/parse/verify do not launch, evaluate or admit.
+- **P2 deferred**: external worker authentication, multi-host ownership, remote evaluator,
+  distributed scheduler, service API and Shinka/Slurm. These are not this iteration's blockers.
+
+The narrow contracts and task status are in Feature191
+`admission-attempt-and-export.md` and `tasks.md`. Do not repeat already merged durable
+resume work or turn synthetic evidence into real-runtime acceptance.
+
 ## Current open priorities — 2026-10-08
 
 PR #6, #7 and #8 are merged. Feature170 trusted local C composition, Feature171 declared-file

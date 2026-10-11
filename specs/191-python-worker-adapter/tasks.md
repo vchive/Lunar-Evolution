@@ -38,8 +38,8 @@
   save/no-op, direct episode recovery, terminal settlement/replay, and callback/native-failure
   reconcile at entry and before checkpoint/journal publication, including already-reserved
   branches. Refusal adds no budget consumption or journal and preserves previous durable
-  reservations. Focused regression and independent review are complete; exact-final-source
-  CI remains required for merge acceptance.
+  reservations. Focused regression, independent review and PR32 final-source CI are
+  complete; this slice is merged in main at `6a912609d3e5e9811bc8dbae77b1df077976afe7`.
 - [x] Specify local exact-evaluator admission and atomic publication handoff;
   external producer score remains provenance only.
 - [x] Add the provider-free Python admission-handoff DTO, create-only batch record,
@@ -66,7 +66,13 @@
   refuse digest-only adoption, latest-journal retrofit and removal of Python links.
   The frozen contract is in `retained-handoff-file-pin.md`. This is local retained
   evidence and does not protect against coherent rewriting of all trusted anchors.
-- [ ] Add an original controller admission-attempt anchor when the live admission flow
+- [x] Add the provider-free admission-attempt content anchor and standalone transaction
+  registration/revalidation. Preserve original fractional limits, register before the
+  prepared intent, replay interrupted registration without rewriting, and refuse missing
+  anchors for existing prepared intents. This is content consistency, not an original
+  anchor inode pin; see `admission-attempt-and-export.md`.
+- [ ] Bind that admission-attempt anchor to the controller/ledger and standalone recovery
+  when the live admission flow
   is connected, without retroactively changing its earlier producer binding/run proof.
   Complete independently observed runtime/lifecycle pin revalidation across that flow;
   sealed-runtime observation remains a separate P1 acceptance gate.
@@ -76,12 +82,16 @@
 
 ## P1 — inert Python process and local adapters
 
-- [ ] Prepare a pinned runtime launch from Feature177/177 closed-tree material;
+- [ ] Prepare a pinned runtime launch from Feature188/177 sealed/closed-tree material;
   never discover or substitute a host interpreter.
 - [ ] Build the local inert Python fixture and bounded broker exchange with real
   runtime observations and fixed negative loader/codec/import cases.
 - [ ] Connect OpenEvolve's Python wrapper and Shinka's explicit SQLite/result
   export to the common binding without launching either project automatically.
+- [x] Add a pure shared OpenEvolve/Shinka evidence envelope with build/parse/verify,
+  retained digest and complete original-binding comparisons. It performs no I/O or
+  evaluator call and always keeps `production_admission=false`; actual project
+  lifecycle/export wiring remains the preceding open task.
 - [ ] Reuse Feature190 private owner/native lifecycle, cancellation, reap, FD
   census and terminal evidence. Keep v2 wire/FD schema unchanged.
 - [ ] Add focused tests for startup, decoys, output bounds, cancellation,
