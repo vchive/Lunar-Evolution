@@ -71,9 +71,19 @@
   prepared intent, replay interrupted registration without rewriting, and refuse missing
   anchors for existing prepared intents. This is content consistency, not an original
   anchor inode pin; see `admission-attempt-and-export.md`.
-- [ ] Bind that admission-attempt anchor to the controller/ledger and standalone recovery
-  when the live admission flow
-  is connected, without retroactively changing its earlier producer binding/run proof.
+- [x] Require the retained admission-attempt content anchor in independent standalone
+  recovery, including resume, published replay and all-rejected acknowledgement. Derive
+  expected content from the independently pinned original handoff, reject missing or
+  drifted anchors at entry and final return gates, and never recreate evidence during
+  recovery. Preserve non-Python journal bytes and behavior; do not add an optional digest
+  that permits legacy Python records to bypass this check.
+  Re-read the original handoff pin and prepared association after anchor I/O. Local
+  validation passes128 focused and796 combined cases without failures/errors/skips;
+  independent review has no blocker. Final-source full CI/merge remain required.
+- [ ] Bind that admission-attempt anchor to a separate late controller/ledger admission
+  record when the live admission flow is connected, without retroactively changing its
+  earlier producer binding/run proof. The anchor contains post-execution evidence and
+  cannot become part of the original pre-execution RSI run request.
   Complete independently observed runtime/lifecycle pin revalidation across that flow;
   sealed-runtime observation remains a separate P1 acceptance gate.
 - [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime

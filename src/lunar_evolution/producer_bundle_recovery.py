@@ -22,6 +22,11 @@ from .producer_bundle_publication import (
     ProducerBundlePublicationJournal,
     parse_producer_bundle_publication_journal,
 )
+from .python_producer_admission_anchor import (
+    PythonProducerAdmissionAnchorError,
+    project_python_producer_admission_attempt_anchor,
+    read_python_producer_admission_attempt_anchor,
+)
 from .python_producer_admission_handoff import (
     PythonProducerAdmissionHandoffError,
     read_python_producer_admission_handoff_pinned,
@@ -127,7 +132,7 @@ def _verify_python_handoff(
     batch: Path, journal: ProducerBundlePublicationJournal,
     plan: ProducerBundleAdmissionPlan,
 ) -> None:
-    """Re-read the immutable Python handoff before resolving any terminal state."""
+    """Re-read retained Python handoff and attempt proof before any decision."""
     try:
         from .producer_bundle_intent import verify_producer_bundle_python_handoff_anchor
 
@@ -160,6 +165,29 @@ def _verify_python_handoff(
         or handoff.state != "prepared"
     ):
         _fail("producer_bundle_recovery_python_handoff_mismatch")
+    try:
+        expected = project_python_producer_admission_attempt_anchor(handoff)
+        observed = read_python_producer_admission_attempt_anchor(
+            batch, expected_anchor_sha256=expected.anchor_sha256,
+        )
+        if not observed.matches(expected):
+            raise ValueError("anchor drift")
+    except (PythonProducerAdmissionAnchorError, TypeError, ValueError) as exc:
+        raise ProducerBundleRecoveryError(
+            "producer_bundle_recovery_python_admission_anchor_invalid"
+        ) from exc
+    # Anchor I/O must not move the original handoff's final pin boundary. Keep
+    # its independently retained inode and prepared association intact too.
+    try:
+        rechecked = read_python_producer_admission_handoff_pinned(
+            batch / "python-producer-admission-handoff.json",
+            expected_file_pin=journal.python_handoff_file_pin,
+        )
+        if rechecked.file_pin != sidecar.file_pin or rechecked.handoff != handoff:
+            raise ValueError("handoff drift")
+        verify_producer_bundle_python_handoff_anchor(batch.parents[2], journal)
+    except (PythonProducerAdmissionHandoffError, TypeError, ValueError) as exc:
+        raise ProducerBundleRecoveryError("producer_bundle_recovery_python_handoff_invalid") from exc
 
 
 def _read_json(path: Path, maximum: int = _MAX_JSON_BYTES) -> dict[str, object]:

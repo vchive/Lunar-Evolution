@@ -67,8 +67,8 @@ from .producer_process import (
 )
 from .python_producer_admission_anchor import (
     PythonProducerAdmissionAttemptAnchor,
-    build_python_producer_admission_attempt_anchor,
     persist_python_producer_admission_attempt_anchor,
+    project_python_producer_admission_attempt_anchor,
     read_python_producer_admission_attempt_anchor,
 )
 from .python_producer_admission_handoff import (
@@ -288,23 +288,7 @@ def _verify_python_handoff_link(
 def _admission_attempt_anchor(handoff: object) -> PythonProducerAdmissionAttemptAnchor:
     """Derive the immutable first-attempt projection from the retained handoff."""
     try:
-        return build_python_producer_admission_attempt_anchor(
-            attempt_id="attempt-" + handoff.handoff_sha256[:32],
-            run_id=handoff.run_id, journal_id=handoff.journal_id,
-            binding_sha256=handoff.binding_sha256, handoff_sha256=handoff.handoff_sha256,
-            terminal_sha256=handoff.terminal_sha256,
-            runtime_observation_sha256=handoff.runtime_observation_sha256,
-            native_execution_receipt_sha256=handoff.native_execution_receipt_sha256,
-            admission_plan_sha256=handoff.admission_plan_sha256,
-            fingerprints={
-                "contract": handoff.contract_sha256, "evaluator": handoff.evaluator_sha256,
-                "runner": handoff.runner_sha256, "dependency": handoff.dependency_sha256,
-                "environment": handoff.environment_sha256,
-            },
-            request_budget=handoff.request_budget,
-            wall_timeout_seconds=handoff.wall_timeout_seconds,
-            deadline_unix=handoff.deadline_unix,
-        )
+        return project_python_producer_admission_attempt_anchor(handoff)
     except Exception as exc:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_admission_anchor_invalid"
