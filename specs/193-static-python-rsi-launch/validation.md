@@ -159,6 +159,18 @@ post-execution handoff, interruption recovery and local solver/production CLI
 acceptance remain unverified. These later stages stay unchecked in `tasks.md` and
 must receive their own contracts and evidence before any claim is promoted.
 
+## F03 provider-free startup wire — 2026-10-12
+
+The detached `static_python_runtime_startup` comparator and its 12 focused
+tests validate canonical JSON, exact pins, baseline and loader-negative fixture
+semantics, argv/marker/startup/owner/lifecycle shape, dependency ordering,
+false claims, parser error normalization, bounds and side-effect absence. The
+tests use synthetic caller bytes only; no process, ELF parser, filesystem or
+`/proc` operation ran. Ruff, compileall and `git diff --check` are required
+before submission. This is a contract slice, not actual startup, loader,
+owner, native lifecycle or installation evidence; F03 runtime acceptance stays
+open.
+
 ## F01 source-only profile preparation continuation — 2026-10-12
 
 Python3.11 new focused module passes 113 cases; disjoint old build-input and

@@ -84,6 +84,11 @@ installation/runtime stage.
 - [x] F02b Implement the pure caller-byte DTO/comparator and focused synthetic
   tests. It performs no filesystem, process, toolchain, freezer, linker or ELF
   operation and does not establish a completed build.
+- [x] F03a Specify and implement the provider-free startup/loader-negative wire,
+  with baseline and refusal fixtures, owner metadata, lifecycle checks, pin
+  binding and false-claim enforcement.
+- [x] F03b Add focused canonical/type/bounds/side-effect tests and export the
+  detached DTO parser. This does not execute a runtime or verify an owner.
 - [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,
   configure the build, generate all frozen headers, retain object/archive/link
   manifests and verify the final ELF/artifact bytes under a separate controlled
