@@ -271,3 +271,23 @@ suite passes 9 local synthetic cases; this does not establish input ownership,
 actual consumption, runtime startup, output validity, producer admission or a
 solver result. Final-source CI and independent raw/source/tree audit remain
 pending; live F04 and later F05 acceptance are unchanged.
+
+## F05 provider-free runtime/post-execution handoff continuation — 2026-10-12
+
+`static_python_runtime_handoff` validates the bounded canonical
+`lunar-static-python-runtime-handoff-v1` projection against independently
+supplied startup, input/result, terminal, binding, launch-intent, result and
+publication-intent digests. It also checks request budget/count, wall timeout,
+Unix deadline, terminal/cleanup/publication state combinations, duplicate keys,
+canonical bytes, bounds and all-false capability claims. The parser returns only
+an immutable digest/state DTO and has no filesystem, process, clock, network,
+solver, evaluator, publication or recovery effects.
+
+The focused F05 suite passes 10 cases; the adjacent F04 input/result contract
+passes 9 cases in the same run, for 19 unique local cases with zero failures,
+errors or skips. Ruff, compileall and `git diff --check` pass on the final tree.
+This is a provider-free consistency contract: it does not establish CPython or
+ELF build evidence, sealed launch, original owner/lifecycle, authoritative input
+consumption, a bounded producer result, publication eligibility or durable
+interruption recovery. Final-source CI and independent raw/source/tree audit
+remain pending.
