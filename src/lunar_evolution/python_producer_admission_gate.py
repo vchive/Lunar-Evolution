@@ -45,6 +45,11 @@ from .python_producer_lifecycle import (
     parse_python_producer_runtime_observation,
     parse_python_producer_terminal,
 )
+from .python_runtime_observation_policy import (
+    PythonRuntimeObservationPolicyError,
+    validate_python_runtime_observation_policy,
+)
+from .static_python_installation import StaticPythonInstallationDescriptor
 
 
 class PythonProducerAdmissionGateError(ValueError):
@@ -254,6 +259,10 @@ def verify_python_producer_admission_gate(
     executable_owner_evidence: Mapping[str, object] | None = None,
     materials_sha256: str | None = None,
     broker_deadline_monotonic_ns: int | None = None,
+    installation_descriptor: StaticPythonInstallationDescriptor | None = None,
+    installation_descriptor_sha256: str | None = None,
+    installation_version: str | None = None,
+    initialization_profile_sha256: str | None = None,
 ) -> PythonProducerAdmissionGateResult:
     """Compose detached Feature191 evidence without any external side effect.
 
@@ -438,18 +447,18 @@ def verify_python_producer_admission_gate(
                 or parsed_observation.production_admission is not False
                 or parsed_observation.general_code_origin_protection is not False):
             return _reject("runtime_observation_claim_invalid", values=values)
-        target = parsed_binding.runtime_manifest.target
-        major, minor = (int(part) for part in target.python_version.split(".", 1))
-        expected_cache_tag = f"cpython-{major}{minor}"
-        expected_flags = tuple(parsed_binding.runtime_manifest.to_dict()["policy"]["argv_flags"])
-        if (parsed_observation.version_major != major
-                or parsed_observation.version_minor != minor
-                or parsed_observation.cache_tag != expected_cache_tag
-                or not parsed_observation.abi_profile.startswith(target.abi_tag + "-")
-                or tuple(parsed_observation.flags) != expected_flags
-                or tuple(parsed_observation.argv) != tuple(parsed_binding.intent.argv)
-                or tuple(parsed_observation.orig_argv) != tuple(parsed_binding.intent.argv)):
-            return _reject("runtime_observation_target_mismatch", values=values)
+        try:
+            validate_python_runtime_observation_policy(
+                parsed_binding, parsed_observation,
+                installation_descriptor=installation_descriptor,
+                installation_descriptor_sha256=installation_descriptor_sha256,
+                installation_version=installation_version,
+                initialization_profile_sha256=initialization_profile_sha256,
+            )
+        except PythonRuntimeObservationPolicyError as exc:
+            code = ("runtime_observation_target_mismatch" if exc.code == "observation_target_mismatch"
+                    else "runtime_profile_" + exc.code)
+            return _reject(code, values=values)
         if not _digest_pin(envelope_sha256):
             return _reject("envelope_pin_unverified", values=values)
         if parsed_handoff.envelope_sha256 != envelope_sha256 or envelope_sha256 != envelope_digest:

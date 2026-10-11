@@ -1,5 +1,40 @@
 # Validation plan
 
+## 2026-10-12 independently pinned runtime observations
+
+The new `python-observation-policy.xml` gate requires68 unique cases and zero
+failures/errors/skips. Five-suite local Python3.11.15 verification passes302 cases
+in72.975seconds; the subsequently added native-input API refusal passes1 in0.458seconds.
+The inventory is303 unique focused cases, including68 policy,45 admission gate,
+49 adapter,98 lifecycle and43 encoder/observation cases. Seven disjoint compatibility
+suites pass195 in5.910seconds, yielding498 unique local cases. XML IDs are compared
+before aggregation; reruns are not additional tests. Reports remain under ignored
+main-workspace `python-observation-policy-20261012`, including earlier failing setup
+XML retained separately. Independent Python3.13.12 replay passes303 focused cases
+in102seconds with no failure/error/skip. It confirms660 source/test/asset hashes are
+unchanged and final source review has no blocker. Its separate create-only report is
+`python-observation-policy-independent-py313-1791742012203477000`; overlapping cases
+are not counted twice. Ruff, compileall and diff checks pass. Complete three-version
+CI/raw source/tree audit remain required before merge.
+
+Inert asset tests use the actual frozen-main encoder, fake sys/loader/pipe facts,
+the existing observation adapter and both detached gate/build/verify APIs. Negative
+cases cover named-flag syntax/order/value drift, OS/PyConfig vector confusion,
+missing/replaced independent installation pins, descriptor/binding artifact mode,
+size and target mismatches, version/ABI/encoding/path/module drift, callback-shaped
+inputs and zero external effects. Historical token observations remain parseable
+for inspection but refuse successful verification.
+
+The native-input test stages real local request/memory files through the existing
+API, then verifies that current static argc-one OS argv receives exactly
+`rsi_native_inputs_marker_missing`; no bootstrap/launch binding is read or written
+and original bytes/inodes/mtime remain unchanged. This explicitly retains the
+unresolved RSI launch contract. No real CPython build/runtime, OpenEvolve/Shinka
+campaign, remote evaluator or production admission is exercised. The new gate is
+annotated/uploaded with the existing gates;43 focused plus3 full CI phases belong
+to this final source and cannot inherit previous PR acceptance. Contract:
+`runtime-observation-contract.md`.
+
 ## 2026-10-12 bounded local interruption recovery
 
 The dedicated `rsi-python-interruption.xml` gate requires24 unique cases and zero

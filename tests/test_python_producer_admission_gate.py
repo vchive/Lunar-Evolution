@@ -6,9 +6,12 @@ import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
-from test_python_producer_binding import _fixture as binding_fixture
+from test_producer_python_runtime import _build, _tree
+from test_producer_python_runtime_tree import build as build_tree
+from test_static_python_artifact import _descriptor, _image
 
 from lunar_evolution.producer_bundle_admission import (
     ProducerBundleAdmissionItem,
@@ -19,6 +22,10 @@ from lunar_evolution.producer_bundle_publication import (
     build_producer_bundle_publication_journal,
 )
 from lunar_evolution.producer_handoff import ProducerMaterial, ProducerResultEnvelope
+from lunar_evolution.producer_launcher import (
+    build_producer_launch_attestation,
+    build_producer_launch_intent,
+)
 from lunar_evolution.producer_process import (
     ProducerEnvelopeEvidence,
     ProducerExecutionReceipt,
@@ -37,6 +44,11 @@ from lunar_evolution.python_producer_lifecycle import (
     build_python_producer_runtime_observation,
     build_python_producer_terminal,
 )
+from lunar_evolution.rsi_budget import RSIRunBudget
+from lunar_evolution.static_python_installation import (
+    STATIC_PYTHON_STARTUP_MODULES,
+    parse_static_python_installation_descriptor,
+)
 
 D = "a" * 64
 RAW_ENVELOPE = "b" * 64
@@ -50,8 +62,59 @@ def _sha(value: object) -> str:
 OWNER_DIGEST = _sha({"kind": "fixture-owner", "pid": 123})
 
 
-def _chain(tmp_path: Path):
-    manifest, tree, intent, attestation, budget = binding_fixture(tmp_path)
+_INSTALLATION_RAW, _INSTALLATION_PINS = _descriptor(_image())
+_INSTALLATION = parse_static_python_installation_descriptor(
+    _INSTALLATION_RAW, **_INSTALLATION_PINS,
+)
+STATIC_FLAGS = (
+    "dev_mode=0", "dont_write_bytecode=1", "hash_randomization=0", "ignore_environment=1",
+    "isolated=1", "no_site=1", "no_user_site=1", "optimize=0", "safe_path=1", "utf8_mode=1",
+)
+STATIC_ARGV = ("lunar-static-python-fixture",)
+
+
+def _installation_inputs(binding):
+    """Independent immutable fixture pins, never reconstructed from child observations."""
+    assert binding.interpreter.sha256 == _INSTALLATION.artifact_sha256
+    assert binding.interpreter.size == _INSTALLATION.artifact_size
+    return {
+        "installation_descriptor": _INSTALLATION,
+        "installation_descriptor_sha256": _INSTALLATION_PINS["expected_descriptor_sha256"],
+        "installation_version": _INSTALLATION_PINS["expected_installation_version"],
+        "initialization_profile_sha256": _INSTALLATION.to_dict()["initialization_profile_sha256"],
+    }
+
+
+def _static_binding_fixture(tmp_path: Path, producer="fixture", *, target_changes=None, mode=0o555):
+    """A finite static-profile binding over inert bytes; it is never executed."""
+    source = _tree(tmp_path)
+    source.target = replace(
+        source.target, **({"python_version": "3.13", "abi_tag": "cp313"} | (target_changes or {})),
+    )
+    executable = source.roots["runtime"] / "bin/python"
+    executable.write_bytes(_image())
+    executable.chmod(mode)
+    manifest = _build(source)
+    tree = build_tree(SimpleNamespace(original=manifest, target=source.target))
+    intent = build_producer_launch_intent(
+        producer_root=source.roots["runtime"], launch_id="launch-1", journal_id="journal-1",
+        run_id="run-1", parent_task_id="parent-1", task_id="task-1", contract_sha256=D,
+        evaluator_kind="local", evaluator_fingerprint=D, runner_fingerprint=D,
+        generator_fingerprint=D, dependency_sha256=D, environment_sha256=D,
+        producer_id=producer, producer_fingerprint=D, executable_relative="bin/python",
+        argv=("bin/python",), working_directory="work", output_directory="output",
+        request_timeout_seconds=5, max_requests=3, output_max_bytes=4096,
+        wall_timeout_seconds=10,
+    )
+    intent = replace(intent, executable_root_label="runtime", intent_sha256=None)
+    intent = replace(intent, intent_sha256=intent.digest())
+    attestation = build_producer_launch_attestation(intent, "nonce-1")
+    budget = RSIRunBudget.create({"deadline_unix": 4102444800.0, "max_solver_invocations": 3})
+    return manifest, tree, intent, attestation, budget
+
+
+def _chain(tmp_path: Path, producer="fixture"):
+    manifest, tree, intent, attestation, budget = _static_binding_fixture(tmp_path, producer)
     binding = build_python_producer_binding(
         runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
         deadline_unix=4102444800.0, budget=budget,
@@ -129,10 +192,10 @@ def _chain(tmp_path: Path):
     )
     observation = build_python_producer_runtime_observation(
         binding_sha256=binding.binding_sha256, execution_performed=True,
-        version_major=3, version_minor=11, version_micro=0, cache_tag="cpython-311",
-        abi_profile="cp311-ordinary-gil", argv=intent.argv, orig_argv=intent.argv, flags=("-I", "-S", "-B"),
+        version_major=3, version_minor=13, version_micro=12, cache_tag="cpython-313",
+        abi_profile="cp313-release-gil", argv=STATIC_ARGV, orig_argv=STATIC_ARGV, flags=STATIC_FLAGS,
         filesystem_encoding="utf-8", filesystem_errors="surrogateescape", stdio_encoding="utf-8",
-        stdio_errors="surrogateescape", sys_path=(".",), startup_modules=("_io",),
+        stdio_errors="strict", sys_path=(), startup_modules=STATIC_PYTHON_STARTUP_MODULES,
         broker_transcript_sha256=D, pycache_absent=True, computation_sha256=D,
     )
     item = ProducerBundleAdmissionItem(
@@ -196,6 +259,7 @@ def test_complete_local_evidence_is_eligible_but_not_production_admission(tmp_pa
         envelope=chain[8], envelope_sha256=chain[8].envelope_sha256,
         envelope_evidence_sha256=RAW_ENVELOPE, materials_sha256=chain[2].materials_sha256,
         broker_deadline_monotonic_ns=BROKER_DEADLINE, executable_owner_sha256=_sha(chain[9]), executable_owner_evidence=chain[9],
+        **_installation_inputs(chain[0]),
     )
     assert result.eligible is True
     assert result.accepted is True
@@ -212,6 +276,7 @@ def test_digest_identity_and_claim_drift_refuse_without_side_effects(tmp_path: P
         envelope=envelope, envelope_sha256=envelope.envelope_sha256,
         envelope_evidence_sha256=RAW_ENVELOPE, materials_sha256=handoff.materials_sha256,
         broker_deadline_monotonic_ns=BROKER_DEADLINE, executable_owner_sha256=_sha(owner_evidence), executable_owner_evidence=owner_evidence,
+        **_installation_inputs(binding),
     )
     assert result.refused is True
     assert result.production_admission is False
@@ -226,6 +291,7 @@ def test_digest_identity_and_claim_drift_refuse_without_side_effects(tmp_path: P
         envelope=envelope, envelope_sha256=envelope.envelope_sha256,
         envelope_evidence_sha256=RAW_ENVELOPE, materials_sha256=handoff.materials_sha256,
         broker_deadline_monotonic_ns=BROKER_DEADLINE, executable_owner_sha256=_sha(owner_evidence), executable_owner_evidence=owner_evidence,
+        **_installation_inputs(binding),
     )
     assert result.eligible is False
 
@@ -239,6 +305,7 @@ def test_terminal_binding_and_request_journal_drift_refuse(tmp_path: Path) -> No
         envelope=envelope, envelope_sha256=envelope.envelope_sha256,
         envelope_evidence_sha256=RAW_ENVELOPE, materials_sha256=handoff.materials_sha256,
         broker_deadline_monotonic_ns=BROKER_DEADLINE, executable_owner_sha256=_sha(owner_evidence), executable_owner_evidence=owner_evidence,
+        **_installation_inputs(binding),
     )
     assert result.refused is True
     assert result.reason_code is not None
@@ -253,6 +320,7 @@ def test_terminal_binding_and_request_journal_drift_refuse(tmp_path: Path) -> No
         envelope=envelope, envelope_sha256=envelope.envelope_sha256,
         envelope_evidence_sha256=RAW_ENVELOPE, materials_sha256=handoff.materials_sha256,
         broker_deadline_monotonic_ns=BROKER_DEADLINE, executable_owner_sha256=_sha(owner_evidence), executable_owner_evidence=owner_evidence,
+        **_installation_inputs(binding),
     )
     assert result.refused is True
 
@@ -262,6 +330,7 @@ def test_missing_material_pin_and_unbrokered_receipt_refuse(tmp_path: Path) -> N
     result = verify_python_producer_admission_gate(
         binding=binding, sidecar=sidecar, handoff=handoff, terminal=terminal,
         runtime_observation=observation, native_receipt=receipt, admission_plan=plan, journal=journal,
+        **_installation_inputs(binding),
     )
     assert result.reason_code == "python_producer_admission_gate_envelope_unverified"
 
@@ -277,6 +346,7 @@ def test_missing_material_pin_and_unbrokered_receipt_refuse(tmp_path: Path) -> N
         envelope=envelope, envelope_sha256=envelope.envelope_sha256,
         envelope_evidence_sha256=RAW_ENVELOPE, materials_sha256=handoff.materials_sha256,
         broker_deadline_monotonic_ns=BROKER_DEADLINE, executable_owner_sha256=_sha(owner_evidence), executable_owner_evidence=owner_evidence,
+        **_installation_inputs(binding),
     )
     assert result.refused is True
 
@@ -293,6 +363,7 @@ def test_independent_envelope_and_owner_pins_must_match_native_receipt(tmp_path:
         "executable_owner_sha256": owner_digest, "executable_owner_evidence": owner_evidence,
         "materials_sha256": handoff.materials_sha256,
         "broker_deadline_monotonic_ns": BROKER_DEADLINE,
+        **_installation_inputs(binding),
     }
     assert verify_python_producer_admission_gate(**kwargs).eligible is True
     assert verify_python_producer_admission_gate(**{**kwargs, "envelope_sha256": "b" * 64}).refused
@@ -333,6 +404,7 @@ def _resigned_chain(chain, **updates):
         "executable_owner_evidence": owner_evidence,
         "materials_sha256": handoff.materials_sha256,
         "broker_deadline_monotonic_ns": BROKER_DEADLINE,
+        **_installation_inputs(binding),
     }
 
 

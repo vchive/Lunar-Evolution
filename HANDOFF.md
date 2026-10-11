@@ -1,5 +1,52 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 independently pinned Python runtime observation policy
+
+The isolated `codex/python-observation-policy` continuation starts from PR48 source
+`26cda35d2cca630be1c751259971c2ce67de205c`. PR45 passed complete three-version
+run38151649684, independent raw/source/tree audit and root offline replay, and is
+merged into main at `9bfccbfc5a25db612a59ea27464b9affce40f1f3`, tree
+`e94fafaeb8654e7feff988daf0e12b749fd9b66c`, ordered parents
+`[db7272b4ebb7b5e8b7e78cc6383b5b498f7f076c,cb6bd809948d08acdd1606e115e59532dad8ff43]`.
+Actual merge/main were independently checked. PR46 corrected run38160158840,
+PR47 run38160240941 and PR48 run38160662089 remain pending at this slice's local
+verification; their original source and failure records remain retained separately.
+Earlier pending statements below are historical, not current merge evidence.
+
+The detached gate/adapter previously compared actual named `sys.flags` to the
+manifest's `-I/-S/-B` launch-policy tokens and compared PyConfig argv/orig_argv to
+OS intent argv. Actual Feature189 encoder output could not pass that contract.
+One shared pure policy now reparses the existing installation descriptor using
+four separately retained caller inputs: descriptor DTO, descriptor digest,
+installation version and initialization-profile digest. The original binding
+supplies the interpreter artifact digest. Descriptor artifact size/mode/target
+must match that binding; expected named flags, both Python vectors, version/ABI,
+paths, encodings and startup modules come from the independently pinned profile.
+All three gate/build/verify entry points forward these inputs. Missing pins refuse;
+historical token-shaped wires remain inspectable but cannot satisfy verification.
+No existing wire, Feature189 asset or native input marker rule changes.
+
+Final Python3.11.15 local evidence contains303 focused and195 disjoint compatibility
+cases,498 unique passes with no failures/errors/skips. The focused inventory includes
+the actual frozen-main encoder exercised only with fake sys/loader/pipe facts and
+an actual native-input API refusal with retained request/memory files: current
+argc-one static launch still fails `rsi_native_inputs_marker_missing`, without
+bootstrap, process launch or input mutation. Original intermediate test failures
+remain retained under ignored `python-observation-policy-20261012` reports. A new
+68-case `python-observation-policy.xml` CI gate is annotated/uploaded. Independent
+Python3.13.12 verification passes the303 focused cases in102seconds with zero
+failures/errors/skips;660 source/test/asset hashes remain unchanged and final review
+has no blocker. Ruff, compileall and diff checks pass. This source's complete
+three-version CI and raw/source/tree audit remain required before merge.
+
+This repairs detached evidence consistency only; `production_admission=false`.
+Current Feature189 argc-one/fixed main still cannot consume native RSI input or
+emit an RSI result. A separately accepted RSI-capable installation profile and
+actual Feature189/190 runtime/owner/lifecycle evidence are prerequisites to live
+scheduler/post-execution composition. Actual local solver export and production
+CLI/Linux acceptance remain open; P2 stays deferred. Bounded SDD:
+Feature191 `runtime-observation-contract.md`.
+
 ## 2026-10-12 bounded Python interruption recovery matrix
 
 The isolated `codex/python-recovery-matrix` continuation retains PR47 source and the

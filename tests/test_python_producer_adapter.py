@@ -6,8 +6,11 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from test_python_producer_admission_gate import _chain
-from test_python_producer_binding import _fixture as binding_fixture
+from test_python_producer_admission_gate import (
+    _chain,
+    _installation_inputs,
+    _static_binding_fixture,
+)
 
 from lunar_evolution.producer_handoff import ProducerResultEnvelope
 from lunar_evolution.producer_launcher import build_producer_launch_attestation
@@ -30,7 +33,7 @@ def _supported_chain(tmp_path: Path, producer="openevolve"):
     _binding, _sidecar, _handoff, terminal, observation, _receipt, _plan, _journal, result, _owner = original
     rebound = tmp_path / "rebound"
     rebound.mkdir(parents=True, exist_ok=True)
-    manifest, tree, intent, _attestation, budget = binding_fixture(rebound)
+    manifest, tree, intent, _attestation, budget = _static_binding_fixture(rebound)
     intent = replace(intent, producer_id=producer, intent_sha256=None)
     intent = replace(intent, intent_sha256=intent.digest())
     attestation = build_producer_launch_attestation(intent, "nonce-1")
@@ -58,11 +61,15 @@ def _supported_chain(tmp_path: Path, producer="openevolve"):
 @pytest.mark.parametrize("producer", ["openevolve", "shinka"])
 def test_adapter_binds_completed_local_evidence_and_round_trips(tmp_path: Path, producer) -> None:
     binding, terminal, observation, result = _supported_chain(tmp_path, producer)
-    envelope = build_python_producer_adapter_envelope(binding, terminal, observation, result)
+    envelope = build_python_producer_adapter_envelope(
+        binding, terminal, observation, result, **_installation_inputs(binding),
+    )
     assert parse_python_producer_adapter_envelope(envelope.to_json()) == envelope
     assert envelope.to_dict()["producer_id"] == producer
     assert envelope.to_dict()["adapter_sha256"] == envelope.digest()
-    assert verify_python_producer_adapter_envelope(binding, envelope.to_json()) == envelope
+    assert verify_python_producer_adapter_envelope(
+        binding, envelope.to_json(), **_installation_inputs(binding),
+    ) == envelope
     assert envelope.production_admission is False
 
 
@@ -70,12 +77,17 @@ def test_adapter_rejects_binding_or_terminal_drift(tmp_path: Path) -> None:
     binding, terminal, observation, result = _supported_chain(tmp_path)
     terminal = _terminal(terminal, binding_sha256="f" * 64)
     with pytest.raises(PythonProducerAdapterError, match="binding_drift"):
-        build_python_producer_adapter_envelope(binding, terminal, observation, result)
+        build_python_producer_adapter_envelope(
+            binding, terminal, observation, result, **_installation_inputs(binding),
+        )
 
     (tmp_path / "unsupported").mkdir()
     unsupported = _chain(tmp_path / "unsupported")
     with pytest.raises(PythonProducerAdapterError, match="producer_identity_drift"):
-        build_python_producer_adapter_envelope(unsupported[0], unsupported[3], unsupported[4], unsupported[8])
+        build_python_producer_adapter_envelope(
+            unsupported[0], unsupported[3], unsupported[4], unsupported[8],
+            **_installation_inputs(unsupported[0]),
+        )
 
 
 def _terminal(item, **updates):
@@ -117,7 +129,9 @@ def test_adapter_rejects_result_drift(tmp_path, field, value, reason):
     else:
         result = replace(result, **{field: value})
     with pytest.raises(PythonProducerAdapterError, match=reason):
-        build_python_producer_adapter_envelope(binding, terminal, observation, result)
+        build_python_producer_adapter_envelope(
+            binding, terminal, observation, result, **_installation_inputs(binding),
+        )
 
 
 @pytest.mark.parametrize("field,value,reason", [
@@ -138,11 +152,13 @@ def test_adapter_rejects_terminal_drift(tmp_path, field, value, reason):
     binding, terminal, observation, result = _supported_chain(tmp_path)
     terminal = _terminal(terminal, **{field: value})
     with pytest.raises(PythonProducerAdapterError, match=reason):
-        build_python_producer_adapter_envelope(binding, terminal, observation, result)
+        build_python_producer_adapter_envelope(
+            binding, terminal, observation, result, **_installation_inputs(binding),
+        )
 
 
 @pytest.mark.parametrize("field,value", [
-    ("version_major", 4), ("version_minor", 13), ("cache_tag", "cpython-313"),
+    ("version_major", 4), ("version_minor", 11), ("cache_tag", "cpython-311"),
     ("abi_profile", "cp313-free-threaded"), ("flags", ("-I", "-B")),
     ("argv", ("different.py",)), ("orig_argv", ("different.py",)), ("pycache_absent", False),
 ])
@@ -150,7 +166,9 @@ def test_adapter_rejects_runtime_target_drift(tmp_path, field, value):
     binding, terminal, observation, result = _supported_chain(tmp_path)
     observation = _observation(observation, **{field: value})
     with pytest.raises(PythonProducerAdapterError, match="runtime_target_drift"):
-        build_python_producer_adapter_envelope(binding, terminal, observation, result)
+        build_python_producer_adapter_envelope(
+            binding, terminal, observation, result, **_installation_inputs(binding),
+        )
 
 
 @pytest.mark.parametrize("mutation,reason", [
@@ -161,7 +179,7 @@ def test_adapter_rejects_runtime_target_drift(tmp_path, field, value):
 ])
 def test_adapter_parser_rejects_resigned_invalid_nested_wire(tmp_path, mutation, reason):
     chain = _supported_chain(tmp_path)
-    value = build_python_producer_adapter_envelope(*chain).to_dict()
+    value = build_python_producer_adapter_envelope(*chain, **_installation_inputs(chain[0])).to_dict()
     if mutation in {"result", "terminal", "observation"}:
         value[mutation]["schema_version"] = "invalid"
     elif mutation == "claim":
@@ -181,16 +199,18 @@ def test_adapter_parser_rejects_resigned_invalid_nested_wire(tmp_path, mutation,
                                    "runtime_manifest_sha256", "runtime_tree_sha256"])
 def test_adapter_verify_refuses_resigned_binding_pin_drift(tmp_path, field):
     binding, terminal, observation, result = _supported_chain(tmp_path)
-    value = build_python_producer_adapter_envelope(binding, terminal, observation, result).to_dict()
+    value = build_python_producer_adapter_envelope(
+        binding, terminal, observation, result, **_installation_inputs(binding),
+    ).to_dict()
     value[field] = "f" * 64
     _resign(value)
     with pytest.raises(PythonProducerAdapterError, match="binding_drift"):
-        verify_python_producer_adapter_envelope(binding, value)
+        verify_python_producer_adapter_envelope(binding, value, **_installation_inputs(binding))
 
 
 def test_adapter_parser_refuses_stale_nested_dto_and_missing_digest(tmp_path):
     chain = _supported_chain(tmp_path)
-    envelope = build_python_producer_adapter_envelope(*chain)
+    envelope = build_python_producer_adapter_envelope(*chain, **_installation_inputs(chain[0]))
     with pytest.raises(PythonProducerAdapterError, match="adapter_digest_invalid"):
         parse_python_producer_adapter_envelope(replace(envelope, adapter_sha256=None))
     object.__setattr__(envelope.result, "budget", {"requests": -1})
@@ -208,8 +228,8 @@ def test_adapter_is_callback_free_and_has_no_admission_api(tmp_path, monkeypatch
     chain = _supported_chain(tmp_path)
     for module, name in [(os, "open"), (subprocess, "Popen")]:
         monkeypatch.setattr(module, name, lambda *_a, **_k: pytest.fail("side effect"))
-    envelope = build_python_producer_adapter_envelope(*chain)
-    assert verify_python_producer_adapter_envelope(chain[0], envelope).production_admission is False
+    envelope = build_python_producer_adapter_envelope(*chain, **_installation_inputs(chain[0]))
+    assert verify_python_producer_adapter_envelope(chain[0], envelope, **_installation_inputs(chain[0])).production_admission is False
     assert not hasattr(adapter, "admit_python_producer_result")
     assert not hasattr(lunar_evolution, "admit_python_producer_result")
 
@@ -227,7 +247,8 @@ def test_adapter_is_callback_free_and_has_no_admission_api(tmp_path, monkeypatch
 def test_adapter_refuses_duplicate_noncanonical_and_oversize_wire(tmp_path):
     from lunar_evolution.python_producer_adapter import MAX_PYTHON_PRODUCER_ADAPTER_BYTES
 
-    envelope = build_python_producer_adapter_envelope(*_supported_chain(tmp_path))
+    chain = _supported_chain(tmp_path)
+    envelope = build_python_producer_adapter_envelope(*chain, **_installation_inputs(chain[0]))
     wire = envelope.to_json()
     for value, code in [
         (wire[:-1] + b',"producer_id":"shinka"}', "duplicate_json_key"),

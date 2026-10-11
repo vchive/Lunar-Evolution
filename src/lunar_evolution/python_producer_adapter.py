@@ -33,6 +33,11 @@ from .python_producer_lifecycle import (
     parse_python_producer_runtime_observation,
     parse_python_producer_terminal,
 )
+from .python_runtime_observation_policy import (
+    PythonRuntimeObservationPolicyError,
+    validate_python_runtime_observation_policy,
+)
+from .static_python_installation import StaticPythonInstallationDescriptor
 
 PYTHON_PRODUCER_ADAPTER_SCHEMA_VERSION = "1"
 PYTHON_PRODUCER_ADAPTER_PROTOCOL = "lunar-python-producer-adapter-v1"
@@ -271,6 +276,11 @@ def build_python_producer_adapter_envelope(
     terminal: PythonProducerTerminal,
     observation: PythonProducerRuntimeObservation,
     result: ProducerResultEnvelope,
+    *,
+    installation_descriptor: StaticPythonInstallationDescriptor | None = None,
+    installation_descriptor_sha256: str | None = None,
+    installation_version: str | None = None,
+    initialization_profile_sha256: str | None = None,
 ) -> PythonProducerAdapterEnvelope:
     """Bind existing immutable evidence; no filesystem or process effects occur."""
     if type(binding) is not PythonProducerBinding:
@@ -313,14 +323,18 @@ def build_python_producer_adapter_envelope(
     ):
         if getattr(terminal, name) != expected:
             _fail("executable_identity_drift")
-    major, minor = (int(part) for part in binding.target.python_version.split(".", 1))
-    if (observation.version_major != major or observation.version_minor != minor
-            or observation.cache_tag != f"cpython-{major}{minor}"
-            or not observation.abi_profile.startswith(binding.target.abi_tag + "-")
-            or observation.flags != tuple(binding.runtime_manifest.to_dict()["policy"]["argv_flags"])
-            or observation.argv != binding.argv or observation.orig_argv != binding.argv
-            or observation.pycache_absent is not True):
-        _fail("runtime_target_drift")
+    try:
+        validate_python_runtime_observation_policy(
+            binding, observation,
+            installation_descriptor=installation_descriptor,
+            installation_descriptor_sha256=installation_descriptor_sha256,
+            installation_version=installation_version,
+            initialization_profile_sha256=initialization_profile_sha256,
+        )
+    except PythonRuntimeObservationPolicyError as exc:
+        code = ("runtime_target_drift" if exc.code == "observation_target_mismatch"
+                else "runtime_profile_" + exc.code)
+        raise PythonProducerAdapterError(code) from exc
     item = PythonProducerAdapterEnvelope(
         schema_version=PYTHON_PRODUCER_ADAPTER_SCHEMA_VERSION,
         protocol=PYTHON_PRODUCER_ADAPTER_PROTOCOL,
@@ -344,11 +358,20 @@ def parse_python_producer_adapter_envelope(
 def verify_python_producer_adapter_envelope(
     binding: PythonProducerBinding,
     envelope: PythonProducerAdapterEnvelope | bytes | str | Mapping[str, object],
+    *,
+    installation_descriptor: StaticPythonInstallationDescriptor | None = None,
+    installation_descriptor_sha256: str | None = None,
+    installation_version: str | None = None,
+    initialization_profile_sha256: str | None = None,
 ) -> PythonProducerAdapterEnvelope:
     """Compare detached evidence to an original binding without granting admission."""
     parsed = _parse_parts(envelope)
     expected = build_python_producer_adapter_envelope(
         binding, parsed.terminal, parsed.observation, parsed.result,
+        installation_descriptor=installation_descriptor,
+        installation_descriptor_sha256=installation_descriptor_sha256,
+        installation_version=installation_version,
+        initialization_profile_sha256=initialization_profile_sha256,
     )
     if expected.to_json() != parsed.to_json():
         _fail("envelope_binding_drift")

@@ -135,7 +135,8 @@ retried, or given a refreshed budget from absence of evidence.
    before native release. Pass only an allowlisted environment and the fixed
    broker FD variables. The Python process receives a fixed fixture/protocol
    case, never a caller-selected module, path, `-c`, `-m`, source or code string.
-3. **Observe.** Require actual CPython version/ABI/cache tag, `-I -S -B` policy,
+3. **Observe.** Require actual CPython version/ABI/cache tag, named runtime flags
+   corresponding to the independently pinned initialization profile and `-I -S -B` launch policy,
    empty or fixed `sys.path`, no pycache, bounded stdout/stderr, one broker
    request/response and one result envelope. Verify readable decoys are refused
    by patched loader routes, not merely by filesystem denial.
@@ -180,12 +181,20 @@ unknown-reconcile and result-envelope contracts.
 
 ## Acceptance boundary
 
+The shared pure runtime comparison uses the independently pinned Feature189 installation
+descriptor as specified in [runtime-observation-contract.md](runtime-observation-contract.md).
+OS launch argv, selected named `sys.flags`, and configured Python argv/orig_argv are distinct
+domains. Gate and adapter build/verify require original descriptor/version/initialization pins;
+missing pins and historical token-shaped observations refuse. Parsing historical wires stays
+compatible. This repair does not resolve the argc-one static fixture versus native RSI marker
+conflict, capture runtime evidence, or enable live dispatch.
+
 The durable sidecar, immutable run-request anchor, controller recovery boundaries, and
 provider-free handoff/receipt plumbing are complete as local slices. Focused regression and
 independent boundary review pass locally; exact-final-source CI remains required before merge
 acceptance. Runtime-gated Python admission is still open.
 Feature acceptance still requires a dedicated Linux fixture proving the entire binding and
 recovery matrix with the accepted 189 image and 190 owner, including real CPython observations,
-loader-negative behavior, broker evidence, lifecycle timestamps and evaluator admission. A
+   loader-negative behavior, broker evidence, lifecycle timestamps and evaluator admission. A
 passing descriptor parser, sidecar round-trip, C producer, declared runtime manifest, or a
 Shinka export alone is not Python adapter acceptance.

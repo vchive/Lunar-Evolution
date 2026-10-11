@@ -146,6 +146,16 @@ Protection claims remain false. Collection fields are bounded exact lists on
 the wire and immutable exact tuples in DTOs; callback-bearing mappings or
 iterables are rejected before conversion or serialization.
 
+For composition, `flags` retains canonical sorted `name=integer` observations;
+launcher policy tokens such as `-I` are not runtime observations. The independently
+pinned Feature189 descriptor supplies the expected version/cache/ABI, named flags,
+Python argv/orig_argv, startup modules, path and encodings. OS intent argv remains
+separately bound by the original launch intent/attestation. Gate and adapter
+build/verify take an existing `StaticPythonInstallationDescriptor` plus separate
+`installation_descriptor_sha256`, `installation_version` and
+`initialization_profile_sha256` kwargs; artifact SHA/size/mode must match the original
+binding. No wire or DTO field is added. See `runtime-observation-contract.md`.
+
 ## ProducerResultEnvelope
 
 Use the existing envelope/material schema. Every candidate file has an explicit
