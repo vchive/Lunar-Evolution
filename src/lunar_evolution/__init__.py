@@ -1047,6 +1047,13 @@ from .static_python_input_result import (
     StaticPythonInputResultError,
     parse_static_python_input_result,
 )
+from .static_python_runtime_handoff import (
+    MAX_RUNTIME_HANDOFF_BYTES,
+    RUNTIME_HANDOFF_SCHEMA,
+    StaticPythonRuntimeHandoff,
+    StaticPythonRuntimeHandoffError,
+    parse_static_python_runtime_handoff,
+)
 from .static_python_runtime_startup import (
     MAX_RUNTIME_STARTUP_BYTES,
     RUNTIME_STARTUP_SCHEMA,
@@ -1147,6 +1154,7 @@ __all__ = [
     "MAX_REQUEST_DURATION_MS",
     "MAX_REQUEST_EVENTS",
     "MAX_REQUEST_EVIDENCE_BYTES",
+    "MAX_RUNTIME_HANDOFF_BYTES",
     "MAX_RUNTIME_STARTUP_BYTES",
     "NATIVE_RSI_FAILURE_PROVENANCE_NAME",
     "NATIVE_RSI_INPUT_MARKER",
@@ -1175,6 +1183,7 @@ __all__ = [
     "PYTHON_RUNTIME_OBSERVATION_PROTOCOL",
     "RSI_PROTOCOL",
     "RSI_SCHEMA_VERSION",
+    "RUNTIME_HANDOFF_SCHEMA",
     "RUNTIME_STARTUP_SCHEMA",
     "SUPPORTED_FIXTURE_SOLVERS",
     "SUPPORTED_PYTHON_PRODUCERS",
@@ -1570,6 +1579,8 @@ __all__ = [
     "StaticPythonBuildClosureError",
     "StaticPythonInputResult",
     "StaticPythonInputResultError",
+    "StaticPythonRuntimeHandoff",
+    "StaticPythonRuntimeHandoffError",
     "StaticPythonRuntimeStartup",
     "StaticPythonRuntimeStartupError",
     "StoredActorCleanRoomEvidence",
@@ -1779,6 +1790,7 @@ __all__ = [
     "parse_seed_manifest",
     "parse_static_python_build_closure",
     "parse_static_python_input_result",
+    "parse_static_python_runtime_handoff",
     "parse_static_python_runtime_startup",
     "parse_trusted_bootstrap_evidence",
     "parse_trusted_bootstrap_process_registration_handoff",

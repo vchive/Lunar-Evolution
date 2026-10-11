@@ -95,6 +95,12 @@ installation/runtime stage.
   fixed computation and all-false claims with focused side-effect tests.
 - [ ] F04c Complete final-source CI plus independent raw/source/tree audit for
   this continuation and merge after PR55.
+- [x] F05a Add a detached runtime/post-execution handoff projection joining
+  startup, input/result, terminal, budget and publication-intent pins.
+- [x] F05b Enforce terminal/cleanup/publication state, request count and deadline
+  consistency with all-false claims; add focused side-effect/refusal tests.
+- [ ] F05c Complete final-source CI plus independent raw/source/tree audit for
+  this continuation after PR56.
 - [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,
   configure the build, generate all frozen headers, retain object/archive/link
   manifests and verify the final ELF/artifact bytes under a separate controlled

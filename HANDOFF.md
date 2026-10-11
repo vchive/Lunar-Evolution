@@ -7206,3 +7206,17 @@ parser has no filesystem, process, network, evaluator or solver effects.
 Focused tests pass 9 cases. This is a provider-free contract only: actual
 marker/file authority, input consumption, runtime startup, producer result,
 publication and final-source CI/raw audit remain open. Branch depends on PR55.
+
+## 2026-10-12 F05 provider-free runtime/post-execution handoff continuation
+
+On top of PR56, the detached `lunar-static-python-runtime-handoff-v1` contract
+joins caller-owned startup, input/result, terminal, runtime binding,
+publication-intent and result digests with one request budget, request count,
+wall timeout and Unix deadline. It rejects cross-pin drift, budget/count
+overrun, invalid terminal/cleanup/publication combinations, duplicate or
+non-canonical JSON and any true capability claim. The immutable DTO contains
+no raw result, process owner or live handle, and parsing has no filesystem,
+process, evaluator, solver, publication or recovery effects. Ten focused tests,
+Ruff, compileall and diff checks pass locally. This is a synthetic consistency
+contract only; actual sealed launch, terminal/broker/material evidence,
+authoritative result handoff and durable publication/recovery remain open.
