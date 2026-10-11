@@ -63,7 +63,10 @@ def _drive(value, monkeypatch, operation, *, handler=None):
         pool = ThreadPoolExecutor(max_workers=1)
         try:
             future = pool.submit(value.controller._execute_brs_intent, wave, state, value.episode_id)
-            deadline = time.monotonic() + 20
+            # The real local transaction rechecks original files at each boundary.
+            # Keep a bounded fixture watchdog which accommodates CI filesystem work;
+            # this does not replace or extend the retained execution deadline.
+            deadline = time.monotonic() + 60
             while not future.done():
                 if time.monotonic() >= deadline:
                     pytest.fail("BRS publication owner/worker did not make progress")

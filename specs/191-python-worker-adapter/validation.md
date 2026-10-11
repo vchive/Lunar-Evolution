@@ -1,5 +1,23 @@
 # Validation plan
 
+## 2026-10-12 BRS first-CI failure and bounded progress correction
+
+Original PR46 run38156193067 failed the same two BRS fixture watchdogs on all three
+Python versions; full regressions were skipped. Preserve the original ZIP/XML/log and
+metadata under ignored `pr46-final-ci-run38156193067-11875b8-v2`, including the final
+failure-retention record. The former10-second sibling waits and20-second publication
+watchdog did not allow repeated proof observations on CI filesystems. Neither failure
+is reclassified as a passing source.
+
+Only the two fixture watchdog sites now allow60seconds. Original absolute execution
+deadline/budget, event order, worker count, ordinal result save and refusal assertions
+stay intact. The offline Python3.13.12 gate passes103 cases in194.462seconds, zero
+failures/errors/skips. Retained trace proves acknowledgement, settlement, slot release,
+queued dispatch and successful return of every sibling, with no hidden worker exception.
+Root Python3.11.15 independently passes the same103 cases. XML/trace and static checks
+remain under ignored `pr46-ci-progress-diagnosis-20261012`. This is test progress
+verification, not runtime acceptance; the corrected source needs new three-version CI.
+
 ## 2026-10-12 local BRS owner ready/ack
 
 The new `rsi-python-brs-admission.xml` gate requires103 unique cases with zero failures,
