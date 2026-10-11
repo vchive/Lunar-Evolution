@@ -85,7 +85,29 @@ def bind_native_producer_bundle_checkpoint(
     if any(not callable(callback) for callback in (*callbacks, *tuple(_distinct_callbacks(previous_guard)))):
         raise ProducerBundleControlError("producer_bundle_transaction_parent_control_invalid")
 
+    last_parent_observations: list[tuple[float, float]] = []
+
+    def observe_cancellation_before_evidence(stage: str) -> None:
+        if strategy._cancelled():
+            raise SolveExecutionCancelled(stage)
+
+    def observe_checkpoint_before_evidence(stage: str) -> None:
+        # Ordinary transaction checkpoints do not call the numeric timeout wrapper.
+        # Sample its original parent callbacks here, before the final evidence gate.
+        nonlocal last_parent_observations
+        observe_cancellation_before_evidence(stage)
+        deadlines = []
+        for callback in callbacks:
+            sampled_at = time.monotonic()
+            remaining = callback(stage)
+            if (isinstance(remaining, bool) or not isinstance(remaining, (int, float))
+                    or not math.isfinite(float(remaining)) or remaining <= 0):
+                raise ProducerBundleControlError("producer_bundle_transaction_parent_budget_invalid")
+            deadlines.append((sampled_at, sampled_at + float(remaining)))
+        last_parent_observations = deadlines
+
     def check(stage: str) -> float:
+        nonlocal last_parent_observations
         checkpoint(stage)
         if previous_guard is not None and previous_guard is not strategy.context.continuation_guard:
             previous_guard()
@@ -97,6 +119,7 @@ def bind_native_producer_bundle_checkpoint(
                     or not math.isfinite(float(remaining)) or remaining <= 0):
                 raise ProducerBundleControlError("producer_bundle_transaction_parent_budget_invalid")
             deadlines.append((sampled_at, sampled_at + float(remaining)))
+        last_parent_observations = deadlines
         checkpoint(stage)
         observed_at = time.monotonic()
         for sampled_at, deadline in deadlines:
@@ -105,6 +128,22 @@ def bind_native_producer_bundle_checkpoint(
                                                   observed_at=observed_at)
         return min([pipeline.timeout_seconds, *(deadline - observed_at for _, deadline in deadlines)])
 
+    def revalidate_after_observation(stage: str) -> float:
+        # All caller predicates were sampled before the final evidence gate. No
+        # callback may remove evidence after that gate and still admit new work.
+        observed_at = time.monotonic()
+        remaining = pipeline.timeout_seconds
+        for sampled_at, deadline in last_parent_observations:
+            if deadline <= observed_at:
+                raise SolveExecutionBudgetExceeded(
+                    stage, started_at=sampled_at, deadline=deadline, observed_at=observed_at,
+                )
+            remaining = min(remaining, deadline - observed_at)
+        return remaining
+
+    check.revalidate_after_observation = revalidate_after_observation
+    check.observe_checkpoint_before_evidence = observe_checkpoint_before_evidence
+    check.observe_cancellation_before_evidence = observe_cancellation_before_evidence
     pipeline.set_remaining_timeout(check)
     try:
         yield
@@ -136,6 +175,7 @@ def bind_native_producer_bundle_control(
         raise ProducerBundleControlError("producer_bundle_transaction_parent_control_invalid")
 
     retained_deadlines: list[Callable[[str], float]] = []
+    last_parent_observations: list[tuple[float, float]] = []
 
     def bind_retained_deadline(callback: Callable[[str], float]) -> None:
         if not callable(callback):
@@ -143,6 +183,7 @@ def bind_native_producer_bundle_control(
         retained_deadlines.append(callback)
 
     def check(stage: str) -> float:
+        nonlocal last_parent_observations
         if strategy._cancelled():
             raise SolveExecutionCancelled(stage)
         for guard in guards:
@@ -156,6 +197,7 @@ def bind_native_producer_bundle_control(
                     or not math.isfinite(float(parent_remaining)) or parent_remaining <= 0):
                 raise ProducerBundleControlError("producer_bundle_transaction_parent_budget_invalid")
             parent_observations.append((sampled_at, float(parent_remaining)))
+        last_parent_observations = parent_observations
         # Parent callbacks may consume time or observe cancellation. Recheck before admitting work.
         if strategy._cancelled():
             raise SolveExecutionCancelled(stage)
@@ -171,7 +213,40 @@ def bind_native_producer_bundle_control(
             remaining = min(remaining, adjusted_remaining)
         return remaining
 
+    def revalidate_after_observation(stage: str) -> float:
+        # Evidence reads can consume the positive allowance sampled by check(). Reuse
+        # its fixed parent deadlines without invoking caller guards or budget callbacks
+        # again. In particular, do not replay the control's observe_stage callback.
+        # Local cancel() is safe to observe after evidence I/O; is_cancelled() would
+        # replay arbitrary parent predicates after the last evidence verification.
+        with execution_control._lock:
+            cancelled = execution_control._cancelled
+        if cancelled:
+            raise SolveExecutionCancelled(stage)
+        observed_at = execution_control._now()
+        remaining = execution_control.deadline - observed_at
+        if remaining <= 0:
+            raise SolveExecutionBudgetExceeded(
+                stage, started_at=execution_control.started_at,
+                deadline=execution_control.deadline, observed_at=observed_at,
+            )
+        for sampled_at, parent_remaining in last_parent_observations:
+            deadline = sampled_at + parent_remaining
+            if deadline <= observed_at:
+                raise SolveExecutionBudgetExceeded(
+                    stage, started_at=sampled_at, deadline=deadline, observed_at=observed_at,
+                )
+            remaining = min(remaining, deadline - observed_at)
+        return remaining
+
+    def observe_cancellation_before_evidence(stage: str) -> None:
+        if strategy._cancelled() or execution_control.is_cancelled():
+            raise SolveExecutionCancelled(stage)
+
     check.bind_retained_deadline = bind_retained_deadline
+    check.revalidate_after_observation = revalidate_after_observation
+    check.observe_checkpoint_before_evidence = observe_cancellation_before_evidence
+    check.observe_cancellation_before_evidence = observe_cancellation_before_evidence
     pipeline.set_remaining_timeout(check)
     pipeline.set_continuation_guard(None)
     try:

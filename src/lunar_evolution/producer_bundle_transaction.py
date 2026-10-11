@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -478,6 +479,7 @@ def run_native_producer_bundle_publication_transaction(
     python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None = None,
     execution_control: SolveExecutionControl | None = None,
     continuation_guard: Callable[[str], None] | None = None,
+    evidence_revalidator: Callable[[str], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
     """Evaluate imported material and atomically publish the valid native subset.
 
@@ -491,6 +493,8 @@ def run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
     if continuation_guard is not None and not callable(continuation_guard):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_guard_invalid")
+    if evidence_revalidator is not None and not callable(evidence_revalidator):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_evidence_revalidator_invalid")
     if python_handoff_sha256 is not None and native_execution_receipt_sha256 is None:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_execution_link_missing"
@@ -512,7 +516,8 @@ def run_native_producer_bundle_publication_transaction(
                "task_id": task_id, "budget_sha256": budget_sha256,
                "native_execution_receipt_sha256": native_execution_receipt_sha256,
                "python_handoff_sha256": python_handoff_sha256,
-               "python_handoff_file_pin": python_handoff_file_pin}
+               "python_handoff_file_pin": python_handoff_file_pin,
+               "evidence_revalidator": evidence_revalidator}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -527,6 +532,9 @@ def run_native_producer_bundle_publication_transaction(
                     return original_checkpoint(stage)
 
                 checkpoint.bind_retained_deadline = original_checkpoint.bind_retained_deadline
+                checkpoint.revalidate_after_observation = original_checkpoint.revalidate_after_observation
+                checkpoint.observe_checkpoint_before_evidence = original_checkpoint.observe_checkpoint_before_evidence
+                checkpoint.observe_cancellation_before_evidence = original_checkpoint.observe_cancellation_before_evidence
                 strategy.context.bundle_pipeline.set_remaining_timeout(checkpoint)
             return _run_native_producer_bundle_publication_transaction(
                 workspace, strategy, drafts, admission_plan, checkpoint=checkpoint,
@@ -541,6 +549,11 @@ def run_native_producer_bundle_publication_transaction(
         strategy._check_stage(stage)
 
     with bind_native_producer_bundle_checkpoint(strategy, checkpoint):
+        timeout_check = strategy.context.bundle_pipeline._remaining_timeout
+        if hasattr(timeout_check, "revalidate_after_observation"):
+            checkpoint.revalidate_after_observation = timeout_check.revalidate_after_observation
+            checkpoint.observe_checkpoint_before_evidence = timeout_check.observe_checkpoint_before_evidence
+            checkpoint.observe_cancellation_before_evidence = timeout_check.observe_cancellation_before_evidence
         return _run_native_producer_bundle_publication_transaction(
             workspace, strategy, drafts, admission_plan, checkpoint=checkpoint, **options,
         )
@@ -562,8 +575,16 @@ def _run_native_producer_bundle_publication_transaction(
     python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None,
     checkpoint: Callable[[str], object],
     execution_control: SolveExecutionControl | None = None,
+    evidence_revalidator: Callable[[str], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
     checkpoint("producer_preparation")
+    if evidence_revalidator is not None:
+        checkpoint.observe_checkpoint_before_evidence("producer_preparation")
+        evidence_revalidator("producer_preparation")
+        if hasattr(checkpoint, "revalidate_after_observation"):
+            checkpoint.revalidate_after_observation("producer_preparation")
+        elif strategy._cancelled():
+            raise SolveExecutionCancelled("producer_preparation")
 
     if not isinstance(strategy, PopulationStrategy):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_strategy_invalid")
@@ -622,6 +643,8 @@ def _run_native_producer_bundle_publication_transaction(
 
     def checkpoint_with_handoff(stage: str) -> object:
         result = original_checkpoint(stage)
+        if evidence_revalidator is not None:
+            original_checkpoint.observe_checkpoint_before_evidence(stage)
         _verify_python_handoff_link(
             root,
             journal_id=journal_id,
@@ -636,10 +659,20 @@ def _run_native_producer_bundle_publication_transaction(
         )
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
+        if evidence_revalidator is not None:
+            evidence_revalidator(stage)
+            if hasattr(original_checkpoint, "revalidate_after_observation"):
+                result = original_checkpoint.revalidate_after_observation(stage)
+            elif strategy._cancelled():
+                raise SolveExecutionCancelled(stage)
         return result
 
     if hasattr(original_checkpoint, "bind_retained_deadline"):
         checkpoint_with_handoff.bind_retained_deadline = original_checkpoint.bind_retained_deadline
+    if hasattr(original_checkpoint, "revalidate_after_observation"):
+        checkpoint_with_handoff.revalidate_after_observation = original_checkpoint.revalidate_after_observation
+        checkpoint_with_handoff.observe_checkpoint_before_evidence = original_checkpoint.observe_checkpoint_before_evidence
+        checkpoint_with_handoff.observe_cancellation_before_evidence = original_checkpoint.observe_cancellation_before_evidence
     checkpoint = checkpoint_with_handoff
     # The bundle evaluator samples the pipeline timeout directly between explicit
     # transaction checkpoints.  Keep that numeric timeout callback on a handoff-aware
@@ -650,6 +683,9 @@ def _run_native_producer_bundle_publication_transaction(
 
     def timeout_with_handoff(stage: str) -> float:
         remaining = pipeline_timeout(stage)
+        sampled_at = execution_control._now() if execution_control is not None else time.monotonic()
+        if evidence_revalidator is not None:
+            original_checkpoint.observe_cancellation_before_evidence(stage)
         _verify_python_handoff_link(
             root,
             journal_id=journal_id,
@@ -664,6 +700,23 @@ def _run_native_producer_bundle_publication_transaction(
         )
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
+        if evidence_revalidator is not None:
+            evidence_revalidator(stage)
+            revalidate = getattr(original_checkpoint, "revalidate_after_observation", None)
+            observed_at = execution_control._now() if execution_control is not None else time.monotonic()
+            deadline = sampled_at + remaining
+            stale_remaining = remaining - max(0.0, observed_at - sampled_at)
+            if callable(revalidate):
+                # This callback returns a remainder sampled after evidence I/O. Charge
+                # that current value directly; subtracting elapsed time again would
+                # double-count the evidence latency.
+                remaining = min(stale_remaining, revalidate(stage))
+            else:
+                remaining = stale_remaining
+            if remaining <= 0:
+                raise SolveExecutionBudgetExceeded(
+                    stage, started_at=sampled_at, deadline=deadline, observed_at=observed_at,
+                )
         return remaining
 
     pipeline.set_remaining_timeout(timeout_with_handoff)
@@ -767,6 +820,14 @@ def _run_native_producer_bundle_publication_transaction(
             root, journal, preflight=preflight, checkpoint=checkpoint,
         )
         if terminal is not None:
+            if evidence_revalidator is not None:
+                checkpoint.observe_cancellation_before_evidence("producer_terminal_replay")
+                evidence_revalidator("producer_terminal_replay")
+                revalidate = getattr(checkpoint, "revalidate_after_observation", None)
+                if callable(revalidate):
+                    revalidate("producer_terminal_replay")
+                elif strategy._cancelled():
+                    raise SolveExecutionCancelled("producer_terminal_replay")
             return NativeProducerBundleTransactionResult(
                 journal=journal, preflight=preflight, evaluations=(), admitted_candidate_ids=(),
                 rejected_candidate_ids=tuple(item.candidate_id for item in terminal.candidates),
@@ -839,6 +900,14 @@ def _run_native_producer_bundle_publication_transaction(
         )
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
+        if evidence_revalidator is not None:
+            checkpoint.observe_cancellation_before_evidence("producer_all_rejected")
+            evidence_revalidator("producer_all_rejected")
+            revalidate = getattr(checkpoint, "revalidate_after_observation", None)
+            if callable(revalidate):
+                revalidate("producer_all_rejected")
+            elif strategy._cancelled():
+                raise SolveExecutionCancelled("producer_all_rejected")
         return NativeProducerBundleTransactionResult(
             journal=journal, preflight=preflight, evaluations=tuple(evaluations),
             admitted_candidate_ids=(), rejected_candidate_ids=tuple(rejected), artifacts=(),
@@ -875,6 +944,10 @@ def _run_native_producer_bundle_publication_transaction(
         )
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
+        if evidence_revalidator is not None:
+            # Commit has already crossed its durable unknown marker. This read-only
+            # refusal preserves committed evidence; do not interrupt or roll it back.
+            evidence_revalidator("producer_postcommit")
         archive = CandidateArchive(root, requested_strategy="population", read_only=True)
         records = tuple(archive.records())
         archive.validate_candidate_integrity(require_all=True, records=records)
@@ -897,6 +970,8 @@ def _run_native_producer_bundle_publication_transaction(
         )
         if admission_anchor is not None and python_handoff is not None:
             _verify_python_admission_attempt_anchor(root, python_handoff)
+        if evidence_revalidator is not None:
+            evidence_revalidator("producer_return")
     except (NativeProducerBundleTransactionError, SolveExecutionCancelled, SolveExecutionBudgetExceeded):
         raise
     except Exception as exc:

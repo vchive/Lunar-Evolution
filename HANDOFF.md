@@ -1,5 +1,45 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-11 controller-bound Python publication and interruption recovery
+
+The continuation `codex/python-admission-composition` now builds on corrected PR43
+source `a83a82e39bc41379e97f014c63b3cdb515ddcfc2`. PR42 is merged as recorded below;
+PR43 corrected-source run38144340314 is still pending and cannot inherit earlier CI.
+
+`rsi_python_publication.py` exposes publication and recovery facades requiring an
+already pinned controller admission and the caller's retained record digest. Entry,
+checkpoint/timeout, terminal and successful-return boundaries revalidate complete
+references, the separate ledger row and original sidecar/handoff/prepared/anchor files.
+Read-only SQLite observations are per-ledger, per-thread and nested; `mode=ro` prevents
+recreating a database removed between the file check and connection. Missing/replaced
+databases refuse without a journal-mode change or evidence repair.
+
+Independent review found two boundary defects and both are fixed: ordinary checkpoints
+without explicit execution control now capture their sampled parent deadlines; caller
+cancellation predicates run before the final evidence gate. After that gate only fixed
+deadlines and the explicit control's local cancel flag are checked. Numeric timeout
+accounting deducts evidence latency once. A real candidate rename followed by an injected
+failure retains the unknown marker and partial material; repeated recovery refuses without
+producer/evaluator/retry/repair. Post-commit evidence refusal preserves durable effects and
+does not add a cancellation or budget gate inside the commit critical region.
+
+Final local Python3.11.15 results:83 focused cases and193 existing compatibility cases
+pass with zero failures/errors/skips. The extra19 control cases overlap the193 and must
+not be added. Ruff across src/tests/tools, compileall and diff checks pass; independent
+read-only review found no remaining blocker for this bounded slice. The new CI report
+`rsi-python-publication.xml` requires83 cases and is annotated and uploaded. Original
+failed local/CI evidence is retained. Final-source three-version CI and independent
+raw/source/tree audit are still required before this continuation merges.
+
+Remaining P0: automatic first admission pin and owning-thread scheduler state synchronization,
+plus the full Python process/runtime/journal interruption matrix. This facade deliberately
+requires an existing pin and does not create one. Remaining P1: actual Feature189 release,
+toolchain, static closure/build and sealed runtime acceptance; Feature190 runtime/owner
+composition; real local OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux
+acceptance. P2 authentication, multi-host ownership, distributed/service scheduling and
+remote evaluator remain deferred. Only local inert fixtures ran; `production_admission=false`.
+The bounded SDD is `specs/191-python-worker-adapter/controller-bound-publication.md`.
+
 ## 2026-10-11 PR42 acceptance and PR43 deterministic cancellation fixture
 
 PR42 source `5b46e51aa9762f8420e2adb3fd4ee08281fc28a9` passed full three-version

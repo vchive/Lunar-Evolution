@@ -24,12 +24,23 @@ provider-free contracts.
   retrofit post-execution evidence into the original RSI run request.
   The explicit controller register/validate API and independent create-only ledger record
   are now implemented against local fixtures, linking the original run proof and episode
-  claim. They need their own final-source full CI and merge. They do not automatically
+  claim. PR42 passed run38129577604 and independent/root offline audits, then merged
+  at d0d4c924 with the accepted tree. They do not automatically
   connect the scheduler or admit a runtime. The continuation adds explicit atomic
   checkpoint references and ordinary-resume row/file revalidation; reference history
-  cannot silently delete or replace an obligation. Automatic scheduler/publication
-  wiring remains open. See Feature191 `late-controller-admission.md` and
+  cannot silently delete or replace an obligation. Corrected PR43 source a83a82e has
+  its own run38144340314 pending; original source3095231 failed a transport fixture
+  race and is not accepted. Automatic scheduler/publication
+  first-pin wiring remains open. See Feature191 `late-controller-admission.md` and
   `durable-admission-reference.md`. Each final source requires its own CI/audit/merge.
+  The bounded continuation `controller-bound-publication.md` now composes
+  publication/recovery with an already pinned reference and covers a real failure
+  after the first candidate move, using inert local material. Its final source still
+  requires full CI and independent audit. Automatic first pin and owning-thread state
+  synchronization remain a separate open task; the current scheduler context has
+  no Python runtime/handoff input, and the late evidence does not exist before
+  the prepared publication boundary. Do not retrofit a post-execution anchor into
+  the request or journal, or substitute host Python for the sealed runtime.
 - **P1**: finish Feature189 G1 actual release/toolchain provenance, G2 configured static
   build/closure and G3 exact sealed runtime evidence; compose Feature190 owner/lifecycle
   observations; wire actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI;

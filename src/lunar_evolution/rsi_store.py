@@ -173,9 +173,31 @@ class RSILedger:
         self.database = Path(database).expanduser().resolve()
         self._controller_guards: dict[str, tuple[int, int, Path, str, int]] = {}
         self._controller_guards_lock = threading.RLock()
+        self._observation_scope = threading.local()
         self.initialize()
 
+    @contextmanager
+    def read_only_observations(self):
+        """Use non-creating SQLite reads within this ledger and calling thread only.
+
+        Nesting restores the previous scope, including after a failed observation. Caller
+        callbacks and publication writes must run outside this scope.
+        """
+        depth = getattr(self._observation_scope, "depth", 0)
+        self._observation_scope.depth = depth + 1
+        try:
+            yield
+        finally:
+            self._observation_scope.depth = depth
+
     def _connect(self) -> sqlite3.Connection:
+        if getattr(self._observation_scope, "depth", 0):
+            # mode=ro closes the lstat/open race: a removed database cannot be recreated.
+            # Do not change journal mode or create parent directories during observations.
+            connection = sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=30)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only = ON")
+            return connection
         self.database.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.database, timeout=30)
         connection.row_factory = sqlite3.Row
