@@ -48,6 +48,20 @@ installation/runtime stage.
 - [ ] F01f Complete this final source's CI plus independent raw/source/tree audit
   and merge in dependency order after PR46–50.
 
+## F04 bounded two-input report continuation
+
+- [x] F04a Specify the separate source prototype and pure caller-byte comparison
+  seam in `input-read-report.md`; retain old emitter/profile/pins unchanged.
+- [x] F04b Read only the existing two fixed paths with bounded binary reads;
+  encode canonical ASCII hex fields after both reads and fixed computation285.
+- [x] F04c Compare independent caller marker/request/memory bytes with exact
+  types/bounds, strict canonical JSON and five false claims; return only digests
+  and sizes without promoting caller DTOs or manufacturing a solver envelope.
+- [x] F04d Verify219 new source/mock cases plus195 disjoint preparation/source
+  compatibility cases,414 unique passes; retain the219-case CI gate.
+- [ ] F04e Complete final-source CI plus independent raw/source/tree audit and
+  merge after the preceding dependencies. Live F04 below remains incomplete.
+
 ## Later stages — installation and runtime remain unaccepted
 
 - [ ] F01 Specify and accept a separately versioned installation profile; retain

@@ -1,5 +1,36 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 fixed two-input RSI report prototype
+
+Feature193 F04 now has a separate uninstalled source prototype and pure comparison
+API. The prototype validates an exact lowercase marker, reads only the existing
+request/memory fixed paths with bounded binary reads, then returns a canonical
+hex report after fixed computation285. It imports nothing, dispatches nothing and
+retains all five capability claims false. The parent comparator checks independent
+caller bytes/marker with strict canonical JSON/type/bound rules and returns only
+digests/sizes. Parser errors expose fixed reasons without retaining parser cause/
+context; evidence must never serialize traceback locals or the raw input report.
+No accepted emitter/profile/frozen inventory, parser or source pin changes.
+
+Root Python3.11 passes219 new focused plus195 disjoint compatibility cases,
+414 unique passes, zero failures/errors/skips. The initial pytest-console tools
+namespace setup error is retained; the corrected python-module invocation passes
+without product fixes. Root source/test hashes are unchanged across the run.
+Independent Python3.13 replay passes the same219 cases with frozen hashes and
+no semantic review blocker. Whole-source Ruff, compileall, diff and YAML/gate
+checks pass. Final-source CI/audit remains required. The219-case retained CI gate is wired;
+see Feature193 `input-read-report.md`, tasks and validation for exact scope.
+This slice starts from PR51 final `3ecf2f3526ed711bf1ff2eeca01c11004cf6cb16`;
+preceding PR46–51 retain their own CI/audit and dependency-order merge obligations.
+Verified main remains PR45 `9bfccbfc5a25db612a59ea27464b9affce40f1f3` at this checkpoint.
+
+Live F04 remains open: two caller-matching byte strings are not original manifest/
+file/launch authority or a solver result. Actual marker-capable installation,
+source/toolchain/static build/sealed runtime, same-attempt bounded capture/
+materialization and terminal/handoff, local solver and production CLI/Linux
+acceptance remain P0/P1 gaps. No real CPython/toolchain or external solver ran;
+`production_admission=false`; P2 stays deferred.
+
 ## 2026-10-12 pure RSI installation-profile input preparation
 
 Feature193 F01 now has a bounded pure preparation API and independently pinned

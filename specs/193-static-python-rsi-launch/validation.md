@@ -152,3 +152,42 @@ completion SHA256 `07148aba89b5329db116fd391421d0ffc2b59ea05ecf59fa871a1a9d70347
 JUnit SHA256 `76286b9d78ef7842d001912e3f2c6932da9a5eea7d0a6f34779e886eb96b9683`.
 Repeated replay is not an additional 113 unique tests. Whole `src/tests/tools`
 Ruff and compileall pass, as do diff checks and YAML/gate annotation/upload wiring.
+
+## F04 source/mock two-input report continuation — 2026-10-12
+
+The separate uninstalled source prototype reads only request and memory grants,
+using exact fixed binary paths and131073-byte reads; it refuses invalid marker
+metadata before opening either input and refuses empty/oversized/nonbytes reads.
+It returns canonical ASCII hex fields after both reads and fixed computation285,
+with five false claims. The pure comparator checks independently supplied caller
+bytes and marker and returns only digests/sizes. It never reads retained input
+files or descriptors, creates a result envelope, or grants evidence authority.
+Malformed JSON/Unicode/depth errors are normalized outside the exception handler
+so parser cause/context does not retain raw input; completion records must still
+exclude traceback locals and the raw report. Existing accepted profile/emitter/
+frozen inventories and pins are unchanged.
+
+Root Python3.11 verification passes219 new focused and195 disjoint compatibility
+cases,414 unique passes, zero failures/errors/skips. The compatibility selection
+is the previous113-case profile plus82-case marker/source-plan modules. The
+create-only report `static-python-rsi-input-report-root-20261012/completion.json`
+has SHA256 `e5766f3f7742b18ec7a52b0ef273cdd480bdc8d697b2962d40450e7c7b0a221a`.
+Source/test hashes were identical before and after the focused run. An earlier
+pytest console invocation lacked the tools namespace and had45 passes/174 setup
+errors; the corrected `python -m pytest` invocation passes without product fixes.
+Both original logs remain retained separately; repeated219-case runs are not
+additional unique cases. No raw input report is retained in completion evidence.
+
+The219-case CI gate retains/annotates its own XML. Complete final-source CI and
+independent raw/source/tree audit remain pending. Live F04, accepted installation,
+actual build/sealed runtime, original terminal/capture/materialization binding,
+solver envelope/publication and production CLI/Linux acceptance remain open.
+Only inert/mock fixtures ran; `production_admission=false`.
+
+Independent Python3.13 replay passes the same219 cases with zero failures/errors/
+skips and unchanged API/asset/test/package hashes. Its create-only completion is
+`static-python-rsi-input-report-independent-py313-20261011T192213737063Z/completion.json`,
+SHA256 `d6d0e10054a1a4b629047a6e47c6d6e3f5e04c54ecdbbff5b9fb46eab7691491`;
+semantic review SHA256 `314b2b9581abb0c8c6d8a00fc10e81c330932d1c19dfcd22bb857359cae57c25`.
+Independent replay is not an additional219 unique cases. Whole src/tests/tools
+Ruff, compileall, diff checks and YAML gate/annotation/upload wiring pass.
