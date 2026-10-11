@@ -268,8 +268,8 @@ class RSILedger:
         """Acquire an exclusive, non-blocking controller lock for one run."""
         _id(run_id, name="run_id")
         lock_dir = self.database.parent / (self.database.name + ".controller-locks")
-        lock_dir.mkdir(parents=True, exist_ok=True)
         try:
+            lock_dir.mkdir(parents=True, exist_ok=True)
             if lock_dir.is_symlink() or not lock_dir.is_dir():
                 raise RSILearningError("rsi_controller_lock_invalid")
             directory_fd = os.open(lock_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -278,16 +278,19 @@ class RSILedger:
         name = hashlib.sha256(run_id.encode("utf-8")).hexdigest()
         descriptor: int | None = None
         try:
-            descriptor = os.open(
-                name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd
-            )
-            identity = os.fstat(descriptor)
-            if not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1:
-                raise RSILearningError("rsi_controller_lock_invalid")
             try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise RSILearningError("rsi_controller_busy") from exc
+                descriptor = os.open(
+                    name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=directory_fd
+                )
+                identity = os.fstat(descriptor)
+                if not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1:
+                    raise RSILearningError("rsi_controller_lock_invalid")
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as exc:
+                    raise RSILearningError("rsi_controller_busy") from exc
+            except OSError as exc:
+                raise RSILearningError("rsi_controller_lock_invalid") from exc
             with self._controller_guards_lock:
                 self._controller_guards[run_id] = (directory_fd, descriptor, lock_dir, name, threading.get_ident())
             try:
@@ -297,8 +300,6 @@ class RSILedger:
                 with self._controller_guards_lock:
                     self._controller_guards.pop(run_id, None)
                 fcntl.flock(descriptor, fcntl.LOCK_UN)
-        except OSError as exc:
-            raise RSILearningError("rsi_controller_lock_invalid") from exc
         finally:
             if descriptor is not None:
                 os.close(descriptor)

@@ -105,10 +105,17 @@
   reference increment. Pin/ack interruption preserves the durable obligation without
   adopting a newer checkpoint. Cover real transaction-to-evaluator boundaries and
   inert provider return through native-result/episode/controller settlement.
+- [x] Compose local BRS worker prepared ready/ack under `brs-owner-ready-ack.md`.
+  Workers submit canonical original evidence outside controller/observation lock waits;
+  the owner pins with captured CAS, acknowledges exact references and saves results
+  ordinally. Support one Python child alongside ordinary siblings; refuse nested/recovered
+  authority and multiple independent Python children. Preserve durable obligations on
+  cancellation or ack failure. The active-wave save refuses unrelated checkpoint drift
+  instead of synchronizing or adopting its latest state.
 - [ ] Automatically require that separate admission identity in the live scheduler
   and publication/recovery flow. The active DRS facade now pins prepared evidence and
   synchronizes exact references; the real Python scheduler still needs runtime/handoff
-  inputs, and BRS needs an owner ready/ack protocol without worker-to-owner lock waits.
+  inputs. Local BRS ready/ack is implemented without worker-to-owner lock waits.
   Ordinary resume requires pinned rows. The anchor contains
   post-execution evidence and cannot become part of the original pre-execution run request.
   Complete independently observed runtime/lifecycle pin revalidation across the live flow;
