@@ -158,3 +158,14 @@
 - [ ] Multi-host ownership, distributed scheduler, service API and remote
   Shinka/Slurm backend.
 - [ ] Model credentials, real OpenEvolve/Shinka campaigns or WebAgent comparison.
+
+## Python scheduler pre-staged input join
+
+- [x] Add immutable cross-domain input context and read-only validator for one retained
+  Python sidecar/checkpoint plus native request/memory/launch inputs.
+- [x] Add a pure stable plan factory reusing `NativeRSIInputDescriptor` and
+  `NativeRSIExecutionPlan`; keep gateway/controller/provider APIs unchanged.
+- [x] Cover cross-episode/request/memory/runtime/intent/attestation/deadline drift,
+  file replacement/touch/mode/link/symlink/missing and two-read races without writes,
+  claims, budget charges, subprocesses or evaluator calls.
+- [x] Preserve legacy non-Python native plan behavior and document this as preflight only.

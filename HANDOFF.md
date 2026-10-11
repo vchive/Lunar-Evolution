@@ -1,5 +1,41 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 Python scheduler pre-staged input join
+
+The isolated `codex/python-scheduler-inputs` continuation starts from frozen PR46
+source `11875b87a659e571083589f7c97cd645484e3028`. At this slice's local acceptance,
+PR45 run38151649684 remains pending. PR46 run38156193067 has a first failed
+Python3.11 lane; the other lanes and failure diagnosis remain pending. Original
+failure evidence must be retained and a corrected dependency needs its own CI. Verified main is
+`db7272b4ebb7b5e8b7e78cc6383b5b498f7f076c`. Each final source needs its own CI.
+
+`rsi_python_scheduler_inputs.py` joins one original Python sidecar/checkpoint with
+one native request/memory/launch context before claim. Its pure plan factory returns
+existing native plan/descriptor formats and commits to31 named code dependencies.
+It never remints original proof, charges budget, launches, evaluates, writes journals
+or creates post-execution handoff. Exact DTO/plain-data checks run before readers or
+serializers. Sidecar/native/runtime observations and caller-owned original material
+are rechecked; opaque strategy/broker/control/ledger objects are not compared or invoked.
+Independent review found callback/equality/shape/fingerprint gaps; all are fixed and
+first findings remain in ignored reports. The final frozen-source review has no blocker.
+
+Final local Python3.11.15:81 focused cases passed in66.608 seconds and250 disjoint
+existing compatibility cases passed in33.743 seconds, zero failures/errors/skips.
+Ruff, compileall and diff checks pass. The new81-case CI gate is annotated/uploaded;
+41 focused plus3 full phases still require this source's own three-version CI and
+independent raw/source/tree audit. Prior intermediate gates are not added to331 unique
+cases. Original native manifest/launch timestamp proof is absent; a prior completed
+touch there remains accepted, while retained sidecar/runtime/request/memory timestamp
+drift refuses. Double observations do not establish an atomic filesystem snapshot.
+
+Remaining P0: live scheduler runtime/post-execution handoff composition and the full
+process/runtime/journal interruption matrix. Remaining P1: Feature189 release/toolchain/
+static build/sealed runtime acceptance, Feature190 runtime/owner composition, actual
+local OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux acceptance.
+P2 authentication, multi-host ownership, service/distributed scheduling and remote
+evaluator remain deferred. Only local inert fixtures ran; `production_admission=false`.
+Bounded SDD: Feature191 `python-scheduler-inputs.md`.
+
 ## 2026-10-12 local BRS prepared ready/ack continuation
 
 The isolated `codex/python-brs-ready-ack` continuation starts from PR45 source
