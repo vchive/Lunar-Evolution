@@ -1,5 +1,25 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-11 PR42 acceptance and PR43 deterministic cancellation fixture
+
+PR42 source `5b46e51aa9762f8420e2adb3fd4ee08281fc28a9` passed full three-version
+run38129577604 and independent raw/source/tree audit. Root replayed the original
+retained artifacts offline and merged it at `d0d4c92428891a7444f5a3b725a05f87554e4734`.
+The actual tree is `96a524f670202429fbe4cdac9357d8d208b9b9db`, with ordered parents
+`[3533dc5cb3010766c02a61afda44beb9dc8eed57,5b46e51aa9762f8420e2adb3fd4ee08281fc28a9]`.
+Root independently verified the actual merge response, commit and PR state.
+
+PR43 original source `30952311a11a23d55db2fb91e70d922815ceb65d`, run38131091302,
+failed current.xml on Python3.13 in the concurrent HTTP handle ownership test. The
+slow worker could naturally exit at its own deadline before the test requested a
+kill; production correctly refused to acknowledge that as a controller kill. Original
+failure evidence is retained. The fixture now stalls only that worker before HTTP
+startup, preserving the 0.2-second parent deadline, exact SIGKILL/reap requirement,
+independent fast response and zero slow HTTP calls. Production code is unchanged.
+All23 transport cases pass locally on Python3.11.15, plus Ruff, compileall and diff
+checks. This new source requires its own full three-version CI and audit; the old
+failure cannot be accepted or replaced by focused success. PR43 is not yet merged.
+
 ## 2026-10-11 durable RSI admission references
 
 Current main includes PR40 at `c0b9bbd` and PR41 at
