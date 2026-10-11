@@ -1,5 +1,37 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 static Python RSI marker source preparation
+
+Feature193 adds a separate fixed `rsi-marker-launch-v1` source emitter/CLI under
+`tools/static_python_rsi_fixture`. The C launcher accepts exactly the native RSI
+marker and lowercase SHA256 metadata before Python initialization; the fixed
+wrapper validates exact string syntax then delegates once to the unchanged
+baseline encoder. Python argv/orig_argv remain the original single-item vectors.
+No request/memory reads, result envelope, new grants or environment selector are
+introduced. Eleven independent source pins, literal-only profile snapshots,
+create-only six-asset output and full readback protect local source preparation.
+All nine capability claims remain false. Old Feature189 assets/profile/recipe/
+reviewed build inputs and accepted installation/parser behavior are unchanged.
+
+Local Python3.11 final verification:82 new focused plus133 disjoint existing
+compatibility cases,215 unique passes with zero failures/errors/skips. C tests
+compile only fake Python APIs; encoder/DTO/comparison uses inert fake runtime
+facts. Ruff, compileall and diff checks pass; first setup/test failures are retained
+under ignored reports. Independent Python3.13.12 replay passes the same82 cases
+with unchanged source/test hashes; separate source review verifies683 existing
+files unchanged against PR49 Git blobs/modes. Final-source three-version CI/audit
+remains pending. The new82-case CI gate
+retains XML and annotations. Feature193 SDD records implementation and later work.
+
+This source branches from PR49 final `da0acf0d714e54b55c072c791e9141c3c932005f`.
+PR46–49 each retain their own pending final-source CI and must merge in dependency
+order after their own audit. Verified main remains PR45 merge `9bfccbfc5a25db612a59ea27464b9affce40f1f3` at this local checkpoint.
+Remaining P0/P1: separately accepted marker-capable installation, verified build/
+sealed runtime, authoritative input consumption/result, live runtime/handoff and
+interruption coverage, actual local solver export and production CLI/Linux
+acceptance. No actual CPython/toolchain build or remote evaluator ran;
+`production_admission=false`. P2 stays deferred.
+
 ## 2026-10-12 independently pinned Python runtime observation policy
 
 The isolated `codex/python-observation-policy` continuation starts from PR48 source
