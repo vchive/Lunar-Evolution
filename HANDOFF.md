@@ -34,8 +34,13 @@ concurrent writer. The existing local trust model does not resist rewriting ever
 Local evidence: original108 new cases plus143 existing compatibility cases passed
 together (251) before the final review fixes. After those fixes root reran20 added
 regressions plus2 representative successful flows (22), all zero failures/errors/skips.
-The final dedicated CI inventory is128; do not claim all128 were rerun locally after
-the fixes. All newly verified local runs use Python3.11.15. Previous3.13.12 labels for
+PR42 first head `23e4581` run38128598448 failed the focused gate: four malformed
+checkpoint tests still expected `checkpoint_corrupt`, although the reviewed API returns
+`rsi_python_admission_evidence_invalid`. The original failed reports are retained; no
+full current/archive/frozen acceptance is inferred from that run. After correcting this
+test assertion, root reran the complete128 cases on Python3.11.15: zero failures/errors/
+skips (`/tmp/lunar-pr42-root-full-fixed-20261011-03.xml`). The corrected source needs a
+new full matrix and independent raw/source/tree audit. Previous3.13.12 labels for
 the128/796 recovery evidence are historically unverified from raw interpreter metadata;
 version-specific acceptance comes from the actual remote matrix. Ruff, compileall and
 diff checks pass; final source full CI and independent audit remain required.

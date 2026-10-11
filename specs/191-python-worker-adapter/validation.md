@@ -6,8 +6,14 @@ The separate `rsi-python-admission.xml` gate requires128 provider-free cases wit
 failures, errors or skips. Locally the original108 cases and143 compatibility cases
 passed together (251), before the final two review fixes. After those fixes, root
 independently reran20 new regression cases and2 representative successful wire/replay
-cases:22 passed with no failures, errors or skips. This is not a claim that all128 were
-rerun locally after the fixes. The author's27 compatibility cases overlap the earlier
+cases:22 passed with no failures, errors or skips. First PR42 head `23e4581` run38128598448
+then exposed four stale test assertions for malformed checkpoint evidence: they expected
+`checkpoint_corrupt`, while the reviewed fixed API returns
+`rsi_python_admission_evidence_invalid`. Original failed evidence is retained, and
+unexecuted full phases are not accepted. Root corrected only the assertion and reran
+all128 cases with zero failures/errors/skips (170.732 seconds; retained JUnit
+`/tmp/lunar-pr42-root-full-fixed-20261011-03.xml`). The corrected source requires a new
+full matrix and independent audit. The author's27 compatibility cases overlap the earlier
 compatibility evidence and must not be added to that inventory. All newly verified local
 commands use the shared interpreter Python3.11.15. Earlier3.13.12 labels for the128/796
 recovery runs were not independently confirmed from raw interpreter metadata; rely on

@@ -369,7 +369,7 @@ def test_corrupt_checkpoint_returns_fixed_refusal_without_admission_write(tmp_pa
             "AND revision=(SELECT MAX(revision) FROM rsi_controller_journal WHERE run_id=?)",
             (raw, value.binding.run_id, value.binding.run_id),
         )
-    _assert_no_effect(value, lambda: _register(value), match="checkpoint_corrupt")
+    _assert_no_effect(value, lambda: _register(value), match="rsi_python_admission_evidence_invalid")
 
 
 @pytest.mark.parametrize("mutation", ["drop-proof", "drift-proof", "drop-intent", "request", "memory", "episode"])
