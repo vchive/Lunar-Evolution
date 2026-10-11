@@ -19,13 +19,17 @@ provider-free contracts.
   and final return, then rechecks the original handoff pin/prepared association;128 focused
   and796 combined local cases pass with independent review. PR40 content/export passed
   its full matrix and independent raw/source/tree audit and merged at c0b9bbd. PR41
-  independent recovery still needs its own full CI/audit/merge; neither is full controller admission. Do not
+  independent recovery passed its full run38125047229 and root offline audit, then merged
+  at3533dc5 with the tested tree. Neither is full controller admission. Do not
   retrofit post-execution evidence into the original RSI run request.
   The explicit controller register/validate API and independent create-only ledger record
   are now implemented against local fixtures, linking the original run proof and episode
   claim. They need their own final-source full CI and merge. They do not automatically
-  connect the scheduler, make ordinary resume detect row deletion, or admit a runtime;
-  see Feature191 `late-controller-admission.md`.
+  connect the scheduler or admit a runtime. The continuation adds explicit atomic
+  checkpoint references and ordinary-resume row/file revalidation; reference history
+  cannot silently delete or replace an obligation. Automatic scheduler/publication
+  wiring remains open. See Feature191 `late-controller-admission.md` and
+  `durable-admission-reference.md`. Each final source requires its own CI/audit/merge.
 - **P1**: finish Feature189 G1 actual release/toolchain provenance, G2 configured static
   build/closure and G3 exact sealed runtime evidence; compose Feature190 owner/lifecycle
   observations; wire actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI;

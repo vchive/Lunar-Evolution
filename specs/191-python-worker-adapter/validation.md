@@ -1,5 +1,39 @@
 # Validation plan
 
+## 2026-10-11 durable RSI admission references
+
+The dedicated `rsi-python-admission-flow.xml` gate requires54 cases and zero failures,
+errors or skips. Final local Python3.11.15 verification passed all54 in100.085 seconds
+(`/tmp/lunar-rsi-python-admission-flow-final54-20261011.xml`), plus276 existing
+late-registration/controller/store/native/producer/budget/reconcile/callback compatibility
+cases in290.007 seconds (`/tmp/lunar-flow-compat-final-20261011-3.xml`). Root independently
+passed18 selected atomic/recovery/history/BRS/cached-replay cases in28.235 seconds.
+Those18 overlap the54 and are not additional inventory. The final five settlement/callback
+regressions also passed; earlier49-case evidence predates the final fixes.
+
+Independent review found and resolved three blockers: public lock acquisition during
+BRS read-only verification, terminal episode writes before checking fresh-result evidence,
+and callback execution after its started checkpoint could lose original evidence. The
+private read-only evidence/CAS helper, optional runner `before_settlement`, and guarded
+callback close these boundaries. Immutable worker result and physical usage remain retained
+on refusal. Existing known-terminal settlement after deadline remains valid; the new
+settlement hook does not add a budget refusal. Exact pin replay remains read-only after
+terminal/unknown states, required missing rows never get recreated, reference history is
+monotonic, and original request/proof/budgets/deadlines/plans and unpinned wires stay unchanged.
+
+Frozen SHA256: controller `3cf2449d282c4baa3d8df9a329f6e82c5048bfe5b99ff1cae6ac5ddaa29ffa5f`,
+store `976f567c88a95731c26da5c5261bd793aed4175bb78ed1c0fd63fc0962555199`,
+admission `9e28150430523e10477bb2274ffa237b81f9f2728dd3b44c2913aae33ca6a753`, and new tests
+`d0aaf1bb0a68c25dad4c5f9a0418091d3bd788e735821eea43a15a5da2c2eebc`.
+Ruff, compileall and diff checks pass. Final-source Ubuntu3.11/3.12/3.13 CI and independent
+raw/source/tree audit remain required before merge; PR41/42 evidence cannot approve this slice.
+
+This is explicit durable evidence pinning, not automatic scheduling/publication composition
+or sealed CPython execution. Separate file observations and SQLite are not globally atomic
+against a hostile writer, and the local trust model does not resist rewriting every trusted
+pin. `production_admission=false`; only local inert fixtures ran. The next P0 slices are
+automatic admission-identity composition and the complete runtime/journal crash matrix.
+
 ## 2026-10-11 explicit late controller/ledger evidence
 
 The separate `rsi-python-admission.xml` gate requires128 provider-free cases with zero

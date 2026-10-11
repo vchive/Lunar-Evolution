@@ -221,8 +221,111 @@ def parse_rsi_python_admission_record(value: object) -> RSIPythonAdmissionRecord
     return RSIPythonAdmissionRecord.from_dict(value)
 
 
+_REFERENCE_FIELDS = frozenset({
+    "journal_id", "attempt_id", "record_sha256", "native_plan", "prepared_journal",
+})
+
+
+def parse_rsi_python_admission_reference(value: object) -> dict[str, Any]:
+    """Reparse a bounded complete recovery context without invoking caller methods."""
+    from .producer_bundle_publication import parse_producer_bundle_publication_journal
+    from .rsi_native_plan import NativeRSIExecutionPlan
+
+    if type(value) is not dict or set(value) != _REFERENCE_FIELDS:
+        _fail("reference_invalid")
+    validate_rsi_python_admission_shapes(value)
+    for name in ("journal_id", "attempt_id"):
+        if type(value[name]) is not str or _ID.fullmatch(value[name]) is None:
+            _fail("reference_invalid")
+    _sha(value["record_sha256"])
+    try:
+        detached = json.loads(_canonical(value))
+        plan = NativeRSIExecutionPlan.from_dict(detached["native_plan"])
+        journal = parse_producer_bundle_publication_journal(detached["prepared_journal"])
+        if (journal.state != "prepared" or journal.publication_phase != "preflight"
+                or journal.python_handoff_file_pin is None or journal.python_handoff_sha256 is None
+                or journal.native_execution_receipt_sha256 is None
+                or (plan.run_id, plan.journal_id, plan.parent_task_id, plan.task_id)
+                != (journal.run_id, journal.journal_id, journal.parent_task_id, journal.task_id)
+                or plan.journal_id != detached["journal_id"]
+                or _canonical(plan.to_dict()) != _canonical(detached["native_plan"])
+                or _canonical(journal.to_dict()) != _canonical(detached["prepared_journal"])):
+            _fail("reference_invalid")
+        # Older DTO parsers accept zero digests; this later trust boundary does not.
+        for field, item in detached["native_plan"].items():
+            if field.endswith("sha256"):
+                _sha(item)
+        return detached
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        raise RSIPythonAdmissionError("reference_invalid") from exc
+
+
+def validate_rsi_python_admission_reference_record(
+    reference: object, record: object, *, run_id: str, episode_id: str,
+) -> dict[str, Any]:
+    """Bind the full original wires to the separately retained evidence identity."""
+    from .producer_bundle_publication import parse_producer_bundle_publication_journal
+    from .rsi_native_plan import NativeRSIExecutionPlan
+
+    ref = parse_rsi_python_admission_reference(reference)
+    retained = parse_rsi_python_admission_record(record)
+    plan = NativeRSIExecutionPlan.from_dict(ref["native_plan"])
+    journal = parse_producer_bundle_publication_journal(ref["prepared_journal"])
+    if ((retained.run_id, retained.episode_id) != (run_id, episode_id)
+            or (ref["journal_id"], ref["attempt_id"], ref["record_sha256"])
+            != (retained.journal_id, retained.attempt_id, retained.record_sha256)
+            or (plan.run_id, plan.request.episode_id) != (run_id, episode_id)
+            or plan.plan_sha256 != retained.native_plan_sha256
+            or plan.request_sha256 != retained.episode_request_sha256
+            or journal.digest() != retained.prepared_journal_sha256
+            or journal.python_handoff_file_pin is None
+            or _canonical(journal.python_handoff_file_pin.to_dict()) != _canonical(retained.handoff_file_pin)):
+        _fail("reference_record_mismatch")
+    return ref
+
+
+def build_rsi_python_admission_reference(
+    record: object, *, native_plan: object, prepared_journal: object,
+) -> dict[str, Any]:
+    """Build a detached reference from exact already-reparsed canonical wire dictionaries."""
+    retained = parse_rsi_python_admission_record(record)
+    return validate_rsi_python_admission_reference_record({
+        "journal_id": retained.journal_id, "attempt_id": retained.attempt_id,
+        "record_sha256": retained.record_sha256, "native_plan": native_plan,
+        "prepared_journal": prepared_journal,
+    }, retained, run_id=retained.run_id, episode_id=retained.episode_id)
+
+
+def parse_rsi_python_admission_references(value: object) -> dict[str, dict[str, Any]]:
+    """Validate the optional episode map before serialization or any evidence I/O."""
+    if type(value) is not dict:
+        _fail("reference_invalid")
+    validate_rsi_python_admission_shapes(value)
+    result: dict[str, dict[str, Any]] = {}
+    for episode_id, reference in value.items():
+        if _ID.fullmatch(episode_id) is None:
+            _fail("reference_invalid")
+        result[episode_id] = parse_rsi_python_admission_reference(reference)
+    # Bound the whole map to the controller's established journal limit.
+    try:
+        raw = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError) as exc:
+        raise RSIPythonAdmissionError("reference_invalid") from exc
+    if len(raw) > 8 * 1024 * 1024:
+        _fail("reference_too_large")
+    return result
+
+
 __all__ = [
-    "MAX_RSI_PYTHON_ADMISSION_BYTES", "RSI_PYTHON_ADMISSION_PROTOCOL", "RSIPythonAdmissionError",
-    "RSIPythonAdmissionRecord", "build_rsi_python_admission_record", "parse_rsi_python_admission_record",
+    "MAX_RSI_PYTHON_ADMISSION_BYTES",
+    "RSI_PYTHON_ADMISSION_PROTOCOL",
+    "RSIPythonAdmissionError",
+    "RSIPythonAdmissionRecord",
+    "build_rsi_python_admission_record",
+    "build_rsi_python_admission_reference",
+    "parse_rsi_python_admission_record",
+    "parse_rsi_python_admission_reference",
+    "parse_rsi_python_admission_references",
+    "validate_rsi_python_admission_reference_record",
     "validate_rsi_python_admission_shapes",
 ]

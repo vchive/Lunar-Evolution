@@ -229,18 +229,31 @@ def test_child_timeout_error_before_deadline_is_failed_not_cancellation(monkeypa
 
 def test_concurrent_handles_own_only_their_exact_child(monkeypatch):
     processes, _ = record_processes(monkeypatch)
-    with local_http("headers") as (slow, _), local_http() as (fast, fast_calls):
+    original_command = http_transport._worker_command
+    code = f"import runpy,time;time.sleep(5);runpy.run_path({http_transport.__file__!r},run_name='__main__')"
+    command_calls = []
+
+    def worker_command(fd):
+        command_calls.append(fd)
+        if len(command_calls) == 1:
+            return [sys.executable, "-I", "-S", "-B", "-c", code, str(fd)]
+        return original_command(fd)
+
+    monkeypatch.setattr(http_transport, "_worker_command", worker_command)
+    with local_http("headers") as (slow, slow_calls), local_http() as (fast, fast_calls):
         transport = ControllerHttpTransport()
         slow_handle = transport.start(admission(0.2), ControllerHttpRequest(slow, {}, b"slow"))
         fast_handle = transport.start(admission(2), ControllerHttpRequest(fast, {}, b"fast"))
         with ThreadPoolExecutor(max_workers=2) as pool:
             slow_wait = pool.submit(slow_handle.wait, 2.0)
             fast_wait = pool.submit(fast_handle.wait, 2.0)
-            assert fast_wait.result(timeout=3) == "completed"
             assert slow_wait.result(timeout=3) is None
-        assert slow_handle.cancel() is True
-        assert fast_handle.response.status == 200
-    assert len(fast_calls) == 1
+            assert slow_handle.cancel() is True
+            assert fast_wait.result(timeout=3) == "completed"
+        assert fast_handle.result().status == 200
+    assert slow_calls == []
+    assert len(fast_calls) == 1 and fast_calls[0][1] == b"fast"
+    assert len(processes) == len(command_calls) == 2
     assert_reaped(processes)
 
 
