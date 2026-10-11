@@ -19,6 +19,8 @@ import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
+from _pytest.junitxml import bin_xml_escape, mangle_test_address
+
 REPO = Path(__file__).resolve().parents[1]
 ARCHIVE_INDEX = "docs/history-archive.json"
 ARCHIVE_COMMIT = "c6947fdfbf43d84e83cc29cc215e7bc0250db83a"
@@ -34,6 +36,7 @@ ARCHIVE_EXECUTION_COUNT = 2294
 REGISTRATION_COUNT = 24
 ARCHIVE_COLLECTION_SHA256 = "1f5259be4ab980b16b60dfef08e7c8842f3562ecc7e3974b002f863cbc249001"
 UV_VERSION = "0.11.8"
+SHARD_ALGORITHM = "sha256-path-utf8-mod-v1"
 NATIVE_E2E_SELECTION = (
     "tests/test_automatic_detach_phase_c.py",
     "tests/test_conversational_automatic_bundle.py",
@@ -249,7 +252,65 @@ def _archive_selection(nodes, bound):
     return ARCHIVE_EXECUTION_COUNT
 
 
-def _junit_summary(report, *, pytest_exit_code, expected_count, frozen=False):
+def _shard_bounds(shard_index, shard_count):
+    if (type(shard_index) is not int or type(shard_count) is not int
+            or shard_count <= 0 or not 0 <= shard_index < shard_count):
+        raise RegressionError("invalid current shard index/count")
+
+
+def _current_nodes(nodes):
+    """Validate supplied identities without filesystem access or callbacks."""
+    if type(nodes) not in (tuple, list) or not nodes:
+        raise RegressionError("current inventory must be a nonempty list or tuple")
+    checked = []
+    keys = set()
+    for node in nodes:
+        if type(node) is not str or any(
+            ord(char) < 32 or ord(char) == 127 or 0xD800 <= ord(char) <= 0xDFFF
+            for char in node
+        ):
+            raise RegressionError("invalid current collection node")
+        filename, separator, address = node.partition("::")
+        path = PurePosixPath(filename)
+        base, bracket, parameters = address.partition("[")
+        if (not separator or not base or any(not part for part in base.split("::"))
+                or (bracket and not parameters.endswith("]"))
+                or not filename or "\\" in filename or "[" in filename
+                or path.is_absolute() or ".." in path.parts
+                or len(path.parts) < 2 or path.parts[0] != "tests"
+                or path.suffix != ".py" or path.as_posix() != filename):
+            raise RegressionError("invalid current collection node")
+        key = _junit_case_key(node)
+        if bin_xml_escape(key[0]) != key[0]:
+            raise RegressionError("invalid current collection classname")
+        if key in keys:
+            raise RegressionError("current inventory contained duplicate node/case keys")
+        keys.add(key)
+        checked.append(node)
+    return tuple(sorted(checked))
+
+
+def _junit_case_key(node):
+    # Match pytest's address mangling: parameter text may itself contain :: or /.
+    names = mangle_test_address(node)
+    return ".".join(names[:-1]), bin_xml_escape(names[-1])
+
+
+def _inventory_sha256(nodes):
+    return hashlib.sha256(("\n".join(sorted(nodes)) + "\n").encode("utf-8")).hexdigest()
+
+
+def partition_current_nodes(nodes, *, shard_index, shard_count):
+    """Select complete files deterministically; an unassigned shard can be empty."""
+    _shard_bounds(shard_index, shard_count)
+    checked = _current_nodes(nodes)
+    return tuple(node for node in checked if int(hashlib.sha256(
+        node.partition("::")[0].encode("utf-8"),
+    ).hexdigest(), 16) % shard_count == shard_index)
+
+
+def _junit_summary(report, *, pytest_exit_code, expected_count, frozen=False,
+                   expected_nodes=None):
     """Read one retained report without running tests or changing evidence."""
     summary = {
         "exit_code": pytest_exit_code, "pytest_exit_code": pytest_exit_code, "junit": str(report),
@@ -277,16 +338,30 @@ def _junit_summary(report, *, pytest_exit_code, expected_count, frozen=False):
         )
         if frozen:
             complete = complete and summary["skipped"] == summary["skipped_elements"] == 0
+        if expected_nodes is not None:
+            expected = sorted(_junit_case_key(node) for node in _current_nodes(expected_nodes))
+            actual = [(case.get("classname", ""), case.get("name", "")) for case in cases]
+            exact = (len(expected) == expected_count and len(actual) == len(set(actual))
+                     and sorted(actual) == expected
+                     and summary["failures"] == summary["failure_elements"]
+                     and summary["errors"] == summary["error_elements"]
+                     and summary["skipped"] == summary["skipped_elements"])
+            summary["exact_case_keys"] = exact
+            summary["expected_inventory_sha256"] = _inventory_sha256(expected_nodes)
+            if not exact:
+                summary["validation_error"] = "JUnit case keys differ from selected current inventory"
+            complete = complete and exact
         if not complete:
             summary["exit_code"] = pytest_exit_code or 1
-            summary["validation_error"] = "JUnit did not confirm the expected executed test set"
+            summary.setdefault("validation_error", "JUnit did not confirm the expected executed test set")
     except (OSError, KeyError, ValueError, ET.ParseError):
         summary["exit_code"] = pytest_exit_code or 1
         summary["validation_error"] = "pytest did not produce a readable JUnit report"
     return summary
 
 
-def _pytest_attempt(root, selections, report, *, expected_count, frozen=False, python=sys.executable):
+def _pytest_attempt(root, selections, report, *, expected_count, frozen=False, python=sys.executable,
+                    expected_nodes=None):
     if report.exists():
         report.unlink()
     command = [str(python), "-m", "pytest", "-o", "addopts=", "-q", "--color=no",
@@ -294,6 +369,7 @@ def _pytest_attempt(root, selections, report, *, expected_count, frozen=False, p
     result = subprocess.run(command, cwd=root, env=_environment(root), check=False)
     summary = _junit_summary(
         report, pytest_exit_code=result.returncode, expected_count=expected_count, frozen=frozen,
+        **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
     )
     print(json.dumps(summary, sort_keys=True), flush=True)
     return summary
@@ -317,13 +393,14 @@ def _known_archive_failure(summary, *, expected_count, frozen):
 
 
 def _pytest_phase(root, selections, report, *, expected_count, frozen=False, python=sys.executable,
-                  historical_retry=False):
+                  historical_retry=False, expected_nodes=None):
     retry_report = report.with_name(f"{report.stem}.retry1{report.suffix}")
     if historical_retry:
         # Do not leave a previous invocation's successful retry beside a new failed attempt.
         retry_report.unlink(missing_ok=True)
     first = _pytest_attempt(
         root, selections, report, expected_count=expected_count, frozen=frozen, python=python,
+        **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
     )
     if not historical_retry or not _known_archive_failure(
         first, expected_count=expected_count, frozen=frozen,
@@ -337,6 +414,7 @@ def _pytest_phase(root, selections, report, *, expected_count, frozen=False, pyt
     }, sort_keys=True), flush=True)
     second = _pytest_attempt(
         root, selections, retry_report, expected_count=expected_count, frozen=frozen, python=python,
+        **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
     )
     result = {
         **second, "retry_reason": ARCHIVE_RETRY_NODE, "attempts": [first, second],
@@ -364,6 +442,127 @@ def run_native_e2e(repo, junit_dir):
     result = _pytest_phase(repo, NATIVE_E2E_SELECTION, report,
                            expected_count=len(nodes))
     print(json.dumps({**version, **result}, sort_keys=True), flush=True)
+    return result["exit_code"]
+
+
+def _checkout_identity(repo, origins):
+    return {
+        "commit": _git(repo, "rev-parse", "HEAD"),
+        "tree": _git(repo, "rev-parse", "HEAD^{tree}"),
+        "working_tree": True, "imports": origins, "python": sys.executable,
+        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+    }
+
+
+def _write_summary(path, result):
+    rendered = json.dumps(result, sort_keys=True)
+    with path.open("x", encoding="utf-8") as stream:
+        stream.write(rendered + "\n")
+    print(rendered, flush=True)
+
+
+def _fresh_reports(junit_dir, names):
+    if any((junit_dir / name).exists() or (junit_dir / name).is_symlink() for name in names):
+        raise RegressionError("new regression suites require fresh report paths")
+
+
+def _exclude_current_history(repo, index):
+    if any((repo / relative).exists() for relative in (*index["test_files"], *index["support_files"])):
+        raise RegressionError("historical test files must not also run against the current product")
+
+
+def run_current(repo, junit_dir, *, shard_index, shard_count):
+    # Reject malformed requests before resolving or touching any report path.
+    _shard_bounds(shard_index, shard_count)
+    repo, junit_dir = repo.resolve(), junit_dir.resolve()
+    report = junit_dir / f"current-shard-{shard_index}.xml"
+    sidecar = junit_dir / f"current-shard-{shard_index}.summary.json"
+    _fresh_reports(junit_dir, (report.name, sidecar.name))
+    junit_dir.mkdir(parents=True, exist_ok=True)
+    index = _load_index(repo)
+    _exclude_current_history(repo, index)
+    origins = _verify_imports(repo)
+    full_nodes = _current_nodes(_collect(repo, ("tests",)))
+    selected = partition_current_nodes(
+        full_nodes, shard_index=shard_index, shard_count=shard_count,
+    )
+    if not selected:
+        raise RegressionError("current shard selected no test files")
+    files = tuple(sorted({node.partition("::")[0] for node in selected}))
+    for filename in files:
+        _regular_file(repo, filename)
+    recollected = _current_nodes(_collect(repo, files))
+    if recollected != selected:
+        raise RegressionError("selected current files changed their exact collection inventory")
+    version = {
+        "schema_version": 1, "suite": "current", "offline": True,
+        **_checkout_identity(repo, origins),
+        "shard_algorithm": SHARD_ALGORITHM, "shard_index": shard_index,
+        "shard_count": shard_count, "full_nodes": full_nodes,
+        "full_collected": len(full_nodes), "full_inventory_sha256": _inventory_sha256(full_nodes),
+        "selected_nodes": selected, "selected_inventory_sha256": _inventory_sha256(selected),
+        "selected_files": files, "collected": len(selected),
+    }
+    print(json.dumps(version, sort_keys=True), flush=True)
+    phase = _pytest_phase(
+        repo, files, report, expected_count=len(selected), expected_nodes=selected,
+    )
+    result = {**version, **phase}
+    _write_summary(sidecar, result)
+    return result["exit_code"]
+
+
+def run_history(repo, junit_dir):
+    repo, junit_dir = repo.resolve(), junit_dir.resolve()
+    sidecar = junit_dir / "history.summary.json"
+    _fresh_reports(junit_dir, (sidecar.name, "archived.xml", "archived.retry1.xml", "frozen123.xml"))
+    junit_dir.mkdir(parents=True, exist_ok=True)
+    index = _load_index(repo)
+    _exclude_current_history(repo, index)
+    with (_snapshot(repo, ARCHIVE_COMMIT, "history") as archive,
+          _snapshot(repo, FROZEN_COMMIT, "registration") as frozen):
+        _verify_archive(archive, index)
+        manifest = _verify_frozen(frozen)
+        archive_python, frozen_python = _archive_python(archive), _archive_python(frozen)
+        current_origins = _verify_imports(repo)
+        checkout = _checkout_identity(repo, current_origins)
+        _verify_imports(archive, python=archive_python, package=_archived_package(archive))
+        _verify_imports(frozen, python=frozen_python, package=_archived_package(frozen))
+        registration_test, bound = _registration_selection(frozen, manifest, python=frozen_python)
+        if hashlib.sha256(_regular_file(archive, registration_test).read_bytes()).hexdigest() != (
+            manifest["measurement_files"][registration_test]
+        ):
+            raise RegressionError("archived registration tests differ from the immutable original")
+        archive_nodes = _collect(archive, index["test_files"], python=archive_python)
+        archive_count = _archive_selection(archive_nodes, bound)
+        frozen_nodes = _collect(frozen, bound, python=frozen_python)
+        if len(frozen_nodes) != REGISTRATION_COUNT or set(frozen_nodes) != set(bound):
+            raise RegressionError("frozen collection did not select exactly the 24 original registration nodes")
+        versions = {
+            "archived": {"commit": ARCHIVE_COMMIT, "historical_only": True,
+                         "files": ARCHIVE_FILE_COUNT, "collection_sha256": ARCHIVE_COLLECTION_SHA256},
+            "frozen123": {"commit": FROZEN_COMMIT, "product_commit": PRODUCT_COMMIT,
+                          "historical_only": True, "pins": PIN_COUNTS},
+        }
+        print(json.dumps({"checkout": checkout, **versions}, sort_keys=True), flush=True)
+        archived = _pytest_phase(
+            archive, (*index["test_files"], *(f"--deselect={node}" for node in bound)),
+            junit_dir / "archived.xml", expected_count=archive_count,
+            frozen=True, python=archive_python, historical_retry=True,
+        )
+        registration = _pytest_phase(
+            frozen, bound, junit_dir / "frozen123.xml", expected_count=REGISTRATION_COUNT,
+            frozen=True, python=frozen_python,
+        )
+        _verify_archive(archive, index)
+        _verify_frozen(frozen)
+        result = {
+            "schema_version": 1, "suite": "history", "offline": True, "checkout": checkout,
+            "archived": {**versions["archived"], **archived},
+            "frozen123": {**versions["frozen123"], **registration},
+            "exit_code": archived["exit_code"] or registration["exit_code"],
+        }
+    _write_summary(sidecar, result)
     return result["exit_code"]
 
 
@@ -426,9 +625,23 @@ def run(repo, junit_dir):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--junit-dir", type=Path, required=True)
-    parser.add_argument("--suite", choices=("all", "native-e2e"), default="all")
+    parser.add_argument("--suite", choices=("all", "native-e2e", "current", "history"), default="all")
+    parser.add_argument("--shard-index", type=int)
+    parser.add_argument("--shard-count", type=int)
     arguments = parser.parse_args(argv)
+    if arguments.suite == "current":
+        try:
+            _shard_bounds(arguments.shard_index, arguments.shard_count)
+        except RegressionError as exc:
+            parser.error(str(exc))
+    elif arguments.shard_index is not None or arguments.shard_count is not None:
+        parser.error("shard index/count are only valid for the current suite")
     try:
+        if arguments.suite == "current":
+            return run_current(REPO, arguments.junit_dir,
+                               shard_index=arguments.shard_index, shard_count=arguments.shard_count)
+        if arguments.suite == "history":
+            return run_history(REPO, arguments.junit_dir)
         if arguments.suite == "native-e2e":
             return run_native_e2e(REPO, arguments.junit_dir)
         return run(REPO, arguments.junit_dir)

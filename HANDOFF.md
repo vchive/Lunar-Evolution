@@ -1,5 +1,36 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 parallel release regression implementation
+
+Feature194 adds independent focused/current-0/current-1/current-2/history roles
+for each Python3.11/3.12/3.13 version, 15 jobs without dependency edges. Existing
+focused shell checks remain byte-identical; a separate 116-case runner gate is
+added. Current tests are assigned by SHA256(UTF8 file path) modulo3, keeping every
+file's class/parameter nodes together. The runner rechecks selected collection and
+actual JUnit keys, records full/selected inventory and actual source/import/tree
+provenance, and writes role-specific reports. The history role preserves original
+archive/frozen source pins and the sole complete archive retry. Old all/native-e2e
+entry points remain available. New role preflight rejects existing reports;
+summary creation is exclusive, while XML freshness assumes isolated job workspaces.
+
+Root Python3.11 passes116 new plus84 disjoint runner/annotation compatibility cases,
+200 unique passes with zero failures/errors/skips. Independent Python3.13 replay
+passes the same116 with unchanged pins. Full collect-only check confirms14600 nodes
+in444 files partition into4379/5159/5062 nodes with no overlap or omission; it is not
+full execution evidence. Whole-source Ruff/compileall/diff and15role/47focused-XML
+workflow syntax/annotation/provenance checks pass. Original fixture/basetemp failures
+are retained; external /tmp basetemp fixes nested-pytest rootdir without product
+changes. See Feature194 validation for source pins and ignored evidence directories.
+
+This follows local Feature193 commit7c14a40 and starts after PR51 source3ecf2f3;
+each source keeps its final CI/audit obligations. PR52 final-source CI and merge are
+still pending. Verified main at this local checkpoint remains PR45 merge9bfccbfc.
+Measured baseline CI was143.8minutes in its slowest serial lane; the new matrix's
+actual speedup is not yet measured. Runtime/product admission is unchanged and
+production_admission=false. Actual accepted installation/build/runtime, authoritative
+input/result capture, handoff, local solver and CLI/Linux acceptance remain P0/P1;
+P2 services/authentication/multi-host ownership/remote evaluator remain deferred.
+
 ## 2026-10-12 fixed two-input RSI report prototype
 
 Feature193 F04 now has a separate uninstalled source prototype and pure comparison
