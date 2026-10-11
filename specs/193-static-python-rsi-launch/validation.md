@@ -258,3 +258,16 @@ SHA256 `d6d0e10054a1a4b629047a6e47c6d6e3f5e04c54ecdbbff5b9fb46eab7691491`;
 semantic review SHA256 `314b2b9581abb0c8c6d8a00fc10e81c330932d1c19dfcd22bb857359cae57c25`.
 Independent replay is not an additional219 unique cases. Whole src/tests/tools
 Ruff, compileall, diff checks and YAML gate/annotation/upload wiring pass.
+
+## F04 provider-free input/result cross-pin continuation — 2026-10-12
+
+`static_python_input_result` joins independently supplied F03 startup and F04
+input-report digests, sizes, fixed computation and report schema through the
+`lunar-static-python-input-result-v1` wire. It enforces canonical JSON,
+duplicate-key/type/bounds checks, exact cross-pins and five false claims, then
+returns only an immutable digest/size DTO. The comparator performs no file,
+process, environment, network, clock, solver or evaluator operation. Its focused
+suite passes 9 local synthetic cases; this does not establish input ownership,
+actual consumption, runtime startup, output validity, producer admission or a
+solver result. Final-source CI and independent raw/source/tree audit remain
+pending; live F04 and later F05 acceptance are unchanged.

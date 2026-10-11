@@ -7194,3 +7194,15 @@ authority. `PYTHONPATH=src python -m pytest -q
 tests/test_static_python_build_closure.py` passes 10 cases. Real configured
 CPython/toolchain/freezer/link/ELF evidence remains open as F02c; synthetic
 vectors do not establish a build.
+
+## 2026-10-12 F04 provider-free input/result cross-pin continuation
+
+A detached F04 continuation adds `lunar-static-python-input-result-v1` under
+`src/lunar_evolution/static_python_input_result.py`. It joins caller-owned F03
+startup and F04 input-report digests, pins, sizes and fixed computation285 using
+bounded canonical JSON, duplicate-key/type checks and all-false claims. The
+immutable DTO contains no raw request/memory bytes or result envelope, and the
+parser has no filesystem, process, network, evaluator or solver effects.
+Focused tests pass 9 cases. This is a provider-free contract only: actual
+marker/file authority, input consumption, runtime startup, producer result,
+publication and final-source CI/raw audit remain open. Branch depends on PR55.
