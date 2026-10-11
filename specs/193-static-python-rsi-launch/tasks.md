@@ -62,6 +62,19 @@ installation/runtime stage.
 - [ ] F04e Complete final-source CI plus independent raw/source/tree audit and
   merge after the preceding dependencies. Live F04 below remains incomplete.
 
+## F01 bounded installation contract continuation
+
+- [x] F01g Specify the detached versioned wrapper and six mandatory external pins
+  in `installation-contract.md`; leave actual F01 acceptance unchecked.
+- [x] F01h Validate fixed source-plan/overlay/launcher, complete nine frozen-source
+  and generated-header descriptions, unchanged initialization and false claims.
+- [x] F01i Verify independent synthetic vectors, pin disagreements, strict bounds,
+  re-signed drift, canonical/error behavior and absent effects; retain compatibility.
+- [x] F01j Run focused tests, Ruff, compileall and diff checks, independently review
+  the final source and add a retained focused CI gate.
+- [ ] F01k Complete final-source CI and independent raw/source/tree audit, then
+  merge in dependency order. No DTO comparison establishes actual installation.
+
 ## Later stages — installation and runtime remain unaccepted
 
 - [ ] F01 Specify and accept a separately versioned installation profile; retain
