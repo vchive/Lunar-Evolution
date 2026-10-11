@@ -1,5 +1,39 @@
 # Validation plan
 
+## 2026-10-11 explicit late controller/ledger evidence
+
+The separate `rsi-python-admission.xml` gate requires128 provider-free cases with zero
+failures, errors or skips. Locally the original108 cases and143 compatibility cases
+passed together (251), before the final two review fixes. After those fixes, root
+independently reran20 new regression cases and2 representative successful wire/replay
+cases:22 passed with no failures, errors or skips. First PR42 head `23e4581` run38128598448
+then exposed four stale test assertions for malformed checkpoint evidence: they expected
+`checkpoint_corrupt`, while the reviewed fixed API returns
+`rsi_python_admission_evidence_invalid`. Original failed evidence is retained, and
+unexecuted full phases are not accepted. Root corrected only the assertion and reran
+all128 cases with zero failures/errors/skips (170.732 seconds; retained JUnit
+`/tmp/lunar-pr42-root-full-fixed-20261011-03.xml`). The corrected source requires a new
+full matrix and independent audit. The author's27 compatibility cases overlap the earlier
+compatibility evidence and must not be added to that inventory. All newly verified local
+commands use the shared interpreter Python3.11.15. Earlier3.13.12 labels for the128/796
+recovery runs were not independently confirmed from raw interpreter metadata; rely on
+each PR's actual remote matrix for version-specific acceptance.
+
+Independent final read-only review confirmed fixed RSI errors for corrupt ledger
+payloads and the missing-row gate: run/checkpoint/episode must be running, and the
+native claim must have no persisted terminal result. Existing exact rows remain
+read-only after terminal/unknown transitions. The matrix checks original request/proof,
+historical memory, original budgets/deadlines, native claim/plan, prepared journal,
+complete anchor, handoff pin and sidecar; stale/callback DTOs, CAS/lock conflicts and
+drift refuse without launch, evaluator, budget charge or evidence repair. Ruff,
+compileall and diff checks pass. The final source needs its own full three-version CI
+and raw/source/tree audit before merge.
+
+The separate row does not alter the original checkpoint wire or automatically make
+ordinary resume detect row deletion. Live identity pinning, scheduler/publication
+composition and complete runtime crash recovery remain open. This is evidence-only;
+`production_admission=false`. See `late-controller-admission.md`.
+
 ## 2026-10-11 independent recovery anchor
 
 The dedicated `python-admission-recovery.xml` gate covers128 local provider-free cases

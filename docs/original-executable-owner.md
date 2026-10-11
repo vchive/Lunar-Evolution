@@ -31,7 +31,9 @@ or cross-restart FD authority. An unpublished acquisition interrupted before its
 first identity capture supports only a first release under that assumption;
 uncertain release can leak a descriptor and is never claimed as clean.
 
-No static CPython image, import/archive/native-loader closure, runtime-load
-protection, production Python admission or solver campaign is supplied. Actual
-Linux owner acceptance remains pending until this feature's final-source CI and
-independent evidence audit finish.
+The bounded Linux owner base passed final-source Ubuntu3.11/3.12/3.13 CI
+run37802795693 and independent evidence audit, then merged through PR23 at
+3a7782cb02b5e504bc9c3186babadb5daa70eaa1. Composition with an actual static
+CPython image and target private-anchor census remain separate acceptance work.
+No import/archive/native-loader closure, runtime-load protection, production
+Python admission or solver campaign is supplied.
