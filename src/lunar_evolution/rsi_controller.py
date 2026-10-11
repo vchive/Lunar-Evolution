@@ -14,10 +14,11 @@ import json
 import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
+from threading import get_ident, local
 from typing import Any, Protocol
 
 from .candidate_evaluation_spec import canonical_json
@@ -77,6 +78,19 @@ def _component_digest(value: object, *, name: str) -> str:
         return component_fingerprint(value)
     except RSIIdentityError as exc:
         raise RSILearningError(f"rsi_{name}_fingerprint_invalid") from exc
+
+
+@dataclass(frozen=True)
+class _PythonAdmissionFlowContext:
+    state: dict[str, Any]
+    run_id: str
+    episode_id: str
+    ledger: RSILedger
+    workspace: Path
+    sidecar: object
+    owner_thread: int
+    checkpoint_sha256: str
+    payload: bytes
 
 
 @dataclass(frozen=True)
@@ -986,6 +1000,7 @@ class RSILearningController:
             raise RSILearningError("rsi_producer_workspace_required")
         self.producer_sidecar = producer_sidecar
         self.producer_workspace = Path(producer_workspace).expanduser() if producer_workspace is not None else None
+        self._python_admission_flow_local = local()
         from .rsi_governance_coordinator import RSIGovernanceCoordinator
 
         if memory_admission_gate is not None:
@@ -1384,6 +1399,158 @@ class RSILearningController:
                 expected_checkpoint_sha256=checkpoint_head, expected_episode_record_sha256=episode_head,
             )
             return retained
+
+    @staticmethod
+    def _python_admission_flow_payload(state: object) -> bytes:
+        """Serialize exact JSON containers without invoking caller collection callbacks."""
+        def validate(value: object, depth: int = 0) -> None:
+            kind = type(value)
+            if depth > 48:
+                raise RSILearningError("rsi_python_admission_flow_state_invalid")
+            if value is None or kind in {str, bool, int, float}:
+                return
+            if kind is dict:
+                if any(type(key) is not str for key in value):
+                    raise RSILearningError("rsi_python_admission_flow_state_invalid")
+                children = value.values()
+            elif kind is list:
+                children = value
+            else:
+                raise RSILearningError("rsi_python_admission_flow_state_invalid")
+            for child in children:
+                validate(child, depth + 1)
+
+        if type(state) is not dict:
+            raise RSILearningError("rsi_python_admission_flow_state_invalid")
+        validate(state)
+        try:
+            return canonical_json(state, maximum=8 * 1024 * 1024)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise RSILearningError("rsi_python_admission_flow_state_invalid") from exc
+
+    def _python_admission_assert_flow_context(
+        self, context: _PythonAdmissionFlowContext, run_id: str, episode_id: str,
+    ) -> None:
+        if (getattr(self._python_admission_flow_local, "active", None) is not context
+                or context.owner_thread != get_ident() or self.ledger is not context.ledger
+                or self.producer_workspace is not context.workspace or self.producer_sidecar is not context.sidecar
+                or (context.run_id, context.episode_id) != (run_id, episode_id)
+                or not context.ledger.controller_lock_held(run_id)):
+            raise RSILearningError("rsi_python_admission_flow_identity_invalid")
+        if self._python_admission_flow_payload(context.state) != context.payload:
+            raise RSILearningError("rsi_python_admission_flow_stale")
+
+    @contextmanager
+    def _python_admission_flow_scope(self, state: Mapping[str, Any], episode_id: str):
+        """Retain one fresh DRS dispatch's owner and original checkpoint, without taking a lock."""
+        previous = getattr(self._python_admission_flow_local, "active", None)
+        self._python_admission_flow_local.active = None
+        try:
+            # Unbound, direct and worker-thread paths retain their existing behavior.
+            # Suppress an outer scope while such a nested dispatch is running.
+            if (self.producer_sidecar is None or self.ledger is None or type(state) is not dict
+                    or type(state.get("mode")) is not str or state["mode"] != "drs"):
+                yield
+                return
+            run_id = _id(state.get("run_id"), "run_id")
+            if not self.ledger.controller_lock_held(run_id):
+                yield
+                return
+            _id(episode_id, "episode_id")
+            payload = self._python_admission_flow_payload(state)
+            if (state.get("status") != "running" or state.get("current_episode_id") != episode_id
+                    or type(state.get("intents")) is not dict or episode_id not in state["intents"]):
+                yield
+                return
+            with self.ledger.read_only_observations():
+                checkpoint = self.ledger.controller_checkpoint(run_id)
+            if checkpoint is None or self._python_admission_flow_payload(checkpoint[1]) != payload:
+                raise RSILearningError("rsi_python_admission_flow_stale")
+            context = _PythonAdmissionFlowContext(
+                state, run_id, episode_id, self.ledger, self.producer_workspace, self.producer_sidecar,
+                get_ident(), checkpoint[0], payload,
+            )
+            self._python_admission_flow_local.active = context
+            self._python_admission_assert_flow_context(context, run_id, episode_id)
+            yield
+        finally:
+            self._python_admission_flow_local.active = previous
+
+    def _python_admission_active_flow(self, run_id: str, episode_id: str) -> tuple[dict[str, Any], str]:
+        """Require the unchanged owner scope and its exact original durable checkpoint."""
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        context = getattr(self._python_admission_flow_local, "active", None)
+        if type(context) is not _PythonAdmissionFlowContext:
+            raise RSILearningError("rsi_python_admission_flow_missing")
+        self._python_admission_assert_flow_context(context, run_id, episode_id)
+        with context.ledger.read_only_observations():
+            checkpoint = context.ledger.controller_checkpoint(run_id)
+        if (checkpoint is None or checkpoint[0] != context.checkpoint_sha256
+                or self._python_admission_flow_payload(checkpoint[1]) != context.payload):
+            raise RSILearningError("rsi_python_admission_flow_stale")
+        self._python_admission_assert_flow_context(context, run_id, episode_id)
+        return context.state, context.checkpoint_sha256
+
+    def _pin_python_admission_for_active_flow(
+        self, run_id: str, episode_id: str, *, native_plan: object, prepared_journal: object,
+        expected_anchor_sha256: str,
+    ):
+        """Pin under the captured CAS, then acknowledge only this exact reference increment."""
+        from .rsi_python_admission import build_rsi_python_admission_reference
+
+        state, captured_head = self._python_admission_active_flow(run_id, episode_id)
+        context = self._python_admission_flow_local.active
+        plan, journal, binding = self._python_admission_inputs(native_plan, prepared_journal, expected_anchor_sha256)
+        with context.ledger.read_only_observations():
+            self._validate_producer_checkpoint(run_id, state)
+            retained, run_head, checkpoint_head, episode_head = self._python_admission_evidence(
+                run_id, episode_id, plan, journal, binding, expected_anchor_sha256,
+            )
+        if checkpoint_head != captured_head:
+            raise RSILearningError("rsi_python_admission_flow_stale")
+        reference = build_rsi_python_admission_reference(
+            retained, native_plan=plan.to_dict(), prepared_journal=journal.to_dict(),
+        )
+        expected = json.loads(context.payload)
+        expected["python_admission_refs"] = expected.get("python_admission_refs", {}) | {episode_id: reference}
+        expected_payload = self._python_admission_flow_payload(expected)
+        self._python_admission_active_flow(run_id, episode_id)
+        RSIRunBudget.load(expected["budget_state"]).check()
+        pinned, checkpoint_sha256 = context.ledger.pin_python_admission_record(
+            retained, reference=reference, expected_run_record_sha256=run_head,
+            expected_checkpoint_sha256=captured_head, expected_episode_record_sha256=episode_head,
+        )
+        # The pin is already durable.  Any refusal below leaves both the old in-memory
+        # state and its captured head untouched, so explicit recovery must load the obligation.
+        with context.ledger.read_only_observations():
+            checkpoint = context.ledger.controller_checkpoint(run_id)
+            if (checkpoint is None or checkpoint[0] != checkpoint_sha256
+                    or self._python_admission_flow_payload(checkpoint[1]) != expected_payload
+                    or pinned.to_json() != retained.to_json()):
+                raise RSILearningError("rsi_python_admission_flow_ack_invalid")
+            self._validate_python_admission_record_evidence(
+                run_id, episode_id, plan, journal, binding, expected_anchor_sha256, retained.record_sha256,
+            )
+            self._validate_python_admission_references(run_id, expected)
+            final_run = context.ledger.get_run(run_id)
+            final_episode = context.ledger.get_episode(episode_id)
+            final_claim = context.ledger.inspect_native_episode_claim(plan.request, plan_sha256=plan.plan_sha256)
+            final_checkpoint = context.ledger.controller_checkpoint(run_id)
+            if (final_run is None or final_run.record_sha256 != run_head or final_run.state != "running"
+                    or final_episode is None or final_episode.record_sha256 != episode_head
+                    or final_episode.state != "running" or final_claim is None or final_claim.status != "started"
+                    or final_claim.claim_sha256 != retained.native_claim_sha256
+                    or final_checkpoint is None or final_checkpoint[0] != checkpoint_sha256
+                    or self._python_admission_flow_payload(final_checkpoint[1]) != expected_payload):
+                raise RSILearningError("rsi_python_admission_flow_ack_invalid")
+        RSIRunBudget.load(expected["budget_state"]).check()
+        self._python_admission_assert_flow_context(context, run_id, episode_id)
+        acknowledged = replace(context, checkpoint_sha256=checkpoint_sha256, payload=expected_payload)
+        if expected_payload != context.payload:
+            state["python_admission_refs"] = expected["python_admission_refs"]
+        self._python_admission_flow_local.active = acknowledged
+        return pinned
 
     def _validate_python_admission_record_evidence(
         self, run_id: str, episode_id: str, plan, journal, binding,
@@ -2773,13 +2940,14 @@ class RSILearningController:
         def before_settlement() -> None:
             self._validate_producer_checkpoint(state["run_id"], state)
 
-        return PracticeEpisodeRunner(
-            self.gateway, ControllerVerifier(), self.ledger, self.usage_ledger,
-            memory_snapshot=self.snapshot,
-            before_run=before_run,
-            before_dispatch=before_dispatch,
-            before_settlement=before_settlement,
-        ).run(episode, request)
+        with self._python_admission_flow_scope(state, episode_id):
+            return PracticeEpisodeRunner(
+                self.gateway, ControllerVerifier(), self.ledger, self.usage_ledger,
+                memory_snapshot=self.snapshot,
+                before_run=before_run,
+                before_dispatch=before_dispatch,
+                before_settlement=before_settlement,
+            ).run(episode, request)
 
     def _flow_episode(self, record: RSIRecord | None, state: dict[str, Any],
                       episode: PracticeEpisode, request: SolverRequest) -> EpisodeExecution:

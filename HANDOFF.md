@@ -1,5 +1,44 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-11 owning-thread DRS first admission pin
+
+The isolated continuation `codex/python-admission-owner` starts from PR44 source
+`24ee911c79aa9e0f3eccbfee5981f560cdb25038`. At this slice's local verification,
+PR43 run38144340314 and PR44 run38146706898 still have incomplete full CI lanes;
+main remains `d0d4c92428891a7444f5a3b725a05f87554e4734`. Neither dependency nor this
+source can inherit an earlier CI acceptance. Preserve source parent, raw event base,
+actual tested parents/tree and actual merge identities as separate evidence.
+
+Fresh DRS dispatch now scopes its exact state, original checkpoint head and owning
+thread. The provider-facing `run_rsi_python_bundle_publication_for_active_flow` uses
+the new optional prepared observer only after the original journal is durable and
+handoff/content anchor are verified. Before evaluation it pins the first admission
+under the captured CAS, reads back the exact expected checkpoint, and acknowledges
+only `python_admission_refs`. It never adopts the entire latest checkpoint or refreshes
+the original budget/deadline. Pin success followed by ack refusal leaves the durable
+obligation intact and old state stale; recovery must reload and verify it explicitly.
+
+Mandatory evidence checks run before/after callbacks and before successful return.
+Direct/non-current-episode/BRS dispatches have no active owner authority; legacy
+behavior remains compatible. Independent review found no remaining source blocker.
+Final local Python3.11.15 evidence:30 new focused cases plus308 existing compatibility
+cases (338 unique) pass with zero failures/errors/skips. Ruff across src/tests/tools,
+compileall and diff checks pass. The new30-case XML gate is separately annotated/uploaded;
+all39 focused plus3 full phases still need final-source three-version CI and raw/source/
+tree audit before merge. Initial failed evidence is retained separately.
+
+The tests cover an actual transaction to an inert evaluator boundary and real controller/
+runner/ledger settlement using an inert gateway and transaction callback spy. They do
+not execute the actual native gateway or a Python runtime. Remaining P0: BRS owner
+ready/ack without lock-wait deadlocks, real scheduler Python runtime/handoff inputs,
+and the full process/runtime/journal interruption matrix. Remaining P1: actual Feature189
+release/toolchain/static closure/build and sealed runtime acceptance, Feature190 owner/
+runtime composition, actual local OpenEvolve/Shinka lifecycle/export, and production
+RSI CLI/Linux acceptance. P2 authentication, multi-host ownership, distributed/service
+scheduling and remote evaluator remain deferred. Only local inert fixtures ran;
+`production_admission=false`. The bounded SDD is
+`specs/191-python-worker-adapter/owning-thread-first-pin.md`.
+
 ## 2026-10-11 controller-bound Python publication and interruption recovery
 
 The continuation `codex/python-admission-composition` now builds on corrected PR43

@@ -480,6 +480,7 @@ def run_native_producer_bundle_publication_transaction(
     execution_control: SolveExecutionControl | None = None,
     continuation_guard: Callable[[str], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
+    prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
     """Evaluate imported material and atomically publish the valid native subset.
 
@@ -495,6 +496,8 @@ def run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_guard_invalid")
     if evidence_revalidator is not None and not callable(evidence_revalidator):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_evidence_revalidator_invalid")
+    if prepared_observer is not None and not callable(prepared_observer):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_prepared_observer_invalid")
     if python_handoff_sha256 is not None and native_execution_receipt_sha256 is None:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_execution_link_missing"
@@ -517,7 +520,8 @@ def run_native_producer_bundle_publication_transaction(
                "native_execution_receipt_sha256": native_execution_receipt_sha256,
                "python_handoff_sha256": python_handoff_sha256,
                "python_handoff_file_pin": python_handoff_file_pin,
-               "evidence_revalidator": evidence_revalidator}
+               "evidence_revalidator": evidence_revalidator,
+               "prepared_observer": prepared_observer}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -576,6 +580,7 @@ def _run_native_producer_bundle_publication_transaction(
     checkpoint: Callable[[str], object],
     execution_control: SolveExecutionControl | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
+    prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
     checkpoint("producer_preparation")
     if evidence_revalidator is not None:
@@ -816,6 +821,13 @@ def _run_native_producer_bundle_publication_transaction(
             journal_sha256 = journal.digest()
         anchored_journal = journal
         verify_producer_bundle_python_handoff_anchor(root, journal)
+        if prepared_observer is not None:
+            # The earlier prepared-intent checkpoint may run before its durable write.
+            # Notify once only after the immutable original authority is retained.
+            checkpoint("producer_prepared_admission")
+            prepared_observer(parse_producer_bundle_publication_journal(journal.to_dict()))
+            verify_producer_bundle_prepared_intent(root, journal)
+            checkpoint("producer_prepared_admission")
         terminal = inspect_producer_bundle_all_rejected(
             root, journal, preflight=preflight, checkpoint=checkpoint,
         )

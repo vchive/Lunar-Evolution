@@ -99,9 +99,17 @@
 - [x] Add an actual first-candidate-move interruption regression: perform the move,
   then inject failure, retain the unknown marker and partial material, and require
   unchanged read-only recovery with no producer/evaluator/retry/repair.
+- [x] Add owning-thread DRS first-pin composition under `owning-thread-first-pin.md`.
+  Scope the exact active state/head during fresh controller dispatch; after durable
+  prepared evidence, pin with the original CAS and acknowledge only the precise
+  reference increment. Pin/ack interruption preserves the durable obligation without
+  adopting a newer checkpoint. Cover real transaction-to-evaluator boundaries and
+  inert provider return through native-result/episode/controller settlement.
 - [ ] Automatically require that separate admission identity in the live scheduler
-  and publication/recovery flow. Ordinary resume now requires explicitly pinned rows;
-  automatic first pin and scheduler state synchronization remain separate. The anchor contains
+  and publication/recovery flow. The active DRS facade now pins prepared evidence and
+  synchronizes exact references; the real Python scheduler still needs runtime/handoff
+  inputs, and BRS needs an owner ready/ack protocol without worker-to-owner lock waits.
+  Ordinary resume requires pinned rows. The anchor contains
   post-execution evidence and cannot become part of the original pre-execution run request.
   Complete independently observed runtime/lifecycle pin revalidation across the live flow;
   sealed-runtime observation remains a separate P1 acceptance gate.

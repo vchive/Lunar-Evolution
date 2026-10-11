@@ -1,5 +1,38 @@
 # Validation plan
 
+## 2026-10-11 owning-thread DRS first pin
+
+The new `rsi-python-admission-owner.xml` gate requires30 cases with zero failures,
+errors or skips:23 owner/facade/settlement cases and7 prepared observer cases.
+Root final-source Python3.11.15 verification passed30 in64.948 seconds,222 publication/
+transaction/control/store compatibility cases in113.754 seconds, and the controller
+agent passed86 flow/producer-checkpoint/controller compatibility cases in192.519 seconds.
+The three retained XML inventories contain338 unique cases, without double-counting
+the independent review's overlapping cases. Ruff across src/tests/tools, compileall
+and diff checks pass. Independent read-only review found no confirmed source blocker.
+
+The owner context captures the original active DRS state and checkpoint on the thread
+already holding the controller lock. The prepared observer runs after durable intent
+and handoff/anchor verification, before evaluator or terminal replay; pin uses the original
+CAS and acknowledgement compares the complete expected checkpoint with only the exact
+reference added. Missing rows, unrelated state/head drift, wrong owner/thread, callback
+changes, cancellation and deadline refuse. A crash after durable pin but before ack
+preserves the row/reference and leaves old state stale, requiring explicit recovery.
+An initial compatibility run exposed four legacy direct-dispatch refusals; the scope
+now binds only the actual current episode, preserving those older paths without granting
+them active-flow authority. The corrected full86-case compatibility run passes.
+
+One integration uses the actual transaction through prepared pin to an inert evaluator
+boundary. The successful settlement integration runs the real controller/runner/facade/
+ledger, but uses an in-process `_NoSolverGateway` and a transaction callback spy; it
+explicitly publishes the fixture native result before real episode/flow settlement.
+It proves reference retention and no stale checkpoint adoption, not an actual
+`NativeRSISolverGateway`, worker or sealed CPython run. BRS ready/ack scheduling, real
+Python scheduler runtime/handoff inputs and the full process/runtime crash matrix remain
+open. `production_admission=false`; no real solver, remote evaluator or toolchain ran.
+The39 focused phases plus3 full phases require final-source Ubuntu3.11/3.12/3.13 CI
+and independent raw/source/tree audit before merge. Existing dependency CI is separate.
+
 ## 2026-10-11 controller-bound publication and read-only recovery
 
 The new `rsi-python-publication.xml` gate requires83 cases with zero failures,
