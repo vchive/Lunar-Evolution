@@ -1,8 +1,9 @@
-"""Publish or inspect local Python material through an existing RSI admission pin.
+"""Bind local Python publication to retained RSI admission evidence.
 
-This evidence-only composition never registers an admission, launches a worker, adopts
-controller state or grants production admission. The original controller proof and complete
-checkpoint reference remain required throughout the standalone publication transaction.
+Existing-pin publication and recovery remain read-only with respect to controller state.
+The active DRS entry pins the first prepared admission and acknowledges only its exact
+reference increment on the owning thread. No entry launches a worker or grants production
+admission; original proof and complete references remain required throughout publication.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ from .producer_bundle_transaction import (
     run_native_producer_bundle_publication_transaction,
 )
 from .rsi_controller import RSILearningController
+from .rsi_learning import RSILearningError
 from .rsi_native_plan import NativeRSIExecutionPlan
 from .rsi_python_admission import (
     parse_rsi_python_admission_references,
@@ -208,6 +210,135 @@ def run_rsi_python_bundle_publication(
         raise
 
 
+def run_rsi_python_bundle_publication_for_active_flow(
+    controller: RSILearningController,
+    run_id: str,
+    episode_id: str,
+    strategy: PopulationStrategy,
+    drafts: Sequence[ProducerBundleDraft],
+    admission_plan: ProducerBundleAdmissionPlan,
+    *,
+    native_plan: NativeRSIExecutionPlan,
+    prepared_journal: ProducerBundlePublicationJournal,
+    expected_anchor_sha256: str,
+    execution_control: SolveExecutionControl | None = None,
+    continuation_guard: Callable[[str], None] | None = None,
+) -> NativeProducerBundleTransactionResult:
+    """Pin prepared evidence on the active DRS owner before admitting evaluation.
+
+    A fresh controller dispatch supplies the original scoped checkpoint. This entry
+    cannot acquire an owner lock, adopt a newer state or reconstruct a missing pin.
+    """
+    if type(controller) is not RSILearningController:
+        raise RSIPythonPublicationError("controller_invalid")
+    if any(type(value) is not str or _ID.fullmatch(value) is None
+           for value in (run_id, episode_id)):
+        raise RSIPythonPublicationError("identity_invalid")
+    plan = _plan_snapshot(admission_plan)
+    try:
+        native, journal, producer = controller._python_admission_inputs(
+            native_plan, prepared_journal, expected_anchor_sha256,
+        )
+    except RSILearningError as exc:
+        raise RSIPythonPublicationError("evidence_invalid") from exc
+    identity = (run_id, producer.intent.journal_id, producer.parent_task_id, producer.task_id)
+    if (producer.run_id != run_id
+            or (native.run_id, native.journal_id, native.parent_task_id, native.task_id) != identity
+            or (journal.run_id, journal.journal_id, journal.parent_task_id, journal.task_id) != identity
+            or native.request.episode_id != episode_id):
+        raise RSIPythonPublicationError("identity_mismatch")
+    if (native.launch_id != producer.intent.launch_id
+            or native.intent_sha256 != producer.intent_sha256
+            or native.attestation_sha256 != producer.attestation_sha256
+            or native.deadline_unix != producer.deadline_unix
+            or native.evaluator_kind != producer.evaluator_kind
+            or native.evaluator_fingerprint != producer.evaluator_fingerprint):
+        raise RSIPythonPublicationError("identity_mismatch")
+    if any(getattr(journal, field) != expected for field, expected in (
+        ("contract_sha256", producer.contract_sha256),
+        ("evaluator_kind", producer.evaluator_kind),
+        ("evaluator_fingerprint", producer.evaluator_fingerprint),
+        ("runner_fingerprint", producer.intent.runner_fingerprint),
+        ("dependency_sha256", producer.dependency_sha256),
+        ("environment_sha256", producer.environment_sha256),
+    )):
+        raise RSIPythonPublicationError("plan_mismatch")
+    if plan.digest() != journal.admission_sha256:
+        raise RSIPythonPublicationError("plan_mismatch")
+    ledger = controller.ledger
+    workspace = controller.producer_workspace.expanduser().absolute()
+    if ledger is None:
+        raise RSIPythonPublicationError("controller_binding_missing")
+    database = ledger.database
+    admitted: _AdmissionBinding | None = None
+
+    def revalidate(stage: str) -> None:
+        try:
+            if (controller.ledger is not ledger or ledger.database != database
+                    or controller.producer_workspace is None
+                    or controller.producer_workspace.expanduser().absolute() != workspace):
+                raise RSIPythonPublicationError("controller_drift")
+            _require_database(database)
+            with ledger.read_only_observations():
+                state, _head = controller._python_admission_active_flow(run_id, episode_id)
+                if native.request.to_dict() != state["intents"][episode_id]["request"]:
+                    raise RSIPythonPublicationError("request_mismatch")
+                controller._validate_producer_checkpoint(run_id, state)
+                # Recheck the scoped head after the proof/file observations.
+                controller._python_admission_active_flow(run_id, episode_id)
+            if admitted is not None:
+                admitted.revalidate(stage)
+                with ledger.read_only_observations():
+                    controller._python_admission_active_flow(run_id, episode_id)
+        except RSIPythonPublicationError:
+            raise
+        except RSILearningError as exc:
+            raise RSIPythonPublicationError("owner_context_invalid") from exc
+        except (AttributeError, KeyError, TypeError, ValueError, OSError, sqlite3.Error) as exc:
+            raise RSIPythonPublicationError("evidence_invalid") from exc
+
+    def pin_prepared(observed: ProducerBundlePublicationJournal) -> None:
+        nonlocal admitted
+        if admitted is not None:
+            raise RSIPythonPublicationError("prepared_observer_replayed")
+        if (type(observed) is not ProducerBundlePublicationJournal
+                or observed.to_dict() != journal.to_dict()):
+            raise RSIPythonPublicationError("prepared_journal_mismatch")
+        revalidate("rsi_python_publication_before_pin")
+        try:
+            retained = controller._pin_python_admission_for_active_flow(
+                run_id, episode_id, native_plan=native, prepared_journal=journal,
+                expected_anchor_sha256=expected_anchor_sha256,
+            )
+        except RSILearningError as exc:
+            raise RSIPythonPublicationError("admission_pin_invalid") from exc
+        admitted = _capture_admission(controller, run_id, episode_id, retained.record_sha256, plan)
+        revalidate("rsi_python_publication_after_pin")
+
+    revalidate("rsi_python_publication_owner_entry")
+    try:
+        result = run_native_producer_bundle_publication_transaction(
+            workspace, strategy, drafts, plan,
+            journal_id=journal.journal_id, run_id=journal.run_id,
+            parent_task_id=journal.parent_task_id, task_id=journal.task_id,
+            budget_sha256=journal.budget_sha256,
+            native_execution_receipt_sha256=journal.native_execution_receipt_sha256,
+            python_handoff_sha256=journal.python_handoff_sha256,
+            python_handoff_file_pin=journal.python_handoff_file_pin,
+            execution_control=execution_control, continuation_guard=continuation_guard,
+            evidence_revalidator=revalidate, prepared_observer=pin_prepared,
+        )
+        if admitted is None:
+            raise RSIPythonPublicationError("admission_missing")
+        revalidate("rsi_python_publication_owner_return")
+        return result
+    except NativeProducerBundleTransactionError as exc:
+        prefix = "rsi_python_publication_"
+        if type(exc) is not RSIPythonPublicationError and exc.code.startswith(prefix):
+            raise RSIPythonPublicationError(exc.code[len(prefix):]) from exc
+        raise
+
+
 def resume_rsi_python_bundle_publication(
     controller: RSILearningController,
     run_id: str,
@@ -235,4 +366,5 @@ __all__ = [
     "RSIPythonPublicationError",
     "resume_rsi_python_bundle_publication",
     "run_rsi_python_bundle_publication",
+    "run_rsi_python_bundle_publication_for_active_flow",
 ]

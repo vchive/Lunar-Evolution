@@ -36,8 +36,14 @@ provider-free contracts.
   The bounded continuation `controller-bound-publication.md` now composes
   publication/recovery with an already pinned reference and covers a real failure
   after the first candidate move, using inert local material. Its final source still
-  requires full CI and independent audit. Automatic first pin and owning-thread state
-  synchronization remain a separate open task; the current scheduler context has
+  requires full CI and independent audit. The continuation `owning-thread-first-pin.md`
+  now supplies an active DRS provider facade: the controller scopes its original head
+  and state, prepared evidence triggers first pin before evaluation, and only exact
+  reference increments are acknowledged. Pin/ack failure retains the durable obligation
+  and refuses stale state. Thirty new inert cases cover prepared callbacks, original CAS,
+  drift, cancellation/deadline and settlement/save composition. This source requires its
+  own CI/audit/merge. BRS worker-to-owner ready/ack and real scheduler inputs remain open;
+  the current scheduler context has
   no Python runtime/handoff input, and the late evidence does not exist before
   the prepared publication boundary. Do not retrofit a post-execution anchor into
   the request or journal, or substitute host Python for the sealed runtime.
