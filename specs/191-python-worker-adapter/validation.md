@@ -1,5 +1,23 @@
 # Validation plan
 
+## 2026-10-11 admission content anchor and detached export
+
+The new `python-admission-export.xml` gate covers 127 anchor DTO/I/O, transaction
+interruption/callback and OpenEvolve/Shinka detached adapter cases with zero failures,
+errors or skips locally on Python 3.13.12. The broader Feature191/bundle/controller
+compatibility result is recorded in HANDOFF.md. Ruff, compileall and diff checks pass.
+Independent read-only review passed 169 focused/compatibility cases, including both
+prepared-intent interruption windows. Exact-source Ubuntu 3.11/3.12/3.13 CI remains
+required before this new slice merges.
+
+The anchor is content consistency: same-byte replacement between operations remains
+allowed, while original handoff inode identity is independently pinned. The adapter has
+no evaluator/admission entry point and performs no I/O. Controller/ledger admission
+binding, independent recovery anchoring, exact ABI-profile acceptance and actual sealed
+CPython/process observation remain open. `production_admission` stays false.
+
+## Existing accepted contract slices
+
 The Phase A binding, create-only durable sidecar, sidecar-aware native recovery gate, and
 zero-side-effect admission composition gate below are complete against inert local fixtures.
 No real CPython process/runtime lifecycle acceptance is complete. Until Features189 and 190
@@ -45,7 +63,7 @@ regression passes 354 cases with no failures, errors or skips; final-source full
 remains required before merge.
 
 The current controller recovery hardening has passed the focused provider-free matrix and
-independent boundary review; exact-final-source CI remains pending for the final source. Its
+independent boundary review and PR32 final-source CI; it is merged at `6a912609d3e5e9811bc8dbae77b1df077976afe7`. Its
 required matrix covers sidecar failure before run
 creation; sidecar loss/drift after preflight and before the first checkpoint; a valid retained
 sidecar with missing first checkpoint; restart without the required sidecar; symmetric terminal
@@ -88,7 +106,7 @@ workflow annotates both contract reports and retains both XML files separately.
 | --- | --- | --- |
 | Binding parser | **Complete Phase A:** canonical nested DTO round trip, exact type/order/bounds, shape-gate, digest/deadline/limit drift and fixed errors | unknown field, bool-as-int, duplicate key, placeholder digest, callback-bearing collection, path/env/target drift |
 | Durable binding sidecar | **Complete provider-free slice:** canonical bytes are published create-only through a temporary file and hard-link; final file is regular `0600` with one link; controller-retained digest/size/device/inode/mode/nlink/mtime/ctime pins are checked before workspace I/O and against pre/read/post file observations; sidecar is bounded at 2 MiB | existing sidecar, batch already started, missing batch/sidecar, malformed retained pin, binding mutation, byte/digest drift, replacement, touch, mode/link/inode drift, symlink, oversized record, temporary-file residue |
-| RSI controller checkpoint binding | **Complete provider-free slice:** sidecar preflight precedes durable run creation; immutable run request/digest retain canonical producer proof/pin; latest proof equals earliest ledger run proof and each checkpoint matches symmetrically; missing first checkpoint reconstructs from the original run proof/budget/fingerprints with live sidecar revalidation; intent preparation, cached execution reuse, post-admission/pre-gateway dispatch, direct/native episode recovery, save/no-op and terminal settlement/replay revalidate; callback completion and callback/native-failure reconcile revalidate at entry and pre-publication, including previously reserved branches; legacy producer checkpoints without original-run proof fail closed; provider-free checkpoints keep their existing shape. Local evidence: 61 dedicated recovery cases and 131 controller/replay cases, zero failures/errors/skips; independent boundary review complete. Exact-final-source CI remains pending. | proof addition/removal/replacement, unbound-run sidecar retrofit, missing checkpoint proof, run/binding/pin mismatch, deleted/replaced/touched sidecar, drift after preflight, admission, native replay, callback or between episodes, restart omitting the sidecar, terminal proof bypass, no-op save bypass, direct recovery/settlement/reconcile bypass, extra budget/journal on refusal or rollback of prior durable reservations, producer workspace supplied without a sidecar |
+| RSI controller checkpoint binding | **Complete provider-free slice:** sidecar preflight precedes durable run creation; immutable run request/digest retain canonical producer proof/pin; latest proof equals earliest ledger run proof and each checkpoint matches symmetrically; missing first checkpoint reconstructs from the original run proof/budget/fingerprints with live sidecar revalidation; intent preparation, cached execution reuse, post-admission/pre-gateway dispatch, direct/native episode recovery, save/no-op and terminal settlement/replay revalidate; callback completion and callback/native-failure reconcile revalidate at entry and pre-publication, including previously reserved branches; legacy producer checkpoints without original-run proof fail closed; provider-free checkpoints keep their existing shape. Local evidence: 61 dedicated recovery cases and 131 controller/replay cases, zero failures/errors/skips; independent boundary review and PR32 final-source CI complete; merged at 6a91260. | proof addition/removal/replacement, unbound-run sidecar retrofit, missing checkpoint proof, run/binding/pin mismatch, deleted/replaced/touched sidecar, drift after preflight, admission, native replay, callback or between episodes, restart omitting the sidecar, terminal proof bypass, no-op save bypass, direct recovery/settlement/reconcile bypass, extra budget/journal on refusal or rollback of prior durable reservations, producer workspace supplied without a sidecar |
 | Pure terminal/reconcile | **Complete contract slice:** 98 focused tests cover canonical DTOs, retained digest recheck, complete known-terminal evidence, original identity/journal/deadline/stream pins and exact collection shapes | mutated reused DTO, missing/zero digest, drifted registration/owner/executable/journal/stream, missing or out-of-order timestamps, refreshed deadline/request count, callback mappings/iterables, publication claim, relabeled attestation consumption or discarded known exit evidence |
 | Pure fixture observation adapter | **Complete contract slice:** 43 cases generated from the reviewed frozen-main asset with fake runtime inputs; independently supplied broker bytes and pycache fact | host path/version/ABI substitution, inventory or module-origin drift, wrong exact flag type, invalid/nested/duplicate/multiple/truncated broker frame, extra stdout newline, zero binding digest, callback-bearing dict/list/text, aggregate overflow |
 | Runtime closure | Original manifest/tree digest, no-follow identity snapshots and target ABI | missing interpreter, symlink/hardlink, unlisted file, changed inode/bytes/resource/native input |

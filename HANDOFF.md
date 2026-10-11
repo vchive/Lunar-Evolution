@@ -1,5 +1,57 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-11 Feature191 admission-attempt content anchor and detached export
+
+PR37–39 are merged; current base main is `89ce5716ca86d6bbdba9fefd751d614a12df1baf`.
+This entry supersedes earlier pending merge notes for those slices. PR32 producer-proof
+durable RSI recovery is also already merged; do not treat it as wholly missing.
+
+The current provider-free slice adds `python_producer_admission_anchor.py` and
+`python_producer_adapter.py`. The standalone publication transaction derives a separate
+admission-attempt content projection from the independently pinned original handoff.
+It preserves original request budget and fractional timeout/deadline, creates the anchor
+before the immutable prepared intent, replays both interrupted-intent windows without
+rewriting retained evidence, and refuses a missing anchor when an intent already exists.
+Checkpoint/timeout callbacks and publication boundaries revalidate content. Bounded,
+nonblocking no-follow I/O checks full within-operation file metadata and retains partial
+or unknown writes for inspection. FIFO, same-operation inode replacement, touch/mode/link
+drift and ambiguous JSON refuse with fixed codes.
+
+The anchor proves content consistency, not original anchor inode identity between
+operations. Same-byte replacement between operations is allowed; the separate original
+handoff file pin still supplies its original inode proof. This slice does not bind the
+admission anchor into controller/ledger or independent recovery, retrofit the earlier
+RSI producer proof, authenticate workers or resist coherent rewriting of every local pin.
+
+The common OpenEvolve/Shinka envelope provides build/parse/verify only. It reparses retained
+binding, terminal, runtime and result wires, checks original identities/deadline/budget/
+interpreter/runtime arguments and refuses mutated DTOs, callback collections and unsupported
+claims. It performs no I/O, evaluator call, launch or admission and always carries
+`production_admission=false`. Actual project lifecycle/export wiring and exact runtime ABI
+acceptance remain open. The local exact evaluator remains separate authority.
+
+Local Python 3.13.12 validation:127 new focused cases and668 broader Feature191/bundle/
+controller compatibility cases, all with zero failures/errors/skips. Independent read-only
+review passed169 focused/compatibility cases and found no remaining blocker for this slice.
+Ruff across src/tests/tools, compileall and diff checks pass. The workflow adds a separate
+127-case `python-admission-export.xml` gate without changing existing recovery116,
+admission198, handoff-pin52, preparation226 or observation43 inventories. Exact final-source
+Ubuntu3.11/3.12/3.13 full CI and independent raw/source/tree audit are required before merge.
+
+Remaining priorities:
+
+- P0: live controller/ledger admission anchoring, independent recovery composition and the
+  complete Python process/runtime/journal recovery matrix.
+- P1: Feature189 G1 actual release/toolchain provenance, G2 static build/closure and G3 sealed
+  runtime evidence; Feature190 owner/lifecycle composition; actual local OpenEvolve/Shinka
+  lifecycle/export; production RSI CLI and Linux runtime acceptance.
+- P2 deferred: external worker authentication, multi-host ownership, remote evaluator,
+  distributed scheduler, service API and remote Shinka/Slurm.
+
+No actual CPython/toolchain acquisition/build/execution, real solver campaign, model,
+WebAgent or remote/company evaluator ran. Continue with local fixtures and existing SDD.
+The new contract is `specs/191-python-worker-adapter/admission-attempt-and-export.md`.
+
 ## 2026-10-10 Feature189 receipt/source-tree consistency continuation
 
 PR37 is merged into main at `c8238ef859e73a7fd7f8f28b9300610e4b7286a9`,

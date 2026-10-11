@@ -1,9 +1,10 @@
 # Feature191 — Pinned Python producer adapter
 
 Status: Phase A binding, durable binding sidecar, controller checkpoint binding, and read-only
-recovery gate implemented; initialization/replay recovery hardening is complete against local
-provider-free fixtures and under final-source CI validation,
-2026-10-10. Priority P1. The `PythonProducerBinding` DTO/parser joins already prepared
+recovery gate implemented; initialization/replay recovery hardening is merged through PR32.
+Standalone admission-attempt content anchoring and detached OpenEvolve/Shinka evidence
+export are implemented against provider-free fixtures, pending this slice's final-source
+CI, 2026-10-11. Priority P1. The `PythonProducerBinding` DTO/parser joins already prepared
 runtime/tree and launch evidence without I/O. The binding can now be persisted once in the
 batch as `python-producer-binding.json`; recovery requires the independently retained sidecar
 pin and rechecks it before and after native process recovery. The immutable RSI run request is
@@ -95,9 +96,13 @@ pin as specified in [retained-handoff-file-pin.md](retained-handoff-file-pin.md)
 transactions require that pin, carry it unchanged in the immutable prepared journal and
 later projections, and revalidate file identity across callbacks and recovery. Digest-only
 legacy Python journals remain inspection records; they cannot silently adopt current
-filesystem metadata. Non-Python journal bytes stay compatible. A future controller
-admission flow needs its own original admission-attempt anchor; this slice does not
-retroactively change the earlier producer binding/run proof.
+filesystem metadata. Non-Python journal bytes stay compatible. The standalone transaction
+also registers an admission-attempt content anchor before the prepared intent and rechecks
+it after callbacks. A shared OpenEvolve/Shinka adapter only exports detached evidence; it
+has no evaluator/admission entry point. See
+[admission-attempt-and-export.md](admission-attempt-and-export.md). Controller/ledger and
+standalone recovery integration remain pending. This slice does not retroactively change
+the earlier producer binding/run proof.
 
 ## Preconditions and safety gates
 
