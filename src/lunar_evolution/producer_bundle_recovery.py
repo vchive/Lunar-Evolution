@@ -19,6 +19,7 @@ from .candidate_evaluation_spec import strict_json
 from .producer_bundle_admission import ProducerBundleAdmissionPlan
 from .producer_bundle_preflight import parse_producer_bundle_preflight_receipt
 from .producer_bundle_publication import (
+    ProducerBundlePublicationError,
     ProducerBundlePublicationJournal,
     parse_producer_bundle_publication_journal,
 )
@@ -199,6 +200,14 @@ def _read_json(path: Path, maximum: int = _MAX_JSON_BYTES) -> dict[str, object]:
     if not isinstance(value, dict):
         _fail("producer_bundle_recovery_json_invalid")
     return value
+
+
+def _read_journal(path: Path) -> ProducerBundlePublicationJournal:
+    """Keep durable journal parsing failures inside the recovery error contract."""
+    try:
+        return parse_producer_bundle_publication_journal(path)
+    except ProducerBundlePublicationError as exc:
+        raise ProducerBundleRecoveryError("producer_bundle_recovery_journal_invalid") from exc
 
 
 def _self_digest(payload: dict[str, object], field: str, code: str) -> str:
@@ -489,7 +498,7 @@ def _terminal(root: Path, batch: Path, journal: ProducerBundlePublicationJournal
     staged_path = batch / "journal.staged.json"
     if not staged_path.exists():
         staged_path = batch / "journal.json"
-    staged = parse_producer_bundle_publication_journal(staged_path)
+    staged = _read_journal(staged_path)
     staged_digest = value.get("staged_journal_sha256", value.get("journal_sha256"))
     if value.get("journal_sha256") is not None and value.get("journal_sha256") != staged_digest:
         _fail("producer_bundle_recovery_terminal_mismatch")
@@ -535,7 +544,7 @@ def resume_producer_bundle_publication(
     # A successful commit retains the publishing journal as journal.json and writes the
     # terminal, published projection separately.  Never treat the former as success.
     journal_file = "journal.published.json" if journal.state == "published" else "journal.json"
-    durable = parse_producer_bundle_publication_journal(_path(root, journal_file, directory=batch))
+    durable = _read_journal(_path(root, journal_file, directory=batch))
     if durable != journal:
         # The publication state and per-stage receipts legitimately advance after the
         # caller's prepared journal.  Immutable authority and plan-order mapping must
@@ -610,7 +619,7 @@ def resume_producer_bundle_publication(
     staged_path = batch / "journal.staged.json"
     if not staged_path.exists():
         staged_path = batch / "journal.json"
-    staged_journal = parse_producer_bundle_publication_journal(staged_path)
+    staged_journal = _read_journal(staged_path)
     preflight_sha = _check_preflight(preflight_raw, staged_journal, plan)
     manifest_raw = _read_json(_path(root, "manifest.json", directory=batch), 256 * 1024)
     manifest_sha, ids, _paths, files = _manifest(manifest_raw, staged_journal, preflight_sha)

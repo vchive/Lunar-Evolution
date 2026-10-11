@@ -1,5 +1,37 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 bounded Python interruption recovery matrix
+
+The isolated `codex/python-recovery-matrix` continuation retains PR47 source and the
+PR46 test-only bounded watchdog correction. Dependencies remain pending; original
+PR46 run38156193067 failed on all three Python versions and its evidence is retained.
+This source and each corrected dependency require their own complete CI and audit.
+
+New24-case local matrix exercises real controller SQLite rows and process/publication
+journal files at dispatch-without-result, callback response loss, claim/registration-only,
+unknown/mismatched/cleanup-uncertain terminal, missing/malformed journal, and publication
+interruption windows. The final publish window follows candidate/archive/state moves
+but precedes terminal persistence. Reopened/repeated read-only recovery must preserve
+all durable rows, bytes, file identities, budget, deadline and uncertain effects without
+another dispatch, callback, cleanup, evaluation or publication.
+
+The matrix demonstrated that missing/malformed durable/staged publication journals
+leaked `ProducerBundlePublicationError` from the recovery API. All three parser entry
+points now normalize that error to `producer_bundle_recovery_journal_invalid`, allowing
+the RSI facade to maintain its fixed recovery error contract. No repair, retry or new
+publication is introduced. First failed XML remains retained separately.
+
+Local final matrix passes24 cases in66.936seconds and disjoint compatibility passes75
+in135.910seconds; root independently verifies36 overlapping matrix/recovery cases in
+65.935seconds, not counted again. Reports remain under ignored
+`python-interruption-matrix-20261012`. This bounded matrix covers inert retained files,
+not actual process death/gate delivery or the complete live runtime interruption matrix.
+Remaining P0 is live scheduler runtime/post-execution handoff and actual runtime/process
+interruption coverage. P1 remains Feature189/190 sealed-runtime acceptance and actual
+OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux acceptance. Only local
+inert fixtures ran; `production_admission=false`. P2 remains deferred. SDD:
+Feature191 `python-interruption-matrix.md`.
+
 ## 2026-10-12 BRS CI progress watchdog correction
 
 PR46 source `11875b87a659e571083589f7c97cd645484e3028` failed its first

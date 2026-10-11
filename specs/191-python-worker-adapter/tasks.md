@@ -169,3 +169,15 @@
   file replacement/touch/mode/link/symlink/missing and two-read races without writes,
   claims, budget charges, subprocesses or evaluator calls.
 - [x] Preserve legacy non-Python native plan behavior and document this as preflight only.
+
+## Bounded local interruption recovery
+
+- [x] Add24 actual local controller/process/publication retained-file interruption
+  cases under `python-interruption-matrix.md`, including the final publication window
+  after material moves and before terminal persistence.
+- [x] Preserve original proof, deadline/budget, uncertain effects and exact durable
+  rows/file identities across repeated reopened read-only refusal; prohibit retry/repair.
+- [x] Normalize demonstrated durable/staged publication journal parser failures inside
+  the existing fixed-code recovery contract; cover missing and malformed journals.
+- [x] Retain first failure evidence and add a dedicated24-case CI inventory. This bounded
+  fixture matrix does not close the full live scheduler/runtime interruption task.

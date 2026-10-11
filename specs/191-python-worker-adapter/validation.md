@@ -1,5 +1,22 @@
 # Validation plan
 
+## 2026-10-12 bounded local interruption recovery
+
+The dedicated `rsi-python-interruption.xml` gate requires24 unique cases and zero
+failures/errors/skips. Final local matrix passes24 in66.936seconds; disjoint existing
+inert recovery/publication compatibility passes75 in135.910seconds. Root independently
+passes36 overlapping matrix and journal recovery cases in65.935seconds; that overlap
+is not added to99 unique local cases. First failed XML and final XML remain separate
+under ignored main-workspace reports `python-interruption-matrix-20261012`.
+
+The matrix uses actual ledger rows and retained process/publication files. Repeated
+reopened recovery checks exact durable rows, bytes and file metadata. It forbids process
+spawn, cleanup and real evaluator entry. Missing/malformed journals exposed an exception
+contract defect, now normalized at all three recovery parser reads. The dedicated gate
+is annotated/uploaded alongside existing gates. This source needs its own three-version
+full CI and independent audit; inert file recovery does not establish runtime execution,
+sealed CPython, actual solver lifecycle or production admission.
+
 ## 2026-10-12 BRS first-CI failure and bounded progress correction
 
 Original PR46 run38156193067 failed the same two BRS fixture watchdogs on all three
