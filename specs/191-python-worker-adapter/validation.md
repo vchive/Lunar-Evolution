@@ -1,5 +1,68 @@
 # Validation plan
 
+## 2026-10-12 BRS first-CI failure and bounded progress correction
+
+Original PR46 run38156193067 failed the same two BRS fixture watchdogs on all three
+Python versions; full regressions were skipped. Preserve the original ZIP/XML/log and
+metadata under ignored `pr46-final-ci-run38156193067-11875b8-v2`, including the final
+failure-retention record. The former10-second sibling waits and20-second publication
+watchdog did not allow repeated proof observations on CI filesystems. Neither failure
+is reclassified as a passing source.
+
+Only the two fixture watchdog sites now allow60seconds. Original absolute execution
+deadline/budget, event order, worker count, ordinal result save and refusal assertions
+stay intact. The offline Python3.13.12 gate passes103 cases in194.462seconds, zero
+failures/errors/skips. Retained trace proves acknowledgement, settlement, slot release,
+queued dispatch and successful return of every sibling, with no hidden worker exception.
+Root Python3.11.15 independently passes the same103 cases. XML/trace and static checks
+remain under ignored `pr46-ci-progress-diagnosis-20261012`. This is test progress
+verification, not runtime acceptance; the corrected source needs new three-version CI.
+
+## 2026-10-12 local BRS owner ready/ack
+
+The new `rsi-python-brs-admission.xml` gate requires103 unique cases with zero failures,
+errors or skips:63 channel,22 controller owner and18 worker publication cases.
+Root final-source Python3.11.15 verification passed103 in108.919 seconds (retained
+`.lunar-evolution/reports/brs-final-20261012f.xml` in the main workspace). The final
+nested-dispatch and owner-save CAS fixes also passed independent focused replay;
+independent actual `run_brs` fixture confirms unrelated durable head drift is preserved
+and no ordinal execution save occurs. Independent review found no remaining blocker.
+Final-source DRS owner/store/checkpoint compatibility passed78 in65.768 seconds
+(`.lunar-evolution/reports/brs-cross-path-20261012g.xml`), with no failures/errors/skips;
+these disjoint final inventories contain181 unique cases.
+
+Auxiliary compatibility evidence remains distinct:100 facade/DRS/prepared-observer
+cases,70 facade/store/checkpoint cases,86 flow/checkpoint/controller cases, and an
+independent230-case overlapping six-suite run passed. These runs began before the last
+nested/CAS fixes and are not additional final-source acceptance or additive inventory.
+The final103-case gate covers both fixes. Original failing/intermediate XML files remain
+retained in ignored main-workspace reports; no failure was overwritten by success.
+
+Actual BRS futures service ready from any pending worker while saving results ordinally,
+including waves larger than the worker pool. The parent retains the mutation lock and
+original whole-wave budgets/frozen memory. A separate observation lock surrounds exact
+CAS pin, reference-only in-memory acknowledgement and channel delivery; waits and caller
+control callbacks happen outside it. Pin followed by cancellation/delivery failure retains
+the durable row/reference, restores only the precise in-memory increment and stops progress
+with stale state for recovery. Active ordinal saves use the captured wave head rather than
+synchronizing/adopting latest durable state. Fresh dispatch tokens cannot be reminted by
+nested calls or borrowed by recovered/direct/wrong-thread workers.
+
+One transaction runs through durable prepared evidence and owner pin to an inert evaluator
+boundary. Real controller/runner/ledger futures and settlement tests use inert gateway and
+transaction seams, not the actual native gateway or a sealed CPython runtime. One original
+Python admission child plus ordinary siblings is supported; independent Python children
+require a separate original proof/journal/attempt routing contract. Production admission
+stays false. Real scheduler inputs, runtime/process/journal interruption coverage, actual
+Feature189/190 acceptance and local OpenEvolve/Shinka lifecycle remain open.
+
+The controller-lock fix narrows filesystem OSError translation to lock acquisition.
+Deadline/timeout/provider OSError raised inside its body now propagates unchanged while
+cleanup releases the lock; three regressions cover this previously masked deadline.
+Ruff across src/tests/tools, compileall and diff checks pass. The40 focused plus3 full
+phases require this source's own Ubuntu3.11/3.12/3.13 CI and raw/source/tree audit before
+merge. Earlier PR43–45 evidence cannot approve this BRS slice.
+
 ## 2026-10-11 owning-thread DRS first pin
 
 The new `rsi-python-admission-owner.xml` gate requires30 cases with zero failures,

@@ -1,5 +1,77 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 BRS CI progress watchdog correction
+
+PR46 source `11875b87a659e571083589f7c97cd645484e3028` failed its first
+Ubuntu3.11/3.12/3.13 run38156193067 at the103-case BRS gate. All three lanes
+reported the same two fixture watchdog failures; their full regressions were skipped.
+Original artifacts, logs, metadata and diagnosis remain retained under ignored
+`pr46-final-ci-run38156193067-11875b8-v2`; the source is not CI accepted.
+
+This correction changes only fixture waits in the owner ordinal/sibling test and
+prepared-publication driver to bounded60-second watchdogs. The retained execution
+deadline, production budget, evidence validation, event assertions and ordinal saves
+are unchanged. An offline Python3.13.12 trace confirms ordinal1 acknowledgement,
+future settlement and slot release precede queued ordinal2 entry; all three futures
+return without hidden sibling errors. The publication driver reaches its expected
+inert evaluator/refusal boundaries. The103-case gate passes independently under local
+Python3.11.15 and3.13.12. The corrected source requires its own complete Ubuntu CI;
+old failed CI cannot approve it. Only inert local fixtures ran and production admission
+remains false.
+
+## 2026-10-12 local BRS prepared ready/ack continuation
+
+The isolated `codex/python-brs-ready-ack` continuation starts from PR45 source
+`cb6bd809948d08acdd1606e115e59532dad8ff43`. PR43 passed full three-version
+run38144340314, independent raw/source/tree audit and root offline replay; it merged
+at `469a11c78cc9b814f1b4a25ad7db319dbbb11b47`, tree
+`874f6a8838dadd36bbdd114e8dd577c7a5bc6e1e`, with ordered parents
+`[d0d4c92428891a7444f5a3b725a05f87554e4734,a83a82e39bc41379e97f014c63b3cdb515ddcfc2]`.
+PR44 full run38146706898 passed independent raw/source/tree audit and root offline replay;
+it merged at `db7272b4ebb7b5e8b7e78cc6383b5b498f7f076c`, tree
+`776eae796120892f466a0683a6e5c02c7ba9824e`, with ordered parents
+`[469a11c78cc9b814f1b4a25ad7db319dbbb11b47,24ee911c79aa9e0f3eccbfee5981f560cdb25038]`.
+Actual merge, PR state and main were independently re-read. PR45 run38151649684 remains
+pending. Earlier pending statements
+below are historical; each final source needs its own acceptance.
+
+BRS workers now send callback-free canonical original plan/journal/anchor bytes and
+wait outside controller and observation locks. The parent holds controller ownership,
+services ready from any active worker while waiting for ordinal futures, pins against
+the captured CAS, acknowledges only exact references and saves results ordinally.
+A separate reentrant observation lock prevents sibling reads between durable pin and
+in-memory acknowledgement. Original wave budgets/deadlines, frozen memory and prepared
+request/proof are retained. One Python admission child alongside ordinary siblings is
+supported; multiple independent Python children require separate proof/journal routing.
+
+Independent review found and fixed nested dispatch token reminting and an owner-save
+latest-head race. Fresh authority cannot be borrowed by recovered/direct/nested calls;
+active-wave saves refuse unrelated checkpoint drift without adopting latest budget/state.
+Cancellation/ack-delivery failure racing a durable pin keeps its obligation, restores
+only the precise in-memory increment and stops with stale state for explicit recovery.
+Channel close wakes blocked workers before executor shutdown. The controller-lock
+OSError wrapper is now limited to acquisition; worker deadline/provider body errors
+propagate unchanged and cleanup releases the lock.
+
+Final local Python3.11.15 BRS gate passed103 cases in108.919 seconds with zero failures,
+errors or skips (63 channel,22 owner,18 facade). Independent focused fixes and actual
+inert `run_brs` drift replay passed; independent review has no remaining blocker.
+Final-source DRS owner/store/checkpoint compatibility passed78 cases in65.768 seconds;
+together the two disjoint final inventories contain181 unique cases. Auxiliary earlier
+compatibility runs are listed separately in Feature191 validation. Original failures/intermediate XML remain in ignored main-workspace
+reports. Ruff across src/tests/tools, compileall and diff checks pass. New CI gate
+`rsi-python-brs-admission.xml` is annotated/uploaded;40 focused plus3 full phases still
+require this source's own Ubuntu3.11/3.12/3.13 CI and raw/source/tree audit.
+
+Actual futures/controller/ledger and transaction-to-inert-evaluator seams do not run
+the actual native gateway, sealed CPython or OpenEvolve/Shinka campaigns. Remaining P0:
+real Python scheduler runtime/handoff inputs and full process/runtime/journal interruption
+coverage. Remaining P1: Feature189 release/toolchain/static closure/build/sealed runtime,
+Feature190 owner/runtime composition, actual local OpenEvolve/Shinka lifecycle/export and
+production RSI CLI/Linux acceptance. P2 authentication, multi-host ownership, service/
+distributed scheduling and remote evaluator remain deferred. Only local inert fixtures
+ran; `production_admission=false`. Bounded SDD: Feature191 `brs-owner-ready-ack.md`.
+
 ## 2026-10-11 owning-thread DRS first admission pin
 
 The isolated continuation `codex/python-admission-owner` starts from PR44 source

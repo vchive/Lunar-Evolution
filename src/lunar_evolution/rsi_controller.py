@@ -18,7 +18,7 @@ from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
-from threading import get_ident, local
+from threading import RLock, get_ident, local
 from typing import Any, Protocol
 
 from .candidate_evaluation_spec import canonical_json
@@ -91,6 +91,31 @@ class _PythonAdmissionFlowContext:
     owner_thread: int
     checkpoint_sha256: str
     payload: bytes
+
+
+@dataclass
+class _PythonAdmissionBRSWave:
+    controller: object
+    state: dict[str, Any]
+    run_id: str
+    episode_ids: tuple[str, ...]
+    ledger: RSILedger
+    workspace: Path
+    sidecar: object
+    owner_thread: int
+    checkpoint_sha256: str
+    payload: bytes
+    channel: Any
+    budget_state: dict[str, Any]
+    admitted_episode_id: str | None = None
+    active: bool = True
+
+
+@dataclass(frozen=True)
+class _PythonAdmissionBRSWorker:
+    wave: _PythonAdmissionBRSWave
+    episode_id: str
+    worker_thread: int
 
 
 @dataclass(frozen=True)
@@ -1001,6 +1026,9 @@ class RSILearningController:
         self.producer_sidecar = producer_sidecar
         self.producer_workspace = Path(producer_workspace).expanduser() if producer_workspace is not None else None
         self._python_admission_flow_local = local()
+        self._python_admission_brs_local = local()
+        self._python_admission_brs_wave: _PythonAdmissionBRSWave | None = None
+        self._python_admission_brs_observation_lock = RLock()
         from .rsi_governance_coordinator import RSIGovernanceCoordinator
 
         if memory_admission_gate is not None:
@@ -1142,14 +1170,16 @@ class RSILearningController:
             raise RSILearningError("rsi_python_admission_reference_stale")
 
     def _validate_producer_checkpoint(self, run_id: str, state: Mapping[str, Any] | None) -> None:
-        self._validate_original_producer_checkpoint(run_id, state)
-        self._validate_python_admission_references(run_id, state)
+        with self._python_admission_brs_observations():
+            self._validate_original_producer_checkpoint(run_id, state)
+            self._validate_python_admission_references(run_id, state)
 
     def _validate_run_checkpoint_producer_binding(
         self, record: RSIRecord, state: Mapping[str, Any] | None,
     ) -> None:
-        self._validate_original_run_checkpoint_producer_binding(record, state)
-        self._validate_python_admission_references(record.logical_id, state)
+        with self._python_admission_brs_observations():
+            self._validate_original_run_checkpoint_producer_binding(record, state)
+            self._validate_python_admission_references(record.logical_id, state)
 
     def _python_admission_inputs(self, native_plan: object, prepared_journal: object, expected_anchor_sha256: object):
         """Reparse exact caller DTOs before acquiring locks or reading evidence."""
@@ -1497,10 +1527,28 @@ class RSILearningController:
         expected_anchor_sha256: str,
     ):
         """Pin under the captured CAS, then acknowledge only this exact reference increment."""
+        state, _ = self._python_admission_active_flow(run_id, episode_id)
+        context = self._python_admission_flow_local.active
+        pinned, checkpoint_sha256, expected_payload, expected = self._python_admission_pin_exact(
+            context, run_id, episode_id, native_plan=native_plan, prepared_journal=prepared_journal,
+            expected_anchor_sha256=expected_anchor_sha256,
+            active=lambda: self._python_admission_active_flow(run_id, episode_id),
+            assert_context=lambda: self._python_admission_assert_flow_context(context, run_id, episode_id),
+        )
+        acknowledged = replace(context, checkpoint_sha256=checkpoint_sha256, payload=expected_payload)
+        if expected_payload != context.payload:
+            state["python_admission_refs"] = expected["python_admission_refs"]
+        self._python_admission_flow_local.active = acknowledged
+        return pinned
+
+    def _python_admission_pin_exact(
+        self, context, run_id: str, episode_id: str, *, native_plan: object, prepared_journal: object,
+        expected_anchor_sha256: str, active: Callable, assert_context: Callable,
+    ):
+        """Shared exact CAS kernel; callers retain separate DRS/BRS scope authority."""
         from .rsi_python_admission import build_rsi_python_admission_reference
 
-        state, captured_head = self._python_admission_active_flow(run_id, episode_id)
-        context = self._python_admission_flow_local.active
+        state, captured_head = active()
         plan, journal, binding = self._python_admission_inputs(native_plan, prepared_journal, expected_anchor_sha256)
         with context.ledger.read_only_observations():
             self._validate_producer_checkpoint(run_id, state)
@@ -1515,7 +1563,7 @@ class RSILearningController:
         expected = json.loads(context.payload)
         expected["python_admission_refs"] = expected.get("python_admission_refs", {}) | {episode_id: reference}
         expected_payload = self._python_admission_flow_payload(expected)
-        self._python_admission_active_flow(run_id, episode_id)
+        active()
         RSIRunBudget.load(expected["budget_state"]).check()
         pinned, checkpoint_sha256 = context.ledger.pin_python_admission_record(
             retained, reference=reference, expected_run_record_sha256=run_head,
@@ -1545,12 +1593,245 @@ class RSILearningController:
                     or self._python_admission_flow_payload(final_checkpoint[1]) != expected_payload):
                 raise RSILearningError("rsi_python_admission_flow_ack_invalid")
         RSIRunBudget.load(expected["budget_state"]).check()
-        self._python_admission_assert_flow_context(context, run_id, episode_id)
-        acknowledged = replace(context, checkpoint_sha256=checkpoint_sha256, payload=expected_payload)
-        if expected_payload != context.payload:
-            state["python_admission_refs"] = expected["python_admission_refs"]
-        self._python_admission_flow_local.active = acknowledged
-        return pinned
+        assert_context()
+        return pinned, checkpoint_sha256, expected_payload, expected
+
+    @contextmanager
+    def _python_admission_brs_observations(self):
+        """Serialize shared evidence observations, without granting controller ownership."""
+        with self._python_admission_brs_observation_lock:
+            yield
+
+    def _python_admission_assert_brs_wave(self, wave: _PythonAdmissionBRSWave, *, owner: bool) -> None:
+        if (type(wave) is not _PythonAdmissionBRSWave or not wave.active
+                or wave.controller is not self or self._python_admission_brs_wave is not wave
+                or self.ledger is not wave.ledger
+                or self.producer_workspace is not wave.workspace or self.producer_sidecar is not wave.sidecar
+                or wave.state.get("run_id") != wave.run_id or wave.state.get("mode") != "brs"
+                or wave.state.get("status") != "running"
+                or (owner and (get_ident() != wave.owner_thread
+                               or not wave.ledger.controller_lock_held(wave.run_id)))):
+            raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+        if self._python_admission_flow_payload(wave.state) != wave.payload:
+            raise RSILearningError("rsi_python_brs_admission_stale")
+
+    def _python_admission_active_brs_owner(self, wave: _PythonAdmissionBRSWave):
+        self._python_admission_assert_brs_wave(wave, owner=True)
+        with wave.ledger.read_only_observations():
+            checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
+        if (checkpoint is None or checkpoint[0] != wave.checkpoint_sha256
+                or self._python_admission_flow_payload(checkpoint[1]) != wave.payload):
+            raise RSILearningError("rsi_python_brs_admission_stale")
+        self._python_admission_assert_brs_wave(wave, owner=True)
+        return wave.state, wave.checkpoint_sha256
+
+    @contextmanager
+    def _python_admission_brs_wave_scope(self, state: dict[str, Any], episode_ids: tuple[str, ...]):
+        """Capture the persisted dispatch wave before any fresh worker receives authority."""
+        from .rsi_python_brs_admission import BRSAdmissionChannel
+
+        previous = self._python_admission_brs_wave
+        wave = None
+        try:
+            if self.producer_sidecar is None or self.ledger is None:
+                yield None
+                return
+            with self._python_admission_brs_observations():
+                if (previous is not None or type(state) is not dict or state.get("mode") != "brs"
+                        or state.get("status") != "running" or type(episode_ids) is not tuple
+                        or not episode_ids or any(type(key) is not str for key in episode_ids)
+                        or len(set(episode_ids)) != len(episode_ids)
+                        or type(state.get("intents")) is not dict
+                        or any(type(key) is not str or key not in state["intents"] for key in episode_ids)):
+                    raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                run_id = _id(state.get("run_id"), "run_id")
+                if not self.ledger.controller_lock_held(run_id):
+                    raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                payload = self._python_admission_flow_payload(state)
+                with self.ledger.read_only_observations():
+                    checkpoint = self.ledger.controller_checkpoint(run_id)
+                if checkpoint is None or self._python_admission_flow_payload(checkpoint[1]) != payload:
+                    raise RSILearningError("rsi_python_brs_admission_stale")
+                refs = state.get("python_admission_refs", {})
+                if len(refs) > 1:
+                    raise RSILearningError("rsi_python_brs_admission_multiple_children")
+                wave = _PythonAdmissionBRSWave(
+                    self, state, run_id, episode_ids, self.ledger, self.producer_workspace, self.producer_sidecar,
+                    get_ident(), checkpoint[0], payload,
+                    BRSAdmissionChannel(run_id, episode_ids, owner_thread=get_ident()),
+                    json.loads(self._python_admission_flow_payload(state["budget_state"])),
+                    next(iter(refs), None),
+                )
+                self._python_admission_brs_wave = wave
+                self._python_admission_active_brs_owner(wave)
+            yield wave
+        finally:
+            if wave is not None:
+                with self._python_admission_brs_observations():
+                    wave.active = False
+                    self._python_admission_brs_wave = previous
+                # Wake all blocked workers before the caller shuts its executor down.
+                wave.channel.close()
+
+    def _execute_brs_intent(self, wave, state, episode_id):
+        """Attach a dispatch token only to the executor's selected invocation."""
+        previous = getattr(self._python_admission_brs_local, "dispatch", None)
+        if previous is not None or getattr(self._python_admission_brs_local, "active", None) is not None:
+            raise RSILearningError("rsi_python_brs_admission_nested_dispatch")
+        self._python_admission_brs_local.dispatch = (wave, state, episode_id)
+        try:
+            return self._execute_intent(state, episode_id)
+        finally:
+            self._python_admission_brs_local.dispatch = previous
+
+    @contextmanager
+    def _python_admission_brs_worker_scope(self, state, episode_id):
+        previous = getattr(self._python_admission_brs_local, "active", None)
+        dispatched = getattr(self._python_admission_brs_local, "dispatch", None)
+        self._python_admission_brs_local.active = None
+        self._python_admission_brs_local.dispatch = None
+        try:
+            if (type(dispatched) is not tuple or len(dispatched) != 3 or dispatched[1] is not state
+                    or dispatched[2] != episode_id or type(dispatched[0]) is not _PythonAdmissionBRSWave):
+                yield
+                return
+            wave = dispatched[0]
+            with self._python_admission_brs_observations():
+                self._python_admission_assert_brs_wave(wave, owner=False)
+                if get_ident() == wave.owner_thread or episode_id not in wave.episode_ids:
+                    raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                self._python_admission_brs_local.active = _PythonAdmissionBRSWorker(wave, episode_id, get_ident())
+                self._python_admission_active_brs_worker(wave.run_id, episode_id)
+            yield
+        finally:
+            self._python_admission_brs_local.active = previous
+            self._python_admission_brs_local.dispatch = dispatched
+
+    def _python_admission_active_brs_worker(self, run_id: str, episode_id: str):
+        with self._python_admission_brs_observations():
+            context = getattr(self._python_admission_brs_local, "active", None)
+            if type(context) is not _PythonAdmissionBRSWorker:
+                raise RSILearningError("rsi_python_brs_admission_worker_missing")
+            wave = context.wave
+            self._python_admission_assert_brs_wave(wave, owner=False)
+            if (context.worker_thread != get_ident() or get_ident() == wave.owner_thread
+                    or (wave.run_id, context.episode_id) != (run_id, episode_id)
+                    or episode_id not in wave.episode_ids):
+                raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+            with wave.ledger.read_only_observations():
+                checkpoint = wave.ledger.controller_checkpoint(run_id)
+            if (checkpoint is None or checkpoint[0] != wave.checkpoint_sha256
+                    or self._python_admission_flow_payload(checkpoint[1]) != wave.payload):
+                raise RSILearningError("rsi_python_brs_admission_stale")
+            return wave.state, wave.checkpoint_sha256
+
+    def _python_admission_service_brs_ready(self, wave: _PythonAdmissionBRSWave, ready) -> str:
+        from .producer_bundle_publication import parse_producer_bundle_publication_journal
+        from .rsi_native_plan import NativeRSIExecutionPlan
+        from .rsi_python_brs_admission import BRSAdmissionReady, build_brs_admission_ready
+
+        with self._python_admission_brs_observations():
+            self._python_admission_active_brs_owner(wave)
+            if (type(ready) is not BRSAdmissionReady or ready.run_id != wave.run_id
+                    or ready.episode_id not in wave.episode_ids
+                    or build_brs_admission_ready(ready.run_id, ready.episode_id, ready.payload) != ready):
+                raise RSILearningError("rsi_python_brs_admission_request_invalid")
+            if wave.admitted_episode_id not in {None, ready.episode_id}:
+                raise RSILearningError("rsi_python_brs_admission_multiple_children")
+            try:
+                payload = json.loads(ready.payload)
+                if (type(payload) is not dict
+                        or set(payload) != {"native_plan", "prepared_journal", "expected_anchor_sha256"}
+                        or self._python_admission_flow_payload(payload) != ready.payload):
+                    raise ValueError("shape")
+                plan = NativeRSIExecutionPlan.from_dict(payload["native_plan"])
+                journal = parse_producer_bundle_publication_journal(payload["prepared_journal"])
+                anchor = payload["expected_anchor_sha256"]
+            except (ValueError, TypeError, KeyError, RecursionError) as exc:
+                raise RSILearningError("rsi_python_brs_admission_request_invalid") from exc
+            RSIRunBudget.load(wave.budget_state).check()
+            pinned, head, expected_payload, expected = self._python_admission_pin_exact(
+                wave, wave.run_id, ready.episode_id, native_plan=plan, prepared_journal=journal,
+                expected_anchor_sha256=anchor,
+                active=lambda: self._python_admission_active_brs_owner(wave),
+                assert_context=lambda: self._python_admission_assert_brs_wave(wave, owner=True),
+            )
+            # Only the reference increment verified by the kernel may enter shared state.
+            wave.state["python_admission_refs"] = expected["python_admission_refs"]
+            wave.checkpoint_sha256, wave.payload = head, expected_payload
+            wave.admitted_episode_id = ready.episode_id
+            return pinned.record_sha256
+
+    @contextmanager
+    def _python_admission_brs_service_observations(self, wave: _PythonAdmissionBRSWave):
+        """Keep pin, exact state acknowledgement and channel delivery in one short scope."""
+        with self._python_admission_brs_observations():
+            self._python_admission_active_brs_owner(wave)
+            before_payload, before_head = wave.payload, wave.checkpoint_sha256
+            before_episode = wave.admitted_episode_id
+            try:
+                yield
+            except BaseException:
+                # No ordinal save can run during this owning-thread service. If delivery failed
+                # after its precise pin increment, undo only that increment in memory, preserving
+                # the durable obligation and the old stale head for explicit recovery.
+                if wave.payload != before_payload and self._python_admission_flow_payload(wave.state) == wave.payload:
+                    before = json.loads(before_payload)
+                    expected = json.loads(wave.payload)
+                    expected.pop("python_admission_refs", None)
+                    previous = dict(before)
+                    previous.pop("python_admission_refs", None)
+                    if expected == previous:
+                        if "python_admission_refs" in before:
+                            wave.state["python_admission_refs"] = before["python_admission_refs"]
+                        else:
+                            wave.state.pop("python_admission_refs", None)
+                        wave.payload, wave.checkpoint_sha256 = before_payload, before_head
+                        wave.admitted_episode_id = before_episode
+                raise
+
+    def _request_python_admission_for_brs_worker(
+        self, run_id: str, episode_id: str, *, native_plan: object, prepared_journal: object,
+        expected_anchor_sha256: str, wait_check: Callable[[], None] | None = None,
+    ) -> str:
+        from .rsi_python_brs_admission import BRSAdmissionAck, build_brs_admission_ready
+
+        if wait_check is not None and not callable(wait_check):
+            raise RSILearningError("rsi_python_brs_admission_check_invalid")
+        with self._python_admission_brs_observations():
+            state, _ = self._python_admission_active_brs_worker(run_id, episode_id)
+            wave = self._python_admission_brs_local.active.wave
+            plan, journal, _ = self._python_admission_inputs(native_plan, prepared_journal, expected_anchor_sha256)
+            with wave.ledger.read_only_observations():
+                self._validate_producer_checkpoint(run_id, state)
+            ready = build_brs_admission_ready(run_id, episode_id, self._python_admission_flow_payload({
+                "native_plan": plan.to_dict(), "prepared_journal": journal.to_dict(),
+                "expected_anchor_sha256": expected_anchor_sha256,
+            }))
+
+        def check():
+            RSIRunBudget.load(wave.budget_state).check()
+            if wait_check is not None:
+                wait_check()
+
+        # Neither the observation lock nor the controller mutation lock belongs to this waiter.
+        ack = wave.channel.request(ready, check=check)
+        check()
+        with self._python_admission_brs_observations():
+            state, _ = self._python_admission_active_brs_worker(run_id, episode_id)
+            if (type(ack) is not BRSAdmissionAck
+                    or (ack.run_id, ack.episode_id, ack.request_sha256)
+                    != (run_id, episode_id, ready.request_sha256)):
+                raise RSILearningError("rsi_python_brs_admission_ack_invalid")
+            _digest(ack.record_sha256, "python_admission_record_sha256")
+            reference = state.get("python_admission_refs", {}).get(episode_id)
+            if (type(reference) is not dict or reference.get("record_sha256") != ack.record_sha256
+                    or reference.get("native_plan") != plan.to_dict()
+                    or reference.get("prepared_journal") != journal.to_dict()):
+                raise RSILearningError("rsi_python_brs_admission_ack_invalid")
+            with wave.ledger.read_only_observations():
+                self._validate_producer_checkpoint(run_id, state)
+            return ack.record_sha256
 
     def _validate_python_admission_record_evidence(
         self, run_id: str, episode_id: str, plan, journal, binding,
@@ -2796,14 +3077,28 @@ class RSILearningController:
             raise RSILearningError("rsi_resume_checkpoint_corrupt") from exc
         return ordered(targets), ordered(practices)
 
-    def _save_flow(self, record: RSIRecord | None, state: dict[str, Any]) -> None:
+    def _save_flow(self, record: RSIRecord | None, state: dict[str, Any]) -> str | None:
         """Publish the whole recovery boundary before permitting the next side effect."""
         self._sync_curriculum_checkpoint(state)
         if self.ledger is None or record is None:
-            return
+            return None
         self._validate_run_checkpoint_producer_binding(record, state)
         previous = self.ledger.controller_checkpoint(record.logical_id)
-        if previous is not None:
+        wave = self._python_admission_brs_wave
+        if wave is not None:
+            if (not wave.active or wave.controller is not self or state is not wave.state
+                    or get_ident() != wave.owner_thread or self.ledger is not wave.ledger
+                    or self.producer_workspace is not wave.workspace or self.producer_sidecar is not wave.sidecar
+                    or record.logical_id != wave.run_id or previous is None
+                    or previous[0] != wave.checkpoint_sha256
+                    or self._python_admission_flow_payload(previous[1]) != wave.payload):
+                raise RSILearningError("rsi_python_brs_admission_stale")
+            # A wave may save only against its own captured checkpoint. Do not refresh or
+            # synchronize from an unrelated latest durable payload after the entry gate.
+            expected_head = wave.checkpoint_sha256
+        else:
+            expected_head = previous[0] if previous else None
+        if previous is not None and wave is None:
             from .rsi_parent_budget import ParentRunBudget
 
             ParentRunBudget.synchronize(state, previous[1])
@@ -2811,13 +3106,13 @@ class RSILearningController:
             # Callers also use _save_flow as a recovery boundary, so an unchanged checkpoint
             # must not mask sidecar drift.
             self._validate_producer_checkpoint(record.logical_id, state)
-            return
+            return previous[0]
         # Validate immediately before the checkpoint write as well as at dispatch boundaries.
         # The sidecar is independently retained evidence; a drift after an earlier check must
         # leave the controller at its last known-good checkpoint instead of publishing progress.
         self._validate_producer_checkpoint(record.logical_id, state)
-        self.ledger.write_controller_checkpoint(
-            record.logical_id, state, expected_sha256=previous[0] if previous else None,
+        return self.ledger.write_controller_checkpoint(
+            record.logical_id, state, expected_sha256=expected_head,
         )
 
     def _flow_state(self, record: RSIRecord | None, *, run_id: str, plan: dict[str, Any],
@@ -2900,6 +3195,15 @@ class RSILearningController:
         self._save_flow(record, state)
 
     def _execute_intent(self, state: Mapping[str, Any], episode_id: str) -> EpisodeExecution:
+        # A nested or recovered execution cannot inherit an outer worker's ready authority.
+        previous = getattr(self._python_admission_brs_local, "active", None)
+        self._python_admission_brs_local.active = None
+        try:
+            return self._execute_intent_inner(state, episode_id)
+        finally:
+            self._python_admission_brs_local.active = previous
+
+    def _execute_intent_inner(self, state: Mapping[str, Any], episode_id: str) -> EpisodeExecution:
         # Final gate immediately before native resume or gateway dispatch.
         self._validate_producer_checkpoint(state["run_id"], state)
         intent = state["intents"][episode_id]
@@ -2910,6 +3214,7 @@ class RSILearningController:
             if head is not None:
                 if head.request_sha256 != request.digest():
                     raise RSILearningError("rsi_resume_episode_drift")
+                self._python_admission_brs_local.dispatch = None
                 return self._resume_episode_execution(
                     head, request_hint=request,
                     before_verify=RSIRunBudget.load(state["budget_state"]).check,
@@ -2940,7 +3245,7 @@ class RSILearningController:
         def before_settlement() -> None:
             self._validate_producer_checkpoint(state["run_id"], state)
 
-        with self._python_admission_flow_scope(state, episode_id):
+        with self._python_admission_flow_scope(state, episode_id), self._python_admission_brs_worker_scope(state, episode_id):
             return PracticeEpisodeRunner(
                 self.gateway, ControllerVerifier(), self.ledger, self.usage_ledger,
                 memory_snapshot=self.snapshot,
@@ -3150,15 +3455,36 @@ class RSILearningController:
         # All controller writes remain in the owning thread.  Workers persist only their own
         # episode/result evidence and never mutate this journal or the frozen memory parent.
         if pending:
-            with ThreadPoolExecutor(max_workers=plan.get("max_workers") or len(pending)) as pool:
-                futures = {key: pool.submit(self._execute_intent, state, key) for key in pending}
+            # The wave scope exits first, closing the channel before executor shutdown waits.
+            with (ThreadPoolExecutor(max_workers=plan.get("max_workers") or len(pending)) as pool,
+                  self._python_admission_brs_wave_scope(state, tuple(pending)) as wave):
+                futures = {key: pool.submit(self._execute_brs_intent, wave, state, key) for key in pending}
                 for key in pending:
-                    execution = futures[key].result()
+                    future = futures[key]
+                    if wave is not None:
+                        while not future.done():
+                            RSIRunBudget.load(wave.budget_state).check()
+                            wave.channel.service(
+                                lambda ready: self._python_admission_service_brs_ready(wave, ready), timeout=.05,
+                                observation_scope=lambda: self._python_admission_brs_service_observations(wave),
+                            )
+                    execution = future.result()
                     if execution.episode.memory_snapshot_sha256 != parent:
                         raise RSILearningError("rsi_brs_snapshot_changed")
-                    state["executions"][key] = self._serialize_execution(execution)
-                    state.update(phase="evaluated", current_episode_id=key)
-                    self._save_flow(record, state)
+                    with self._python_admission_brs_observations():
+                        if wave is not None:
+                            self._python_admission_active_brs_owner(wave)
+                        state["executions"][key] = self._serialize_execution(execution)
+                        state.update(phase="evaluated", current_episode_id=key)
+                        saved_head = self._save_flow(record, state)
+                        if wave is not None:
+                            expected_payload = self._python_admission_flow_payload(state)
+                            with wave.ledger.read_only_observations():
+                                checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
+                            if (saved_head is None or checkpoint is None or checkpoint[0] != saved_head
+                                    or self._python_admission_flow_payload(checkpoint[1]) != expected_payload):
+                                raise RSILearningError("rsi_python_brs_admission_stale")
+                            wave.checkpoint_sha256, wave.payload = saved_head, expected_payload
         results = [self._deserialize_execution(state["executions"][key]) for key in episode_ids]
         for execution in results:
             if execution.episode.episode_id not in pending:

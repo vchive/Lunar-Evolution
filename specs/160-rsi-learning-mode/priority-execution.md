@@ -4,6 +4,31 @@ This is the current execution list, extending Feature 160 and the producer lifec
 Code and HANDOFF evidence take precedence over historical gap descriptions and design drafts.
 All validation in this iteration is local and provider-free.
 
+## Current open priorities — 2026-10-12
+
+This section supersedes earlier status notes. PR43 durable admission references passed
+its own three-version CI and raw/source/tree audits and merged at `469a11c`.
+PR44 publication passed independent/root audits and merged at `db7272b4`; PR45 DRS
+owner first-pin still needs its separate CI acceptance and merge as tracked in HANDOFF.
+The local BRS ready/ack continuation is implemented and requires its own final-source CI.
+
+- **P0**: wire real Python scheduler runtime/handoff inputs; complete independently
+  observed process/runtime/journal interruption coverage for launch, missing terminal,
+  callbacks, cleanup uncertainty and drift. DRS first-pin and one-child local BRS ready/ack
+  now have inert composition tests. BRS retains whole-wave reservations, frozen memory,
+  ordinal saves, exact captured CAS and durable pin obligations; multiple independent
+  Python children still need separate original proof/journal routing. These contracts
+  do not execute the actual native gateway or establish runtime acceptance.
+- **P1**: finish Feature189 release/toolchain provenance, configured static build/closure
+  and sealed runtime evidence; compose Feature190 owner/lifecycle observations; wire
+  actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux acceptance.
+  Acquiring/building/running a real sealed toolchain is outside the current inert slice.
+- **P2 deferred**: external worker authentication, multi-host ownership, remote evaluator,
+  distributed/service scheduling and Shinka/Slurm.
+
+Keep `production_admission=false`; use local inert fixtures and preserve original failures.
+The bounded current contract is Feature191 `brs-owner-ready-ack.md`.
+
 ## Current open priorities — 2026-10-11
 
 This section supersedes the older execution notes below. PR32 RSI producer-proof
