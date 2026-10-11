@@ -1,8 +1,8 @@
 # Feature 191 — pinned runtime observation policy
 
 Adopted bounded P0 contract, 2026-10-12. The shared pure comparison and its gate/adapter
-call sites are implemented;303 focused and195 disjoint compatibility cases pass locally.
-Independent Python3.13 focused replay and final source review pass; full three-version
+call sites are implemented;309 focused and195 disjoint compatibility cases pass locally.
+Independent Python3.13 policy74 replay and final source review pass; full three-version
 CI and raw/source/tree audit remain required before merge. This
 change repairs detached consistency checks. It does not implement runtime execution
 or grant admission. Only inert local fixtures may be used for this slice.
@@ -84,6 +84,12 @@ callers; no success path may use defaults, reconstruct pins, or infer a profile
 from the observation. Adapter verify must forward the original pins when it
 rebuilds the expected envelope. Parsing a historical envelope remains a pure wire
 operation and does not require the external profile.
+
+The independent installation-version pin must be an exact built-in string matching
+`[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}` before descriptor parsing. Surrogates, non-ASCII
+labels, whitespace and a leading dash receive `installation_pin_unverified` in the
+helper, gate, adapter build and adapter verify. This matches the descriptor's label
+domain and prevents an encoding exception from escaping the fixed refusal contract.
 
 After parsing the existing descriptor, the shared helper joins its installation
 artifact digest/size/mode to the

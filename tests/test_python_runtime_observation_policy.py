@@ -212,6 +212,12 @@ def test_each_independent_pin_is_required_by_all_entry_points(evidence, name, co
     ("initialization_profile_sha256", True, "installation_pin_unverified"),
     ("installation_version", "", "installation_pin_unverified"),
     ("installation_version", "x" * 129, "installation_pin_unverified"),
+    ("installation_version", "\ud800", "installation_pin_unverified"),
+    ("installation_version", "\udfff", "installation_pin_unverified"),  # noqa: PT014 -- distinct surrogate code points
+    ("installation_version", "release\n", "installation_pin_unverified"),
+    ("installation_version", " release", "installation_pin_unverified"),
+    ("installation_version", "-v1", "installation_pin_unverified"),
+    ("installation_version", "版本", "installation_pin_unverified"),
 ])
 def test_independent_pin_drift_is_not_replaced_with_descriptor_values(evidence, name, value, code):
     _, gate = evidence

@@ -22,6 +22,7 @@ from .static_python_installation import (
 )
 
 _SHA = re.compile(r"[0-9a-f]{64}")
+_VERSION = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
 
 
 class PythonRuntimeObservationPolicyError(ValueError):
@@ -57,7 +58,7 @@ def validate_python_runtime_observation_policy(
     by their parser but cannot satisfy this comparison.
     """
     if (not _pin(installation_descriptor_sha256) or not _pin(initialization_profile_sha256)
-            or type(installation_version) is not str or not 1 <= len(installation_version) <= 128):
+            or type(installation_version) is not str or _VERSION.fullmatch(installation_version) is None):
         _fail("installation_pin_unverified")
     if type(installation_descriptor) is not StaticPythonInstallationDescriptor:
         _fail("installation_invalid")

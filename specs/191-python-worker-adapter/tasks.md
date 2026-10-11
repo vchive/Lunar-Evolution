@@ -194,8 +194,11 @@
   frozen-main encoder-to-observation-to-gate/adapter inert compatibility tests.
 - [x] Verify wrong/missing/replaced pins, target, mode, flags, argv and callback-free
   zero-effect boundaries with focused tests and independent review.
-  Python3.11 focused303 plus disjoint compatibility195 pass; independent Python3.13
-  focused303 pass without source/test/asset drift. No actual static runtime ran.
+  Python3.11 focused309 plus disjoint compatibility195 pass; independent Python3.13
+  policy74 pass without reviewed source/test drift. Earlier303 replay remains
+  evidence of its earlier source. No actual static runtime ran.
+- [x] Normalize malformed independent installation-version labels before descriptor
+  parsing; six cases verify the fixed refusal across helper/gate/build/verify.
 - [ ] Run final-source three-version CI and audit before merge acceptance.
 - [ ] Separately define and accept an RSI-capable static installation asset/profile;
   the current argc-one/fixed-main fixture cannot consume native RSI marker inputs.

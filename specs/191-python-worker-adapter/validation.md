@@ -2,20 +2,29 @@
 
 ## 2026-10-12 independently pinned runtime observations
 
-The new `python-observation-policy.xml` gate requires68 unique cases and zero
-failures/errors/skips. Five-suite local Python3.11.15 verification passes302 cases
-in72.975seconds; the subsequently added native-input API refusal passes1 in0.458seconds.
-The inventory is303 unique focused cases, including68 policy,45 admission gate,
-49 adapter,98 lifecycle and43 encoder/observation cases. Seven disjoint compatibility
-suites pass195 in5.910seconds, yielding498 unique local cases. XML IDs are compared
-before aggregation; reruns are not additional tests. Reports remain under ignored
-main-workspace `python-observation-policy-20261012`, including earlier failing setup
-XML retained separately. Independent Python3.13.12 replay passes303 focused cases
-in102seconds with no failure/error/skip. It confirms660 source/test/asset hashes are
-unchanged and final source review has no blocker. Its separate create-only report is
-`python-observation-policy-independent-py313-1791742012203477000`; overlapping cases
-are not counted twice. Ruff, compileall and diff checks pass. Complete three-version
-CI/raw source/tree audit remain required before merge.
+The new `python-observation-policy.xml` gate requires74 unique cases and zero
+failures/errors/skips. Final five-suite local Python3.11.15 verification passes309
+cases in69.708seconds:74 policy,45 admission gate,49 adapter,98 lifecycle and43
+encoder/observation cases. Seven disjoint compatibility suites pass195 in6.298seconds,
+yielding504 unique local cases. XML IDs are compared before aggregation; reruns are
+not additional tests. Reports remain under ignored main-workspace
+`python-observation-policy-20261012`, including earlier failing setup/reproduction
+XML retained separately.
+
+Independent review of the original303-case source found a Unicode encoding exception
+for malformed installation-version labels. The corrected exact ASCII label gate is
+covered by six added cases; each exercises helper/gate/build/verify with a fixed
+`installation_pin_unverified` refusal. Independent Python3.13.12 final policy replay
+passes74 in50seconds with no failure/error/skip and six reviewed source/test hashes
+unchanged. Its create-only report is
+`python-observation-version-pin-final-py313-1791742697581629000`. The first74 replay
+passed but observed a concurrent comment-only test edit; that fact and the source
+reconstruction proof remain separate from the final frozen replay. The earlier
+303/498 local evidence and independent303 replay in
+`python-observation-policy-independent-py313-1791742012203477000` retain their earlier
+source identity. Overlapping cases are not counted twice. Ruff, compileall and diff
+checks pass. Complete three-version CI/raw source/tree audit remain required before
+merge.
 
 Inert asset tests use the actual frozen-main encoder, fake sys/loader/pipe facts,
 the existing observation adapter and both detached gate/build/verify APIs. Negative

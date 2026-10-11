@@ -26,17 +26,26 @@ All three gate/build/verify entry points forward these inputs. Missing pins refu
 historical token-shaped wires remain inspectable but cannot satisfy verification.
 No existing wire, Feature189 asset or native input marker rule changes.
 
-Final Python3.11.15 local evidence contains303 focused and195 disjoint compatibility
-cases,498 unique passes with no failures/errors/skips. The focused inventory includes
+Final Python3.11.15 local evidence contains309 focused and195 disjoint compatibility
+cases,504 unique passes with no failures/errors/skips. The focused inventory includes
 the actual frozen-main encoder exercised only with fake sys/loader/pipe facts and
 an actual native-input API refusal with retained request/memory files: current
 argc-one static launch still fails `rsi_native_inputs_marker_missing`, without
 bootstrap, process launch or input mutation. Original intermediate test failures
 remain retained under ignored `python-observation-policy-20261012` reports. A new
-68-case `python-observation-policy.xml` CI gate is annotated/uploaded. Independent
-Python3.13.12 verification passes the303 focused cases in102seconds with zero
-failures/errors/skips;660 source/test/asset hashes remain unchanged and final review
-has no blocker. Ruff, compileall and diff checks pass. This source's complete
+74-case `python-observation-policy.xml` CI gate is annotated/uploaded. Independent
+review found that malformed installation-version labels could leak a Unicode
+encoding exception through the helper/adapter. An exact ASCII label gate now
+returns `installation_pin_unverified` before parsing; six added cases exercise
+surrogates, whitespace, a leading dash and non-ASCII text through all entry points.
+The final focused309 passes in69.708seconds and disjoint195 in6.298seconds.
+Independent Python3.13.12 policy74 replay passes in50seconds with zero failures,
+errors or skips and six reviewed source/test hashes unchanged. The create-only
+report is `python-observation-version-pin-final-py313-1791742697581629000`.
+The previous303/498 local evidence and independent303 replay belong to the earlier
+source and remain retained. The first74 replay passed but observed a concurrent
+comment-only test edit, so it is not substituted for the final frozen replay.
+Ruff, compileall and diff checks pass. This source's complete
 three-version CI and raw/source/tree audit remain required before merge.
 
 This repairs detached evidence consistency only; `production_admission=false`.
