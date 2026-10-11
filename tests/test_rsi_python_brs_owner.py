@@ -644,8 +644,11 @@ def test_actual_brs_futures_service_later_ready_before_ordinal_save_with_fewer_w
                 solver_score=1.0, terminal_reason="inert-brs-owner-fixture",
             )
             if ordinal == 0:
-                assert acknowledged.wait(timeout=10), "owner blocked on ordinal 0 instead of servicing ordinal 1"
-                assert queued_sibling.wait(timeout=10), "queued ordinary sibling never received its executor slot"
+                # This fixture waits through repeated original-evidence observations,
+                # including sibling settlement and queued dispatch on CI filesystems.
+                # The retained execution deadline remains the production budget.
+                assert acknowledged.wait(timeout=60), "owner blocked on ordinal 0 instead of servicing ordinal 1"
+                assert queued_sibling.wait(timeout=60), "queued ordinary sibling never received its executor slot"
             elif ordinal == 1:
                 plan = _plan(value.binding, request, controller.snapshot)
                 claim = ledger.claim_native_episode(request, plan_sha256=plan.plan_sha256)

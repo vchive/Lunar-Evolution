@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 BRS CI progress watchdog correction
+
+PR46 source `11875b87a659e571083589f7c97cd645484e3028` failed its first
+Ubuntu3.11/3.12/3.13 run38156193067 at the103-case BRS gate. All three lanes
+reported the same two fixture watchdog failures; their full regressions were skipped.
+Original artifacts, logs, metadata and diagnosis remain retained under ignored
+`pr46-final-ci-run38156193067-11875b8-v2`; the source is not CI accepted.
+
+This correction changes only fixture waits in the owner ordinal/sibling test and
+prepared-publication driver to bounded60-second watchdogs. The retained execution
+deadline, production budget, evidence validation, event assertions and ordinal saves
+are unchanged. An offline Python3.13.12 trace confirms ordinal1 acknowledgement,
+future settlement and slot release precede queued ordinal2 entry; all three futures
+return without hidden sibling errors. The publication driver reaches its expected
+inert evaluator/refusal boundaries. The103-case gate passes independently under local
+Python3.11.15 and3.13.12. The corrected source requires its own complete Ubuntu CI;
+old failed CI cannot approve it. Only inert local fixtures ran and production admission
+remains false.
+
 ## 2026-10-12 local BRS prepared ready/ack continuation
 
 The isolated `codex/python-brs-ready-ack` continuation starts from PR45 source
