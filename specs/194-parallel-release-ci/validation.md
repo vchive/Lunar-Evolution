@@ -1,5 +1,12 @@
 # Validation contract
 
+## Current status — 2026-10-12
+
+The Feature194 source is included in PR52, whose 15-role CI and independent raw/source/tree
+audit passed before merge `e0bd7b8`. The older remote-acceptance paragraph below records the
+pre-merge gate and is retained as historical evidence. Post-merge main validation remains
+separate; this feature does not establish CPython, producer, evaluator or production admission.
+
 Test runner selection/control code with mocks, local inert XML and local pytest
 identity fixtures. The runner uses the installed pytest JUnit address mangling
 helpers; it does not add a product dependency. Partition conservation must hold across reordered collections and

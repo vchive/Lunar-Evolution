@@ -1,5 +1,18 @@
 # RSI remaining work by priority — 2026-10-02
 
+## Current integration snapshot — 2026-10-12
+
+PR50–53 are merged into `origin/main` at `5adbdb82`. Their source, tree, raw-log and
+JUnit audits passed. PR54/56 are still running; PR55/57/59 have passing CI and await
+independent audit; PR60–64 remain in the dependency queue. Earlier sections that describe
+PR43–46 or PR52 as pending are historical snapshots and do not override this status.
+
+The remaining local release work is integration evidence plus the real Feature189/191
+runtime gates. Provider-free controller resume, replay, budget, fingerprint and unknown
+reconciliation are implemented. Real CPython/toolchain acquisition, sealed startup and
+Python producer lifecycle acceptance remain open. Remote evaluators, external worker
+authentication, multi-host ownership and distributed scheduling remain deferred P2.
+
 This is the current execution list, extending Feature 160 and the producer lifecycle SDD.
 Code and HANDOFF evidence take precedence over historical gap descriptions and design drafts.
 All validation in this iteration is local and provider-free.

@@ -1,5 +1,10 @@
 # Current development work
 
+> **Current-state note — 2026-10-12:** this file is a historical development log. For the
+> current branch and merge state, use `HANDOFF.md` and
+> `specs/160-rsi-learning-mode/priority-execution.md`. At the current checkpoint,
+> `origin/main=5adbdb82`; PR50–53 are merged, while later dependency PRs remain in CI/audit.
+
 ## 2026-10-09 build-input candidate continuation
 
 Feature189 continues with a fixed reviewed-input asset and pure source/object
