@@ -159,6 +159,18 @@ post-execution handoff, interruption recovery and local solver/production CLI
 acceptance remain unverified. These later stages stay unchecked in `tasks.md` and
 must receive their own contracts and evidence before any claim is promoted.
 
+## F03 provider-free startup wire — 2026-10-12
+
+The detached `static_python_runtime_startup` comparator and its 12 focused
+tests validate canonical JSON, exact pins, baseline and loader-negative fixture
+semantics, argv/marker/startup/owner/lifecycle shape, dependency ordering,
+false claims, parser error normalization, bounds and side-effect absence. The
+tests use synthetic caller bytes only; no process, ELF parser, filesystem or
+`/proc` operation ran. Ruff, compileall and `git diff --check` are required
+before submission. This is a contract slice, not actual startup, loader,
+owner, native lifecycle or installation evidence; F03 runtime acceptance stays
+open.
+
 ## F01 source-only profile preparation continuation — 2026-10-12
 
 Python3.11 new focused module passes 113 cases; disjoint old build-input and
@@ -246,3 +258,39 @@ SHA256 `d6d0e10054a1a4b629047a6e47c6d6e3f5e04c54ecdbbff5b9fb46eab7691491`;
 semantic review SHA256 `314b2b9581abb0c8c6d8a00fc10e81c330932d1c19dfcd22bb857359cae57c25`.
 Independent replay is not an additional219 unique cases. Whole src/tests/tools
 Ruff, compileall, diff checks and YAML gate/annotation/upload wiring pass.
+
+## F04 provider-free input/result cross-pin continuation — 2026-10-12
+
+`static_python_input_result` joins independently supplied F03 startup and F04
+input-report digests, sizes, fixed computation and report schema through the
+`lunar-static-python-input-result-v1` wire. It enforces canonical JSON,
+duplicate-key/type/bounds checks, exact cross-pins and five false claims, then
+returns only an immutable digest/size DTO. The comparator performs no file,
+process, environment, network, clock, solver or evaluator operation. Its focused
+suite passes 9 local synthetic cases; this does not establish input ownership,
+actual consumption, runtime startup, output validity, producer admission or a
+solver result. Final-source CI and independent raw/source/tree audit remain
+pending; live F04 and later F05 acceptance are unchanged.
+
+## F05 provider-free runtime/post-execution handoff continuation — 2026-10-12
+
+`static_python_runtime_handoff` validates the bounded canonical
+`lunar-static-python-runtime-handoff-v1` projection against independently
+supplied startup, input/result, terminal, binding, launch-intent, result and
+publication-intent digests. It also checks request budget/count, wall timeout,
+Unix deadline, terminal/cleanup/publication state combinations, duplicate keys,
+canonical bytes, bounds and all-false capability claims. The parser returns only
+an immutable digest/state DTO and has no filesystem, process, clock, network,
+solver, evaluator, publication or recovery effects.
+
+The focused F05 suite passes 10 cases; the adjacent F04 input/result contract
+passes 9 cases in the same run, for 19 unique local cases with zero failures,
+errors or skips. Ruff, compileall and `git diff --check` pass on the final tree.
+This is a provider-free consistency contract: it does not establish CPython or
+ELF build evidence, sealed launch, original owner/lifecycle, authoritative input
+consumption, a bounded producer result, publication eligibility or durable
+interruption recovery. The complete local `tests/test_static_python*.py` selection collected and
+passed 1,395 cases with exit code zero after this continuation. macOS pytest
+cleanup emitted permission/directory-not-empty warnings for existing protected
+fixture snapshots; no test failure or product exception occurred.
+Final-source CI and independent raw/source/tree audit remain pending.

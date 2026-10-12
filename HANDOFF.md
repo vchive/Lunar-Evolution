@@ -19,6 +19,18 @@ validation passes37 helper/process-ownership cases, Ruff across src/tests/tools,
 compileall and diff checks; no actual producer, solver or evaluator ran.
 
 
+## 2026-10-12 static Python RSI runtime startup contract
+
+Feature193 F03 adds a provider-free `lunar-static-python-runtime-startup-v1`
+comparator for canonical startup and loader-negative DTOs. It binds F02,
+installation and launch-intent digests; checks exact marker/argv/startup,
+loader, owner and lifecycle fields; and keeps all capability claims false.
+Baseline and loader-negative cases are synthetic and the API has no process,
+filesystem, `/proc`, ELF or network effects. Focused tests cover strict types,
+canonical bytes, pin drift, lifecycle/loader cross-fields, duplicate keys,
+bounds and side-effect absence. Actual sealed-image startup, loader-negative,
+native owner/lifecycle and installation acceptance remain open.
+
 ## 2026-10-12 detached RSI marker installation contract
 
 Feature193 F01 now has a separate bounded canonical description wrapper with
@@ -7201,3 +7213,29 @@ authority. `PYTHONPATH=src python -m pytest -q
 tests/test_static_python_build_closure.py` passes 10 cases. Real configured
 CPython/toolchain/freezer/link/ELF evidence remains open as F02c; synthetic
 vectors do not establish a build.
+
+## 2026-10-12 F04 provider-free input/result cross-pin continuation
+
+A detached F04 continuation adds `lunar-static-python-input-result-v1` under
+`src/lunar_evolution/static_python_input_result.py`. It joins caller-owned F03
+startup and F04 input-report digests, pins, sizes and fixed computation285 using
+bounded canonical JSON, duplicate-key/type checks and all-false claims. The
+immutable DTO contains no raw request/memory bytes or result envelope, and the
+parser has no filesystem, process, network, evaluator or solver effects.
+Focused tests pass 9 cases. This is a provider-free contract only: actual
+marker/file authority, input consumption, runtime startup, producer result,
+publication and final-source CI/raw audit remain open. Branch depends on PR55.
+
+## 2026-10-12 F05 provider-free runtime/post-execution handoff continuation
+
+On top of PR56, the detached `lunar-static-python-runtime-handoff-v1` contract
+joins caller-owned startup, input/result, terminal, runtime binding,
+publication-intent and result digests with one request budget, request count,
+wall timeout and Unix deadline. It rejects cross-pin drift, budget/count
+overrun, invalid terminal/cleanup/publication combinations, duplicate or
+non-canonical JSON and any true capability claim. The immutable DTO contains
+no raw result, process owner or live handle, and parsing has no filesystem,
+process, evaluator, solver, publication or recovery effects. Ten focused tests,
+Ruff, compileall and diff checks pass locally. This is a synthetic consistency
+contract only; actual sealed launch, terminal/broker/material evidence,
+authoritative result handoff and durable publication/recovery remain open.
