@@ -2,7 +2,7 @@
 
 ## Current integration status — 2026-10-12 (updated)
 
-PR54–57 are now represented in `origin/main` through merge `f296431`, with PR60 and PR64 subsequently merged. PR59 has 15/15 CI roles passing and a completed source/tree audit; its base has been redirected to current `main` and it still needs a fresh exact-base check before merge. The retained CI is provider-free and does not establish real CPython/toolchain acquisition, sealed startup, producer lifecycle, evaluator access or production admission.
+PR54–57, PR59, PR60, PR64–67 are represented in `origin/main` through merge `31ab43c`. The retained CI is provider-free and does not establish real CPython/toolchain acquisition, sealed startup, producer lifecycle, evaluator access or production admission. PR54 raw-log and PR56/57 artifact downloads were incomplete; those limits remain explicitly recorded below.
 
 The PR54 raw-log audit was incomplete because GitHub API log download timed out. PR56/57 raw artifact downloads were also incomplete (their CI and source-only evidence remain valid). These limits are recorded explicitly rather than promoted to full raw-log acceptance.
 

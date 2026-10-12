@@ -2,10 +2,11 @@
 
 ## Current integration snapshot — 2026-10-12
 
-PR50–53 are merged into `origin/main` at `5adbdb82`. Their source, tree, raw-log and
-JUnit audits passed. PR54/56 are still running; PR55/57/59 have passing CI and await
-independent audit; PR60–64 remain in the dependency queue. Earlier sections that describe
-PR43–46 or PR52 as pending are historical snapshots and do not override this status.
+PR54–57, PR59, PR60, PR64–67 are merged into `origin/main` at `31ab43c`. Their required
+three-version CI passed for the merge heads; source/tree evidence is retained, with the
+known incomplete raw-log downloads for PR54 and PR56/57 recorded in HANDOFF. PR62/63 are
+superseded stacked PRs whose code is already in the PR64 ancestry. Earlier sections that
+describe older PRs as pending are historical snapshots and do not override this status.
 
 The remaining local release work is integration evidence plus the real Feature189/191
 runtime gates. Provider-free controller resume, replay, budget, fingerprint and unknown
