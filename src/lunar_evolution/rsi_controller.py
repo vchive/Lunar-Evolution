@@ -1653,8 +1653,15 @@ class RSILearningController:
                 if checkpoint is None or self._python_admission_flow_payload(checkpoint[1]) != payload:
                     raise RSILearningError("rsi_python_brs_admission_stale")
                 refs = state.get("python_admission_refs", {})
-                if len(refs) > 1:
-                    raise RSILearningError("rsi_python_brs_admission_multiple_children")
+                # A resumed wave may already contain independent obligations for more than
+                # one child.  Keep the route bounded to the exact dispatch wave: a reference
+                # for an unrelated episode is stale/foreign and must never be adopted by a
+                # fresh BRS channel.  The ledger and evidence gates below independently bind
+                # each child to its own journal/attempt.
+                if type(refs) is not dict or any(
+                    type(key) is not str or key not in episode_ids for key in refs
+                ):
+                    raise RSILearningError("rsi_python_brs_admission_identity_invalid")
                 wave = _PythonAdmissionBRSWave(
                     self, state, run_id, episode_ids, self.ledger, self.producer_workspace, self.producer_sidecar,
                     get_ident(), checkpoint[0], payload,
@@ -1736,8 +1743,6 @@ class RSILearningController:
                     or ready.episode_id not in wave.episode_ids
                     or build_brs_admission_ready(ready.run_id, ready.episode_id, ready.payload) != ready):
                 raise RSILearningError("rsi_python_brs_admission_request_invalid")
-            if wave.admitted_episode_id not in {None, ready.episode_id}:
-                raise RSILearningError("rsi_python_brs_admission_multiple_children")
             try:
                 payload = json.loads(ready.payload)
                 if (type(payload) is not dict
@@ -1749,6 +1754,27 @@ class RSILearningController:
                 anchor = payload["expected_anchor_sha256"]
             except (ValueError, TypeError, KeyError, RecursionError) as exc:
                 raise RSILearningError("rsi_python_brs_admission_request_invalid") from exc
+            # Route every child through its own original request and publication journal.
+            # Reusing a first child's plan/journal for a sibling is an ambiguous admission,
+            # even when the worker supplies a different episode id.  Refuse before any
+            # durable CAS or attempt reservation; genuinely independent children continue
+            # through the exact evidence/attempt checks in _python_admission_pin_exact.
+            if (plan.request.episode_id != ready.episode_id
+                    or plan.run_id != wave.run_id
+                    or plan.journal_id != journal.journal_id
+                    or plan.parent_task_id != journal.parent_task_id
+                    or plan.task_id != journal.task_id):
+                raise RSILearningError("rsi_python_brs_admission_multiple_children")
+            refs = wave.state.get("python_admission_refs", {})
+            if type(refs) is not dict or ready.episode_id in refs:
+                raise RSILearningError("rsi_python_brs_admission_multiple_children")
+            for episode_id, reference in refs.items():
+                if episode_id != ready.episode_id and (
+                    reference.get("journal_id") == journal.journal_id
+                    or reference.get("native_plan", {}).get("plan_sha256") == plan.plan_sha256
+                    or reference.get("prepared_journal", {}).get("journal_id") == journal.journal_id
+                ):
+                    raise RSILearningError("rsi_python_brs_admission_multiple_children")
             RSIRunBudget.load(wave.budget_state).check()
             pinned, head, expected_payload, expected = self._python_admission_pin_exact(
                 wave, wave.run_id, ready.episode_id, native_plan=plan, prepared_journal=journal,
@@ -1759,7 +1785,10 @@ class RSILearningController:
             # Only the reference increment verified by the kernel may enter shared state.
             wave.state["python_admission_refs"] = expected["python_admission_refs"]
             wave.checkpoint_sha256, wave.payload = head, expected_payload
-            wave.admitted_episode_id = ready.episode_id
+            # Preserve the legacy first-child observation while routing later children by
+            # their own reference-map key.  The map is the durable source of truth.
+            if wave.admitted_episode_id is None:
+                wave.admitted_episode_id = ready.episode_id
             return pinned.record_sha256
 
     @contextmanager
