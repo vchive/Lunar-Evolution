@@ -16,6 +16,7 @@ from typing import Any
 from . import _benchmark_files as files
 from .algorithm import MAX_CONTRACT_BYTES, AlgorithmProblemContract
 from .candidate_evaluation_spec import strict_json
+from .evolution import MAX_SOURCE_BYTES
 from .official_evaluator_evidence import OfficialEvaluationReceipt, verify_official_evaluation
 from .producer_handoff import (
     ProducerHandoffError,
@@ -72,6 +73,20 @@ def _read(path: object, pin: str, maximum: int = MAX_REPLAY_BYTES) -> tuple[Path
     return selected, raw, before
 
 
+def _recheck(
+    observed: list[tuple[Path, bytes, tuple[int, ...]]],
+    sources: list[tuple[Path, tuple[int, ...], str]],
+) -> None:
+    """Re-open through the no-follow boundary before returning any comparison result."""
+    for path, raw, identity in observed:
+        if files.read_regular_file(path, len(raw)) != raw or _identity(path) != identity:
+            raise RSIProducerReplayError("rsi_producer_replay_file_drift")
+    for path, identity, digest in sources:
+        raw = files.read_regular_file(path, MAX_SOURCE_BYTES)
+        if hashlib.sha256(raw).hexdigest() != digest or _identity(path) != identity:
+            raise RSIProducerReplayError("rsi_producer_replay_source_drift")
+
+
 def inspect_producer_replay(
     *, producer_root: str | Path, contract_path: str | Path, request_path: str | Path,
     memory_path: str | Path, receipts_path: str | Path, producer_id: str,
@@ -95,10 +110,11 @@ def inspect_producer_replay(
         "read_only": True, "evidence_scope": "retained_local_comparison",
         "production_admission": False, "solver_id": producer_id, "result": None,
         "producer_fingerprint": pins[0], "contract_sha256": pins[1],
-        "request_sha256": pins[2], "memory_sha256": pins[3],
+        "request_sha256": pins[2], "solver_request_sha256": None, "memory_sha256": pins[3],
         "envelope_sha256": pins[5], "materials_sha256": pins[6], "receipts_sha256": pins[4],
     }
     observed: list[tuple[Path, bytes, tuple[int, ...]]] = []
+    sources: list[tuple[Path, tuple[int, ...], str]] = []
     try:
         observed = [
             _read(contract_path, pins[1], MAX_CONTRACT_BYTES),
@@ -110,6 +126,7 @@ def inspect_producer_replay(
         if (request.solver_id != producer_id or request.contract_sha256 != contract.digest()
                 or request.memory_snapshot_sha256 != memory.digest()):
             raise RSIProducerReplayError("rsi_producer_replay_request_drift")
+        report["solver_request_sha256"] = request.digest()
         observed.append(_read(files.absolute_path(producer_root) / "producer-result.json", pins[5]))
         envelope = ProducerResultEnvelope.from_dict(strict_json(observed[-1][1], MAX_REPLAY_BYTES))
         if (envelope.producer_id != producer_id or envelope.producer_fingerprint != pins[0]
@@ -117,30 +134,45 @@ def inspect_producer_replay(
             raise RSIProducerReplayError("rsi_producer_replay_envelope_drift")
         if producer_materials_sha256(envelope) != pins[6]:
             raise RSIProducerReplayError("rsi_producer_replay_materials_drift")
+        if envelope.status == "unknown":
+            _recheck(observed, sources)
+            return report
         manifest = prepare_producer_seed_manifest(
             producer_root, contract, evaluator_fingerprint=request.evaluator_sha256,
             producer_fingerprint=pins[0], producer_id=producer_id,
         )
-        source_nodes = [(manifest.source_root / seed.source_path, _identity(manifest.source_root / seed.source_path))
-                        for seed in manifest.seeds]
+        sources = [(manifest.source_root / seed.source_path,
+                    _identity(manifest.source_root / seed.source_path), seed.source_sha256)
+                   for seed in manifest.seeds]
         observed.append(_read(receipts_path, pins[4]))
         value = strict_json(observed[-1][1], MAX_REPLAY_BYTES)
         required = {"candidate", "execution", "evaluation", "publication", "official_evaluator_receipt"}
-        if type(value) is not dict or not required <= set(value) or set(value) - _FIELDS:
+        if type(value) is not dict or set(value) - _FIELDS:
             raise RSIProducerReplayError("rsi_producer_replay_receipts_invalid")
         worker_status = value.get("worker_terminal_status", "unknown")
         if worker_status not in {"completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"}:
             raise RSIProducerReplayError("rsi_producer_replay_terminal_invalid")
-        if any(value[name] is None for name in required) or worker_status != "completed":
+        parsers = {
+            "candidate": NativeCandidateRecord.from_dict,
+            "execution": NativeExecutionReceipt.from_dict,
+            "evaluation": NativeEvaluationReceipt.from_dict,
+            "publication": NativePublicationReceipt.from_dict,
+            "official_evaluator_receipt": OfficialEvaluationReceipt.from_dict,
+        }
+        # Missing evidence is unknown; malformed evidence remains a refusal even when another
+        # record is absent.  Do not let an incomplete bundle hide an invalid present record.
+        parsed = {name: parser(value[name]) for name, parser in parsers.items()
+                  if value.get(name) is not None}
+        if value.get("provenance_sha256") is not None:
+            _pin(value["provenance_sha256"])
+        if any(value.get(name) is None for name in required) or worker_status != "completed":
+            _recheck(observed, sources)
             return report
         bundle = NativeRSIReceiptBundle(
-            NativeCandidateRecord.from_dict(value["candidate"]),
-            NativeExecutionReceipt.from_dict(value["execution"]),
-            NativeEvaluationReceipt.from_dict(value["evaluation"]),
-            NativePublicationReceipt.from_dict(value["publication"]),
+            parsed["candidate"], parsed["execution"], parsed["evaluation"], parsed["publication"],
             provenance_sha256=value.get("provenance_sha256"),
             worker_terminal_status=worker_status,
-            official_evaluator_receipt=OfficialEvaluationReceipt.from_dict(value["official_evaluator_receipt"]),
+            official_evaluator_receipt=parsed["official_evaluator_receipt"],
         )
         if bundle.candidate.candidate_source_sha256 not in {seed.source_sha256 for seed in manifest.seeds}:
             raise RSIProducerReplayError("rsi_producer_replay_source_drift")
@@ -162,21 +194,21 @@ def inspect_producer_replay(
             producer_fingerprint=pins[0], producer_id=producer_id,
         ).to_dict() != manifest.to_dict():
             raise RSIProducerReplayError("rsi_producer_replay_source_drift")
-        if (any(_identity(path) != node for path, node in source_nodes)
-                or any(_identity(path) != node for path, _, node in observed)):
-            raise RSIProducerReplayError("rsi_producer_replay_file_drift")
+        _recheck(observed, sources)
         result = replace(result, solver_provenance=tuple(sorted({
             **dict(result.solver_provenance), "backend": producer_id,
             "evidence_scope": "retained_local_comparison", "production_admission": False,
         }.items())))
         return {**report, "status": "completed", "reason": "rsi_producer_replay_matching",
-                "request_sha256": request.digest(), "receipts_sha256": pins[4], "result": result.to_dict()}
+                "solver_request_sha256": request.digest(), "result": result.to_dict()}
     except FileNotFoundError:
         return report
     except files.BenchmarkFileError as exc:
         return {**report, "status": "unknown" if exc.reason == "missing" else "drifted",
                 "reason": "rsi_producer_replay_evidence_missing" if exc.reason == "missing" else "rsi_producer_replay_file_invalid"}
     except ProducerHandoffError as exc:
+        if exc.code in {"producer_envelope_missing", "producer_material_missing"}:
+            return report
         return {**report, "status": "drifted", "reason": exc.code}
     except RSIProducerReplayError as exc:
         # RSIProducerReplayError codes are fixed, path-free diagnostics.  Preserve the specific

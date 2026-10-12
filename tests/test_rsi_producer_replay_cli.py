@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import lunar_evolution.rsi_producer_replay as replay
 from lunar_evolution.algorithm import AlgorithmProblemContract
 from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.cli import main
@@ -175,6 +176,116 @@ def test_missing_receipts_is_fixed_unknown_and_does_not_create_home(tmp_path: Pa
     assert main(_args(case)) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "unknown"
+
+
+@pytest.mark.parametrize("name", ["candidate", "execution", "evaluation", "publication", "official_evaluator_receipt"])
+@pytest.mark.parametrize("disposition", ["omitted", "null"])
+def test_missing_receipt_records_are_unknown(tmp_path: Path, capsys, name: str, disposition: str) -> None:
+    case = _fixture(tmp_path)
+    value = dict(case["receipts_value"])
+    if disposition == "omitted":
+        value.pop(name)
+    else:
+        value[name] = None
+    case["receipts_pin"] = _write(case["receipts"], value)
+    assert main(_args(case)) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "unknown" and payload["result"] is None
+
+
+@pytest.mark.parametrize("value", [[], {"unexpected": True}, {"candidate": []}])
+def test_invalid_incomplete_receipt_shapes_are_drifted(tmp_path: Path, capsys, value: object) -> None:
+    case = _fixture(tmp_path)
+    case["receipts_pin"] = _write(case["receipts"], value)
+    assert main(_args(case)) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "drifted"
+
+
+def test_pretty_request_preserves_raw_pin_and_labels_canonical_request_digest(tmp_path: Path, capsys) -> None:
+    case = _fixture(tmp_path)
+    value = json.loads(case["request"].read_bytes())
+    canonical_digest = SolverRequest.from_dict(value).digest()
+    raw = json.dumps(value, sort_keys=True, indent=2).encode()
+    case["request"].write_bytes(raw)
+    case["request_pin"] = hashlib.sha256(raw).hexdigest()
+    assert main(_args(case)) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["request_sha256"] == case["request_pin"] != canonical_digest
+    assert payload["solver_request_sha256"] == canonical_digest
+
+
+@pytest.mark.parametrize("status,identity_drift,expected", [
+    ("unknown", False, "unknown"), ("unknown", True, "drifted"),
+    ("failed", False, "drifted"), ("cancelled", False, "drifted"),
+])
+def test_unknown_envelope_preserves_identity_gate(
+    tmp_path: Path, capsys, status: str, identity_drift: bool, expected: str,
+) -> None:
+    case = _fixture(tmp_path)
+    path = case["root"] / "producer-result.json"
+    value = json.loads(path.read_bytes())
+    value["status"] = status
+    if identity_drift:
+        value["producer_fingerprint"] = "8" * 64
+    case["envelope_pin"] = _write(path, value)
+    assert main(_args(case)) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == expected
+
+
+def test_missing_source_is_unknown(tmp_path: Path, capsys) -> None:
+    case = _fixture(tmp_path)
+    (case["root"] / "candidate.py").unlink()
+    assert main(_args(case)) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "unknown" and payload["result"] is None
+
+
+@pytest.mark.parametrize("worker_status", ["completed", "unknown"])
+@pytest.mark.parametrize("mutation", ["bytes", "same_bytes_inode"])
+def test_source_bytes_mutation_is_drifted_even_for_incomplete_terminal(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch, worker_status: str, mutation: str,
+) -> None:
+    case = _fixture(tmp_path)
+    value = dict(case["receipts_value"])
+    value["worker_terminal_status"] = worker_status
+    case["receipts_pin"] = _write(case["receipts"], value)
+    original = replay._read
+
+    def mutate_after_receipts(path, *args, **kwargs):
+        result = original(path, *args, **kwargs)
+        if Path(path) == case["receipts"]:
+            source = case["root"] / "candidate.py"
+            if mutation == "bytes":
+                source.write_bytes(SOURCE.replace(b"3", b"4"))
+            else:
+                replacement = case["root"] / "replacement.py"
+                replacement.write_bytes(SOURCE)
+                replacement.replace(source)
+        return result
+
+    monkeypatch.setattr(replay, "_read", mutate_after_receipts)
+    assert main(_args(case)) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "drifted"
+
+
+def test_final_root_symlink_replacement_is_drifted(tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    case = _fixture(tmp_path)
+    original = replay.prepare_producer_seed_manifest
+    calls = 0
+
+    def replace_after_final_prepare(*args, **kwargs):
+        nonlocal calls
+        result = original(*args, **kwargs)
+        calls += 1
+        if calls == 2:
+            retained = case["root"].with_name("retained-producer")
+            case["root"].rename(retained)
+            case["root"].symlink_to(retained, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(replay, "prepare_producer_seed_manifest", replace_after_final_prepare)
+    assert main(_args(case)) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "drifted"
 
 
 def test_rsi_run_fixture_backend_is_explicitly_marked_non_production(tmp_path: Path, capsys) -> None:
