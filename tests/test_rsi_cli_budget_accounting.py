@@ -75,3 +75,22 @@ def test_brs_omitted_limits_follow_practice_count(tmp_path: Path, capsys) -> Non
     inspected = json.loads(capsys.readouterr().out)
     assert inspected["budget"]["planned"]["max_practice_rounds"] == 2
     assert inspected["budget"]["planned"]["max_target_attempts"] == 1
+
+
+def test_drs_requested_limits_bind_controller_plan_and_budget(tmp_path: Path, capsys) -> None:
+    """Explicit DRS limits must not be replaced by the historical 3/4 defaults."""
+    contract = _contract(tmp_path)
+    home = tmp_path / "home"
+    assert main([
+        "rsi", "run", str(contract), "--run-id", "drs-explicit-limits",
+        "--max-practice-rounds", "0", "--max-target-attempts", "1",
+        "--json", "--home", str(home),
+    ]) == 1
+    capsys.readouterr()
+
+    assert main(["rsi", "inspect", "drs-explicit-limits", "--json", "--home", str(home)]) == 0
+    inspected = json.loads(capsys.readouterr().out)
+    assert inspected["head"]["payload"]["plan"]["max_practice_rounds"] == 0
+    assert inspected["head"]["payload"]["plan"]["max_target_attempts"] == 1
+    assert inspected["budget"]["planned"]["max_practice_rounds"] == 0
+    assert inspected["budget"]["planned"]["max_target_attempts"] == 1
