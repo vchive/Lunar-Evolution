@@ -740,7 +740,8 @@ def producer_materials_sha256(envelope: ProducerResultEnvelope | Mapping[str, An
     """
 
     try:
-        parsed = parse_producer_envelope(envelope)
+        parsed = (_canonical_envelope(envelope) if isinstance(envelope, ProducerResultEnvelope)
+                  else parse_producer_envelope(envelope))
         descriptors = [item.to_dict() for item in parsed.materials]
         return _sha256(descriptors)
     except ProducerHandoffError:

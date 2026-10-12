@@ -180,6 +180,21 @@ def test_materials_pin_is_canonical_and_revalidates_mapping() -> None:
     )
 
 
+@pytest.mark.parametrize("field,value", [("path", "../outside.py"), ("size", True)])
+def test_materials_pin_rejects_forged_material_without_reading_files(
+    monkeypatch: pytest.MonkeyPatch, field: str, value: object,
+) -> None:
+    envelope = ProducerResultEnvelope(
+        schema_version="1", producer_id="shinka", producer_fingerprint=PRODUCER_SHA,
+        status="completed", contract_sha256=_contract().digest(), budget={"iterations": 1},
+        materials=(ProducerMaterial("candidate_source", "candidate.py", 3, "c" * 64),),
+    )
+    object.__setattr__(envelope.materials[0], field, value)
+    monkeypatch.setattr(os, "open", lambda *_a, **_k: pytest.fail("pin must remain detached"))
+    with pytest.raises(ProducerHandoffError):
+        producer_materials_sha256(envelope)
+
+
 def test_terminal_noncompleted_envelopes_round_trip_without_materials() -> None:
     contract = _contract()
     for status in ("failed", "cancelled", "unknown"):
