@@ -125,3 +125,19 @@ installation/runtime stage.
 
 P2 remote evaluator, worker authentication, multi-host ownership and service/
 distributed scheduling remain outside this feature and are not acceptance tasks.
+
+## Controlled build-driver continuation
+
+- [x] Consume the independently pinned canonical F01 preparation wire before
+  backend dispatch; reject source/preparation/claim drift without re-emitting
+  source assets.
+- [x] Enforce exact 162 shared, 2 freezer and 4 target role sets, stock-object
+  exclusions, nine freeze identities and pending-header order.
+- [x] Add the trusted mock-only configure→freeze→compile→link graph with a
+  simulated closure gate that never promotes actual acceptance claims.
+- [x] Add detached per-stage plan copies, immutable reports, shared deadline,
+  interruption and partial-stage refusal semantics with exception normalization.
+- [x] Add focused mutation, role, header, claim, clock/callback and backend
+  exception tests; retain local focused evidence separately from live acceptance.
+- [ ] Run this continuation's final-source Linux CI and independent raw/source/
+  tree audit before merge.

@@ -88,3 +88,16 @@ accepted by the stage 1 source emitter; each needs a separate contract and tests
 
 Remote evaluation, services, distributed scheduling, worker authentication and
 multi-host ownership remain deferred P2 work.
+
+## Controlled build-driver continuation
+
+The next bounded slice consumes the canonical
+`RSIProfilePreparation` produced by `prepare_rsi_installation_profile`; it does
+not regenerate source assets or accept a user dictionary as a build plan. The
+independent preparation digest and source-plan pins are checked first. The
+candidate is copied into fresh built-in containers before each trusted mock
+backend call. The graph is fixed as configure, freeze, compile and link, with
+the unclosed-configuration gate before freeze and an exact nine-header gate.
+Mock closure is labelled synthetic and cannot promote any actual build,
+installation, runtime or production claim. A real backend requires a later SDD
+after observed G1/G2 evidence.
