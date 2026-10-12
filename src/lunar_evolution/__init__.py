@@ -682,19 +682,6 @@ from .python_producer_admission_anchor import (
     read_python_producer_admission_attempt_anchor,
     verify_python_producer_admission_attempt_anchor,
 )
-from .rsi_python_admission_bridge import (
-    MAX_PYTHON_ADMISSION_BRIDGE_BYTES,
-    PYTHON_ADMISSION_BRIDGE_PROTOCOL,
-    PYTHON_ADMISSION_BRIDGE_SCHEMA_VERSION,
-    PYTHON_ADMISSION_BRS_PIN_HOOK,
-    PYTHON_ADMISSION_DRS_PIN_HOOK,
-    PythonAdmissionBridge,
-    PythonAdmissionBridgeDescriptor,
-    PythonAdmissionBridgeError,
-    build_python_admission_bridge_descriptor,
-    parse_python_admission_bridge_descriptor,
-    validate_python_admission_bridge_descriptor,
-)
 from .python_producer_admission_gate import (
     PythonProducerAdmissionGateError,
     PythonProducerAdmissionGateResult,
@@ -974,6 +961,20 @@ from .rsi_noise_confidence import (
     recover_confidence_report,
 )
 from .rsi_parent_budget import ParentRunBudget
+from .rsi_python_admission_bridge import (
+    MAX_PYTHON_ADMISSION_BRIDGE_BYTES,
+    PYTHON_ADMISSION_BRIDGE_PROTOCOL,
+    PYTHON_ADMISSION_BRIDGE_SCHEMA_VERSION,
+    PYTHON_ADMISSION_BRS_PIN_HOOK,
+    PYTHON_ADMISSION_DRS_PIN_HOOK,
+    PythonAdmissionBridge,
+    PythonAdmissionBridgeAdapter,
+    PythonAdmissionBridgeDescriptor,
+    PythonAdmissionBridgeError,
+    build_python_admission_bridge_descriptor,
+    parse_python_admission_bridge_descriptor,
+    validate_python_admission_bridge_descriptor,
+)
 from .rsi_python_publication import (
     RSIPythonPublicationError,
     resume_rsi_python_bundle_publication,
@@ -1501,6 +1502,7 @@ __all__ = [
     "ProfileRegistry",
     "ProviderFreeSolverGateway",
     "PythonAdmissionBridge",
+    "PythonAdmissionBridgeAdapter",
     "PythonAdmissionBridgeDescriptor",
     "PythonAdmissionBridgeError",
     "PythonFixtureObservationError",

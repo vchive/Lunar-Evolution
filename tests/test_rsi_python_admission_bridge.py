@@ -8,6 +8,7 @@ from test_rsi_python_admission import OTHER, _files, _rows, _setup
 from lunar_evolution.rsi_python_admission_bridge import (
     PYTHON_ADMISSION_BRS_PIN_HOOK,
     PYTHON_ADMISSION_DRS_PIN_HOOK,
+    PythonAdmissionBridgeAdapter,
     PythonAdmissionBridgeError,
     build_python_admission_bridge_descriptor,
     parse_python_admission_bridge_descriptor,
@@ -82,7 +83,7 @@ def test_bridge_descriptor_rejects_non_prepared_journal(tmp_path):
 def test_bridge_descriptor_rejects_controller_identity_before_return(tmp_path):
     value = _setup(tmp_path)
     descriptor = _descriptor(value)
-    with pytest.raises(PythonAdmissionBridgeError, match="controller_identity_mismatch"):
+    with pytest.raises(PythonAdmissionBridgeError, match="identity_mismatch"):
         validate_python_admission_bridge_descriptor(
             descriptor, run_id="other-run", episode_id=value.episode_id,
         )
@@ -122,3 +123,46 @@ def test_bridge_descriptor_rejects_zero_anchor_digest(tmp_path):
             prepared_journal=value.journal,
             expected_anchor_sha256="0" * 64,
         )
+
+
+class _Controller:
+    def __init__(self):
+        self.calls = []
+
+    def _pin_python_admission_for_active_flow(self, *args, **kwargs):
+        self.calls.append(("drs", args, kwargs))
+        return "1" * 64
+
+    def _request_python_admission_for_brs_worker(self, *args, **kwargs):
+        self.calls.append(("brs", args, kwargs))
+        kwargs["wait_check"]()
+        return "2" * 64
+
+
+def test_bridge_adapter_maps_existing_drs_and_brs_hooks_without_side_effects(tmp_path):
+    value = _setup(tmp_path)
+    descriptor = _descriptor(value)
+    controller = _Controller()
+    stages = []
+    adapter = PythonAdmissionBridgeAdapter(controller, descriptor, wait_check=lambda: stages.append("checked"))
+
+    assert adapter.pin_drs(descriptor.to_json()) == "1" * 64
+    assert adapter.pin_brs(descriptor.to_dict()) == "2" * 64
+    assert stages == ["checked"]
+    assert [item[0] for item in controller.calls] == ["drs", "brs"]
+    assert controller.calls[0][1] == (value.binding.run_id, value.episode_id)
+    assert controller.calls[1][1] == (value.binding.run_id, value.episode_id)
+
+
+def test_bridge_adapter_fails_closed_on_descriptor_drift_and_missing_brs_wait(tmp_path):
+    value = _setup(tmp_path)
+    descriptor = _descriptor(value)
+    controller = _Controller()
+    adapter = PythonAdmissionBridgeAdapter(controller, descriptor)
+    drifted = descriptor.to_dict()
+    drifted["run_id"] = "other-run"
+    with pytest.raises(PythonAdmissionBridgeError, match="identity_mismatch"):
+        adapter.pin_drs(drifted)
+    with pytest.raises(PythonAdmissionBridgeError, match="brs_wait_check_missing"):
+        adapter.pin_brs(descriptor)
+    assert controller.calls == []
