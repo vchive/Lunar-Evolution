@@ -5,6 +5,46 @@ inert fixtures, fake C APIs or fake Python runtime facts. No CPython/toolchain
 acquisition/build, static image launch, input consumption or producer admission
 is established by this plan.
 
+## Detached installation contract continuation — 2026-10-12
+
+The separate F01 wrapper binds six mandatory independent comparison pins, fixed
+reviewed marker/source-plan/overlay/launcher descriptions, complete nine frozen
+sources and generated-header records, original initialization and false claims.
+The unchanged original parser validates embedded canonical descriptor bytes.
+No tools/profile imports or filesystem/network/process/runtime effects occur.
+Actual source-to-object/header correspondence and accepted installation remain
+unverified; matching synthetic metadata pins cannot establish those facts.
+
+Root Python3.11 passes189 focused plus515 disjoint compatibility cases,704 unique
+passing cases with zero failures/errors/skips. Compatibility covers original
+build inputs/installation, RSI preparation/launch/source-plan and input report.
+Root inventories actual JUnit case identities and all27 baseline files remain
+unchanged. Independent Python3.13.12 replay passes the same189 cases with final
+source/test hashes unchanged, not an additional189 unique passes. Independent
+source reviews verify nine literal freeze-task projections, exact launcher and
+base/overlay/source-plan records; test review verifies independent synthetic
+fixtures and retained external-pin mismatch oracles. Whole-source Ruff,
+compileall and diff checks pass. The retained189-case focused gate is separate
+from the existing focused shell body, which remains byte-identical.
+
+Source pins:
+
+- `src/lunar_evolution/static_python_rsi_installation.py`:12873 bytes,
+  SHA256 `6d28b8f5d071e7ae777ad96fc4b23d6bf780b18284c2a54f16cf6a665d95697c`.
+- `tests/test_static_python_rsi_installation_contract.py`:25208 bytes,
+  SHA256 `795b897f1aa2226022369b16e80fcd405c31323a9af61921a84806c93115a9e1`.
+
+Ignored main-workspace reports directory
+`rsi-installation-contract-1791748409946671000` retains baseline-pins,
+compatibility/root-final-inventory, root-focused-final XML, independent first/
+second/third/fourth reports and final independent-py313 completion/XML/log.
+Initial alias/enum test-oracle failures are not replaced by the passing evidence;
+the product source did not change to accommodate them. Independent source review
+also retained `f01-installation-independent-source-review-1791748797420408000`.
+This source starts from PR52 final8d44efd and requires its own complete CI plus
+raw/source/tree audit and dependency-order merge. Actual F01–F06 and P2 status
+are unchanged.
+
 ## Recorded local results — 2026-10-12
 
 Python 3.11 focused tests passed 82 cases (51 launcher/wrapper, 31 source plan),

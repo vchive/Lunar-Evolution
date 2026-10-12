@@ -18,6 +18,36 @@ production capability or a new runtime acceptance. Local integrated-source
 validation passes37 helper/process-ownership cases, Ruff across src/tests/tools,
 compileall and diff checks; no actual producer, solver or evaluator ran.
 
+
+## 2026-10-12 detached RSI marker installation contract
+
+Feature193 F01 now has a separate bounded canonical description wrapper with
+six mandatory external comparison pins. It binds reviewed source-plan/overlay,
+the full marker launcher and its exact-once link-input record, all nine frozen
+source/output identities, complete generated-header descriptions and the caller
+main-header/inventory pins. Embedded installation validation uses the unchanged
+original parser and fixed Python initialization. All nine claims stay false.
+The immutable DTO is detached and conveys no build/runtime or input authority;
+the parser has no filesystem/network/process effects or tools/profile imports.
+No actual old-main header digest is available to prove compiled byte non-reuse.
+
+Root Python3.11 passes189 focused plus515 disjoint compatibility cases,704 unique
+passes with zero failures/errors/skips. Independent Python3.13.12 passes the same
+189 with source/test hashes unchanged. Independent reviews verify reviewed pins
+and test oracles; all27 baseline parser/preparation/asset files are unchanged.
+Ruff/compileall/diff pass; a separate189-case focused CI gate retains/annotates
+XML without changing the prior native-focused shell body. Initial test-oracle
+failures remain retained. See Feature193 installation-contract/tasks/validation
+for scope and exact evidence.
+
+This continuation starts from PR52 final8d44efda03eed68184a848fd9dc9394d78bdc661.
+Its own final-source CI/audit/merge and preceding PR46–52 dependency-order CI/audit
+obligations remain pending; verified main at this local checkpoint remains PR45
+9bfccbfc5a25db612a59ea27464b9affce40f1f3. Actual marker-capable installation,
+source/toolchain/build/sealed runtime, authoritative input/result, handoff,
+local solver and production CLI/Linux acceptance remain P0/P1 gaps. No real
+CPython/toolchain or solver ran; production_admission=false. P2 stays deferred.
+
 ## 2026-10-12 parallel release regression implementation
 
 Feature194 adds independent focused/current-0/current-1/current-2/history roles
