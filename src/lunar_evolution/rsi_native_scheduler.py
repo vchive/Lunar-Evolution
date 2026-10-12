@@ -34,9 +34,25 @@ from .native_trusted_scheduler import (
 from .official_evaluator_evidence import OfficialEvaluationReceipt, OfficialEvaluatorProfile
 from .producer_broker_ipc import ProducerBrokerConfig
 from .producer_bundle_handoff import BundleGroup
-from .producer_bundle_publication import parse_producer_bundle_publication_journal
+from .producer_bundle_intent import (
+    verify_producer_bundle_prepared_intent,
+    verify_producer_bundle_python_handoff_anchor,
+)
+from .producer_bundle_publication import (
+    ProducerBundlePublicationJournal,
+    parse_producer_bundle_publication_journal,
+)
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
-from .python_producer_admission_anchor import read_python_producer_admission_attempt_anchor
+from .python_producer_admission_anchor import (
+    project_python_producer_admission_attempt_anchor,
+    read_python_producer_admission_attempt_anchor,
+)
+from .python_producer_admission_handoff import (
+    PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
+    PythonProducerAdmissionHandoffFilePin,
+    parse_python_producer_admission_handoff_file_pin,
+    read_python_producer_admission_handoff_pinned,
+)
 from .rsi_gateway import SolverRequest
 from .rsi_identity import RSIIdentityError, component_fingerprint
 from .rsi_learning import MemorySnapshot, RSILearningError
@@ -540,6 +556,134 @@ class NativeRSISchedulerProvider:
             char not in "0123456789abcdef" for char in result
         ):
             _fail("python_admission_record_invalid")
+
+    def pin_python_admission_at_prepared_boundary(
+        self,
+        request: SolverRequest,
+        plan: NativeRSIExecutionPlan,
+        *,
+        prepared_journal: ProducerBundlePublicationJournal,
+        python_handoff_sha256: str,
+        python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin,
+        expected_anchor_sha256: str,
+    ) -> str:
+        """Explicitly bridge one already-persisted prepared Python attempt.
+
+        This hook is intended for a producer transaction's ``prepared_observer``.
+        It receives the immutable journal and the original handoff/file pin from
+        that transaction, rereads both retained files, then maps the fixed bridge
+        descriptor to the controller's DRS/BRS owner.  Native ``__call__`` never
+        invokes it; callers must establish this later boundary before evaluation.
+        """
+        if not isinstance(request, SolverRequest) or not isinstance(plan, NativeRSIExecutionPlan):
+            _fail("python_admission_prepared_input_invalid")
+        controller = self._python_admission_controller
+        if controller is None:
+            _fail("python_admission_controller_missing")
+        if not isinstance(prepared_journal, ProducerBundlePublicationJournal):
+            _fail("python_admission_prepared_journal_invalid")
+        controller_workspace = getattr(controller, "producer_workspace", None)
+        if getattr(controller, "producer_sidecar", None) is None:
+            _fail("python_admission_sidecar_missing")
+        if (
+            controller_workspace is None
+            or Path(controller_workspace).expanduser().absolute()
+            != Path(self.context.workspace).expanduser().absolute()
+        ):
+            _fail("python_admission_workspace_mismatch")
+        try:
+            pin = parse_python_producer_admission_handoff_file_pin(python_handoff_file_pin)
+            _sha(python_handoff_sha256, "python_admission_handoff")
+            _sha(expected_anchor_sha256, "python_admission_anchor")
+            if pin.handoff_sha256 != python_handoff_sha256:
+                _fail("python_admission_handoff_pin_mismatch")
+            context = self.context
+            intent = context.intent
+            identity = {
+                "journal_id": intent.journal_id,
+                "run_id": intent.run_id,
+                "parent_task_id": intent.parent_task_id,
+                "task_id": intent.task_id,
+            }
+            if any(getattr(prepared_journal, field) != value for field, value in identity.items()):
+                _fail("python_admission_prepared_identity_mismatch")
+            if prepared_journal.python_handoff_sha256 != python_handoff_sha256:
+                _fail("python_admission_handoff_mismatch")
+            if prepared_journal.python_handoff_file_pin != pin:
+                _fail("python_admission_handoff_pin_mismatch")
+            if plan.run_id != intent.run_id or plan.journal_id != intent.journal_id:
+                _fail("python_admission_plan_identity_mismatch")
+            if any(getattr(prepared_journal, field) != expected for field, expected in (
+                ("contract_sha256", request.contract_sha256),
+                ("evaluator_kind", context.evaluator_kind),
+                ("evaluator_fingerprint", request.evaluator_sha256),
+                ("runner_fingerprint", context.runner_fingerprint),
+                ("dependency_sha256", context.dependency_sha256),
+                ("environment_sha256", request.environment_sha256),
+            )):
+                _fail("python_admission_prepared_binding_mismatch")
+            batch = self.provenance_batch
+            persisted_journal = parse_producer_bundle_publication_journal(
+                batch / "journal.prepared.json",
+            )
+            if persisted_journal != prepared_journal:
+                _fail("python_admission_prepared_journal_drift")
+            verify_producer_bundle_prepared_intent(context.workspace, prepared_journal)
+            verify_producer_bundle_python_handoff_anchor(context.workspace, prepared_journal)
+            sidecar = read_python_producer_admission_handoff_pinned(
+                batch / PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
+                expected_file_pin=pin,
+            )
+            handoff = sidecar.handoff
+            if (
+                sidecar.file_pin != pin
+                or handoff.handoff_sha256 != python_handoff_sha256
+                or handoff.state != "prepared"
+                or any(getattr(handoff, field) != value for field, value in identity.items())
+                or handoff.native_execution_receipt_sha256
+                != prepared_journal.native_execution_receipt_sha256
+                or handoff.admission_plan_sha256 != prepared_journal.admission_sha256
+                or handoff.contract_sha256 != request.contract_sha256
+                or handoff.evaluator_sha256 != request.evaluator_sha256
+                or handoff.environment_sha256 != request.environment_sha256
+            ):
+                _fail("python_admission_handoff_mismatch")
+            anchor = read_python_producer_admission_attempt_anchor(
+                batch / "python-producer-admission-anchor.json",
+                expected_anchor_sha256=expected_anchor_sha256,
+            )
+            if (
+                anchor.handoff_sha256 != handoff.handoff_sha256
+                or anchor.run_id != intent.run_id
+                or anchor.journal_id != intent.journal_id
+                or anchor.native_execution_receipt_sha256
+                != prepared_journal.native_execution_receipt_sha256
+                or anchor != project_python_producer_admission_attempt_anchor(handoff)
+            ):
+                _fail("python_admission_anchor_mismatch")
+            descriptor = build_python_admission_bridge_descriptor(
+                run_id=plan.run_id,
+                episode_id=request.episode_id,
+                native_plan=plan,
+                prepared_journal=prepared_journal,
+                expected_anchor_sha256=anchor.anchor_sha256,
+            )
+            wait_check = getattr(controller, "_python_admission_bridge_wait_check", None)
+            if not callable(wait_check):
+                _fail("python_admission_wait_check_missing")
+            bridge = PythonAdmissionBridgeAdapter(controller, descriptor, wait_check=wait_check)
+            result = bridge.pin_live(descriptor)
+        except NativeRSISchedulerProviderError:
+            raise
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError(
+                "rsi_native_scheduler_prepared_bridge_failed",
+            ) from exc
+        if type(result) is not str or len(result) != 64 or any(
+            char not in "0123456789abcdef" for char in result
+        ):
+            _fail("python_admission_record_invalid")
+        return result
 
     def assert_failure_ledger(self, ledger: RSILedger) -> None:
         """Verify explicit failure wiring against the original database, never repin it."""

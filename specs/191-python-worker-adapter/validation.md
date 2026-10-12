@@ -1,5 +1,17 @@
 # Validation plan
 
+## 2026-10-13 explicit native prepared-boundary bridge
+
+`NativeRSISchedulerProvider.pin_python_admission_at_prepared_boundary` is the
+reusable provider hook for a caller-owned `prepared_observer`. It accepts the
+original handoff digest/file pin, persisted prepared journal and expected
+admission-anchor digest, rereads each retained file, compares the complete
+request/runtime identity, then invokes the existing DRS/BRS bridge adapter.
+The native provider's `__call__` path never invokes this hook and does not read
+post-execution Python evidence. A caller must pass the hook explicitly after
+the transaction has durably published the prepared intent; this remains
+provider-free plumbing and keeps `production_admission=false`.
+
 ## 2026-10-13 provider-free admission bridge
 
 The provider-free bridge has focused coverage for descriptor parsing, DRS/BRS owner
