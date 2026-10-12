@@ -1178,6 +1178,21 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_usage_parser.add_argument("--adapter-stage", help="limit receipts to one adapter stage")
     _add_json(rsi_usage_parser)
 
+    rsi_replay_parser = rsi_commands.add_parser(
+        "replay", help="compare pinned local producer receipts without execution or initialization",
+    )
+    rsi_replay_parser.add_argument("producer_root", type=Path, help="retained local producer export")
+    rsi_replay_parser.add_argument("--contract", type=Path, required=True)
+    rsi_replay_parser.add_argument("--request", type=Path, required=True)
+    rsi_replay_parser.add_argument("--memory-snapshot", type=Path, required=True)
+    rsi_replay_parser.add_argument("--receipts", type=Path, required=True, help="retained native receipt bundle JSON")
+    rsi_replay_parser.add_argument("--solver", choices=("openevolve", "shinka"), required=True)
+    for pin in ("producer-fingerprint", "contract-sha256", "request-sha256", "memory-sha256",
+                "receipts-sha256", "envelope-sha256"):
+        rsi_replay_parser.add_argument("--" + pin, required=True, help="independently retained byte digest")
+    _add_home(rsi_replay_parser)
+    _add_json(rsi_replay_parser)
+
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
     rsi_reconcile_parser.add_argument(
@@ -5518,6 +5533,10 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
         "run_id": result.run_id,
         "mode": args.mode,
         "status": result.status,
+        "solver_execution": "provider_free_fixture",
+        "production_admission": False,
+        "producer_replay_required": args.solver in {"openevolve", "shinka"},
+        **({"warning": "rsi_producer_replay_required"} if args.solver in {"openevolve", "shinka"} else {}),
         "target_attempts": len(result.target_attempts),
         "practice_episodes": len(result.practice_episodes),
         "memory_snapshot_sha256": result.memory_snapshot.digest(),
@@ -6265,6 +6284,20 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 adapter_stage=args.adapter_stage,
             ), args.json)
             return 0
+        if args.command == "rsi" and args.rsi_command == "replay":
+            from .rsi_producer_replay import inspect_producer_replay
+
+            # Detached comparisons precede all home, Store, SQLite and worker initialization.
+            payload = inspect_producer_replay(
+                producer_root=args.producer_root, contract_path=args.contract,
+                request_path=args.request, memory_path=args.memory_snapshot,
+                receipts_path=args.receipts, producer_id=args.solver,
+                producer_fingerprint=args.producer_fingerprint, contract_sha256=args.contract_sha256,
+                request_sha256=args.request_sha256, memory_sha256=args.memory_sha256,
+                receipts_sha256=args.receipts_sha256, envelope_sha256=args.envelope_sha256,
+            )
+            _emit(payload, args.json)
+            return 0 if payload["status"] == "completed" else 1
         config = _config(args)
         if args.command == "init":
             _emit({"home": str(config.home), "status": "initialized"}, args.json)
