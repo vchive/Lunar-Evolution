@@ -340,3 +340,37 @@ An independent review must verify that `execution_performed` and successful
 publication are derived from observed Python/process/evaluator evidence, not from
 descriptor fields or child claims. `runtime_load_protection`,
 `production_admission` and `general_code_origin_protection` remain false.
+
+## Python scheduler pre-staged input join
+
+Final local Python3.11.15 gate passed **81 cases** in66.608 seconds, with zero failures,
+errors or skips. The disjoint existing native-input/plan/scheduler and Python binding /
+checkpoint/runtime-tree compatibility gate passed **250 cases** in33.743 seconds;
+the two final inventories contain331 unique cases. Root evidence remains in ignored
+reports `python-scheduler-inputs-final-20261012e.xml` and
+`python-scheduler-inputs-compat-20261012c.xml`. Earlier71-case selected and10-case
+boundary runs are auxiliary evidence, not additional unique cases. Initial failures
+and independent review findings remain retained separately.
+
+The gate covers immutable context, canonical retained sidecar/checkpoint join, stable
+repeated plans, original deadline preservation, cross-domain identity/runtime drift,
+two-read replacement races, file metadata and zero-side-effect guarantees. Exact DTO
+shape and plain-collection gates precede callbacks, readers and serializers; original
+caller request/memory/context are rechecked after observations. Opaque strategy, broker,
+control and ledger objects are neither compared nor invoked. Foreign mapping proxies
+and instance serializer shadowing refuse. The factory commits to31 named local code
+dependencies without claiming general dependency discovery or remote authenticity.
+
+Independent frozen-source review passed81/81 with source and test hashes unchanged.
+Ruff across src/tests/tools, compileall and `git diff --check` pass. The new CI report
+`rsi-python-scheduler-inputs.xml` requires81 cases and zero failures/errors/skips and is
+annotated/uploaded. The final source still requires its own Ubuntu3.11/3.12/3.13 full CI
+and independent raw/source/tree audit; this workflow has41 focused and3 full phases.
+
+Only inert local fixtures ran and `production_admission=false`. No Python runtime,
+native gateway, OpenEvolve/Shinka campaign or production CLI acceptance occurred.
+Original sidecar/runtime and request/memory timestamp drift refuses. Existing native
+manifest/launch records self-bind bytes/device/inode without an independently retained
+original timestamp, so a touch completed before observation remains accepted. Two reads
+are not an atomic filesystem snapshot. Live runtime/handoff composition and the full
+process/runtime/journal interruption matrix remain separate work.
