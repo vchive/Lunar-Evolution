@@ -181,3 +181,24 @@
   the existing fixed-code recovery contract; cover missing and malformed journals.
 - [x] Retain first failure evidence and add a dedicated24-case CI inventory. This bounded
   fixture matrix does not close the full live scheduler/runtime interruption task.
+
+## P0 — independently pinned runtime observation policy
+
+- [x] Adopt `runtime-observation-contract.md`: separate OS argv, named observed flags
+  and the original descriptor's PyConfig argv/orig_argv; preserve existing wires.
+- [x] Add one pure comparison using the existing installation parser, independent
+  descriptor/version/initialization pins and original binding artifact SHA/size/mode.
+- [x] Require that comparison in gate and adapter build/verify; missing pins and
+  old argv-token observations refuse, while historical pure parsing stays compatible.
+- [x] Migrate composition fixtures to the reviewed static profile and add actual
+  frozen-main encoder-to-observation-to-gate/adapter inert compatibility tests.
+- [x] Verify wrong/missing/replaced pins, target, mode, flags, argv and callback-free
+  zero-effect boundaries with focused tests and independent review.
+  Python3.11 focused309 plus disjoint compatibility195 pass; independent Python3.13
+  policy74 pass without reviewed source/test drift. Earlier303 replay remains
+  evidence of its earlier source. No actual static runtime ran.
+- [x] Normalize malformed independent installation-version labels before descriptor
+  parsing; six cases verify the fixed refusal across helper/gate/build/verify.
+- [ ] Run final-source three-version CI and audit before merge acceptance.
+- [ ] Separately define and accept an RSI-capable static installation asset/profile;
+  the current argc-one/fixed-main fixture cannot consume native RSI marker inputs.

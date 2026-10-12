@@ -38,3 +38,16 @@ Focused contract tests generate observations from the reviewed emitted
 adapter and encoder compatibility, without claiming real runtime enforcement. A
 later Linux acceptance change can call it after the existing native fixture
 has independently captured raw stdout, transcript, and filesystem evidence.
+
+## Composition with the original installation
+
+The observation adapter preserves named runtime flags and fixed PyConfig argv;
+it does not turn those facts into OS launch tokens. The shared
+`validate_python_runtime_observation_policy` comparison joins this observation to
+the independently pinned Feature189 installation and original binding. Gate and
+OpenEvolve/Shinka envelope build/verify use that comparison with four explicit
+installation kwargs. Missing pins refuse; historical observation/envelope parsing
+remains available without granting consistency or runtime authority. This closes
+the previous token/argv mismatch in synthetic composition fixtures. The exact
+contract and separate unresolved static RSI launch profile are in
+[runtime-observation-contract.md](runtime-observation-contract.md).
