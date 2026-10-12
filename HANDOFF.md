@@ -1,10 +1,10 @@
 # Lunar Evolution 交接记录
 
-## 当前集成状态 — 2026-10-12（更新）
+## 当前集成状态 — 2026-10-13（更新）
 
-当前 `origin/main` 为 `31ab43c23fb45ba067697703482c1be8482481ae`。PR54–57、PR59、PR60、PR64–67 已合入 main；PR55/56 的代码通过 PR57 的依赖树进入 main，PR61 的 build-driver 通过 PR66 以当前 main 为基线重新移植。PR65 更新了本状态记录，PR67 增加 RSI CLI 的独立预算/用量账本接线。PR54 的 raw-log 审计因 GitHub API 超时未完整完成；PR56/57 raw artifact 下载不完整，这些限制不影响已通过的 CI、source-only 和 merge-tree 证据，但不能把它们描述为完整 raw 审计。PR62/63 仍保留为已被 PR64 祖先链 supersede 的旧堆叠 PR，不再代表待合入能力。
+当前 `origin/main` 为 `4e6621f74a5aeb91f3003e5b2cc5366c96be0b1d`。PR68–71 已合入 main：状态文档同步、RSI CLI 显式 plan 预算、bounded fixture 的 failed 终态断言，以及 memory admission holdout 治理门。PR62/63 已关闭并由后续祖先链 supersede，不再代表待合入能力。PR54/56/57 的 raw-log 下载限制仍保留，不能把 source-only、merge-tree 或 CI 证据描述为完整 raw 审计。
 
-当前 provider-free 能力覆盖 durable controller resume、unknown reconcile gate、fingerprint drift、统一预算、native replay、retained producer evidence，以及静态 Python 安装/输入/启动/运行时 handoff/build-closure 合同。Feature189 的真实来源/工具链、静态 CPython 构建与 sealed startup，以及 Feature191 的真实 Python 生命周期/adapter 仍未验收；本轮不运行真实 CPython、远程 evaluator 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。
+当前 provider-free 能力覆盖 durable controller resume、unknown reconcile gate、fingerprint drift、统一预算、native replay、retained producer evidence，以及静态 Python 安装/输入/启动/运行时 handoff/build-closure 合同。Feature191 仍有 P0 开放项：真实 Python scheduler/runtime/handoff 输入、完整 interruption matrix，以及 BRS 多 child 的独立原始 proof/journal/attempt 路由；当前多 child admission 保持 fail-closed。Feature189 的真实来源/工具链、静态 CPython 构建与 sealed startup，以及 Feature191 的真实 Python 生命周期/adapter 仍未验收；本轮不运行真实 CPython、远程 evaluator 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。
 
 后文较早的 pending/verified-main 段落是历史交接记录；判断当前状态时以本节、最新 PR 审计记录和 `origin/main` 为准。
 

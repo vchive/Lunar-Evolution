@@ -757,11 +757,55 @@ def _terminal_binding_pins(item: PythonProducerTerminal, binding: object) -> Non
         _fail("request_budget_exceeded")
 
 
+def _validate_admission_attempt_anchor(
+    item: PythonProducerTerminal,
+    expected_binding: object,
+    admission_anchor: object | None,
+) -> None:
+    """Validate a retained first-admission identity before terminal replay.
+
+    The anchor is optional for legacy terminal callers.  When supplied, it is
+    reparsed and compared with the immutable terminal identity and original
+    binding limits without filesystem, process, or recovery-side effects.
+    """
+    if admission_anchor is None:
+        return
+    from .python_producer_admission_anchor import (
+        PythonProducerAdmissionAnchorError,
+        parse_python_producer_admission_attempt_anchor,
+    )
+
+    try:
+        anchor = parse_python_producer_admission_attempt_anchor(admission_anchor)
+    except (PythonProducerAdmissionAnchorError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("admission_anchor_invalid") from exc
+    if anchor.binding_sha256 != item.binding_sha256:
+        _fail("admission_anchor_binding_drift")
+    if anchor.run_id != item.run_id or anchor.journal_id != item.journal_id:
+        _fail("admission_anchor_identity_drift")
+    if anchor.deadline_unix != item.deadline_unix:
+        _fail("admission_anchor_deadline_drift")
+    if type(expected_binding) is PythonProducerBinding:
+        if anchor.request_budget != expected_binding.request_budget:
+            _fail("admission_anchor_budget_drift")
+        if anchor.wall_timeout_seconds != expected_binding.wall_timeout_seconds:
+            _fail("admission_anchor_timeout_drift")
+        expected_fingerprints = {
+            "contract": expected_binding.contract_sha256,
+            "evaluator": expected_binding.evaluator_fingerprint,
+            "environment": expected_binding.environment_sha256,
+        }
+        for name, expected in expected_fingerprints.items():
+            if anchor.fingerprints.get(name) != expected:
+                _fail("admission_anchor_fingerprint_drift")
+
+
 def reconcile_python_producer_terminal(
     previous: PythonProducerTerminal | bytes | str | Mapping[str, object],
     observed: PythonProducerTerminal | bytes | str | Mapping[str, object],
     *, expected_binding: str | PythonProducerBinding | Mapping[str, object],
     expected_deadline_unix: float | None = None,
+    admission_anchor: object | None = None,
 ) -> PythonProducerTerminal:
     """Reconcile retained terminal evidence without I/O, mutation, retry or publication."""
     old = _retained_terminal(previous)
@@ -774,6 +818,7 @@ def reconcile_python_producer_terminal(
             _fail("deadline_drift")
         bound_deadline = parsed
     for item in (old, new):
+        _validate_admission_attempt_anchor(item, expected_binding, admission_anchor)
         if item.binding_sha256 != binding:
             _fail("binding_drift")
         if item.deadline_unix != bound_deadline and not math.isnan(bound_deadline):
@@ -827,6 +872,7 @@ def resume_python_producer_terminal(
     expected_binding: str | PythonProducerBinding | Mapping[str, object], expected_deadline_unix: float | None = None,
     checkpoint: PythonProducerCheckpointBinding | bytes | str | Mapping[str, object] | None = None,
     sidecar: PythonProducerBindingSidecar | None = None,
+    admission_anchor: object | None = None,
 ) -> PythonProducerTerminal:
     """Validate a retained terminal for resume; unknown state remains reconcile-required."""
     item = _retained_terminal(terminal)
@@ -857,6 +903,7 @@ def resume_python_producer_terminal(
     if not math.isnan(deadline) and item.deadline_unix != deadline:
         _fail("deadline_drift")
     _terminal_binding_pins(item, binding_object or expected_binding)
+    _validate_admission_attempt_anchor(item, binding_object or expected_binding, admission_anchor)
     if item.status == "unknown":
         _fail("reconcile_required")
     return item

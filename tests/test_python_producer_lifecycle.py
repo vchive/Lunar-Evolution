@@ -9,6 +9,9 @@ import pytest
 from test_python_producer_binding import _fixture
 
 from lunar_evolution.producer_process import ProducerExecutionReceipt, ProducerStreamEvidence
+from lunar_evolution.python_producer_admission_anchor import (
+    build_python_producer_admission_attempt_anchor,
+)
 from lunar_evolution.python_producer_binding import build_python_producer_binding
 from lunar_evolution.python_producer_lifecycle import (
     PythonProducerLifecycleError,
@@ -75,6 +78,27 @@ def completed_terminal(**changes):
     return terminal(**value)
 
 
+def admission_anchor(**changes):
+    value = {
+        "attempt_id": "attempt-1",
+        "run_id": "run-1",
+        "journal_id": "journal-1",
+        "binding_sha256": D,
+        "handoff_sha256": "b" * 64,
+        "terminal_sha256": "c" * 64,
+        "runtime_observation_sha256": "d" * 64,
+        "native_execution_receipt_sha256": "e" * 64,
+        "admission_plan_sha256": "f" * 64,
+        "fingerprints": {"contract": "1" * 64, "evaluator": "2" * 64,
+                          "environment": "3" * 64},
+        "request_budget": 1,
+        "wall_timeout_seconds": 10,
+        "deadline_unix": 100.0,
+    }
+    value.update(changes)
+    return build_python_producer_admission_attempt_anchor(**value)
+
+
 def observation():
     return build_python_producer_runtime_observation(
         binding_sha256=D,
@@ -113,6 +137,29 @@ def test_completed_terminal_roundtrip_and_resume_is_read_only():
     )
     assert replay == item
     assert parse_python_producer_terminal(item.to_json()) == item
+
+
+def test_terminal_resume_and_reconcile_validate_optional_admission_anchor():
+    item = completed_terminal()
+    anchor = admission_anchor()
+    assert resume_python_producer_terminal(
+        item, expected_binding={"binding_sha256": D, "deadline_unix": 100.0},
+        admission_anchor=anchor,
+    ) == item
+    assert reconcile_python_producer_terminal(
+        item, item, expected_binding={"binding_sha256": D, "deadline_unix": 100.0},
+        admission_anchor=anchor,
+    ) == item
+    with pytest.raises(PythonProducerLifecycleError, match="admission_anchor_identity_drift"):
+        resume_python_producer_terminal(
+            item, expected_binding={"binding_sha256": D, "deadline_unix": 100.0},
+            admission_anchor=admission_anchor(run_id="other-run"),
+        )
+    with pytest.raises(PythonProducerLifecycleError, match="admission_anchor_invalid"):
+        resume_python_producer_terminal(
+            item, expected_binding={"binding_sha256": D, "deadline_unix": 100.0},
+            admission_anchor={"run_id": "run-1"},
+        )
 
 
 def test_unknown_reconcile_requires_complete_process_and_cleanup_evidence():
