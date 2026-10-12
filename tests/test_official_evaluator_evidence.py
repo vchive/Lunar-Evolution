@@ -45,3 +45,42 @@ def test_nonpass_and_holdout_drift_fail_closed():
                                    evaluator_sha256=H, candidate_source_sha256="1" * 64,
                                    execution_receipt_sha256="2" * 64, publication_receipt_sha256="3" * 64,
                                    holdout_sha256="9" * 64)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("config_sha256", "9" * 64, "config_mismatch"),
+        ("task_input_sha256", "9" * 64, "task_input_mismatch"),
+        ("seed_sha256", "9" * 64, "seed_mismatch"),
+    ],
+)
+def test_optional_evaluator_context_pins_are_bound(field, value, code):
+    item = receipt()
+    with pytest.raises(OfficialEvaluatorEvidenceError, match=code):
+        verify_official_evaluation(
+            item,
+            request_sha256=H,
+            contract_sha256="c" * 64,
+            evaluator_sha256=H,
+            candidate_source_sha256="1" * 64,
+            execution_receipt_sha256="2" * 64,
+            publication_receipt_sha256="3" * 64,
+            **{field: value},
+        )
+
+
+def test_optional_evaluator_context_pins_accept_exact_profile_values():
+    item = receipt()
+    verify_official_evaluation(
+        item,
+        request_sha256=H,
+        contract_sha256="c" * 64,
+        evaluator_sha256=H,
+        candidate_source_sha256="1" * 64,
+        execution_receipt_sha256="2" * 64,
+        publication_receipt_sha256="3" * 64,
+        config_sha256="b" * 64,
+        task_input_sha256="d" * 64,
+        seed_sha256="f" * 64,
+    )
