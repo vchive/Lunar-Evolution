@@ -92,6 +92,20 @@ introduced. It reads all files with no-follow bounded descriptors, rechecks thei
 does not initialize the controller home or SQLite ledger. Missing `worker_terminal_status` is
 reported as `unknown`; incomplete or drifted receipts cannot become `completed`.
 
+Known receipt records may be omitted or explicitly `null`; both mean missing evidence and return
+`unknown`. Unexpected bundle keys or malformed present records remain `drifted`, even when another
+record is missing. A valid identity-bound envelope with `status: unknown`, or a missing material
+file, also returns `unknown`; failed/cancelled envelope claims and identity drift remain refused.
+Before returning either a complete or incomplete comparison, the command re-opens observed files
+and candidate sources through the no-follow boundary and checks retained bytes/digests and inode
+metadata. This catches replacement of the producer root by a symlink and source byte/inode drift;
+it is a bounded sequence of observations, not a multi-file atomic snapshot.
+
+Top-level `request_sha256` always retains the caller's original request-file byte pin.
+`solver_request_sha256` separately exposes the canonical `SolverRequest.digest()` when the
+request is parsed. Pretty-printed JSON can therefore have different byte and canonical digests
+without losing the original evidence pin. The result's existing request binding stays canonical.
+
 The existing `rsi run --solver openevolve|shinka` remains the provider-free controller fixture,
 but its JSON now states `solver_execution: provider_free_fixture`,
 `production_admission: false`, and `warning: rsi_producer_replay_required`. It is therefore not
@@ -112,6 +126,13 @@ local native lifecycle, but that is a separate acceptance slice.
   retained evidence digests.
 - Existing `rsi run --solver openevolve|shinka`, `evolve`, `export-shinka-result`, native gateway
   tests, and read-only usage diagnostics remain unchanged.
+
+Final local review-fix validation: 117 focused cases across producer replay, generic handoff,
+Shinka exporter and producer CLI passed with zero failures/errors/skips. New replay cases cover
+omitted/null records, malformed incomplete bundles, raw/canonical request digests, unknown envelope
+identity, missing source, actual source byte/same-byte inode replacement and a producer root
+symlink installed after final manifest preparation. Whole-source Ruff, compileall and diff checks
+pass. These are local fixture checks; final-source CI/audit remains separate.
 
 ## Out of scope
 
