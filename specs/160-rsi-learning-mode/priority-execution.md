@@ -11,6 +11,12 @@ known incomplete raw-log downloads for PR54 and PR56/57 recorded in HANDOFF. PR6
 superseded stacked PRs whose code is already in the PR64 ancestry. Earlier sections that
 describe older PRs as pending are historical snapshots and do not override this status.
 
+The current PR75 branch adds the next provider-free P0/P1 slices: live native scheduler
+admission through the existing DRS/BRS owner scope, independent BRS child routing,
+malformed process-journal recovery cases, and explicit OpenEvolve/Shinka result binding.
+These commits are validated locally but are not part of `origin/main` until PR75 passes
+the final-source CI and is merged.
+
 The remaining local release work is integration evidence plus the real Feature189/191
 runtime gates. Provider-free controller resume, replay, budget, fingerprint and unknown
 reconciliation are implemented. Real CPython/toolchain acquisition, sealed startup and
@@ -31,17 +37,16 @@ The local BRS ready/ack continuation is implemented and requires its own final-s
 
 - **P0**: wire real Python scheduler runtime/handoff inputs; complete independently
   observed process/runtime/journal interruption coverage for launch, missing terminal,
-  callbacks, cleanup uncertainty and drift. DRS first-pin and one-child local BRS ready/ack
-  now have inert composition tests. BRS retains whole-wave reservations, frozen memory,
-  ordinal saves, exact captured CAS and durable pin obligations; multiple independent
-  Python children still need separate original proof/journal/attempt routing and remain
-  fail-closed. Retained terminal admission-anchor validation and the provider-free bridge
-  adapter now exist; automatic live scheduler invocation, independently observed runtime
-  inputs, and multiple-child proof routing remain open. These contracts do not execute the
-  actual native gateway or establish runtime acceptance.
+  callbacks, cleanup uncertainty and drift. DRS first-pin and local BRS ready/ack now have
+  inert composition tests. PR75 adds separate original proof/journal/attempt routing for
+  independent Python children and invokes the bridge after durable claim and before native
+  producer dispatch, using fixed prepared evidence and the existing owner scope. These
+  contracts still do not execute sealed CPython or establish runtime acceptance.
 - **P1**: finish Feature189 release/toolchain provenance, configured static build/closure
   and sealed runtime evidence; compose Feature190 owner/lifecycle observations; wire
   actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux acceptance.
+  PR75 only adds provider-free binding checks; it does not launch either project or claim
+  runtime lifecycle acceptance.
   Acquiring/building/running a real sealed toolchain is outside the current inert slice.
 - **P2 deferred**: external worker authentication, multi-host ownership, remote evaluator,
   distributed/service scheduling and Shinka/Slurm.
