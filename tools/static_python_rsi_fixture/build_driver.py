@@ -259,6 +259,13 @@ def _preparation_wire(preparation: RSIProfilePreparation) -> dict[str, Any]:
         raise ControlledBuildError("preparation_invalid")
     if type(value) is not dict:
         raise ControlledBuildError("preparation_shape_invalid")
+    try:
+        canonical = (json.dumps(value, sort_keys=True, separators=(",", ":"),
+                               ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+    except (TypeError, ValueError, UnicodeError):
+        raise ControlledBuildError("preparation_invalid") from None
+    if canonical != raw:
+        raise ControlledBuildError("preparation_noncanonical")
     fields = {
         "schema", "profile", "base_reviewed_inputs", "reviewed_overlay", "source_plan",
         "launch_policy", "initialization_profile", "substitutions", "candidate_build_inputs",
@@ -364,6 +371,10 @@ def run_controlled_build(
     if deadline is not None and (not _finite_number(deadline) or deadline <= 0):
         raise ControlledBuildError("deadline_invalid")
     selected = MockBuildBackend() if backend is None else backend
+    if not callable(monotonic):
+        raise ControlledBuildError("clock_type_invalid")
+    if interrupted is not None and not callable(interrupted):
+        raise ControlledBuildError("interruption_type_invalid")
     backend_mode, failure = _attempt(lambda: selected.mode, "backend_invalid")
     if failure is not None:
         raise ControlledBuildError(failure)
