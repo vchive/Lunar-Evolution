@@ -12,7 +12,8 @@
   and episode/request consumption remain pending.
 - [x] Implement and test pure terminal resume/reconcile rules: retained digest,
   identity/journal/time pins, original deadline, complete known-terminal evidence,
-  callback-free exact collection shapes and unsupported publication claims.
+  callback-free exact collection shapes, unsupported publication claims, and optional retained
+  admission-attempt anchor identity/fingerprint checks before replay or reconcile.
 - [x] Persist one canonical binding sidecar create-only in the producer batch with
   temporary-file/hard-link publication, `0600` regular-file and single-link checks,
   an independently retained digest/stat pin, and pre-I/O retained-pin validation.
