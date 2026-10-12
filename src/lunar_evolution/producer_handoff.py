@@ -729,6 +729,27 @@ def declared_producer_environment_sha256() -> str:
     )
 
 
+def producer_materials_sha256(envelope: ProducerResultEnvelope | Mapping[str, Any]) -> str:
+    """Return the canonical pin for one envelope's material descriptors.
+
+    This is a detached projection of the generic producer envelope.  It binds the ordered
+    descriptor records (path, size, source digest, lineage and evidence summary) without reading
+    a producer directory, starting an evaluator, or treating producer scores as authority.  The
+    input is reparsed through the same strict DTO path used by admission so callers cannot obtain
+    a pin from a mutated frozen object or a permissive mapping.
+    """
+
+    try:
+        parsed = (_canonical_envelope(envelope) if isinstance(envelope, ProducerResultEnvelope)
+                  else parse_producer_envelope(envelope))
+        descriptors = [item.to_dict() for item in parsed.materials]
+        return _sha256(descriptors)
+    except ProducerHandoffError:
+        raise
+    except Exception:  # noqa: BLE001 - caller-supplied envelope is an untrusted boundary
+        _raise(PRODUCER_ENVELOPE_SCHEMA_INVALID)
+
+
 def producer_bundle_dependency_sha256(source_sha256s: Sequence[str]) -> str:
     """Digest the observed source set without claiming transitive dependency verification.
 
@@ -1075,4 +1096,5 @@ __all__ = [
     "parse_producer_envelope",
     "prepare_producer_seed_manifest",
     "producer_bundle_dependency_sha256",
+    "producer_materials_sha256",
 ]

@@ -14,6 +14,14 @@ import re
 from dataclasses import dataclass
 from typing import NoReturn
 
+from lunar_evolution.static_python_rsi_installation import (
+    MAX_CONTRACT_BYTES as MAX_INSTALLATION_CONTRACT_BYTES,
+)
+from lunar_evolution.static_python_rsi_installation import (
+    StaticPythonRSIInstallationError,
+    parse_static_python_rsi_installation_descriptor,
+)
+
 BUILD_CLOSURE_SCHEMA = "lunar-static-python-build-closure-v1"
 MAX_BUILD_CLOSURE_BYTES = 512 * 1024
 MAX_ARTIFACT_BYTES = 128 * 1024 * 1024
@@ -22,15 +30,27 @@ _MAX_NODES = 20_000
 _MAX_DEPTH = 16
 _MAX_TEXT_BYTES = 256 * 1024
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
+_GIT_ID = re.compile(r"[0-9a-f]{40}\Z")
 _LABEL = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 _PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./+-]{0,511}\Z")
 _FROZEN = (
     "_frozen_importlib", "_frozen_importlib_external", "_lunar_static_main",
     "abc", "codecs", "encodings", "encodings.aliases", "encodings.utf_8", "io",
 )
-_FROZEN_OUTPUTS = {
-    name: f"generated-sources/Python/frozen_modules/{name}.h" for name in _FROZEN
+_FREEZE_TASKS = {
+    "_frozen_importlib": ("importlib._bootstrap", "_Py_M__importlib__bootstrap", False),
+    "_frozen_importlib_external": (
+        "importlib._bootstrap_external", "_Py_M__importlib__bootstrap_external", False,
+    ),
+    "_lunar_static_main": ("_lunar_static_main", "_Py_M___lunar_static_main", False),
+    "abc": ("abc", "_Py_M__abc", False),
+    "codecs": ("codecs", "_Py_M__codecs", False),
+    "encodings": ("encodings", "_Py_M__encodings", True),
+    "encodings.aliases": ("encodings.aliases", "_Py_M__encodings_aliases", False),
+    "encodings.utf_8": ("encodings.utf_8", "_Py_M__encodings_utf_8", False),
+    "io": ("io", "_Py_M__io", False),
 }
+_GENERATOR_NAMES = {task[0]: name for name, task in _FREEZE_TASKS.items()}
 _FORBIDDEN_STOCK_OBJECTS = (
     "Modules/getpath.o", "Programs/_bootstrap_python.o", "Programs/python.o", "Python/frozen.o",
 )
@@ -53,14 +73,24 @@ _PIN_FIELDS = (
     "expected_contract_sha256", "expected_source_tree_sha256",
     "expected_toolchain_manifest_sha256", "expected_frozen_inventory_sha256",
     "expected_link_manifest_sha256", "expected_artifact_sha256",
+    "expected_installation_contract_sha256", "expected_installation_descriptor_sha256",
+    "expected_installation_frozen_inventory_sha256", "expected_main_header_sha256",
 )
+_REASONS = frozenset({
+    "invalid", "canonical", "digest", "label", "path", "integer", "schema",
+    "duplicate_key", "json", "bounds", "collection", "ordering", "toolchain",
+    "source", "source_pin", "manifest_pin", "toolchain_pin", "frozen_inventory",
+    "frozen_header", "frozen_pin", "link_closure", "duplicate_object", "flags",
+    "stock_objects", "link_pin", "elf", "artifact_pin", "claims",
+    "installation_descriptor", "cross_field", "raw", "pin", "contract_pin",
+})
 
 
 class StaticPythonBuildClosureError(ValueError):
     """A fixed refusal code that never contains caller material or paths."""
 
     def __init__(self, reason: str) -> None:
-        if type(reason) is not str or _LABEL.fullmatch(reason) is None:
+        if type(reason) is not str or reason not in _REASONS:
             reason = "invalid"
         self.reason = "static_python_build_closure_" + reason
         super().__init__(self.reason)
@@ -77,13 +107,16 @@ def _fail(reason: str) -> NoReturn:
 
 
 def canonical_sha256(value: object) -> str:
-    """Hash a JSON-compatible projection using the wire's canonical encoding."""
+    """Hash a bounded exact-built-in projection using the wire's encoding."""
     try:
+        _scan(value)
         encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                              allow_nan=False).encode("utf-8")
-    except (TypeError, ValueError, UnicodeError) as exc:
-        raise StaticPythonBuildClosureError("canonical") from exc
-    return hashlib.sha256(encoded).hexdigest()
+        return hashlib.sha256(encoded).hexdigest()
+    except (TypeError, ValueError, UnicodeError, RecursionError, OverflowError):
+        pass
+    # Suppressing chaining inside a handler still leaves __context__ available.
+    raise StaticPythonBuildClosureError("canonical")
 
 
 def _sha(value: object, reason: str = "digest") -> str:
@@ -96,6 +129,27 @@ def _label(value: object, reason: str = "label") -> str:
     if type(value) is not str or _LABEL.fullmatch(value) is None:
         _fail(reason)
     return value
+
+
+def _git_id(value: object) -> str:
+    if (type(value) is not str or _GIT_ID.fullmatch(value) is None
+            or value in {"0" * 40, "f" * 40}):
+        _fail("source")
+    return value
+
+
+def _same_typed(value: object, expected: object) -> bool:
+    if type(value) is not type(expected):
+        return False
+    if type(expected) is dict:
+        return set(value) == set(expected) and all(
+            _same_typed(value[key], item) for key, item in expected.items()
+        )
+    if type(expected) is list:
+        return len(value) == len(expected) and all(
+            _same_typed(left, right) for left, right in zip(value, expected, strict=True)
+        )
+    return value == expected
 
 
 def _path(value: object) -> str:
@@ -141,11 +195,17 @@ def _scan(value: object) -> None:
         if nodes > _MAX_NODES or depth > _MAX_DEPTH:
             _fail("bounds")
         if type(item) is dict:
+            if len(item) > _MAX_NODES:
+                _fail("bounds")
             pending.extend((child, depth + 1) for child in item.values())
             pending.extend((key, depth + 1) for key in item)
         elif type(item) is list:
+            if len(item) > _MAX_NODES:
+                _fail("bounds")
             pending.extend((child, depth + 1) for child in item)
         elif type(item) is str:
+            if len(item) > _MAX_TEXT_BYTES - text_bytes:
+                _fail("bounds")
             try:
                 text_bytes += len(item.encode("utf-8"))
             except UnicodeError:
@@ -199,15 +259,16 @@ def _validate_source(value: object, pins: dict[str, str]) -> dict:
         "source_tree_sha256", "patch_set_sha256", "files",
     }), "source")
     _label(item["source_tag"])
-    _sha(item["source_commit"])
-    _sha(item["source_git_tree"])
+    _git_id(item["source_commit"])
+    _git_id(item["source_git_tree"])
     for name in ("source_archive_sha256", "source_tree_sha256", "patch_set_sha256"):
         _sha(item[name])
     if item["source_tree_sha256"] != pins["expected_source_tree_sha256"]:
         _fail("source_pin")
     _records(item["files"])
-    if _manifest_digest(item, "source_tree_sha256") != item["source_tree_sha256"]:
-        _fail("manifest_pin")
+    # This is the independently pinned source-tree digest also present in F01,
+    # not a self-referential digest of this evidence projection. The complete
+    # projection is already covered by expected_contract_sha256.
     return item
 
 
@@ -240,15 +301,16 @@ def _validate_frozen(value: object, pins: dict[str, str]) -> tuple[list[dict], s
         header = _object(header, frozenset({"generator_id", "symbol", "is_package", "source",
                                             "generated", "freezer"}), "frozen_header")
         ident = _label(header["generator_id"])
-        if ident not in _FROZEN or ident in seen:
+        name = _GENERATOR_NAMES.get(ident)
+        if name is None or name in seen:
             _fail("frozen_inventory")
-        seen.append(ident)
-        _label(header["symbol"])
-        if type(header["is_package"]) is not bool:
+        seen.append(name)
+        _, symbol, package = _FREEZE_TASKS[name]
+        if not _same_typed(header["symbol"], symbol) or not _same_typed(header["is_package"], package):
             _fail("frozen_header")
         _record(header["source"])
         generated = _record(header["generated"])
-        if generated["path"] != _FROZEN_OUTPUTS[ident]:
+        if generated["path"] != f"generated-sources/Python/frozen_modules/{ident}.h":
             _fail("frozen_header")
         freezer = _object(header["freezer"], frozenset({"path", "recipe_sha256"}), "frozen_header")
         _path(freezer["path"])
@@ -311,7 +373,22 @@ def _validate_elf(value: object, pins: dict[str, str]) -> dict:
             } else str
         if type(item[name]) is not expected_type:
             _fail("elf")
-    if item["size"] != item["artifact_size"] or item["size"] > MAX_ARTIFACT_BYTES:
+    fixed = {
+        "sha256": item["artifact_sha256"], "size": item["artifact_size"],
+        "elf_class": 64, "byte_order": "little", "machine": "x86_64", "elf_type": "ET_EXEC",
+    }
+    if any(not _same_typed(item[name], expected) for name, expected in fixed.items()):
+        _fail("elf")
+    if item["osabi"] not in (0, 3):
+        _fail("elf")
+    _integer(item["entry_point"], 2**64 - 1, 1, "elf")
+    ph = _integer(item["program_header_count"], 256, 1, "elf")
+    _integer(item["section_header_count"], 4096, reason="elf")
+    loads = _integer(item["load_segment_count"], ph, 1, "elf")
+    _integer(item["executable_load_segment_count"], loads, 1, "elf")
+    tables = _integer(item["dynamic_table_count"], 4096 + 256, reason="elf")
+    entries = _integer(item["dynamic_entry_count"], 4096, 1 if tables else 0, "elf")
+    if not tables and entries:
         _fail("elf")
     if item["has_pt_interp"] or item["has_dt_needed"]:
         _fail("elf")
@@ -322,47 +399,32 @@ def _validate_elf(value: object, pins: dict[str, str]) -> dict:
     return item
 
 
-def _cross_check_f01(raw: bytes, closure: dict, expected_version: str) -> None:
-    if type(raw) is not bytes or not 0 < len(raw) <= 384 * 1024:
-        _fail("installation_descriptor")
-    try:
-        descriptor_top = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs,
-                                    parse_float=_constant, parse_constant=_constant)
-    except (UnicodeError, ValueError, RecursionError):
-        _fail("installation_descriptor")
-    _scan(descriptor_top)
-    if not isinstance(descriptor_top, dict):
-        _fail("installation_descriptor")
-    descriptor = descriptor_top.get("descriptor", descriptor_top)
-    if type(descriptor) is not dict or descriptor.get("installation_version") != expected_version:
-        _fail("installation_descriptor")
+def _cross_check_f01(descriptor: dict, closure: dict) -> None:
+    # Only a complete canonical wrapper that has passed the F01 parser reaches
+    # this comparison. No caller digest is derived from unverified metadata.
     source = closure["source_identity"]
-    if any(descriptor.get(name) != source.get(name) for name in (
-        "source_tree_sha256", "source_archive_sha256",
+    if any(not _same_typed(descriptor["source_provenance"][name], source[name]) for name in (
+        "source_tag", "source_commit", "source_git_tree", "source_tree_sha256", "source_archive_sha256",
     )):
         _fail("cross_field")
+    if not _same_typed(descriptor["patch_set_sha256"], source["patch_set_sha256"]):
+        _fail("cross_field")
     elf = closure["elf"]
-    if descriptor.get("artifact_sha256") != elf["artifact_sha256"] \
-            or descriptor.get("artifact_size") != elf["artifact_size"]:
+    if not _same_typed(descriptor["artifact_sha256"], elf["artifact_sha256"]) \
+            or not _same_typed(descriptor["artifact_size"], elf["artifact_size"]):
         _fail("cross_field")
-    declared_elf = descriptor.get("elf_profile")
-    if type(declared_elf) is not dict or any(declared_elf.get(name) != elf.get(name) for name in _ELF_FIELDS):
+    if not _same_typed(descriptor["elf_profile"], {name: elf[name] for name in _ELF_FIELDS}):
         _fail("cross_field")
-    declared_headers = {item.get("name"): item for item in descriptor.get("frozen_modules", [])}
+    declared_headers = {item["name"]: item for item in descriptor["frozen_modules"]}
     for header in closure["frozen_headers"]["headers"]:
-        declared = declared_headers.get(header["generator_id"])
-        if type(declared) is not dict:
+        declared = declared_headers[_GENERATOR_NAMES[header["generator_id"]]]
+        if not _same_typed(declared["is_package"], header["is_package"]):
             _fail("cross_field")
         for key in ("source", "generated"):
             actual = header[key]
-            expected = declared.get(key)
-            if type(expected) is not dict or any(expected.get(field) != actual.get(field)
-                                                for field in ("path", "size", "sha256")):
+            if not _same_typed(declared[key], {field: actual[field] for field in ("path", "size", "sha256")}):
                 _fail("cross_field")
-    declared_links = descriptor.get("recipe", {}).get("link_inputs")
-    if type(declared_links) is not list:
-        _fail("cross_field")
-    declared_paths = {record.get("path") for record in declared_links if type(record) is dict}
+    declared_paths = {record["path"] for record in descriptor["recipe"]["link_inputs"]}
     if any(record["path"] not in declared_paths for name in (
         "objects", "archives", "crt_objects", "libc_objects", "libm_objects",
     ) for record in closure["link_closure"][name]):
@@ -395,6 +457,8 @@ def parse_static_python_build_closure(
     expected_toolchain_manifest_sha256: str, expected_frozen_inventory_sha256: str,
     expected_link_manifest_sha256: str, expected_artifact_sha256: str,
     expected_installation_version: str, installation_descriptor_raw: bytes,
+    expected_installation_contract_sha256: str, expected_installation_descriptor_sha256: str,
+    expected_installation_frozen_inventory_sha256: str, expected_main_header_sha256: str,
 ) -> StaticPythonBuildClosure:
     """Validate one canonical closure and compare it with an F01 descriptor.
 
@@ -405,6 +469,9 @@ def parse_static_python_build_closure(
     try:
         if type(raw) is not bytes or not 0 < len(raw) <= MAX_BUILD_CLOSURE_BYTES:
             _fail("raw")
+        if (type(installation_descriptor_raw) is not bytes
+                or not 0 < len(installation_descriptor_raw) <= MAX_INSTALLATION_CONTRACT_BYTES):
+            _fail("installation_descriptor")
         if type(expected_installation_version) is not str or not _LABEL.fullmatch(expected_installation_version):
             _fail("pin")
         pins = {
@@ -414,6 +481,10 @@ def parse_static_python_build_closure(
             "expected_frozen_inventory_sha256": expected_frozen_inventory_sha256,
             "expected_link_manifest_sha256": expected_link_manifest_sha256,
             "expected_artifact_sha256": expected_artifact_sha256,
+            "expected_installation_contract_sha256": expected_installation_contract_sha256,
+            "expected_installation_descriptor_sha256": expected_installation_descriptor_sha256,
+            "expected_installation_frozen_inventory_sha256": expected_installation_frozen_inventory_sha256,
+            "expected_main_header_sha256": expected_main_header_sha256,
         }
         for name in _PIN_FIELDS:
             _sha(pins[name], "pin")
@@ -440,7 +511,16 @@ def parse_static_python_build_closure(
         claims = _object(payload["claims"], frozenset(_CLAIMS), "claims")
         if any(value is not False for value in claims.values()):
             _fail("claims")
-        _cross_check_f01(installation_descriptor_raw, payload, expected_installation_version)
+        installation = parse_static_python_rsi_installation_descriptor(
+            installation_descriptor_raw,
+            expected_contract_sha256=expected_installation_contract_sha256,
+            expected_descriptor_sha256=expected_installation_descriptor_sha256,
+            expected_installation_version=expected_installation_version,
+            expected_artifact_sha256=expected_artifact_sha256,
+            expected_frozen_inventory_sha256=expected_installation_frozen_inventory_sha256,
+            expected_main_header_sha256=expected_main_header_sha256,
+        )
+        _cross_check_f01(installation.to_dict()["descriptor"], payload)
         canonical = raw
         return StaticPythonBuildClosure(
             canonical, expected_contract_sha256, pins["expected_source_tree_sha256"],
@@ -450,6 +530,8 @@ def parse_static_python_build_closure(
         )
     except _Refusal as exc:
         reason = exc.reason
+    except StaticPythonRSIInstallationError:
+        reason = "installation_descriptor"
     except (UnicodeError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
         reason = "json"
     raise StaticPythonBuildClosureError(reason)

@@ -969,6 +969,7 @@ from .rsi_python_publication import (
     run_rsi_python_bundle_publication_for_active_flow,
 )
 from .rsi_regression_campaign import DurableRegressionCampaign
+from .rsi_replay_gateway import RetainedProducerReplayGateway, RetainedProducerReplaySource
 from .rsi_store import (
     EpisodeState,
     NativeEpisodeClaim,
@@ -1550,6 +1551,8 @@ __all__ = [
     "RemoteSubmitRequest",
     "RemoteSyncRequest",
     "RequestAdmission",
+    "RetainedProducerReplayGateway",
+    "RetainedProducerReplaySource",
     "RunFingerprint",
     "RunState",
     "RuntimeAgentAdapter",

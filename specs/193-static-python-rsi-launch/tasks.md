@@ -84,6 +84,11 @@ installation/runtime stage.
 - [x] F02b Implement the pure caller-byte DTO/comparator and focused synthetic
   tests. It performs no filesystem, process, toolchain, freezer, linker or ELF
   operation and does not establish a completed build.
+- [x] F02d Correct composition with a complete canonical F01 wrapper and four
+  mandatory independent pins; align Git/tree hash domains, reviewed freeze
+  identity and strict ELF/type/error semantics. Verify 210 F02 cases plus the
+  disjoint F01/F03/F04/F05/helper suites. Final-source CI/audit remains pending;
+  real F02c build acceptance is unchanged.
 - [x] F03a Specify and implement the provider-free startup/loader-negative wire,
   with baseline and refusal fixtures, owner metadata, lifecycle checks, pin
   binding and false-claim enforcement.
@@ -99,6 +104,10 @@ installation/runtime stage.
   startup, input/result, terminal, budget and publication-intent pins.
 - [x] F05b Enforce terminal/cleanup/publication state, request count and deadline
   consistency with all-false claims; add focused side-effect/refusal tests.
+- [x] F05d Correct F03 reviewed marker/argv/entrypoint and lifecycle agreement,
+  F04 strict size types, and F05 strict budget/time types, integer precision,
+  independent state pins and unknown-cleanup publication gate. Retain focused
+  and disjoint compatibility evidence; this does not close live F03/F04/F05.
 - [ ] F05c Complete final-source CI plus independent raw/source/tree audit for
   this continuation after PR56.
 - [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,

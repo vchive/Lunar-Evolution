@@ -1,5 +1,58 @@
 # Feature 193 validation
 
+## F02 complete-F01 composition correction — 2026-10-12
+
+The previous F02 fixture used a partial descriptor and missed incompatibility
+with the actual F01 contract. F02 now requires the complete canonical F01 wrapper
+and four separately supplied pins, delegates its validation to the unchanged F01
+parser, and compares validated provenance with exact built-in types. Reviewed
+40-character Git object IDs, source-tree hash domain, nine freeze identities and
+strict ELF profile fields now agree across both contracts. Re-signed malformed
+nested descriptions, boolean/integer substitutions and noncanonical F01 input
+refuse with fixed errors. Public canonical hashing retains integer precision,
+bounds and context-free failures without caller-subclass callbacks.
+
+Root Python3.11.15 final combined verification passes 485 distinct cases:
+F01 189, F02 210, F03/F04/F05 79, and high-FD helper 7. Actual JUnit identities
+are unique, with zero failures/errors/skips. Whole-source Ruff, compileall and
+diff-check pass; fresh external basetemp avoids the old pytest cleanup warnings.
+The isolated worktree retains `final-integrated.xml` and create-only
+`final-integrated-completion.json` under ignored
+`.lunar-evolution/reports/contract-validation-20261012/`. XML SHA256 is
+`33184602b8a25b8ba0f0b287c8f5df7596c374839de82a1fc0ab6d8dbb7ef2d8`.
+The implementation agent verifies the same F01/F02 cases; those passes are not
+added to root's unique count. Earlier baseline and first-failure evidence remains retained.
+
+The merged dependency includes PR58's test-only high-FD repair. The superseded
+PR59 run38198708634 was cancelled to release queued jobs; it is not passing
+evidence. The final committed source requires a new complete CI and independent
+raw/source/tree audit. No old Feature189/193 assets, F01 parser, native wire or
+production caller changed. These are detached metadata comparisons; F02c and
+all real installation/runtime/solver acceptance gates remain open and
+`production_admission=false`.
+
+## Cross-contract validation corrections — 2026-10-12
+
+F03 fixed native argv/marker/entrypoint and executable/lifecycle agreement,
+F04 exact integer sizes, and F05 exact count/time types, precision, independently
+pinned state and unknown cleanup gates pass 79 focused cases. Three initial
+test-oracle mismatches were retained and corrected without validation changes.
+Adding 280 disjoint existing build/source/report cases gives 359 unique passes,
+zero failures/errors/skips on Python3.13.12. Independent review replays the same
+79 cases with no blocker. Whole-source Ruff, compileall and diff-check pass.
+Completion metadata and XML are retained create-only in ignored
+`.lunar-evolution/reports/contract-validation-20261012/`. JUnit SHA256:
+`0dcebcfd1f18f3c2dd1f1874404aeb4f54fc91af04b6d314ceb6ced5f13909c0`.
+The compatibility run emitted pre-existing macOS pytest cleanup warnings.
+
+F05 callers must now supply three separately retained state pins. There are no
+existing production callers of this unpublished detached parser. F03 historical
+synthetic `--fixture`/`LUNAR_RSI_INPUT`/alternate-entrypoint descriptions now
+refuse instead of diverging from the reviewed C launcher. Old Feature189/193
+assets/profile/native intent wire are unchanged. No real sealed runtime,
+installation, input consumption or publication is accepted. The final committed
+source still needs its own CI and independent raw/source/tree audit.
+
 Status: stage 1 local verification complete; final-source CI/audit pending. All cases use local
 inert fixtures, fake C APIs or fake Python runtime facts. No CPython/toolchain
 acquisition/build, static image launch, input consumption or producer admission

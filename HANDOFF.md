@@ -1,5 +1,66 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 F02 composition correction and current release boundary
+
+F02 now delegates a complete canonical F01 installation wrapper to the existing
+F01 parser using four additional mandatory, independently retained comparison
+pins. It no longer accepts partial descriptors or derives authority from their
+own fields. Source Git IDs are 40-character object IDs, source-tree SHA256 keeps
+its independent tree hash domain, and all nine generator IDs, symbols, package
+bits and generated paths match the reviewed F01 freeze tasks. ELF fields retain
+the original profile's exact types, fixed target, count relationships and artifact
+digest. Malformed nested records, boolean/integer substitutions and noncanonical
+F01 input produce fixed errors without parser cause/context. No production caller
+of the unpublished F02 parser needs migration.
+
+Final Python3.11.15 verification passes 485 distinct cases: F01 189, F02 210,
+F03/F04/F05 79 and high-FD helper 7. Zero failures, errors or skips; whole-source
+Ruff, compileall and diff-check pass. XML and source hashes are retained in
+`.lunar-evolution/reports/contract-validation-20261012/final-integrated-completion.json`
+in the isolated worktree. Earlier test/source evidence remains unchanged and is
+not counted again. The final PR59 source still requires its own CI and raw/source/
+tree audit.
+
+The independent parallel-CI collector also now verifies ordered multiple Git
+parents. Its 20 local regression cases include refusal of a replaced replay helper
+before executing it; root independently replays the same cases. New PR52 source
+inventory/replay covers 14,607 collected tests and all 15 roles, with
+`ci_approval=false`. Original tools and failed/cancelled runs are retained.
+The updated tools/configuration are under the main workspace's ignored
+`.lunar-evolution/reports/parallel-source-ordered-parents-20261012/`.
+
+Controller-level durable Python admission binding, publication stage/commit and
+read-only retained-file recovery are already implemented. An independent PR57
+audit passes 362 related fixture cases; do not create a second binding interface.
+Verified main at this checkpoint is PR47 merge `15f762b`; PR48–57 dependency CI/
+audits and PR59 integration remain pending. Historical entries below describe
+their own checkpoints. Real installation/build, sealed startup, authoritative
+input/result, live handoff and local solver/production CLI acceptance remain open.
+`production_admission=false`; no real CPython/toolchain, campaign, WebAgent or
+remote evaluator ran. P2 remains deferred.
+
+## 2026-10-12 static Python contract validation corrections
+
+F03 now follows the unchanged reviewed launcher exactly: argc3, the native
+`--lunar-rsi-input-v1` marker, matching digest, and fixed
+`_lunar_static_main._rsi_launch` entrypoint. Owner path/execute bits, ordered
+lifecycle and baseline/refusal exit codes must agree. F04 size fields reject
+booleans even when they compare equal to integer pins. F05 rejects boolean/text
+counts and times, preserves integer precision and fractional deadlines, requires
+independent terminal/cleanup/publication state pins and blocks prepared publication
+when cleanup is unknown. Public errors are raised outside parser handlers so they
+do not retain parser exception context. No source/profile/native wire was changed.
+
+Python3.13.12 passes 79 focused and 280 disjoint source/report/build compatibility
+cases, 359 unique passes with zero failures/errors/skips. Independent review
+replays the same 79 cases; it is not an additional unique count. Whole src/tests/tools
+Ruff, compileall and diff-check pass. Three initial test-oracle mismatches were
+corrected without relaxing validation and retained separately. macOS pytest's
+pre-existing temporary-directory cleanup warnings remain. Evidence is under
+ignored `.lunar-evolution/reports/contract-validation-20261012/` in the isolated
+worktree. Final-source CI/audit remains required. This corrects detached
+contracts only; real installation/build/startup/input/publication acceptance
+and production_admission remain false.
 ## 2026-10-12 PR52 integration: high-descriptor fixture repair
 
 The test-only repair from PR58 commit `1c7dca4` is applied here before the

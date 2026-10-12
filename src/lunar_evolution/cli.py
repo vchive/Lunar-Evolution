@@ -1165,6 +1165,27 @@ def build_parser() -> argparse.ArgumentParser:
     _add_home(rsi_run_parser)
     _add_json(rsi_run_parser)
 
+    rsi_resume_parser = rsi_commands.add_parser(
+        "resume", help="resume a durable RSI run without launching an unknown episode"
+    )
+    rsi_resume_parser.add_argument("run_id", help="durable RSI run ID")
+    rsi_resume_parser.add_argument("--mode", choices=("drs", "brs"), help="assert the persisted mode")
+    rsi_resume_parser.add_argument(
+        "--solver", choices=("mock", "native_population", "openevolve", "shinka"),
+        help="assert the persisted solver identity",
+    )
+    rsi_resume_parser.add_argument(
+        "--worker-status",
+        choices=("completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"),
+        default="completed",
+        help="fixture terminal status used to reconstruct the persisted solver identity",
+    )
+    rsi_resume_parser.add_argument("--contract-sha256", help="assert the persisted contract pin")
+    rsi_resume_parser.add_argument("--evaluator-sha256", help="assert the persisted evaluator pin")
+    rsi_resume_parser.add_argument("--environment-sha256", help="assert the persisted environment pin")
+    _add_home(rsi_resume_parser)
+    _add_json(rsi_resume_parser)
+
     rsi_inspect_parser = rsi_commands.add_parser("inspect", help="inspect one RSI run or episode ledger")
     rsi_inspect_parser.add_argument("logical_id")
     rsi_inspect_parser.add_argument("--callback-id", help="inspect a callback checkpoint in this run")
@@ -1177,6 +1198,21 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_usage_parser.add_argument("--episode-id", help="limit receipts to one episode")
     rsi_usage_parser.add_argument("--adapter-stage", help="limit receipts to one adapter stage")
     _add_json(rsi_usage_parser)
+
+    rsi_replay_parser = rsi_commands.add_parser(
+        "replay", help="compare pinned local producer receipts without execution or initialization",
+    )
+    rsi_replay_parser.add_argument("producer_root", type=Path, help="retained local producer export")
+    rsi_replay_parser.add_argument("--contract", type=Path, required=True)
+    rsi_replay_parser.add_argument("--request", type=Path, required=True)
+    rsi_replay_parser.add_argument("--memory-snapshot", type=Path, required=True)
+    rsi_replay_parser.add_argument("--receipts", type=Path, required=True, help="retained native receipt bundle JSON")
+    rsi_replay_parser.add_argument("--solver", choices=("openevolve", "shinka"), required=True)
+    for pin in ("producer-fingerprint", "contract-sha256", "request-sha256", "memory-sha256",
+                "receipts-sha256", "envelope-sha256", "materials-sha256"):
+        rsi_replay_parser.add_argument("--" + pin, required=True, help="independently retained byte digest")
+    _add_home(rsi_replay_parser)
+    _add_json(rsi_replay_parser)
 
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
@@ -5417,6 +5453,15 @@ def _rsi_callback_json(path: Path, *, maximum: int, name: str) -> dict[str, obje
     return value
 
 
+def _rsi_fixture_target_judge(mode: str):
+    """Return the stable target judge shared by fresh and resumed fixture runs."""
+    def target_judge(execution):
+        if mode == "drs" and execution.episode.episode_kind == "target" and execution.episode.wave == 0:
+            return False, "local fixture capability gap"
+        return execution.passed, "local fixture target accepted" if execution.passed else execution.verifier.diagnosis
+    return target_judge
+
+
 def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, object]:
     """Run only the deterministic local RSI fixture from the CLI.
 
@@ -5444,13 +5489,7 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
     ledger = RSILedger(config.home / "rsi.sqlite3")
     gateway = fixture_solver_gateway(args.solver, terminal_status=args.worker_status)
 
-    judge_mode = args.mode
-
-    def target_judge(execution):
-        # Make the successful local fixture exercise the learning gate once before transfer.
-        if judge_mode == "drs" and execution.episode.episode_kind == "target" and execution.episode.wave == 0:
-            return False, "local fixture capability gap"
-        return execution.passed, "local fixture target accepted" if execution.passed else execution.verifier.diagnosis
+    target_judge = _rsi_fixture_target_judge(args.mode)
 
     controller = RSILearningController(
         gateway,
@@ -5518,6 +5557,66 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
         "run_id": result.run_id,
         "mode": args.mode,
         "status": result.status,
+        "solver_execution": "provider_free_fixture",
+        "production_admission": False,
+        "producer_replay_required": args.solver in {"openevolve", "shinka"},
+        **({"warning": "rsi_producer_replay_required"} if args.solver in {"openevolve", "shinka"} else {}),
+        "target_attempts": len(result.target_attempts),
+        "practice_episodes": len(result.practice_episodes),
+        "memory_snapshot_sha256": result.memory_snapshot.digest(),
+        "recovery_eligibility": "reconcile_required" if result.status == "unknown" else "terminal",
+        "ledger": str(config.home / "rsi.sqlite3"),
+    }
+
+
+def _rsi_resume_payload(config: Config, args: argparse.Namespace) -> dict[str, object]:
+    """Resume one persisted RSI controller run using only its durable plan and pins.
+
+    The command deliberately does not accept a new contract, budget, or worker command.  Those
+    values are part of the append-only run record; optional CLI values are assertions and are
+    checked by ``RSILearningController.resume`` before it can dispatch a new episode.  This makes
+    the public resume path useful for interrupted provider-free runs while preserving the same
+    fingerprint and unknown-reconcile gates used by the Python API.
+    """
+    ledger = RSILedger(config.home / "rsi.sqlite3")
+    record = ledger.get(args.run_id)
+    if record is None:
+        raise ValueError("rsi_run_missing")
+    payload = record.payload
+    required = ("mode", "contract_sha256", "evaluator_sha256", "environment_sha256", "solver_id")
+    if any(key not in payload for key in required):
+        raise ValueError("rsi_run_record_invalid")
+    observed = {
+        key: value for key, value in {
+            "mode": args.mode,
+            "contract_sha256": args.contract_sha256,
+            "evaluator_sha256": args.evaluator_sha256,
+            "environment_sha256": args.environment_sha256,
+            "solver_id": args.solver,
+        }.items() if value is not None
+    }
+    solver_id = payload["solver_id"]
+    if type(solver_id) is not str:
+        raise ValueError("rsi_run_record_invalid")
+    gateway = fixture_solver_gateway(solver_id, terminal_status=args.worker_status)
+    target_judge = _rsi_fixture_target_judge(payload["mode"])
+
+    controller = RSILearningController(
+        gateway,
+        curriculum=DeterministicCurriculum(),
+        target_judge=target_judge,
+        ledger=ledger,
+    )
+    result = controller.resume(args.run_id, observed_fingerprints=observed or None)
+    return {
+        "run_id": result.run_id,
+        "mode": payload["mode"],
+        "status": result.status,
+        "resumed": True,
+        "solver_execution": "provider_free_fixture",
+        "production_admission": False,
+        "producer_replay_required": payload["solver_id"] in {"openevolve", "shinka"},
+        **({"warning": "rsi_producer_replay_required"} if payload["solver_id"] in {"openevolve", "shinka"} else {}),
         "target_attempts": len(result.target_attempts),
         "practice_episodes": len(result.practice_episodes),
         "memory_snapshot_sha256": result.memory_snapshot.digest(),
@@ -6265,6 +6364,21 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 adapter_stage=args.adapter_stage,
             ), args.json)
             return 0
+        if args.command == "rsi" and args.rsi_command == "replay":
+            from .rsi_producer_replay import inspect_producer_replay
+
+            # Detached comparisons precede all home, Store, SQLite and worker initialization.
+            payload = inspect_producer_replay(
+                producer_root=args.producer_root, contract_path=args.contract,
+                request_path=args.request, memory_path=args.memory_snapshot,
+                receipts_path=args.receipts, producer_id=args.solver,
+                producer_fingerprint=args.producer_fingerprint, contract_sha256=args.contract_sha256,
+                request_sha256=args.request_sha256, memory_sha256=args.memory_sha256,
+                receipts_sha256=args.receipts_sha256, envelope_sha256=args.envelope_sha256,
+                materials_sha256=args.materials_sha256,
+            )
+            _emit(payload, args.json)
+            return 0 if payload["status"] == "completed" else 1
         config = _config(args)
         if args.command == "init":
             _emit({"home": str(config.home), "status": "initialized"}, args.json)
@@ -6275,6 +6389,10 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 payload = _rsi_run_payload(config, args)
                 _emit(payload, args.json)
                 return 0 if payload["status"] in {"completed", "reconciled"} else 1
+            if args.rsi_command == "resume":
+                payload = _rsi_resume_payload(config, args)
+                _emit(payload, args.json)
+                return 0 if payload["status"] in {"completed", "reconciled", "running"} else 1
             if args.rsi_command == "inspect":
                 if args.callback_id is not None:
                     checkpoint = DurableCallbackJournal(ledger).inspect(args.logical_id, args.callback_id)

@@ -11,7 +11,7 @@
 - [x] T160-09 增加本地 mock/native/OpenEvolve/Shinka provider-free 集成 fixture 和
   target/practice timeout、abandoned、cancelled 状态矩阵；BRS 遇到不确定 worker 会保留
   wave evidence 并阻止合并；全链路 DRS fixture 回归通过。
-- [x] T160-10 增加显式本地 CLI/诊断/恢复入口（`rsi run|inspect|reconcile`）；controller 恢复见 T160-13，真实 solver adapter 和 LLM curriculum 不在本轮验收范围。
+- [x] T160-10 增加显式本地 CLI/诊断/恢复入口（`rsi run|inspect|reconcile|resume`）；`rsi resume` 只读取持久化 plan/pins，重新计算 controller fingerprint，并在 unknown episode 上 fail-closed；controller 恢复见 T160-13，真实 solver adapter 和 LLM curriculum 不在本轮验收范围。
 - [x] T160-11 将 candidate source、dependency、actor/solver fingerprint 和 bounded public action/tool/observation trace 纳入 episode evidence；MemoryItem 增加 condition/action/observed-result/applicability 因果投影。
 - [x] T160-12 增加 provider-free clean-room verifier MVP：候选源/依赖在隔离 workspace 重开，重算 evaluator/source/task 指纹，检测 workspace 修改并对超时、异常和不可信证据 fail-closed；真实 Actor environment runner 和官方 evaluator 仍待接入。
 - [ ] T160-13 增加 durable controller-level resume、unknown reconcile gate 和 diversity/failure-boundary curriculum policy。

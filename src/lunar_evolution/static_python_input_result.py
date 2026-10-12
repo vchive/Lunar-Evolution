@@ -108,8 +108,8 @@ def _canonical(value: object) -> bytes:
     try:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                           allow_nan=False).encode("utf-8")
-    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError) as exc:
-        raise StaticPythonInputResultError("canonical") from exc
+    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError):
+        _fail("canonical")
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +181,8 @@ def parse_static_python_input_result(
                 _fail("cross_pin")
         if payload["input_report_schema"] != INPUT_REPORT_SCHEMA:
             _fail("report_schema")
+        _integer(payload["request_size"], "input_size")
+        _integer(payload["memory_size"], "input_size")
         if payload["request_size"] != expected_request_size or payload["memory_size"] != expected_memory_size:
             _fail("input_size")
         if type(payload["computed"]) is not int or payload["computed"] != 285:
@@ -196,10 +198,11 @@ def parse_static_python_input_result(
             payload["request_size"], payload["memory_size"], payload["computed"],
         )
     except _Refusal as exc:
-        raise StaticPythonInputResultError(exc.reason) from None
+        reason = exc.reason
     except (UnicodeError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
         # Do not retain malformed raw bytes or parser locals in the public error.
-        raise StaticPythonInputResultError("json") from None
+        reason = "json"
+    raise StaticPythonInputResultError(reason) from None
 
 
 __all__ = [

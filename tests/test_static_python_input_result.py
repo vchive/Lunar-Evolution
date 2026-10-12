@@ -115,4 +115,23 @@ def test_error_does_not_retain_malformed_input():
         _parse(copy.deepcopy(payload), pins)
     assert str(caught.value) == "static_python_input_result_claims"
     assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
 
+
+@pytest.mark.parametrize("side", ["request", "memory"])
+@pytest.mark.parametrize("value", [True, False, 1.0, "1"])
+def test_size_must_be_an_exact_integer_even_when_equal_to_pin(side, value):
+    payload, pins = _vector()
+    payload[side + "_size"] = value
+    pins["expected_" + side + "_size"] = 1
+    reason = "json" if type(value) is float else "input_size"
+    with pytest.raises(contract.StaticPythonInputResultError, match="_" + reason + "$"):
+        _parse(payload, pins)
+
+
+def test_json_failure_has_no_retained_decode_context():
+    _, pins = _vector()
+    with pytest.raises(contract.StaticPythonInputResultError) as caught:
+        contract.parse_static_python_input_result(b'{"private":"never",', **pins)
+    assert str(caught.value) == "static_python_input_result_json"
+    assert caught.value.__cause__ is caught.value.__context__ is None

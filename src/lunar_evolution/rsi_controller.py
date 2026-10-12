@@ -2745,6 +2745,18 @@ class RSILearningController:
         rather than substituting the controller's current memory after later practice commits.
         This path never invokes ``gateway.run`` or appends controller/episode evidence.
         """
+        if getattr(self.gateway, "requires_replay_validation", False) is True:
+            validate = getattr(self.gateway, "validate_replay", None)
+            if not callable(validate):
+                raise RSILearningError("rsi_replay_validation_required")
+            try:
+                verified = validate(request, result)
+            except RSILearningError:
+                raise
+            except Exception:  # noqa: BLE001 - callback details never enter durable errors
+                raise RSILearningError("rsi_replay_validation_failed") from None
+            if not isinstance(verified, SolverResult) or verified != result:
+                raise RSILearningError("rsi_replay_result_conflict")
         if getattr(self.gateway, "requires_memory_snapshot", False) is not True:
             return
         validate = getattr(self.gateway, "validate_replay", None)
@@ -3573,14 +3585,16 @@ class RSILearningController:
             validated_native_executions: set[str] = set()
             for raw_execution in terminal_executions:
                 execution = self._deserialize_execution(raw_execution)
-                if getattr(self.gateway, "requires_memory_snapshot", False) is True:
+                if (getattr(self.gateway, "requires_memory_snapshot", False) is True
+                        or getattr(self.gateway, "requires_replay_validation", False) is True):
                     wire_digest = _record_digest(raw_execution)
                     if wire_digest not in validated_native_executions:
                         self._validate_native_cached_execution(execution)
                         validated_native_executions.add(wire_digest)
                     self._validate_producer_checkpoint(run_id, producer_state)
                 self._usage_replay_marker(execution.episode, execution.request)
-            if getattr(self.gateway, "requires_memory_snapshot", False) is True and checkpoint:
+            if (getattr(self.gateway, "requires_memory_snapshot", False) is True
+                    or getattr(self.gateway, "requires_replay_validation", False) is True) and checkpoint:
                 # The public return comes from the run payload. Check it as well when a
                 # checkpoint is present so an unrelated cached result cannot bypass recovery.
                 # Identical checkpoint and payload wires share one read-only validation.
@@ -3674,7 +3688,8 @@ class RSILearningController:
                                            else "rsi_resume_recovery_required")
             if head.logical_id not in state["intents"]:
                 raise RSILearningError("rsi_resume_episode_drift")
-            if getattr(self.gateway, "requires_memory_snapshot", False) is True:
+            if (getattr(self.gateway, "requires_memory_snapshot", False) is True
+                    or getattr(self.gateway, "requires_replay_validation", False) is True):
                 saved = self.ledger.episode_result(head.logical_id)
                 if saved is not None and saved[1].status != "unknown":
                     self._validate_native_replay(PracticeEpisode.from_dict(head.payload), *saved)

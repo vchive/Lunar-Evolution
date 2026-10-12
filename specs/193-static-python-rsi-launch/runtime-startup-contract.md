@@ -12,6 +12,14 @@ marker shape, a fixed startup observation, loader-negative fields, executable
 device/inode/mode metadata, bounded lifecycle events, and capability claims.
 Every claim is required to remain `false` in this stage.
 
+The OS argv must match the reviewed launcher: exactly the relative executable
+path, `--lunar-rsi-input-v1`, and the marker's 64 lowercase hexadecimal digits.
+The fixed entry point is `_lunar_static_main._rsi_launch`; no alternate program,
+module or callable is permitted. The executable record must name argv[0] and
+have an executable permission bit. Baseline exits with code zero; loader refusal
+has a nonzero code. The two lifecycle events must be `started` followed by the
+case's terminal event. These are consistency gates, not process observations.
+
 Two synthetic cases are supported:
 
 - `baseline` requires an `exited` terminal, no `PT_INTERP`, no `DT_NEEDED`, and
@@ -24,4 +32,3 @@ absolute or traversal paths, duplicate/unsorted dependencies, invalid owner
 integers, pin drift, lifecycle mismatch, and any claim set to `true`. Returned
 data is an immutable DTO containing the original canonical bytes. This slice is
 not evidence that a sealed image was built or that either fixture was executed.
-
