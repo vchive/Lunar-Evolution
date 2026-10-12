@@ -16,6 +16,7 @@ from lunar_evolution.rsi_replay_gateway import (
     RetainedProducerReplayGateway,
     RetainedProducerReplaySource,
 )
+from lunar_evolution.rsi_store import RSILedger
 
 HEX = "a" * 64
 
@@ -182,3 +183,44 @@ def test_actual_request_drift_refuses_before_missing_receipts(tmp_path: Path) ->
     changed = replace(_request(), budget=(("max_solver_invocations", 2),))
     with pytest.raises(RSILearningError, match="rsi_replay_request_mismatch"):
         gateway.run(changed)
+
+
+class ReadOnlyReplayFixture:
+    requires_replay_validation = True
+
+    def __init__(self):
+        self.runs = 0
+        self.replays = 0
+        self.drift = False
+
+    def rsi_fingerprint_config(self):
+        return {"fixture": "controller-replay-validation"}
+
+    def run(self, request):
+        self.runs += 1
+        return _result(request)
+
+    def validate_replay(self, request, result):
+        self.replays += 1
+        if self.drift:
+            raise RSILearningError("fixture_replay_drift")
+        return result
+
+
+def test_terminal_controller_resume_revalidates_without_dispatch(tmp_path: Path) -> None:
+    ledger = RSILedger(tmp_path / "ledger.sqlite")
+    gateway = ReadOnlyReplayFixture()
+    controller = RSILearningController(gateway, ledger=ledger)
+    original = controller.run_drs(
+        run_id="replay-run", contract_sha256=HEX, evaluator_sha256=HEX,
+        environment_sha256=HEX, solver_id="openevolve", max_practice_rounds=0,
+        max_target_attempts=1,
+    )
+    head = ledger.get_run("replay-run")
+    assert RSILearningController(gateway, ledger=ledger).resume("replay-run") == original
+    assert gateway.runs == 1 and gateway.replays == 1
+    assert ledger.get_run("replay-run") == head
+    gateway.drift = True
+    with pytest.raises(RSILearningError, match="fixture_replay_drift"):
+        controller.resume("replay-run")
+    assert gateway.runs == 1 and ledger.get_run("replay-run") == head
