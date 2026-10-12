@@ -8,11 +8,37 @@ PR23 at `3a7782cb02b5e504bc9c3186babadb5daa70eaa1`, with the tested tree
 `f694145860ed5033c8d0fcfaaf0f03d853c24f89`. This supersedes the old pending
 acceptance text below, retained as the pre-CI local checkpoint. It proves the bounded
 original Linux owner base under the stated trust model; it does not establish actual
-Feature189 static CPython runtime composition, loader closure, target private-anchor
-census, production admission or a solver campaign.
+Feature189 static CPython runtime composition, loader closure, or final-source Linux
+acceptance of the target private-anchor census, production admission or a solver
+campaign.
 
 Local focused tests and portable static checks have run. Dedicated inventory133
 is frozen, but no actual Linux execution or final-source acceptance is established. Portable unsupported/refusal checks cannot establish Linux ownership.
+
+## Original-object and FD-generation boundary record
+
+The implementation freezes the internal owner API at the original acquisition
+boundary: `_OWNERS` retains the exact public DTO object and its private owner,
+`_validate_original_linux_executable` reobserves the original anchor and borrowed
+descriptor, and `_validate_original_linux_executable_pair` binds both original
+factory handles for the producing context. An acquisition that has not captured
+its first identity may be released once only under the trusted controller's
+no-private-rebind assumption; a later `fstat` is not promoted to original
+ownership. If that assumption is unavailable, cleanup records fixed uncertainty
+and a possible leak rather than closing a reused number. Borrowed descriptors use
+`F_DUPFD_CLOEXEC` with minimum number 3, while legacy helpers retain positive
+infinity deadline compatibility. These are controller-side ownership rules, not
+FD-generation proofs: duplicate aliases of one still-held open-file description,
+cross-restart descriptor continuity, concurrent hostile rebinding, and kernel
+atomicity remain outside the claim.
+
+The provider-free regression in `tests/test_native_executable_owner.py` checks
+that each private anchor is absent from the native v2 reserved-FD census and both
+native `Popen` pass-FD sets. The inert static target in
+`tests/test_linux_executable_owner.py` performs the target-side `/proc/self/fd`
+census and expects only the borrowed executable role. Together these tests retain
+the existing v2 wire format, keep-list, guardian handoff, and original process
+recovery paths; they do not replace the dedicated Linux CI acceptance gate.
 
 ## Live object binding
 

@@ -8,15 +8,18 @@ passed Ubuntu3.11/3.12/3.13 run `37802795693` and merged through PR23 at
 `f694145860ed5033c8d0fcfaaf0f03d853c24f89`. Feature189 already records this
 accepted prerequisite. Historical pending statements below refer to the earlier
 implementation checkpoint, not current acceptance. Real Feature189 CPython runtime
-composition and target private-anchor census remain separate open work.
+composition remains separate open work; provider-free private-anchor census
+coverage is recorded below and does not stand in for Linux acceptance.
 
 - [x] Record root's188 final exact-source Linux audit and main merge before code.
   Sourcec5973a7/tree61d6f966, run37747759152, root raw report6260a06a,
   merge4f8576d with the same tree.
-- [ ] Record190 original-object/FD-generation boundary, frozen unpublished
+- [x] Record190 original-object/FD-generation boundary, frozen unpublished
   acquisition first-release rule under trusted no-private-rebind, possible
   uncertainty/leak, borrowed F_DUPFD_CLOEXEC minimum3, legacy +inf compatibility
-  and the root-frozen internal API names before implementation.
+  and the root-frozen internal API names before implementation. See the boundary
+  record in `validation.md`; this records the limit rather than claiming FD
+  generation or cross-restart ownership.
 - [x] Implement private executable anchor/borrowed owner while retaining public
   DTO shape/helper signature/128MiB ceiling, source pins and shebang support.
 - [x] Implement original live handle validation with independent sealed `pread`
@@ -31,8 +34,11 @@ composition and target private-anchor census remain separate open work.
   `popen_factory`; preserve monkeypatch seams and existing receipt/error schemas.
 - [x] Add actual Linux ownership/cleanup/fault/deadline/forced-mutation tests and
   success shebang/static-native fixtures; no189 image or provider execution.
-- [ ] Verify private anchors never enter native pass-FD sets or target FD census;
+- [x] Verify private anchors never enter native pass-FD sets or target FD census;
   keep native v2 formats/keep-list, guardian and original process recovery intact.
+  Provider-free coverage is in `tests/test_native_executable_owner.py` (v2
+  reserved/pass-FD assertions) and `tests/test_linux_executable_owner.py`
+  (inert target census). Linux CI remains the acceptance gate.
 - [x] Run focused tests, ruff, compileall and diff check after implementation;
   retain every first failure and exact XML separately from repaired runs.
 - [x] Freeze actual case identities/counts; add dedicated no-skip Linux owner
