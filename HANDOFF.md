@@ -1,5 +1,85 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 PR52 integration: high-descriptor fixture repair
+
+The test-only repair from PR58 commit `1c7dca4` is applied here before the
+PR52–57 dependency chain. Four native test fixtures now share one
+`DefaultSelector` readiness helper with the original supplied timeout; the
+helper neither reads nor closes caller pipes. Seven regression cases cover
+high FD numbers, EOF, timeout forwarding and selector cleanup. Product/native
+sources, ownership gates and deadline policy are unchanged.
+
+Original failed current-1 raw artifacts remain retained under ignored
+`current-shard-ci-repair-20261012`. The separate PR53 worker timeout is not
+claimed fixed. This integrated source requires fresh final-source CI and raw/
+source/tree audit; old failed or passing runs cannot approve it. PR58 is the
+retained repair source and is superseded by this integration, not an extra
+production capability or a new runtime acceptance. Local integrated-source
+validation passes37 helper/process-ownership cases, Ruff across src/tests/tools,
+compileall and diff checks; no actual producer, solver or evaluator ran.
+
+## 2026-10-12 parallel release regression implementation
+
+Feature194 adds independent focused/current-0/current-1/current-2/history roles
+for each Python3.11/3.12/3.13 version, 15 jobs without dependency edges. Existing
+focused shell checks remain byte-identical; a separate 116-case runner gate is
+added. Current tests are assigned by SHA256(UTF8 file path) modulo3, keeping every
+file's class/parameter nodes together. The runner rechecks selected collection and
+actual JUnit keys, records full/selected inventory and actual source/import/tree
+provenance, and writes role-specific reports. The history role preserves original
+archive/frozen source pins and the sole complete archive retry. Old all/native-e2e
+entry points remain available. New role preflight rejects existing reports;
+summary creation is exclusive, while XML freshness assumes isolated job workspaces.
+
+Root Python3.11 passes116 new plus84 disjoint runner/annotation compatibility cases,
+200 unique passes with zero failures/errors/skips. Independent Python3.13 replay
+passes the same116 with unchanged pins. Full collect-only check confirms14600 nodes
+in444 files partition into4379/5159/5062 nodes with no overlap or omission; it is not
+full execution evidence. Whole-source Ruff/compileall/diff and15role/47focused-XML
+workflow syntax/annotation/provenance checks pass. Original fixture/basetemp failures
+are retained; external /tmp basetemp fixes nested-pytest rootdir without product
+changes. See Feature194 validation for source pins and ignored evidence directories.
+
+This follows local Feature193 commit7c14a40 and starts after PR51 source3ecf2f3;
+each source keeps its final CI/audit obligations. PR52 final-source CI and merge are
+still pending. Verified main at this local checkpoint remains PR45 merge9bfccbfc.
+Measured baseline CI was143.8minutes in its slowest serial lane; the new matrix's
+actual speedup is not yet measured. Runtime/product admission is unchanged and
+production_admission=false. Actual accepted installation/build/runtime, authoritative
+input/result capture, handoff, local solver and CLI/Linux acceptance remain P0/P1;
+P2 services/authentication/multi-host ownership/remote evaluator remain deferred.
+
+## 2026-10-12 fixed two-input RSI report prototype
+
+Feature193 F04 now has a separate uninstalled source prototype and pure comparison
+API. The prototype validates an exact lowercase marker, reads only the existing
+request/memory fixed paths with bounded binary reads, then returns a canonical
+hex report after fixed computation285. It imports nothing, dispatches nothing and
+retains all five capability claims false. The parent comparator checks independent
+caller bytes/marker with strict canonical JSON/type/bound rules and returns only
+digests/sizes. Parser errors expose fixed reasons without retaining parser cause/
+context; evidence must never serialize traceback locals or the raw input report.
+No accepted emitter/profile/frozen inventory, parser or source pin changes.
+
+Root Python3.11 passes219 new focused plus195 disjoint compatibility cases,
+414 unique passes, zero failures/errors/skips. The initial pytest-console tools
+namespace setup error is retained; the corrected python-module invocation passes
+without product fixes. Root source/test hashes are unchanged across the run.
+Independent Python3.13 replay passes the same219 cases with frozen hashes and
+no semantic review blocker. Whole-source Ruff, compileall, diff and YAML/gate
+checks pass. Final-source CI/audit remains required. The219-case retained CI gate is wired;
+see Feature193 `input-read-report.md`, tasks and validation for exact scope.
+This slice starts from PR51 final `3ecf2f3526ed711bf1ff2eeca01c11004cf6cb16`;
+preceding PR46–51 retain their own CI/audit and dependency-order merge obligations.
+Verified main remains PR45 `9bfccbfc5a25db612a59ea27464b9affce40f1f3` at this checkpoint.
+
+Live F04 remains open: two caller-matching byte strings are not original manifest/
+file/launch authority or a solver result. Actual marker-capable installation,
+source/toolchain/static build/sealed runtime, same-attempt bounded capture/
+materialization and terminal/handoff, local solver and production CLI/Linux
+acceptance remain P0/P1 gaps. No real CPython/toolchain or external solver ran;
+`production_admission=false`; P2 stays deferred.
+
 ## 2026-10-12 pure RSI installation-profile input preparation
 
 Feature193 F01 now has a bounded pure preparation API and independently pinned

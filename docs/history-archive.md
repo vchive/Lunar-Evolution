@@ -27,6 +27,25 @@ The entry point runs three separately reported phases:
 | `archived.xml` | Fixed migration baseline above | 2294 original historical tests |
 | `frozen123.xml` | Original registration commit `5560eb9f67463badc31fed17e309bb5dc1dabf8f` | 24 original registration tests |
 
+CI runs these same checks in independent roles for each Python version. The focused
+gates remain separate, the entire current collection is partitioned into three file
+shards, and the two historical phases run together. To run the explicit roles locally:
+
+```sh
+.venv/bin/python tools/run_tests.py --suite current --shard-index 0 --shard-count 3 --junit-dir .lunar-evolution/test-results/current-0
+.venv/bin/python tools/run_tests.py --suite current --shard-index 1 --shard-count 3 --junit-dir .lunar-evolution/test-results/current-1
+.venv/bin/python tools/run_tests.py --suite current --shard-index 2 --shard-count 3 --junit-dir .lunar-evolution/test-results/current-2
+.venv/bin/python tools/run_tests.py --suite history --junit-dir .lunar-evolution/test-results/history
+```
+
+Each current shard assigns a complete test file by SHA-256 of its UTF-8 path modulo
+three, validates the selected collection and JUnit case identities, and retains a
+`current-shard-N.xml` plus its inventory summary. All three shard sets must be disjoint
+and cover the entire current inventory. History retains its original reports and
+`history.summary.json`. These role reports describe actual executions; they do not
+replace a missing role or pretend to be a monolithic `current.xml`. The default complete
+entry point above continues to produce its original three reports.
+
 The historical test collection contains exactly 2318 unique nodes with a registered collection
 digest. Exactly 24 nodes requiring the earlier registered product are deferred to their original
 commit; no historical test is dropped or silently skipped. The original registration manifest's
@@ -52,7 +71,8 @@ uv pip install --python .venv/bin/python -e '.[dev,lint]'
 
 Historical environment creation uses offline installation and the current pytest version. A
 missing cache entry fails explicitly instead of fetching dependencies or bypassing a historical
-check. CI must retain full Git history and publish all three reports separately.
+check. CI must retain full Git history and publish each role's reports and source/import
+provenance separately.
 
 ## Private local evidence
 
