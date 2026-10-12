@@ -128,6 +128,18 @@ class NativeRSISolverGateway:
     def ledger(self) -> RSILedger:
         return self.config.ledger
 
+    def bind_python_admission_controller(self, controller: Any) -> None:
+        """Bind the optional live Python admission bridge to its receipt provider.
+
+        The gateway owns the durable native claim, while the scheduler provider owns
+        the producer launch.  Delegating the binding keeps that ownership split and
+        lets the provider pin admission only after this gateway has acquired the
+        claim and immediately before scheduler dispatch.
+        """
+        bind = getattr(self.config.receipt_provider, "bind_python_admission_controller", None)
+        if callable(bind):
+            bind(controller)
+
     def rsi_fingerprint_config(self) -> dict[str, Any]:
         """Expose stable native wiring identity without hashing mutable runtime state.
 

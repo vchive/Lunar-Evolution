@@ -154,6 +154,33 @@ def test_bridge_adapter_maps_existing_drs_and_brs_hooks_without_side_effects(tmp
     assert controller.calls[1][1] == (value.binding.run_id, value.episode_id)
 
 
+@pytest.mark.parametrize("scope", ["drs", "brs"])
+def test_bridge_adapter_pin_live_selects_existing_owner_scope(tmp_path, scope):
+    value = _setup(tmp_path)
+    descriptor = _descriptor(value)
+    controller = _Controller()
+    controller._python_admission_flow_local = type("Local", (), {"active": object()})()
+    controller._python_admission_brs_local = type("Local", (), {"active": None})()
+    if scope == "brs":
+        controller._python_admission_flow_local.active = None
+        controller._python_admission_brs_local.active = object()
+    adapter = PythonAdmissionBridgeAdapter(controller, descriptor, wait_check=lambda: None)
+    expected = "1" * 64 if scope == "drs" else "2" * 64
+    assert adapter.pin_live(descriptor.to_json()) == expected
+    assert [item[0] for item in controller.calls] == [scope]
+
+
+def test_bridge_adapter_pin_live_requires_an_existing_owner_scope(tmp_path):
+    value = _setup(tmp_path)
+    controller = _Controller()
+    controller._python_admission_flow_local = type("Local", (), {"active": None})()
+    controller._python_admission_brs_local = type("Local", (), {"active": None})()
+    adapter = PythonAdmissionBridgeAdapter(controller, _descriptor(value), wait_check=lambda: None)
+    with pytest.raises(PythonAdmissionBridgeError, match="live_worker_missing"):
+        adapter.pin_live(_descriptor(value))
+    assert controller.calls == []
+
+
 def test_bridge_adapter_fails_closed_on_descriptor_drift_and_missing_brs_wait(tmp_path):
     value = _setup(tmp_path)
     descriptor = _descriptor(value)

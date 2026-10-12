@@ -1029,6 +1029,13 @@ class RSILearningController:
         self._python_admission_brs_local = local()
         self._python_admission_brs_wave: _PythonAdmissionBRSWave | None = None
         self._python_admission_brs_observation_lock = RLock()
+        # A native scheduler provider may expose the optional live Python admission
+        # bridge.  Bind it only for an explicitly sidecar-bound controller; ordinary
+        # provider-free RSI and legacy gateways retain their existing dispatch path.
+        if self.producer_sidecar is not None:
+            bind_python_admission = getattr(self.gateway, "bind_python_admission_controller", None)
+            if callable(bind_python_admission):
+                bind_python_admission(self)
         from .rsi_governance_coordinator import RSIGovernanceCoordinator
 
         if memory_admission_gate is not None:
@@ -1521,6 +1528,33 @@ class RSILearningController:
             raise RSILearningError("rsi_python_admission_flow_stale")
         self._python_admission_assert_flow_context(context, run_id, episode_id)
         return context.state, context.checkpoint_sha256
+
+    def _python_admission_bridge_wait_check(self) -> None:
+        """Keep a live BRS admission waiter behind the same local budget/evidence gate.
+
+        ``PythonAdmissionBridgeAdapter`` calls this while its worker waits for the
+        owning BRS thread to acknowledge a prepared pin.  The callback is resolved
+        from the already-established DRS/BRS owner scope; it never discovers a run,
+        refreshes a deadline, or installs a new scope.  A missing scope is a fail-closed
+        misuse of the live scheduler bridge.
+        """
+        context = getattr(self._python_admission_brs_local, "active", None)
+        if context is not None:
+            wave = getattr(context, "wave", None)
+            episode_id = getattr(context, "episode_id", None)
+            run_id = getattr(wave, "run_id", None)
+            state = getattr(wave, "state", None)
+        else:
+            context = getattr(self._python_admission_flow_local, "active", None)
+            run_id = getattr(context, "run_id", None)
+            episode_id = getattr(context, "episode_id", None)
+            state = getattr(context, "state", None)
+        if type(run_id) is not str or type(episode_id) is not str or type(state) is not dict:
+            raise RSILearningError("rsi_python_admission_bridge_worker_missing")
+        RSIRunBudget.load(state["budget_state"]).check()
+        # BRS worker waits can span an owner-thread checkpoint update.  Revalidate the
+        # retained proof before each wait iteration, while the worker owns no mutation lock.
+        self._validate_producer_checkpoint(run_id, state)
 
     def _pin_python_admission_for_active_flow(
         self, run_id: str, episode_id: str, *, native_plan: object, prepared_journal: object,

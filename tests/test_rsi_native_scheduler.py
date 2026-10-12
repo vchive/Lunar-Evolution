@@ -15,6 +15,7 @@ from lunar_evolution.rsi_native_candidate import (
     NativePublicationReceipt,
 )
 from lunar_evolution.rsi_native_scheduler import (
+    NativeRSISchedulerProvider,
     NativeRSISchedulerProviderError,
     _assert_plan_binding,
     _build_receipts,
@@ -151,6 +152,63 @@ def test_scheduler_sidecar_rejects_invalid_official_evaluation() -> None:
     run.publication.evaluations[0].evaluation.report["validity"] = 0
     with pytest.raises(NativeRSISchedulerProviderError, match="evaluation_not_valid"):
         _build_receipts(req, Context(), run)
+
+
+def test_scheduler_provider_pins_python_admission_before_live_dispatch(monkeypatch, tmp_path) -> None:
+    """The provider's optional live hook consumes only fixed prepared evidence."""
+    req = request()
+    plan = SimpleNamespace(run_id="run", plan_sha256=digest("plan"))
+    intent = SimpleNamespace(journal_id="journal")
+    context = SimpleNamespace(workspace=tmp_path, intent=intent)
+    controller = SimpleNamespace(
+        producer_sidecar=object(),
+        producer_workspace=tmp_path,
+        _python_admission_bridge_wait_check=lambda: None,
+    )
+    provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider.context = context
+    provider._python_admission_controller = controller
+    seen = []
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.parse_producer_bundle_publication_journal",
+        lambda path: seen.append(("journal", path.name)) or "journal",
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.read_python_producer_admission_attempt_anchor",
+        lambda path: seen.append(("anchor", path.name)) or SimpleNamespace(anchor_sha256=digest("anchor")),
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.build_python_admission_bridge_descriptor",
+        lambda **kwargs: seen.append(("descriptor", kwargs["episode_id"])) or "descriptor",
+    )
+
+    class Bridge:
+        def __init__(self, owner, descriptor, *, wait_check):
+            seen.append(("bridge", owner is controller, descriptor, callable(wait_check)))
+
+        def pin_live(self, descriptor):
+            seen.append(("pin", descriptor))
+            return "a" * 64
+
+    monkeypatch.setattr("lunar_evolution.rsi_native_scheduler.PythonAdmissionBridgeAdapter", Bridge)
+    provider._pin_python_admission_before_dispatch(req, plan)
+    assert seen == [
+        ("journal", "journal.prepared.json"),
+        ("anchor", "python-producer-admission-anchor.json"),
+        ("descriptor", req.episode_id),
+        ("bridge", True, "descriptor", True),
+        ("pin", "descriptor"),
+    ]
+
+
+def test_scheduler_provider_bridge_binding_is_single_owner() -> None:
+    provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider._python_admission_controller = None
+    first, second = object(), object()
+    provider.bind_python_admission_controller(first)
+    provider.bind_python_admission_controller(first)
+    with pytest.raises(NativeRSISchedulerProviderError, match="python_admission_controller_changed"):
+        provider.bind_python_admission_controller(second)
 
 
 def test_scheduler_plan_binding_rejects_manifest_drift() -> None:
