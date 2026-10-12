@@ -397,6 +397,7 @@ from .native_trusted_streams import (
     start_native_trusted_stream_capture,
 )
 from .openevolve_handoff import (
+    RESULT_BINDING_MISMATCH,
     OpenEvolveHandoffError,
     admit_openevolve_result,
     declared_protocol_environment_sha256,
@@ -668,6 +669,7 @@ from .python_producer_adapter import (
     build_python_producer_adapter_envelope,
     parse_python_producer_adapter_envelope,
     verify_python_producer_adapter_envelope,
+    verify_python_producer_result_binding,
 )
 from .python_producer_admission_anchor import (
     MAX_PYTHON_PRODUCER_ADMISSION_ANCHOR_BYTES,
@@ -1030,6 +1032,7 @@ from .seed_handoff import (
     recover_retained_seed_admission,
 )
 from .shinka_handoff import (
+    SHINKA_BINDING_MISMATCH,
     ShinkaHandoffError,
     export_shinka_envelope,
     export_shinka_result,
@@ -1201,10 +1204,12 @@ __all__ = [
     "PYTHON_PRODUCER_SCHEMA_VERSION",
     "PYTHON_PRODUCER_TERMINAL_PROTOCOL",
     "PYTHON_RUNTIME_OBSERVATION_PROTOCOL",
+    "RESULT_BINDING_MISMATCH",
     "RSI_PROTOCOL",
     "RSI_SCHEMA_VERSION",
     "RUNTIME_HANDOFF_SCHEMA",
     "RUNTIME_STARTUP_SCHEMA",
+    "SHINKA_BINDING_MISMATCH",
     "SUPPORTED_FIXTURE_SOLVERS",
     "SUPPORTED_PYTHON_PRODUCERS",
     "TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL",
@@ -1931,6 +1936,7 @@ __all__ = [
     "verify_python_producer_adapter_envelope",
     "verify_python_producer_admission_attempt_anchor",
     "verify_python_producer_admission_gate",
+    "verify_python_producer_result_binding",
     "verify_python_runtime_manifest",
     "verify_python_runtime_tree_manifest",
     "verify_sealed_python_runtime_material",

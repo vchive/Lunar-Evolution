@@ -360,6 +360,25 @@ class PythonAdmissionBridgeAdapter:
             raise PythonAdmissionBridgeError("brs_pin_failed") from exc
         return self._record_sha(result, "brs_record_invalid")
 
+    def pin_live(self, descriptor: PythonAdmissionBridgeDescriptor | dict[str, Any] | bytes | str) -> str:
+        """Pin from the currently executing controller-owned scheduler worker.
+
+        The native provider is shared by DRS and BRS.  Looking at the controller's
+        already-established owner scopes lets one provider hook select the correct
+        facade without guessing from a request or allowing a caller to choose the
+        wrong ownership domain.  No scope means this is an invalid live dispatch,
+        rather than permission to fall back to a direct pin.
+        """
+        value = self._validated(descriptor)
+        controller = self._controller
+        drs_local = getattr(controller, "_python_admission_flow_local", None)
+        brs_local = getattr(controller, "_python_admission_brs_local", None)
+        if getattr(drs_local, "active", None) is not None:
+            return self.pin_drs(value)
+        if getattr(brs_local, "active", None) is not None:
+            return self.pin_brs(value)
+        _fail("live_worker_missing")
+
 
 __all__ = [
     "MAX_PYTHON_ADMISSION_BRIDGE_BYTES",

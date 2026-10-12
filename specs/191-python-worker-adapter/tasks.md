@@ -113,14 +113,15 @@
   authority and multiple independent Python children. Preserve durable obligations on
   cancellation or ack failure. The active-wave save refuses unrelated checkpoint drift
   instead of synchronizing or adopting its latest state.
-- [ ] Automatically require that separate admission identity in the live scheduler
-  and publication/recovery flow. The active DRS facade now pins prepared evidence and
-  synchronizes exact references; the real Python scheduler still needs runtime/handoff
-  inputs. Local BRS ready/ack is implemented without worker-to-owner lock waits.
-  Ordinary resume requires pinned rows. The anchor contains
-  post-execution evidence and cannot become part of the original pre-execution run request.
-  Complete independently observed runtime/lifecycle pin revalidation across the live flow;
-  sealed-runtime observation remains a separate P1 acceptance gate.
+- [x] Require the separate admission identity at the local live scheduler boundary.
+  A sidecar-bound controller binds the native gateway/provider once; after the durable
+  native claim and immediately before producer dispatch, the provider reads only the
+  fixed prepared journal and first-attempt anchor, builds the canonical bridge descriptor,
+  and routes it through the owning DRS/BRS scope. Missing evidence, workspace drift,
+  owner scope, wait budget, or record identity fails closed and leaves the native claim
+  recoverable. Publication/recovery still require the durable reference and independently
+  observed runtime/lifecycle evidence; sealed-runtime observation remains a separate P1
+  acceptance gate.
 - [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime
   observations to the handoff, then enable runtime-gated local exact evaluation and atomic
   publication. Until those gates pass, `production_admission` remains false.
@@ -137,10 +138,11 @@
   retained digest and complete original-binding comparisons. It performs no I/O or
   evaluator call and always keeps `production_admission=false`; actual project
   lifecycle/export wiring remains the preceding open task.
-- [x] Add a pure controller-backed Python admission bridge adapter over the existing DRS
-  and BRS pin facades. It reparses the canonical descriptor on every call, requires the
-  BRS continuation check, and preserves fail-closed identity/digest errors; automatic live
-  scheduler invocation remains the open integration task above.
+- [x] Add a controller-backed Python admission bridge adapter over the existing DRS and
+  BRS pin facades. It reparses the canonical descriptor on every call, requires the BRS
+  continuation check, exposes an owner-scope `pin_live` selector, and preserves
+  fail-closed identity/digest errors. The native local scheduler invokes this adapter
+  automatically only for an explicitly sidecar-bound controller.
 - [ ] Reuse Feature190 private owner/native lifecycle, cancellation, reap, FD
   census and terminal evidence. Keep v2 wire/FD schema unchanged.
 - [ ] Add focused tests for startup, decoys, output bounds, cancellation,

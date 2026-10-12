@@ -36,6 +36,7 @@ from .producer_broker_ipc import ProducerBrokerConfig
 from .producer_bundle_handoff import BundleGroup
 from .producer_bundle_publication import parse_producer_bundle_publication_journal
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
+from .python_producer_admission_anchor import read_python_producer_admission_attempt_anchor
 from .rsi_gateway import SolverRequest
 from .rsi_identity import RSIIdentityError, component_fingerprint
 from .rsi_learning import MemorySnapshot, RSILearningError
@@ -64,6 +65,10 @@ from .rsi_native_provenance import (
     read_native_rsi_provenance,
 )
 from .rsi_native_retained import NativeRetainedCandidateEvidence, read_native_retained_candidate
+from .rsi_python_admission_bridge import (
+    PythonAdmissionBridgeAdapter,
+    build_python_admission_bridge_descriptor,
+)
 from .rsi_store import NativeEpisodeClaim, RSILedger
 
 
@@ -449,12 +454,92 @@ class NativeRSISchedulerProvider:
         if not isinstance(context, NativeRSISchedulerContext):
             _fail("context_invalid")
         self.context = context
+        # The controller is attached after construction by the explicit
+        # producer-sidecar path.  Keeping it out of the immutable context and
+        # fingerprint avoids hashing thread locals or mutable controller state.
+        self._python_admission_controller: Any | None = None
         # Freeze before any launch. Recovery compares this prepared pin to the durable sidecar;
         # neither provider checks nor restart may silently pin a replacement database.
         self._failure_ledger_identity = (
             None if context.failure_ledger is None
             else MappingProxyType(_read_ledger_identity(context.failure_ledger))
         )
+
+    def bind_python_admission_controller(self, controller: Any) -> None:
+        """Attach one controller for automatic pre-dispatch Python admission.
+
+        This is intentionally a one-way local binding.  Rebinding a provider after
+        it has been used could route an in-flight native claim to another controller,
+        so a different object is rejected and the original binding is retained.
+        """
+        if controller is None:
+            _fail("python_admission_controller_invalid")
+        existing = self._python_admission_controller
+        if existing is not None and existing is not controller:
+            _fail("python_admission_controller_changed")
+        self._python_admission_controller = controller
+
+    def _python_admission_descriptor(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan,
+    ):
+        """Read the fixed prepared journal and first-attempt anchor for one dispatch."""
+        controller = self._python_admission_controller
+        if controller is None:
+            return None
+        # The controller binding is the opt-in gate.  Do not infer Python authority
+        # from a filename when a caller supplied no retained sidecar.
+        if getattr(controller, "producer_sidecar", None) is None:
+            _fail("python_admission_sidecar_missing")
+        controller_workspace = getattr(controller, "producer_workspace", None)
+        if controller_workspace is None or Path(controller_workspace).expanduser().absolute() != Path(
+            self.context.workspace,
+        ).expanduser().absolute():
+            _fail("python_admission_workspace_mismatch")
+        batch = self.provenance_batch
+        try:
+            journal = parse_producer_bundle_publication_journal(batch / "journal.prepared.json")
+            anchor = read_python_producer_admission_attempt_anchor(
+                batch / "python-producer-admission-anchor.json",
+            )
+            return build_python_admission_bridge_descriptor(
+                run_id=plan.run_id,
+                episode_id=request.episode_id,
+                native_plan=plan,
+                prepared_journal=journal,
+                expected_anchor_sha256=anchor.anchor_sha256,
+            )
+        except NativeRSISchedulerProviderError:
+            raise
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError(
+                "rsi_native_scheduler_python_admission_evidence_invalid",
+            ) from exc
+
+    def _pin_python_admission_before_dispatch(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan,
+    ) -> None:
+        controller = self._python_admission_controller
+        if controller is None:
+            return
+        descriptor = self._python_admission_descriptor(request, plan)
+        if descriptor is None:  # pragma: no cover - defensive binding guard
+            _fail("python_admission_descriptor_missing")
+        wait_check = getattr(controller, "_python_admission_bridge_wait_check", None)
+        if not callable(wait_check):
+            _fail("python_admission_wait_check_missing")
+        try:
+            bridge = PythonAdmissionBridgeAdapter(controller, descriptor, wait_check=wait_check)
+            result = bridge.pin_live(descriptor)
+        except NativeRSISchedulerProviderError:
+            raise
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError(
+                "rsi_native_scheduler_python_admission_failed",
+            ) from exc
+        if type(result) is not str or len(result) != 64 or any(
+            char not in "0123456789abcdef" for char in result
+        ):
+            _fail("python_admission_record_invalid")
 
     def assert_failure_ledger(self, ledger: RSILedger) -> None:
         """Verify explicit failure wiring against the original database, never repin it."""
@@ -679,6 +764,11 @@ class NativeRSISchedulerProvider:
             # Native scheduler controls use monotonic timestamps.  Convert the retained Unix
             # deadline once, immediately before dispatch, without widening the request budget.
             parent_deadline = mapped_start + remaining
+        # The native episode claim is already durable at this point.  Pin the
+        # Python admission before entering the producer scheduler so a failed or
+        # missing bridge leaves the claim started/unknown and cannot launch a
+        # producer without its retained runtime/handoff identity.
+        self._pin_python_admission_before_dispatch(request, plan)
         try:
             scheduler = (run_native_trusted_producer if context.failure_ledger is None
                          else run_native_trusted_producer_outcome)

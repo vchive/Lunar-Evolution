@@ -30,6 +30,7 @@ from typing import Any, Protocol
 
 from .algorithm import AlgorithmProblemContract, EvaluationReport
 from .evolution import MAX_SOURCE_BYTES
+from .producer_handoff import ProducerMaterial, ProducerResultEnvelope
 from .seed_handoff import AdmittedSeed, SeedManifest, admit_seed_manifest
 
 OPENEVOLVE_RESULT_PROTOCOL = "lunar-openevolve-result-v1"
@@ -54,6 +55,7 @@ CANDIDATE_TOO_LARGE = "candidate_too_large"
 CANDIDATE_ENCODING_INVALID = "candidate_encoding_invalid"
 EVALUATOR_FINGERPRINT_REQUIRED = "evaluator_fingerprint_required"
 PRODUCER_FINGERPRINT_REQUIRED = "producer_fingerprint_required"
+RESULT_BINDING_MISMATCH = "result_binding_mismatch"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CREDENTIAL_RE = re.compile(
@@ -349,6 +351,7 @@ def admit_openevolve_result(
     lineage: Sequence[str] = (),
     staging_root: str | os.PathLike[str] | None = None,
     num_islands: int = 1,
+    binding: object | None = None,
 ) -> AdmittedSeed:
     """Convert one confined wrapper result to a locally evaluated Feature 084 seed.
 
@@ -399,6 +402,41 @@ def admit_openevolve_result(
     if evaluation_present:
         external_score_present = _validate_evaluation_tree(raw_evaluation)
         evaluation_sha256 = _sha256(raw_evaluation)
+
+    if binding is not None:
+        # This is an explicit composition gate only.  It binds the wrapper's
+        # material/result metadata to the caller's immutable Python binding; it
+        # never starts OpenEvolve or treats the wrapper score as authority.
+        try:
+            from .python_producer_adapter import verify_python_producer_result_binding
+
+            envelope = ProducerResultEnvelope(
+                schema_version="1",
+                producer_id="openevolve",
+                producer_fingerprint=producer_fingerprint,
+                producer_run_id=getattr(binding, "run_id", None),
+                status="completed",
+                contract_sha256=contract.digest(),
+                budget={"requests": 1},
+                materials=(
+                    ProducerMaterial(
+                        kind="candidate_source",
+                        path=candidate_path,
+                        size=len(source),
+                        sha256=hashlib.sha256(source).hexdigest(),
+                        external_evidence={
+                            "present": evaluation_present,
+                            "score_present": external_score_present,
+                            "payload_sha256": evaluation_sha256,
+                        },
+                    ),
+                ),
+            )
+            verify_python_producer_result_binding(binding, envelope)
+        except OpenEvolveHandoffError:
+            raise
+        except Exception as exc:
+            raise OpenEvolveHandoffError(RESULT_BINDING_MISMATCH) from exc
 
     source_sha256 = hashlib.sha256(source).hexdigest()
     dependency_sha256 = source_only_dependency_sha256(source_sha256)
@@ -468,6 +506,7 @@ __all__ = [
     "MAX_OPENEVOLVE_RESULT_BYTES",
     "OPENEVOLVE_RESULT_PROTOCOL",
     "PRODUCER_FINGERPRINT_REQUIRED",
+    "RESULT_BINDING_MISMATCH",
     "RESULT_ENCODING_INVALID",
     "RESULT_JSON_INVALID",
     "RESULT_MISSING",

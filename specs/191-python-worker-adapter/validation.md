@@ -1,5 +1,18 @@
 # Validation plan
 
+## 2026-10-13 local live admission bridge
+
+The provider-free live boundary now has focused coverage for the native scheduler's
+sidecar-bound hook.  After a durable native claim, the provider reads only the fixed
+`journal.prepared.json` and `python-producer-admission-anchor.json`, constructs the
+canonical descriptor, and calls `PythonAdmissionBridgeAdapter.pin_live`; DRS and BRS
+owner scopes are selected from the controller's existing thread-local scope.  Tests
+cover descriptor drift, missing owner scope, single-controller binding, workspace
+identity, record digest validation and the exact pre-dispatch call order.  The path
+does not run CPython/toolchains or remote evaluators and keeps `production_admission=false`.
+The complete runtime/process/journal interruption matrix and sealed-runtime acceptance
+remain open P0/P1 work.
+
 ## 2026-10-12 independently pinned runtime observations
 
 The new `python-observation-policy.xml` gate requires74 unique cases and zero

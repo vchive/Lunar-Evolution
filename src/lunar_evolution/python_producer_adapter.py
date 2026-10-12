@@ -271,6 +271,45 @@ class PythonProducerAdapterEnvelope:
         return _canonical(self.to_dict())
 
 
+def verify_python_producer_result_binding(
+    binding: PythonProducerBinding,
+    result: ProducerResultEnvelope,
+    *,
+    require_completed: bool = True,
+) -> ProducerResultEnvelope:
+    """Verify a producer result against the immutable Python binding.
+
+    This is the common, provider-free seam used by explicit OpenEvolve and Shinka
+    exporters.  It only reparses detached DTO bytes and compares authority fields;
+    it does not inspect a workspace, start a producer, evaluate a candidate, or
+    grant production admission.  The terminal/runtime observation remains a
+    separate input to :func:`build_python_producer_adapter_envelope`.
+    """
+    if type(binding) is not PythonProducerBinding:
+        _fail("binding_invalid")
+    try:
+        bound = parse_python_producer_binding(binding.to_json())
+    except (PythonProducerBindingError, TypeError, ValueError) as exc:
+        raise PythonProducerAdapterError("binding_invalid") from exc
+    if type(result) is not ProducerResultEnvelope:
+        _fail("result_invalid")
+    try:
+        detached = ProducerResultEnvelope.from_dict(_result_wire(result))
+    except (ProducerHandoffError, TypeError, ValueError) as exc:
+        raise PythonProducerAdapterError("result_invalid") from exc
+    if detached.producer_id != bound.producer_id or detached.producer_id not in SUPPORTED_PYTHON_PRODUCERS:
+        _fail("producer_identity_drift")
+    if detached.producer_fingerprint != bound.producer_fingerprint:
+        _fail("producer_fingerprint_drift")
+    if detached.contract_sha256 != bound.contract_sha256:
+        _fail("contract_drift")
+    if detached.producer_run_id != bound.run_id:
+        _fail("result_run_drift")
+    if require_completed and detached.status != "completed":
+        _fail("result_not_completed")
+    return detached
+
+
 def build_python_producer_adapter_envelope(
     binding: PythonProducerBinding,
     terminal: PythonProducerTerminal,
@@ -385,4 +424,5 @@ __all__ = [
     "build_python_producer_adapter_envelope",
     "parse_python_producer_adapter_envelope",
     "verify_python_producer_adapter_envelope",
+    "verify_python_producer_result_binding",
 ]
