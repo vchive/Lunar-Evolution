@@ -129,12 +129,13 @@ class NativeRSISolverGateway:
         return self.config.ledger
 
     def bind_python_admission_controller(self, controller: Any) -> None:
-        """Bind the optional live Python admission bridge to its receipt provider.
+        """Bind the optional Python bridge for an explicit prepared boundary.
 
         The gateway owns the durable native claim, while the scheduler provider owns
-        the producer launch.  Delegating the binding keeps that ownership split and
-        lets the provider pin admission only after this gateway has acquired the
-        claim and immediately before scheduler dispatch.
+        the producer launch.  Delegating the binding keeps that ownership split.
+        Binding alone does not invoke a bridge during ``run``/provider dispatch;
+        a live integration must call the provider hook only after prepared
+        publication has retained the original Python handoff and file pin.
         """
         bind = getattr(self.config.receipt_provider, "bind_python_admission_controller", None)
         if callable(bind):
