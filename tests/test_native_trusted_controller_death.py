@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import select
 import signal
 import subprocess
 import sys
@@ -14,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _native_pipe_wait import pipe_readable
 from _native_target_fixture import compile_native_target
 from test_native_bootstrap import _launch
 from test_native_trusted_attempt import _attempt
@@ -34,7 +34,7 @@ def _frame(fd, timeout=5):
     line = bytearray()
     deadline = time.monotonic() + timeout
     while not line.endswith(b"\n"):
-        assert select.select([fd], [], [], max(0, deadline - time.monotonic()))[0]
+        assert pipe_readable(fd, max(0, deadline - time.monotonic()))
         chunk = os.read(fd, 1)
         assert chunk, "native bootstrap closed before expected frame"
         line.extend(chunk)
@@ -306,7 +306,7 @@ def test_formal_controller_only_sigkill_stops_work_before_original_deadline(tmp_
     )
     target = None
     try:
-        assert select.select([controller.stdout], [], [], 8)[0], "formal target did not start"
+        assert pipe_readable(controller.stdout, 8), "formal target did not start"
         line = controller.stdout.readline(4096)
         assert line, controller.stderr.read().decode()
         target = json.loads(line)

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import select
 import signal
 import subprocess
 import sys
@@ -20,6 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _native_pipe_wait import pipe_readable
 from _native_target_fixture import compile_native_target
 from test_native_bootstrap import _launch
 from test_native_trusted_controller_death import _frame, _state, _stopped
@@ -208,7 +208,7 @@ def _started_with_descendants(fixture, tmp_path: Path, *, count: int = 1):
         assert os.getpgid(pid) == fixture.process.pid == started.observed_pgid
         assert _state(pid) and not _state(pid).startswith("Z")
     assert fixture.process.poll() is None, "bootstrap exited while its waitable descendants run"
-    assert not select.select([fixture.frame], [], [], 0.15)[0], "terminal preceded descendant drain"
+    assert not pipe_readable(fixture.frame, 0.15), "terminal preceded descendant drain"
     return started, descendants
 
 
@@ -311,7 +311,7 @@ def test_original_absolute_deadline_remains_active_after_direct_exit(tmp_path):
         assert _frame(fixture.frame).kind == "bootstrap_ready"
         # Gate time is charged to the same deadline as the later descendant drain.
         remaining = max(0, (fixture.deadline_ns - time.monotonic_ns()) / 1e9 - 1.4)
-        assert not select.select([fixture.frame], [], [], remaining)[0]
+        assert not pipe_readable(fixture.frame, remaining)
         os.write(fixture.gate, b"1")
         _close(fixture, "gate")
         started = _frame(fixture.frame)
@@ -390,7 +390,7 @@ def test_controller_sigkill_after_direct_exit_leaves_guardian_to_stop_descendant
     bootstrap_pid = None
     fixture = SimpleNamespace(gate=gate_w, frame=frame_r)
     try:
-        assert select.select([controller.stdout], [], [], 5)[0]
+        assert pipe_readable(controller.stdout, 5)
         bootstrap_pid = json.loads(controller.stdout.readline())['bootstrap_pid']
         os.write(control_w, control)
         os.close(control_w)
@@ -403,7 +403,7 @@ def test_controller_sigkill_after_direct_exit_leaves_guardian_to_stop_descendant
         descendant = int(_wait_file(tmp_path / "descendant-0.pid"))
         _stopped(started.observed_pid)
         assert _state(bootstrap_pid) and not _state(bootstrap_pid).startswith("Z")
-        assert not select.select([fixture.frame], [], [], 0.15)[0]
+        assert not pipe_readable(fixture.frame, 0.15)
         # Kill only the controller. Its sole owner-writer closes in the kernel.
         controller.kill()
         assert controller.wait(timeout=3) == -signal.SIGKILL
@@ -630,7 +630,7 @@ def test_drain_wall_waits_for_actual_non_sigchld_bootstrap_child(tmp_path):
         _stopped(descendants[0])
         # Ordinary SIGCHLD children have finished. Omitting __WALL would now
         # yield ECHILD, emit seq3 and retire bootstrap while this child runs.
-        assert not select.select([fixture.frame], [], [], 0.15)[0]
+        assert not pipe_readable(fixture.frame, 0.15)
         assert fixture.process.poll() is None
         assert _state(extra) and not _state(extra).startswith("Z")
         (tmp_path / "release-non-sigchld").touch()
