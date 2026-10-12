@@ -48,8 +48,11 @@ def test_original_pair_checks_and_parent_only_anchors_through_real_v2(tmp_path, 
 
     values = _attempt(tmp_path)
     state = _hold_pair(monkeypatch)
-    anchors, checks, inherited = [], [], []
-    real_create, real_check, real_spawn = executable.os.memfd_create, runner._validate_original_linux_executable_pair, runner.subprocess.Popen
+    anchors, checks, inherited, reserved = [], [], [], []
+    real_create = executable.os.memfd_create
+    real_check = runner._validate_original_linux_executable_pair
+    real_encode = runner.encode_native_bootstrap_control_v2
+    real_spawn = runner.subprocess.Popen
 
     def create(*args, **kwargs):
         fd = real_create(*args, **kwargs)
@@ -60,6 +63,14 @@ def test_original_pair_checks_and_parent_only_anchors_through_real_v2(tmp_path, 
         real_check(pair)
         checks.append(pair)
 
+    def encode(*args, **kwargs):
+        # The owner anchor is parent-only.  It must stay out of the v2
+        # reserved-FD census as well as the actual subprocess pass list.
+        values = kwargs.get("reserved_fds", ())
+        reserved.append(tuple(values))
+        assert not (set(values) & set(anchors))
+        return real_encode(*args, **kwargs)
+
     class Spawn(real_spawn):
         def __init__(self, *args, **kwargs):
             passed = set(kwargs["pass_fds"])
@@ -69,11 +80,13 @@ def test_original_pair_checks_and_parent_only_anchors_through_real_v2(tmp_path, 
 
     monkeypatch.setattr(executable.os, "memfd_create", create)
     monkeypatch.setattr(runner, "_validate_original_linux_executable_pair", check)
+    monkeypatch.setattr(runner, "encode_native_bootstrap_control_v2", encode)
     monkeypatch.setattr(runner.subprocess, "Popen", Spawn)
     result = _run(values)
     assert result.target_started and result.exit_code == 0
     assert len(checks) == 3 and all(pair is state["pair"] for pair in checks)
     assert len(anchors) == 2 and len(inherited) == 2
+    assert reserved and all(not (set(values) & set(anchors)) for values in reserved)
     assert set(state["fds"]) <= inherited[0]
     assert state["pair"].bootstrap.pass_fd in inherited[1]
     for fd in (*anchors, *state["fds"]):
