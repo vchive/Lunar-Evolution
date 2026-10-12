@@ -113,15 +113,15 @@
   authority and multiple independent Python children. Preserve durable obligations on
   cancellation or ack failure. The active-wave save refuses unrelated checkpoint drift
   instead of synchronizing or adopting its latest state.
-- [x] Require the separate admission identity at the local live scheduler boundary.
-  A sidecar-bound controller binds the native gateway/provider once; after the durable
-  native claim and immediately before producer dispatch, the provider reads only the
-  fixed prepared journal and first-attempt anchor, builds the canonical bridge descriptor,
-  and routes it through the owning DRS/BRS scope. Missing evidence, workspace drift,
-  owner scope, wait budget, or record identity fails closed and leaves the native claim
-  recoverable. Publication/recovery still require the durable reference and independently
-  observed runtime/lifecycle evidence; sealed-runtime observation remains a separate P1
-  acceptance gate.
+- [ ] Require the separate admission identity at the local live scheduler boundary.
+  The provider-free bridge/owner facades and BRS foreign/duplicate guards exist, but the
+  native scheduler does not invoke them automatically. Prepared journal/attempt-anchor
+  inputs include post-execution/runtime evidence and must be joined at the later prepared
+  publication boundary with the original Python handoff/file pin. The current native
+  scheduler has no such handoff input; keep automatic dispatch fail-closed until that
+  seam is implemented. Publication/recovery still require the durable reference and
+  independently observed runtime/lifecycle evidence; sealed-runtime observation remains
+  a separate P1 acceptance gate.
 - [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime
   observations to the handoff, then enable runtime-gated local exact evaluation and atomic
   publication. Until those gates pass, `production_admission` remains false.
@@ -141,8 +141,8 @@
 - [x] Add a controller-backed Python admission bridge adapter over the existing DRS and
   BRS pin facades. It reparses the canonical descriptor on every call, requires the BRS
   continuation check, exposes an owner-scope `pin_live` selector, and preserves
-  fail-closed identity/digest errors. The native local scheduler invokes this adapter
-  automatically only for an explicitly sidecar-bound controller.
+  fail-closed identity/digest errors. The adapter is explicit plumbing; automatic native
+  scheduler invocation remains the open integration task above.
 - [ ] Reuse Feature190 private owner/native lifecycle, cancellation, reap, FD
   census and terminal evidence. Keep v2 wire/FD schema unchanged.
 - [ ] Add focused tests for startup, decoys, output bounds, cancellation,

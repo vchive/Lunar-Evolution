@@ -1029,13 +1029,6 @@ class RSILearningController:
         self._python_admission_brs_local = local()
         self._python_admission_brs_wave: _PythonAdmissionBRSWave | None = None
         self._python_admission_brs_observation_lock = RLock()
-        # A native scheduler provider may expose the optional live Python admission
-        # bridge.  Bind it only for an explicitly sidecar-bound controller; ordinary
-        # provider-free RSI and legacy gateways retain their existing dispatch path.
-        if self.producer_sidecar is not None:
-            bind_python_admission = getattr(self.gateway, "bind_python_admission_controller", None)
-            if callable(bind_python_admission):
-                bind_python_admission(self)
         from .rsi_governance_coordinator import RSIGovernanceCoordinator
 
         if memory_admission_gate is not None:
@@ -1791,11 +1784,11 @@ class RSILearningController:
                 anchor = payload["expected_anchor_sha256"]
             except (ValueError, TypeError, KeyError, RecursionError) as exc:
                 raise RSILearningError("rsi_python_brs_admission_request_invalid") from exc
-            # Route every child through its own original request and publication journal.
-            # Reusing a first child's plan/journal for a sibling is an ambiguous admission,
-            # even when the worker supplies a different episode id.  Refuse before any
-            # durable CAS or attempt reservation; genuinely independent children continue
-            # through the exact evidence/attempt checks in _python_admission_pin_exact.
+            # Route requests through the exact original plan/journal identity.  Reusing a
+            # first child's plan/journal for a sibling is ambiguous, even when the worker
+            # supplies a different episode id.  Refuse before any durable CAS or attempt
+            # reservation.  A second independent child still needs its own controller
+            # binding/sidecar and is intentionally fail-closed in this single-binding wave.
             if (plan.request.episode_id != ready.episode_id
                     or plan.run_id != wave.run_id
                     or plan.journal_id != journal.journal_id
@@ -1826,8 +1819,9 @@ class RSILearningController:
             # Only the reference increment verified by the kernel may enter shared state.
             wave.state["python_admission_refs"] = expected["python_admission_refs"]
             wave.checkpoint_sha256, wave.payload = head, expected_payload
-            # Preserve the legacy first-child observation while routing later children by
-            # their own reference-map key.  The map is the durable source of truth.
+            # Preserve the legacy first-child observation.  The reference map is durable
+            # state, but it does not grant authority to a second child without its own
+            # independently bound proof.
             if wave.admitted_episode_id is None:
                 wave.admitted_episode_id = ready.episode_id
             return pinned.record_sha256

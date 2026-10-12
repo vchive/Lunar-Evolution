@@ -403,6 +403,7 @@ def admit_openevolve_result(
         external_score_present = _validate_evaluation_tree(raw_evaluation)
         evaluation_sha256 = _sha256(raw_evaluation)
 
+    bound_producer_run_id = producer_run_id
     if binding is not None:
         # This is an explicit composition gate only.  It binds the wrapper's
         # material/result metadata to the caller's immutable Python binding; it
@@ -410,11 +411,16 @@ def admit_openevolve_result(
         try:
             from .python_producer_adapter import verify_python_producer_result_binding
 
+            binding_run_id = getattr(binding, "run_id", None)
+            if producer_run_id is not None and producer_run_id != binding_run_id:
+                raise OpenEvolveHandoffError(RESULT_BINDING_MISMATCH)
+            bound_producer_run_id = binding_run_id
+
             envelope = ProducerResultEnvelope(
                 schema_version="1",
                 producer_id="openevolve",
                 producer_fingerprint=producer_fingerprint,
-                producer_run_id=getattr(binding, "run_id", None),
+                producer_run_id=bound_producer_run_id,
                 status="completed",
                 contract_sha256=contract.digest(),
                 budget={"requests": 1},
@@ -460,7 +466,7 @@ def admit_openevolve_result(
                         "origin_kind": "external",
                         "producer_id": "openevolve",
                         "producer_fingerprint": producer_fingerprint,
-                        "producer_run_id": producer_run_id,
+                        "producer_run_id": bound_producer_run_id,
                         # No external material byte was verified by this adapter.
                         "material_refs": [],
                         "external_evidence": {
