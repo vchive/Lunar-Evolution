@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 PR52 integration: high-descriptor fixture repair
+
+The test-only repair from PR58 commit `1c7dca4` is applied here before the
+PR52–57 dependency chain. Four native test fixtures now share one
+`DefaultSelector` readiness helper with the original supplied timeout; the
+helper neither reads nor closes caller pipes. Seven regression cases cover
+high FD numbers, EOF, timeout forwarding and selector cleanup. Product/native
+sources, ownership gates and deadline policy are unchanged.
+
+Original failed current-1 raw artifacts remain retained under ignored
+`current-shard-ci-repair-20261012`. The separate PR53 worker timeout is not
+claimed fixed. This integrated source requires fresh final-source CI and raw/
+source/tree audit; old failed or passing runs cannot approve it. PR58 is the
+retained repair source and is superseded by this integration, not an extra
+production capability or a new runtime acceptance. Local integrated-source
+validation passes37 helper/process-ownership cases, Ruff across src/tests/tools,
+compileall and diff checks; no actual producer, solver or evaluator ran.
+
+
 ## 2026-10-12 detached RSI marker installation contract
 
 Feature193 F01 now has a separate bounded canonical description wrapper with
