@@ -10,7 +10,6 @@ import errno
 import fcntl
 import json
 import os
-import select
 import signal
 import subprocess
 import sys
@@ -19,6 +18,7 @@ from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 
 import pytest
+from _native_pipe_wait import pipe_readable
 from _native_target_fixture import compile_native_target
 from test_native_bootstrap import _launch
 from test_native_fd_handoff import _sealed
@@ -79,7 +79,7 @@ def _read(fd, timeout=3):
     while True:
         remaining = end - time.monotonic()
         assert remaining > 0, "original bounded fixture read expired"
-        if select.select([fd], [], [], remaining)[0]:
+        if pipe_readable(fd, remaining):
             return os.read(fd, 2)
 
 
@@ -203,7 +203,7 @@ def test_watcher_ready_finish_exact_exit_and_unrelated_fd_closure(compiled, tmp_
             os.close(extra_w)
             extra_w = None
             assert _read(fixture.ack_r) == b"R"
-            assert select.select([extra_r], [], [], 1)[0]
+            assert pipe_readable(extra_r, 1)
             assert os.read(extra_r, 1) == b""  # watcher discarded extra writer
             assert fixture.watcher.stdout.read() == b""  # it closed inherited stdio
             os.write(fixture.finish_w, b"F")

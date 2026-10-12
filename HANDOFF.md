@@ -7220,3 +7220,17 @@ process, evaluator, solver, publication or recovery effects. Ten focused tests,
 Ruff, compileall and diff checks pass locally. This is a synthetic consistency
 contract only; actual sealed launch, terminal/broker/material evidence,
 authoritative result handoff and durable publication/recovery remain open.
+
+## 2026-10-12 current-shard native fixture descriptor repair
+
+Original PR52/53/55/56 CI artifacts show current-1 native fixture waits calling
+select.select with descriptors1024/1189/1447, causing FD_SETSIZE ValueError.
+A test-only shared DefaultSelector pipe wait now replaces those waits across
+native controller-death, guardian, descendant and deadline fixtures, preserving
+original timeouts, unread/open pipe ownership and EOF readiness. Seven high-FD/
+EOF/bounded-cleanup cases plus five worker ownership cases pass locally,12 unique
+cases. Ruff/compileall/diff pass. No product/runtime/build/solver behavior changes.
+PR53's separate unrelated-worker timeout did not reproduce and remains a risk;
+final Linux CI/audit is still required. Original12 current-1 artifact directories
+and final focused evidence are retained in ignored reports
+`current-shard-ci-repair-20261012`. The fix branches from PR57 c7d4308.
