@@ -7187,3 +7187,17 @@ evaluator、真实 producer 或凭据。controller checkpoint 对 pin 的 durabl
 intent preparation、cached execution、dispatch 和 resume 前 fail closed 地重验 sidecar；旧
 checkpoint 缺少 producer proof 时拒绝恢复。remote evaluator、外部 worker 认证、多机 ownership、
 distributed scheduler 和 service API 仍是明确的 P2 范围。
+
+## 2026-10-12 Feature193 F02 build-closure contract
+
+Added the pure `lunar-static-python-build-closure-v1` DTO/comparator in
+`src/lunar_evolution/static_python_build_closure.py`, focused synthetic tests,
+and `specs/193-static-python-rsi-launch/build-closure-contract.md`. The
+comparator checks source/toolchain projections, exactly nine frozen headers,
+ordered static-link records, ELF loader-negative fields, false claims and F01
+cross-fields from caller-owned canonical bytes and independent pins. It never
+reads paths, launches tools, parses an image, or grants installation/runtime
+authority. `PYTHONPATH=src python -m pytest -q
+tests/test_static_python_build_closure.py` passes 10 cases. Real configured
+CPython/toolchain/freezer/link/ELF evidence remains open as F02c; synthetic
+vectors do not establish a build.

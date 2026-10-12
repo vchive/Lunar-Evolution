@@ -224,6 +224,21 @@ actual build/sealed runtime, original terminal/capture/materialization binding,
 solver envelope/publication and production CLI/Linux acceptance remain open.
 Only inert/mock fixtures ran; `production_admission=false`.
 
+## F02 pure build-closure comparison — 2026-10-12
+
+`tests/test_static_python_build_closure.py` passes 10 focused synthetic cases.
+The new comparator validates exact canonical wire shape, independent source,
+toolchain, frozen-inventory, link-manifest and artifact pins, nine frozen header
+slots, duplicate/forbidden link records, ELF loader-negative fields, false
+claims and F01 cross-field agreement. It returns only an immutable DTO. Tests
+monkeypatch filesystem/process APIs to confirm no external effects. Ruff,
+compileall and `git diff --check` pass for the changed files.
+
+This is not a configured build or artifact result. No compiler, freezer, linker,
+ELF parser, source acquisition or executable ran. F02c remains open until a
+controlled build produces independently audited source/tree, toolchain,
+generated-header, object/archive, link-map and final ELF byte evidence.
+
 Independent Python3.13 replay passes the same219 cases with zero failures/errors/
 skips and unchanged API/asset/test/package hashes. Its create-only completion is
 `static-python-rsi-input-report-independent-py313-20261011T192213737063Z/completion.json`,
