@@ -2914,6 +2914,22 @@ class RSILearningController:
 
     def _validate_native_cached_execution(self, execution: EpisodeExecution) -> None:
         self._validate_native_replay(execution.episode, execution.request, execution.result)
+        # Read-only replay gateways can opt into the same cached-result revalidation
+        # without pretending to be native gateways or owning a native ledger.  The
+        # callback must return the exact immutable result wire; a changed receipt is
+        # drift, never a reason to trust the controller checkpoint.
+        if getattr(self.gateway, "requires_replay_validation", False) is True:
+            validate = getattr(self.gateway, "validate_replay", None)
+            if not callable(validate):
+                raise RSILearningError("rsi_replay_validation_required")
+            try:
+                verified = validate(execution.request, execution.result)
+            except RSILearningError:
+                raise
+            except Exception:  # noqa: BLE001 - callback details never enter the durable error
+                raise RSILearningError("rsi_replay_validation_failed") from None
+            if not isinstance(verified, SolverResult) or verified != execution.result:
+                raise RSILearningError("rsi_replay_result_conflict")
 
     def _resume_episode_execution(
         self, episode_record: RSIRecord, *, request_hint: SolverRequest | None = None,
