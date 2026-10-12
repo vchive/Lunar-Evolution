@@ -97,6 +97,7 @@ SHINKA_ENVELOPE_TOO_LARGE = "shinka_envelope_too_large"
 SHINKA_FINGERPRINT_REQUIRED = "shinka_fingerprint_required"
 SHINKA_CONTRACT_REQUIRED = "shinka_contract_required"
 SHINKA_BUDGET_INVALID = "shinka_budget_invalid"
+SHINKA_BINDING_MISMATCH = "shinka_binding_mismatch"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -952,6 +953,7 @@ def export_shinka_result(
     budget: Mapping[str, int | float] | None = None,
     program_ids: Sequence[str] | None = None,
     envelope_path: str | os.PathLike[str] = SHINKA_ENVELOPE_FILENAME,
+    binding: object | None = None,
 ) -> ProducerResultEnvelope:
     """Export selected Shinka programs into a generic envelope.
 
@@ -966,6 +968,17 @@ def export_shinka_result(
     :class:`ProducerMaterial`; Lunar Evolution must re-evaluate each copied source locally.
     """
 
+    if binding is not None:
+        # Keep the import local: this exporter is also used by the generic producer
+        # CLI, while the Python binding is an optional provider-free composition gate.
+        try:
+            from .python_producer_adapter import verify_python_producer_result_binding
+
+            verify_binding = verify_python_producer_result_binding
+        except (ImportError, AttributeError):
+            _raise(SHINKA_BINDING_MISMATCH)
+    else:
+        verify_binding = None
     if top_k is not None and (type(top_k) is not int or not 1 <= top_k <= MAX_SHINKA_TOP_K):
         _raise(SHINKA_TOP_K_INVALID)
     contract_value: object = contract_sha256
@@ -1055,6 +1068,13 @@ def export_shinka_result(
             if exc.code == PRODUCER_BUDGET_INVALID:
                 _raise(SHINKA_BUDGET_INVALID)
             _raise(exc.code)
+        if verify_binding is not None:
+            try:
+                verify_binding(binding, envelope)
+            except Exception as exc:
+                if isinstance(exc, ShinkaHandoffError):
+                    raise
+                _raise(SHINKA_BINDING_MISMATCH)
         envelope_bytes = _canonical_envelope_bytes(envelope)
 
         destination_root, destination_parent = _prepare_export_root(source_root, export_root)
@@ -1110,6 +1130,7 @@ __all__ = [
     "MAX_SHINKA_GENERATION",
     "MAX_SHINKA_PATH_BYTES",
     "MAX_SHINKA_TOP_K",
+    "SHINKA_BINDING_MISMATCH",
     "SHINKA_BUDGET_INVALID",
     "SHINKA_CONTRACT_REQUIRED",
     "SHINKA_DATABASE_CHANGED",
