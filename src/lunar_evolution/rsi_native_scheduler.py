@@ -764,11 +764,6 @@ class NativeRSISchedulerProvider:
             # Native scheduler controls use monotonic timestamps.  Convert the retained Unix
             # deadline once, immediately before dispatch, without widening the request budget.
             parent_deadline = mapped_start + remaining
-        # The native episode claim is already durable at this point.  Pin the
-        # Python admission before entering the producer scheduler so a failed or
-        # missing bridge leaves the claim started/unknown and cannot launch a
-        # producer without its retained runtime/handoff identity.
-        self._pin_python_admission_before_dispatch(request, plan)
         try:
             scheduler = (run_native_trusted_producer if context.failure_ledger is None
                          else run_native_trusted_producer_outcome)

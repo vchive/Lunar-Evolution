@@ -14,6 +14,7 @@ from lunar_evolution.rsi_native_candidate import (
     NativeExecutionReceipt,
     NativePublicationReceipt,
 )
+from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
 from lunar_evolution.rsi_native_scheduler import (
     NativeRSISchedulerProvider,
     NativeRSISchedulerProviderError,
@@ -209,6 +210,131 @@ def test_scheduler_provider_bridge_binding_is_single_owner() -> None:
     provider.bind_python_admission_controller(first)
     with pytest.raises(NativeRSISchedulerProviderError, match="python_admission_controller_changed"):
         provider.bind_python_admission_controller(second)
+
+
+def test_scheduler_provider_dispatch_does_not_read_python_admission_evidence(
+    monkeypatch, tmp_path,
+) -> None:
+    """Live Python admission is an explicit prepared-boundary hook, never pre-dispatch IO."""
+    req = request()
+    plan = NativeRSIExecutionPlan.build(
+        request=req,
+        memory_snapshot=EMPTY_MEMORY_SNAPSHOT,
+        journal_id="journal",
+        launch_id="launch",
+        run_id="run",
+        parent_task_id="parent",
+        task_id="task",
+        intent_sha256=digest("intent"),
+        attestation_sha256=digest("attestation"),
+        bootstrap_descriptor_sha256=digest("descriptor"),
+        bootstrap_artifact_sha256=digest("artifact"),
+        manifest_sha256=digest("manifest"),
+        candidate_selector_sha256=digest("selector"),
+        evaluator_kind="local",
+        evaluator_fingerprint=req.evaluator_sha256,
+    )
+    inputs = SimpleNamespace(
+        request=req,
+        memory=EMPTY_MEMORY_SNAPSHOT,
+        deadline_unix=None,
+        launch_binding_sha256=digest("binding"),
+    )
+    touched: list[str] = []
+
+    def forbidden(*_args, **_kwargs):
+        touched.append("evidence")
+        raise AssertionError("Python admission evidence must not be read during dispatch")
+
+    for name in (
+        "parse_producer_bundle_publication_journal",
+        "read_python_producer_admission_attempt_anchor",
+        "build_python_admission_bridge_descriptor",
+    ):
+        monkeypatch.setattr(f"lunar_evolution.rsi_native_scheduler.{name}", forbidden)
+
+    class ForbiddenBridge:
+        def __init__(self, *_args, **_kwargs):
+            touched.append("bridge")
+            raise AssertionError("Python admission bridge must not run during dispatch")
+
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.PythonAdmissionBridgeAdapter",
+        ForbiddenBridge,
+    )
+    context = SimpleNamespace(
+        workspace=tmp_path,
+        producer_root=tmp_path,
+        intent=SimpleNamespace(journal_id="journal"),
+        attestation=object(),
+        artifact=object(),
+        broker_config=object(),
+        contract=object(),
+        groups=(),
+        evaluator_kind="local",
+        evaluator_fingerprint=req.evaluator_sha256,
+        runner_fingerprint=digest("runner"),
+        dependency_sha256=digest("dependency"),
+        environment_sha256=req.environment_sha256,
+        strategy=object(),
+        execution_control=None,
+        cancelled=None,
+        failure_ledger=None,
+    )
+    provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider.context = context
+    provider._failure_ledger_identity = None
+    provider._python_admission_controller = SimpleNamespace(
+        producer_sidecar=object(),
+        producer_workspace=tmp_path,
+        _python_admission_bridge_wait_check=lambda: None,
+    )
+    provider._inputs = lambda *, require_unexpired: inputs
+    result = object()
+    provider.recover = lambda _request, _plan: result
+
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler._assert_plan_binding",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.run_native_trusted_producer",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            receipt=SimpleNamespace(receipt_sha256=digest("receipt")),
+        ),
+    )
+    projected = SimpleNamespace(candidate=SimpleNamespace(
+        candidate_id="candidate", candidate_receipt_sha256=digest("candidate-receipt"),
+    ))
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler._build_receipts",
+        lambda *_args, **_kwargs: projected,
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler._journal_for_published_run",
+        lambda *_args, **_kwargs: (
+            object(), SimpleNamespace(digest=lambda: digest("journal")),
+        ),
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler._read_retained",
+        lambda *_args, **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler._retained_bundle",
+        lambda *_args, **_kwargs: projected,
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.persist_native_rsi_provenance",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler._provenance_payload",
+        lambda *_args, **_kwargs: {},
+    )
+
+    assert provider(req, plan) is result
+    assert touched == []
 
 
 def test_scheduler_plan_binding_rejects_manifest_drift() -> None:

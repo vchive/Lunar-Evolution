@@ -1,15 +1,13 @@
 # Validation plan
 
-## 2026-10-13 local live admission bridge
+## 2026-10-13 provider-free admission bridge
 
-The provider-free live boundary now has focused coverage for the native scheduler's
-sidecar-bound hook.  After a durable native claim, the provider reads only the fixed
-`journal.prepared.json` and `python-producer-admission-anchor.json`, constructs the
-canonical descriptor, and calls `PythonAdmissionBridgeAdapter.pin_live`; DRS and BRS
-owner scopes are selected from the controller's existing thread-local scope.  Tests
-cover descriptor drift, missing owner scope, single-controller binding, workspace
-identity, record digest validation and the exact pre-dispatch call order.  The path
-does not run CPython/toolchains or remote evaluators and keeps `production_admission=false`.
+The provider-free bridge has focused coverage for descriptor parsing, DRS/BRS owner
+selection, missing owner scope, single-controller binding, workspace identity and record
+digest validation.  The native scheduler does not call this hook automatically: its
+prepared journal/attempt anchor includes post-execution/runtime evidence, while the
+current scheduler context has no original Python handoff/file-pin input.  The path does
+not run CPython/toolchains or remote evaluators and keeps `production_admission=false`.
 The complete runtime/process/journal interruption matrix and sealed-runtime acceptance
 remain open P0/P1 work.
 
