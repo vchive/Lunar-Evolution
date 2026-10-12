@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .candidate_evaluation_spec import canonical_json
+from .candidate_evaluation_spec import canonical_json, strict_json
 from .rsi_gateway import SolverRequest, SolverResult
 from .rsi_learning import RSILearningError
 from .rsi_producer_replay import inspect_producer_replay
@@ -57,6 +57,7 @@ class RetainedProducerReplaySource:
     memory_sha256: str
     receipts_sha256: str
     envelope_sha256: str
+    materials_sha256: str
 
     def __post_init__(self) -> None:
         for field in ("producer_root", "contract_path", "request_path", "memory_path", "receipts_path"):
@@ -66,6 +67,7 @@ class RetainedProducerReplaySource:
         for field in (
             "producer_fingerprint", "contract_sha256", "request_sha256", "memory_sha256",
             "receipts_sha256", "envelope_sha256",
+            "materials_sha256",
         ):
             _pin(getattr(self, field), "rsi_replay_source_pin_invalid")
 
@@ -81,6 +83,7 @@ class RetainedProducerReplaySource:
             "memory_sha256": self.memory_sha256,
             "receipts_sha256": self.receipts_sha256,
             "envelope_sha256": self.envelope_sha256,
+            "materials_sha256": self.materials_sha256,
         }
 
 
@@ -108,6 +111,18 @@ class RetainedProducerReplayGateway:
     def _inspect(self, request: SolverRequest) -> dict[str, Any]:
         if type(request) is not SolverRequest or request.solver_id != self.source.producer_id:
             raise RSILearningError("rsi_replay_request_mismatch")
+        # Check the complete original request before incomplete producer/receipt
+        # evidence can map to unknown. Missing receipts must not authorize a new
+        # episode, budget, evaluator, memory or solver-settings request.
+        from .rsi_producer_replay import _read
+
+        try:
+            _, request_raw, _ = _read(self.source.request_path, self.source.request_sha256)
+            original = SolverRequest.from_dict(strict_json(request_raw, maximum=512 * 1024))
+        except (OSError, TypeError, ValueError, KeyError, RecursionError, OverflowError):
+            raise RSILearningError("rsi_replay_request_unverified") from None
+        if original != request:
+            raise RSILearningError("rsi_replay_request_mismatch")
         try:
             return inspect_producer_replay(
                 producer_root=self.source.producer_root,
@@ -122,6 +137,7 @@ class RetainedProducerReplayGateway:
                 memory_sha256=self.source.memory_sha256,
                 receipts_sha256=self.source.receipts_sha256,
                 envelope_sha256=self.source.envelope_sha256,
+                materials_sha256=self.source.materials_sha256,
             )
         except (OSError, TypeError, ValueError, KeyError, RecursionError, OverflowError) as exc:
             if isinstance(exc, RSILearningError):

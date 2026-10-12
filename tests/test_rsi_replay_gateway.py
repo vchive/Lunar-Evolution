@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_rsi_producer_replay_cli import _fixture
 
 from lunar_evolution.rsi_controller import RSILearningController
 from lunar_evolution.rsi_gateway import SolverRequest, SolverResult
@@ -30,19 +32,23 @@ def _request(status_solver: str = "openevolve") -> SolverRequest:
 
 
 def _source(tmp_path: Path, solver: str = "openevolve") -> RetainedProducerReplaySource:
+    request_path = tmp_path / "request.json"
+    request_raw = json.dumps(_request(solver).to_dict(), sort_keys=True, separators=(",", ":")).encode()
+    request_path.write_bytes(request_raw)
     return RetainedProducerReplaySource(
         producer_root=tmp_path / "producer",
         contract_path=tmp_path / "contract.json",
-        request_path=tmp_path / "request.json",
+        request_path=request_path,
         memory_path=tmp_path / "memory.json",
         receipts_path=tmp_path / "receipts.json",
         producer_id=solver,
         producer_fingerprint="e" * 64,
         contract_sha256=HEX,
-        request_sha256="f" * 64,
+        request_sha256=hashlib.sha256(request_raw).hexdigest(),
         memory_sha256="1" * 64,
         receipts_sha256="2" * 64,
         envelope_sha256="3" * 64,
+        materials_sha256="4" * 64,
     )
 
 
@@ -78,6 +84,7 @@ def test_source_fingerprint_is_path_free_and_pins_are_checked(tmp_path: Path) ->
             receipts_path=tmp_path / "receipts.json", producer_id="openevolve",
             producer_fingerprint="z" * 64, contract_sha256=HEX, request_sha256="f" * 64,
             memory_sha256="1" * 64, receipts_sha256="2" * 64, envelope_sha256="3" * 64,
+            materials_sha256="4" * 64,
         )
 
 
@@ -148,3 +155,30 @@ def test_controller_cached_execution_uses_opt_in_replay_validation(
     controller.gateway = gateway
     cached = SimpleNamespace(episode=SimpleNamespace(), request=request, result=result)
     controller._validate_native_cached_execution(cached)
+
+
+def test_actual_pinned_export_is_read_and_drift_rejected(tmp_path: Path) -> None:
+    case = _fixture(tmp_path)
+    source = RetainedProducerReplaySource(
+        producer_root=case["root"], contract_path=case["contract"],
+        request_path=case["request"], memory_path=case["memory"], receipts_path=case["receipts"],
+        producer_id=case["solver"], producer_fingerprint=case["producer"],
+        contract_sha256=case["contract_pin"], request_sha256=case["request_pin"],
+        memory_sha256=case["memory_pin"], receipts_sha256=case["receipts_pin"],
+        envelope_sha256=case["envelope_pin"], materials_sha256=case["materials_pin"],
+    )
+    gateway = RetainedProducerReplayGateway(source)
+    request = SolverRequest.from_dict(json.loads(case["request"].read_text()))
+    result = gateway.run(request)
+    assert result.status == "completed"
+    assert gateway.validate_replay(request, result) == result
+    (case["root"] / "candidate.py").write_bytes(b"changed source")
+    with pytest.raises(RSILearningError, match="rsi_replay_evidence_drift"):
+        gateway.validate_replay(request, result)
+
+
+def test_actual_request_drift_refuses_before_missing_receipts(tmp_path: Path) -> None:
+    gateway = RetainedProducerReplayGateway(_source(tmp_path))
+    changed = replace(_request(), budget=(("max_solver_invocations", 2),))
+    with pytest.raises(RSILearningError, match="rsi_replay_request_mismatch"):
+        gateway.run(changed)
