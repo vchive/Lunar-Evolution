@@ -13,7 +13,7 @@ import sys
 import time
 import unicodedata
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
@@ -93,6 +93,7 @@ from .rsi_adapters import fixture_solver_gateway
 from .rsi_callbacks import DurableCallbackJournal
 from .rsi_controller import DeterministicCurriculum, RSILearningController
 from .rsi_store import RSILedger
+from .rsi_usage import UsageLedger as RSIUsageLedger
 from .runtime import OpenAICompatibleRuntime, build_runtime
 from .seed_handoff import SeedAdmissionError
 from .staged_workflow import StagedWorkflowConfig
@@ -189,6 +190,26 @@ def _add_input_options(parser: argparse.ArgumentParser) -> None:
             "repeat for multiple files)"
         ),
     )
+
+
+def _add_rsi_budget_options(parser: argparse.ArgumentParser, *, defaults: bool = True) -> None:
+    """Expose the controller's one-run budget without creating a second CLI schema.
+
+    ``rsi run`` keeps the historical DRS defaults (three practice rounds and four target
+    attempts).  BRS computes its defaults from the requested practice count, so the parser uses
+    ``None`` and the command handler fills the mode-specific value.  Resume options are optional
+    assertions against the persisted policy and therefore never receive defaults.
+    """
+    parser.add_argument("--max-depth", type=int)
+    parser.add_argument("--max-practice-rounds", type=int, default=3 if defaults else None)
+    parser.add_argument("--max-target-attempts", type=int, default=4 if defaults else None)
+    parser.add_argument("--max-practice-episodes", type=int)
+    parser.add_argument("--max-solver-invocations", type=int)
+    parser.add_argument("--max-unknown-retries", type=int)
+    parser.add_argument("--max-evaluator-invocations", type=int)
+    parser.add_argument("--max-verifier-invocations", type=int)
+    parser.add_argument("--max-transfer-invocations", type=int)
+    parser.add_argument("--deadline-unix", type=float)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1153,8 +1174,11 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_run_parser.add_argument("--contract-sha256", help="explicit contract pin; defaults to file bytes")
     rsi_run_parser.add_argument("--evaluator-sha256", help="evaluator pin; defaults to local exact fixture")
     rsi_run_parser.add_argument("--environment-sha256", help="environment pin; defaults to local fixture")
-    rsi_run_parser.add_argument("--max-practice-rounds", type=int, default=3)
-    rsi_run_parser.add_argument("--max-target-attempts", type=int, default=4)
+    _add_rsi_budget_options(rsi_run_parser, defaults=False)
+    rsi_run_parser.add_argument(
+        "--usage-ledger", type=Path,
+        help="optional writable provider-free usage sidecar JSON (disabled by default)",
+    )
     rsi_run_parser.add_argument("--practice-count", type=int, default=2, help="BRS practice decisions")
     rsi_run_parser.add_argument(
         "--worker-status",
@@ -1183,6 +1207,11 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_resume_parser.add_argument("--contract-sha256", help="assert the persisted contract pin")
     rsi_resume_parser.add_argument("--evaluator-sha256", help="assert the persisted evaluator pin")
     rsi_resume_parser.add_argument("--environment-sha256", help="assert the persisted environment pin")
+    _add_rsi_budget_options(rsi_resume_parser, defaults=False)
+    rsi_resume_parser.add_argument(
+        "--usage-ledger", type=Path,
+        help="optional writable provider-free usage sidecar JSON (must be reused for replay evidence)",
+    )
     _add_home(rsi_resume_parser)
     _add_json(rsi_resume_parser)
 
@@ -5462,6 +5491,30 @@ def _rsi_fixture_target_judge(mode: str):
     return target_judge
 
 
+_RSI_BUDGET_ARGUMENTS = (
+    "max_depth", "max_practice_rounds", "max_target_attempts", "max_practice_episodes",
+    "max_solver_invocations", "max_unknown_retries", "max_evaluator_invocations",
+    "max_verifier_invocations", "max_transfer_invocations", "deadline_unix",
+)
+
+
+def _rsi_budget_from_args(
+    args: argparse.Namespace, *, defaults: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Build the single canonical budget policy passed to the RSI controller.
+
+    The controller persists this mapping and compares it byte-for-byte on resume.  Keeping the
+    conversion here means every CLI limit uses the same names and ``None`` remains an omitted
+    unlimited field instead of an invented limit.
+    """
+    policy = dict(defaults or {})
+    for name in _RSI_BUDGET_ARGUMENTS:
+        value = getattr(args, name, None)
+        if value is not None:
+            policy[name] = value
+    return policy
+
+
 def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, object]:
     """Run only the deterministic local RSI fixture from the CLI.
 
@@ -5488,6 +5541,16 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
     run_id = args.run_id or f"rsi-{uuid.uuid4().hex[:16]}"
     ledger = RSILedger(config.home / "rsi.sqlite3")
     gateway = fixture_solver_gateway(args.solver, terminal_status=args.worker_status)
+    practice_round_default = 3 if args.mode == "drs" else args.practice_count
+    target_attempt_default = 4 if args.mode == "drs" else 1
+    budget = _rsi_budget_from_args(
+        args,
+        defaults={
+            "max_practice_rounds": practice_round_default,
+            "max_target_attempts": target_attempt_default,
+        },
+    )
+    usage_ledger = RSIUsageLedger(args.usage_ledger) if args.usage_ledger is not None else None
 
     target_judge = _rsi_fixture_target_judge(args.mode)
 
@@ -5496,6 +5559,7 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
         curriculum=DeterministicCurriculum(),
         target_judge=target_judge,
         ledger=ledger,
+        usage_ledger=usage_ledger,
     )
     if reconcile_requested:
         record = ledger.get_run(run_id)
@@ -5514,11 +5578,14 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
             result=_rsi_callback_json(args.callback_result, maximum=1024 * 1024, name="result"),
             evidence=_rsi_callback_json(args.callback_evidence, maximum=128 * 1024, name="evidence"),
         )
-        return {
+        response = {
             "run_id": run_id, "mode": args.mode, "status": "reconciled",
             "callback_id": args.reconcile_callback, "result": result,
             "ledger": str(config.home / "rsi.sqlite3"),
         }
+        if args.usage_ledger is not None:
+            response["usage_ledger"] = str(args.usage_ledger)
+        return response
     if args.mode == "drs":
         result = controller.run_drs(
             run_id=run_id,
@@ -5526,8 +5593,9 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
             evaluator_sha256=evaluator_sha256,
             environment_sha256=environment_sha256,
             solver_id=args.solver,
-            max_practice_rounds=args.max_practice_rounds,
-            max_target_attempts=args.max_target_attempts,
+            max_practice_rounds=practice_round_default,
+            max_target_attempts=target_attempt_default,
+            budget=budget,
         )
     else:
         target = controller._target_episode(
@@ -5552,8 +5620,9 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
             environment_sha256=environment_sha256,
             solver_id=args.solver,
             practices=decisions,
+            budget=budget,
         )
-    return {
+    payload = {
         "run_id": result.run_id,
         "mode": args.mode,
         "status": result.status,
@@ -5567,6 +5636,9 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
         "recovery_eligibility": "reconcile_required" if result.status == "unknown" else "terminal",
         "ledger": str(config.home / "rsi.sqlite3"),
     }
+    if args.usage_ledger is not None:
+        payload["usage_ledger"] = str(args.usage_ledger)
+    return payload
 
 
 def _rsi_resume_payload(config: Config, args: argparse.Namespace) -> dict[str, object]:
@@ -5595,6 +5667,18 @@ def _rsi_resume_payload(config: Config, args: argparse.Namespace) -> dict[str, o
             "solver_id": args.solver,
         }.items() if value is not None
     }
+    requested_budget = _rsi_budget_from_args(args)
+    persisted_budget = payload.get("budget")
+    budget_policy = None
+    if requested_budget:
+        if not isinstance(persisted_budget, Mapping):
+            raise ValueError("rsi_run_record_invalid")
+        for field, value in requested_budget.items():
+            if persisted_budget.get(field) != value:
+                raise ValueError("rsi_resume_budget_drift")
+        # ``resume`` compares the complete persisted policy.  Supplying only one assertion must
+        # not accidentally turn the remaining fields into an unrelated new policy.
+        budget_policy = dict(persisted_budget)
     solver_id = payload["solver_id"]
     if type(solver_id) is not str:
         raise ValueError("rsi_run_record_invalid")
@@ -5606,9 +5690,12 @@ def _rsi_resume_payload(config: Config, args: argparse.Namespace) -> dict[str, o
         curriculum=DeterministicCurriculum(),
         target_judge=target_judge,
         ledger=ledger,
+        usage_ledger=RSIUsageLedger(args.usage_ledger) if args.usage_ledger is not None else None,
     )
-    result = controller.resume(args.run_id, observed_fingerprints=observed or None)
-    return {
+    result = controller.resume(
+        args.run_id, observed_fingerprints=observed or None, budget_policy=budget_policy,
+    )
+    response = {
         "run_id": result.run_id,
         "mode": payload["mode"],
         "status": result.status,
@@ -5623,6 +5710,9 @@ def _rsi_resume_payload(config: Config, args: argparse.Namespace) -> dict[str, o
         "recovery_eligibility": "reconcile_required" if result.status == "unknown" else "terminal",
         "ledger": str(config.home / "rsi.sqlite3"),
     }
+    if args.usage_ledger is not None:
+        response["usage_ledger"] = str(args.usage_ledger)
+    return response
 
 
 def _memory_payload(config: Config, query: str | None, scope: str | None, limit: int) -> list[dict[str, object]]:
@@ -6409,6 +6499,24 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                     "head": _rsi_record_payload(record),
                     "history": [_rsi_record_payload(item) for item in ledger.history(args.logical_id)],
                 }
+                if record.kind == "run":
+                    persisted_budget = record.payload.get("budget_state")
+                    if isinstance(persisted_budget, Mapping):
+                        payload["budget"] = {
+                            "planned": persisted_budget.get("planned"),
+                            "consumed": persisted_budget.get("consumed"),
+                            "remaining": persisted_budget.get("remaining"),
+                        }
+                    unknown_episode_ids = [
+                        episode_id for episode_id in ledger.episode_ids_for_run(args.logical_id)
+                        if (ledger.get_episode(episode_id) is not None
+                            and ledger.get_episode(episode_id).state == "unknown")
+                    ]
+                    payload["reconcile"] = {
+                        "required": record.state == "unknown" or bool(unknown_episode_ids),
+                        "run_state": record.state,
+                        "unknown_episode_ids": unknown_episode_ids,
+                    }
                 _emit(payload, args.json)
                 return 0
             if args.rsi_command == "reconcile":
