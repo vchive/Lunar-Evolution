@@ -1,5 +1,35 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 pure RSI installation-profile input preparation
+
+Feature193 F01 now has a bounded pure preparation API and independently pinned
+reviewed overlay. It validates the original build-input bytes, marker source-plan
+and all six payloads, snapshots the exact caller map, and substitutes exactly the
+launcher and expanded frozen-main records. All other records and both fixed Python
+vectors remain unchanged. The separate candidate schema is not an accepted build
+input or installation. Nine headers remain pending without produced digests;
+nine capability claims remain false. No configure/freezer/compiler/runtime or
+filesystem/network/environment/clock operation occurs in the API. Existing
+Feature189/193 assets and accepted parsers are unchanged.
+
+Python3.11:113 new focused plus183 disjoint compatibility cases,296 unique passes,
+zero failures/errors/skips; root independently inventories retained JUnit files.
+Independent semantic/pin and strict-type/side-effect reviews have no blocker.
+Independent Python3.13.12 replay passes the same113 cases with eight hashes
+unchanged; it is not added to the296 unique cases. Ruff, compileall, diff checks
+and YAML/gate wiring pass. The new113-case CI gate preserves XML/annotations;
+final-source CI/audit remains pending as recorded in Feature193 validation. This continuation starts from PR50 final
+`f075b186502506d3ed05d0743643483addc43406`; PR46–50 each still need their own CI/audit
+and merge in dependency order. Verified main at this checkpoint remains PR45
+`9bfccbfc5a25db612a59ea27464b9affce40f1f3`.
+
+Remaining P0/P1 are actual marker-capable installation/build/sealed runtime,
+authoritative input consumption/result, live runtime/post-execution handoff and
+interruption coverage, actual local solver and production CLI/Linux acceptance.
+Only local inert/mock/fixture validation ran; `production_admission=false`. P2
+services, worker authentication, multi-host ownership and remote evaluators stay
+deferred. See `specs/193-static-python-rsi-launch/profile-preparation.md`.
+
 ## 2026-10-12 static Python RSI marker source preparation
 
 Feature193 adds a separate fixed `rsi-marker-launch-v1` source emitter/CLI under

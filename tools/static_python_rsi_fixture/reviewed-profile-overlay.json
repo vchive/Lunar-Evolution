@@ -1,0 +1,66 @@
+{
+  "base": {
+    "sha256": "ba5221310c10360b010d0b5a5b104586d3a1529f159c93a9c02a83319701a92b",
+    "size": 79459
+  },
+  "profile": "rsi-marker-launch-v1",
+  "schema": "lunar-static-python-rsi-profile-overlay-v1",
+  "source_plan": {
+    "sha256": "f6e1ba1daa0a6916c9f8a8fc50932e6b8f8b0b816b522c0cc502e414e60df9d2",
+    "size": 6706
+  },
+  "substitutions": [
+    {
+      "after": {
+        "compile_role": "core",
+        "extra_flags": [],
+        "object": "installation-owned-launcher.o",
+        "origin": "fixture-asset",
+        "reviewed_source_sha256": "3a81211b2869727469c1de3bfad79144d11f17c99ccc100c3c48015c0398a0e0",
+        "source": "tools/static_python_rsi_fixture/assets/launcher.c",
+        "source_sha256": "3a81211b2869727469c1de3bfad79144d11f17c99ccc100c3c48015c0398a0e0",
+        "source_size": 1740
+      },
+      "before": {
+        "compile_role": "core",
+        "extra_flags": [],
+        "object": "installation-owned-launcher.o",
+        "origin": "fixture-asset",
+        "reviewed_source_sha256": "79a4462386f54dfe36ea87838523fe652bbc59e72db4505175fd3b6870837735",
+        "source": "tools/static_python_fixture/assets/launcher.c",
+        "source_sha256": "79a4462386f54dfe36ea87838523fe652bbc59e72db4505175fd3b6870837735",
+        "source_size": 1546
+      },
+      "key": "object",
+      "section": "target_units",
+      "value": "installation-owned-launcher.o"
+    },
+    {
+      "after": {
+        "generator_id": "_lunar_static_main",
+        "name": "_lunar_static_main",
+        "origin": "expanded-fixture-asset",
+        "output": "generated-sources/Python/frozen_modules/_lunar_static_main.h",
+        "package": false,
+        "source": "assets/frozen_main.py",
+        "source_sha256": "2b30f4463db471419df601a0c7640a560d2be95aed08d69cdf0e8e10d6871d28",
+        "source_size": 7227,
+        "symbol": "_Py_M___lunar_static_main"
+      },
+      "before": {
+        "generator_id": "_lunar_static_main",
+        "name": "_lunar_static_main",
+        "origin": "expanded-fixture-asset",
+        "output": "generated-sources/Python/frozen_modules/_lunar_static_main.h",
+        "package": false,
+        "source": "assets/frozen_main.py",
+        "source_sha256": "6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d",
+        "source_size": 6794,
+        "symbol": "_Py_M___lunar_static_main"
+      },
+      "key": "name",
+      "section": "freeze_tasks",
+      "value": "_lunar_static_main"
+    }
+  ]
+}

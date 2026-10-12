@@ -118,3 +118,37 @@ lifecycle, authoritative input binding and real consumption, producer result/
 post-execution handoff, interruption recovery and local solver/production CLI
 acceptance remain unverified. These later stages stay unchecked in `tasks.md` and
 must receive their own contracts and evidence before any claim is promoted.
+
+## F01 source-only profile preparation continuation — 2026-10-12
+
+Python3.11 new focused module passes 113 cases; disjoint old build-input and
+installation modules pass 101 and disjoint stage-1 marker/source-plan modules
+pass 82. Root confirms 296 unique cases across the three JUnit files, zero
+failures/errors/skips. This count does not include repeated or overlapping runs.
+Create-only root inventory is `rsi-profile-root-local-inventory-1791745186327988000`,
+completion SHA256 `ac92787e0317a6dc36c3e3970ee9904fe1a592371be740518b24396ffcc8c2fe`.
+New focused completion is `static-python-rsi-installation-profile-tests-completion-20261012/completion-v1.json`,
+SHA256 `2e9d3d3275bcb2db752641fb160395e3ce8bd685fa9f527001824831729a7162`.
+Independent semantic/pin review has no blocker:
+`rsi-profile-independent-semantic-review-1791744992735051000/completion.json`,
+SHA256 `61bdaf179576e134e95ac53670dd5b1840f9e76278f0656529728889b5e9094c`.
+Its earlier environment preparation failure is retained separately.
+
+This API has no filesystem/process/network/environment/clock access. All caller
+buffers/map/key/value types are exact built-ins before hashing or parsing; a
+private dict snapshot prevents later caller map replacement. All six supplied
+payloads match fixed source-plan records. Only complete launcher and main-freezer
+records change; the 162 shared, two freezer and four target units, nine freeze
+tasks, generated sources and other headers retain their original content. All
+nine output headers are pending with no generated digest. A separate candidate
+schema is refused by old accepted parsers; nine claims remain false. The old
+Feature189/193 inputs and parser semantics are unchanged. Final-source CI/audit
+remains required; no configured/build/runtime/accepted installation is claimed.
+
+Independent Python3.13.12 replay passes the same 113 focused cases with zero
+failures/errors/skips and eight source/test/dependency hashes unchanged. Its
+create-only report is `static-python-rsi-profile-independent-py313-20261011T185949854237Z`,
+completion SHA256 `07148aba89b5329db116fd391421d0ffc2b59ea05ecf59fa871a1a9d703477f1`;
+JUnit SHA256 `76286b9d78ef7842d001912e3f2c6932da9a5eea7d0a6f34779e886eb96b9683`.
+Repeated replay is not an additional 113 unique tests. Whole `src/tests/tools`
+Ruff and compileall pass, as do diff checks and YAML/gate annotation/upload wiring.

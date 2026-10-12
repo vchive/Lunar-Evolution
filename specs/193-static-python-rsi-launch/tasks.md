@@ -33,7 +33,22 @@ installation/runtime stage.
 - [x] T12 Update validation and handoff with implemented stage 1 scope, exact
   evidence and remaining stage boundaries only after the corresponding checks.
 
-## Later stages — not implemented by this slice
+## F01 bounded preparation continuation
+
+- [x] F01a Specify the pure fixed overlay preparation API and separate candidate
+  schemas in `profile-preparation.md` without changing accepted installations.
+- [x] F01b Independently pin the original build inputs, two-record reviewed overlay,
+  source plan and six assets; preserve every other record and fixed Python vectors.
+- [x] F01c Prepare source-only candidate inputs and nine pending frozen headers,
+  without generated digests, artifact/runtime evidence or promoted claims.
+- [x] F01d Verify strict types/bounds, independent pins, re-signed mutant refusal,
+  deterministic output, old-parser refusal and no side effects: 113 focused cases.
+- [x] F01e Verify 183 disjoint compatibility cases and root JUnit inventory,
+  296 unique cases total; add the bounded 113-case retained CI gate.
+- [ ] F01f Complete this final source's CI plus independent raw/source/tree audit
+  and merge in dependency order after PR46–50.
+
+## Later stages — installation and runtime remain unaccepted
 
 - [ ] F01 Specify and accept a separately versioned installation profile; retain
   the old argc-one profile/parser behavior without an implicit compatibility bypass.
