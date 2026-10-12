@@ -119,6 +119,8 @@ def verify_official_evaluation(
     receipt: OfficialEvaluationReceipt, *, request_sha256: str, contract_sha256: str,
     evaluator_sha256: str, candidate_source_sha256: str, execution_receipt_sha256: str,
     publication_receipt_sha256: str, holdout_sha256: str | None = None,
+    config_sha256: str | None = None, task_input_sha256: str | None = None,
+    seed_sha256: str | None = None,
 ) -> None:
     if not isinstance(receipt, OfficialEvaluationReceipt):
         raise OfficialEvaluatorEvidenceError("receipt_invalid")
@@ -132,8 +134,18 @@ def verify_official_evaluation(
         raise OfficialEvaluatorEvidenceError("binding_mismatch")
     if receipt.execution_receipt_sha256 != execution_receipt_sha256 or receipt.publication_receipt_sha256 != publication_receipt_sha256:
         raise OfficialEvaluatorEvidenceError("binding_mismatch")
-    if holdout_sha256 is not None and receipt.profile.holdout_sha256 != holdout_sha256:
-        raise OfficialEvaluatorEvidenceError("holdout_mismatch")
+    context_pins = (
+        (holdout_sha256, receipt.profile.holdout_sha256, "holdout"),
+        (config_sha256, receipt.profile.config_sha256, "config"),
+        (task_input_sha256, receipt.profile.task_input_sha256, "task_input"),
+        (seed_sha256, receipt.profile.seed_sha256, "seed"),
+    )
+    for expected_pin, actual_pin, field in context_pins:
+        if expected_pin is None:
+            continue
+        _sha(expected_pin, field)
+        if actual_pin != expected_pin:
+            raise OfficialEvaluatorEvidenceError(f"{field}_mismatch")
     if receipt.outcome != "pass":
         raise OfficialEvaluatorEvidenceError("not_pass")
 

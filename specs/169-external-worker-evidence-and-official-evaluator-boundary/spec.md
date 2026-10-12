@@ -18,6 +18,13 @@ Feature 160 已完成本地 native RSI 的 request/memory/plan、candidate、exe
 
 `OfficialEvaluatorProfile` 固定 evaluator code/config/version、contract/task/input/holdout/seed、candidate source/execution/publication digests、clean-room workspace 和 raw verdict。`EvaluationReceipt` 必须由 controller 绑定的 evaluator runner 产生；score 仅为 informational，缺失、篡改、holdout mismatch、unsigned/unknown receipt 均为 unresolved。
 
+`verify_official_evaluation()` 保留旧调用的兼容性，但接收方只要有独立的 evaluator
+上下文就应同时提供 `config_sha256`、`task_input_sha256` 和 `seed_sha256`（以及已有的
+`holdout_sha256`）。这些参数是对 receipt profile 的附加精确断言；任一不匹配都会
+fail-closed，避免仅凭 receipt 自己声明的配置、任务输入或 seed 通过恢复。provider-free
+native fixture 目前仍只拥有 evaluator/contract/source/execution/publication 的请求级 pins，
+真实 evaluator 接线时必须补齐这些上下文 pins。
+
 ## Non-goals
 
 本 feature 不启动真实 OpenEvolve/Shinka campaign、不访问远程 evaluator、不提供分布式 lease、不增加自动后台 scheduler，也不把模型分数直接写入 memory。
