@@ -1,5 +1,13 @@
 # Feature 193 validation
 
+## Current integration status — 2026-10-12 (updated)
+
+PR54–57 are now represented in `origin/main` through merge `f296431`, with PR60 and PR64 subsequently merged. PR59 has 15/15 CI roles passing and a completed source/tree audit; its base has been redirected to current `main` and it still needs a fresh exact-base check before merge. The retained CI is provider-free and does not establish real CPython/toolchain acquisition, sealed startup, producer lifecycle, evaluator access or production admission.
+
+The PR54 raw-log audit was incomplete because GitHub API log download timed out. PR56/57 raw artifact downloads were also incomplete (their CI and source-only evidence remain valid). These limits are recorded explicitly rather than promoted to full raw-log acceptance.
+
+For local provider-free validation, use the focused commands and isolated basetemp described below. Real runtime and producer gates remain open.
+
 ## F02 complete-F01 composition correction — 2026-10-12
 
 The previous F02 fixture used a partial descriptor and missed incompatibility
