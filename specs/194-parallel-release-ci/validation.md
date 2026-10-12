@@ -70,3 +70,32 @@ case-time sums are about 32–38 minutes per Python version; focused remains abo
 42–53 minutes. New CI queueing, elapsed speedup and acceptance are unmeasured.
 Final-source remote CI, independent artifact/source audit and merge remain pending.
 No real toolchain, CPython, provider, solver or remote evaluator ran.
+
+## Current-1 high-descriptor fixture repair — 2026-10-12
+
+Retained original artifacts identify `select.select` descriptor-limit refusals
+in native fixture helpers, not a failed F01/F03/F04 comparator. PR52 run38169372402
+has six py3.12 current-1 descendant failures; PR53 run38170726943 has one py3.11
+independent-guardian descriptor refusal and one unrelated-worker wait timeout;
+PR55 run38173032524 has two py3.11 plus six py3.12 descendant descriptor refusals;
+PR56 run38173757590 has one py3.11 descendant descriptor refusal. The retained
+failures report descriptors1024,1189 and1447, beyond Linux select's FD_SETSIZE.
+Other current-1 version artifacts contain no failed cases.
+
+A test-only `_native_pipe_wait.pipe_readable` uses `DefaultSelector` to wait once
+with the original supplied timeout. It closes its selector on success/refusal,
+leaves caller pipes open and unread, and preserves readable EOF. The four native
+fixture modules use it for frame, acknowledgment and controller-output waits.
+No native C source, runtime, ownership gate, runner retry policy, deadline or
+production admission rule changes.
+
+Python3.13 local validation passes seven new pipe regressions and five existing
+worker process ownership cases,12 unique cases with zero failures/errors/skips.
+Only local inert pipes and worker fixture commands ran; no CPython/static build,
+sealed runtime, external solver or evaluator ran. Ruff, compileall and diff checks
+pass. The PR53 worker timeout did not reproduce and is not declared fixed by the
+descriptor repair; it remains visible in retained failure evidence. The ignored
+main-workspace `current-shard-ci-repair-20261012` report retains all12 downloaded
+current-1 artifact directories, original logs/XML/summaries/provenance, run metadata,
+failure inventory and final focused XML/log. Own final-source Linux CI and
+independent raw/source/tree audit remain pending.

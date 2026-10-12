@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import select
 import signal
 import subprocess
 import sys
@@ -18,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from _native_pipe_wait import pipe_readable
 from _native_target_fixture import compile_native_target
 from test_native_bootstrap import _launch
 from test_native_trusted_attempt import _attempt
@@ -219,7 +219,7 @@ def test_live_owner_absolute_deadline_stops_active_target_and_contained_child(tm
         # expire over two seconds late and cannot satisfy the original absolute deadline.
         until_release = fixture.deadline_ns - 2_500_000_000
         wait = max(0, (until_release - time.monotonic_ns()) / 1_000_000_000)
-        assert not select.select([fixture.frame], [], [], wait)[0]
+        assert not pipe_readable(fixture.frame, wait)
         assert fixture.process.poll() is None
         os.write(fixture.gate, b"1")
         os.close(fixture.gate)
@@ -307,7 +307,7 @@ def test_formal_sigstopped_controller_cannot_extend_parent_deadline(tmp_path, mo
     )
     target = None
     try:
-        assert select.select([controller.stdout], [], [], 8)[0], "formal launch did not reach pause boundary"
+        assert pipe_readable(controller.stdout, 8), "formal launch did not reach pause boundary"
         line = controller.stdout.readline(4096)
         assert line, controller.stderr.read().decode()
         target = json.loads(line)
@@ -332,7 +332,7 @@ def test_formal_sigstopped_controller_cannot_extend_parent_deadline(tmp_path, mo
         assert bootstrap_state and not bootstrap_state.startswith("Z")
         # The stopped controller still owns its lifeline writer. No EOF can explain native exit.
         until_deadline = max(0, deadline["deadline_monotonic"] - time.monotonic() - 1.5)
-        assert not select.select([controller.stdout], [], [], until_deadline)[0]
+        assert not pipe_readable(controller.stdout, until_deadline)
         bootstrap_state = _state(target["pgid"])
         assert bootstrap_state and not bootstrap_state.startswith("Z")
         _stopped(target["pgid"], timeout=max(0, deadline["deadline_monotonic"] - time.monotonic()) + 1.5)
