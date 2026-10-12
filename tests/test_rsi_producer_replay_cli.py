@@ -139,6 +139,43 @@ def test_matching_replay_is_read_only_and_maps_existing_solver_result(tmp_path: 
     assert {path: path.read_bytes() for path in before} == before
 
 
+def test_matching_replay_accepts_exact_evaluator_context_pins(tmp_path: Path, capsys) -> None:
+    case = _fixture(tmp_path)
+    args = _args(case)
+    args[args.index("--json"):args.index("--json")] = [
+        "--evaluator-config-sha256", "3" * 64,
+        "--evaluator-task-input-sha256", "4" * 64,
+        "--evaluator-seed-sha256", "6" * 64,
+    ]
+    assert main(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "completed"
+    assert payload["evaluator_context"] == {
+        "config_sha256": "3" * 64,
+        "task_input_sha256": "4" * 64,
+        "seed_sha256": "6" * 64,
+    }
+
+
+@pytest.mark.parametrize(
+    ("option", "value"),
+    [
+        ("--evaluator-config-sha256", "9" * 64),
+        ("--evaluator-task-input-sha256", "9" * 64),
+        ("--evaluator-seed-sha256", "9" * 64),
+    ],
+)
+def test_evaluator_context_pin_drift_is_refused_before_mapping(
+    tmp_path: Path, capsys, option: str, value: str,
+) -> None:
+    case = _fixture(tmp_path)
+    args = _args(case)
+    args[args.index("--json"):args.index("--json")] = [option, value]
+    assert main(args) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "drifted"
+
+
 def test_missing_terminal_is_unknown_without_controller_or_writes(tmp_path: Path, capsys) -> None:
     case = _fixture(tmp_path)
     value = dict(case["receipts_value"])

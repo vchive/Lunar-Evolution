@@ -58,6 +58,9 @@ class RetainedProducerReplaySource:
     receipts_sha256: str
     envelope_sha256: str
     materials_sha256: str
+    config_sha256: str | None = None
+    task_input_sha256: str | None = None
+    seed_sha256: str | None = None
 
     def __post_init__(self) -> None:
         for field in ("producer_root", "contract_path", "request_path", "memory_path", "receipts_path"):
@@ -70,6 +73,10 @@ class RetainedProducerReplaySource:
             "materials_sha256",
         ):
             _pin(getattr(self, field), "rsi_replay_source_pin_invalid")
+        for field in ("config_sha256", "task_input_sha256", "seed_sha256"):
+            value = getattr(self, field)
+            if value is not None:
+                _pin(value, "rsi_replay_source_pin_invalid")
 
     def fingerprint(self) -> dict[str, Any]:
         """Return a path-free stable identity suitable for resume fingerprints."""
@@ -84,6 +91,9 @@ class RetainedProducerReplaySource:
             "receipts_sha256": self.receipts_sha256,
             "envelope_sha256": self.envelope_sha256,
             "materials_sha256": self.materials_sha256,
+            "config_sha256": self.config_sha256,
+            "task_input_sha256": self.task_input_sha256,
+            "seed_sha256": self.seed_sha256,
         }
 
 
@@ -138,6 +148,9 @@ class RetainedProducerReplayGateway:
                 receipts_sha256=self.source.receipts_sha256,
                 envelope_sha256=self.source.envelope_sha256,
                 materials_sha256=self.source.materials_sha256,
+                config_sha256=self.source.config_sha256,
+                task_input_sha256=self.source.task_input_sha256,
+                seed_sha256=self.source.seed_sha256,
             )
         except (OSError, TypeError, ValueError, KeyError, RecursionError, OverflowError) as exc:
             if isinstance(exc, RSILearningError):

@@ -1240,6 +1240,15 @@ def build_parser() -> argparse.ArgumentParser:
     for pin in ("producer-fingerprint", "contract-sha256", "request-sha256", "memory-sha256",
                 "receipts-sha256", "envelope-sha256", "materials-sha256"):
         rsi_replay_parser.add_argument("--" + pin, required=True, help="independently retained byte digest")
+    rsi_replay_parser.add_argument(
+        "--evaluator-config-sha256", help="optional independent evaluator config digest",
+    )
+    rsi_replay_parser.add_argument(
+        "--evaluator-task-input-sha256", help="optional independent evaluator task-input digest",
+    )
+    rsi_replay_parser.add_argument(
+        "--evaluator-seed-sha256", help="optional independent evaluator seed digest",
+    )
     _add_home(rsi_replay_parser)
     _add_json(rsi_replay_parser)
 
@@ -6479,6 +6488,9 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 request_sha256=args.request_sha256, memory_sha256=args.memory_sha256,
                 receipts_sha256=args.receipts_sha256, envelope_sha256=args.envelope_sha256,
                 materials_sha256=args.materials_sha256,
+                config_sha256=args.evaluator_config_sha256,
+                task_input_sha256=args.evaluator_task_input_sha256,
+                seed_sha256=args.evaluator_seed_sha256,
             )
             _emit(payload, args.json)
             return 0 if payload["status"] == "completed" else 1
