@@ -2,9 +2,10 @@
 
 ## Current integration snapshot — 2026-10-13
 
-PR54–57, PR59, PR60, PR64–71 are merged into `origin/main` at `4e6621f`. PR68–71 cover
+PR54–57, PR59, PR60, PR64–74 are merged into `origin/main` at `1153004f`. PR68–74 cover
 status synchronization, explicit RSI CLI plan budgets, bounded fixture terminal assertions,
-and memory-admission holdout governance. Their required
+memory-admission holdout governance, terminal admission anchors, evaluator context pins,
+producer replay/CLI forwarding, and the provider-free Python admission bridge descriptor/adapter. Their required
 three-version CI passed for the merge heads; source/tree evidence is retained, with the
 known incomplete raw-log downloads for PR54 and PR56/57 recorded in HANDOFF. PR62/63 are
 superseded stacked PRs whose code is already in the PR64 ancestry. Earlier sections that
@@ -34,9 +35,10 @@ The local BRS ready/ack continuation is implemented and requires its own final-s
   now have inert composition tests. BRS retains whole-wave reservations, frozen memory,
   ordinal saves, exact captured CAS and durable pin obligations; multiple independent
   Python children still need separate original proof/journal/attempt routing and remain
-  fail-closed. The next bounded slice is retained admission-anchor validation at terminal
-  resume/reconcile entry. These contracts do not execute the actual native gateway or
-  establish runtime acceptance.
+  fail-closed. Retained terminal admission-anchor validation and the provider-free bridge
+  adapter now exist; automatic live scheduler invocation, independently observed runtime
+  inputs, and multiple-child proof routing remain open. These contracts do not execute the
+  actual native gateway or establish runtime acceptance.
 - **P1**: finish Feature189 release/toolchain provenance, configured static build/closure
   and sealed runtime evidence; compose Feature190 owner/lifecycle observations; wire
   actual local OpenEvolve/Shinka lifecycle/export and production RSI CLI/Linux acceptance.

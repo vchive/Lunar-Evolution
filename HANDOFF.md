@@ -2,9 +2,9 @@
 
 ## 当前集成状态 — 2026-10-13（更新）
 
-当前 `origin/main` 为 `4e6621f74a5aeb91f3003e5b2cc5366c96be0b1d`。PR68–71 已合入 main：状态文档同步、RSI CLI 显式 plan 预算、bounded fixture 的 failed 终态断言，以及 memory admission holdout 治理门。PR62/63 已关闭并由后续祖先链 supersede，不再代表待合入能力。PR54/56/57 的 raw-log 下载限制仍保留，不能把 source-only、merge-tree 或 CI 证据描述为完整 raw 审计。
+当前 `origin/main` 为 `1153004fc2c79cd418874025165a03a397662fe6`。PR68–74 已合入 main：状态/优先级同步、RSI CLI 显式 plan 预算、bounded fixture 的 failed 终态断言、memory admission holdout 治理门、terminal admission-anchor 校验、evaluator context pins、producer replay/CLI 接线，以及 provider-free Python admission bridge descriptor/adapter。PR62/63 已关闭并由后续祖先链 supersede，不再代表待合入能力。PR54/56/57 的 raw-log 下载限制仍保留，不能把 source-only、merge-tree 或 CI 证据描述为完整 raw 审计。
 
-当前 provider-free 能力覆盖 durable controller resume、unknown reconcile gate、fingerprint drift、统一预算、native replay、retained producer evidence，以及静态 Python 安装/输入/启动/运行时 handoff/build-closure 合同。Feature191 仍有 P0 开放项：真实 Python scheduler/runtime/handoff 输入、完整 interruption matrix，以及 BRS 多 child 的独立原始 proof/journal/attempt 路由；当前多 child admission 保持 fail-closed。Feature189 的真实来源/工具链、静态 CPython 构建与 sealed startup，以及 Feature191 的真实 Python 生命周期/adapter 仍未验收；本轮不运行真实 CPython、远程 evaluator 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。
+当前 provider-free 能力覆盖 durable controller resume、unknown reconcile gate、fingerprint drift、统一预算、native replay、retained producer evidence、evaluator context pins，以及静态 Python 安装/输入/启动/运行时 handoff/build-closure 合同。Feature191 仍有 P0 开放项：真实 Python scheduler/runtime/handoff 输入、完整 interruption matrix，以及 BRS 多 child 的独立原始 proof/journal/attempt 路由；当前多 child admission 保持 fail-closed。新增的 bridge descriptor/adapter 只映射已有 DRS/BRS pin facade，不代表 live scheduler 已自动接线或建立 runtime admission。Feature189 的真实来源/工具链、静态 CPython 构建与 sealed startup，以及 Feature191 的真实 Python 生命周期/adapter 仍未验收；本轮不运行真实 CPython、远程 evaluator 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。
 
 后文较早的 pending/verified-main 段落是历史交接记录；判断当前状态时以本节、最新 PR 审计记录和 `origin/main` 为准。
 
