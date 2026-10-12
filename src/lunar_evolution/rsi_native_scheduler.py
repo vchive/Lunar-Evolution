@@ -630,37 +630,50 @@ class NativeRSISchedulerProvider:
                 _fail("python_admission_prepared_journal_drift")
             verify_producer_bundle_prepared_intent(context.workspace, prepared_journal)
             verify_producer_bundle_python_handoff_anchor(context.workspace, prepared_journal)
-            sidecar = read_python_producer_admission_handoff_pinned(
-                batch / PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
-                expected_file_pin=pin,
-            )
-            handoff = sidecar.handoff
-            if (
-                sidecar.file_pin != pin
-                or handoff.handoff_sha256 != python_handoff_sha256
-                or handoff.state != "prepared"
-                or any(getattr(handoff, field) != value for field, value in identity.items())
-                or handoff.native_execution_receipt_sha256
-                != prepared_journal.native_execution_receipt_sha256
-                or handoff.admission_plan_sha256 != prepared_journal.admission_sha256
-                or handoff.contract_sha256 != request.contract_sha256
-                or handoff.evaluator_sha256 != request.evaluator_sha256
-                or handoff.environment_sha256 != request.environment_sha256
-            ):
-                _fail("python_admission_handoff_mismatch")
-            anchor = read_python_producer_admission_attempt_anchor(
-                batch / "python-producer-admission-anchor.json",
-                expected_anchor_sha256=expected_anchor_sha256,
-            )
-            if (
-                anchor.handoff_sha256 != handoff.handoff_sha256
-                or anchor.run_id != intent.run_id
-                or anchor.journal_id != intent.journal_id
-                or anchor.native_execution_receipt_sha256
-                != prepared_journal.native_execution_receipt_sha256
-                or anchor != project_python_producer_admission_attempt_anchor(handoff)
-            ):
-                _fail("python_admission_anchor_mismatch")
+
+            def reread_prepared_evidence():
+                """Revalidate immutable handoff and anchor bytes at each bridge boundary."""
+                persisted = parse_producer_bundle_publication_journal(
+                    batch / "journal.prepared.json",
+                )
+                if persisted != prepared_journal:
+                    _fail("python_admission_prepared_journal_drift")
+                verify_producer_bundle_prepared_intent(context.workspace, prepared_journal)
+                verify_producer_bundle_python_handoff_anchor(context.workspace, prepared_journal)
+                retained_sidecar = read_python_producer_admission_handoff_pinned(
+                    batch / PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
+                    expected_file_pin=pin,
+                )
+                retained_handoff = retained_sidecar.handoff
+                if (
+                    retained_sidecar.file_pin != pin
+                    or retained_handoff.handoff_sha256 != python_handoff_sha256
+                    or retained_handoff.state != "prepared"
+                    or any(getattr(retained_handoff, field) != value for field, value in identity.items())
+                    or retained_handoff.native_execution_receipt_sha256
+                    != prepared_journal.native_execution_receipt_sha256
+                    or retained_handoff.admission_plan_sha256 != prepared_journal.admission_sha256
+                    or retained_handoff.contract_sha256 != request.contract_sha256
+                    or retained_handoff.evaluator_sha256 != request.evaluator_sha256
+                    or retained_handoff.environment_sha256 != request.environment_sha256
+                ):
+                    _fail("python_admission_handoff_mismatch")
+                retained_anchor = read_python_producer_admission_attempt_anchor(
+                    batch / "python-producer-admission-anchor.json",
+                    expected_anchor_sha256=expected_anchor_sha256,
+                )
+                if (
+                    retained_anchor.handoff_sha256 != retained_handoff.handoff_sha256
+                    or retained_anchor.run_id != intent.run_id
+                    or retained_anchor.journal_id != intent.journal_id
+                    or retained_anchor.native_execution_receipt_sha256
+                    != prepared_journal.native_execution_receipt_sha256
+                    or retained_anchor != project_python_producer_admission_attempt_anchor(retained_handoff)
+                ):
+                    _fail("python_admission_anchor_mismatch")
+                return retained_sidecar, retained_anchor
+
+            _, anchor = reread_prepared_evidence()
             descriptor = build_python_admission_bridge_descriptor(
                 run_id=plan.run_id,
                 episode_id=request.episode_id,
@@ -673,6 +686,10 @@ class NativeRSISchedulerProvider:
                 _fail("python_admission_wait_check_missing")
             bridge = PythonAdmissionBridgeAdapter(controller, descriptor, wait_check=wait_check)
             result = bridge.pin_live(descriptor)
+            # The bridge may synchronously invoke owner callbacks.  Re-read after it
+            # returns so a callback cannot replace the trusted prepared evidence while
+            # still yielding an apparently valid admission record.
+            reread_prepared_evidence()
         except NativeRSISchedulerProviderError:
             raise
         except Exception as exc:

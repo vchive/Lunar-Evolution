@@ -95,3 +95,31 @@ def test_explicit_prepared_boundary_refuses_controller_workspace_drift(tmp_path)
             python_handoff_file_pin=value.pin,
             expected_anchor_sha256=value.anchor.anchor_sha256,
         )
+
+
+def test_explicit_prepared_boundary_rechecks_anchor_after_bridge_returns(tmp_path, monkeypatch):
+    value = _setup(tmp_path)
+    provider = _provider(value)
+    anchor_path = value.batch / "python-producer-admission-anchor.json"
+
+    class Bridge:
+        def __init__(self, _owner, _descriptor, *, wait_check):
+            assert callable(wait_check)
+
+        def pin_live(self, _descriptor):
+            anchor_path.write_bytes(anchor_path.read_bytes() + b"drift")
+            return "f" * 64
+
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.PythonAdmissionBridgeAdapter", Bridge,
+    )
+
+    with pytest.raises(NativeRSISchedulerProviderError):
+        provider.pin_python_admission_at_prepared_boundary(
+            value.request,
+            value.plan,
+            prepared_journal=value.journal,
+            python_handoff_sha256=value.handoff.handoff_sha256,
+            python_handoff_file_pin=value.pin,
+            expected_anchor_sha256=value.anchor.anchor_sha256,
+        )
