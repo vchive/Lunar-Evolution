@@ -137,6 +137,10 @@
   retained digest and complete original-binding comparisons. It performs no I/O or
   evaluator call and always keeps `production_admission=false`; actual project
   lifecycle/export wiring remains the preceding open task.
+- [x] Add a pure controller-backed Python admission bridge adapter over the existing DRS
+  and BRS pin facades. It reparses the canonical descriptor on every call, requires the
+  BRS continuation check, and preserves fail-closed identity/digest errors; automatic live
+  scheduler invocation remains the open integration task above.
 - [ ] Reuse Feature190 private owner/native lifecycle, cancellation, reap, FD
   census and terminal evidence. Keep v2 wire/FD schema unchanged.
 - [ ] Add focused tests for startup, decoys, output bounds, cancellation,
