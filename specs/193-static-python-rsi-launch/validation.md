@@ -1,5 +1,27 @@
 # Feature 193 validation
 
+## Cross-contract validation corrections — 2026-10-12
+
+F03 fixed native argv/marker/entrypoint and executable/lifecycle agreement,
+F04 exact integer sizes, and F05 exact count/time types, precision, independently
+pinned state and unknown cleanup gates pass 79 focused cases. Three initial
+test-oracle mismatches were retained and corrected without validation changes.
+Adding 280 disjoint existing build/source/report cases gives 359 unique passes,
+zero failures/errors/skips on Python3.13.12. Independent review replays the same
+79 cases with no blocker. Whole-source Ruff, compileall and diff-check pass.
+Completion metadata and XML are retained create-only in ignored
+`.lunar-evolution/reports/contract-validation-20261012/`. JUnit SHA256:
+`0dcebcfd1f18f3c2dd1f1874404aeb4f54fc91af04b6d314ceb6ced5f13909c0`.
+The compatibility run emitted pre-existing macOS pytest cleanup warnings.
+
+F05 callers must now supply three separately retained state pins. There are no
+existing production callers of this unpublished detached parser. F03 historical
+synthetic `--fixture`/`LUNAR_RSI_INPUT`/alternate-entrypoint descriptions now
+refuse instead of diverging from the reviewed C launcher. Old Feature189/193
+assets/profile/native intent wire are unchanged. No real sealed runtime,
+installation, input consumption or publication is accepted. The final committed
+source still needs its own CI and independent raw/source/tree audit.
+
 Status: stage 1 local verification complete; final-source CI/audit pending. All cases use local
 inert fixtures, fake C APIs or fake Python runtime facts. No CPython/toolchain
 acquisition/build, static image launch, input consumption or producer admission

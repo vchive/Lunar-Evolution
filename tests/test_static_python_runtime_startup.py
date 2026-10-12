@@ -37,12 +37,12 @@ def _vector(case: str = "baseline") -> tuple[dict, dict[str, str]]:
         "binding_sha256": _sha("binding"),
         "launch_intent_sha256": _sha("launch-intent"),
         "fixture_case": case,
-        "argv": ["bin/lunar-static", "--fixture"],
-        "marker": {"name": "LUNAR_RSI_INPUT", "value": _sha("request")},
+        "argv": ["bin/lunar-static", "--lunar-rsi-input-v1", _sha("request")],
+        "marker": {"name": "--lunar-rsi-input-v1", "value": _sha("request")},
         "startup": {
             "exit_code": 0 if case == "baseline" else 127,
-            "module": "lunar_static_main",
-            "callable": "main",
+            "module": "_lunar_static_main",
+            "callable": "_rsi_launch",
             "stdout_sha256": _sha("stdout"),
             "stderr_sha256": _sha("stderr"),
         },
@@ -82,19 +82,16 @@ def test_valid_vectors_are_immutable_and_canonical(case: str, terminal: str):
 
 
 @pytest.mark.parametrize("mutation,reason", [
-    (lambda p: p["build_closure_sha256"] == _sha("drift"), "pin"),
+    (lambda p: p.update(build_closure_sha256=_sha("drift")), "pin"),
     (lambda p: p["loader"].update(pt_interp=True), "startup"),
-    (lambda p: p["lifecycle"].update(terminal="loader_refused"), "startup"),
+    (lambda p: p["lifecycle"].update(terminal="loader_refused"), "lifecycle"),
     (lambda p: p["claims"].update(owner_verified=True), "claims"),
     (lambda p: p["owner"].update(inode=0), "integer"),
     (lambda p: p["loader"].update(dependencies=["z.so", "a.so"]), "loader"),
 ])
 def test_mutations_refuse(mutation, reason: str):
     payload, pins = _vector()
-    if reason == "pin":
-        payload["build_closure_sha256"] = _sha("drift")
-    else:
-        mutation(payload)
+    mutation(payload)
     with pytest.raises(startup.StaticPythonRuntimeStartupError) as caught:
         _parse(payload, pins)
     assert caught.value.reason == "static_python_runtime_startup_" + reason
@@ -144,3 +141,62 @@ def test_error_does_not_retain_input_or_parser_context():
     assert str(caught.value) == "static_python_runtime_startup_marker"
     assert "x" not in str(caught.value)
     assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize("argv", [
+    ["bin/lunar-static"],
+    ["bin/lunar-static", "--fixture"],
+    ["bin/lunar-static", "-c", _sha("request")],
+    ["bin/lunar-static", "-m", _sha("request")],
+    ["bin/lunar-static", _sha("request"), "--lunar-rsi-input-v1"],
+    ["bin/lunar-static", "--lunar-rsi-input-v1", _sha("drift")],
+    ["bin/lunar-static", "--lunar-rsi-input-v1", _sha("request"), "extra"],
+])
+def test_os_argv_must_follow_reviewed_launcher(argv):
+    payload, pins = _vector()
+    payload["argv"] = argv
+    with pytest.raises(startup.StaticPythonRuntimeStartupError, match="_argv$"):
+        _parse(payload, pins)
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    ("module", "other_module", "entrypoint"),
+    ("callable", "main", "entrypoint"),
+    ("exit_code", 1, "startup"),
+    ("exit_code", True, "integer"),
+])
+def test_baseline_cannot_select_another_entrypoint_or_claim_failed_startup(field, value, reason):
+    payload, pins = _vector()
+    payload["startup"][field] = value
+    with pytest.raises(startup.StaticPythonRuntimeStartupError, match="_" + reason + "$"):
+        _parse(payload, pins)
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    (lambda p: p["owner"]["executable"].update(path="bin/decoy"), "owner"),
+    (lambda p: p["owner"].update(mode=0o644), "owner"),
+    (lambda p: p["lifecycle"].update(events=["started"]), "lifecycle"),
+    (lambda p: p["lifecycle"].update(events=["exited", "started"]), "lifecycle"),
+    (lambda p: p["lifecycle"].update(events=["started", "started", "exited"]), "lifecycle"),
+])
+def test_executable_and_lifecycle_must_match_launch(mutation, reason):
+    payload, pins = _vector()
+    mutation(payload)
+    with pytest.raises(startup.StaticPythonRuntimeStartupError, match="_" + reason + "$"):
+        _parse(payload, pins)
+
+
+def test_loader_negative_cannot_report_success_exit():
+    payload, pins = _vector("loader-negative")
+    payload["startup"]["exit_code"] = 0
+    with pytest.raises(startup.StaticPythonRuntimeStartupError, match="_loader_negative$"):
+        _parse(payload, pins)
+
+
+def test_json_failure_has_no_retained_decode_context():
+    _, pins = _vector()
+    with pytest.raises(startup.StaticPythonRuntimeStartupError) as caught:
+        startup.parse_static_python_runtime_startup(b'{"private":"never",', **pins)
+    assert str(caught.value) == "static_python_runtime_startup_json"
+    assert caught.value.__cause__ is caught.value.__context__ is None

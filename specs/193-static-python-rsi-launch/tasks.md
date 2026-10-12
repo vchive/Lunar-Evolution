@@ -99,6 +99,10 @@ installation/runtime stage.
   startup, input/result, terminal, budget and publication-intent pins.
 - [x] F05b Enforce terminal/cleanup/publication state, request count and deadline
   consistency with all-false claims; add focused side-effect/refusal tests.
+- [x] F05d Correct F03 reviewed marker/argv/entrypoint and lifecycle agreement,
+  F04 strict size types, and F05 strict budget/time types, integer precision,
+  independent state pins and unknown-cleanup publication gate. Retain focused
+  and disjoint compatibility evidence; this does not close live F03/F04/F05.
 - [ ] F05c Complete final-source CI plus independent raw/source/tree audit for
   this continuation after PR56.
 - [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,

@@ -19,6 +19,7 @@ MAX_RUNTIME_HANDOFF_BYTES = 64 * 1024
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _STATES = frozenset({"completed", "failed", "cancelled", "unknown"})
 _PUBLICATION_STATES = frozenset({"prepared", "rejected", "unknown"})
+_CLEANUP_STATES = frozenset({"cleaned", "already_exited", "unknown"})
 _CLAIMS = (
     "runtime_startup_verified", "input_result_verified", "terminal_verified",
     "publication_ready", "recovery_verified", "production_admission",
@@ -64,11 +65,10 @@ def _integer(value: object, reason: str, *, minimum: int = 0, maximum: int = 2**
     return value
 
 
-def _number(value: object, reason: str, *, minimum: float = 0.0) -> float:
+def _number(value: object, reason: str, *, minimum: float = 0.0) -> int | float:
     if type(value) not in {int, float} or isinstance(value, bool):
         _fail(reason)
-    value = float(value)
-    if not math.isfinite(value) or value < minimum:
+    if (type(value) is float and not math.isfinite(value)) or value < minimum:
         _fail(reason)
     return value
 
@@ -115,8 +115,8 @@ def _canonical(value: object) -> bytes:
     try:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                           allow_nan=False).encode("utf-8")
-    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError) as exc:
-        raise StaticPythonRuntimeHandoffError("canonical") from exc
+    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError):
+        _fail("canonical")
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,6 +144,8 @@ def parse_static_python_runtime_handoff(
     expected_result_sha256: str, expected_publication_intent_sha256: str,
     expected_request_budget: int, expected_request_count: int,
     expected_wall_timeout_seconds: float, expected_deadline_unix: float,
+    expected_terminal_state: str, expected_cleanup_status: str,
+    expected_publication_state: str,
 ) -> StaticPythonRuntimeHandoff:
     """Validate one bounded canonical post-execution projection, without I/O."""
     try:
@@ -179,16 +181,33 @@ def parse_static_python_runtime_handoff(
             _sha(payload[field])
             if payload[field] != value:
                 _fail("cross_pin")
+        _integer(payload["request_budget"], "budget", minimum=1)
+        _integer(payload["request_count"], "budget")
         if payload["request_budget"] != request_budget or payload["request_count"] != request_count:
             _fail("budget")
-        if float(payload["wall_timeout_seconds"]) != timeout or float(payload["deadline_unix"]) != deadline:
+        actual_timeout = _number(payload["wall_timeout_seconds"], "timeout", minimum=0.000001)
+        actual_deadline = _number(payload["deadline_unix"], "deadline", minimum=0.000001)
+        if actual_timeout != timeout or actual_deadline != deadline:
             _fail("budget")
-        if payload["terminal_state"] not in _STATES or payload["publication_state"] not in _PUBLICATION_STATES:
+        if (type(payload["terminal_state"]) is not str or payload["terminal_state"] not in _STATES
+                or type(payload["publication_state"]) is not str or payload["publication_state"] not in _PUBLICATION_STATES):
             _fail("state")
-        if payload["cleanup_status"] not in {"cleaned", "already_exited", "unknown"}:
+        if type(payload["cleanup_status"]) is not str or payload["cleanup_status"] not in _CLEANUP_STATES:
             _fail("cleanup")
-        if payload["terminal_state"] != "completed" and payload["publication_state"] == "prepared":
+        if payload["publication_state"] == "prepared" and (
+            payload["terminal_state"] != "completed" or payload["cleanup_status"] == "unknown"
+        ):
             _fail("publication_state")
+        states = {
+            "terminal_state": (expected_terminal_state, _STATES),
+            "cleanup_status": (expected_cleanup_status, _CLEANUP_STATES),
+            "publication_state": (expected_publication_state, _PUBLICATION_STATES),
+        }
+        for field, (expected_state, allowed) in states.items():
+            if type(expected_state) is not str or expected_state not in allowed:
+                _fail("state_pin")
+            if payload[field] != expected_state:
+                _fail("state_pin")
         claims = _object(payload["claims"], frozenset(_CLAIMS), "claims")
         if any(value is not False for value in claims.values()):
             _fail("claims")
@@ -197,9 +216,10 @@ def parse_static_python_runtime_handoff(
             request_budget, request_count,
         )
     except _Refusal as exc:
-        raise StaticPythonRuntimeHandoffError(exc.reason) from None
+        reason = exc.reason
     except (UnicodeError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
-        raise StaticPythonRuntimeHandoffError("json") from None
+        reason = "json"
+    raise StaticPythonRuntimeHandoffError(reason) from None
 
 
 __all__ = [

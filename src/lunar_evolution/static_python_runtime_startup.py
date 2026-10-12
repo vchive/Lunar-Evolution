@@ -19,6 +19,7 @@ _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _LABEL = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 _PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./+-]{0,511}\Z")
 _CASES = ("baseline", "loader-negative")
+_MARKER = "--lunar-rsi-input-v1"
 _CLAIMS = ("startup_performed", "loader_negative_verified", "owner_verified", "production_admission")
 
 
@@ -26,7 +27,9 @@ class StaticPythonRuntimeStartupError(ValueError):
     """Fixed refusal code without caller-controlled context."""
 
     def __init__(self, reason: str) -> None:
-        self.reason = "static_python_runtime_startup_" + (reason if _LABEL.fullmatch(reason) else "invalid")
+        self.reason = "static_python_runtime_startup_" + (
+            reason if type(reason) is str and _LABEL.fullmatch(reason) else "invalid"
+        )
         super().__init__(self.reason)
 
 
@@ -109,8 +112,8 @@ def _scan(value: object) -> None:
 def _canonical(value: object) -> bytes:
     try:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError) as exc:
-        raise StaticPythonRuntimeStartupError("canonical") from exc
+    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError):
+        _fail("canonical")
 
 
 def _record(value: object) -> dict:
@@ -132,15 +135,18 @@ def _validate(payload: dict, expected: dict[str, str]) -> None:
     if payload["fixture_case"] not in _CASES:
         _fail("fixture_case")
     argv = payload["argv"]
-    if type(argv) is not list or not 1 <= len(argv) <= 16 or any(type(v) is not str or not v for v in argv):
+    if type(argv) is not list or len(argv) != 3 or any(type(v) is not str for v in argv):
         _fail("argv")
     _path(argv[0])
     marker = _object(payload["marker"], frozenset({"name", "value"}), "marker")
-    if marker["name"] != "LUNAR_RSI_INPUT" or type(marker["value"]) is not str or not re.fullmatch(r"[0-9a-f]{64}", marker["value"]):
+    if marker["name"] != _MARKER or type(marker["value"]) is not str or not _SHA.fullmatch(marker["value"]):
         _fail("marker")
+    if argv[1:] != [_MARKER, marker["value"]]:
+        _fail("argv")
     startup = _object(payload["startup"], frozenset({"exit_code", "module", "callable", "stdout_sha256", "stderr_sha256"}), "startup")
     _integer(startup["exit_code"], maximum=255)
-    _label(startup["module"]); _label(startup["callable"])
+    if startup["module"] != "_lunar_static_main" or startup["callable"] != "_rsi_launch":
+        _fail("entrypoint")
     _sha(startup["stdout_sha256"]); _sha(startup["stderr_sha256"])
     loader = _object(payload["loader"], frozenset({"pt_interp", "dt_needed", "dependencies", "sealed_material_sha256"}), "loader")
     if type(loader["pt_interp"]) is not bool or type(loader["dt_needed"]) is not bool:
@@ -155,20 +161,26 @@ def _validate(payload: dict, expected: dict[str, str]) -> None:
         _path(dep)
     owner = _object(payload["owner"], frozenset({"device", "inode", "mode", "executable"}), "owner")
     _integer(owner["device"]); _integer(owner["inode"], minimum=1); _integer(owner["mode"], maximum=0o7777); _record(owner["executable"])
+    if owner["executable"]["path"] != argv[0] or not owner["mode"] & 0o111:
+        _fail("owner")
     lifecycle = _object(payload["lifecycle"], frozenset({"events", "terminal"}), "lifecycle")
     events = lifecycle["events"]
     if type(events) is not list or not 1 <= len(events) <= 32 or any(type(v) is not str or not _LABEL.fullmatch(v) for v in events):
         _fail("lifecycle")
-    if lifecycle["terminal"] not in {"exited", "loader_refused"}:
+    if type(lifecycle["terminal"]) is not str or lifecycle["terminal"] not in {"exited", "loader_refused"}:
+        _fail("lifecycle")
+    if events != ["started", lifecycle["terminal"]]:
         _fail("lifecycle")
     claims = _object(payload["claims"], frozenset(_CLAIMS), "claims")
     if any(value is not False for value in claims.values()):
         _fail("claims")
     if payload["fixture_case"] == "loader-negative":
-        if lifecycle["terminal"] != "loader_refused" or not loader["pt_interp"] and not loader["dt_needed"]:
+        if (lifecycle["terminal"] != "loader_refused" or startup["exit_code"] == 0
+                or not loader["pt_interp"] and not loader["dt_needed"]):
             _fail("loader_negative")
     else:
-        if lifecycle["terminal"] != "exited" or loader["pt_interp"] or loader["dt_needed"] or deps:
+        if (lifecycle["terminal"] != "exited" or startup["exit_code"] != 0
+                or loader["pt_interp"] or loader["dt_needed"] or deps):
             _fail("startup")
 
 
@@ -202,9 +214,11 @@ def parse_static_python_runtime_startup(raw: bytes, *, expected_build_closure_sh
         _validate(payload, expected)
         return StaticPythonRuntimeStartup(raw, payload["installation_version"], payload["fixture_case"], payload["lifecycle"]["terminal"])
     except _Refusal as exc:
-        raise StaticPythonRuntimeStartupError(exc.reason) from None
+        reason = exc.reason
     except (UnicodeError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
-        raise StaticPythonRuntimeStartupError("json") from None
+        reason = "json"
+    # Raise after the handlers so malformed input is not retained as context.
+    raise StaticPythonRuntimeStartupError(reason) from None
 
 
 __all__ = ["MAX_RUNTIME_STARTUP_BYTES", "RUNTIME_STARTUP_SCHEMA", "StaticPythonRuntimeStartup", "StaticPythonRuntimeStartupError", "parse_static_python_runtime_startup"]

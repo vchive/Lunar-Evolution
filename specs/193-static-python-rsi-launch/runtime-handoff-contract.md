@@ -12,6 +12,14 @@ run. Terminal state, cleanup state, publication state, request count, timeout
 and deadline must match independently retained pins. A non-completed terminal
 cannot claim a prepared publication. All six capability claims remain false.
 
+Parsing also requires separate expected terminal, cleanup and publication
+states; matching digest labels alone cannot establish those states. Counts and
+sizes require exact integers (booleans refuse); time values require finite
+positive exact int/float values (strings and booleans refuse). Comparison must
+preserve integer precision and fractional deadlines. Prepared publication is
+allowed only for completed terminal plus known cleanup; unknown cleanup remains
+inspectable with rejected/unknown publication.
+
 Matching detached hashes are consistency evidence only. They do not prove a
 real CPython image, process owner, input authority, result validity, evaluator
 authenticity, publication eligibility or durable recovery. The live F05 stage

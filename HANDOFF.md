@@ -1,5 +1,28 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-12 static Python contract validation corrections
+
+F03 now follows the unchanged reviewed launcher exactly: argc3, the native
+`--lunar-rsi-input-v1` marker, matching digest, and fixed
+`_lunar_static_main._rsi_launch` entrypoint. Owner path/execute bits, ordered
+lifecycle and baseline/refusal exit codes must agree. F04 size fields reject
+booleans even when they compare equal to integer pins. F05 rejects boolean/text
+counts and times, preserves integer precision and fractional deadlines, requires
+independent terminal/cleanup/publication state pins and blocks prepared publication
+when cleanup is unknown. Public errors are raised outside parser handlers so they
+do not retain parser exception context. No source/profile/native wire was changed.
+
+Python3.13.12 passes 79 focused and 280 disjoint source/report/build compatibility
+cases, 359 unique passes with zero failures/errors/skips. Independent review
+replays the same 79 cases; it is not an additional unique count. Whole src/tests/tools
+Ruff, compileall and diff-check pass. Three initial test-oracle mismatches were
+corrected without relaxing validation and retained separately. macOS pytest's
+pre-existing temporary-directory cleanup warnings remain. Evidence is under
+ignored `.lunar-evolution/reports/contract-validation-20261012/` in the isolated
+worktree. Final-source CI/audit remains required. This corrects detached
+contracts only; real installation/build/startup/input/publication acceptance
+and production_admission remain false.
+
 ## 2026-10-12 static Python RSI runtime startup contract
 
 Feature193 F03 adds a provider-free `lunar-static-python-runtime-startup-v1`
