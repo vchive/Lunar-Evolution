@@ -3291,6 +3291,13 @@ class RSILearningController:
         if self.generation_regression_tasks:
             self._commit_governed_flow(record, state, execution, decision, frozen_parent=frozen_parent)
             return
+        # A configured admission gate protects the currently active snapshot, but it cannot
+        # authorize a newly generated memory item on its own.  Without the generation holdout
+        # path above, committing here would bypass the transfer regression and promotion gates
+        # entirely.  Stop before mutating RSIMemoryStore and require the caller to configure the
+        # governed generation path instead.
+        if self.memory_admission_gate is not None:
+            raise RSILearningError("rsi_memory_promotion_config_required")
         memory_id = f"memory-{execution.episode.episode_id}"
         if any(item.memory_id == memory_id for item in self.snapshot.items):
             return

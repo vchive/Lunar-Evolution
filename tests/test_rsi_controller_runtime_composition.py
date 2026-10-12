@@ -159,6 +159,26 @@ def test_removing_gate_on_resume_is_fingerprint_drift(tmp_path: Path):
         changed.resume("governed")
 
 
+def test_admission_gate_blocks_ungoverned_memory_commit(tmp_path: Path):
+    controller, _governance, _active = governed_controller(tmp_path)
+    initial = controller.snapshot
+    controller.target_judge = lambda execution: (execution.episode.wave > 0, "practice required")
+
+    with pytest.raises(RSILearningError, match="memory_promotion_config_required"):
+        controller.run_drs(
+            run_id="promotion-config-required", contract_sha256=CONTRACT,
+            evaluator_sha256=CONTRACT, environment_sha256=ENVIRONMENT, solver_id="mock",
+            max_practice_rounds=1, max_target_attempts=2,
+        )
+
+    # The practice receipt may be retained for recovery, but no candidate can enter the live
+    # snapshot without the configured transfer regression/promotion path.
+    assert controller.snapshot == initial
+    checkpoint = controller.ledger.controller_checkpoint("promotion-config-required")
+    assert checkpoint is not None
+    assert "generations" not in checkpoint[1]
+
+
 def test_governance_wait_cannot_dispatch_after_run_deadline(tmp_path: Path, monkeypatch):
     now = [100.0]
     monkeypatch.setattr("lunar_evolution.rsi_budget.time.time", lambda: now[0])
