@@ -1658,9 +1658,12 @@ class RSILearningController:
                 # for an unrelated episode is stale/foreign and must never be adopted by a
                 # fresh BRS channel.  The ledger and evidence gates below independently bind
                 # each child to its own journal/attempt.
-                if type(refs) is not dict or any(
-                    type(key) is not str or key not in episode_ids for key in refs
-                ):
+                if (type(refs) is not dict or any(
+                    type(key) is not str or key not in episode_ids or type(reference) is not dict
+                    or type(reference.get("native_plan")) is not dict
+                    or type(reference.get("prepared_journal")) is not dict
+                    for key, reference in refs.items()
+                )):
                     raise RSILearningError("rsi_python_brs_admission_identity_invalid")
                 wave = _PythonAdmissionBRSWave(
                     self, state, run_id, episode_ids, self.ledger, self.producer_workspace, self.producer_sidecar,
@@ -1766,13 +1769,17 @@ class RSILearningController:
                     or plan.task_id != journal.task_id):
                 raise RSILearningError("rsi_python_brs_admission_multiple_children")
             refs = wave.state.get("python_admission_refs", {})
-            if type(refs) is not dict or ready.episode_id in refs:
+            if (type(refs) is not dict or ready.episode_id in refs
+                    or any(type(key) is not str or type(reference) is not dict
+                           for key, reference in refs.items())):
                 raise RSILearningError("rsi_python_brs_admission_multiple_children")
             for episode_id, reference in refs.items():
                 if episode_id != ready.episode_id and (
                     reference.get("journal_id") == journal.journal_id
-                    or reference.get("native_plan", {}).get("plan_sha256") == plan.plan_sha256
-                    or reference.get("prepared_journal", {}).get("journal_id") == journal.journal_id
+                    or (type(reference.get("native_plan")) is dict
+                        and reference["native_plan"].get("plan_sha256") == plan.plan_sha256)
+                    or (type(reference.get("prepared_journal")) is dict
+                        and reference["prepared_journal"].get("journal_id") == journal.journal_id)
                 ):
                     raise RSILearningError("rsi_python_brs_admission_multiple_children")
             RSIRunBudget.load(wave.budget_state).check()
