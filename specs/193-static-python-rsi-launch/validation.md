@@ -347,3 +347,15 @@ passed 1,395 cases with exit code zero after this continuation. macOS pytest
 cleanup emitted permission/directory-not-empty warnings for existing protected
 fixture snapshots; no test failure or product exception occurred.
 Final-source CI and independent raw/source/tree audit remain pending.
+
+## Controlled build-driver continuation
+
+`tests/test_static_python_rsi_build_driver.py` builds a preparation through the
+existing source emitter/profile preparation seam, then exercises the driver
+without a compiler, linker, freezer, process, evaluator, network or runtime.
+The 16-case focused gate covers preparation SHA/canonical pin refusal, source,
+object, count, generator, header and order mutations, exact role sets and
+stock exclusions, unclosed/partial stages, plan detachment, immutable report
+evidence, NaN/inf/bool/string clock and interruption results, real-mode and
+environment refusal, and backend exception normalization. JUnit reports zero
+failures/errors/skips locally; this is not installation or runtime evidence.
