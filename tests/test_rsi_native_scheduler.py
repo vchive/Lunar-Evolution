@@ -290,50 +290,26 @@ def test_scheduler_provider_dispatch_does_not_read_python_admission_evidence(
         _python_admission_bridge_wait_check=lambda: None,
     )
     provider._inputs = lambda *, require_unexpired: inputs
-    result = object()
-    provider.recover = lambda _request, _plan: result
 
     monkeypatch.setattr(
         "lunar_evolution.rsi_native_scheduler._assert_plan_binding",
         lambda *_args, **_kwargs: None,
     )
+
+    dispatch: list[str] = []
+
+    def dispatch_and_stop(*_args, **_kwargs):
+        dispatch.append("dispatch")
+        raise RuntimeError("stop at native dispatch")
+
     monkeypatch.setattr(
         "lunar_evolution.rsi_native_scheduler.run_native_trusted_producer",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            receipt=SimpleNamespace(receipt_sha256=digest("receipt")),
-        ),
-    )
-    projected = SimpleNamespace(candidate=SimpleNamespace(
-        candidate_id="candidate", candidate_receipt_sha256=digest("candidate-receipt"),
-    ))
-    monkeypatch.setattr(
-        "lunar_evolution.rsi_native_scheduler._build_receipts",
-        lambda *_args, **_kwargs: projected,
-    )
-    monkeypatch.setattr(
-        "lunar_evolution.rsi_native_scheduler._journal_for_published_run",
-        lambda *_args, **_kwargs: (
-            object(), SimpleNamespace(digest=lambda: digest("journal")),
-        ),
-    )
-    monkeypatch.setattr(
-        "lunar_evolution.rsi_native_scheduler._read_retained",
-        lambda *_args, **_kwargs: object(),
-    )
-    monkeypatch.setattr(
-        "lunar_evolution.rsi_native_scheduler._retained_bundle",
-        lambda *_args, **_kwargs: projected,
-    )
-    monkeypatch.setattr(
-        "lunar_evolution.rsi_native_scheduler.persist_native_rsi_provenance",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "lunar_evolution.rsi_native_scheduler._provenance_payload",
-        lambda *_args, **_kwargs: {},
+        dispatch_and_stop,
     )
 
-    assert provider(req, plan) is result
+    with pytest.raises(NativeRSISchedulerProviderError, match="attempt_failed"):
+        provider(req, plan)
+    assert dispatch == ["dispatch"]
     assert touched == []
 
 
