@@ -17,7 +17,12 @@ from . import _benchmark_files as files
 from .algorithm import MAX_CONTRACT_BYTES, AlgorithmProblemContract
 from .candidate_evaluation_spec import strict_json
 from .official_evaluator_evidence import OfficialEvaluationReceipt, verify_official_evaluation
-from .producer_handoff import ProducerHandoffError, prepare_producer_seed_manifest
+from .producer_handoff import (
+    ProducerHandoffError,
+    ProducerResultEnvelope,
+    prepare_producer_seed_manifest,
+    producer_materials_sha256,
+)
 from .rsi_gateway import SolverRequest
 from .rsi_learning import MemorySnapshot, RSILearningError
 from .rsi_native_candidate import (
@@ -72,6 +77,7 @@ def inspect_producer_replay(
     memory_path: str | Path, receipts_path: str | Path, producer_id: str,
     producer_fingerprint: str, contract_sha256: str, request_sha256: str,
     memory_sha256: str, receipts_sha256: str, envelope_sha256: str,
+    materials_sha256: str,
 ) -> dict[str, Any]:
     """Map pinned local receipt fixtures with existing APIs, without publishing their result.
 
@@ -80,7 +86,7 @@ def inspect_producer_replay(
     """
     pins = tuple(_pin(value) for value in (
         producer_fingerprint, contract_sha256, request_sha256, memory_sha256, receipts_sha256,
-        envelope_sha256,
+        envelope_sha256, materials_sha256,
     ))
     if producer_id not in {"openevolve", "shinka"}:
         raise RSIProducerReplayError("rsi_producer_replay_solver_invalid")
@@ -90,7 +96,7 @@ def inspect_producer_replay(
         "production_admission": False, "solver_id": producer_id, "result": None,
         "producer_fingerprint": pins[0], "contract_sha256": pins[1],
         "request_sha256": pins[2], "memory_sha256": pins[3],
-        "envelope_sha256": pins[5], "receipts_sha256": pins[4],
+        "envelope_sha256": pins[5], "materials_sha256": pins[6], "receipts_sha256": pins[4],
     }
     observed: list[tuple[Path, bytes, tuple[int, ...]]] = []
     try:
@@ -105,6 +111,12 @@ def inspect_producer_replay(
                 or request.memory_snapshot_sha256 != memory.digest()):
             raise RSIProducerReplayError("rsi_producer_replay_request_drift")
         observed.append(_read(files.absolute_path(producer_root) / "producer-result.json", pins[5]))
+        envelope = ProducerResultEnvelope.from_dict(strict_json(observed[-1][1], MAX_REPLAY_BYTES))
+        if (envelope.producer_id != producer_id or envelope.producer_fingerprint != pins[0]
+                or envelope.contract_sha256 != contract.digest()):
+            raise RSIProducerReplayError("rsi_producer_replay_envelope_drift")
+        if producer_materials_sha256(envelope) != pins[6]:
+            raise RSIProducerReplayError("rsi_producer_replay_materials_drift")
         manifest = prepare_producer_seed_manifest(
             producer_root, contract, evaluator_fingerprint=request.evaluator_sha256,
             producer_fingerprint=pins[0], producer_id=producer_id,
@@ -166,7 +178,12 @@ def inspect_producer_replay(
                 "reason": "rsi_producer_replay_evidence_missing" if exc.reason == "missing" else "rsi_producer_replay_file_invalid"}
     except ProducerHandoffError as exc:
         return {**report, "status": "drifted", "reason": exc.code}
-    except (RSIProducerReplayError, RSILearningError, ValueError, TypeError, OSError):
+    except RSIProducerReplayError as exc:
+        # RSIProducerReplayError codes are fixed, path-free diagnostics.  Preserve the specific
+        # refusal so callers can distinguish an independently pinned materials drift from a
+        # malformed receipt while retaining the same non-authoritative status.
+        return {**report, "status": "drifted", "reason": str(exc)}
+    except (RSILearningError, ValueError, TypeError, OSError):
         return {**report, "status": "drifted", "reason": "rsi_producer_replay_evidence_drift"}
 
 

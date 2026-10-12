@@ -78,12 +78,14 @@ lunar-evolution rsi replay <producer-export-dir> \
   --solver openevolve --producer-fingerprint <digest> \
   --contract-sha256 <digest> --request-sha256 <digest> \
   --memory-sha256 <digest> --receipts-sha256 <digest> \
-  --envelope-sha256 <digest> --json
+  --envelope-sha256 <digest> --materials-sha256 <digest> --json
 ```
 
 The provider-free slice now exposes `rsi replay` with this retained evidence shape. The command
-requires byte pins for the contract, request, memory snapshot, producer envelope, and native
-receipt bundle. The receipt bundle is a plain wire projection of existing
+requires byte pins for the contract, request, memory snapshot, producer envelope, producer
+material descriptors, and native receipt bundle. The material pin is the canonical digest of the
+generic envelope's material records, exposed by `producer_materials_sha256`; it is independent of
+the raw envelope-byte pin and catches descriptor drift before receipt mapping. The receipt bundle is a plain wire projection of existing
 `NativeCandidateRecord`, `NativeExecutionReceipt`, `NativeEvaluationReceipt`,
 `NativePublicationReceipt`, and `OfficialEvaluationReceipt` records; no parallel result DTO is
 introduced. It reads all files with no-follow bounded descriptors, rechecks their identities, and

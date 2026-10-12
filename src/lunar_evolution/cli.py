@@ -1188,7 +1188,7 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_replay_parser.add_argument("--receipts", type=Path, required=True, help="retained native receipt bundle JSON")
     rsi_replay_parser.add_argument("--solver", choices=("openevolve", "shinka"), required=True)
     for pin in ("producer-fingerprint", "contract-sha256", "request-sha256", "memory-sha256",
-                "receipts-sha256", "envelope-sha256"):
+                "receipts-sha256", "envelope-sha256", "materials-sha256"):
         rsi_replay_parser.add_argument("--" + pin, required=True, help="independently retained byte digest")
     _add_home(rsi_replay_parser)
     _add_json(rsi_replay_parser)
@@ -6295,6 +6295,7 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                 producer_fingerprint=args.producer_fingerprint, contract_sha256=args.contract_sha256,
                 request_sha256=args.request_sha256, memory_sha256=args.memory_sha256,
                 receipts_sha256=args.receipts_sha256, envelope_sha256=args.envelope_sha256,
+                materials_sha256=args.materials_sha256,
             )
             _emit(payload, args.json)
             return 0 if payload["status"] == "completed" else 1

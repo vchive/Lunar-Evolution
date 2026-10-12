@@ -36,6 +36,7 @@ from lunar_evolution.producer_handoff import (
     declared_producer_environment_sha256,
     parse_producer_envelope,
     producer_bundle_dependency_sha256,
+    producer_materials_sha256,
 )
 from lunar_evolution.seed_handoff import SeedAdmissionError
 
@@ -160,6 +161,23 @@ def test_shinka_like_envelope_round_trips_and_normalizes_external_evidence() -> 
     assert second.to_dict()["materials"][0]["external_evidence"]["score_present"] is True
     assert second.to_dict()["external_evidence"]["score_present"] is True
     assert PRODUCER_RESULT_PROTOCOL == "lunar-producer-result-v1"
+
+
+def test_materials_pin_is_canonical_and_revalidates_mapping() -> None:
+    contract = _contract()
+    envelope = ProducerResultEnvelope(
+        schema_version="1",
+        producer_id="shinka",
+        producer_fingerprint=PRODUCER_SHA,
+        status="completed",
+        contract_sha256=contract.digest(),
+        budget={"max_iterations": 1},
+        materials=(ProducerMaterial("candidate_source", "candidate.py", 3, "c" * 64),),
+    )
+    assert producer_materials_sha256(envelope) == producer_materials_sha256(envelope.to_dict())
+    assert producer_materials_sha256(envelope) == producer_materials_sha256(
+        ProducerResultEnvelope.from_dict(envelope.to_dict())
+    )
 
 
 def test_terminal_noncompleted_envelopes_round_trip_without_materials() -> None:

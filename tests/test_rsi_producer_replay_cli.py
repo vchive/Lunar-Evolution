@@ -13,7 +13,11 @@ from lunar_evolution.official_evaluator_evidence import (
     OfficialEvaluationReceipt,
     OfficialEvaluatorProfile,
 )
-from lunar_evolution.producer_handoff import ProducerMaterial, ProducerResultEnvelope
+from lunar_evolution.producer_handoff import (
+    ProducerMaterial,
+    ProducerResultEnvelope,
+    producer_materials_sha256,
+)
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_learning import EMPTY_MEMORY_SNAPSHOT
 from lunar_evolution.rsi_native_candidate import (
@@ -63,6 +67,7 @@ def _fixture(tmp_path: Path, *, solver: str = "openevolve") -> dict[str, object]
         producer_run_id="replay-run",
     )
     envelope_pin = _write(root / "producer-result.json", envelope.to_dict())
+    materials_pin = producer_materials_sha256(envelope)
     request = SolverRequest.build(
         episode_id="replay-episode", contract_sha256=contract.digest(), evaluator_sha256=EVALUATOR,
         environment_sha256=ENVIRONMENT, memory_snapshot_sha256=EMPTY_MEMORY_SNAPSHOT.digest(), solver_id=solver,
@@ -100,7 +105,8 @@ def _fixture(tmp_path: Path, *, solver: str = "openevolve") -> dict[str, object]
         "root": root, "contract": contract_path, "request": request_path, "memory": memory_path,
         "receipts": receipts_path, "solver": solver, "contract_pin": contract_pin,
         "envelope_pin": envelope_pin, "request_pin": request_pin, "memory_pin": memory_pin,
-        "receipts_pin": receipts_pin, "producer": PRODUCER, "receipts_value": receipts,
+        "receipts_pin": receipts_pin, "materials_pin": materials_pin,
+        "producer": PRODUCER, "receipts_value": receipts,
     }
 
 
@@ -111,7 +117,8 @@ def _args(case: dict[str, object], home: Path | None = None) -> list[str]:
         "--receipts", str(case["receipts"]), "--solver", str(case["solver"]),
         "--producer-fingerprint", str(case["producer"]), "--contract-sha256", str(case["contract_pin"]),
         "--request-sha256", str(case["request_pin"]), "--memory-sha256", str(case["memory_pin"]),
-        "--receipts-sha256", str(case["receipts_pin"]), "--envelope-sha256", str(case["envelope_pin"]), "--json",
+        "--receipts-sha256", str(case["receipts_pin"]), "--envelope-sha256", str(case["envelope_pin"]),
+        "--materials-sha256", str(case["materials_pin"]), "--json",
     ]
     if home is not None:
         args.extend(["--home", str(home)])
@@ -151,6 +158,15 @@ def test_binding_drift_is_refused_without_execution(tmp_path: Path, capsys) -> N
     assert main(_args(case)) == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "drifted"
+
+
+def test_material_descriptor_pin_drift_is_refused_before_receipt_mapping(tmp_path: Path, capsys) -> None:
+    case = _fixture(tmp_path)
+    case["materials_pin"] = "8" * 64
+    assert main(_args(case)) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "drifted"
+    assert payload["reason"] == "rsi_producer_replay_materials_drift"
 
 
 def test_missing_receipts_is_fixed_unknown_and_does_not_create_home(tmp_path: Path, capsys) -> None:
