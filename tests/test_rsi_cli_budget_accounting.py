@@ -23,7 +23,7 @@ def test_run_accepts_unified_budget_and_usage_sidecar(tmp_path: Path, capsys) ->
         "--usage-ledger", str(usage), "--json", "--home", str(home),
     ]) == 1
     payload = json.loads(capsys.readouterr().out)
-    assert payload["status"] == "budget_exhausted"
+    assert payload["status"] == "failed"
     assert payload["usage_ledger"] == str(usage)
     assert len(UsageLedger(usage).records()) == 2
 
@@ -32,7 +32,7 @@ def test_run_accepts_unified_budget_and_usage_sidecar(tmp_path: Path, capsys) ->
     assert inspected["budget"]["planned"]["max_target_attempts"] == 1
     assert inspected["budget"]["consumed"]["target_attempts"] == 1
     assert inspected["reconcile"] == {
-        "required": False, "run_state": "budget_exhausted", "unknown_episode_ids": [],
+        "required": False, "run_state": "failed", "unknown_episode_ids": [],
     }
 
 
