@@ -745,7 +745,7 @@ def producer_materials_sha256(envelope: ProducerResultEnvelope | Mapping[str, An
         return _sha256(descriptors)
     except ProducerHandoffError:
         raise
-    except (TypeError, ValueError, RecursionError, OverflowError):
+    except Exception:  # noqa: BLE001 - caller-supplied envelope is an untrusted boundary
         _raise(PRODUCER_ENVELOPE_SCHEMA_INVALID)
 
 
