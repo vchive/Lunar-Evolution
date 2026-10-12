@@ -979,6 +979,21 @@ def export_shinka_result(
             _raise(SHINKA_BINDING_MISMATCH)
     else:
         verify_binding = None
+    # A bound result must carry the immutable run identity from the binding.  A
+    # caller may omit the optional run id for convenience, but an explicit
+    # different id is a composition drift and must fail before any export is
+    # created.  Keep the unbound exporter behavior unchanged.
+    bound_producer_run_id = producer_run_id
+    if binding is not None:
+        try:
+            binding_run_id = getattr(binding, "run_id", None)
+            if producer_run_id is not None and producer_run_id != binding_run_id:
+                _raise(SHINKA_BINDING_MISMATCH)
+            bound_producer_run_id = binding_run_id
+        except ShinkaHandoffError:
+            raise
+        except Exception as exc:
+            raise ShinkaHandoffError(SHINKA_BINDING_MISMATCH) from exc
     if top_k is not None and (type(top_k) is not int or not 1 <= top_k <= MAX_SHINKA_TOP_K):
         _raise(SHINKA_TOP_K_INVALID)
     contract_value: object = contract_sha256
@@ -1058,7 +1073,7 @@ def export_shinka_result(
                 schema_version="1",
                 producer_id=producer_id,
                 producer_fingerprint=producer_digest,
-                producer_run_id=producer_run_id,
+                producer_run_id=bound_producer_run_id,
                 status="completed",
                 contract_sha256=contract_digest,
                 budget=envelope_budget,
