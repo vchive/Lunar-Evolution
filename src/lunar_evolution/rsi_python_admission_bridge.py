@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
@@ -271,6 +272,95 @@ class PythonAdmissionBridge(Protocol):
         """Request the owning BRS thread to pin prepared evidence and acknowledge it."""
 
 
+class PythonAdmissionBridgeAdapter:
+    """Provider-free adapter over the controller's existing DRS/BRS pin facades.
+
+    The adapter deliberately accepts a descriptor at construction and reparses it on every
+    hook call.  It does not discover plans, read files, acquire locks, launch a producer or
+    invoke an evaluator.  A BRS call must provide the caller's continuation check so a worker
+    cannot turn a missing deadline/cancellation gate into an admission.
+    """
+
+    def __init__(
+        self,
+        controller: Any,
+        descriptor: PythonAdmissionBridgeDescriptor | dict[str, Any] | bytes | str,
+        *,
+        wait_check: Callable[[], None] | None = None,
+    ) -> None:
+        if controller is None:
+            _fail("controller_invalid")
+        self._controller = controller
+        self.descriptor = parse_python_admission_bridge_descriptor(descriptor)
+        if wait_check is not None and not callable(wait_check):
+            _fail("wait_check_invalid")
+        self._wait_check = wait_check
+
+    def _validated(self, descriptor: object) -> PythonAdmissionBridgeDescriptor:
+        try:
+            value = validate_python_admission_bridge_descriptor(
+                descriptor,
+                run_id=self.descriptor.run_id,
+                episode_id=self.descriptor.episode_id,
+            )
+        except PythonAdmissionBridgeError:
+            raise
+        except Exception as exc:
+            raise PythonAdmissionBridgeError("descriptor_invalid") from exc
+        if value.to_dict() != self.descriptor.to_dict():
+            _fail("descriptor_drift")
+        return value
+
+    @staticmethod
+    def _record_sha(value: object, code: str) -> str:
+        if type(value) is not str or _DIGEST.fullmatch(value) is None or value == "0" * 64:
+            _fail(code)
+        return value
+
+    def pin_drs(self, descriptor: PythonAdmissionBridgeDescriptor | dict[str, Any] | bytes | str) -> str:
+        """Pin the prepared evidence on the owning DRS thread."""
+        value = self._validated(descriptor)
+        method = getattr(self._controller, "_pin_python_admission_for_active_flow", None)
+        if not callable(method):
+            _fail("drs_hook_unavailable")
+        try:
+            result = method(
+                value.run_id,
+                value.episode_id,
+                native_plan=value.native_plan,
+                prepared_journal=value.prepared_journal,
+                expected_anchor_sha256=value.expected_anchor_sha256,
+            )
+        except PythonAdmissionBridgeError:
+            raise
+        except Exception as exc:
+            raise PythonAdmissionBridgeError("drs_pin_failed") from exc
+        return self._record_sha(result, "drs_record_invalid")
+
+    def pin_brs(self, descriptor: PythonAdmissionBridgeDescriptor | dict[str, Any] | bytes | str) -> str:
+        """Request the owner to pin prepared evidence for this BRS worker."""
+        value = self._validated(descriptor)
+        if self._wait_check is None:
+            _fail("brs_wait_check_missing")
+        method = getattr(self._controller, "_request_python_admission_for_brs_worker", None)
+        if not callable(method):
+            _fail("brs_hook_unavailable")
+        try:
+            result = method(
+                value.run_id,
+                value.episode_id,
+                native_plan=value.native_plan,
+                prepared_journal=value.prepared_journal,
+                expected_anchor_sha256=value.expected_anchor_sha256,
+                wait_check=self._wait_check,
+            )
+        except PythonAdmissionBridgeError:
+            raise
+        except Exception as exc:
+            raise PythonAdmissionBridgeError("brs_pin_failed") from exc
+        return self._record_sha(result, "brs_record_invalid")
+
+
 __all__ = [
     "MAX_PYTHON_ADMISSION_BRIDGE_BYTES",
     "PYTHON_ADMISSION_BRIDGE_PROTOCOL",
@@ -278,6 +368,7 @@ __all__ = [
     "PYTHON_ADMISSION_BRS_PIN_HOOK",
     "PYTHON_ADMISSION_DRS_PIN_HOOK",
     "PythonAdmissionBridge",
+    "PythonAdmissionBridgeAdapter",
     "PythonAdmissionBridgeDescriptor",
     "PythonAdmissionBridgeError",
     "build_python_admission_bridge_descriptor",
