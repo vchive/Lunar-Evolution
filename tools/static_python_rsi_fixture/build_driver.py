@@ -177,6 +177,62 @@ def _refuse(code: str, completed: list[str], evidence: dict[str, Mapping[str, An
     raise ControlledBuildError(code, report=_report(completed, evidence, **kwargs)) from None
 
 
+def _attempt(callback: Callable[[], Any], failure_code: str) -> tuple[Any, str | None]:
+    """Leave exception handlers before raising a detached fixed refusal."""
+    try:
+        return callback(), None
+    except ControlledBuildError as exc:
+        code = "interrupted" if exc.code == "static_python_rsi_build_driver_interrupted" else failure_code
+    except KeyboardInterrupt:
+        code = "interrupted"
+    except Exception:  # noqa: BLE001 - trusted seam details do not enter evidence
+        code = failure_code
+    return None, code
+
+
+def _finite_number(value: object) -> bool:
+    return type(value) is int or (type(value) is float and math.isfinite(value))
+
+
+def _stage_record(value: object, stage: str, plan: dict[str, Any]) -> dict[str, Any] | None:
+    """Retain only finite mock fields; never serialize arbitrary backend payloads."""
+    fields = {"stage", "status", "evidence"}
+    if stage == "configure":
+        fields.add("simulated_closure")
+    elif stage == "freeze":
+        fields.add("headers")
+    if type(value) is not dict or set(value) != fields:
+        return None
+    if any(type(value.get(key)) is not str for key in ("stage", "status", "evidence")):
+        return None
+    if value["stage"] != stage or value["status"] not in {"complete", "partial"}:
+        return None
+    expected_label = "mock-only" if value["status"] == "complete" else "mock-partial"
+    if value["evidence"] != expected_label:
+        return None
+    result = {key: value[key] for key in ("stage", "status", "evidence")}
+    if stage == "configure":
+        if type(value["simulated_closure"]) is not bool:
+            return None
+        result["simulated_closure"] = value["simulated_closure"]
+    elif stage == "freeze":
+        headers = value["headers"]
+        if type(headers) is not list or len(headers) != 9:
+            return None
+        checked = []
+        for record, task in zip(headers, plan["freeze_tasks"], strict=True):
+            if type(record) is not dict or set(record) != {"name", "generator_id", "output", "state"}:
+                return None
+            if any(type(item) is not str for item in record.values()):
+                return None
+            if record != {"name": task["name"], "generator_id": task["generator_id"],
+                          "output": task["output"], "state": "mock-generated"}:
+                return None
+            checked.append(record.copy())
+        result["headers"] = checked
+    return result
+
+
 def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -295,25 +351,23 @@ def run_controlled_build(
     interrupted: Callable[[], bool] | None = None,
 ) -> BuildReport:
     """Run the fixed mock graph from one independently pinned preparation wire."""
-    if mode != "mock":
+    if type(mode) is not str or mode != "mock":
         raise ControlledBuildError("real_execution_refused")
     env = dict(os.environ) if environment is None else environment
     if type(env) is not dict:
         raise ControlledBuildError("environment_invalid")
+    if any(type(key) is not str or type(value) is not str for key, value in env.items()):
+        raise ControlledBuildError("environment_invalid")
     if any(env.get(key) in {"1", "true", "TRUE", "yes"} for key in _REAL_OPT_INS):
         raise ControlledBuildError("real_execution_refused")
     wire = _preparation_wire(preparation)
-    if deadline is not None and (
-        type(deadline) not in {int, float} or isinstance(deadline, bool)
-        or not math.isfinite(float(deadline)) or float(deadline) <= 0
-    ):
+    if deadline is not None and (not _finite_number(deadline) or deadline <= 0):
         raise ControlledBuildError("deadline_invalid")
     selected = MockBuildBackend() if backend is None else backend
-    try:
-        backend_mode = selected.mode
-    except Exception:  # noqa: BLE001 - backend metadata is untrusted
-        raise ControlledBuildError("backend_invalid")
-    if backend_mode != "mock":
+    backend_mode, failure = _attempt(lambda: selected.mode, "backend_invalid")
+    if failure is not None:
+        raise ControlledBuildError(failure)
+    if type(backend_mode) is not str or backend_mode != "mock":
         raise ControlledBuildError("backend_not_mock")
     plan = json.loads(json.dumps(wire["candidate_build_inputs"], sort_keys=True, separators=(",", ":")))
     completed: list[str] = []
@@ -322,19 +376,17 @@ def run_controlled_build(
     headers = 0
 
     def checkpoint() -> None:
-        try:
-            now = monotonic()
-        except Exception:  # noqa: BLE001 - normalize trusted seam failure
-            _refuse("clock_failure", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
-        if deadline is not None and (type(now) not in {int, float} or isinstance(now, bool) or not math.isfinite(float(now))):
+        now, failure = _attempt(monotonic, "clock_failure")
+        if failure is not None:
+            _refuse(failure, completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
+        if not _finite_number(now):
             _refuse("clock_invalid", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
-        if deadline is not None and now >= float(deadline):
+        if deadline is not None and now >= deadline:
             _refuse("deadline_expired", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
         if interrupted is not None:
-            try:
-                stop = interrupted()
-            except Exception:  # noqa: BLE001 - normalize trusted seam failure
-                _refuse("interruption_check_failed", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
+            stop, failure = _attempt(interrupted, "interruption_check_failed")
+            if failure is not None:
+                _refuse(failure, completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
             if type(stop) is not bool:
                 _refuse("interruption_type_invalid", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
             if stop:
@@ -342,43 +394,25 @@ def run_controlled_build(
 
     for stage in STAGES:
         checkpoint()
-        backend_failure = False
-        try:
-            result = getattr(selected, stage)(json.loads(json.dumps(plan, sort_keys=True, separators=(",", ":"))))
-        except ControlledBuildError as exc:
-            if exc.report is None:
-                code = "interrupted" if exc.code.endswith("_interrupted") else "backend_refused"
-                _refuse(code, completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
-            raise
-        except Exception:  # noqa: BLE001 - backend detail must not escape
-            backend_failure = True
-            result = None
-        if backend_failure:
-            _refuse("backend_failure", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
-        if type(result) is not dict or result.get("stage") != stage:
+        result, failure = _attempt(
+            lambda stage=stage: getattr(selected, stage)(
+                json.loads(json.dumps(plan, sort_keys=True, separators=(",", ":")))
+            ),
+            "backend_failure",
+        )
+        if failure is not None:
+            _refuse(failure, completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
+        result = _stage_record(result, stage, plan)
+        if result is None:
             _refuse("backend_result_invalid", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
-        try:
-            detached_result = json.dumps(result, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        except (TypeError, ValueError, OverflowError):
-            _refuse("backend_result_invalid", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
-        evidence[stage] = json.loads(detached_result)
+        evidence[stage] = result
         if result.get("status") == "partial":
             _refuse("partial_stage", completed, evidence, partial=True, simulated=simulated, headers=headers)
-        if result.get("status") != "complete":
-            _refuse("backend_result_invalid", completed, evidence, partial=bool(completed), simulated=simulated, headers=headers)
         if stage == "configure":
             simulated = result.get("simulated_closure") is True
             if not simulated:
                 _refuse("configured_closure_unverified", completed, evidence, partial=True, simulated=False, headers=headers)
         if stage == "freeze":
-            header_records = result.get("headers")
-            expected = tuple((item["name"], item["generator_id"], item["output"]) for item in plan["freeze_tasks"])
-            if type(header_records) is not list or len(header_records) != 9:
-                _refuse("freeze_headers_invalid", completed, evidence, partial=True, simulated=simulated, headers=0)
-            actual = tuple((item.get("name"), item.get("generator_id"), item.get("output"))
-                           if type(item) is dict else (None, None, None) for item in header_records)
-            if actual != expected or any(type(item) is not dict or item.get("state") != "mock-generated" for item in header_records):
-                _refuse("freeze_headers_invalid", completed, evidence, partial=True, simulated=simulated, headers=0)
             headers = 9
         completed.append(stage)
         checkpoint()

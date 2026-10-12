@@ -161,3 +161,121 @@ def test_non_mock_backend_refuses_before_stage(preparation):
     with pytest.raises(ControlledBuildError, match="backend_not_mock"):
         run_controlled_build(preparation, backend=backend, environment={})
     assert backend.calls == []
+
+
+@pytest.mark.parametrize("source", ["clock", "interruption", "backend_mode", "backend"])
+def test_trusted_seam_failures_leave_no_caller_exception_context(preparation, source):
+    def explode():
+        raise ValueError("caller details must not enter the report")
+
+    class Backend(MockBuildBackend):
+        @property
+        def mode(self):
+            return explode() if source == "backend_mode" else "mock"
+
+        def configure(self, plan):
+            return explode() if source == "backend" else super().configure(plan)
+
+    kwargs = {"backend": Backend(), "environment": {}}
+    if source == "clock":
+        kwargs["monotonic"] = explode
+    elif source == "interruption":
+        kwargs["interrupted"] = explode
+    with pytest.raises(ControlledBuildError) as caught:
+        run_controlled_build(preparation, **kwargs)
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+    assert "caller details" not in str(caught.value)
+
+
+@pytest.mark.parametrize("mutation", ["extra", "claim", "object", "cycle", "wrong_label", "integer_closure"])
+def test_mock_stage_evidence_is_bounded_before_serialization(preparation, mutation):
+    class Backend(MockBuildBackend):
+        def configure(self, plan):
+            value = dict(super().configure(plan))
+            if mutation == "extra":
+                value["unbounded_metadata"] = "x" * 100_000
+            elif mutation == "claim":
+                value["production_admission"] = True
+            elif mutation == "object":
+                value["unbounded_metadata"] = object()
+            elif mutation == "cycle":
+                value["unbounded_metadata"] = value
+            elif mutation == "wrong_label":
+                value["evidence"] = "real-toolchain"
+            else:
+                value["simulated_closure"] = 1
+            return value
+
+    backend = Backend()
+    with pytest.raises(ControlledBuildError, match="backend_result_invalid") as caught:
+        run_controlled_build(preparation, backend=backend, environment={})
+    assert backend.calls == ["configure"]
+    assert not caught.value.report.stage_evidence
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize("mutation", ["missing", "non_dict", "extra", "foreign_output", "reorder"])
+def test_exact_header_receipts_are_required_before_compile(preparation, mutation):
+    class Backend(MockBuildBackend):
+        def freeze(self, plan):
+            value = dict(super().freeze(plan))
+            if mutation == "missing":
+                value["headers"].pop()
+            elif mutation == "non_dict":
+                value["headers"][0] = None
+            elif mutation == "extra":
+                value["headers"][0]["code"] = "opaque blob"
+            elif mutation == "foreign_output":
+                value["headers"][0]["output"] = "other.h"
+            else:
+                value["headers"].reverse()
+            return value
+
+    backend = Backend()
+    with pytest.raises(ControlledBuildError, match="backend_result_invalid") as caught:
+        run_controlled_build(preparation, backend=backend, environment={})
+    assert backend.calls == ["configure", "freeze"]
+    assert caught.value.report.completed_stages == ("configure",)
+    assert "freeze" not in caught.value.report.stage_evidence
+
+
+def test_original_absolute_deadline_is_not_refreshed_after_stage(preparation):
+    ticks = iter((1, 1, 2))
+    backend = MockBuildBackend()
+    with pytest.raises(ControlledBuildError, match="deadline_expired") as caught:
+        run_controlled_build(preparation, backend=backend, environment={},
+                             deadline=2, monotonic=lambda: next(ticks))
+    assert backend.calls == ["configure"]
+    assert caught.value.report.completed_stages == ("configure",)
+
+
+def test_large_integer_deadline_preserves_precision(preparation):
+    deadline = 10**400
+    backend = MockBuildBackend()
+    with pytest.raises(ControlledBuildError, match="deadline_expired"):
+        run_controlled_build(preparation, backend=backend, environment={}, deadline=deadline,
+                             monotonic=lambda: deadline)
+    assert not backend.calls
+
+
+@pytest.mark.parametrize("stage", ["configure", "freeze", "compile", "link"])
+def test_partial_stages_never_enter_completed_inventory(preparation, stage):
+    backend = MockBuildBackend(partial_stage=stage)
+    with pytest.raises(ControlledBuildError, match="partial_stage") as caught:
+        run_controlled_build(preparation, backend=backend, environment={})
+    assert caught.value.report.completed_stages == tuple(backend.calls[:-1])
+    assert caught.value.report.partial is True
+
+
+def test_keyboard_interrupt_preserves_completed_stage_evidence(preparation):
+    class Backend(MockBuildBackend):
+        def compile(self, plan):
+            self.calls.append("compile")
+            raise KeyboardInterrupt("private caller detail")
+
+    backend = Backend()
+    with pytest.raises(ControlledBuildError, match="interrupted") as caught:
+        run_controlled_build(preparation, backend=backend, environment={})
+    assert caught.value.report.completed_stages == ("configure", "freeze")
+    assert caught.value.__context__ is None
