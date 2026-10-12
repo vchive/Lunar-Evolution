@@ -353,7 +353,7 @@ Final-source CI and independent raw/source/tree audit remain pending.
 `tests/test_static_python_rsi_build_driver.py` builds a preparation through the
 existing source emitter/profile preparation seam, then exercises the driver
 without a compiler, linker, freezer, process, evaluator, network or runtime.
-The 16-case focused gate covers preparation SHA/canonical pin refusal, source,
+The 38-case focused gate covers preparation SHA/canonical pin refusal, source,
 object, count, generator, header and order mutations, exact role sets and
 stock exclusions, unclosed/partial stages, plan detachment, immutable report
 evidence, NaN/inf/bool/string clock and interruption results, real-mode and
