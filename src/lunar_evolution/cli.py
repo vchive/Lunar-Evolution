@@ -5541,8 +5541,21 @@ def _rsi_run_payload(config: Config, args: argparse.Namespace) -> dict[str, obje
     run_id = args.run_id or f"rsi-{uuid.uuid4().hex[:16]}"
     ledger = RSILedger(config.home / "rsi.sqlite3")
     gateway = fixture_solver_gateway(args.solver, terminal_status=args.worker_status)
-    practice_round_default = 3 if args.mode == "drs" else args.practice_count
-    target_attempt_default = 4 if args.mode == "drs" else 1
+    # The parser leaves these limits unset so the command can choose mode-specific
+    # defaults.  Once a caller supplies a value, it must drive both the persisted
+    # controller plan and its canonical budget policy; otherwise the two records
+    # can silently disagree (for example, a requested one target attempt with a
+    # plan that still allows four).
+    practice_round_default = (
+        args.max_practice_rounds
+        if args.max_practice_rounds is not None
+        else (3 if args.mode == "drs" else args.practice_count)
+    )
+    target_attempt_default = (
+        args.max_target_attempts
+        if args.max_target_attempts is not None
+        else (4 if args.mode == "drs" else 1)
+    )
     budget = _rsi_budget_from_args(
         args,
         defaults={
