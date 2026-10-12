@@ -89,6 +89,12 @@ installation/runtime stage.
   binding and false-claim enforcement.
 - [x] F03b Add focused canonical/type/bounds/side-effect tests and export the
   detached DTO parser. This does not execute a runtime or verify an owner.
+- [x] F04a Add a provider-free input/result cross-pin DTO that joins F03 startup
+  and F04 report digests/sizes without raw inputs or solver/result authority.
+- [x] F04b Enforce canonical JSON, duplicate-key/type/bounds checks, exact pins,
+  fixed computation and all-false claims with focused side-effect tests.
+- [ ] F04c Complete final-source CI plus independent raw/source/tree audit for
+  this continuation and merge after PR55.
 - [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,
   configure the build, generate all frozen headers, retain object/archive/link
   manifests and verify the final ELF/artifact bytes under a separate controlled

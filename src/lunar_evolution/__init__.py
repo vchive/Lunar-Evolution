@@ -1039,6 +1039,14 @@ from .static_python_build_closure import (
     canonical_sha256,
     parse_static_python_build_closure,
 )
+from .static_python_input_result import (
+    INPUT_REPORT_SCHEMA,
+    INPUT_RESULT_SCHEMA,
+    MAX_INPUT_RESULT_BYTES,
+    StaticPythonInputResult,
+    StaticPythonInputResultError,
+    parse_static_python_input_result,
+)
 from .static_python_runtime_startup import (
     MAX_RUNTIME_STARTUP_BYTES,
     RUNTIME_STARTUP_SCHEMA,
@@ -1101,6 +1109,8 @@ __all__ = [
     "HOLDOUT_AUDIT_SCHEMA_VERSION",
     "HOLDOUT_MAX_DURATION_MS",
     "HOLDOUT_MAX_SNAPSHOT_BYTES",
+    "INPUT_REPORT_SCHEMA",
+    "INPUT_RESULT_SCHEMA",
     "INVENTORY_PROTOCOL",
     "INVENTORY_SCHEMA_VERSION",
     "LINUX_FD_CONTROL_IMPLEMENTATION",
@@ -1116,6 +1126,7 @@ __all__ = [
     "MAX_BUILD_CLOSURE_BYTES",
     "MAX_HOLDOUTS",
     "MAX_HOST_REQUEST_JOURNAL_BYTES",
+    "MAX_INPUT_RESULT_BYTES",
     "MAX_INVENTORY_DEPTH",
     "MAX_INVENTORY_FILES",
     "MAX_INVENTORY_FILE_BYTES",
@@ -1557,6 +1568,8 @@ __all__ = [
     "StaticPythonArtifactVerificationError",
     "StaticPythonBuildClosure",
     "StaticPythonBuildClosureError",
+    "StaticPythonInputResult",
+    "StaticPythonInputResultError",
     "StaticPythonRuntimeStartup",
     "StaticPythonRuntimeStartupError",
     "StoredActorCleanRoomEvidence",
@@ -1765,6 +1778,7 @@ __all__ = [
     "parse_registration_seal",
     "parse_seed_manifest",
     "parse_static_python_build_closure",
+    "parse_static_python_input_result",
     "parse_static_python_runtime_startup",
     "parse_trusted_bootstrap_evidence",
     "parse_trusted_bootstrap_process_registration_handoff",
