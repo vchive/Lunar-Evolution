@@ -176,6 +176,55 @@ def test_openevolve_explicit_run_drift_is_rejected_before_evaluation(tmp_path: P
     assert not evaluated
 
 
+def test_openevolve_bound_run_drift_is_rejected_before_opening_external_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A foreign run id must fail before an untrusted producer path is inspected."""
+    import lunar_evolution.openevolve_handoff as openevolve_module
+
+    binding, _terminal, _observation, _result = _supported_chain(tmp_path, producer="openevolve")
+    opened = False
+
+    def fail_open(_root):
+        nonlocal opened
+        opened = True
+        pytest.fail("binding drift must precede external-root I/O")
+
+    monkeypatch.setattr(openevolve_module, "_external_root", fail_open)
+    with pytest.raises(OpenEvolveHandoffError, match=RESULT_BINDING_MISMATCH):
+        admit_openevolve_result(
+            tmp_path / "foreign-producer-run",
+            object(),  # contract is never touched after the run-id preflight refusal
+            lambda *_args: pytest.fail("binding drift must precede evaluation"),
+            evaluator_fingerprint=binding.evaluator_fingerprint,
+            producer_fingerprint=binding.producer_fingerprint,
+            producer_run_id="foreign-run",
+            binding=binding,
+        )
+    assert opened is False
+
+
+def test_openevolve_bound_evaluator_drift_is_rejected_before_opening_external_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lunar_evolution.openevolve_handoff as openevolve_module
+
+    binding, _terminal, _observation, _result = _supported_chain(tmp_path, producer="openevolve")
+    monkeypatch.setattr(
+        openevolve_module, "_external_root",
+        lambda _root: pytest.fail("binding drift must precede external-root I/O"),
+    )
+    with pytest.raises(OpenEvolveHandoffError, match=RESULT_BINDING_MISMATCH):
+        admit_openevolve_result(
+            tmp_path / "foreign-producer-run",
+            object(),  # contract is not needed after the evaluator preflight refusal
+            lambda *_args: pytest.fail("binding drift must precede evaluation"),
+            evaluator_fingerprint="f" * 64,
+            producer_fingerprint=binding.producer_fingerprint,
+            binding=binding,
+        )
+
+
 def test_openevolve_binding_normalizes_run_id_in_envelope_and_provenance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
