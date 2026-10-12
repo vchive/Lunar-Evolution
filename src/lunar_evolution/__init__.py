@@ -1039,6 +1039,13 @@ from .static_python_build_closure import (
     canonical_sha256,
     parse_static_python_build_closure,
 )
+from .static_python_runtime_startup import (
+    MAX_RUNTIME_STARTUP_BYTES,
+    RUNTIME_STARTUP_SCHEMA,
+    StaticPythonRuntimeStartup,
+    StaticPythonRuntimeStartupError,
+    parse_static_python_runtime_startup,
+)
 from .trusted_bootstrap_handoff import (
     TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL,
     TRUSTED_BOOTSTRAP_HANDOFF_SCHEMA_VERSION,
@@ -1129,6 +1136,7 @@ __all__ = [
     "MAX_REQUEST_DURATION_MS",
     "MAX_REQUEST_EVENTS",
     "MAX_REQUEST_EVIDENCE_BYTES",
+    "MAX_RUNTIME_STARTUP_BYTES",
     "NATIVE_RSI_FAILURE_PROVENANCE_NAME",
     "NATIVE_RSI_INPUT_MARKER",
     "PRODUCER_LAUNCH_INPUT_MARKER",
@@ -1156,6 +1164,7 @@ __all__ = [
     "PYTHON_RUNTIME_OBSERVATION_PROTOCOL",
     "RSI_PROTOCOL",
     "RSI_SCHEMA_VERSION",
+    "RUNTIME_STARTUP_SCHEMA",
     "SUPPORTED_FIXTURE_SOLVERS",
     "SUPPORTED_PYTHON_PRODUCERS",
     "TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL",
@@ -1548,6 +1557,8 @@ __all__ = [
     "StaticPythonArtifactVerificationError",
     "StaticPythonBuildClosure",
     "StaticPythonBuildClosureError",
+    "StaticPythonRuntimeStartup",
+    "StaticPythonRuntimeStartupError",
     "StoredActorCleanRoomEvidence",
     "StrategyResult",
     "TargetJudge",
@@ -1754,6 +1765,7 @@ __all__ = [
     "parse_registration_seal",
     "parse_seed_manifest",
     "parse_static_python_build_closure",
+    "parse_static_python_runtime_startup",
     "parse_trusted_bootstrap_evidence",
     "parse_trusted_bootstrap_process_registration_handoff",
     "parse_trusted_bootstrap_registration",

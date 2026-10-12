@@ -19,6 +19,18 @@ validation passes37 helper/process-ownership cases, Ruff across src/tests/tools,
 compileall and diff checks; no actual producer, solver or evaluator ran.
 
 
+## 2026-10-12 static Python RSI runtime startup contract
+
+Feature193 F03 adds a provider-free `lunar-static-python-runtime-startup-v1`
+comparator for canonical startup and loader-negative DTOs. It binds F02,
+installation and launch-intent digests; checks exact marker/argv/startup,
+loader, owner and lifecycle fields; and keeps all capability claims false.
+Baseline and loader-negative cases are synthetic and the API has no process,
+filesystem, `/proc`, ELF or network effects. Focused tests cover strict types,
+canonical bytes, pin drift, lifecycle/loader cross-fields, duplicate keys,
+bounds and side-effect absence. Actual sealed-image startup, loader-negative,
+native owner/lifecycle and installation acceptance remain open.
+
 ## 2026-10-12 detached RSI marker installation contract
 
 Feature193 F01 now has a separate bounded canonical description wrapper with
