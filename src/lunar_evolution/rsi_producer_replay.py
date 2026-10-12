@@ -92,7 +92,8 @@ def inspect_producer_replay(
     memory_path: str | Path, receipts_path: str | Path, producer_id: str,
     producer_fingerprint: str, contract_sha256: str, request_sha256: str,
     memory_sha256: str, receipts_sha256: str, envelope_sha256: str,
-    materials_sha256: str,
+    materials_sha256: str, config_sha256: str | None = None,
+    task_input_sha256: str | None = None, seed_sha256: str | None = None,
 ) -> dict[str, Any]:
     """Map pinned local receipt fixtures with existing APIs, without publishing their result.
 
@@ -103,6 +104,11 @@ def inspect_producer_replay(
         producer_fingerprint, contract_sha256, request_sha256, memory_sha256, receipts_sha256,
         envelope_sha256, materials_sha256,
     ))
+    context_pins = {
+        "config_sha256": None if config_sha256 is None else _pin(config_sha256),
+        "task_input_sha256": None if task_input_sha256 is None else _pin(task_input_sha256),
+        "seed_sha256": None if seed_sha256 is None else _pin(seed_sha256),
+    }
     if producer_id not in {"openevolve", "shinka"}:
         raise RSIProducerReplayError("rsi_producer_replay_solver_invalid")
     report: dict[str, Any] = {
@@ -112,6 +118,7 @@ def inspect_producer_replay(
         "producer_fingerprint": pins[0], "contract_sha256": pins[1],
         "request_sha256": pins[2], "solver_request_sha256": None, "memory_sha256": pins[3],
         "envelope_sha256": pins[5], "materials_sha256": pins[6], "receipts_sha256": pins[4],
+        "evaluator_context": context_pins,
     }
     observed: list[tuple[Path, bytes, tuple[int, ...]]] = []
     sources: list[tuple[Path, tuple[int, ...], str]] = []
@@ -182,6 +189,10 @@ def inspect_producer_replay(
             candidate_source_sha256=bundle.candidate.candidate_source_sha256,
             execution_receipt_sha256=bundle.execution.receipt_sha256,
             publication_receipt_sha256=bundle.publication.receipt_sha256,
+            holdout_sha256=None,
+            config_sha256=context_pins["config_sha256"],
+            task_input_sha256=context_pins["task_input_sha256"],
+            seed_sha256=context_pins["seed_sha256"],
         )
         if bundle.official_evaluator_receipt.raw_verdict_sha256 != bundle.evaluation.receipt_sha256:
             raise RSIProducerReplayError("rsi_producer_replay_evaluator_drift")

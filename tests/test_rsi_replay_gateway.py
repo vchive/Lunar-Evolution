@@ -89,6 +89,38 @@ def test_source_fingerprint_is_path_free_and_pins_are_checked(tmp_path: Path) ->
         )
 
 
+def test_optional_evaluator_context_pins_are_in_fingerprint(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    pinned = replace(source, config_sha256="5" * 64, task_input_sha256="6" * 64, seed_sha256="7" * 64)
+    fingerprint = pinned.fingerprint()
+    assert fingerprint["config_sha256"] == "5" * 64
+    assert fingerprint["task_input_sha256"] == "6" * 64
+    assert fingerprint["seed_sha256"] == "7" * 64
+    assert fingerprint != source.fingerprint()
+
+
+def test_optional_evaluator_context_pins_are_forwarded_to_inspection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    request = _request()
+    source = replace(
+        _source(tmp_path), config_sha256="5" * 64, task_input_sha256="6" * 64, seed_sha256="7" * 64,
+    )
+    gateway = RetainedProducerReplayGateway(source)
+    result = _result(request)
+    observed: dict[str, object] = {}
+
+    def inspect(**kwargs):
+        observed.update(kwargs)
+        return {"status": "completed", "result": result.to_dict()}
+
+    monkeypatch.setattr("lunar_evolution.rsi_replay_gateway.inspect_producer_replay", inspect)
+    assert gateway.run(request) == result
+    assert observed["config_sha256"] == "5" * 64
+    assert observed["task_input_sha256"] == "6" * 64
+    assert observed["seed_sha256"] == "7" * 64
+
+
 def test_completed_replay_is_mapped_and_revalidated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     request = _request()
     result = _result(request)
