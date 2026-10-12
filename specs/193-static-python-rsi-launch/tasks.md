@@ -84,6 +84,11 @@ installation/runtime stage.
 - [x] F02b Implement the pure caller-byte DTO/comparator and focused synthetic
   tests. It performs no filesystem, process, toolchain, freezer, linker or ELF
   operation and does not establish a completed build.
+- [x] F02d Correct composition with a complete canonical F01 wrapper and four
+  mandatory independent pins; align Git/tree hash domains, reviewed freeze
+  identity and strict ELF/type/error semantics. Verify 210 F02 cases plus the
+  disjoint F01/F03/F04/F05/helper suites. Final-source CI/audit remains pending;
+  real F02c build acceptance is unchanged.
 - [x] F03a Specify and implement the provider-free startup/loader-negative wire,
   with baseline and refusal fixtures, owner metadata, lifecycle checks, pin
   binding and false-claim enforcement.

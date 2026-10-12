@@ -1,5 +1,36 @@
 # Feature 193 validation
 
+## F02 complete-F01 composition correction — 2026-10-12
+
+The previous F02 fixture used a partial descriptor and missed incompatibility
+with the actual F01 contract. F02 now requires the complete canonical F01 wrapper
+and four separately supplied pins, delegates its validation to the unchanged F01
+parser, and compares validated provenance with exact built-in types. Reviewed
+40-character Git object IDs, source-tree hash domain, nine freeze identities and
+strict ELF profile fields now agree across both contracts. Re-signed malformed
+nested descriptions, boolean/integer substitutions and noncanonical F01 input
+refuse with fixed errors. Public canonical hashing retains integer precision,
+bounds and context-free failures without caller-subclass callbacks.
+
+Root Python3.11.15 final combined verification passes 485 distinct cases:
+F01 189, F02 210, F03/F04/F05 79, and high-FD helper 7. Actual JUnit identities
+are unique, with zero failures/errors/skips. Whole-source Ruff, compileall and
+diff-check pass; fresh external basetemp avoids the old pytest cleanup warnings.
+The isolated worktree retains `final-integrated.xml` and create-only
+`final-integrated-completion.json` under ignored
+`.lunar-evolution/reports/contract-validation-20261012/`. XML SHA256 is
+`33184602b8a25b8ba0f0b287c8f5df7596c374839de82a1fc0ab6d8dbb7ef2d8`.
+The implementation agent verifies the same F01/F02 cases; those passes are not
+added to root's unique count. Earlier baseline and first-failure evidence remains retained.
+
+The merged dependency includes PR58's test-only high-FD repair. The superseded
+PR59 run38198708634 was cancelled to release queued jobs; it is not passing
+evidence. The final committed source requires a new complete CI and independent
+raw/source/tree audit. No old Feature189/193 assets, F01 parser, native wire or
+production caller changed. These are detached metadata comparisons; F02c and
+all real installation/runtime/solver acceptance gates remain open and
+`production_admission=false`.
+
 ## Cross-contract validation corrections — 2026-10-12
 
 F03 fixed native argv/marker/entrypoint and executable/lifecycle agreement,
