@@ -7381,3 +7381,16 @@ process, evaluator, solver, publication or recovery effects. Ten focused tests,
 Ruff, compileall and diff checks pass locally. This is a synthetic consistency
 contract only; actual sealed launch, terminal/broker/material evidence,
 authoritative result handoff and durable publication/recovery remain open.
+# 2026-10-14 当前主线同步
+
+当前 `main=dd84c2b`，工作区干净，已推送到 `origin/main`。本轮新增并合入：
+
+- GitHub 首页 README 重写，明确安装、五分钟 provider-free 试跑、RSI CLI、执行链路、数据布局和 P0/P1/P2 边界；不宣称真实模型、远程 evaluator、sealed CPython 或 producer campaign 已验收。
+- PR97 的 provider-free 多 episode context 已合入；child preview 会保留 episode 自己的 request、memory、launch、sidecar 和 proof，broker headers 采用 detached snapshot。
+- scheduler preclaim 只读门禁：在 controller 持锁的 child bridge 中复核 sealed native inputs、完整 request/plan、同一 ledger、绝对 deadline、取消状态和既有 native claim；它不创建 claim、不启动进程、不调用 producer。
+- `tests/test_rsi_resume_matrix.py` 和 `specs/160-rsi-learning-mode/resume-regression-matrix.md` 补齐 BRS durable resume、child result 已持久化但 checkpoint 未推进、cancelled/timed_out/abandoned terminal replay 的回归语义。
+- `specs/160-rsi-learning-mode/p1-cli-provider-free-audit-2026-10-14.md` 记录 P1 CLI/provider-free 审计：`native-producer` 在合同、home、ledger 和 fixture I/O 前拒绝；replay/exporter 只读。
+
+本轮本地验证：新增 resume matrix 13/13、preclaim 三个 focused case 通过；全仓 Ruff、compileall、`git diff --check` 通过，README 相对链接存在。GitHub main CI 的历史 run `38426186975` 长时间卡在 in-progress，后续 push 已触发新的 run；在 GitHub API 恢复前不能把主线 CI 写成全绿。
+
+下一项 P0 仍是受 runtime acceptance 约束的 claim → producer execution → receipt/publication/recovery 接线。当前 ready entry 继续 fail-closed，不能把只读 preclaim 当成真实 producer dispatch。真实 CPython/toolchain/sealed runtime、OpenEvolve/Shinka process lifecycle 和生产 CLI 仍是 P1；remote evaluator、external worker authentication、多机 ownership、distributed scheduler 和 service API 仍是 P2。
