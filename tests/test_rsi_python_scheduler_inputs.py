@@ -466,7 +466,7 @@ def test_original_checkpoint_is_detached_and_never_reminted(tmp_path, monkeypatc
         value.context.original_producer_checkpoint.sidecar_pin["file_inode"] = 1
 
 
-def test_fingerprint_excludes_execution_hooks_credentials_and_wall_clock(tmp_path, monkeypatch):
+def test_fingerprint_excludes_execution_hooks_and_credentials_binds_broker_config(tmp_path, monkeypatch):
     value = _setup(tmp_path)
     fingerprint = component_fingerprint(value.factory)
     calls = []
@@ -481,7 +481,7 @@ def test_fingerprint_excludes_execution_hooks_credentials_and_wall_clock(tmp_pat
         native, value.sidecar, value.proof,
     ))
     monkeypatch.setattr(native_inputs.time, "time", lambda: DEADLINE + 999)
-    assert component_fingerprint(factory) == fingerprint
+    assert component_fingerprint(factory) != fingerprint
     assert factory(value.request, value.memory) == value.factory(value.request, value.memory)
     assert "fixture-secret" not in str(factory.rsi_fingerprint_config())
     assert calls == []
