@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 from test_rsi_python_admission import _setup
 
+from lunar_evolution.candidate_evaluation_spec import canonical_json
+from lunar_evolution.rsi_identity import component_fingerprint
+from lunar_evolution.rsi_native_candidate import select_native_candidate
+from lunar_evolution.rsi_native_inputs import NativeRSIInputDescriptor
 from lunar_evolution.rsi_native_scheduler import (
     NativeRSISchedulerProvider,
     NativeRSISchedulerProviderError,
@@ -12,14 +18,42 @@ from lunar_evolution.rsi_native_scheduler import (
 
 
 def _provider(value):
+    value.plan = replace(
+        value.plan,
+        candidate_selector_sha256=component_fingerprint(select_native_candidate),
+        plan_sha256=None,
+    )
     provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    artifact = type("Artifact", (), {
+        "descriptor": type("Descriptor", (), {"digest": lambda _self: "a" * 64})(),
+        "artifact_sha256": "a" * 64,
+    })()
+    contract = type("Contract", (), {"digest": lambda _self: value.request.contract_sha256})()
     provider.context = type("Context", (), {
         "workspace": value.workspace,
         "intent": value.binding.intent,
+        "attestation": value.binding.attestation,
+        "artifact": artifact,
+        "contract": contract,
         "evaluator_kind": value.journal.evaluator_kind,
+        "evaluator_fingerprint": value.request.evaluator_sha256,
         "runner_fingerprint": value.journal.runner_fingerprint,
         "dependency_sha256": value.journal.dependency_sha256,
+        "environment_sha256": value.request.environment_sha256,
     })()
+    input_descriptor = NativeRSIInputDescriptor(
+        workspace=value.workspace,
+        journal_id=value.binding.intent.journal_id,
+        inputs_path=value.workspace / "evolution" / "producer-batches" / value.binding.intent.journal_id / ".rsi-input",
+        request_sha256=value.request.digest(),
+        memory_snapshot_sha256=value.controller.snapshot.digest(),
+        manifest_sha256="a" * 64,
+        request_json=canonical_json(value.request.to_dict()),
+        memory_json=value.controller.snapshot.to_bytes(),
+        manifest_json=b"{}",
+        deadline_unix=value.binding.deadline_unix,
+    )
+    provider._inputs = lambda *, require_unexpired: input_descriptor
     provider._python_admission_controller = value.controller
     return provider
 
@@ -122,4 +156,47 @@ def test_explicit_prepared_boundary_rechecks_anchor_after_bridge_returns(tmp_pat
             python_handoff_sha256=value.handoff.handoff_sha256,
             python_handoff_file_pin=value.pin,
             expected_anchor_sha256=value.anchor.anchor_sha256,
+        )
+
+
+def test_explicit_prepared_boundary_rejects_request_drift_before_journal_read(tmp_path, monkeypatch):
+    value = _setup(tmp_path)
+    provider = _provider(value)
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.parse_producer_bundle_publication_journal",
+        lambda *_args, **_kwargs: pytest.fail("request drift reached journal"),
+    )
+    with pytest.raises(NativeRSISchedulerProviderError, match="request_input_mismatch"):
+        provider.pin_python_admission_at_prepared_boundary(
+            replace(value.request, solver_id="other-solver"),
+            value.plan,
+            prepared_journal=value.journal,
+            python_handoff_sha256=value.handoff.handoff_sha256,
+            python_handoff_file_pin=value.pin,
+            expected_anchor_sha256=value.anchor.anchor_sha256,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("launch_id", "foreign-launch"), ("manifest_sha256", "b" * 64), ("deadline_unix", 42.0)],
+)
+def test_explicit_prepared_boundary_rejects_plan_authority_drift_before_journal_read(
+    tmp_path, monkeypatch, field, value,
+):
+    fixture = _setup(tmp_path)
+    provider = _provider(fixture)
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.parse_producer_bundle_publication_journal",
+        lambda *_args, **_kwargs: pytest.fail("plan drift reached journal"),
+    )
+    plan = replace(fixture.plan, **{field: value}, plan_sha256=None)
+    with pytest.raises(NativeRSISchedulerProviderError, match="plan_.*mismatch"):
+        provider.pin_python_admission_at_prepared_boundary(
+            fixture.request,
+            plan,
+            prepared_journal=fixture.journal,
+            python_handoff_sha256=fixture.handoff.handoff_sha256,
+            python_handoff_file_pin=fixture.pin,
+            expected_anchor_sha256=fixture.anchor.anchor_sha256,
         )

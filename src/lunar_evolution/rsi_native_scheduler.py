@@ -225,6 +225,11 @@ def _assert_plan_binding(
             _fail(f"plan_{field}_mismatch")
     if plan.deadline_unix != inputs.deadline_unix:
         _fail("plan_deadline_mismatch")
+    if isinstance(plan, NativeRSIExecutionPlan) and (
+        plan.candidate_selector_id != "native-selector-v1"
+        or plan.candidate_selector_sha256 != component_fingerprint(select_native_candidate)
+    ):
+        _fail("plan_candidate_selector_mismatch")
     if request.contract_sha256 != context.contract.digest():
         _fail("contract_mismatch")
     if request.evaluator_sha256 != context.evaluator_fingerprint:
@@ -591,13 +596,20 @@ class NativeRSISchedulerProvider:
             != Path(self.context.workspace).expanduser().absolute()
         ):
             _fail("python_admission_workspace_mismatch")
+        context = self.context
         try:
+            # The prepared journal is late evidence, never a source of native plan
+            # authority.  Reuse the same validated launch-input snapshot and complete
+            # plan/request binding that protects normal dispatch before touching any
+            # prepared-journal or handoff path.
+            inputs = self._inputs(require_unexpired=False)
+            memory = _memory_from_request_inputs(inputs, request)
+            _assert_plan_binding(request, memory, plan, context, inputs)
             pin = parse_python_producer_admission_handoff_file_pin(python_handoff_file_pin)
             _sha(python_handoff_sha256, "python_admission_handoff")
             _sha(expected_anchor_sha256, "python_admission_anchor")
             if pin.handoff_sha256 != python_handoff_sha256:
                 _fail("python_admission_handoff_pin_mismatch")
-            context = self.context
             intent = context.intent
             identity = {
                 "journal_id": intent.journal_id,
