@@ -1209,6 +1209,58 @@ class RSILearningController:
         if state is not None:
             self.producer_stager.validate_state(self, state)
 
+    def _python_admission_sidecar(self, run_id: str, episode_id: str):
+        """Resolve the sidecar for one staged episode while retaining the root proof.
+
+        Controller state keeps the original root sidecar as the run authority.  Once
+        per-episode staging is enabled, admission evidence belongs to the ready child
+        binding written by the stager.  The store resolver validates the hash-chain and
+        all child associations before this method constructs a read-only sidecar pin.
+        Unstaged/legacy runs continue to use the root sidecar unchanged.
+        """
+        from .python_producer_binding import parse_python_producer_binding
+        from .python_producer_binding_store import (
+            PythonProducerBindingSidecar,
+            read_python_producer_binding_sidecar,
+        )
+        from .python_producer_checkpoint import PythonProducerCheckpointBinding
+
+        if self.ledger is None or self.producer_sidecar is None or self.producer_stager is None:
+            return self.producer_sidecar, None
+        try:
+            root, selected = self.ledger.resolve_python_producer_checkpoint(run_id, episode_id)
+        except RSILearningError as exc:
+            # A run without staged producer evidence is still supported by the
+            # pre-existing admission path; staged runs fail closed in the resolver.
+            if "original_proof_missing" in str(exc):
+                return self.producer_sidecar, None
+            raise
+        root_pin = PythonProducerCheckpointBinding.from_sidecar(self.producer_sidecar)
+        if root != root_pin:
+            raise RSILearningError("rsi_python_admission_original_proof_drift")
+        if selected == root:
+            return self.producer_sidecar, selected
+        checkpoint = self.ledger.controller_checkpoint(run_id)
+        if checkpoint is None:
+            raise RSILearningError("rsi_python_admission_child_proof_missing")
+        state = checkpoint[1]
+        entry = state.get("producer_episode_staging", {}).get(episode_id)
+        if type(entry) is not dict or entry.get("state") != "ready":
+            raise RSILearningError("rsi_python_admission_child_proof_not_ready")
+        ready = entry.get("ready")
+        if type(ready) is not dict:
+            raise RSILearningError("rsi_python_admission_child_proof_corrupt")
+        try:
+            binding = parse_python_producer_binding(canonical_json(ready["binding"], maximum=2 * 1024 * 1024))
+            child = PythonProducerBindingSidecar(binding=binding, **dict(selected.sidecar_pin))
+            selected.validate_sidecar(child)
+            read_python_producer_binding_sidecar(
+                self.producer_workspace, binding=binding, expected_sidecar=child,
+            )
+        except (KeyError, TypeError, ValueError, OSError, RSILearningError) as exc:
+            raise RSILearningError("rsi_python_admission_child_proof_invalid") from exc
+        return child, selected
+
     def _python_admission_inputs(self, native_plan: object, prepared_journal: object, expected_anchor_sha256: object):
         """Reparse exact caller DTOs before acquiring locks or reading evidence."""
         from .producer_bundle_publication import (
@@ -1261,16 +1313,21 @@ class RSILearningController:
                 raise RSIPythonAdmissionError("input_invalid")
             if type(self.producer_sidecar) is not PythonProducerBindingSidecar or self.producer_workspace is None:
                 raise RSIPythonAdmissionError("producer_missing")
+            episode_sidecar, _child_proof = self._python_admission_sidecar(
+                plan.run_id, plan.task_id,
+            )
+            if type(episode_sidecar) is not PythonProducerBindingSidecar:
+                raise RSIPythonAdmissionError("producer_missing")
             validate_rsi_python_admission_shapes(
-                self.producer_sidecar,
+                episode_sidecar,
                 dto_types=(PythonProducerBindingSidecar, PythonProducerBinding, ProducerLaunchIntent,
                            ProducerLaunchAttestation, PythonRuntimeManifest, PythonRuntimeTarget,
                            PythonRuntimeRoot, PythonRuntimeDirectory, PythonRuntimeFile, PythonRuntimeFileDeclaration,
                            PythonRuntimeImportRoot,
                            PythonRuntimeTreeManifest, PythonRuntimeTreeDirectory),
             )
-            binding = parse_python_producer_binding(self.producer_sidecar.binding.to_json())
-            if binding != self.producer_sidecar.binding:
+            binding = parse_python_producer_binding(episode_sidecar.binding.to_json())
+            if binding != episode_sidecar.binding:
                 raise RSIPythonAdmissionError("binding_drift")
             return plan, journal, binding
         except (AttributeError, KeyError, IndexError, TypeError, ValueError, RSILearningError) as exc:
@@ -1301,7 +1358,9 @@ class RSILearningController:
                 raise RSILearningError("rsi_python_admission_attribution_missing")
             self._validate_original_run_checkpoint_producer_binding(run, checkpoint[1])
             original = self.ledger.history(run_id)[0]
-            proof = PythonProducerCheckpointBinding.from_dict(original.payload.get("producer_checkpoint_binding"))
+            root_proof = PythonProducerCheckpointBinding.from_dict(original.payload.get("producer_checkpoint_binding"))
+            episode_sidecar, child_proof = self._python_admission_sidecar(run_id, episode_id)
+            proof = child_proof or root_proof
             intent = checkpoint[1]["intents"][episode_id]
             request = SolverRequest.from_dict(intent["request"])
             planned = PracticeEpisode.from_dict(intent["episode"])
@@ -1357,7 +1416,7 @@ class RSILearningController:
             verify_producer_bundle_prepared_intent(self.producer_workspace, journal)
             verify_producer_bundle_python_handoff_anchor(self.producer_workspace, journal)
             pairs = (
-                ("binding_sha256", binding.binding_sha256), ("sidecar_raw_sha256", self.producer_sidecar.raw_sha256),
+                ("binding_sha256", binding.binding_sha256), ("sidecar_raw_sha256", episode_sidecar.raw_sha256),
                 ("sidecar_pin_sha256", _record_digest(dict(proof.sidecar_pin))),
                 ("launch_intent_sha256", binding.intent_sha256), ("attestation_sha256", binding.attestation_sha256),
                 ("runtime_manifest_sha256", binding.runtime_manifest_sha256), ("runtime_tree_sha256", binding.runtime_tree_sha256),
