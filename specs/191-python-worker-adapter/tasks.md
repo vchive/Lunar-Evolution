@@ -114,8 +114,10 @@
   cancellation or ack failure. The active-wave save refuses unrelated checkpoint drift
   instead of synchronizing or adopting its latest state.
 - [ ] Require the separate admission identity at the local live scheduler boundary.
-  The provider-free bridge/owner facades and BRS foreign/duplicate guards exist, but the
-  native scheduler does not invoke them automatically. Prepared journal/attempt-anchor
+  The provider-free bridge/owner facades and BRS foreign/duplicate guards exist, and the
+  native provider now exposes an explicit prepared-observer hook that joins the original
+  handoff/file pin, prepared journal and attempt anchor. The native scheduler still does
+  not invoke it automatically. Prepared journal/attempt-anchor
   inputs include post-execution/runtime evidence and must be joined at the later prepared
   publication boundary with the original Python handoff/file pin. The current native
   scheduler has no such handoff input; keep automatic dispatch fail-closed until that
