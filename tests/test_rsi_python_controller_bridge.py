@@ -73,6 +73,26 @@ def test_controller_bridge_reuses_ready_child_plan_without_writes(tmp_path, monk
     assert _inventory(value.root) == before
 
 
+def test_controller_bridge_snapshots_broker_headers_and_rejects_source_drift(tmp_path, monkeypatch):
+    value, controller, head, state, _entry, request, memory = _ready(tmp_path, monkeypatch)
+    root_context = controller.gateway.producer_config.inputs
+    with value.ledger.controller_lock(value.binding.run_id):
+        preview = resolve_python_producer_controller_child_preview(
+            controller, run_id=value.binding.run_id, episode_id=state["current_episode_id"],
+            request=request, memory=memory, expected_checkpoint_sha256=head,
+        )
+    assert preview.context.native_context.broker_config is not root_context.native_context.broker_config
+    assert preview.context.native_context.broker_config.headers == root_context.native_context.broker_config.headers
+    root_context.native_context.broker_config.headers["x-drift"] = "changed"
+    with value.ledger.controller_lock(value.binding.run_id), pytest.raises(
+        PythonProducerControllerBridgeError, match="evidence_invalid",
+    ):
+        resolve_python_producer_controller_child_preview(
+            controller, run_id=value.binding.run_id, episode_id=state["current_episode_id"],
+            request=request, memory=memory, expected_checkpoint_sha256=head,
+        )
+
+
 @pytest.mark.parametrize("mutation", ["checkpoint", "request", "memory"])
 def test_controller_bridge_refuses_drift_before_scheduler_plan(tmp_path, monkeypatch, mutation):
     value, controller, head, state, _entry, request, memory = _ready(tmp_path, monkeypatch)

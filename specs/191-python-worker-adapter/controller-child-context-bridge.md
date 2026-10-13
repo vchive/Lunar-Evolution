@@ -16,5 +16,10 @@ The bridge performs no claim, receipt, result, admission, publication, launch or
 checkpoint write. `preparing`, `unknown`, BRS checkpoints, missing owner locks and
 checkpoint/request/memory/root drift refuse. Ready dispatch remains refused by the
 controller's existing stager; this bridge supplies evidence for a future explicit
-dispatch slice and does not grant launch authority.
-
+dispatch slice and does not grant launch authority. The returned preview is an
+observation artifact, not a dispatch context. Host-only broker headers are copied into
+the read-only child context and their digest is part of the context identity; mutation
+of the original context after preview creation is rejected on the next observation.
+Execution strategy, cancellation control, ledger and handoff hooks remain controller-owned
+and are intentionally not cloned or treated as authority. A future dispatch slice must
+revalidate those hooks and their configuration under the controller's lock before use.
