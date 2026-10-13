@@ -23,6 +23,23 @@ not run CPython/toolchains or remote evaluators and keeps `production_admission=
 The complete runtime/process/journal interruption matrix and sealed-runtime acceptance
 remain open P0/P1 work.
 
+## 2026-10-13 bounded OpenEvolve result preflight
+
+PR82 (`6b4e841`) adds an early, provider-free identity gate documented in
+`bounded-result-preflight.md`. When a Python binding is supplied, the adapter reparses
+the exact binding and checks five pins—producer id, evaluator fingerprint, producer
+fingerprint, contract digest and optional run-id—before opening the external producer
+root. Drift returns the fixed `result_binding_mismatch` error without filesystem,
+process, evaluator, budget or journal effects. The existing complete
+`verify_python_producer_result_binding` check remains mandatory after result and
+candidate reads, so this early gate does not replace material/result verification.
+
+An independent replay of the focused binding-export, adapter and OpenEvolve suites
+passes 77 unique cases (8 + 49 + 20), with zero failures, errors or skips. The count
+deduplicates by testcase identity and is local evidence only; PR82 CI and merge are
+still pending. This slice does not establish external worker authentication, sealed
+CPython/runtime acceptance, real project campaigns or production admission.
+
 ## 2026-10-12 independently pinned runtime observations
 
 The new `python-observation-policy.xml` gate requires74 unique cases and zero

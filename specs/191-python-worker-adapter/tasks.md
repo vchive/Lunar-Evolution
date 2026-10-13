@@ -136,6 +136,12 @@
   runtime observations and fixed negative loader/codec/import cases.
 - [ ] Connect OpenEvolve's Python wrapper and Shinka's explicit SQLite/result
   export to the common binding without launching either project automatically.
+- [x] Add the bounded OpenEvolve result preflight from
+  `bounded-result-preflight.md`: before external-root I/O, reparse the exact
+  binding and compare producer id, evaluator fingerprint, producer fingerprint,
+  contract digest and optional run-id. Keep the complete final result binding
+  verifier after result/material reads. PR82 `6b4e841` has local focused
+  evidence; its CI and merge remain pending.
 - [x] Add a pure shared OpenEvolve/Shinka evidence envelope with build/parse/verify,
   retained digest and complete original-binding comparisons. It performs no I/O or
   evaluator call and always keeps `production_admission=false`; actual project

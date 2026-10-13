@@ -2,9 +2,11 @@
 
 ## 当前集成状态 — 2026-10-13（更新）
 
-当前 `origin/main` 为 `514c9de`（PR75 已合入）。PR68–75 已合入 main：状态/优先级同步、RSI CLI 显式 plan 预算、bounded fixture 的 failed 终态断言、memory admission holdout 治理门、terminal admission-anchor 校验、evaluator context pins、producer replay/CLI 接线、provider-free Python admission bridge descriptor/adapter，以及 BRS/producer binding 边界校验。PR62/63 已关闭并由后续祖先链 supersede，不再代表待合入能力。PR54/56/57 的 raw-log 下载限制仍保留，不能把 source-only、merge-tree 或 CI 证据描述为完整 raw 审计。
+当前 `origin/main` 为 `6159c6b`，已包含 PR76、PR81、PR78、PR79：Python admission boundary timing、Feature190 executable owner/FD boundary、Shinka binding run-id normalization，以及 prepared-boundary bridge 文档澄清均已合入。PR80 的 prepared-boundary bridge head 为 `94a2ec2`，PR82 的 OpenEvolve bound-result preflight head 为 `6b4e841`；两者 CI/合并仍待完成，不能把分支 head 当作 main 能力。
 
-当前 provider-free 能力覆盖 durable controller resume、unknown reconcile gate、fingerprint drift、统一预算、native replay、retained producer evidence、evaluator context pins，以及静态 Python 安装/输入/启动/运行时 handoff/build-closure 合同。PR75 已合入的切片包括 provider-free bridge descriptor/owner facade、BRS 多 child 的 foreign/duplicate fail-closed 路由、process/registration/execution journal 损坏恢复，以及 OpenEvolve/Shinka 的统一 Python binding export 校验。live scheduler 的自动接线仍未启用：prepared journal/attempt anchor 含有 post-execution/runtime 证据，不能在 producer dispatch 前读取；当前保留显式 bridge API，避免首次运行被错误拒绝。仍未验收的是 Feature189 的真实来源/工具链、静态 CPython 构建与 sealed startup，以及 Feature191 的真实 Python runtime 生命周期、startup/timeout/cancel/parent-loss/restart 的真实观察。本轮不运行真实 CPython、远程 evaluator 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。
+当前 provider-free 能力覆盖 durable controller resume、unknown reconcile gate、fingerprint drift、统一预算、native replay、retained producer evidence、evaluator context pins，以及静态 Python 安装/输入/启动/运行时 handoff/build-closure 合同。PR80 保留显式 prepared-boundary bridge，并在 bridge 返回后复验 prepared evidence；PR82 在读取外部 OpenEvolve run root 前校验 producer/evaluator/producer fingerprint、contract digest 和可选 run-id 五个身份 pin，同时保留最终 result binding verifier。live scheduler 的自动接线仍未启用：prepared journal/attempt anchor 含有 post-execution/runtime 证据，不能在 producer dispatch 前读取；当前保留显式 bridge API，避免首次运行被错误拒绝。
+
+仍未验收的是 Feature189 的真实来源/工具链、静态 sealed CPython 构建与 startup，以及 Feature191 的真实 Python runtime 生命周期、startup/timeout/cancel/parent-loss/restart 观察、实际 OpenEvolve/Shinka project campaign 和生产 RSI CLI/Linux acceptance。本轮只使用本地 fixture/provider-free 验证，不运行真实 CPython/toolchain、远程 evaluator、WebAgent 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。
 
 后文较早的 pending/verified-main 段落是历史交接记录；判断当前状态时以本节、最新 PR 审计记录和 `origin/main` 为准。
 
