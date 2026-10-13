@@ -2,11 +2,12 @@
 
 ## Current snapshot — 2026-10-14
 
-以远程 GitHub 当前状态为准：`main=60b0bbb`（PR97 merge commit `51f0fd6` 之后的 broker
+以远程 GitHub 当前状态为准：功能基线 `dd84c2b`（PR97 merge commit `51f0fd6` 之后的 broker
 snapshot 测试同步）。PR89、PR91、PR92、PR93、PR94、PR95、PR96 和 PR97 已合入；PR97
 补齐 provider-free 多 episode child context 选择，broker snapshot 的测试同步已在
 `00cb39d`。PR97 合入后的 main CI run `38420669326` 因后续 push 被取消；其后续
-`00cb39d` 的 run `38422229880` 也因本轮继续 push 被取消，`60b0bbb` 的新 main CI
+`00cb39d` 的 run `38422229880` 也因本轮继续 push 被取消；随后仅追加了 README、P1
+审计和 HANDOFF 文档提交（最新 handoff-only 提交为 `b9e768a`）。新的 main CI
 需要以 GitHub 最终结果为准，不能提前写成已通过。
 
 当前 P0 仍是把已验证的 child proof 从只读 preview 接到 controller 持锁下的
