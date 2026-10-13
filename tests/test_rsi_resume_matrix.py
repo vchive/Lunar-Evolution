@@ -16,12 +16,14 @@ import pytest
 
 from lunar_evolution import (
     EMPTY_MEMORY_SNAPSHOT,
+    DeterministicCurriculum,
     RSILearningController,
     RSILearningError,
     RSILedger,
     RSIPracticeEpisode,
     SolverRequest,
     SolverResult,
+    fixture_solver_gateway,
 )
 
 HEX = "a" * 64
@@ -272,3 +274,116 @@ def test_concurrent_resume_has_one_writer_and_one_reconciliation(
     assert thread_errors == []
     assert gateway.calls == 0
     assert len(ledger.episode_reconciliation(episode_id)) == 1
+
+
+def test_brs_resume_reconciles_child_result_after_controller_interruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A BRS worker result is durable even when the owning controller dies before its wave save."""
+
+    class Gateway:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def rsi_fingerprint_config(self):
+            return {"fixture": "brs-resume-v1"}
+
+        def run(self, request: SolverRequest) -> SolverResult:
+            self.calls.append(request.episode_id)
+            return fixture_solver_gateway("mock").run(request)
+
+    database = tmp_path / "rsi.sqlite3"
+    gateway = Gateway()
+    ledger = RSILedger(database)
+    controller = RSILearningController(gateway, ledger=ledger)
+    target = controller._target_episode(
+        "brs-resume", "brs-resume-target", {
+            "contract_sha256": HEX, "evaluator_sha256": HEX,
+            "environment_sha256": HEX, "solver_id": "mock",
+        }, 0,
+    )
+    curriculum = DeterministicCurriculum()
+    decisions = [
+        curriculum.choose(target=target, diagnosis=f"gap-{i}", wave=0, ordinal=i)
+        for i in range(2)
+    ]
+    original_save = ledger.save_episode_result
+    interrupted = False
+
+    def save_then_interrupt(request: SolverRequest, result: SolverResult) -> None:
+        nonlocal interrupted
+        original_save(request, result)
+        if request.episode_id.endswith("-0") and not interrupted:
+            interrupted = True
+            raise RuntimeError("fixture_controller_interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ledger, "save_episode_result", save_then_interrupt)
+        with pytest.raises(RuntimeError, match="fixture_controller_interrupted"):
+            controller.run_brs(
+                run_id="brs-resume", contract_sha256=HEX, evaluator_sha256=HEX,
+                environment_sha256=HEX, solver_id="mock", practices=decisions,
+            )
+
+    assert interrupted
+    assert gateway.calls == ["brs-resume-practice-0-0", "brs-resume-practice-0-1"]
+    assert ledger.episode_result("brs-resume-practice-0-0") is not None
+    assert ledger.episode_result("brs-resume-practice-0-1") is not None
+    # The first child remains running because its immutable result was written before the crash.
+    assert ledger.get_episode("brs-resume-practice-0-0").state == "running"
+
+    resumed = RSILearningController(Gateway(), ledger=RSILedger(database)).resume("brs-resume")
+
+    assert resumed.status == "completed"
+    assert len(resumed.practice_episodes) == 2
+    assert [item.episode.ordinal for item in resumed.practice_episodes] == [0, 1]
+    # Recovery consumes the persisted result and does not dispatch either child again.
+    assert gateway.calls == ["brs-resume-practice-0-0", "brs-resume-practice-0-1"]
+    assert len(resumed.memory_snapshot.items) == 2
+
+
+@pytest.mark.parametrize("terminal_status", ["cancelled", "timed_out", "abandoned"])
+def test_brs_terminal_cancel_or_deadline_replays_without_dispatch(
+    tmp_path: Path, terminal_status: str,
+) -> None:
+    """Cancellation/deadline terminals remain terminal across BRS restart."""
+
+    class Gateway:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        def rsi_fingerprint_config(self):
+            return {"fixture": "brs-terminal-replay-v1", "status": terminal_status}
+
+        def run(self, request: SolverRequest) -> SolverResult:
+            self.calls.append(request.episode_id)
+            return fixture_solver_gateway("mock", terminal_status=terminal_status).run(request)
+
+    database = tmp_path / "rsi.sqlite3"
+    gateway = Gateway()
+    ledger = RSILedger(database)
+    controller = RSILearningController(gateway, ledger=ledger)
+    target = controller._target_episode(
+        f"brs-{terminal_status}", f"brs-{terminal_status}-target", {
+            "contract_sha256": HEX, "evaluator_sha256": HEX,
+            "environment_sha256": HEX, "solver_id": "mock",
+        }, 0,
+    )
+    decision = DeterministicCurriculum().choose(
+        target=target, diagnosis="deadline-or-cancel", wave=0, ordinal=0,
+    )
+    result = controller.run_brs(
+        run_id=f"brs-{terminal_status}", contract_sha256=HEX,
+        evaluator_sha256=HEX, environment_sha256=HEX, solver_id="mock",
+        practices=[decision],
+    )
+
+    assert result.status == "failed"
+    assert result.practice_episodes[0].result.status == terminal_status
+    assert gateway.calls == [f"brs-{terminal_status}-practice-0-0"]
+    resumed = RSILearningController(Gateway(), ledger=RSILedger(database)).resume(
+        f"brs-{terminal_status}"
+    )
+    assert resumed == result
+    # A terminal cancellation/deadline is evidence, not permission for a retry.
+    assert gateway.calls == [f"brs-{terminal_status}-practice-0-0"]
