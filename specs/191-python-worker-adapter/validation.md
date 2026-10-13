@@ -2,7 +2,7 @@
 
 ## 2026-10-13 integrated OpenEvolve/Shinka preflight
 
-PR82 is rebased onto PR80 merge `480334c`. Shinka now reparses the canonical
+PR82 is merged as `d530f9f` on top of PR80 merge `480334c`. Shinka now reparses the canonical
 binding and requires fixed `shinka` producer identity, matching caller producer ID,
 fingerprint, contract digest and optional run-id before results-root/SQLite I/O.
 Omitted run-id remains normalized from the binding. The complete final envelope
@@ -13,8 +13,9 @@ The final three-suite local selection passes 60 unique cases (binding exports,
 OpenEvolve handoff and Shinka handoff), with zero failures, errors or skips;
 whole-source Ruff, compileall and diff-check pass. Earlier 77-case independent
 verification below refers to the earlier OpenEvolve-only head and is not additive.
-PR80 is merged but its full CI is pending; PR82 final CI/merge and production
-runtime acceptance remain open. No real toolchain, Python runtime or campaign ran.
+PR80, PR82 and the documentation update are merged; main CI run `38330366793`
+is still queued, and production runtime acceptance remains open. No real toolchain,
+Python runtime or campaign ran.
 
 The final verifier uses the detached preflight binding snapshot and checks the
 caller-supplied canonical binding wire for drift before verification. This keeps
