@@ -1,5 +1,22 @@
 # Tasks
 
+## Single-episode producer composition continuation
+
+- [x] Specify the single-context boundary in `single-episode-producer-gateway.md`;
+  retain the existing native claim/receipt/recovery and prepared admission protocol.
+- [x] Compose the original Python input plan and native scheduler/gateway with
+  exact producer/ledger/proof/wiring checks and a fresh-attempt preclaim controller gate.
+- [x] Add explicit CLI execution selection and refuse unavailable native config
+  before state I/O without fixture fallback; preserve the default fixture path.
+- [x] Add 30 inert composition/recovery/CLI cases and independent boundary review.
+- [x] Complete final combined regression: 195 distinct cases, including 30 new
+  producer cases and the 26-case execution continuation; whole Ruff/compileall/diff
+  checks pass. Repeated focused runs are not additional unique cases.
+- [ ] Complete this final source's full CI and independent
+  raw/source/tree audit before merge.
+- [ ] Specify and implement per-episode staging/launch and durable original proof
+  association before claiming a complete multi-episode DRS/BRS production CLI.
+
 ## P0 — contract and failure semantics
 
 - [x] Freeze the Phase A `PythonProducerBinding` wire against the existing

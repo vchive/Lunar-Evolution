@@ -1,5 +1,43 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-13 构建执行机制与单 episode producer 接线
+
+本轮从已合入的 `main 17ebde4` 继续；PR87 最终来源的完整 CI 与独立
+raw/source/tree 审计已经通过，合入后 main CI 也通过 15/15。较早的 pending
+文字属于其历史检查点，不应据此重复开发已完成的 scheduler/export/replay 能力。
+
+新增 `tools/static_python_rsi_fixture/execution_backend.py` 的 `run_pinned_build`：
+消费原 preparation 和独立 pinned recipe，执行 configure/freeze/compile/link 的受信工具，
+显式构造环境，逐块检查同一 deadline/cancel，限制日志和输出，回收直接子进程并保留 partial
+证据。原 mock API 和 plan-only 拒绝不变。它没有实际 CPython recipe、来源签名或工具链
+认证，不能宣称 configured closure、安装/runtime/production 验收；descendant cleanup
+也不据直接子进程 reap 推断。
+
+新增 `PythonProducerRSISolverGateway` 组合原 Python input/plan gate、native scheduler、
+claim、receipt 和 prepared handoff。它匹配原 producer/ledger/proof/context，首次执行在
+claim 前要求原 controller 绑定；started/terminal 保留原 recovery/replay。CLI 增加显式
+`--solver-execution fixture|native-producer`，当前 native 选择在合同/home/ledger I/O 前
+明确拒绝，不静默转 fixture。
+
+关键实际缺口：一个预先 staged 的 Python context 绑定单个 request/memory/launch/batch，
+不能直接驱动多 episode DRS/BRS。完整生产 CLI 仍需逐 episode 的 launch/staging 与 durable
+原 proof 接线。实际 source/toolchain/recipe、static image、sealed startup、runtime 故障矩阵、
+真实 OpenEvolve/Shinka project lifecycle 和 Linux production acceptance 继续开放。
+本轮仅本地 inert fixture；`production_admission=false`，不运行真实 CPython/toolchain、
+solver/model/evaluator、WebAgent 或公司平台。P2 服务化/多机/认证继续后置。
+
+规格见 Feature193 `execution-backend.md`、`execution-backend-validation.md` 和 Feature191
+`single-episode-producer-gateway.md`；使用边界见 `docs/rsi-local-runtime.md`。两条线已由独立
+agent 审查，最后来源统一 focused/兼容回归与 CI/审计须按其自身证据完成后才能合入。
+
+统一当前产品源码通过 195 个不同 case：execution backend 26、producer gateway 30、
+原 mock driver/native gateway/Python inputs/CLI 兼容 139，零 failures/errors/skips；运行前后
+五个产品/测试文件 SHA256 一致。全仓 Ruff、compileall 和 diff-check 通过。首次 shell
+fixture 的 macOS AMFI 拒绝保留，最终改用本地 inert C helper，不是实际 CPython 构建。
+最终 XML 与 source pins 留存于 ignored
+`.lunar-evolution/reports/pinned-execution-producer-final-1791873831923639000/`；完整 CI/独立
+raw/source/tree 审计仍须验收本轮最终 Git 来源。
+
 ## 当前集成状态 — 2026-10-13（更新）
 
 当前具体剩余工作与逐项 CI/审计状态见

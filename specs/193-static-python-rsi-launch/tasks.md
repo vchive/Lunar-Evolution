@@ -165,3 +165,19 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
   completed/success on all 15 checks; merged at `147dbc1`.
 - [ ] Verify and retain the independent raw/source/tree audit for that final
   controlled mock build-driver source. This is separate from real F02c acceptance.
+
+## Pinned process-execution mechanism continuation
+
+- [x] Specify the separate trusted recipe mechanism in `execution-backend.md`;
+  preserve the original mock API and plan-only refusal behavior.
+- [x] Implement independently pinned preparation/recipe/inputs, create-only
+  snapshots, fixed stage order, explicit environment and bounded command output.
+- [x] Apply the original deadline/cancel through every read chunk and command;
+  retain partial evidence and direct-child reap without descendant-cleanup claims.
+- [x] Add 26 inert process/failure cases and independently review execution,
+  compiler flags, input bounds, cleanup and budget handling.
+- [x] Complete final combined regression: 195 distinct cases, including 26 new
+  execution cases and 139 unchanged compatibility cases shared with the 30-case
+  producer continuation; no failures/errors/skips and unchanged product/source pins.
+- [ ] Complete this final source's full CI and independent
+  raw/source/tree audit before merge. Actual F02c/G1/G2 acceptance remains open.
