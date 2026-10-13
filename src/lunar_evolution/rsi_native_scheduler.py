@@ -466,7 +466,12 @@ class NativeRSISchedulerProvider:
         )
 
     def bind_python_admission_controller(self, controller: Any) -> None:
-        """Attach one controller for automatic pre-dispatch Python admission.
+        """Attach one controller for an explicit prepared-boundary bridge.
+
+        Binding does not make :meth:`__call__` read Python evidence or invoke a
+        bridge.  A future live integration must call the bridge after the
+        producer transaction has emitted its complete prepared evidence, with
+        the original handoff/file pin retained by that transaction.
 
         This is intentionally a one-way local binding.  Rebinding a provider after
         it has been used could route an in-flight native claim to another controller,
@@ -482,7 +487,12 @@ class NativeRSISchedulerProvider:
     def _python_admission_descriptor(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
     ):
-        """Read the fixed prepared journal and first-attempt anchor for one dispatch."""
+        """Read fixed prepared evidence for an explicit bridge call.
+
+        The evidence includes post-execution/runtime fields and therefore must
+        only be read at the later prepared/publication boundary.  The native
+        provider never calls this helper from :meth:`__call__`.
+        """
         controller = self._python_admission_controller
         if controller is None:
             return None
@@ -518,6 +528,13 @@ class NativeRSISchedulerProvider:
     def _pin_python_admission_before_dispatch(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
     ) -> None:
+        """Pin an already prepared bridge when an explicit caller requests it.
+
+        The historical method name is retained for compatibility.  It is not
+        part of native provider dispatch: callers must establish the prepared
+        observer/publication boundary and retain the original Python handoff
+        before invoking this helper.
+        """
         controller = self._python_admission_controller
         if controller is None:
             return
