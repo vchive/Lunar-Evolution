@@ -218,7 +218,7 @@ def test_controller_bridge_preclaim_rechecks_context_after_cancellation_callback
     )
     before = _inventory(value.root)
     with value.ledger.controller_lock(value.binding.run_id), pytest.raises(
-        PythonProducerControllerBridgeError, match="evidence_invalid",
+        PythonProducerControllerBridgeError, match="gateway_plan_invalid",
     ):
         resolve_python_producer_controller_child_preview(
             controller, run_id=value.binding.run_id, episode_id=state["current_episode_id"],
