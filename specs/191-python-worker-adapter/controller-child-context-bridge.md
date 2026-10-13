@@ -12,6 +12,15 @@ child proof and construct a child `PythonRSISchedulerInputContext`. A temporary
 native scheduler plan; the plan must equal the staged plan. The temporary gateway is
 never returned or run.
 
+Before returning a ready preview, the bridge invokes the native scheduler's
+`validate_preclaim` gate with the exact controller ledger. The gate rereads sealed native inputs
+with the original deadline required to remain unexpired, checks the complete plan/request
+binding, samples cancellation once, and rejects any existing native claim (including started or
+unknown recovery state). It then repeats the input/plan/ledger and scheduler-context fingerprint
+observations after the callback, so a callback that changes intent, broker headers, strategy,
+hooks, or deadline cannot turn a stale preview into a dispatch. The gate is read-only: it never
+creates or settles a claim, consumes an attestation, launches a process, or invokes a producer.
+
 The bridge performs no claim, receipt, result, admission, publication, launch or
 checkpoint write. `preparing`, `unknown`, BRS checkpoints, missing owner locks and
 checkpoint/request/memory/root drift refuse. Ready dispatch remains refused by the

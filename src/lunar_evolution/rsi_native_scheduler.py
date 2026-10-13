@@ -926,6 +926,80 @@ class NativeRSISchedulerProvider:
             self.assert_failure_ledger(context.failure_ledger)
         return plan
 
+    def validate_preclaim(
+        self,
+        request: SolverRequest,
+        plan: NativeRSIExecutionPlan,
+        *,
+        claim_ledger: RSILedger | None = None,
+    ) -> None:
+        """Validate the native launch boundary before a gateway creates a claim.
+
+        This is intentionally a read-only bridge for controller-owned child previews.  It
+        re-reads the sealed native inputs, checks the complete request/plan binding, observes
+        cancellation and the original absolute deadline, and verifies that the episode has no
+        existing native claim.  It never creates, settles, or publishes a claim and never calls
+        the producer scheduler.  A started or terminal claim is a recovery/replay boundary and
+        therefore refuses a fresh dispatch rather than allowing a second effect.
+
+        ``claim_ledger`` must be the exact ledger retained by the scheduler context.  Requiring
+        identity here prevents a caller from checking one database and then claiming another.
+        """
+        if type(request) is not SolverRequest or type(plan) is not NativeRSIExecutionPlan:
+            _fail("preclaim_input_invalid")
+        context_fingerprint = self.rsi_fingerprint_config()
+        inputs = self._inputs(require_unexpired=True)
+        memory = _memory_from_request_inputs(inputs, request)
+        _assert_plan_binding(request, memory, plan, self.context, inputs)
+        ledger = self.context.failure_ledger
+        if ledger is None or claim_ledger is not ledger:
+            _fail("preclaim_ledger_mismatch")
+
+        def inspect_claim() -> None:
+            self.assert_failure_ledger(ledger)
+            try:
+                claim = ledger.inspect_native_episode_claim(
+                    request, plan_sha256=plan.plan_sha256,
+                )
+            except Exception as exc:
+                raise NativeRSISchedulerProviderError(
+                    "rsi_native_scheduler_preclaim_claim_invalid",
+                ) from exc
+            self.assert_failure_ledger(ledger)
+            if claim is not None:
+                # This includes ``started``/unknown and every terminal result.  Both cases
+                # require the gateway's explicit recovery/replay path and cannot become a
+                # fresh dispatch.
+                _fail("preclaim_claim_exists")
+
+        inspect_claim()
+        cancellation = self.context.cancelled
+        if cancellation is not None:
+            try:
+                if bool(cancellation()):
+                    _fail("preclaim_cancelled")
+            except NativeRSISchedulerProviderError:
+                raise
+            except Exception as exc:
+                raise NativeRSISchedulerProviderError(
+                    "rsi_native_scheduler_preclaim_cancellation_invalid",
+                ) from exc
+        # The callback and ledger read above are untrusted observation boundaries. Re-read every
+        # launch input and the complete provider fingerprint before accepting the preview. This
+        # catches a callback that mutates intent, broker headers, strategy, hooks, or deadline
+        # while the preflight is in progress; requiring an unexpired second read also catches a
+        # deadline crossed during the callback/ledger operation.
+        repeated_inputs = self._inputs(require_unexpired=True)
+        if repeated_inputs != inputs:
+            _fail("preclaim_input_changed")
+        repeated_memory = _memory_from_request_inputs(repeated_inputs, request)
+        _assert_plan_binding(request, repeated_memory, plan, self.context, repeated_inputs)
+        if self.context.cancelled is not cancellation:
+            _fail("preclaim_context_changed")
+        if self.rsi_fingerprint_config() != context_fingerprint:
+            _fail("preclaim_context_changed")
+        inspect_claim()
+
     def recover(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
     ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence:

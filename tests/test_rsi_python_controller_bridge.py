@@ -9,7 +9,9 @@ from test_producer_python_runtime import _inventory
 from test_rsi_producer_gateway import _fixture
 from test_rsi_producer_staging_controller import ObservedAttestations
 
+import lunar_evolution.rsi_native_inputs as native_inputs
 import lunar_evolution.rsi_producer_launch as producer_launch
+import lunar_evolution.rsi_python_controller_bridge as controller_bridge
 from lunar_evolution import RSILearningController, RSILearningError
 from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
 from lunar_evolution.rsi_producer_gateway import PythonProducerRSISolverGateway
@@ -150,3 +152,79 @@ def test_controller_bridge_rejects_existing_claim_without_writing(tmp_path, monk
     assert _inventory(value.root) == before
     assert value.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256) is not None
     assert entry["state"] == "ready"
+
+
+def test_controller_bridge_preclaim_refuses_cancelled_child_without_writing(tmp_path, monkeypatch):
+    value, controller, head, state, _entry, request, memory = _ready(tmp_path, monkeypatch)
+    original = controller_bridge.resolve_python_rsi_episode_input_context
+
+    def cancelled_child(*args, **kwargs):
+        child = original(*args, **kwargs)
+        object.__setattr__(child.native_context, "cancelled", lambda: True)
+        return child
+
+    monkeypatch.setattr(
+        controller_bridge, "resolve_python_rsi_episode_input_context", cancelled_child,
+    )
+    before = _inventory(value.root)
+    with value.ledger.controller_lock(value.binding.run_id), pytest.raises(
+        PythonProducerControllerBridgeError, match="evidence_invalid",
+    ):
+        resolve_python_producer_controller_child_preview(
+            controller, run_id=value.binding.run_id, episode_id=state["current_episode_id"],
+            request=request, memory=memory, expected_checkpoint_sha256=head,
+        )
+    assert value.ledger.inspect_native_episode_claim(
+        request, plan_sha256=_entry["ready"]["plan"]["plan_sha256"],
+    ) is None
+    assert _inventory(value.root) == before
+
+
+def test_controller_bridge_preclaim_refuses_expired_child_before_claim(tmp_path, monkeypatch):
+    value, controller, head, state, _entry, request, memory = _ready(tmp_path, monkeypatch)
+    monkeypatch.setattr(native_inputs.time, "time", lambda: 10**12)
+    before = _inventory(value.root)
+    with value.ledger.controller_lock(value.binding.run_id), pytest.raises(
+        PythonProducerControllerBridgeError, match="evidence_invalid",
+    ):
+        resolve_python_producer_controller_child_preview(
+            controller, run_id=value.binding.run_id, episode_id=state["current_episode_id"],
+            request=request, memory=memory, expected_checkpoint_sha256=head,
+        )
+    assert value.ledger.inspect_native_episode_claim(
+        request, plan_sha256=_entry["ready"]["plan"]["plan_sha256"],
+    ) is None
+    assert _inventory(value.root) == before
+
+
+def test_controller_bridge_preclaim_rechecks_context_after_cancellation_callback(
+    tmp_path, monkeypatch,
+):
+    value, controller, head, state, _entry, request, memory = _ready(tmp_path, monkeypatch)
+    original = controller_bridge.resolve_python_rsi_episode_input_context
+
+    def mutating_child(*args, **kwargs):
+        child = original(*args, **kwargs)
+
+        def cancel_and_mutate():
+            child.native_context.broker_config.headers["x-preclaim-drift"] = "changed"
+            return False
+
+        object.__setattr__(child.native_context, "cancelled", cancel_and_mutate)
+        return child
+
+    monkeypatch.setattr(
+        controller_bridge, "resolve_python_rsi_episode_input_context", mutating_child,
+    )
+    before = _inventory(value.root)
+    with value.ledger.controller_lock(value.binding.run_id), pytest.raises(
+        PythonProducerControllerBridgeError, match="evidence_invalid",
+    ):
+        resolve_python_producer_controller_child_preview(
+            controller, run_id=value.binding.run_id, episode_id=state["current_episode_id"],
+            request=request, memory=memory, expected_checkpoint_sha256=head,
+        )
+    assert value.ledger.inspect_native_episode_claim(
+        request, plan_sha256=_entry["ready"]["plan"]["plan_sha256"],
+    ) is None
+    assert _inventory(value.root) == before

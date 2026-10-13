@@ -10,6 +10,7 @@ from .python_producer_checkpoint import PythonProducerCheckpointBinding
 from .rsi_gateway import SolverRequest
 from .rsi_learning import MemorySnapshot, RSILearningError
 from .rsi_native_plan import NativeRSIExecutionPlan
+from .rsi_native_scheduler import NativeRSISchedulerProvider
 from .rsi_producer_gateway import (
     PythonProducerRSIExecutionConfig,
     PythonProducerRSIGatewayError,
@@ -142,6 +143,17 @@ def resolve_python_producer_controller_child_preview(
             plan = child_gateway._plan(request, memory)
             if plan.to_dict() != ready["plan"]:
                 _fail("ready_plan_drift")
+            # Preserve the controller's existing recovery gate and its stable public refusal
+            # code before asking the scheduler to perform its deeper input/deadline checks.
+            if ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256) is not None:
+                _fail("episode_claim_exists")
+            provider = child_gateway.config.receipt_provider
+            if type(provider) is not NativeRSISchedulerProvider:
+                _fail("scheduler_provider_invalid")
+            # Bind the immutable child preview to the actual scheduler/native-claim preflight.
+            # This only rereads sealed inputs and the controller ledger; it never creates a
+            # claim, consumes an attestation, launches a process, or invokes a producer.
+            provider.validate_preclaim(request, plan, claim_ledger=ledger)
             latest = ledger.controller_checkpoint(run_id)
             if latest is None or latest[0] != expected_checkpoint_sha256 or latest[1] != state:
                 _fail("checkpoint_drift")
