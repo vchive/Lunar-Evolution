@@ -29,6 +29,7 @@ from .algorithm import (
 from .candidate_evaluation_spec import canonical_json, strict_json
 from .native_bootstrap import NativeBootstrapArtifact
 from .producer_bootstrap import TrustedBootstrapDescriptor
+from .producer_broker_ipc import ProducerBrokerConfig
 from .producer_bundle_handoff import BundleGroup
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_python_runtime import (
@@ -210,11 +211,36 @@ def _sidecar(value: object, proof: PythonProducerCheckpointBinding) -> PythonPro
         raise PythonRSISchedulerInputError("sidecar_invalid") from exc
 
 
+def _broker(value: object) -> ProducerBrokerConfig:
+    """Copy the host-only broker config and bind its mutable headers by digest.
+
+    The scheduler input context is read-only. A caller-owned headers dictionary must not
+    remain aliased into a returned child preview, while later mutation of the original
+    context must still be detected by ``_projection`` before any plan is rebuilt.
+    """
+    if type(value) is not ProducerBrokerConfig:
+        _fail("broker_invalid")
+    try:
+        endpoint = value.endpoint
+        headers = dict(value.headers)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise PythonRSISchedulerInputError("broker_invalid") from exc
+    if (type(endpoint) is not str or not endpoint or "\x00" in endpoint
+            or type(value.headers) is not dict
+            or any(type(key) is not str or type(item) is not str for key, item in headers.items())):
+        _fail("broker_invalid")
+    try:
+        return ProducerBrokerConfig(endpoint, headers)
+    except Exception as exc:
+        raise PythonRSISchedulerInputError("broker_invalid") from exc
+
+
 def _native(value: object, binding: PythonProducerBinding) -> NativeRSISchedulerContext:
     if type(value) is not NativeRSISchedulerContext:
         _fail("native_context_invalid")
     for item in (value.intent, value.attestation, value.contract, value.groups):
         _shape(item)
+    broker = _broker(value.broker_config)
     if (type(value.intent) is not ProducerLaunchIntent
             or type(value.attestation) is not ProducerLaunchAttestation
             or type(value.contract) is not AlgorithmProblemContract
@@ -265,6 +291,7 @@ def _native(value: object, binding: PythonProducerBinding) -> NativeRSIScheduler
             value, workspace=_path(value.workspace), producer_root=_path(value.producer_root),
             intent=binding.intent, attestation=binding.attestation, contract=contract,
             artifact=replace(artifact, path=_path(artifact.path)),
+            broker_config=broker,
             groups=tuple(BundleGroup(group.bundle_id, group.entrypoint, group.material_paths)
                          for group in value.groups),
         )
@@ -297,6 +324,10 @@ def _projection(
         "bootstrap_compiler": artifact.compiler,
         "bootstrap_platform_execution_mode": artifact.platform_execution_mode,
         "bootstrap_allowlist_id": artifact.allowlist_id,
+        "broker_endpoint": native.broker_config.endpoint,
+        "broker_headers_sha256": hashlib.sha256(canonical_json(
+            native.broker_config.headers, maximum=MAX_RSI_RECORD_BYTES,
+        )).hexdigest(),
         "contract_sha256": native.contract.digest(),
         "groups": [group.to_dict() for group in native.groups],
         "evaluator_kind": native.evaluator_kind,

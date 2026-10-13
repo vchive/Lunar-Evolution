@@ -6,12 +6,17 @@ from dataclasses import replace
 
 import pytest
 from test_producer_python_runtime import _inventory
+from test_rsi_producer_gateway import _fixture
 from test_rsi_store_child_proof import _store_ready
 
+import lunar_evolution.rsi_producer_launch as producer_launch
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_learning import MemorySnapshot, RSILearningError
 from lunar_evolution.rsi_python_episode_inputs import resolve_python_rsi_episode_input_context
-from lunar_evolution.rsi_python_scheduler_inputs import PythonRSISchedulerPlanFactory
+from lunar_evolution.rsi_python_scheduler_inputs import (
+    PythonRSISchedulerInputContext,
+    PythonRSISchedulerPlanFactory,
+)
 
 
 def _case(tmp_path, monkeypatch):
@@ -39,6 +44,52 @@ def test_ready_child_context_has_exact_plan_preserves_root_and_performs_no_write
     assert value.ledger.controller_checkpoint_history(value.binding.run_id) == history
     assert _inventory(value.root) == inventory
     assert len(supplier.observations) == 1
+    assert value.ledger.get_episode(request.episode_id) is None
+    assert value.ledger.episode_result(request.episode_id) is None
+
+
+def test_ready_child_context_preserves_cancellation_and_deadline_binding_read_only(tmp_path, monkeypatch):
+    """Recovery input inspection never turns cancellation/deadline into launch authority."""
+    value, supplier, controller, head, request, memory, entry = _case(tmp_path, monkeypatch)
+    cancelled = lambda: True
+    native = replace(value.native, cancelled=cancelled)
+    value.context = PythonRSISchedulerInputContext(native, value.sidecar, value.proof)
+    expired = replace(request, budget=(("deadline_unix", 1.0),))
+    # The staged proof binds the original request/deadline, so a changed caller deadline
+    # must refuse before the resolver can silently refresh or widen it.
+    with pytest.raises(RSILearningError):
+        resolve_python_rsi_episode_input_context(
+            value.context, value.ledger, expired, memory, expected_checkpoint_sha256=head,
+        )
+    child = resolve_python_rsi_episode_input_context(
+        value.context, value.ledger, request, memory, expected_checkpoint_sha256=head,
+    )
+    assert child.native_context.cancelled is cancelled
+    assert child.native_context.execution_control is value.native.execution_control
+    assert child.producer_sidecar.binding.deadline_unix == value.sidecar.binding.deadline_unix
+    assert child.producer_sidecar.binding.deadline_unix == entry["ready"]["binding"]["deadline_unix"]
+    assert len(supplier.observations) == 1
+    assert controller.producer_sidecar is value.sidecar
+    assert value.ledger.get_episode(request.episode_id) is None
+
+
+def test_unknown_child_context_cannot_be_recovered_from_root_sidecar(tmp_path, monkeypatch):
+    """A staging unknown remains quarantined even when the root sidecar is intact."""
+    from test_rsi_producer_staging_controller import ObservedAttestations, _controller, _run
+
+    monkeypatch.setattr(producer_launch, "MAX_STAGING_BINDING_BYTES", 64 * 1024)
+    value = _fixture(tmp_path, monkeypatch)
+    supplier = ObservedAttestations(value.ledger, failure=True)
+    controller = _controller(value, supplier)
+    result = _run(controller, value)
+    assert result.status == "unknown"
+    head = value.ledger.controller_checkpoint(value.binding.run_id)[0]
+    request = value.request
+    memory = value.memory
+    with pytest.raises(RSILearningError, match="episode_evidence_invalid"):
+        resolve_python_rsi_episode_input_context(
+            value.context, value.ledger, request, memory, expected_checkpoint_sha256=head,
+        )
     assert value.ledger.get_episode(request.episode_id) is None
     assert value.ledger.episode_result(request.episode_id) is None
 
