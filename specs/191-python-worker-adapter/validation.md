@@ -1,5 +1,32 @@
 # Validation plan
 
+## 2026-10-13 controller-called per-episode staging
+
+The frozen continuation has 19 core tests in `test_rsi_producer_launch.py` and
+8 independent controller tests in `test_rsi_producer_staging_controller.py`.
+The final local selection additionally covers controller, resume contract,
+original producer proof, single-episode gateway, durable flow, budget/fingerprint,
+native controller and CLI compatibility: 135 distinct collected cases in total.
+
+The first unified selection had 133 passes and two compatibility failures. Both
+showed `_finish_flow` passing a new keyword into historical two-argument
+`_save_flow` overrides. Preserve that original XML; the correction retains the
+historical call when no explicit CAS is supplied and keeps the staging path's
+captured CAS. Tests and refusal assertions were not weakened. Final-source
+verification is running and must complete before its result is recorded below.
+
+Reports, source pins and both XML revisions are retained in the isolated
+worktree's ignored `.lunar-evolution/reports/episode-staging-final-20261013-1915/`.
+Whole-source Ruff, compileall and diff-check pass. Independent source review
+covers owner/permit consumption, immediate durable intent association, original
+root proof, strict input/plan/file pins, bounded preflight and read-only resume.
+Review does not add a second count of executed tests.
+
+No fixture executes a producer, CPython/toolchain, model or evaluator. Ready is
+rechecked retained staging evidence and refuses dispatch before running episode
+or native claim. Full DRS/BRS execution, accepted project runtime, production CLI
+and source CI/independent raw/source/tree acceptance remain separate obligations.
+
 ## 2026-10-13 integrated OpenEvolve/Shinka preflight
 
 PR82 is merged as `d530f9f` on top of PR80 merge `480334c`. Shinka now reparses the canonical

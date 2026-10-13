@@ -1,5 +1,26 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-13 并行继续：逐 episode durable staging
+
+本轮在 PR88 最终来源 `5bb90c9` 的隔离分支继续，修改已有 controller 并新增
+`rsi_producer_launch.py`。这是 controller 实际调用的 staging-only 机制：纯容量检查先于
+一次预算 reservation，durable intent 之后先保存 preparing，再通过单次临时 owner/CAS
+permit 复用原 create-only native inputs/launch/child sidecar，最后保存完整 ready 关联和
+原 bytes/inode pins。ready 仍在 running episode/native claim 前固定拒绝 dispatch。
+旧 unconfigured controller 保持原行为；BRS opt-in 在 run 创建前拒绝。
+
+中断保留 preparing/unknown 和 partial 文件；resume 只读拒绝，不再次准备、扣预算、
+延长 deadline、采用新 disk pins 或旋转原 run proof。无关 checkpoint CAS 更新与 unknown
+保存失败保持原 authority，不从较新 head 刷新 finish/save。源码独审已完成；19 core +
+8 独立 controller cases 的最终来源统一回归正在进行，不能沿用较早测试来源当最终证据。
+详细边界见 Feature191 `per-episode-producer-launch.md` 和 `docs/rsi-local-runtime.md`。
+
+完整多 episode DRS 仍需 gateway、controller admission、store 和 scheduler 的显式 child
+authority 接线。真实 OpenEvolve/Shinka runtime/dependency profile 是独立未验收项，见
+`project-runtime-profile.md`。本轮仅本地 inert fixture/provider-free；未运行真实
+CPython/toolchain、campaign、模型/evaluator、WebAgent 或公司平台，
+`production_admission=false`。本轮最终源码仍须自己的 CI/raw/source/tree audit。
+
 ## 2026-10-13 构建执行机制与单 episode producer 接线
 
 本轮从已合入的 `main 17ebde4` 继续；PR87 最终来源的完整 CI 与独立
