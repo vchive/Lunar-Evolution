@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from test_python_producer_adapter import _supported_chain
 
+import lunar_evolution.shinka_handoff as shinka_module
 from lunar_evolution.algorithm import AlgorithmProblemContract, EvaluationReport
 from lunar_evolution.openevolve_handoff import (
     RESULT_BINDING_MISMATCH,
@@ -110,6 +111,69 @@ def test_shinka_export_binding_drift_is_fixed_and_does_not_publish(tmp_path: Pat
         )
     assert caught.value.code == SHINKA_BINDING_MISMATCH
     assert not export.exists()
+
+
+def test_shinka_bound_run_drift_is_rejected_before_results_root_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A foreign bound run must fail before an untrusted Shinka root is inspected."""
+    binding, _terminal, _observation, _result = _supported_chain(tmp_path, producer="shinka")
+    monkeypatch.setattr(
+        shinka_module, "_root",
+        lambda _root, _code: pytest.fail("binding drift must precede results-root I/O"),
+    )
+    with pytest.raises(ShinkaHandoffError) as caught:
+        export_shinka_result(
+            tmp_path / "foreign-run",
+            object(),  # contract is never touched after the run-id preflight refusal
+            contract_sha256=object(),
+            producer_fingerprint=binding.producer_fingerprint,
+            producer_run_id="foreign-run-id",
+            binding=binding,
+        )
+    assert caught.value.code == SHINKA_BINDING_MISMATCH
+
+
+def test_shinka_bound_contract_drift_is_rejected_before_results_root_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding, _terminal, _observation, _result = _supported_chain(tmp_path, producer="shinka")
+    monkeypatch.setattr(
+        shinka_module, "_root",
+        lambda _root, _code: pytest.fail("binding drift must precede results-root I/O"),
+    )
+    with pytest.raises(ShinkaHandoffError) as caught:
+        export_shinka_result(
+            tmp_path / "foreign-run",
+            tmp_path / "export",
+            contract_sha256="f" * 64,
+            producer_fingerprint=binding.producer_fingerprint,
+            producer_run_id=binding.run_id,
+            binding=binding,
+        )
+    assert caught.value.code == SHINKA_BINDING_MISMATCH
+
+
+def test_shinka_bound_producer_id_drift_is_rejected_before_results_root_io(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding, _terminal, _observation, _result = _supported_chain(tmp_path, producer="shinka")
+    monkeypatch.setattr(
+        shinka_module,
+        "_root",
+        lambda _root, _code: pytest.fail("producer-id drift must precede results-root I/O"),
+    )
+    with pytest.raises(ShinkaHandoffError) as caught:
+        export_shinka_result(
+            tmp_path / "foreign-run",
+            tmp_path / "export",
+            contract_sha256=binding.contract_sha256,
+            producer_fingerprint=binding.producer_fingerprint,
+            producer_run_id=binding.run_id,
+            producer_id="openevolve",
+            binding=binding,
+        )
+    assert caught.value.code == SHINKA_BINDING_MISMATCH
 
 
 def test_openevolve_wrapper_binding_drift_is_rejected_before_evaluation(tmp_path: Path) -> None:

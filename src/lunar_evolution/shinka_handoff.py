@@ -941,6 +941,47 @@ def _bounded_budget(value: object) -> dict[str, int | float]:
     return result
 
 
+def _preflight_python_binding(
+    binding: object,
+    contract_sha256: object,
+    producer_fingerprint: str,
+    producer_run_id: str | None,
+    producer_id: str,
+) -> str:
+    """Validate detached binding identity before touching an untrusted Shinka run root.
+
+    The complete envelope verifier remains mandatory after SQLite/source inspection. This small
+    preflight only reparses the caller-owned binding and compares immutable identity fields. It
+    deliberately runs before ``_root`` and ``_database_path`` so a foreign binding cannot be
+    paired with an arbitrary producer directory or make the exporter inspect a database first.
+    """
+    try:
+        from .python_producer_binding import PythonProducerBinding, parse_python_producer_binding
+
+        if type(binding) is not PythonProducerBinding:
+            _raise(SHINKA_BINDING_MISMATCH)
+        bound = parse_python_producer_binding(binding.to_json())
+        if bound.producer_id != producer_id:
+            _raise(SHINKA_BINDING_MISMATCH)
+        if bound.producer_fingerprint != producer_fingerprint:
+            _raise(SHINKA_BINDING_MISMATCH)
+        if producer_run_id is not None and producer_run_id != bound.run_id:
+            _raise(SHINKA_BINDING_MISMATCH)
+        expected_contract = contract_sha256
+        if not isinstance(expected_contract, str):
+            digest_method = getattr(expected_contract, "digest", None)
+            if not callable(digest_method):
+                _raise(SHINKA_BINDING_MISMATCH)
+            expected_contract = digest_method()
+        if bound.contract_sha256 != expected_contract:
+            _raise(SHINKA_BINDING_MISMATCH)
+        return bound.run_id
+    except ShinkaHandoffError:
+        raise
+    except Exception as exc:
+        raise ShinkaHandoffError(SHINKA_BINDING_MISMATCH) from exc
+
+
 def export_shinka_result(
     results_root: str | os.PathLike[str],
     export_root: str | os.PathLike[str],
@@ -979,21 +1020,17 @@ def export_shinka_result(
             _raise(SHINKA_BINDING_MISMATCH)
     else:
         verify_binding = None
-    # A bound result must carry the immutable run identity from the binding.  A
-    # caller may omit the optional run id for convenience, but an explicit
-    # different id is a composition drift and must fail before any export is
-    # created.  Keep the unbound exporter behavior unchanged.
     bound_producer_run_id = producer_run_id
     if binding is not None:
-        try:
-            binding_run_id = getattr(binding, "run_id", None)
-            if producer_run_id is not None and producer_run_id != binding_run_id:
-                _raise(SHINKA_BINDING_MISMATCH)
-            bound_producer_run_id = binding_run_id
-        except ShinkaHandoffError:
-            raise
-        except Exception as exc:
-            raise ShinkaHandoffError(SHINKA_BINDING_MISMATCH) from exc
+        # Reject detached identity drift before opening the caller-selected results root. The
+        # generic envelope check below remains mandatory after the result and source are read.
+        bound_producer_run_id = _preflight_python_binding(
+            binding,
+            contract_sha256,
+            producer_fingerprint,
+            producer_run_id,
+            producer_id,
+        )
     if top_k is not None and (type(top_k) is not int or not 1 <= top_k <= MAX_SHINKA_TOP_K):
         _raise(SHINKA_TOP_K_INVALID)
     contract_value: object = contract_sha256
