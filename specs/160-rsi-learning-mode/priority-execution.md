@@ -2,12 +2,12 @@
 
 ## Current integration snapshot — 2026-10-13
 
-`origin/main` is `fea8239`, containing merged PR76, PR81, PR78, PR79, PR80, PR82
-and PR83: the
+`origin/main` is `7021d86`, containing merged PR76, PR81, PR78, PR79, PR80, PR82,
+PR83 and PR84: the
 Python admission boundary timing fix, Feature190 executable owner/FD boundary,
 Shinka binding run-id normalization, prepared-boundary bridge and complete native
 input/plan binding, OpenEvolve/Shinka preflight and current-boundary documentation.
-PR82 merged as `d530f9f`; PR83 merged as `fea8239`. Main CI run `38330366793`
+PR82 merged as `d530f9f`; PR83 merged as `fea8239`; PR84 merged as `7021d86`. Main CI run `38331781593`
 is queued, so remote CI acceptance remains pending even though the code is merged.
 
 PR82 adds provider-free preflight before opening external OpenEvolve or Shinka run

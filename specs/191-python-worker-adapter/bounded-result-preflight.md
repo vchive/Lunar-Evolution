@@ -2,7 +2,7 @@
 
 Status: provider-free implementation merged on main through PR82 (`d530f9f`),
 with the documentation status update carried by PR84. The post-merge main CI run
-`38330366793` is still pending at the time of this update; the earlier bridge head
+`38331781593` is still pending at the time of this update; the earlier bridge head
 `6770650` is superseded by `94a2ec2`. This slice narrows the OpenEvolve/Shinka handoff boundaries; it does not launch a
 producer, authenticate an external worker, or grant runtime/production admission.
 
@@ -49,7 +49,7 @@ foreign run-id/contract/producer drift, including mutually matching foreign bind
 and caller IDs. It asserts that external-root access and the evaluator are not
 called on refusal. The latest local three-suite selection passes 60 unique cases,
 with zero failures, errors or skips. This count is local evidence only; the merged
-code still awaits completion of the post-merge main CI run `38330366793`.
+code still awaits completion of the post-merge main CI run `38331781593`.
 
 This contract does not close the remaining P0/P1 runtime gates: sealed CPython
 installation/startup, real process lifecycle and interruption observation, actual
