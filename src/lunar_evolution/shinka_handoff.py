@@ -984,6 +984,32 @@ def _preflight_python_binding(
         raise ShinkaHandoffError(SHINKA_BINDING_MISMATCH) from exc
 
 
+def _read_shinka_snapshot(
+    source_root: Path, top_k: int | None, program_ids: Sequence[str] | None,
+) -> list[tuple[_ProgramRow, tuple[str, ...], bytes, str]]:
+    """Read existing bounded SQLite/source evidence without creating an export tree."""
+    database = _database_path(source_root)
+    database_before = _database_signature(database)
+    connection = _open_database(database)
+    try:
+        _check_schema(connection)
+        rows = _select_rows(connection, top_k, program_ids)
+        prepared: list[tuple[_ProgramRow, tuple[str, ...], bytes, str]] = []
+        for row in rows:
+            lineage = _lineage(connection, row)
+            origin, source = _candidate_source(source_root, row)
+            prepared.append((row, lineage, source, origin))
+    finally:
+        try:
+            connection.close()
+        except sqlite3.Error:
+            pass
+    if _database_signature(database) != database_before:
+        _raise(SHINKA_DATABASE_CHANGED)
+
+    return prepared
+
+
 def export_shinka_result(
     results_root: str | os.PathLike[str],
     export_root: str | os.PathLike[str],
@@ -1052,24 +1078,7 @@ def export_shinka_result(
     source_root = _root(results_root, SHINKA_ROOT_UNSAFE)
     relative_envelope = _relative_path(envelope_path, SHINKA_EXPORT_PATH_UNSAFE)
 
-    database = _database_path(source_root)
-    database_before = _database_signature(database)
-    connection = _open_database(database)
-    try:
-        _check_schema(connection)
-        rows = _select_rows(connection, top_k, program_ids)
-        prepared: list[tuple[_ProgramRow, tuple[str, ...], bytes, str]] = []
-        for row in rows:
-            lineage = _lineage(connection, row)
-            origin, source = _candidate_source(source_root, row)
-            prepared.append((row, lineage, source, origin))
-    finally:
-        try:
-            connection.close()
-        except sqlite3.Error:
-            pass
-    if _database_signature(database) != database_before:
-        _raise(SHINKA_DATABASE_CHANGED)
+    prepared = _read_shinka_snapshot(source_root, top_k, program_ids)
 
     # Only validate the destination after all source/database checks have passed.  This keeps a
     # rejected or incomplete Shinka run from leaving a misleading empty export directory.
