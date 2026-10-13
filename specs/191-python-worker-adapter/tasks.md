@@ -143,8 +143,10 @@
   verifier after result/material reads. Shinka also requires the fixed `shinka`
   identity and matching caller producer ID before root/SQLite I/O, retaining bound
   run-id normalization. PR82 is merged as `d530f9f`; its local three-suite
-  evidence has 60 passes. The post-merge main CI remains pending in run
-`38331781593`.
+  evidence has 60 passes and its final source `6d4fdc2` passed all 15 checks in
+  run `38329866982`. The old main run `38331781593` was cancelled, not passed.
+  Current main/PR87 acceptance and unresolved independent raw/source/tree audit
+  are tracked separately in `../../docs/current-release-backlog.md`.
 - [x] Add a pure shared OpenEvolve/Shinka evidence envelope with build/parse/verify,
   retained digest and complete original-binding comparisons. It performs no I/O or
   evaluator call and always keeps `production_admission=false`; actual project
@@ -221,6 +223,9 @@
   evidence of its earlier source. No actual static runtime ran.
 - [x] Normalize malformed independent installation-version labels before descriptor
   parsing; six cases verify the fixed refusal across helper/gate/build/verify.
-- [ ] Run final-source three-version CI and audit before merge acceptance.
+- [x] Verify PR49 final source `87e579a` against completed/success run
+  `38198657810` on the original three-version 3-job matrix; merged at `e2537f1`.
+- [ ] Verify and retain the independent raw/source/tree audit for that final
+  observation-policy source. CI/merge alone do not establish runtime acceptance.
 - [ ] Separately define and accept an RSI-capable static installation asset/profile;
   the current argc-one/fixed-main fixture cannot consume native RSI marker inputs.

@@ -2,6 +2,12 @@
 
 ## 当前集成状态 — 2026-10-13（更新）
 
+当前具体剩余工作与逐项 CI/审计状态见
+[`docs/current-release-backlog.md`](docs/current-release-backlog.md)。该账本区分已开发待集成、
+真实 source/toolchain/runtime 依赖和后置 P2；旧 combined CI/audit pending 只关闭已核实的
+CI 部分，缺独立 raw/source/tree audit 的义务继续保留。PR87 将统一接线修改和集成测试后
+验收最终来源，不以较早 revision 的结果代替，也不为刷新 run ID 新建 CI matrix。
+
 已核实的主线能力包含 PR76、PR81、PR78、PR79、PR80、PR82、PR83、PR84、PR85 和 PR86：Python admission boundary timing、Feature190 executable owner/FD boundary、Shinka binding run-id normalization、prepared-boundary bridge、完整 native input/plan binding、OpenEvolve/Shinka bound-result preflight，以及父级 deadline 已过期时的启动前拒绝均已合入。PR82 的最终来源 CI run `38329866982` 已通过 15/15。PR86 合入为 `cd37a2b`；普通 native dispatch 保持显式 Python bridge，过期 parent deadline 不消耗 attestation/nonce/claim。后续当前 revision 和验收结果以 `origin/main`、对应 PR 和最新 `gh run list --branch main` 为准；被后续提交取消的旧 push CI 不算通过，也不需要为刷新 run ID 单独创建文档 PR。
 
 本次继续补齐两个 provider-free 边界：Python admission bridge 在序列化前拒绝嵌套 callback-bearing 输入、DTO serializer shadow 与超大结构；acceptance snapshot probe 要求唯一、类型严格且一致的 source/result/exit/process/release 观察，并保留首次证据。规格分别见 `specs/191-python-worker-adapter/admission-bridge-input-shape.md` 和 `specs/142-automatic-solve-lifecycle/probe-observation-gate.md`。这两项不启用 live scheduler 或生产 runtime。

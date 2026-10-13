@@ -2,13 +2,12 @@
 
 ## Current integration snapshot — 2026-10-13
 
-`origin/main` is `7021d86`, containing merged PR76, PR81, PR78, PR79, PR80, PR82,
-PR83 and PR84: the
-Python admission boundary timing fix, Feature190 executable owner/FD boundary,
-Shinka binding run-id normalization, prepared-boundary bridge and complete native
-input/plan binding, OpenEvolve/Shinka preflight and current-boundary documentation.
-PR82 merged as `d530f9f`; PR83 merged as `fea8239`; PR84 merged as `7021d86`. Main CI run `38331781593`
-is queued, so remote CI acceptance remains pending even though the code is merged.
+The inspected baseline is `1fbdb26`, following `origin/main` at `cd37a2b` (PR86).
+PR76/78/80/81/82 already contain boundary timing, Shinka run-id normalization,
+prepared-boundary bridge/native input binding, executable-owner FD assertions and
+bound-result preflight. Their final-source 15-check runs passed; the latest main
+and unified PR87 integration still need their own final-source acceptance.
+The old main run `38331781593` was cancelled and is not passing evidence.
 
 PR82 adds provider-free preflight before opening external OpenEvolve or Shinka run
 roots. OpenEvolve checks producer id, evaluator fingerprint, producer fingerprint,
@@ -18,17 +17,20 @@ normalization. Both retain the complete final result binding verifier. Sixty loc
 binding-export/OpenEvolve/Shinka cases pass; this is an ordering guard, not producer
 authentication or runtime admission.
 
-The remaining local release work is integration evidence plus the real Feature189/
-191 runtime gates. Provider-free controller resume, replay, budget, fingerprint
-and unknown reconciliation are implemented. Real CPython/toolchain acquisition,
-sealed startup, Python producer lifecycle acceptance, actual OpenEvolve/Shinka
-campaigns and production RSI CLI/Linux acceptance remain open. Remote evaluators,
-external worker authentication, multi-host ownership and distributed scheduling
-remain deferred P2. All validation in this iteration is local and provider-free.
+The actionable list and final-source CI/audit ledger are now in
+[`../../docs/current-release-backlog.md`](../../docs/current-release-backlog.md).
+The remaining local development is the scheduler's late prepared-observer join,
+the retained OpenEvolve/Shinka result exporter join, and unified PR87 integration
+tests/CI/audit. Durable resume, retained replay, budgets, fingerprint/unknown gates,
+DRS first-pin and BRS ready/ack must not be reclassified as missing development.
+Real Feature189 source/toolchain/static build and Feature191/193 runtime/CLI
+acceptance remain separate prerequisites. P2 remains deferred and
+`production_admission=false`.
 
-## Current open priorities — 2026-10-12
+## Historical open-priority snapshot — 2026-10-12
 
-This section supersedes earlier status notes. PR43 durable admission references passed
+This section records its original checkpoint; the current ledger above supersedes
+its pending status. PR43 durable admission references passed
 its own three-version CI and raw/source/tree audits and merged at `469a11c`.
 PR44 publication passed independent/root audits and merged at `db7272b4`; PR45 DRS
 owner first-pin still needs its separate CI acceptance and merge as tracked in HANDOFF.
@@ -56,9 +58,9 @@ The local BRS ready/ack continuation is implemented and requires its own final-s
 Keep `production_admission=false`; use local inert fixtures and preserve original failures.
 The bounded current contract is Feature191 `brs-owner-ready-ack.md`.
 
-## Current open priorities — 2026-10-11
+## Historical open-priority snapshot — 2026-10-11
 
-This section supersedes the older execution notes below. PR32 RSI producer-proof
+This section records the earlier execution checkpoint. PR32 RSI producer-proof
 durable recovery and PR33–39 handoff/pin/composition and static source/artifact
 evidence slices are merged. Actual runtime acceptance remains separate from those
 provider-free contracts.
@@ -111,7 +113,7 @@ The narrow contracts and task status are in Feature191
 `admission-attempt-and-export.md` and `tasks.md`. Do not repeat already merged durable
 resume work or turn synthetic evidence into real-runtime acceptance.
 
-## Current open priorities — 2026-10-08
+## Historical open-priority snapshot — 2026-10-08
 
 PR #6, #7 and #8 are merged. Feature170 trusted local C composition, Feature171 declared-file
 runtime inventory and Feature172 Linux target-control restrictions passed their own final-head

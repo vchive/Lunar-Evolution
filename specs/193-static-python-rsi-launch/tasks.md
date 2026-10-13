@@ -1,8 +1,11 @@
 # Feature 193 tasks
 
-Stage 1 implementation and local verification are complete; final-source CI
-and independent raw/source/tree audit remain pending. Completing source preparation does not complete a later
-installation/runtime stage.
+Stage 1 and the listed detached continuations are implemented and merged. Their
+verified final-source CI is recorded separately below; independent raw/source/tree
+audit obligations remain open where the retained evidence has not been checked.
+See `../../docs/current-release-backlog.md` for the current integration ledger.
+Completing source preparation does not complete installation/runtime acceptance;
+`production_admission=false`.
 
 ## Stage 1 — reviewed source preparation
 
@@ -28,8 +31,10 @@ installation/runtime stage.
 - [x] T10 Run final focused tests, Ruff, compileall and `git diff --check`; retain
   source-bound results and first failures without inflating repeated pass counts.
 - [x] T11a Add the bounded 82-case CI gate with retained XML and annotations.
-- [ ] T11b Complete final-source CI plus independent raw/source/tree audit before
-  merge. Parent task owns Git and CI integration.
+- [x] T11b (CI) Verify PR50 final source `861e068` against run `38198840702`,
+  completed/success on the original three-version 3-job matrix; merged at `3d0df9f`.
+- [ ] T11b (audit) Verify and retain the independent raw/source/tree audit for
+  that final source. Merge status alone does not complete this obligation.
 - [x] T12 Update validation and handoff with implemented stage 1 scope, exact
   evidence and remaining stage boundaries only after the corresponding checks.
 
@@ -45,8 +50,10 @@ installation/runtime stage.
   deterministic output, old-parser refusal and no side effects: 113 focused cases.
 - [x] F01e Verify 183 disjoint compatibility cases and root JUnit inventory,
   296 unique cases total; add the bounded 113-case retained CI gate.
-- [ ] F01f Complete this final source's CI plus independent raw/source/tree audit
-  and merge in dependency order after PR46–50.
+- [x] F01f (CI) Verify PR51 final source `517593c` against run `38198846690`,
+  completed/success on the original three-version 3-job matrix; merged at `d46624e`.
+- [ ] F01f (audit) Verify and retain the independent raw/source/tree audit for
+  the final preparation source and its dependency links.
 
 ## F04 bounded two-input report continuation
 
@@ -59,8 +66,10 @@ installation/runtime stage.
   and sizes without promoting caller DTOs or manufacturing a solver envelope.
 - [x] F04d Verify219 new source/mock cases plus195 disjoint preparation/source
   compatibility cases,414 unique passes; retain the219-case CI gate.
-- [ ] F04e Complete final-source CI plus independent raw/source/tree audit and
-  merge after the preceding dependencies. Live F04 below remains incomplete.
+- [x] F04e (CI) Verify PR52 final source `ac763f0` against run `38199122019`,
+  completed/success on all 15 checks; merged at `e0bd7b8`.
+- [ ] F04e (audit) Verify and retain the independent raw/source/tree audit for
+  that source. Live F04 below remains incomplete.
 
 ## F01 bounded installation contract continuation
 
@@ -72,8 +81,10 @@ installation/runtime stage.
   re-signed drift, canonical/error behavior and absent effects; retain compatibility.
 - [x] F01j Run focused tests, Ruff, compileall and diff checks, independently review
   the final source and add a retained focused CI gate.
-- [ ] F01k Complete final-source CI and independent raw/source/tree audit, then
-  merge in dependency order. No DTO comparison establishes actual installation.
+- [x] F01k (CI) Verify PR53 final source `4f4d880` against run `38199235337`,
+  completed/success on all 15 checks; merged at `5adbdb8`.
+- [ ] F01k (audit) Verify and retain the independent raw/source/tree audit for
+  the final installation-contract source. No DTO comparison establishes installation.
 
 ## Later stages — installation and runtime remain unaccepted
 
@@ -87,19 +98,28 @@ installation/runtime stage.
 - [x] F02d Correct composition with a complete canonical F01 wrapper and four
   mandatory independent pins; align Git/tree hash domains, reviewed freeze
   identity and strict ELF/type/error semantics. Verify 210 F02 cases plus the
-  disjoint F01/F03/F04/F05/helper suites. Final-source CI/audit remains pending;
-  real F02c build acceptance is unchanged.
+  disjoint F01/F03/F04/F05/helper suites. PR59 final source `a6a8eb2` passed
+  all 15 checks in run `38200497242` and is merged; independent raw/source/tree
+  audit remains open below. Real F02c build acceptance is unchanged.
+- [x] Verify PR54 build-closure source `e08b044` against run `38199240159`,
+  completed/success on all 15 checks; merged at `0ae7519`.
 - [x] F03a Specify and implement the provider-free startup/loader-negative wire,
   with baseline and refusal fixtures, owner metadata, lifecycle checks, pin
   binding and false-claim enforcement.
 - [x] F03b Add focused canonical/type/bounds/side-effect tests and export the
   detached DTO parser. This does not execute a runtime or verify an owner.
+- [x] Verify PR55 startup-contract source `37aa8ab` against run `38199245419`,
+  completed/success on all 15 checks; merged at `048a403`.
+- [ ] Verify and retain independent raw/source/tree audits for the final PR54,
+  PR55 and PR59 contract/correction sources; CI success does not supply that audit.
 - [x] F04a Add a provider-free input/result cross-pin DTO that joins F03 startup
   and F04 report digests/sizes without raw inputs or solver/result authority.
 - [x] F04b Enforce canonical JSON, duplicate-key/type/bounds checks, exact pins,
   fixed computation and all-false claims with focused side-effect tests.
-- [ ] F04c Complete final-source CI plus independent raw/source/tree audit for
-  this continuation and merge after PR55.
+- [x] F04c (CI) Verify PR56 final source `7665164` against run `38199255630`,
+  completed/success on all 15 checks; merged at `ad4877c`.
+- [ ] F04c (audit) Verify and retain the independent raw/source/tree audit for
+  the final input/result cross-pin source.
 - [x] F05a Add a detached runtime/post-execution handoff projection joining
   startup, input/result, terminal, budget and publication-intent pins.
 - [x] F05b Enforce terminal/cleanup/publication state, request count and deadline
@@ -108,8 +128,10 @@ installation/runtime stage.
   F04 strict size types, and F05 strict budget/time types, integer precision,
   independent state pins and unknown-cleanup publication gate. Retain focused
   and disjoint compatibility evidence; this does not close live F03/F04/F05.
-- [ ] F05c Complete final-source CI plus independent raw/source/tree audit for
-  this continuation after PR56.
+- [x] F05c (CI) Verify PR57 final source `7ca3816` against run `38199260479`,
+  completed/success on all 15 checks; merged at `f296431`.
+- [ ] F05c (audit) Verify and retain the independent raw/source/tree audit for
+  the final runtime-handoff source and subsequent PR59 corrections.
 - [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,
   configure the build, generate all frozen headers, retain object/archive/link
   manifests and verify the final ELF/artifact bytes under a separate controlled
@@ -139,5 +161,7 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
   interruption and partial-stage refusal semantics with exception normalization.
 - [x] Add focused mutation, role, header, claim, clock/callback and backend
   exception tests; retain local focused evidence separately from live acceptance.
-- [ ] Run this continuation's final-source Linux CI and independent raw/source/
-  tree audit before merge.
+- [x] Verify integrated PR66 final source `3551b9e` against run `38270514933`,
+  completed/success on all 15 checks; merged at `147dbc1`.
+- [ ] Verify and retain the independent raw/source/tree audit for that final
+  controlled mock build-driver source. This is separate from real F02c acceptance.

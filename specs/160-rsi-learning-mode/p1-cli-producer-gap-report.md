@@ -5,6 +5,16 @@ Baseline: PR59 `a6a8eb262a9ef79a6468e02f4d5c158afaf718a3`
 Scope: provider-free local inspection only; no model, WebAgent, remote evaluator, or real
 OpenEvolve/Shinka campaign was run.
 
+Current correction, 2026-10-13: the retained `rsi replay` inspector, replay gateway
+and durable `rsi resume` CLI are implemented and merged. PR64's integrated source
+passed 15 checks; later replay-context changes from PR73 keep their original failed
+CI evidence and must not borrow that older acceptance. The latest integration and
+raw/source/tree obligations are tracked in
+[`../../docs/current-release-backlog.md`](../../docs/current-release-backlog.md).
+The open P1 development is the local retained result/exporter join and subsequent
+runtime-gated producer CLI acceptance, not another replay/result DTO.
+`production_admission=false`.
+
 ## Finding
 
 The RSI CLI accepts `--solver openevolve` and `--solver shinka`, but those values currently
@@ -52,10 +62,10 @@ _rsi_run_payload
 The command's success is therefore intentionally provider-free fixture evidence and must not be
 reported as local OpenEvolve/Shinka runtime acceptance.
 
-## Smallest useful P1 slice
+## Implemented retained replay slice
 
-Add one explicit **read-only producer replay / dry-run inspection** composition using existing
-contracts:
+The following explicit **read-only producer replay / dry-run inspection** composition
+is implemented using existing contracts; it is not a new development request:
 
 1. Accept a retained `ProducerResultEnvelope` directory plus the original RSI run/episode pins.
 2. Reuse `prepare_producer_seed_manifest`, existing producer admission, and the existing
