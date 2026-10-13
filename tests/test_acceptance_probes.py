@@ -170,11 +170,12 @@ def detached_probe(tmp_path, monkeypatch, *, observations=((17, 17),), releases=
     return evidence
 
 
-def test_detached_unique_consistent_observers_are_accepted(tmp_path, monkeypatch):
-    result = detached_probe(tmp_path, monkeypatch)
+@pytest.mark.parametrize("identity", [(17, 17), (17, None)])
+def test_detached_unique_consistent_observers_are_accepted(tmp_path, monkeypatch, identity):
+    result = detached_probe(tmp_path, monkeypatch, observations=(identity,), releases=(identity,))
     assert result.passed and result.reason == "passed"
     assert result.process_exit_code == result.native_exit_code == 0
-    assert result.observer_identity == result.release_identity == (17, 17)
+    assert result.observer_identity == result.release_identity == identity
 
 
 @pytest.mark.parametrize("sources", [

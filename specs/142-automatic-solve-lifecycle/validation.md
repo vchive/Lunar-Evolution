@@ -1,5 +1,23 @@
 # Validation
 
+## Snapshot probe observation gate (2026-10-13)
+
+The continuation in [probe-observation-gate.md](probe-observation-gate.md) rejects
+missing, duplicate, malformed or inconsistent source/result/independent-exit and
+process-release observations. It retains the first result/harness evidence and
+bounds callback accumulation. Detached fixtures exercise these failures without
+launching a process; existing snapshot and holdout suites verify compatibility.
+This is provider-free regression evidence and does not reopen or revise either
+historical real-model registration below.
+
+Final integrated local Python 3.13 validation passes 122 distinct cases across
+`test_acceptance_probes.py`, `test_acceptance_holdouts.py`,
+`test_acceptance_runtime_binding.py` and `test_acceptance_campaign_audit.py`,
+with zero failures, errors or skips. Whole-source Ruff, compileall and diff-check
+pass. The separate bridge/prepared-boundary selection passes 46 cases; these
+selections are disjoint. The final-source remote matrix is tracked by its PR and
+is not inferred from local results.
+
 ## Second registered real-model attempt (2026-09-28)
 
 The fresh `native-142-20260928-02` registration pinned product

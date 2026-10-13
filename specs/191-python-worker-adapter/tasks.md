@@ -154,6 +154,10 @@
   continuation check, exposes an owner-scope `pin_live` selector, and preserves
   fail-closed identity/digest errors. The adapter is explicit plumbing; automatic native
   scheduler invocation remains the open integration task above.
+- [x] Reject callback-bearing nested bridge input, DTO serializer shadows, foreign
+  hook scalar types and oversized shapes before serialization or owner-hook access,
+  under `admission-bridge-input-shape.md`. Preserve canonical wires and explicit
+  DRS/BRS behavior; this does not grant live runtime admission.
 - [ ] Reuse Feature190 private owner/native lifecycle, cancellation, reap, FD
   census and terminal evidence. Keep v2 wire/FD schema unchanged.
 - [ ] Add focused tests for startup, decoys, output bounds, cancellation,

@@ -232,7 +232,7 @@ def test_bridge_wire_refuses_callback_shapes_before_serialization(tmp_path, doma
     assert (_rows(value), _files(value)) == before
 
 
-@pytest.mark.parametrize("domain", ["string", "unicode", "key", "aggregate", "container", "integer"])
+@pytest.mark.parametrize("domain", ["string", "unicode", "key", "aggregate", "container", "integer", "depth", "nodes"])
 def test_bridge_bounds_shapes_before_json_encoding(tmp_path, monkeypatch, domain):
     wire = _descriptor(_setup(tmp_path)).to_dict()
     if domain == "string":
@@ -248,8 +248,15 @@ def test_bridge_bounds_shapes_before_json_encoding(tmp_path, monkeypatch, domain
         }
     elif domain == "container":
         wire["prepared_journal"]["candidates"] = [None] * 10_001
-    else:
+    elif domain == "integer":
         wire["native_plan"]["deadline_unix"] = 1 << 4096
+    elif domain == "depth":
+        nested = []
+        for _ in range(49):
+            nested = [nested]
+        wire["native_plan"]["request"]["solver_settings"] = nested
+    else:
+        wire["native_plan"]["request"]["solver_settings"] = [[None] * 10_000 for _ in range(11)]
     monkeypatch.setattr(
         "lunar_evolution.rsi_python_admission_bridge.canonical_json",
         lambda *_args, **_kwargs: pytest.fail("unbounded shape reached JSON encoder"),
