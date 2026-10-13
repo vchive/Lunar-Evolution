@@ -1181,6 +1181,12 @@ def _run_producer_process(
     if _observe_cancellation(cancelled):
         _fail("producer_process_cancelled")
     deadline = _compose_parent_deadline(intent, monotonic, parent_deadline)
+    # A parent deadline that has already elapsed is a startup refusal.  Check it
+    # before attestation verification, producer-root inspection, or one-time claim
+    # publication so parent loss cannot consume the child launch authority or leave
+    # a partially prepared attempt that looks dispatchable after restart.
+    if parent_deadline is not None and monotonic() >= deadline:
+        _fail("producer_process_wall_timeout")
     try:
         verify_producer_launch_attestation(intent, attestation)
     except ProducerLaunchError as exc:
