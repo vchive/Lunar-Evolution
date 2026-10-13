@@ -1,5 +1,25 @@
 # Current release backlog — 2026-10-13
 
+## Current snapshot — 2026-10-13
+
+以远程 GitHub 当前状态为准：`main=292abdb`（PR91 merge commit）。PR89 已合入；PR91
+也已合入并包含 store-side staged child producer proof resolver。当前 PR92（README）、PR93
+（controller admission 绑定 staged child proof）和 PR94（episode-scoped Python scheduler
+context）处于 open/stacked 状态，依次构成文档 → child-proof admission → scheduler context
+的集成链。若本地 checkout 仍显示 `d38bab1`，请先 fetch `origin/main`；它是 PR91 合入前的
+旧 main 快照。
+
+下一项 P0 是把已经验证的 child proof 以只读方式接入
+`controller → gateway → scheduler → store/admission/native claim`：每个 episode 只能采用
+自己的 request、memory、launch、sidecar 和 proof；缺失、unknown、漂移、取消或 deadline
+都必须保持阻断，不能回退到 fixture gateway 或重复 staging。该接线仍不等于真实 runtime
+验收。
+
+真实 Python/CPython source、toolchain、sealed runtime、OpenEvolve/Shinka project lifecycle
+和生产 RSI CLI 仍属于后续 P0/P1 验收，不能由 provider-free fixture 关闭。remote evaluator、
+external worker authentication、multi-host ownership、distributed scheduler、service API
+和远程 Shinka/Slurm 继续作为 P2 后置范围；所有条目保持 `production_admission=false`。
+
 本轮起点为 `main 17ebde4`，PR87 已合入；其最终来源 CI 与独立 raw/source/tree
 审计通过，合入后 main CI 也通过 15/15。本文按代码、指定任务清单及 GitHub 最终来源检查整理当前工作；
 历史交接里的 pending 不等于功能尚未开发。所有条目保持
