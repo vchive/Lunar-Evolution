@@ -23,6 +23,12 @@ from .candidate_evaluation_spec import canonical_json
 _MAX_EXPECTED_KEYS = frozenset({"validity", "quality", "combined_score", "constraint_code"})
 
 
+def _process_identity(value: tuple[int, int | None]) -> bool:
+    pid, pgid = value
+    return (type(pid) is int and pid > 0
+            and (pgid is None or type(pgid) is int and pgid > 0))
+
+
 @dataclass(frozen=True)
 class AcceptanceSnapshotEvidence:
     """Detached, bounded observation of one native snapshot probe."""
@@ -131,8 +137,9 @@ def run_acceptance_snapshot_probe(
     """Execute one probe and return a conservative, digest-bearing observation.
 
     ``native_exit_code`` is the process result returned by the bounded runner and
-    ``process_exit_code`` is the independent exit observer callback. A timeout/cancellation
-    or missing release callback leaves cleanup ``unknown``.
+    ``process_exit_code`` is the independent exit observer callback. Successful evidence
+    requires one exact, consistent result/exit observation and one matched process release.
+    A timeout/cancellation or incomplete observation leaves cleanup ``unknown``.
     """
     expected_value = _expected(expected)
     if not isinstance(evaluator, Path) or not isinstance(workspace, Path):
@@ -150,18 +157,32 @@ def run_acceptance_snapshot_probe(
     released: list[tuple[int, int | None]] = []
     exits: list[int | None] = []
     captured: dict[str, Any] = {}
+    result_count = 0
+    source_count = 0
 
     def observer(pid: int, pgid: int | None) -> None:
-        observed.append((pid, pgid))
+        if len(observed) < 2:
+            observed.append((pid, pgid))
 
     def release(pid: int, pgid: int | None) -> None:
-        released.append((pid, pgid))
+        if len(released) < 2:
+            released.append((pid, pgid))
+
+    def exit_observed(code: int | None) -> None:
+        if len(exits) < 2:
+            exits.append(code)
 
     def result_observed(status: str, exit_code: int | None, process_reason: str | None) -> None:
-        captured.update(status=status, exit=exit_code, reason=process_reason)
+        nonlocal result_count
+        result_count = min(2, result_count + 1)
+        if result_count == 1:
+            captured.update(status=status, exit=exit_code, reason=process_reason)
 
     def source_observed(source: bytes) -> None:
-        captured["harness_sha256"] = hashlib.sha256(source).hexdigest()
+        nonlocal source_count
+        source_count = min(2, source_count + 1)
+        if source_count == 1 and type(source) is bytes:
+            captured["harness_sha256"] = hashlib.sha256(source).hexdigest()
 
     started = time.monotonic()
     report_dict: dict[str, Any] | None = None
@@ -174,7 +195,7 @@ def run_acceptance_snapshot_probe(
             evaluator, probe, contract, workspace, float(timeout_seconds),
             process_observer=observer,
             process_released=release,
-            process_exit_observed=lambda code: exits.append(code),
+            process_exit_observed=exit_observed,
             process_result_observed=result_observed,
             evaluator_source_observed=source_observed,
         )
@@ -182,9 +203,15 @@ def run_acceptance_snapshot_probe(
         projection = _projection(report)
         if projection != expected_value:
             reason = "projection_mismatch"
-        elif captured.get("status") != "succeeded" or captured.get("exit") != 0:
+        elif (source_count != 1 or "harness_sha256" not in captured
+              or result_count != 1 or type(captured.get("status")) is not str
+              or captured["status"] != "succeeded" or type(captured.get("exit")) is not int
+              or captured["exit"] != 0 or captured.get("reason") is not None
+              or len(exits) != 1 or type(exits[0]) is not int or exits[0] != captured["exit"]):
             reason = "process_failed"
-        elif len(observed) != 1 or len(released) != 1 or observed[0] != released[0]:
+        elif (len(observed) != 1 or len(released) != 1
+              or not _process_identity(observed[0]) or not _process_identity(released[0])
+              or observed[0] != released[0]):
             reason = "cleanup_unknown"
         else:
             reason = "passed"
@@ -194,8 +221,10 @@ def run_acceptance_snapshot_probe(
         reason = "timeout"
     except _bundle.EvaluatorBundleError:
         status = captured.get("status")
-        reason = ("process_timed_out" if status == "timed_out" else
-                  "process_cleanup_failed" if captured.get("reason") == "process_cleanup_failed" else "process_failed")
+        process_reason = captured.get("reason")
+        reason = ("process_timed_out" if type(status) is str and status == "timed_out" else
+                  "process_cleanup_failed" if type(process_reason) is str
+                  and process_reason == "process_cleanup_failed" else "process_failed")
     except (OSError, KeyError, TypeError, ValueError, RuntimeError):
         reason = "process_failed" if captured else "exception"
     finally:
@@ -217,8 +246,8 @@ def run_acceptance_snapshot_probe(
         report=report_dict, projection=projection, expected=expected_value,
         passed=reason == "passed", reason=reason, duration_ms=duration_ms,
         process_exit_code=process_exit, native_exit_code=native_exit, cleanup=cleanup,
-        observer_identity=observed[0] if len(observed) == 1 else None,
-        release_identity=released[0] if len(released) == 1 else None,
+        observer_identity=observed[0] if len(observed) == 1 and _process_identity(observed[0]) else None,
+        release_identity=released[0] if len(released) == 1 and _process_identity(released[0]) else None,
         input_bytes=input_bytes, expected_output_bytes=expected_bytes,
         actual_output_bytes=actual_bytes,
         report_sha256=hashlib.sha256(report_bytes).hexdigest() if report_bytes is not None else None,

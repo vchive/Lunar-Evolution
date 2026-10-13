@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
 
 from lunar_evolution.acceptance_probes import AcceptanceProbeError, run_acceptance_snapshot_probe
-from lunar_evolution.algorithm import AlgorithmProblemContract
+from lunar_evolution.algorithm import AlgorithmProblemContract, EvaluationReport
 from lunar_evolution.evaluator_bundle import EvaluatorProbe, ProbeFile
 
 
@@ -137,3 +138,106 @@ def test_snapshot_probe_does_not_replace_global_runner(tmp_path, monkeypatch):
                                            expected=expected(2))
     assert result.passed and calls == [1]
     assert runner._bounded_process_bytes is observe
+
+
+def detached_probe(tmp_path, monkeypatch, *, observations=((17, 17),), releases=((17, 17),),
+                   exits=(0,), results=(("succeeded", 0, None),),
+                   sources=(b"detached-harness-fixture",), error=False):
+    """Supply detached callbacks without reading a harness or starting a process."""
+    from lunar_evolution import evaluator_bundle as bundle
+
+    def snapshot(*_args, **kwargs):
+        for source_bytes in sources:
+            kwargs["evaluator_source_observed"](source_bytes)
+        for identity in observations:
+            kwargs["process_observer"](*identity)
+        for identity in releases:
+            kwargs["process_released"](*identity)
+        for code in exits:
+            kwargs["process_exit_observed"](code)
+        for result in results:
+            kwargs["process_result_observed"](*result)
+        if error:
+            raise bundle.EvaluatorBundleError("fixture error")
+        return EvaluationReport("1", "compiled-bundle", 1, 2, {}, (), quality=2)
+
+    monkeypatch.setattr(bundle, "_snapshot_probe", snapshot)
+    harness = tmp_path / "not-created.py"
+    workspace = tmp_path / "not-created"
+    evidence = run_acceptance_snapshot_probe(harness, probe(2), contract(), workspace,
+                                            expected=expected(2))
+    assert not harness.exists() and not workspace.exists()
+    return evidence
+
+
+def test_detached_unique_consistent_observers_are_accepted(tmp_path, monkeypatch):
+    result = detached_probe(tmp_path, monkeypatch)
+    assert result.passed and result.reason == "passed"
+    assert result.process_exit_code == result.native_exit_code == 0
+    assert result.observer_identity == result.release_identity == (17, 17)
+
+
+@pytest.mark.parametrize("sources", [
+    (), (b"first", b"replacement"), ("text",), (bytearray(b"mutable"),), (None,),
+])
+def test_missing_duplicate_or_malformed_source_observation_refuses(tmp_path, monkeypatch, sources):
+    result = detached_probe(tmp_path, monkeypatch, sources=sources)
+    assert not result.passed and result.reason == "process_failed"
+    assert result.cleanup == "unknown"
+    first = sources[0] if sources else None
+    assert result.harness_sha256 == (hashlib.sha256(first).hexdigest() if type(first) is bytes else None)
+
+
+@pytest.mark.parametrize("exits", [(), (0, 0), (None,), (False,), (0.0,), ("0",), (1,), (-9,)])
+def test_missing_duplicate_malformed_or_conflicting_exit_refuses(tmp_path, monkeypatch, exits):
+    result = detached_probe(tmp_path, monkeypatch, exits=exits)
+    assert not result.passed and result.reason == "process_failed"
+    assert result.cleanup == "unknown"
+    assert result.native_exit_code == 0
+    assert result.process_exit_code == (exits[0] if len(exits) == 1 and type(exits[0]) is int else None)
+
+
+@pytest.mark.parametrize("results", [
+    (), (("succeeded", 0, None), ("succeeded", 0, None)),
+    (("failed", 1, None), ("succeeded", 0, None)),
+    (("succeeded", False, None),), (("succeeded", 0.0, None),),
+    (("succeeded", "0", None),), (("succeeded", 0, "process_cleanup_failed"),),
+    (("failed", 0, None),), ((None, 0, None),),
+])
+def test_missing_duplicate_or_malformed_runner_result_refuses(tmp_path, monkeypatch, results):
+    result = detached_probe(tmp_path, monkeypatch, results=results)
+    assert not result.passed and result.reason == "process_failed"
+    assert result.cleanup == "unknown"
+    first_exit = results[0][1] if results else None
+    assert result.native_exit_code == (first_exit if type(first_exit) is int else None)
+
+
+@pytest.mark.parametrize("field,identities", [
+    ("observations", ()), ("releases", ()),
+    ("observations", ((17, 17), (17, 17))), ("releases", ((17, 17), (17, 17))),
+    ("observations", ((True, 17),)), ("releases", ((17, True),)),
+    ("observations", ((17.0, 17),)), ("releases", ((17, "17"),)),
+    ("observations", ((0, 17),)), ("releases", ((17, -1),)),
+    ("observations", ((18, 18),)), ("releases", ((17, None),)),
+])
+def test_incomplete_malformed_or_conflicting_process_identity_refuses(
+    tmp_path, monkeypatch, field, identities,
+):
+    result = detached_probe(tmp_path, monkeypatch, **{field: identities})
+    assert not result.passed and result.reason == "cleanup_unknown"
+    assert result.cleanup == "unknown"
+    assert result.process_exit_code == result.native_exit_code == 0
+
+
+def test_observation_type_gates_do_not_invoke_foreign_equality(tmp_path, monkeypatch):
+    class Foreign:
+        def __eq__(self, _other):
+            pytest.fail("observation equality must not run")
+
+    result = detached_probe(tmp_path, monkeypatch, results=((Foreign(), 0, None),))
+    assert result.reason == "process_failed"
+    result = detached_probe(tmp_path, monkeypatch, observations=((Foreign(), 17),))
+    assert result.reason == "cleanup_unknown"
+    assert result.observer_identity is None
+    result = detached_probe(tmp_path, monkeypatch, results=((Foreign(), 0, Foreign()),), error=True)
+    assert result.reason == "process_failed"
