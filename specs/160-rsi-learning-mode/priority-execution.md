@@ -2,17 +2,20 @@
 
 ## Current integration snapshot — 2026-10-13
 
-`origin/main` is `6159c6b`, containing merged PR76, PR81, PR78 and PR79: the
+`origin/main` is `480334c`, containing merged PR76, PR81, PR78, PR79 and PR80: the
 Python admission boundary timing fix, Feature190 executable owner/FD boundary,
-Shinka binding run-id normalization and prepared-boundary bridge clarification.
-PR80 prepared-boundary bridge remains at head `94a2ec2`, and PR82 bound OpenEvolve
-result preflight remains at head `6b4e841`; their CI and merge are still pending.
+Shinka binding run-id normalization, prepared-boundary bridge and complete native
+input/plan binding. PR80 head `94a2ec2` and post-merge main CI remain pending;
+merge status alone does not establish CI acceptance. PR82 includes both bound
+OpenEvolve and Shinka result preflight on this main; its final CI and merge remain pending.
 
-PR82 adds a provider-free preflight before opening an external OpenEvolve run
-root. It checks five identity pins (producer id, evaluator fingerprint, producer
-fingerprint, contract digest and optional run-id), then still performs the full
-result binding verifier after the candidate/result bytes are read. This is a
-fail-closed ordering guard, not producer authentication or runtime admission.
+PR82 adds provider-free preflight before opening external OpenEvolve or Shinka run
+roots. OpenEvolve checks producer id, evaluator fingerprint, producer fingerprint,
+contract digest and optional run-id. Shinka requires its fixed producer id plus the
+caller identity, fingerprint, contract and optional run-id, preserving omitted run-id
+normalization. Both retain the complete final result binding verifier. Sixty local
+binding-export/OpenEvolve/Shinka cases pass; this is an ordering guard, not producer
+authentication or runtime admission.
 
 The remaining local release work is integration evidence plus the real Feature189/
 191 runtime gates. Provider-free controller resume, replay, budget, fingerprint

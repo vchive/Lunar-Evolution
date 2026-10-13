@@ -1,8 +1,8 @@
 # Bounded external-result preflight
 
-Status: provider-free implementation on PR82 (`6b4e841`), with final CI and merge
-pending. It is documented alongside the corrected PR80 prepared-boundary bridge
-head (`94a2ec2`); the earlier bridge head `6770650` is superseded. This slice narrows the OpenEvolve handoff boundary; it does not launch a
+Status: provider-free implementation on PR82, rebased onto PR80 merge `480334c`,
+with final CI and merge pending. PR80 full CI is still pending; the earlier bridge
+head `6770650` is superseded by `94a2ec2`. This slice narrows the OpenEvolve/Shinka handoff boundaries; it does not launch a
 producer, authenticate an external worker, or grant runtime/production admission.
 
 ## Contract
@@ -29,13 +29,21 @@ producer fingerprint, contract, run id, status and material digest/metadata. The
 external producer score remains provenance only; local evaluation remains the result
 authority.
 
+For `export_shinka_result(..., binding=...)`, preflight runs before `_root` and
+SQLite access. It requires the fixed `shinka` identity, the matching caller
+producer ID, producer fingerprint, contract digest and optional run-id. A matching
+foreign producer/binding pair is refused. Omission of run-id is normalized to the
+binding run-id. Drift returns `shinka_binding_mismatch`; the post-read full result
+binding verifier remains mandatory.
+
 ## Failure matrix and evidence
 
-The focused regression covers foreign run-id and evaluator fingerprint drift and
-asserts that `_external_root` and the evaluator are not called. Independent replay
-runs 77 unique cases (8 binding-export, 49 adapter, 20 OpenEvolve handoff), with
-zero failures, errors or skips. This count is local evidence only; PR82's required
-CI and merge are still pending.
+The focused regression covers OpenEvolve foreign run-id/evaluator drift and Shinka
+foreign run-id/contract/producer drift, including mutually matching foreign binding
+and caller IDs. It asserts that external-root access and the evaluator are not
+called on refusal. The latest local three-suite selection passes 60 unique cases,
+with zero failures, errors or skips. This count is local evidence only; PR82's
+required CI and merge are still pending.
 
 This contract does not close the remaining P0/P1 runtime gates: sealed CPython
 installation/startup, real process lifecycle and interruption observation, actual
