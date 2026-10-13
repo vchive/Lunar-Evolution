@@ -12,13 +12,19 @@ prepared boundary.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from typing import Any, Protocol
 
 from .candidate_evaluation_spec import canonical_json, strict_json
-from .producer_bundle_publication import ProducerBundlePublicationJournal
+from .producer_bundle_publication import (
+    ProducerBundlePublicationCandidate,
+    ProducerBundlePublicationJournal,
+)
+from .python_producer_admission_handoff import PythonProducerAdmissionHandoffFilePin
+from .rsi_gateway import SolverRequest
 from .rsi_native_plan import NativeRSIExecutionPlan
 
 PYTHON_ADMISSION_BRIDGE_PROTOCOL = "lunar-python-admission-bridge-v1"
@@ -34,6 +40,10 @@ _FIELDS = frozenset({
     "prepared_journal", "expected_anchor_sha256", "drs_pin_hook", "brs_pin_hook",
     "bridge_sha256",
 })
+_DTO_TYPES = (
+    NativeRSIExecutionPlan, SolverRequest, ProducerBundlePublicationJournal,
+    ProducerBundlePublicationCandidate, PythonProducerAdmissionHandoffFilePin,
+)
 
 
 class PythonAdmissionBridgeError(ValueError):
@@ -60,7 +70,82 @@ def _digest(value: object, field: str) -> str:
     return value
 
 
+def _shape(
+    value: object, *, dto_types: tuple[type, ...] = (), depth: int = 0,
+    remaining: list[int] | None = None,
+) -> None:
+    """Reject callback-bearing values before JSON encoding or DTO serialization."""
+    if remaining is None:
+        remaining = [100_000, MAX_PYTHON_ADMISSION_BRIDGE_BYTES]
+    remaining[0] -= 1
+    if depth > 48 or remaining[0] < 0:
+        _fail("shape_invalid")
+    kind = type(value)
+    if value is None or kind is bool:
+        remaining[1] -= 4 if value is None or value else 5
+        if remaining[1] < 0:
+            _fail("shape_invalid")
+        return
+    if kind is str:
+        if len(value) > remaining[1]:
+            _fail("shape_invalid")
+        try:
+            remaining[1] -= len(value.encode("utf-8"))
+        except UnicodeError as exc:
+            raise PythonAdmissionBridgeError("shape_invalid") from exc
+        if remaining[1] < 0:
+            _fail("shape_invalid")
+        return
+    if kind is int:
+        if value.bit_length() > 4096:
+            _fail("shape_invalid")
+        remaining[1] -= len(str(value))
+        if remaining[1] < 0:
+            _fail("shape_invalid")
+        return
+    if kind is float:
+        if not math.isfinite(value):
+            _fail("shape_invalid")
+        remaining[1] -= len(repr(value))
+        if remaining[1] < 0:
+            _fail("shape_invalid")
+        return
+    if kind is dict:
+        if len(value) > 10_000 or any(type(key) is not str for key in value):
+            _fail("shape_invalid")
+        for key in value:
+            _shape(key, dto_types=dto_types, depth=depth + 1, remaining=remaining)
+        items = value.values()
+    elif kind is list or (dto_types and kind is tuple):
+        if len(value) > 10_000:
+            _fail("shape_invalid")
+        items = value
+    elif any(kind is allowed for allowed in dto_types):
+        declared = fields(kind)
+        try:
+            attributes = object.__getattribute__(value, "__dict__")
+        except AttributeError:
+            pass
+        else:
+            # A frozen non-slotted DTO can still shadow its serializer through
+            # object.__setattr__.  Only declared fields belong to this boundary.
+            if (type(attributes) is not dict
+                    or len(attributes) > len(declared)
+                    or any(type(key) is not str or len(key) > 128 for key in attributes)
+                    or set(attributes) - {item.name for item in declared}):
+                _fail("shape_invalid")
+        try:
+            items = [object.__getattribute__(value, item.name) for item in declared]
+        except AttributeError as exc:
+            raise PythonAdmissionBridgeError("shape_invalid") from exc
+    else:
+        _fail("shape_invalid")
+    for item in items:
+        _shape(item, dto_types=dto_types, depth=depth + 1, remaining=remaining)
+
+
 def _canonical(value: object) -> bytes:
+    _shape(value)
     try:
         raw = canonical_json(value, maximum=MAX_PYTHON_ADMISSION_BRIDGE_BYTES)
     except Exception as exc:  # pragma: no cover - canonical_json fixes the public code
@@ -71,7 +156,9 @@ def _canonical(value: object) -> bytes:
 
 
 def _strict_wire(value: object) -> dict[str, Any]:
-    if type(value) is not dict or set(value) != _FIELDS:
+    if (type(value) is not dict or len(value) != len(_FIELDS)
+            or any(type(key) is not str or len(key) > 64 for key in value)
+            or set(value) != _FIELDS):
         _fail("schema_invalid")
     try:
         encoded = _canonical(value)
@@ -137,14 +224,16 @@ class PythonAdmissionBridgeDescriptor:
         _identifier(self.run_id, "run_id")
         _identifier(self.episode_id, "episode_id")
         _digest(self.expected_anchor_sha256, "anchor_sha256")
-        if self.drs_pin_hook != PYTHON_ADMISSION_DRS_PIN_HOOK:
+        if type(self.drs_pin_hook) is not str or self.drs_pin_hook != PYTHON_ADMISSION_DRS_PIN_HOOK:
             _fail("drs_hook_invalid")
-        if self.brs_pin_hook != PYTHON_ADMISSION_BRS_PIN_HOOK:
+        if type(self.brs_pin_hook) is not str or self.brs_pin_hook != PYTHON_ADMISSION_BRS_PIN_HOOK:
             _fail("brs_hook_invalid")
         if type(self.native_plan) is not NativeRSIExecutionPlan:
             _fail("native_plan_invalid")
         if type(self.prepared_journal) is not ProducerBundlePublicationJournal:
             _fail("prepared_journal_invalid")
+        _shape(self.native_plan, dto_types=_DTO_TYPES)
+        _shape(self.prepared_journal, dto_types=_DTO_TYPES)
         # Reparse nested wires so caller-owned objects cannot be substituted after
         # validation.  The parser also checks the prepared phase and full identity.
         plan, journal = _parse_nested(self.native_plan.to_dict(), self.prepared_journal.to_dict())
@@ -209,7 +298,7 @@ class PythonAdmissionBridgeDescriptor:
 
     @classmethod
     def from_json(cls, value: bytes | str) -> PythonAdmissionBridgeDescriptor:
-        if type(value) not in {bytes, str}:
+        if type(value) is not bytes and type(value) is not str:
             _fail("json_invalid")
         try:
             encoded = value if type(value) is bytes else value.encode("utf-8")
