@@ -13,7 +13,7 @@
 - **普通任务执行**：把 goal 编译为有依赖关系的 plan，调度本地 task，记录 attempt、evaluation、artifact 和事件。
 - **会话式算法任务**：`solve` 先生成严格的 `AlgorithmProblemContract`，再运行 `data_discovery → formulate → solve → verify`；可以选择本地 population evolution，或显式配置的 OpenEvolve 命令。
 - **受控产物交付**：候选程序在隔离的本地 workspace 运行，声明的文件经过格式、大小、路径和 SHA-256 检查后才能发布；多文件发布、terminal result、launch、execution 和 delivery 都保留可恢复证据。
-- **RSI learning mode**：DRS（逐目标恢复）和 BRS（冻结 wave 批量恢复）共享 run 预算、组件 fingerprint、memory governance 和 transfer evidence。controller-level resume、unknown reconcile gate、fingerprint drift gate、统一预算和逐 episode durable staging 已接入本地链路。
+- **RSI learning mode**：DRS（Deep、围绕目标缺口逐步深入）和 BRS（Broad、在冻结 wave 上横向展开）共享 run 预算、组件 fingerprint、memory governance 和 transfer evidence。controller-level resume、unknown reconcile gate、fingerprint drift gate、统一预算和逐 episode durable staging slice 已接入本地链路。
 - **只读诊断与回放**：可以 inspect ledger、读取 usage、replay 已保留 producer receipt；未知状态不会因为“看起来像成功”而自动重试或晋级。
 
 ## 快速开始
@@ -99,7 +99,7 @@ lunar-evolution rsi inspect readme-rsi --home .lunar-evolution --json
 lunar-evolution rsi resume readme-rsi --home .lunar-evolution --json
 ```
 
-`resume` 只读取原始 run 的 plan、request、memory、deadline、预算和 fingerprint；它不会重新 staging、重复扣费、采用磁盘上新出现的 proof，或自动重启一个结果未知的 episode。需要人工观察后，使用 `rsi reconcile` 提交与原记录绑定的显式状态：
+`resume` 以原始 run 的 plan、request、memory、deadline、预算和 fingerprint 为准：已完成的 side effect 只读重放，原计划中尚未开始的 episode 可以继续；它不会重新 staging、重复扣费、采用磁盘上新出现的 proof，或自动重启一个结果未知的 episode。需要人工观察后，使用 `rsi reconcile` 提交与原记录绑定的显式状态：
 
 ```bash
 lunar-evolution rsi reconcile <episode-id> \
