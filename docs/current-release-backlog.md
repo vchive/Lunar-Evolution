@@ -2,17 +2,22 @@
 
 ## Current snapshot — 2026-10-13
 
-以远程 GitHub 当前状态为准：`main=e43e0fe`（PR92 merge commit）。PR89、PR91 和 README PR92 已合入；PR91
-包含 store-side staged child producer proof resolver。当前 PR93（controller admission 绑定
-staged child proof）和 PR94（episode-scoped Python scheduler context）仍处于 open/stacked
-状态，依次构成 child-proof admission → scheduler context 的集成链。若本地 checkout 仍显示
-`d38bab1`，请先 fetch `origin/main`；它是 PR91 合入前的旧 main 快照。
+以远程 GitHub 当前状态为准：`main=00cb39d`（PR97 merge commit `51f0fd6` 之后的 broker
+snapshot 测试同步）。PR89、PR91、PR92、PR93、PR94、PR95、PR96 和 PR97 已合入；PR97
+补齐 provider-free 多 episode child context 选择，broker snapshot 的测试同步已在
+`00cb39d`。PR97 合入后的 main CI run `38420669326` 因后续 push 被取消；`00cb39d` 的
+新 main CI run `38422229880` 当前处于排队，不能把它写成已通过。
 
-下一项 P0 是把已经验证的 child proof 以只读方式接入
-`controller → gateway → scheduler → store/admission/native claim`：每个 episode 只能采用
-自己的 request、memory、launch、sidecar 和 proof；缺失、unknown、漂移、取消或 deadline
-都必须保持阻断，不能回退到 fixture gateway 或重复 staging。该接线仍不等于真实 runtime
-验收。
+当前 P0 仍是把已验证的 child proof 从只读 preview 接到 controller 持锁下的
+gateway → scheduler → store/admission/native claim 前置流程；ready entry 继续 fail-closed，
+直到完整证据链和取消/截止时间/恢复回归通过。README 只展示当前可用能力和这条边界，
+不把 preview 或 fixture score 宣称为真实 producer runtime。
+
+已完成的只读阶段让每个 episode 只能采用自己的 request、memory、launch、sidecar 和
+proof；缺失、unknown、漂移、取消或 deadline 都保持阻断，不能回退到 fixture gateway 或
+重复 staging。后续 P0 是在同一 controller lock 和重新验证边界下消费该 preview，形成
+一次性的 scheduler/native claim 前置记录，并为 claim 后的 publication/recovery 保留原
+证据。该接线仍不等于真实 runtime 验收。
 
 真实 Python/CPython source、toolchain、sealed runtime、OpenEvolve/Shinka project lifecycle
 和生产 RSI CLI 仍属于后续 P0/P1 验收，不能由 provider-free fixture 关闭。remote evaluator、
