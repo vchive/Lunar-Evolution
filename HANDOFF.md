@@ -2,11 +2,11 @@
 
 ## 当前集成状态 — 2026-10-13（更新）
 
-当前 `origin/main` 为 `480334c`，已包含 PR76、PR81、PR78、PR79、PR80：Python admission boundary timing、Feature190 executable owner/FD boundary、Shinka binding run-id normalization、prepared-boundary bridge 和完整 native input/plan binding 均已合入。PR80 head `94a2ec2` 的完整 CI 和合并后 main CI 尚在运行，不能标记为 CI 验收完成。PR82 基于该 main，包含 OpenEvolve/Shinka 的 bound-result preflight；其最终 CI 和合并仍待完成，不能把分支能力当作已合入 main。
+当前 `origin/main` 为 `fea8239`，已包含 PR76、PR81、PR78、PR79、PR80、PR82 和 PR83：Python admission boundary timing、Feature190 executable owner/FD boundary、Shinka binding run-id normalization、prepared-boundary bridge、完整 native input/plan binding、OpenEvolve/Shinka bound-result preflight，以及本阶段交接文档均已合入。PR82 merge commit 为 `d530f9f`，PR83 merge commit 为 `fea8239`。最新 main push CI 为 run `38330366793`，当前仍在 GitHub runner 队列中；在其完成前不要把远程 CI 结果标记为成功。
 
 当前 provider-free 能力覆盖 durable controller resume、unknown reconcile gate、fingerprint drift、统一预算、native replay、retained producer evidence、evaluator context pins，以及静态 Python 安装/输入/启动/运行时 handoff/build-closure 合同。PR80 保留显式 prepared-boundary bridge，并在读取 prepared evidence 前验证完整 native input/request/memory/plan binding，bridge 返回后再复验证据。PR82 在读取外部结果目录前重解析绑定：OpenEvolve 校验 producer/evaluator/producer fingerprint、contract digest 和可选 run-id；Shinka 校验固定 producer ID、调用者 producer ID、producer fingerprint、contract digest 和可选 run-id，同时保留省略 run-id 的归一化。两条路径都保留 detached binding snapshot，并在最终 verifier 前检查 caller wire 未漂移，再执行完整 result binding verifier。最新本地三模块 60 项通过，Ruff、compileall、diff-check 通过。live scheduler 的自动接线仍未启用：prepared journal/attempt anchor 含有 post-execution/runtime 证据，不能在 producer dispatch 前读取；当前保留显式 bridge API，避免首次运行被错误拒绝。
 
-仍未验收的是 Feature189 的真实来源/工具链、静态 sealed CPython 构建与 startup，以及 Feature191 的真实 Python runtime 生命周期、startup/timeout/cancel/parent-loss/restart 观察、实际 OpenEvolve/Shinka project campaign 和生产 RSI CLI/Linux acceptance。本轮只使用本地 fixture/provider-free 验证，不运行真实 CPython/toolchain、远程 evaluator、WebAgent 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。
+仍未验收的是 Feature189 的真实来源/工具链、静态 sealed CPython 构建与 startup，以及 Feature191 的真实 Python runtime 生命周期、startup/timeout/cancel/parent-loss/restart 观察、实际 OpenEvolve/Shinka project campaign 和生产 RSI CLI/Linux acceptance。本轮只使用本地 fixture/provider-free 验证，不运行真实 CPython/toolchain、远程 evaluator、WebAgent 或生产 campaign。P2 的远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler 和服务化接口继续后置。PR82/83 的本地 focused、Ruff、compileall 和 diff-check 已通过；远程矩阵只保留为 main CI run 的待验收项。
 
 后文较早的 pending/verified-main 段落是历史交接记录；判断当前状态时以本节、最新 PR 审计记录和 `origin/main` 为准。
 
