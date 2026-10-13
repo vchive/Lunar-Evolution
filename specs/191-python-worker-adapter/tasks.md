@@ -113,17 +113,20 @@
   authority and multiple independent Python children. Preserve durable obligations on
   cancellation or ack failure. The active-wave save refuses unrelated checkpoint drift
   instead of synchronizing or adopting its latest state.
-- [ ] Require the separate admission identity at the local live scheduler boundary.
-  The provider-free bridge/owner facades and BRS foreign/duplicate guards exist, and the
-  native provider now exposes an explicit prepared-observer hook that joins the original
-  handoff/file pin, prepared journal and attempt anchor. The native scheduler still does
-  not invoke it automatically. Prepared journal/attempt-anchor
-  inputs include post-execution/runtime evidence and must be joined at the later prepared
-  publication boundary with the original Python handoff/file pin. The current native
-  scheduler has no such handoff input; keep automatic dispatch fail-closed until that
-  seam is implemented. Publication/recovery still require the durable reference and
-  independently observed runtime/lifecycle evidence; sealed-runtime observation remains
-  a separate P1 acceptance gate.
+- [x] Connect the separate admission identity at the opt-in local scheduler boundary
+  under `late-prepared-scheduler-join.md`. Fingerprint the explicit immutable supplier,
+  call it only after retained receipt/output validation, pass the original handoff pin
+  to the transaction and pin DRS/BRS authority at its durable prepared notification.
+  Revalidate the first record/reference throughout publication and before scheduler
+  return. Ordinary native dispatch remains unchanged. This closes local plumbing;
+  independently observed sealed-runtime/lifecycle and production acceptance remain below.
+- [x] Consume the actual DRS owner's canonical `RSIPythonAdmissionRecord` in the bridge,
+  checking its shape, digest and complete descriptor identity before returning its SHA.
+  Preserve historical string-hook and BRS digest behavior. Real local controller/CAS,
+  prepared transaction and BRS ready/ack tests use inert native/evaluator boundaries.
+  Final integrated local evidence is 348 distinct cases, zero failures/errors/skips,
+  with whole-source static checks; see `local-wiring-validation.md`. Final-source
+  Linux CI and independent audit remain pending.
 - [ ] Connect accepted Feature189 sealed CPython and Feature190 owner/lifecycle/runtime
   observations to the handoff, then enable runtime-gated local exact evaluation and atomic
   publication. Until those gates pass, `production_admission` remains false.
@@ -134,8 +137,11 @@
   never discover or substitute a host interpreter.
 - [ ] Build the local inert Python fixture and bounded broker exchange with real
   runtime observations and fixed negative loader/codec/import cases.
-- [ ] Connect OpenEvolve's Python wrapper and Shinka's explicit SQLite/result
-  export to the common binding without launching either project automatically.
+- [x] Connect completed local OpenEvolve wrapper files and Shinka SQLite/source snapshots
+  to the existing common adapter under `local-python-producer-export.md`. Require original
+  binding/terminal/observation/result and independent pins before source I/O; reuse the
+  existing bounded readers and full verifier without launch, evaluation or export writes.
+  Actual project lifecycle/campaign acceptance remains a separate runtime task.
 - [x] Add the bounded OpenEvolve/Shinka result preflight from
   `bounded-result-preflight.md`: before external-root I/O, reparse the exact
   binding and compare producer id, evaluator fingerprint, producer fingerprint,
@@ -143,8 +149,10 @@
   verifier after result/material reads. Shinka also requires the fixed `shinka`
   identity and matching caller producer ID before root/SQLite I/O, retaining bound
   run-id normalization. PR82 is merged as `d530f9f`; its local three-suite
-  evidence has 60 passes. The post-merge main CI remains pending in run
-`38331781593`.
+  evidence has 60 passes and its final source `6d4fdc2` passed all 15 checks in
+  run `38329866982`. The old main run `38331781593` was cancelled, not passed.
+  Current main/PR87 acceptance and unresolved independent raw/source/tree audit
+  are tracked separately in `../../docs/current-release-backlog.md`.
 - [x] Add a pure shared OpenEvolve/Shinka evidence envelope with build/parse/verify,
   retained digest and complete original-binding comparisons. It performs no I/O or
   evaluator call and always keeps `production_admission=false`; actual project
@@ -154,6 +162,10 @@
   continuation check, exposes an owner-scope `pin_live` selector, and preserves
   fail-closed identity/digest errors. The adapter is explicit plumbing; automatic native
   scheduler invocation remains the open integration task above.
+- [x] Reject callback-bearing nested bridge input, DTO serializer shadows, foreign
+  hook scalar types and oversized shapes before serialization or owner-hook access,
+  under `admission-bridge-input-shape.md`. Preserve canonical wires and explicit
+  DRS/BRS behavior; this does not grant live runtime admission.
 - [ ] Reuse Feature190 private owner/native lifecycle, cancellation, reap, FD
   census and terminal evidence. Keep v2 wire/FD schema unchanged.
 - [ ] Add focused tests for startup, decoys, output bounds, cancellation,
@@ -217,6 +229,9 @@
   evidence of its earlier source. No actual static runtime ran.
 - [x] Normalize malformed independent installation-version labels before descriptor
   parsing; six cases verify the fixed refusal across helper/gate/build/verify.
-- [ ] Run final-source three-version CI and audit before merge acceptance.
+- [x] Verify PR49 final source `87e579a` against completed/success run
+  `38198657810` on the original three-version 3-job matrix; merged at `e2537f1`.
+- [ ] Verify and retain the independent raw/source/tree audit for that final
+  observation-policy source. CI/merge alone do not establish runtime acceptance.
 - [ ] Separately define and accept an RSI-capable static installation asset/profile;
   the current argc-one/fixed-main fixture cannot consume native RSI marker inputs.

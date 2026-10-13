@@ -50,12 +50,21 @@ from .native_trusted_receipt import (
 )
 from .producer_broker_ipc import ProducerBrokerConfig
 from .producer_bundle_handoff import BundleGroup
+from .producer_bundle_publication import ProducerBundlePublicationJournal
 from .producer_bundle_transaction import (
     NativeProducerBundleTransactionResult,
     run_native_producer_bundle_publication_transaction,
 )
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_process import ProducerExecutionReceipt
+from .python_producer_admission_handoff import (
+    PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
+    PythonProducerAdmissionHandoff,
+    PythonProducerAdmissionHandoffFilePin,
+    PythonProducerAdmissionHandoffSidecar,
+    parse_python_producer_admission_handoff_file_pin,
+    read_python_producer_admission_handoff_pinned,
+)
 
 
 class NativeTrustedSchedulerError(ValueError):
@@ -241,6 +250,11 @@ def _run_native_trusted_producer(
     cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
     known_failure: bool = False,
+    python_handoff_after_execution: Callable[
+        [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None,
+    prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    evidence_revalidator: Callable[[str], None] | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run one pinned native producer through the formal local boundaries.
 
@@ -263,6 +277,13 @@ def _run_native_trusted_producer(
         raise NativeTrustedSchedulerError("native_trusted_scheduler_groups_invalid")
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_cancellation_invalid")
+    python_join = any(value is not None for value in (
+        python_handoff_after_execution, prepared_observer, evidence_revalidator,
+    ))
+    if python_join and (strategy is None or not all(callable(value) for value in (
+        python_handoff_after_execution, prepared_observer, evidence_revalidator,
+    ))):
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_python_join_invalid")
     _check_parent_deadline(parent_deadline)
     control, checkpoint = _lifecycle_control(execution_control, cancelled, parent_deadline)
     root = _workspace_root(workspace)
@@ -339,6 +360,59 @@ def _run_native_trusted_producer(
     if output.execution_receipt_sha256 != receipt.receipt_sha256:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_receipt_binding_mismatch")
 
+    publication_options: dict[str, Any] = {}
+    if python_join:
+        checkpoint("native_producer_python_handoff")
+        try:
+            original_receipt_sha256 = receipt.receipt_sha256
+            original_admission_sha256 = output.admission_plan.digest()
+            supplied = python_handoff_after_execution(receipt, output)
+            # The callback supplies the independently retained creation pin. Never
+            # discover a current pin from a filename or reconstruct late observations.
+            if (type(supplied) is not PythonProducerAdmissionHandoffSidecar
+                    or type(supplied.handoff) is not PythonProducerAdmissionHandoff
+                    or type(supplied.file_pin) is not PythonProducerAdmissionHandoffFilePin):
+                raise ValueError("original pinned handoff required")
+            pin = parse_python_producer_admission_handoff_file_pin(supplied.file_pin)
+            if (pin.run_id, pin.journal_id, pin.parent_task_id, pin.task_id) != (
+                intent.run_id, intent.journal_id, intent.parent_task_id, intent.task_id,
+            ):
+                raise ValueError("handoff identity mismatch")
+            checkpoint("native_producer_after_python_handoff")
+            if (receipt.receipt_sha256 != original_receipt_sha256
+                    or output.execution_receipt_sha256 != original_receipt_sha256
+                    or output.admission_plan.digest() != original_admission_sha256):
+                raise ValueError("original execution evidence changed")
+            retained = read_python_producer_admission_handoff_pinned(
+                root / "evolution" / "producer-batches" / intent.journal_id
+                / PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
+                expected_file_pin=pin,
+            )
+            handoff = retained.handoff
+            if (retained != supplied or handoff.state != "prepared"
+                    or handoff.native_execution_receipt_sha256 != original_receipt_sha256
+                    or handoff.admission_plan_sha256 != original_admission_sha256
+                    or handoff.launch_intent_sha256 != intent.digest()
+                    or handoff.attestation_sha256 != attestation.digest()
+                    or handoff.contract_sha256 != contract.digest()
+                    or handoff.evaluator_sha256 != evaluator_fingerprint
+                    or handoff.runner_sha256 != runner_fingerprint
+                    or handoff.dependency_sha256 != dependency_sha256
+                    or handoff.environment_sha256 != environment_sha256):
+                raise ValueError("handoff execution binding mismatch")
+            publication_options = {
+                "python_handoff_sha256": handoff.handoff_sha256,
+                "python_handoff_file_pin": pin,
+                "prepared_observer": prepared_observer,
+                "evidence_revalidator": evidence_revalidator,
+            }
+        except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
+            raise
+        except Exception as exc:
+            raise NativeTrustedSchedulerError(
+                "native_trusted_scheduler_python_handoff_invalid",
+            ) from exc
+
     publication: NativeProducerBundleTransactionResult | None = None
     status = "prepared"
     if strategy is not None:
@@ -356,6 +430,7 @@ def _run_native_trusted_producer(
                 native_execution_receipt_sha256=receipt.receipt_sha256,
                 execution_control=control,
                 continuation_guard=checkpoint,
+                **publication_options,
             )
         except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
             raise
@@ -382,6 +457,11 @@ def run_native_trusted_producer(
     dependency_sha256: str, environment_sha256: str, strategy: Any | None = None,
     execution_control: SolveExecutionControl | None = None, cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
+    python_handoff_after_execution: Callable[
+        [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None,
+    prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    evidence_revalidator: Callable[[str], None] | None = None,
 ) -> NativeTrustedProducerRun:
     """Run the historical success-only receipt/output/publication entry point once."""
     return _run_native_trusted_producer(
@@ -391,6 +471,8 @@ def run_native_trusted_producer(
         runner_fingerprint=runner_fingerprint, dependency_sha256=dependency_sha256,
         environment_sha256=environment_sha256, strategy=strategy, execution_control=execution_control,
         cancelled=cancelled, parent_deadline=parent_deadline, known_failure=False,
+        python_handoff_after_execution=python_handoff_after_execution,
+        prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
     )
 
 
@@ -402,6 +484,11 @@ def run_native_trusted_producer_outcome(
     dependency_sha256: str, environment_sha256: str, strategy: Any | None = None,
     execution_control: SolveExecutionControl | None = None, cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
+    python_handoff_after_execution: Callable[
+        [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None,
+    prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    evidence_revalidator: Callable[[str], None] | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run once, returning verified process failure or the unchanged success result.
 
@@ -415,6 +502,8 @@ def run_native_trusted_producer_outcome(
         runner_fingerprint=runner_fingerprint, dependency_sha256=dependency_sha256,
         environment_sha256=environment_sha256, strategy=strategy, execution_control=execution_control,
         cancelled=cancelled, parent_deadline=parent_deadline, known_failure=True,
+        python_handoff_after_execution=python_handoff_after_execution,
+        prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
     )
 
 

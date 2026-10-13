@@ -1,5 +1,13 @@
 # Lunar RSI 阶段性能力差距报告
 
+2026-10-13 当前状态：具体剩余功能、结束条件和 CI/独立审计分级以
+[`../../docs/current-release-backlog.md`](../../docs/current-release-backlog.md) 为准。
+durable resume、unknown/fingerprint/budget gates、retained replay、DRS/BRS admission
+facades 及静态 Python detached contracts 已开发；A1/A2/A3/A5 的早期缺口分析不再是新的
+开发任务。当前本地接线为 scheduler 晚期 prepared observer 与 retained producer result
+exporter，统一集成在 PR87 验收；真实 Feature189/191/193 runtime 与生产 CLI/Linux
+证据仍缺，P2 后置，`production_admission=false`。
+
 2026-10-02 补充：T160-33已接通实际已发布 native 候选的只读证据接口，保留完整源码/
 execution/evaluation/publication 链，前后复验，38项本地focused通过。它不追认未绑定的
 RSI request/memory，也不实现真实 SolverGateway；正式launch前置绑定仍需补齐。现有HTTP
@@ -7,7 +15,7 @@ lifeline已有真实 controller-only死亡+broker journal组合回归，恢复�
 不重试/写入/发信号。最终相关组合1,919 passed/4 Darwin skip/零失败；不代表完整Ubuntu
 最终head验证或真实项目验收。详见 HANDOFF、本feature validation和两个局部契约。
 
-2026-10-03 最新更新：native RSI SolverGateway composition、provenance sidecar 和 controller historical replay 已接通并合入 main；本地可恢复 RSI 主链已接通。P0 增加 parent learning/holdout 合账、
+2026-10-03 历史更新：native RSI SolverGateway composition、provenance sidecar 和 controller historical replay 已接通并合入 main；本地可恢复 RSI 主链已接通。P0 增加 parent learning/holdout 合账、
 外层/子 trial unknown 预算与独立 generation admission checkpoint 绑定；P1 增加同 run 跨代
 准入、配置后的自动 post-practice holdout、完整 Actor clean-room evidence 持久化，以及实际
 本地 native producer 从 bootstrap/broker 到候选评估/发布/只读恢复的整链；P2 增加显式

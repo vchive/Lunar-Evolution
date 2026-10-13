@@ -379,6 +379,48 @@ def declared_protocol_environment_sha256() -> str:
     )
 
 
+def _read_openevolve_snapshot(
+    external_root: str | os.PathLike[str], result_path: str | os.PathLike[str],
+) -> tuple[Path, str, bytes, bool, bool, str | None]:
+    """Read the bounded wrapper/source snapshot shared by admission and inspection."""
+    root = _external_root(external_root)
+    relative_result = _relative_to_root(root, result_path, code=RESULT_PATH_UNSAFE)
+    result_content = _read_confined_regular(
+        root,
+        relative_result,
+        limit=MAX_OPENEVOLVE_RESULT_BYTES,
+        missing_code=RESULT_MISSING,
+        regular_code=RESULT_NOT_REGULAR,
+        too_large_code=RESULT_TOO_LARGE,
+        unsafe_code=RESULT_PATH_UNSAFE,
+    )
+    payload = _parse_result(result_content)
+    candidate_path = _portable_relative_path(payload["candidate_path"], CANDIDATE_PATH_UNSAFE)
+    source = _read_confined_regular(
+        root,
+        candidate_path,
+        limit=MAX_SOURCE_BYTES,
+        missing_code=CANDIDATE_MISSING,
+        regular_code=CANDIDATE_NOT_REGULAR,
+        too_large_code=CANDIDATE_TOO_LARGE,
+        unsafe_code=CANDIDATE_PATH_UNSAFE,
+    )
+    try:
+        source.decode("utf-8")
+    except UnicodeDecodeError:
+        _raise(CANDIDATE_ENCODING_INVALID)
+
+    raw_evaluation = payload.get("evaluation")
+    evaluation_present = "evaluation" in payload
+    evaluation_sha256: str | None = None
+    external_score_present = False
+    if evaluation_present:
+        external_score_present = _validate_evaluation_tree(raw_evaluation)
+        evaluation_sha256 = _sha256(raw_evaluation)
+
+    return root, candidate_path, source, evaluation_present, external_score_present, evaluation_sha256
+
+
 def admit_openevolve_result(
     external_root: str | os.PathLike[str],
     contract: AlgorithmProblemContract,
@@ -417,40 +459,8 @@ def admit_openevolve_result(
         bound_binding, bound_producer_run_id, bound_binding_wire = _preflight_python_binding(
             binding, contract, evaluator_fingerprint, producer_fingerprint, producer_run_id,
         )
-    root = _external_root(external_root)
-    relative_result = _relative_to_root(root, result_path, code=RESULT_PATH_UNSAFE)
-    result_content = _read_confined_regular(
-        root,
-        relative_result,
-        limit=MAX_OPENEVOLVE_RESULT_BYTES,
-        missing_code=RESULT_MISSING,
-        regular_code=RESULT_NOT_REGULAR,
-        too_large_code=RESULT_TOO_LARGE,
-        unsafe_code=RESULT_PATH_UNSAFE,
-    )
-    payload = _parse_result(result_content)
-    candidate_path = _portable_relative_path(payload["candidate_path"], CANDIDATE_PATH_UNSAFE)
-    source = _read_confined_regular(
-        root,
-        candidate_path,
-        limit=MAX_SOURCE_BYTES,
-        missing_code=CANDIDATE_MISSING,
-        regular_code=CANDIDATE_NOT_REGULAR,
-        too_large_code=CANDIDATE_TOO_LARGE,
-        unsafe_code=CANDIDATE_PATH_UNSAFE,
-    )
-    try:
-        source.decode("utf-8")
-    except UnicodeDecodeError:
-        _raise(CANDIDATE_ENCODING_INVALID)
-
-    raw_evaluation = payload.get("evaluation")
-    evaluation_present = "evaluation" in payload
-    evaluation_sha256: str | None = None
-    external_score_present = False
-    if evaluation_present:
-        external_score_present = _validate_evaluation_tree(raw_evaluation)
-        evaluation_sha256 = _sha256(raw_evaluation)
+    (root, candidate_path, source, evaluation_present,
+     external_score_present, evaluation_sha256) = _read_openevolve_snapshot(external_root, result_path)
 
     if binding is not None:
         # This is an explicit composition gate only.  It binds the wrapper's

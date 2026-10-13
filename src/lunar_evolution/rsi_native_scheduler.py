@@ -26,6 +26,7 @@ from .bundle_evolution import derive_native_draft_run_id
 from .candidate_evaluation_spec import canonical_json
 from .native_bootstrap import NativeBootstrapArtifact
 from .native_trusted_failure import NativeTrustedProducerFailure, recover_native_trusted_failure
+from .native_trusted_output import NativeTrustedOutputPreparation
 from .native_trusted_scheduler import (
     NativeTrustedProducerRun,
     run_native_trusted_producer,
@@ -43,6 +44,7 @@ from .producer_bundle_publication import (
     parse_producer_bundle_publication_journal,
 )
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
+from .producer_process import ProducerExecutionReceipt
 from .python_producer_admission_anchor import (
     project_python_producer_admission_attempt_anchor,
     read_python_producer_admission_attempt_anchor,
@@ -50,6 +52,7 @@ from .python_producer_admission_anchor import (
 from .python_producer_admission_handoff import (
     PYTHON_PRODUCER_ADMISSION_HANDOFF_NAME,
     PythonProducerAdmissionHandoffFilePin,
+    PythonProducerAdmissionHandoffSidecar,
     parse_python_producer_admission_handoff_file_pin,
     read_python_producer_admission_handoff_pinned,
 )
@@ -151,8 +154,15 @@ class NativeRSISchedulerContext:
     execution_control: SolveExecutionControl | None = None
     cancelled: Callable[[], bool] | None = None
     failure_ledger: RSILedger | None = None
+    python_handoff_after_execution: Callable[
+        [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None
 
     def __post_init__(self) -> None:
+        if self.python_handoff_after_execution is not None and (
+            not callable(self.python_handoff_after_execution) or self.strategy is None
+        ):
+            _fail("python_handoff_supplier_invalid")
         if not isinstance(self.intent, ProducerLaunchIntent):
             _fail("intent_invalid")
         if not isinstance(self.attestation, ProducerLaunchAttestation):
@@ -489,10 +499,9 @@ class NativeRSISchedulerProvider:
     def bind_python_admission_controller(self, controller: Any) -> None:
         """Attach one controller for an explicit prepared-boundary bridge.
 
-        Binding does not make :meth:`__call__` read Python evidence or invoke a
-        bridge.  A future live integration must call the bridge after the
-        producer transaction has emitted its complete prepared evidence, with
-        the original handoff/file pin retained by that transaction.
+        Binding alone does not make :meth:`__call__` read Python evidence or invoke
+        a bridge. The immutable context's explicit post-execution supplier opts
+        into the late join, retaining its original handoff/file pin.
 
         This is intentionally a one-way local binding.  Rebinding a provider after
         it has been used could route an in-flight native claim to another controller,
@@ -512,7 +521,8 @@ class NativeRSISchedulerProvider:
 
         The evidence includes post-execution/runtime fields and therefore must
         only be read at the later prepared/publication boundary.  The native
-        provider never calls this helper from :meth:`__call__`.
+        provider never calls this helper from :meth:`__call__`; the opt-in join
+        receives its journal from the transaction's later durable notification.
         """
         controller = self._python_admission_controller
         if controller is None:
@@ -594,8 +604,8 @@ class NativeRSISchedulerProvider:
         This hook is intended for a producer transaction's ``prepared_observer``.
         It receives the immutable journal and the original handoff/file pin from
         that transaction, rereads both retained files, then maps the fixed bridge
-        descriptor to the controller's DRS/BRS owner.  Native ``__call__`` never
-        invokes it; callers must establish this later boundary before evaluation.
+        descriptor to the controller's DRS/BRS owner. The opt-in native join only
+        invokes it from the later transaction observer before evaluation.
         """
         if not isinstance(request, SolverRequest) or not isinstance(plan, NativeRSIExecutionPlan):
             _fail("python_admission_prepared_input_invalid")
@@ -730,6 +740,102 @@ class NativeRSISchedulerProvider:
         ):
             _fail("python_admission_record_invalid")
         return result
+
+    def _python_publication_join(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, inputs: NativeRSIInputDescriptor,
+    ) -> dict[str, Callable[..., Any]]:
+        """Build lazy local hooks without reading post-execution evidence.
+
+        The context supplier was fingerprinted before the controller froze its run.
+        Its returned creation pin, prepared notification and first record digest
+        stay scoped to this single dispatch; no restart or legacy adoption occurs.
+        """
+        supplier = getattr(self.context, "python_handoff_after_execution", None)
+        if supplier is None:
+            return {}
+        controller = self._python_admission_controller
+        if controller is None:
+            _fail("python_admission_controller_missing")
+        if (getattr(controller, "producer_sidecar", None) is None
+                or getattr(controller, "producer_workspace", None) is None):
+            _fail("python_admission_sidecar_missing")
+        if Path(controller.producer_workspace).expanduser().absolute() != Path(
+            self.context.workspace,
+        ).expanduser().absolute():
+            _fail("python_admission_workspace_mismatch")
+        wait_check = getattr(controller, "_python_admission_bridge_wait_check", None)
+        if not callable(wait_check):
+            _fail("python_admission_wait_check_missing")
+        supplied: PythonProducerAdmissionHandoffSidecar | None = None
+        output_plan = None
+        admitted = None
+        supplier_called = False
+        observer_called = False
+
+        def revalidate(stage: str) -> None:
+            if self._python_admission_controller is not controller:
+                _fail("python_admission_controller_changed")
+            if stage == "rsi_native_python_scheduler_return" and admitted is None:
+                _fail("python_admission_missing")
+            # This is the observation lock, not ownership. It is never held while
+            # the BRS bridge waits for the owner to pin/ack.
+            with controller._python_admission_brs_observations():
+                wait_check()
+                current = self._inputs(require_unexpired=False)
+                if current != inputs:
+                    _fail("python_admission_input_changed")
+                _assert_plan_binding(
+                    request, _memory_from_request_inputs(current, request), plan, self.context, current,
+                )
+                if admitted is not None:
+                    admitted.revalidate(stage)
+
+        def obtain_handoff(receipt, output):
+            nonlocal supplied, output_plan, supplier_called
+            if supplier_called:
+                _fail("python_handoff_supplier_replayed")
+            supplier_called = True
+            revalidate("rsi_native_python_handoff")
+            value = supplier(receipt, output)
+            if type(value) is not PythonProducerAdmissionHandoffSidecar:
+                _fail("python_handoff_supplier_invalid")
+            supplied = value
+            output_plan = output.admission_plan
+            revalidate("rsi_native_after_python_handoff")
+            return value
+
+        def pin_prepared(journal: ProducerBundlePublicationJournal) -> None:
+            nonlocal admitted, observer_called
+            if observer_called:
+                _fail("python_admission_prepared_observer_replayed")
+            observer_called = True
+            if supplied is None or output_plan is None:
+                _fail("python_handoff_supplier_missing")
+            revalidate("rsi_native_before_python_pin")
+            expected_anchor = project_python_producer_admission_attempt_anchor(supplied.handoff)
+            record_sha256 = self.pin_python_admission_at_prepared_boundary(
+                request, plan, prepared_journal=journal,
+                python_handoff_sha256=supplied.handoff.handoff_sha256,
+                python_handoff_file_pin=supplied.file_pin,
+                expected_anchor_sha256=expected_anchor.anchor_sha256,
+            )
+            # Reuse complete reference/row validation without duplicating its
+            # authority contract. Import late to avoid module initialization cycles.
+            from .rsi_python_publication import _capture_admission
+
+            with controller._python_admission_brs_observations():
+                admitted = _capture_admission(
+                    controller, plan.run_id, request.episode_id, record_sha256, output_plan,
+                )
+                if admitted.native_plan != plan or admitted.prepared_journal != journal:
+                    _fail("python_admission_reference_mismatch")
+                revalidate("rsi_native_after_python_pin")
+
+        return {
+            "python_handoff_after_execution": obtain_handoff,
+            "prepared_observer": pin_prepared,
+            "evidence_revalidator": revalidate,
+        }
 
     def assert_failure_ledger(self, ledger: RSILedger) -> None:
         """Verify explicit failure wiring against the original database, never repin it."""
@@ -929,6 +1035,10 @@ class NativeRSISchedulerProvider:
         if context.failure_ledger is not None:
             self.assert_failure_ledger(context.failure_ledger)
             projection["failure_ledger"] = dict(self._failure_ledger_identity)
+        if context.python_handoff_after_execution is not None:
+            projection["python_handoff_after_execution_sha256"] = component_fingerprint(
+                context.python_handoff_after_execution,
+            )
         return projection
 
     def __call__(
@@ -940,6 +1050,7 @@ class NativeRSISchedulerProvider:
         inputs = self._inputs(require_unexpired=True)
         memory = _memory_from_request_inputs(inputs, request)
         _assert_plan_binding(request, memory, plan, context, inputs)
+        python_join = self._python_publication_join(request, plan, inputs)
         claim = None
         if context.failure_ledger is not None:
             claim = self._failure_claim(request, plan, live=True)
@@ -975,6 +1086,7 @@ class NativeRSISchedulerProvider:
                 parent_deadline=parent_deadline,
                 execution_control=context.execution_control,
                 cancelled=context.cancelled,
+                **python_join,
             )
         except NativeRSISchedulerProviderError:
             raise
@@ -998,6 +1110,8 @@ class NativeRSISchedulerProvider:
                     or recovered.provenance_sha256 != persisted_sha256):
                 _fail("failure_provenance_changed")
             return recovered
+        if python_join:
+            python_join["evidence_revalidator"]("rsi_native_python_scheduler_return")
         projected = _build_receipts(request, context, run)
         _publication, journal = _journal_for_published_run(run)
         evidence = _read_retained(
