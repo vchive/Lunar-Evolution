@@ -2,29 +2,28 @@
 
 ## Current integration snapshot — 2026-10-13
 
-PR54–57, PR59, PR60, PR64–75 are merged into `origin/main` at `514c9de`. PR68–75 cover
-status synchronization, explicit RSI CLI plan budgets, bounded fixture terminal assertions,
-memory-admission holdout governance, terminal admission anchors, evaluator context pins,
-producer replay/CLI forwarding, and the provider-free Python admission bridge descriptor/adapter. Their required
-three-version CI passed for the merge heads; source/tree evidence is retained, with the
-known incomplete raw-log downloads for PR54 and PR56/57 recorded in HANDOFF. PR62/63 are
-superseded stacked PRs whose code is already in the PR64 ancestry. Earlier sections that
-describe older PRs as pending are historical snapshots and do not override this status.
+`origin/main` is `480334c`, containing merged PR76, PR81, PR78, PR79 and PR80: the
+Python admission boundary timing fix, Feature190 executable owner/FD boundary,
+Shinka binding run-id normalization, prepared-boundary bridge and complete native
+input/plan binding. PR80 head `94a2ec2` and post-merge main CI remain pending;
+merge status alone does not establish CI acceptance. PR82 includes both bound
+OpenEvolve and Shinka result preflight on this main; its final CI and merge remain pending.
 
-PR75 adds provider-free bridge/owner facades, BRS foreign/duplicate routing guards,
-malformed process-journal recovery cases, and explicit OpenEvolve/Shinka result binding.
-Its bridge remains an explicit API: automatic live scheduler invocation is still open
-because the prepared journal/attempt anchor contains post-execution evidence.
+PR82 adds provider-free preflight before opening external OpenEvolve or Shinka run
+roots. OpenEvolve checks producer id, evaluator fingerprint, producer fingerprint,
+contract digest and optional run-id. Shinka requires its fixed producer id plus the
+caller identity, fingerprint, contract and optional run-id, preserving omitted run-id
+normalization. Both retain the complete final result binding verifier. Sixty local
+binding-export/OpenEvolve/Shinka cases pass; this is an ordering guard, not producer
+authentication or runtime admission.
 
-The remaining local release work is integration evidence plus the real Feature189/191
-runtime gates. Provider-free controller resume, replay, budget, fingerprint and unknown
-reconciliation are implemented. Real CPython/toolchain acquisition, sealed startup and
-Python producer lifecycle acceptance remain open. Remote evaluators, external worker
-authentication, multi-host ownership and distributed scheduling remain deferred P2.
-
-This is the current execution list, extending Feature 160 and the producer lifecycle SDD.
-Code and HANDOFF evidence take precedence over historical gap descriptions and design drafts.
-All validation in this iteration is local and provider-free.
+The remaining local release work is integration evidence plus the real Feature189/
+191 runtime gates. Provider-free controller resume, replay, budget, fingerprint
+and unknown reconciliation are implemented. Real CPython/toolchain acquisition,
+sealed startup, Python producer lifecycle acceptance, actual OpenEvolve/Shinka
+campaigns and production RSI CLI/Linux acceptance remain open. Remote evaluators,
+external worker authentication, multi-host ownership and distributed scheduling
+remain deferred P2. All validation in this iteration is local and provider-free.
 
 ## Current open priorities — 2026-10-12
 
