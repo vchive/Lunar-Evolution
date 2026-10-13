@@ -26,6 +26,7 @@ from .producer_bundle_publication import (
 from .python_producer_admission_handoff import PythonProducerAdmissionHandoffFilePin
 from .rsi_gateway import SolverRequest
 from .rsi_native_plan import NativeRSIExecutionPlan
+from .rsi_python_admission import RSIPythonAdmissionRecord, parse_rsi_python_admission_record
 
 PYTHON_ADMISSION_BRIDGE_PROTOCOL = "lunar-python-admission-bridge-v1"
 PYTHON_ADMISSION_BRIDGE_SCHEMA_VERSION = "1"
@@ -424,6 +425,27 @@ class PythonAdmissionBridgeAdapter:
             raise
         except Exception as exc:
             raise PythonAdmissionBridgeError("drs_pin_failed") from exc
+        # The actual DRS owner returns its canonical durable record; BRS returns
+        # only the acknowledged digest. Keep the historical string hook compatible
+        # while refusing foreign or unbound record objects before serialization.
+        if type(result) is RSIPythonAdmissionRecord:
+            try:
+                _shape(result, dto_types=(RSIPythonAdmissionRecord,))
+                record = parse_rsi_python_admission_record(result)
+                if (
+                    record.run_id != value.run_id
+                    or record.episode_id != value.episode_id
+                    or record.journal_id != value.prepared_journal.journal_id
+                    or record.native_plan_sha256 != value.native_plan.plan_sha256
+                    or record.prepared_journal_sha256 != value.prepared_journal.digest()
+                    or record.admission_anchor["anchor_sha256"] != value.expected_anchor_sha256
+                ):
+                    _fail("drs_record_invalid")
+                result = record.record_sha256
+            except PythonAdmissionBridgeError:
+                raise
+            except Exception as exc:
+                raise PythonAdmissionBridgeError("drs_record_invalid") from exc
         return self._record_sha(result, "drs_record_invalid")
 
     def pin_brs(self, descriptor: PythonAdmissionBridgeDescriptor | dict[str, Any] | bytes | str) -> str:
