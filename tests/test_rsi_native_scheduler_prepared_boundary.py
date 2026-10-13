@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from test_rsi_python_admission import _setup
@@ -200,3 +201,40 @@ def test_explicit_prepared_boundary_rejects_plan_authority_drift_before_journal_
             python_handoff_file_pin=fixture.pin,
             expected_anchor_sha256=fixture.anchor.anchor_sha256,
         )
+
+def test_normal_native_dispatch_keeps_python_admission_hook_explicit(tmp_path, monkeypatch):
+    """Binding a controller never upgrades ordinary native dispatch to Python admission."""
+    value = _setup(tmp_path)
+    provider = _provider(value)
+    # The focused provider fixture only needs enough inert fields to reach the patched
+    # scheduler call.  No producer, broker, evaluator or filesystem launch is allowed.
+    provider.context = SimpleNamespace(
+        workspace=value.workspace, producer_root=value.workspace,
+        intent=provider.context.intent, attestation=provider.context.attestation,
+        artifact=provider.context.artifact, contract=provider.context.contract,
+        broker_config=object(), groups=(), evaluator_kind=value.journal.evaluator_kind,
+        evaluator_fingerprint=value.request.evaluator_sha256,
+        runner_fingerprint=value.journal.runner_fingerprint,
+        dependency_sha256=value.journal.dependency_sha256,
+        environment_sha256=value.request.environment_sha256, strategy=object(),
+        execution_control=None, cancelled=None, failure_ledger=None,
+    )
+    bridge_calls = []
+    monkeypatch.setattr(
+        provider, "_pin_python_admission_before_dispatch",
+        lambda *_args, **_kwargs: bridge_calls.append("unexpected"),
+    )
+    scheduler_calls = []
+
+    def stop_before_launch(*_args, **_kwargs):
+        scheduler_calls.append("native")
+        raise RuntimeError("inert scheduler stop")
+
+    monkeypatch.setattr(
+        "lunar_evolution.rsi_native_scheduler.run_native_trusted_producer",
+        stop_before_launch,
+    )
+    with pytest.raises(NativeRSISchedulerProviderError, match="attempt_failed"):
+        provider(value.request, value.plan)
+    assert scheduler_calls == ["native"]
+    assert bridge_calls == []
