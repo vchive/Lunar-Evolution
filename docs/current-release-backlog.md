@@ -1,7 +1,7 @@
 # Current release backlog — 2026-10-13
 
-检查基线为 `1fbdb26`，包含 `origin/main` 的 `cd37a2b` 和 PR87 的本地
-probe/bridge 修正。本文按代码、指定任务清单及 GitHub 最终来源检查整理当前工作；
+本轮起点为 `main 17ebde4`，PR87 已合入；其最终来源 CI 与独立 raw/source/tree
+审计通过，合入后 main CI 也通过 15/15。本文按代码、指定任务清单及 GitHub 最终来源检查整理当前工作；
 历史交接里的 pending 不等于功能尚未开发。所有条目保持
 `production_admission=false`。
 
@@ -14,16 +14,19 @@ BRS ready/ack、publication/recovery gates 已存在。`rsi replay` 与
 
 Feature189 的 archive/source/staging/provenance 比较器、Feature193 的 marker source、
 F01–F05 detached contracts 和 controlled build driver 已开发。driver 只接受 mock
-backend，不产生实际 CPython image。Feature190 原始 executable owner 是已记录验收的
+backend，不产生实际 CPython image。新增独立 `run_pinned_build` 执行机制消费另行审阅的
+recipe 和输入/tool bytes pins；它没有内置或自动推导实际 CPython recipe，不完成 G1/G2。
+Feature190 原始 executable owner 是已记录验收的
 基础能力，真实 sealed CPython 与它的组合仍待验收。
 
 ## P0/P1：当前开发与集成项
 
 | 优先级 / 功能 | 基线现状与剩余工作 | 结束条件 |
 | --- | --- | --- |
-| P0：scheduler 晚期 prepared 接线 | 已实现显式启用的 immutable post-execution supplier → 原 handoff pin → transaction prepared observer → DRS/BRS first-pin；首次 record/reference 在后续边界持续复验。DRS bridge 已适配实际 controller 返回的 canonical record。规格见 Feature191 `late-prepared-scheduler-join.md`。 | 完成统一来源 CI/审计；真实 runtime 验收仍在下表。普通 native path 保持兼容，取消、缺失、漂移和 callback failure 保留既有 unknown/obligation。 |
-| P1：本地 OpenEvolve/Shinka result exporter | 已实现 `read_python_producer_adapter_export`，复用现有 bounded wrapper/SQLite/source readers 和 common adapter verifier；原始 evidence 与独立 pins 在 source I/O 前验证。规格见 Feature191 `local-python-producer-export.md`。 | 完成统一来源 CI/审计；不把 producer score 当官方 verdict，不据此宣称真实 project lifecycle。 |
-| P0/P1：PR87 统一集成验收 | probe 唯一观察、bridge callback-free shape gate、两条接线修改和真实本地 owner/transaction 组合测试已统一集成；最终来源 CI/审计待验收。 | 统一集成后的最终来源通过完整 15 checks；保留 raw logs/XML/inventories、source/import/tree pins 和独立审计。此前 PR87 revision 或旧分支的结果不代替该最终来源。 |
+| P0：scheduler 晚期 prepared 接线 | 已实现显式启用的 immutable post-execution supplier → 原 handoff pin → transaction prepared observer → DRS/BRS first-pin；首次 record/reference 在后续边界持续复验。DRS bridge 已适配实际 controller 返回的 canonical record。规格见 Feature191 `late-prepared-scheduler-join.md`。 | PR87 最终来源 CI/审计已通过；真实 runtime 验收仍在下表。普通 native path 保持兼容，取消、缺失、漂移和 callback failure 保留既有 unknown/obligation。 |
+| P1：本地 OpenEvolve/Shinka result exporter | 已实现 `read_python_producer_adapter_export`，复用现有 bounded wrapper/SQLite/source readers 和 common adapter verifier；原始 evidence 与独立 pins 在 source I/O 前验证。规格见 Feature191 `local-python-producer-export.md`。 | PR87 最终来源 CI/审计已通过；不把 producer score 当官方 verdict，不据此宣称真实 project lifecycle。 |
+| P0：受限构建执行机制 | 独立 `run_pinned_build` 接口执行另行 pinned recipe 的 configure/freeze/compile/link，保留 bounded logs、输出 pins 和失败记录；原 mock-only API 保持兼容。 | 本轮最终来源 CI/审计仍待完成。真实 source/signature/toolchain 和 CPython executable recipe 仍未冻结；工具执行完成不等于静态 image 或 installation 验收。 |
+| P1：单 episode producer 组合 | `PythonProducerRSISolverGateway` 复用原 Python plan/input gate、native scheduler/claim/receipt 和 prepared handoff，要求同一 ledger、原 producer identity 与 controller proof。CLI native opt-in 在缺配置时前置拒绝。 | 本轮最终来源 CI/审计仍待完成。一个预先 staged context 只绑定一个 request/memory/launch；完整 DRS/BRS CLI 需要逐 episode 接线，不得直接复用为多 episode campaign。 |
 
 以上开发项完成后仍不启用 production runtime。`rsi run` / `rsi resume` 的
 OpenEvolve/Shinka 选项当前仍明确输出 `solver_execution=provider_free_fixture`；
@@ -89,7 +92,9 @@ PR72/73/74 已合入，但其原来源 runs
 CI 义务。后续 PR82 的完整集成来源通过 15/15，证明的是该集成 revision。
 Feature195 的 replay context 修改已随 PR73 合入；PR64 的旧成功不能代替它的最终验收。
 
-最新 `main` 的 PR86 与统一集成 PR87 仍须完成各自最终来源验收。被后续 push 取消的
+PR87 最终来源 `328b898` 的完整 CI 与独立 raw/source/tree 审计已通过，合入为
+`17ebde4`；新执行机制/单 episode 组合须验收其自身最终来源。较早 PR 的原来源
+义务继续按各自保留证据判断。被后续 push 取消的
 旧 main runs（包括旧任务中引用的 `38331781593`）不算通过；不为刷新 run ID 新建
 文档 PR 或 CI matrix。PR87 的最终来源由该 PR 的实际最后一次产品/测试集成决定。
 

@@ -362,6 +362,40 @@ controller cancellation 或 unknown-to-success 对账。完整契约见
 [`native-controller-lifeline.md`](../specs/157-producer-request-evidence/native-controller-lifeline.md) 和
 [`native-deadline-guard.md`](../specs/157-producer-request-evidence/native-deadline-guard.md)。
 
+### 4.4 显式组合单次 Python producer episode
+
+`PythonProducerRSISolverGateway` 将已准备的 Python 输入 context 接入原 native
+gateway、scheduler、claim、receipt 和 prepared admission。调用方保留原始 request、
+冻结 memory、binding sidecar、launch/attestation，以及同一个失败恢复 ledger：
+
+```python
+from lunar_evolution.rsi_producer_gateway import (
+    PythonProducerRSIExecutionConfig,
+    PythonProducerRSISolverGateway,
+)
+
+gateway = PythonProducerRSISolverGateway(PythonProducerRSIExecutionConfig(
+    producer_id="shinka",  # 或 openevolve；必须匹配原 producer 和请求。
+    ledger=ledger,
+    inputs=original_python_inputs,
+))
+# original_controller 已使用 gateway 和原 producer proof 构造。
+gateway.bind_python_admission_controller(original_controller)
+```
+
+实际 dispatch 由原 controller 的有效 DRS/BRS owner scope 驱动；单独构造 gateway
+不具备该 scope。未绑定 controller 的首次执行会在领取 claim 前拒绝，终态 replay
+继续使用原只读恢复规则。
+
+接口只处理 context 绑定的单个 episode。它不准备下一次 launch，不启动未配置的开源
+project，也不把外部 score 当成官方评测。重复请求和未知状态继续使用原 native 恢复规则；
+不能把同一个 context 直接复用于 DRS/BRS 的多个 episode。完整生产 CLI 还需要逐 episode
+的 context/launch 接线和实际 sealed runtime 验收，`production_admission=false`。
+
+`rsi run` 和 `rsi resume` 的 `--solver-execution fixture` 保留原本地行为。显式指定
+`--solver-execution native-producer` 时，当前版本在创建 ledger 或读取合同前返回
+`rsi_python_producer_gateway_cli_accepted_runtime_required`，不会转而运行 fixture。
+
 ## 5. P2：显式 memory 翻译与重复评测置信策略
 
 两个 API 都已从 `lunar_evolution` 导出，目前是独立、显式入口，不会自动替换 controller
