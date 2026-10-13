@@ -127,7 +127,7 @@ def _preflight_python_binding(
     evaluator_fingerprint: str,
     producer_fingerprint: str,
     producer_run_id: str | None,
-) -> str:
+) -> tuple[object, str, bytes]:
     """Validate a bound producer before touching its untrusted run directory.
 
     The normal result verifier must inspect the candidate envelope, so it remains the final
@@ -152,7 +152,9 @@ def _preflight_python_binding(
             _raise(RESULT_BINDING_MISMATCH)
         if bound.contract_sha256 != contract.digest():
             _raise(RESULT_BINDING_MISMATCH)
-        return bound.run_id
+        # Keep the detached parse result for the post-read verifier. Re-reading the caller's
+        # binding later would reopen a TOCTOU window if its object or serializer changes.
+        return bound, bound.run_id, bound.to_json()
     except OpenEvolveHandoffError:
         raise
     except Exception as exc:
@@ -407,10 +409,12 @@ def admit_openevolve_result(
         PRODUCER_FINGERPRINT_REQUIRED,
     )
     bound_producer_run_id = producer_run_id
+    bound_binding: object | None = None
+    bound_binding_wire: bytes | None = None
     if binding is not None:
         # Reject detached identity drift before opening the caller-selected producer root.  The
         # full envelope check below remains mandatory after the result and candidate are read.
-        bound_producer_run_id = _preflight_python_binding(
+        bound_binding, bound_producer_run_id, bound_binding_wire = _preflight_python_binding(
             binding, contract, evaluator_fingerprint, producer_fingerprint, producer_run_id,
         )
     root = _external_root(external_root)
@@ -455,11 +459,8 @@ def admit_openevolve_result(
         try:
             from .python_producer_adapter import verify_python_producer_result_binding
 
-            binding_run_id = getattr(binding, "run_id", None)
-            if producer_run_id is not None and producer_run_id != binding_run_id:
+            if bound_binding_wire is None or binding.to_json() != bound_binding_wire:
                 raise OpenEvolveHandoffError(RESULT_BINDING_MISMATCH)
-            bound_producer_run_id = binding_run_id
-
             envelope = ProducerResultEnvelope(
                 schema_version="1",
                 producer_id="openevolve",
@@ -482,7 +483,7 @@ def admit_openevolve_result(
                     ),
                 ),
             )
-            verify_python_producer_result_binding(binding, envelope)
+            verify_python_producer_result_binding(bound_binding, envelope)
         except OpenEvolveHandoffError:
             raise
         except Exception as exc:

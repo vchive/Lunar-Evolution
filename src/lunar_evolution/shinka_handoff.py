@@ -947,7 +947,7 @@ def _preflight_python_binding(
     producer_fingerprint: str,
     producer_run_id: str | None,
     producer_id: str,
-) -> str:
+) -> tuple[object, str, bytes]:
     """Validate detached binding identity before touching an untrusted Shinka run root.
 
     The complete envelope verifier remains mandatory after SQLite/source inspection. This small
@@ -975,7 +975,9 @@ def _preflight_python_binding(
             expected_contract = digest_method()
         if bound.contract_sha256 != expected_contract:
             _raise(SHINKA_BINDING_MISMATCH)
-        return bound.run_id
+        # Keep the detached parse result for post-read verification. Re-reading the caller's
+        # binding later would reopen a TOCTOU window if its object or serializer changes.
+        return bound, bound.run_id, bound.to_json()
     except ShinkaHandoffError:
         raise
     except Exception as exc:
@@ -1021,10 +1023,12 @@ def export_shinka_result(
     else:
         verify_binding = None
     bound_producer_run_id = producer_run_id
+    bound_binding: object | None = None
+    bound_binding_wire: bytes | None = None
     if binding is not None:
         # Reject detached identity drift before opening the caller-selected results root. The
         # generic envelope check below remains mandatory after the result and source are read.
-        bound_producer_run_id = _preflight_python_binding(
+        bound_binding, bound_producer_run_id, bound_binding_wire = _preflight_python_binding(
             binding,
             contract_sha256,
             producer_fingerprint,
@@ -1122,7 +1126,9 @@ def export_shinka_result(
             _raise(exc.code)
         if verify_binding is not None:
             try:
-                verify_binding(binding, envelope)
+                if bound_binding_wire is None or binding.to_json() != bound_binding_wire:
+                    raise ShinkaHandoffError(SHINKA_BINDING_MISMATCH)
+                verify_binding(bound_binding, envelope)
             except Exception as exc:
                 if isinstance(exc, ShinkaHandoffError):
                     raise
