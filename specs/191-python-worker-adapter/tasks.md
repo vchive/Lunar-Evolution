@@ -144,7 +144,7 @@
   identity and matching caller producer ID before root/SQLite I/O, retaining bound
   run-id normalization. PR82 is merged as `d530f9f`; its local three-suite
   evidence has 60 passes. The post-merge main CI remains pending in run
-  `38330366793`.
+`38331781593`.
 - [x] Add a pure shared OpenEvolve/Shinka evidence envelope with build/parse/verify,
   retained digest and complete original-binding comparisons. It performs no I/O or
   evaluator call and always keeps `production_admission=false`; actual project

@@ -13,7 +13,7 @@ The final three-suite local selection passes 60 unique cases (binding exports,
 OpenEvolve handoff and Shinka handoff), with zero failures, errors or skips;
 whole-source Ruff, compileall and diff-check pass. Earlier 77-case independent
 verification below refers to the earlier OpenEvolve-only head and is not additive.
-PR80, PR82 and the documentation update are merged; main CI run `38330366793`
+PR80, PR82 and the documentation updates are merged; main CI run `38331781593`
 is still queued, and production runtime acceptance remains open. No real toolchain,
 Python runtime or campaign ran.
 
