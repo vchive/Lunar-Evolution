@@ -405,6 +405,132 @@ class RSILedger:
         self._checkpoint_reference_rows_tx(connection, run_id, references)
         return history
 
+    @staticmethod
+    def _checkpoint_binding(value: object, *, code: str):
+        """Parse one retained producer checkpoint without accepting caller-owned objects."""
+        from .python_producer_checkpoint import PythonProducerCheckpointBinding
+
+        try:
+            return PythonProducerCheckpointBinding.from_dict(value)
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError(code) from exc
+
+    def _select_python_producer_checkpoint_tx(
+        self,
+        state: Mapping[str, Any],
+        *,
+        run_id: str,
+        episode_id: str,
+        root: object,
+    ):
+        """Select a ready child proof while retaining the independently checked root proof.
+
+        ``state`` is read from the same SQLite transaction as the admission state.  The
+        controller's root proof remains the run/checkpoint authority; a child proof is only
+        selected when the immutable staging entry for this exact episode is acknowledged
+        ``ready`` and all of its launch identities agree.
+        """
+        if type(state) is not dict:
+            raise RSILearningError("rsi_python_admission_checkpoint_corrupt")
+        staging_present = "producer_episode_staging" in state
+        entries = state.get("producer_episode_staging")
+        if not staging_present:
+            return root
+        if type(entries) is not dict:
+            raise RSILearningError("rsi_python_admission_child_proof_corrupt")
+        entry = entries.get(episode_id)
+        if type(entry) is not dict:
+            raise RSILearningError("rsi_python_admission_child_proof_missing")
+        if entry.get("state") != "ready":
+            raise RSILearningError("rsi_python_admission_child_proof_not_ready")
+        ready = entry.get("ready")
+        identity = entry.get("identity")
+        if (type(ready) is not dict
+                or set(ready) != {"binding", "producer_checkpoint", "plan", "inputs", "input_manifest"}
+                or type(identity) is not dict):
+            raise RSILearningError("rsi_python_admission_child_proof_corrupt")
+        child = self._checkpoint_binding(
+            ready.get("producer_checkpoint"), code="rsi_python_admission_child_proof_invalid",
+        )
+        try:
+            from .python_producer_binding import parse_python_producer_binding
+
+            binding = parse_python_producer_binding(canonical_json(ready["binding"], maximum=2 * 1024 * 1024))
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_python_admission_child_binding_invalid") from exc
+        expected_identity = {
+            "run_id": run_id,
+            "episode_id": episode_id,
+            "journal_id": child.journal_id,
+            "launch_id": binding.intent.launch_id,
+            "request_sha256": identity.get("request_sha256"),
+            "memory_snapshot_sha256": identity.get("memory_snapshot_sha256"),
+        }
+        if (
+            child.run_id != run_id
+            or child.journal_id != binding.intent.journal_id
+            or child.binding_sha256 != binding.binding_sha256
+            or binding.run_id != run_id
+            or binding.task_id != episode_id
+            or identity.get("run_id") != expected_identity["run_id"]
+            or identity.get("episode_id") != expected_identity["episode_id"]
+            or identity.get("journal_id") != expected_identity["journal_id"]
+            or identity.get("launch_id") != expected_identity["launch_id"]
+            or type(identity.get("request_sha256")) is not str
+            or type(identity.get("memory_snapshot_sha256")) is not str
+        ):
+            raise RSILearningError("rsi_python_admission_child_proof_association_drift")
+        if child.to_json() == root.to_json():
+            raise RSILearningError("rsi_python_admission_child_proof_association_drift")
+        return child
+
+    def resolve_python_producer_checkpoint(
+        self,
+        run_id: str,
+        episode_id: str,
+        *,
+        expected_checkpoint_sha256: str | None = None,
+    ):
+        """Resolve ``(root, selected)`` producer proofs in one read transaction.
+
+        Legacy/unbound runs return the root proof for both tuple entries.  A staged run
+        requires a ready entry for the requested episode and returns its child proof as the
+        selected value while retaining the root proof separately.
+        """
+        _id(run_id, name="run_id")
+        _id(episode_id, name="episode_id")
+        if expected_checkpoint_sha256 is not None:
+            _digest(expected_checkpoint_sha256, name="python_admission_expected_head")
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            rows = connection.execute(
+                "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (run_id,),
+            ).fetchall()
+            if not rows:
+                raise RSILearningError("rsi_python_admission_run_missing")
+            records = tuple(self._row_to_record(row) for row in rows)
+            if any(record.kind != "run" or record.revision != ordinal for ordinal, record in enumerate(records)):
+                raise RSILearningError("rsi_python_admission_run_drift")
+            root = self._checkpoint_binding(
+                records[0].payload.get("producer_checkpoint_binding"),
+                code="rsi_python_admission_original_proof_missing",
+            )
+            root_wire = root.to_dict()
+            if any(record.payload.get("producer_checkpoint_binding") != root_wire for record in records):
+                raise RSILearningError("rsi_python_admission_original_proof_drift")
+            history = self._controller_checkpoint_history_tx(connection, run_id)
+            if not history:
+                raise RSILearningError("rsi_python_admission_checkpoint_missing")
+            checkpoint_sha256, state = history[-1]
+            if expected_checkpoint_sha256 is not None and checkpoint_sha256 != expected_checkpoint_sha256:
+                raise RSILearningError("rsi_python_admission_checkpoint_conflict")
+            if state.get("run_id") != run_id:
+                raise RSILearningError("rsi_python_admission_checkpoint_drift")
+            selected = self._select_python_producer_checkpoint_tx(
+                state, run_id=run_id, episode_id=episode_id, root=root,
+            )
+            return root, selected
+
     def controller_checkpoint_history(self, run_id: str) -> list[tuple[str, dict[str, Any]]]:
         """Read the verified hash chain and its monotonic independently retained obligations."""
         _id(run_id, name="run_id")
@@ -620,13 +746,10 @@ class RSILedger:
         proof = original.payload.get("producer_checkpoint_binding")
         try:
             parsed_proof = PythonProducerCheckpointBinding.from_dict(proof)
-            proof_digest = hashlib.sha256(parsed_proof.to_json()).hexdigest()
         except (TypeError, ValueError) as exc:
             raise RSILearningError("rsi_python_admission_original_proof_missing") from exc
         if (original.record_sha256 != admission.original_run_record_sha256
-                or proof_digest != admission.producer_checkpoint_sha256
-                or parsed_proof.run_id != admission.run_id or parsed_proof.journal_id != admission.journal_id
-                or parsed_proof.binding_sha256 != admission.admission_anchor["binding_sha256"]
+                or parsed_proof.run_id != admission.run_id
                 or any(run.payload.get("producer_checkpoint_binding") != proof for run in runs)):
             raise RSILearningError("rsi_python_admission_original_proof_drift")
         if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
@@ -669,6 +792,18 @@ class RSILedger:
                 snapshots.extend((generation.get("parent_memory"), generation.get("candidate_memory")))
         if expected_checkpoint_sha256 is not None and parent != expected_checkpoint_sha256:
             raise RSILearningError("rsi_python_admission_checkpoint_conflict")
+        selected_proof = self._select_python_producer_checkpoint_tx(
+            state, run_id=admission.run_id, episode_id=admission.episode_id, root=parsed_proof,
+        )
+        selected_proof_digest = hashlib.sha256(selected_proof.to_json()).hexdigest()
+        if selected_proof_digest != admission.producer_checkpoint_sha256:
+            raise RSILearningError("rsi_python_admission_child_proof_drift")
+        if (
+            selected_proof.run_id != admission.run_id
+            or selected_proof.journal_id != admission.journal_id
+            or selected_proof.binding_sha256 != admission.admission_anchor.get("binding_sha256")
+        ):
+            raise RSILearningError("rsi_python_admission_child_proof_association_drift")
         try:
             episode = self._head(connection, admission.episode_id)
             if episode is not None and type(episode.payload) is not dict:
