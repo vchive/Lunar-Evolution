@@ -454,9 +454,102 @@ class RSILedger:
         )
         try:
             from .python_producer_binding import parse_python_producer_binding
+            from .rsi_identity import component_fingerprint
+            from .rsi_native_candidate import select_native_candidate
+            from .rsi_native_inputs import NATIVE_RSI_INPUT_MARKER
+            from .rsi_native_plan import NativeRSIExecutionPlan
 
             binding = parse_python_producer_binding(canonical_json(ready["binding"], maximum=2 * 1024 * 1024))
-        except (TypeError, ValueError) as exc:
+            request = SolverRequest.from_dict(identity["intent"]["request"])
+            memory = MemorySnapshot.from_dict(identity["memory"])
+            plan = NativeRSIExecutionPlan.from_dict(ready["plan"])
+            manifest = ready["input_manifest"]
+            inputs = ready["inputs"]
+            token = hashlib.sha256(canonical_json({
+                "run_id": run_id, "episode_id": episode_id, "request": request.digest(),
+            })).hexdigest()[:32]
+            if (request.episode_id != episode_id
+                    or request.digest() != identity["request_sha256"]
+                    or memory.digest() != identity["memory_snapshot_sha256"]
+                    or request.memory_snapshot_sha256 != memory.digest()
+                    or identity["journal_id"] != "rsi-stage-" + token
+                    or identity["launch_id"] != "rsi-launch-" + token):
+                raise ValueError("request association changed")
+            if type(manifest) is not dict or set(manifest) != {
+                "schema_version", "protocol", "journal_id", "episode_id", "request_sha256",
+                "memory_snapshot_sha256", "workspace_identity", "batch_identity", "inputs_identity",
+                "files", "manifest_file_identity", "manifest_sha256",
+            }:
+                raise ValueError("manifest shape changed")
+            manifest_sha256 = hashlib.sha256(canonical_json({
+                key: value for key, value in manifest.items() if key != "manifest_sha256"
+            })).hexdigest()
+            if (manifest["schema_version"] != "1"
+                    or manifest["protocol"] != "lunar-native-rsi-inputs-v1"
+                    or manifest["manifest_sha256"] != manifest_sha256
+                    or manifest["journal_id"] != identity["journal_id"]
+                    or manifest["episode_id"] != episode_id
+                    or manifest["request_sha256"] != request.digest()
+                    or manifest["memory_snapshot_sha256"] != memory.digest()):
+                raise ValueError("manifest association changed")
+            for name in ("workspace_identity", "batch_identity", "inputs_identity", "manifest_file_identity"):
+                node = manifest[name]
+                if (type(node) is not dict or set(node) != {"device", "inode"}
+                        or any(type(value) is not int or value <= 0 for value in node.values())):
+                    raise ValueError("manifest identity changed")
+            files = manifest["files"]
+            if type(files) is not list or len(files) != 2:
+                raise ValueError("manifest files changed")
+            for metadata, name, raw in zip(files, ("request.json", "memory.json"),
+                                           (canonical_json(request.to_dict()), memory.to_bytes()), strict=True):
+                if (type(metadata) is not dict or set(metadata) != {
+                    "name", "size", "sha256", "device", "inode", "mtime_ns", "ctime_ns",
+                } or metadata["name"] != name or metadata["size"] != len(raw)
+                        or type(metadata["size"]) is not int
+                        or metadata["sha256"] != hashlib.sha256(raw).hexdigest()
+                        or any(type(metadata[key]) is not int or metadata[key] <= 0
+                               for key in ("device", "inode", "mtime_ns", "ctime_ns"))):
+                    raise ValueError("manifest bytes changed")
+            if type(inputs) is not dict or type(inputs.get("workspace")) is not str:
+                raise ValueError("inputs shape changed")
+            workspace = Path(inputs["workspace"])
+            if not workspace.is_absolute() or str(workspace) != inputs["workspace"] or ".." in workspace.parts:
+                raise ValueError("inputs workspace changed")
+            input_path = workspace / "evolution" / "producer-batches" / identity["journal_id"] / ".rsi-input"
+            _digest(inputs.get("launch_binding_sha256"), name="child_launch_binding")
+            expected_inputs = {
+                "schema_version": "1", "protocol": "lunar-native-rsi-inputs-v1",
+                "workspace": str(workspace), "journal_id": identity["journal_id"],
+                "inputs_path": str(input_path), "episode_id": episode_id,
+                "request_sha256": request.digest(), "memory_snapshot_sha256": memory.digest(),
+                "manifest_sha256": manifest_sha256, "deadline_unix": dict(request.budget).get("deadline_unix"),
+                "launch_binding_sha256": inputs["launch_binding_sha256"],
+                "read_paths": [str(input_path / name) for name in ("request.json", "memory.json")],
+            }
+            expected_plan = NativeRSIExecutionPlan.build(
+                request=request, memory_snapshot=memory, journal_id=identity["journal_id"],
+                launch_id=identity["launch_id"], run_id=run_id, parent_task_id=binding.parent_task_id,
+                task_id=episode_id, intent_sha256=binding.intent_sha256,
+                attestation_sha256=binding.attestation_sha256,
+                bootstrap_descriptor_sha256=plan.bootstrap_descriptor_sha256,
+                bootstrap_artifact_sha256=plan.bootstrap_artifact_sha256,
+                manifest_sha256=manifest_sha256, deadline_unix=binding.deadline_unix,
+                candidate_selector_sha256=component_fingerprint(select_native_candidate),
+                evaluator_kind=binding.evaluator_kind, evaluator_fingerprint=binding.evaluator_fingerprint,
+            )
+            if (canonical_json(inputs) != canonical_json(expected_inputs)
+                    or canonical_json(ready["plan"]) != canonical_json(expected_plan.to_dict())
+                    or binding.intent.argv[-2:] != (NATIVE_RSI_INPUT_MARKER, manifest_sha256)
+                    or binding.intent.argv.count(NATIVE_RSI_INPUT_MARKER) != 1
+                    or binding.producer_id != request.solver_id
+                    or binding.contract_sha256 != request.contract_sha256
+                    or binding.evaluator_fingerprint != request.evaluator_sha256
+                    or binding.environment_sha256 != request.environment_sha256
+                    or binding.deadline_unix != dict(request.budget).get("deadline_unix")
+                    or child.sidecar_pin["raw_sha256"] != hashlib.sha256(binding.to_json()).hexdigest()
+                    or child.sidecar_pin["raw_size"] != len(binding.to_json())):
+                raise ValueError("ready association changed")
+        except (KeyError, TypeError, ValueError, RSILearningError) as exc:
             raise RSILearningError("rsi_python_admission_child_binding_invalid") from exc
         expected_identity = {
             "run_id": run_id,
@@ -483,6 +576,95 @@ class RSILedger:
         if child.to_json() == root.to_json():
             raise RSILearningError("rsi_python_admission_child_proof_association_drift")
         return child
+
+    def _validate_python_producer_staging_history_tx(
+        self, history: list[tuple[str, dict[str, Any]]], *, run_id: str,
+        expected_policy: dict[str, Any] | None = None,
+    ) -> None:
+        """Validate the controller-owned staging state without opening another snapshot."""
+        if not history:
+            raise RSILearningError("rsi_python_admission_checkpoint_missing")
+        policy = history[0][1].get("producer_staging_policy")
+        staged = policy is not None or "producer_episode_staging" in history[0][1]
+        if not staged:
+            if any("producer_staging_policy" in state or "producer_episode_staging" in state
+                   for _, state in history):
+                raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+            return
+        if type(policy) is not dict:
+            raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+        if expected_policy is not None and policy != expected_policy:
+            raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+        previous_entries: dict[str, dict[str, Any]] = {}
+        previous_digest: str | None = None
+        states_by_digest = {digest: state for digest, state in history}
+        for digest, state in history:
+            if (state.get("run_id") != run_id or state.get("producer_staging_policy") != policy
+                    or type(state.get("producer_episode_staging")) is not dict):
+                raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+            entries = state["producer_episode_staging"]
+            if not set(previous_entries).issubset(entries):
+                raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+            for episode_id, entry in entries.items():
+                if (type(episode_id) is not str or type(entry) is not dict
+                        or set(entry) != {"state", "identity", "ready", "failure_code"}
+                        or entry["state"] not in {"preparing", "ready", "unknown"}
+                        or type(entry["identity"]) is not dict):
+                    raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                identity = entry["identity"]
+                required = {
+                    "run_id", "episode_id", "original_run_request_sha256", "original_run_record_sha256",
+                    "origin_checkpoint_sha256", "intent", "request_sha256", "memory",
+                    "memory_snapshot_sha256", "journal_id", "launch_id", "policy",
+                }
+                if set(identity) != required or identity["run_id"] != run_id or identity["episode_id"] != episode_id:
+                    raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                if identity.get("policy") != policy:
+                    raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                try:
+                    request = SolverRequest.from_dict(identity["intent"]["request"])
+                    memory = MemorySnapshot.from_dict(identity["memory"])
+                    token = hashlib.sha256(canonical_json({
+                        "run_id": run_id, "episode_id": episode_id, "request": request.digest(),
+                    })).hexdigest()[:32]
+                    if (request.episode_id != episode_id
+                            or request.digest() != identity["request_sha256"]
+                            or memory.digest() != identity["memory_snapshot_sha256"]
+                            or request.memory_snapshot_sha256 != memory.digest()
+                            or identity["journal_id"] != "rsi-stage-" + token
+                            or identity["launch_id"] != "rsi-launch-" + token):
+                        raise ValueError("staging identity changed")
+                except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+                    raise RSILearningError("rsi_python_admission_child_proof_history_drift") from exc
+                prior = previous_entries.get(episode_id)
+                if prior is None:
+                    if (entry["state"] != "preparing" or entry["ready"] is not None
+                            or entry["failure_code"] is not None
+                            or identity["origin_checkpoint_sha256"] != previous_digest):
+                        raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                    # The intent must already be durable in the immediately preceding checkpoint.
+                    if previous_digest is None:
+                        raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                    prior_state = states_by_digest.get(previous_digest)
+                    if prior_state is None or prior_state.get("intents", {}).get(episode_id) != identity.get("intent"):
+                        raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                else:
+                    if prior["identity"] != identity:
+                        raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                    allowed = {"preparing": {"preparing", "ready", "unknown"},
+                               "ready": {"ready"}, "unknown": {"unknown"}}
+                    if entry["state"] not in allowed[prior["state"]]:
+                        raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                    if prior["state"] != "preparing" and entry != prior:
+                        raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                if entry["state"] == "preparing" and (entry["ready"] is not None or entry["failure_code"] is not None):
+                    raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                if entry["state"] == "unknown" and (entry["ready"] is not None or entry["failure_code"] != "staging_failed"):
+                    raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+                if entry["state"] == "ready" and entry["failure_code"] is not None:
+                    raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+            previous_entries = entries
+            previous_digest = digest
 
     def resolve_python_producer_checkpoint(
         self,
@@ -521,6 +703,9 @@ class RSILedger:
             history = self._controller_checkpoint_history_tx(connection, run_id)
             if not history:
                 raise RSILearningError("rsi_python_admission_checkpoint_missing")
+            self._validate_python_producer_staging_history_tx(
+                history, run_id=run_id, expected_policy=records[0].payload.get("producer_staging_policy"),
+            )
             checkpoint_sha256, state = history[-1]
             if expected_checkpoint_sha256 is not None and checkpoint_sha256 != expected_checkpoint_sha256:
                 raise RSILearningError("rsi_python_admission_checkpoint_conflict")
@@ -754,7 +939,11 @@ class RSILedger:
             raise RSILearningError("rsi_python_admission_original_proof_drift")
         if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
             raise RSILearningError("rsi_python_admission_run_conflict")
-        self._controller_checkpoint_history_tx(connection, admission.run_id)
+        staging_history = self._controller_checkpoint_history_tx(connection, admission.run_id)
+        self._validate_python_producer_staging_history_tx(
+            staging_history, run_id=admission.run_id,
+            expected_policy=original.payload.get("producer_staging_policy"),
+        )
         checkpoint_rows = connection.execute(
             "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
             "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (admission.run_id,),
