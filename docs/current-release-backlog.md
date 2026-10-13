@@ -21,9 +21,9 @@ backend，不产生实际 CPython image。Feature190 原始 executable owner 是
 
 | 优先级 / 功能 | 基线现状与剩余工作 | 结束条件 |
 | --- | --- | --- |
-| P0：scheduler 晚期 prepared 接线 | `pin_python_admission_at_prepared_boundary` 已有完整 native plan/input binding、retained handoff/anchor 重读和 DRS/BRS owner facade；native dispatch 尚不自动调用。独立分支正在补 producer transaction → prepared observer 的连接。 | fresh dispatch 不提前读取 post-execution evidence；原 journal/handoff/file pin/anchor 在 prepared boundary 触发原 owner first-pin；evaluation 前获得精确 ack；取消、缺失、漂移和 callback failure 保留既有 unknown/obligation。provider-free regressions、最终集成 CI 与独立审计通过。 |
-| P1：本地 OpenEvolve/Shinka result exporter | `admit_openevolve_result`、`export_shinka_result`、bound-result preflight 和纯 `PythonProducerAdapterEnvelope` 已存在；独立分支正在接 retained local output/SQLite snapshot → 既有 result/adapter envelope。 | 使用 caller 的 original binding、result/terminal/runtime 和独立 pins，复验 retained snapshot；不把 producer score 当官方 verdict。只读 exporter 的成功/缺失/漂移案例通过，并完成最终集成 CI/审计；不据此宣称真实 project lifecycle。 |
-| P0/P1：PR87 统一集成验收 | probe 唯一观察及 bridge callback-free shape gate 已开发，本地 focused/static checks 已通过；两条接线修改和集成测试将一起进入 PR87。 | 统一集成后的最终来源通过完整 15 checks；保留 raw logs/XML/inventories、source/import/tree pins 和独立审计。此前 PR87 revision 或旧分支的结果不代替该最终来源。 |
+| P0：scheduler 晚期 prepared 接线 | 已实现显式启用的 immutable post-execution supplier → 原 handoff pin → transaction prepared observer → DRS/BRS first-pin；首次 record/reference 在后续边界持续复验。DRS bridge 已适配实际 controller 返回的 canonical record。规格见 Feature191 `late-prepared-scheduler-join.md`。 | 完成统一来源 CI/审计；真实 runtime 验收仍在下表。普通 native path 保持兼容，取消、缺失、漂移和 callback failure 保留既有 unknown/obligation。 |
+| P1：本地 OpenEvolve/Shinka result exporter | 已实现 `read_python_producer_adapter_export`，复用现有 bounded wrapper/SQLite/source readers 和 common adapter verifier；原始 evidence 与独立 pins 在 source I/O 前验证。规格见 Feature191 `local-python-producer-export.md`。 | 完成统一来源 CI/审计；不把 producer score 当官方 verdict，不据此宣称真实 project lifecycle。 |
+| P0/P1：PR87 统一集成验收 | probe 唯一观察、bridge callback-free shape gate、两条接线修改和真实本地 owner/transaction 组合测试已统一集成；最终来源 CI/审计待验收。 | 统一集成后的最终来源通过完整 15 checks；保留 raw logs/XML/inventories、source/import/tree pins 和独立审计。此前 PR87 revision 或旧分支的结果不代替该最终来源。 |
 
 以上开发项完成后仍不启用 production runtime。`rsi run` / `rsi resume` 的
 OpenEvolve/Shinka 选项当前仍明确输出 `solver_execution=provider_free_fixture`；
