@@ -29,6 +29,11 @@ producer fingerprint, contract, run id, status and material digest/metadata. The
 external producer score remains provenance only; local evaluation remains the result
 authority.
 
+The parsed binding is retained as a detached snapshot for the final verifier. Before
+verification, the caller-supplied binding must still serialize to the exact canonical
+wire captured at preflight; drift is refused. This closes the preflight-to-publication
+TOCTOU window without reusing mutable caller state as authority.
+
 For `export_shinka_result(..., binding=...)`, preflight runs before `_root` and
 SQLite access. It requires the fixed `shinka` identity, the matching caller
 producer ID, producer fingerprint, contract digest and optional run-id. A matching

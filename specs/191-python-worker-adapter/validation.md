@@ -16,6 +16,11 @@ verification below refers to the earlier OpenEvolve-only head and is not additiv
 PR80 is merged but its full CI is pending; PR82 final CI/merge and production
 runtime acceptance remain open. No real toolchain, Python runtime or campaign ran.
 
+The final verifier uses the detached preflight binding snapshot and checks the
+caller-supplied canonical binding wire for drift before verification. This keeps
+runtime/tree/manifest fields from being replaced between external material reads and
+publication while retaining fail-closed behavior.
+
 ## 2026-10-13 explicit native prepared-boundary bridge
 
 `NativeRSISchedulerProvider.pin_python_admission_at_prepared_boundary` is the
