@@ -48,7 +48,7 @@ def test_ready_child_context_has_exact_plan_preserves_root_and_performs_no_write
     assert value.ledger.episode_result(request.episode_id) is None
 
 
-def test_ready_child_context_preserves_cancellation_and_expired_deadline_read_only(tmp_path, monkeypatch):
+def test_ready_child_context_preserves_cancellation_and_deadline_binding_read_only(tmp_path, monkeypatch):
     """Recovery input inspection never turns cancellation/deadline into launch authority."""
     value, supplier, controller, head, request, memory, entry = _case(tmp_path, monkeypatch)
     cancelled = lambda: True
