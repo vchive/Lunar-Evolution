@@ -2,15 +2,17 @@
 
 ## Current snapshot — 2026-10-13
 
-以远程 GitHub 当前状态为准：`main=00cb39d`（PR97 merge commit `51f0fd6` 之后的 broker
+以远程 GitHub 当前状态为准：`main=a952403`（PR97 merge commit `51f0fd6` 之后的 broker
 snapshot 测试同步）。PR89、PR91、PR92、PR93、PR94、PR95、PR96 和 PR97 已合入；PR97
 补齐 provider-free 多 episode child context 选择，broker snapshot 的测试同步已在
-`00cb39d`。PR97 合入后的 main CI run `38420669326` 因后续 push 被取消；`00cb39d` 的
-新 main CI run `38422229880` 当前处于排队，不能把它写成已通过。
+`00cb39d`。PR97 合入后的 main CI run `38420669326` 因后续 push 被取消；其后续
+`00cb39d` 的 run `38422229880` 也因本轮继续 push 被取消，`a952403` 的新 main CI
+需要以 GitHub 最终结果为准，不能提前写成已通过。
 
 当前 P0 仍是把已验证的 child proof 从只读 preview 接到 controller 持锁下的
 gateway → scheduler → store/admission/native claim 前置流程；ready entry 继续 fail-closed，
-直到完整证据链和取消/截止时间/恢复回归通过。README 只展示当前可用能力和这条边界，
+直到完整证据链和取消/截止时间/恢复回归通过。本轮已补 scheduler preclaim 的只读复验
+以及 BRS durable resume matrix，但仍未创建 native claim 或执行 producer。README 只展示当前可用能力和这条边界，
 不把 preview 或 fixture score 宣称为真实 producer runtime。
 
 已完成的只读阶段让每个 episode 只能采用自己的 request、memory、launch、sidecar 和
