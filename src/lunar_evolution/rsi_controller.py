@@ -996,6 +996,7 @@ class RSILearningController:
         generation_revalidate_before_dispatch: bool = False,
         producer_sidecar: Any | None = None,
         producer_workspace: str | Path | None = None,
+        producer_stager: Any | None = None,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -1025,6 +1026,17 @@ class RSILearningController:
             raise RSILearningError("rsi_producer_workspace_required")
         self.producer_sidecar = producer_sidecar
         self.producer_workspace = Path(producer_workspace).expanduser() if producer_workspace is not None else None
+        from .rsi_producer_launch import PythonProducerEpisodeStager
+
+        if producer_stager is not None and (
+            type(producer_stager) is not PythonProducerEpisodeStager or ledger is None
+            or producer_sidecar is not producer_stager.config.root_sidecar
+            or self.producer_workspace is None
+            or self.producer_workspace.absolute() != producer_stager.config.workspace
+        ):
+            raise RSILearningError("rsi_producer_episode_controller_configuration_invalid")
+        self.producer_stager = producer_stager
+        self._producer_staging_permit = None
         self._python_admission_flow_local = local()
         self._python_admission_brs_local = local()
         self._python_admission_brs_wave: _PythonAdmissionBRSWave | None = None
@@ -1173,6 +1185,10 @@ class RSILearningController:
         with self._python_admission_brs_observations():
             self._validate_original_producer_checkpoint(run_id, state)
             self._validate_python_admission_references(run_id, state)
+            if self.ledger is not None:
+                record = self.ledger.get_run(run_id)
+                if record is not None:
+                    self._validate_producer_staging(record, state)
 
     def _validate_run_checkpoint_producer_binding(
         self, record: RSIRecord, state: Mapping[str, Any] | None,
@@ -1180,6 +1196,18 @@ class RSILearningController:
         with self._python_admission_brs_observations():
             self._validate_original_run_checkpoint_producer_binding(record, state)
             self._validate_python_admission_references(record.logical_id, state)
+            self._validate_producer_staging(record, state)
+
+    def _validate_producer_staging(self, record: RSIRecord, state: Mapping[str, Any] | None) -> None:
+        expected = self.producer_stager.policy() if self.producer_stager is not None else None
+        if record.payload.get("producer_staging_policy") != expected:
+            raise RSILearningError("rsi_producer_episode_original_mode_mismatch")
+        if self.producer_stager is None:
+            if state is not None and ("producer_staging_policy" in state or "producer_episode_staging" in state):
+                raise RSILearningError("rsi_producer_episode_original_mode_mismatch")
+            return
+        if state is not None:
+            self.producer_stager.validate_state(self, state)
 
     def _python_admission_inputs(self, native_plan: object, prepared_journal: object, expected_anchor_sha256: object):
         """Reparse exact caller DTOs before acquiring locks or reading evidence."""
@@ -2615,6 +2643,8 @@ class RSILearningController:
         """Build one complete identity contract for a new or resumed controller run."""
 
         solver_settings: dict[str, Any] = {}
+        if self.producer_stager is not None:
+            solver_settings["producer_staging_policy"] = self.producer_stager.policy()
         if self.memory_admission_gate is not None:
             solver_settings["memory_admission_gate_fingerprint"] = _component_digest(self.memory_admission_gate, name="memory_admission_gate")
         if self.generation_regression_tasks:
@@ -2737,6 +2767,8 @@ class RSILearningController:
             # the first controller checkpoint: recovery must never infer provider-free mode
             # from the absence of that checkpoint.
             payload["producer_checkpoint_binding"] = dict(producer_checkpoint_binding)
+        if self.producer_stager is not None:
+            payload["producer_staging_policy"] = self.producer_stager.policy()
         curriculum_state = self._failure_curriculum_state()
         if curriculum_state is not None:
             payload["curriculum_state"] = curriculum_state
@@ -3153,13 +3185,20 @@ class RSILearningController:
             raise RSILearningError("rsi_resume_checkpoint_corrupt") from exc
         return ordered(targets), ordered(practices)
 
-    def _save_flow(self, record: RSIRecord | None, state: dict[str, Any]) -> str | None:
+    def _save_flow(
+        self, record: RSIRecord | None, state: dict[str, Any], *,
+        expected_checkpoint_sha256: str | None = None,
+    ) -> str | None:
         """Publish the whole recovery boundary before permitting the next side effect."""
         self._sync_curriculum_checkpoint(state)
         if self.ledger is None or record is None:
             return None
         self._validate_run_checkpoint_producer_binding(record, state)
         previous = self.ledger.controller_checkpoint(record.logical_id)
+        if expected_checkpoint_sha256 is not None and (
+            previous is None or previous[0] != expected_checkpoint_sha256
+        ):
+            raise RSILearningError("rsi_producer_episode_staging_checkpoint_conflict")
         wave = self._python_admission_brs_wave
         if wave is not None:
             if (not wave.active or wave.controller is not self or state is not wave.state
@@ -3174,7 +3213,7 @@ class RSILearningController:
             expected_head = wave.checkpoint_sha256
         else:
             expected_head = previous[0] if previous else None
-        if previous is not None and wave is None:
+        if previous is not None and wave is None and expected_checkpoint_sha256 is None:
             from .rsi_parent_budget import ParentRunBudget
 
             ParentRunBudget.synchronize(state, previous[1])
@@ -3211,6 +3250,9 @@ class RSILearningController:
         )
         if producer_checkpoint is not None:
             state["producer_checkpoint_binding"] = dict(producer_checkpoint)
+        if self.producer_stager is not None:
+            state["producer_staging_policy"] = self.producer_stager.policy()
+            state["producer_episode_staging"] = {}
         self._sync_curriculum_checkpoint(state)
         return state
 
@@ -3230,9 +3272,18 @@ class RSILearningController:
             checkpoint_episode_id=state.get("current_episode_id"),
         )
 
-    def _finish_flow(self, record: RSIRecord | None, state: dict[str, Any], status: str) -> LearningRunResult:
+    def _finish_flow(
+        self, record: RSIRecord | None, state: dict[str, Any], status: str, *,
+        expected_checkpoint_sha256: str | None = None,
+    ) -> LearningRunResult:
         state.update(status=status, phase="terminal")
-        self._save_flow(record, state)
+        # Keep the historical two-argument override surface usable for callers
+        # that instrument `_save_flow`; the CAS keyword is only needed for the
+        # staging uncertainty path.
+        if expected_checkpoint_sha256 is None:
+            self._save_flow(record, state)
+        else:
+            self._save_flow(record, state, expected_checkpoint_sha256=expected_checkpoint_sha256)
         result = self._flow_result(state)
         if record is not None and self.ledger is not None:
             latest = self.ledger.get_run(record.logical_id)
@@ -3250,6 +3301,8 @@ class RSILearningController:
         # Recheck the retained producer proof before idempotent intent reuse or any
         # budget reservation/checkpoint write. A sidecar may drift between episodes.
         self._validate_producer_checkpoint(state["run_id"], state)
+        if self.producer_stager is not None:
+            self.producer_stager.pure_preflight(state, episode, request, self.snapshot)
         key = episode.episode_id
         expected = {"episode": episode.to_record_dict(), "request": request.to_dict()}
         if key in state["intents"]:
@@ -3285,6 +3338,8 @@ class RSILearningController:
         intent = state["intents"][episode_id]
         episode = PracticeEpisode.from_dict(intent["episode"])
         request = SolverRequest.from_dict(intent["request"])
+        if self.producer_stager is not None:
+            self._stage_producer_episode(state, episode, request)
         if self.ledger is not None:
             head = self.ledger.get_episode(episode_id)
             if head is not None:
@@ -3329,6 +3384,65 @@ class RSILearningController:
                 before_dispatch=before_dispatch,
                 before_settlement=before_settlement,
             ).run(episode, request)
+
+    def _stage_producer_episode(self, state: dict, episode: PracticeEpisode, request: SolverRequest) -> None:
+        """Durably stage one DRS intent and refuse dispatch before any running record."""
+        stager = self.producer_stager
+        if state["mode"] != "drs" or not self.ledger.controller_lock_held(state["run_id"]):
+            raise RSILearningError("rsi_producer_episode_owner_required")
+        record = self.ledger.get_run(state["run_id"])
+        entries = state["producer_episode_staging"]
+        previous = entries.get(episode.episode_id)
+        if previous is not None:
+            if previous["state"] != "ready":
+                raise RSILearningError("rsi_producer_episode_staging_unknown")
+            stager.validate_state(self, state)
+            raise RSILearningError("rsi_producer_episode_dispatch_not_accepted")
+        growth = stager.pure_preflight(state, episode, request, self.snapshot)
+        stager.assert_unattempted(self, episode.episode_id)
+        identity = stager.identity(self, state, request, self.snapshot)
+        entries[episode.episode_id] = {
+            "state": "preparing", "identity": identity, "ready": None, "failure_code": None,
+        }
+        state.update(phase="producer_staging", current_episode_id=episode.episode_id)
+        prepared_head = self._save_flow(
+            record, state, expected_checkpoint_sha256=identity["origin_checkpoint_sha256"],
+        )
+        try:
+            self._producer_staging_permit = (stager, state, prepared_head, get_ident())
+            try:
+                ready = stager.stage(
+                    self, state, expected_checkpoint_sha256=prepared_head, request=request, memory=self.snapshot,
+                )
+            finally:
+                self._producer_staging_permit = None
+            from .rsi_producer_launch import MAX_STAGING_CHECKPOINT_BYTES
+
+            prospective = {
+                "state": "ready", "identity": identity, "ready": ready, "failure_code": None,
+            }
+            if len(canonical_json(prospective, maximum=MAX_STAGING_CHECKPOINT_BYTES)) > growth:
+                raise RSILearningError("rsi_producer_episode_ready_capacity_exceeded")
+            if self.ledger.controller_checkpoint(state["run_id"])[0] != prepared_head:
+                raise RSILearningError("rsi_producer_episode_staging_checkpoint_conflict")
+            entries[episode.episode_id] = prospective
+            state.update(phase="producer_staged")
+            self._save_flow(record, state, expected_checkpoint_sha256=prepared_head)
+        except Exception:  # noqa: BLE001 - preserve uncertainty without callback details
+            checkpoint = self.ledger.controller_checkpoint(state["run_id"])
+            if checkpoint is None or checkpoint[0] != prepared_head:
+                raise RSILearningError("rsi_producer_episode_staging_checkpoint_conflict") from None
+            entries[episode.episode_id] = {
+                "state": "unknown", "identity": identity, "ready": None, "failure_code": "staging_failed",
+            }
+            state.update(phase="producer_staging_unknown")
+            try:
+                self._save_flow(record, state, expected_checkpoint_sha256=prepared_head)
+            except Exception:  # noqa: BLE001 - failed persistence grants no new CAS authority
+                raise RSILearningError("rsi_producer_episode_staging_checkpoint_conflict") from None
+            raise RSILearningError("rsi_producer_episode_staging_unknown") from None
+        stager.validate_state(self, state)
+        raise RSILearningError("rsi_producer_episode_dispatch_not_accepted")
 
     def _flow_episode(self, record: RSIRecord | None, state: dict[str, Any],
                       episode: PracticeEpisode, request: SolverRequest) -> EpisodeExecution:
@@ -3586,6 +3700,11 @@ class RSILearningController:
             RSIRunBudget.load(state["budget_state"]).check(now=now)
             return self._drive_drs(record, state) if state["mode"] == "drs" else self._drive_brs(record, state)
         except RSILearningError as exc:
+            if str(exc) == "rsi_producer_episode_staging_unknown":
+                checkpoint = self.ledger.controller_checkpoint(state["run_id"])
+                if checkpoint is None or checkpoint[1] != state:
+                    raise RSILearningError("rsi_producer_episode_staging_checkpoint_conflict") from None
+                return self._finish_flow(record, state, "unknown", expected_checkpoint_sha256=checkpoint[0])
             if str(exc) != "rsi_budget_exhausted":
                 raise
             return self._finish_flow(record, state, "budget_exhausted")
@@ -3638,6 +3757,14 @@ class RSILearningController:
         if record.state == "unknown" and not self.ledger.episode_ids_for_run(run_id):
             raise RSILearningError("rsi_unknown_reconcile_required")
         self._validate_resume_identity(record, observed_fingerprints, budget_policy)
+        if self.producer_stager is not None and entry_checkpoint is not None:
+            entries = entry_checkpoint[1]["producer_episode_staging"]
+            if any(entry["state"] in {"preparing", "unknown"} for entry in entries.values()):
+                raise RSILearningError("rsi_unknown_reconcile_required")
+            if entries:
+                # Entry validation above rereads original ready evidence. It grants
+                # neither dispatch nor another checkpoint/reservation on resume.
+                raise RSILearningError("rsi_producer_episode_dispatch_not_accepted")
         if record.state in {"completed", "failed", "cancelled", "budget_exhausted"}:
             checkpoint = self.ledger.controller_checkpoint(run_id)
             producer_state = checkpoint[1] if checkpoint else None
@@ -3987,6 +4114,8 @@ class RSILearningController:
     def _run_plan(self, *, run_id: str, pins: dict[str, str], plan: dict[str, Any],
                   budget: Mapping[str, Any]) -> LearningRunResult:
         _id(run_id, "run_id")
+        if self.producer_stager is not None and plan["mode"] != "drs":
+            raise RSILearningError("rsi_producer_episode_brs_not_supported")
         _id(pins["solver_id"], "solver_id")
         for key in ("contract_sha256", "evaluator_sha256", "environment_sha256"):
             _digest(pins[key], key)

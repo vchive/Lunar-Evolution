@@ -1,5 +1,28 @@
 # Tasks
 
+## Controller-called per-episode staging continuation
+
+- [x] Specify the staging-only boundary in `per-episode-producer-launch.md`;
+  preserve the original run proof, fixed deadline and existing ledger limits.
+- [x] Call pure capacity preflight before reservation and save an adjacent durable
+  preparing checkpoint before create-only native inputs/launch/child sidecar effects.
+- [x] Bind the single-use transient permit to the original owner/state/CAS; retain
+  full identity, request/memory, plan and independently captured file pins in ready.
+- [x] Preserve preparing/unknown and partial evidence on interruption; refuse
+  read-only resume without restaging, renewing budget or adopting disk pins.
+- [x] Refuse ready dispatch before episode/native claim and reject BRS opt-in
+  before run creation. Keep ordinary unconfigured controller behavior unchanged.
+- [x] Add 19 core and 8 independent controller cases; complete independent
+  source review of the frozen staging/controller implementation.
+- [ ] Complete final-source unified regression, whole Ruff/compileall/diff checks,
+  full CI and independent raw/source/tree audit before merge.
+- [ ] Implement the remaining episode-scoped DRS gateway/admission/store/scheduler
+  authority and exercise target failure → practice success → target retry with
+  distinct child IDs and changed approved memory. Staging ready is not execution.
+- [ ] Freeze and accept the separate real project runtime profile described in
+  `project-runtime-profile.md`; the current candidate startup/codec module set
+  does not establish an OpenEvolve/Shinka runtime closure.
+
 ## Single-episode producer composition continuation
 
 - [x] Specify the single-context boundary in `single-episode-producer-gateway.md`;

@@ -396,6 +396,36 @@ project，也不把外部 score 当成官方评测。重复请求和未知状态
 `--solver-execution native-producer` 时，当前版本在创建 ledger 或读取合同前返回
 `rsi_python_producer_gateway_cli_accepted_runtime_required`，不会转而运行 fixture。
 
+### Controller 调用的逐 episode 准备流程
+
+`lunar_evolution.rsi_producer_launch` 提供显式
+`PythonProducerEpisodeStagingConfig` 和 `PythonProducerEpisodeStager`。
+将 stager 传入 controller 的 `producer_stager`，同时提供它原先保留的
+`producer_sidecar`、workspace、bootstrap artifact 和显式 attestation supplier。
+这是一条本地 Python API；CLI 的 native 选择仍保留上面的拒绝行为。
+
+新 run 在最早的不可变请求中登记准备策略。controller 先保存原 episode intent 和
+预算 reservation，再保存 `preparing`，最后调用原 create-only input/launch/sidecar
+机制。只有该次 controller 调用拥有一次有效的临时许可；重启或再次调用 API
+不能重新取得它。成功后，`ready` 保留原 request/memory、完整 plan/binding 和 sidecar
+字节及 inode pin。每个 checkpoint 保留原 run proof，后续 child proof 单独关联。
+
+该版本限定小型 profile：binding 至多 32 KiB，request/memory 各至多 8 KiB，最多
+8 个 episode，准备状态及预计 ready checkpoint 至多 112 KiB。容量检查在新 reservation
+之前进行；已经持久化的 reservation 继续保留。没有提高原 ledger 的 128 KiB 上限。
+
+准备失败或 ready 未可靠保存时保留 `preparing`/`unknown` 和部分文件。resume 重验
+原证据并进入 `rsi_unknown_reconcile_required`，不重复准备、不增加 reservation、不从
+现有文件采纳新的 pin。checkpoint 冲突或 unknown 写入失败保留原 head，不刷新 CAS。
+
+`ready` 当前仍在创建 running episode 或 native claim 前返回
+`rsi_producer_episode_dispatch_not_accepted`；BRS opt-in 在创建 run 前拒绝。
+完整 DRS 执行还需要让 gateway、controller admission、store 验证和 scheduler 按
+episode 选择原证明；实际 runtime 与 project profile 也未验收。
+`production_admission=false`。规格见
+[`per-episode-producer-launch.md`](../specs/191-python-worker-adapter/per-episode-producer-launch.md)
+和 [`project-runtime-profile.md`](../specs/191-python-worker-adapter/project-runtime-profile.md)。
+
 ## 5. P2：显式 memory 翻译与重复评测置信策略
 
 两个 API 都已从 `lunar_evolution` 导出，目前是独立、显式入口，不会自动替换 controller

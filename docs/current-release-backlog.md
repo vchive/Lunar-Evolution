@@ -27,6 +27,7 @@ Feature190 原始 executable owner 是已记录验收的
 | P1：本地 OpenEvolve/Shinka result exporter | 已实现 `read_python_producer_adapter_export`，复用现有 bounded wrapper/SQLite/source readers 和 common adapter verifier；原始 evidence 与独立 pins 在 source I/O 前验证。规格见 Feature191 `local-python-producer-export.md`。 | PR87 最终来源 CI/审计已通过；不把 producer score 当官方 verdict，不据此宣称真实 project lifecycle。 |
 | P0：受限构建执行机制 | 独立 `run_pinned_build` 接口执行另行 pinned recipe 的 configure/freeze/compile/link，保留 bounded logs、输出 pins 和失败记录；原 mock-only API 保持兼容。 | 本轮最终来源 CI/审计仍待完成。真实 source/signature/toolchain 和 CPython executable recipe 仍未冻结；工具执行完成不等于静态 image 或 installation 验收。 |
 | P1：单 episode producer 组合 | `PythonProducerRSISolverGateway` 复用原 Python plan/input gate、native scheduler/claim/receipt 和 prepared handoff，要求同一 ledger、原 producer identity 与 controller proof。CLI native opt-in 在缺配置时前置拒绝。 | 本轮最终来源 CI/审计仍待完成。一个预先 staged context 只绑定一个 request/memory/launch；完整 DRS/BRS CLI 需要逐 episode 接线，不得直接复用为多 episode campaign。 |
+| P0：controller 调用的逐 episode durable staging | 已开发 preparing → ready/unknown、create-only child input/launch/sidecar、一次临时 owner/CAS permit、原 request/memory/文件 pins 关联及只读恢复拒绝。规格见 Feature191 `per-episode-producer-launch.md`。 | 本轮最终来源统一回归、CI/独审待完成。ready 在 running episode/native claim 前拒绝 dispatch；完整 DRS child gateway/admission/store/scheduler 接线仍未完成，BRS 前置拒绝。 |
 
 以上开发项完成后仍不启用 production runtime。`rsi run` / `rsi resume` 的
 OpenEvolve/Shinka 选项当前仍明确输出 `solver_execution=provider_free_fixture`；
@@ -44,6 +45,9 @@ OpenEvolve/Shinka 选项当前仍明确输出 `solver_execution=provider_free_fi
 | Feature191 P1、Feature193 F06、Feature195：真实本地 producer 与 RSI CLI | accepted runtime 下的 OpenEvolve/Shinka lifecycle/export、生产用 opt-in CLI 路径和实际 project/Linux acceptance。 | producer-backed 路径使用已有 native scheduler/claim/receipt mapper，不落到 fixture gateway；原 request/memory/result/evaluation/publication 归属及取消恢复通过独立验收。真实 campaign 另保留其原始 receipts 与运行授权。 |
 
 本轮未执行这些真实依赖项，未运行 CPython/toolchain、solver/model/evaluator 或 campaign。
+真实项目 source/dependencies、受控入口、broker/result export 与 acceptance 的设计边界见
+Feature191 `project-runtime-profile.md`；它是尚未验收的设计，不能由当前 candidate
+startup/codec 冻结模块列表推导实际 SDK 可用性。
 
 ## P2：明确后置
 
