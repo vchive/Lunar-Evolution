@@ -2,12 +2,11 @@
 
 ## Current snapshot — 2026-10-13
 
-以远程 GitHub 当前状态为准：`main=292abdb`（PR91 merge commit）。PR89 已合入；PR91
-也已合入并包含 store-side staged child producer proof resolver。当前 PR92（README）、PR93
-（controller admission 绑定 staged child proof）和 PR94（episode-scoped Python scheduler
-context）处于 open/stacked 状态，依次构成文档 → child-proof admission → scheduler context
-的集成链。若本地 checkout 仍显示 `d38bab1`，请先 fetch `origin/main`；它是 PR91 合入前的
-旧 main 快照。
+以远程 GitHub 当前状态为准：`main=e43e0fe`（PR92 merge commit）。PR89、PR91 和 README PR92 已合入；PR91
+包含 store-side staged child producer proof resolver。当前 PR93（controller admission 绑定
+staged child proof）和 PR94（episode-scoped Python scheduler context）仍处于 open/stacked
+状态，依次构成 child-proof admission → scheduler context 的集成链。若本地 checkout 仍显示
+`d38bab1`，请先 fetch `origin/main`；它是 PR91 合入前的旧 main 快照。
 
 下一项 P0 是把已经验证的 child proof 以只读方式接入
 `controller → gateway → scheduler → store/admission/native claim`：每个 episode 只能采用
