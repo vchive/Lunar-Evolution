@@ -1010,6 +1010,19 @@ def test_invalid_parent_deadline_fails_before_attestation_consumption(tmp_path: 
     assert not (tmp_path / "evolution/producer-batches/journal-001/attestation-consumption.json").exists()
 
 
+def test_expired_parent_deadline_refuses_startup_before_claim_or_spawn(tmp_path: Path):
+    producer_root, intent, attestation = _fixture(tmp_path)
+    with pytest.raises(ProducerProcessError, match="wall_timeout"):
+        run_producer_process(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            parent_deadline=99.0, monotonic=lambda: 100.0,
+            popen_factory=lambda *args, **kwargs: pytest.fail("expired parent must not spawn"),
+        )
+    batch = tmp_path / "evolution/producer-batches/journal-001"
+    assert not (batch / "attestation-consumption.json").exists()
+    assert not (tmp_path / "evolution/producer-nonces").exists()
+
+
 @pytest.mark.parametrize(
     ("callback", "code"),
     [
