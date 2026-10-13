@@ -961,7 +961,7 @@ def _preflight_python_binding(
         if type(binding) is not PythonProducerBinding:
             _raise(SHINKA_BINDING_MISMATCH)
         bound = parse_python_producer_binding(binding.to_json())
-        if bound.producer_id != producer_id:
+        if bound.producer_id != SHINKA_PRODUCER_ID or producer_id != bound.producer_id:
             _raise(SHINKA_BINDING_MISMATCH)
         if bound.producer_fingerprint != producer_fingerprint:
             _raise(SHINKA_BINDING_MISMATCH)

@@ -154,10 +154,11 @@ def test_shinka_bound_contract_drift_is_rejected_before_results_root_io(
     assert caught.value.code == SHINKA_BINDING_MISMATCH
 
 
+@pytest.mark.parametrize("bound_producer", ["shinka", "openevolve"])
 def test_shinka_bound_producer_id_drift_is_rejected_before_results_root_io(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bound_producer: str,
 ) -> None:
-    binding, _terminal, _observation, _result = _supported_chain(tmp_path, producer="shinka")
+    binding, _terminal, _observation, _result = _supported_chain(tmp_path, producer=bound_producer)
     monkeypatch.setattr(
         shinka_module,
         "_root",
