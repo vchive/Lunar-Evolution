@@ -185,7 +185,7 @@ def test_controller_bridge_preclaim_refuses_expired_child_before_claim(tmp_path,
     monkeypatch.setattr(native_inputs.time, "time", lambda: 10**12)
     before = _inventory(value.root)
     with value.ledger.controller_lock(value.binding.run_id), pytest.raises(
-        PythonProducerControllerBridgeError, match="gateway_plan_invalid",
+        PythonProducerControllerBridgeError, match="evidence_invalid",
     ):
         resolve_python_producer_controller_child_preview(
             controller, run_id=value.binding.run_id, episode_id=state["current_episode_id"],
