@@ -1,0 +1,114 @@
+# Feature 196 — BRS-2 owner/worker handoff contract
+
+## Status and scope
+
+This is a tracked SDD for the next P1 slice. It freezes the in-process owner/worker
+boundary needed by native BRS before product implementation starts. It is a design
+contract only: no native BRS dispatch is enabled by this feature and no existing
+provider-free DRS/BRS behavior is changed.
+
+The first implementation accepts a fresh BRS wave with `max_workers=1`. The parent
+controller reserves the complete wave once, freezes one root memory snapshot (`M0`),
+and selects one ordinal at a time. A worker may perform the selected child's producer
+work and submit prepared admission evidence. The owning controller thread performs
+all controller, ledger, workspace, admission CAS, and publication mutations.
+
+This slice uses the existing in-process ready/ack channel and existing durable rows.
+It introduces no SQL table, ledger row kind, wire protocol, RPC, scheduler service,
+remote worker, remote evaluator, or production admission. `max_workers>1`, multiple
+native children in one shared workspace, and distributed ownership remain later work.
+
+## Authority model
+
+The **wave owner** is the controller thread that created the fresh run and holds the
+existing controller ownership context. It alone may reserve or settle wave budget,
+create a child staging permit, perform admission CAS, advance the captured head,
+invoke publication-lineage owner operations, save the checkpoint, and close the wave.
+
+The **selected worker** receives a one-shot, in-memory dispatch handoff for one
+`(run_id, wave_id, episode_id, ordinal)`. It may run the selected child's producer
+and evaluator seams, observe its own execution evidence, and submit one prepared
+`BRSAdmissionReady` request through the existing channel. It never receives the parent
+controller lock or a publication-lineage owner object. It never writes the controller
+checkpoint, changes a head, settles another episode, chooses a later ordinal, or
+calls a public DRS mutation API.
+
+Ready/ack has one meaning: it proves the exact prepared admission record was pinned by
+the owner and returns its retained record digest. It does not authorize launch,
+staging, evaluator invocation, publication, memory promotion, C1/P/C2 handling, or
+recovery. An acknowledgement cannot be used as a lineage or parent-owner token.
+
+## Handoff identity and lifetime
+
+The handoff is an ephemeral detached value, not a new persisted schema. Before the
+worker starts, the owner captures and binds:
+
+- run and wave identifiers, selected episode identifier, ordinal, and one-shot lease
+  nonce;
+- canonical request digest and selected intent digest;
+- root memory/checkpoint digest (`M0`), captured current head and payload digest;
+- exact controller, ledger, workspace, sidecar and owner-thread identities;
+- source, policy, evaluator, environment and execution-control fingerprints;
+- fixed `max_workers=1` and the original wave budget reservation.
+
+The worker must present the same canonical handoff and an invocation-scoped worker
+capability. The owner rechecks the handoff, request, current captured head, expected
+state, and source/policy fingerprints at every evidence boundary. A worker or nested
+callback cannot reconstruct authority by reading a checkpoint, a latest state, a
+retained receipt, or a serialized ready message.
+
+The handoff expires when the selected child reaches a durable terminal result,
+unknown/error/cancelled close, owner drift, deadline, or wave close. It cannot be
+replayed for a second episode or reused after acknowledgement. Existing durable
+failure and unknown evidence remains available for read-only recovery; no automatic
+retry or row repair is implied.
+
+## Required call boundary
+
+The planned call sequence is:
+
+1. The owner runs BRS preflight, reserves the whole wave and persists all intents
+   against `M0`; it selects the next ordinal without refreshing sibling requests.
+2. The owner creates the selected child's exact staging/dispatch permit while holding
+   the existing owner context, then releases the controller lock before waiting.
+3. The worker enters its invocation scope with the one-shot handoff, runs only the
+   selected child, and sends the canonical prepared plan/journal/anchor bytes through
+   the existing ready channel.
+4. While any future is running, the owner services ready requests without holding the
+   controller lock, observation mutex, or workspace lock while waiting. It verifies
+   the original wave/request and performs the existing precise admission CAS.
+5. The owner sends the exact acknowledgement digest. The worker revalidates its own
+   durable evidence and returns a result envelope; it cannot mutate lineage.
+6. The owner, on its thread, settles the selected execution, serializes publication
+   against the current head, advances the wave state, and only then selects the next
+   ordinal. Shared-workspace publication is therefore ordinal and owner-serialized.
+7. On close, the owner closes the channel before executor shutdown and wakes every
+   waiter. A racing durable pin remains an obligation; it is never rolled back.
+
+The owner may service a queued ready request while an earlier ordinal future runs,
+but it must not let a later child publish against a stale head. If a head, payload,
+controller, ledger, workspace, sidecar, owner-thread, request, or source fingerprint
+drifts, the request is refused and durable evidence is retained for reconciliation.
+
+## Terminal and refusal semantics
+
+The handoff recognizes `prepared`, `running`, `ready`, `acknowledged`, `completed`,
+`rejected`, `unknown`, `cancelled`, `error`, and `closed` observations. Only the
+owner can make a terminal settlement. `unknown`, timeout, cancellation, owner exit,
+CAS failure, and channel close stop fresh sibling dispatch for the wave unless a
+later recovery contract explicitly permits it. They do not become success, ack,
+publication, or a budget refresh.
+
+A failed ready request invokes no evaluator or publication. A pin followed by ack
+failure retains its durable reference and leaves the old state stale; recovery must
+reload and revalidate that obligation. A second Python admission child must have its
+own original intent, journal, claim, attempt and handoff; the first child's values
+cannot be copied or relaxed to satisfy uniqueness.
+
+## Non-goals
+
+This feature does not enable native BRS, implement multi-child publication, add
+external-worker authentication, distributed/multi-machine ownership, official or
+remote evaluators, OpenEvolve/Shinka campaigns, sealed runtime acceptance, a new
+CLI mode, or a new persistence schema. Those require separate approved SDDs and
+independent acceptance evidence.
