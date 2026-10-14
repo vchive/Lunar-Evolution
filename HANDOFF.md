@@ -1,5 +1,38 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 当前出口：mixed 已通过，PR100 原 CI 失败已修复
+
+当前 main 仍为 PR99 `0cb49ab`。原 PR100 `c73650a` 的 CI `38582309622`
+已结束为 failure：Python 3.13 current-0 的 actor evidence 同字节替换测试未抛异常，
+3.11/3.12 current-0 取消。官方 check-run annotations 已确认两者触及
+`maximum execution time of 6h0m0s`，不是失败联动。原始 log、ZIP、XML 和官方 digest
+均保留，不算接受；回归正在沿同一分片协议从三个 current 分片拆为六个，保留全量覆盖。
+根因是全局 `os.read` hook 在 `pins(bridge)` 的 fresh source fingerprint 读取时提前
+替换了证据，发生在 evidence open 前。修复 `9db1ffd` 仅将 hook 绑定原证据 dev/inode，
+并断言实际触发；生产 reader、fresh source 和 inode gate 保持。76 个 store/verifier
+cases、全仓 Ruff、compileall、diff-check 通过，已正常推送原 PR100 branch。
+新 PR100 CI `38651297182` 已由官方 API 确认排队；其最终接受仍开放。
+
+冻结发布树的 RPP、PRP、RRR 三案全部结束，各 1 pass，耗时分别为 5334.763、
+5329.049、6717.501 秒。独立 stdlib-only 审查核对原 XML、SQLite、checkpoint chain、
+claims/results、预算、archive genesis prefix、lineage、rejection provenance、file/inode
+pins 与 terminal readonly replay，全部通过。报告保留在冻结树 ignored
+`.lunar-evolution/reports/mixed-independent-review-20261014T194936288214Z/review.json`，
+SHA256 `b22c89efafab56e7d7f35e80d651eefc6f445883c17c8f7b0feee54b6f19ec33`。
+原 PID 的 cwd/PYTHONPATH 已核实；没有独立的原启动 `sys.modules` origin receipt，
+此限制继续保留。这些结果不改称后续 parser/fixture 候选的完整验收。
+
+PR103 是独立修复与 parser 联合候选，已包含 PR100 `9db1ffd` 的原 ancestry。
+原 publication fixture 已补 inert evidence digest；parser 只移除构造后的重复验证。
+最终集成 CI、raw/source/tree audit 与合入仍开放。原 PR101 CI 的三版 focused failure
+和后续 current cancellation 保留，不能合入未经修复的 `c75de8c`。
+
+P1 的 PR102 是 detached selected handoff/channel；PR104 是私有 controller owner service，
+尚未接公共 native BRS dispatch。正在补实际 service 正路径和边界测试，既有 owner
+文件的23 cases不等于23个新接线测试。真实 runtime/producer/CLI 继续待验收，P2 后置。
+本轮只使用本地 inert/provider-free fixtures，`production_admission=false`。
+下方旧 pending/running 段落是历史检查点；当前状态以本节和最新官方 head/run 为准。
+
 ## 2026-10-15 PR101 focused CI 修复与性能切片联合候选
 
 PR101 原 `c75de8c` 的 CI `38612673297` 在 Python 3.11/3.13 focused 均暴露同一

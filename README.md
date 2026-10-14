@@ -20,8 +20,8 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
 | 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |
-| 同 workspace 连续 DRS 发布 | 🧪 [PR100](https://github.com/vchive/Lunar-Evolution/pull/100) 待合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终来源完整 CI 和独立审计仍在进行。 |
-| DRS known rejection | 🧪 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101) 草稿 | 已实现拒绝批次的证据、失败结算和只读恢复；原 owner、连续 reconcile 与早期中断用例已通过，混合链及最终 CI/合入待完成。 |
+| 同 workspace 连续 DRS 发布 | 🧪 [PR100](https://github.com/vchive/Lunar-Evolution/pull/100) 待合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；原 CI 的测试竞态已修复，修复后完整 CI 与独立审计待完成。 |
+| DRS known rejection | 🧪 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101) 草稿 | 原 owner、连续 reconcile、早期中断及三组混合链已通过本地验收和原证据审查；[PR103](https://github.com/vchive/Lunar-Evolution/pull/103) 集成修复/parser 后的最终 CI、审计与合入待完成。 |
 | BRS partial-wave resume | 🧪 PR101 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；347 个本地 cases 通过，待最终集成 CI/审计与合入。 |
 | 多 child native BRS | ⏳ 未启用 | 纯 preflight 已开发，[owner/worker SDD](specs/196-brs-owner-worker-handoff/spec.md) 已建立；staging、dispatch、publication 与恢复尚待接线和验收。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
@@ -202,7 +202,7 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已合入 main。当前批次的剩余出口是：
 
 - 完成 PR100 最终来源的完整 CI、原始日志/产物与来源审计，再合入连续 DRS 发布。
-- 完成 PR101 的 known rejection 混合链与恢复批次最终集成验收；同步已接受的 PR100 main 基线后完成自身 CI/审计和合入。
+- known rejection 三组混合链已通过；完成 PR101/PR103 恢复批次最终集成验收，同步已接受的 PR100 main 基线后完成自身 CI/审计和合入。
 
 恢复始终复核原 claim、预算、身份、deadline 与取消门禁；没有原始证据的中断保留 unknown，不启动后继 child。
 

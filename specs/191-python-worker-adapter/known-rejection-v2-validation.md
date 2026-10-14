@@ -1,5 +1,23 @@
 # Known rejection v2 validation
 
+## Mixed acceptance closed on frozen source — 2026-10-15
+
+RPP, PRP and RRR each completed with one pass and zero failures/errors/skips:
+5334.763s, 5329.049s and 6717.501s respectively. The independent stdlib-only
+review verified the original XML, SQLite/checkpoint chain, claims/results,
+budget, genesis archive prefix, lineage, rejection provenance, file/inode pins
+and terminal read-only replay. Its report is retained in the frozen release
+tree under ignored `mixed-independent-review-20261014T194936288214Z/review.json`,
+SHA256 `b22c89efafab56e7d7f35e80d651eefc6f445883c17c8f7b0feee54b6f19ec33`.
+
+This closes the original mixed local exit, not the final candidate CI. The frozen
+source retains its own source maps and process cwd/PYTHONPATH observations; there
+is no dedicated original-launch `sys.modules` origin receipt. The later fixture
+and parser candidate is separate. Original PR100 `c73650a` CI failed its actor
+evidence race fixture; the test-only `9db1ffd` repair is now part of the candidate.
+Final integrated-source CI and independent raw/source/tree audit remain required
+before merge. The checkpoints below describe their historical observation times.
+
 ## PR101 publication fixture correction — 2026-10-15
 
 The `c75de8c` CI run `38612673297` failed the two parameterizations of the
