@@ -1494,21 +1494,44 @@ class RSILedger:
 
     def claim_native_episode(
         self, request: SolverRequest, *, plan_sha256: str,
+        controller_run_id: str | None = None,
+        expected_controller_checkpoint_sha256: str | None = None,
     ) -> NativeEpisodeClaim:
         """Atomically claim one episode before native launch.
 
         The operation is create-only.  An existing started claim is a recovery gate and
         never causes a second launch; an existing terminal result is replayable only when
         both request and plan digests match exactly.
+
+        The optional controller pins must be supplied together. They require the original
+        controller lock and compare the checkpoint inside the same SQLite transaction as
+        claim creation. This narrowed path refuses every existing claim, including terminal
+        replay, and cannot turn a stale child preview into a fresh claim.
         """
         if not isinstance(request, SolverRequest):
             raise RSILearningError("rsi_native_episode_request_invalid")
+        guarded = controller_run_id is not None or expected_controller_checkpoint_sha256 is not None
+        if guarded:
+            if controller_run_id is None or expected_controller_checkpoint_sha256 is None:
+                raise RSILearningError("rsi_native_episode_controller_pins_invalid")
+            controller_run_id = _id(controller_run_id, name="native_controller_run_id")
+            expected_controller_checkpoint_sha256 = _digest(
+                expected_controller_checkpoint_sha256, name="native_controller_checkpoint_sha256",
+            )
+            self._assert_controller_lock(controller_run_id)
         plan_sha256 = self._native_claim_plan(plan_sha256)
         request_sha256 = request.digest()
         claim_sha256 = self._native_claim_digest(request.episode_id, request_sha256, plan_sha256)
         created_at = utc_now()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if guarded:
+                self._assert_controller_lock(controller_run_id)
+                history = self._controller_checkpoint_history_tx(connection, controller_run_id)
+                if not history or history[-1][0] != expected_controller_checkpoint_sha256:
+                    raise RSILearningError("rsi_native_episode_controller_checkpoint_conflict")
+                if self._head(connection, request.episode_id) is not None:
+                    raise RSILearningError("rsi_native_episode_already_started")
             row = connection.execute(
                 "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
                 (request.episode_id,),
@@ -1516,6 +1539,8 @@ class RSILedger:
             if row is not None:
                 if row["request_sha256"] != request_sha256 or row["plan_sha256"] != plan_sha256:
                     raise RSILearningError("rsi_native_episode_claim_binding_drift")
+                if guarded:
+                    raise RSILearningError("rsi_native_episode_claim_exists")
                 status = self._native_result_status(connection, request.episode_id, request_sha256)
                 claim = self._native_claim_row(row, status=status or "started")
                 if status is None:
@@ -1523,6 +1548,8 @@ class RSILedger:
                 return claim
             if self._native_result_status(connection, request.episode_id, request_sha256) is not None:
                 raise RSILearningError("rsi_native_episode_unclaimed_result")
+            if guarded:
+                self._assert_controller_lock(controller_run_id)
             connection.execute(
                 "INSERT INTO rsi_native_episode_claims VALUES (?, ?, ?, ?, ?)",
                 (request.episode_id, request_sha256, plan_sha256, claim_sha256, created_at),
