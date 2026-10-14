@@ -280,6 +280,9 @@ def retained_publication_evidence_bytes(state: object) -> int:
     if (type(wire) is not dict or type(wire.get("batches")) is not list
             or len(wire["batches"]) > MAX_LINEAGE_BATCHES):
         _fail("state_invalid")
+    v2 = wire.get("protocol") == "lunar-rsi-multi-episode-publication-v2"
+    if v2 and state.get("producer_known_rejection") is not True:
+        _fail("mode_required")
     for batch in wire["batches"]:
         if type(batch) is not dict or type(batch.get("snapshots")) is not dict:
             _fail("state_invalid")
@@ -294,6 +297,29 @@ def retained_publication_evidence_bytes(state: object) -> int:
             if pin.name != name + ".snapshot":
                 _fail("file_pin_invalid")
             total += pin.size
+            if total > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+                _fail("aggregate_exhausted")
+        if v2:
+            from .rsi_native_rejection import NativeRSIRejectionFilePin
+
+            for field, expected_name in (("before_file_pin", "before-v2.json"), ("staged_file_pin", "staged.json"),
+                                          ("terminal_file_pin", "terminal.json"), ("rejected_file_pin", "rejected.json")):
+                if field not in batch:
+                    continue
+                pin = LineageSnapshotPin.from_dict(batch[field])
+                if pin.name != expected_name:
+                    _fail("file_pin_invalid")
+                total += pin.size
+            evidence = batch.get("evidence_pins")
+            if type(evidence) is not dict:
+                _fail("state_invalid")
+            for raw_pin in evidence.values():
+                total += LineageSnapshotPin.from_dict(raw_pin).size
+            reference = batch.get("rejection_provenance")
+            if reference is not None:
+                if type(reference) is not dict or set(reference) != {"provenance_sha256", "file_pin"}:
+                    _fail("file_pin_invalid")
+                total += NativeRSIRejectionFilePin.from_dict(reference["file_pin"]).size
             if total > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
                 _fail("aggregate_exhausted")
     return total

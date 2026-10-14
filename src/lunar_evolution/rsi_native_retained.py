@@ -170,11 +170,15 @@ def _inspect(
     if lineage_inspection is None:
         publication = resume_producer_bundle_publication(root, recovery.output.admission_plan, journal)
     else:
-        from .rsi_publication_lineage import RSIPublicationLineageInspection
+        from .rsi_publication_lineage import (
+            RSIPublicationLineageInspection,
+            RSIPublicationLineageV2Inspection,
+        )
 
-        if type(lineage_inspection) is not RSIPublicationLineageInspection:
+        inspection_type = type(lineage_inspection)
+        if inspection_type not in {RSIPublicationLineageInspection, RSIPublicationLineageV2Inspection}:
             _fail("lineage_inspection_invalid")
-        publication = RSIPublicationLineageInspection.inspect(
+        publication = inspection_type.inspect(
             lineage_inspection, root, recovery.output.admission_plan, journal,
         )
     if (publication.status != "published" or publication.journal_sha256 != expected_journal_sha256
@@ -265,9 +269,12 @@ def read_native_retained_candidate(
             or type(require_broker) is not bool):
         _fail("input_invalid")
     if lineage_inspection is not None:
-        from .rsi_publication_lineage import RSIPublicationLineageInspection
+        from .rsi_publication_lineage import (
+            RSIPublicationLineageInspection,
+            RSIPublicationLineageV2Inspection,
+        )
 
-        if type(lineage_inspection) is not RSIPublicationLineageInspection:
+        if type(lineage_inspection) not in {RSIPublicationLineageInspection, RSIPublicationLineageV2Inspection}:
             _fail("lineage_inspection_invalid")
     try:
         root = files.absolute_path(workspace)

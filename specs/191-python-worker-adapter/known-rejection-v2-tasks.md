@@ -1,7 +1,22 @@
 # Known rejection v2: implementation tasks and ownership
 
-Status: helpers implemented and locally reviewed; integration/product acceptance pending, 2026-10-14. Source checked: `a62ac647e692c69f12f9df19d9bc6a20f792c738`.
+Status: helpers and controller integration implemented; original product acceptance pending, 2026-10-15. Initial reference source: `a62ac647e692c69f12f9df19d9bc6a20f792c738`; later PR100 test fixes are integrated independently.
 Read sibling `known-rejection-v2.md` first. All development uses a separate worktree rooted at the stable PR100 product candidate. Integration development may proceed after helper review; final integration acceptance and release require the accepted PR100 main baseline. The PR100 checkout remains frozen.
+
+## Current execution status — 2026-10-15
+
+| Tasks | Implementation / validation state |
+| --- | --- |
+| V2-00, A1/A2, B1/B2/B3 | Implemented and cross-reviewed; original 290-case helper checkpoint retained below. |
+| V2-I1 through I8 | Implemented; final-source 476-case joint focused plus two nested DTO refusal cases pass, zero failures/errors/skips. Original owner/controller acceptance is still running. |
+| V2-T1/T2/T3 | Three original RPP/PRP/RRR fixtures implemented and executing concurrently in independent local workspaces; no result claimed yet. |
+| V2-T4 | Maximum-cardinality capacity gate covered by fast tests; original controller multicandidate acceptance remains open. |
+| V2-T5 | Original C2 and four successive reconcile crash boundaries executing. Earlier native/C1/orphan interruption acceptance remains open. |
+| V2-R1/R2 | Final local inventory/evidence review, accepted PR100 main synchronization, complete CI/artifact audit and release remain open. |
+
+The current source freeze and separate raw XML identities are recorded in
+`known-rejection-v2-validation.md`. Earlier failed development runs are retained;
+neither unit seams nor pending tests close the product acceptance tasks.
 
 ## Fast independent helper streams
 

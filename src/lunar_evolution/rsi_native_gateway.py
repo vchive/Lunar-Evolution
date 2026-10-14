@@ -33,6 +33,11 @@ from .rsi_native_candidate import (
 )
 from .rsi_native_failure import NativeRSIFailureEvidence, map_native_failure_to_solver_result
 from .rsi_native_plan import NativeRSIExecutionPlan
+from .rsi_native_rejection import (
+    NativeRSIRejectionEvidence,
+    NativeRSIRejectionFilePin,
+    map_native_rejection_to_solver_result,
+)
 from .rsi_store import NativeEpisodeClaim, RSILedger
 
 
@@ -82,7 +87,10 @@ class NativeRSIExecutionConfig:
 
     ledger: RSILedger
     plan_factory: Callable[[SolverRequest, MemorySnapshot], NativeRSIExecutionPlan]
-    receipt_provider: Callable[[SolverRequest, NativeRSIExecutionPlan], NativeRSIReceiptBundle | NativeRSIFailureEvidence]
+    receipt_provider: Callable[
+        [SolverRequest, NativeRSIExecutionPlan],
+        NativeRSIReceiptBundle | NativeRSIFailureEvidence | NativeRSIRejectionEvidence,
+    ]
 
     def __post_init__(self) -> None:
         if not isinstance(self.ledger, RSILedger):
@@ -227,7 +235,15 @@ class NativeRSISolverGateway:
         self._assert_ledger()
         if saved is None or saved[0] != request:
             raise NativeRSISolverGatewayError("rsi_native_gateway_replay_missing")
-        recovery = getattr(self.config.receipt_provider, "recover", None)
+        if saved[1].terminal_reason == "native_all_rejected":
+            from .rsi_native_scheduler import NativeRSISchedulerProvider
+
+            provider = self.config.receipt_provider
+            if type(provider) is not NativeRSISchedulerProvider:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_reader_required")
+            recovery = lambda req, supplied_plan: NativeRSISchedulerProvider.recover(provider, req, supplied_plan)
+        else:
+            recovery = getattr(self.config.receipt_provider, "recover", None)
         if saved[1].status in {"failed", "cancelled"} and not callable(recovery):
             raise NativeRSISolverGatewayError("rsi_native_gateway_failure_reader_required")
         if callable(recovery):
@@ -243,11 +259,33 @@ class NativeRSISolverGateway:
 
     def _map_outcome(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
-        evidence: NativeRSIReceiptBundle | NativeRSIFailureEvidence,
+        evidence: NativeRSIReceiptBundle | NativeRSIFailureEvidence | NativeRSIRejectionEvidence,
         *, expected_claim: NativeEpisodeClaim | None = None,
     ) -> SolverResult:
         if isinstance(evidence, NativeRSIReceiptBundle):
             return self._map_bundle(request, plan, evidence)
+        if type(evidence) is NativeRSIRejectionEvidence:
+            # Pure shape/association checks precede any ledger I/O. File parsing
+            # alone grants no native authority; the provider must verify its C2 pin.
+            result = map_native_rejection_to_solver_result(request, plan, evidence)
+            from .rsi_native_scheduler import NativeRSISchedulerProvider
+
+            provider = self.config.receipt_provider
+            if type(provider) is not NativeRSISchedulerProvider:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_reader_required")
+            self._assert_ledger()
+            NativeRSISchedulerProvider.assert_rejection_ledger(provider, self.ledger)
+            self._assert_ledger()
+            if dict(evidence.ledger_identity) != self._ledger_identity:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_ledger_mismatch")
+            if expected_claim is not None and replace(expected_claim, status="started") != evidence.claim:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_claim_mismatch")
+            claim = self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+            self._assert_ledger()
+            if (claim is None or claim.status not in {"started", "failed"}
+                    or replace(claim, status="started") != evidence.claim):
+                raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_claim_mismatch")
+            return result
         if not isinstance(evidence, NativeRSIFailureEvidence):
             raise NativeRSISolverGatewayError("rsi_native_gateway_receipts_invalid")
         self._assert_ledger()
@@ -335,6 +373,114 @@ class NativeRSISolverGateway:
         self._assert_ledger()
         if self._replay(request, plan) != result:
             raise NativeRSISolverGatewayError("rsi_native_gateway_failure_result_conflict")
+        return result
+
+    def _read_rejection(
+        self, request: SolverRequest, memory: MemorySnapshot, *,
+        expected_checkpoint_sha256: str, expected_episode_record_sha256: str,
+        expected_claim_sha256: str, expected_provenance_file_pin: NativeRSIRejectionFilePin,
+    ) -> tuple[NativeRSIExecutionPlan, SolverResult, NativeEpisodeClaim]:
+        """Observe the original C2 evidence; a started claim never uses ordinary replay."""
+        for digest in (expected_checkpoint_sha256, expected_episode_record_sha256, expected_claim_sha256):
+            if (type(digest) is not str or len(digest) != 64
+                    or any(char not in "0123456789abcdef" for char in digest)):
+                raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_pin_invalid")
+        if type(expected_provenance_file_pin) is not NativeRSIRejectionFilePin:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_pin_invalid")
+        pin = NativeRSIRejectionFilePin.from_dict(expected_provenance_file_pin.to_dict())
+        config = self.config
+        from .rsi_native_scheduler import NativeRSISchedulerProvider
+
+        provider = config.receipt_provider
+        if type(provider) is not NativeRSISchedulerProvider:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_reader_required")
+        plan = self._plan(request, memory)
+        if self.config is not config:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_configuration_changed")
+        claim = self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        self._assert_ledger()
+        if (claim is None or claim.claim_sha256 != expected_claim_sha256
+                or claim.status not in {"started", "failed"}):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_claim_mismatch")
+        if claim.status == "started":
+            from .rsi_publication_lineage import StartedRSIRejectionInspection
+
+            inspection = StartedRSIRejectionInspection(
+                provider._python_admission_replay_controller, request=request, memory=memory,
+                native_plan=plan, expected_checkpoint_sha256=expected_checkpoint_sha256,
+                expected_episode_record_sha256=expected_episode_record_sha256,
+                expected_claim_sha256=expected_claim_sha256, expected_provenance_file_pin=pin,
+            )
+
+            def read():
+                return NativeRSISchedulerProvider.recover_rejection(provider, request, plan, inspection=inspection)
+        else:
+            def read():
+                return NativeRSISchedulerProvider.recover(provider, request, plan)
+
+        evidence = read()
+        self._assert_ledger()
+        if (self.config is not config or type(evidence) is not NativeRSIRejectionEvidence
+                or evidence.provenance_file_pin != pin or evidence.claim_sha256 != expected_claim_sha256):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_proof_mismatch")
+        result = self._map_outcome(request, plan, evidence, expected_claim=claim)
+        saved = self.ledger.episode_result(request.episode_id)
+        self._assert_ledger()
+        if saved is not None and saved != (request, result):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_result_conflict")
+        repeated = read()
+        self._assert_ledger()
+        if (self.config is not config or type(repeated) is not NativeRSIRejectionEvidence
+                or repeated.to_dict() != evidence.to_dict() or repeated.provenance_file_pin != pin
+                or repeated.provenance_sha256 != evidence.provenance_sha256
+                or self._map_outcome(request, plan, repeated, expected_claim=claim) != result):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_proof_changed")
+        return plan, result, claim
+
+    def inspect_rejection(
+        self, request: SolverRequest, memory: MemorySnapshot, *,
+        expected_checkpoint_sha256: str, expected_episode_record_sha256: str,
+        expected_claim_sha256: str, expected_provenance_file_pin: NativeRSIRejectionFilePin,
+    ) -> SolverResult:
+        """Read-only evidence validation before the controller reserves reconcile budget."""
+        return self._read_rejection(
+            request, memory, expected_checkpoint_sha256=expected_checkpoint_sha256,
+            expected_episode_record_sha256=expected_episode_record_sha256,
+            expected_claim_sha256=expected_claim_sha256, expected_provenance_file_pin=expected_provenance_file_pin,
+        )[1]
+
+    def restore_rejection(
+        self, request: SolverRequest, memory: MemorySnapshot, *,
+        expected_checkpoint_sha256: str, expected_episode_record_sha256: str,
+        expected_claim_sha256: str, expected_provenance_file_pin: NativeRSIRejectionFilePin,
+        before_publish: Callable[[], None] | None = None,
+    ) -> SolverResult:
+        """Register a verified failed result under its original claim without producer work."""
+        if before_publish is not None and not callable(before_publish):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_guard_invalid")
+        pins = {
+            "expected_checkpoint_sha256": expected_checkpoint_sha256,
+            "expected_episode_record_sha256": expected_episode_record_sha256,
+            "expected_claim_sha256": expected_claim_sha256,
+            "expected_provenance_file_pin": expected_provenance_file_pin,
+        }
+        config = self.config
+        observed = self._read_rejection(request, memory, **pins)
+        self._assert_ledger()
+        if before_publish is not None:
+            before_publish()
+            self._assert_ledger()
+        # The guard cannot make replaced evidence or a changed claim publishable.
+        repeated = self._read_rejection(request, memory, **pins)
+        if self.config is not config or repeated != observed:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_proof_changed")
+        plan, result, claim = repeated
+        self.ledger.publish_native_episode_result(
+            request, plan_sha256=plan.plan_sha256, result=result, expected_claim=claim,
+        )
+        self._assert_ledger()
+        if self._replay(request, plan) != result:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_result_conflict")
         return result
 
     @staticmethod
@@ -492,8 +638,16 @@ class NativeRSISolverGateway:
         self, request: SolverRequest, plan: NativeRSIExecutionPlan, claim: NativeEpisodeClaim,
     ) -> SolverResult:
         """Reuse the original mapper/publication inside a newly acquired attempt stack."""
+        config = self.config
         try:
-            bundle = self.config.receipt_provider(request, plan)
+            bundle = config.receipt_provider(request, plan)
+            if type(bundle) is NativeRSIRejectionEvidence:
+                from .rsi_native_scheduler import NativeRSISchedulerProvider
+
+                if type(config.receipt_provider) is not NativeRSISchedulerProvider:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_reader_required")
+                if self.config is not config:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_configuration_changed")
             self._assert_ledger()
             result = self._map_outcome(request, plan, bundle, expected_claim=claim)
             if isinstance(bundle, NativeRSIFailureEvidence):
@@ -507,7 +661,25 @@ class NativeRSISolverGateway:
                         repeated.provenance_sha256 != bundle.provenance_sha256 or
                         self._map_outcome(request, plan, repeated, expected_claim=claim) != result):
                     raise NativeRSISolverGatewayError("rsi_native_gateway_failure_proof_changed")
-            failure_claim = {"expected_claim": claim} if isinstance(bundle, NativeRSIFailureEvidence) else {}
+            if type(bundle) is NativeRSIRejectionEvidence:
+                if self.config is not config:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_configuration_changed")
+                from .rsi_native_scheduler import NativeRSISchedulerProvider
+
+                if type(config.receipt_provider) is not NativeRSISchedulerProvider:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_reader_required")
+                repeated = NativeRSISchedulerProvider.recover_live_rejection(config.receipt_provider, request, plan)
+                if self.config is not config:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_configuration_changed")
+                self._assert_ledger()
+                if (type(repeated) is not NativeRSIRejectionEvidence
+                        or repeated.to_dict() != bundle.to_dict()
+                        or repeated.provenance_sha256 != bundle.provenance_sha256
+                        or repeated.provenance_file_pin != bundle.provenance_file_pin
+                        or self._map_outcome(request, plan, repeated, expected_claim=claim) != result):
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_rejection_proof_changed")
+            failure_claim = {"expected_claim": claim} if (
+                isinstance(bundle, NativeRSIFailureEvidence) or type(bundle) is NativeRSIRejectionEvidence) else {}
             self.ledger.publish_native_episode_result(
                 request, plan_sha256=plan.plan_sha256, result=result, **failure_claim,
             )

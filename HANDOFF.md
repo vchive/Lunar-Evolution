@@ -1,5 +1,38 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 并行集成：fresh v2 已实现，原始恢复验收中
+
+PR100 的冻结最终 head 为 `c73650afe3cdc9f1dc3c08ec74d8df12a7b75b01`；完整
+CI `38582309622` 和独立 raw/source/tree 审计仍在进行，尚未合入。不要把旧 `a62`
+或 `2e` 的本地三轮成功当作这一最终来源的 CI，也不要修改冻结 checkout。
+
+独立分支 `codex/known-rejection-drs` 已接通 fresh
+`producer_known_rejection=True` 的 controller、owner、scheduler 和 gateway。该模式
+要求原 child execution 与 multi-episode publication 同时开启，只允许 DRS；默认/v1、
+BRS 和生产 CLI 不变。原 all-rejected terminal → C1 → 独立 0400 provenance P →
+C2、单次 unknown evidence 预算、原四项恢复 pins 与严格 checkpoint delta 均已实现。
+恢复只登记原失败结果，不驱动后继 child，不把拒绝视作进程故障或官方成功。
+
+第一轮联合 focused 为 476 个不同 case、零 failure/error/skip，测试期间 787 文件
+source inventory 未变。真实原路径随后发现一处接线错误：child resolver 返回 exact
+`PythonProducerRSISolverGateway`，不能要求其 type 是父类 `NativeRSISolverGateway`。
+已改为原 exact child、非 root、同 ledger，继承 reader 使用原 native class dispatch；
+独立源码复核通过。v2 inspector 也已补 nested DTO extra-field gate，避免在拒绝前调用
+污染的 serializer。早期原 XML 全部保留；archive 断言改为原 genesis 字节比较。
+
+当前冻结的集成来源为 788 文件，map
+`275e3f44385ebdce9ec43f7e585ea21d445043db781f33f1e773f2191e9fc85d`。
+两个真实 owner cases、原 C2 四个连续中断恢复、RPP/PRP/RRR 三个独立三轮流程正在
+并行运行，最终 focused 也在同源重测。尚未据 unit seams、开发失败或未结束的运行关闭
+v2 acceptance；完整中断矩阵、最终 CI/独立审计和接受 PR100 main 后同步仍是出口。
+详见 Feature191 `known-rejection-v2*.md`。ignored reports 保留原 source maps/XML。
+
+多 child BRS 仅有 ignored 最小 SDD 草案，待 v2 DRS 稳定后建立 tracked feature。
+真实 source/toolchain/static build/sealed startup/input consumption、项目 profile/lifecycle
+和 opt-in CLI/Linux 验收仍开放；P2 多机与服务化后置。README 第一轮已随 PR99 发布。
+本轮只跑本地 inert fixtures，不运行真实模型、CPython/toolchain target、campaign、
+WebAgent、远程 evaluator 或公司平台，`production_admission=false`。
+
 ## 2026-10-14 Known rejection v2 并行开发检查点
 
 独立 `codex/known-rejection-drs` 分支补齐 fresh-v2 before/rejected 描述符、原生

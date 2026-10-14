@@ -19,7 +19,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import RLock, get_ident, local
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from .candidate_evaluation_spec import canonical_json
 from .rsi_budget import RSIRunBudget
@@ -47,6 +47,9 @@ from .rsi_learning import (
 from .rsi_store import RSILedger, RSIRecord
 from .rsi_usage import RSIUsageError, UsageReceipt
 from .rsi_usage import UsageLedger as RSIUsageLedger
+
+if TYPE_CHECKING:
+    from .rsi_native_rejection import NativeRSIRejectionFilePin
 
 
 def _digest(value: object, name: str) -> str:
@@ -1006,7 +1009,14 @@ class RSILearningController:
         producer_stager: Any | None = None,
         producer_child_execution: bool = False,
         producer_multi_episode_publication: bool = False,
+        producer_known_rejection: bool = False,
     ) -> None:
+        if (type(producer_known_rejection) is not bool
+                or (producer_known_rejection and (
+                    producer_child_execution is not True or producer_multi_episode_publication is not True))):
+            raise RSILearningError("rsi_producer_known_rejection_configuration_invalid")
+        self.producer_known_rejection = producer_known_rejection
+        self._original_producer_known_rejection = producer_known_rejection
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
         self.curriculum = curriculum or DeterministicCurriculum()
@@ -1251,7 +1261,18 @@ class RSILearningController:
             "controller": _component_digest(RSILearningController._execute_producer_child, name="child_controller"),
         }
 
+    def _producer_known_rejection_mode(self) -> bool:
+        """Check the original fresh-run mode without touching run or workspace files."""
+        flag = self.producer_known_rejection
+        if (type(flag) is not bool or flag is not self._original_producer_known_rejection):
+            raise RSILearningError("rsi_producer_known_rejection_configuration_drift")
+        if flag and (self.producer_child_execution is not True
+                     or self.producer_multi_episode_publication is not True):
+            raise RSILearningError("rsi_producer_known_rejection_configuration_drift")
+        return flag
+
     def _validate_producer_staging(self, record: RSIRecord, state: Mapping[str, Any] | None) -> None:
+        rejection_mode = self._producer_known_rejection_mode()
         execution_policy = self._producer_child_execution_policy()
         from .rsi_publication_lineage import multi_episode_publication_policy
 
@@ -1266,6 +1287,8 @@ class RSILearningController:
                 retained.extend(item.payload for item in history)
             retained.extend(snapshot for _head, snapshot in self.ledger.controller_checkpoint_history(record.logical_id))
         for snapshot in retained:
+            if snapshot.get("producer_known_rejection") is not (True if rejection_mode else None):
+                raise RSILearningError("rsi_producer_known_rejection_original_mode_mismatch")
             if (snapshot.get("producer_child_execution") is not expected_flag
                     or snapshot.get("producer_child_execution_policy") != execution_policy):
                 raise RSILearningError("rsi_producer_child_execution_original_mode_mismatch")
@@ -2790,6 +2813,8 @@ class RSILearningController:
         """Build one complete identity contract for a new or resumed controller run."""
 
         solver_settings: dict[str, Any] = {}
+        if self._producer_known_rejection_mode():
+            solver_settings["producer_known_rejection"] = True
         if self.producer_stager is not None:
             solver_settings["producer_staging_policy"] = self.producer_stager.policy()
         execution_policy = self._producer_child_execution_policy()
@@ -2934,6 +2959,8 @@ class RSILearningController:
         if publication_policy is not None:
             payload["producer_multi_episode_publication"] = True
             payload["producer_multi_episode_publication_policy"] = publication_policy
+        if self._producer_known_rejection_mode():
+            payload["producer_known_rejection"] = True
         curriculum_state = self._failure_curriculum_state()
         if curriculum_state is not None:
             payload["curriculum_state"] = curriculum_state
@@ -3050,6 +3077,77 @@ class RSILearningController:
                 continue
             return snapshot
         raise RSILearningError("rsi_native_replay_memory_snapshot_missing")
+
+    def _validate_native_rejection_reconciliation_checkpoint(
+        self, run_id: str, episode_id: str, *,
+        expected_checkpoint_sha256: str, current_checkpoint_sha256: str,
+    ) -> None:
+        """Observe only the original checkpoint plus our one evidence reservation.
+
+        This checks a controller journal delta, not native evidence or ownership.
+        C1/C2 and the independent file pin still require their separate reader.
+        """
+        if not self._producer_known_rejection_mode() or self.ledger is None:
+            raise RSILearningError("rsi_native_rejection_opt_in_required")
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        _digest(expected_checkpoint_sha256, "checkpoint_sha256")
+        _digest(current_checkpoint_sha256, "checkpoint_sha256")
+        self.gateway._assert_ledger()
+        self.ledger._assert_controller_lock(run_id)
+        current = self.ledger.controller_checkpoint(run_id)
+        if current is None or current[0] != current_checkpoint_sha256:
+            raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+        original = dict(self.ledger.controller_checkpoint_history(run_id)).get(expected_checkpoint_sha256)
+        if original is None or original.get("run_id") != run_id:
+            raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+        if current_checkpoint_sha256 == expected_checkpoint_sha256:
+            if current[1] != original:
+                raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+            self.ledger._assert_controller_lock(run_id)
+            self.gateway._assert_ledger()
+            return
+        state = current[1]
+        reservation = state.get("native_rejection_reconciliation_reservations", {}).get(episode_id)
+        if (type(reservation) is not dict or set(reservation) != {
+                "checkpoint_sha256", "episode_record_sha256", "claim_sha256", "provenance_file_pin"}
+                or reservation["checkpoint_sha256"] != expected_checkpoint_sha256
+                or episode_id in original.get("native_rejection_reconciliation_reservations", {})):
+            raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+        from .rsi_native_rejection import NativeRSIRejectionFilePin
+
+        for field in ("episode_record_sha256", "claim_sha256"):
+            _digest(reservation[field], field)
+        NativeRSIRejectionFilePin.from_dict(reservation["provenance_file_pin"])
+        expected = deepcopy(original)
+        budget = RSIRunBudget.load(expected["budget_state"])
+        budget.reserve_unknown_reconcile_evidence()
+        expected["budget_state"] = budget.to_dict()
+        expected.setdefault("native_rejection_reconciliation_reservations", {})[episode_id] = reservation
+        old_cache, cache = original.get("executions", {}), state.get("executions", {})
+        if (type(old_cache) is not dict or type(cache) is not dict
+                or any(cache.get(key) != value for key, value in old_cache.items())
+                or set(cache) - set(old_cache) - {episode_id}):
+            raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+        if episode_id not in old_cache and episode_id in cache:
+            execution = self._deserialize_execution(cache[episode_id])
+            head = self.ledger.get_episode(episode_id)
+            saved = self.ledger.episode_result(episode_id)
+            if (execution.episode.run_id != run_id or execution.episode.episode_id != episode_id
+                    or execution.result.status != "failed"
+                    or execution.result.terminal_reason != "native_all_rejected"
+                    or head is None or head.state != "failed"
+                    or head.payload != execution.episode.to_record_dict()
+                    or saved != (execution.request, execution.result)):
+                raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+            expected["executions"][episode_id] = cache[episode_id]
+        if state != expected:
+            raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+        repeated = self.ledger.controller_checkpoint(run_id)
+        if repeated != current:
+            raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+        self.ledger._assert_controller_lock(run_id)
+        self.gateway._assert_ledger()
 
     def reconcile_native_failure(
         self, run_id: str, episode_id: str, *, expected_checkpoint_sha256: str,
@@ -3186,6 +3284,154 @@ class RSILearningController:
             settled_head = self.ledger.get_episode(episode_id)
             if settled_head is None or settled_head.payload != execution.episode.to_record_dict():
                 raise RSILearningError("rsi_native_failure_episode_conflict")
+            check_boundary(expected_head=settled_head.record_sha256)
+            state["executions"][episode_id] = self._serialize_execution(execution)
+            self._save_flow(record, state)
+            self.gateway._assert_ledger()
+            return execution
+
+    def reconcile_native_rejection(
+        self, run_id: str, episode_id: str, *, expected_checkpoint_sha256: str,
+        expected_episode_record_sha256: str, expected_claim_sha256: str,
+        expected_provenance_file_pin: NativeRSIRejectionFilePin,
+    ) -> EpisodeExecution:
+        """Settle original C2 rejection evidence without driving a successor or producer."""
+        from .rsi_native_rejection import NativeRSIRejectionFilePin
+
+        if not self._producer_known_rejection_mode():
+            raise RSILearningError("rsi_native_rejection_opt_in_required")
+        if type(expected_provenance_file_pin) is not NativeRSIRejectionFilePin:
+            raise RSILearningError("rsi_native_rejection_pin_invalid")
+        file_pin = NativeRSIRejectionFilePin.from_dict(expected_provenance_file_pin.to_dict())
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        pins = {
+            "checkpoint_sha256": _digest(expected_checkpoint_sha256, "checkpoint_sha256"),
+            "episode_record_sha256": _digest(expected_episode_record_sha256, "episode_record_sha256"),
+            "claim_sha256": _digest(expected_claim_sha256, "claim_sha256"),
+            "provenance_file_pin": file_pin.to_dict(),
+        }
+        from .rsi_native_gateway import NativeRSISolverGateway
+        from .rsi_producer_gateway import PythonProducerRSISolverGateway
+
+        if (self.ledger is None or type(self.gateway) is not PythonProducerRSISolverGateway or
+                self.gateway.ledger is not self.ledger):
+            raise RSILearningError("rsi_native_gateway_ledger_mismatch")
+        # The original inode gate precedes controller_lock, whose ledger connection must not
+        # silently initialize a database that replaced the prepared original.
+        self.gateway._assert_ledger()
+        with self.ledger.controller_lock(run_id):
+            self.gateway._assert_ledger()
+            record = self.ledger.get_run(run_id)
+            checkpoint = self.ledger.controller_checkpoint(run_id)
+            head = self.ledger.get_episode(episode_id)
+            if (record is None or checkpoint is None or head is None or
+                    checkpoint[1].get("schema_version") != "2"):
+                raise RSILearningError("rsi_resume_checkpoint_unavailable")
+            self._validate_resume_identity(record, None, None)
+            self._check_budget_history(record)
+            state = checkpoint[1]
+            self._validate_run_checkpoint_producer_binding(record, state)
+            if (state.get("run_id") != run_id or head.payload.get("run_id") != run_id or
+                    state.get("plan") != record.payload.get("plan") or
+                    state.get("pins") != {key: record.payload[key] for key in (
+                        "contract_sha256", "evaluator_sha256", "environment_sha256", "solver_id" )}):
+                raise RSILearningError("rsi_native_rejection_episode_mismatch")
+            RSIRunBudget.load(state["budget_state"]).assert_matches(record.payload["budget"])
+            if MemorySnapshot.from_dict(state["root_snapshot"]).digest() != record.payload["fingerprints"]["memory_snapshot_sha256"]:
+                raise RSILearningError("rsi_resume_memory_drift")
+            intent = state.get("intents", {}).get(episode_id)
+            if not isinstance(intent, Mapping):
+                raise RSILearningError("rsi_resume_episode_drift")
+            request = SolverRequest.from_dict(intent["request"])
+            episode = PracticeEpisode.from_dict(head.payload)
+            if (request.episode_id != episode_id or episode.request_sha256 != request.digest() or
+                    any(getattr(episode, key) != getattr(request, key) for key in (
+                        "contract_sha256", "evaluator_sha256", "environment_sha256",
+                        "memory_snapshot_sha256", "solver_id"))):
+                raise RSILearningError("rsi_episode_result_conflict")
+            memory = self._native_historical_memory(run_id, request)
+            from .rsi_child_gateway import resolve_python_producer_episode_gateway
+
+            rejection_gateway = resolve_python_producer_episode_gateway(self, request, memory)
+            if (type(rejection_gateway) is not PythonProducerRSISolverGateway or
+                    rejection_gateway is self.gateway or rejection_gateway.ledger is not self.ledger):
+                raise RSILearningError("rsi_native_gateway_ledger_mismatch")
+            reservations = state.get("native_rejection_reconciliation_reservations", {})
+            previous = reservations.get(episode_id)
+            if previous is not None and previous != pins:
+                raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+            history = dict(self.ledger.controller_checkpoint_history(run_id))
+            original = history.get(expected_checkpoint_sha256)
+            if original is None or original.get("intents", {}).get(episode_id) != intent:
+                raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+            original_heads = self.ledger.history(episode_id)
+            original_head = next((item for item in original_heads
+                                  if item.record_sha256 == expected_episode_record_sha256), None)
+            if original_head is None or original_head.state not in {"running", "unknown"}:
+                raise RSILearningError("rsi_native_rejection_episode_conflict")
+            if previous is None:
+                if (checkpoint[0] != expected_checkpoint_sha256 or
+                        head.record_sha256 != expected_episode_record_sha256):
+                    raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+            else:
+                self._validate_native_rejection_reconciliation_checkpoint(
+                    run_id, episode_id, expected_checkpoint_sha256=expected_checkpoint_sha256,
+                    current_checkpoint_sha256=checkpoint[0],
+                )
+                if (head.record_sha256 != expected_episode_record_sha256 and
+                        (head.parent_record_sha256 != expected_episode_record_sha256 or
+                         head.state != "failed")):
+                    raise RSILearningError("rsi_native_rejection_episode_conflict")
+            self._restore_failure_curriculum(state)
+            checkpoint_pin = checkpoint[0]
+
+            def check_boundary(*, expected_head: str) -> None:
+                current_checkpoint = self.ledger.controller_checkpoint(run_id)
+                current_head = self.ledger.get_episode(episode_id)
+                current_record = self.ledger.get_run(run_id)
+                self.gateway._assert_ledger()
+                rejection_gateway._assert_ledger()
+                if (current_record is None or current_record.record_sha256 != record.record_sha256 or
+                        current_checkpoint is None or current_checkpoint[0] != checkpoint_pin or
+                        current_head is None or current_head.record_sha256 != expected_head):
+                    raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+                self._validate_run_checkpoint_producer_binding(current_record, current_checkpoint[1])
+
+            # Validate pins before consuming evidence budget; inspection never publishes.
+            anticipated = NativeRSISolverGateway.inspect_rejection(
+                rejection_gateway, request, memory, expected_claim_sha256=expected_claim_sha256,
+                expected_checkpoint_sha256=expected_checkpoint_sha256,
+                expected_episode_record_sha256=expected_episode_record_sha256,
+                expected_provenance_file_pin=file_pin,
+            )
+            check_boundary(expected_head=head.record_sha256)
+            if previous is None:
+                budget = RSIRunBudget.load(state["budget_state"])
+                budget.assert_matches(record.payload["budget"])
+                budget.reserve_unknown_reconcile_evidence()
+                state["budget_state"] = budget.to_dict()
+                state.setdefault("native_rejection_reconciliation_reservations", {})[episode_id] = pins
+                self._save_flow(record, state)
+                persisted = self.ledger.controller_checkpoint(run_id)
+                if persisted is None or persisted[1] != state:
+                    raise RSILearningError("rsi_native_rejection_checkpoint_conflict")
+                checkpoint_pin = persisted[0]
+            result = NativeRSISolverGateway.restore_rejection(
+                rejection_gateway, request, memory, expected_claim_sha256=expected_claim_sha256,
+                expected_checkpoint_sha256=expected_checkpoint_sha256,
+                expected_episode_record_sha256=expected_episode_record_sha256,
+                expected_provenance_file_pin=file_pin,
+                before_publish=lambda: check_boundary(expected_head=head.record_sha256),
+            )
+            if result != anticipated or result.status != "failed" or result.terminal_reason != "native_all_rejected":
+                raise RSILearningError("rsi_native_rejection_result_conflict")
+            self._validate_native_replay(episode, request, result)
+            check_boundary(expected_head=head.record_sha256)
+            execution = self._resume_episode_execution(head, request_hint=request)
+            settled_head = self.ledger.get_episode(episode_id)
+            if settled_head is None or settled_head.payload != execution.episode.to_record_dict():
+                raise RSILearningError("rsi_native_rejection_episode_conflict")
             check_boundary(expected_head=settled_head.record_sha256)
             state["executions"][episode_id] = self._serialize_execution(execution)
             self._save_flow(record, state)
@@ -3435,6 +3681,8 @@ class RSILearningController:
         if publication_policy is not None:
             state["producer_multi_episode_publication"] = True
             state["producer_multi_episode_publication_policy"] = publication_policy
+        if self._producer_known_rejection_mode():
+            state["producer_known_rejection"] = True
         self._sync_curriculum_checkpoint(state)
         return state
 
@@ -4036,6 +4284,7 @@ class RSILearningController:
                observed_fingerprints: Mapping[str, Any] | None = None,
                budget_policy: Mapping[str, Any] | None = None) -> LearningRunResult:
         _id(run_id, "run_id")
+        self._producer_known_rejection_mode()
         if self.ledger is None:
             raise RSILearningError("rsi_resume_requires_ledger")
         with self.ledger.controller_lock(run_id):
@@ -4417,6 +4666,8 @@ class RSILearningController:
     def _run_plan(self, *, run_id: str, pins: dict[str, str], plan: dict[str, Any],
                   budget: Mapping[str, Any]) -> LearningRunResult:
         _id(run_id, "run_id")
+        if self._producer_known_rejection_mode() and plan["mode"] != "drs":
+            raise RSILearningError("rsi_producer_known_rejection_drs_required")
         if self.producer_stager is not None and plan["mode"] != "drs":
             raise RSILearningError("rsi_producer_episode_brs_not_supported")
         _id(pins["solver_id"], "solver_id")

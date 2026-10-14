@@ -1,5 +1,45 @@
 # Known rejection v2 validation
 
+## Controller integration checkpoint — 2026-10-15
+
+Controller mode/history gates, original owner C1/P/C2, mixed terminal and started
+inspection, three-way native scheduler recovery and explicit rejection reconcile
+are implemented on the independent integration branch. Acceptance remains open.
+The PR100 checkout and its CI source are separate and frozen.
+
+The first joint focused run covered 476 distinct cases, zero failures/errors/
+skips in 98.41 seconds. Its 787-file before/after source map was unchanged:
+`2dbe8d0f8944627d03a14dbe74135817f700885a8d3ac708716289aa8767fd9a`.
+Raw XML SHA-256:
+`36db823d4666dab8f3e996421b558112debbce9b47980e63a38f12bd435f922d`.
+This is an earlier development-source result, not final owner/controller acceptance.
+
+Actual original owner/controller tests then exposed an exact child facade type
+mistake, now corrected without relaxing the original provider/ledger gate. A pure
+hostile nested DTO probe also established a serializer-before-shape gap in the
+new inspector, now covered by terminal/started no-I/O tests. An archive assertion
+incorrectly assumed that genesis had no archive; it now compares original bytes.
+All failed XML remain retained with their own source boundary.
+
+Final local integration source before long execution: 788 source/test/tool/config
+files, map
+`275e3f44385ebdce9ec43f7e585ea21d445043db781f33f1e773f2191e9fc85d`.
+Final focused covered 478 distinct cases across two non-overlapping XML files,
+zero failures/errors/skips; before/after discovery included additions/deletions
+and matched the same 788-file map. Joint XML SHA-256:
+`b7a2ac149c0a39ada3a19abb69303da31e238a22712ab43f04d330ff30b2084a`;
+nested inspector XML SHA-256:
+`beffebe3285b7a88a703e01546b6e912c7ae7cda8056cf14539efd79548b9bb9`.
+Full Ruff, compileall and diff-check passed. Original terminal/started owner
+cases, four successive durable reconcile crash boundaries and RPP/PRP/RRR are
+executing in separate inert workspaces. Pending results must not be counted as
+passed or combined with the earlier 476/helper results.
+
+Remaining exit: complete original interruption/multicandidate coverage, final
+source local results and independent inventory review, synchronize accepted
+PR100 main, then final full CI/raw/source/tree audit before release. No runtime
+or campaign acceptance is established by any local fixture result.
+
 ## Helper checkpoint — 2026-10-14
 
 The independent worktree uses the PR100 product baseline `a62ac647`, retaining

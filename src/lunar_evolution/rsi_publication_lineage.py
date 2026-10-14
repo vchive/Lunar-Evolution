@@ -35,13 +35,27 @@ from .producer_bundle_lineage import (
     read_lineage_descriptor_pinned,
     verify_persisted_lineage_snapshot,
 )
+from .producer_bundle_lineage_v2 import (
+    ProducerLineageBeforeIntentV2,
+    ProducerLineageRejectedTerminalV2,
+    persist_lineage_v2_descriptor,
+    read_lineage_v2_descriptor_pinned,
+)
 from .rsi_budget import RSIRunBudget
 from .rsi_gateway import SolverRequest
 from .rsi_identity import component_fingerprint
 from .rsi_learning import MemorySnapshot, RSILearningError
 from .rsi_native_plan import NativeRSIExecutionPlan, NativeRSIExecutionPlanError
+from .rsi_native_rejection import (
+    NativeRSIRejectionEvidence,
+    NativeRSIRejectionFilePin,
+    RejectionLineageC1Binding,
+    map_native_rejection_to_solver_result,
+    read_native_rsi_rejection_provenance,
+)
 
 _PROTOCOL = "lunar-rsi-multi-episode-publication-v1"
+_PROTOCOL_V2 = "lunar-rsi-multi-episode-publication-v2"
 _FIELD = "producer_publication_lineage"
 _MAX_CHECKPOINT_BYTES = 112 * 1024
 
@@ -104,6 +118,7 @@ def multi_episode_publication_policy(controller: Any) -> dict[str, Any] | None:
     """Reject mode drift before reading a run, workspace or producer artifact."""
     from .rsi_controller import RSILearningController
 
+    known_rejection = controller._producer_known_rejection_mode()
     flag = controller.producer_multi_episode_publication
     if (type(flag) is not bool
             or flag is not controller._original_producer_multi_episode_publication):
@@ -126,7 +141,7 @@ def multi_episode_publication_policy(controller: Any) -> dict[str, Any] | None:
         ProducerLineageTerminal,
     )
 
-    return {
+    policy = {
         "protocol": "lunar-rsi-multi-episode-publication-v1",
         "production_admission": False,
         "mode": "drs",
@@ -164,6 +179,45 @@ def multi_episode_publication_policy(controller: Any) -> dict[str, Any] | None:
             },
         },
     }
+    if not known_rejection:
+        return policy
+    from .producer_bundle_rejection import _verify_terminal_batch_rejection_evidence
+    from .rsi_native_gateway import NativeRSISolverGateway
+    from .rsi_native_rejection import persist_native_rsi_rejection_provenance
+
+    policy["protocol"] = _PROTOCOL_V2
+    dependencies = policy["dependencies"]
+    dependencies.update({
+        "before_v2": component_fingerprint(ProducerLineageBeforeIntentV2, config={}),
+        "rejected_v2": component_fingerprint(ProducerLineageRejectedTerminalV2, config={}),
+        "rejection_pin": component_fingerprint(NativeRSIRejectionFilePin, config={}),
+        "rejection_binding": component_fingerprint(RejectionLineageC1Binding, config={}),
+        "rejection_evidence": component_fingerprint(NativeRSIRejectionEvidence, config={}),
+        "rejection_verifier": component_fingerprint(_verify_terminal_batch_rejection_evidence),
+        "rejection_persist": component_fingerprint(persist_native_rsi_rejection_provenance),
+        "rejection_read": component_fingerprint(read_native_rsi_rejection_provenance),
+        "rejection_mapper": component_fingerprint(map_native_rejection_to_solver_result),
+        "inspection_v2": component_fingerprint(RSIPublicationLineageV2Inspection, config={}),
+        "started_rejection_inspection": component_fingerprint(StartedRSIRejectionInspection, config={}),
+        "mixed_history_reader": component_fingerprint(_V2LineageEvidenceReader, config={}),
+        "controller_methods": {name: component_fingerprint(getattr(RSILearningController, name)) for name in (
+            "_producer_known_rejection_mode", "_validate_native_rejection_reconciliation_checkpoint", "reconcile_native_rejection",
+        )},
+        "gateway_methods": {name: component_fingerprint(getattr(NativeRSISolverGateway, name))
+                            for name in ("inspect_rejection", "restore_rejection")},
+    })
+    dependencies["owner_methods"].update({
+        name: component_fingerprint(getattr(RSIPublicationLineage, name))
+        for name in ("rejection_provenance_binding", "acknowledge_rejection_provenance",
+                     "rejection_provenance_file_pin", "_retain_rejected_locked", "_projected_rejected_entry",
+                     "_build_before_descriptor", "_retained_bytes")
+    })
+    dependencies["module_sources"].update({
+        name: _sha(_files.read_regular_file(Path(__file__).parent / name, 1024 * 1024))
+        for name in ("producer_bundle_lineage_v2.py", "producer_bundle_rejection.py", "rsi_native_rejection.py",
+                     "rsi_native_provenance_names.py", "rsi_native_provenance.py", "rsi_native_failure.py")
+    })
+    return policy
 
 
 class _LineageEvidenceReader:
@@ -171,7 +225,12 @@ class _LineageEvidenceReader:
 
     __slots__ = ()
 
+    def _is_v2(self) -> bool:
+        return self._association.get("protocol") == _PROTOCOL_V2
+
     def _validate_history(self, state: dict[str, Any]) -> None:
+        if self._is_v2():
+            return self._validate_history_v2(state)
         from .rsi_producer_staging_capsule import (
             retained_publication_evidence_bytes,
             retained_ready_capsule_bytes,
@@ -262,6 +321,8 @@ class _LineageEvidenceReader:
             _fail("history_drift")
 
     def _validate_entry_shape(self, entry: dict[str, Any]) -> None:
+        if self._is_v2():
+            return self._validate_entry_shape_v2(entry)
         base = {
             "journal_id", "ordinal", "episode_id", "request_sha256", "memory_snapshot_sha256",
             "native_plan_sha256", "admission_plan", "prepared_journal", "before", "before_file_pin",
@@ -297,6 +358,14 @@ class _LineageEvidenceReader:
 
     def _verify_descriptor(self, entry: dict[str, Any], kind: str):
         pin = LineageSnapshotPin.from_dict(entry[kind + "_file_pin"])
+        if self._is_v2() and kind in {"before", "rejected"}:
+            observed = read_lineage_v2_descriptor_pinned(
+                self._workspace, entry["journal_id"], kind="before-v2" if kind == "before" else "rejected",
+                expected_file_pin=pin,
+            )
+            if observed.to_dict() != entry[kind]:
+                _fail("descriptor_drift")
+            return observed
         observed = read_lineage_descriptor_pinned(
             self._workspace, entry["journal_id"], kind=kind, expected_file_pin=pin,
         )
@@ -320,24 +389,30 @@ class _LineageEvidenceReader:
         from .producer_bundle_admission import parse_producer_bundle_admission_plan
         from .producer_bundle_publication import parse_producer_bundle_publication_journal
 
+        if self._is_v2() and type(entry) is dict and entry.get("state") == "rejected":
+            return self._verify_rejected_entry(entry, ordinal=ordinal, previous=previous)
         if type(entry) is not dict or entry.get("state") != "terminal" or entry.get("ordinal") != ordinal:
             _fail("pending_predecessor")
         self._validate_entry_shape(entry)
         before = self._verify_descriptor(entry, "before")
         staged = self._verify_descriptor(entry, "staged")
         terminal = self._verify_descriptor(entry, "terminal")
-        if (type(before) is not ProducerLineageBeforeIntent or type(staged) is not ProducerLineageStagedTransition
+        before_type = ProducerLineageBeforeIntentV2 if self._is_v2() else ProducerLineageBeforeIntent
+        if (type(before) is not before_type or type(staged) is not ProducerLineageStagedTransition
                 or type(terminal) is not ProducerLineageTerminal or before.ordinal != ordinal
                 or staged.ordinal != ordinal or terminal.ordinal != ordinal
                 or before.run_id != self._run_id or staged.run_id != self._run_id
                 or terminal.run_id != self._run_id
                 or staged.before_sha256 != before.digest() or terminal.staged_sha256 != staged.digest()):
             _fail("chain_invalid")
-        expected_terminal = previous["terminal"]["terminal_sha256"] if previous else None
-        expected_lineage = previous["terminal"]["descriptor_sha256"] if previous else None
-        if (before.predecessor_terminal_sha256 != expected_terminal
-                or before.predecessor_lineage_sha256 != expected_lineage):
-            _fail("predecessor_mismatch")
+        if self._is_v2():
+            self._verify_before_predecessors_v2(before, previous)
+        else:
+            expected_terminal = previous["terminal"]["terminal_sha256"] if previous else None
+            expected_lineage = previous["terminal"]["descriptor_sha256"] if previous else None
+            if (before.predecessor_terminal_sha256 != expected_terminal
+                    or before.predecessor_lineage_sha256 != expected_lineage):
+                _fail("predecessor_mismatch")
         snapshots = entry["snapshots"]
         archive_before = self._snapshot_bytes(entry["journal_id"], snapshots["archive-before"], name="archive-before")
         state_before = self._snapshot_bytes(entry["journal_id"], snapshots["state-before"], name="state-before")
@@ -352,10 +427,12 @@ class _LineageEvidenceReader:
             _fail("snapshot_drift")
         if previous is not None:
             old = previous["snapshots"]
-            if (archive_before != self._snapshot_bytes(previous["journal_id"], old["archive-after"], name="archive-after")
-                    or state_before != self._snapshot_bytes(previous["journal_id"], old["state-after"], name="state-after")):
+            suffix = "before" if self._is_v2() and previous["state"] == "rejected" else "after"
+            if (archive_before != self._snapshot_bytes(previous["journal_id"], old["archive-" + suffix], name="archive-" + suffix)
+                    or state_before != self._snapshot_bytes(previous["journal_id"], old["state-" + suffix], name="state-" + suffix)):
                 _fail("snapshot_continuity_drift")
-            if entry["before_sources"] != previous["head_sources"]:
+            sources = previous["before_sources"] if suffix == "before" else previous["head_sources"]
+            if entry["before_sources"] != sources:
                 _fail("source_continuity_drift")
         journal = parse_producer_bundle_publication_journal(entry["published_journal"])
         prepared = parse_producer_bundle_publication_journal(entry["prepared_journal"])
@@ -403,6 +480,8 @@ class _LineageEvidenceReader:
         return archive_after, state_after
 
     def _validate_source_pin_maps(self, entry: dict[str, Any]) -> None:
+        if self._is_v2():
+            return self._validate_source_pin_maps_v2(entry)
         maps = ["before_sources"]
         if entry["state"] in {"staged", "terminal"}:
             maps.append("after_sources")
@@ -610,6 +689,7 @@ class _LineageEvidenceReader:
         seen_candidates: set[str] = set()
         prior_events = []
         previous = None
+        published_head = None
         head_archive = head_state = None
         for ordinal, entry in enumerate(wire["batches"]):
             if entry["journal_id"] in seen_journals:
@@ -626,27 +706,43 @@ class _LineageEvidenceReader:
                 json.loads(prefix_state), _records_from_archive(prefix_archive), window_strategy,
                 prior_events=tuple(prior_events),
             )
-            ids = tuple(entry["staged"]["candidate_ids"])
+            rejected = self._is_v2() and entry["state"] == "rejected"
+            ids = tuple(entry["rejected"]["candidate_ids"] if rejected else entry["staged"]["candidate_ids"])
             if seen_candidates.intersection(ids):
                 _fail("duplicate_candidate")
             seen_candidates.update(ids)
-            prior_events.append(ids)
+            if not rejected:
+                prior_events.append(ids)
+                published_head = entry
+            if self._is_v2():
+                self._verify_entry_native_settlement(entry)
             previous = entry
-        expected_head = None if previous is None else {
-            "journal_id": previous["journal_id"],
-            "terminal_sha256": previous["terminal"]["terminal_sha256"],
-            "lineage_sha256": previous["terminal"]["descriptor_sha256"],
+        selected_head = published_head if self._is_v2() else previous
+        expected_head = None if selected_head is None else {
+            "journal_id": selected_head["journal_id"],
+            "terminal_sha256": selected_head["terminal"]["terminal_sha256"],
+            "lineage_sha256": selected_head["terminal"]["descriptor_sha256"],
         }
         if wire["head"] != expected_head:
             _fail("head_drift")
         if previous is not None and (archive != head_archive or state_bytes != head_state):
             _fail("current_head_drift")
         if previous is not None:
-            for name, pin in previous["head_sources"].items():
+            sources = previous["before_sources"] if self._is_v2() and previous["state"] == "rejected" else previous["head_sources"]
+            for name, pin in sources.items():
                 extension = "jsonl" if name == "archive" else "json"
-                verify_persisted_lineage_snapshot(
-                    self._workspace / "evolution" / f"{name}.{extension}", LineageSnapshotPin.from_dict(pin),
-                )
+                path = self._workspace / "evolution" / f"{name}.{extension}"
+                if self._is_v2() and pin.get("missing") is True:
+                    if name != "archive" or _root_pin(path.parent) != pin["parent"]:
+                        _fail("source_absence_drift")
+                    try:
+                        path.lstat()
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        _fail("source_absence_drift")
+                else:
+                    verify_persisted_lineage_snapshot(path, LineageSnapshotPin.from_dict(pin))
         if marker_pin is not None:
             _check_held_publication_lock()
             self._check_owner()
@@ -663,7 +759,358 @@ class _LineageEvidenceReader:
         return tuple(prior_events)
 
 
-class RSIPublicationLineage(_LineageEvidenceReader):
+class _V2LineageEvidenceReader(_LineageEvidenceReader):
+    """Mixed attempted history; observations never acquire an execution continuation."""
+
+    __slots__ = ()
+
+    @staticmethod
+    def _rejection_index(batches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{"ordinal": entry["ordinal"], "journal_id": entry["journal_id"],
+                 "rejected_sha256": entry["rejected"]["descriptor_sha256"]}
+                for entry in batches if entry["state"] == "rejected"]
+
+    @staticmethod
+    def _previous_v2(previous: dict[str, Any] | None) -> dict[str, Any]:
+        links = {name: None for name in (
+            "previous_attempt_journal_id", "previous_attempt_outcome", "previous_attempt_terminal_sha256",
+            "previous_attempt_lineage_sha256", "published_predecessor_journal_id",
+            "published_predecessor_terminal_sha256", "published_predecessor_lineage_sha256",
+        )}
+        if previous is None:
+            return links
+        if previous.get("state") not in {"terminal", "rejected"}:
+            _fail("pending_predecessor")
+        published = previous["state"] == "terminal"
+        terminal = previous["terminal"] if published else previous["rejected"]
+        links.update(
+            previous_attempt_journal_id=previous["journal_id"],
+            previous_attempt_outcome="published" if published else "all_rejected",
+            previous_attempt_terminal_sha256=terminal["terminal_sha256" if published else "terminal_journal_sha256"],
+            previous_attempt_lineage_sha256=terminal["descriptor_sha256"],
+        )
+        if published:
+            links.update(published_predecessor_journal_id=previous["journal_id"],
+                         published_predecessor_terminal_sha256=terminal["terminal_sha256"],
+                         published_predecessor_lineage_sha256=terminal["descriptor_sha256"])
+        else:
+            links.update({name: previous["before"][name] for name in links if name.startswith("published_")})
+        return links
+
+    def _verify_before_predecessors_v2(self, before: ProducerLineageBeforeIntentV2,
+                                       previous: dict[str, Any] | None) -> None:
+        if (type(before) is not ProducerLineageBeforeIntentV2
+                or before.ordinal != (0 if previous is None else previous["ordinal"] + 1)
+                or any(getattr(before, name) != value for name, value in self._previous_v2(previous).items())):
+            _fail("predecessor_mismatch")
+
+    def _validate_entry_shape_v2(self, entry: dict[str, Any]) -> None:
+        from .rsi_producer_staging_capsule import _shape
+
+        _shape(entry)
+        if type(entry) is not dict:
+            _fail("history_invalid")
+        base = {"journal_id", "ordinal", "episode_id", "request_sha256", "memory_snapshot_sha256",
+                "native_plan_sha256", "admission_plan", "prepared_journal", "before", "before_file_pin",
+                "snapshots", "before_sources", "state", "evidence_pins"}
+        phase = entry.get("state")
+        staged_fields = {"staged", "staged_file_pin", "state_projection_sha256", "after_sources"}
+        terminal_fields = {"terminal", "terminal_file_pin", "published_journal", "head_sources"}
+        rejected_fields = {"rejected", "rejected_file_pin", "rejected_journal", "rejection_provenance"}
+        expected = base | (staged_fields if phase in {"staged", "terminal"} else set())
+        expected |= terminal_fields if phase == "terminal" else rejected_fields if phase == "rejected" else set()
+        snapshots = {"archive-before", "state-before"}
+        if phase in {"staged", "terminal"}:
+            snapshots |= {"archive-after", "state-after"}
+        pins = {"journal.prepared.json"}
+        if phase in {"staged", "terminal"}:
+            pins |= {"journal.staged.json", "manifest.json", "preflight.json"}
+        if phase == "terminal":
+            pins |= {"journal.published.json", "terminal.json"}
+        if phase == "rejected":
+            rejected = ProducerLineageRejectedTerminalV2.from_dict(entry.get("rejected"))
+            pins |= {"journal.json", "rejections.json", *("rejections/" + item + ".json" for item in rejected.candidate_ids)}
+            reference = entry["rejection_provenance"]
+            if reference is not None:
+                if (type(reference) is not dict or set(reference) != {"provenance_sha256", "file_pin"}
+                        or type(reference["provenance_sha256"]) is not str
+                        or len(reference["provenance_sha256"]) != 64
+                        or any(c not in "0123456789abcdef" for c in reference["provenance_sha256"])):
+                    _fail("rejection_provenance_invalid")
+                NativeRSIRejectionFilePin.from_dict(reference["file_pin"])
+        if (type(entry) is not dict or phase not in {"before", "staged", "terminal", "rejected"}
+                or set(entry) != expected or type(entry.get("snapshots")) is not dict
+                or set(entry["snapshots"]) != snapshots or type(entry.get("evidence_pins")) is not dict
+                or (set(entry["evidence_pins"]) != pins and not (phase == "before" and not entry["evidence_pins"]))):
+            _fail("history_phase_pins_invalid")
+        before = ProducerLineageBeforeIntentV2.from_dict(entry["before"])
+        if (before.run_id != self._run_id or before.journal_id != entry["journal_id"]
+                or before.ordinal != entry["ordinal"] or before.archive.to_dict() != entry["snapshots"]["archive-before"]
+                or before.state.to_dict() != entry["snapshots"]["state-before"]):
+            _fail("history_invalid")
+        for name, pin in entry["snapshots"].items():
+            if LineageSnapshotPin.from_dict(pin).name != name + ".snapshot":
+                _fail("history_phase_pins_invalid")
+        for name, pin in entry["evidence_pins"].items():
+            expected_name = "rejection-" + _sha(name.encode()) if name.startswith("rejections/") else name
+            if LineageSnapshotPin.from_dict(pin).name != expected_name:
+                _fail("history_phase_pins_invalid")
+        for kind in ("before", "staged", "terminal", "rejected"):
+            if kind + "_file_pin" in entry:
+                name = "before-v2.json" if kind == "before" else kind + ".json"
+                if LineageSnapshotPin.from_dict(entry[kind + "_file_pin"]).name != name:
+                    _fail("history_phase_pins_invalid")
+        self._validate_source_pin_maps_v2(entry)
+
+    def _validate_source_pin_maps_v2(self, entry: dict[str, Any]) -> None:
+        maps = ["before_sources"]
+        if entry["state"] in {"staged", "terminal"}:
+            maps.append("after_sources")
+        if entry["state"] == "terminal":
+            maps.append("head_sources")
+        for field in maps:
+            sources = entry.get(field)
+            if type(sources) is not dict or set(sources) != {"archive", "state"}:
+                _fail("source_pins_invalid")
+            for name, raw in sources.items():
+                if field == "before_sources" and name == "archive" and type(raw) is dict and raw.get("missing") is True:
+                    if (set(raw) != {"missing", "parent"}
+                            or entry["before"]["published_predecessor_journal_id"] is not None
+                            or raw["parent"] != _root_pin(self._workspace / "evolution")
+                            or entry["snapshots"]["archive-before"]["size"] != 0
+                            or entry["snapshots"]["archive-before"]["sha256"] != _sha(b"")):
+                        _fail("source_pins_invalid")
+                    continue
+                pin = LineageSnapshotPin.from_dict(raw)
+                suffix = "after" if field == "after_sources" else "before"
+                snapshot_suffix = "before" if field == "before_sources" else "after"
+                snapshot = LineageSnapshotPin.from_dict(entry["snapshots"][name + "-" + snapshot_suffix])
+                if pin.name != name + "-" + suffix or pin.sha256 != snapshot.sha256 or pin.size != snapshot.size:
+                    _fail("source_pins_invalid")
+        if entry["state"] == "terminal":
+            for name in ("archive", "state"):
+                source = LineageSnapshotPin.from_dict(entry["after_sources"][name])
+                head = LineageSnapshotPin.from_dict(entry["head_sources"][name])
+                if any(getattr(source, field) != getattr(head, field) for field in (
+                    "device", "inode", "size", "mode", "nlink", "mtime_ns", "sha256",
+                )):
+                    _fail("source_pins_invalid")
+
+    def _validate_history_v2(self, state: dict[str, Any]) -> None:
+        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
+
+        retained_publication_evidence_bytes(state)
+        previous = None
+        for _head, snapshot in self._ledger.controller_checkpoint_history(self._run_id):
+            retained_publication_evidence_bytes(snapshot)
+            wire = snapshot.get(_FIELD)
+            if wire is None:
+                if previous is not None:
+                    _fail("history_drift")
+                continue
+            if (type(wire) is not dict or set(wire) != {*self._association, "batches", "head", "rejections"}
+                    or any(wire[key] != value for key, value in self._association.items())
+                    or type(wire["batches"]) is not list or len(wire["batches"]) > MAX_LINEAGE_BATCHES
+                    or type(wire["rejections"]) is not list):
+                _fail("history_invalid")
+            if previous is None and (len(wire["batches"]) > 1 or (wire["batches"] and (
+                    wire["batches"][0].get("state") != "before" or wire["batches"][0].get("evidence_pins") != {}))):
+                _fail("history_introduction_invalid")
+            published_head = None
+            attempted = None
+            seen_journals = set()
+            for ordinal, entry in enumerate(wire["batches"]):
+                self._validate_entry_shape_v2(entry)
+                if entry["ordinal"] != ordinal or entry["journal_id"] in seen_journals:
+                    _fail("history_invalid")
+                seen_journals.add(entry["journal_id"])
+                self._verify_before_predecessors_v2(ProducerLineageBeforeIntentV2.from_dict(entry["before"]), attempted)
+                if entry["state"] == "terminal":
+                    terminal = ProducerLineageTerminal.from_dict(entry["terminal"])
+                    published_head = {"journal_id": terminal.journal_id, "terminal_sha256": terminal.terminal_sha256,
+                                      "lineage_sha256": terminal.digest()}
+                elif entry["state"] != "rejected" and ordinal != len(wire["batches"]) - 1:
+                    _fail("history_invalid")
+                attempted = entry
+            if wire["head"] != published_head or wire["rejections"] != self._rejection_index(wire["batches"]):
+                _fail("history_head_invalid")
+            if previous is not None:
+                old, new = previous["batches"], wire["batches"]
+                if len(new) < len(old) or len(new) > len(old) + 1:
+                    _fail("history_drift")
+                if len(new) == len(old) + 1 and (
+                    new[-1]["state"] != "before" or new[-1]["evidence_pins"] != {}
+                    or any(entry["state"] not in {"terminal", "rejected"}
+                           or (entry["state"] == "rejected" and entry["rejection_provenance"] is None) for entry in old)
+                ):
+                    _fail("history_introduction_invalid")
+                for index, entry in enumerate(old):
+                    current = new[index]
+                    for key, value in entry.items():
+                        if key in {"snapshots", "evidence_pins"}:
+                            if any(current[key].get(name) != pin for name, pin in value.items()):
+                                _fail("history_drift")
+                        elif key == "rejection_provenance" and value is None:
+                            continue
+                        elif key != "state" and current.get(key) != value:
+                            _fail("history_drift")
+                    allowed = {"before": {"before", "staged", "rejected"}, "staged": {"staged", "terminal"},
+                               "terminal": {"terminal"}, "rejected": {"rejected"}}
+                    if current["state"] not in allowed[entry["state"]]:
+                        _fail("history_drift")
+                    if entry["state"] == "before" and current["state"] != "before" and set(entry["evidence_pins"]) != {"journal.prepared.json"}:
+                        _fail("history_prepared_pin_missing")
+                if wire["rejections"][:len(previous["rejections"])] != previous["rejections"]:
+                    _fail("history_drift")
+            previous = wire
+        if state.get(_FIELD) != previous:
+            _fail("history_drift")
+
+    def _binding_for_rejected_entry(self, entry: dict[str, Any]) -> RejectionLineageC1Binding:
+        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
+
+        candidates = []
+        prior = None
+        for head, state in self._ledger.controller_checkpoint_history(self._run_id):
+            batches = state.get(_FIELD, {}).get("batches", [])
+            if len(batches) <= entry["ordinal"]:
+                continue
+            observed = batches[entry["ordinal"]]
+            if observed["state"] == "rejected" and (prior is None or prior["state"] != "rejected"):
+                if (prior is None or prior["state"] != "before" or observed["rejection_provenance"] is not None
+                        or observed["rejected"] != entry["rejected"]):
+                    _fail("rejection_c1_history_invalid")
+                candidates.append((head, state))
+            prior = observed
+        if len(candidates) != 1:
+            _fail("rejection_c1_history_invalid")
+        head, state = candidates[0]
+        rejected = ProducerLineageRejectedTerminalV2.from_dict(entry["rejected"])
+        return RejectionLineageC1Binding(
+            run_id=self._run_id, episode_id=entry["episode_id"], journal_id=entry["journal_id"], ordinal=entry["ordinal"],
+            checkpoint_sha256=head, rejected_sha256=rejected.digest(), retained_bytes=retained_publication_evidence_bytes(state),
+            **{name: getattr(rejected, name) for name in (
+                "before_sha256", "prepared_journal_sha256", "terminal_journal_sha256", "rejection_manifest_sha256",
+                "terminal_marker_sha256", "candidate_ids", "archive_sha256", "state_sha256",
+            )},
+        )
+
+    def _rejection_pinned_evidence(self, entry: dict[str, Any]) -> NativeRSIRejectionEvidence:
+        reference = entry["rejection_provenance"]
+        if reference is None:
+            _fail("rejection_c2_required")
+        pin = NativeRSIRejectionFilePin.from_dict(reference["file_pin"])
+        evidence = read_native_rsi_rejection_provenance(
+            self._workspace / "evolution/producer-batches" / entry["journal_id"], expected_file_pin=pin,
+        )
+        if (evidence.provenance_sha256 != reference["provenance_sha256"]
+                or evidence.lineage != self._binding_for_rejected_entry(entry)
+                or evidence.rejected.to_dict() != entry["rejected"]
+                or evidence.terminal.to_dict() != entry["rejected_journal"]
+                or dict(evidence.ledger_identity) != self._gateway._ledger_identity):
+            _fail("rejection_provenance_drift")
+        return evidence
+
+    def _entry_native_association(self, entry: dict[str, Any]) -> tuple[SolverRequest, NativeRSIExecutionPlan, Any, Any]:
+        from .rsi_producer_staging_capsule import materialize_ready
+
+        checkpoint = self._ledger.controller_checkpoint(self._run_id)
+        if checkpoint is None:
+            _fail("inspection_checkpoint_drift")
+        state = checkpoint[1]
+        intent = state.get("intents", {}).get(entry["episode_id"])
+        ready = state.get("producer_episode_staging", {}).get(entry["episode_id"], {}).get("ready")
+        reference = state.get("python_admission_refs", {}).get(entry["episode_id"])
+        if type(intent) is not dict or type(ready) is not dict or type(reference) is not dict:
+            _fail("inspection_child_association_invalid")
+        ready = materialize_ready(ready, allow_capsule=True, expected_workspace=self._workspace,
+                                  expected_journal_id=entry["journal_id"])
+        request = SolverRequest.from_dict(intent["request"])
+        plan = NativeRSIExecutionPlan.from_dict(ready["plan"])
+        memory = self._controller._native_historical_memory(self._run_id, request)
+        claim = self._ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        result = self._ledger.episode_result(entry["episode_id"])
+        if (entry["request_sha256"] != request.digest() or entry["memory_snapshot_sha256"] != memory.digest()
+                or plan.request != request or plan.memory_snapshot_sha256 != memory.digest()
+                or entry["native_plan_sha256"] != plan.plan_sha256 or plan.journal_id != entry["journal_id"]
+                or reference.get("native_plan") != plan.to_dict() or reference.get("prepared_journal") != entry["prepared_journal"]
+                or claim is None):
+            _fail("inspection_child_association_invalid")
+        return request, plan, claim, result
+
+    def _verify_entry_native_settlement(self, entry: dict[str, Any]) -> None:
+        request, plan, claim, result = self._entry_native_association(entry)
+        if entry["state"] == "terminal":
+            if claim.status != "completed" or result is None or result[0] != request or result[1].status != "completed":
+                _fail("pending_predecessor")
+            self._verify_durable_native_result(entry, request, plan, result[1])
+            return
+        evidence = self._rejection_pinned_evidence(entry)
+        if evidence.plan != plan or evidence.claim.claim_sha256 != claim.claim_sha256:
+            _fail("rejection_claim_drift")
+        if type(self) is StartedRSIRejectionInspection and entry["episode_id"] == self._request.episode_id:
+            if claim != self._claim or claim.status != "started" or result is not None:
+                _fail("inspection_started_claim_required")
+            return
+        if claim.status != "failed" or result is None or result[0] != request:
+            _fail("pending_predecessor")
+        if result[1] != map_native_rejection_to_solver_result(request, plan, evidence):
+            _fail("inspection_native_result_drift")
+        if self._rejection_pinned_evidence(entry) != evidence:
+            _fail("rejection_provenance_drift")
+
+    def _verify_rejected_entry(self, entry: dict[str, Any], *, ordinal: int,
+                               previous: dict[str, Any] | None):
+        from .producer_bundle_admission import parse_producer_bundle_admission_plan
+        from .producer_bundle_publication import parse_producer_bundle_publication_journal
+        from .producer_bundle_rejection import _verify_terminal_batch_rejection_evidence
+
+        self._validate_entry_shape_v2(entry)
+        before = self._verify_descriptor(entry, "before")
+        rejected = self._verify_descriptor(entry, "rejected")
+        self._verify_before_predecessors_v2(before, previous)
+        if (rejected.ordinal != ordinal or rejected.run_id != self._run_id
+                or rejected.journal_id != entry["journal_id"] or rejected.episode_id != entry["episode_id"]
+                or rejected.before_sha256 != before.digest()):
+            _fail("rejected_association_invalid")
+        archive = self._snapshot_bytes(entry["journal_id"], entry["snapshots"]["archive-before"], name="archive-before")
+        state_bytes = self._snapshot_bytes(entry["journal_id"], entry["snapshots"]["state-before"], name="state-before")
+        if rejected.archive_sha256 != _sha(archive) or rejected.state_sha256 != _sha(state_bytes):
+            _fail("snapshot_drift")
+        if previous is not None:
+            suffix = "before" if previous["state"] == "rejected" else "after"
+            for name, raw in (("archive", archive), ("state", state_bytes)):
+                if raw != self._snapshot_bytes(previous["journal_id"], previous["snapshots"][name + "-" + suffix], name=name + "-" + suffix):
+                    _fail("snapshot_continuity_drift")
+            sources = previous["before_sources"] if suffix == "before" else previous["head_sources"]
+            if entry["before_sources"] != sources:
+                _fail("source_continuity_drift")
+        prepared = parse_producer_bundle_publication_journal(entry["prepared_journal"])
+        terminal = parse_producer_bundle_publication_journal(entry["rejected_journal"])
+        plan = parse_producer_bundle_admission_plan(entry["admission_plan"])
+        if (prepared.digest() != rejected.prepared_journal_sha256 or terminal.digest() != rejected.terminal_journal_sha256
+                or prepared.journal_id != before.journal_id or prepared.run_id != self._run_id
+                or prepared.task_id != entry["episode_id"] or prepared.admission_sha256 != plan.digest()
+                or prepared.base_archive_sha256 != before.archive.sha256 or prepared.base_state_sha256 != before.state.sha256):
+            _fail("prepared_association_drift")
+        batch = self._workspace / "evolution/producer-batches" / entry["journal_id"]
+        for name, pin in entry["evidence_pins"].items():
+            verify_persisted_lineage_snapshot(batch / name, LineageSnapshotPin.from_dict(pin))
+        observed = _verify_terminal_batch_rejection_evidence(self._workspace, batch, prepared, terminal=terminal)
+        if (observed.manifest_sha256 != rejected.rejection_manifest_sha256
+                or observed.candidate_ids != rejected.candidate_ids
+                or terminal.terminal_marker_sha256 != rejected.terminal_marker_sha256):
+            _fail("rejected_evidence_drift")
+        for name, pin in entry["evidence_pins"].items():
+            verify_persisted_lineage_snapshot(batch / name, LineageSnapshotPin.from_dict(pin))
+        self._verify_descriptor(entry, "before")
+        self._verify_descriptor(entry, "rejected")
+        self._snapshot_bytes(entry["journal_id"], entry["snapshots"]["archive-before"], name="archive-before")
+        self._snapshot_bytes(entry["journal_id"], entry["snapshots"]["state-before"], name="state-before")
+        return archive, state_bytes
+
+
+class RSIPublicationLineage(_V2LineageEvidenceReader):
     """One original DRS owner's ephemeral publication/CAS continuation.
 
     Construction requires the current controller scope. Retained descriptors are
@@ -697,6 +1144,7 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         "_run_id",
         "_sidecar",
         "_strategy",
+        "_terminal_evidence_sha256",
         "_thread",
         "_workspace",
     )
@@ -743,6 +1191,9 @@ class RSIPublicationLineage(_LineageEvidenceReader):
                 or state.get("producer_multi_episode_publication") is not True
                 or state.get("producer_child_execution") is not True or lease[0] is not state):
             _fail("scope_invalid")
+        if (policy["protocol"] == _PROTOCOL_V2
+                and state.get("producer_known_rejection") is not True):
+            _fail("scope_invalid")
         existing = getattr(controller._python_admission_flow_local, "publication_lineage_owner", None)
         if type(existing) is RSIPublicationLineage and existing._context is context:
             _fail("owner_already_created")
@@ -766,7 +1217,7 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         self._claim, self._episode_head = claim, episode.record_sha256
         self._run_head = run.record_sha256
         self._association = {
-            "protocol": _PROTOCOL, "run_id": plan.run_id,
+            "protocol": policy["protocol"], "run_id": plan.run_id,
             "workspace": _root_pin(self._workspace),
             "run_request_sha256": original.request_sha256,
             "root_proof_sha256": _sha(_raw(original.payload.get("producer_checkpoint_binding"))),
@@ -774,6 +1225,7 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         }
         self._prepared = self._admission_plan = self._strategy = self._native_configuration = None
         self._phase, self._pending_wire, self._poisoned, self._prepared_ack = "new", None, False, False
+        self._terminal_evidence_sha256 = None
         self._check_owner(registered=False)
         controller._python_admission_flow_local.publication_lineage_owner = self
 
@@ -983,6 +1435,19 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         except (ValueError, TypeError) as exc:
             raise RSILearningError("rsi_publication_lineage_capacity_exceeded") from exc
 
+    def _build_before_descriptor(self, journal_id: str, ordinal: int, head: dict[str, Any] | None,
+                                 archive_pin: LineageSnapshotPin, state_pin: LineageSnapshotPin):
+        if not self._is_v2():
+            return ProducerLineageBeforeIntent(self._plan.run_id, journal_id, ordinal,
+                head["terminal_sha256"] if head else None, head["lineage_sha256"] if head else None,
+                archive_pin, state_pin)
+        wire = self._wire(self._check_owner(check_budget=False))
+        previous = wire["batches"][ordinal - 1] if ordinal else None
+        return ProducerLineageBeforeIntentV2(
+            run_id=self._plan.run_id, journal_id=journal_id, ordinal=ordinal,
+            archive=archive_pin, state=state_pin, **self._previous_v2(previous),
+        )
+
     def _projected_entry(self, journal: Any, ordinal: int, head: dict[str, Any] | None) -> dict[str, Any]:
         """Upper-bound complete held pins and terminal wire before any create.
 
@@ -995,9 +1460,8 @@ class RSIPublicationLineage(_LineageEvidenceReader):
                                       maximum, maximum, maximum, maximum,
                                       mtime_ns=maximum, ctime_ns=maximum).to_dict()
 
-        before = ProducerLineageBeforeIntent(
-            self._plan.run_id, journal.journal_id, ordinal,
-            head["terminal_sha256"] if head else None, head["lineage_sha256"] if head else None,
+        before = self._build_before_descriptor(
+            journal.journal_id, ordinal, head,
             LineageSnapshotPin.from_dict(pin("archive-before.snapshot")),
             LineageSnapshotPin.from_dict(pin("state-before.snapshot")),
         )
@@ -1018,7 +1482,8 @@ class RSIPublicationLineage(_LineageEvidenceReader):
             "journal_id": journal.journal_id, "ordinal": ordinal, "episode_id": self._request.episode_id,
             "request_sha256": self._request.digest(), "memory_snapshot_sha256": self._memory.digest(),
             "native_plan_sha256": self._plan.plan_sha256, "admission_plan": self._admission_plan.to_dict(),
-            "prepared_journal": journal.to_dict(), "before": before.to_dict(), "before_file_pin": pin("before.json"),
+            "prepared_journal": journal.to_dict(), "before": before.to_dict(),
+            "before_file_pin": pin("before-v2.json" if self._is_v2() else "before.json"),
             "staged": staged.to_dict(), "staged_file_pin": pin("staged.json"),
             "terminal": terminal.to_dict(), "terminal_file_pin": pin("terminal.json"),
             "published_journal": published, "state_projection_sha256": "f" * 64, "state": "terminal",
@@ -1032,6 +1497,45 @@ class RSIPublicationLineage(_LineageEvidenceReader):
                 "journal.prepared.json", "journal.staged.json", "manifest.json", "preflight.json", "journal.published.json", "terminal.json",
             )},
         }
+
+    def _projected_rejected_entry(self, journal: Any, ordinal: int, head: dict[str, Any] | None) -> dict[str, Any]:
+        """Complete C2 capacity measurement only; never persisted or accepted as evidence."""
+        from .rsi_native_provenance_names import NATIVE_RSI_REJECTION_PROVENANCE_NAME
+        from .rsi_native_rejection import MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES
+
+        entry = self._projected_entry(journal, ordinal, head)
+        for name in ("staged", "staged_file_pin", "state_projection_sha256", "after_sources",
+                     "terminal", "terminal_file_pin", "published_journal", "head_sources"):
+            entry.pop(name)
+        entry["snapshots"] = {name: pin for name, pin in entry["snapshots"].items() if name.endswith("before")}
+        maximum = 2**64 - 1
+        def pin(name):
+            return LineageSnapshotPin(name, "f" * 64, MAX_LINEAGE_SNAPSHOT_BYTES, maximum, maximum,
+                maximum, maximum, mtime_ns=maximum, ctime_ns=maximum).to_dict()
+        ids = tuple(candidate.candidate_id for candidate in journal.candidates)
+        terminal = _copy(journal.to_dict())
+        terminal.update(state="all_rejected", publication_phase="committed", terminal_marker_sha256="f" * 64,
+                        archive_after_sha256=journal.base_archive_sha256, state_after_sha256=journal.base_state_sha256)
+        for candidate in terminal["candidates"]:
+            candidate.update(status="rejected", execution_receipt_sha256="f" * 64,
+                             evaluation_receipt_sha256="f" * 64, publication_receipt_sha256=None)
+        rejected = ProducerLineageRejectedTerminalV2(
+            run_id=self._run_id, journal_id=journal.journal_id, episode_id=self._request.episode_id, ordinal=ordinal,
+            before_sha256=entry["before"]["descriptor_sha256"], prepared_journal_sha256=journal.digest(),
+            terminal_journal_sha256="f" * 64, rejection_manifest_sha256="f" * 64, terminal_marker_sha256="f" * 64,
+            candidate_ids=ids, archive_sha256=entry["before"]["archive"]["sha256"],
+            state_sha256=entry["before"]["state"]["sha256"],
+        )
+        entry.update(state="rejected", rejected=rejected.to_dict(), rejected_file_pin=pin("rejected.json"),
+                     rejected_journal=terminal,
+                     evidence_pins={name: pin("rejection-" + _sha(name.encode()) if name.startswith("rejections/") else name)
+                         for name in ("journal.prepared.json", "journal.json", "rejections.json",
+                                      *("rejections/" + item + ".json" for item in ids))},
+                     rejection_provenance={"provenance_sha256": "f" * 64, "file_pin": NativeRSIRejectionFilePin(
+                         NATIVE_RSI_REJECTION_PROVENANCE_NAME, "f" * 64, MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES,
+                         maximum, maximum, maximum, maximum, mtime_ns=maximum, ctime_ns=maximum,
+                     ).to_dict()})
+        return entry
 
     def _publication_checkpoint(self, _stage: str) -> None:
         self._check_owner()
@@ -1064,8 +1568,14 @@ class RSIPublicationLineage(_LineageEvidenceReader):
 
     @staticmethod
     def _retained_bytes(wire: dict[str, Any], state: dict[str, Any] | None = None) -> int:
-        from .rsi_producer_staging_capsule import retained_ready_capsule_bytes
+        from .rsi_producer_staging_capsule import (
+            retained_publication_evidence_bytes,
+            retained_ready_capsule_bytes,
+        )
 
+        if wire.get("protocol") == _PROTOCOL_V2:
+            return retained_publication_evidence_bytes({**({} if state is None else state),
+                "producer_multi_episode_publication": True, "producer_known_rejection": True, _FIELD: wire})
         total = 0 if state is None else retained_ready_capsule_bytes(state)
         total += sum(pin["size"] for entry in wire["batches"] for pin in entry["snapshots"].values())
         if total > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
@@ -1073,7 +1583,12 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         return total
 
     def _ack(self, wire: dict[str, Any]) -> None:
-        self._check_owner(check_budget=self._phase != "staged")
+        terminal_evidence = self._is_v2() and self._terminal_evidence_sha256 is not None
+        if terminal_evidence and (not wire["batches"] or wire["batches"][-1]["state"] != "rejected"
+                or wire["batches"][-1]["rejected"]["terminal_journal_sha256"] != self._terminal_evidence_sha256
+                or self._phase not in {"before", "rejected", "rejected-provenance"}):
+            _fail("terminal_evidence_ack_invalid")
+        self._check_owner(check_budget=self._phase != "staged" and not terminal_evidence)
         self._pending_wire = _raw(wire)
         try:
             self._controller._ack_publication_lineage_for_active_flow(self)
@@ -1103,6 +1618,11 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         projected["batches"].append(self._projected_entry(journal, len(wire["batches"]), wire["head"]))
         projected["head"] = {"journal_id": journal.journal_id, "terminal_sha256": "f" * 64, "lineage_sha256": "f" * 64}
         self._capacity_check(projected)
+        if self._is_v2():
+            rejected_projected = _copy(wire)
+            rejected_projected["batches"].append(self._projected_rejected_entry(journal, len(wire["batches"]), wire["head"]))
+            rejected_projected["rejections"] = self._rejection_index(rejected_projected["batches"])
+            self._capacity_check(rejected_projected)
         total = self._retained_bytes(wire, state)
         if total + len(base_archive) + len(base_state_bytes) > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
             _fail("capacity_exceeded")
@@ -1114,12 +1634,14 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         state_pin, original_state = self._retain_snapshot(journal_id, "state-before", base_state_bytes,
                                                          source=self._workspace / "evolution/state.json", total=total + archive_pin.size)
         head = wire["head"]
-        before = ProducerLineageBeforeIntent(
-            self._plan.run_id, journal_id, len(wire["batches"]),
-            head["terminal_sha256"] if head else None, head["lineage_sha256"] if head else None,
+        before = self._build_before_descriptor(
+            journal_id, len(wire["batches"]), head,
             archive_pin, state_pin,
         )
-        _path, pin = persist_lineage_descriptor(self._workspace, before)
+        if self._is_v2():
+            _path, pin = persist_lineage_v2_descriptor(self._workspace, before)
+        else:
+            _path, pin = persist_lineage_descriptor(self._workspace, before)
         entry = {
             "journal_id": journal_id, "ordinal": before.ordinal, "episode_id": self._request.episode_id,
             "request_sha256": self._request.digest(), "memory_snapshot_sha256": self._memory.digest(),
@@ -1303,6 +1825,8 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         from . import producer_bundle_recovery as recovery
 
         if manifest is None:
+            if self._is_v2():
+                return self._retain_rejected_locked(published)
             _fail("all_rejected_not_yet_supported")
         if self._phase != "staged":
             _fail("terminal_state_invalid")
@@ -1344,6 +1868,149 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         self._ack(wire)
         self._phase = "terminal"
 
+    def _retain_rejected_locked(self, terminal: Any) -> None:
+        from .producer_bundle_publication import ProducerBundlePublicationJournal
+        from .producer_bundle_rejection import _verify_terminal_batch_rejection_evidence
+        from .rsi_native_rejection import MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES
+
+        if (not self._is_v2() or self._phase != "before" or not self._prepared_ack
+                or type(terminal) is not ProducerBundlePublicationJournal
+                or terminal.journal_id != self._plan.journal_id or terminal.state != "all_rejected"):
+            _fail("rejected_state_invalid")
+        state = self._check_owner(check_budget=False)
+        wire = self._wire(state)
+        entry = wire["batches"][-1]
+        if entry["state"] != "before" or entry["journal_id"] != terminal.journal_id:
+            _fail("rejected_association_invalid")
+        projected = _copy(wire)
+        projected["batches"][-1] = self._projected_rejected_entry(self._prepared, entry["ordinal"], wire["head"])
+        projected["rejections"] = self._rejection_index(projected["batches"])
+        self._capacity_check(projected)
+        self._verify_before_source_pins(entry)
+        before = self._verify_descriptor(entry, "before")
+        archive = self._snapshot_bytes(entry["journal_id"], entry["snapshots"]["archive-before"], name="archive-before")
+        state_bytes = self._snapshot_bytes(entry["journal_id"], entry["snapshots"]["state-before"], name="state-before")
+        self._verify_live_bytes(archive, state_bytes)
+        _require_marker_absent(self._workspace)
+        batch = self._workspace / "evolution/producer-batches" / terminal.journal_id
+        verify_persisted_lineage_snapshot(batch / "journal.prepared.json",
+                                         LineageSnapshotPin.from_dict(entry["evidence_pins"]["journal.prepared.json"]))
+        observed = _verify_terminal_batch_rejection_evidence(self._workspace, batch, self._prepared, terminal=terminal)
+        pins = {name: capture_lineage_snapshot_pin(batch / name,
+                name="rejection-" + _sha(name.encode()) if name.startswith("rejections/") else name).to_dict()
+                for name in ("journal.json", "rejections.json",
+                             *("rejections/" + item + ".json" for item in observed.candidate_ids))}
+        if _verify_terminal_batch_rejection_evidence(self._workspace, batch, self._prepared, terminal=terminal) != observed:
+            _fail("rejected_evidence_drift")
+        for name, pin in pins.items():
+            verify_persisted_lineage_snapshot(batch / name, LineageSnapshotPin.from_dict(pin))
+        rejected = ProducerLineageRejectedTerminalV2(
+            run_id=self._run_id, journal_id=terminal.journal_id, episode_id=self._request.episode_id,
+            ordinal=entry["ordinal"], before_sha256=before.digest(), prepared_journal_sha256=self._prepared.digest(),
+            terminal_journal_sha256=terminal.digest(), rejection_manifest_sha256=observed.manifest_sha256,
+            terminal_marker_sha256=terminal.terminal_marker_sha256, candidate_ids=observed.candidate_ids,
+            archive_sha256=_sha(archive), state_sha256=_sha(state_bytes),
+        )
+        total = self._retained_bytes(wire, state) + sum(pin["size"] for pin in pins.values())
+        if total + len(_raw(rejected.to_dict())) + MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+            _fail("capacity_exceeded")
+        self._verify_before_source_pins(entry)
+        self._check_owner(check_budget=False)
+        _path, file_pin = persist_lineage_v2_descriptor(self._workspace, rejected)
+        entry.update(state="rejected", rejected=rejected.to_dict(), rejected_file_pin=file_pin.to_dict(),
+                     rejected_journal=terminal.to_dict(), rejection_provenance=None)
+        entry["evidence_pins"].update(pins)
+        wire["rejections"] = self._rejection_index(wire["batches"])
+        self._verify_rejected_entry(entry, ordinal=entry["ordinal"],
+                                    previous=wire["batches"][-2] if len(wire["batches"]) > 1 else None)
+        self._verify_before_source_pins(entry)
+        self._verify_live_bytes(archive, state_bytes)
+        self._terminal_evidence_sha256 = terminal.digest()
+        self._ack(wire)
+        self._phase = "rejected"
+
+    def rejection_provenance_binding(self) -> RejectionLineageC1Binding:
+        """Read the original C1 observation under the still-live original owner."""
+        if type(self) is not RSIPublicationLineage:
+            _fail("owner_invalid")
+        if not self._is_v2() or self._phase not in {"rejected", "rejected-provenance"}:
+            _fail("rejection_c1_required")
+        state = self._check_owner(check_budget=False)
+        wire = self._wire(state)
+        entry = wire["batches"][-1]
+        if entry["state"] != "rejected" or entry["journal_id"] != self._plan.journal_id:
+            _fail("rejected_association_invalid")
+        self._verify_rejected_entry(entry, ordinal=entry["ordinal"],
+                                    previous=wire["batches"][-2] if len(wire["batches"]) > 1 else None)
+        self._verify_before_source_pins(entry)
+        binding = self._binding_for_rejected_entry(entry)
+        if self._phase == "rejected" and binding.checkpoint_sha256 != self._head:
+            _fail("rejection_c1_adjacency_drift")
+        if self._phase == "rejected-provenance":
+            self._rejection_pinned_evidence(entry)
+        self._check_owner(check_budget=False)
+        return binding
+
+    def rejection_provenance_file_pin(self) -> NativeRSIRejectionFilePin:
+        if type(self) is not RSIPublicationLineage:
+            _fail("owner_invalid")
+        if not self._is_v2() or self._phase != "rejected-provenance":
+            _fail("rejection_c2_required")
+        state = self._check_owner(check_budget=False)
+        entry = self._wire(state)["batches"][-1]
+        self.rejection_provenance_binding()
+        evidence = self._rejection_pinned_evidence(entry)
+        pin = NativeRSIRejectionFilePin.from_dict(entry["rejection_provenance"]["file_pin"])
+        if evidence.provenance_file_pin != pin:
+            _fail("rejection_provenance_drift")
+        self._check_owner(check_budget=False)
+        return pin
+
+    def acknowledge_rejection_provenance(self, evidence: NativeRSIRejectionEvidence,
+                                         file_pin: NativeRSIRejectionFilePin) -> None:
+        from .producer_bundle_staging import _locked
+
+        if type(self) is not RSIPublicationLineage:
+            _fail("owner_invalid")
+        if (not self._is_v2() or self._phase != "rejected"
+                or type(evidence) is not NativeRSIRejectionEvidence or type(file_pin) is not NativeRSIRejectionFilePin):
+            _fail("rejection_ack_invalid")
+        # Exact DTO revalidation precedes all path/lock I/O and caller-controlled methods.
+        from .rsi_native_rejection import _dto_shape
+
+        _dto_shape(evidence)
+        _dto_shape(file_pin)
+        evidence = NativeRSIRejectionEvidence.from_dict(evidence.to_dict(), provenance_sha256=evidence.provenance_sha256,
+                                                      provenance_file_pin=file_pin)
+        self._check_owner(check_budget=False)
+        with _locked(self._workspace, checkpoint=self._terminal_checkpoint):
+            state = self._check_owner(check_budget=False)
+            binding = self.rejection_provenance_binding()
+            wire = self._wire(state)
+            entry = wire["batches"][-1]
+            if (entry["rejection_provenance"] is not None or evidence.lineage != binding
+                    or evidence.plan != self._plan or evidence.claim != self._claim
+                    or evidence.provenance_file_pin != file_pin or evidence.provenance_sha256 is None
+                    or dict(evidence.ledger_identity) != self._gateway._ledger_identity):
+                _fail("rejection_ack_association_invalid")
+            observed = read_native_rsi_rejection_provenance(
+                self._workspace / "evolution/producer-batches" / entry["journal_id"], expected_file_pin=file_pin,
+            )
+            if observed != evidence:
+                _fail("rejection_provenance_drift")
+            entry["rejection_provenance"] = {"provenance_sha256": evidence.provenance_sha256, "file_pin": file_pin.to_dict()}
+            self._capacity_check(wire)
+            self._retained_bytes(wire, state)
+            self._verify_before_source_pins(entry)
+            if self._rejection_pinned_evidence(entry) != evidence:
+                _fail("rejection_provenance_drift")
+            self._check_owner(check_budget=False)
+            self._ack(wire)
+            self._phase = "rejected-provenance"
+            if self._rejection_pinned_evidence(entry) != evidence:
+                _fail("rejection_provenance_drift")
+            self._check_owner(check_budget=False)
+
 
 class RSIPublicationLineageInspection(_LineageEvidenceReader):
     """Read one durable child through its original held, complete publication chain.
@@ -1379,6 +2046,8 @@ class RSIPublicationLineageInspection(_LineageEvidenceReader):
         policy = multi_episode_publication_policy(controller)
         if policy is None:
             _fail("opt_in_required")
+        if policy["protocol"] != _PROTOCOL:
+            _fail("v2_inspection_required")
         parsed_request, parsed_memory = _request_memory(request, memory)
         validate_rsi_python_admission_shapes(native_plan, dto_types=(NativeRSIExecutionPlan, SolverRequest))
         plan = NativeRSIExecutionPlan.from_dict(native_plan.to_dict())
@@ -1543,15 +2212,338 @@ class RSIPublicationLineageInspection(_LineageEvidenceReader):
         return recovery.ProducerBundleRecoveryResult("published", journal.digest(), manifest_sha, preflight_sha, ids, checked)
 
 
+class _V2InspectionBase(_V2LineageEvidenceReader):
+    """Held read-only observations; terminal and started contracts stay exact and separate."""
+
+    __slots__ = (
+        "_association",
+        "_claim",
+        "_controller",
+        "_episode_head",
+        "_expected_checkpoint_sha256",
+        "_expected_provenance_file_pin",
+        "_gateway",
+        "_head",
+        "_ledger",
+        "_memory",
+        "_payload",
+        "_plan",
+        "_policy",
+        "_request",
+        "_result",
+        "_run_head",
+        "_run_id",
+        "_sidecar",
+        "_strategy",
+        "_thread",
+        "_workspace",
+    )
+
+    def _initialize(self, controller: Any, *, request: SolverRequest,
+                    memory: MemorySnapshot, native_plan: NativeRSIExecutionPlan,
+                    expected_checkpoint_sha256: str | None = None,
+                    expected_episode_record_sha256: str | None = None,
+                    expected_claim_sha256: str | None = None,
+                    expected_provenance_file_pin: NativeRSIRejectionFilePin | None = None) -> None:
+        from .evolution import PopulationStrategy
+        from .rsi_controller import RSILearningController
+        from .rsi_producer_gateway import PythonProducerRSISolverGateway
+        from .rsi_python_admission import validate_rsi_python_admission_shapes
+        from .rsi_python_scheduler_inputs import _request_memory
+        from .rsi_store import RSILedger
+
+        if (type(self) not in {RSIPublicationLineageV2Inspection, StartedRSIRejectionInspection}
+                or type(controller) is not RSILearningController or type(controller.ledger) is not RSILedger
+                or type(controller.gateway) is not PythonProducerRSISolverGateway
+                or controller.gateway.ledger is not controller.ledger or type(native_plan) is not NativeRSIExecutionPlan):
+            _fail("inspection_invalid")
+        from .rsi_native_rejection import _dto_shape
+
+        _dto_shape(native_plan)
+        started = type(self) is StartedRSIRejectionInspection
+        if started:
+            if (type(expected_provenance_file_pin) is not NativeRSIRejectionFilePin
+                    or any(type(value) is not str or len(value) != 64
+                           or any(c not in "0123456789abcdef" for c in value) for value in (
+                               expected_checkpoint_sha256, expected_episode_record_sha256, expected_claim_sha256))):
+                _fail("inspection_expected_pins_invalid")
+            _dto_shape(expected_provenance_file_pin)
+            expected_provenance_file_pin = NativeRSIRejectionFilePin.from_dict(expected_provenance_file_pin.to_dict())
+            if not controller.ledger.controller_lock_held(native_plan.run_id):
+                _fail("inspection_controller_lock_required")
+        policy = multi_episode_publication_policy(controller)
+        if policy is None or policy["protocol"] != _PROTOCOL_V2:
+            _fail("v2_opt_in_required")
+        parsed_request, parsed_memory = _request_memory(request, memory)
+        validate_rsi_python_admission_shapes(native_plan, dto_types=(NativeRSIExecutionPlan, SolverRequest))
+        plan = NativeRSIExecutionPlan.from_dict(native_plan.to_dict())
+        if plan != native_plan or plan.request != parsed_request or plan.memory_snapshot_sha256 != parsed_memory.digest():
+            _fail("inspection_plan_mismatch")
+        self._controller, self._ledger, self._gateway = controller, controller.ledger, controller.gateway
+        self._workspace, self._sidecar = controller.producer_workspace, controller.producer_sidecar
+        self._strategy = self._gateway.producer_config.inputs.native_context.strategy
+        if (type(self._strategy) is not PopulationStrategy
+                or self._strategy.context.workspace.expanduser().absolute() != self._workspace):
+            _fail("inspection_strategy_invalid")
+        self._thread, self._run_id = get_ident(), plan.run_id
+        self._request, self._memory, self._plan, self._policy = parsed_request, parsed_memory, plan, _raw(policy)
+        self._expected_checkpoint_sha256 = expected_checkpoint_sha256
+        self._expected_provenance_file_pin = expected_provenance_file_pin
+        with self._ledger.read_only_observations():
+            self._gateway._assert_ledger()
+            run = self._ledger.get_run(plan.run_id)
+            history = self._ledger.history(plan.run_id)
+            checkpoint = self._ledger.controller_checkpoint(plan.run_id)
+            claim = self._ledger.inspect_native_episode_claim(parsed_request, plan_sha256=plan.plan_sha256)
+            result = self._ledger.episode_result(parsed_request.episode_id)
+            episode = self._ledger.get_episode(parsed_request.episode_id)
+        if run is None or not history or checkpoint is None or claim is None or episode is None:
+            _fail("inspection_durable_result_required")
+        if episode.request_sha256 != parsed_request.digest():
+            _fail("inspection_child_association_invalid")
+        if started:
+            if (claim.status != "started" or result is not None
+                    or episode.record_sha256 != expected_episode_record_sha256
+                    or claim.claim_sha256 != expected_claim_sha256):
+                _fail("inspection_started_claim_required")
+        elif (claim.status not in {"completed", "failed"} or result is None or result[0] != parsed_request
+              or result[1].status != claim.status):
+            _fail("inspection_durable_result_required")
+        self._run_head, self._head, self._payload = run.record_sha256, checkpoint[0], _raw(checkpoint[1])
+        self._claim, self._result, self._episode_head = claim, result, episode.record_sha256
+        self._association = {
+            "protocol": _PROTOCOL_V2, "run_id": plan.run_id, "workspace": _root_pin(self._workspace),
+            "run_request_sha256": history[0].request_sha256,
+            "root_proof_sha256": _sha(_raw(history[0].payload.get("producer_checkpoint_binding"))),
+            "policy_sha256": _sha(self._policy), "max_batches": MAX_LINEAGE_BATCHES,
+        }
+        self._check()
+
+    def _check(self) -> dict[str, Any]:
+        from .rsi_controller import RSILearningController
+        from .rsi_producer_gateway import PythonProducerRSISolverGateway
+
+        controller = self._controller
+        if (type(self) not in {RSIPublicationLineageV2Inspection, StartedRSIRejectionInspection}
+                or get_ident() != self._thread or type(controller) is not RSILearningController
+                or controller.ledger is not self._ledger or controller.gateway is not self._gateway
+                or type(self._gateway) is not PythonProducerRSISolverGateway or self._gateway.ledger is not self._ledger
+                or controller.producer_workspace is not self._workspace or controller.producer_sidecar is not self._sidecar
+                or self._gateway.producer_config.inputs.native_context.strategy is not self._strategy):
+            _fail("inspection_owner_drift")
+        if (_raw(multi_episode_publication_policy(controller)) != self._policy
+                or _root_pin(self._workspace) != self._association["workspace"]):
+            _fail("inspection_policy_drift")
+        started = type(self) is StartedRSIRejectionInspection
+        if started:
+            controller._validate_native_rejection_reconciliation_checkpoint(
+                self._run_id, self._request.episode_id, expected_checkpoint_sha256=self._expected_checkpoint_sha256,
+                current_checkpoint_sha256=self._head,
+            )
+        with self._ledger.read_only_observations():
+            self._gateway._assert_ledger()
+            run = self._ledger.get_run(self._run_id)
+            checkpoint = self._ledger.controller_checkpoint(self._run_id)
+            original = self._ledger.history(self._run_id)[0]
+            episode = self._ledger.get_episode(self._request.episode_id)
+            claim = self._ledger.inspect_native_episode_claim(self._request, plan_sha256=self._plan.plan_sha256)
+            result = self._ledger.episode_result(self._request.episode_id)
+            if (run is None or run.record_sha256 != self._run_head or checkpoint is None
+                    or checkpoint[0] != self._head or _raw(checkpoint[1]) != self._payload
+                    or original.request_sha256 != self._association["run_request_sha256"]
+                    or _sha(_raw(original.payload.get("producer_checkpoint_binding"))) != self._association["root_proof_sha256"]
+                    or episode is None or episode.record_sha256 != self._episode_head or claim != self._claim or result != self._result):
+                _fail("inspection_checkpoint_drift")
+            state = checkpoint[1]
+            controller._validate_run_checkpoint_producer_binding(run, state)
+            controller._validate_resume_identity(run, None, None)
+            if (state.get("mode") != "drs" or state.get("producer_known_rejection") is not True
+                    or controller._native_historical_memory(self._run_id, self._request).to_bytes() != self._memory.to_bytes()):
+                _fail("inspection_memory_drift")
+            self._validate_history_v2(state)
+            wire = state.get(_FIELD)
+            if (type(wire) is not dict or not wire["batches"]
+                    or any(entry["state"] not in {"terminal", "rejected"}
+                           or (entry["state"] == "rejected" and entry["rejection_provenance"] is None) for entry in wire["batches"])):
+                _fail("inspection_terminal_chain_required")
+            selected = [entry for entry in wire["batches"] if entry["episode_id"] == self._request.episode_id]
+            if len(selected) != 1:
+                _fail("inspection_selected_child_missing")
+            entry = selected[0]
+            if (entry["request_sha256"] != self._request.digest() or entry["native_plan_sha256"] != self._plan.plan_sha256
+                    or entry["memory_snapshot_sha256"] != self._memory.digest() or entry["journal_id"] != self._plan.journal_id):
+                _fail("inspection_selected_child_mismatch")
+            if started and (entry is not wire["batches"][-1] or entry["state"] != "rejected"
+                            or NativeRSIRejectionFilePin.from_dict(entry["rejection_provenance"]["file_pin"])
+                            != self._expected_provenance_file_pin):
+                _fail("inspection_c2_pin_mismatch")
+            for retained in wire["batches"]:
+                self._verify_entry_native_settlement(retained)
+            _require_marker_absent(self._workspace)
+            latest = self._ledger.controller_checkpoint(self._run_id)
+            if latest is None or latest[0] != self._head or _raw(latest[1]) != self._payload:
+                _fail("inspection_checkpoint_drift")
+        if started:
+            controller._validate_native_rejection_reconciliation_checkpoint(
+                self._run_id, self._request.episode_id, expected_checkpoint_sha256=self._expected_checkpoint_sha256,
+                current_checkpoint_sha256=self._head,
+            )
+        return state
+
+    def _live_population(self, wire: dict[str, Any]) -> tuple[bytes, bytes]:
+        path = self._workspace / "evolution/archive.jsonl"
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            if wire["head"] is not None:
+                _fail("current_head_drift")
+            archive = b""
+        else:
+            archive = _files.read_regular_file(path, MAX_LINEAGE_SNAPSHOT_BYTES)
+        state_bytes = _files.read_regular_file(self._workspace / "evolution/state.json", MAX_LINEAGE_SNAPSHOT_BYTES)
+        return archive, state_bytes
+
+    def rejection_provenance_binding(self) -> RejectionLineageC1Binding:
+        state = self._check()
+        entry = next(entry for entry in state[_FIELD]["batches"] if entry["episode_id"] == self._request.episode_id)
+        if entry["state"] != "rejected":
+            _fail("rejection_c2_required")
+        binding = self._binding_for_rejected_entry(entry)
+        if self._rejection_pinned_evidence(entry).lineage != binding:
+            _fail("rejection_provenance_drift")
+        self._check()
+        return binding
+
+    def rejection_provenance_file_pin(self) -> NativeRSIRejectionFilePin:
+        state = self._check()
+        entry = next(entry for entry in state[_FIELD]["batches"] if entry["episode_id"] == self._request.episode_id)
+        if entry["state"] != "rejected" or entry["rejection_provenance"] is None:
+            _fail("rejection_c2_required")
+        pin = NativeRSIRejectionFilePin.from_dict(entry["rejection_provenance"]["file_pin"])
+        if self._rejection_pinned_evidence(entry).provenance_file_pin != pin:
+            _fail("rejection_provenance_drift")
+        self._check()
+        return pin
+
+    def inspect_rejection(self, workspace: str | Path, admission_plan: Any, terminal: Any):
+        from .producer_bundle_admission import (
+            ProducerBundleAdmissionPlan,
+            parse_producer_bundle_admission_plan,
+        )
+        from .producer_bundle_publication import (
+            ProducerBundlePublicationJournal,
+            parse_producer_bundle_publication_journal,
+        )
+        from .producer_bundle_rejection import _verify_terminal_batch_rejection_evidence
+
+        _publication_shapes(admission_plan, terminal)
+        if (type(self) not in {RSIPublicationLineageV2Inspection, StartedRSIRejectionInspection}
+                or type(workspace) not in {str, type(self._workspace)}
+                or Path(workspace).expanduser().absolute() != self._workspace
+                or type(admission_plan) is not ProducerBundleAdmissionPlan or type(terminal) is not ProducerBundlePublicationJournal):
+            _fail("inspection_inputs_invalid")
+        plan = parse_producer_bundle_admission_plan(admission_plan.to_dict())
+        terminal = parse_producer_bundle_publication_journal(terminal.to_dict())
+        wire = self._check()[_FIELD]
+        entry = next(entry for entry in wire["batches"] if entry["episode_id"] == self._request.episode_id)
+        if entry["state"] != "rejected" or plan.to_dict() != entry["admission_plan"] or terminal.to_dict() != entry["rejected_journal"]:
+            _fail("inspection_inputs_mismatch")
+        archive, current_state = self._live_population(wire)
+        self._verify_chain(wire, archive, current_state)
+        from .producer_bundle_publication import parse_producer_bundle_publication_journal
+
+        prepared = parse_producer_bundle_publication_journal(entry["prepared_journal"])
+        observed = _verify_terminal_batch_rejection_evidence(
+            self._workspace, self._workspace / "evolution/producer-batches" / entry["journal_id"], prepared, terminal=terminal,
+        )
+        self._check()
+        self._verify_chain(wire, archive, current_state)
+        self._check()
+        return observed
+
+
+class RSIPublicationLineageV2Inspection(_V2InspectionBase):
+    """Terminal-only mixed P/R history; no owner, launch or acknowledgment API."""
+
+    __slots__ = ()
+
+    def __init__(self, controller: Any, *, request: SolverRequest,
+                 memory: MemorySnapshot, native_plan: NativeRSIExecutionPlan) -> None:
+        self._initialize(controller, request=request, memory=memory, native_plan=native_plan)
+
+    def inspect(self, workspace: str | Path, admission_plan: Any, published_journal: Any):
+        from . import producer_bundle_recovery as recovery
+        from .producer_bundle_admission import (
+            ProducerBundleAdmissionPlan,
+            parse_producer_bundle_admission_plan,
+        )
+        from .producer_bundle_publication import (
+            ProducerBundlePublicationJournal,
+            parse_producer_bundle_publication_journal,
+        )
+
+        _publication_shapes(admission_plan, published_journal)
+        if (type(self) is not RSIPublicationLineageV2Inspection or type(workspace) not in {str, type(self._workspace)}
+                or Path(workspace).expanduser().absolute() != self._workspace
+                or type(admission_plan) is not ProducerBundleAdmissionPlan or type(published_journal) is not ProducerBundlePublicationJournal):
+            _fail("inspection_inputs_invalid")
+        plan = parse_producer_bundle_admission_plan(admission_plan.to_dict())
+        journal = parse_producer_bundle_publication_journal(published_journal.to_dict())
+        wire = self._check()[_FIELD]
+        selected = next(entry for entry in wire["batches"] if entry["episode_id"] == self._request.episode_id)
+        if (selected["state"] != "terminal" or plan.to_dict() != selected["admission_plan"]
+                or journal.to_dict() != selected["published_journal"] or journal.state != "published"):
+            _fail("inspection_inputs_mismatch")
+        archive, current_state = self._live_population(wire)
+        self._verify_chain(wire, archive, current_state)
+        self._strategy._validate_candidate_integrity_state(json.loads(current_state))
+        self._strategy._active(json.loads(current_state))
+        batch = recovery._batch(self._workspace, journal.journal_id)
+        staged = recovery._read_journal(batch / "journal.staged.json")
+        preflight = recovery._read_json(batch / "preflight.json", 128 * 1024)
+        preflight_sha = recovery._check_preflight(preflight, staged, plan)
+        manifest = recovery._read_json(batch / "manifest.json", 256 * 1024)
+        manifest_sha, ids, _paths, files = recovery._manifest(manifest, staged, preflight_sha)
+        checked = recovery._verify_manifest_files(self._workspace, batch, files, journal)
+        self._check()
+        self._verify_chain(wire, archive, current_state)
+        self._check()
+        return recovery.ProducerBundleRecoveryResult("published", journal.digest(), manifest_sha, preflight_sha, ids, checked)
+
+
+class StartedRSIRejectionInspection(_V2InspectionBase):
+    """C2-only explicit reconcile observation with separately pinned current CAS."""
+
+    __slots__ = ()
+
+    def __init__(self, controller: Any, *, request: SolverRequest,
+                 memory: MemorySnapshot, native_plan: NativeRSIExecutionPlan,
+                 expected_checkpoint_sha256: str, expected_episode_record_sha256: str,
+                 expected_claim_sha256: str, expected_provenance_file_pin: NativeRSIRejectionFilePin) -> None:
+        self._initialize(controller, request=request, memory=memory, native_plan=native_plan,
+                         expected_checkpoint_sha256=expected_checkpoint_sha256,
+                         expected_episode_record_sha256=expected_episode_record_sha256,
+                         expected_claim_sha256=expected_claim_sha256,
+                         expected_provenance_file_pin=expected_provenance_file_pin)
+
+
 def acknowledge_publication_lineage_for_active_flow(controller: Any, owner: RSIPublicationLineage) -> str:
     """Write and acknowledge only the capsule's exact adjacent lineage increment."""
     if type(owner) is not RSIPublicationLineage or controller is not owner._controller:
         _fail("owner_invalid")
-    state = owner._check_owner(check_budget=owner._phase != "staged")
-    context = owner._context
+    if not owner._is_v2():
+        state = owner._check_owner(check_budget=owner._phase != "staged")
     if type(owner._pending_wire) is not bytes:
         _fail("acknowledgement_missing")
     wire = json.loads(owner._pending_wire)
+    terminal_evidence = owner._is_v2() and owner._terminal_evidence_sha256 is not None
+    if terminal_evidence and (not wire["batches"] or wire["batches"][-1]["state"] != "rejected"
+            or wire["batches"][-1]["rejected"]["terminal_journal_sha256"] != owner._terminal_evidence_sha256
+            or owner._phase not in {"before", "rejected", "rejected-provenance"}):
+        _fail("terminal_evidence_ack_invalid")
+    if owner._is_v2():
+        state = owner._check_owner(check_budget=owner._phase != "staged" and not terminal_evidence)
+    context = owner._context
     expected = json.loads(context.payload)
     expected[_FIELD] = wire
     try:
