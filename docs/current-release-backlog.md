@@ -18,7 +18,12 @@ PR100 的最终 head 为 `c73650afe3cdc9f1dc3c08ec74d8df12a7b75b01`；
 规格见 [multi-episode-publication.md](../specs/191-python-worker-adapter/multi-episode-publication.md)
 与 [ready-capsule.md](../specs/191-python-worker-adapter/ready-capsule.md)。
 
-Known rejection v2 已在独立开发树接通 controller、owner、scheduler 和 gateway；
+当前恢复批次已创建 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101) 草稿，尚未
+合入 main。它继续使用 PR100 的产品基线，包含 known rejection、BRS partial-wave
+修复和纯 BRS child preflight；本地提交可能领先远端草稿。较早 PR101 CI 的取消或
+pending 状态不构成最终验收，必须核对最后一次实际推送的 head。
+
+Known rejection v2 已接通 controller、owner、scheduler 和 gateway；
 只允许 fresh、显式 opt-in DRS。原 owner 两案、T4 多候选案、T5 五个中断边界与原 C2
 连续 reconcile 已通过；连续恢复只消费一次 unknown evidence 预算、保留一次原 solver
 invocation。RPP/PRP/RRR 混合链仍在验收，本批待最终来源 CI、独立审计和合入。
@@ -34,7 +39,7 @@ invocation。RPP/PRP/RRR 混合链仍在验收，本批待最终来源 CI、独�
 | --- | --- | --- |
 | PR100 连续发布与历史恢复 | append lineage、原 owner/CAS、独立 held pins、fresh dispatch lease、ready capsule、历史只读 inspection 已实现；三轮 DRS 已有本地验收。 | 最终 head 全部 CI jobs 完成，原始 log/ZIP/JUnit/inventory 与 checkout/source/tree/import 独立一致；合入 main。 |
 | Known rejection 原始恢复验收 | 原 `all_rejected` terminal → C1 → 独立 0400 provenance P → C2、failed mapper、原 pins 和单次 unknown evidence 预算已实现；原 owner、T4/T5 与连续 reconcile 通过。 | RPP/PRP/RRR 全部通过；中断后仅结算原结果，不重复 dispatch、不推进后继、不改 archive/state、不晋级记忆。 |
-| Known rejection 最终集成发布 | 新代码独立于冻结 PR100 checkout，默认/v1 与 BRS wire 保持原契约。 | 同步已接受的 PR100 main，最终集成来源 focused/static checks、完整 CI、raw/source/tree 独立审计通过，再合入 main。 |
+| PR101 恢复批次最终集成发布 | 草稿包含 known rejection、BRS partial-wave 修复及纯 preflight；默认/v1 与 BRS wire 保持原契约，新代码独立于冻结 PR100 checkout。 | 同步已接受的 PR100 main，最终实际推送的集成 head 通过 focused/static checks、完整 CI、raw/source/tree 独立审计，再合入 main。 |
 | 发布文档与证据状态 | GitHub README、台账和对应 SDD 按代码与验收区分状态。 | 用最终实际结果更新状态，链接可用；不把 partial log、不同 source 的局部成功或 skipped Linux gate 当作接受。 |
 
 Known rejection 复用原评测证据结算失败结果；拒绝与进程故障分别处理，不生成官方成功。
@@ -45,8 +50,8 @@ C1/P/C2 不完整、missing、unknown、配置/来源漂移、取消或 deadline
 
 | 工作 | 当前边界 | 结束条件 |
 | --- | --- | --- |
-| BRS partial-wave durable resume | 已在当前集成树接入 completed-obligation 与 pending-dispatch 分离、锁外 replay callback 和 exact identity/head 复核；347 个本地 cases、789 文件 source map、Ruff/compileall/diff-check 已通过。仍不授予 completed child 新 token，也不启用 native multi-child。 | 随当前恢复批次完成最终 integrated source/CI/audit；产品行为保持 provider-free。 |
-| Native 多 child BRS | provider-free BRS 和单 Python child ready/ack 已存在；native 多 child BRS 尚未启用。partial-wave 恢复修复不等于 native dispatch。 | 建立独立 tracked SDD，接通冻结 wave、多 child staging/claim、原 owner/CAS、ready/ack 和完整中断验收；完成最终来源 CI 与独立审计。 |
+| BRS partial-wave durable resume | 已在 PR101 集成树接入 completed-obligation 与 pending-dispatch 分离、锁外 replay callback 和 exact identity/head 复核；347 个本地 cases、789 文件 source map、Ruff/compileall/diff-check 已通过。仍不授予 completed child 新 token，也不启用 native multi-child。 | 随 PR101 完成最终 integrated source/CI/audit 和合入；产品行为保持 provider-free。 |
+| Native 多 child BRS | provider-free BRS 和单 Python child ready/ack 已存在；[纯 child preflight](../specs/191-python-worker-adapter/brs-child-preflight.md) 已开发，[Feature196 owner/worker SDD](../specs/196-brs-owner-worker-handoff/spec.md) 已建立。native BRS 尚未启用，纯 selection 的 `authority=False` 不构成 dispatch 权限。 | 按 Feature196 冻结的边界接通 selected child staging/claim、原 owner/CAS、ready/ack、串行 publication 与完整中断验收；完成最终来源 CI 与独立审计。 |
 | 真实 Python runtime | bounded source/build/runtime contracts 和原 executable owner 已存在；真实 source/toolchain/static image/sealed startup 未验收。 | 完成下表 G0–G3/F01–F05 的真实 bytes、构建 closure、startup/input/lifecycle 和 dedicated Linux no-skip evidence。 |
 | 本地 OpenEvolve/Shinka 与生产用 RSI CLI | adapter、bounded result exporter、native scheduler/claim/receipt mapper 和单 episode 组合已存在。当前 `rsi run` / `rsi resume` solver 选项仍是 `provider_free_fixture`。 | 至少一个实际 project profile/lifecycle 在 accepted runtime 下验收，opt-in CLI 消费原 request/memory/result/publication 证据，支持取消和只读恢复；不会落入 fixture gateway。 |
 
