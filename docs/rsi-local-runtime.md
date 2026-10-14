@@ -13,6 +13,13 @@
 在中断后保留，不能通过再次调用来重启。接线边界见
 [`controller-child-claim.md`](../specs/191-python-worker-adapter/controller-child-claim.md)。
 
+新的显式 Python 配置 `RSILearningController(..., producer_child_execution=True)`
+继续接通相邻准备成功的单个 child。它要求原 `PythonProducerRSISolverGateway`、同一
+ledger、sidecar 和 stager；原 run 及全部历史版本固定此配置，恢复时不能增删。默认值仍为
+`False`，CLI native 选择仍拒绝。该配置的单 child 本地闭环验收正在进行，真实 runtime
+和多 episode DRS/BRS 尚未验收，`production_admission=false`。规格见
+[`child-execution-flow.md`](../specs/191-python-worker-adapter/child-execution-flow.md)。
+
 ## 1. 选择治理入口
 
 | 入口 | 适用情形 | 接线要求 |
@@ -426,10 +433,16 @@ project，也不把外部 score 当成官方评测。重复请求和未知状态
 原证据并进入 `rsi_unknown_reconcile_required`，不重复准备、不增加 reservation、不从
 现有文件采纳新的 pin。checkpoint 冲突或 unknown 写入失败保留原 head，不刷新 CAS。
 
-`ready` 当前仍在创建 running episode 或 native claim 前返回
+默认 staging-only 配置的 `ready` 仍在创建 running episode 或 native claim 前返回
 `rsi_producer_episode_dispatch_not_accepted`；BRS opt-in 在创建 run 前拒绝。
-完整 DRS 执行还需要让 gateway、controller admission、store 验证和 scheduler 按
-episode 选择原证明；实际 runtime 与 project profile 也未验收。
+显式启用 `producer_child_execution=True` 时，只有刚完成 ready 的原 owner 调用栈可继续：
+先按原证明选择 child gateway 并绑定 controller，再登记 claim、保存 running，最后通过
+线程绑定、只能调用一次的临时 continuation 进入原 scheduler/admission/publication/mapper。
+读取已有 ready 或 started 不会再创建 continuation。已保存 native result 的中断可完成
+原 episode 的 settlement/verifier；只有 publication 而缺 result 时保持 unknown。终态
+resume 复验历史记忆和原 child 证据，只读恢复，不重跑、不重新准备或增加预算 reservation。
+不同 child ID 和新 approved memory 的多 episode DRS、BRS、实际 runtime 与 project
+profile 仍需各自验收。
 `production_admission=false`。规格见
 [`per-episode-producer-launch.md`](../specs/191-python-worker-adapter/per-episode-producer-launch.md)
 和 [`project-runtime-profile.md`](../specs/191-python-worker-adapter/project-runtime-profile.md)。

@@ -1,5 +1,26 @@
 # Tasks
 
+## Explicit fresh child execution continuation
+
+- [x] Specify `child-execution-flow.md`; persist the original opt-in and exact
+  execution policy in the immutable run request and every run/checkpoint revision.
+- [x] Select each original ready child using its historical request memory;
+  bind the existing provider under the held controller lock and active DRS flow
+  without replacing the controller-wide root gateway or original run proof.
+- [x] Continue only adjacent successful staging with a consumed owner/CAS permit;
+  claim atomically before running, then use a thread-bound one-call continuation
+  to enter the original scheduler, prepared admission, publication and mapper.
+- [x] Recover published evaluation receipts with the original verified journal's
+  Python handoff digest; retain legacy receipt bytes and all original drift gates.
+- [x] Select the original child for terminal replay and explicit failure reconcile;
+  ready/started readback cannot recreate a continuation or restart a provider.
+- [x] Complete unified single-child success/interruption/recovery regression:
+  300 distinct cases, zero failures/errors/skips; frozen 223 product files,
+  whole-source Ruff/compileall/diff checks and ten README CLI commands pass.
+- [ ] Complete this slice's own full CI/raw-source audit and merge.
+- [ ] Accept multiple DRS episodes with distinct child IDs, practice learning and
+  changed approved memory; accept BRS separately before any production CLI claim.
+
 ## Atomic child claim and fresh preclaim continuation
 
 - [x] Reuse the original native claim table/DTO with paired controller-lock and

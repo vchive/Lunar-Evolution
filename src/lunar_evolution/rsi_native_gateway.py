@@ -9,8 +9,10 @@ the same native attempt.
 from __future__ import annotations
 
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from threading import get_ident
 from types import MethodType
 from typing import Any
 
@@ -389,6 +391,72 @@ class NativeRSISolverGateway:
         except Exception as exc:
             raise NativeRSISolverGatewayError("rsi_native_gateway_replay_evidence_invalid") from exc
 
+    @contextmanager
+    def _fresh_child_dispatch(
+        self, request: SolverRequest, memory: MemorySnapshot, *,
+        claim_factory: Callable[[NativeRSIExecutionPlan], NativeEpisodeClaim],
+        check_owner: Callable[[], None],
+    ) -> Iterator[Callable[[SolverRequest], SolverResult]]:
+        """Keep one new child claim's continuation inside its original owner stack.
+
+        There is deliberately no started-claim input or durable execution token.
+        Readback and ordinary run/recovery cannot reconstruct this continuation.
+        The owning controller acquires its atomic claim before creating running;
+        only the adjacent runner may invoke the provider once inside this context.
+        """
+        if not callable(claim_factory) or not callable(check_owner):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_child_hooks_invalid")
+        owner_thread = get_ident()
+        config = self.config
+        check_owner()
+        plan = self._plan(request, memory)
+        self._assert_ledger()
+        if self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256) is not None:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_recovery_required")
+        self._assert_ledger()
+        self._validate_preclaim(request, plan)
+        check_owner()
+        claim = claim_factory(plan)
+        self._assert_ledger()
+        if (type(claim) is not NativeEpisodeClaim or claim.status != "started"
+                or claim.request_sha256 != request.digest() or claim.plan_sha256 != plan.plan_sha256
+                or self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256) != claim):
+            raise NativeRSISolverGatewayError("rsi_native_gateway_child_claim_invalid")
+        self._assert_ledger()
+        check_owner()
+        if self.config is not config:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_child_configuration_changed")
+        active = True
+        used = False
+
+        def dispatch(supplied_request: SolverRequest) -> SolverResult:
+            nonlocal used
+            if not active or used or get_ident() != owner_thread:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_child_continuation_unavailable")
+            # Consume before any callback/provider effect, including a failed observation.
+            used = True
+            if self.config is not config or type(supplied_request) is not SolverRequest or supplied_request != request:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_child_configuration_changed")
+            check_owner()
+            if self._plan(request, memory) != plan:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_child_plan_changed")
+            self._assert_ledger()
+            if self.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256) != claim:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_child_claim_changed")
+            self._assert_ledger()
+            check_owner()
+            result = self._execute_acquired_claim(request, plan, claim)
+            self._assert_ledger()
+            check_owner()
+            if self.config is not config:
+                raise NativeRSISolverGatewayError("rsi_native_gateway_child_configuration_changed")
+            return result
+
+        try:
+            yield dispatch
+        finally:
+            active = False
+
     def run(self, request: SolverRequest, memory: MemorySnapshot) -> SolverResult:
         """Claim, execute through an injected provider, map, and durably publish one result.
 
@@ -418,6 +486,12 @@ class NativeRSISolverGateway:
             # Another controller may have published after our initial read. Acquiring an
             # existing terminal claim grants replay authority only, never a second execution.
             return self._replay(request, plan)
+        return self._execute_acquired_claim(request, plan, claim)
+
+    def _execute_acquired_claim(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, claim: NativeEpisodeClaim,
+    ) -> SolverResult:
+        """Reuse the original mapper/publication inside a newly acquired attempt stack."""
         try:
             bundle = self.config.receipt_provider(request, plan)
             self._assert_ledger()

@@ -1,5 +1,27 @@
 # Current release backlog — 2026-10-14
 
+## Opt-in single-child execution — 2026-10-14
+
+`codex/child-execution-flow` 在原 child claim 基线上继续接通显式
+`producer_child_execution=True`：相邻 ready 的原 owner/CAS permit → child gateway →
+原 claim → running → native scheduler → prepared admission/publication → receipt mapper →
+result/verifier。原 controller root 和 proof 不替换；原 run 与全部历史版本固定 execution
+policy。默认 staging-only 和 CLI native 拒绝行为不变，`production_admission=false`。
+单 child 完整 inert fixture 已通过，统一最终来源与中断回归正在完成，尚未据此声明合入。
+规格见 [`child-execution-flow.md`](../specs/191-python-worker-adapter/child-execution-flow.md)。
+
+下一片多 episode DRS 有两个已核实的发布依赖，不能只循环调用 child：
+
+- 原 Feature153 的 `_ensure_initial_population_window` 只允许第一批 producer admission；
+  第二个 episode 对同一 archive 发布会被拒绝。
+- 原 publication `_terminal` 要求当前 archive/state 等于该批的完整发布后摘要；合法的
+  后续发布也会使早先 child 的恢复失败。
+
+须在现有 SDD 下明确连续发布及历史恢复契约，或明确每个 child 的独立 publication
+workspace 与原 run 归属，再验收 target failure → practice success → 新 approved memory
+→ target retry。不能通过移除初始门禁、忽略整个 archive 摘要或重复使用 root sidecar 完成。
+本批只验收 single child，不关闭多 episode DRS、BRS、真实 runtime 或生产 CLI 的任务。
+
 ## Current snapshot — 2026-10-14
 
 已核实的集成基线是 `main 82191cf29601405769af08b53a3bce78eb6c1d6d`。
