@@ -239,26 +239,28 @@ class BRSAdmissionChannel:
                         for episode_id, pending in self._requests.items()
                     )):
                 _fail("handoff_busy")
+            # Snapshot before validation. The caller may retain and mutate a frozen
+            # DTO with object.__setattr__; every gate and state transition must use
+            # the same strict primitive-only value.
+            detached_handoff = BRSSelectedChildHandoff(**handoff.to_dict())
             nonce_digest = validate_brs_child_handoff(
-                handoff, preflight, current,
+                detached_handoff, preflight, current,
                 consumed_nonces=tuple(self._consumed_handoff_nonces),
             )
-            # The gate validates a detached reconstruction but intentionally returns
-            # only its digest. Reconstruct again here before using fields as set keys.
-            handoff = BRSSelectedChildHandoff(**handoff.to_dict())
-            if (handoff.episode_id in self._completed_selected_episodes
-                    or handoff.episode_id in self._requests):
+            if (detached_handoff.episode_id in self._completed_selected_episodes
+                    or detached_handoff.episode_id in self._requests):
                 _fail("handoff_episode_replayed")
-            if handoff.run_id != self._run_id or handoff.episode_id not in self._episode_ids:
+            if (detached_handoff.run_id != self._run_id
+                    or detached_handoff.episode_id not in self._episode_ids):
                 _fail("wave_mismatch")
-            self._consumed_handoff_nonces.add(handoff.lease_nonce)
-            self._selected_episode_id = handoff.episode_id
+            self._consumed_handoff_nonces.add(detached_handoff.lease_nonce)
+            self._selected_episode_id = detached_handoff.episode_id
             self._selected_handoff_sha256 = nonce_digest
             self._handoff_mode = True
             return nonce_digest
 
     def complete_selected_handoff(self, episode_id: str) -> None:
-        """Retire the current binding after its acknowledged worker future completes."""
+        """Retire an acknowledged binding; caller must first observe its future outcome."""
         if threading.get_ident() != self._owner_thread:
             _fail("handoff_owner_required")
         if type(episode_id) is not str:
@@ -270,6 +272,7 @@ class BRSAdmissionChannel:
                 _fail("selected_episode_mismatch")
             pending = self._requests.get(episode_id)
             if (pending is None or pending.state != "done" or pending.ack is None
+                    or pending.cancelled or pending.error is not None
                     or pending.binding_sha256 != self._selected_handoff_sha256
                     or self._servicing or self._queue):
                 _fail("handoff_not_acknowledged")

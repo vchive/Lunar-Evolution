@@ -2,10 +2,11 @@
 
 ## Status and scope
 
-This is a tracked SDD for the next P1 slice. It freezes the in-process owner/worker
-boundary needed by native BRS before product implementation starts. It is a design
-contract only: no native BRS dispatch is enabled by this feature and no existing
-provider-free DRS/BRS behavior is changed.
+This SDD freezes the in-process owner/worker boundary needed by native BRS. The
+detached handoff value/gates and a selected-episode channel binding sub-slice are
+implemented and tested. Controller integration, selected-child staging/dispatch,
+owner-thread settlement/publication, and native BRS dispatch remain unimplemented;
+no existing provider-free DRS/BRS behavior is changed.
 
 The first implementation accepts a fresh BRS wave with `max_workers=1`. The parent
 controller reserves the complete wave once, freezes one root memory snapshot (`M0`),

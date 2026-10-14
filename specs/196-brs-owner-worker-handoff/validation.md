@@ -37,8 +37,10 @@ git diff --check
 The channel atomically consumes the nonce under its in-memory condition lock and gates
 ready messages to the selected episode. It does not verify that its caller holds the
 controller mutation lock; future controller integration must call it inside the exact
-owner scope and wait for the selected worker future before marking that ordinal complete.
-The helper alone does not provide native BRS dispatch or production admission.
+owner scope. Channel completion checks acknowledged, non-cancelled, error-free request
+state; it cannot observe the executor future. The caller must observe that future's
+successful terminal outcome before invoking completion. The helper alone does not
+provide native BRS dispatch or production admission.
 
 The final acceptance must additionally compare complete source inventories before and
 after, canonical tree and parent commits, all raw JUnit files and every durable

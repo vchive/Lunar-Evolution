@@ -466,3 +466,81 @@ def test_channel_bind_rejects_mutated_handoff_before_set_membership_callbacks():
     with pytest.raises(BRSChildHandoffError):
         channel.bind_selected_handoff(handoff, preflight, CONTEXT)
     assert trap.calls == 0
+
+
+def test_channel_uses_one_strict_handoff_snapshot_if_caller_mutates_during_gate(monkeypatch):
+    import lunar_evolution.rsi_python_brs_admission as admission
+
+    preflight = _preflight(_wire(executions=[]))
+    original = _handoff(selection=preflight.select_next_pending(), nonce="V" * 32)
+    alternate_nonce = "W" * 32
+    original_gate = admission.validate_brs_child_handoff
+    seen = []
+
+    def mutate_caller_after_gate(handoff, *args, **kwargs):
+        seen.append(handoff)
+        digest = original_gate(handoff, *args, **kwargs)
+        object.__setattr__(original, "lease_nonce", alternate_nonce)
+        return digest
+
+    monkeypatch.setattr(admission, "validate_brs_child_handoff", mutate_caller_after_gate)
+    from lunar_evolution.rsi_python_brs_admission import BRSAdmissionChannel
+
+    channel = BRSAdmissionChannel(
+        RUN, tuple(item[1] for item in preflight.intents), owner_thread=get_ident(),
+    )
+    assert channel.bind_selected_handoff(original, preflight, CONTEXT) == original_gate(
+        _handoff(selection=preflight.select_next_pending(), nonce="V" * 32),
+        preflight,
+        CONTEXT,
+    )
+    assert len(seen) == 1
+    assert seen[0] is not original
+    assert seen[0].lease_nonce == "V" * 32
+    assert channel._consumed_handoff_nonces == {"V" * 32}
+    assert original.lease_nonce == alternate_nonce
+
+
+def test_channel_does_not_complete_when_worker_check_fails_after_ack():
+    import threading
+
+    from lunar_evolution.rsi_python_brs_admission import (
+        BRSAdmissionChannel,
+        RSIPythonBRSAdmissionError,
+    )
+
+    preflight = _preflight(_wire(executions=[]))
+    handoff = _handoff(selection=preflight.select_next_pending(), nonce="X" * 32)
+    channel = BRSAdmissionChannel(
+        RUN, tuple(item[1] for item in preflight.intents), owner_thread=get_ident(),
+    )
+    channel.bind_selected_handoff(handoff, preflight, CONTEXT)
+    check_waiting = threading.Event()
+    release_check = threading.Event()
+    post_count = 0
+    errors = []
+
+    def worker_check():
+        nonlocal post_count
+        post_count += 1
+        if post_count == 2:
+            check_waiting.set()
+            assert release_check.wait(3)
+            raise RuntimeError("worker-check-failed-after-ack")
+
+    def worker():
+        try:
+            channel.request(_selected_ready(handoff.episode_id), check=worker_check)
+        except BaseException as exc:  # noqa: BLE001 - assert request outcome.
+            errors.append(exc)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    assert check_waiting.wait(3)
+    assert channel.service(lambda _ready: "f" * 64, timeout=3)
+    release_check.set()
+    thread.join(3)
+    assert not thread.is_alive()
+    assert len(errors) == 1 and str(errors[0]) == "worker-check-failed-after-ack"
+    with pytest.raises(RSIPythonBRSAdmissionError, match="handoff_not_acknowledged"):
+        channel.complete_selected_handoff(handoff.episode_id)
