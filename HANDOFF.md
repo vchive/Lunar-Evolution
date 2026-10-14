@@ -1,5 +1,21 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 PR100 草稿与 plan drift 异常修复
+
+PR100 已创建并保持 draft：`https://github.com/vchive/Lunar-Evolution/pull/100`。
+最初 head `c99265b` 与 CI `38543950522` 保留为原来源，不能用它关闭新来源验收。
+真实 owner 负例发现原 dispatch plan 被修改时底层 `NativeRSIExecutionPlanError` 泄漏；
+最小修复只规范为原 `rsi_publication_lineage_dispatch_inputs_drift`，保留 cause、原
+shape/reparse/owner/CAS/预算门禁。原实际 mutation 测试补精确 code/cause 断言，
+独立代码审查已通过。中断长组、原失败 trace 和旧通过 XML 都保留，不计入新来源。
+
+当前最终冻结 `source-before-ready-capsule-plan-refusal.json`：772 文件，map SHA
+`4f46b0c7d1901bb4c0c30439d9e7e55a1371aec4395b93273f7505fa67d6aaa1`。
+它与前一 corrected 来源只差 lineage 源码和 owner 测试；各组正在重跑。6 个互不重叠
+owner/inspection 分区、三轮 flow、默认单 child 与历史兼容全部须通过，再独审原始
+XML/source 和对应最新 head 的完整 CI。没有真实模型、runtime、campaign 或远程评测。
+本地性能采样及后续 all-rejected/BRS 最小出口仅写入 ignored 只读报告，不改本批范围。
+
 ## 2026-10-14 多 episode 容量修复与统一并行验收
 
 三轮 inert DRS 首次完整验收在第一轮 settlement 后实际触发

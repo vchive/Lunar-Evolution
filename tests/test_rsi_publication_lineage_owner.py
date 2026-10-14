@@ -12,7 +12,7 @@ from test_rsi_producer_staging_controller import _run
 
 from lunar_evolution import RSILearningController, RSILearningError, native_trusted_scheduler
 from lunar_evolution.rsi_gateway import SolverRequest
-from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
+from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan, NativeRSIExecutionPlanError
 from lunar_evolution.rsi_publication_lineage import RSIPublicationLineage
 
 
@@ -229,8 +229,11 @@ def test_live_original_dispatch_dtos_cannot_change_after_capture(tmp_path, monke
         before = _inventory(value.root)
         object.__setattr__(dto, field, changed)
         try:
-            with pytest.raises(RSILearningError):
+            with pytest.raises(RSILearningError) as refused:
                 owner._check_owner()
+            if kind == "plan":
+                assert str(refused.value) == "rsi_publication_lineage_dispatch_inputs_drift"
+                assert type(refused.value.__cause__) is NativeRSIExecutionPlanError
         finally:
             object.__setattr__(dto, field, original)
         assert _inventory(value.root) == before

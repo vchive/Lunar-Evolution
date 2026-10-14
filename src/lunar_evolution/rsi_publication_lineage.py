@@ -39,7 +39,7 @@ from .rsi_budget import RSIRunBudget
 from .rsi_gateway import SolverRequest
 from .rsi_identity import component_fingerprint
 from .rsi_learning import MemorySnapshot, RSILearningError
-from .rsi_native_plan import NativeRSIExecutionPlan
+from .rsi_native_plan import NativeRSIExecutionPlan, NativeRSIExecutionPlanError
 
 _PROTOCOL = "lunar-rsi-multi-episode-publication-v1"
 _FIELD = "producer_publication_lineage"
@@ -716,7 +716,10 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         validate_rsi_python_admission_shapes(
             self._dispatch_lease[4], dto_types=(NativeRSIExecutionPlan, SolverRequest),
         )
-        plan = NativeRSIExecutionPlan.from_dict(self._dispatch_lease[4].to_dict())
+        try:
+            plan = NativeRSIExecutionPlan.from_dict(self._dispatch_lease[4].to_dict())
+        except NativeRSIExecutionPlanError as exc:
+            raise RSILearningError("rsi_publication_lineage_dispatch_inputs_drift") from exc
         if (request != self._request or memory.to_bytes() != self._memory.to_bytes()
                 or plan != self._plan):
             _fail("dispatch_inputs_drift")

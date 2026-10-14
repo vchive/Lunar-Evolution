@@ -1,5 +1,23 @@
 # Validation plan
 
+## 2026-10-14 actual plan-mutation refusal correction
+
+The complete owner regression exposed an unnormalized original plan parser
+error in the prior source. Only `NativeRSIExecutionPlanError` is normalized to
+the existing `rsi_publication_lineage_dispatch_inputs_drift` with its cause;
+the original shape/reparse and refusal gates remain. The actual mutation case
+now requires the exact public code and original parser cause. Independent
+source review accepts this minimal correction.
+
+The final frozen inventory is `source-before-ready-capsule-plan-refusal.json`,
+772 files, map SHA-256
+`4f46b0c7d1901bb4c0c30439d9e7e55a1371aec4395b93273f7505fa67d6aaa1`.
+All groups are rerunning against it. Earlier XMLs, including complete core and
+compatibility passes, the actual failure and deliberately interrupted partitions,
+remain evidence of their own revisions and are excluded from this final count.
+PR100 remains draft until the final local inventories and exact-head full CI
+with independent raw/source/tree audit pass.
+
 ## 2026-10-14 pinned ready capsule: corrected source acceptance in progress
 
 The three-child actual flow exposed the original 112 KiB checkpoint capacity
