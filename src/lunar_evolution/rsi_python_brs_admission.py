@@ -160,6 +160,7 @@ class _Pending:
     state: str = "queued"
     binding_sha256: str | None = None
     ack: BRSAdmissionAck | None = None
+    ack_fields: tuple[str, str, str, str] | None = None
     error: str | None = None
     cancelled: bool = False
 
@@ -276,6 +277,16 @@ class BRSAdmissionChannel:
                     or pending.binding_sha256 != self._selected_handoff_sha256
                     or self._servicing or self._queue):
                 _fail("handoff_not_acknowledged")
+            if type(pending.ack) is not BRSAdmissionAck:
+                _fail("ack_invalid")
+            ack = BRSAdmissionAck(pending.ack.run_id, pending.ack.episode_id,
+                                  pending.ack.request_sha256, pending.ack.record_sha256)
+            fields = (ack.run_id, ack.episode_id, ack.request_sha256, ack.record_sha256)
+            if (type(pending.ack_fields) is not tuple or len(pending.ack_fields) != 4
+                    or any(type(value) is not str for value in pending.ack_fields)
+                    or fields != pending.ack_fields
+                    or fields[:3] != (self._run_id, episode_id, pending.ready.request_sha256)):
+                _fail("ack_mismatch")
             self._completed_selected_episodes.add(episode_id)
             self._selected_episode_id = None
             self._selected_handoff_sha256 = None
@@ -310,8 +321,12 @@ class BRSAdmissionChannel:
                     if pending.error is not None:
                         _fail(pending.error)
                     if pending.ack is not None:
-                        ack = pending.ack
-                        ack.__post_init__()
+                        if type(pending.ack) is not BRSAdmissionAck:
+                            _fail("ack_invalid")
+                        # Retain the owner ACK separately from the caller's return
+                        # value; frozen DTOs can still be mutated with object.__setattr__.
+                        ack = BRSAdmissionAck(pending.ack.run_id, pending.ack.episode_id,
+                                              pending.ack.request_sha256, pending.ack.record_sha256)
                         if (ack.run_id, ack.episode_id, ack.request_sha256) != (
                                 detached.run_id, detached.episode_id, detached.request_sha256):
                             _fail("ack_mismatch")
@@ -369,6 +384,8 @@ class BRSAdmissionChannel:
                     ack_failed = pending.cancelled or pending.error is not None or self._closed
                     if not ack_failed:
                         pending.ack = ack
+                        pending.ack_fields = (ack.run_id, ack.episode_id,
+                                              ack.request_sha256, ack.record_sha256)
                     else:
                         pending.error = pending.error or "ack_invalid"
                     self._condition.notify_all()
