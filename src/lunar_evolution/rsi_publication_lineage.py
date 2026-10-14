@@ -523,11 +523,88 @@ class _LineageEvidenceReader:
         if observed != expected or _sha(state_after) != entry["state_projection_sha256"]:
             _fail("state_projection_drift")
 
-    def _verify_chain(self, wire: dict[str, Any], archive: bytes, state_bytes: bytes) -> tuple[tuple[str, ...], ...]:
+    def _verify_chain(self, wire: dict[str, Any], archive: bytes, state_bytes: bytes, *,
+                      precommit: tuple[Any, Any] | None = None) -> tuple[tuple[str, ...], ...]:
         from .producer_bundle_transaction import (
             _ensure_append_population_window,
             _records_from_archive,
         )
+
+        marker_pin = None
+        if precommit is not None:
+            from .evolution import CandidateArchive, PopulationStrategy
+            from .producer_bundle_lineage import ProducerBundleLineageError
+            from .producer_bundle_publication import ProducerBundlePublicationJournal
+            from .producer_bundle_staging import (
+                _HELD_PUBLICATION_LOCKS,
+                ProducerBundlePublicationManifest,
+                ProducerBundlePublicationStagingError,
+                _check_held_publication_lock,
+                _load_marker,
+                _marker_bytes,
+                marker_payload,
+            )
+
+            if (type(self) is not RSIPublicationLineage or type(precommit) is not tuple
+                    or len(precommit) != 2):
+                _fail("precommit_state_invalid")
+            staged, manifest = precommit
+            _publication_shapes(staged, manifest)
+            if (type(staged) is not ProducerBundlePublicationJournal
+                    or type(manifest) is not ProducerBundlePublicationManifest
+                    or self._phase != "staged" or self._prepared_ack is not True):
+                _fail("precommit_state_invalid")
+            held = _HELD_PUBLICATION_LOCKS.get()
+            if not any(path.parent.parent == self._workspace for path, _fd, _info in held):
+                _fail("publication_lock_required")
+            _check_held_publication_lock()
+            state = self._check_owner()
+            current = self._wire(state)
+            if type(current.get("batches")) is not list or not current["batches"]:
+                _fail("precommit_association_invalid")
+            entry = current["batches"][-1]
+            if (entry["state"] != "staged" or staged.state != "publishing" or manifest.status != "staged"
+                    or staged.journal_id != self._plan.journal_id or entry["journal_id"] != staged.journal_id
+                    or staged.digest() != entry["staged"]["journal_sha256"]
+                    or manifest.digest() != entry["staged"]["manifest_sha256"]
+                    or manifest.journal_id != staged.journal_id or manifest.journal_sha256 != staged.digest()
+                    or wire != {**current, "batches": current["batches"][:-1]}):
+                _fail("precommit_association_invalid")
+            original_strategy = self._strategy
+            if (type(original_strategy) is not PopulationStrategy
+                    or type(original_strategy.archive) is not CandidateArchive
+                    or original_strategy is not self._gateway.producer_config.inputs.native_context.strategy
+                    or original_strategy.context.workspace.expanduser().absolute() != self._workspace):
+                _fail("precommit_strategy_invalid")
+            marker_path = self._workspace / "evolution" / "producer-publication.json"
+            expected_marker = _marker_bytes(marker_payload(
+                journal_id=staged.journal_id, journal_sha256=staged.digest(),
+                manifest_sha256=manifest.digest(), status="staged",
+            ))
+            try:
+                marker_pin = capture_lineage_snapshot_pin(marker_path, name=marker_path.name)
+                if _load_marker(marker_path)[1] != expected_marker:
+                    _fail("precommit_marker_invalid")
+                verify_persisted_lineage_snapshot(marker_path, marker_pin)
+            except (ProducerBundleLineageError, ProducerBundlePublicationStagingError) as exc:
+                raise RSILearningError("rsi_publication_lineage_precommit_marker_invalid") from exc
+            # Only this held, original staged commit can inspect offspring history.
+            # Do not alter the ordinary archive or expose/store an inspection object.
+            inspection_archive = CandidateArchive.__new__(CandidateArchive)
+            inspection_archive.workspace = self._workspace
+            inspection_archive.root = self._workspace / "evolution"
+            inspection_archive.candidates_root = inspection_archive.root / "candidates"
+            inspection_archive.archive_path = inspection_archive.root / "archive.jsonl"
+            inspection_archive.offspring_outcomes_path = inspection_archive.root / "offspring-outcomes.jsonl"
+            inspection_archive.state_path = inspection_archive.root / "state.json"
+            inspection_archive.read_only = True
+            inspection_archive._producer_publication_inspection = True
+            window_strategy = PopulationStrategy.__new__(PopulationStrategy)
+            window_strategy.context = original_strategy.context
+            window_strategy.config = original_strategy.config
+            window_strategy.archive = inspection_archive
+        else:
+            window_strategy = self._strategy
 
         seen_journals: set[str] = set()
         seen_candidates: set[str] = set()
@@ -546,7 +623,7 @@ class _LineageEvidenceReader:
                 entry["journal_id"], entry["snapshots"]["state-before"], name="state-before",
             )
             _ensure_append_population_window(
-                json.loads(prefix_state), _records_from_archive(prefix_archive), self._strategy,
+                json.loads(prefix_state), _records_from_archive(prefix_archive), window_strategy,
                 prior_events=tuple(prior_events),
             )
             ids = tuple(entry["staged"]["candidate_ids"])
@@ -570,6 +647,19 @@ class _LineageEvidenceReader:
                 verify_persisted_lineage_snapshot(
                     self._workspace / "evolution" / f"{name}.{extension}", LineageSnapshotPin.from_dict(pin),
                 )
+        if marker_pin is not None:
+            _check_held_publication_lock()
+            self._check_owner()
+            if (self._strategy is not original_strategy
+                    or original_strategy is not self._gateway.producer_config.inputs.native_context.strategy
+                    or original_strategy.context.workspace.expanduser().absolute() != self._workspace):
+                _fail("precommit_strategy_invalid")
+            try:
+                if _load_marker(marker_path)[1] != expected_marker:
+                    _fail("precommit_marker_invalid")
+                verify_persisted_lineage_snapshot(marker_path, marker_pin)
+            except (ProducerBundleLineageError, ProducerBundlePublicationStagingError) as exc:
+                raise RSILearningError("rsi_publication_lineage_precommit_marker_invalid") from exc
         return tuple(prior_events)
 
 
@@ -1188,7 +1278,7 @@ class RSIPublicationLineage(_LineageEvidenceReader):
         state_bytes = self._snapshot_bytes(staged.journal_id, snapshots["state-before"], name="state-before")
         self._verify_live_bytes(archive, state_bytes)
         chain = {**wire, "batches": wire["batches"][:-1]}
-        self._verify_chain(chain, archive, state_bytes)
+        self._verify_chain(chain, archive, state_bytes, precommit=(staged, manifest))
         batch = self._workspace / "evolution/producer-batches" / staged.journal_id
         for name in ("archive", "state"):
             extension = "jsonl" if name == "archive" else "json"

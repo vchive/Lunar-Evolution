@@ -1,5 +1,27 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 三轮 DRS 的第二轮 staged marker 接线修复
+
+缺锁测试修正的独立 focused 用例已通过（1 case，零失败/错误/跳过，967.437 秒）；
+772 文件运行后与 `8404b3c7…` 一致。PR100 的 `3caba97` 已推送并启动完整 CI，
+仍保持 draft，不能把旧来源局部成功算成该提交的完整验收。
+
+原三轮 fixture 的完整 XML 实际记录 1 failure（2389.833 秒）：第二 practice 已到
+staged；`commit` 在把 marker 从 staged 改成 unknown **之前**调用 owner precommit，
+历史链校验却调用原 public archive 的 `offspring_outcomes`，被本次 staged marker
+正确拒绝。没有第三轮成功证据。失败 XML、原 checkpoint、raw trace 全部保留。
+
+最小修复仅在原 live owner 的 precommit 里构造局部只读 inspection view，要求原
+controller CAS/lease、publication lock、完整 staged marker 与 journal/manifest 绑定，
+前后复查 marker 原 bytes/inode/stat；普通 reader、外来 marker 和 unknown 仍拒绝。
+原 strategy/archive 不修改，view 不返回、不持久化，也无写入权。实现已独立审查，
+57 个新 marker 快测和 12 个邻接 commit-control 用例共 69 passed，零失败/错误/跳过；
+ruff、compileall、diff-check 通过。最终 773 文件冻结 map 为
+`6b8bb05fa649390f85677b282a1bac6f132e2c636904d45ba9ecad294530367d`，
+三轮回归已在这一来源重新启动；仍需完整 CI/raw/source/tree 审计，不能提前合入。
+容量只读预检未发现确定 blocker，但第三轮完整终态条件估计仅余约 2–3 KiB，
+不是全 schema 上界，必须以实际每帧回归为准。此条是提交时检查点，最终结果见 PR100。
+
 ## 2026-10-14 PR100 测试锁修正与文档校准
 
 原 `db04c72` 来源的默认/单 child 96 cases 和历史兼容 158 cases 已完整通过；
