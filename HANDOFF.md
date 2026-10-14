@@ -1,5 +1,45 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 并行继续：显式单 child 完整执行与恢复
+
+本轮在 `codex/child-execution-flow` 延续原 child claim/preclaim 来源，新增显式
+`RSILearningController(..., producer_child_execution=True)`。它要求原 exact Python
+producer gateway、ledger、sidecar 和 stager；原 run、全部 run revisions 和 checkpoints
+保留 execution policy，恢复时不能增删模式或隐藏中间版本漂移。默认 staging-only 和
+CLI native 拒绝行为不变，`production_admission=false`。
+
+相邻成功的 ready staging 才能发出同一 owner/thread/state/CAS 的临时许可，执行入口
+立即消费。局部 child gateway 使用历史 request memory 和原 child proof；原 controller
+root/sidecar 不替换。原 lock/active DRS flow 内绑定 provider，原 atomic claim 先于
+running，然后经线程绑定、只能调用一次且离开 context 即失效的 continuation 进入原
+scheduler、prepared admission、publication、receipt mapper、result/verifier。
+读取 ready/started 不会重建 continuation。replay 和 failure reconcile 选择原 child。
+
+完整 fixture 发现并修复原 retained reader 的实际缺口：candidate projection 不含 Python
+handoff digest，重建 evaluation receipt 与合法 published slot 不一致。现在只在原
+publication recovery 已验证 pinned handoff/attempt anchor 后补原 journal 的该字段；
+无 handoff 的旧 canonical receipt 保持不变。独立源码审查通过。
+
+单 child 完整发布/verifier/终态只读恢复，以及 publication 前后 durable result 中断
+路径已通过；统一最终来源回归仍在完成，最终计数与 GitHub CI/审计另记，不能以这段
+阶段状态宣称已经合入。publication 已有而 native result 未保存时，保留 started/unknown；
+已有 native result 时可完成原 RSI episode settlement/verifier，预算不重复扣除，之后
+terminal resume 只读。真实 scheduler/capture/transaction/mapper/reader/verifier 均保留，
+仅最低 process/evaluator seam 使用 inert 观察，测试禁止 subprocess 启动。
+
+README 已整理可复制 run ID、独立 RSI 示例、原 usage ledger 复用、环境变量配置方式、
+可选 transfer 架构图和已验收/实验/后置状态。规格见 Feature191
+`child-execution-flow.md`；各 XML、source pins 和早期失败保存在 ignored
+`.lunar-evolution/reports/child-execution/`。
+
+下一片多 episode DRS 仍有两个发布依赖：Feature153 只允许首批 producer admission；
+历史 terminal recovery 要求整个当前 archive/state 等于该批发布后快照。须先明确连续
+发布/历史恢复，或独立 child publication workspace 的 SDD 契约，再验收不同 child ID、
+practice 晋级记忆与 target retry。不能移除原门禁或忽略 archive 摘要来完成。
+真实 source/toolchain/sealed runtime、OpenEvolve/Shinka project lifecycle、生产 CLI/Linux
+acceptance 仍开放；P2 多机/服务化继续后置。本轮未运行真实 CPython/toolchain、模型、
+campaign、远程 evaluator、WebAgent 或公司平台。
+
 ## 2026-10-14 并行继续：显式 child claim 与 fresh preclaim
 
 本轮起点为 `main 82191cf29601405769af08b53a3bce78eb6c1d6d`。其 CI run

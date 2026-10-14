@@ -24,6 +24,7 @@ from .rsi_native_scheduler import NativeRSISchedulerProvider, make_native_rsi_sc
 from .rsi_python_scheduler_inputs import (
     PythonRSISchedulerInputContext,
     PythonRSISchedulerPlanFactory,
+    _request_memory,
 )
 from .rsi_store import RSILedger
 
@@ -191,6 +192,137 @@ class PythonProducerRSISolverGateway(NativeRSISolverGateway):
         super().bind_python_admission_controller(controller)
         self._assert_ledger()
 
+    def bind_python_admission_child_controller(
+        self, controller: Any, *, expected_checkpoint_sha256: str,
+    ) -> None:
+        """Bind a resolved child only inside its original DRS owner scope.
+
+        This separate entry point preserves the ordinary binder's exact root
+        gateway check. Binding does not claim or adopt a started attempt; only
+        the adjacent controller continuation can execute a fresh child.
+        """
+        from .rsi_controller import RSILearningController
+
+        self._assert_ledger()
+        if type(controller) is not RSILearningController or controller.ledger is not self.ledger:
+            _fail("child_controller_mismatch")
+        run_id = self.producer_config.inputs.original_producer_checkpoint.run_id
+        episode_id = self.producer_config.inputs.native_context.intent.task_id
+        if not self.ledger.controller_lock_held(run_id):
+            _fail("child_controller_lock_required")
+        try:
+            state, head = controller._python_admission_active_flow(run_id, episode_id)
+            if state.get("mode") != "drs" or head != expected_checkpoint_sha256:
+                _fail("child_controller_checkpoint_conflict")
+            identity = state["producer_episode_staging"][episode_id]["identity"]
+            request = SolverRequest.from_dict(identity["intent"]["request"])
+            memory = MemorySnapshot.from_dict(identity["memory"])
+            expected = resolve_python_producer_episode_gateway(
+                controller, request, memory, expected_checkpoint_sha256=expected_checkpoint_sha256,
+            )
+            if (expected is controller.gateway
+                    or expected.rsi_fingerprint_config() != self.rsi_fingerprint_config()):
+                _fail("child_controller_context_mismatch")
+            # Do not route this through the public root-only producer binder.
+            # The original native provider binder still enforces one-way identity.
+            controller._python_admission_active_flow(run_id, episode_id)
+            NativeRSISolverGateway.bind_python_admission_controller(self, controller)
+            self._assert_ledger()
+            controller._python_admission_active_flow(run_id, episode_id)
+        except PythonProducerRSIGatewayError:
+            raise
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RSILearningError) as exc:
+            raise PythonProducerRSIGatewayError("rsi_python_producer_gateway_child_controller_evidence_invalid") from exc
+
+
+def resolve_python_producer_episode_gateway(
+    controller: Any,
+    request: SolverRequest,
+    memory: MemorySnapshot,
+    *,
+    expected_checkpoint_sha256: str | None = None,
+) -> Any:
+    """Select a ready child's gateway for explicit execution or read-only recovery.
+
+    Legacy controllers retain their original gateway. The opt-in path rereads
+    retained root and child evidence, with the request's historical memory, and
+    never rotates the controller's root or attaches a live provider controller.
+    Started claims remain observations for the native recovery gate.
+    """
+    flag = getattr(controller, "producer_child_execution", False)
+    if flag is False:
+        if getattr(controller, "_original_producer_child_execution", False) is not False:
+            _fail("episode_original_mode_mismatch")
+        return controller.gateway
+    from .rsi_controller import RSILearningController
+    from .rsi_python_episode_inputs import resolve_python_rsi_episode_input_context
+
+    if flag is not True or type(controller) is not RSILearningController:
+        _fail("episode_controller_invalid")
+    gateway = controller.gateway
+    ledger = controller.ledger
+    if (type(gateway) is not PythonProducerRSISolverGateway
+            or gateway is not getattr(controller, "_original_producer_child_gateway", None)
+            or type(ledger) is not RSILedger or gateway.ledger is not ledger):
+        _fail("episode_root_gateway_mismatch")
+    if controller.producer_stager is None or controller.producer_sidecar is None:
+        _fail("episode_stager_required")
+    if expected_checkpoint_sha256 is not None and (
+        type(expected_checkpoint_sha256) is not str or len(expected_checkpoint_sha256) != 64
+        or any(char not in "0123456789abcdef" for char in expected_checkpoint_sha256)
+        or expected_checkpoint_sha256 == "0" * 64
+    ):
+        _fail("episode_checkpoint_invalid")
+    try:
+        # The existing pure gate precedes database/file reads and DTO serializers.
+        request, memory = _request_memory(request, memory)
+        gateway._assert_ledger()
+        root_context = gateway.producer_config.inputs
+        proof = PythonProducerCheckpointBinding.from_sidecar(controller.producer_sidecar)
+        if (proof.to_json() != root_context.original_producer_checkpoint.to_json()
+                or controller.producer_workspace is None
+                or Path(controller.producer_workspace).expanduser().absolute()
+                != Path(root_context.native_context.workspace).expanduser().absolute()):
+            _fail("episode_root_context_mismatch")
+        run_id = proof.run_id
+        with ledger.read_only_observations():
+            records = ledger.history(run_id)
+            if (not records or records[0].kind != "run"
+                    or records[0].payload.get("producer_child_execution") is not True):
+                _fail("episode_original_mode_mismatch")
+            checkpoint = ledger.controller_checkpoint(run_id)
+            if checkpoint is None:
+                _fail("episode_checkpoint_missing")
+            head, state = checkpoint
+            if expected_checkpoint_sha256 is not None and head != expected_checkpoint_sha256:
+                _fail("episode_checkpoint_conflict")
+            if (state.get("producer_child_execution") is not True
+                    or state.get("run_id") != run_id or state.get("mode") != "drs"):
+                _fail("episode_original_mode_mismatch")
+            # The controller owns the complete durable policy/history check.
+            controller._validate_producer_checkpoint(run_id, state)
+            historical = controller._native_historical_memory(run_id, request)
+            _request_memory(request, historical)
+            if historical.to_dict() != memory.to_dict():
+                _fail("episode_historical_memory_mismatch")
+            context = resolve_python_rsi_episode_input_context(
+                root_context, ledger, request, historical, expected_checkpoint_sha256=head,
+            )
+            child = PythonProducerRSISolverGateway(PythonProducerRSIExecutionConfig(
+                gateway.producer_config.producer_id, ledger, context,
+            ))
+            child._plan(request, historical)
+            gateway._assert_ledger()
+            if (controller.gateway is not gateway or controller.ledger is not ledger
+                    or ledger.controller_checkpoint(run_id) != checkpoint):
+                _fail("episode_evidence_drift")
+            controller._validate_producer_checkpoint(run_id, state)
+            return child
+    except PythonProducerRSIGatewayError:
+        raise
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RSILearningError) as exc:
+        raise PythonProducerRSIGatewayError("rsi_python_producer_gateway_episode_evidence_invalid") from exc
+
 
 def require_fixture_rsi_cli(solver_execution: object) -> None:
     """Refuse unavailable production CLI before contract, ledger or fixture I/O.
@@ -207,4 +339,5 @@ def require_fixture_rsi_cli(solver_execution: object) -> None:
 __all__ = [
     "PythonProducerRSIExecutionConfig", "PythonProducerRSIGatewayError",
     "PythonProducerRSISolverGateway", "require_fixture_rsi_cli",
+    "resolve_python_producer_episode_gateway",
 ]

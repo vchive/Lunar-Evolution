@@ -12,7 +12,7 @@ import json
 import re
 import stat
 from collections.abc import Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -201,6 +201,13 @@ def _inspect(
         _fail("candidate_authority_mismatch")
     execution = build_producer_bundle_execution_receipt(root, candidate)
     evaluation = build_producer_bundle_evaluation_receipt(root, candidate)
+    if journal.python_handoff_sha256 is not None:
+        # Recovery above verifies the original journal's retained handoff. The
+        # candidate projection alone does not carry that publication binding.
+        evaluation = replace(
+            evaluation, python_handoff_sha256=journal.python_handoff_sha256,
+            receipt_sha256=None,
+        )
     if (execution.digest() != slot.execution_receipt_sha256
             or evaluation.digest() != slot.evaluation_receipt_sha256
             or execution.completion_sha256 != evidence["completion_sha256"]

@@ -1,5 +1,40 @@
 # Validation plan
 
+## 2026-10-14 explicit single-child execution
+
+The frozen local source passes **300 distinct cases**, zero failures, errors or
+skips, across six XML inventories: child gates 43, staging/claims 48,
+native recovery 163, controller compatibility 43, complete child flow 1 and
+publication interruptions 2. Case identities are deduplicated; earlier agent
+runs, initial failures and repeated success are not added to that count.
+All 223 product Python files match the before/after source inventory. The final
+complete-flow rerun also retains strict pre/post pins for its full test source.
+
+The 13-case full-flow file forbids `subprocess.Popen` and `subprocess.run`.
+Only native process/receipt observations and lowest candidate/evaluator process
+execution are inert seams. Native scheduler, host journal, output capture,
+pinned prepared handoff/anchor, admission, publication transaction, retained
+receipt mapper, result store and independent verifier remain real. Root and
+child bindings are 25,663 and 25,825 bytes; the original 32 KiB bound is
+retained with no test-only capacity override.
+
+Publication-before-result interruption keeps the started claim and unknown
+gate; retained evidence cannot relaunch the provider. After a durable native
+result, recovery finishes the original RSI settlement/verifier without a new
+reservation; the next terminal resume is read-only. Handoff tampering refuses
+without file/history writes. Additional cases cover cancellation/deadline,
+owner loss, claim-before-running interruption, configuration/plan/request drift,
+historical memory, mode retrofit/removal and intermediate canonical revision
+drift.
+
+Whole-source Ruff, compileall and diff checks pass. Ten documented README mock/
+RSI CLI commands exit zero (init/run/status/events/resume/solve and RSI
+run/inspect/usage/resume). Raw XML, source pins and summaries are in the
+ignored `.lunar-evolution/reports/child-execution/final/` directory. This
+source still needs its own full CI, raw/source/tree audit and merge;
+multi-episode DRS/BRS, real Python/toolchain/sealed runtime, OpenEvolve/Shinka
+lifecycle and production CLI remain unaccepted; `production_admission=false`.
+
 ## 2026-10-13 controller-called per-episode staging
 
 The frozen continuation has 19 core tests in `test_rsi_producer_launch.py` and

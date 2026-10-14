@@ -6,7 +6,7 @@
 
 Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与算法演化控制器。它把任务计划、执行、评测、产物和恢复状态写入本地 ledger 与 run workspace；模型、solver 和 evaluator 都通过显式 adapter 接入。
 
-当前主线是单机 provider-free 可靠执行和 RSI（recursive/self-improving learning）控制闭环。仓库默认保持 `production_admission=false`：可以用本地 fixture 验证协议、恢复和证据边界，但不会把 fixture 结果冒充真实模型、真实 solver 或官方 evaluator 的效果。
+当前主线是单机 provider-free 可靠执行和 RSI（recursive/self-improving learning）控制闭环。RSI producer 路径默认保持 `production_admission=false`；本地 fixture 用于验证执行和恢复流程，真实 solver campaign 仍需独立验收。普通任务的模型接口可以按显式配置使用。
 
 ## 当前状态
 
@@ -15,8 +15,8 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 普通任务与 `solve` | ✅ 可用 | 本地 plan、AgentLoop、评测、artifact 和 delivery ledger。 |
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture，支持 run、inspect、resume、usage、replay、reconcile。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态 fail-closed。 |
-| 逐 episode producer staging | 🧪 实验 API | 持久化 child proof、launch intent、sidecar 和 plan；可在 controller 锁内显式登记一次性 native claim，默认 ready dispatch 仍未启用。 |
-| native producer / OpenEvolve / Shinka 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
+| 逐 episode producer 执行 | 🧪 实验 API | 单 child 本地 fixture 已贯穿 claim、发布、verifier 和恢复；需显式 `producer_child_execution=True`，默认保持 staging-only，多 episode 尚未验收。 |
+| native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
 因此，当前仓库适合做本地协议回归、恢复测试和架构开发；它不是已经上线的远程演化服务，也不宣称与任何外部 Agent 或评测平台效果持平。
@@ -31,14 +31,15 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 
 ## 安装
 
-要求 Python 3.11 或更高版本。运行时没有第三方依赖；开发依赖是 pytest 和 ruff。
+要求 Python 3.11 或更高版本。运行时没有第三方依赖；下面安装 pytest、ruff，并使用与 CI 一致的 uv 版本建立开发环境。
 
 ```bash
 git clone https://github.com/vchive/Lunar-Evolution.git
 cd Lunar-Evolution
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[dev,lint]'
+python -m pip install 'uv==0.11.8'
+uv pip install --python .venv/bin/python -e '.[dev,lint]'
 ```
 
 ## 五分钟本地试跑
@@ -47,13 +48,20 @@ python -m pip install -e '.[dev,lint]'
 
 ```bash
 lunar-evolution init --home .lunar-evolution --json
+mkdir -p .lunar-evolution/demo
 lunar-evolution run '生成一个本地执行报告' \
-  --runtime mock --home .lunar-evolution --json
+  --runtime mock --home .lunar-evolution --json \
+  > .lunar-evolution/demo/run.json
 
-# 把上一步返回的 run_id 代入
-lunar-evolution status <run-id> --home .lunar-evolution --json
-lunar-evolution events <run-id> --home .lunar-evolution --json
-lunar-evolution resume <run-id> \
+RUN_ID="$(python -c 'import json; print(json.load(open(".lunar-evolution/demo/run.json"))["run_id"])')"
+lunar-evolution status "$RUN_ID" --home .lunar-evolution --json
+lunar-evolution events "$RUN_ID" --home .lunar-evolution --json
+```
+
+成功时 `run.json` 包含 `run_id`、`status=succeeded` 和 `workspace`。mock 产生确定性的演示结果；真实业务任务需要配置模型或求解器。任务文件和产物保留在返回的 workspace 中。需要恢复时使用原来的 run ID：
+
+```bash
+lunar-evolution resume "$RUN_ID" \
   --runtime mock --home .lunar-evolution --json
 ```
 
@@ -71,7 +79,6 @@ lunar-evolution solve '根据订单数据设计配送路线' \
 ```bash
 export LUNAR_EVOLUTION_MODEL_ENDPOINT='http://127.0.0.1:11434/v1/chat/completions'
 export LUNAR_EVOLUTION_MODEL='your-local-model'
-export LUNAR_EVOLUTION_API_KEY='set-in-your-shell-only'
 
 lunar-evolution solve '分析订单并给出可验证的路线方案' \
   --runtime openai-compatible \
@@ -80,56 +87,41 @@ lunar-evolution solve '分析订单并给出可验证的路线方案' \
   --home .lunar-evolution --json
 ```
 
-需要工具调用时显式加 `--agent-loop`；`--max-steps`、workspace、超时和 artifact 限制仍由 Lunar 控制。
+先在运行环境中配置 `LUNAR_EVOLUTION_API_KEY`。普通 CLI 不自动加载 `.env`；配置字段可参考 [`.env.example`](.env.example)。需要工具调用时显式加 `--agent-loop`；`--max-steps`、workspace、超时和 artifact 限制仍由 Lunar 控制。
 
 ## RSI provider-free 回归
 
 下面的命令只运行本地 fixture。`--solver` 记录 solver provenance，但不会启动 OpenEvolve、Shinka、远程 evaluator 或真实模型。
 
 ```bash
-cat > /tmp/rsi-contract.json <<'JSON'
+mkdir -p .lunar-evolution/demo
+cat > .lunar-evolution/demo/rsi-contract.json <<'JSON'
 {"problem_id":"readme-fixture"}
 JSON
 
-lunar-evolution rsi run /tmp/rsi-contract.json \
+lunar-evolution rsi run .lunar-evolution/demo/rsi-contract.json \
   --run-id readme-rsi \
   --mode drs \
   --solver mock \
   --max-practice-rounds 1 \
   --max-target-attempts 2 \
+  --usage-ledger .lunar-evolution/demo/rsi-usage.json \
   --home .lunar-evolution \
   --json
 ```
 
-正常的 provider-free 结果会包含 `status=completed`、memory snapshot digest、target/practice 统计、`solver_execution=provider_free_fixture` 和 `production_admission=false`。如果 worker 结果是 `unknown`，控制器会停止并等待显式 reconcile：
+这里的最小 JSON 仅作为 fixture 演示输入；普通 `evolve` 使用完整算法合同。正常结果包含 `status=completed`、目标／练习统计、`solver_execution=provider_free_fixture` 和 `production_admission=false`。
+在同一个 home 内开始另一轮演示时，使用新的 `--run-id`；恢复已有演示沿用原 ID。
 
 ```bash
-lunar-evolution rsi inspect readme-rsi \
-  --home .lunar-evolution --json
+lunar-evolution rsi inspect readme-rsi --home .lunar-evolution --json
+lunar-evolution rsi usage .lunar-evolution/demo/rsi-usage.json --json
 lunar-evolution rsi resume readme-rsi \
-  --home .lunar-evolution --json
-
-lunar-evolution rsi reconcile <episode-id> \
-  --worker-state failed \
-  --expected-record-sha256 <record-sha256> \
+  --usage-ledger .lunar-evolution/demo/rsi-usage.json \
   --home .lunar-evolution --json
 ```
 
-`resume` 使用原 run 的 plan、request、memory、deadline、预算和 fingerprint。它不会重新 staging、重复扣费、采用磁盘上新出现的 proof，也不会自动重启结果未知的 episode。
-
-常用诊断命令：
-
-```bash
-lunar-evolution rsi usage <usage-ledger.json> --json
-lunar-evolution rsi replay <producer-root> \
-  --contract <contract.json> --request <request.json> \
-  --memory-snapshot <memory.json> --receipts <receipts.json> \
-  --solver openevolve --producer-fingerprint <sha256> \
-  --contract-sha256 <sha256> --request-sha256 <sha256> \
-  --memory-sha256 <sha256> --receipts-sha256 <sha256> \
-  --envelope-sha256 <sha256> --materials-sha256 <sha256> \
-  --json
-```
+`resume` 复核原 run 的计划、预算、deadline、组件身份和历史记忆。结果为 `unknown` 时需要显式对账，控制器不会自动重启。已有 producer 结果的 `replay` 需要原始文件和独立摘要；高级恢复／重放接口见下面的运行时说明。
 
 更完整的 Python API、数据模型、DRS/BRS wave、memory promotion、Actor clean-room evidence 和 producer receipt 说明见 [`docs/rsi-local-runtime.md`](docs/rsi-local-runtime.md) 与 [`specs/160-rsi-learning-mode/`](specs/160-rsi-learning-mode/)。
 
@@ -137,32 +129,27 @@ lunar-evolution rsi replay <producer-root> \
 
 ```mermaid
 flowchart LR
-    U[CLI / parent Agent] --> C[LocalController]
-    C --> P[Plan + Domain Router]
-    P --> L[(SQLite ledger)]
-    C --> R[Runtime adapter]
-    R --> T[Task / Agent attempt]
-    T --> E[Evaluator + acceptance]
-    E --> A[Hashed artifacts]
-    A --> D[Fail-closed delivery]
+    U[CLI / parent Agent] --> C[普通任务控制器]
+    C --> P[任务计划 / AgentLoop]
+    P --> R[Mock / 模型 / 本地 adapter]
+    R --> E[评测与交付检查]
+    E --> A[结果与产物]
+    C --- L[(普通任务状态库)]
 
-    C --> X[RSI controller]
-    X --> G[SolverGateway]
-    G --> Q[Practice / target episodes]
-    Q --> V[Verifier + receipts]
-    V --> M[Governed memory snapshot]
-    M --> H[Frozen transfer evidence]
+    U --> X[RSI 学习控制器]
+    X --> Q[目标 / 练习 episode]
+    Q --> G[SolverGateway]
+    G --> V[Verifier + receipts]
+    V --> M[经验证并接纳的记忆快照]
+    M --> X
+    M -. 可选 .-> H[冻结记忆迁移测试]
     H --> X
+    X --- S[(RSI 状态库)]
 ```
 
-执行时有四个关键边界：
+CLI 选择入口，controller 管理执行、预算、持久状态和恢复；runtime／solver 负责产生候选和执行结果。评测、verifier 判断、记忆晋级和产物交付分别保留证据，未知结果进入恢复门禁。
 
-1. CLI 只创建可追踪的 run handle；SQLite ledger 是状态和 CAS（compare-and-swap）迁移的权威来源。
-2. controller 在每个 side effect 前检查 plan、预算、deadline 和组件 fingerprint。
-3. runtime adapter 不拥有 durable state；每个 attempt 的 prompt、结果、evaluation 和 artifact 都写入 run workspace 并索引到 ledger。
-4. evaluator、receipt、verifier decision 和 memory admission 分开保存；证据缺失或状态不确定时保持 `unknown`/manual review。
-
-普通任务和 RSI 都是单机控制面。当前没有把 Lunar 拆成必须部署的微服务；外部 producer 只能通过显式、受 pin 约束的本地 handoff 接入。
+普通任务和 RSI 都是单机流程；模型接口和本地 solver 按显式配置接入。完整架构与尚未验收的 native producer 边界见 [`docs/architecture.md`](docs/architecture.md) 和 [`docs/rsi-local-runtime.md`](docs/rsi-local-runtime.md)。
 
 ## 本地数据布局
 
@@ -204,8 +191,9 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 
 ### P0：完成本地闭环
 
-- 接通逐 episode child proof 的 controller → gateway → scheduler → store/admission/native claim 运行时链路。
-- 在本地 fixture 覆盖 practice success、target retry、多 child、取消、deadline、进程中断和只读恢复。
+- 验收单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路。
+- 支持连续发布及历史批次恢复，再验收 practice success、target retry、新 approved memory 和多 child。
+- 在本地 fixture 覆盖取消、deadline、中断、只读证据恢复和原 episode settlement。
 - 为每个 side effect 保留 launch、execution、receipt、publication 和 unknown reconcile 证据。
 
 ### P1：接入真实本地运行时
