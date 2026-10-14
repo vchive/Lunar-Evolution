@@ -1228,11 +1228,17 @@ def commit_producer_bundle_publication(
 ) -> ProducerBundlePublicationJournal:
     """Expose one complete staged batch; any uncertain boundary remains terminal."""
     _validate_python_handoff_pin(journal)
+    revalidate = None
     if lineage_owner is not None:
         from . import rsi_publication_lineage
 
         if type(lineage_owner) is not getattr(rsi_publication_lineage, "RSIPublicationLineage", None):
             _fail("producer_bundle_publication_lineage_owner_invalid")
+        # Retain the original composed control before any checkpoint callback. The
+        # final lineage/evidence observations must consume that same allowance.
+        revalidate = getattr(checkpoint, "revalidate_after_observation", None)
+        if not callable(revalidate):
+            _fail("producer_bundle_publication_control_invalid")
     root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
     _verify_python_handoff(batch, journal)
@@ -1264,6 +1270,10 @@ def commit_producer_bundle_publication(
             )
             _verify_stage(batch, manifest, staged_journal)
             _verify_python_handoff(batch, staged_journal)
+            # This original native gate samples only local cancellation and the
+            # fixed native/parent deadlines. It does not replay caller callbacks
+            # after the held lineage, stage and handoff evidence was verified.
+            revalidate("producer_commit_verified")
         # Once the first target is moved, all failures are unknown and marker status is durable.
         unknown_marker = marker_payload(journal_id=journal.journal_id, journal_sha256=manifest.journal_sha256,
                                          manifest_sha256=manifest.digest(), status="unknown")
