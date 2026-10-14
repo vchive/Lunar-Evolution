@@ -1,5 +1,34 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 PR101 focused CI 修复与性能切片联合候选
+
+PR101 原 `c75de8c` 的 CI `38612673297` 在 Python 3.11/3.13 focused 均暴露同一
+测试 fixture 问题：模拟 retained evidence 缺 `evidence_sha256`。独立修复
+`ddaaa21` 已推送 `codex/pr101-focused-repair`；只补 fixture 字段，生产校验、真实
+prepared/preflight/terminal、inode、checkpoint 与只读 drift 断言保持。
+显式本树 `PYTHONPATH` 重现原两案失败后，52 个 publication 和31个相邻 transaction/
+interruption cases 全过。原失败/通过 XML 与导入来源保留；一次未设 `PYTHONPATH`
+而导入主仓 main 的结果明确不计入接受。
+
+独立 `codex/pr101-final-candidate` 已将该修复与 parser 切片 `66251b0` 组合。
+parser 仅避免 fresh exact DTO 构造后立即重复外层验证；公开 serializer、子 DTO、
+file/inode/source/config/CAS 门禁保持。独立源码审查通过，单次 warmed parser
+测量降低 41.58%，不能推导端到端提速。联合候选 **227 distinct cases**、零失败/
+错误/跳过，147.819秒；Ruff、compileall、diff-check 通过。原 XML SHA
+`949d1c10361806ab20d50d270576b69344c9b77d8c5ccde8b97c16c74bcab45b`，
+scoped 759-file src/tests map 与 import origin 保留在本树 ignored reports。
+
+原发布树 `c75de8c` 的 RPP/PRP/RRR 仍冻结运行，不能把联合候选的局部结果算成它的
+完整验收。原PID环境已核实 `PYTHONPATH=src:tests`，cwd为发布树；该controller显式
+使用 main 不支持的参数与新模块，排除了默认 main 导入，但未取得单独的原启动
+sys.modules origin receipt。PR100 最后完整官方状态仍12/15成功，剩三版current-0；
+完整 CI/独审/合入尚未完成。PR101 仍 draft、head仍c75；正文已注明原失败及独立修复。
+最终出口仍为原mixed三案独审、PR100接受/main同步、最终候选CI/独审与PR101合入。
+
+BRS detached handoff与selected-channel切片在独立PR102草稿，controller owner service
+接线另树并行开发；native多child BRS未启用。真实runtime/producer/CLI为后续P1，
+P2继续后置。本轮只使用本地 inert/provider-free fixture，不启动真实target/campaign。
+
 ## 2026-10-15 PR101 发布候选与并行 BRS 接线
 
 当前 main 仍为 PR99 `0cb49ab`；PR100 `c73650a` 的最后可信状态为完整 CI

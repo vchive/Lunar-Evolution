@@ -1,6 +1,7 @@
 # Pure binding parser normalization performance
 
-Status: implementation slice; local validation and independent review pending.
+Status: local validation and independent source review passed; release CI and
+integration remain pending.
 This continues Feature191 Phase A; it does not change the admission contract.
 
 ## Existing contract and measured problem
@@ -51,8 +52,7 @@ worktree. Production admission remains false.
   detached call). Outer `PythonProducerBinding.__post_init__` calls changed 2→1;
   runtime parser calls changed 11→7 in the measured path. This is not a full-run
   speedup claim.
-- [x] Run Ruff, compileall and `git diff --check`; independent review remains
-  pending.
+- [x] Run Ruff, compileall and `git diff --check`; independent source review passed.
 
 Use existing `test_python_producer_binding`, `test_python_producer_binding_store`,
 `test_producer_python_runtime`, `test_producer_python_runtime_tree`,
@@ -64,6 +64,14 @@ verification, process creation and network access after fixture preparation.
 The public serializer matrix mutates a parsed DTO with a tuple subclass carrying
 callbacks but retaining the same apparent items; rejection must precede callbacks.
 Timing is an ignored measurement report, not a flaky product-test threshold.
+
+The parser slice and PR101 publication fixture correction were combined in the
+separate `codex/pr101-final-candidate` tree. All **227 distinct** binding, parser,
+store, scheduler, gateway, publication and transaction/interruption cases passed
+there with zero failures, errors or skips (147.819 seconds). Imports resolved to
+that candidate tree. XML and its scoped 759-file `src`/`tests` inventory are retained
+in ignored `pr101-final-candidate-20261015`; this does not replace the complete
+release inventory, original mixed-run results or final-source CI.
 
 ## Acceptance limits
 
