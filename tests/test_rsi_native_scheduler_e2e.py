@@ -292,14 +292,16 @@ def test_real_native_rsi_admission_stops_without_nonce_or_spawn(tmp_path, monkey
             ))
             assert provider.rsi_fingerprint_config()["cancelled_sha256"]
         monkeypatch.setattr(native_scheduler, "run_native_trusted_attempt", lambda *_a, **_k: pytest.fail("admission spawned"))
-        with pytest.raises(NativeRSISolverGatewayError, match="attempt_unknown"):
+        with pytest.raises(NativeRSISolverGatewayError, match="preclaim_failed") as stopped:
             fixture.gateway.run(fixture.request, fixture.memory)
+        refusal = "launch_invalid" if stop == "deadline" else "preclaim_cancelled"
+        assert refusal in str(stopped.value.__cause__)
         assert not (fixture.batch / "attestation-consumption.json").exists()
         assert not (fixture.batch / "work" / "started").exists()
         assert not (fixture.batch / "native-rsi.provenance.json").exists()
-        assert _ledger_counts(fixture.ledger) == (1, 0)
+        assert _ledger_counts(fixture.ledger) == (0, 0)
         assert requests == []
-        with pytest.raises(NativeRSISolverGatewayError, match="recovery_required"):
+        with pytest.raises(NativeRSISolverGatewayError, match="preclaim_failed"):
             fixture.gateway.run(fixture.request, fixture.memory)
 
 

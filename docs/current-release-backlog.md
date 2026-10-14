@@ -2,26 +2,29 @@
 
 ## Current snapshot — 2026-10-14
 
-以远程 GitHub 当前状态为准：功能基线 `dd84c2b`（PR97 merge commit `51f0fd6` 之后的 broker
-snapshot 测试同步）。PR89、PR91、PR92、PR93、PR94、PR95、PR96 和 PR97 已合入；PR97
-补齐 provider-free 多 episode child context 选择，broker snapshot 的测试同步已在
-`00cb39d`。PR97 合入后的 main CI run `38420669326` 因后续 push 被取消；其后续
-`00cb39d` 的 run `38422229880` 也因本轮继续 push 被取消；随后仅追加了 README、P1
-审计和 HANDOFF 文档提交（最新 handoff-only 提交为 `b9e768a`）。新的 main CI
-需要以 GitHub 最终结果为准，不能提前写成已通过。
+已核实的集成基线是 `main 82191cf29601405769af08b53a3bce78eb6c1d6d`。
+它的 [CI run 38428650836](https://github.com/vchive/Lunar-Evolution/actions/runs/38428650836)
+已通过 15/15 jobs，15 份原始 artifacts 的 source/tree/parent/import provenance 和
+XML/inventory 已独立核对。每版 current 三个分区覆盖 15,536 个不同 case、零失败和
+错误；92 个 skips 有明确跨平台/ABI 原因，不能称全量 zero skips。之前因后续 push
+取消的 main runs 保留原结果；其 pending 文字不再代表该集成基线的状态。
 
-当前 P0 仍是把已验证的 child proof 从只读 preview 接到 controller 持锁下的
-gateway → scheduler → store/admission/native claim 前置流程；ready entry 继续 fail-closed，
-直到完整证据链和取消/截止时间/恢复回归通过。本轮已补 scheduler preclaim 的只读复验
-以及 BRS durable resume matrix；P1 CLI/provider-free audit 也已记录，确认 native opt-in
-仍在 I/O 前拒绝。当前仍未创建 native claim 或执行 producer。README 只展示当前可用能力和这条边界，
-不把 preview 或 fixture score 宣称为真实 producer runtime。
+本轮在 `codex/child-claim-integration` 集成三条 P0 接线：显式 controller child claim、
+scheduler 原 execution control/cancellation/deadline 门禁、fresh gateway preclaim 调用。
+claim 复用原表和 DTO，原 checkpoint CAS 与 insert 位于同一 SQLite 事务；中断或后续漂移
+保留 started。首次 native gateway 执行在 claim 前调用 provider 的显式 read-only gate，
+started/terminal 仍走原 recovery/replay。规格见 Feature191 `controller-child-claim.md`、
+`preclaim-execution-control.md` 和 `fresh-native-preclaim.md`。本轮最终来源的本地回归、
+CI、独审与 merge 按各自实际结果记录，不能沿用基线 CI。
+旧 unbound native 仅只读观察 gateway 传入 ledger 的本次 inode pin，不新增持久 failure
+authority；已绑定 Python child 仍要求原 exact ledger 和 constructor pin，不能卸除
+绑定来进入兼容分支。取消/过期的 fresh request 在 claim 前拒绝，不再制造 started。
 
-已完成的只读阶段让每个 episode 只能采用自己的 request、memory、launch、sidecar 和
-proof；缺失、unknown、漂移、取消或 deadline 都保持阻断，不能回退到 fixture gateway 或
-重复 staging。后续 P0 是在同一 controller lock 和重新验证边界下消费该 preview，形成
-一次性的 scheduler/native claim 前置记录，并为 claim 后的 publication/recovery 保留原
-证据。该接线仍不等于真实 runtime 验收。
+剩余 P0 是把已登记 claim 接入真正的 child execution → receipt → admission/publication
+→ recovery 闭环，随后验收带不同 child ID 和新 approved memory 的多 episode DRS/BRS。
+默认 ready dispatch 和 CLI native opt-in 继续拒绝；显式 claim 不调用 producer、不创建
+episode/receipt，也不消费 attestation 或新增预算 reservation。缺失、unknown、漂移、
+取消和 deadline 不允许 fixture fallback、重复 staging 或重启 started claim。
 
 真实 Python/CPython source、toolchain、sealed runtime、OpenEvolve/Shinka project lifecycle
 和生产 RSI CLI 仍属于后续 P0/P1 验收，不能由 provider-free fixture 关闭。remote evaluator、
@@ -53,9 +56,10 @@ Feature190 原始 executable owner 是已记录验收的
 | --- | --- | --- |
 | P0：scheduler 晚期 prepared 接线 | 已实现显式启用的 immutable post-execution supplier → 原 handoff pin → transaction prepared observer → DRS/BRS first-pin；首次 record/reference 在后续边界持续复验。DRS bridge 已适配实际 controller 返回的 canonical record。规格见 Feature191 `late-prepared-scheduler-join.md`。 | PR87 最终来源 CI/审计已通过；真实 runtime 验收仍在下表。普通 native path 保持兼容，取消、缺失、漂移和 callback failure 保留既有 unknown/obligation。 |
 | P1：本地 OpenEvolve/Shinka result exporter | 已实现 `read_python_producer_adapter_export`，复用现有 bounded wrapper/SQLite/source readers 和 common adapter verifier；原始 evidence 与独立 pins 在 source I/O 前验证。规格见 Feature191 `local-python-producer-export.md`。 | PR87 最终来源 CI/审计已通过；不把 producer score 当官方 verdict，不据此宣称真实 project lifecycle。 |
-| P0：受限构建执行机制 | 独立 `run_pinned_build` 接口执行另行 pinned recipe 的 configure/freeze/compile/link，保留 bounded logs、输出 pins 和失败记录；原 mock-only API 保持兼容。 | 本轮最终来源 CI/审计仍待完成。真实 source/signature/toolchain 和 CPython executable recipe 仍未冻结；工具执行完成不等于静态 image 或 installation 验收。 |
-| P1：单 episode producer 组合 | `PythonProducerRSISolverGateway` 复用原 Python plan/input gate、native scheduler/claim/receipt 和 prepared handoff，要求同一 ledger、原 producer identity 与 controller proof。CLI native opt-in 在缺配置时前置拒绝。 | 本轮最终来源 CI/审计仍待完成。一个预先 staged context 只绑定一个 request/memory/launch；完整 DRS/BRS CLI 需要逐 episode 接线，不得直接复用为多 episode campaign。 |
-| P0：controller 调用的逐 episode durable staging | 已开发 preparing → ready/unknown、create-only child input/launch/sidecar、一次临时 owner/CAS permit、原 request/memory/文件 pins 关联及只读恢复拒绝。规格见 Feature191 `per-episode-producer-launch.md`。 | 本轮最终来源统一回归、CI/独审待完成。ready 在 running episode/native claim 前拒绝 dispatch；完整 DRS child gateway/admission/store/scheduler 接线仍未完成，BRS 前置拒绝。 |
+| P0：受限构建执行机制 | 独立 `run_pinned_build` 接口执行另行 pinned recipe 的 configure/freeze/compile/link，保留 bounded logs、输出 pins 和失败记录；原 mock-only API 保持兼容。 | 当前 main 集成基线 CI/审计已通过。真实 source/signature/toolchain 和 CPython executable recipe 仍未冻结；工具执行完成不等于静态 image 或 installation 验收。 |
+| P1：单 episode producer 组合 | `PythonProducerRSISolverGateway` 复用原 Python plan/input gate、native scheduler/claim/receipt 和 prepared handoff，要求同一 ledger、原 producer identity 与 controller proof。CLI native opt-in 在缺配置时前置拒绝。 | 当前 main 集成基线 CI/审计已通过。一个预先 staged context 只绑定一个 request/memory/launch；完整 DRS/BRS CLI 需要逐 episode 接线，不得直接复用为多 episode campaign。 |
+| P0：controller 调用的逐 episode durable staging | 已开发 preparing → ready/unknown、create-only child input/launch/sidecar、一次临时 owner/CAS permit、原 request/memory/文件 pins 关联及只读恢复拒绝。规格见 Feature191 `per-episode-producer-launch.md`。 | 当前 main 集成基线 CI/审计已通过。默认 ready dispatch 与 BRS opt-in 仍拒绝。 |
+| P0：显式 child claim 与 fresh preclaim | 本轮显式 API 将 ready preview 重新验证后登记为原 native claim；checkpoint CAS 同事务、取消/截止时间与配置漂移门禁已接入。 | 独立代码审查通过；本轮最终来源统一回归和 CI 待记录。真正 child execution、receipt/publication/recovery 与多 episode controller dispatch 仍未启用。 |
 
 以上开发项完成后仍不启用 production runtime。`rsi run` / `rsi resume` 的
 OpenEvolve/Shinka 选项当前仍明确输出 `solver_execution=provider_free_fixture`；

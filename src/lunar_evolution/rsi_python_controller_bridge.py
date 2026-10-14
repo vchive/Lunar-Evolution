@@ -1,4 +1,4 @@
-"""Read-only controller to staged Python child scheduler composition."""
+"""Controller to staged Python child observation and explicit claim composition."""
 
 from __future__ import annotations
 
@@ -16,13 +16,18 @@ from .rsi_producer_gateway import (
     PythonProducerRSIGatewayError,
     PythonProducerRSISolverGateway,
 )
+from .rsi_python_admission import validate_rsi_python_admission_shapes
 from .rsi_python_episode_inputs import resolve_python_rsi_episode_input_context
-from .rsi_python_scheduler_inputs import PythonRSISchedulerInputContext
-from .rsi_store import RSILedger
+from .rsi_python_scheduler_inputs import (
+    PythonRSISchedulerInputContext,
+    PythonRSISchedulerPlanFactory,
+    validate_python_rsi_scheduler_inputs,
+)
+from .rsi_store import NativeEpisodeClaim, RSILedger
 
 
 class PythonProducerControllerBridgeError(RSILearningError):
-    """Fixed refusal codes for read-only controller child composition."""
+    """Fixed refusal codes for explicit controller child composition."""
 
 
 def _fail(reason: str) -> NoReturn:
@@ -175,8 +180,91 @@ def resolve_python_producer_controller_child_preview(
         raise PythonProducerControllerBridgeError("evidence_invalid") from exc
 
 
+def claim_python_producer_controller_child(
+    controller: Any,
+    preview: PythonProducerControllerChildPreview,
+    *,
+    request: SolverRequest,
+    memory: MemorySnapshot,
+) -> NativeEpisodeClaim:
+    """Explicitly consume a ready preview into the existing once-only native claim.
+
+    The caller must hold the original controller lock. This experimental API is never
+    called by default dispatch or resume and does not execute the producer. The preview
+    is only a comparison pin: fresh child proof and launch inputs are resolved under
+    the lock, and its execution hooks are never adopted. The checkpoint CAS and claim
+    insert share the existing ledger transaction. Any post-claim uncertainty retains
+    the started claim for recovery; it never rolls back or renews an attempt.
+    """
+    from .rsi_controller import RSILearningController
+
+    if type(controller) is not RSILearningController:
+        _fail("controller_invalid")
+    if type(controller.ledger) is not RSILedger:
+        _fail("ledger_invalid")
+    if type(preview) is not PythonProducerControllerChildPreview:
+        _fail("preview_invalid")
+    preview.__post_init__()
+    ledger = controller.ledger
+    if not ledger.controller_lock_held(preview.run_id):
+        _fail("controller_lock_required")
+    try:
+        # Reuse the pure admission shape gate before any plan serializer or nested DTO
+        # comparison. A caller-modified preview cannot run serializer/property hooks.
+        validate_rsi_python_admission_shapes(
+            preview.plan, dto_types=(NativeRSIExecutionPlan, SolverRequest),
+        )
+        supplied_plan = NativeRSIExecutionPlan.from_dict(preview.plan.to_dict())
+        supplied_context = PythonRSISchedulerPlanFactory(preview.context).rsi_fingerprint_config()
+        current = resolve_python_producer_controller_child_preview(
+            controller, run_id=preview.run_id, episode_id=preview.episode_id,
+            request=request, memory=memory, expected_checkpoint_sha256=preview.checkpoint_sha256,
+        )
+        if (preview.producer_id != current.producer_id
+                or supplied_plan.to_dict() != current.plan.to_dict()
+                or supplied_context != PythonRSISchedulerPlanFactory(
+                    current.context,
+                ).rsi_fingerprint_config()):
+            _fail("preview_drift")
+        # Keep all observations read-only until this single atomic claim operation.
+        # The rebuilt plan retains a detached, parsed request. Never let a caller alias
+        # provide different request bytes to the ledger after the input gate completed.
+        claim = ledger.claim_native_episode(
+            current.plan.request, plan_sha256=current.plan.plan_sha256,
+            controller_run_id=preview.run_id,
+            expected_controller_checkpoint_sha256=preview.checkpoint_sha256,
+        )
+        with ledger.read_only_observations():
+            if not ledger.controller_lock_held(preview.run_id):
+                _fail("controller_lock_required")
+            controller.gateway._assert_ledger()
+            checkpoint = ledger.controller_checkpoint(preview.run_id)
+            if checkpoint is None or checkpoint[0] != preview.checkpoint_sha256:
+                _fail("checkpoint_drift")
+            controller._validate_producer_checkpoint(preview.run_id, checkpoint[1])
+            validate_python_rsi_scheduler_inputs(
+                current.context, request, memory, require_unexpired=True,
+            )
+            if ledger.inspect_native_episode_claim(
+                request, plan_sha256=current.plan.plan_sha256,
+            ) != claim or claim.status != "started":
+                _fail("claim_drift")
+            if ledger.get_episode(preview.episode_id) is not None:
+                _fail("episode_already_started")
+            controller.gateway._assert_ledger()
+            latest = ledger.controller_checkpoint(preview.run_id)
+            if latest != checkpoint:
+                _fail("checkpoint_drift")
+        return claim
+    except PythonProducerControllerBridgeError:
+        raise
+    except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RSILearningError) as exc:
+        raise PythonProducerControllerBridgeError("rsi_python_controller_bridge_claim_refused") from exc
+
+
 __all__ = [
     "PythonProducerControllerBridgeError",
     "PythonProducerControllerChildPreview",
+    "claim_python_producer_controller_child",
     "resolve_python_producer_controller_child_preview",
 ]

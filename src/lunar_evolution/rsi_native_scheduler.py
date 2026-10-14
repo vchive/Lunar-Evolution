@@ -21,7 +21,11 @@ from typing import Any
 
 from ._candidate_workspace_io import DirectoryChain
 from .algorithm import AlgorithmProblemContract, EvaluationReport
-from .automatic_solve_lifecycle import SolveExecutionControl
+from .automatic_solve_lifecycle import (
+    SolveExecutionBudgetExceeded,
+    SolveExecutionCancelled,
+    SolveExecutionControl,
+)
 from .bundle_evolution import derive_native_draft_run_id
 from .candidate_evaluation_spec import canonical_json
 from .native_bootstrap import NativeBootstrapArtifact
@@ -937,46 +941,60 @@ class NativeRSISchedulerProvider:
 
         This is intentionally a read-only bridge for controller-owned child previews.  It
         re-reads the sealed native inputs, checks the complete request/plan binding, observes
-        cancellation and the original absolute deadline, and verifies that the episode has no
-        existing native claim.  It never creates, settles, or publishes a claim and never calls
+        cancellation, the original shared monotonic control and the original absolute deadline,
+        and verifies that the episode has no existing native claim. It never creates, settles,
+        or publishes a claim and never calls
         the producer scheduler.  A started or terminal claim is a recovery/replay boundary and
         therefore refuses a fresh dispatch rather than allowing a second effect.
 
-        ``claim_ledger`` must be the exact ledger retained by the scheduler context.  Requiring
-        identity here prevents a caller from checking one database and then claiming another.
+        A context with a failure ledger requires that exact original ledger object and its
+        constructor pin. A legacy native context with no failure ledger may observe the gateway's
+        exact ``RSILedger`` with a local inode pin for this call only; it acquires no persistent
+        failure authority. Neither path rebinds the provider or creates a database.
         """
         if type(request) is not SolverRequest or type(plan) is not NativeRSIExecutionPlan:
             _fail("preclaim_input_invalid")
+        context = self.context
+        bound_ledger = context.failure_ledger
+        original_failure_pin = self._failure_ledger_identity
+        if bound_ledger is not None:
+            if claim_ledger is not bound_ledger:
+                _fail("preclaim_ledger_mismatch")
+            if original_failure_pin is None:
+                _fail("preclaim_context_changed")
+            ledger = bound_ledger
+            ledger_identity = dict(original_failure_pin)
+        else:
+            # An originally bound provider cannot discard its durable failure authority and
+            # borrow the compatibility path. Truly unbound native contexts may only observe a
+            # gateway-supplied exact ledger; never store this temporary pin on the provider.
+            if original_failure_pin is not None:
+                _fail("preclaim_context_changed")
+            if type(claim_ledger) is not RSILedger:
+                _fail("preclaim_ledger_mismatch")
+            ledger = claim_ledger
+            ledger_identity = _read_ledger_identity(ledger)
+
+        def inspect_ledger_identity() -> None:
+            if (self.context is not context or context.failure_ledger is not bound_ledger
+                    or self._failure_ledger_identity is not original_failure_pin):
+                _fail("preclaim_context_changed")
+            if _read_ledger_identity(ledger) != ledger_identity:
+                _fail("preclaim_ledger_changed")
+            if bound_ledger is not None:
+                self.assert_failure_ledger(ledger)
+
+        inspect_ledger_identity()
         context_fingerprint = self.rsi_fingerprint_config()
-        inputs = self._inputs(require_unexpired=True)
-        memory = _memory_from_request_inputs(inputs, request)
-        _assert_plan_binding(request, memory, plan, self.context, inputs)
-        ledger = self.context.failure_ledger
-        if ledger is None or claim_ledger is not ledger:
-            _fail("preclaim_ledger_mismatch")
-
-        def inspect_claim() -> None:
-            self.assert_failure_ledger(ledger)
-            try:
-                claim = ledger.inspect_native_episode_claim(
-                    request, plan_sha256=plan.plan_sha256,
-                )
-            except Exception as exc:
-                raise NativeRSISchedulerProviderError(
-                    "rsi_native_scheduler_preclaim_claim_invalid",
-                ) from exc
-            self.assert_failure_ledger(ledger)
-            if claim is not None:
-                # This includes ``started``/unknown and every terminal result.  Both cases
-                # require the gateway's explicit recovery/replay path and cannot become a
-                # fresh dispatch.
-                _fail("preclaim_claim_exists")
-
-        inspect_claim()
         cancellation = self.context.cancelled
-        if cancellation is not None:
+        execution_control = self.context.execution_control
+
+        def inspect_execution_control() -> None:
+            if (self.context.cancelled is not cancellation
+                    or self.context.execution_control is not execution_control):
+                _fail("preclaim_context_changed")
             try:
-                if bool(cancellation()):
+                if cancellation is not None and bool(cancellation()):
                     _fail("preclaim_cancelled")
             except NativeRSISchedulerProviderError:
                 raise
@@ -984,6 +1002,52 @@ class NativeRSISchedulerProvider:
                 raise NativeRSISchedulerProviderError(
                     "rsi_native_scheduler_preclaim_cancellation_invalid",
                 ) from exc
+            if execution_control is not None:
+                try:
+                    execution_control.check("rsi_native_preclaim")
+                except SolveExecutionCancelled as exc:
+                    raise NativeRSISchedulerProviderError(
+                        "rsi_native_scheduler_preclaim_cancelled",
+                    ) from exc
+                except SolveExecutionBudgetExceeded as exc:
+                    raise NativeRSISchedulerProviderError(
+                        "rsi_native_scheduler_preclaim_deadline_expired",
+                    ) from exc
+                except Exception as exc:
+                    raise NativeRSISchedulerProviderError(
+                        "rsi_native_scheduler_preclaim_control_invalid",
+                    ) from exc
+            if (self.context.cancelled is not cancellation
+                    or self.context.execution_control is not execution_control):
+                _fail("preclaim_context_changed")
+
+        # Check the original shared monotonic control as well as the explicit callback before
+        # observing launch files or claims. Neither gate constructs a control or resets its
+        # start/deadline; an earlier parent ceiling continues to constrain this child.
+        inspect_execution_control()
+        inputs = self._inputs(require_unexpired=True)
+        memory = _memory_from_request_inputs(inputs, request)
+        _assert_plan_binding(request, memory, plan, self.context, inputs)
+
+        def inspect_claim() -> None:
+            inspect_ledger_identity()
+            try:
+                with ledger.read_only_observations():
+                    claim = ledger.inspect_native_episode_claim(
+                        request, plan_sha256=plan.plan_sha256,
+                    )
+            except Exception as exc:
+                raise NativeRSISchedulerProviderError(
+                    "rsi_native_scheduler_preclaim_claim_invalid",
+                ) from exc
+            inspect_ledger_identity()
+            if claim is not None:
+                # This includes ``started``/unknown and every terminal result.  Both cases
+                # require the gateway's explicit recovery/replay path and cannot become a
+                # fresh dispatch.
+                _fail("preclaim_claim_exists")
+
+        inspect_claim()
         # The callback and ledger read above are untrusted observation boundaries. Re-read every
         # launch input and the complete provider fingerprint before accepting the preview. This
         # catches a callback that mutates intent, broker headers, strategy, hooks, or deadline
@@ -999,6 +1063,19 @@ class NativeRSISchedulerProvider:
         if self.rsi_fingerprint_config() != context_fingerprint:
             _fail("preclaim_context_changed")
         inspect_claim()
+        # The second ledger observation can cross a parent deadline or observe cancellation.
+        # Sample both authorities again, then reread the original absolute deadline and context
+        # pins because callbacks within either control are observation boundaries themselves.
+        inspect_execution_control()
+        inspect_ledger_identity()
+        final_inputs = self._inputs(require_unexpired=True)
+        if final_inputs != inputs:
+            _fail("preclaim_input_changed")
+        final_memory = _memory_from_request_inputs(final_inputs, request)
+        _assert_plan_binding(request, final_memory, plan, self.context, final_inputs)
+        if self.rsi_fingerprint_config() != context_fingerprint:
+            _fail("preclaim_context_changed")
+        inspect_ledger_identity()
 
     def recover(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,

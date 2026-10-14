@@ -5,6 +5,14 @@
 [`stage-gap-report.md`](../specs/160-rsi-learning-mode/stage-gap-report.md) 为准。
 下面的 fixture 不调用模型或远程 evaluator，也不启动真实 OpenEvolve/Shinka campaign。
 
+逐 episode producer 的实验 Python API 现已支持
+`claim_python_producer_controller_child(controller, preview, request=..., memory=...)`。
+调用者须先持有原 ledger 的 controller lock；函数重新验证 ready child，并在同一 SQLite
+事务内比较原 checkpoint 与创建一次性 native claim。它只登记 claim，不执行 child；
+默认 controller dispatch/resume 与 CLI 的 `native-producer` 路径仍拒绝。started claim
+在中断后保留，不能通过再次调用来重启。接线边界见
+[`controller-child-claim.md`](../specs/191-python-worker-adapter/controller-child-claim.md)。
+
 ## 1. 选择治理入口
 
 | 入口 | 适用情形 | 接线要求 |
