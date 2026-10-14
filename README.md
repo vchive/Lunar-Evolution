@@ -15,7 +15,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 普通任务与 `solve` | ✅ 可用 | 本地 plan、AgentLoop、评测、artifact 和 delivery ledger。 |
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture，支持 run、inspect、resume、usage、replay、reconcile。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态 fail-closed。 |
-| 逐 episode producer staging | 🧪 只读预览 | 会持久化 child proof、launch intent、sidecar 和 plan；scheduler 只做 preclaim 复验，当前 ready entry 仍会拒绝 dispatch。 |
+| 逐 episode producer staging | 🧪 实验 API | 持久化 child proof、launch intent、sidecar 和 plan；可在 controller 锁内显式登记一次性 native claim，默认 ready dispatch 仍未启用。 |
 | native producer / OpenEvolve / Shinka 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 

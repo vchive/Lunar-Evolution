@@ -1,5 +1,49 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 并行继续：显式 child claim 与 fresh preclaim
+
+本轮起点为 `main 82191cf29601405769af08b53a3bce78eb6c1d6d`。其 CI run
+`38428650836` 已通过 15/15 jobs；独立审核全部 15 artifacts 的 source/tree/parents/
+import provenance、XML 与分区 inventory。每版 current 覆盖 15,536 个不同 case、零失败
+和错误，92 个跨平台/ABI skips 有明示原因。旧 pending/cancelled 记录保留为历史，
+不能据此重复等待或重新开发已验收的基线。证据保留在 ignored
+`.lunar-evolution/reports/ci-82191cf/1791949969637654000/`。
+
+本轮在 `codex/child-claim-integration` 并行实现：
+
+- `claim_python_producer_controller_child` 在原 controller lock 下重新验证 ready child；
+  原 `claim_native_episode` 增加成对 checkpoint CAS pins，在同一 `BEGIN IMMEDIATE`
+  内校验完整 checkpoint history 并写入原 claim 表。拒绝任何已有 claim/episode，
+  claim 后中断或证据漂移保留 started，不删除、不重试、不刷新 proof/checkpoint。
+- scheduler preclaim 检查原 `SolveExecutionControl`、显式 cancellation 和两个固定
+  deadline；最终 ledger observation 后再次检查，拒绝 control 对象替换或期限延长。
+- fresh native gateway 在 claim 前调用 provider 的显式 read-only preclaim hook，
+  属性解析与回调后的配置、hook 和 ledger 都复验。缺失/None hook 保持原 injected
+  provider 协议；started/terminal 保持 recovery/replay，失败不创建新 claim。
+  旧 unbound native context 仅观察 gateway 明确传入 ledger 的本次 inode pin，
+  不新增持久 failure authority；已绑定 Python child 仍要求原 exact ledger 和
+  constructor pin，移除绑定不能进入兼容分支。
+
+独立代码审查已通过，最终集成来源的三组本地回归与静态检查单独记录；不能以较早的
+agent test 或 main CI 替代本轮最终来源。规格见 Feature191 `controller-child-claim.md`、
+`preclaim-execution-control.md` 和 `fresh-native-preclaim.md`。
+
+初次集成兼容回归中的旧 staging fixture 因自选长 basetemp 超过原 32 KiB 输入上限；
+保持产品上限，使用短目录重测 27 cases 全部通过。原始 25 个失败及改用短路径的 XML
+均保留在 ignored `.lunar-evolution/reports/child-claim-integration/`，不删除失败证据，
+不把不同来源或重复测试相加。取消/超时的旧 native fixture 现在于 claim 前拒绝，
+因此对应断言为 `preclaim_failed`、零 claim；实际 publication 中断仍保留
+`attempt_unknown` 与 started claim。最终统一产品来源继续自己的 focused/CI 验证。
+
+该 API 只登记 claim，不调用 producer、不创建 episode/receipt、不消费 attestation 或
+增加预算 reservation。默认 controller ready dispatch、resume 和 CLI native opt-in
+仍拒绝。下一个 P0 是原 claim → child execution → receipt/admission/publication →
+recovery 的实际接线，以及不同 child ID/新 approved memory 的 DRS/BRS 回归。P1 的
+真实 source/signature/toolchain、静态镜像/sealed startup、OpenEvolve/Shinka project
+dependency profile 和 Linux 生命周期/生产 CLI 验收仍开放。P2 多机/服务化继续后置。
+本轮只使用本地 inert/provider-free fixture；未运行真实 CPython/toolchain、模型、
+evaluator、campaign、WebAgent 或公司平台，`production_admission=false`。
+
 ## 2026-10-13 并行继续：逐 episode durable staging
 
 本轮在 PR88 最终来源 `5bb90c9` 的隔离分支继续，修改已有 controller 并新增

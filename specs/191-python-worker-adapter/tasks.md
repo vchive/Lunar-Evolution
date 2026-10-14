@@ -1,5 +1,23 @@
 # Tasks
 
+## Atomic child claim and fresh preclaim continuation
+
+- [x] Reuse the original native claim table/DTO with paired controller-lock and
+  checkpoint pins checked in the same SQLite transaction as the insert.
+- [x] Add an explicit held-lock child claim API; freshly resolve the original
+  ready proof, reject competing claims and preserve started after interruption.
+- [x] Check original parent execution control, cancellation and fixed deadlines
+  at initial/final scheduler preclaim observations without extending budgets.
+- [x] Invoke the explicit provider preclaim hook before fresh gateway claims;
+  retain configuration/hook/ledger identities across read-only observations.
+- [x] Preserve legacy unbound native calls with a call-local query-only ledger
+  inode pin; retain strict bound identity and refuse binding removal or drift.
+- [x] Add claim race/interruption, preclaim control and gateway/scheduler
+  composition regression cases; complete independent code review.
+- [ ] Complete unified final-source regression, full CI/raw-source audit and merge.
+- [ ] Connect retained claims to child execution, receipt/admission/publication
+  and recovery before enabling multi-episode DRS/BRS or production CLI dispatch.
+
 ## Controller-called per-episode staging continuation
 
 - [x] Specify the staging-only boundary in `per-episode-producer-launch.md`;
@@ -14,8 +32,9 @@
   before run creation. Keep ordinary unconfigured controller behavior unchanged.
 - [x] Add 19 core and 8 independent controller cases; complete independent
   source review of the frozen staging/controller implementation.
-- [ ] Complete final-source unified regression, whole Ruff/compileall/diff checks,
-  full CI and independent raw/source/tree audit before merge.
+- [x] Complete the integrated staging baseline's regression/static checks and
+  full CI/raw-source audit at `main 82191cf`, run `38428650836`. The new child
+  claim continuation has its separate final-source obligation above.
 - [ ] Implement the remaining episode-scoped DRS gateway/admission/store/scheduler
   authority and exercise target failure → practice success → target retry with
   distinct child IDs and changed approved memory. Staging ready is not execution.
@@ -35,8 +54,8 @@
 - [x] Complete final combined regression: 195 distinct cases, including 30 new
   producer cases and the 26-case execution continuation; whole Ruff/compileall/diff
   checks pass. Repeated focused runs are not additional unique cases.
-- [ ] Complete this final source's full CI and independent
-  raw/source/tree audit before merge.
+- [x] Complete the integrated single-episode baseline's full CI and independent
+  raw/source/tree audit at `main 82191cf`, run `38428650836`.
 - [ ] Specify and implement per-episode staging/launch and durable original proof
   association before claiming a complete multi-episode DRS/BRS production CLI.
 
