@@ -571,7 +571,7 @@ def test_actual_transaction_reuses_prepared_intent_and_inspects_terminal_with_in
         "candidate_id": candidate.candidate_id,
         "execution_receipt": {"fixture": "inert-execution"},
         "evaluation_receipt": {"fixture": "inert-rejection"},
-        "retained_evidence": {"fixture": "inert-evidence"},
+        "retained_evidence": {"fixture": "inert-evidence", "evidence_sha256": "f" * 64},
     }
     verifications = []
 

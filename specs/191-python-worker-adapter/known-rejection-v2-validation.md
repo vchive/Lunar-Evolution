@@ -1,5 +1,27 @@
 # Known rejection v2 validation
 
+## PR101 publication fixture correction — 2026-10-15
+
+The `c75de8c` CI run `38612673297` failed the two parameterizations of the
+inert-receipt terminal inspection test on Python 3.11 and 3.13. Its retained
+evidence fixture omitted `evidence_sha256`, required by the immutable rejection
+reader. The correction supplies that fixture field; production validation and
+the real prepared/preflight/terminal, inode, checkpoint and read-only drift
+assertions are unchanged.
+
+The original two failures were reproduced locally with an explicit repair-tree
+`PYTHONPATH`. After the correction, all 52 publication cases and 31 adjacent
+transaction/interruption cases passed: **83 distinct cases**, zero failures,
+errors or skips. Ruff, compileall and `git diff --check` passed. Original failure
+XML, corrected XML, import origin and a 758-file tracked `src`/`tests` map are
+retained under ignored `pr101-focused-repair-20261015`; this scoped map is not the
+complete release inventory. An initial command without `PYTHONPATH` imported
+the main checkout and is explicitly excluded from acceptance.
+
+This correction has not yet been integrated into the frozen mixed-run source.
+PR101 remains draft and its original failed CI is preserved. Final integrated
+source CI and the mixed RPP/PRP/RRR acceptance remain release requirements.
+
 ## Original local acceptance checkpoint — 2026-10-15
 
 Controller mode/history gates, original owner C1/P/C2, mixed terminal and started
