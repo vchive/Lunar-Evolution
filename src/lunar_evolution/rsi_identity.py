@@ -21,11 +21,20 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import io
+import linecache
 import math
+import os
+import stat
+import sys
 import textwrap
+import threading
+import tokenize
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from types import CodeType
+from importlib.machinery import SourceFileLoader
+from types import CodeType, FunctionType, MethodType, ModuleType
 from typing import Any, ClassVar
 
 from .candidate_evaluation_spec import canonical_json
@@ -37,6 +46,22 @@ MAX_CODE_BYTES = 96 * 1024
 MAX_CONFIG_DEPTH = 12
 MAX_CONFIG_KEYS = 256
 MAX_CONFIG_TEXT_BYTES = 16 * 1024
+_MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024
+_MAX_SOURCE_CACHE_ENTRIES = 256
+_SOURCE_CACHE: OrderedDict[tuple[Any, ...], tuple[str, object, object]] = OrderedDict()
+_SOURCE_CACHE_LOCK = threading.RLock()
+_INSPECT_SOURCE_BACKEND = {
+    name: (getattr(inspect, name), getattr(getattr(inspect, name), "__code__", None))
+    for name in (
+        "getsource", "getsourcelines", "findsource", "getsourcefile", "getfile", "getmodule",
+        "getblock", "unwrap", "isclass", "ismethod", "isfunction", "istraceback", "isframe",
+        "iscode", "ismodule",
+    )
+}
+_LINECACHE_SOURCE_BACKEND = {
+    name: (getattr(linecache, name), getattr(getattr(linecache, name), "__code__", None))
+    for name in ("getlines", "checkcache")
+}
 
 
 class RSIIdentityError(ValueError):
@@ -207,6 +232,150 @@ def _code_object_material(code: CodeType) -> str:
         raise RSIIdentityError("code_invalid") from exc
 
 
+def _source_backend_unchanged() -> bool:
+    return all(
+        getattr(module, name) is original and getattr(original, "__code__", None) is code
+        for module, backend in ((inspect, _INSPECT_SOURCE_BACKEND), (linecache, _LINECACHE_SOURCE_BACKEND))
+        for name, (original, code) in backend.items()
+    )
+
+
+def _source_cache_request(target: object) -> tuple[str, tuple[Any, ...], object, object] | None:
+    """Select ordinary Python source without changing generated/custom-loader inspection."""
+    if not _source_backend_unchanged():
+        return None
+    current, seen = target, set()
+    while id(current) not in seen:
+        seen.add(id(current))
+        if type(current) is MethodType:
+            wrapped = vars(current.__func__).get("__wrapped__", current)
+        elif type(current) is FunctionType:
+            wrapped = vars(current).get("__wrapped__", current)
+        elif type(current) is type:
+            if any("__wrapped__" in vars(base) for base in current.__mro__):
+                return None
+            break
+        else:
+            return None
+        if wrapped is current:
+            break
+        current = wrapped
+    resolved = inspect.unwrap(target)
+    if type(resolved) is MethodType:
+        resolved = resolved.__func__
+    if type(resolved) not in {FunctionType, type}:
+        return None
+    module = sys.modules.get(resolved.__module__)
+    if type(module) is not ModuleType or type(getattr(module, "__loader__", None)) is not SourceFileLoader:
+        return None
+    path = inspect.getsourcefile(resolved)
+    if type(path) is not str or not path.endswith(".py"):
+        return None
+    if type(resolved.__module__) is not str or type(resolved.__qualname__) is not str:
+        return None
+    if type(resolved) is FunctionType:
+        code = resolved.__code__
+        locator = ("function", id(resolved), id(code), resolved.__module__, resolved.__qualname__,
+                   code.co_filename, code.co_firstlineno)
+    else:
+        code = None
+        firstline = vars(resolved).get("__firstlineno__")
+        if firstline is not None and type(firstline) is not int:
+            return None
+        locator = ("class", id(resolved), resolved.__module__, resolved.__qualname__, firstline)
+    return path, locator, resolved, code
+
+
+def _fresh_source_bytes(path: str) -> bytes | None:
+    """Read exact bounded file bytes; source identity never relies on timestamps alone."""
+    descriptor = -1
+    try:
+        before = os.stat(path, follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode) or before.st_size > _MAX_SOURCE_FILE_BYTES:
+            return None
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        opened = os.fstat(descriptor)
+        def fields(info):
+            return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+        if fields(before) != fields(opened):
+            _fail("code_unavailable")
+        chunks = []
+        remaining = _MAX_SOURCE_FILE_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(65536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        named = os.stat(path, follow_symlinks=False)
+        if (len(raw) > _MAX_SOURCE_FILE_BYTES or len(raw) != after.st_size
+                or fields(before) != fields(after) or fields(after) != fields(named)):
+            _fail("code_unavailable")
+        return raw
+    except OSError:
+        return None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _extract_fresh_source(target: object, path: str, raw: bytes) -> str:
+    """Reuse this interpreter's exact class/function locator on private fresh source lines."""
+    encoding, _ = tokenize.detect_encoding(io.BytesIO(raw).readline)
+    with io.TextIOWrapper(io.BytesIO(raw), encoding=encoding, newline=None) as stream:
+        lines = stream.readlines()
+
+    class FreshLines:
+        @staticmethod
+        def checkcache(_filename):
+            pass
+
+        @staticmethod
+        def getlines(filename, _module_globals=None):
+            if filename != path:
+                raise OSError("source association changed")
+            return lines
+
+    original = _INSPECT_SOURCE_BACKEND["findsource"][0]
+    # A private globals view preserves the installed Python locator without altering
+    # process-wide inspect/linecache state or parsing class ranges differently.
+    finder = FunctionType(
+        original.__code__, {**original.__globals__, "linecache": FreshLines}, original.__name__,
+        original.__defaults__, original.__closure__,
+    )
+    observed, start = finder(target)
+    return "".join(inspect.getblock(observed[start:]))
+
+
+def _source_with_content_cache(target: object) -> str:
+    request = _source_cache_request(target)
+    if request is None:
+        return inspect.getsource(target)
+    path, locator, resolved, code = request
+    raw = _fresh_source_bytes(path)
+    if raw is None:
+        return inspect.getsource(target)
+    key = (path, hashlib.sha256(raw).digest(), *locator)
+    with _SOURCE_CACHE_LOCK:
+        retained = _SOURCE_CACHE.get(key)
+    source = retained[0] if retained is not None else _extract_fresh_source(resolved, path, raw)
+    repeated = _source_cache_request(target)
+    if (repeated is None or repeated[:2] != request[:2] or repeated[2] is not resolved
+            or repeated[3] is not code or _fresh_source_bytes(path) != raw):
+        _fail("code_unavailable")
+    # The cache retains only successful bounded source extraction. Config/defaults/
+    # captures and explicit code hooks are always evaluated by component_identity.
+    if len(source.encode("utf-8")) <= MAX_CODE_BYTES:
+        with _SOURCE_CACHE_LOCK:
+            _SOURCE_CACHE[key] = (source, resolved, code)
+            _SOURCE_CACHE.move_to_end(key)
+            while len(_SOURCE_CACHE) > _MAX_SOURCE_CACHE_ENTRIES:
+                _SOURCE_CACHE.popitem(last=False)
+    return source
+
+
 def _source_material(value: object, explicit: object | None) -> str:
     if explicit is not None:
         if isinstance(explicit, bytes):
@@ -222,7 +391,7 @@ def _source_material(value: object, explicit: object | None) -> str:
         if not (inspect.isclass(target) or inspect.isfunction(target) or inspect.ismethod(target)):
             target = type(target)
         try:
-            source = inspect.getsource(target)
+            source = _source_with_content_cache(target)
         except (OSError, TypeError):
             code = getattr(target, "__code__", None)
             if isinstance(code, CodeType):
