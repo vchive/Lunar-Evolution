@@ -84,7 +84,7 @@ def _xml(nodes, *, skip=False, failure=False, error=False, counters=None):
     return ET.tostring(root)
 
 
-@pytest.mark.parametrize("count", [1, 2, 3, 5])
+@pytest.mark.parametrize("count", [1, 2, 3, 5, 6])
 def test_partition_conserves_every_node_and_file_across_collection_order(count):
     nodes = _inventory(count)
     shards = [runner.partition_current_nodes(nodes, shard_index=index, shard_count=count)
@@ -100,6 +100,28 @@ def test_partition_conserves_every_node_and_file_across_collection_order(count):
         files = {node.split("::", 1)[0] for node in shard}
         assert set(shard) == {node for node in nodes if node.split("::", 1)[0] in files}
         assert all(set(shard).isdisjoint(other) for other in shards[index + 1:])
+
+
+def test_six_shards_refine_three_without_changing_full_inventory_or_file_grouping():
+    nodes = _inventory(6)
+    old = [runner.partition_current_nodes(nodes, shard_index=index, shard_count=3)
+           for index in range(3)]
+    new = [runner.partition_current_nodes(nodes, shard_index=index, shard_count=6)
+           for index in range(6)]
+    assert runner.SHARD_ALGORITHM == "sha256-path-utf8-mod-v1"
+    assert tuple(sorted(node for shard in new for node in shard)) == nodes
+    assert sum(map(len, new)) == len(nodes)
+    for index, shard in enumerate(old):
+        refined = tuple(sorted((*new[index], *new[index + 3])))
+        assert refined == shard
+        assert _digest(refined) == _digest(shard)
+        files = {node.split("::", 1)[0] for node in shard}
+        for part in (new[index], new[index + 3]):
+            part_files = {node.split("::", 1)[0] for node in part}
+            assert part_files <= files
+            assert set(part) == {node for node in nodes if node.split("::", 1)[0] in part_files}
+    assert all(set(shard).isdisjoint(other)
+               for index, shard in enumerate(new) for other in new[index + 1:])
 
 
 def test_empty_pure_partition_does_not_invent_or_reassign_a_file():
@@ -243,9 +265,11 @@ def test_summary_exclusive_creation_preserves_evidence_that_arrived_after_prefli
     assert capsys.readouterr().out == ""
 
 
-def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=None, skip=False):
-    nodes = _inventory()
-    selected = tuple(node for node in nodes if _assigned(node.split("::", 1)[0], 3) == 1)
+def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=None, skip=False,
+                   shard_index=1, shard_count=3):
+    nodes = _inventory(shard_count)
+    selected = tuple(node for node in nodes
+                     if _assigned(node.split("::", 1)[0], shard_count) == shard_index)
     files = tuple(sorted({node.split("::", 1)[0] for node in selected}))
     for relative in files:
         source = tmp_path / relative
@@ -313,14 +337,21 @@ def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=No
     return nodes, selected, files, imports, calls
 
 
-@pytest.mark.parametrize("skip", [False, True])
+@pytest.mark.parametrize("shard_index,shard_count,skip", [
+    (1, 3, False), (1, 3, True), *((index, 6, False) for index in range(6)),
+], ids=["three-shards", "three-shards-with-visible-skip",
+        *(f"six-shards-{index}" for index in range(6))])
 def test_current_records_actual_source_shard_inventory_junit_and_visible_skips(
-    tmp_path, monkeypatch, capsys, skip,
+    tmp_path, monkeypatch, capsys, shard_index, shard_count, skip,
 ):
-    nodes, selected, files, imports, calls = _current_mocks(tmp_path, monkeypatch, skip=skip)
+    nodes, selected, files, imports, calls = _current_mocks(
+        tmp_path, monkeypatch, skip=skip, shard_index=shard_index, shard_count=shard_count,
+    )
     reports = tmp_path / "reports"
-    assert runner.run_current(tmp_path, reports, shard_index=1, shard_count=3) == 0
-    summary = json.loads((reports / "current-shard-1.summary.json").read_bytes())
+    assert runner.run_current(
+        tmp_path, reports, shard_index=shard_index, shard_count=shard_count,
+    ) == 0
+    summary = json.loads((reports / f"current-shard-{shard_index}.summary.json").read_bytes())
     assert summary == json.loads(capsys.readouterr().out.splitlines()[-1])
     assert summary["schema_version"] == 1
     assert summary["suite"] == "current" and summary["offline"] is True
@@ -328,7 +359,7 @@ def test_current_records_actual_source_shard_inventory_junit_and_visible_skips(
     assert summary["working_tree"] is True and summary["imports"] == imports
     assert summary["python"] == sys.executable
     assert summary["python_version"] == f"{sys.version_info.major}.{sys.version_info.minor}"
-    assert (summary["shard_index"], summary["shard_count"]) == (1, 3)
+    assert (summary["shard_index"], summary["shard_count"]) == (shard_index, shard_count)
     assert summary["shard_algorithm"] == "sha256-path-utf8-mod-v1"
     assert summary["full_nodes"] == list(nodes)
     assert summary["full_collected"] == len(nodes)
@@ -339,8 +370,9 @@ def test_current_records_actual_source_shard_inventory_junit_and_visible_skips(
     assert summary["collected"] == summary["tests"] == summary["reported_testcases"] == len(selected)
     assert summary["skipped"] == summary["skipped_elements"] == int(skip)
     assert summary["failures"] == summary["errors"] == summary["exit_code"] == 0
-    assert summary["junit"] == str(reports / "current-shard-1.xml")
-    assert summary["junit_sha256"] == hashlib.sha256((reports / "current-shard-1.xml").read_bytes()).hexdigest()
+    junit = reports / f"current-shard-{shard_index}.xml"
+    assert summary["junit"] == str(junit)
+    assert summary["junit_sha256"] == hashlib.sha256(junit.read_bytes()).hexdigest()
     assert not (reports / "current.xml").exists()
     assert [call[0] for call in calls] == ["collect", "collect", "execute"]
 
