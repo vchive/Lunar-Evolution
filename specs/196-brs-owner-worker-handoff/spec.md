@@ -2,10 +2,15 @@
 
 ## Status and scope
 
-This is a tracked SDD for the next P1 slice. It freezes the in-process owner/worker
-boundary needed by native BRS before product implementation starts. It is a design
-contract only: no native BRS dispatch is enabled by this feature and no existing
-provider-free DRS/BRS behavior is changed.
+This SDD freezes the in-process owner/worker boundary needed by native BRS. The
+detached handoff value/gates and a selected-episode channel binding sub-slice are
+implemented and tested. A private controller owner-service seam now constructs pins
+from an actual BRS checkpoint, binds one selected handoff, rechecks worker identity
+and ready messages, and closes the channel before executor shutdown. It is exercised
+only against complete owner-held BRS projections; legacy DRS-shaped state is refused.
+Public native BRS dispatch remains refused, and selected-child staging/dispatch plus
+owner-thread settlement/publication remain unimplemented;
+no existing provider-free DRS/BRS behavior is changed.
 
 The first implementation accepts a fresh BRS wave with `max_workers=1`. The parent
 controller reserves the complete wave once, freezes one root memory snapshot (`M0`),
@@ -70,13 +75,16 @@ The planned call sequence is:
 1. The owner runs BRS preflight, reserves the whole wave and persists all intents
    against `M0`; it selects the next ordinal without refreshing sibling requests.
 2. The owner creates the selected child's exact staging/dispatch permit while holding
-   the existing owner context, then releases the controller lock before waiting.
+   the existing owner context. The run ownership lease remains held for the whole
+   live wave, including waits, so another process cannot mistake it for recovery.
 3. The worker enters its invocation scope with the one-shot handoff, runs only the
    selected child, and sends the canonical prepared plan/journal/anchor bytes through
    the existing ready channel.
 4. While any future is running, the owner services ready requests without holding the
-   controller lock, observation mutex, or workspace lock while waiting. It verifies
-   the original wave/request and performs the existing precise admission CAS.
+   observation mutex or workspace mutation lock while waiting or running a worker
+   callback. It retains the run ownership lease; the original owner-thread and CAS
+   checks still guard each short admission mutation. It verifies the original
+   wave/request and performs the existing precise admission CAS.
 5. The owner sends the exact acknowledgement digest. The worker revalidates its own
    durable evidence and returns a result envelope; it cannot mutate lineage.
 6. The owner, on its thread, settles the selected execution, serializes publication
