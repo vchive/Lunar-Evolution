@@ -584,7 +584,10 @@ def parse_python_producer_binding(value: bytes | str) -> PythonProducerBinding:
             broker_policy=raw["broker_policy"], binding_sha256=raw["binding_sha256"],
             schema_version=raw["schema_version"], protocol=raw["protocol"],
         )
-        canonical = _canonical(result.to_dict())
+        # The constructor validated these freshly parsed, detached DTOs. Keep
+        # child serialization and the exact wire comparison, without repeating
+        # the outer binding validator before this parser-local object escapes.
+        canonical = _canonical(result._to_dict_unchecked())
         if (canonical != value if type(value) is bytes else canonical.decode("utf-8") != value):
             _fail("noncanonical_json")
         return result
