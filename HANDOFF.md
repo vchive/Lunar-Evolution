@@ -1,5 +1,33 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 PR101 发布候选与并行 BRS 接线
+
+当前 main 仍为 PR99 `0cb49ab`；PR100 `c73650a` 的最后可信状态为完整 CI
+10/15 jobs 成功，剩余 current shards 与最终独立审计未关闭。GitHub API 间歇 TCP reset，
+不能据此前状态宣称合入。
+
+当前恢复发布候选为 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101)，
+位于 `codex/rsi-recovery-release`。原 mixed RPP/PRP 的 archive 断言漏掉 fixture
+genesis candidate；`e5e7dbc` 已改为保留原 genesis prefix 再比较本轮 published candidates。
+旧失败 XML 原样保留，修正后的 RPP/PRP/RRR 正在本发布树重新运行，尚未计为通过。
+RRR 旧冻结来源也保留其运行和证据，不能与本树结果混算。
+
+本轮已将 Feature196 owner/worker handoff 的独立 SDD 纳入 tracked specs；纯 BRS
+child preflight 已实现，selection 固定 `authority=False`。owner-created handoff、
+owner service loop、selected-ordinal dispatch 和 native 多 child BRS 仍未启用。
+下一实现切片在独立工作树开发，不修改当前长测的产品/测试源码。
+
+README 与发布台账现已明确 main/PR100/PR101 的区别、P0 出口及 P1/P2 边界。
+README 中 init、mock run/status/events/resume/solve 和 RSI run/inspect/usage/resume
+共 10 条入口已在独立本地 home 实际通过；RSI 仍为 provider-free fixture，
+`production_admission=false`。原始 smoke 记录保留在 ignored
+`.lunar-evolution/reports/readme-smoke-20261015.json`。
+
+待办仍为 mixed 三案最终 XML/SQLite/source 独审、PR100 完整 CI/审计/合入、同步 main、
+PR101 最终来源回归/CI/独审/合入。真实 Python runtime、实际 producer project/CLI
+是后续 P1；多机/服务/远程 evaluator/模型训练为后置 P2。只使用本地 inert/provider-free
+fixtures，不运行 WebAgent、远程 evaluator、公司平台、真实 toolchain target 或 campaign。
+
 ## 2026-10-15 恢复批次集成：原始中断与连续 reconcile 已关闭本地验收
 
 主仓 main 仍是 PR99 `0cb49abb146d91cb59b71de45d01e16217ebed8d`。
