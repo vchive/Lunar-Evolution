@@ -138,6 +138,7 @@ def test_original_three_attempt_mixed_drs_and_terminal_readonly_replay(tmp_path,
     original_gateway, original_sidecar = controller.gateway, controller.producer_sidecar
     archive_path = value.root / "evolution/archive.jsonl"
     genesis_archive = archive_path.read_bytes() if archive_path.exists() else None
+    genesis_records = CandidateArchive(value.root, requested_strategy="population", read_only=True).records()
     genesis_state = (value.root / "evolution/state.json").read_bytes()
     result = controller.run_drs(
         run_id=value.binding.run_id, contract_sha256=value.request.contract_sha256,
@@ -245,7 +246,11 @@ def test_original_three_attempt_mixed_drs_and_terminal_readonly_replay(tmp_path,
         archive = CandidateArchive(value.root, requested_strategy="population", read_only=True)
         records = archive.records()
         archive.validate_candidate_integrity(require_all=True, records=records)
-        assert [record.candidate_id for record in records] == published_candidates
+        # The fixture may already contain genesis candidates. Publication appends
+        # this run's candidates while preserving that immutable prefix.
+        assert [record.candidate_id for record in records] == [
+            *(record.candidate_id for record in genesis_records), *published_candidates,
+        ]
     else:
         assert wire["head"] is None
         assert (archive_path.read_bytes() if archive_path.exists() else None) == genesis_archive
