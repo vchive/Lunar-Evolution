@@ -254,3 +254,215 @@ def test_nonce_size_bounds_are_preserved():
     for nonce in ("N" * 31, "N" * 129):
         with pytest.raises(BRSChildHandoffError, match="handoff_lease_nonce_invalid"):
             BRSSelectedChildHandoff.from_selection(selection, CONTEXT, lease_nonce=nonce)
+
+
+def _selected_ready(episode_id):
+    from lunar_evolution.rsi_python_brs_admission import build_brs_admission_ready
+
+    payload = json.dumps(
+        {"native_plan": {"request": episode_id}, "prepared_journal": {},
+         "expected_anchor_sha256": "e" * 64},
+        sort_keys=True, separators=(",", ":"),
+    ).encode()
+    return build_brs_admission_ready(RUN, episode_id, payload)
+
+
+def test_channel_binds_one_selected_ordinal_and_consumes_nonce_atomically():
+    import threading
+
+    from lunar_evolution.rsi_python_brs_admission import (
+        BRSAdmissionChannel,
+        RSIPythonBRSAdmissionError,
+    )
+
+    preflight = _preflight(_wire(executions=[]))
+    selected = preflight.select_next_pending()
+    first = BRSSelectedChildHandoff.from_selection(
+        selected, CONTEXT, lease_nonce="Z" * 32,
+    )
+    channel = BRSAdmissionChannel(
+        RUN, tuple(item[1] for item in preflight.intents), owner_thread=get_ident(),
+    )
+    assert channel.bind_selected_handoff(first, preflight, CONTEXT) == first.sha256
+    with pytest.raises(RSIPythonBRSAdmissionError, match="handoff_busy"):
+        channel.bind_selected_handoff(first, preflight, CONTEXT)
+
+    wrong = _selected_ready(f"{RUN}-practice-2-1")
+    worker_errors = []
+    wrong_thread = threading.Thread(
+        target=lambda: _capture_channel_error(channel, wrong, worker_errors), daemon=True,
+    )
+    wrong_thread.start()
+    wrong_thread.join(3)
+    assert not wrong_thread.is_alive()
+    assert [str(error) for error in worker_errors] == [
+        "rsi_python_brs_admission_selected_episode_mismatch",
+    ]
+
+    selected_ready = _selected_ready(first.episode_id)
+    posted = threading.Event()
+    result = []
+    errors = []
+
+    def selected_worker():
+        try:
+            result.append(channel.request(selected_ready, check=lambda: posted.set()))
+        except BaseException as exc:  # noqa: BLE001 - propagate thread outcome.
+            errors.append(exc)
+
+    thread = threading.Thread(target=selected_worker, daemon=True)
+    thread.start()
+    assert posted.wait(3)
+    assert channel.service(lambda ready: "f" * 64, timeout=3)
+    thread.join(3)
+    assert not thread.is_alive()
+    assert not errors
+    assert result[0].episode_id == first.episode_id
+    duplicate_errors = []
+    duplicate = threading.Thread(
+        target=lambda: _capture_channel_error(channel, selected_ready, duplicate_errors), daemon=True,
+    )
+    duplicate.start()
+    duplicate.join(3)
+    assert not duplicate.is_alive()
+    assert [str(error) for error in duplicate_errors] == [
+        "rsi_python_brs_admission_duplicate_request",
+    ]
+    channel.complete_selected_handoff(first.episode_id)
+    late = _selected_ready(first.episode_id)
+    late_errors = []
+    late_worker = threading.Thread(
+        target=lambda: _capture_channel_error(channel, late, late_errors), daemon=True,
+    )
+    late_worker.start()
+    late_worker.join(3)
+    assert not late_worker.is_alive()
+    assert [str(error) for error in late_errors] == [
+        "rsi_python_brs_admission_no_selected_child",
+    ]
+
+    next_wire = _wire(executions=[first.episode_id])
+    next_preflight = _preflight(next_wire)
+    next_selection = next_preflight.select_next_pending()
+    next_context = replace(CONTEXT, head_sha256="9" * 64, state_sha256="a" * 64)
+    replayed_nonce = BRSSelectedChildHandoff.from_selection(
+        next_selection, next_context, lease_nonce=first.lease_nonce,
+    )
+    with pytest.raises(BRSChildHandoffError, match="handoff_nonce_replayed"):
+        channel.bind_selected_handoff(replayed_nonce, next_preflight, next_context)
+
+    second = BRSSelectedChildHandoff.from_selection(next_selection, next_context)
+    assert channel.bind_selected_handoff(second, next_preflight, next_context) == second.sha256
+    with pytest.raises(RSIPythonBRSAdmissionError, match="handoff_not_acknowledged"):
+        channel.complete_selected_handoff(second.episode_id)
+    channel.close()
+
+
+def _capture_channel_error(channel, ready, errors):
+    from lunar_evolution.rsi_python_brs_admission import RSIPythonBRSAdmissionError
+
+    try:
+        channel.request(ready, check=lambda: None)
+    except RSIPythonBRSAdmissionError as exc:
+        errors.append(exc)
+
+
+def test_selected_binding_close_and_handler_error_wake_waiters():
+    import threading
+
+    from lunar_evolution.rsi_python_brs_admission import (
+        BRSAdmissionChannel,
+        RSIPythonBRSAdmissionError,
+    )
+
+    preflight = _preflight(_wire(executions=[]))
+    selection = preflight.select_next_pending()
+    episode_ids = tuple(item[1] for item in preflight.intents)
+
+    def make_bound_channel(nonce):
+        channel = BRSAdmissionChannel(RUN, episode_ids, owner_thread=get_ident())
+        selected = BRSSelectedChildHandoff.from_selection(selection, CONTEXT, lease_nonce=nonce)
+        channel.bind_selected_handoff(selected, preflight, CONTEXT)
+        return channel, selected
+
+    closed, selected = make_bound_channel("R" * 32)
+    posted = threading.Event()
+    errors = []
+
+    def wait_for_close():
+        try:
+            closed.request(_selected_ready(selected.episode_id), check=lambda: posted.set())
+        except BaseException as exc:  # noqa: BLE001 - capture worker result.
+            errors.append(exc)
+
+    worker = threading.Thread(target=wait_for_close, daemon=True)
+    worker.start()
+    assert posted.wait(3)
+    closed.close()
+    worker.join(3)
+    assert not worker.is_alive()
+    assert len(errors) == 1 and str(errors[0]) == "rsi_python_brs_admission_closed"
+    with pytest.raises(RSIPythonBRSAdmissionError, match="closed"):
+        closed.bind_selected_handoff(selected, preflight, CONTEXT)
+
+    failed, selected = make_bound_channel("S" * 32)
+    posted.clear()
+    errors.clear()
+    def wait_for_handler_error():
+        try:
+            failed.request(_selected_ready(selected.episode_id), check=lambda: posted.set())
+        except BaseException as exc:  # noqa: BLE001 - capture worker result.
+            errors.append(exc)
+
+    worker = threading.Thread(target=wait_for_handler_error, daemon=True)
+    worker.start()
+    assert posted.wait(3)
+    with pytest.raises(RuntimeError, match="inert-handler-error"):
+        failed.service(lambda _ready: (_ for _ in ()).throw(RuntimeError("inert-handler-error")))
+    worker.join(3)
+    assert not worker.is_alive()
+    assert len(errors) == 1 and str(errors[0]) == "rsi_python_brs_admission_handler_failed"
+    with pytest.raises(RSIPythonBRSAdmissionError, match="handoff_not_acknowledged"):
+        failed.complete_selected_handoff(selected.episode_id)
+
+
+def test_selected_handoff_binding_requires_the_channel_owner_thread():
+    import threading
+
+    from lunar_evolution.rsi_python_brs_admission import BRSAdmissionChannel
+
+    preflight = _preflight(_wire(executions=[]))
+    handoff = _handoff(selection=preflight.select_next_pending(), nonce="T" * 32)
+    channel = BRSAdmissionChannel(
+        RUN, tuple(item[1] for item in preflight.intents), owner_thread=get_ident(),
+    )
+    errors = []
+
+    def bind_from_worker():
+        try:
+            channel.bind_selected_handoff(handoff, preflight, CONTEXT)
+        except BaseException as exc:  # noqa: BLE001 - assert stable refusal.
+            errors.append(exc)
+
+    worker = threading.Thread(target=bind_from_worker, daemon=True)
+    worker.start()
+    worker.join(3)
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert str(errors[0]) == "rsi_python_brs_admission_handoff_owner_required"
+    assert channel.bind_selected_handoff(handoff, preflight, CONTEXT) == handoff.sha256
+
+
+def test_channel_bind_rejects_mutated_handoff_before_set_membership_callbacks():
+    from lunar_evolution.rsi_python_brs_admission import BRSAdmissionChannel
+
+    preflight = _preflight(_wire(executions=[]))
+    handoff = _handoff(selection=preflight.select_next_pending(), nonce="U" * 32)
+    trap = _CallbackTrap()
+    object.__setattr__(handoff, "episode_id", trap)
+    channel = BRSAdmissionChannel(
+        RUN, tuple(item[1] for item in preflight.intents), owner_thread=get_ident(),
+    )
+    with pytest.raises(BRSChildHandoffError):
+        channel.bind_selected_handoff(handoff, preflight, CONTEXT)
+    assert trap.calls == 0

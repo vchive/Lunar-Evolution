@@ -20,6 +20,12 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from .rsi_learning import RSILearningError
+from .rsi_python_brs_child_policy import BRSNativeChildPreflight
+from .rsi_python_brs_handoff import (
+    BRSChildHandoffContext,
+    BRSSelectedChildHandoff,
+    validate_brs_child_handoff,
+)
 
 MAX_BRS_ADMISSION_BYTES = 8 * 1024 * 1024
 _POLL_SECONDS = 0.05
@@ -152,6 +158,7 @@ def build_brs_admission_ready(run_id: str, episode_id: str, payload: bytes) -> B
 class _Pending:
     ready: BRSAdmissionReady
     state: str = "queued"
+    binding_sha256: str | None = None
     ack: BRSAdmissionAck | None = None
     error: str | None = None
     cancelled: bool = False
@@ -185,14 +192,91 @@ class BRSAdmissionChannel:
         self._requests: dict[str, _Pending] = {}
         self._closed = False
         self._servicing = False
+        self._handoff_mode = False
+        self._selected_episode_id: str | None = None
+        self._selected_handoff_sha256: str | None = None
+        self._consumed_handoff_nonces: set[str] = set()
+        self._completed_selected_episodes: set[str] = set()
 
     def _available(self, ready: BRSAdmissionReady) -> None:
         if self._closed:
             _fail("closed")
         if ready.run_id != self._run_id or ready.episode_id not in self._episode_ids:
             _fail("wave_mismatch")
+        if self._handoff_mode:
+            if self._selected_episode_id is None:
+                _fail("no_selected_child")
+            if ready.episode_id != self._selected_episode_id:
+                _fail("selected_episode_mismatch")
         if ready.episode_id in self._requests:
             _fail("duplicate_request")
+
+    def bind_selected_handoff(
+        self,
+        handoff: BRSSelectedChildHandoff,
+        preflight: BRSNativeChildPreflight,
+        current: BRSChildHandoffContext,
+    ) -> str:
+        """Atomically consume one nonce and bind the next selected ordinal.
+
+        This method is owner-thread-only. The channel condition protects nonce
+        consumption and selected-episode binding as one in-memory transition; the
+        caller remains responsible for invoking it from its controller-owner scope.
+        """
+        if threading.get_ident() != self._owner_thread:
+            _fail("handoff_owner_required")
+        if (type(handoff) is not BRSSelectedChildHandoff
+                or type(preflight) is not BRSNativeChildPreflight
+                or type(current) is not BRSChildHandoffContext):
+            _fail("handoff_invalid")
+        with self._condition:
+            if self._closed:
+                _fail("closed")
+            if (self._selected_episode_id is not None or self._servicing or self._queue
+                    or any(
+                        episode_id not in self._completed_selected_episodes
+                        or pending.state != "done" or pending.ack is None
+                        for episode_id, pending in self._requests.items()
+                    )):
+                _fail("handoff_busy")
+            nonce_digest = validate_brs_child_handoff(
+                handoff, preflight, current,
+                consumed_nonces=tuple(self._consumed_handoff_nonces),
+            )
+            # The gate validates a detached reconstruction but intentionally returns
+            # only its digest. Reconstruct again here before using fields as set keys.
+            handoff = BRSSelectedChildHandoff(**handoff.to_dict())
+            if (handoff.episode_id in self._completed_selected_episodes
+                    or handoff.episode_id in self._requests):
+                _fail("handoff_episode_replayed")
+            if handoff.run_id != self._run_id or handoff.episode_id not in self._episode_ids:
+                _fail("wave_mismatch")
+            self._consumed_handoff_nonces.add(handoff.lease_nonce)
+            self._selected_episode_id = handoff.episode_id
+            self._selected_handoff_sha256 = nonce_digest
+            self._handoff_mode = True
+            return nonce_digest
+
+    def complete_selected_handoff(self, episode_id: str) -> None:
+        """Retire the current binding after its acknowledged worker future completes."""
+        if threading.get_ident() != self._owner_thread:
+            _fail("handoff_owner_required")
+        if type(episode_id) is not str:
+            _fail("handoff_episode_invalid")
+        with self._condition:
+            if self._closed:
+                _fail("closed")
+            if self._selected_episode_id != episode_id:
+                _fail("selected_episode_mismatch")
+            pending = self._requests.get(episode_id)
+            if (pending is None or pending.state != "done" or pending.ack is None
+                    or pending.binding_sha256 != self._selected_handoff_sha256
+                    or self._servicing or self._queue):
+                _fail("handoff_not_acknowledged")
+            self._completed_selected_episodes.add(episode_id)
+            self._selected_episode_id = None
+            self._selected_handoff_sha256 = None
+            self._condition.notify_all()
 
     def request(self, ready: BRSAdmissionReady, *, check: Callable[[], None]) -> BRSAdmissionAck:
         if type(ready) is not BRSAdmissionReady:
@@ -209,7 +293,10 @@ class BRSAdmissionChannel:
         check()
         with self._condition:
             self._available(detached)
-            pending = _Pending(detached)
+            pending = _Pending(
+                detached,
+                binding_sha256=self._selected_handoff_sha256 if self._handoff_mode else None,
+            )
             self._requests[detached.episode_id] = pending
             self._queue.append(pending)
             self._condition.notify_all()

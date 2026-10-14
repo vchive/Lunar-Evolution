@@ -7,6 +7,9 @@
   state, source, policy and execution-control pins. Existing child preflight remains
   responsible for mode, intent, budget and capacity checks. The nonce gate checks a
   caller-supplied consumed set; atomic consume remains an owner-integration task.
+- [x] Add channel-level owner-thread nonce consumption and a single selected-ordinal
+  ready/ack binding with explicit completion before rebinding. Duplicate, closed and
+  handler-error wakeups are covered. The controller does not call this API yet.
 - [ ] Implement owner-created selected-child staging/dispatch permit while keeping
   the existing DRS owner path and public APIs unchanged.
 - [ ] Route the existing ready/ack channel through the selected handoff; enforce

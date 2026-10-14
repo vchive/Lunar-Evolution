@@ -2,9 +2,10 @@
 
 BRS-2a now has a pure detached handoff value and gate. It has no controller, ledger,
 workspace, channel, CAS, worker dispatch or native BRS integration. The local focused
-checks cover H01 identity serialization, H02 fixed worker count, H06 owner/head/source/
-policy drift, and H07 nonce replay and selection drift. The remaining matrix is for
-later integration. Tests must use local fixtures; no network, process campaign, WebAgent,
+checks cover H01 identity serialization, H02 fixed worker count, H04 channel-level
+selected ready/ack, H06 owner/head/source/policy drift, H07 nonce/replay/selection gates,
+and H08 selected-channel close/error wakeups. The remaining matrix is for controller
+integration. Tests must use local fixtures; no network, process campaign, WebAgent,
 remote evaluator or company platform is allowed.
 
 | ID | Scenario | Required assertion |
@@ -12,11 +13,11 @@ remote evaluator or company platform is allowed.
 | H01 | Fresh handoff shape | **Pure helper covered:** exact run/wave/episode/ordinal, M0, request, owner, head, source and policy pins serialize canonically; mutable subclasses are refused. |
 | H02 | Policy and worker count | **Pure helper covered:** `max_workers=1`; existing child preflight requires BRS mode. Controller mode upgrade and pre-I/O integration gate remain open. |
 | H03 | Owner lock boundary | Worker and nested callback never acquire the controller, lineage or checkpoint owner; owner-only CAS remains the sole mutation path. |
-| H04 | Ready/ack meaning | Valid ready pins only the exact admission reference and returns its digest; it cannot launch, evaluate, publish, promote memory or settle C1/P/C2. |
+| H04 | Ready/ack meaning | **Channel helper covered:** ready/ack is bound to the single selected episode and exact ready digest. Durable pin-only semantics and non-escalation remain controller integration tests. |
 | H05 | Queue while ordinal waits | Owner services a queued ready request while an earlier future runs without holding a wait lock; no deadlock at `max_workers=1`. |
 | H06 | Head/state drift | **Pure helper covered:** changed head, state, controller, ledger, workspace, sidecar, owner thread, source, policy or execution-control fingerprint refuses. Durable evidence preservation remains an integration test. |
 | H07 | Duplicate/foreign request | **Pure helper covered:** consumed nonce, wrong wave/ordinal and owner-thread drift refuse. Channel replay, sibling/nested/recovered requests and admission-reference uniqueness remain integration tests. |
-| H08 | Ack failure / owner exit | Durable pin survives ack failure; close wakes workers before executor shutdown; no rollback, synthetic ack or missing-row repair occurs. |
+| H08 | Ack failure / owner exit | **Channel helper covered:** selected-channel close and handler error wake waiters. Durable pin retention, owner exit ordering and no repair remain controller integration tests. |
 | H09 | Deadline/cancel/unknown | Deadline, cancellation and unknown close the selected handoff, preserve budgets/evidence and do not auto-retry or dispatch a sibling. |
 | H10 | Serial head continuity | After a completed or rejected child, the next ordinal gets a fresh handoff against the new head while all requests remain bound to M0 and the original reservation. |
 | H11 | Partial-wave resume | Completed child references remain in the wave scope; only the missing selected ordinal may receive a fresh handoff; terminal resume is read-only. |
@@ -33,9 +34,11 @@ python -m compileall -q src tests
 git diff --check
 ```
 
-A gate success only validates a snapshot. The eventual controller must atomically consume
-the nonce under its owner lock before any worker effect; this helper alone does not
-provide exactly-once dispatch or make native BRS available.
+The channel atomically consumes the nonce under its in-memory condition lock and gates
+ready messages to the selected episode. It does not verify that its caller holds the
+controller mutation lock; future controller integration must call it inside the exact
+owner scope and wait for the selected worker future before marking that ordinal complete.
+The helper alone does not provide native BRS dispatch or production admission.
 
 The final acceptance must additionally compare complete source inventories before and
 after, canonical tree and parent commits, all raw JUnit files and every durable
