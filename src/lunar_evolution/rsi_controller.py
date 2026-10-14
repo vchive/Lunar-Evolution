@@ -114,6 +114,7 @@ class _PythonAdmissionBRSWave:
     admitted_episode_id: str | None = None
     active: bool = True
     selected_handoff: Any = None
+    selected_handoff_sha256: str | None = None
     selected_context: Any = None
     selected_worker_started: bool = False
 
@@ -1995,6 +1996,15 @@ class RSILearningController:
         # the short observation mutex, while the original run ownership remains held.
         with wave.ledger.read_only_observations():
             original = wave.ledger.history(wave.run_id)[0]
+            original_budget = RSIRunBudget.load(original.payload["budget_state"])
+            original_budget.assert_matches(original.payload["budget"])
+            planned = original_budget.to_dict()["planned"]
+            budget = RSIRunBudget.load(detached["budget_state"])
+            budget.assert_matches(original.payload["budget"])
+            if (canonical_json(budget.to_dict()["planned"]) != canonical_json(planned)
+                    or any(canonical_json(dict(SolverRequest.from_dict(intent["request"]).budget))
+                           != canonical_json(planned) for intent in detached["intents"].values())):
+                raise RSILearningError("rsi_python_brs_admission_selected_budget_invalid")
             actual, _ = self._run_fingerprint(
                 **detached["pins"],
                 memory_snapshot_sha256=MemorySnapshot.from_dict(detached["root_snapshot"]).digest(),
@@ -2004,7 +2014,6 @@ class RSILearningController:
                 actual,
             )
             self._validate_producer_checkpoint(wave.run_id, detached)
-        budget = RSIRunBudget.load(detached["budget_state"])
         budget.check()
         policy = {
             "plan": detached["plan"], "pins": detached["pins"],
@@ -2102,21 +2111,39 @@ class RSILearningController:
                 raise RSILearningError("rsi_python_brs_admission_stale")
             wave.channel.bind_selected_handoff(handoff, preflight, context)
             wave.selected_handoff, wave.selected_context = handoff, context
+            wave.selected_handoff_sha256 = handoff.sha256
             wave.selected_worker_started = False
         return handoff
 
-    def _python_admission_assert_selected_brs(self, wave, handoff) -> None:
-        """Recheck invocation pins; only the existing precise admission CAS may move head."""
+    def _python_admission_selected_brs_identity(self, wave, handoff):
+        """Recheck strict captured values without invoking source/configuration hooks."""
+        from .rsi_python_brs_handoff import BRSChildHandoffContext, BRSSelectedChildHandoff
+
         with self._python_admission_brs_observations():
             self._python_admission_assert_brs_wave(wave, owner=get_ident() == wave.owner_thread)
-            if wave.selected_handoff is not handoff or wave.selected_context is None:
+            if (wave.selected_handoff is not handoff or type(handoff) is not BRSSelectedChildHandoff
+                    or type(wave.selected_context) is not BRSChildHandoffContext):
                 raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
-            original = wave.selected_context
-            request = SolverRequest.from_dict(wave.state["intents"][handoff.episode_id]["request"])
-            if (request.digest() != handoff.request_sha256
-                    or request.memory_snapshot_sha256 != handoff.root_snapshot_sha256):
+            try:
+                # Bypass instance serializer shadows and validate primitive fields
+                # before equality. Frozen DTOs may still be mutated by a worker.
+                detached = BRSSelectedChildHandoff(**BRSSelectedChildHandoff.to_dict(handoff))
+                original = BRSChildHandoffContext(**BRSChildHandoffContext.to_dict(wave.selected_context))
+            except (TypeError, ValueError) as exc:
+                raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid") from exc
+            if detached.sha256 != wave.selected_handoff_sha256:
                 raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+            request = SolverRequest.from_dict(wave.state["intents"][detached.episode_id]["request"])
+            if (request.digest() != detached.request_sha256
+                    or request.memory_snapshot_sha256 != detached.root_snapshot_sha256):
+                raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+            return original
+
+    def _python_admission_assert_selected_brs(self, wave, handoff) -> None:
+        """Recheck invocation pins; only the existing precise admission CAS may move head."""
+        original = self._python_admission_selected_brs_identity(wave, handoff)
         current = self._python_admission_brs_selected_pins(wave)
+        self._python_admission_selected_brs_identity(wave, handoff)
         for field in ("controller_id", "ledger_id", "workspace_id", "sidecar_id", "owner_thread_id",
                       "source_sha256", "policy_sha256", "execution_control_sha256", "max_workers"):
             if getattr(current, field) != getattr(original, field):
@@ -2141,7 +2168,19 @@ class RSILearningController:
                 )
             execution = future.result()
             self._python_admission_assert_selected_brs(wave, handoff)
-            if (type(execution) is not EpisodeExecution or execution.request.digest() != handoff.request_sha256
+            try:
+                if (type(execution) is not EpisodeExecution
+                        or type(execution.episode) is not PracticeEpisode
+                        or type(execution.request) is not SolverRequest
+                        or type(execution.result) is not SolverResult
+                        or type(execution.verifier) is not VerifierDecision
+                        or type(execution.episode.verifier) is not VerifierDecision
+                        or execution.episode.verifier != execution.verifier
+                        or self._deserialize_execution(self._serialize_execution(execution)) != execution):
+                    raise ValueError("inconsistent execution")
+            except (AttributeError, KeyError, TypeError, ValueError, RSILearningError) as exc:
+                raise RSILearningError("rsi_python_brs_admission_selected_result_invalid") from exc
+            if (execution.request.digest() != handoff.request_sha256
                     or execution.episode.episode_id != handoff.episode_id
                     or execution.episode.memory_snapshot_sha256 != handoff.root_snapshot_sha256
                     or execution.result.status != "completed" or execution.episode.status != "completed"):
@@ -2222,7 +2261,11 @@ class RSILearningController:
         from .rsi_python_brs_admission import BRSAdmissionReady, build_brs_admission_ready
 
         if wave.selected_handoff is not None:
-            self._python_admission_assert_selected_brs(wave, wave.selected_handoff)
+            scope = getattr(self._python_admission_brs_local, "selected_service", None)
+            if (type(scope) is not tuple or len(scope) != 2
+                    or scope[0] is not wave or scope[1] is not wave.selected_handoff):
+                raise RSILearningError("rsi_python_brs_admission_selected_service_missing")
+            self._python_admission_selected_brs_identity(wave, wave.selected_handoff)
             if type(ready) is not BRSAdmissionReady or ready.episode_id != wave.selected_handoff.episode_id:
                 raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
         with self._python_admission_brs_observations():
@@ -2287,10 +2330,23 @@ class RSILearningController:
     @contextmanager
     def _python_admission_brs_service_observations(self, wave: _PythonAdmissionBRSWave):
         """Keep pin, exact state acknowledgement and channel delivery in one short scope."""
+        previous_service = getattr(self._python_admission_brs_local, "selected_service", None)
+        if previous_service is not None:
+            raise RSILearningError("rsi_python_brs_admission_nested_service")
+        handoff = wave.selected_handoff
+        # This context is entered before the channel handler. Source/configuration
+        # hooks must finish before acquiring the short observation mutex.
+        if handoff is not None:
+            self._python_admission_assert_selected_brs(wave, handoff)
         with self._python_admission_brs_observations():
             self._python_admission_active_brs_owner(wave)
+            if wave.selected_handoff is not handoff:
+                raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+            if handoff is not None:
+                self._python_admission_selected_brs_identity(wave, handoff)
             before_payload, before_head = wave.payload, wave.checkpoint_sha256
             before_episode = wave.admitted_episode_id
+            self._python_admission_brs_local.selected_service = (wave, handoff)
             try:
                 yield
             except BaseException:
@@ -2311,6 +2367,8 @@ class RSILearningController:
                         wave.payload, wave.checkpoint_sha256 = before_payload, before_head
                         wave.admitted_episode_id = before_episode
                 raise
+            finally:
+                self._python_admission_brs_local.selected_service = previous_service
 
     def _request_python_admission_for_brs_worker(
         self, run_id: str, episode_id: str, *, native_plan: object, prepared_journal: object,

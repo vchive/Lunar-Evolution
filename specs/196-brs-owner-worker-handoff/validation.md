@@ -46,3 +46,26 @@ The final acceptance must additionally compare complete source inventories befor
 after, canonical tree and parent commits, all raw JUnit files and every durable
 workspace/ledger/inode pin. A focused fixture pass cannot claim native runtime,
 external worker authenticity, distributed ownership or production admission.
+
+## Private selected owner-service slice
+
+The controller now has a private, provider-free selected-service seam. It binds one
+selected child from a complete BRS wave, checks original planned budget/deadline and
+request budget before executor creation, runs source/configuration fingerprint hooks
+outside the short observation lock, then rechecks strict handoff identity and owner
+CAS pins inside that lock. The worker returns only a validated `EpisodeExecution`;
+episode/request/result/verifier DTO types and verifier-to-episode consistency are
+checked before durable result comparison. Channel ACKs are detached from caller
+objects and completion verifies the retained owner fields.
+
+The focused tests are split so their exact counters remain auditable:
+
+| Scope | Cases | Result |
+| --- | ---: | --- |
+| Existing BRS admission/owner/publication | 104 | provider-free pass |
+| Detached ACK channel | 13 | provider-free pass |
+| Selected owner service and drift/lock/result gates | 28 | provider-free pass |
+
+The public `_drive_brs` entrance remains refusal-only and no native producer,
+sealed runtime, external worker, remote evaluator or production admission is enabled.
+The 145 local cases are focused seam evidence, not native BRS acceptance.
