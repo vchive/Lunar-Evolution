@@ -27,6 +27,25 @@ RUN = "handoff-run"
 ROOT = "1" * 64
 DIGEST0 = "2" * 64
 DIGEST1 = "3" * 64
+
+
+class _CallbackTrap:
+    def __init__(self):
+        self.calls = 0
+
+    def __eq__(self, _other):
+        self.calls += 1
+        raise AssertionError("equality callback executed")
+
+    def __str__(self):
+        self.calls += 1
+        raise AssertionError("string callback executed")
+
+    def __format__(self, _format_spec):
+        self.calls += 1
+        raise AssertionError("format callback executed")
+
+
 CONTEXT = BRSChildHandoffContext(
     controller_id="controller-1",
     ledger_id="ledger-1",
@@ -196,3 +215,42 @@ def test_preflight_input_remains_the_existing_pure_budget_selection_gate():
     bad["max_workers"] = 2
     with pytest.raises(BRSChildPolicyError, match="max_workers_invalid"):
         preflight_native_brs_child(bad)
+
+
+@pytest.mark.parametrize("field", ["protocol", "episode_id", "owner_thread_id", "lease_nonce", "request_sha256"])
+def test_injected_handoff_fields_are_rejected_before_callbacks(field):
+    handoff = _handoff()
+    trap = _CallbackTrap()
+    object.__setattr__(handoff, field, trap)
+    with pytest.raises(BRSChildHandoffError):
+        _validate(handoff)
+    assert trap.calls == 0
+
+
+def test_injected_context_field_is_rejected_before_callbacks():
+    current = CONTEXT
+    trap = _CallbackTrap()
+    object.__setattr__(current, "controller_id", trap)
+    try:
+        with pytest.raises(BRSChildHandoffError):
+            _validate(current=current)
+        assert trap.calls == 0
+    finally:
+        object.__setattr__(current, "controller_id", "controller-1")
+
+
+def test_injected_consumed_nonce_is_rejected_without_equality_callback():
+    handoff = _handoff()
+    trap = _CallbackTrap()
+    with pytest.raises(BRSChildHandoffError, match="handoff_nonce_state_invalid"):
+        _validate(handoff, consumed=(trap,))
+    assert trap.calls == 0
+
+
+def test_nonce_size_bounds_are_preserved():
+    selection = _preflight().select_next_pending()
+    accepted = BRSSelectedChildHandoff.from_selection(selection, CONTEXT, lease_nonce="N" * 128)
+    assert len(accepted.lease_nonce) == 128
+    for nonce in ("N" * 31, "N" * 129):
+        with pytest.raises(BRSChildHandoffError, match="handoff_lease_nonce_invalid"):
+            BRSSelectedChildHandoff.from_selection(selection, CONTEXT, lease_nonce=nonce)

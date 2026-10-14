@@ -25,6 +25,8 @@ HANDOFF_PROTOCOL = "lunar-rsi-python-brs-selected-child-handoff-v1"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _NONCE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+
+
 class BRSChildHandoffError(BRSChildPolicyError):
     """Stable refusal raised by the detached handoff constructor and gate."""
 
@@ -128,7 +130,7 @@ class BRSSelectedChildHandoff:
     protocol: str = HANDOFF_PROTOCOL
 
     def __post_init__(self) -> None:
-        if self.protocol != HANDOFF_PROTOCOL:
+        if type(self.protocol) is not str or self.protocol != HANDOFF_PROTOCOL:
             _fail("protocol_invalid")
         _identity(self.run_id, "run_id")
         _int(self.wave, "wave")
@@ -208,6 +210,33 @@ class BRSSelectedChildHandoff:
         return hashlib.sha256(self.canonical_bytes).hexdigest()
 
 
+def _validate_preflight_shape(preflight: BRSNativeChildPreflight) -> None:
+    """Reject injected fields before the existing preflight serializer iterates them."""
+    if (type(preflight.run_id) is not str or type(preflight.wave) is not int
+            or type(preflight.root_snapshot_sha256) is not str
+            or type(preflight.intents) is not tuple or type(preflight.executions) is not tuple
+            or type(preflight.planned_budget) is not tuple or type(preflight.consumed_budget) is not tuple):
+        _fail("preflight_shape_invalid")
+    if any(
+        type(item) is not tuple or len(item) != 3
+        or type(item[0]) is not int or type(item[1]) is not str or type(item[2]) is not str
+        for item in preflight.intents
+    ):
+        _fail("preflight_shape_invalid")
+    if any(type(item) is not str for item in preflight.executions):
+        _fail("preflight_shape_invalid")
+    for counters, allow_none in ((preflight.planned_budget, True), (preflight.consumed_budget, False)):
+        if any(
+            type(item) is not tuple or len(item) != 2 or type(item[0]) is not str
+            or not ((item[1] is None and allow_none) or type(item[1]) is int)
+            for item in counters
+        ):
+            _fail("preflight_shape_invalid")
+    for field in ("attempts", "candidates", "checkpoint_bytes", "aggregate_bytes", "max_workers"):
+        if type(getattr(preflight, field)) is not int:
+            _fail("preflight_shape_invalid")
+
+
 def validate_brs_child_handoff(
     handoff: BRSSelectedChildHandoff,
     preflight: BRSNativeChildPreflight,
@@ -228,20 +257,25 @@ def validate_brs_child_handoff(
         _fail("preflight_invalid")
     if type(current) is not BRSChildHandoffContext:
         _fail("context_invalid")
-    if get_ident() != handoff.owner_thread_id:
-        _fail("owner_thread_drift")
-    if type(consumed_nonces) is not tuple or any(type(item) is not str for item in consumed_nonces):
-        _fail("nonce_state_invalid")
-    if handoff.lease_nonce in consumed_nonces:
-        _fail("nonce_replayed")
+    # Frozen dataclasses are not a security boundary: object.__setattr__ can inject
+    # values. Reconstruct strict primitive fields before any equality or membership
+    # comparison so hostile values cannot run __eq__, __str__, or __format__ callbacks.
     try:
         handoff = BRSSelectedChildHandoff(**handoff.to_dict())
         current = BRSChildHandoffContext(**current.to_dict())
+        _validate_preflight_shape(preflight)
         preflight = BRSNativeChildPreflight.from_wire(preflight.to_dict())
     except (BRSChildPolicyError, TypeError, ValueError, OverflowError, RecursionError) as exc:
         if isinstance(exc, BRSChildHandoffError):
             raise
         raise BRSChildHandoffError("shape_invalid") from exc
+    if get_ident() != handoff.owner_thread_id:
+        _fail("owner_thread_drift")
+    if (type(consumed_nonces) is not tuple
+            or any(type(item) is not str or _NONCE.fullmatch(item) is None for item in consumed_nonces)):
+        _fail("nonce_state_invalid")
+    if handoff.lease_nonce in consumed_nonces:
+        _fail("nonce_replayed")
     if preflight.max_workers != 1 or current.max_workers != 1 or handoff.max_workers != 1:
         _fail("max_workers_invalid")
     selection = preflight.select_next_pending()
