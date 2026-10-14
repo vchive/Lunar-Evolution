@@ -31,6 +31,15 @@ Existing request/plan/ledger checks and started/terminal recovery refusal remain
 Preclaim remains an observation gate, not a reservation or launch authority;
 the fresh claim/dispatch owner must still revalidate under its existing lock.
 
+Bound contexts retain their exact failure ledger and original constructor pin.
+Legacy native contexts originally constructed without that binding use only an
+invocation-local pin of the gateway-supplied exact `RSILedger`, with query-only
+claim observations and identity checks before/after reads and at the final return
+boundary. Neither callback may replace the context, attach/drop the failure ledger,
+replace the constructor pin or replace the database inode. The compatibility path
+does not create persistent failure authority or weaken Python child ledger binding;
+see `fresh-native-preclaim.md` for its scope.
+
 Public scheduler refusal codes are `preclaim_cancelled`,
 `preclaim_deadline_expired`, `preclaim_control_invalid` and
 `preclaim_cancellation_invalid`, with the existing scheduler prefix. Retained
