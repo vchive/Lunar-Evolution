@@ -11,6 +11,7 @@ from __future__ import annotations
 import stat
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from types import MethodType
 from typing import Any
 
 from .official_evaluator_evidence import (
@@ -71,8 +72,9 @@ class NativeRSIExecutionConfig:
 
     ``plan_factory`` rebuilds the frozen plan on every call, including replay and recovery checks.
     It must be pure and read-only: it cannot stage inputs, consume an attestation, or launch work.
-    ``receipt_provider`` is invoked only after a new claim is acquired; scheduler integration and
-    reading same-attempt evidence remain its caller-owned responsibilities. Both dependencies are
+    ``receipt_provider`` is invoked only after a new claim is acquired. Its optional read-only
+    ``validate_preclaim`` hook runs before a fresh claim; scheduler integration and reading
+    same-attempt evidence remain its caller-owned responsibilities. Both dependencies are
     explicit so the facade cannot accidentally reuse an unbound legacy producer receipt.
     """
 
@@ -183,6 +185,39 @@ class NativeRSISolverGateway:
         except Exception as exc:
             raise NativeRSISolverGatewayError("rsi_native_gateway_plan_binding_mismatch") from exc
         return plan
+
+    def _validate_preclaim(self, request: SolverRequest, plan: NativeRSIExecutionPlan) -> None:
+        """Observe an explicit provider gate before the first durable claim."""
+        config = self.config
+        provider = config.receipt_provider
+        try:
+            with config.ledger.read_only_observations():
+                hook = getattr(provider, "validate_preclaim", None)
+                if self.config is not config:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_preclaim_configuration_changed")
+                self._assert_ledger()
+                if hook is None:
+                    return
+                if not callable(hook):
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_preclaim_hook_invalid")
+                fingerprint = self.rsi_fingerprint_config()
+                hook(request, plan, claim_ledger=config.ledger)
+                if self.config is not config:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_preclaim_configuration_changed")
+                repeated_hook = getattr(provider, "validate_preclaim", None)
+                same_hook = repeated_hook is hook
+                if type(hook) is MethodType and type(repeated_hook) is MethodType:
+                    same_hook = (repeated_hook.__self__ is hook.__self__
+                                 and repeated_hook.__func__ is hook.__func__)
+                if not same_hook or self.rsi_fingerprint_config() != fingerprint:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_preclaim_configuration_changed")
+                self._assert_ledger()
+                if self.config is not config:
+                    raise NativeRSISolverGatewayError("rsi_native_gateway_preclaim_configuration_changed")
+        except NativeRSISolverGatewayError:
+            raise
+        except Exception as exc:
+            raise NativeRSISolverGatewayError("rsi_native_gateway_preclaim_failed") from exc
 
     def _replay(self, request: SolverRequest, plan: NativeRSIExecutionPlan) -> SolverResult:
         self._assert_ledger()
@@ -371,6 +406,7 @@ class NativeRSISolverGateway:
             return self._replay(request, plan)
         if claim is not None:
             raise NativeRSISolverGatewayError("rsi_native_gateway_recovery_required")
+        self._validate_preclaim(request, plan)
         try:
             claim = self.ledger.claim_native_episode(request, plan_sha256=plan.plan_sha256)
             self._assert_ledger()
