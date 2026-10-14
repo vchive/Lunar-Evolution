@@ -1,5 +1,19 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 Linux guardian fixture 的独立 FD 修正
+
+旧 `a62ac647` 的 Python 3.13 current-1 raw XML 除 5 个 Actor hook 失败外，还有
+guardian 正常启动测试失败：固定模拟 pidfd 77 与该 runner 的真实 bootstrap_fd 77
+相同，产品正确触发 borrowed alias 拒绝。仅将测试的 fake pidfd 改为当前全部 pipe
+FD 最大值加一，mock 返回与 owner 断言使用同一变量；产品 fresh-FD 门禁不变。
+独立审查、ruff、compileall、diff-check 通过。Darwin 本地 skip 不算 Linux 接受；
+最终 CI 必须原 readiness test 无 skip 通过。
+
+修正位于独立 `pr100-guardian-fixture` 工作树，保留正在回归的 `2e0ff07` checkout
+及其原 freeze。新 773 文件 freeze 相对该来源仅改变 guardian test，最终完整 CI
+要重新核对所有 current inventory、三轮 DRS case 与 raw/source/tree；之前的通过与
+失败均按其原 source 保留。此条是提交时检查点，不能据此宣称 CI/合入成功。
+
 ## 2026-10-14 三轮闭环通过；CI 候选读取负例接线修正
 
 `a62ac647` 的完整三轮 DRS fixture 已通过：三个不同 child、连续 publication、
