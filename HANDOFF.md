@@ -1,5 +1,59 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 多 episode 容量修复与统一并行验收
+
+三轮 inert DRS 首次完整验收在第一轮 settlement 后实际触发
+`rsi_producer_episode_checkpoint_capacity_exhausted`：原 canonical checkpoint
+70,438 bytes，下一轮保守预留合计 121,338 bytes，超过原 112 KiB。仅降低固定预留
+不能解决第三轮完整状态容量；失败 XML、source pins 和只读容量分析继续保留。
+
+本轮按 Feature191 `ready-capsule.md` 完成 MEP-only ready capsule：完整 ready 先通过原
+binding/input/plan/root 校验，再由原 preparing permit create-only 留存本地证据文件；
+checkpoint 仅保存原始文件 pin，原 ready CAS 首次确认它。默认单 child 的完整 ready
+格式保持；reader 只读，不能采用 orphan、刷新 pin、恢复 launch permit 或扩写 state。
+binding 32 KiB、capsule 64 KiB、reference 8 KiB、checkpoint 112 KiB 和共同 64 MiB
+证据预算均保留。全部历史模式固定，combined aggregate 在证据文件 I/O 前检查。
+
+独立代码审查未发现本轮 blocker。最终来源正在并行回归：
+`source-before-ready-capsule-corrected.json` 包含 772 个 source/test/tool/config 文件，
+map SHA `d1f673ee3016e73b67e80cf4421c4b701d96942695b8b3b58da50742e3d63288`。
+core 179 distinct cases 已通过且前后 pins 一致；三轮完整闭环、历史/默认兼容和 72 项
+owner/inspection 回归仍运行中，后者按原 collection 拆为 6 个不重叠分区。早期 freeze
+后补入 4 条 pure consumer 测试，因此原来源与中断 XML 不计入最终验收。
+所有证据位于 ignored `.lunar-evolution/reports/multi-episode-final/`。
+
+本批尚未创建 PR/合入，不能关闭完整 MEP 验收。`all_rejected`、BRS、多轮中断扩展、
+真实 CPython/toolchain/runtime、OpenEvolve/Shinka lifecycle 与生产 CLI 仍开放。
+只用本地 inert/provider-free fixture；`production_admission=false`，P2 继续后置。
+
+## 2026-10-14 合入单 child 与 README；多 episode 并行开发中
+
+PR99 已按授权合入 `main 0cb49abb146d91cb59b71de45d01e16217ebed8d`，主目录已
+安全 fast-forward 且 clean。最终 head `80d3f3af45b53013cce0a7bc69ddf87f7d1e1f16`
+通过 CI run `38517739592` 的 15/15 jobs，15 份 artifacts 已独立审查；每版 current
+15,664 个不同 case、92 个明示 skips、零 failures/errors。合入 tree
+`2990ac0326b811ebb34c921c7419571a64c52ba4` 与原 tested tree 完全相同；新 merge
+parents 已核实。README 的安装、普通任务、RSI fixture、架构与状态说明已发布到首页。
+单 child 接线已验收，但不关闭真实 runtime、生产 CLI 或多 episode 的验收项。
+
+`codex/multi-episode-publication` 继续同 workspace 的显式 append lineage：原 owner/CAS、
+fresh dispatch lease、独立只读历史 chain inspection、原 native deadline/cancellation 门禁
+和严格 held pins。实现与独立审查并行，正在修复 publication DTO shape-first、每历史阶段
+pin-map/预算、原 result/provenance 关联等边界。早期中断/测试输出保留，不计为验收成功。
+真实三 episode 闭环及最终统一来源回归仍未完成；all-rejected opt-in 尚明确拒绝。
+
+性能 slice `318e51c` 缓存普通源码文件的成功解析，仍实时读取精确源码 bytes 与配置/
+defaults/closure/code hooks；65 项 identity 开发测试通过，31 dependencies 局部 warm
+benchmark 约快 10 倍。它不跳过 filesystem、ledger、预算或 publication 校验，最终
+workflow 回归仍需使用其自身统一来源。
+
+验收发现 native mapper 原本不填 `solver_score`，默认 target judge 会接受 validity 1 的
+completed candidate。三 episode fixture 因此使用已有 `target_judge` 配置接口，先核实
+原 evaluator report/evaluation receipt/journal/result 摘要，再判断 0/9 阈值；不伪造
+SolverResult 或修改 native wire。仅本地 inert/provider-free fixture，
+`production_admission=false`；未运行真实模型、CPython/toolchain、campaign、远程
+evaluator、WebAgent 或公司平台。P2 多机/服务化继续后置。
+
 ## 2026-10-14 并行继续：显式单 child 完整执行与恢复
 
 本轮在 `codex/child-execution-flow` 延续原 child claim/preclaim 来源，新增显式

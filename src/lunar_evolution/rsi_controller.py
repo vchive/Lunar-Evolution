@@ -91,6 +91,7 @@ class _PythonAdmissionFlowContext:
     owner_thread: int
     checkpoint_sha256: str
     payload: bytes
+    publication_dispatch_lease: object | None = None
 
 
 @dataclass
@@ -1004,6 +1005,7 @@ class RSILearningController:
         producer_workspace: str | Path | None = None,
         producer_stager: Any | None = None,
         producer_child_execution: bool = False,
+        producer_multi_episode_publication: bool = False,
     ) -> None:
         self.gateway = gateway
         self.verifier = verifier or LocalExactVerifier()
@@ -1054,8 +1056,14 @@ class RSILearningController:
         self.producer_child_execution = producer_child_execution
         self._original_producer_child_execution = producer_child_execution
         self._original_producer_child_gateway = gateway if producer_child_execution else None
+        if (type(producer_multi_episode_publication) is not bool
+                or (producer_multi_episode_publication and not producer_child_execution)):
+            raise RSILearningError("rsi_producer_multi_episode_configuration_invalid")
+        self.producer_multi_episode_publication = producer_multi_episode_publication
+        self._original_producer_multi_episode_publication = producer_multi_episode_publication
         self._producer_staging_permit = None
         self._producer_child_dispatch_permit = None
+        self._producer_publication_dispatch = None
         self._python_admission_flow_local = local()
         self._python_admission_brs_local = local()
         self._python_admission_brs_wave: _PythonAdmissionBRSWave | None = None
@@ -1245,6 +1253,9 @@ class RSILearningController:
 
     def _validate_producer_staging(self, record: RSIRecord, state: Mapping[str, Any] | None) -> None:
         execution_policy = self._producer_child_execution_policy()
+        from .rsi_publication_lineage import multi_episode_publication_policy
+
+        publication_policy = multi_episode_publication_policy(self)
         expected_flag = True if execution_policy is not None else None
         retained = [record.payload]
         if state is not None:
@@ -1258,6 +1269,10 @@ class RSILearningController:
             if (snapshot.get("producer_child_execution") is not expected_flag
                     or snapshot.get("producer_child_execution_policy") != execution_policy):
                 raise RSILearningError("rsi_producer_child_execution_original_mode_mismatch")
+            if (snapshot.get("producer_multi_episode_publication")
+                    is not (True if publication_policy is not None else None)
+                    or snapshot.get("producer_multi_episode_publication_policy") != publication_policy):
+                raise RSILearningError("rsi_producer_multi_episode_original_mode_mismatch")
         expected = self.producer_stager.policy() if self.producer_stager is not None else None
         if record.payload.get("producer_staging_policy") != expected:
             raise RSILearningError("rsi_producer_episode_original_mode_mismatch")
@@ -1283,6 +1298,7 @@ class RSILearningController:
             read_python_producer_binding_sidecar,
         )
         from .python_producer_checkpoint import PythonProducerCheckpointBinding
+        from .rsi_producer_staging_capsule import materialize_ready
 
         if self.ledger is None or self.producer_sidecar is None or self.producer_stager is None:
             return self.producer_sidecar, None
@@ -1310,6 +1326,11 @@ class RSILearningController:
         if type(ready) is not dict:
             raise RSILearningError("rsi_python_admission_child_proof_corrupt")
         try:
+            ready = materialize_ready(
+                ready, allow_capsule=state.get("producer_multi_episode_publication") is True,
+                expected_workspace=self.producer_workspace,
+                expected_journal_id=entry["identity"]["journal_id"],
+            )
             binding = parse_python_producer_binding(canonical_json(ready["binding"], maximum=2 * 1024 * 1024))
             child = PythonProducerBindingSidecar(binding=binding, **dict(selected.sidecar_pin))
             selected.validate_sidecar(child)
@@ -1613,6 +1634,8 @@ class RSILearningController:
                 or (context.run_id, context.episode_id) != (run_id, episode_id)
                 or not context.ledger.controller_lock_held(run_id)):
             raise RSILearningError("rsi_python_admission_flow_identity_invalid")
+        if context.publication_dispatch_lease is not self._producer_publication_dispatch:
+            raise RSILearningError("rsi_producer_publication_dispatch_invalid")
         if self._python_admission_flow_payload(context.state) != context.payload:
             raise RSILearningError("rsi_python_admission_flow_stale")
 
@@ -1667,6 +1690,12 @@ class RSILearningController:
             raise RSILearningError("rsi_python_admission_flow_stale")
         self._python_admission_assert_flow_context(context, run_id, episode_id)
         return context.state, context.checkpoint_sha256
+
+    def _ack_publication_lineage_for_active_flow(self, owner):
+        """Acknowledge only the original lineage owner's exact checkpoint CAS."""
+        from .rsi_publication_lineage import acknowledge_publication_lineage_for_active_flow
+
+        return acknowledge_publication_lineage_for_active_flow(self, owner)
 
     def _python_admission_bridge_wait_check(self) -> None:
         """Keep a live BRS admission waiter behind the same local budget/evidence gate.
@@ -2766,6 +2795,11 @@ class RSILearningController:
         execution_policy = self._producer_child_execution_policy()
         if execution_policy is not None:
             solver_settings["producer_child_execution_policy"] = execution_policy
+        from .rsi_publication_lineage import multi_episode_publication_policy
+
+        publication_policy = multi_episode_publication_policy(self)
+        if publication_policy is not None:
+            solver_settings["producer_multi_episode_publication_policy"] = publication_policy
         if self.memory_admission_gate is not None:
             solver_settings["memory_admission_gate_fingerprint"] = _component_digest(self.memory_admission_gate, name="memory_admission_gate")
         if self.generation_regression_tasks:
@@ -2894,6 +2928,12 @@ class RSILearningController:
         if execution_policy is not None:
             payload["producer_child_execution"] = True
             payload["producer_child_execution_policy"] = execution_policy
+        from .rsi_publication_lineage import multi_episode_publication_policy
+
+        publication_policy = multi_episode_publication_policy(self)
+        if publication_policy is not None:
+            payload["producer_multi_episode_publication"] = True
+            payload["producer_multi_episode_publication_policy"] = publication_policy
         curriculum_state = self._failure_curriculum_state()
         if curriculum_state is not None:
             payload["curriculum_state"] = curriculum_state
@@ -3389,6 +3429,12 @@ class RSILearningController:
         if execution_policy is not None:
             state["producer_child_execution"] = True
             state["producer_child_execution_policy"] = execution_policy
+        from .rsi_publication_lineage import multi_episode_publication_policy
+
+        publication_policy = multi_episode_publication_policy(self)
+        if publication_policy is not None:
+            state["producer_multi_episode_publication"] = True
+            state["producer_multi_episode_publication_policy"] = publication_policy
         self._sync_curriculum_checkpoint(state)
         return state
 
@@ -3557,6 +3603,9 @@ class RSILearningController:
             raise RSILearningError("rsi_producer_child_execution_checkpoint_conflict")
         budget = RSIRunBudget.load(state["budget_state"])
         controller = self
+        memory = self.snapshot
+        fresh_plan = None
+        publication_lease = None
 
         class ControllerVerifier:
             def verify(self, episode, request, result):
@@ -3565,39 +3614,71 @@ class RSILearningController:
         with self._python_admission_flow_scope(state, episode.episode_id):
             _active, head = self._python_admission_active_flow(state["run_id"], episode.episode_id)
             child = resolve_python_producer_episode_gateway(
-                self, request, self.snapshot, expected_checkpoint_sha256=head,
+                self, request, memory, expected_checkpoint_sha256=head,
             )
             child.bind_python_admission_child_controller(self, expected_checkpoint_sha256=head)
 
             def check_owner() -> None:
+                if self._producer_publication_dispatch is not publication_lease:
+                    raise RSILearningError("rsi_producer_publication_dispatch_invalid")
                 self._python_admission_active_flow(state["run_id"], episode.episode_id)
                 self._validate_producer_checkpoint(state["run_id"], state)
                 budget.check()
 
             def claim_factory(plan):
+                nonlocal fresh_plan
                 preview = resolve_python_producer_controller_child_preview(
                     self, run_id=state["run_id"], episode_id=episode.episode_id,
-                    request=request, memory=self.snapshot, expected_checkpoint_sha256=head,
+                    request=request, memory=memory, expected_checkpoint_sha256=head,
                 )
                 if preview.plan != plan:
                     raise RSILearningError("rsi_producer_child_execution_plan_drift")
-                return claim_python_producer_controller_child(
-                    self, preview, request=request, memory=self.snapshot,
+                claim = claim_python_producer_controller_child(
+                    self, preview, request=request, memory=memory,
                 )
+                fresh_plan = plan
+                return claim
 
             def before_run() -> None:
                 self._check_memory_admission(request, parent_run_id=state["run_id"])
                 check_owner()
 
             with child._fresh_child_dispatch(
-                request, self.snapshot, claim_factory=claim_factory, check_owner=check_owner,
+                request, memory, claim_factory=claim_factory, check_owner=check_owner,
             ) as dispatch:
+                def publication_dispatch(supplied_request):
+                    nonlocal publication_lease
+                    if (self._producer_publication_dispatch is not None or fresh_plan is None
+                            or supplied_request is not request):
+                        raise RSILearningError("rsi_producer_publication_dispatch_invalid")
+                    context = self._python_admission_flow_local.active
+                    self._python_admission_assert_flow_context(context, state["run_id"], episode.episode_id)
+                    publication_lease = (state, child, request, memory, fresh_plan)
+                    # Retain the original object in the owning stack/context before
+                    # any dispatch observation can replace the readable field.
+                    self._python_admission_flow_local.active = replace(
+                        context, publication_dispatch_lease=publication_lease,
+                    )
+                    self._producer_publication_dispatch = publication_lease
+                    try:
+                        return dispatch(supplied_request)
+                    finally:
+                        current = getattr(self._python_admission_flow_local, "active", None)
+                        if (type(current) is _PythonAdmissionFlowContext
+                                and current.state is state
+                                and current.publication_dispatch_lease is publication_lease):
+                            self._python_admission_flow_local.active = replace(
+                                current, publication_dispatch_lease=None,
+                            )
+                        self._producer_publication_dispatch = None
+                        publication_lease = None
+
                 return PracticeEpisodeRunner(
                     child, ControllerVerifier(), self.ledger, self.usage_ledger,
-                    memory_snapshot=self.snapshot, before_run=before_run,
+                    memory_snapshot=memory, before_run=before_run,
                     before_dispatch=check_owner,
                     before_settlement=lambda: self._validate_producer_checkpoint(state["run_id"], state),
-                    gateway_dispatch=dispatch,
+                    gateway_dispatch=publication_dispatch if self.producer_multi_episode_publication else dispatch,
                 ).run(episode, request)
 
     def _stage_producer_episode(self, state: dict, episode: PracticeEpisode, request: SolverRequest) -> str | None:

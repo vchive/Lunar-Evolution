@@ -255,6 +255,8 @@ def _run_native_trusted_producer(
     ] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
+    producer_multi_episode_publication: bool = False,
+    lineage_owner: Any | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run one pinned native producer through the formal local boundaries.
 
@@ -284,9 +286,20 @@ def _run_native_trusted_producer(
         python_handoff_after_execution, prepared_observer, evidence_revalidator,
     ))):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_python_join_invalid")
+    if (type(producer_multi_episode_publication) is not bool
+            or producer_multi_episode_publication != (lineage_owner is not None)
+            or (producer_multi_episode_publication and not python_join)):
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_multi_episode_configuration_invalid")
+    if producer_multi_episode_publication:
+        from .rsi_publication_lineage import RSIPublicationLineage
+
+        if type(lineage_owner) is not RSIPublicationLineage:
+            raise NativeTrustedSchedulerError("native_trusted_scheduler_multi_episode_configuration_invalid")
     _check_parent_deadline(parent_deadline)
     control, checkpoint = _lifecycle_control(execution_control, cancelled, parent_deadline)
     root = _workspace_root(workspace)
+    if lineage_owner is not None:
+        lineage_owner.validate_launch(workspace=root, intent=intent)
 
     checkpoint("native_producer_attempt")
     caller_limited = control is not None and control.deadline <= control._now() + intent.wall_timeout_seconds
@@ -406,6 +419,9 @@ def _run_native_trusted_producer(
                 "prepared_observer": prepared_observer,
                 "evidence_revalidator": evidence_revalidator,
             }
+            if lineage_owner is not None:
+                publication_options["producer_multi_episode_publication"] = True
+                publication_options["lineage_owner"] = lineage_owner
         except (SolveExecutionCancelled, SolveExecutionBudgetExceeded):
             raise
         except Exception as exc:
@@ -462,6 +478,8 @@ def run_native_trusted_producer(
     ] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
+    producer_multi_episode_publication: bool = False,
+    lineage_owner: Any | None = None,
 ) -> NativeTrustedProducerRun:
     """Run the historical success-only receipt/output/publication entry point once."""
     return _run_native_trusted_producer(
@@ -473,6 +491,8 @@ def run_native_trusted_producer(
         cancelled=cancelled, parent_deadline=parent_deadline, known_failure=False,
         python_handoff_after_execution=python_handoff_after_execution,
         prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
+        producer_multi_episode_publication=producer_multi_episode_publication,
+        lineage_owner=lineage_owner,
     )
 
 
@@ -489,6 +509,8 @@ def run_native_trusted_producer_outcome(
     ] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
+    producer_multi_episode_publication: bool = False,
+    lineage_owner: Any | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run once, returning verified process failure or the unchanged success result.
 
@@ -504,6 +526,8 @@ def run_native_trusted_producer_outcome(
         cancelled=cancelled, parent_deadline=parent_deadline, known_failure=True,
         python_handoff_after_execution=python_handoff_after_execution,
         prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
+        producer_multi_episode_publication=producer_multi_episode_publication,
+        lineage_owner=lineage_owner,
     )
 
 

@@ -489,7 +489,33 @@ def _marker(root: Path, journal: ProducerBundlePublicationJournal) -> None:
     _self_digest(marker, "marker_sha256", "producer_bundle_recovery_marker_digest_mismatch")
 
 
-def _terminal(root: Path, batch: Path, journal: ProducerBundlePublicationJournal, manifest_sha: str) -> None:
+@dataclass(frozen=True, slots=True)
+class _ProducerBundleTerminalEvidence:
+    """Validated terminal associations, without lineage or file-pin authority.
+
+    These observations only describe the selected batch.  They cannot establish a
+    publication decision, a retained historical snapshot, or a successor chain.
+    The complete recovery path must still verify material, handoff, markers, and
+    either the legacy current head or independently held historical chain pins.
+    """
+
+    journal_id: str
+    staged_journal_sha256: str
+    manifest_sha256: str
+    archive_after_sha256: str
+    state_after_sha256: str
+    terminal_marker_sha256: str
+
+
+def _verify_terminal_batch_evidence(
+    root: Path, batch: Path, journal: ProducerBundlePublicationJournal, manifest_sha: str,
+) -> _ProducerBundleTerminalEvidence:
+    """Validate the original batch's terminal association without reading live head.
+
+    This private composition seam intentionally returns no recovery result and
+    mints no authorization.  A future historical reader must independently verify
+    its bounded, originally pinned lineage; self-digests here are not those pins.
+    """
     value = _read_json(_path(root, "terminal.json", directory=batch), 8192)
     fields = {"schema_version", "protocol", "journal_id", "staged_journal_sha256", "manifest_sha256", "archive_after_sha256", "state_after_sha256", "status", "terminal_marker_sha256"}
     fields_with_alias = fields | {"journal_sha256"}
@@ -511,10 +537,25 @@ def _terminal(root: Path, batch: Path, journal: ProducerBundlePublicationJournal
     marker_sha = _self_digest(value, "terminal_marker_sha256", "producer_bundle_recovery_terminal_digest_mismatch")
     if journal.terminal_marker_sha256 != marker_sha:
         _fail("producer_bundle_recovery_terminal_mismatch")
+    return _ProducerBundleTerminalEvidence(
+        journal.journal_id, staged.digest(), manifest_sha,
+        journal.archive_after_sha256, journal.state_after_sha256, marker_sha,
+    )
+
+
+def _verify_terminal_current_head(root: Path, journal: ProducerBundlePublicationJournal) -> None:
+    """Keep the legacy whole-current-archive/state requirement exactly intact."""
     archive = _read(root / "evolution" / "archive.jsonl", _MAX_FILE_BYTES)
     state = _read(root / "evolution" / "state.json", _MAX_FILE_BYTES)
     if hashlib.sha256(archive).hexdigest() != journal.archive_after_sha256 or hashlib.sha256(state).hexdigest() != journal.state_after_sha256:
         _fail("producer_bundle_recovery_after_digest_mismatch")
+
+
+def _terminal(root: Path, batch: Path, journal: ProducerBundlePublicationJournal, manifest_sha: str) -> None:
+    # Default recovery always requires both layers.  Do not catch a current-head
+    # refusal to retry through the partial immutable verifier.
+    _verify_terminal_batch_evidence(root, batch, journal, manifest_sha)
+    _verify_terminal_current_head(root, journal)
 
 
 def resume_producer_bundle_publication(

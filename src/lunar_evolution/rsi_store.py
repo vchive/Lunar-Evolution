@@ -36,6 +36,7 @@ from .rsi_python_admission import (
     parse_rsi_python_admission_record,
     parse_rsi_python_admission_references,
     validate_rsi_python_admission_reference_record,
+    validate_rsi_python_admission_shapes,
 )
 
 RunState = Literal["created", "running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"]
@@ -445,9 +446,23 @@ class RSILedger:
             raise RSILearningError("rsi_python_admission_child_proof_not_ready")
         ready = entry.get("ready")
         identity = entry.get("identity")
-        if (type(ready) is not dict
-                or set(ready) != {"binding", "producer_checkpoint", "plan", "inputs", "input_manifest"}
-                or type(identity) is not dict):
+        if type(ready) is not dict or type(identity) is not dict:
+            raise RSILearningError("rsi_python_admission_child_proof_corrupt")
+        validate_rsi_python_admission_shapes((ready, identity))
+        allow_capsule = state.get("producer_multi_episode_publication") is True
+        if allow_capsule and (state.get("mode") != "drs" or state.get("producer_child_execution") is not True):
+            raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+        from .rsi_producer_staging_capsule import (
+            materialize_ready,
+            retained_publication_evidence_bytes,
+        )
+
+        retained_publication_evidence_bytes(state)
+        ready = materialize_ready(
+            ready, allow_capsule=allow_capsule,
+            expected_journal_id=identity.get("journal_id"),
+        )
+        if set(ready) != {"binding", "producer_checkpoint", "plan", "inputs", "input_manifest"}:
             raise RSILearningError("rsi_python_admission_child_proof_corrupt")
         child = self._checkpoint_binding(
             ready.get("producer_checkpoint"), code="rsi_python_admission_child_proof_invalid",
@@ -597,11 +612,22 @@ class RSILedger:
             raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         previous_entries: dict[str, dict[str, Any]] = {}
         previous_digest: str | None = None
+        capsule_mode = history[0][1].get("producer_multi_episode_publication")
+        if capsule_mode is not None and type(capsule_mode) is not bool:
+            raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         states_by_digest = {digest: state for digest, state in history}
+        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
+
         for digest, state in history:
             if (state.get("run_id") != run_id or state.get("producer_staging_policy") != policy
-                    or type(state.get("producer_episode_staging")) is not dict):
+                    or type(state.get("producer_episode_staging")) is not dict
+                    or ("producer_multi_episode_publication" in state
+                        and type(state["producer_multi_episode_publication"]) is not bool)
+                    or state.get("producer_multi_episode_publication") != capsule_mode
+                    or (capsule_mode is True and (state.get("mode") != "drs"
+                        or state.get("producer_child_execution") is not True))):
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
+            retained_publication_evidence_bytes(state)
             entries = state["producer_episode_staging"]
             if not set(previous_entries).issubset(entries):
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
@@ -703,6 +729,12 @@ class RSILedger:
             history = self._controller_checkpoint_history_tx(connection, run_id)
             if not history:
                 raise RSILearningError("rsi_python_admission_checkpoint_missing")
+            original_capsule_mode = records[0].payload.get("producer_multi_episode_publication")
+            if ((original_capsule_mode is not None and type(original_capsule_mode) is not bool)
+                    or history[0][1].get("producer_multi_episode_publication") != original_capsule_mode
+                    or (original_capsule_mode is True and (records[0].payload.get("mode") != "drs"
+                        or records[0].payload.get("producer_child_execution") is not True))):
+                raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             self._validate_python_producer_staging_history_tx(
                 history, run_id=run_id, expected_policy=records[0].payload.get("producer_staging_policy"),
             )
@@ -940,6 +972,13 @@ class RSILedger:
         if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
             raise RSILearningError("rsi_python_admission_run_conflict")
         staging_history = self._controller_checkpoint_history_tx(connection, admission.run_id)
+        original_capsule_mode = original.payload.get("producer_multi_episode_publication")
+        if ((original_capsule_mode is not None and type(original_capsule_mode) is not bool)
+                or (staging_history and staging_history[0][1].get("producer_multi_episode_publication")
+                    != original_capsule_mode)
+                or (original_capsule_mode is True and (original.payload.get("mode") != "drs"
+                    or original.payload.get("producer_child_execution") is not True))):
+            raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         self._validate_python_producer_staging_history_tx(
             staging_history, run_id=admission.run_id,
             expected_policy=original.payload.get("producer_staging_policy"),

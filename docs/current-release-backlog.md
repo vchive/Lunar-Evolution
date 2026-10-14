@@ -2,51 +2,63 @@
 
 ## Opt-in single-child execution — 2026-10-14
 
-`codex/child-execution-flow` 在原 child claim 基线上继续接通显式
+PR99 已合入 `main 0cb49abb146d91cb59b71de45d01e16217ebed8d`，接通显式
 `producer_child_execution=True`：相邻 ready 的原 owner/CAS permit → child gateway →
 原 claim → running → native scheduler → prepared admission/publication → receipt mapper →
 result/verifier。原 controller root 和 proof 不替换；原 run 与全部历史版本固定 execution
 policy。默认 staging-only 和 CLI native 拒绝行为不变，`production_admission=false`。
-单 child 完整 inert fixture 已通过，统一最终来源与中断回归正在完成，尚未据此声明合入。
+单 child 完整 inert fixture 与中断恢复回归已通过；最终 head `80d3f3af` 的 CI
+`38517739592` 通过 15/15 jobs，原始 artifacts/source/tree 已独立审计。合入 tree
+与实际 tested merge tree 相同。README 已发布到 GitHub 首页。
 规格见 [`child-execution-flow.md`](../specs/191-python-worker-adapter/child-execution-flow.md)。
 
-下一片多 episode DRS 有两个已核实的发布依赖，不能只循环调用 child：
+当前 `codex/multi-episode-publication` 正按现有 SDD 处理两个发布依赖：
 
 - 原 Feature153 的 `_ensure_initial_population_window` 只允许第一批 producer admission；
   第二个 episode 对同一 archive 发布会被拒绝。
 - 原 publication `_terminal` 要求当前 archive/state 等于该批的完整发布后摘要；合法的
   后续发布也会使早先 child 的恢复失败。
 
-须在现有 SDD 下明确连续发布及历史恢复契约，或明确每个 child 的独立 publication
-workspace 与原 run 归属，再验收 target failure → practice success → 新 approved memory
-→ target retry。不能通过移除初始门禁、忽略整个 archive 摘要或重复使用 root sidecar 完成。
-本批只验收 single child，不关闭多 episode DRS、BRS、真实 runtime 或生产 CLI 的任务。
+契约已选择同 workspace 的显式 append lineage，规格见
+[`multi-episode-publication.md`](../specs/191-python-worker-adapter/multi-episode-publication.md)。
+原 owner/CAS、fresh dispatch lease、每阶段独立 held pins、历史只读 inspection 和
+原 deadline/cancellation 门禁已实现，正在统一来源下验收 target failure → practice
+success → 新 approved memory → target retry。当前尚未验收或合入；`all_rejected`
+opt-in 仍明确拒绝，不关闭整项、BRS、真实 runtime 或生产 CLI。不得移除初始门禁、忽略
+archive 摘要或重复使用 root sidecar。
+
+三轮实际验收已暴露 checkpoint 容量阻塞，正在按
+[`ready-capsule.md`](../specs/191-python-worker-adapter/ready-capsule.md) 验证 MEP-only
+独立 ready 证据文件。实现与独立代码审查已完成，保留原 112 KiB 上限、create-only
+写入、原 ready CAS 和共同 64 MiB 预算；179 项核心回归已通过。三轮闭环与默认/历史
+兼容尚在同一冻结来源下验收，未据开发测试关闭功能或合入。完整拒绝批次的关联、mapper
+和历史恢复须下一片单独实现，不能把正常 validity=0 当进程失败。
 
 ## Current snapshot — 2026-10-14
 
-已核实的集成基线是 `main 82191cf29601405769af08b53a3bce78eb6c1d6d`。
-它的 [CI run 38428650836](https://github.com/vchive/Lunar-Evolution/actions/runs/38428650836)
+已核实的集成基线是 `main 0cb49abb146d91cb59b71de45d01e16217ebed8d`。
+PR99 的 [CI run 38517739592](https://github.com/vchive/Lunar-Evolution/actions/runs/38517739592)
 已通过 15/15 jobs，15 份原始 artifacts 的 source/tree/parent/import provenance 和
-XML/inventory 已独立核对。每版 current 三个分区覆盖 15,536 个不同 case、零失败和
+XML/inventory 已独立核对。每版 current 三个分区覆盖 15,664 个不同 case、零失败和
 错误；92 个 skips 有明确跨平台/ABI 原因，不能称全量 zero skips。之前因后续 push
 取消的 main runs 保留原结果；其 pending 文字不再代表该集成基线的状态。
 
-本轮在 `codex/child-claim-integration` 集成三条 P0 接线：显式 controller child claim、
+PR98 已合入 `4767e539`，集成三条 P0 接线：显式 controller child claim、
 scheduler 原 execution control/cancellation/deadline 门禁、fresh gateway preclaim 调用。
 claim 复用原表和 DTO，原 checkpoint CAS 与 insert 位于同一 SQLite 事务；中断或后续漂移
 保留 started。首次 native gateway 执行在 claim 前调用 provider 的显式 read-only gate，
 started/terminal 仍走原 recovery/replay。规格见 Feature191 `controller-child-claim.md`、
-`preclaim-execution-control.md` 和 `fresh-native-preclaim.md`。本轮最终来源的本地回归、
-CI、独审与 merge 按各自实际结果记录，不能沿用基线 CI。
+`preclaim-execution-control.md` 和 `fresh-native-preclaim.md`。最终 head `8e56b42f` 的
+CI `38511478558` 与独立审计已通过；PR99 在此基础上补齐单 child 闭环。
 旧 unbound native 仅只读观察 gateway 传入 ledger 的本次 inode pin，不新增持久 failure
 authority；已绑定 Python child 仍要求原 exact ledger 和 constructor pin，不能卸除
 绑定来进入兼容分支。取消/过期的 fresh request 在 claim 前拒绝，不再制造 started。
 
-剩余 P0 是把已登记 claim 接入真正的 child execution → receipt → admission/publication
-→ recovery 闭环，随后验收带不同 child ID 和新 approved memory 的多 episode DRS/BRS。
-默认 ready dispatch 和 CLI native opt-in 继续拒绝；显式 claim 不调用 producer、不创建
-episode/receipt，也不消费 attestation 或新增预算 reservation。缺失、unknown、漂移、
-取消和 deadline 不允许 fixture fallback、重复 staging 或重启 started claim。
+单 child 的 claim → execution → receipt → admission/publication → recovery 闭环已验收。
+剩余 P0 是显式多 episode DRS 的连续发布/历史恢复与中断矩阵，随后单独处理 BRS。
+默认 staging-only 和 CLI native opt-in 继续拒绝。缺失、unknown、漂移、取消和 deadline
+不允许 fixture fallback、重复 staging 或重启 started claim。原单独 claim API 仍只
+登记 claim，不因已有 claim/readback 自动取得执行 continuation。
 
 真实 Python/CPython source、toolchain、sealed runtime、OpenEvolve/Shinka project lifecycle
 和生产 RSI CLI 仍属于后续 P0/P1 验收，不能由 provider-free fixture 关闭。remote evaluator、
@@ -81,7 +93,9 @@ Feature190 原始 executable owner 是已记录验收的
 | P0：受限构建执行机制 | 独立 `run_pinned_build` 接口执行另行 pinned recipe 的 configure/freeze/compile/link，保留 bounded logs、输出 pins 和失败记录；原 mock-only API 保持兼容。 | 当前 main 集成基线 CI/审计已通过。真实 source/signature/toolchain 和 CPython executable recipe 仍未冻结；工具执行完成不等于静态 image 或 installation 验收。 |
 | P1：单 episode producer 组合 | `PythonProducerRSISolverGateway` 复用原 Python plan/input gate、native scheduler/claim/receipt 和 prepared handoff，要求同一 ledger、原 producer identity 与 controller proof。CLI native opt-in 在缺配置时前置拒绝。 | 当前 main 集成基线 CI/审计已通过。一个预先 staged context 只绑定一个 request/memory/launch；完整 DRS/BRS CLI 需要逐 episode 接线，不得直接复用为多 episode campaign。 |
 | P0：controller 调用的逐 episode durable staging | 已开发 preparing → ready/unknown、create-only child input/launch/sidecar、一次临时 owner/CAS permit、原 request/memory/文件 pins 关联及只读恢复拒绝。规格见 Feature191 `per-episode-producer-launch.md`。 | 当前 main 集成基线 CI/审计已通过。默认 ready dispatch 与 BRS opt-in 仍拒绝。 |
-| P0：显式 child claim 与 fresh preclaim | 本轮显式 API 将 ready preview 重新验证后登记为原 native claim；checkpoint CAS 同事务、取消/截止时间与配置漂移门禁已接入。 | 独立代码审查通过；本轮最终来源统一回归和 CI 待记录。真正 child execution、receipt/publication/recovery 与多 episode controller dispatch 仍未启用。 |
+| P0：显式 child claim 与 fresh preclaim | PR98 将 ready preview 重新验证后登记为原 native claim；checkpoint CAS 同事务、取消/截止时间与配置漂移门禁已接入。 | 最终来源完整 CI/独审通过且已合入；原 claim API 不自动授权执行。 |
+| P0：显式单 child 闭环 | PR99 接通原 claim/running/scheduler/prepared/publication/mapper/verifier 与只读终态恢复。 | 最终来源完整 CI/独审通过且已合入；仅 inert/provider-free fixture，默认 staging-only。 |
+| P0：同 workspace 多 episode DRS | 显式 append lineage 与独立只读历史 inspection 已写入当前隔离分支；原 owner/CAS/pins/预算门禁保持。 | 三个不同 child、M0→practice commit M1→target M1、历史恢复和中断矩阵尚待统一验收；all-rejected/BRS 仍开放。 |
 
 以上开发项完成后仍不启用 production runtime。`rsi run` / `rsi resume` 的
 OpenEvolve/Shinka 选项当前仍明确输出 `solver_execution=provider_free_fixture`；

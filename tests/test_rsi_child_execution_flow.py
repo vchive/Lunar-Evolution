@@ -126,6 +126,9 @@ class _InertNativeObservation:
     def rsi_fingerprint_config(self):
         return {"fixture": "retained-inert-native-observation-v1"}
 
+    def source_bytes(self, intent):
+        return b"# Inert candidate source; never executed.\n"
+
     def _write(self, path, payload):
         raw = canonical_json(payload)
         with path.open("xb") as stream:
@@ -156,7 +159,7 @@ class _InertNativeObservation:
         batch = Path(workspace) / "evolution" / "producer-batches" / intent.journal_id
         output = batch / intent.output_directory
         (output / "solve").mkdir(parents=True)
-        source = b"# Inert candidate source; never executed.\n"
+        source = self.source_bytes(intent)
         (output / "solve/main.py").write_bytes(source)
         envelope = {
             "schema_version": "1", "producer_id": intent.producer_id,

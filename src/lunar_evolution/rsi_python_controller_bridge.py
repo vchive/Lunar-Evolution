@@ -16,6 +16,7 @@ from .rsi_producer_gateway import (
     PythonProducerRSIGatewayError,
     PythonProducerRSISolverGateway,
 )
+from .rsi_producer_staging_capsule import materialize_ready
 from .rsi_python_admission import validate_rsi_python_admission_shapes
 from .rsi_python_episode_inputs import resolve_python_rsi_episode_input_context
 from .rsi_python_scheduler_inputs import (
@@ -133,10 +134,17 @@ def resolve_python_producer_controller_child_preview(
             if type(entry) is not dict or entry.get("state") != "ready":
                 _fail("child_not_ready")
             ready = entry.get("ready")
-            if type(ready) is not dict or type(ready.get("plan")) is not dict:
+            if type(ready) is not dict:
                 _fail("ready_invalid")
             controller.producer_stager.validate_state(controller, state)
             controller._validate_producer_checkpoint(run_id, state)
+            ready = materialize_ready(
+                ready, allow_capsule=state.get("producer_multi_episode_publication") is True,
+                expected_workspace=controller.producer_workspace,
+                expected_journal_id=entry["identity"]["journal_id"],
+            )
+            if type(ready.get("plan")) is not dict:
+                _fail("ready_invalid")
             context = resolve_python_rsi_episode_input_context(
                 root_context, ledger, request, memory,
                 expected_checkpoint_sha256=expected_checkpoint_sha256,

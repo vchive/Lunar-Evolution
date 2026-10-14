@@ -452,8 +452,10 @@ def _preparation_receipt(context: NativeRSISchedulerContext, evidence: NativeRet
 def _read_retained(
     context: NativeRSISchedulerContext, *, candidate_id: str, journal_sha256: str,
     producer_receipt_sha256: str,
+    lineage_inspection: object | None = None,
 ) -> NativeRetainedCandidateEvidence:
     try:
+        options = {} if lineage_inspection is None else {"lineage_inspection": lineage_inspection}
         return read_native_retained_candidate(
             context.workspace, candidate_id=candidate_id,
             expected_journal_sha256=journal_sha256,
@@ -463,6 +465,7 @@ def _read_retained(
             evaluator_fingerprint=context.evaluator_fingerprint,
             runner_fingerprint=context.runner_fingerprint, dependency_sha256=context.dependency_sha256,
             environment_sha256=context.environment_sha256, require_broker=True,
+            **options,
         )
     except Exception as exc:
         raise NativeRSISchedulerProviderError("rsi_native_scheduler_retained_invalid") from exc
@@ -493,6 +496,7 @@ class NativeRSISchedulerProvider:
         # producer-sidecar path.  Keeping it out of the immutable context and
         # fingerprint avoids hashing thread locals or mutable controller state.
         self._python_admission_controller: Any | None = None
+        self._python_admission_replay_controller: Any | None = None
         # Freeze before any launch. Recovery compares this prepared pin to the durable sidecar;
         # neither provider checks nor restart may silently pin a replacement database.
         self._failure_ledger_identity = (
@@ -517,6 +521,43 @@ class NativeRSISchedulerProvider:
         if existing is not None and existing is not controller:
             _fail("python_admission_controller_changed")
         self._python_admission_controller = controller
+
+    def bind_python_admission_replay_controller(self, controller: Any) -> None:
+        """Associate read-only lineage inspection without enabling fresh dispatch."""
+        from .rsi_controller import RSILearningController
+
+        if (type(controller) is not RSILearningController
+                or controller.producer_multi_episode_publication is not True
+                or controller.producer_child_execution is not True
+                or controller.ledger is not self.context.failure_ledger
+                or controller.producer_workspace is None
+                or Path(controller.producer_workspace).expanduser().absolute()
+                != Path(self.context.workspace).expanduser().absolute()):
+            _fail("python_replay_controller_invalid")
+        existing = self._python_admission_replay_controller
+        if existing is not None and existing is not controller:
+            _fail("python_replay_controller_changed")
+        self._python_admission_replay_controller = controller
+
+    def _retained_lineage_options(
+        self, request: SolverRequest, memory: MemorySnapshot, plan: NativeRSIExecutionPlan,
+    ) -> dict[str, Any]:
+        controller = self._python_admission_replay_controller
+        if controller is None:
+            return {}
+        self.bind_python_admission_replay_controller(controller)
+        with controller.ledger.read_only_observations():
+            claim = controller.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        # Before the mapper saves the native result, the fresh publication must
+        # still satisfy the original current-head gate. Never catch that gate's
+        # refusal to adopt a historical proof for a started attempt.
+        if claim is None or claim.status == "started":
+            return {}
+        from .rsi_publication_lineage import RSIPublicationLineageInspection
+
+        return {"lineage_inspection": RSIPublicationLineageInspection(
+            controller, request=request, memory=memory, native_plan=plan,
+        )}
 
     def _python_admission_descriptor(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
@@ -747,7 +788,7 @@ class NativeRSISchedulerProvider:
 
     def _python_publication_join(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan, inputs: NativeRSIInputDescriptor,
-    ) -> dict[str, Callable[..., Any]]:
+    ) -> dict[str, Any]:
         """Build lazy local hooks without reading post-execution evidence.
 
         The context supplier was fingerprinted before the controller froze its run.
@@ -770,6 +811,17 @@ class NativeRSISchedulerProvider:
         wait_check = getattr(controller, "_python_admission_bridge_wait_check", None)
         if not callable(wait_check):
             _fail("python_admission_wait_check_missing")
+        lineage_owner = None
+        publication_flag = getattr(controller, "producer_multi_episode_publication", False)
+        if type(publication_flag) is not bool:
+            _fail("multi_episode_configuration_invalid")
+        if publication_flag:
+            from .rsi_publication_lineage import RSIPublicationLineage
+
+            lineage_owner = RSIPublicationLineage(
+                controller, request=request,
+                memory=_memory_from_request_inputs(inputs, request), native_plan=plan,
+            )
         supplied: PythonProducerAdmissionHandoffSidecar | None = None
         output_plan = None
         admitted = None
@@ -833,13 +885,19 @@ class NativeRSISchedulerProvider:
                 )
                 if admitted.native_plan != plan or admitted.prepared_journal != journal:
                     _fail("python_admission_reference_mismatch")
+                if lineage_owner is not None:
+                    lineage_owner.acknowledge_prepared(journal, record_sha256)
                 revalidate("rsi_native_after_python_pin")
 
-        return {
+        hooks = {
             "python_handoff_after_execution": obtain_handoff,
             "prepared_observer": pin_prepared,
             "evidence_revalidator": revalidate,
         }
+        if lineage_owner is not None:
+            hooks["producer_multi_episode_publication"] = True
+            hooks["lineage_owner"] = lineage_owner
+        return hooks
 
     def assert_failure_ledger(self, ledger: RSILedger) -> None:
         """Verify explicit failure wiring against the original database, never repin it."""
@@ -1095,6 +1153,7 @@ class NativeRSISchedulerProvider:
                 self.context, candidate_id=candidate.candidate_id,
                 journal_sha256=saved["publication_journal_sha256"],
                 producer_receipt_sha256=saved["producer_execution_receipt_sha256"],
+                **self._retained_lineage_options(request, memory, plan),
             )
             bundle = _retained_bundle(request, evidence, _preparation_receipt(self.context, evidence))
             expected = _provenance_payload(plan, inputs, evidence, bundle)
@@ -1268,6 +1327,7 @@ class NativeRSISchedulerProvider:
         evidence = _read_retained(
             context, candidate_id=projected.candidate.candidate_id,
             journal_sha256=journal.digest(), producer_receipt_sha256=run.receipt.receipt_sha256,
+            **self._retained_lineage_options(request, _memory_from_request_inputs(inputs, request), plan),
         )
         bundle = _retained_bundle(request, evidence, projected.candidate.candidate_receipt_sha256)
         if bundle != projected or self._inputs(require_unexpired=False) != inputs:
