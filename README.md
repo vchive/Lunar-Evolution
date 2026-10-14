@@ -15,7 +15,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 普通任务与 `solve` | ✅ 可用 | 本地 plan、AgentLoop、评测、artifact 和 delivery ledger。 |
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture，支持 run、inspect、resume、usage、replay、reconcile。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态 fail-closed。 |
-| 逐 episode producer 执行 | 🧪 实验 API | 单 child 本地 fixture 已贯穿 claim、发布、verifier 和恢复；需显式 `producer_child_execution=True`，默认保持 staging-only，多 episode 尚未验收。 |
+| 逐 episode producer 执行 | 🧪 实验 API | 单 child 本地 fixture 闭环已验收；需显式 `producer_child_execution=True`，默认保持 staging-only。三轮 DRS 正在验证，多 episode 尚未验收。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
@@ -44,7 +44,7 @@ uv pip install --python .venv/bin/python -e '.[dev,lint]'
 
 ## 五分钟本地试跑
 
-所有状态都放在 `--home` 指定的目录中，默认是当前目录的 `.lunar-evolution/`。mock runtime 不读取网络、模型、凭据或机器上的其他 Agent 状态。
+本地状态目录优先使用 `--home`，其次使用 `LUNAR_EVOLUTION_HOME` 环境变量，未配置时使用当前目录的 `.lunar-evolution/`。mock runtime 不读取网络、模型、凭据或机器上的其他 Agent 状态。
 
 ```bash
 lunar-evolution init --home .lunar-evolution --json
@@ -74,7 +74,7 @@ lunar-evolution solve '根据订单数据设计配送路线' \
   --runtime mock --home .lunar-evolution --json
 ```
 
-连接 OpenAI-compatible endpoint 时必须显式提供 endpoint 和 model。密钥只从环境变量读取，不要把它写进仓库或命令历史：
+连接 OpenAI-compatible endpoint 时，以下示例显式提供 endpoint 和 model。建议通过环境变量提供密钥，避免写进仓库或命令历史：
 
 ```bash
 export LUNAR_EVOLUTION_MODEL_ENDPOINT='http://127.0.0.1:11434/v1/chat/completions'
@@ -87,7 +87,7 @@ lunar-evolution solve '分析订单并给出可验证的路线方案' \
   --home .lunar-evolution --json
 ```
 
-先在运行环境中配置 `LUNAR_EVOLUTION_API_KEY`。普通 CLI 不自动加载 `.env`；配置字段可参考 [`.env.example`](.env.example)。需要工具调用时显式加 `--agent-loop`；`--max-steps`、workspace、超时和 artifact 限制仍由 Lunar 控制。
+endpoint 需要认证时，先在运行环境中配置 `LUNAR_EVOLUTION_API_KEY`；不需要认证的本地服务可以省略。普通 CLI 不自动加载 `.env`；配置字段可参考 [`.env.example`](.env.example)。需要工具调用时显式加 `--agent-loop`；`--max-steps`、workspace、超时和 artifact 限制仍由 Lunar 控制。
 
 ## RSI provider-free 回归
 
@@ -191,7 +191,8 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 
 ### P0：完成本地闭环
 
-- 验收单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路。
+单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已完成本地 fixture 验收。剩余工作：
+
 - 支持连续发布及历史批次恢复，再验收 practice success、target retry、新 approved memory 和多 child。
 - 在本地 fixture 覆盖取消、deadline、中断、只读证据恢复和原 episode settlement。
 - 为每个 side effect 保留 launch、execution、receipt、publication 和 unknown reconcile 证据。

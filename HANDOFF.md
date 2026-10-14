@@ -1,5 +1,29 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 PR100 测试锁修正与文档校准
+
+原 `db04c72` 来源的默认/单 child 96 cases 和历史兼容 158 cases 已完整通过；
+多个 owner/inspection 分区也通过，三轮完整 DRS 仍运行。part5 的真实失败来自测试
+在单 child fixture 完成、controller guard 释放后直接更新 checkpoint：产品正确拒绝
+`rsi_controller_lock_required`，未进入预期 inspection drift 检查。失败、中断 XML 和
+原始 source/log 全部保留，不计入成功。
+
+最小修正仅在该测试故意 CAS 更新时取得原 run 的 `controller_lock`。使用独立工作树
+`/tmp/le-pr100-lock-fix`，保留原冻结工作树及长测试继续运行；未修改产品源码。
+772 文件的新 map 为 `8404b3c7c09ef84e8bd52c1d0335e301f9d41ff5c78719e6d19891f13f6b2c31`，
+与 `4f46b0c7…` 仅 inspection 测试文件不同。独立审查通过；单用例 focused 验证与
+新 head 完整 CI 并行收尾，最终以新 head 的完整 current inventory/raw XML/source/tree
+证明验收，不能把旧来源局部成功替代最终通过。此条是提交时检查点，最终结果见 PR100。
+
+README 与 RSI 指南校准 HOME 优先级、环境变量密钥示例、认证条件和 PR99 已完成的
+单 child fixture；三轮 DRS、真实 runtime 和生产 CLI 不提前声明验收。README 示例
+仅做 argparse 验证，11 组可解析、8 个本地链接存在。
+
+剩余顺序：P0 完成当前 DRS 验收/合入及 known all_rejected 正常结算/重放；P1 为多
+Python child BRS、真实 source/toolchain/static closure、sealed startup/input/lifecycle、
+至少一个实际项目 profile 和 opt-in CLI。P2 远程/多机/服务/训练继续后置。
+只用本地 inert/provider-free fixture，`production_admission=false`。
+
 ## 2026-10-14 PR100 草稿与 plan drift 异常修复
 
 PR100 已创建并保持 draft：`https://github.com/vchive/Lunar-Evolution/pull/100`。

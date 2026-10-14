@@ -16,8 +16,9 @@
 新的显式 Python 配置 `RSILearningController(..., producer_child_execution=True)`
 继续接通相邻准备成功的单个 child。它要求原 `PythonProducerRSISolverGateway`、同一
 ledger、sidecar 和 stager；原 run 及全部历史版本固定此配置，恢复时不能增删。默认值仍为
-`False`，CLI native 选择仍拒绝。该配置的单 child 本地闭环验收正在进行，真实 runtime
-和多 episode DRS/BRS 尚未验收，`production_admission=false`。规格见
+`False`，CLI native 选择仍拒绝。该配置的单 child 本地 fixture 闭环、中断恢复和最终来源
+CI 已验收并合入 main；三轮 DRS（PR100）仍在验证，真实 runtime 和多 episode DRS/BRS
+尚未验收，`production_admission=false`。规格见
 [`child-execution-flow.md`](../specs/191-python-worker-adapter/child-execution-flow.md)。
 
 ## 1. 选择治理入口

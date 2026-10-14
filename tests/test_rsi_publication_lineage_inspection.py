@@ -89,7 +89,8 @@ def test_inspection_cannot_adopt_new_controller_checkpoint(tmp_path, monkeypatch
     value, _controller, inspection, plan, journal, _supplier, _observation = _published(tmp_path, monkeypatch)
     head, state = value.ledger.controller_checkpoint(value.binding.run_id)
     state["foreign_readonly_update"] = True
-    value.ledger.write_controller_checkpoint(value.binding.run_id, state, expected_sha256=head)
+    with value.ledger.controller_lock(value.binding.run_id):
+        value.ledger.write_controller_checkpoint(value.binding.run_id, state, expected_sha256=head)
     before = _inventory(value.root)
     with pytest.raises(RSILearningError, match="inspection_checkpoint_drift"):
         inspection.inspect(value.root, plan, journal)
