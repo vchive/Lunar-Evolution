@@ -201,8 +201,8 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 
 单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已合入 main。当前批次的剩余出口是：
 
-- 完成 PR100 最终来源的完整 CI、原始日志/产物与来源审计，再合入连续 DRS 发布。
-- known rejection 三组混合链已通过；完成 PR101/PR103 恢复批次最终集成验收，同步已接受的 PR100 main 基线后完成自身 CI/审计和合入。
+- PR103 已把 PR100/PR101 恢复批次、parser、六分片 CI 及 BRS handoff/service ancestry 组合到单一 `main`-based 候选；待该候选完成最终来源 CI、原始日志/产物与来源审计后合入连续 DRS 发布。
+- known rejection 三组混合链已通过；PR103 是当前统一出口，不再要求按 PR100→PR101→PR103 顺序逐个合入。
 
 恢复始终复核原 claim、预算、身份、deadline 与取消门禁；没有原始证据的中断保留 unknown，不启动后继 child。
 

@@ -7,14 +7,18 @@ selected BRS service：完整 wave 绑定一个 selected handoff，保留原 own
 指纹、source hook、ready/ack 和 durable result；source/configuration hooks 在短观察锁
 外执行，handoff 使用严格 canonical digest，worker 结果要求精确 DTO 类型和 verifier
 一致性，channel ACK 与调用者对象分离。当前 focused gate 拆成 104 个既有 BRS、13 个
-ACK detached、28 个 selected service，共 145 个不同本地 cases，零失败/错误/跳过；
-完整来源和 SHA 证据留在 PR104 树 ignored reports。公共 `_drive_brs` 仍拒绝 native
+ACK detached、28 个 selected service，共 175 个不同本地 cases，零失败/错误/跳过；
+完整来源和 SHA 证据留在 PR104 树 ignored reports。最终候选合并回归的 175 个 cases
+单次运行耗时 220.881 秒，结果为零失败/错误/跳过。公共 `_drive_brs` 仍拒绝 native
 multi-child，`production_admission=false`，因此这不是 native producer/runtime 验收。
 
 README 和 Feature196 tasks/validation 已更新以反映该边界。PR104 原先仅 103-case
 workflow gate 已更正为 104，并增加独立 13/28-case gates。最终 candidate 的 24-job
 workflow 另已将 current regression 从三分片拆为六分片；原 6 小时 timeout 与 actor
-fixture failure 证据保留。当前仍须最终来源 CI、raw/source/tree audit 和按依赖合入 main。
+fixture failure 证据保留。PR103 已将 PR100/PR101 的恢复、parser、六分片 CI 以及
+PR102/PR104 的 BRS handoff/service ancestry 整合到同一候选，并已把 base 切换为 `main`；
+主出口是 PR103 的最终来源 CI、raw/source/tree audit 与合入，不再要求按
+PR100→PR101→PR103 顺序逐个合入。
 
 ## 2026-10-15 当前出口：mixed 已通过，PR100 原 CI 失败已修复
 

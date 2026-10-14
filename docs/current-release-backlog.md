@@ -20,21 +20,22 @@ fixture 修复已推送原分支，
 [新 CI 38651297182](https://github.com/vchive/Lunar-Evolution/actions/runs/38651297182)
 已确认排队，最终 CI/独审和合入仍开放。这一批实现同 workspace 的连续 DRS
 发布、独立 ready capsule 和历史只读恢复；三轮不同 child、练习记忆晋级、目标重试已有
-本地验收。较早 head 的成功与失败按各自来源保留，不能代替当前最终来源。
+本地验收。较早 head 的成功与失败按各自来源保留，不能代替当前最终来源。PR103 已将
+该恢复批次与 parser、六分片 CI 及 BRS handoff/service ancestry 整合，并以 `main` 为
+base；当前应以 PR103 的最终来源 CI、独立审计和合入作为单一出口。
 规格见 [multi-episode-publication.md](../specs/191-python-worker-adapter/multi-episode-publication.md)
 与 [ready-capsule.md](../specs/191-python-worker-adapter/ready-capsule.md)。
 
-当前恢复批次已创建 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101) 草稿，尚未
-合入 main。它继续使用 PR100 的产品基线，包含 known rejection、BRS partial-wave
-修复和纯 BRS child preflight；本地提交可能领先远端草稿。较早 PR101 CI 的取消或
-pending 状态不构成最终验收，必须核对最后一次实际推送的 head。
+PR101 仍作为恢复批次的历史草稿保留；其 known rejection、BRS partial-wave
+修复和纯 BRS child preflight 已由 PR103 统一候选承接。较早 PR101 CI 的取消或 pending
+状态不构成最终验收，必须核对 PR103 最后一次实际推送的 head。
 
 Known rejection v2 已接通 controller、owner、scheduler 和 gateway；
 只允许 fresh、显式 opt-in DRS。原 owner 两案、T4 多候选案、T5 五个中断边界与原 C2
 连续 reconcile 已通过；连续恢复只消费一次 unknown evidence 预算、保留一次原 solver
 invocation。冻结来源 RPP/PRP/RRR 三案各 1 pass，原 XML/SQLite/source 独立审查通过；
 后续修复/parser 联合候选在 [PR103](https://github.com/vchive/Lunar-Evolution/pull/103)，
-本批仍待最终集成来源 CI、独立审计和合入。
+PR103 统一候选仍待最终集成来源 CI、独立审计和合入。
 代码与规格见 [known-rejection-v2.md](../specs/191-python-worker-adapter/known-rejection-v2.md)、
 [tasks](../specs/191-python-worker-adapter/known-rejection-v2-tasks.md) 和
 [validation](../specs/191-python-worker-adapter/known-rejection-v2-validation.md)。
@@ -45,9 +46,9 @@ invocation。冻结来源 RPP/PRP/RRR 三案各 1 pass，原 XML/SQLite/source �
 
 | 剩余工作 | 已有实现 / 本地证据 | 结束条件 |
 | --- | --- | --- |
-| PR100 连续发布与历史恢复 | append lineage、原 owner/CAS、独立 held pins、fresh dispatch lease、ready capsule、历史只读 inspection 已实现；三轮 DRS 已有本地验收。 | 最终 head 全部 CI jobs 完成，原始 log/ZIP/JUnit/inventory 与 checkout/source/tree/import 独立一致；合入 main。 |
+| PR100/PR103 连续发布与历史恢复 | append lineage、原 owner/CAS、独立 held pins、fresh dispatch lease、ready capsule、历史只读 inspection 已实现；三轮 DRS 已有本地验收，最终集成候选集中在 PR103。 | PR103 最终 head 全部 CI jobs 完成，原始 log/ZIP/JUnit/inventory 与 checkout/source/tree/import 独立一致；合入 main。 |
 | Known rejection 原始恢复验收 | 原 owner、T4/T5、连续 reconcile 与 RPP/PRP/RRR 全部通过；mixed 原 XML/SQLite/source 独立审查通过，证据边界详见 HANDOFF。 | 本地出口已关闭；最终集成来源仍须 CI/审计和合入，不能将冻结来源结果直接改称新 parser 候选验收。 |
-| PR101 恢复批次最终集成发布 | 草稿包含 known rejection、BRS partial-wave 修复及纯 preflight；默认/v1 与 BRS wire 保持原契约，新代码独立于冻结 PR100 checkout。 | 同步已接受的 PR100 main，最终实际推送的集成 head 通过 focused/static checks、完整 CI、raw/source/tree 独立审计，再合入 main。 |
+| PR103 恢复批次最终集成发布 | 统一候选包含 known rejection、BRS partial-wave 修复、parser、六分片 CI 及 BRS handoff/service ancestry；默认/v1 与 BRS wire 保持原契约。 | PR103 最终实际推送的集成 head 通过 focused/static checks、完整 CI、raw/source/tree 独立审计，再合入 main。 |
 | 发布文档与证据状态 | GitHub README、台账和对应 SDD 按代码与验收区分状态。 | 用最终实际结果更新状态，链接可用；不把 partial log、不同 source 的局部成功或 skipped Linux gate 当作接受。 |
 
 Known rejection 复用原评测证据结算失败结果；拒绝与进程故障分别处理，不生成官方成功。
