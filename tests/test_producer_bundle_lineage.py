@@ -13,9 +13,11 @@ from lunar_evolution.producer_bundle_lineage import (
     ProducerLineageBeforeIntent,
     ProducerLineageStagedTransition,
     ProducerLineageTerminal,
+    capture_lineage_snapshot_pin,
     parse_lineage_descriptor,
     persist_lineage_descriptor,
     read_lineage_chain,
+    verify_lineage_snapshot_pin,
 )
 
 
@@ -100,3 +102,17 @@ def test_lineage_chain_is_bounded(tmp_path: Path) -> None:
     ids, _ = _chain(tmp_path)
     with pytest.raises(ProducerBundleLineageError, match="capacity_invalid"):
         read_lineage_chain(tmp_path, ids, run_id="run-1", max_batches=0)
+
+
+def test_capture_snapshot_pin_is_read_only_and_exact(tmp_path: Path) -> None:
+    path = tmp_path / "archive.jsonl"
+    path.write_bytes(b'{"candidate_id":"one"}\n')
+    path.chmod(0o600)
+    pin = capture_lineage_snapshot_pin(path, name="archive")
+    assert pin.size == path.stat().st_size
+    assert pin.inode == path.stat().st_ino
+    assert pin.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+    verify_lineage_snapshot_pin(path, pin)
+    path.write_bytes(b'{"candidate_id":"two"}\n')
+    with pytest.raises(ProducerBundleLineageError, match="snapshot_pin_drift"):
+        verify_lineage_snapshot_pin(path, pin)

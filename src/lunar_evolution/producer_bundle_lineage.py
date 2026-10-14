@@ -303,6 +303,148 @@ def lineage_directory(workspace: str | Path, journal_id: str) -> Path:
     return root / "evolution" / "producer-batches" / journal_id / "lineage"
 
 
+def capture_lineage_snapshot_pin(path: str | Path, *, name: str) -> LineageSnapshotPin:
+    """Capture one bounded regular-file pin with before/read/after identity checks.
+
+    This helper is read-only.  It is intended to run while the existing publication lock is
+    held; it does not turn a current file into authority for a successor by itself.
+    """
+    _id(name, "snapshot_name_invalid")
+    target = _files.absolute_path(path)
+    try:
+        before = target.lstat()
+        if (not stat.S_ISREG(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_nlink != 1 or before.st_size <= 0
+                or before.st_size > MAX_LINEAGE_SNAPSHOT_BYTES):
+            _fail("snapshot_identity_invalid")
+        raw = _files.read_regular_file(target, MAX_LINEAGE_SNAPSHOT_BYTES)
+        after = target.lstat()
+        if (before.st_dev, before.st_ino, before.st_size, before.st_mode, before.st_nlink,
+                before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_dev, after.st_ino, after.st_size, after.st_mode, after.st_nlink,
+                after.st_mtime_ns, after.st_ctime_ns) or len(raw) != before.st_size:
+            _fail("snapshot_identity_drift")
+        return LineageSnapshotPin(
+            name=name, sha256=hashlib.sha256(raw).hexdigest(), size=len(raw),
+            device=before.st_dev, inode=before.st_ino, mode=stat.S_IMODE(before.st_mode),
+            nlink=before.st_nlink, mtime_ns=before.st_mtime_ns, ctime_ns=before.st_ctime_ns,
+        )
+    except ProducerBundleLineageError:
+        raise
+    except (_files.BenchmarkFileError, OSError, ValueError) as exc:
+        raise ProducerBundleLineageError("snapshot_read_invalid") from exc
+
+
+def verify_lineage_snapshot_pin(path: str | Path, pin: LineageSnapshotPin) -> None:
+    """Re-read a retained snapshot and reject any byte or inode/stat drift."""
+    if not isinstance(pin, LineageSnapshotPin):
+        _fail("snapshot_pin_invalid")
+    observed = capture_lineage_snapshot_pin(path, name=pin.name)
+    if observed != pin:
+        _fail("snapshot_pin_drift")
+
+
+def persist_lineage_snapshot(
+    workspace: str | Path,
+    journal_id: str,
+    *,
+    name: str,
+    source: str | Path,
+    expected_pin: LineageSnapshotPin | None = None,
+) -> tuple[Path, LineageSnapshotPin]:
+    """Retain an immutable snapshot copy and its independent source pin.
+
+    The source is observed before and after the bounded read.  The destination is a
+    create-only regular file under the derived lineage directory; retries require exact
+    bytes and metadata.  This is evidence retention only and never advances publication.
+    """
+    _id(journal_id, "journal_id_invalid")
+    _id(name, "snapshot_name_invalid")
+    pin = capture_lineage_snapshot_pin(source, name=name) if expected_pin is None else expected_pin
+    if expected_pin is not None:
+        verify_lineage_snapshot_pin(source, expected_pin)
+    raw = _files.read_regular_file(_files.absolute_path(source), MAX_LINEAGE_SNAPSHOT_BYTES)
+    if hashlib.sha256(raw).hexdigest() != pin.sha256 or len(raw) != pin.size:
+        _fail("snapshot_pin_drift")
+    destination = lineage_directory(workspace, journal_id) / f"{name}.snapshot"
+    try:
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if destination.exists():
+            current = _files.read_regular_file(_files.absolute_path(destination), MAX_LINEAGE_SNAPSHOT_BYTES)
+            if current != raw:
+                _fail("snapshot_conflict")
+            return destination, pin
+        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            view = memoryview(raw)
+            while view:
+                count = os.write(descriptor, view)
+                if count <= 0:
+                    _fail("snapshot_write_failed")
+                view = view[count:]
+            os.fsync(descriptor)
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size != len(raw):
+                _fail("snapshot_pin_invalid")
+        finally:
+            os.close(descriptor)
+        return destination, pin
+    except ProducerBundleLineageError:
+        raise
+    except (_files.BenchmarkFileError, OSError, ValueError) as exc:
+        raise ProducerBundleLineageError("snapshot_write_failed") from exc
+
+
+def verify_persisted_lineage_snapshot(path: str | Path, pin: LineageSnapshotPin) -> None:
+    """Verify a retained snapshot's bytes and strict regular-file metadata."""
+    if not isinstance(pin, LineageSnapshotPin):
+        _fail("snapshot_pin_invalid")
+    try:
+        info = _files.absolute_path(path).lstat()
+        if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_nlink != 1 or info.st_size != pin.size):
+            _fail("snapshot_pin_drift")
+        raw = _files.read_regular_file(_files.absolute_path(path), MAX_LINEAGE_SNAPSHOT_BYTES)
+        if hashlib.sha256(raw).hexdigest() != pin.sha256:
+            _fail("snapshot_pin_drift")
+    except ProducerBundleLineageError:
+        raise
+    except (_files.BenchmarkFileError, OSError, ValueError) as exc:
+        raise ProducerBundleLineageError("snapshot_read_invalid") from exc
+
+
+def precommit_lineage_cas(
+    *,
+    producer_multi_episode_publication: bool,
+    before: ProducerLineageBeforeIntent,
+    staged: ProducerLineageStagedTransition,
+    expected_run_id: str,
+    expected_journal_id: str,
+    expected_ordinal: int,
+    expected_predecessor_terminal_sha256: str | None,
+    expected_predecessor_lineage_sha256: str | None,
+) -> str:
+    """Validate the opt-in precommit lineage CAS tuple without touching legacy paths.
+
+    The returned digest is a checkpoint value for a caller-owned CAS.  This helper has
+    no controller or publication-lock side effects and refuses unless the new explicit
+    boolean is exactly true.
+    """
+    if producer_multi_episode_publication is not True:
+        _fail("multi_episode_opt_in_required")
+    if type(expected_run_id) is not str or type(expected_journal_id) is not str:
+        _fail("association_invalid")
+    if before.run_id != expected_run_id or staged.run_id != expected_run_id or before.journal_id != expected_journal_id or staged.journal_id != expected_journal_id:
+        _fail("association_invalid")
+    if before.ordinal != expected_ordinal or staged.ordinal != expected_ordinal:
+        _fail("ordinal_invalid")
+    if before.predecessor_terminal_sha256 != expected_predecessor_terminal_sha256 or before.predecessor_lineage_sha256 != expected_predecessor_lineage_sha256:
+        _fail("predecessor_mismatch")
+    if staged.before_sha256 != before.digest():
+        _fail("transition_mismatch")
+    return hashlib.sha256(_canonical({"before": before.digest(), "staged": staged.digest(), "ordinal": expected_ordinal})).hexdigest()
+
+
 def persist_lineage_descriptor(workspace: str | Path, descriptor: object) -> Path:
     """Create a descriptor once, preserving byte-identical retries and refusing replacement."""
     if not isinstance(descriptor, (ProducerLineageBeforeIntent, ProducerLineageStagedTransition, ProducerLineageTerminal)):
@@ -310,15 +452,27 @@ def persist_lineage_descriptor(workspace: str | Path, descriptor: object) -> Pat
     encoded = _canonical(descriptor.to_dict())
     path = lineage_directory(workspace, descriptor.journal_id) / f"{descriptor.kind}.json"
     try:
+        root = _files.absolute_path(workspace)
+        current = root
+        relative = path.parent.relative_to(root)
+        # Check existing components before ``mkdir`` so an attacker cannot make a
+        # system-derived component redirect the create-only sidecar write.
+        for part in relative.parts:
+            candidate = current / part
+            try:
+                info = candidate.lstat()
+            except FileNotFoundError:
+                break
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                _fail("path_invalid")
+            current = candidate
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        current = path.parent
-        # Existing path components are authority-bearing; a symlink here could redirect
-        # an otherwise system-derived sidecar write outside the batch directory.
-        while current != _files.absolute_path(workspace):
+        current = root
+        for part in relative.parts:
+            current = current / part
             info = current.lstat()
             if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
                 _fail("path_invalid")
-            current = current.parent
         if path.exists():
             existing = _files.read_regular_file(_files.absolute_path(path), MAX_LINEAGE_DESCRIPTOR_BYTES)
             if existing != encoded: _fail("descriptor_conflict")
@@ -371,8 +525,22 @@ def read_lineage_chain(workspace: str | Path, journal_ids: Sequence[str], *, run
 
 
 __all__ = [
-    "LINEAGE_PROTOCOL", "LINEAGE_SCHEMA_VERSION", "MAX_LINEAGE_BATCHES", "MAX_LINEAGE_DESCRIPTOR_BYTES",
-    "LineageSnapshotPin", "ProducerBundleLineageError", "ProducerLineageBeforeIntent",
-    "ProducerLineageStagedTransition", "ProducerLineageTerminal", "lineage_directory",
-    "parse_lineage_descriptor", "persist_lineage_descriptor", "read_lineage_chain",
+    "LINEAGE_PROTOCOL",
+    "LINEAGE_SCHEMA_VERSION",
+    "MAX_LINEAGE_BATCHES",
+    "MAX_LINEAGE_DESCRIPTOR_BYTES",
+    "LineageSnapshotPin",
+    "ProducerBundleLineageError",
+    "ProducerLineageBeforeIntent",
+    "ProducerLineageStagedTransition",
+    "ProducerLineageTerminal",
+    "capture_lineage_snapshot_pin",
+    "lineage_directory",
+    "parse_lineage_descriptor",
+    "persist_lineage_descriptor",
+    "persist_lineage_snapshot",
+    "precommit_lineage_cas",
+    "read_lineage_chain",
+    "verify_lineage_snapshot_pin",
+    "verify_persisted_lineage_snapshot",
 ]
