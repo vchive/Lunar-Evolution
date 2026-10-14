@@ -113,6 +113,9 @@ class _PythonAdmissionBRSWave:
     budget_state: dict[str, Any]
     admitted_episode_id: str | None = None
     active: bool = True
+    selected_handoff: Any = None
+    selected_context: Any = None
+    selected_worker_started: bool = False
 
 
 @dataclass(frozen=True)
@@ -1977,11 +1980,195 @@ class RSILearningController:
                 # Wake all blocked workers before the caller shuts its executor down.
                 wave.channel.close()
 
-    def _execute_brs_intent(self, wave, state, episode_id):
+    def _python_admission_brs_selected_pins(self, wave: _PythonAdmissionBRSWave):
+        """Project actual owner objects and retained run controls; never invent launch pins."""
+        from .rsi_python_brs_handoff import BRSChildHandoffContext
+
+        with self._python_admission_brs_observations():
+            if get_ident() == wave.owner_thread:
+                self._python_admission_active_brs_owner(wave)
+            else:
+                self._python_admission_assert_brs_wave(wave, owner=False)
+            payload, head = wave.payload, wave.checkpoint_sha256
+            detached = json.loads(payload)
+        # Configuration/source hooks may wait on another observer. They run outside
+        # the short observation mutex, while the original run ownership remains held.
+        with wave.ledger.read_only_observations():
+            original = wave.ledger.history(wave.run_id)[0]
+            actual, _ = self._run_fingerprint(
+                **detached["pins"],
+                memory_snapshot_sha256=MemorySnapshot.from_dict(detached["root_snapshot"]).digest(),
+            )
+            ensure_fingerprint_compatible(
+                RSIFingerprintContract.from_dict(original.payload["fingerprints"]["run_fingerprint"]),
+                actual,
+            )
+            self._validate_producer_checkpoint(wave.run_id, detached)
+        budget = RSIRunBudget.load(detached["budget_state"])
+        budget.check()
+        policy = {
+            "plan": detached["plan"], "pins": detached["pins"],
+            "planned": budget.to_dict()["planned"],
+            "producer_checkpoint_binding": detached.get("producer_checkpoint_binding"),
+            "solver_settings": actual.to_dict()["solver_settings"],
+        }
+        # This is the real controller budget projection, not a fabricated native
+        # SolveExecutionControl. Actual native controls are also bound by the gateway
+        # fingerprint when present; generic gateways gain no such capability.
+        control = {"budget_state": budget.to_dict(), "status": detached["status"]}
+        context = BRSChildHandoffContext(
+            controller_id=f"controller-{id(self):x}", ledger_id=f"ledger-{id(wave.ledger):x}",
+            workspace_id=f"workspace-{id(wave.workspace):x}", sidecar_id=f"sidecar-{id(wave.sidecar):x}",
+            owner_thread_id=wave.owner_thread, head_sha256=head,
+            state_sha256=hashlib.sha256(payload).hexdigest(),
+            source_sha256=actual.digest(), policy_sha256=_record_digest(policy),
+            execution_control_sha256=_record_digest(control), max_workers=1,
+        )
+        with self._python_admission_brs_observations():
+            self._python_admission_assert_brs_wave(wave, owner=get_ident() == wave.owner_thread)
+            if wave.payload != payload or wave.checkpoint_sha256 != head:
+                raise RSILearningError("rsi_python_brs_admission_stale")
+            with wave.ledger.read_only_observations():
+                checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
+            if checkpoint != (head, detached):
+                raise RSILearningError("rsi_python_brs_admission_stale")
+        return context
+
+    def _python_admission_bind_selected_brs_handoff(self, wave: _PythonAdmissionBRSWave):
+        """Bind one complete original BRS selection to the existing ready channel."""
+        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
+        from .rsi_python_brs_child_policy import (
+            BRS_CHILD_POLICY_PROTOCOL,
+            BRS_CHILD_POLICY_SCHEMA_VERSION,
+            preflight_native_brs_child,
+        )
+        from .rsi_python_brs_handoff import BRSSelectedChildHandoff
+
+        with self._python_admission_brs_observations():
+            self._python_admission_active_brs_owner(wave)
+            if wave.selected_handoff is not None:
+                raise RSILearningError("rsi_python_brs_admission_selected_busy")
+            state = json.loads(wave.payload)
+        plan = state["plan"]
+        if (plan.get("mode") != "brs" or plan.get("max_workers") != 1
+                or type(plan.get("practices")) is not list or not plan["practices"]):
+            raise RSILearningError("rsi_python_brs_admission_selected_policy_invalid")
+        original_ids = tuple(
+            f"{wave.run_id}-practice-{plan['wave']}-{ordinal}"
+            for ordinal in range(len(plan["practices"]))
+        )
+        with wave.ledger.read_only_observations():
+            history = wave.ledger.history(wave.run_id)
+        if (not history or history[0].payload.get("plan") != plan
+                or set(state["intents"]) != set(original_ids)
+                or wave.episode_ids != tuple(key for key in original_ids if key not in state["executions"])):
+            raise RSILearningError("rsi_python_brs_admission_selected_policy_invalid")
+        root = MemorySnapshot.from_dict(state["root_snapshot"]).digest()
+        intents = []
+        for ordinal, key in enumerate(original_ids):
+            intent = state["intents"][key]
+            request = SolverRequest.from_dict(intent["request"])
+            episode = PracticeEpisode.from_dict(intent["episode"])
+            if (request.episode_id != key or request.memory_snapshot_sha256 != root
+                    or episode.episode_id != key or episode.run_id != wave.run_id
+                    or episode.ordinal != ordinal or episode.wave != plan["wave"]
+                    or episode.memory_snapshot_sha256 != root):
+                raise RSILearningError("rsi_python_brs_admission_selected_intent_invalid")
+            intents.append({"ordinal": ordinal, "episode_id": key, "request_sha256": request.digest()})
+        budget = RSIRunBudget.load(state["budget_state"]).to_dict()
+        refs = state.get("python_admission_refs", {})
+        # Bound known retained admission metadata. This is not an inventory or
+        # acceptance of untracked native output, and never grants native dispatch.
+        candidates = sum(len(reference["prepared_journal"]["candidates"]) for reference in refs.values())
+        preflight = preflight_native_brs_child({
+            "schema_version": BRS_CHILD_POLICY_SCHEMA_VERSION, "protocol": BRS_CHILD_POLICY_PROTOCOL,
+            "run_id": wave.run_id, "mode": "brs", "wave": plan["wave"], "max_workers": 1,
+            "root_snapshot_sha256": root, "intents": intents,
+            "executions": [key for key in original_ids if key in state["executions"]],
+            "budget": {"planned": {key: budget["planned"]["max_" + key] for key in budget["consumed"]},
+                       "consumed": budget["consumed"]},
+            "caps": {"attempts": len(intents), "candidates": candidates,
+                     "checkpoint_bytes": len(wave.payload),
+                     "aggregate_bytes": retained_publication_evidence_bytes(state)},
+        })
+        selection = preflight.select_next_pending()
+        if selection is None:
+            raise RSILearningError("rsi_python_brs_admission_selected_exhausted")
+        context = self._python_admission_brs_selected_pins(wave)
+        handoff = BRSSelectedChildHandoff.from_selection(selection, context)
+        with self._python_admission_brs_observations():
+            self._python_admission_active_brs_owner(wave)
+            if context.head_sha256 != wave.checkpoint_sha256 or context.state_sha256 != hashlib.sha256(wave.payload).hexdigest():
+                raise RSILearningError("rsi_python_brs_admission_stale")
+            wave.channel.bind_selected_handoff(handoff, preflight, context)
+            wave.selected_handoff, wave.selected_context = handoff, context
+            wave.selected_worker_started = False
+        return handoff
+
+    def _python_admission_assert_selected_brs(self, wave, handoff) -> None:
+        """Recheck invocation pins; only the existing precise admission CAS may move head."""
+        with self._python_admission_brs_observations():
+            self._python_admission_assert_brs_wave(wave, owner=get_ident() == wave.owner_thread)
+            if wave.selected_handoff is not handoff or wave.selected_context is None:
+                raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+            original = wave.selected_context
+            request = SolverRequest.from_dict(wave.state["intents"][handoff.episode_id]["request"])
+            if (request.digest() != handoff.request_sha256
+                    or request.memory_snapshot_sha256 != handoff.root_snapshot_sha256):
+                raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+        current = self._python_admission_brs_selected_pins(wave)
+        for field in ("controller_id", "ledger_id", "workspace_id", "sidecar_id", "owner_thread_id",
+                      "source_sha256", "policy_sha256", "execution_control_sha256", "max_workers"):
+            if getattr(current, field) != getattr(original, field):
+                raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+
+    def _python_admission_run_selected_brs_intent(self, wave: _PythonAdmissionBRSWave) -> EpisodeExecution:
+        """Owner-service one selected invocation without staging or publication authority.
+
+        This private seam is deliberately not called by the public BRS driver. The
+        native BRS entrance remains refused. A caller must retain the original wave
+        owner; this service closes its channel before waiting for executor shutdown.
+        """
+        handoff = self._python_admission_bind_selected_brs_handoff(wave)
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
+            future = pool.submit(self._execute_brs_intent, wave, wave.state, handoff.episode_id, handoff)
+            while not future.done():
+                self._python_admission_assert_selected_brs(wave, handoff)
+                wave.channel.service(
+                    lambda ready: self._python_admission_service_brs_ready(wave, ready), timeout=.05,
+                    observation_scope=lambda: self._python_admission_brs_service_observations(wave),
+                )
+            execution = future.result()
+            self._python_admission_assert_selected_brs(wave, handoff)
+            if (type(execution) is not EpisodeExecution or execution.request.digest() != handoff.request_sha256
+                    or execution.episode.episode_id != handoff.episode_id
+                    or execution.episode.memory_snapshot_sha256 != handoff.root_snapshot_sha256
+                    or execution.result.status != "completed" or execution.episode.status != "completed"):
+                raise RSILearningError("rsi_python_brs_admission_selected_result_invalid")
+            with wave.ledger.read_only_observations():
+                episode = wave.ledger.get_episode(handoff.episode_id)
+                result = wave.ledger.episode_result(handoff.episode_id)
+            if episode is None or episode.payload != execution.episode.to_record_dict() or result != (execution.request, execution.result):
+                raise RSILearningError("rsi_python_brs_admission_selected_result_invalid")
+            wave.channel.complete_selected_handoff(handoff.episode_id)
+            return execution
+        finally:
+            wave.channel.close()
+            pool.shutdown(wait=True)
+
+    def _execute_brs_intent(self, wave, state, episode_id, handoff=None):
         """Attach a dispatch token only to the executor's selected invocation."""
         previous = getattr(self._python_admission_brs_local, "dispatch", None)
         if previous is not None or getattr(self._python_admission_brs_local, "active", None) is not None:
             raise RSILearningError("rsi_python_brs_admission_nested_dispatch")
+        if wave is not None and wave.selected_handoff is not None:
+            self._python_admission_assert_selected_brs(wave, handoff)
+            with self._python_admission_brs_observations():
+                if (episode_id != handoff.episode_id or state is not wave.state
+                        or get_ident() == wave.owner_thread or wave.selected_worker_started):
+                    raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+                wave.selected_worker_started = True
         self._python_admission_brs_local.dispatch = (wave, state, episode_id)
         try:
             return self._execute_intent(state, episode_id)
@@ -2034,6 +2221,10 @@ class RSILearningController:
         from .rsi_native_plan import NativeRSIExecutionPlan
         from .rsi_python_brs_admission import BRSAdmissionReady, build_brs_admission_ready
 
+        if wave.selected_handoff is not None:
+            self._python_admission_assert_selected_brs(wave, wave.selected_handoff)
+            if type(ready) is not BRSAdmissionReady or ready.episode_id != wave.selected_handoff.episode_id:
+                raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
         with self._python_admission_brs_observations():
             self._python_admission_active_brs_owner(wave)
             if (type(ready) is not BRSAdmissionReady or ready.run_id != wave.run_id

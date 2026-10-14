@@ -25,3 +25,10 @@
 - [ ] Run local provider-free focused tests, Ruff, compileall and diff checks.
 - [ ] Run an independent final-source CI and raw/source/tree audit before opening a
   PR. Do not mark native BRS available from design or mocked tests alone.
+
+Implementation note (selected owner-service slice): a private controller seam now binds one
+selected handoff from a complete BRS projection, rechecks invocation/ready identity, observes a
+successful worker result before channel completion, and closes the channel before executor
+shutdown. It is not called by the public `_drive_brs` path and does not create producer staging,
+native claims, publication authority, or native BRS availability. Legacy DRS-shaped projections
+remain refused.

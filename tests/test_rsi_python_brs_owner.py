@@ -145,6 +145,19 @@ def test_direct_worker_scope_cannot_create_ready_authority(tmp_path):
     assert not _rows(value)["rsi_python_admissions"]
 
 
+def test_selected_owner_binding_refuses_legacy_drs_projection(tmp_path):
+    """The private selected seam never upgrades a legacy DRS checkpoint to BRS authority."""
+    value = _brs_fixture(tmp_path)
+    with _wave(value) as wave:
+        with pytest.raises(
+            RSILearningError,
+            match="rsi_python_brs_admission_selected_policy_invalid",
+        ):
+            value.controller._python_admission_bind_selected_brs_handoff(wave)
+        assert wave.selected_handoff is None
+        assert wave.selected_context is None
+
+
 def test_nested_unrelated_scope_suppresses_then_restores_fresh_worker_authority(tmp_path, monkeypatch):
     value = _brs_fixture(tmp_path)
     pool = ThreadPoolExecutor(max_workers=1)
