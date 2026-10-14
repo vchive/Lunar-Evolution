@@ -11,8 +11,8 @@ import hashlib
 import os
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import replace
-from pathlib import Path
+from dataclasses import dataclass, fields, replace
+from pathlib import Path, PosixPath, WindowsPath
 from types import SimpleNamespace
 from typing import Any
 
@@ -33,6 +33,7 @@ from .producer_bundle_preflight import (
 )
 from .producer_bundle_publication import (
     MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES,
+    ProducerBundlePublicationCandidate,
     ProducerBundlePublicationJournal,
     parse_producer_bundle_publication_journal,
 )
@@ -62,9 +63,11 @@ from .producer_bundle_staging import (
     _write_new,
     verify_native_publication_intent,
 )
+from .python_producer_admission_handoff import PythonProducerAdmissionHandoffFilePin
 
 _PROTOCOL = "lunar-producer-bundle-all-rejected-v1"
 _MAX_BYTES = MAX_PRODUCER_BUNDLE_PUBLICATION_BYTES
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _EVIDENCE_FIELDS = {"candidate_id", "execution_receipt", "evaluation_receipt", "retained_evidence"}
 _MANIFEST_FIELDS = {
     "schema_version", "protocol", "journal_id", "prepared_journal_sha256", "preflight",
@@ -259,36 +262,139 @@ def _verify_receipts(
     return execution.digest(), evaluation.digest()
 
 
-def _inspect(
-    root: Path, batch: Path, journal: ProducerBundlePublicationJournal,
-    preflight: ProducerBundlePreflightReceipt | None,
-) -> ProducerBundlePublicationJournal | None:
-    _verify_python_handoff(batch, journal)
-    prepared = _prepared(journal)
-    terminal_path, evidence_path = batch / "journal.json", batch / "rejections.json"
-    present = tuple(_present(path) for path in (terminal_path, evidence_path, batch / "rejections"))
-    if not any(present):
-        return None
-    if not all(present):
-        _fail("producer_bundle_rejection_recovery_required")
-    durable = parse_producer_bundle_publication_journal(terminal_path)
-    if durable.state != "all_rejected" or _prepared(durable) != prepared:
-        _fail("producer_bundle_rejection_journal_mismatch")
-    if journal.state == "all_rejected" and journal != durable:
-        _fail("producer_bundle_rejection_journal_mismatch")
+def _exact_evidence_shape(value: object, *, depth: int = 0) -> None:
+    """Refuse DTO subclasses and nested callbacks before serialization or I/O."""
+    if depth > 6:
+        _fail("producer_bundle_rejection_input_invalid")
+    if type(value) in {
+        ProducerBundlePublicationJournal, ProducerBundlePublicationCandidate,
+        ProducerBundlePreflightReceipt, PythonProducerAdmissionHandoffFilePin,
+    }:
+        for field in fields(type(value)):
+            _exact_evidence_shape(getattr(value, field.name), depth=depth + 1)
+    elif type(value) is tuple:
+        if len(value) > 32:
+            _fail("producer_bundle_rejection_input_invalid")
+        for item in value:
+            _exact_evidence_shape(item, depth=depth + 1)
+    elif type(value) is str:
+        if len(value) > _MAX_BYTES:
+            _fail("producer_bundle_rejection_input_invalid")
+    elif value is not None and type(value) is not int:
+        _fail("producer_bundle_rejection_input_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedProducerBundleRejection:
+    """An immutable observation, never an execution/recovery authorization.
+
+    ``manifest_sha256`` hashes all original pretty manifest file bytes, whereas
+    ``terminal.terminal_marker_sha256`` hashes the canonical manifest body.
+    The caller must compare its independently held original source/native file
+    pins before and after the helper; constructing this DTO does not prove trust.
+    """
+
+    terminal: ProducerBundlePublicationJournal
+    manifest_sha256: str
+    candidate_ids: tuple[str, ...]
+    execution_receipt_sha256s: tuple[str, ...]
+    evaluation_receipt_sha256s: tuple[str, ...]
+    retained_evidence_sha256s: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if type(self) is not VerifiedProducerBundleRejection or type(self.terminal) is not ProducerBundlePublicationJournal:
+            _fail("producer_bundle_rejection_input_invalid")
+        _exact_evidence_shape(self.terminal)
+        normalized = parse_producer_bundle_publication_journal(self.terminal.to_dict())
+        if normalized != self.terminal or normalized.state != "all_rejected":
+            _fail("producer_bundle_rejection_journal_mismatch")
+        if type(self.manifest_sha256) is not str or _DIGEST.fullmatch(self.manifest_sha256) is None:
+            _fail("producer_bundle_rejection_evidence_invalid")
+        _exact_evidence_shape(self.candidate_ids)
+        if (type(self.candidate_ids) is not tuple
+                or self.candidate_ids != tuple(item.candidate_id for item in normalized.candidates)):
+            _fail("producer_bundle_rejection_evidence_invalid")
+        for projection in (self.execution_receipt_sha256s, self.evaluation_receipt_sha256s, self.retained_evidence_sha256s):
+            if (type(projection) is not tuple or len(projection) != len(self.candidate_ids)
+                    or any(type(value) is not str or _DIGEST.fullmatch(value) is None for value in projection)):
+                _fail("producer_bundle_rejection_evidence_invalid")
+        if (self.execution_receipt_sha256s != tuple(item.execution_receipt_sha256 for item in normalized.candidates)
+                or self.evaluation_receipt_sha256s != tuple(item.evaluation_receipt_sha256 for item in normalized.candidates)):
+            _fail("producer_bundle_rejection_receipt_mismatch")
+
+
+def _verify_terminal_batch_rejection_evidence(
+    root: Path, batch: Path, prepared: ProducerBundlePublicationJournal, *,
+    terminal: ProducerBundlePublicationJournal,
+    preflight: ProducerBundlePreflightReceipt | None = None,
+) -> VerifiedProducerBundleRejection:
+    """Verify immutable native rejection without consulting the live population.
+
+    This private reader preserves rejected-final-tree absence and all native
+    receipt reconstruction. It cannot adopt files, replay a producer, suppress a
+    public prefix check or resolve an unknown attempt. A global current staged
+    marker belongs to the original caller's gate, not this historical reader.
+    """
+    chain = None
+    try:
+        if (type(root) not in {Path, PosixPath, WindowsPath}
+                or type(batch) not in {Path, PosixPath, WindowsPath}
+                or not root.is_absolute() or not batch.is_absolute()
+                or ".." in root.parts or ".." in batch.parts
+                or type(prepared) is not ProducerBundlePublicationJournal
+                or type(terminal) is not ProducerBundlePublicationJournal
+                or preflight is not None and type(preflight) is not ProducerBundlePreflightReceipt):
+            _fail("producer_bundle_rejection_input_invalid")
+        for value in (prepared, terminal, preflight):
+            _exact_evidence_shape(value)
+        prepared = parse_producer_bundle_publication_journal(prepared.to_dict())
+        terminal = parse_producer_bundle_publication_journal(terminal.to_dict())
+        if prepared.state != "prepared" or terminal.state != "all_rejected" or _prepared(terminal) != prepared:
+            _fail("producer_bundle_rejection_journal_mismatch")
+        if preflight is not None:
+            preflight = _preflight(preflight.to_dict(), prepared)
+        if batch != root / "evolution" / "producer-batches" / prepared.journal_id:
+            _fail("producer_bundle_rejection_batch_mismatch")
+        chain = DirectoryChain(batch, "producer_bundle_rejection_path_invalid")
+        root = _workspace(root)
+        if _batch(root, prepared.journal_id) != batch:
+            _fail("producer_bundle_rejection_batch_mismatch")
+        durable = parse_producer_bundle_publication_journal(batch / "journal.json")
+        if durable != terminal:
+            _fail("producer_bundle_rejection_journal_mismatch")
+        _verify_python_handoff(batch, prepared)
+        observation = _verify_rejection_files(root, batch, prepared, durable, preflight)
+        _verify_python_handoff(batch, prepared)
+        chain.check()
+        return observation
+    except ProducerBundleRejectionError:
+        raise
+    except Exception as exc:
+        raise ProducerBundleRejectionError("producer_bundle_rejection_evidence_invalid") from exc
+    finally:
+        if chain is not None:
+            chain.close()
+
+
+def _verify_rejection_files(
+    root: Path, batch: Path, prepared: ProducerBundlePublicationJournal,
+    durable: ProducerBundlePublicationJournal, preflight: ProducerBundlePreflightReceipt | None,
+) -> VerifiedProducerBundleRejection:
     if any(_present(batch / name) for name in (
         "stage", "manifest.json", "journal.staged.json", "journal.published.json", "terminal.json",
     )):
         _fail("producer_bundle_rejection_recovery_required")
     verify_producer_bundle_prepared_intent(root, prepared)
-    _prefix(root, prepared)
-    manifest = _json(evidence_path)
+    for candidate in prepared.candidates:
+        if _present(_confined(root, f"evolution/candidates/{candidate.candidate_id}")):
+            _fail("producer_bundle_rejection_candidate_conflict")
+    manifest = _json(batch / "rejections.json")
     if set(manifest) != _MANIFEST_FIELDS:
         _fail("producer_bundle_rejection_terminal_invalid")
     payload = {key: value for key, value in manifest.items() if key != "terminal_marker_sha256"}
     if (
         manifest["schema_version"] != "1" or manifest["protocol"] != _PROTOCOL
-        or manifest["status"] != "all_rejected" or manifest["journal_id"] != journal.journal_id
+        or manifest["status"] != "all_rejected" or manifest["journal_id"] != prepared.journal_id
         or manifest["prepared_journal_sha256"] != prepared.digest()
         or manifest["terminal_marker_sha256"] != _sha(_canonical(payload))
         or manifest["terminal_marker_sha256"] != durable.terminal_marker_sha256
@@ -307,17 +413,54 @@ def _inspect(
     expected_names = {item.candidate_id + ".json" for item in prepared.candidates}
     if {path.name for path in (batch / "rejections").iterdir()} != expected_names:
         _fail("producer_bundle_rejection_evidence_invalid")
+    executions: list[str] = []
+    evaluations: list[str] = []
+    retained: list[str] = []
     for candidate, terminal_candidate, entry in zip(prepared.candidates, durable.candidates, entries, strict=True):
         relative = "rejections/" + candidate.candidate_id + ".json"
         path = _confined(batch, relative)
         raw = _read(path, _MAX_BYTES)
         if entry != _file_descriptor(path, relative, raw):
             _fail("producer_bundle_rejection_evidence_changed")
-        execution, evaluation = _verify_receipts(root, prepared, candidate, _json(path))
+        value = _json(path)
+        execution, evaluation = _verify_receipts(root, prepared, candidate, value)
         if (terminal_candidate.execution_receipt_sha256 != execution
                 or terminal_candidate.evaluation_receipt_sha256 != evaluation):
             _fail("producer_bundle_rejection_receipt_mismatch")
-    return durable
+        executions.append(execution)
+        evaluations.append(evaluation)
+        retained.append(value["retained_evidence"]["evidence_sha256"])
+    return VerifiedProducerBundleRejection(
+        terminal=durable, manifest_sha256=_sha(_pretty(manifest, _MAX_BYTES)),
+        candidate_ids=tuple(item.candidate_id for item in prepared.candidates),
+        execution_receipt_sha256s=tuple(executions), evaluation_receipt_sha256s=tuple(evaluations),
+        retained_evidence_sha256s=tuple(retained),
+    )
+
+
+def _inspect(
+    root: Path, batch: Path, journal: ProducerBundlePublicationJournal,
+    preflight: ProducerBundlePreflightReceipt | None,
+) -> ProducerBundlePublicationJournal | None:
+    _verify_python_handoff(batch, journal)
+    prepared = _prepared(journal)
+    terminal_path, evidence_path = batch / "journal.json", batch / "rejections.json"
+    present = tuple(_present(path) for path in (terminal_path, evidence_path, batch / "rejections"))
+    if not any(present):
+        return None
+    if not all(present):
+        _fail("producer_bundle_rejection_recovery_required")
+    durable = parse_producer_bundle_publication_journal(terminal_path)
+    if durable.state != "all_rejected" or _prepared(durable) != prepared:
+        _fail("producer_bundle_rejection_journal_mismatch")
+    if journal.state == "all_rejected" and journal != durable:
+        _fail("producer_bundle_rejection_journal_mismatch")
+    # Historical extraction must not relax the original live-prefix/marker gate.
+    _prefix(root, prepared)
+    receipt = None if preflight is None else _preflight(preflight.to_dict(), prepared)
+    return _verify_terminal_batch_rejection_evidence(
+        root, batch, prepared, terminal=durable, preflight=receipt,
+    ).terminal
 
 
 def inspect_producer_bundle_all_rejected(

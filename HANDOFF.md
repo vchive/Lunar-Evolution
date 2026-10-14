@@ -1,5 +1,27 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-14 Known rejection v2 并行开发检查点
+
+独立 `codex/known-rejection-drs` 分支补齐 fresh-v2 before/rejected 描述符、原生
+拒绝证据只读校验、严格 failed mapper、原发布 FD 返回的独立 0400 provenance pin，
+以及 success/process-failure/rejection 三向文件排他。A/B 已交叉审查；发现的两个
+shape 检查顺序问题已修正，新增 callback traps。纯 DTO 的 process-failure writer
+测试补齐剩余 sibling 拒绝方向，无 native 编译或目标执行。
+
+联合 focused 回归 290 distinct cases 全过，零失败/错误/跳过，13.07 秒；全仓 Ruff、
+compileall、diff-check 通过。781 文件前后 source map 一致，详见 Feature191
+`known-rejection-v2-validation.md`。这里只完成 helpers，C1/P/C2 owner、scheduler、
+gateway/controller reconcile 和 R-P-P/P-R-P/R-R-R 整体验收尚未完成。
+
+为并行推进，后续集成开发使用独立分支，不改 PR100 的最终 c73650a 冻结 checkout。
+新 fresh-DRS API `producer_known_rejection=False` 的规格已固定；最终集成验收和
+release 必须先同步到通过验收的 PR100 main 基线。PR100 仍 draft，最终 CI
+38582309622 在运行；此记录不能宣称已合入。主仓 main 仍 0cb49ab。
+
+下一步：A 实现 owner/inspection/capacity，B 接 scheduler，root 接 gateway/controller
+与 immutable mode；共享文件只由指定 owner 修改。所有工作继续只用本地 inert/
+provider-free fixture，`production_admission=false`，P2 后置。
+
 ## 2026-10-14 三轮 DRS 的第二轮 staged marker 接线修复
 
 缺锁测试修正的独立 focused 用例已通过（1 case，零失败/错误/跳过，967.437 秒）；
