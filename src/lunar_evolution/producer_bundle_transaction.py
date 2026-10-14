@@ -481,6 +481,8 @@ def run_native_producer_bundle_publication_transaction(
     continuation_guard: Callable[[str], None] | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    producer_multi_episode_publication: bool = False,
+    lineage_precommit: Callable[[ProducerBundlePublicationJournal], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
     """Evaluate imported material and atomically publish the valid native subset.
 
@@ -498,6 +500,12 @@ def run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_evidence_revalidator_invalid")
     if prepared_observer is not None and not callable(prepared_observer):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_prepared_observer_invalid")
+    if type(producer_multi_episode_publication) is not bool:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
+    if producer_multi_episode_publication != (lineage_precommit is not None) or (
+        lineage_precommit is not None and not callable(lineage_precommit)
+    ):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
     if python_handoff_sha256 is not None and native_execution_receipt_sha256 is None:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_execution_link_missing"
@@ -521,7 +529,9 @@ def run_native_producer_bundle_publication_transaction(
                "python_handoff_sha256": python_handoff_sha256,
                "python_handoff_file_pin": python_handoff_file_pin,
                "evidence_revalidator": evidence_revalidator,
-               "prepared_observer": prepared_observer}
+               "prepared_observer": prepared_observer,
+               "producer_multi_episode_publication": producer_multi_episode_publication,
+               "lineage_precommit": lineage_precommit}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -581,6 +591,8 @@ def _run_native_producer_bundle_publication_transaction(
     execution_control: SolveExecutionControl | None = None,
     evidence_revalidator: Callable[[str], None] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    producer_multi_episode_publication: bool = False,
+    lineage_precommit: Callable[[ProducerBundlePublicationJournal], None] | None = None,
 ) -> NativeProducerBundleTransactionResult:
     checkpoint("producer_preparation")
     if evidence_revalidator is not None:
@@ -940,6 +952,12 @@ def _run_native_producer_bundle_publication_transaction(
         staged = parse_producer_bundle_publication_journal(
             root / "evolution" / "producer-batches" / journal_id / "journal.json",
         )
+        if producer_multi_episode_publication:
+            # Caller-owned lineage CAS is acknowledged only after durable immutable stage
+            # evidence, before the old commit lock/unknown marker.  This explicit seam does
+            # not relax the initial-only population gate or the legacy recovery contract.
+            assert lineage_precommit is not None
+            lineage_precommit(staged)
         checkpoint("producer_commit")
         published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint)
         _verify_python_handoff_link(
