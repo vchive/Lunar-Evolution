@@ -21,7 +21,11 @@ from typing import Any
 
 from ._candidate_workspace_io import DirectoryChain
 from .algorithm import AlgorithmProblemContract, EvaluationReport
-from .automatic_solve_lifecycle import SolveExecutionControl
+from .automatic_solve_lifecycle import (
+    SolveExecutionBudgetExceeded,
+    SolveExecutionCancelled,
+    SolveExecutionControl,
+)
 from .bundle_evolution import derive_native_draft_run_id
 from .candidate_evaluation_spec import canonical_json
 from .native_bootstrap import NativeBootstrapArtifact
@@ -937,8 +941,9 @@ class NativeRSISchedulerProvider:
 
         This is intentionally a read-only bridge for controller-owned child previews.  It
         re-reads the sealed native inputs, checks the complete request/plan binding, observes
-        cancellation and the original absolute deadline, and verifies that the episode has no
-        existing native claim.  It never creates, settles, or publishes a claim and never calls
+        cancellation, the original shared monotonic control and the original absolute deadline,
+        and verifies that the episode has no existing native claim. It never creates, settles,
+        or publishes a claim and never calls
         the producer scheduler.  A started or terminal claim is a recovery/replay boundary and
         therefore refuses a fresh dispatch rather than allowing a second effect.
 
@@ -948,6 +953,45 @@ class NativeRSISchedulerProvider:
         if type(request) is not SolverRequest or type(plan) is not NativeRSIExecutionPlan:
             _fail("preclaim_input_invalid")
         context_fingerprint = self.rsi_fingerprint_config()
+        cancellation = self.context.cancelled
+        execution_control = self.context.execution_control
+
+        def inspect_execution_control() -> None:
+            if (self.context.cancelled is not cancellation
+                    or self.context.execution_control is not execution_control):
+                _fail("preclaim_context_changed")
+            try:
+                if cancellation is not None and bool(cancellation()):
+                    _fail("preclaim_cancelled")
+            except NativeRSISchedulerProviderError:
+                raise
+            except Exception as exc:
+                raise NativeRSISchedulerProviderError(
+                    "rsi_native_scheduler_preclaim_cancellation_invalid",
+                ) from exc
+            if execution_control is not None:
+                try:
+                    execution_control.check("rsi_native_preclaim")
+                except SolveExecutionCancelled as exc:
+                    raise NativeRSISchedulerProviderError(
+                        "rsi_native_scheduler_preclaim_cancelled",
+                    ) from exc
+                except SolveExecutionBudgetExceeded as exc:
+                    raise NativeRSISchedulerProviderError(
+                        "rsi_native_scheduler_preclaim_deadline_expired",
+                    ) from exc
+                except Exception as exc:
+                    raise NativeRSISchedulerProviderError(
+                        "rsi_native_scheduler_preclaim_control_invalid",
+                    ) from exc
+            if (self.context.cancelled is not cancellation
+                    or self.context.execution_control is not execution_control):
+                _fail("preclaim_context_changed")
+
+        # Check the original shared monotonic control as well as the explicit callback before
+        # observing launch files or claims. Neither gate constructs a control or resets its
+        # start/deadline; an earlier parent ceiling continues to constrain this child.
+        inspect_execution_control()
         inputs = self._inputs(require_unexpired=True)
         memory = _memory_from_request_inputs(inputs, request)
         _assert_plan_binding(request, memory, plan, self.context, inputs)
@@ -973,17 +1017,6 @@ class NativeRSISchedulerProvider:
                 _fail("preclaim_claim_exists")
 
         inspect_claim()
-        cancellation = self.context.cancelled
-        if cancellation is not None:
-            try:
-                if bool(cancellation()):
-                    _fail("preclaim_cancelled")
-            except NativeRSISchedulerProviderError:
-                raise
-            except Exception as exc:
-                raise NativeRSISchedulerProviderError(
-                    "rsi_native_scheduler_preclaim_cancellation_invalid",
-                ) from exc
         # The callback and ledger read above are untrusted observation boundaries. Re-read every
         # launch input and the complete provider fingerprint before accepting the preview. This
         # catches a callback that mutates intent, broker headers, strategy, hooks, or deadline
@@ -999,6 +1032,17 @@ class NativeRSISchedulerProvider:
         if self.rsi_fingerprint_config() != context_fingerprint:
             _fail("preclaim_context_changed")
         inspect_claim()
+        # The second ledger observation can cross a parent deadline or observe cancellation.
+        # Sample both authorities again, then reread the original absolute deadline and context
+        # pins because callbacks within either control are observation boundaries themselves.
+        inspect_execution_control()
+        final_inputs = self._inputs(require_unexpired=True)
+        if final_inputs != inputs:
+            _fail("preclaim_input_changed")
+        final_memory = _memory_from_request_inputs(final_inputs, request)
+        _assert_plan_binding(request, final_memory, plan, self.context, final_inputs)
+        if self.rsi_fingerprint_config() != context_fingerprint:
+            _fail("preclaim_context_changed")
 
     def recover(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
