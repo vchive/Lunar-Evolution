@@ -166,6 +166,8 @@ class BRSNativeChildSelection:
     episode_id: str
     request_sha256: str
     root_snapshot_sha256: str
+    planned_budget: tuple[tuple[str, int | None], ...]
+    consumed_budget: tuple[tuple[str, int], ...]
     authority: bool = False
 
     def __post_init__(self) -> None:
@@ -175,6 +177,15 @@ class BRSNativeChildSelection:
         _identity(self.episode_id, "episode_id")
         _digest(self.request_sha256, "request_sha256")
         _digest(self.root_snapshot_sha256, "root_snapshot_sha256")
+        if (self.planned_budget != tuple(self.planned_budget)
+                or self.consumed_budget != tuple(self.consumed_budget)):
+            _fail("budget_invalid")
+        if (tuple(name for name, _limit in self.planned_budget) != _COUNTERS
+                or tuple(name for name, _used in self.consumed_budget) != _COUNTERS):
+            _fail("budget_invalid")
+        for (_name, limit), (_used_name, used) in zip(self.planned_budget, self.consumed_budget):
+            if type(used) is not int or used < 0 or (limit is not None and (type(limit) is not int or used > limit)):
+                _fail("budget_invalid")
         if self.episode_id != f"{self.run_id}-practice-{self.wave}-{self.ordinal}":
             _fail("episode_identity_invalid")
         if self.authority is not False:
@@ -188,6 +199,10 @@ class BRSNativeChildSelection:
             "episode_id": self.episode_id,
             "request_sha256": self.request_sha256,
             "root_snapshot_sha256": self.root_snapshot_sha256,
+            "budget": {
+                "planned": dict(self.planned_budget),
+                "consumed": dict(self.consumed_budget),
+            },
             "authority": False,
         }
 
@@ -278,7 +293,7 @@ class BRSNativeChildPreflight:
             if episode_id not in completed:
                 return BRSNativeChildSelection(
                     self.run_id, self.wave, ordinal, episode_id, request,
-                    self.root_snapshot_sha256,
+                    self.root_snapshot_sha256, self.planned_budget, self.consumed_budget,
                 )
         return None
 

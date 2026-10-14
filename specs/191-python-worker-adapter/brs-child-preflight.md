@@ -52,7 +52,8 @@ mutating a caller-owned dictionary after parsing cannot alter the result.
 `select_next_pending()` returns the first unexecuted intent in ordinal order, or
 `None` after all original intents are executed. The returned
 `BRSNativeChildSelection` contains only run/wave/ordinal/episode/request/root
-identity and a literal `authority=False`. It has no claim, staging, ready/ack,
+identity, detached planned/consumed budget counters, and a literal `authority=False`.
+It has no claim, staging, ready/ack,
 lineage, lease, owner, callback, filesystem or process field. No method in this
 module can reserve, stage, claim, launch, spawn, evaluate, publish, reconcile or
 grant a worker token.

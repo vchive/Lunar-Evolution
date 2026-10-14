@@ -1,5 +1,45 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 恢复批次集成：原始中断与连续 reconcile 已关闭本地验收
+
+主仓 main 仍是 PR99 `0cb49abb146d91cb59b71de45d01e16217ebed8d`。
+PR100 最终 head `c73650afe3cdc9f1dc3c08ec74d8df12a7b75b01` 的完整 CI
+`38582309622` 与独立 raw/source/tree 审计尚未完成，尚未合入；冻结 checkout 不修改。
+本批最终集成在 `codex/rsi-recovery-release` 独立工作树，以 `9cbf622` 为基线，
+包含 PR100 最终 head 与 known-rejection v2 的产品代码。此记录不提前关闭最终 CI 或 release。
+
+Known-rejection v2 的原始本地验收已完成：478 个不同 focused cases、两个原 owner
+terminal/started 案、原 C2 连续四个 durable reconcile 中断、原两个有序候选拒绝、
+C1/no-P 与原 P/no-C2、缺 terminal/partial terminal/terminal-before-C1 三个早界。
+11 份原始 XML 的独立并集是 **487 distinct cases**，零 failure/error/skip；分别保留
+788/789/790-file source maps，不伪装成同一最终集成来源。早界测试通过后仅修说明文字，
+原 XML、运行时源和 AST 等值记录仍保留。
+
+连续 reconcile 的原始长测耗时 4315.288 秒（约 72 分钟），四项 stale pins 在预算前
+拒绝；reservation/result/episode/checkpoint 连续中断最终只保留一次 unknown retry、
+一次 solver invocation、一次原 claim/result/reconciliation，revision 10，checkpoint
+峰值 41,273 bytes。最终仍是 running/producer_staged：reconcile 只登记原失败，不驱动
+后继。这是正确状态，不把它写成整个 run 完成。
+
+RPP/PRP/RRR 三个原三轮 mixed fixture 仍在独立 790-file 冻结树运行；只有结束并独审
+原 XML/SQLite/source 后才关闭 T1–T3。T4 使用独立修正后的双 BundleGroup 原始 fixture；
+旧 test API/collection 错误、原开发失败和中断证据都保留，不采用失败版测试。
+
+并行发现既有 BRS partial-wave 恢复缺口：已完成 child 的 retained admission reference
+被仅包含 pending sibling 的 wave scope 误判 foreign。独立树已复现原失败，并实现原
+whole-plan obligations 与 pending-only fresh channel/token 分离；completed replay 在短
+观察锁外，随后复验原 head/payload/controller/ledger/workspace/sidecar/gateway/proof。
+26 个 focused 与 321 个兼容 cases 已通过（347 个不同 named cases，零 failure/error/skip）；789 文件 source map 前后完全一致 `a7d0791f8b689cd9a0ca5300cff0c23c04428be84cf83b392aa34369b9fca9c1`。此修复不启用 native 多 child BRS。
+README 与当前台账已重整，发布仍以最终来源 CI/审计与实际 main 状态为准。
+
+剩余出口：mixed 三案、接受 PR100 main 后同步、最终集成
+focused/Ruff/compileall/diff-check、完整 CI/原日志与产物/source/tree 独审、PR 合入。BRS partial-wave
+修复已在本集成树验证，但未改变 native multi-child BRS 的 P1 范围。
+下一 P1 为独立 native 多 child BRS、真实 source/toolchain/static runtime、sealed startup/
+input/lifecycle、实际项目 profile 和 opt-in CLI；P2 多机/服务/训练后置。仅本地 inert
+fixtures，`production_admission=false`；不运行真实模型、toolchain target、campaign、
+WebAgent、远程 evaluator 或公司平台。
+
 ## 2026-10-15 并行集成：fresh v2 已实现，原始恢复验收中
 
 PR100 的冻结最终 head 为 `c73650afe3cdc9f1dc3c08ec74d8df12a7b75b01`；完整

@@ -90,6 +90,10 @@ def test_preflight_selects_next_ordinal_as_detached_non_authority():
         "episode_id": f"{RUN}-practice-3-1",
         "request_sha256": "3" * 64,
         "root_snapshot_sha256": ROOT,
+        "budget": {
+            "planned": _budget()["planned"],
+            "consumed": _budget()["consumed"],
+        },
         "authority": False,
     }
     value["intents"][1]["episode_id"] = "mutated-after-parse"

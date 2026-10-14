@@ -1,6 +1,6 @@
 """V2-T1/T2/T3 original mixed DRS acceptance, with a short basetemp.
 
- Only retained inert native observations and the lowest process
+Only retained inert native observations and the lowest process
 seams are synthetic; controller, owner/CAS, P pins, receipts, claims, capsules,
 memory promotion and historical replay remain original.
 """
@@ -217,8 +217,9 @@ def test_original_three_attempt_mixed_drs_and_terminal_readonly_replay(tmp_path,
             assert terminal.state == "all_rejected"
             assert terminal.archive_after_sha256 == terminal.base_archive_sha256
             assert terminal.state_after_sha256 == terminal.base_state_sha256
-            rejected_candidates.extend(evidence.candidate_ids)
-            for candidate_id in evidence.candidate_ids:
+            assert evidence.lineage.candidate_ids == tuple(item.candidate_id for item in terminal.candidates)
+            rejected_candidates.extend(evidence.lineage.candidate_ids)
+            for candidate_id in evidence.lineage.candidate_ids:
                 assert not (value.root / "evolution/candidates" / candidate_id).exists()
             assert not (batch / "journal.published.json").exists()
             assert not (batch / "manifest.json").exists()

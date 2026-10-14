@@ -1,32 +1,40 @@
 # Lunar Evolution
 
-[![CI](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml/badge.svg)](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml)
+[![CI](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-2ea44f)](pyproject.toml)
 
-Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与算法演化控制器。它把任务计划、执行、评测、产物和恢复状态写入本地 ledger 与 run workspace；模型、solver 和 evaluator 都通过显式 adapter 接入。
+Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与算法演化控制器。它管理从任务计划、候选生成、评测到产物交付的完整链路，并把预算、执行记录和恢复证据保留在本地。
 
-当前主线是单机 provider-free 可靠执行和 RSI（recursive/self-improving learning）控制闭环。RSI producer 路径默认保持 `production_admission=false`；本地 fixture 用于验证执行和恢复流程，真实 solver campaign 仍需独立验收。普通任务的模型接口可以按显式配置使用。
+你可以用 CLI 执行普通任务和算法求解，也可以用 Python API 组合 solver、verifier 与 RSI 学习流程。模型和本地 solver 按显式配置接入；默认回归使用 mock/fixture，可以在没有模型服务和密钥的环境中运行。
+
+当前主线是单机可靠执行和 RSI（递归学习）控制闭环。RSI 改进候选程序与经验证的任务记忆；模型权重训练和修改 Lunar 自身代码不在当前主线内。RSI producer 路径保持 `production_admission=false`，真实 solver campaign 仍需独立验收。
+
+[本地试跑](#五分钟本地试跑) · [RSI 示例](#rsi-provider-free-回归) · [执行链路](#执行链路) · [架构说明](docs/architecture.md) · [剩余工作与验收条件](docs/current-release-backlog.md)
 
 ## 当前状态
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | 普通任务与 `solve` | ✅ 可用 | 本地 plan、AgentLoop、评测、artifact 和 delivery ledger。 |
-| provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture，支持 run、inspect、resume、usage、replay、reconcile。 |
-| durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态 fail-closed。 |
-| 逐 episode producer 执行 | 🧪 实验 API | 单 child 本地 fixture 闭环已验收；需显式 `producer_child_execution=True`，默认保持 staging-only。三轮 DRS 正在验证，多 episode 尚未验收。 |
+| provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
+| durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
+| 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |
+| 同 workspace 连续 DRS 发布 | 🧪 PR100 待合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终来源完整 CI 和独立审计仍在进行。 |
+| DRS known rejection | 🧪 本批待最终验收 | 已实现拒绝批次的证据、失败结算和只读恢复；原 owner、连续 reconcile 与早期中断用例已通过，混合链及最终 CI/合入待完成。 |
+| BRS partial-wave resume | 🧪 当前批次已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；347 个本地 cases 通过，仍不启用 native 多 child BRS。 |
+| 多 child native BRS | ⏳ 未启用 | provider-free BRS 已存在；native 多 child 的波次调度和恢复需要单独接线与验收。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-因此，当前仓库适合做本地协议回归、恢复测试和架构开发；它不是已经上线的远程演化服务，也不宣称与任何外部 Agent 或评测平台效果持平。
+上表区分 main、当前开发批次和真实运行时验收；CI badge 表示 main 的 workflow 状态。详细证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
 
 ## 主要能力
 
 - **普通任务执行**：把 goal 编译成有依赖关系的 plan，调度本地 task，记录 attempt、evaluation、artifact 和事件。
 - **会话式算法求解**：`solve` 先生成严格的 `AlgorithmProblemContract`，再运行 `data_discovery → formulate → solve → verify`；可以选择本地 population evolution，或显式配置本地 OpenEvolve 命令。
 - **受控产物交付**：候选源文件在隔离 workspace 中执行，交付前检查路径、格式、大小和 SHA-256；多文件发布、execution、delivery 和恢复证据都保留在 ledger 中。
-- **RSI learning mode**：DRS（围绕目标缺口逐步深入）和 BRS（在冻结 wave 上横向展开）共享 run 预算、component fingerprint、memory governance 和 transfer evidence。
+- **RSI learning mode**：DRS 围绕目标缺口生成练习、验证记忆再重试目标；BRS 在冻结 wave 上横向展开。两者共享 run 预算、组件指纹、记忆治理和迁移证据。
 - **证据优先恢复**：已完成的 side effect 只读重放；`unknown`、证据缺失、身份漂移、取消和 deadline 不会自动 retry 或晋级。
 
 ## 安装
@@ -189,23 +197,24 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 
 ## 路线图与明确边界
 
-### P0：完成本地闭环
+### P0：收尾当前 DRS 发布批次
 
-单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已完成本地 fixture 验收。剩余工作：
+单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已合入 main。当前批次的剩余出口是：
 
-- 支持连续发布及历史批次恢复，再验收 practice success、target retry、新 approved memory 和多 child。
-- 在本地 fixture 覆盖取消、deadline、中断、只读证据恢复和原 episode settlement。
-- 为每个 side effect 保留 launch、execution、receipt、publication 和 unknown reconcile 证据。
+- 完成 PR100 最终来源的完整 CI、原始日志/产物与来源审计，再合入连续 DRS 发布。
+- 完成 known rejection 的混合拒绝/发布链和最终集成验收；同步已接受的 main 基线后完成自身 CI 和合入。
+- 按原 claim、预算、身份、deadline 与取消门禁恢复已有结果；没有原始证据的中断保留 unknown，不启动后继 child。
 
-### P1：接入真实本地运行时
+### P1：多 child BRS 与真实本地运行时
 
+- 为 native 多 child BRS 建立独立 SDD，复用冻结 wave、ready/ack 与原 owner/CAS；补齐部分波次恢复和中断验收。
 - 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。
-- 为本地 OpenEvolve/Shinka 增加受 pin 约束的 process adapter、result export、cancel/cleanup、producer admission 和 opt-in CLI。
-- 不改变 provider-free 默认值，不把 producer score 直接当作 official verdict。
+- 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。
+- 保留 provider-free 默认值；producer score 仍须经独立 verifier/evaluation 才能产生官方结论。
 
 ### P2：后置能力
 
-remote evaluator、external worker authentication、multi-host ownership、distributed scheduler、service API、remote Shinka/Slurm，以及模型训练/SFT/RL 都需要单独定义身份、租约、故障和部署边界，不是当前单机 RSI 正确性的前置条件。
+远程 evaluator、外部 worker 来源认证、多机 ownership、分布式 scheduler、service API、远程 Shinka/Slurm，以及模型训练/SFT/RL 均后置。它们需要独立的身份、租约、故障与部署契约，不是本轮单机 DRS 发布的出口条件。
 
 当前工作台账、结束条件和证据分级见 [`docs/current-release-backlog.md`](docs/current-release-backlog.md)；系统架构见 [`docs/architecture.md`](docs/architecture.md)。
 

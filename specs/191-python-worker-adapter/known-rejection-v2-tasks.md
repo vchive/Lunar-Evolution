@@ -8,15 +8,18 @@ Read sibling `known-rejection-v2.md` first. All development uses a separate work
 | Tasks | Implementation / validation state |
 | --- | --- |
 | V2-00, A1/A2, B1/B2/B3 | Implemented and cross-reviewed; original 290-case helper checkpoint retained below. |
-| V2-I1 through I8 | Implemented; final-source 476-case joint focused plus two nested DTO refusal cases pass, zero failures/errors/skips. Original owner/controller acceptance is still running. |
-| V2-T1/T2/T3 | Three original RPP/PRP/RRR fixtures implemented and executing concurrently in independent local workspaces; no result claimed yet. |
-| V2-T4 | Maximum-cardinality capacity gate covered by fast tests; original controller multicandidate acceptance remains open. |
-| V2-T5 | Original C2 and four successive reconcile crash boundaries executing. Earlier native/C1/orphan interruption acceptance remains open. |
-| V2-R1/R2 | Final local inventory/evidence review, accepted PR100 main synchronization, complete CI/artifact audit and release remain open. |
+| V2-I1 through I8 | Implemented; 478 distinct final product-source focused cases and two original owner terminal/started cases pass, zero failures/errors/skips. |
+| V2-T1/T2/T3 | Original RPP/PRP/RRR fixtures execute concurrently in separate frozen workspaces; final results still pending. |
+| V2-T4 | Original two-BundleGroup, ordered two-candidate controller acceptance passed (942.238s); maximum-cardinality capacity gates remain covered by focused tests. The earlier test API error is retained separately. |
+| V2-T5 | Original C2 reservation/result/episode/checkpoint crash sequence passed (4315.288s), one unknown retry and one solver invocation; all five original earlier native/C1/P interruption boundaries passed. Reconcile settles only the original failure and does not drive a successor. |
+| V2-R1 | Eleven original XML files have 487 non-overlapping cases, zero failures/errors/skips. Their explicit 788/789/790-file source identities remain separate; mixed3 and final integrated-source checks are pending. |
+| V2-R2 | Accepted PR100 main synchronization, final integrated full CI/artifact/source/tree audit and merge remain open. |
 
-The current source freeze and separate raw XML identities are recorded in
+The source freeze and raw XML identities are recorded in
 `known-rejection-v2-validation.md`. Earlier failed development runs are retained;
-neither unit seams nor pending tests close the product acceptance tasks.
+neither unit seams nor pending tests close the product acceptance tasks. Existing
+BRS partial-wave recovery is a separate bounded repair, not native multi-child
+BRS enablement.
 
 ## Fast independent helper streams
 

@@ -1851,12 +1851,16 @@ class RSILearningController:
         return wave.state, wave.checkpoint_sha256
 
     @contextmanager
-    def _python_admission_brs_wave_scope(self, state: dict[str, Any], episode_ids: tuple[str, ...]):
+    def _python_admission_brs_wave_scope(
+        self, state: dict[str, Any], episode_ids: tuple[str, ...], *,
+        wave_episode_ids: tuple[str, ...] | None = None,
+    ):
         """Capture the persisted dispatch wave before any fresh worker receives authority."""
         from .rsi_python_brs_admission import BRSAdmissionChannel
 
         previous = self._python_admission_brs_wave
         wave = None
+        completed_executions = []
         try:
             if self.producer_sidecar is None or self.ledger is None:
                 yield None
@@ -1865,6 +1869,9 @@ class RSILearningController:
                 if (previous is not None or type(state) is not dict or state.get("mode") != "brs"
                         or state.get("status") != "running" or type(episode_ids) is not tuple
                         or not episode_ids or any(type(key) is not str for key in episode_ids)
+                        or (wave_episode_ids is not None and (
+                            type(wave_episode_ids) is not tuple
+                            or any(type(key) is not str for key in wave_episode_ids)))
                         or len(set(episode_ids)) != len(episode_ids)
                         or type(state.get("intents")) is not dict
                         or any(type(key) is not str or key not in state["intents"] for key in episode_ids)):
@@ -1872,28 +1879,90 @@ class RSILearningController:
                 run_id = _id(state.get("run_id"), "run_id")
                 if not self.ledger.controller_lock_held(run_id):
                     raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                ledger, workspace, sidecar, gateway, owner_thread = (
+                    self.ledger, self.producer_workspace, self.producer_sidecar, self.gateway, get_ident(),
+                )
                 payload = self._python_admission_flow_payload(state)
                 with self.ledger.read_only_observations():
                     checkpoint = self.ledger.controller_checkpoint(run_id)
                 if checkpoint is None or self._python_admission_flow_payload(checkpoint[1]) != payload:
                     raise RSILearningError("rsi_python_brs_admission_stale")
+                obligation_ids = episode_ids
+                if wave_episode_ids is not None:
+                    plan, executions = state.get("plan"), state.get("executions")
+                    with self.ledger.read_only_observations():
+                        history = self.ledger.history(run_id)
+                    if (type(wave_episode_ids) is not tuple or type(plan) is not dict
+                            or plan.get("mode") != "brs" or type(plan.get("practices")) is not list
+                            or type(plan.get("wave")) is not int or plan["wave"] < 0
+                            or type(executions) is not dict or not history
+                            or history[0].payload.get("plan") != plan):
+                        raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                    original_ids = tuple(
+                        f"{run_id}-practice-{plan['wave']}-{ordinal}"
+                        for ordinal in range(len(plan["practices"]))
+                    )
+                    if (wave_episode_ids != original_ids or set(state["intents"]) != set(original_ids)
+                            or not set(executions).issubset(original_ids)
+                            or episode_ids != tuple(key for key in original_ids if key not in executions)):
+                        raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                    obligation_ids = original_ids
                 refs = state.get("python_admission_refs", {})
-                # A resumed wave may already contain independent obligations for more than
-                # one child.  Keep the route bounded to the exact dispatch wave: a reference
-                # for an unrelated episode is stale/foreign and must never be adopted by a
-                # fresh BRS channel.  The ledger and evidence gates below independently bind
-                # each child to its own journal/attempt.
+                # Cached children retain original obligations but cannot receive a new
+                # channel/token.  Only the original full plan may extend this read-only
+                # obligation set beyond the current pending dispatch subset.
                 if (type(refs) is not dict or any(
-                    type(key) is not str or key not in episode_ids or type(reference) is not dict
+                    type(key) is not str or key not in obligation_ids or type(reference) is not dict
                     or type(reference.get("native_plan")) is not dict
                     or type(reference.get("prepared_journal")) is not dict
                     for key, reference in refs.items()
                 )):
                     raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                if wave_episode_ids is not None:
+                    with self.ledger.read_only_observations():
+                        for key, reference in refs.items():
+                            if key in episode_ids:
+                                continue
+                            try:
+                                execution = self._deserialize_execution(state["executions"][key])
+                                head = self.ledger.get_episode(key)
+                                saved = self.ledger.episode_result(key)
+                                if (execution.episode.episode_id != key or execution.episode.run_id != run_id
+                                        or execution.request.to_dict() != state["intents"][key]["request"]
+                                        or reference["native_plan"].get("request") != execution.request.to_dict()
+                                        or head is None or head.payload != execution.episode.to_record_dict()
+                                        or saved != (execution.request, execution.result)
+                                        or (execution.episode.verifier is not None
+                                            and execution.verifier != execution.episode.verifier)):
+                                    raise ValueError("completed obligation mismatch")
+                                completed_executions.append(execution)
+                            except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+                                raise RSILearningError("rsi_python_brs_admission_identity_invalid") from exc
+                        self._validate_producer_checkpoint(run_id, state)
+            # Caller replay hooks may wait on another thread's observations. They
+            # retain the owner mutation lock, but never run under the short mutex.
+            with ledger.read_only_observations():
+                for execution in completed_executions:
+                    self._validate_native_cached_execution(execution)
+            with self._python_admission_brs_observations():
+                if (self._python_admission_brs_wave is not previous or self.ledger is not ledger
+                        or self.producer_workspace is not workspace or self.producer_sidecar is not sidecar
+                        or self.gateway is not gateway
+                        or get_ident() != owner_thread or not ledger.controller_lock_held(run_id)):
+                    raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+                if self._python_admission_flow_payload(state) != payload:
+                    raise RSILearningError("rsi_python_brs_admission_stale")
+                with ledger.read_only_observations():
+                    repeated = ledger.controller_checkpoint(run_id)
+                    if (repeated is None or repeated[0] != checkpoint[0]
+                            or self._python_admission_flow_payload(repeated[1]) != payload):
+                        raise RSILearningError("rsi_python_brs_admission_stale")
+                    if wave_episode_ids is not None:
+                        self._validate_producer_checkpoint(run_id, state)
                 wave = _PythonAdmissionBRSWave(
-                    self, state, run_id, episode_ids, self.ledger, self.producer_workspace, self.producer_sidecar,
-                    get_ident(), checkpoint[0], payload,
-                    BRSAdmissionChannel(run_id, episode_ids, owner_thread=get_ident()),
+                    self, state, run_id, episode_ids, ledger, workspace, sidecar,
+                    owner_thread, checkpoint[0], payload,
+                    BRSAdmissionChannel(run_id, episode_ids, owner_thread=owner_thread),
                     json.loads(self._python_admission_flow_payload(state["budget_state"])),
                     next(iter(refs), None),
                 )
@@ -4200,7 +4269,9 @@ class RSILearningController:
         if pending:
             # The wave scope exits first, closing the channel before executor shutdown waits.
             with (ThreadPoolExecutor(max_workers=plan.get("max_workers") or len(pending)) as pool,
-                  self._python_admission_brs_wave_scope(state, tuple(pending)) as wave):
+                  self._python_admission_brs_wave_scope(
+                      state, tuple(pending), wave_episode_ids=tuple(episode_ids),
+                  ) as wave):
                 futures = {key: pool.submit(self._execute_brs_intent, wave, state, key) for key in pending}
                 for key in pending:
                     future = futures[key]
