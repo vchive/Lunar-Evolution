@@ -23,7 +23,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 同 workspace 连续 DRS 发布 | 🧪 [PR100](https://github.com/vchive/Lunar-Evolution/pull/100) 待合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；原 CI 的测试竞态已修复，修复后完整 CI 与独立审计待完成。 |
 | DRS known rejection | 🧪 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101) 草稿 | 原 owner、连续 reconcile、早期中断及三组混合链已通过本地验收和原证据审查；[PR103](https://github.com/vchive/Lunar-Evolution/pull/103) 集成修复/parser 后的最终 CI、审计与合入待完成。 |
 | BRS partial-wave resume | 🧪 PR101 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；347 个本地 cases 通过，待最终集成 CI/审计与合入。 |
-| 多 child native BRS | ⏳ 未启用 | 纯 preflight 已开发，[owner/worker SDD](specs/196-brs-owner-worker-handoff/spec.md) 已建立；staging、dispatch、publication 与恢复尚待接线和验收。 |
+| 多 child native BRS | 🧪 私有 service 已验证 | Feature196 的 private selected owner service、detached handoff/ACK、预算/指纹/锁边界和 175 个 provider-free focused cases 已通过；公共 native BRS、多 child staging/publication 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
@@ -208,7 +208,7 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 
 ### P1：多 child BRS 与真实本地运行时
 
-- 按已建立的 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 接通 native BRS owner/worker；复用已开发的纯 preflight、冻结 wave、ready/ack 与原 owner/CAS，完成多 child 接线和中断验收。
+- 按已建立的 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 将 private selected owner service 的边界继续扩展到 native 多 child；当前只验收 provider-free service，公共 native BRS、真实 producer、sealed runtime 和生产 admission 仍是后续出口。
 - 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。
 - 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。
 - 保留 provider-free 默认值；producer score 仍须经独立 verifier/evaluation 才能产生官方结论。

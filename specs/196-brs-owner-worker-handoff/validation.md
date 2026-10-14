@@ -64,8 +64,9 @@ The focused tests are split so their exact counters remain auditable:
 | --- | ---: | --- |
 | Existing BRS admission/owner/publication | 104 | provider-free pass |
 | Detached ACK channel | 13 | provider-free pass |
+| Detached handoff contract | 30 | provider-free pass |
 | Selected owner service and drift/lock/result gates | 28 | provider-free pass |
 
 The public `_drive_brs` entrance remains refusal-only and no native producer,
 sealed runtime, external worker, remote evaluator or production admission is enabled.
-The 145 local cases are focused seam evidence, not native BRS acceptance.
+The 175 local cases are focused seam evidence, not native BRS acceptance.
