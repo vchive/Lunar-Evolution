@@ -1224,9 +1224,15 @@ def commit_producer_bundle_publication(
     journal: ProducerBundlePublicationJournal,
     *,
     checkpoint: Callable[[str], object] | None = None,
+    lineage_owner: object | None = None,
 ) -> ProducerBundlePublicationJournal:
     """Expose one complete staged batch; any uncertain boundary remains terminal."""
     _validate_python_handoff_pin(journal)
+    if lineage_owner is not None:
+        from . import rsi_publication_lineage
+
+        if type(lineage_owner) is not getattr(rsi_publication_lineage, "RSIPublicationLineage", None):
+            _fail("producer_bundle_publication_lineage_owner_invalid")
     root = _workspace(workspace)
     batch = _batch(root, journal.journal_id)
     _verify_python_handoff(batch, journal)
@@ -1249,6 +1255,15 @@ def commit_producer_bundle_publication(
         if checkpoint is not None:
             checkpoint("producer_commit_verified")
         _verify_python_handoff(batch, staged_journal)
+        if lineage_owner is not None:
+            # The original controller already owns its lock.  This exact capsule performs
+            # bounded observations and checks its held CAS; it must not acquire that lock
+            # in reverse or invoke a user callback while publication is locked.
+            rsi_publication_lineage.RSIPublicationLineage.verify_precommit(
+                lineage_owner, staged_journal, manifest,
+            )
+            _verify_stage(batch, manifest, staged_journal)
+            _verify_python_handoff(batch, staged_journal)
         # Once the first target is moved, all failures are unknown and marker status is durable.
         unknown_marker = marker_payload(journal_id=journal.journal_id, journal_sha256=manifest.journal_sha256,
                                          manifest_sha256=manifest.digest(), status="unknown")

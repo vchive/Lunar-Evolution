@@ -373,6 +373,58 @@ def _ensure_initial_population_window(
         )
 
 
+def _validate_lineage_owner(
+    producer_multi_episode_publication: bool, lineage_owner: object | None,
+) -> None:
+    if type(producer_multi_episode_publication) is not bool:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
+    if not producer_multi_episode_publication:
+        if lineage_owner is not None:
+            raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
+        return
+    if lineage_owner is None:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
+    from . import rsi_publication_lineage
+
+    if type(lineage_owner) is not getattr(rsi_publication_lineage, "RSIPublicationLineage", None):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
+
+
+def _lineage_call(lineage_owner: object, method: str, *args: object, **kwargs: object) -> Any:
+    """Resolve only an exact capsule's original class method, never an instance hook."""
+    _validate_lineage_owner(True, lineage_owner)
+    from .rsi_publication_lineage import RSIPublicationLineage
+
+    return getattr(RSIPublicationLineage, method)(lineage_owner, *args, **kwargs)
+
+
+def _ensure_append_population_window(
+    state: Mapping[str, Any], records: Sequence[Candidate], strategy: PopulationStrategy,
+    *, prior_events: tuple[tuple[str, ...], ...],
+) -> None:
+    """Narrow native shape check after the original owner's predecessor proof passed."""
+    if type(prior_events) is not tuple or len(prior_events) > 7 or any(
+        type(group) is not tuple or not group or len(group) > 32
+        or any(type(candidate_id) is not str for candidate_id in group)
+        for group in prior_events
+    ):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_lineage_prefix_invalid")
+    stripped_state = dict(state)
+    stripped_state.pop("producer_admissions", None)
+    ordinary = tuple(candidate for candidate in records if "producer_bundle" not in candidate.metadata)
+    _ensure_initial_population_window(stripped_state, ordinary, strategy)
+    seed_commit = strategy.context.workspace / "evolution" / "seed-commit.json"
+    if (any(candidate.iteration != 0 or "seed_handoff" in candidate.metadata for candidate in records)
+            or seed_commit.exists() or seed_commit.is_symlink()):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_population_history_unsupported")
+    try:
+        observed = strategy._producer_admission_events(state, records)
+    except Exception as exc:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_lineage_prefix_invalid") from exc
+    if observed != tuple((0, candidate_ids) for candidate_ids in prior_events):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_lineage_prefix_invalid")
+
+
 def derive_population_state_after(
     base_state: Mapping[str, Any],
     base_archive: bytes,
@@ -380,6 +432,8 @@ def derive_population_state_after(
     *,
     journal: ProducerBundlePublicationJournal,
     strategy: PopulationStrategy,
+    lineage_owner: object | None = None,
+    base_state_bytes: bytes | None = None,
 ) -> dict[str, Any]:
     """Derive the initial native population projection from the frozen prefix and admissions."""
 
@@ -403,13 +457,22 @@ def derive_population_state_after(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_candidate_collision")
 
     iteration = base_state.get("iteration")
-    _ensure_initial_population_window(base_state, before, strategy)
+    if lineage_owner is None:
+        _ensure_initial_population_window(base_state, before, strategy)
+        prior_events = ()
+    else:
+        _validate_lineage_owner(True, lineage_owner)
+        if type(base_state_bytes) is not bytes or _sha(base_state_bytes) != journal.base_state_sha256:
+            raise NativeProducerBundleTransactionError("producer_bundle_transaction_lineage_prefix_invalid")
+        prior_events = _lineage_call(lineage_owner, "validate_before", journal, base_archive, base_state_bytes, strategy)
+        _ensure_append_population_window(base_state, before, strategy, prior_events=prior_events)
 
     admission_ids = [item.candidate_id for item in added]
     projection_state = dict(base_state)
     projection_state["producer_admissions"] = {
         "schema_version": "1",
-        "events": [{"after_iteration": iteration, "candidate_ids": admission_ids}],
+        "events": [{"after_iteration": 0, "candidate_ids": list(group)} for group in prior_events]
+        + [{"after_iteration": iteration, "candidate_ids": admission_ids}],
     }
 
     source_overrides = {
@@ -482,7 +545,7 @@ def run_native_producer_bundle_publication_transaction(
     evidence_revalidator: Callable[[str], None] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     producer_multi_episode_publication: bool = False,
-    lineage_precommit: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    lineage_owner: object | None = None,
 ) -> NativeProducerBundleTransactionResult:
     """Evaluate imported material and atomically publish the valid native subset.
 
@@ -500,12 +563,7 @@ def run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_evidence_revalidator_invalid")
     if prepared_observer is not None and not callable(prepared_observer):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_prepared_observer_invalid")
-    if type(producer_multi_episode_publication) is not bool:
-        raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
-    if producer_multi_episode_publication != (lineage_precommit is not None) or (
-        lineage_precommit is not None and not callable(lineage_precommit)
-    ):
-        raise NativeProducerBundleTransactionError("producer_bundle_transaction_multi_episode_configuration_invalid")
+    _validate_lineage_owner(producer_multi_episode_publication, lineage_owner)
     if python_handoff_sha256 is not None and native_execution_receipt_sha256 is None:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_execution_link_missing"
@@ -531,7 +589,7 @@ def run_native_producer_bundle_publication_transaction(
                "evidence_revalidator": evidence_revalidator,
                "prepared_observer": prepared_observer,
                "producer_multi_episode_publication": producer_multi_episode_publication,
-               "lineage_precommit": lineage_precommit}
+               "lineage_owner": lineage_owner}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -592,8 +650,9 @@ def _run_native_producer_bundle_publication_transaction(
     evidence_revalidator: Callable[[str], None] | None = None,
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     producer_multi_episode_publication: bool = False,
-    lineage_precommit: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    lineage_owner: object | None = None,
 ) -> NativeProducerBundleTransactionResult:
+    _validate_lineage_owner(producer_multi_episode_publication, lineage_owner)
     checkpoint("producer_preparation")
     if evidence_revalidator is not None:
         checkpoint.observe_checkpoint_before_evidence("producer_preparation")
@@ -796,7 +855,13 @@ def _run_native_producer_bundle_publication_transaction(
         code = getattr(exc, "code", "producer_bundle_transaction_preflight_failed")
         raise NativeProducerBundleTransactionError(code) from exc
     try:
-        _ensure_initial_population_window(base_state, _records_from_archive(base_archive), strategy)
+        if lineage_owner is None:
+            _ensure_initial_population_window(base_state, _records_from_archive(base_archive), strategy)
+        else:
+            prior_events = _lineage_call(lineage_owner, "validate_before", journal, base_archive, base_state_bytes, strategy,
+                                         admission_plan=admission_plan)
+            _ensure_append_population_window(base_state, _records_from_archive(base_archive), strategy,
+                                             prior_events=prior_events)
         strategy._validate_candidate_integrity_state(base_state)
         strategy._active(dict(base_state))
     except NativeProducerBundleTransactionError:
@@ -809,6 +874,8 @@ def _run_native_producer_bundle_publication_transaction(
     evaluations: list[NativeDraftEvaluationResult] = []
     artifacts: list[ProducerBundlePublicationArtifact] = []
     rejected: list[str] = []
+    if lineage_owner is not None:
+        _lineage_call(lineage_owner, "retain_before", journal, base_archive, base_state_bytes)
     try:
         checkpoint("producer_prepared_intent")
         if python_handoff is not None:
@@ -844,6 +911,8 @@ def _run_native_producer_bundle_publication_transaction(
             root, journal, preflight=preflight, checkpoint=checkpoint,
         )
         if terminal is not None:
+            if lineage_owner is not None:
+                _lineage_call(lineage_owner, "retain_terminal", terminal, None)
             if evidence_revalidator is not None:
                 checkpoint.observe_cancellation_before_evidence("producer_terminal_replay")
                 evidence_revalidator("producer_terminal_replay")
@@ -932,6 +1001,8 @@ def _run_native_producer_bundle_publication_transaction(
                 revalidate("producer_all_rejected")
             elif strategy._cancelled():
                 raise SolveExecutionCancelled("producer_all_rejected")
+        if lineage_owner is not None:
+            _lineage_call(lineage_owner, "retain_terminal", terminal, None)
         return NativeProducerBundleTransactionResult(
             journal=journal, preflight=preflight, evaluations=tuple(evaluations),
             admitted_candidate_ids=(), rejected_candidate_ids=tuple(rejected), artifacts=(),
@@ -941,6 +1012,8 @@ def _run_native_producer_bundle_publication_transaction(
 
     state_after = derive_population_state_after(
         base_state, base_archive, artifacts, journal=journal, strategy=strategy,
+        lineage_owner=lineage_owner,
+        base_state_bytes=base_state_bytes if lineage_owner is not None else None,
     )
     try:
         checkpoint("producer_staging")
@@ -953,13 +1026,14 @@ def _run_native_producer_bundle_publication_transaction(
             root / "evolution" / "producer-batches" / journal_id / "journal.json",
         )
         if producer_multi_episode_publication:
-            # Caller-owned lineage CAS is acknowledged only after durable immutable stage
-            # evidence, before the old commit lock/unknown marker.  This explicit seam does
-            # not relax the initial-only population gate or the legacy recovery contract.
-            assert lineage_precommit is not None
-            lineage_precommit(staged)
+            _lineage_call(lineage_owner, "retain_staged", staged, manifest)
         checkpoint("producer_commit")
-        published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint)
+        if lineage_owner is None:
+            published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint)
+        else:
+            published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint,
+                                                            lineage_owner=lineage_owner)
+            _lineage_call(lineage_owner, "retain_terminal", published, manifest)
         _verify_python_handoff_link(
             root,
             journal_id=journal_id,
