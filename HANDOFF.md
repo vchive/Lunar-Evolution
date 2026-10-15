@@ -34,8 +34,15 @@ fixture，121 项通过；它没有冒称修复产品竞态。三条来源不能
 
 最终整合冻结 `9d66b2382e85392bc2c134edff998899473e1f84` / tree
 `89aed1b7e65ccc2304e9d8bec69b81fd37ec95ef` 已包含全部产品/测试改动，并保留新
-fixed projection 的 mode/plan fingerprint 参数。5090gpu 正在新 own-editable checkout
-一次运行 265 个不同 cases（78/85/73/29）；最终 XML/exit/source 审查未完成前不写通过。
+fixed projection 的 mode/plan fingerprint 参数。5090gpu 新 own-editable checkout
+一次完成 265 个不同 cases（78/85/73/29），全部通过、零 failure/error/skip；17 个
+collection/install/test/static exits 全为零，2,042 tracked source files 前后相同。
+原始 XML/exit/own-editable/Git source 已独立核验，root 重跑独立审计通过；原始归档在
+ignored `p1-final-integrated-linux-9d66b23-20261016/`。归档 SHA256
+`6c39bc08119945703cdf7f3a0f8b45bba71707743c6a2cc2e7b0730c1ca10f5b`。
+另一次原 runner 全量 collection 只收集 16,989 节点、额外执行 0 case；六普通分片与
+三 heavy 节点精确互斥覆盖，inventory SHA256
+`380f69413192540e3c4056f5e62830f937e74ff0098d3bbc9a9cb6d65919267d`。
 CI focused gates 为 preparation/policy 189 项和 selected service/wait 38 项。
 后续 docs/annotation 收尾不改变该冻结的产品和测试 bytes。
 

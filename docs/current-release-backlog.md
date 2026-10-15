@@ -1,11 +1,11 @@
-# Current release backlog — 2026-10-15
+# Current release backlog — 2026-10-16
 
 本文按**已合入 main、当前批次待验收、真实运行时待验收、明确后置**四种状态记录工作。
 本地通过、最终来源 CI、独立来源审计、合入和真实 campaign 验收分别记录，不能互相替代。
 
 ## 当前状态与本轮出口
 
-2026-10-15 最新检查点：main 仍为下面的 PR99 基线。P0 当前出口是 PR103
+2026-10-16 最新检查点：main 仍为下面的 PR99 基线。P0 当前出口是 PR103
 `935ab57c36bf05dc2f49a4a3c0e40167ebaa7adb` 的
 [33-job CI](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)，
 采用六个普通文件分片和三个独立 mixed 用例，尚未完整验收。下文 `9203ef1` 的
@@ -19,13 +19,17 @@ publication transaction。两处测试夹具修正 `2576d2b` 的独立 121-case 
 路径的 episode 终态 CAS 竞态由 `27929e7`/`1603330` 独立修复，最终 16 项测试通过。
 持久化 pre-wave policy 的 `399958c` 来源 402 项回归通过。上述改动已整合到草稿
 [PR108](https://github.com/vchive/Lunar-Evolution/pull/108)，冻结 `9d66b23` 的 265 项
-Linux 针对性回归仍在运行；不能将各来源计数相加。这些后继还没有合入 main，公共
+Linux 针对性回归全部通过、零 failure/error/skip；原始证据、own-editable 来源和全部
+2,042 Git blobs 独立审查通过。全量 16,989 仅作 collection，额外执行 0 case，不能将
+各来源计数相加。这些后继还没有合入 main，公共
 native BRS 仍关闭，`production_admission=false`。
 
 当前已确认的 main 基线为 `0cb49abb146d91cb59b71de45d01e16217ebed8d`（PR99）。
 单 child 的原 controller → owner/CAS → gateway → claim/running → scheduler →
 admission/publication → receipt/verifier → 只读恢复已完成本地 fixture 验收并合入。
 默认 staging-only、生产 CLI native 拒绝和 `production_admission=false` 保留。
+
+### 历史过程（按原来源保留）
 
 PR103 `9203ef1` 的 [CI 38688233723](https://github.com/vchive/Lunar-Evolution/actions/runs/38688233723)
 最终为 **21 success、3 current-5 cancelled，NOT_ACCEPTED**。三份取消产物缺少最终
@@ -73,9 +77,9 @@ lineage/import-trap fixture、短 TMPDIR 和完整历史对象的修复已整合
 P0。新整合来源仍需 focused gate、完整六分片、三版正式 CI 和独立审计。
 各切片范围与限制见 HANDOFF 和 Feature157/160/191 validation。
 
-最终 PR103 当前提交为 `9203ef1f0c3b5dd69e09c8cdb79b92c5af5e1e76`，
+历史 PR103 来源 `9203ef1f0c3b5dd69e09c8cdb79b92c5af5e1e76` 的
 [官方 CI 38688233723](https://github.com/vchive/Lunar-Evolution/actions/runs/38688233723)
-尚待完整结果与独立审计。该提交 installed Linux focused 为 360 cases：354 pass、
+最终为 21 success / 3 cancelled，未获完整接受。该提交 installed Linux focused 为 360 cases：354 pass、
 6 个原架构 skips、零 failure/error；XML/install/source 与全仓静态检查已独立核对。
 新的服务器六分片完整收集 16,503 cases，精确互斥覆盖，仍在运行。
 较早 `bd902c9` 的 shard2 原始 XML 已确认唯一失败为 deadline 并发 fixture 读到
@@ -89,7 +93,7 @@ P0。新整合来源仍需 focused gate、完整六分片、三版正式 CI 和�
 | --- | --- | --- |
 | PR100/PR103 连续发布与历史恢复 | append lineage、原 owner/CAS、独立 held pins、fresh dispatch lease、ready capsule、历史只读 inspection 已实现；三轮 DRS 已有本地验收，最终集成候选集中在 PR103。 | PR103 最终 head 全部 CI jobs 完成，原始 log/ZIP/JUnit/inventory 与 checkout/source/tree/import 独立一致；合入 main。 |
 | Known rejection 原始恢复验收 | 原 owner、T4/T5、连续 reconcile 与 RPP/PRP/RRR 全部通过；mixed 原 XML/SQLite/source 独立审查通过，证据边界详见 HANDOFF。 | 本地出口已关闭；最终集成来源仍须 CI/审计和合入，不能将冻结来源结果直接改称新 parser 候选验收。 |
-| PR103 恢复批次最终集成发布 | 统一候选包含 known rejection、BRS partial-wave 修复、parser 及 BRS handoff/service ancestry；`9203ef1` 官方21 success/3 cancelled，整轮未获接受。正在拆分同文件的三个重用例，保留六个普通分片及全部 inventory。 | 修复后的最终实际推送 head 通过 focused/static checks、完整 CI、raw/source/tree 独立审计，再合入 main。 |
+| PR103 恢复批次最终集成发布 | 当前 `935ab57` 已拆分同文件三个重用例，保留六个普通分片及全部 inventory；本地 macOS/Linux 同一 279-case focused 各自通过。33-job 官方 CI 仍待完成；旧 `9203ef1` 的取消结果保持未接受。 | 当前实际推送 head 通过完整 CI、raw/source/tree 独立审计，再合入 main。 |
 | 发布文档与证据状态 | GitHub README、台账和对应 SDD 按代码与验收区分状态。 | 用最终实际结果更新状态，链接可用；不把 partial log、不同 source 的局部成功或 skipped Linux gate 当作接受。 |
 
 Known rejection 复用原评测证据结算失败结果；拒绝与进程故障分别处理，不生成官方成功。

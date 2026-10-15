@@ -283,3 +283,40 @@ validation. Final-source CI remains separate.
 PB-03c closes original policy persistence only. Online owner transaction/mailbox
 composition, staged/terminal lineage, rejection C1/P/C2, reconcile, serial successor
 and policy/memory composition remain open; public native BRS remains closed.
+
+## Final integrated Linux checkpoint and wait acceptance
+
+Frozen product/test source
+`9d66b2382e85392bc2c134edff998899473e1f84`, tree
+`89aed1b7e65ccc2304e9d8bec69b81fd37ec95ef`, combines preparation, checkpoint
+kernel/owner, persisted original policy, the actual selected-owner terminal CAS
+race fix and the two inert fixture corrections. **265 exact distinct cases pass**
+with zero failures/errors/skips, in disjoint groups 78/85/73/29. JUnit group times
+are 399.642/951.010/1476.810/2.204 seconds. All 17 collection/install/test/static
+exits are zero; the independent own-editable Python 3.12 Linux checkout has no
+`PYTHONPATH` during execution. All 2,042 tracked files match immutable Git blob
+size/SHA256 and remain unchanged before/after execution and later collection.
+
+Raw evidence and the independent review are retained at ignored
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/reports/p1-final-integrated-linux-9d66b23-20261016/`.
+Root reran `independent-audit.py` successfully. Transport archive SHA256:
+`6c39bc08119945703cdf7f3a0f8b45bba71707743c6a2cc2e7b0730c1ca10f5b`.
+This is a single integrated-source acceptance; earlier 450/402/121/174/16 source
+results are retained separately and are not added to the 265 count.
+
+The original runner `_collect` was then called once in that same checkout for
+**collection only**, executing zero additional cases. It retained 16,989 nodes,
+SHA256 `380f69413192540e3c4056f5e62830f937e74ff0098d3bbc9a9cb6d65919267d`.
+Six ordinary partition sizes 3190/2495/3097/2286/3255/2663 plus three isolated
+heavy nodes form the exact disjoint full inventory. The 265 tested nodes and
+189/38 workflow gates are exact subsets. The original collector internally sets
+its child `PYTHONPATH` to this checkout's `src`; that collection behavior does
+not change the separate unset execution environment or represent full-suite
+execution. Workflow topology and 56 focused XML annotation paths are reviewed
+separately from product/test runtime qualification.
+
+Later documentation and annotation changes keep `src/tests/tools` byte-identical
+to the frozen source. Final-source official CI, upstream integration and main
+merge remain open. Only local inert/provider-free fixtures were used; no online
+publication, production admission, real solver/runtime/campaign or remote
+evaluator acceptance follows from this result.
