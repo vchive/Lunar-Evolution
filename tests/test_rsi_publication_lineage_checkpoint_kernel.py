@@ -2,19 +2,29 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import socket
 import subprocess
+from pathlib import Path
 
 import pytest
 from test_rsi_publication_lineage_owner import _captured_owner
 
+from lunar_evolution import rsi_publication_lineage as lineage
 from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.rsi_publication_lineage import (
     _publication_lineage_checkpoint_delta,
     _validate_publication_lineage_checkpoint_readback,
 )
+
+_REBOUND_HELPER_CALLS = []
+
+
+def _unexpected_rebound_helper(*_args, **_kwargs):
+    _REBOUND_HELPER_CALLS.append(True)
+    raise AssertionError("rebound checkpoint helper must not execute")
 
 
 @pytest.fixture(autouse=True)
@@ -218,5 +228,39 @@ def test_post_readback_owner_gate_failure_cannot_acknowledge_durable_delta(kerne
         assert value.ledger.controller_checkpoint(owner._run_id) == (
             committed[0], before[3] | {"producer_publication_lineage": wire},
         )
+
+    _captured_owner(kernel_workspace, monkeypatch, operation)
+
+
+@pytest.mark.parametrize("helper", [
+    "_publication_lineage_checkpoint_delta", "_validate_publication_lineage_checkpoint_readback",
+])
+def test_live_helper_rebind_refuses_original_owner_before_helper_or_cas(kernel_workspace, monkeypatch, helper):
+    def operation(owner, _controller, value):
+        before = _capture(owner)
+        original_policy = owner._policy
+        original_source = hashlib.sha256(Path(lineage.__file__).read_bytes()).hexdigest()
+        with value.ledger.read_only_observations():
+            history = value.ledger.controller_checkpoint_history(owner._run_id)
+        writes = []
+
+        def forbidden_write(*_args, **_kwargs):
+            writes.append(True)
+            pytest.fail("live helper drift reached checkpoint CAS")
+
+        _REBOUND_HELPER_CALLS.clear()
+        wire = owner._wire(owner._context.state)
+        monkeypatch.setattr(value.ledger, "write_controller_checkpoint", forbidden_write)
+        with monkeypatch.context() as changed:
+            changed.setattr(lineage, helper, _unexpected_rebound_helper)
+            with pytest.raises(RSILearningError, match="^rsi_publication_lineage_policy_drift$"):
+                owner._ack(wire)
+        assert _REBOUND_HELPER_CALLS == [] and writes == []
+        assert owner._context is before[0] and owner._head == before[1] and owner._payload == before[2]
+        assert owner._context.state == before[3] and owner._policy == original_policy
+        assert owner._poisoned is False and owner._pending_wire is None
+        assert hashlib.sha256(Path(lineage.__file__).read_bytes()).hexdigest() == original_source
+        with value.ledger.read_only_observations():
+            assert value.ledger.controller_checkpoint_history(owner._run_id) == history
 
     _captured_owner(kernel_workspace, monkeypatch, operation)

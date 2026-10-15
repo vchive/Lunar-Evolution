@@ -163,6 +163,8 @@ def multi_episode_publication_policy(controller: Any) -> dict[str, Any] | None:
                              "retain_staged", "verify_precommit", "retain_terminal", "_check_owner", "_ack")
             },
             "owner_cas": component_fingerprint(acknowledge_publication_lineage_for_active_flow),
+            "checkpoint_delta": component_fingerprint(_publication_lineage_checkpoint_delta),
+            "checkpoint_readback": component_fingerprint(_validate_publication_lineage_checkpoint_readback),
             "inspection": component_fingerprint(RSIPublicationLineageInspection, config={}),
             "module_sources": {
                 name: _sha(_files.read_regular_file(Path(__file__).parent / name, 1024 * 1024))
