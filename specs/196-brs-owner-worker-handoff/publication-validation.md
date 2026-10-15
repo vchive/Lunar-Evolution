@@ -297,7 +297,7 @@ exits are zero; the independent own-editable Python 3.12 Linux checkout has no
 `PYTHONPATH` during execution. All 2,042 tracked files match immutable Git blob
 size/SHA256 and remain unchanged before/after execution and later collection.
 
-Raw evidence and the stdlib-only independent review are retained at ignored
+Raw evidence and the independent review are retained at ignored
 `/Users/liminghan/Documents/lunar_agent/.lunar-evolution/reports/p1-final-integrated-linux-9d66b23-20261016/`.
 Root reran `independent-audit.py` successfully. Transport archive SHA256:
 `6c39bc08119945703cdf7f3a0f8b45bba71707743c6a2cc2e7b0730c1ca10f5b`.
