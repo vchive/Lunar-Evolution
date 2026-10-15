@@ -17,8 +17,15 @@
   and enforce owner CAS/publication semantics there. Source/configuration hooks run
   before the short observation lock; the channel enforces selected episode, exact ready
   digest, duplicate refusal, detached ACK state and close/error wakeups.
-- [ ] Keep owner CAS, checkpoint save, publication-lineage mutation, C1/P/C2 and
-  head advancement on the owner thread; prohibit worker parent/lineage ownership.
+- [x] BRS-2c: persist one successful selected-service result through the private
+  owner-only checkpoint settlement seam, with exact return receipt/ACK/result pins,
+  original M0/budget/source gates, captured-head CAS and complete readback. Implemented
+  in this branch; 360 final-source focused cases and independent raw/source/static
+  acceptance passed. Final CI/integration is tracked separately below. No public
+  dispatch, publication, sibling transition or new durable schema is included.
+- [ ] Keep publication-lineage mutation, C1/P/C2 and publication head advancement
+  on the owner thread; prohibit worker parent/lineage ownership. The private result
+  checkpoint sub-slice above does not close this publication obligation.
 - [ ] Add ordinal serial transition and partial-wave recovery without dropping
   completed obligations or refreshing sibling requests/budgets.
 - [x] Add the focused matrix in `validation.md`; this slice locally exercises the

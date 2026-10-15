@@ -8,8 +8,9 @@ implemented and tested. A private controller owner-service seam now constructs p
 from an actual BRS checkpoint, binds one selected handoff, rechecks worker identity
 and ready messages, and closes the channel before executor shutdown. It is exercised
 only against complete owner-held BRS projections; legacy DRS-shaped state is refused.
-Public native BRS dispatch remains refused, and selected-child staging/dispatch plus
-owner-thread settlement/publication remain unimplemented;
+A private owner-only checkpoint settlement seam now records the exact returned
+selected execution through the existing CAS and full readback. Public native BRS,
+selected-child producer staging, sibling transition and publication remain open;
 no existing provider-free DRS/BRS behavior is changed.
 
 The first implementation accepts a fresh BRS wave with `max_workers=1`. The parent
@@ -112,6 +113,42 @@ failure retains its durable reference and leaves the old state stale; recovery m
 reload and revalidate that obligation. A second Python admission child must have its
 own original intent, journal, claim, attempt and handoff; the first child's values
 cannot be copied or relaxed to satisfy uniqueness.
+
+## BRS-2c: private owner checkpoint settlement
+
+This bounded private slice records one successfully returned selected execution in the
+controller recovery checkpoint. It does not publish a candidate, promote memory,
+select a sibling, reopen the channel, or enable the public native BRS driver.
+
+The owner may call the private settlement seam only after the selected service and
+executor shutdown have succeeded. An invocation-scoped in-memory return receipt
+binds the original returned object and canonical execution bytes, handoff, retained
+ACK and durable result to that service. A caller-created equivalent result is not
+an execution grant. The receipt is neither a new durable schema nor recovery
+permission and is consumed at most once.
+
+Before settlement the owner rechecks its run lock/thread, exact controller/ledger/
+workspace/sidecar, original handoff, M0, request, source/configuration, planned
+reservation, retained ACK, episode/result and captured checkpoint. Source and
+configuration hooks remain outside the short observation mutex; the original run
+ownership lease stays held. Only the selected execution and evaluated/current
+checkpoint fields may advance. Sibling requests and budgets stay original.
+
+Settlement uses the existing `_save_flow` CAS against the captured head, then reads
+back the complete exact checkpoint. Only successful readback advances the wave's
+in-memory head/payload and consumes the return receipt. A CAS failure or ambiguous
+write/readback keeps the old captured head stale, preserves any durable obligation,
+and grants no retry, latest-head adoption, repair, publication or sibling dispatch.
+The settlement seam itself does not resolve an unknown durable outcome.
+
+The original state object and actual owner object identities are rechecked against
+the frozen handoff before and after save/source callbacks. Unknown rollback restores
+only the captured state object and original budget/head; a foreign replacement state
+is not cleared or adopted. The execution parser accepts only known exact DTOs,
+exact attribute dictionaries/string keys and recursive exact containers/primitives.
+Type dispatch uses identity comparisons, and nested fields are read only after
+safe detachment; worker-held mapping, key, serializer, equality and metaclass
+callbacks cannot run before rejection.
 
 ## Non-goals
 

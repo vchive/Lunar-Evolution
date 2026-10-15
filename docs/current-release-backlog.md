@@ -18,7 +18,8 @@ PR100 原 head `c73650a` 的
 不能只修 fixture 后等待同一超时拓扑；正在按原确定性算法拆为六分片，保留全量 inventory。
 fixture 修复已推送原分支，
 [新 CI 38651297182](https://github.com/vchive/Lunar-Evolution/actions/runs/38651297182)
-已确认排队，最终 CI/独审和合入仍开放。这一批实现同 workspace 的连续 DRS
+当时已确认排队，原始状态按来源保留；该历史 run 不再是当前合入出口。
+这一批实现同 workspace 的连续 DRS
 发布、独立 ready capsule 和历史只读恢复；三轮不同 child、练习记忆晋级、目标重试已有
 本地验收。较早 head 的成功与失败按各自来源保留，不能代替当前最终来源。PR103 已将
 该恢复批次与 parser、六分片 CI 及 BRS handoff/service ancestry 整合，并以 `main` 为
@@ -48,6 +49,16 @@ lineage/import-trap fixture、短 TMPDIR 和完整历史对象的修复已整合
 P0。新整合来源仍需 focused gate、完整六分片、三版正式 CI 和独立审计。
 各切片范围与限制见 HANDOFF 和 Feature157/160/191 validation。
 
+最终 PR103 当前提交为 `9203ef1f0c3b5dd69e09c8cdb79b92c5af5e1e76`，
+[官方 CI 38688233723](https://github.com/vchive/Lunar-Evolution/actions/runs/38688233723)
+尚待完整结果与独立审计。该提交 installed Linux focused 为 360 cases：354 pass、
+6 个原架构 skips、零 failure/error；XML/install/source 与全仓静态检查已独立核对。
+新的服务器六分片完整收集 16,503 cases，精确互斥覆盖，仍在运行。
+较早 `bd902c9` 的 shard2 原始 XML 已确认唯一失败为 deadline 并发 fixture 读到
+尚未完成的 writer 记录并按 `path_invalid` 拒绝；最终 fixture 对完整记录锁争用和
+零字节/八字节记录拒绝分别同步验证，生产预算与拒绝逻辑未改。旧整轮仍保留原结果，
+不能用修复后的 focused pass 改写。main 仍为上述 PR99 基线。
+
 ## P0：当前 DRS 批次
 
 | 剩余工作 | 已有实现 / 本地证据 | 结束条件 |
@@ -65,8 +76,8 @@ C1/P/C2 不完整、missing、unknown、配置/来源漂移、取消或 deadline
 
 | 工作 | 当前边界 | 结束条件 |
 | --- | --- | --- |
-| BRS partial-wave durable resume | 已在 PR101 集成树接入 completed-obligation 与 pending-dispatch 分离、锁外 replay callback 和 exact identity/head 复核；347 个本地 cases、789 文件 source map、Ruff/compileall/diff-check 已通过。仍不授予 completed child 新 token，也不启用 native multi-child。 | 随 PR101 完成最终 integrated source/CI/audit 和合入；产品行为保持 provider-free。 |
-| Native 多 child BRS | provider-free BRS 和单 Python child ready/ack 已存在；PR102 提供 detached handoff/channel，PR104 私有 selected owner service 已通过 175 个 provider-free focused cases（104 existing + 13 ACK + 30 handoff + 28 service），含锁、预算、指纹、结果和 durable ACK 边界；公共 native BRS 仍未启用。 | 按 [Feature196](../specs/196-brs-owner-worker-handoff/spec.md) 接通 selected child staging/claim、原 owner/CAS、ready/ack、串行 publication 与完整中断验收；完成最终来源 CI 与独立审计。 |
+| BRS partial-wave durable resume | 已在 PR101 集成树接入 completed-obligation 与 pending-dispatch 分离、锁外 replay callback 和 exact identity/head 复核；347 个本地 cases、789 文件 source map、Ruff/compileall/diff-check 已通过。仍不授予 completed child 新 token，也不启用 native multi-child。 | 随 PR103 统一候选完成最终 integrated source/CI/audit 和合入；产品行为保持 provider-free。 |
+| Native 多 child BRS | provider-free BRS 和单 Python child ready/ack 已存在；PR102 提供 detached handoff/channel，PR104 私有 selected owner service 已通过 175 个 provider-free focused cases（104 existing + 13 ACK + 30 handoff + 28 service），含锁、预算、指纹、结果和 durable ACK 边界；本分支已新增私有 owner 对本次 service 返回结果的 checkpoint CAS/完整读回，最终 callback hardening 整合来源的 360 cases、全仓静态及独立 raw/source/install/exit 审计已通过，未进入 PR103/main。此切片不包含 publication 或 sibling transition；公共 native BRS 仍未启用。 | 按 [Feature196](../specs/196-brs-owner-worker-handoff/spec.md) 接通 selected child staging/claim、原 owner/CAS、ready/ack、串行 publication 与完整中断验收；完成最终来源 CI 与独立审计。 |
 | 真实 Python runtime | bounded source/build/runtime contracts 和原 executable owner 已存在；真实 source/toolchain/static image/sealed startup 未验收。 | 完成下表 G0–G3/F01–F05 的真实 bytes、构建 closure、startup/input/lifecycle 和 dedicated Linux no-skip evidence。 |
 | 本地 OpenEvolve/Shinka 与生产用 RSI CLI | adapter、bounded result exporter、native scheduler/claim/receipt mapper 和单 episode 组合已存在。当前 `rsi run` / `rsi resume` solver 选项仍是 `provider_free_fixture`。 | 至少一个实际 project profile/lifecycle 在 accepted runtime 下验收，opt-in CLI 消费原 request/memory/result/publication 证据，支持取消和只读恢复；不会落入 fixture gateway。 |
 

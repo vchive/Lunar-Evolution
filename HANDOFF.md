@@ -1,5 +1,44 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 私有 BRS owner checkpoint settlement（后继分支）
+
+本分支 `codex/brs-selected-owner-settlement` 从 PR103 最终候选 `9203ef1` 分出；
+新增 private `_python_admission_settle_selected_brs_execution`。只有原 selected
+service 及 executor shutdown 成功后才签发 in-memory return receipt，绑定 exact
+execution 对象/字节、原 handoff/owner/state、ACK、durable episode/result、M0 和预算。
+owner 使用原 `_save_flow` captured-head CAS 和完整 readback 登记 selected execution；
+成功前不推进 wave head，unknown/写后 drift 保留 durable obligation、恢复原 state
+对象/预算/旧 head，禁止 retry、latest-head adoption、repair 或 sibling dispatch。
+source/config hooks 和 save 均在短 observation mutex 外，run ownership 仍持有。
+
+首次 34-case 尝试因 runner 300s 超时只留 partial，不算接受。首个六路来源
+`132e530`/`7983f4d` 为 272 cases：269 pass、3 failures、零 errors/skips；两个预算
+fault 对 unlimited remaining=None 做减法，另一个预期错误码与原 checkpoint conflict
+契约不符。原失败保留，fixture 改用真实 budget consume，精确核原 conflict。
+独立审查还发现写后 actual owner/state 身份缺口，已补冻结 handoff 和原 state 引用。
+后续 `eb01d461`/`ea478ae` 六路 274 cases 全部通过，raw XML、exact inventory union、
+installed origins、source unchanged、退出链已审查。不能把它改称最终 hardening 验收。
+
+最后集中补 exact DTO 属性字典/keys、identity-only type dispatch 和 safe detachment
+顺序，防 worker-held callback 在拒绝前执行；相邻 flow payload/wave state 保持同一
+无 callback 契约。32 快速负例已通过；最终八路整合回归 **360 pass、零 failure/
+error/skip**（85 新模块 + 221 既有 BRS + 54 原 flow），最慢分组 244.25s。
+Ruff/compileall/diff-check、installed origins、源码冻结、8 exits 和 raw XML/inventory
+精确互斥并集均通过两次独立审查。最终 controller SHA `5f2d932b`、test SHA
+`00229c85`；inventory SHA `c84aa8e73886640ad9784e35b534d35bc85e427ad83d15f5aa92bf45fc0f1943`。
+原始报告 `final-eight-1rb__9zs` 在本机和服务器保留，root 独审 SHA
+`81eae45be2ee940124c06d8f405796176a4ef1ca1a333c409c8852850340b6f0`。
+只有本地私有 checkpoint 子项已关闭，最终 CI/集成与 PR 仍待处理。此切片没有接
+公共 native BRS、staging/publication、ordinal transition，
+也未增加 SQL/wire schema；`production_admission=false`，仅本地 inert/provider-free。
+
+P0 与该后继切片分离：PR103 head `9203ef1`、官方 run `38688233723`，main 仍为
+PR99 `0cb49ab`。final-head focused 360=354 pass/6原架构 skips，独立静态/source
+检查通过；服务器完整 16,503 cases 六分片及官方24-job最终审计尚待完成。
+旧 `bd902c9` shard2 原 traceback 已确认 deadline fixture 在不完整 writer 记录处
+按原 path_invalid gate 拒绝；原失败整轮保留。未运行真实模型/solver、WebAgent、
+远程 evaluator、公司平台或 CPython/toolchain target。
+
 ## 2026-10-15 deadline 并发 fixture 的确定性修复
 
 `bd902c9` 的整合 focused gate 已通过：238 cases = 232 pass、6 原架构 skips、

@@ -70,3 +70,65 @@ The focused tests are split so their exact counters remain auditable:
 The public `_drive_brs` entrance remains refusal-only and no native producer,
 sealed runtime, external worker, remote evaluator or production admission is enabled.
 The 175 local cases are focused seam evidence, not native BRS acceptance.
+
+## Private selected execution checkpoint settlement: validation scope
+
+BRS-2c adds a separate owner checkpoint boundary after the existing worker/result
+and channel completion boundary. Its new focused matrix must use the real selected
+service, original ready/ACK, durable episode/result, `_save_flow` CAS and readback
+on its successful path. Fault injection is reserved for refusal and interrupted
+write/readback paths; it cannot manufacture a successful owner grant.
+
+Required checks include original selected result persistence, owner thread and lock,
+foreign/changed return values, duplicate settlement, retained ACK/result/source/M0/
+budget drift, stale head, CAS and full readback failure. No sibling may launch or
+acquire a refreshed request/reservation. A durable write followed by uncertain
+readback remains retained with a stale owner head and no automatic retry. Existing
+service, ACK, handoff, admission and public native-refusal tests remain regression
+obligations. Final counters and source identity will be recorded after execution;
+this plan alone does not complete a test or runtime acceptance.
+
+
+### Settlement source-specific execution record
+
+All runs below use only installed local provider-free/inert fixtures. Original
+failures and interrupted attempts remain retained in separate ignored reports.
+Counters across different source hashes are not added into one acceptance claim.
+
+| Source / scope | Observed result | Boundary |
+| --- | --- | --- |
+| First 34-case attempt, 300s runner limit | partial; no complete final XML | Not acceptance or a proven product failure. |
+| `132e530` controller / `7983f4d` tests, six groups | 272 distinct: 269 pass, 3 failures, zero errors/skips | Two invalid `None -= 1` budget faults and one expected-code mismatch with the existing checkpoint conflict gate; original XML/source/exit evidence is retained. |
+| `eb01d461` controller / `ea478ae` tests, six groups | 274 distinct: 274 pass, zero failures/errors/skips | Real CAS/readback, post-save original owner/state identity, valid budget drift and exact conflict contract. Independent source/install/exit and inventory/JUnit disjoint-union audit passed. |
+| Final callback hardening quick scope | 32 pass, zero failures/errors/skips | Exact DTO attribute dictionaries/keys, colliding keys, metaclass type callbacks, flow payload and wave-state rejection; callbacks remain zero. This is a parser/refusal gate, not worker execution acceptance. |
+| Final integrated hardening scope | **360 pass; zero failures/errors/skips** | 85 settlement (53 service/CAS + 32 quick refusal), 221 existing BRS, 54 existing admission-flow. Eight exact node-hash groups; installed origins, source freeze, all exits and raw XML/inventory disjoint union independently audited. |
+
+The final code SHA256 is
+`5f2d932b21738b7d612da23292c6de2c8df0c52d655d21174b4364af1235da10`;
+the final settlement test SHA256 is
+`00229c85c1a277c4647454a3f7fe18c9f10f507076cea06c5a25543882c7171d`.
+The earlier 274 inventory SHA256 is
+`bdf14d90dbbe3ad7e166f068067b851b77bddf4b6cce0c81e18707cb88a5fc98`.
+Its raw XML/source/exit receipts are under `final-six-jxxylqq_`; they do not certify
+the later callback hardening. The original failed 272 run is `final-six-3mhbexg1`.
+
+The workflow adds a separate 85-case no-skip settlement gate on Python 3.11/3.12/3.13;
+the complete current suite still discovers the same module independently. A local
+focused pass will close only this private checkpoint sub-slice, not public native
+BRS, ordinal/publication recovery, real runtime/producer/CLI or production admission.
+Final-source CI and independent raw/source/tree review remain separate obligations.
+
+
+Final integrated run: `final-eight-1rb__9zs`, group counts
+`45/42/42/50/42/44/49/46`, longest group 244.25 seconds. Dynamic inventory SHA256
+`c84aa8e73886640ad9784e35b534d35bc85e427ad83d15f5aa92bf45fc0f1943`;
+runner result SHA256 `f78b87803ee6e28bd453ed789cf7ebcb3d71e415e1d55e4c873be4449624eebe`.
+Ruff over `src tests tools`, compileall and diff-check passed. Both the test owner's
+stdlib audit and a separately written root auditor checked actual raw XML, all eight
+exit records, exact disjoint inventory, original/actual source hashes, installed
+editable import receipts and static argv/cwd/logs. Root audit SHA256
+`81eae45be2ee940124c06d8f405796176a4ef1ca1a333c409c8852850340b6f0`.
+The root auditor does not import or execute the product. Raw evidence is retained
+on the server and copied into ignored local reports. Only documentation acceptance
+status was updated after the final freeze; controller, tests and workflow remained
+byte-identical to the accepted focused source. CI/integration remains pending.
