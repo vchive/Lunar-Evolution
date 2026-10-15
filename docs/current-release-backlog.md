@@ -5,6 +5,20 @@
 
 ## 当前状态与本轮出口
 
+2026-10-15 最新检查点：main 仍为下面的 PR99 基线。P0 当前出口是 PR103
+`935ab57c36bf05dc2f49a4a3c0e40167ebaa7adb` 的
+[33-job CI](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)，
+采用六个普通文件分片和三个独立 mixed 用例，尚未完整验收。下文 `9203ef1` 的
+24-job run 是保留的历史来源，不能作为当前合入出口。PR105–107 的旧 CI 已保留
+状态并取消；同步上游后必须验收实际最终来源，不能沿用已取消的结果。
+
+P1 后继已实现私有 producer prepublication stop、共用 checkpoint kernel，以及原 BRS
+owner 的首 ordinal before/prepared checkpoint；`e30f5f8` 的 installed Linux 回归为
+450 个不同 case 全部通过，原始证据仍单独核对。它们没有接通完整 owner publication
+transaction。两处测试夹具修正 `2576d2b` 的独立 121-case 回归通过，另有实际成功路径的
+episode 终态 CAS 竞态正在独立修复。持久化 pre-wave policy 也在独立来源回归；
+这些后继还没有合入 main，公共 native BRS 仍关闭，`production_admission=false`。
+
 当前已确认的 main 基线为 `0cb49abb146d91cb59b71de45d01e16217ebed8d`（PR99）。
 单 child 的原 controller → owner/CAS → gateway → claim/running → scheduler →
 admission/publication → receipt/verifier → 只读恢复已完成本地 fixture 验收并合入。
