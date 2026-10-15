@@ -232,6 +232,13 @@ def test_malformed_primitive_envelope_normalizes_existing_runtime_error(prepared
         _request(prepared)
 
 
+def test_rehashed_receipt_with_non_string_cleanup_refuses_with_fixed_code(prepared):
+    malformed = replace(prepared.preparation.run.receipt, cleanup_status=[], receipt_sha256=None)
+    object.__setattr__(prepared.preparation.run, "receipt", malformed)
+    with pytest.raises(RSILearningError, match="state_invalid"):
+        _request(prepared)
+
+
 def test_dto_subclass_refuses_before_overridden_serializer(prepared):
     class ForeignPlan(NativeRSIExecutionPlan):
         def to_dict(self, **_kwargs):

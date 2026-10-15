@@ -141,6 +141,7 @@ def _request_from_native_preparation(
             or parsed_receipt.status != "completed" or type(parsed_receipt.exit_code) is not int
             or parsed_receipt.exit_code != 0 or type(parsed_receipt.request_count) is not int
             or parsed_receipt.gate_released is not True
+            or type(parsed_receipt.cleanup_status) is not str
             or parsed_receipt.cleanup_status not in {"cleaned", "already_exited"}
             or output_values["publication_eligible"] is not True
             or output_values["request_coverage"] != "brokered_requests_only" or retained.state != "prepared"
