@@ -262,6 +262,16 @@ the script is `independent-review/audit.py`, SHA256
 `e043d238659d304883bf91d0b1d9b2672610d71ffedac03a70083d28b2dae1c5`.
 Its verdict covers only frozen `399958c`, not the separate terminal race fix.
 
+A durable ignored copy is retained in the main checkout at
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/reports/brs-prewave-policy-399958c-20261016/`.
+It contains all 61 original evidence files, the complete 2,038-file immutable
+`source/` snapshot, and the four follow-up SDD documents at `40ceabf`. Its
+`copy-manifest.json` covers 2,104 payload files with verified SHA256/mode/size;
+manifest SHA256 is
+`4a618a89f3c574911153c075086158cc5863fa03f3f78b596deed2423a58831a`.
+Original argv and historical paths are preserved unchanged. The snapshot remains
+available without the temporary worktree; caches and runtime fixtures are excluded.
+
 Separate independent code review of `399958c` passed without blockers. The earlier
 21-case development evidence stays in `development-1/` and is not added to this
 402 count. The separate selected-owner episode-settlement race fix is absent from
