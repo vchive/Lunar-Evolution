@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from dataclasses import fields, replace
 from pathlib import Path
 from threading import get_ident
@@ -172,7 +173,27 @@ def _validate_persisted_policy(
 
 def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
-    from . import evolution
+    from . import (
+        automatic_solve_lifecycle,
+        evolution,
+        native_trusted_attempt,
+        native_trusted_capture,
+        native_trusted_cleanup,
+        native_trusted_output,
+        native_trusted_receipt,
+        native_trusted_scheduler,
+        native_trusted_streams,
+        producer_bundle_admission,
+        producer_bundle_handoff,
+        producer_bundle_population,
+        producer_handoff,
+        producer_process,
+        producer_request_transport,
+        python_producer_admission_handoff,
+        rsi_python_brs_publication_inputs,
+        rsi_python_brs_publication_mailbox,
+        rsi_python_brs_publication_recovery,
+    )
     from . import rsi_python_scheduler_inputs as scheduler_inputs
     from .algorithm import (
         AlgorithmProblemContract,
@@ -194,6 +215,47 @@ def _policy() -> dict[str, Any]:
     )
     from .producer_bundle_transaction import _records_from_archive
     from .rsi_python_scheduler_inputs import _context
+
+    reader = rsi_python_brs_publication_recovery
+    aliases = (
+        (reader._context, scheduler_inputs._context),
+        (reader._request, rsi_python_brs_publication_mailbox._request),
+        (reader._request_from_native_preparation, rsi_python_brs_publication_inputs._request_from_native_preparation),
+        (reader.recover_native_trusted_producer, native_trusted_scheduler.recover_native_trusted_producer),
+        (reader.read_python_producer_admission_handoff_pinned,
+         python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
+        (reader._prepublication_control_pin, native_trusted_scheduler._prepublication_control_pin),
+        (reader.SolveExecutionControl, automatic_solve_lifecycle.SolveExecutionControl),
+        (native_trusted_scheduler.recover_native_trusted_execution_receipt,
+         native_trusted_receipt.recover_native_trusted_execution_receipt),
+        (native_trusted_scheduler.prepare_native_trusted_output, native_trusted_output.prepare_native_trusted_output),
+        (native_trusted_output.recover_native_trusted_execution_receipt,
+         native_trusted_receipt.recover_native_trusted_execution_receipt),
+        (native_trusted_output.recover_native_trusted_output_capture,
+         native_trusted_capture.recover_native_trusted_output_capture),
+        (native_trusted_output.recover_native_trusted_attempt, native_trusted_attempt.recover_native_trusted_attempt),
+        (native_trusted_receipt.recover_native_trusted_attempt, native_trusted_attempt.recover_native_trusted_attempt),
+        (native_trusted_receipt.recover_native_trusted_stream_capture,
+         native_trusted_streams.recover_native_trusted_stream_capture),
+        (native_trusted_receipt.recover_native_trusted_cleanup, native_trusted_cleanup.recover_native_trusted_cleanup),
+        (native_trusted_receipt.recover_native_trusted_output_capture,
+         native_trusted_capture.recover_native_trusted_output_capture),
+        (native_trusted_output.prepare_producer_bundle_manifest, producer_bundle_handoff.prepare_producer_bundle_manifest),
+        (native_trusted_output.prepare_producer_bundle_drafts, producer_bundle_population.prepare_producer_bundle_drafts),
+        (native_trusted_output.build_producer_bundle_admission_plan,
+         producer_bundle_admission.build_producer_bundle_admission_plan),
+        (native_trusted_output._read_envelope, producer_process._read_envelope),
+        (native_trusted_output.parse_producer_envelope, producer_handoff.parse_producer_envelope),
+        (native_trusted_capture.read_host_request_journal, producer_request_transport.read_host_request_journal),
+    )
+    if any(actual is not canonical for actual, canonical in aliases):
+        _fail("native_reader_binding_drift")
+    journal_defaults = producer_request_transport.read_host_request_journal.__kwdefaults__
+    if (type(journal_defaults) is not dict or any(type(key) is not str for key in journal_defaults)
+            or set(journal_defaults) != {"deadline", "monotonic", "expected_file_identity"}
+            or journal_defaults["deadline"] is not None or journal_defaults["expected_file_identity"] is not None
+            or journal_defaults["monotonic"] is not time.monotonic):
+        _fail("native_reader_binding_drift")
 
     return {
         "protocol": _PROTOCOL, "mode": "brs", "max_workers": 1,
@@ -219,7 +281,71 @@ def _policy() -> dict[str, Any]:
                                             "rsi_producer_staging_capsule.py", "producer_bundle_recovery.py",
                                             "producer_bundle_staging.py", "evolution.py", "algorithm.py",
                                             "candidate_bundle.py", "producer_bundle_transaction.py",
-                                            "rsi_python_scheduler_inputs.py")},
+                                            "rsi_python_scheduler_inputs.py",
+                                            "rsi_python_brs_publication_recovery.py",
+                                            "rsi_python_brs_publication_inputs.py",
+                                            "rsi_python_brs_publication_mailbox.py", "rsi_native_plan.py",
+                                            "rsi_gateway.py", "rsi_python_brs_admission.py",
+                                            "automatic_solve_lifecycle.py", "native_trusted_scheduler.py",
+                                            "native_trusted_output.py", "native_trusted_receipt.py",
+                                            "native_trusted_capture.py", "native_trusted_attempt.py",
+                                            "native_trusted_streams.py", "native_trusted_cleanup.py",
+                                            "_benchmark_files.py", "bundle_evolution.py",
+                                            "native_bootstrap.py", "producer_bootstrap.py",
+                                            "producer_launcher.py", "producer_process.py",
+                                            "producer_bundle_handoff.py", "producer_bundle_population.py",
+                                            "producer_handoff.py", "producer_request_transport.py",
+                                            "python_producer_admission_handoff.py")},
+            "retained_native_reader": {
+                "methods": {name: component_fingerprint(getattr(
+                    rsi_python_brs_publication_recovery._BRSRetainedNativePreparationReader, name))
+                    for name in ("__init__", "_scope", "_check", "_project", "recover")},
+                "helpers": {name: component_fingerprint(getattr(rsi_python_brs_publication_recovery, name))
+                    for name in ("_fail", "_copy", "_comparison_preparation", "_arguments", "_dto_policy", "_control_pin")},
+                "dto_types": reader._dto_policy(),
+                "projector": component_fingerprint(rsi_python_brs_publication_inputs._request_from_native_preparation),
+                "projector_binding": component_fingerprint(
+                    rsi_python_brs_publication_recovery._request_from_native_preparation),
+                "context_binding": component_fingerprint(rsi_python_brs_publication_recovery._context),
+                "request_binding": component_fingerprint(rsi_python_brs_publication_recovery._request),
+                "control_pin": component_fingerprint(rsi_python_brs_publication_recovery._prepublication_control_pin),
+                "control_check": component_fingerprint(rsi_python_brs_publication_recovery.SolveExecutionControl.check),
+                "control_cancelled": component_fingerprint(rsi_python_brs_publication_recovery.SolveExecutionControl.is_cancelled),
+                "control_clock": component_fingerprint(rsi_python_brs_publication_recovery.SolveExecutionControl._now),
+                "control_finite_time": component_fingerprint(automatic_solve_lifecycle._finite_time),
+                "control_stage_name": component_fingerprint(automatic_solve_lifecycle._stage_name),
+                "channel": component_fingerprint(rsi_python_brs_publication_recovery.BRSAdmissionChannel, config={}),
+                "recovery_binding": component_fingerprint(
+                    rsi_python_brs_publication_recovery.recover_native_trusted_producer),
+                "handoff_binding": component_fingerprint(
+                    rsi_python_brs_publication_recovery.read_python_producer_admission_handoff_pinned),
+                "native_recovery": component_fingerprint(native_trusted_scheduler.recover_native_trusted_producer),
+                "native_receipt_binding": component_fingerprint(
+                    native_trusted_scheduler.recover_native_trusted_execution_receipt),
+                "native_output_binding": component_fingerprint(native_trusted_scheduler.prepare_native_trusted_output),
+                "output": component_fingerprint(native_trusted_output.prepare_native_trusted_output),
+                "output_receipt_binding": component_fingerprint(
+                    native_trusted_output.recover_native_trusted_execution_receipt),
+                "output_capture_binding": component_fingerprint(
+                    native_trusted_output.recover_native_trusted_output_capture),
+                "output_terminal_binding": component_fingerprint(native_trusted_output.recover_native_trusted_attempt),
+                "receipt": component_fingerprint(native_trusted_receipt.recover_native_trusted_execution_receipt),
+                "receipt_projection": component_fingerprint(native_trusted_receipt.build_native_trusted_execution_receipt),
+                "receipt_terminal": component_fingerprint(native_trusted_receipt.recover_native_trusted_attempt),
+                "receipt_streams": component_fingerprint(native_trusted_receipt.recover_native_trusted_stream_capture),
+                "receipt_cleanup": component_fingerprint(native_trusted_receipt.recover_native_trusted_cleanup),
+                "receipt_capture": component_fingerprint(native_trusted_receipt.recover_native_trusted_output_capture),
+                "output_manifest": component_fingerprint(native_trusted_output.prepare_producer_bundle_manifest),
+                "output_drafts": component_fingerprint(native_trusted_output.prepare_producer_bundle_drafts),
+                "output_admission": component_fingerprint(native_trusted_output.build_producer_bundle_admission_plan),
+                "output_read_envelope": component_fingerprint(native_trusted_output._read_envelope),
+                "output_parse_envelope": component_fingerprint(native_trusted_output.parse_producer_envelope),
+                "broker_journal": component_fingerprint(native_trusted_capture.read_host_request_journal,
+                    config={"deadline": None, "expected_file_identity": None, "monotonic": "time.monotonic"}),
+                "capture": component_fingerprint(native_trusted_capture.recover_native_trusted_output_capture),
+                "handoff": component_fingerprint(
+                    python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
+            },
             "owner": component_fingerprint(_BRSLineageCheckpointOwner, config={}),
             "methods": {name: component_fingerprint(getattr(_BRSLineageCheckpointOwner, name)) for name in (
                 "__init__", "_identity", "_check_owner", "_running", "_before_entry", "_write",
