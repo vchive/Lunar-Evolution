@@ -252,6 +252,16 @@ terminated without a verdict; its script and attempt record are preserved as
 `audit_final402-initial.py` and `audit-initial-attempt.json`. Bounded temporary-file
 stdin fixed the verifier invocation. No product/test run was repeated or replaced.
 
+Separate independent raw/source review also passed without blockers. The reviewer
+did not run product code or pytest. Its independent stdlib checker verified
+**10,756 raw/source assertions**, not additional test cases, including all 2,038
+immutable source blobs and unchanged bytes in all 40 raw files before/after review.
+The report is the sibling `independent-review/review.json`, SHA256
+`9360ef020a79819cb1cad1556fc283462445bd43d4acdfa85b021f84275c846d`;
+the script is `independent-review/audit.py`, SHA256
+`e043d238659d304883bf91d0b1d9b2672610d71ffedac03a70083d28b2dae1c5`.
+Its verdict covers only frozen `399958c`, not the separate terminal race fix.
+
 Separate independent code review of `399958c` passed without blockers. The earlier
 21-case development evidence stays in `development-1/` and is not added to this
 402 count. The separate selected-owner episode-settlement race fix is absent from

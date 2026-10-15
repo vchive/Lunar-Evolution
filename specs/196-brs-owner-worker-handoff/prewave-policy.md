@@ -78,6 +78,8 @@ Exact module inventories, raw XML, argv/cwd, exits, source identity and evidence
 digests are recorded in `publication-validation.md`; the raw directory is
 `.lunar-evolution/reports/brs-prewave-policy-20261015/final-candidate/`.
 Independent code review of the frozen product/test source passed with no blockers.
+Separate independent raw/source review also passed; its report and script digests
+are recorded in `publication-validation.md`.
 Use provider-free local fixtures only. This acceptance belongs to that source;
 it does not claim the separate selected-owner terminal race fix is present or
 replace final integrated-source validation.
