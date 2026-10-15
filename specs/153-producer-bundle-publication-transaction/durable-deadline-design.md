@@ -33,6 +33,12 @@ The retained object reopens and verifies its original bytes/inode at each execut
 This is immutable workspace integrity, not an authenticity claim against a privileged writer who
 can rewrite all journal, file identity, and evidence records together.
 
+The publication lock serializes writers. A controlled caller checks an already visible deadline
+before attempting that lock, so an in-progress first write can be observed as empty, partial, or
+changed bytes. Such an observation fails closed and does not allocate a replacement deadline or
+retry the preparation automatically. Concurrent callers may share a fully written original clock;
+the contract does not require every caller racing its initial write to succeed.
+
 ## Transaction binding
 
 The transaction derives its portable budget digest from the declared allowance as before. Once
@@ -54,7 +60,9 @@ must still be supplied by the caller; cancellation state is not inferred from a 
 ## Validation
 
 Provider-free tests cover a real subprocess's persisted clock restored after process exit,
-concurrent local processes preserving one clock, changed boot and clock rollback, expiry and
+concurrent local processes preserving one fully written clock under actual lock contention,
+empty/partial first-write observations refusing without changing the writer's bytes or budget,
+changed boot and clock rollback, expiry and
 cancellation, old controlled-intent refusal, clock-only interruption, retained partial writes,
 corruption/symlink/hardlink/inode replacement, journal/allowance drift, fresh-control non-extension,
 expiry while publication lock is held, runtime mutation before a second candidate, and unchanged

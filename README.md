@@ -20,14 +20,14 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
 | 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |
-| 同 workspace 连续 DRS 发布 | 🧪 [PR100](https://github.com/vchive/Lunar-Evolution/pull/100) 待合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；原 CI 的测试竞态已修复，修复后完整 CI 与独立审计待完成。 |
-| DRS known rejection | 🧪 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101) 草稿 | 原 owner、连续 reconcile、早期中断及三组混合链已通过本地验收和原证据审查；[PR103](https://github.com/vchive/Lunar-Evolution/pull/103) 集成修复/parser 后的最终 CI、审计与合入待完成。 |
-| BRS partial-wave resume | 🧪 PR101 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；347 个本地 cases 通过，待最终集成 CI/审计与合入。 |
-| 多 child native BRS | 🧪 私有 service 已验证 | Feature196 的 private selected owner service、detached handoff/ACK、预算/指纹/锁边界和 175 个 provider-free focused cases 已通过；公共 native BRS、多 child staging/publication 与生产 admission 仍关闭。 |
+| 同 workspace 连续 DRS 发布 | 🧪 [PR103](https://github.com/vchive/Lunar-Evolution/pull/103) 待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
+| DRS known rejection | 🧪 PR103 待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
+| BRS partial-wave resume | 🧪 PR103 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
+| 多 child native BRS | 🧪 私有 service 已验证 | Feature196 的 private selected owner service、detached handoff/ACK、预算/指纹/锁边界已有 provider-free 验证；公共 native BRS、多 child staging/publication 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-PR100 与 PR101 的新增能力尚未合入 main；PR101 是开发草稿，其本地提交与测试记录也可能领先远端 PR。CI badge 表示 main 的 workflow 状态，不能替代这两项 PR 的验收。详细证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
+上述待发布切片已集中到 PR103；PR100、PR101 等较早 PR 保留历史实现和验证记录。当前 main 仍是 PR99 基线，最终集成提交的完整 CI、独立审计与合入尚未完成。CI badge 表示 main 的 workflow 状态；候选提交的证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
 
 ## 主要能力
 
