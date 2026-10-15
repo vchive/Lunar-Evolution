@@ -364,18 +364,29 @@ def test_final_fixed_evidence_latency_exhausts_temporary_cap_before_cas(tmp_path
     import sys
     import time
 
+    from lunar_evolution import producer_request_transport
+
     _control, now, _cancelled, _calls = _controlled(monkeypatch)
-    enabled, slept = [], []
+    enabled, elapsed_injected = [], []
+    original_monotonic, frozen, elapsed = time.monotonic, [None], [0.0]
+    def monotonic():
+        return (original_monotonic() if frozen[0] is None else frozen[0]) + elapsed[0]
+    # Install one stable clock before policy capture, including the reader's
+    # canonical default binding. Freeze only this retention's elapsed time so
+    # a busy machine cannot consume its five-second allowance before injection.
+    monkeypatch.setattr(time, "monotonic", monotonic)
+    monkeypatch.setitem(producer_request_transport.read_host_request_journal.__kwdefaults__,
+                        "monotonic", monotonic)
     original_read = brs._files.read_regular_file
     def observe_read(*args, **kwargs):
         result = original_read(*args, **kwargs)
-        if enabled and not slept:
+        if enabled and not elapsed_injected:
             frame = sys._getframe()
             try:
                 while frame is not None:
                     if frame.f_code.co_name == "_success_entry" and frame.f_locals.get("fixed") is True:
-                        slept.append(True)
-                        time.sleep(6)
+                        elapsed_injected.append(True)
+                        elapsed[0] += 6.0
                         break
                     frame = frame.f_back
             finally:
@@ -392,9 +403,10 @@ def test_final_fixed_evidence_latency_exhausts_temporary_cap_before_cas(tmp_path
             journal = staged
         before = owner_fixture._capture(value)
         now[0] = 995.0  # Original fixed native deadline has five seconds remaining.
+        frozen[0] = original_monotonic()
         enabled.append(True)
         with pytest.raises(RSILearningError, match="success_allowance_exhausted"):
             getattr(value.owner, "retain_" + phase)(journal, manifest)
         owner_fixture._unchanged(value, before)
-        assert slept and phase + ".json" in _lineage_files(value) and value.owner._poisoned
+        assert elapsed_injected == [True] and phase + ".json" in _lineage_files(value) and value.owner._poisoned
         assert value.ledger.controller_checkpoint(value.binding.run_id)[0] == before[0]
