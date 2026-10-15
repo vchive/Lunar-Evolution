@@ -2795,7 +2795,7 @@ class RSILearningController:
                     raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid")
                 times = (execution_control.started_at, execution_control.deadline, execution_control.timeout_seconds)
                 try:
-                    valid = all(type(value) in (float, int) and math.isfinite(value) for value in times)
+                    valid = all((type(value) is float or type(value) is int) and math.isfinite(value) for value in times)
                 except OverflowError:
                     valid = False
                 if not valid or type(execution_control._cancellation_callbacks) is not list:

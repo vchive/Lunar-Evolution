@@ -337,7 +337,8 @@ def test_original_channel_must_remain_live_and_selected_without_ready_ack(tmp_pa
                                   "post-callback", "post-cancellation", "post-source-hook-cancel",
                                   "last-active-cancel", "last-active-timeout", "pre-subclass",
                                   "pre-shadow-check", "pre-shadow-is_cancelled", "pre-shadow-_now",
-                                  "post-shadow-check", "post-shadow-is_cancelled", "post-shadow-_now"])
+                                  "post-shadow-check", "post-shadow-is_cancelled", "post-shadow-_now",
+                                  "pre-numeric-metaclass"])
 def test_real_native_control_is_fixed_and_live_across_prepared_cas(tmp_path, monkeypatch, fault):
     now, signal = [0.0], [False]
     control = SolveExecutionControl(30, clock=lambda: now[0], started_at=0)
@@ -433,6 +434,12 @@ def test_real_native_control_is_fixed_and_live_across_prepared_cas(tmp_path, mon
             class ControlShadow(SolveExecutionControl):
                 check = unexpected
             object.__setattr__(value.native, "execution_control", ControlShadow(30, clock=lambda: 0, started_at=0))
+        elif fault == "pre-numeric-metaclass":
+            class NumericMeta(type):
+                __eq__ = unexpected
+            class NumericShadow(metaclass=NumericMeta):
+                pass
+            control.deadline = NumericShadow()
         elif fault == "pre-nonbool":
             class BooleanShadow:
                 def __bool__(self):
