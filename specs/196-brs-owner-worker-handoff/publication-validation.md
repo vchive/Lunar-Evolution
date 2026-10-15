@@ -320,3 +320,60 @@ to the frozen source. Final-source official CI, upstream integration and main
 merge remain open. Only local inert/provider-free fixtures were used; no online
 publication, production admission, real solver/runtime/campaign or remote
 evaluator acceptance follows from this result.
+
+## PB-02c/PB-03d unified final focused acceptance — 2026-10-16
+
+The frozen product/test commit is `01c3bd1222fa6226762dbd65817e0d60d607330e`,
+tree `e414add9b3488141bd773599c3fc5ef1d76652be`. Each platform passed the same
+**322 distinct cases** with zero failures, errors or skips. The disjoint sets are
+179 preparation/mailbox cases and 143 checkpoint cases (70 new, 37 original owner,
+21 original policy, 15 shared kernel). The two platforms are not added into 644.
+
+| Platform / group | Python and environment | Observed cases |
+| --- | --- | --- |
+| macOS preparation/mailbox | Python 3.11.15, own editable venv | 179 passed |
+| macOS checkpoints | Python 3.13.12, own editable venv with system-site-packages | 143 passed: 70 + 73 |
+| Linux preparation/mailbox | Python 3.12.3, own isolated editable venv | 179 passed |
+| Linux checkpoints | Python 3.12.3, separate isolated editable venv | 143 passed: 70 + 73 |
+
+The macOS total combines separate interpreter profiles; it does not claim a
+single-profile 322-case run. Plugin autoload was disabled, execution had
+`PYTHONPATH` unset, and each package/import/direct URL matched its original own
+checkout. All process exits, full Ruff, compileall and diff-check passed. All
+2,047 tracked source files stayed unchanged and match the frozen Git bytes. The
+exact collection and JUnit case identities agree without omissions or duplicates.
+Original checkpoint JUnit durations were 358.308/474.141 seconds on macOS and
+609.00/777.43 seconds on Linux; concurrent group durations are not a wall-clock sum.
+
+Canonical sorted-node SHA256 values:
+
+- 179 cases: `8ceeff71199ce89f1c6d0bc8a95e9fef70d6f01177995e2cdb383b221500f5e5`.
+- 143 cases: `43ebbf1307093168eb40d2f7d1ef9e22077126a72de916d82a37531c345f3ba6`.
+- Exact disjoint 322 union: `a48d4f48ca62e2a5561d19c033892a94ea9516210cc41af0e8e0b60ba13ad819`.
+
+A separate single collection-only invocation of the original `tools/run_tests.py`
+collected 17,094 current nodes at that same source; **zero extra cases executed**.
+Canonical inventory SHA256 is
+`b1b1f55bf173375c1f28a12b779c16b90385e5423ac2e8b7c0ed3ca323756669`.
+Six ordinary groups contain 3190/2495/3167/2286/3255/2698 nodes; together with the
+three explicit heavy nodes they exactly and disjointly cover the inventory. The
+322 focused cases are a subset. The outer environment had `PYTHONPATH` unset;
+the unmodified runner's collection child explicitly uses that same checkout/src.
+This collection does not claim 17,094 passed tests.
+
+Independent product review passed at the exact frozen source. Independent raw
+reviews validate immutable Git bytes, own installed/import identity, exact XML/
+collection/exit records and the platform unions. Raw supervisors, source snapshots,
+stdout/stderr/JUnit and review JSON are retained under ignored
+`.lunar-evolution/reports/brs-combined-checkpoints-20261016/`; original development
+failures and the pre-bundle-fix `97bb774` remain separately labelled. Neither old
+runs nor different frozen-source counts are promoted or added to this acceptance.
+
+The documentation/workflow suffix preserves all `src/tests/tools` bytes and modes.
+CI separately requires the 35-case input and 70-case success-checkpoint gates, both
+zero failure/error/skip; all 58 explicit focused JUnit outputs have one matching
+annotation path. The final base-main PR still needs its own complete 33-job CI,
+actual merge/tree/ordered-parent/import/raw audit, and verified main merge. The
+public native BRS refusal, `online_publication=false` and
+`production_admission=false` remain unchanged. No actual producer, model/solver,
+CPython/toolchain target, campaign, WebAgent or remote evaluator was executed.

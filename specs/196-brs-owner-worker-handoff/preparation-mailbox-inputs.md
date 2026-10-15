@@ -70,3 +70,9 @@ XML SHA256:
 This verifies the same inventory on two platforms, not 358 different cases.
 Later documentation/workflow updates keep product/test/tool bytes unchanged;
 the new 35-case focused gate is one of 57 uniquely annotated XML outputs.
+
+The later unified `01c3bd1` source also passes this exact disjoint 179-case group
+on macOS/Python3.11.15 and Linux/Python3.12.3. Its companion checkpoint group has
+143 distinct cases; profiles and independent raw verification are recorded in
+[`publication-validation.md`](publication-validation.md#pb-02cpb-03d-unified-final-focused-acceptance--2026-10-16).
+The original `1ca4325` run retains its own source label and is not added again.

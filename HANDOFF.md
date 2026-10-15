@@ -1,5 +1,38 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 并行继续：preparation/mailbox 与 staged/terminal
+
+本轮将两个独立切片合并到统一产品/测试来源 `01c3bd1222fa6226762dbd65817e0d60d607330e`，
+tree `e414add9b3488141bd773599c3fc5ef1d76652be`。PB-02c 只把原 producer
+preparation 转换为 detached mailbox 证据；PB-03d 只验证已有 staged/terminal
+文件并执行原 owner checkpoint CAS。二者均不启动 transaction、evaluation 或 publication。
+
+PB-03d 冻结原 native context/strategy/config/authority，复验完整投影、manifest record、
+暂存源码与 bundle 声明，并要求原 launch 的 task_id 已等于选中 episode_id。
+旧 root-task before/prepared 支持保留，不能被改写成 success 关联。新增方法和依赖纳入
+原 durable policy fingerprint；旧缺失/不同 policy 不迁移、不补写。失败保留原 durable
+证据和 stale captured head，poison 当前 owner，不刷新、重试或伪造 DRS scope。
+独立产品源码审查通过；统一来源 Mac/Linux 各通过相同的 322 个不同 case：179
+preparation/mailbox + 143 checkpoint，零 failure/error/skip，静态检查通过。Mac 的两组
+分别为 Python3.11.15 和 3.13.12（后者 own editable venv 含 system-site-packages），
+Linux 两组均为各自隔离 Python3.12.3；不称单 Mac Python profile 322 或两平台合计644。
+2,047 tracked files 前后不变，exact XML/inventory/source/import/exit 与原始字节独审见
+Feature196 `publication-validation.md` 和 ignored `brs-combined-checkpoints-20261016`。
+另一次全量仅 collection 为17,094 nodes、额外执行0 case，不是全量 pass。
+
+下一步仍是原 owner retained-context recovery、显式 BRS prepared-pin 入口、exact native
+transaction dispatch、owner rejection C1/P/C2 与独立 mailbox return/settlement，然后才是
+reconcile、serial successor、policy/memory。公开 native BRS、生产 runtime/CLI 验收不因
+这两个私有切片完成。`online_publication=false`、`production_admission=false`。
+本轮只运行本地 inert/provider-free fixture；未运行真实模型/solver/campaign、CPython/toolchain
+构建目标、WebAgent、远程 evaluator 或公司平台。修复前 `97bb774` 与开发失败原始证据单独保留，
+不替换或累计到新来源验收。当前 main/PR 完整 CI 与 merge 状态另行核实。
+独立 Git 祖先/路径审查确认统一候选包含 PR103/105/106/107/108 全部 heads；main
+相对共同祖先只有历史差别、tree 相同。最终后继将直接 base main，要求自身完整
+33-job CI 和 actual merge/source/import/raw 独审；通过合入后才关闭已被包含的旧 PR。
+旧 PR 的局部成功、取消或 focused 数量不能代替这份统一候选验收。
+
+
 ## 2026-10-16 并行后继：preparation → mailbox 证据接线
 
 PB-02c 新私有 `_request_from_native_preparation` 将原 producer-only preparation、

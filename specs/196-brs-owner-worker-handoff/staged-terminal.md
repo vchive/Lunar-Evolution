@@ -69,7 +69,7 @@ Tasks:
 - [x] Add inert genuine-owner tests for both success checkpoints and gate failures,
       including source/inode drift, missing original native inputs, phase skips,
       competing CAS and ambiguous readback. Forbid external execution/transactions.
-- [ ] Run the focused owner/policy/kernel tests, Ruff, compileall and diff checks;
+- [x] Run the focused owner/policy/kernel tests, Ruff, compileall and diff checks;
       retain initial failures and report exact source/observed counts.
 
 Development qualification is not final acceptance. The expanded module currently
@@ -86,3 +86,11 @@ tracked source snapshots. No counts are promoted from older source runs.
 `online_publication=false`, `production_admission=false` and the public native BRS
 refusal remain unchanged. Online mailbox/controller/scheduler composition, rejection
 C1/P/C2, reconcile, serial successor and policy/memory composition remain open.
+
+Final same-source qualification: `01c3bd1` passes this module's 70 cases and
+73 owner/policy/kernel compatibility cases on macOS and Linux, zero failures,
+errors or skips. Combined with the disjoint 179-case preparation/mailbox group,
+each platform covers 322 cases; macOS uses two Python profiles, not one 322-case
+interpreter run. Exact profiles, inventories, preserved failures, raw review and
+remaining final-CI obligations are recorded in
+[`publication-validation.md`](publication-validation.md#pb-02cpb-03d-unified-final-focused-acceptance--2026-10-16).

@@ -139,6 +139,15 @@ durable evidence and the stale captured head, with no automatic retry or head ad
 Incomplete before/prepared/staged/terminal or rejection C1/P/C2 requires explicit
 reconciliation. Existing DRS inspections do not authorize BRS reconciliation.
 
+PB-03d now adds private success `checkpoint_staged` and `checkpoint_terminal` to
+that same original owner. It observes already retained native evidence, verifies
+staged source and population projections, and applies adjacent captured-head CASes.
+Its original native context/strategy cannot be adopted later, and the original task
+must already identify the selected episode. Generic retained candidates remain
+supported; bundle-backed candidates additionally bind original bundle, contract,
+entrypoint and per-file declarations. This does not invoke any native transaction
+or settle a result. See `staged-terminal.md`; full online composition remains open.
+
 The next implementation slices remain open:
 
 - Online composition of the private before/prepared owner and its persisted

@@ -20,14 +20,14 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
 | 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |
-| 同 workspace 连续 DRS 发布 | 🧪 [PR103](https://github.com/vchive/Lunar-Evolution/pull/103) 待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
-| DRS known rejection | 🧪 PR103 待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
-| BRS partial-wave resume | 🧪 PR103 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
-| 多 child native BRS | 🧪 私有 service 已验证 | Feature196 的 selected owner service、detached handoff/ACK 已验证；[PR105](https://github.com/vchive/Lunar-Evolution/pull/105) 的 owner checkpoint settlement 通过 360 项本地回归，待最终 CI/集成。后继切片拒绝 worker 发布与 scheduler 旁路，完整 owner publication bridge 仍待实现。公共 native BRS 与生产 admission 仍关闭。 |
+| 同 workspace 连续 DRS 发布 | 🧪 统一候选待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
+| DRS known rejection | 🧪 统一候选待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
+| BRS partial-wave resume | 🧪 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
+| 多 child native BRS | 🧪 私有组件已验证 | 已具备 selected owner service、独立 publication mailbox 和成功证据检查点；完整在线 owner 发布、恢复与连续 child 接线仍开放。公共 native BRS 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-恢复、parser 与私有 selected service 已集中到 PR103；PR105 的 checkpoint settlement 和 worker publication refusal 是后继切片。PR100、PR101 等较早 PR 保留历史实现和验证记录。当前 main 仍是 PR99 基线，最终集成提交的完整 CI、独立审计与合入尚未完成。CI badge 表示 main 的 workflow 状态；候选提交的证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
+恢复、parser、selected service、worker 发布拒绝与私有成功检查点已集中到同一个待验收后继，包含 PR103/105/106/107/108。最终候选直接面向 `main`，通过完整 33-job CI 与独立原始证据审查后合入；旧 PR 保留各自历史记录。当前 main 仍是 PR99 基线。CI badge 表示 main 的 workflow 状态；候选提交的实际来源、证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
 
 ## 主要能力
 
@@ -208,14 +208,14 @@ Linux / SSH 服务器的独立环境、六个普通分片加三个重用例的�
 
 单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已合入 main。当前批次的剩余出口是：
 
-- PR103 已把 PR100/PR101 恢复批次、parser 及 BRS handoff/service ancestry 组合到单一 `main`-based 候选。原完整 CI 为21 success、3 cancelled，缺少最终覆盖；重用例独立分片修复仍须完成最终来源 CI 和独立审计后合入。
-- known rejection 三组混合链已通过；PR103 是当前统一出口，不再要求按 PR100→PR101→PR103 顺序逐个合入。
+- 统一后继包含 PR103/105/106/107/108 的全部提交，保留六个普通分片、三个独立重用例、focused 与 history；对最终来源完整验收后一次合入 `main`。
+- known rejection 三组混合链已有独立本地证据；历史失败、取消和局部成功保留原标签，不代替最终候选完整 CI。
 
 恢复始终复核原 claim、预算、身份、deadline 与取消门禁；没有原始证据的中断保留 unknown，不启动后继 child。
 
 ### P1：多 child BRS 与真实本地运行时
 
-- 按 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 分步接通 native 多 child：本分支已完成 private selected result 的 owner checkpoint CAS/完整读回及 360 项本地回归；publication、ordinal transition、真实 producer、sealed runtime 和生产 admission 仍是后续出口。
+- 按 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 接通原 owner 的 retained recovery、native transaction、拒绝分支和独立结果交付，再完成 reconciliation、连续 child 和记忆策略。私有检查点已开发，不等于公开 native BRS 可用。
 - 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。
 - 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。
 - 保留 provider-free 默认值；producer score 仍须经独立 verifier/evaluation 才能产生官方结论。
