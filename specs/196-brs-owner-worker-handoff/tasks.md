@@ -31,6 +31,8 @@
   bypasses before plan callbacks, scheduler input observation or transaction execution.
   Preserve pin-only ready/ACK and DRS paths. This refusal does not implement an owner
   publication bridge; the remaining stages are in `owner-publication-bridge.md`.
+- [ ] Validate the independent one-shot owner-publication mailbox transport in
+  `publication-mailbox.md`; this is not controller/scheduler or owner publication integration.
 - [ ] Add ordinal serial transition and partial-wave recovery without dropping
   completed obligations or refreshing sibling requests/budgets.
 - [x] Add the focused matrix in `validation.md`; this slice locally exercises the

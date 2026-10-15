@@ -1,5 +1,29 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 并行后继：owner 邮箱与纯解析去重
+
+发布边界拒绝切片已推送 stacked draft PR106，head `ffa98e7`，base PR105。
+261-case整合focused及独立原始证据审计通过；补充86-case channel/owner兼容通过。
+PR103当前仍是P0合入出口，20/24官方jobs成功，余下4个继续验收；服务器全量
+六分片0–4完成14,008 cases、零failure/error、83skips，第5片仍待最终证据。
+这些是检查点，不能描述为已合入或完整通过。
+
+本后继分支从PR106分出，独立纯transport `BRSOwnerPublicationMailbox` 绑定原
+selected handoff、owner/worker thread和owner冻结的head/state，传递canonical有界
+receipt/output/admission/native-plan digest及原handoff creator file pin。one-shot
+请求不运行controller/native transaction，也不授予publication权限。wait/check/handler
+在condition锁外；close-before-worker-accept、取消、handler/readback失败保留未确认，
+禁止retry/refresh/repair。完整BRS owner policy/lineage/CAS、producer-only调度插槽、
+rejection C1/P/C2、reconcile与serial successor仍是P1开放项。
+
+并行纯解析优化只在同一次strict tree parse内复用刚完成校验且未逃逸的manifest，
+公开DTO、构造/verify/build gates、source/config hooks和所有fresh observations保持。
+独立切片405 focused通过，27个新语义tests在原baseline也通过；root只读代码审查通过。
+单次validator profile的总调用数由16,140,170降至13,852,568，source-read198、
+config7、preflight2次不变；前后机器负载不同，不据wall time推导端到端倍数。
+本分支最终整合测试、服务器安装来源与独立复核将在实际完成后补记。
+仅本地inert/provider-free fixtures，`production_admission=false`，公共native BRS仍拒绝。
+
 ## 2026-10-15 BRS worker publication refusal（后继切片）
 
 P1 settlement 已创建 stacked draft PR105，head `868bccc`，base 为 PR103 候选分支。

@@ -80,7 +80,9 @@ reconciliation. Existing DRS inspections do not authorize BRS reconciliation.
 The next implementation slices remain open:
 
 - Explicit BRS policy/owner and captured-head lineage CAS with provider-free fixtures.
-- One-shot mailbox and the pre-publication scheduler dispatch seam.
+- One-shot mailbox transport is implemented in the successor candidate
+  (`publication-mailbox.md`); focused acceptance and its controller/pre-publication
+  scheduler dispatch integration remain separate open work.
 - Owner rejection provenance/C2 and exact terminal result delivery.
 - Independent BRS read-only reconcile, serial ordinal transition and partial-wave recovery.
 
