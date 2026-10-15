@@ -129,7 +129,9 @@ static int lunar_apply_isolation_internal(const char *profile,
                read/execute path stays exact and never grants directory access. */
             if (!S_ISDIR(st.st_mode)) {
                 if (is_write || !S_ISREG(st.st_mode)) {
-                    if (!grants) close(fd); close(ruleset_fd); return EINVAL;
+                    if (!grants) close(fd);
+                    close(ruleset_fd);
+                    return EINVAL;
                 }
                 rule.allowed_access &= ~LANDLOCK_ACCESS_FS_READ_DIR;
             }

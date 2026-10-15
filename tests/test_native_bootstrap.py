@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import select
+import shutil
 import socket
 import subprocess
 import sys
@@ -125,6 +126,20 @@ def test_native_artifact_is_exactly_allowlisted_and_target_waits_for_gate(tmp_pa
                         os.close(frame_r)
                     finally:
                         process.stderr.close()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux GCC strict compilation")
+def test_native_artifact_explicit_gcc_build_preserves_descriptor(tmp_path: Path):
+    compiler = shutil.which("gcc")
+    if compiler is None:
+        pytest.skip("GCC is unavailable for the explicit Linux compiler regression")
+    artifact = build_native_bootstrap_artifact(tmp_path / "gcc-install", compiler=compiler)
+    assert Path(artifact.compiler).resolve() == Path(compiler).resolve()
+    loaded = load_native_bootstrap_artifact(
+        artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
+    )
+    assert loaded.artifact_sha256 == artifact.artifact_sha256
+    assert loaded.descriptor == artifact.descriptor
 
 
 @pytest.mark.skipif(__import__("sys").platform not in {"darwin", "linux"}, reason="native bootstrap platform")

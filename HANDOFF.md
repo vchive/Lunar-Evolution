@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 Linux 开发环境与严格 GCC 编译兼容
+
+新增独立 Linux / SSH 开发流程，固定每个 worktree 自己的 uv/Python 环境、console
+launcher、TMPDIR、Lunar home 和六分片结果目录；不依赖系统 ensurepip，也不安装
+runner/service。README 的 current 示例同步为六分片，并链接
+[Linux 开发指南](docs/linux-development.md)。当前 provider-free 回归使用 CPU，GPU
+不参与这些测试。服务器补充结果不能替代三版 Python 的正式 CI 与原始产物审计。
+
+以 PR103 `49b9df9` 为基线的独立开发树复现 GCC 11/12/13/15 在三个既有同行语句上
+触发严格 `misleading-indentation` 错误。修复只调整换行，C/header 去空白字节相同，
+编译参数与运行门禁不变；显式 GCC13/15 编译、51 个相关测试通过，2 个 Darwin-only
+用例在 Linux 跳过。新增显式 GCC descriptor 回归，避免默认 Clang 掩盖该问题。
+独立本树 uv/Python3.12 环境中该新回归另有 1 pass，CLI/import/install 身份已核实；
+Ruff、compileall、diff-check 均通过。详细证据边界见 Feature157 validation。
+
+本切片与冻结的 PR103 候选分离；PR103 最终来源 CI/原始产物审计和合入仍开放。
+不据此关闭 native BRS、sealed runtime 或真实 producer 验收；仅本地 inert/provider-free
+fixtures，`production_admission=false`。
+
 ## 2026-10-15 BRS private selected-service slice integrated into candidate
 
 PR104 的 owner-service 分支已在当前 candidate 合入。它新增私有、provider-free

@@ -189,11 +189,13 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 
 ```bash
 .venv/bin/python tools/run_tests.py \
-  --suite current --shard-index 0 --shard-count 3 \
+  --suite current --shard-index 0 --shard-count 6 \
   --junit-dir .lunar-evolution/test-results
 ```
 
 测试保持 provider-free，不会因为运行测试而发起模型调用、远程 evaluator 或真实 solver campaign。
+
+Linux / SSH 服务器的独立环境、六分片并行运行和日志保留步骤见 [Linux 开发指南](docs/linux-development.md)。
 
 ## 路线图与明确边界
 
