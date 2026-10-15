@@ -12,6 +12,7 @@ import os
 import socket
 import subprocess
 from dataclasses import replace
+from threading import RLock, local
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
@@ -83,6 +84,11 @@ def provider_fixture(tmp_path, monkeypatch):
         deadline_unix=None, launch_binding_sha256=evidence.input_binding_sha256,
     )
     controller = RSILearningController.__new__(RSILearningController)
+    # Match the constructor's inactive admission scopes at the publication guard.
+    controller._python_admission_flow_local = local()
+    controller._python_admission_brs_local = local()
+    controller._python_admission_brs_wave = None
+    controller._python_admission_brs_observation_lock = RLock()
     controller.producer_known_rejection = True
     controller.producer_multi_episode_publication = True
     controller.producer_child_execution = True

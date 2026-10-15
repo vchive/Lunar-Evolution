@@ -135,7 +135,7 @@ def _wave(value, *, episode_ids=None):
         yield wave
 
 
-def _ack_and_result(value, request, *, acknowledge=True):
+def _ack_and_result(value, request, *, acknowledge=True, after_ack=None):
     plan = _plan(value.binding, request, value.controller.snapshot)
     claim = value.ledger.claim_native_episode(request, plan_sha256=plan.plan_sha256)
     if acknowledge:
@@ -150,6 +150,8 @@ def _ack_and_result(value, request, *, acknowledge=True):
         )
         assert state["python_admission_refs"][request.episode_id]["record_sha256"] == digest
         value.events.append(("ack", get_ident(), request.episode_id))
+        if after_ack is not None:
+            after_ack(request, plan, claim)
     result = SolverResult(
         episode_id=request.episode_id, request_sha256=request.digest(), status="completed",
         candidate_receipt_sha256=DIGEST, execution_receipt_sha256=DIGEST,
@@ -469,23 +471,56 @@ def test_selected_service_refuses_shared_handoff_mutation_after_actual_ack(
     tmp_path, monkeypatch, field,
 ):
     value = _fixture(tmp_path, monkeypatch)
-    original_execute = value.controller._execute_intent
+    mutated, release, released_by_close, stopped = Event(), Event(), Event(), Event()
+    captured = []
 
-    def mutate_handoff(state, episode_id):
-        execution = original_execute(state, episode_id)
+    class StopAfterAck(BaseException):
+        pass
+
+    def mutate_handoff(request, plan, claim):
+        episode = value.ledger.get_episode(request.episode_id)
+        assert episode.state == "running" and claim.status == "started"
+        assert value.ledger.episode_result(request.episode_id) is None
+        assert value.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256) == claim
+        captured.append((request, plan, claim, episode))
         handoff = value.controller._python_admission_brs_wave.selected_handoff
         changed = handoff.ordinal + 1 if field == "ordinal" else "X" * 32 if field == "lease_nonce" else OTHER
         object.__setattr__(handoff, field, changed)
-        return execution
+        mutated.set()
+        try:
+            assert release.wait(timeout=20), "owner did not close the rejected selected service"
+            released_by_close.set()
+            raise StopAfterAck()
+        finally:
+            stopped.set()
 
-    monkeypatch.setattr(value.controller, "_execute_intent", mutate_handoff)
+    # The real ready/ACK has returned, but neither the native result nor the
+    # completed episode can race with the owner's handoff identity rejection.
+    value.operation = lambda request: _ack_and_result(value, request, after_ack=mutate_handoff)
     with _wave(value) as wave:
+        shutdown = _track_close_and_shutdown(monkeypatch, wave)
+        original_close = wave.channel.close
+
+        def close_and_release():
+            try:
+                original_close()
+            finally:
+                release.set()
+
+        monkeypatch.setattr(wave.channel, "close", close_and_release)
         with pytest.raises(RSILearningError, match="selected_identity_invalid|handoff_"):
             value.controller._python_admission_run_selected_brs_intent(wave)
+        assert mutated.is_set() and release.is_set() and released_by_close.is_set() and stopped.is_set()
+        assert shutdown == ["close", "shutdown"]
         assert wave.channel._closed
         assert not wave.channel._completed_selected_episodes
     assert len(_rows(value)["rsi_python_admissions"]) == 1
-    assert value.ledger.get_episode(value.episode_id).state == "completed"
+    request, plan, claim, episode = captured[0]
+    assert value.ledger.get_episode(value.episode_id) == episode
+    assert value.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256) == claim
+    assert value.ledger.episode_result(value.episode_id) is None
+    assert value.ledger.get_episode(value.sibling_id) is None
+    assert value.gateway.calls == 1
 
 
 def test_selected_service_rechecks_original_deadline_without_budget_refresh(tmp_path, monkeypatch):
