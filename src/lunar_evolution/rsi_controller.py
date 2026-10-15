@@ -2713,6 +2713,182 @@ class RSILearningController:
                 wave.admitted_episode_id = ready.episode_id
             return pinned.record_sha256
 
+    def _pin_python_admission_for_original_brs_owner(
+        self, owner: object, *, expected_anchor_sha256: str,
+    ) -> str:
+        """Pin the original owner's prepared reference, without worker ready/ACK.
+
+        The owner keeps its old capture until ``acknowledge_prepared`` verifies
+        this adjacent reference and performs its separate evidence checkpoint.
+        An uncertain pin poisons that owner and never adopts the latest head.
+        """
+        import math
+
+        from .automatic_solve_lifecycle import SolveExecutionControl
+        from .producer_bundle_lineage import (
+            capture_lineage_snapshot_pin,
+            verify_persisted_lineage_snapshot,
+        )
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+
+        if (type(self) is not RSILearningController or type(owner) is not _BRSLineageCheckpointOwner
+                or owner._controller is not self):
+            raise RSILearningError("rsi_python_brs_owner_prepared_identity_invalid")
+        try:
+            owner._check_owner()
+            if owner._phase != "before" or owner._before_bytes is None:
+                raise RSILearningError("rsi_python_brs_owner_prepared_unavailable")
+            owner._before_entry(json.loads(owner._before_bytes))
+            wave, plan, journal = owner._wave, owner._plan, owner._prepared
+            prepared_path = owner._workspace / "evolution/producer-batches" / journal.journal_id / "journal.prepared.json"
+            prepared_pin = capture_lineage_snapshot_pin(prepared_path, name="journal.prepared.json")
+            native = owner._native
+            execution_control = None if native is None else native.execution_control
+            cancellation = None if native is None else native.cancelled
+
+            def control_pin():
+                # Match native_trusted_scheduler's prepublication pin without
+                # adding an unpinned live helper dependency to this owner policy.
+                if execution_control is None:
+                    return None
+                if not isinstance(execution_control, SolveExecutionControl):
+                    raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid")
+                times = (execution_control.started_at, execution_control.deadline, execution_control.timeout_seconds)
+                try:
+                    valid = all(type(value) in (float, int) and math.isfinite(value) for value in times)
+                except OverflowError:
+                    valid = False
+                if not valid or type(execution_control._cancellation_callbacks) is not list:
+                    raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid")
+                return (*times, id(execution_control._clock), id(execution_control._observe_stage),
+                        id(execution_control._lock), tuple(id(callback) for callback in execution_control._cancellation_callbacks))
+
+            original_control_pin = control_pin()
+
+            def control_unchanged():
+                if (owner._native is not native or (native is not None and (
+                        native.execution_control is not execution_control or native.cancelled is not cancellation))
+                        or control_pin() != original_control_pin):
+                    raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid")
+
+            def native_live():
+                control_unchanged()
+                if native is None:
+                    return
+                try:
+                    if cancellation is not None:
+                        cancelled = cancellation()
+                        if type(cancelled) is not bool:
+                            raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid")
+                        if cancelled:
+                            raise RSILearningError("rsi_python_brs_owner_prepared_cancelled")
+                    control_unchanged()
+                    if execution_control is not None:
+                        execution_control.check("rsi_brs_owner_prepared_pin")
+                except RSILearningError:
+                    raise
+                except Exception as exc:
+                    raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid") from exc
+                control_unchanged()
+
+            native_live()
+            captured_head, captured_payload = owner._head, owner._payload
+            episode_id = owner._request.episode_id
+            refs = wave.state.get("python_admission_refs", {})
+            if (type(refs) is not dict or episode_id in refs
+                    or any(type(key) is not str or type(reference) is not dict
+                           for key, reference in refs.items())):
+                raise RSILearningError("rsi_python_brs_owner_prepared_reference_invalid")
+            for reference in refs.values():
+                if (reference.get("journal_id") == journal.journal_id
+                        or (type(reference.get("native_plan")) is dict
+                            and reference["native_plan"].get("plan_sha256") == plan.plan_sha256)
+                        or (type(reference.get("prepared_journal")) is dict
+                            and reference["prepared_journal"].get("journal_id") == journal.journal_id)):
+                    raise RSILearningError("rsi_python_brs_owner_prepared_reference_invalid")
+            admitted_episode_id = wave.admitted_episode_id
+
+            def active():
+                owner._check_owner()
+                native_live()
+                owner._identity()
+                if (owner._phase != "before" or owner._head != captured_head
+                        or owner._payload != captured_payload):
+                    raise RSILearningError("rsi_python_brs_owner_prepared_stale")
+                with wave.ledger.read_only_observations():
+                    owner._running()
+                    self._python_admission_active_brs_owner(wave)
+                return owner._state, captured_head
+
+            pinned, head, expected_payload, expected = self._python_admission_pin_exact(
+                wave, wave.run_id, episode_id, native_plan=plan, prepared_journal=journal,
+                expected_anchor_sha256=expected_anchor_sha256, active=active,
+                assert_context=lambda: owner._identity(),
+            )
+            # Evidence/configuration hooks finish outside the short observation
+            # mutex. They cannot turn a later no-op revision into our capture.
+            owner._before_entry(json.loads(owner._before_bytes))
+            with wave.ledger.read_only_observations():
+                original = wave.ledger.history(wave.run_id)[0]
+                captured = json.loads(captured_payload)
+                actual, _ = self._run_fingerprint(
+                    **captured["pins"],
+                    memory_snapshot_sha256=MemorySnapshot.from_dict(captured["root_snapshot"]).digest(),
+                    mode=captured["mode"], plan=captured["plan"],
+                )
+                ensure_fingerprint_compatible(
+                    RSIFingerprintContract.from_dict(original.payload["fingerprints"]["run_fingerprint"]), actual,
+                )
+                self._validate_original_producer_checkpoint(wave.run_id, captured)
+                self._validate_producer_staging(wave.ledger.get_run(wave.run_id), expected)
+            budget = RSIRunBudget.load(captured["budget_state"])
+            budget.assert_matches(original.payload["budget"])
+            budget.check()
+            policy = {
+                "plan": captured["plan"], "pins": captured["pins"],
+                "planned": budget.to_dict()["planned"],
+                "producer_checkpoint_binding": captured.get("producer_checkpoint_binding"),
+                "solver_settings": actual.to_dict()["solver_settings"],
+            }
+            control = {"budget_state": budget.to_dict(), "status": captured["status"]}
+            context = owner._selected_context
+            if (actual.digest() != context.source_sha256 or _record_digest(policy) != context.policy_sha256
+                    or _record_digest(control) != context.execution_control_sha256):
+                raise RSILearningError("rsi_python_brs_owner_prepared_authority_invalid")
+            owner._identity()
+            if owner._native is not None:
+                owner._native_strategy()
+            native_live()
+            owner._identity()
+            verify_persisted_lineage_snapshot(prepared_path, prepared_pin)
+            with wave.ledger.read_only_observations():
+                owner._running()
+                observed = wave.ledger.controller_checkpoint(wave.run_id)
+                history = wave.ledger.controller_checkpoint_history(wave.run_id)
+                if (head == captured_head or observed != (head, expected)
+                        or len(history) < 2
+                        or history[-2] != (captured_head, json.loads(captured_payload))
+                        or history[-1] != (head, expected)):
+                    raise RSILearningError("rsi_python_brs_owner_prepared_readback_invalid")
+                owner._history(expected)
+            with self._python_admission_brs_observations():
+                self._python_admission_assert_brs_wave(wave, owner=True)
+                self._python_admission_selected_brs_identity(wave, owner._handoff)
+                if (owner._poisoned or owner._phase != "before"
+                        or owner._wave is not wave or wave.state is not owner._state
+                        or owner._head != captured_head or owner._payload != captured_payload
+                        or wave.checkpoint_sha256 != captured_head or wave.payload != captured_payload
+                        or wave.admitted_episode_id != admitted_episode_id):
+                    raise RSILearningError("rsi_python_brs_owner_prepared_stale")
+                wave.state["python_admission_refs"] = expected["python_admission_refs"]
+                wave.checkpoint_sha256, wave.payload = head, expected_payload
+                if wave.admitted_episode_id is None:
+                    wave.admitted_episode_id = episode_id
+            return pinned.record_sha256
+        except BaseException:
+            owner._poisoned = True
+            raise
+
     @contextmanager
     def _python_admission_brs_service_observations(self, wave: _PythonAdmissionBRSWave):
         """Keep pin, exact state acknowledgement and channel delivery in one short scope."""
