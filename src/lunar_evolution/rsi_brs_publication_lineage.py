@@ -34,18 +34,72 @@ from .rsi_native_plan import NativeRSIExecutionPlan
 
 _FIELD = "producer_publication_lineage"
 _PROTOCOL = "lunar-rsi-brs-lineage-checkpoint-v1"
+_RUN_POLICY_FIELD = "producer_brs_checkpoint_policy"
 
 
 def _fail(reason: str) -> None:
     raise RSILearningError("rsi_brs_publication_lineage_" + reason)
 
 
-def _policy() -> dict[str, Any]:
-    """Constructor-local BRS mode/source pin, never a native dispatch permission.
+def _policy_required(controller: Any, *, mode: object, plan: object) -> bool:
+    """Select non-authorizing metadata without observing source/configuration hooks."""
+    from .python_producer_binding_store import PythonProducerBindingSidecar
 
-    Online integration must pin this policy before the original wave dispatch.
-    No persisted pre-wave policy entry or migration is installed by this slice.
+    return (type(mode) is str and mode == "brs" and type(plan) is dict
+            and plan.get("mode") == "brs" and type(plan.get("max_workers")) is int
+            and plan["max_workers"] == 1
+            and type(controller.producer_sidecar) is PythonProducerBindingSidecar)
+
+
+def _run_policy(controller: Any, *, mode: object = None, plan: object = None) -> dict[str, Any] | None:
+    """Pin only new sidecar-bound, single-worker BRS runs; never enable execution."""
+    return _policy() if _policy_required(controller, mode=mode, plan=plan) else None
+
+
+def _validate_persisted_policy(
+    controller: Any, *, run_id: str, state: Any = None, expected: dict[str, Any] | None = None,
+) -> None:
+    """Compare original JSON pins only; source/configuration hooks belong outside locks.
+
+    Every retained record and checkpoint must carry the original policy. A later
+    state cannot supply a missing original pin, and this reader never migrates it.
     """
+    with controller.ledger.read_only_observations():
+        history = controller.ledger.history(run_id)
+        checkpoints = controller.ledger.controller_checkpoint_history(run_id)
+    if not history:
+        _fail("persisted_policy_original_missing")
+    original = history[0].payload
+    required = _policy_required(controller, mode=original.get("mode"), plan=original.get("plan"))
+    policy = original.get(_RUN_POLICY_FIELD)
+    snapshots = [record.payload for record in history] + [payload for _head, payload in checkpoints]
+    if state is not None:
+        snapshots.append(state)
+    if not required:
+        if expected is not None or any(_RUN_POLICY_FIELD in snapshot for snapshot in snapshots):
+            _fail("persisted_policy_scope_invalid")
+        return
+    if (type(policy) is not dict or policy.get("protocol") != _PROTOCOL
+            or policy.get("mode") != "brs" or type(policy.get("max_workers")) is not int
+            or policy["max_workers"] != 1 or policy.get("online_publication") is not False
+            or policy.get("production_admission") is not False):
+        _fail("persisted_policy_original_invalid")
+    if expected is not None and policy != expected:
+        _fail("persisted_policy_drift")
+    for snapshot in snapshots:
+        if (snapshot.get(_RUN_POLICY_FIELD) != policy
+                or not _policy_required(controller, mode=snapshot.get("mode"), plan=snapshot.get("plan"))):
+            _fail("persisted_policy_drift")
+    for record in history:
+        fingerprints = record.payload.get("fingerprints", {})
+        fingerprint = fingerprints.get("run_fingerprint", {}) if type(fingerprints) is dict else {}
+        settings = fingerprint.get("solver_settings", {}) if type(fingerprint) is dict else {}
+        if type(settings) is not dict or settings.get(_RUN_POLICY_FIELD) != policy:
+            _fail("persisted_policy_fingerprint_invalid")
+
+
+def _policy() -> dict[str, Any]:
+    """Original-run and constructor BRS identity pin, never a dispatch permission."""
     return {
         "protocol": _PROTOCOL, "mode": "brs", "max_workers": 1,
         "production_admission": False, "online_publication": False,
@@ -55,6 +109,9 @@ def _policy() -> dict[str, Any]:
         "dependencies": {
             "policy": component_fingerprint(_policy),
             "failure": component_fingerprint(_fail),
+            "selection": component_fingerprint(_policy_required),
+            "run_policy": component_fingerprint(_run_policy),
+            "persisted_policy": component_fingerprint(_validate_persisted_policy),
             "module_sources": {name: hashlib.sha256(_files.read_regular_file(Path(__file__).parent / name, 1024 * 1024)).hexdigest()
                                for name in ("rsi_brs_publication_lineage.py", "rsi_publication_lineage.py",
                                             "rsi_controller.py", "rsi_store.py", "producer_bundle_lineage.py",
@@ -224,6 +281,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             _fail("checkpoint_drift")
         if lineage._raw(_policy()) != self._policy_bytes:
             _fail("policy_drift")
+        _validate_persisted_policy(
+            controller, run_id=self._run_id, state=self._state, expected=json.loads(self._policy_bytes),
+        )
         request, memory = _request_memory(self._provided_request, self._provided_memory)
         validate_rsi_python_admission_shapes(self._provided_plan, dto_types=(NativeRSIExecutionPlan, SolverRequest))
         plan = NativeRSIExecutionPlan.from_dict(NativeRSIExecutionPlan.to_dict(self._provided_plan))

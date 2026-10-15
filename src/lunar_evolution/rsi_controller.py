@@ -1308,6 +1308,10 @@ class RSILearningController:
             if history:
                 retained.extend(item.payload for item in history)
             retained.extend(snapshot for _head, snapshot in self.ledger.controller_checkpoint_history(record.logical_id))
+        from .rsi_brs_publication_lineage import _validate_persisted_policy
+
+        if self.ledger is not None:
+            _validate_persisted_policy(self, run_id=record.logical_id, state=state)
         for snapshot in retained:
             if snapshot.get("producer_known_rejection") is not (True if rejection_mode else None):
                 raise RSILearningError("rsi_producer_known_rejection_original_mode_mismatch")
@@ -2028,6 +2032,7 @@ class RSILearningController:
             actual, _ = self._run_fingerprint(
                 **detached["pins"],
                 memory_snapshot_sha256=MemorySnapshot.from_dict(detached["root_snapshot"]).digest(),
+                mode=detached["mode"], plan=detached["plan"],
             )
             ensure_fingerprint_compatible(
                 RSIFingerprintContract.from_dict(original.payload["fingerprints"]["run_fingerprint"]),
@@ -2476,6 +2481,7 @@ class RSILearningController:
                 actual, _ = self._run_fingerprint(
                     **before["pins"],
                     memory_snapshot_sha256=MemorySnapshot.from_dict(before["root_snapshot"]).digest(),
+                    mode=before["mode"], plan=before["plan"],
                 )
                 assert_original_owner()
                 ensure_fingerprint_compatible(
@@ -3468,6 +3474,8 @@ class RSILearningController:
         environment_sha256: str,
         solver_id: str,
         memory_snapshot_sha256: str,
+        mode: str | None = None,
+        plan: Mapping[str, Any] | None = None,
     ) -> tuple[RSIFingerprintContract, str]:
         """Build one complete identity contract for a new or resumed controller run."""
 
@@ -3484,6 +3492,11 @@ class RSILearningController:
         publication_policy = multi_episode_publication_policy(self)
         if publication_policy is not None:
             solver_settings["producer_multi_episode_publication_policy"] = publication_policy
+        from .rsi_brs_publication_lineage import _run_policy
+
+        brs_policy = _run_policy(self, mode=mode, plan=plan)
+        if brs_policy is not None:
+            solver_settings["producer_brs_checkpoint_policy"] = brs_policy
         if self.memory_admission_gate is not None:
             solver_settings["memory_admission_gate_fingerprint"] = _component_digest(self.memory_admission_gate, name="memory_admission_gate")
         if self.generation_regression_tasks:
@@ -3546,6 +3559,7 @@ class RSILearningController:
                 environment_sha256=environment_sha256,
                 memory_snapshot_sha256=str(payload.get("fingerprints", {}).get("memory_snapshot_sha256")),
                 solver_id=solver_id,
+                mode=mode, plan=payload.get("plan"),
             )
             try:
                 ensure_fingerprint_compatible(RSIFingerprintContract.from_dict(stored), expected)
@@ -3575,6 +3589,7 @@ class RSILearningController:
             environment_sha256=environment_sha256,
             memory_snapshot_sha256=self.snapshot.digest(),
             solver_id=solver_id,
+            mode=mode, plan=plan,
         )
         payload = {
             "mode": mode,
@@ -3618,6 +3633,9 @@ class RSILearningController:
         if publication_policy is not None:
             payload["producer_multi_episode_publication"] = True
             payload["producer_multi_episode_publication_policy"] = publication_policy
+        brs_policy = run_fingerprint.to_dict()["solver_settings"].get("producer_brs_checkpoint_policy")
+        if brs_policy is not None:
+            payload["producer_brs_checkpoint_policy"] = brs_policy
         if self._producer_known_rejection_mode():
             payload["producer_known_rejection"] = True
         curriculum_state = self._failure_curriculum_state()
@@ -4340,6 +4358,11 @@ class RSILearningController:
         if publication_policy is not None:
             state["producer_multi_episode_publication"] = True
             state["producer_multi_episode_publication_policy"] = publication_policy
+        from .rsi_brs_publication_lineage import _run_policy
+
+        brs_policy = _run_policy(self, mode=plan["mode"], plan=plan)
+        if brs_policy is not None:
+            state["producer_brs_checkpoint_policy"] = brs_policy
         if self._producer_known_rejection_mode():
             state["producer_known_rejection"] = True
         self._sync_curriculum_checkpoint(state)
@@ -4935,6 +4958,7 @@ class RSILearningController:
                 contract_sha256=payload["contract_sha256"], evaluator_sha256=payload["evaluator_sha256"],
                 environment_sha256=payload["environment_sha256"], solver_id=payload["solver_id"],
                 memory_snapshot_sha256=stored["memory_snapshot_sha256"],
+                mode=payload.get("mode"), plan=payload.get("plan"),
             )
             try:
                 ensure_fingerprint_compatible(RSIFingerprintContract.from_dict(stored), actual)
