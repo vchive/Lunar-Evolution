@@ -1,40 +1,51 @@
-"""BRS publication over real local owner/channel pins and inert transaction seams."""
+"""BRS workers cannot turn prepared admission into publication authority."""
 
 from __future__ import annotations
 
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from copy import deepcopy
-from dataclasses import replace
 
 import pytest
-from test_rsi_python_admission import OTHER, _files, _rows
-from test_rsi_python_admission_flow import _forged_checkpoint_append, _lose_record
+from test_rsi_python_admission import _files, _rows
+from test_rsi_python_admission_flow import _forged_checkpoint_append
 from test_rsi_python_admission_owner import (
-    _EvaluationBoundary,
     _owner,
     _state,
     _unregistered_publication,
     no_actual_worker_or_evaluator,  # noqa: F401 -- imported autouse fixture
 )
+from test_rsi_python_brs_selected_service import _ack_and_result, _fixture
+from test_rsi_python_brs_selected_service import _wave as _selected_wave
 
-from lunar_evolution import producer_bundle_transaction as transaction
+import lunar_evolution
 from lunar_evolution import rsi_python_publication as publication
 from lunar_evolution.automatic_solve_lifecycle import (
     SolveExecutionBudgetExceeded,
-    SolveExecutionCancelled,
     SolveExecutionControl,
 )
 from lunar_evolution.rsi_store import RSILedger
 
+ERROR = "rsi_python_publication_brs_worker_publication_forbidden"
 
-def _call(value, **kwargs):
-    return publication.run_rsi_python_bundle_publication_for_active_brs_worker(
+
+def _call(value, *, entry="named", admission_plan=None, **kwargs):
+    arguments = (
         value.controller, value.binding.run_id, value.episode_id,
-        value.strategy, value.drafts, value.admission_plan,
-        native_plan=kwargs.pop("native_plan", value.plan),
-        prepared_journal=kwargs.pop("prepared_journal", value.journal),
+        getattr(value, "strategy", object()), getattr(value, "drafts", ()),
+        getattr(value, "admission_plan", object()) if admission_plan is None else admission_plan,
+    )
+    if entry == "generic":
+        return publication.run_rsi_python_bundle_publication(
+            *arguments, expected_admission_record_sha256="1" * 64, **kwargs,
+        )
+    function = (
+        publication.run_rsi_python_bundle_publication_for_active_flow if entry == "drs"
+        else publication.run_rsi_python_bundle_publication_for_active_brs_worker
+    )
+    return function(
+        *arguments, native_plan=value.plan, prepared_journal=value.journal,
         expected_anchor_sha256=value.anchor.anchor_sha256, **kwargs,
     )
 
@@ -82,16 +93,26 @@ def _drive(value, monkeypatch, operation, *, handler=None):
             pool.shutdown(wait=True)
 
 
-@pytest.mark.parametrize("scope", ["direct", "drs-owner", "unscoped-worker"])
-def test_brs_facade_cannot_borrow_drs_or_direct_authority(tmp_path, monkeypatch, scope):
-    value = _unregistered_publication(tmp_path)
-    before = _rows(value), _files(value)
-
+def _forbid_mutation_boundaries(monkeypatch, value, calls):
     def forbidden(*args, **kwargs):
-        pytest.fail("unscoped BRS caller reached the transaction")
+        calls.append("unexpected-boundary")
+        pytest.fail("BRS worker publication reached parsing, ready, transaction or evaluation")
 
-    monkeypatch.setattr(publication, "run_native_producer_bundle_publication_transaction", forbidden)
-    with pytest.raises(publication.RSIPythonPublicationError, match="owner_context_invalid"):
+    for name in ("_plan_snapshot", "_capture_admission", "run_native_producer_bundle_publication_transaction"):
+        monkeypatch.setattr(publication, name, forbidden)
+    monkeypatch.setattr(value.controller, "_request_python_admission_for_brs_worker", forbidden)
+    monkeypatch.setattr(value.controller, "_python_admission_inputs", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    monkeypatch.setattr(subprocess, "run", forbidden)
+
+
+@pytest.mark.parametrize("scope", ["direct", "drs-owner", "unscoped-worker"])
+def test_named_worker_symbol_refuses_without_observing_inputs_or_mutating(tmp_path, monkeypatch, scope):
+    value = _unregistered_publication(tmp_path)
+    before = _rows(value), _files(value), value.gateway.calls
+    calls = []
+    _forbid_mutation_boundaries(monkeypatch, value, calls)
+    with pytest.raises(publication.RSIPythonPublicationError) as caught:
         if scope == "drs-owner":
             with _owner(value):
                 _call(value)
@@ -100,147 +121,108 @@ def test_brs_facade_cannot_borrow_drs_or_direct_authority(tmp_path, monkeypatch,
                 pool.submit(_call, value).result(timeout=5)
         else:
             _call(value)
-    assert (_rows(value), _files(value)) == before
+    assert caught.value.code == ERROR and calls == []
+    assert (_rows(value), _files(value), value.gateway.calls) == before
 
 
-@pytest.mark.parametrize("lose_after_ack", [False, True])
-def test_actual_prepared_transaction_waits_for_owner_pin_before_inert_evaluation(
-    tmp_path, monkeypatch, lose_after_ack,
+@pytest.mark.parametrize("entry", ["named", "generic", "drs"])
+@pytest.mark.parametrize("after_ack", [False, True])
+def test_actual_selected_worker_cannot_publish_or_bypass_through_other_mutation_facades(
+    tmp_path, monkeypatch, entry, after_ack,
 ):
-    value = _unregistered_publication(tmp_path)
-    original_service = value.controller._python_admission_service_brs_ready
-    records, evaluations = [], []
-    prepared = (value.batch / "journal.prepared.json").read_bytes()
+    value = _fixture(tmp_path, monkeypatch)
+    observations = []
 
-    def service(wave, ready):
-        assert not _rows(value)["rsi_python_admissions"]
-        assert (value.batch / "journal.prepared.json").read_bytes() == prepared
-        digest = original_service(wave, ready)
-        record = value.ledger.python_admission_record(
-            value.binding.run_id, value.episode_id, value.journal.journal_id,
-            expected_record_sha256=digest,
-        )
-        records.append(record)
-        if lose_after_ack:
-            _lose_record(value, record, "missing")
-        return digest
+    def operation(request):
+        result = _ack_and_result(value, request) if after_ack else None
+        before = _rows(value), _files(value), value.gateway.calls
+        calls = []
+        with monkeypatch.context() as refusal_patch:
+            _forbid_mutation_boundaries(refusal_patch, value, calls)
+            with pytest.raises(publication.RSIPythonPublicationError) as caught:
+                _call(value, entry=entry)
+            assert caught.value.code == ERROR and calls == []
+            assert (_rows(value), _files(value), value.gateway.calls) == before
+        observations.append(after_ack)
+        return _ack_and_result(value, request) if result is None else result
 
-    def inert_evaluation(*args, **kwargs):
-        assert len(records) == 1
-        assert _state(value)["python_admission_refs"][value.episode_id]["record_sha256"] == records[0].record_sha256
-        evaluations.append(kwargs["journal_id"])
-        raise _EvaluationBoundary()
-
-    monkeypatch.setattr(transaction, "_verify_native_execution_receipt_link", lambda *a, **k: None)
-    monkeypatch.setattr(value.controller, "_python_admission_service_brs_ready", service)
-    monkeypatch.setattr(value.strategy.context.bundle_pipeline, "evaluate_draft_non_publishing", inert_evaluation)
-    error = publication.RSIPythonPublicationError if lose_after_ack else _EvaluationBoundary
-    with pytest.raises(error):
-        _drive(value, monkeypatch, lambda: _call(value))
-    assert len(records) == 1 and records[0].production_admission is False
-    assert evaluations == ([] if lose_after_ack else [value.journal.journal_id])
-    assert (value.batch / "journal.prepared.json").read_bytes() == prepared
+    value.operation = operation
+    with _selected_wave(value) as wave:
+        execution = value.controller._python_admission_run_selected_brs_intent(wave)
+        assert wave.selected_return is not None
+        assert execution.episode.status == execution.result.status == "completed"
+        assert wave.channel._completed_selected_episodes == {value.episode_id}
+        assert set(wave.state["python_admission_refs"]) == {value.episode_id}
+    assert observations == [after_ack]
     assert value.gateway.calls == 1
+    assert value.ledger.get_episode(value.sibling_id) is None
     assert not (value.workspace / "evolution" / "producer-publication.json").exists()
 
 
-@pytest.mark.parametrize("changed", ["request", "journal", "plan"])
-def test_original_message_identity_is_checked_before_ready_or_transaction(tmp_path, monkeypatch, changed):
+@pytest.mark.parametrize("entry", ["named", "generic", "drs"])
+@pytest.mark.parametrize("malicious", ["serializer", "attribute-mapping"])
+def test_active_worker_refusal_precedes_malicious_admission_plan_callbacks(
+    tmp_path, monkeypatch, entry, malicious,
+):
+    value = _fixture(tmp_path, monkeypatch)
+    callbacks = []
+
+    class MaliciousPlan:
+        def to_dict(self):
+            callbacks.append("serializer")
+            raise AssertionError("worker plan serializer ran")
+
+        def __getattribute__(self, name):
+            if malicious == "attribute-mapping":
+                callbacks.append("attribute-mapping")
+                raise AssertionError("worker plan attribute callback ran")
+            return object.__getattribute__(self, name)
+
+    def operation(request):
+        before = _rows(value), _files(value)
+        with pytest.raises(publication.RSIPythonPublicationError) as caught:
+            _call(value, entry=entry, admission_plan=MaliciousPlan())
+        assert caught.value.code == ERROR and callbacks == []
+        assert (_rows(value), _files(value)) == before
+        return _ack_and_result(value, request)
+
+    value.operation = operation
+    with _selected_wave(value) as wave:
+        value.controller._python_admission_run_selected_brs_intent(wave)
+    assert value.gateway.calls == 1 and callbacks == []
+
+
+@pytest.mark.parametrize("stop", ["cancelled", "expired"])
+def test_named_refusal_does_not_sample_control_or_caller_guards(tmp_path, monkeypatch, stop):
     value = _unregistered_publication(tmp_path)
-    arguments = {}
-    if changed == "request":
-        request = replace(value.request, environment_sha256=OTHER)
-        arguments["native_plan"] = replace(
-            value.plan, request=request, request_sha256=request.digest(), plan_sha256=None,
-        )
-    elif changed == "journal":
-        arguments["prepared_journal"] = replace(value.journal, environment_sha256=OTHER, journal_sha256=None)
-    else:
-        value.admission_plan = replace(value.admission_plan, environment_sha256=OTHER)
-
-    def forbidden(*args, **kwargs):
-        pytest.fail("mismatched BRS request reached transaction or owner ready")
-
-    monkeypatch.setattr(publication, "run_native_producer_bundle_publication_transaction", forbidden)
-    monkeypatch.setattr(value.controller, "_request_python_admission_for_brs_worker", forbidden)
-    with pytest.raises(publication.RSIPythonPublicationError):
-        _drive(value, monkeypatch, lambda: _call(value, **arguments))
-    assert not _rows(value)["rsi_python_admissions"]
-
-
-@pytest.mark.parametrize("stop", ["cancel", "deadline", "guard-drift"])
-def test_ready_wait_preserves_control_and_revalidates_after_caller_callbacks(tmp_path, monkeypatch, stop):
     clock = {"now": 100.0}
     control = SolveExecutionControl(30, clock=lambda: clock["now"])
-    value = _unregistered_publication(tmp_path, execution_control=control)
-    callbacks, transaction_calls = [], []
+    if stop == "cancelled":
+        control.cancel()
+    else:
+        clock["now"] = control.deadline
+    calls = []
 
     def guard(stage):
-        assert not value.controller._python_admission_brs_observation_lock._is_owned()
-        callbacks.append(stage)
-        if stop == "cancel":
-            control.cancel()
-        elif stop == "deadline":
-            clock["now"] = control.deadline
-        else:
-            _forged_checkpoint_append(value, lambda state: state.update(phase="caller-drift"))
+        calls.append(stage)
+        raise AssertionError("worker caller guard ran")
 
-    def prepared_transaction(*args, **kwargs):
-        transaction_calls.append("prepared")
-        kwargs["prepared_observer"](value.journal)
-        pytest.fail("stopped ready wait returned admission")
+    def check(stage):
+        calls.append(stage)
+        raise AssertionError("worker control callback ran")
 
-    monkeypatch.setattr(publication, "run_native_producer_bundle_publication_transaction", prepared_transaction)
-    error = {"cancel": SolveExecutionCancelled, "deadline": SolveExecutionBudgetExceeded,
-             "guard-drift": publication.RSIPythonPublicationError}[stop]
-    with pytest.raises(error):
-        _drive(value, monkeypatch, lambda: _call(value, execution_control=control, continuation_guard=guard))
-    assert transaction_calls == ["prepared"] and callbacks
-    assert not _rows(value)["rsi_python_admissions"]
+    monkeypatch.setattr(control, "check", check)
+    before = _rows(value), _files(value)
+    with pytest.raises(publication.RSIPythonPublicationError) as caught:
+        _call(value, execution_control=control, continuation_guard=guard)
+    assert caught.value.code == ERROR and calls == []
+    assert (_rows(value), _files(value)) == before
 
 
-def test_post_ack_evidence_refusal_keeps_durable_reference_and_never_repairs_it(tmp_path, monkeypatch):
-    value = _unregistered_publication(tmp_path)
-    transaction_result = object()
-    refs = []
-
-    def prepared_transaction(*args, **kwargs):
-        kwargs["prepared_observer"](value.journal)
-        refs.append(deepcopy(_state(value)["python_admission_refs"]))
-        anchor = value.batch / "python-producer-admission-anchor.json"
-        anchor.write_bytes(anchor.read_bytes() + b"\n")
-        return transaction_result
-
-    monkeypatch.setattr(publication, "run_native_producer_bundle_publication_transaction", prepared_transaction)
-    with pytest.raises(publication.RSIPythonPublicationError):
-        _drive(value, monkeypatch, lambda: _call(value))
-    assert len(_rows(value)["rsi_python_admissions"]) == 1
-    assert _state(value)["python_admission_refs"] == refs[0]
-    retained = _rows(value), _files(value)
-    with pytest.raises(publication.RSIPythonPublicationError, match="owner_context_invalid"):
-        _call(value)
-    assert (_rows(value), _files(value)) == retained
-
-
-@pytest.mark.parametrize("observer", ["omitted", "wrong-journal", "replayed"])
-def test_prepared_observer_cannot_be_skipped_replaced_or_replayed(tmp_path, monkeypatch, observer):
-    value = _unregistered_publication(tmp_path)
-
-    def prepared_transaction(*args, **kwargs):
-        if observer == "wrong-journal":
-            kwargs["prepared_observer"](replace(value.journal, budget_sha256=OTHER, journal_sha256=None))
-        elif observer == "replayed":
-            kwargs["prepared_observer"](value.journal)
-            kwargs["prepared_observer"](value.journal)
-        return object()
-
-    monkeypatch.setattr(publication, "run_native_producer_bundle_publication_transaction", prepared_transaction)
-    with pytest.raises(publication.RSIPythonPublicationError, match={
-        "omitted": "admission_missing", "wrong-journal": "prepared_journal_mismatch",
-        "replayed": "prepared_observer_replayed",
-    }[observer]):
-        _drive(value, monkeypatch, lambda: _call(value))
-    assert len(_rows(value)["rsi_python_admissions"]) == (1 if observer == "replayed" else 0)
+def test_named_worker_import_symbol_is_retained():
+    name = "run_rsi_python_bundle_publication_for_active_brs_worker"
+    assert name in publication.__all__
+    assert getattr(lunar_evolution, name) is getattr(publication, name)
 
 
 @pytest.mark.parametrize("failure", ["deadline", "timeout", "os-error"])

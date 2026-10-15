@@ -1,39 +1,24 @@
-# Feature 196 — owner publication task split (draft)
+# Feature 196 — owner publication task split
 
-This task split is subordinate to `publication-boundary.md`. It is a planning
-artifact only; no item below is complete until its code, focused tests, static
-checks and independent review are recorded. Keep the existing private checkpoint
-settlement task separate from this publication work.
+This tracking is subordinate to `publication-boundary.md`. PB-01 closes only the
+worker mutation facade; no owner publication or native BRS availability follows.
 
-## P1 implementation slices
-
-| ID | Owner boundary | Deliverable | Required refusal/side-effect proof |
+| ID | Slice | Deliverable / dependency | Exit condition |
 | --- | --- | --- | --- |
-| PB-01 | Authority facade | Private owner-only publication entry point consuming the exact selected return receipt, handoff and original prepared reference | Worker thread, missing owner scope, foreign lease, wrong episode, mode drift and public `_drive_brs` calls refuse before lock/I/O; archive, state, checkpoint and budget remain byte-identical |
-| PB-02 | C1 capture/CAS | Capture `H_before`, before archive/state pins, source/configuration and budget/deadline under the original owner lease; CAS the prepared execution into the owner checkpoint | Stale controller head, changed payload, source/sidecar/workspace/inode drift, owner-thread drift and duplicate C1 refuse; no latest-head adoption or second reservation |
-| PB-03 | P transaction bridge | Invoke the existing Feature 153 owner publication transaction with the exact original plan/journal/anchor and C1 expected head | Worker cannot invoke staging/commit; plan/journal/receipt/attempt/deadline drift refuses before first final move; lock order is owner then publication |
-| PB-04 | C2 terminal/read-back | Verify terminal journal, manifest, candidate trees, archive/state and native receipt, then CAS C2 against C1 and `H_after` | CAS/read-back mismatch leaves C1 and durable P evidence intact, owner head stale, no rollback/repair/retry/sibling; successful C2 is idempotent only through exact terminal inspection |
-| PB-05 | Unknown/recovery gate | Map deadline, cancellation, owner exit, channel close, unknown marker and partial move to existing durable recovery states | Unknown and missing C2 block successor dispatch; read-only inspection requires original pins and never launches evaluator/producer or adopts current files |
-| PB-06 | Serial ordinal transition | Create a fresh handoff against C2's verified head while preserving original wave reservation and M0 | Next ordinal cannot start before C2; prior prepared/receipt/journal cannot be copied; stale sibling publication is rejected |
-| PB-07 | Success/rejection policy composition | Route completed success and known rejection through existing owner memory/result policy | Worker never promotes memory; rejection does not advance published head or create success evidence; C1/P/C2 associations remain distinct |
+| PB-01 | Worker mutation refusal | Keep the named worker symbol/signature with unconditional fixed refusal; reject active BRS worker scope in generic and DRS mutation facades before plan parsing. Leave read-only resume and pin-only ready/ACK unchanged. | Real selected-worker tests before/after ACK show zero parsing/callback/transaction/ready/write effects and original ACK/result path still completes; DRS/direct generic compatibility passes. Implementation present in isolated branch; validation pending. |
+| PB-01s | Native scheduler bypass refusal | At the original scheduler provider boundary, refuse a live BRS worker before the separate direct transaction route. Do not disable standalone pin-only admission. | Actual worker scheduler regression cannot reach producer/transaction; DRS scheduler/pin-only channel compatibility passes. Tracked separately from PB-01 implementation. |
+| PB-02 | Online prepared bridge specification | Freeze live selected prepared request/response, original claim/running episode, handoff lifetime, exact owner/worker pins, callback/lock ordering and bounded evidence before implementing. Completed-return receipt cannot be used as a publication grant. | Independent design/source audit; no manufactured DRS context or new authority. Not implemented. |
+| PB-03 | Owner bridge and lineage composition | After PB-02, add BRS-specific owner composition. Success retains existing before/prepared/staged/terminal; rejection retains original C1/provenance-P/C2. Reuse existing native transaction and exact captured-head CAS/read-back. | Real owner thread alone performs lineage/publication; worker only submits/waits; no DRS gate relaxation, duplicate evaluation or schema/cap widening. Not implemented. |
+| PB-04 | Unknown/recovery | Define original-pin inspection/reconcile for each missing or ambiguous success/rejection boundary; preserve durable marker and stale owner head. | No launch/evaluation/publication retry, current-file adoption, repair, budget refresh or successor. Not implemented. |
+| PB-05 | Serial ordinal transition | Fresh next handoff only after exact native terminal/result and complete preceding owner lineage acknowledgment. | Original reservation/M0 retained; nonce/journal/claim/receipt uniqueness and exact verified head. Not implemented. |
+| PB-06 | Policy/memory composition | Keep existing owner success/rejection memory/result policy separate from immutable candidate publication. | Rejection changes no published head or memory; workers never promote memory. Not implemented. |
+| PB-07 | Independent acceptance | Focused exact inventory/raw XML, static checks, installed-source identity, independent review and final-source CI. | Actual observed counters/hash only; no design-only task marked complete. |
 
-## P1 verification and release slices
+PB-01 can be implemented independently because it grants no new authority or
+publication path. PB-02/PB-03 cannot be safely treated as a completed-return facade;
+they require the prepared-stage online lifecycle above. PB-04/PB-05 depend on that
+contract and complete durable acceptance.
 
-| ID | Deliverable | Exit condition |
-| --- | --- | --- |
-| PB-08 | Focused owner/worker publication matrix | All PB-01..07 cases pass with exact disjoint inventory, no provider/network/process campaign, zero F/E/skip |
-| PB-09 | Static and compatibility gate | Ruff over `src tests tools`, compileall and `git diff --check`; existing DRS, admission, settlement and public native-refusal suites pass |
-| PB-10 | Independent source/evidence review | Reviewer checks source hash, installed import origin, raw XML, exit chain, archive/state/inode pins and that public native BRS remains refusal-only |
-| PB-11 | Documentation/status update | Update Feature196 task/validation/HANDOFF only with observed counters and source hash; keep publication status open until PB-10 |
-
-## Deferred P2 work
-
-- Multiple native children or concurrent publication in one wave.
-- External worker authentication, remote transport and multi-machine ownership.
-- Public native BRS enablement, production CLI and scheduler integration.
-- Sealed runtime/toolchain, real OpenEvolve/Shinka campaigns and remote/company
-evaluators.
-- New persistence schema, automatic repair/retry or latest-head adoption.
-
-Any deferred item requires its own SDD and acceptance rather than being inferred from
-this in-process owner boundary.
+P2 remains separate: concurrent/multiple native children, external worker transport
+and authentication, multi-machine ownership, public native BRS/CLI enablement,
+sealed runtime and real campaigns. No service API or automatic repair is implied.
