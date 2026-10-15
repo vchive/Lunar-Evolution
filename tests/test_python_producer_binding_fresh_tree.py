@@ -150,15 +150,41 @@ def test_public_binding_gates_revalidate_mutated_tree_before_callback(tmp_path, 
 
 
 @pytest.mark.parametrize("text", [False, True], ids=["bytes", "text"])
-@pytest.mark.parametrize("mutation,code", [
-    ("bytes_bound", "binding_too_large"),
-    ("depth_bound", "json_invalid"),
-])
-def test_fresh_tree_binding_keeps_raw_capacity_refusal(tmp_path, text, mutation, code):
-    if mutation == "bytes_bound":
-        raw = b" " * (binding.MAX_PYTHON_PRODUCER_BINDING_BYTES + 1)
-    else:
-        raw = b"[" * 2000 + b"0" + b"]" * 2000
+def test_fresh_tree_binding_keeps_raw_capacity_refusal(text):
+    raw = b" " * (binding.MAX_PYTHON_PRODUCER_BINDING_BYTES + 1)
     with pytest.raises(binding.PythonProducerBindingError) as caught:
         binding.parse_python_producer_binding(raw.decode() if text else raw)
-    assert caught.value.code == "python_producer_binding_" + code
+    assert caught.value.code == "python_producer_binding_binding_too_large"
+
+
+@pytest.mark.parametrize("text", [False, True], ids=["bytes", "text"])
+def test_fresh_tree_binding_rejects_deep_array_outside_schema(text):
+    # Decoder recursion behavior differs across supported Python versions. This
+    # array is outside the binding schema even when the decoder accepts it; its
+    # nesting is not a portable parser depth limit.
+    raw = b"[" * 2000 + b"0" + b"]" * 2000
+    with pytest.raises(binding.PythonProducerBindingError) as caught:
+        binding.parse_python_producer_binding(raw.decode() if text else raw)
+    assert caught.value.code in {
+        "python_producer_binding_json_invalid",
+        "python_producer_binding_schema_invalid",
+    }
+
+
+@pytest.mark.parametrize("text", [False, True], ids=["bytes", "text"])
+def test_fresh_tree_binding_maps_decoder_recursion_error_to_json_invalid(monkeypatch, text):
+    raw, calls = b"{}", []
+    failure = RecursionError("inert decoder refusal")
+
+    def exhausted(value, **_kwargs):
+        calls.append(value)
+        raise failure
+
+    # json is a shared module: restore its decoder before pytest emits reports.
+    with monkeypatch.context() as decoder_patch:
+        decoder_patch.setattr(binding.json, "loads", exhausted)
+        with pytest.raises(binding.PythonProducerBindingError) as caught:
+            binding.parse_python_producer_binding(raw.decode() if text else raw)
+    assert calls == [raw.decode()]
+    assert caught.value.code == "python_producer_binding_json_invalid"
+    assert caught.value.__cause__ is failure

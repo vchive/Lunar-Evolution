@@ -52,7 +52,7 @@ are unchanged and retain their existing authority boundaries.
 - [x] Verify all five public construction/revalidation/serialization gates
   reject mutated tree digests and same-wire callback-bearing directory or
   declared-file collections before invoking their callbacks.
-- [x] Verify original raw byte and depth capacity refusals, existing no-effects
+- [x] Verify the exact original raw byte capacity refusal, existing no-effects
   traps and scheduler inode/configuration/between-observation drift regressions.
 - [x] Run focused Ruff, `compileall src tests` and `git diff --check`.
 - [ ] Complete independent review, integration and that final source's own CI.
@@ -63,6 +63,32 @@ profiles are retained under the implementation worktree's ignored
 `baseline-new-tests-attempt01.xml`; candidate focused XML is
 `candidate-focused-attempt01.xml`. Neither run failed; the evidence is retained
 under its actual source and is not substituted for release acceptance.
+
+### Decoder portability follow-up
+
+The original 47/236 local results above are preserved as observations of their
+original source and interpreter. A later Linux Python 3.12 integration run
+exposed a test assumption: its JSON decoder accepts the 2,000-level array used
+by two cases, after which the unchanged binding schema gate returns
+`python_producer_binding_schema_invalid`. Other interpreters may reject that
+array during decoding with `python_producer_binding_json_invalid`. The array is
+an invalid binding in either case; 2,000 is not a cross-version hard depth cap.
+
+This tests-and-documentation follow-up preserves the exact raw byte limit
+assertion, permits only those two fixed codes for the real deeply nested array,
+and adds deterministic decoder `RecursionError` injections for both bytes and
+text. Each injected decoder failure must map to the existing `json_invalid`
+code. Product parsing, public construction, serialization and source pins are
+unchanged. New baseline/candidate XML, logs and source maps are retained in a
+separate `fresh-tree-decoder-portability/` report directory; they do not replace
+the original evidence or the Linux integration failure.
+
+Follow-up local validation uses CPython 3.11.15: all 49 semantic cases pass
+against unchanged baseline `bbfba929`, and 238 distinct candidate focused cases
+pass (54.88 seconds), including those same 49. Both have zero failures, errors
+or skips. Focused Ruff, `compileall src tests`, `git diff --check` and an
+independent read-only review pass. These new counts apply to this follow-up
+only; final integrated Linux/cross-version acceptance remains separate.
 
 ## Bounded performance evidence
 
