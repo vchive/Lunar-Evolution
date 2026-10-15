@@ -2,7 +2,7 @@
 
 Existing-pin publication and recovery remain read-only with respect to controller state.
 The active DRS entry pins on its owning thread. Publication mutation entries refuse
-an already-established BRS worker scope before parsing caller material. The named
+an already-established BRS invocation before parsing caller material. The named
 BRS worker entry remains a compatibility symbol with a fixed refusal until an owner
 publication bridge is accepted. Read-only recovery remains available. No entry
 launches a worker or grants production admission; original proof and complete
@@ -63,10 +63,13 @@ class RSIPythonPublicationError(NativeProducerBundleTransactionError):
 
 
 def _refuse_active_brs_worker_publication(controller: object) -> None:
-    """A live worker observation scope is never parent publication authority."""
-    if (type(controller) is RSILearningController
-            and getattr(controller._python_admission_brs_local, "active", None) is not None):
-        raise RSIPythonPublicationError("brs_worker_publication_forbidden")
+    """Reject BRS entry hooks and nested scopes without discovering authority on disk."""
+    if type(controller) is RSILearningController:
+        worker_local = controller._python_admission_brs_local
+        if (getattr(worker_local, "publication_forbidden", False) is True
+                or getattr(worker_local, "active", None) is not None
+                or getattr(worker_local, "dispatch", None) is not None):
+            raise RSIPythonPublicationError("brs_worker_publication_forbidden")
 
 
 def _plan_snapshot(plan: ProducerBundleAdmissionPlan) -> ProducerBundleAdmissionPlan:

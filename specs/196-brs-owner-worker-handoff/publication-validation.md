@@ -12,6 +12,7 @@ refusal from future online owner bridge acceptance.
 | RF-02 | Actual selected BRS worker before prepared ACK calls named/generic/DRS mutation facade | Fixed refusal occurs before `_plan_snapshot`, `_capture_admission`, native transaction, `_python_admission_inputs` or ready request; SQL/files and gateway count unchanged. |
 | RF-03 | Actual selected worker after retained ACK/durable result calls those facades | Existing refs cannot bypass ownership; same zero-effect refusal. Original service completes its sole ACK/result and sibling stays unstarted. |
 | RF-04 | Active worker supplies callback-bearing admission plan | Serializer/attribute callbacks remain zero; fixed refusal precedes caller DTO observation. |
+| RF-04a | Actual entry source hook, dispatch/checkpoint callback and nested `_execute_intent` suppression | All three mutation facades refuse even when active/dispatch are absent; negative invocation marker restores after return and creates no grant. |
 | RF-05 | Named helper gets expired/cancelled control and caller guard | Neither control nor caller guard sampled; fixed refusal leaves original files/rows unchanged. |
 | RF-06 | Import compatibility | Named symbol and `__all__` remain; original call signature retained. |
 | RF-07 | DRS/direct generic and read-only recovery | Existing publication/admission owner suites remain exact; no read-only resume gate added. |

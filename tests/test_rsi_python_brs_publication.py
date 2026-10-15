@@ -6,6 +6,7 @@ import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from threading import get_ident
 
 import pytest
 from test_rsi_python_admission import _files, _rows
@@ -98,10 +99,19 @@ def _forbid_mutation_boundaries(monkeypatch, value, calls):
         calls.append("unexpected-boundary")
         pytest.fail("BRS worker publication reached parsing, ready, transaction or evaluation")
 
+    caller_thread = get_ident()
+
+    def caller_only(original):
+        def check(*args, **kwargs):
+            if get_ident() == caller_thread:
+                forbidden(*args, **kwargs)
+            return original(*args, **kwargs)
+        return check
+
     for name in ("_plan_snapshot", "_capture_admission", "run_native_producer_bundle_publication_transaction"):
-        monkeypatch.setattr(publication, name, forbidden)
-    monkeypatch.setattr(value.controller, "_request_python_admission_for_brs_worker", forbidden)
-    monkeypatch.setattr(value.controller, "_python_admission_inputs", forbidden)
+        monkeypatch.setattr(publication, name, caller_only(getattr(publication, name)))
+    for name in ("_request_python_admission_for_brs_worker", "_python_admission_inputs"):
+        monkeypatch.setattr(value.controller, name, caller_only(getattr(value.controller, name)))
     monkeypatch.setattr(subprocess, "Popen", forbidden)
     monkeypatch.setattr(subprocess, "run", forbidden)
 
@@ -190,6 +200,70 @@ def test_active_worker_refusal_precedes_malicious_admission_plan_callbacks(
     with _selected_wave(value) as wave:
         value.controller._python_admission_run_selected_brs_intent(wave)
     assert value.gateway.calls == 1 and callbacks == []
+
+
+@pytest.mark.parametrize("entry", ["named", "generic", "drs"])
+@pytest.mark.parametrize("window", ["entry-source", "dispatch-checkpoint", "nested-suppression"])
+def test_entire_actual_invocation_refuses_publication_across_entry_and_nested_windows(
+    tmp_path, monkeypatch, entry, window,
+):
+    value = _fixture(tmp_path, monkeypatch)
+    observed = []
+    original_config = value.gateway.rsi_fingerprint_config
+    original_checkpoint = value.controller._validate_producer_checkpoint
+
+    def refuse():
+        worker_local = value.controller._python_admission_brs_local
+        assert get_ident() != value.owner_thread
+        assert worker_local.publication_forbidden is True
+        assert getattr(worker_local, "active", None) is None
+        assert (getattr(worker_local, "dispatch", None) is not None) is (window == "dispatch-checkpoint")
+        before = _rows(value), _files(value), value.gateway.calls
+        calls = []
+        with monkeypatch.context() as refusal_patch:
+            _forbid_mutation_boundaries(refusal_patch, value, calls)
+            with pytest.raises(publication.RSIPythonPublicationError) as caught:
+                _call(value, entry=entry, admission_plan=object())
+            assert caught.value.code == ERROR and calls == []
+            assert (_rows(value), _files(value), value.gateway.calls) == before
+        observed.append(window)
+
+    def source_hook():
+        worker_local = value.controller._python_admission_brs_local
+        if (window == "entry-source" and get_ident() != value.owner_thread and not observed
+                and getattr(worker_local, "publication_forbidden", False) is True
+                and getattr(worker_local, "dispatch", None) is None
+                and getattr(worker_local, "active", None) is None):
+            refuse()
+        return original_config()
+
+    def checkpoint_hook(run_id, state):
+        worker_local = value.controller._python_admission_brs_local
+        if (window == "dispatch-checkpoint" and get_ident() != value.owner_thread and not observed
+                and getattr(worker_local, "dispatch", None) is not None
+                and getattr(worker_local, "active", None) is None):
+            refuse()
+        return original_checkpoint(run_id, state)
+
+    def operation(request):
+        if window == "nested-suppression":
+            worker_local = value.controller._python_admission_brs_local
+            original_active = worker_local.active
+            assert worker_local.dispatch is None
+            with monkeypatch.context() as nested_patch:
+                nested_patch.setattr(value.controller, "_execute_intent_inner", lambda *a: refuse())
+                value.controller._execute_intent(value.state, request.episode_id)
+            assert worker_local.active is original_active
+        return _ack_and_result(value, request)
+
+    monkeypatch.setattr(value.gateway, "rsi_fingerprint_config", source_hook)
+    monkeypatch.setattr(value.controller, "_validate_producer_checkpoint", checkpoint_hook)
+    value.operation = operation
+    with _selected_wave(value) as wave:
+        value.controller._python_admission_run_selected_brs_intent(wave)
+    assert observed == [window]
+    assert value.gateway.calls == 1 and value.ledger.get_episode(value.sibling_id) is None
+    assert getattr(value.controller._python_admission_brs_local, "publication_forbidden", False) is False
 
 
 @pytest.mark.parametrize("stop", ["cancelled", "expired"])

@@ -2530,21 +2530,30 @@ class RSILearningController:
 
     def _execute_brs_intent(self, wave, state, episode_id, handoff=None):
         """Attach a dispatch token only to the executor's selected invocation."""
-        previous = getattr(self._python_admission_brs_local, "dispatch", None)
-        if previous is not None or getattr(self._python_admission_brs_local, "active", None) is not None:
-            raise RSILearningError("rsi_python_brs_admission_nested_dispatch")
-        if wave is not None and wave.selected_handoff is not None:
-            self._python_admission_assert_selected_brs(wave, handoff)
-            with self._python_admission_brs_observations():
-                if (episode_id != handoff.episode_id or state is not wave.state
-                        or get_ident() == wave.owner_thread or wave.selected_worker_started):
-                    raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
-                wave.selected_worker_started = True
-        self._python_admission_brs_local.dispatch = (wave, state, episode_id)
+        # This is only a negative mutation gate, retained across entry/source hooks
+        # and nested execution scopes that suppress active/dispatch capabilities.
+        previous_publication_forbidden = getattr(
+            self._python_admission_brs_local, "publication_forbidden", False,
+        )
+        self._python_admission_brs_local.publication_forbidden = True
         try:
-            return self._execute_intent(state, episode_id)
+            previous = getattr(self._python_admission_brs_local, "dispatch", None)
+            if previous is not None or getattr(self._python_admission_brs_local, "active", None) is not None:
+                raise RSILearningError("rsi_python_brs_admission_nested_dispatch")
+            if wave is not None and wave.selected_handoff is not None:
+                self._python_admission_assert_selected_brs(wave, handoff)
+                with self._python_admission_brs_observations():
+                    if (episode_id != handoff.episode_id or state is not wave.state
+                            or get_ident() == wave.owner_thread or wave.selected_worker_started):
+                        raise RSILearningError("rsi_python_brs_admission_selected_identity_invalid")
+                    wave.selected_worker_started = True
+            self._python_admission_brs_local.dispatch = (wave, state, episode_id)
+            try:
+                return self._execute_intent(state, episode_id)
+            finally:
+                self._python_admission_brs_local.dispatch = previous
         finally:
-            self._python_admission_brs_local.dispatch = previous
+            self._python_admission_brs_local.publication_forbidden = previous_publication_forbidden
 
     @contextmanager
     def _python_admission_brs_worker_scope(self, state, episode_id):

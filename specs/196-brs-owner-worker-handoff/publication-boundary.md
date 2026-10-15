@@ -16,7 +16,10 @@ calling callbacks, submitting ready, opening a transaction or touching evidence.
 
 The generic `run_rsi_python_bundle_publication` and DRS
 `run_rsi_python_bundle_publication_for_active_flow` mutation facades also refuse an
-already-established thread-local active BRS worker before plan parsing. They do not
+already-established BRS invocation before plan parsing, including the entry/source-hook,
+pre-active dispatch and nested active/dispatch-suppression windows. A negative
+thread-local publication-forbidden marker is set at invocation entry and restored
+in finally; it grants no execution or publication authority. They do not
 discover a BRS run from disk or invent new ownership. Direct already-pinned generic
 calls and original DRS ownership retain their existing semantics. Read-only resume
 is unchanged. Prepared admission through the existing ready/ACK channel stays
