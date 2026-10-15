@@ -42,6 +42,12 @@ PR103 统一候选仍待最终集成来源 CI、独立审计和合入。
 原始 XML、source maps、失败和中断记录保留在各自 ignored reports；当前验收状态以
 [HANDOFF.md](../HANDOFF.md) 和最终验证记录为准。
 
+Linux 开发服务器首轮 `f9048df` 六分片已失败：16,484 cases 中 15,976 pass、
+234 failures、188 errors、86 skips，原始产物保留。严格 GCC、系统 Python 探测、
+lineage/import-trap fixture、短 TMPDIR 和完整历史对象的修复已整合；局部通过不关闭
+P0。新整合来源仍需 focused gate、完整六分片、三版正式 CI 和独立审计。
+各切片范围与限制见 HANDOFF 和 Feature157/160/191 validation。
+
 ## P0：当前 DRS 批次
 
 | 剩余工作 | 已有实现 / 本地证据 | 结束条件 |

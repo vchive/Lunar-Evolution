@@ -632,3 +632,22 @@ manifest/launch records self-bind bytes/device/inode without an independently re
 original timestamp, so a touch completed before observation remains accepted. Two reads
 are not an atomic filesystem snapshot. Live runtime/handoff composition and the full
 process/runtime/journal interruption matrix remain separate work.
+
+
+## 2026-10-15 server layout and historical-object preflight
+
+The first six-shard server run at `f9048df` failed; its raw 16,484-case inventory,
+XML/logs and source receipts are retained. Deep temporary roots expanded repeated
+absolute fixture paths beyond the existing 32,768-byte staging binding limit (an
+original retained binding measured 36,701 canonical bytes). Follow-up local runs use
+fresh, independently owned short temporary roots. The production byte ceilings remain
+unchanged, and a short test layout grants no exception to those ceilings.
+
+The shallow clone also lacked the runner's fixed archive, frozen and product Git
+objects. Current runner tests use those objects too, so the Linux guide now requires
+all three before current or history execution. The repository was fetched intact;
+no historical pins or archive bytes were edited. In the correctly installed independent
+Python3.12 environment with a short temporary root, the complete regression-runner
+module and the two original rejection-mode checkpoint cases passed 77 cases, with no
+failures, errors or skips (23.430 seconds). This focused run confirms the repaired
+preconditions; it does not substitute for the final complete current or official matrix.

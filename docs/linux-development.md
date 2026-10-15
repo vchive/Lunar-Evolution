@@ -15,12 +15,14 @@ dev_checkout="$(dirname "$PWD")/lunar-linux-dev"
 git worktree add -b codex/linux-development "$dev_checkout" "$revision"
 cd "$dev_checkout"
 
+# SSH 非交互会话可能未把 user bin 加入 PATH。
+export PATH="$HOME/.local/bin:$PATH"
 # 确认输出为 uv 0.11.8、已安装的 Python 3.11+。
 uv --version
 python3.12 --version
 uv venv --no-config --no-python-downloads --python python3.12 .venv
 uv pip install --no-config --python .venv/bin/python -e '.[dev,lint]'
-export PATH="$PWD/.venv/bin:$PATH"
+export PATH="$PWD/.venv/bin:$HOME/.local/bin:$PATH"
 export PYTHONPATH="$PWD/src"
 
 python -c 'import sys, lunar_evolution; print(sys.executable); print(lunar_evolution.__file__)'
@@ -44,17 +46,29 @@ git diff --check
 
 当前回归使用 `tools/run_tests.py`，分片索引为 **0、1、2、3、4、5**，统一 `--shard-count 6`。分片划分是确定的；六个分片必须使用同一个 Git 提交。`current` 不包含独立的 focused 和 history 角色，不能据此声称完整 CI 已通过。完整角色及 Python 版本以 [workflow](../.github/workflows/test.yml) 为准。
 
-先在仓库根目录创建一轮全新的目录和六个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
+`current` 内的 runner 回归也会读取固定历史提交，因此 current 和 history 都需要先检查完整历史。浅 clone 在联网时先执行 `git fetch --unshallow origin`；也可以显式 fetch 下列固定对象。不要更改 runner 中的 pins 来绕过缺失历史。
+
+先在仓库根目录检查固定对象，再创建一轮全新的目录和六个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
 
 ```bash
+set -euo pipefail
 revision="$(git rev-parse HEAD)"
+# 对应 tools/run_tests.py 的 archive/frozen/product pins；全部必须存在。
+for pinned_commit in \
+  c6947fdfbf43d84e83cc29cc215e7bc0250db83a \
+  5560eb9f67463badc31fed17e309bb5dc1dabf8f \
+  519fea5ca70ac1ede3df356ee7391112801ab45d; do
+  git cat-file -e "$pinned_commit^{commit}" || exit 1
+done
 run_parent="$(dirname "$PWD")/lunar-local-runs"
 mkdir -p "$run_parent"
 run_root="$(mktemp -d "$run_parent/$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:12}-XXXXXX")"
 printf '%s\n' "$revision" > "$run_root/revision.txt"
 for shard_index in 0 1 2 3 4 5; do
   shard_root="$run_root/current-$shard_index"
-  mkdir -p "$shard_root/tmp" "$shard_root/home" "$shard_root/results"
+  mkdir -p "$shard_root/home" "$shard_root/results"
+  # binding 会重复记录绝对路径；使用短、独占的临时根，保持原字节上限。
+  mktemp -d /tmp/le.XXXXXXXX > "$shard_root/tmp-root.txt"
   git worktree add --detach "$shard_root/checkout" "$revision"
   uv venv --no-config --no-python-downloads --python python3.12 \
     "$shard_root/checkout/.venv"
@@ -72,9 +86,9 @@ run_root='/absolute/path/to/this-run'
 shard_index=0
 shard_root="$run_root/current-$shard_index"
 cd "$shard_root/checkout"
-export PATH="$PWD/.venv/bin:$PATH"
+export PATH="$PWD/.venv/bin:$HOME/.local/bin:$PATH"
 export PYTHONPATH="$PWD/src"
-export TMPDIR="$shard_root/tmp"
+export TMPDIR="$(cat "$shard_root/tmp-root.txt")"
 export LUNAR_EVOLUTION_HOME="$shard_root/home"
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
@@ -99,7 +113,9 @@ printf '%s\n' "${pipeline_status[1]}" > "$shard_root/results/log-exit-status.txt
 
 `exit-status.txt` 非零表示测试失败，`log-exit-status.txt` 非零表示日志写入失败；缺少这些文件表示进程可能尚未结束或被中断。保留 JUnit XML、runner 生成的 provenance、stdout/stderr 日志和退出码；不要只看终端最后一行。SSH 断线时先检查原进程和结果，不要直接在原目录重跑。
 
-history 需要完整 Git 历史及 runner 中固定的 archive/frozen/product 提交。先检查 `git rev-parse --is-shallow-repository`；浅 clone 在联网时先执行 `git fetch --unshallow origin`，或按 `tools/run_tests.py` 的固定 commit 显式 fetch 所缺对象，并用 `git cat-file -e '<commit>^{commit}'` 确认。不要改写固定 commit 来绕过缺失历史。
+同样保留每个 `tmp-root.txt` 指向的临时目录；其中可能包含定位失败所需的原始 fixture 证据。长 TMPDIR 会放大重复路径，可能使原本有效的 fixture binding 超过既有 32 KiB 上限；不要提高生产上限来容纳测试目录。短路径只修正测试布局，不是对生产 byte bound 的豁免。
+
+上面的历史对象检查也适用于单独运行 history。缺少对象时先补齐仓库，再创建新的结果目录运行；不能把缺少历史导致的 setup error 计为功能已通过。
 
 history 会用 uv 离线建立历史环境，因此预先用同一个 uv cache 安装当前 package/build 依赖，并缓存当前环境使用的同版 pytest。仅通过 pip 装过依赖不保证 uv cache 已预热，缺少缓存时 offline 安装会失败。以下在已建立的独立 history checkout 和 `.venv` 内运行；测试前不切换 `UV_CACHE_DIR`，也不要清理该 cache：
 
@@ -115,4 +131,4 @@ uv pip install --no-config --reinstall-package pytest \
 
 六分片通过仅证明该提交在这台机器上的 current 测试结果。正式合入仍需核实精确 head/base、GitHub Actions 全部必需角色、原始 artifact 和 source/tree provenance。provider-free 成功不代表真实 solver、原生工具链或生产 admission 已验收；`production_admission=false` 保持原有边界。
 
-结束前保留需要审查的日志和提交身份。只在确认没有运行中的测试、需要保留的修改或未归档产物后，才使用 `git worktree remove` 清理对应 checkout；日志位于外部 results，可独立保留。开发记录和后续验收条件见 [当前发布台账](current-release-backlog.md)。
+结束前保留需要审查的日志和提交身份。只在确认没有运行中的测试、需要保留的修改或未归档产物后，才使用 `git worktree remove` 清理对应 checkout；日志位于外部 results，可独立保留。各 `tmp-root.txt` 中的短临时根也应先检查和归档，再由创建者单独清理，不要删除其他用户或其他运行的 `/tmp` 目录。开发记录和后续验收条件见 [当前发布台账](current-release-backlog.md)。

@@ -1,5 +1,29 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 Linux 完整回归失败后的集成修复
+
+服务器首轮六分片来源为 `f9048df`，结果为 **16,484 distinct cases：15,976 pass、
+234 failures、188 errors、86 skips**，整轮失败。原始 XML、stdout、inventory 和
+source/import 身份记录保留于独立 run-root；stderr 为空不代表通过，后续结果不覆盖原失败。
+
+独立修复已整合：严格 GCC 生成 fixture 换行及八字节 IPC marker、Python pipe 中
+系统 customization 与实际 decoy 来源区分、lineage reader 的 v1/v2 association 初始化、
+Python3.12 pathlib 已加载 ntpath 的窄 import-trap 例外。原 production 字节上限、
+编译 warning/hardening、file/inode/source/CAS 和 effect-free 门禁不变。Linux 流程另
+要求三个固定历史对象齐全，并为每分片分配短且独占的 TMPDIR。
+
+当前已有的独立证据：GCC 切片 167 cases（161 pass、6 原架构 skips），Python pipe
+完整模块 34 pass，reader/import-trap 受影响范围 17 pass，runner/原 rejection-mode
+范围 77 pass。各范围、原失败及 XML SHA 见 Feature157/160/191 validation；
+这些局部结果可能跨来源，不相加声称完整集成验收。reader/runtime 两个完整模块的
+199-case 尝试未完成，不能描述为通过，未改的重案例交由完整集成回归覆盖。
+
+本轮出口是最终提交的整合 focused gate、新六分片 current、三版正式 CI 与独立
+raw/source/tree/import 审计，再合入 PR103/main；目前均未据此关闭。
+冻结的旧 PR103 来源和官方 run 保持原证据身份，不能充当新修复提交的验收。
+仅本地 inert/provider-free fixtures，`production_admission=false`；真实 native BRS、
+sealed runtime 和 OpenEvolve/Shinka producer/CLI 验收仍按台账开放。
+
 ## 2026-10-15 Linux 开发环境与严格 GCC 编译兼容
 
 新增独立 Linux / SSH 开发流程，固定每个 worktree 自己的 uv/Python 环境、console
