@@ -1,4 +1,4 @@
-# Selected BRS owner publication bridge — design, not implementation
+# Selected BRS owner publication bridge — online design and checkpoint primitive
 
 ## Verified gap
 
@@ -52,7 +52,7 @@ back to running/started to obtain publication authority.
 
 ## Explicit BRS authority
 
-A future exact BRS owner must have its own mode/policy and scope gate. It must not
+The complete online BRS owner must have its own mode/policy and scope gate. It must not
 forge `_PythonAdmissionFlowContext`, rewrite BRS state as DRS, borrow a DRS dispatch
 lease or accept duck-typed owners. Existing descriptor/snapshot/rejection formats and
 capacity rules can be reused behind a private kernel with explicit known-owner dispatch.
@@ -75,8 +75,50 @@ and comparison of already-observed head/payload bytes. The original DRS facade s
 owns exact owner admission, capacity/strict serialization, captured-head CAS, readback
 scope and context/root-binding checks. Both live functions are explicit fingerprint
 dependencies. This changes new policy fingerprints and retains old-run drift refusal;
-it does not provide a BRS owner or migrate a persisted policy. Its 17-case focused
+that slice does not provide a BRS owner or migrate a persisted policy. Its 17-case focused
 validation is recorded separately in `validation.md`.
+
+PB-03b implements a narrower private primitive in
+`rsi_brs_publication_lineage.py`: `_BRSLineageCheckpointOwner` supports only
+`checkpoint_before` and `acknowledge_prepared` for the first original ordinal. It
+requires the exact original controller, ledger, wave, selected handoff/context and
+channel, original owner thread and held run lock. The real worker must still be
+waiting with a running episode, started native claim and no result. The frozen
+request, M0, native plan, sidecar, intent/reservation, budget, source, control and
+deadline remain bound. No DRS context, lease or mode rewrite is manufactured; the
+original DRS mutation facade explicitly refuses this owner.
+
+Its distinct protocol is `lunar-rsi-brs-lineage-checkpoint-v1`. Its policy pins
+`mode=brs`, `max_workers=1`, `production_admission=false` and
+`online_publication=false`, but **only at owner construction**. It does not add this
+policy to the original persisted pre-wave run record. Online PB-03 integration must
+persist and bind that policy before the original dispatch. The genuine BRS fixture
+retains `producer_multi_episode_publication=false`; construction is no publication
+or dispatch grant.
+
+The primitive reuses existing descriptor, snapshot, source and file-pin formats,
+actual file readback, the 112 KiB checkpoint bound, and the shared 64 MiB
+ready-capsule plus lineage-snapshot budget. Shared retained-byte accounting runs
+before descriptor or snapshot reads. Live owner methods, shared accounting, pure
+checkpoint helpers and evidence readers are explicit fingerprint dependencies;
+source files are hashed as well. The writer admits only its exact phase and legal
+one-field delta, never arbitrary caller checkpoint wire.
+
+Prepared acknowledgment has two distinct increments: the existing controller/store
+admission-reference CAS, then this owner's prepared-journal evidence-pin CAS. The
+owner adopts only the exact adjacent verified reference head and canonical payload.
+After callback checks it verifies that fixed head/payload again and rereads the
+entire history, so a late same-payload no-op revision cannot become a fresh capture.
+Full write/readback and post-write owner/root checks precede shared wave/state/head
+advance. Failed or ambiguous write/readback retains durable evidence, stale captured
+authority and a poisoned owner, without retry, repair or latest-row adoption. Source
+and configuration hooks run outside the short observation mutex.
+
+The final focused acceptance for this primitive is **40 = 37 new + 3 original** at
+`309ce16`, with static/install/source verification and independent code review.
+Exact evidence and preserved failures are recorded in `publication-validation.md`.
+This closes no staged, terminal, rejection, publication transaction, reconcile or
+serial successor path.
 
 Mailbox, nonce and owner objects are ephemeral and cannot be recovered from files.
 Interrupted producer work remains an unknown started obligation. Queued requests are
@@ -87,7 +129,8 @@ reconciliation. Existing DRS inspections do not authorize BRS reconciliation.
 
 The next implementation slices remain open:
 
-- Explicit BRS policy/owner and captured-head lineage CAS with provider-free fixtures.
+- Persisted pre-wave BRS policy and online composition of the private before/prepared
+  owner with the original controller and scheduler transaction lifecycle.
 - One-shot mailbox transport is implemented in the successor candidate
   (`publication-mailbox.md`); focused acceptance and its controller/pre-publication
   scheduler dispatch integration remain separate open work.
@@ -98,5 +141,5 @@ Tests must record owner thread identity for transaction, admission pin, lineage 
 archive commit and C1/P/C2; prove running/started while the worker waits; inject drift,
 duplicate/foreign requests, failed CAS/readback, every durable interruption and shutdown
 failure; and preserve the existing DRS and pin-only BRS contracts. This document does
-not implement those slices or enable CLI/native BRS, real producers, sealed runtime,
+not complete those slices or enable CLI/native BRS, real producers, sealed runtime,
 remote evaluators or production admission.

@@ -22,7 +22,12 @@ The actual selected fixture uses the existing service/channel, original wave, re
 running/result/terminal ledger records and inert gateway. It does not manufacture
 success publication. This gate closes no owner bridge task.
 
-## Future PB-02/PB-03 owner bridge acceptance (not implemented)
+## Remaining PB-02/PB-03 online owner bridge acceptance
+
+PB-03b below verifies only the original-BRS before/prepared checkpoint primitive.
+The online mailbox/controller/scheduler composition, persisted pre-wave policy and
+complete publication lifecycle in this matrix remain open; a passing primitive
+case does not mark the corresponding online boundary complete.
 
 | ID | Boundary | Required assertion |
 | --- | --- | --- |
@@ -90,3 +95,92 @@ A separate local workflow-compatibility run passed the 63 admission-channel and
 is retained beside the final-261 directory as `workflow-compat-86.xml`. Pytest
 reported cleanup warnings for old read-only fixture garbage directories. This
 supplementary run is separate from the exact 261-case acceptance inventory.
+
+## PB-03b private before/prepared checkpoint acceptance
+
+The frozen product/test source is commit
+`309ce16fce58d4b70231a427ad0e1d5a47ce6a2a`, tree
+`0fcaa3d362caf8dbab71489278da0bfd7cfd3320`. The final two-process local run passed
+**40 = 37 new + 3 original** cases, with zero failures, errors or skips. The two
+groups are disjoint and contain exactly 37 and 3 nodes. This is a separate source
+acceptance, not an addition to the earlier 261-case or PB-03a inventories.
+
+The new cases use the actual selected-service/channel, original wave, running
+episode, started native claim and inert waiting worker. They verify exact
+before/prepared deltas and distinct admission-reference/evidence-pin CAS writes;
+owner/thread/claim/request/source/control/budget drift refusal; bounded detached
+wire; genuine descriptor/snapshot/file pins; hooks outside the observation mutex;
+live method/helper fingerprints; competing CAS, lost readback and stale capture;
+completed-return and original DRS facade refusal. The owner remains private and
+first-ordinal only. Its BRS policy is pinned at construction, not in the original
+persisted pre-wave policy. `production_admission=false`, `online_publication=false`
+and the fixture's `producer_multi_episode_publication=false` remain unchanged.
+There is no staged/terminal, rejection C1/P/C2, online transaction, reconcile or
+successor implementation in this slice.
+
+The three unchanged compatibility nodes are exactly:
+
+```text
+tests/test_rsi_producer_staging_capsule.py::test_shared_evidence_accounting_is_pure_and_bounded_before_read
+tests/test_rsi_python_brs_selected_service.py::test_actual_selected_service_acknowledges_and_settles_only_first_original_intent
+tests/test_rsi_publication_lineage_checkpoint_kernel.py::test_original_drs_owner_uses_one_captured_head_cas_and_only_lineage_delta
+```
+
+All seven exits are zero: installed-origin, collection, group-0, group-1, full Ruff
+over `src tests tools`, compileall over the same scope, and `git diff --check`.
+The run used Python 3.11.15 / pytest 9.1.1, no `PYTHONPATH`, isolated short temp/home
+paths and this worktree's editable install:
+`/private/tmp/lunar-brs-lineage-owner-kernel/.venv/bin/python`. Interpreter, package
+origin and editable direct URL all point to the same worktree. The before/after
+maps are identical for all **2,032 tracked files**.
+
+SHA256 records:
+
+| Evidence | SHA256 |
+| --- | --- |
+| `src/lunar_evolution/rsi_brs_publication_lineage.py` | `f2587b8f30d91e1ffd6ab4e2057133de1a13bc9e87d41819751c9d25fe8ab817` |
+| `tests/test_rsi_brs_publication_lineage_owner.py` | `2502b9e11f4ee1bde12e38c0da8eef489f012b4f495da24f3a12c31ff72ac7e7` |
+| `inventory.json` | `9c85e229669871f312180388c80e3594e135baf39c5b3b44a9e8b71677817b6e` |
+| `result.json` | `55f55ec595f86c7407dca6bc6b24558bedc72c69bcbd044fdb634dff46346bf8` |
+| `group-0.xml` | `27ac85b3fbbbefeeb53e3b722d2adf818254f037fbee97bfe9d239f9c1897f74` |
+| `group-1.xml` | `6a8cf48e58ff82ac4f31ea31d19d5c5323aa1c4246700a4e8a4617327a78b189` |
+
+Raw XML, exact inventories, argv/cwd, exits, stdout/stderr, installed-origin and
+source maps are retained in the ignored directory
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/reports/brs-lineage-owner-kernel-20261015/final-40/`.
+The same task's stdlib raw/source verification passed **6,165 assertions** covering
+the immutable commit/tree, exact four-module 37+3 inventory, raw XML/exit agreement,
+installed origin, and every SHA/mode/size entry against the immutable git blobs.
+This is source/evidence verification by the implementing task, not an independent
+agent's raw review. Its script is
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/reports/brs-lineage-owner-kernel-20261015/audit_final40.py`
+(SHA256 `9013c3f8a152398de1fbc0097b51be0d4c160205cb5980502893affcd99d42a3`);
+the output is the sibling `final40-review.json`
+(SHA256 `031b7943da3d268d40c5b0e376f19b7ffdf527cc3f568edd37846abbb61ec013`).
+Separate independent code review of the frozen commit passed with no blockers.
+Neither local acceptance nor code review substitutes for final integration CI.
+
+### Preserved development and review failures
+
+Earlier raw runs remain under the same report parent and are not final-source
+acceptance. `development-1` through `development-4` each retain 0 passes/1 failure;
+`development-5` retains 19/1 and `development-6` retains 25/1. They preserve their
+original argv, source hashes, exits, timing and raw output. `development-7` passed
+37 cases on the source before the final shared-budget binding amendment; its count
+is also separate from the final 40.
+
+Independent review found a genuine late-gate defect before the fix: a callback
+after the inner selected-pins check could append a same-payload no-op revision and
+advance the wave head, allowing latest-head adoption. The retained reproduction
+`review-noop-before-fix.xml` has **0 passes/1 failure** (`DID NOT RAISE`), SHA256
+`33b02ca0e10992e7691132983340899adf8b1599bcfb33eeed70d01742b39b9d`.
+Its stdout/stderr are retained beside it; original product/test bytes remain in
+`review-noop-before-fix-source/` (product SHA256
+`4da169b0d714518cb485a4ce2885cefe7c360fc4b10e96e20a83e3da7ff4877a`,
+test SHA256 `3d62b5ac792416aecd3b3d3f52123646fe7a1736136bbcb5bec47f7e966f9a88`).
+The fix captures the exact adjacent reference head/payload before callbacks,
+rechecks both after them, rereads the whole unchanged history and adopts only that
+captured pair. The final inventory includes
+`test_late_owner_gate_cannot_adopt_a_same_payload_new_reference_revision`; its
+injection is at the late controller gate continuation. The original failed result
+is preserved and is not reclassified by the later passing run.
