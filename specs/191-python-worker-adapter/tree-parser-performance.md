@@ -91,3 +91,14 @@ Raw measurements are ignored development artifacts under
 `validator-profile-20261015-02/` in the primary checkout. No long mixed flow,
 real Python producer/runtime, solver, model or evaluator was run. Existing
 `production_admission=false` and all original acceptance limits remain.
+
+## Integrated successor acceptance
+
+The unchanged parser product/test bytes were combined with the independent owner
+mailbox in frozen `b468f558` / tree `859a2acb`. The Linux installed-source focused
+run passed 872 exact distinct cases across 18 modules, zero failures/errors/skips;
+all test/collection/install/static exits are zero and tracked sources unchanged.
+This includes the 405-case parser range and adjacent owner/publication contracts;
+these are subsets of one 872 inventory, not additive separate acceptance totals.
+Raw evidence and hashes are recorded in Feature196 `publication-mailbox.md`.
+This integrated local result does not establish final CI, merge or runtime admission.

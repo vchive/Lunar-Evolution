@@ -21,7 +21,16 @@ rejection C1/P/C2、reconcile与serial successor仍是P1开放项。
 独立切片405 focused通过，27个新语义tests在原baseline也通过；root只读代码审查通过。
 单次validator profile的总调用数由16,140,170降至13,852,568，source-read198、
 config7、preflight2次不变；前后机器负载不同，不据wall time推导端到端倍数。
-本分支最终整合测试、服务器安装来源与独立复核将在实际完成后补记。
+本分支最终来源 `b468f55` / tree `859a2acb` 的服务器八路整合回归完成：872 distinct
+cases全部通过，零failure/error/skip，18模块、8组124/91/112/122/99/111/117/96。
+13份exit均0，installed editable origin/源码前后不变、Ruff/compileall/diff-check通过。
+inventory SHA `b738da3c674aa7651840aec6b7a3e7fc0baf2a325e7e36c51ff05e5c359c47ea`。
+raw在ignored `brs-mailbox-parser-20261015/final-872/` 和服务器
+`lunar-mailbox-parser-final-4949k5nr`；原开发44/47/72轮失败XML原样保留，不能回写成功。
+独立final source/spec/workflow审查通过；raw/gitblob/install/XML独审通过6,219断言，
+2,029trackedfiles与immutable blobs逐项相同，review SHA
+`866333e2b6c984535d539f7988138ceb653d0d47c803379a56757c6c6d836660`。
+收尾文档不改任何产品/测试bytes；最终CI/合入仍开放。
 仅本地inert/provider-free fixtures，`production_admission=false`，公共native BRS仍拒绝。
 
 ## 2026-10-15 BRS worker publication refusal（后继切片）
