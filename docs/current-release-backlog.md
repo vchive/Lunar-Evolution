@@ -8,8 +8,10 @@
 macOS/Linux各34例（31新+3兼容）全通过并获独审。两来源分别验收，不能累计，
 也不称855已重新通过498。详情见Feature196 `publication-validation.md`。
 
-现在并行开发staged/precommit/terminal高层接口并核对exact BRS私有transaction
-dispatch。完整owner transaction、controller/mailbox service、拒绝C1/P/C2、独立
+staged/precommit/terminal高层接口候选`7a21ed8`已完成静态独审和最终8项开发选择，
+整合来源Mac/Linux各72项验收待完成。exact BRS私有transaction dispatch仍是下一步
+（SDD：Feature196 `private-native-dispatch.md`）。完整owner transaction、
+controller/mailbox service、拒绝C1/P/C2、独立
 result delivery/settlement、reconcile、连续ordinal与policy/memory仍开放。
 冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109)的完整33-job CI、
 actual checkout/source/import/raw独审和main合并是独立P0，后继不追加或取消其来源。
@@ -27,9 +29,10 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 当前优先级：
 
 - P0：最终集成候选的完整 CI、原始产物/source/import/tree 独审与 main 合并。
-- P1：原 owner retained native evidence recovery、BRS prepared pin、原 transaction
-  owner dispatch、rejection C1/P/C2、独立 return/settlement；再接 reconcile、serial
-  successor 与 policy/memory。已具备的检查点不等于这些在线执行链路已接通。
+- P1：staged/precommit/terminal 高层接口、原 transaction owner dispatch、controller/
+  mailbox service、rejection C1/P/C2、独立 return/settlement；再接 reconcile、serial
+  successor 与 policy/memory。retained reader、prepared pin 已完成顶部所列后继验收；
+  已具备的私有接口和检查点仍不等于完整在线执行链路已接通。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
   生产 CLI/Linux acceptance 仍按原独立范围开放，本轮不运行真实目标来替代验收设计。
 - P2：外部认证、多机 ownership、分布式调度/服务化继续后置。

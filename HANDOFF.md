@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 后继：success 高层留存候选与统一验收
+
+`7a21ed831113a30917dbeb378b31e2450dae2fe0`在独立分支实现原BRS owner的
+`retain_staged`、`verify_precommit`、`retain_terminal`，现整合到后继候选。
+staged/terminal留存原快照和descriptor，再执行原checkpoint CAS；precommit在真实
+publication lock内只核固定身份和durable evidence，不运行source/config/control hooks。
+临时numeric cap只收窄本次retention allowance，在最后evidence后/CAS前及readback
+推进前重检；不刷新原预算，不持久化新预算。原channel保持empty，不以旧fixture的
+ready/ACK完成记录扩大许可。取消/close/不确定写回保留文件、旧head与poisoned owner。
+
+最终产品静态独审通过；最终开发选择8项通过，旧开发33项单独保留，不能当作最终38。
+本轮将在整合冻结来源执行Mac/Linux各72项：38新+31 before+3明确原兼容，尚未验收。
+CI增加38-case gate及annotation。实际运行与raw/source审查结果随后单独登记。
+公开native BRS和原DRS-only transaction/staging gate保持；PB-03h私有dispatch仍未实现，
+SDD见`specs/196-brs-owner-worker-handoff/private-native-dispatch.md`。后续仍是完整
+controller/mailbox事务、拒绝C1/P/C2、独立result delivery/settlement、reconcile、
+serial successor与policy/memory；真实runtime/project/生产CLI验收另列P1。
+`online_publication=false`、`production_admission=false`。仅本地inert/provider-free fixtures。
+
 ## 2026-10-16 后继收尾：原 owner 证据组合与 before 高层留存
 
 后继工作区为 `/private/tmp/lunar-brs-owner-evidence-integration`，产品/测试已推进到
