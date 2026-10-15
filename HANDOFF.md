@@ -1,5 +1,29 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 deadline 并发 fixture 的确定性修复
+
+`bd902c9` 的整合 focused gate 已通过：238 cases = 232 pass、6 原架构 skips、
+零 failure/error，source/install 身份和全仓静态检查通过。修复已推送 PR103，
+新官方 run 为 `38685683296`；首批三版 history 原始 artifact/log 与实际 merge
+`574cb2fa` 的 tree/parents/source 已独立审查，不能据此接受尚未完成的 current/focused。
+服务器 v2 六分片完整收集 16,501 cases，精确互斥并集已确认；运行中 shard2 出现
+1F，当前检查点尚无最终 traceback，不能描述为整轮通过或已确认根因。
+
+独立真实进程 probe 已证实原并发 fixture 的全成功假设超出契约：writer 持锁创建
+deadline 后、首写前，waiter 会在原 lock-wait guard 拒绝空记录。生产代码明确要求
+保留不完整证据并拒绝，不允许吞错、删除记录或自动分配新预算。原单案 10 次独立
+pass 不抹去这个窗口，也不代替原失败 trace。测试切片改用有界 pipe 同步完整记录后
+的真实锁争用，并补零字节/八字节写入窗口的精确拒绝、原 bytes/inode/metadata/预算
+和 prepared 状态验证。仅修改测试，所有自有子进程在 finally 回收。
+
+独立切片 `6f9a47d` 的 3 个受影响 cases 和 122-case 五文件 focused 全部通过，
+无 skips/failures/errors；Ruff、compileall、diff-check 和独立代码审查通过。
+详细范围、原始失败保留与 XML SHA 见 Feature153 validation。README 统一指向
+PR103 发布出口；Feature153 设计仅澄清现有并发拒绝契约。此后仍需最终整合来源的
+focused/full current、三版正式 CI 和 raw/source/tree/import 独审，才可合入 main。
+当前 main 仍为 PR99 `0cb49ab`；native BRS、sealed runtime 与实际 producer/CLI
+验收未关闭，`production_admission=false`，仅本地 inert/provider-free fixtures。
+
 ## 2026-10-15 Linux 完整回归失败后的集成修复
 
 服务器首轮六分片来源为 `f9048df`，结果为 **16,484 distinct cases：15,976 pass、
