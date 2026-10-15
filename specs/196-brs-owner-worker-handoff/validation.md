@@ -1,5 +1,35 @@
 # Feature 196 validation plan
 
+## PB-03a checkpoint delta/readback extraction
+
+Final product/test source `3c0d74e7f97c7e98a8f4e68bcc439275e272dd8f`, tree
+`3830617dc27fc1bbbfe3149f09fd21a35a3568a9`, passes 17 distinct inert cases in
+two disjoint groups (15 and 2), with zero failures, errors or skips. The 15 new
+cases cover bounded one-field deltas, exact canonical readback, original DRS CAS,
+competing writes, post-write missing/wrong evidence, post-readback context/root
+failure, stale/poisoned state, and live helper rebinding before any helper/CAS effect.
+The two original compatibility cases execute successful publication plus read-only
+inspection, and the original rejected C1/provenance-P/C2 sequence, respectively.
+
+Seven collection/install/test/static exits are zero. The editable environment points
+to its own checkout; 2,030 tracked files are unchanged before/after and match immutable
+Git blobs. Full-scope Ruff, compileall and diff-check pass. Raw inventory, XML, source
+maps, exits and result are retained under ignored reports
+`pb03-kernel-and-final872-independent-20261015/final-17/`; the stdlib raw review passes
+6,159 assertions. Separate root/code review checks original operation order and the
+explicit live-helper fingerprint dependencies. These local results do not replace
+final-source CI or complete the online BRS publication bridge.
+
+The first 13-case development run retained 6 passes and 7 setup failures caused by
+deep temporary paths exceeding the existing 32 KiB binding limit. A subsequent short
+workspace 13-case run passed; both remain evidence of their original source. The later
+live-helper fingerprint fix has its own final 17-case validation above. Neither earlier
+run is added to the final count. Source/policy hashes intentionally change with this
+extraction, and persisted runs retain their existing drift refusal without migration.
+No BRS mutation gate, wire schema, capacity or production admission is widened.
+
+## Earlier handoff validation
+
 BRS-2a now has a pure detached handoff value and gate. It has no controller, ledger,
 workspace, channel, CAS, worker dispatch or native BRS integration. The local focused
 checks cover H01 identity serialization, H02 fixed worker count, H04 channel-level

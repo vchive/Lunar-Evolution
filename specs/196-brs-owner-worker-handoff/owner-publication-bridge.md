@@ -70,6 +70,14 @@ short observation mutex, followed by the original identity/head checks.
 
 ## Recovery and remaining work
 
+PB-03a now extracts two private pure checkpoint helpers: the one-field lineage delta
+and comparison of already-observed head/payload bytes. The original DRS facade still
+owns exact owner admission, capacity/strict serialization, captured-head CAS, readback
+scope and context/root-binding checks. Both live functions are explicit fingerprint
+dependencies. This changes new policy fingerprints and retains old-run drift refusal;
+it does not provide a BRS owner or migrate a persisted policy. Its 17-case focused
+validation is recorded separately in `validation.md`.
+
 Mailbox, nonce and owner objects are ephemeral and cannot be recovered from files.
 Interrupted producer work remains an unknown started obligation. Queued requests are
 not resubmitted for fresh authority. CAS/commit with lost ACK or failed readback retains

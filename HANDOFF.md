@@ -1,5 +1,34 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 PB-03a checkpoint 共用逻辑与 P0 分片修复
+
+PB-03a 从 PR107 `ed66333` 延续，两个产品提交为 `13e3b78` 与 `3c0d74e`。
+仅在 `rsi_publication_lineage.py` 提取纯 checkpoint delta/readback helpers；DRS
+原 owner/terminal gates、captured-head CAS、read-only scope、context/root-binding
+顺序和失败后 stale/poisoned owner 保持。两个新增函数显式纳入 live component
+fingerprint；进程内替换 helper 即使文件 bytes 不变也先拒绝，不迁移旧 policy。
+此修改会改变新 run 的 policy/source 指纹，既有持久化 run 继续遵守 drift gate。
+
+最终产品/测试来源 `3c0d74e7f97c7e98a8f4e68bcc439275e272dd8f` / tree
+`3830617dc27fc1bbbfe3149f09fd21a35a3568a9` 验证17个独立 cases：15新 helper/
+owner/CAS/drift 案，加原成功 publication/只读 inspection 与原拒绝 C1/P/C2 各1案。
+17 pass、零failure/error/skip；7份exit均0，own editable install准确，2030个tracked
+files前后不变，Ruff/compileall/diff-check通过。raw在 ignored
+`pb03-kernel-and-final872-independent-20261015/final-17/`；原first13的6pass/7个
+深路径setup failures、shortpath13 pass均保留原来源，不并入最终17计数。
+独审发现的live helper依赖缺口已修复；原48组合差分属于修复前来源，最终17另验。
+PB-03在线BRS owner/policy/完整事务仍未实现，PB-04 reconcile、PB-05 serial successor
+及真实runtime/producer/CLI仍为P1；public native BRS关闭，`production_admission=false`。
+
+P0已独立推送 PR103 `935ab57`，新官方run为
+[38752535974](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)。
+新调度保留6普通文件分片，3个mixed用例各独立job，共33jobs；macOS及5090gpu独立
+Linux均279 pass、零failure/error/skip，静态与source审查通过。Linux完整collection
+16583、9分区互斥完整，SHA `df3b1aba3a3823c9cc4c4c4c2a8f3664adca65fae374c75fa8621d3cd647c1e5`。
+这些不替代新官方CI；原`9203ef1`官方21 success/3 cancelled保持NOT_ACCEPTED，
+原服务器第5片保持原来源及独立证据。main仍PR99 `0cb49ab`。PR105–107均是stacked后继，
+上游合入后须依次同步新base并验收实际最终来源，不复用旧24-job结果。
+
 ## 2026-10-15 并行后继：owner 邮箱与纯解析去重
 
 发布边界拒绝切片已推送 stacked draft PR106，head `ffa98e7`，base PR105。
