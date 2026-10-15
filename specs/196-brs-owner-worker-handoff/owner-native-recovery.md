@@ -44,6 +44,11 @@ The original BRS policy explicitly pins this module, projector, native recovery,
 output/receipt/capture/handoff readers and their source dependencies. Existing
 persisted policies drift and remain refused; no migration or backfill is added.
 Policy inspection fingerprints code only and never constructs or invokes a reader.
+The finite recovery entry chain also requires original import-alias identities
+and each function's canonical application module dictionary. Replacing an alias
+and its canonical target with the same-code function over different globals is
+therefore refused before recovery. This gate does not recursively expand to
+unrelated application paths or standard-library internals.
 
 This primitive neither launches a producer, model or evaluator nor writes a
 checkpoint, budget, admission ACK, transaction, population or result. Any failed
@@ -61,3 +66,10 @@ explicit inert fixture doubles. No native target, real solver, model, evaluator,
 WebAgent or remote service is run; this proves reader composition, not native
 execution or production admission. Development failures and frozen validation
 results must retain distinct labels.
+
+The reader test inventory has 53 cases. Development `dev-11` passed the prior
+47-case inventory; `dev-12` passed 12 focused cases for canonical-global binding,
+successful recovery, current cancellation, timeout and last-source-hook controls.
+These are development results, not final unified acceptance. The final integrated
+source still requires the owner-prepared-pin composition and frozen Mac/Linux
+qualification under the coordinating worktree's exact commit and tree.

@@ -173,6 +173,8 @@ def _validate_persisted_policy(
 
 def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
+    from types import FunctionType
+
     from . import (
         automatic_solve_lifecycle,
         evolution,
@@ -250,6 +252,42 @@ def _policy() -> dict[str, Any]:
     )
     if any(actual is not canonical for actual, canonical in aliases):
         _fail("native_reader_binding_drift")
+    # Code fingerprints do not capture a function's globals. Pin the finite
+    # recovery entry chain to its canonical application module dictionary too.
+    # This also refuses replacing both sides of an import alias with one clone.
+    entries = (
+        *((getattr(reader._BRSRetainedNativePreparationReader, name), reader)
+          for name in ("__init__", "_scope", "_check", "_project", "recover")),
+        *((getattr(reader, name), reader) for name in (
+            "_fail", "_copy", "_comparison_preparation", "_arguments", "_dto_policy", "_control_pin")),
+        (rsi_python_brs_publication_inputs._request_from_native_preparation, rsi_python_brs_publication_inputs),
+        (scheduler_inputs._context, scheduler_inputs),
+        (rsi_python_brs_publication_mailbox._request, rsi_python_brs_publication_mailbox),
+        (native_trusted_scheduler.recover_native_trusted_producer, native_trusted_scheduler),
+        (native_trusted_scheduler._prepublication_control_pin, native_trusted_scheduler),
+        (native_trusted_receipt.recover_native_trusted_execution_receipt, native_trusted_receipt),
+        (native_trusted_receipt.build_native_trusted_execution_receipt, native_trusted_receipt),
+        (native_trusted_attempt.recover_native_trusted_attempt, native_trusted_attempt),
+        (native_trusted_streams.recover_native_trusted_stream_capture, native_trusted_streams),
+        (native_trusted_cleanup.recover_native_trusted_cleanup, native_trusted_cleanup),
+        (native_trusted_capture.recover_native_trusted_output_capture, native_trusted_capture),
+        (native_trusted_output.prepare_native_trusted_output, native_trusted_output),
+        (producer_process._read_envelope, producer_process),
+        (producer_handoff.parse_producer_envelope, producer_handoff),
+        (producer_bundle_handoff.prepare_producer_bundle_manifest, producer_bundle_handoff),
+        (producer_bundle_population.prepare_producer_bundle_drafts, producer_bundle_population),
+        (producer_bundle_admission.build_producer_bundle_admission_plan, producer_bundle_admission),
+        (python_producer_admission_handoff.read_python_producer_admission_handoff_pinned,
+         python_producer_admission_handoff),
+        (producer_request_transport.read_host_request_journal, producer_request_transport),
+        *((getattr(automatic_solve_lifecycle.SolveExecutionControl, name), automatic_solve_lifecycle)
+          for name in ("check", "is_cancelled", "_now")),
+        (automatic_solve_lifecycle._finite_time, automatic_solve_lifecycle),
+        (automatic_solve_lifecycle._stage_name, automatic_solve_lifecycle),
+    )
+    if any(type(function) is not FunctionType or function.__globals__ is not vars(module)
+           for function, module in entries):
+        _fail("native_reader_globals_drift")
     journal_defaults = producer_request_transport.read_host_request_journal.__kwdefaults__
     if (type(journal_defaults) is not dict or any(type(key) is not str for key in journal_defaults)
             or set(journal_defaults) != {"deadline", "monotonic", "expected_file_identity"}
