@@ -42,7 +42,7 @@ def _stages(context, monkeypatch, events):
         process_terminal_sha256="a" * 64, output_capture_sha256="b" * 64,
         envelope_bytes_sha256="c" * 64, envelope=envelope, bundles=(bundle,), drafts=drafts,
         admission_plan=plan, execution_receipt_sha256=receipt.receipt_sha256,
-        request_coverage="brokered_requests_only", publication_eligible=True,
+        request_coverage="brokered_requests_only",
     )
     context.preparation_receipt, context.preparation_output = receipt, output
 
@@ -110,6 +110,7 @@ def test_private_preparation_returns_original_evidence_before_publication(tmp_pa
     assert type(result) is scheduler._NativeTrustedPythonProducerPreparation
     assert result.run.status == "prepared" and result.run.publication is None
     assert result.run.receipt is receipt and result.run.output is output
+    assert result.run.output.publication_eligible is False
     assert result.run.deadline_scope == "native_attempt_only"
     assert result.handoff == original[0] and result.handoff is not original[0]
     assert result.handoff.file_pin is not original[0].file_pin

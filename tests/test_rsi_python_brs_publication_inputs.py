@@ -101,12 +101,14 @@ def _request(value, **changes):
 
 def test_actual_preparation_projects_original_evidence_and_composes_mailbox(prepared):
     before = {path: path.read_bytes() for path in prepared.workspace.rglob("*") if path.is_file()}
+    assert prepared.preparation.run.output.publication_eligible is False
     request = _request(prepared)
     payload = json.loads(request.payload)
     assert payload["native_plan_sha256"] == prepared.plan.plan_sha256
     assert payload["python_handoff_file_pin"] == prepared.preparation.handoff.file_pin.to_dict()
     assert payload["native_execution_receipt_sha256"] == prepared.preparation.run.receipt.receipt_sha256
     assert payload["output"]["admission_plan_sha256"] == prepared.preparation.run.output.admission_plan.digest()
+    assert "publication_eligible" not in payload["output"]
     with ThreadPoolExecutor(max_workers=1) as pool:
         worker_id = pool.submit(threading.get_ident).result(timeout=5)
         mailbox = BRSOwnerPublicationMailbox(prepared.handoff, worker_thread=worker_id)
@@ -133,7 +135,9 @@ def test_request_is_detached_from_original_nested_receipt(prepared):
     ("run", "status", "published", "state_invalid"),
     ("run", "publication", {}, "state_invalid"),
     ("run", "deadline_scope", [], "state_invalid"),
-    ("output", "publication_eligible", False, "state_invalid"),
+    ("output", "publication_eligible", True, "state_invalid"),
+    ("output", "publication_eligible", 0, "state_invalid"),
+    ("output", "publication_eligible", None, "state_invalid"),
     ("output", "request_coverage", "producer_declaration_only", "state_invalid"),
     ("output", "execution_receipt_sha256", "8" * 64, "output_mismatch"),
     ("output", "process_terminal_sha256", "8" * 64, "capture_mismatch"),
