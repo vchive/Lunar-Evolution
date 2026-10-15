@@ -2201,8 +2201,12 @@ class RSILearningController:
         This wait check grants no ACK or return receipt. The real ready service and
         both terminal gates still require complete admission evidence and its CAS.
         """
+        with self._python_admission_brs_observations():
+            self._python_admission_active_brs_owner(wave)
         original = self._python_admission_selected_brs_identity(wave, handoff)
         current = self._python_admission_brs_fixed_pins(wave)
+        with self._python_admission_brs_observations():
+            self._python_admission_active_brs_owner(wave)
         self._python_admission_selected_brs_identity(wave, handoff)
         for field in ("controller_id", "ledger_id", "workspace_id", "sidecar_id", "owner_thread_id",
                       "source_sha256", "policy_sha256", "execution_control_sha256", "max_workers"):

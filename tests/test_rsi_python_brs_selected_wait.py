@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from threading import Event, get_ident
 
@@ -24,6 +25,37 @@ def no_network(monkeypatch):
 
     monkeypatch.setattr(socket.socket, "connect", forbidden)
     monkeypatch.setattr(socket, "create_connection", forbidden)
+
+
+@pytest.mark.parametrize("fault", ["worker-thread", "unowned"])
+def test_selected_wait_requires_actual_owner_before_any_source_hook(tmp_path, monkeypatch, fault):
+    value = selected._fixture(tmp_path, monkeypatch)
+    with selected._wave(value) as wave:
+        handoff = value.controller._python_admission_bind_selected_brs_handoff(wave)
+        rows, files = _rows(value), selected._evidence_files(value)
+        head, payload = wave.checkpoint_sha256, wave.payload
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("unowned wait reached a source/configuration hook")
+
+        monkeypatch.setattr(value.controller, "_python_admission_brs_fixed_pins", forbidden)
+
+        def observe():
+            with pytest.raises(RSILearningError, match="^rsi_python_brs_admission_identity_invalid$"):
+                value.controller._python_admission_assert_selected_brs_wait(wave, handoff)
+
+        if fault == "worker-thread":
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(observe).result(timeout=10)
+        else:
+            with monkeypatch.context() as patch:
+                patch.setattr(value.ledger, "controller_lock_held", lambda _run_id: False)
+                observe()
+        assert wave.checkpoint_sha256 == head and wave.payload == payload
+        assert wave.selected_return is None
+        assert not wave.channel._completed_selected_episodes
+        assert _rows(value) == rows and selected._evidence_files(value) == files
+        assert value.gateway.calls == 0
 
 
 def test_selected_wait_allows_real_ack_worker_to_settle_during_fixed_source_observation(
