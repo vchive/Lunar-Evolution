@@ -24,6 +24,11 @@ because new candidates are not yet installed at their live code paths. Added
 archive DTOs must equal their manifest-bound `record.json`; coherent replacement
 archive/state hashes do not substitute for that binding. Terminal repeats this
 record/material check against the live candidate tree.
+For bundle-backed records, the parsed bundle digest must equal both the record's
+bundle evidence and the original prepared candidate's bundle digest. Its contract
+and entrypoint/code path must agree, and every source size/SHA must match both
+the publication descriptor and the bundle declaration. Generic retained candidates
+remain supported. These consistency checks do not add native receipt authority.
 
 `checkpoint_terminal(wire)` is available only after the staged CAS and accepts the
 same staged batch plus its exact success descriptor, published journal, terminal
@@ -68,7 +73,10 @@ Tasks:
       retain initial failures and report exact source/observed counts.
 
 Development qualification is not final acceptance. The expanded module currently
-collects 65 cases; the last focused development selections passed 14 and 6 cases.
+collects 70 cases; development selections passed 14, 6 and the 5-case genuine
+bundle declaration selection (success, changed source size/SHA, changed digest,
+and mismatched entrypoint). The earlier 97bb774 Mac/Linux runs predate this last
+bundle consistency fix and are retained without promotion as final acceptance.
 Earlier fixture/discovery failures and the later family-proxy/classmethod-pin
 failures are retained under ignored development evidence. Final Mac/Linux runs
 must use one immutable integrated source, their own editable installs and temporary

@@ -681,6 +681,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 _fail("candidate_materials_invalid")
             if record.bundle_evidence is None:
                 paths = (record.code_path[len(live_root):],)
+                declarations = None
             else:
                 evidence = record.bundle_evidence
                 if evidence["source_root"] != live_root[:-1] or not evidence["bundle_path"].startswith(live_root):
@@ -690,10 +691,15 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                     _fail("candidate_materials_invalid")
                 bundle_raw = _files.read_regular_file(recovery._path(self._workspace, name, directory=root), 256 * 1024)
                 bundle = parse_candidate_source_bundle(json.loads(bundle_raw))
+                planned = next((candidate for candidate in self._prepared.candidates if candidate.candidate_id == cid), None)
                 if (lineage._sha(bundle_raw) != descriptors[name]["sha256"]
-                        or bundle.digest() != evidence["bundle_sha256"]):
+                        or planned is None or bundle.digest() != evidence["bundle_sha256"]
+                        or evidence["bundle_sha256"] != planned.bundle_sha256
+                        or bundle.contract_sha256 != self._prepared.contract_sha256
+                        or record.code_path != live_root + bundle.entrypoint):
                     _fail("candidate_materials_invalid")
                 paths = tuple(item.path for item in bundle.files)
+                declarations = {item.path: item for item in bundle.files}
             sources = {}
             for name in paths:
                 if name not in descriptors:
@@ -702,6 +708,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 content = _files.read_regular_file(recovery._path(self._workspace, name, directory=root), descriptor["size"] + 1)
                 if len(content) != descriptor["size"] or lineage._sha(content) != descriptor["sha256"]:
                     _fail("candidate_material_source_drift")
+                if declarations is not None and (len(content) != declarations[name].size
+                        or lineage._sha(content) != declarations[name].sha256):
+                    _fail("candidate_bundle_source_drift")
                 sources[name] = content
             overrides[cid] = sources
         if tuple(overrides) != tuple(entry["staged"]["candidate_ids"]):

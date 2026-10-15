@@ -30,6 +30,7 @@ from lunar_evolution import producer_bundle_transaction as transaction
 from lunar_evolution import rsi_brs_publication_lineage as brs
 from lunar_evolution import rsi_python_scheduler_inputs as scheduler_inputs
 from lunar_evolution.algorithm import AlgorithmProblemContract, EvaluationReport
+from lunar_evolution.candidate_bundle import CandidateSourceBundle, CandidateSourceFile
 from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.evolution import (
     Candidate,
@@ -90,8 +91,11 @@ def _write(path, raw):
     path.chmod(0o600)
 
 
-def _native_setup(tmp_path, monkeypatch, *, task_bound=True):
+def _native_setup(tmp_path, monkeypatch, *, task_bound=True, bundle=False):
     contract = AlgorithmProblemContract.from_dict(_contract(evolution={"strategy": "population"}))
+    sources = {"solve/main.py": b"# inert\n", "helper.py": b"# helper\n"}
+    bundle_plan = CandidateSourceBundle(contract.digest(), "solve/main.py",
+        tuple(CandidateSourceFile(name, len(raw), _sha(raw)) for name, raw in sources.items())) if bundle else None
     original = admission._fixture
 
     def bound(root):
@@ -105,7 +109,13 @@ def _native_setup(tmp_path, monkeypatch, *, task_bound=True):
 
     monkeypatch.setattr(admission, "_fixture", bound)
     monkeypatch.setattr(admission, "DIGEST", contract.digest())
-    monkeypatch.setattr(fixture, "DIGEST", contract.digest())
+    monkeypatch.setattr(fixture, "DIGEST", bundle_plan.digest() if bundle else contract.digest())
+    if bundle:
+        original_item = fixture.ProducerBundleAdmissionItem
+        def planned_item(*args, **kwargs):
+            return replace(original_item(*args, **kwargs), entrypoint=bundle_plan.entrypoint,
+                material_paths=tuple(item.path for item in bundle_plan.files))
+        monkeypatch.setattr(fixture, "ProducerBundleAdmissionItem", planned_item)
     monkeypatch.setattr(fixture.selected, "DIGEST", contract.digest())
     value = fixture._setup(tmp_path, monkeypatch)
     binding = value.binding
@@ -128,8 +138,9 @@ def _native_setup(tmp_path, monkeypatch, *, task_bound=True):
         base_state_sha256=_sha(state.read_bytes()), population_config_sha256=_sha(canonical_json(config.to_dict())),
         archive_prefix_sha256=compute_archive_prefix_digest(_sha(b""), _sha(state.read_bytes()),
             strategy_config_sha256=_sha(canonical_json(config.to_dict())), active_ids_sha256=_sha(canonical_json({"0": []}))),
-        candidates=tuple(replace(candidate, candidate_id=derive_producer_bundle_candidate_id(
-            value.journal.journal_id, index, candidate.bundle_id, candidate.bundle_sha256))
+        candidates=tuple(replace(candidate, bundle_sha256=bundle_plan.digest() if bundle else candidate.bundle_sha256,
+            candidate_id=derive_producer_bundle_candidate_id(value.journal.journal_id, index, candidate.bundle_id,
+                bundle_plan.digest() if bundle else candidate.bundle_sha256))
             for index, candidate in enumerate(value.journal.candidates)), journal_sha256=None)
     (value.batch / "journal.prepared.json").write_bytes(_intent_content(value.journal)[0])
     native = NativeRSISchedulerContext(
@@ -138,7 +149,8 @@ def _native_setup(tmp_path, monkeypatch, *, task_bound=True):
                            if root.label == binding.interpreter.root_label),
         intent=binding.intent, attestation=binding.attestation, artifact=_inert_bootstrap(value.workspace),
         broker_config=ProducerBrokerConfig("http://127.0.0.1:9/unused", {}), contract=contract,
-        groups=(BundleGroup("bundle-1", "main.py", ("main.py",)),),
+        groups=(BundleGroup("bundle-1", bundle_plan.entrypoint if bundle else "main.py",
+            tuple(item.path for item in bundle_plan.files) if bundle else ("main.py",)),),
         evaluator_kind=binding.evaluator_kind, evaluator_fingerprint=binding.evaluator_fingerprint,
         runner_fingerprint=binding.intent.runner_fingerprint, dependency_sha256=binding.dependency_sha256,
         environment_sha256=binding.environment_sha256, strategy=strategy, failure_ledger=value.ledger,
@@ -146,12 +158,12 @@ def _native_setup(tmp_path, monkeypatch, *, task_bound=True):
     )
     inputs = PythonRSISchedulerInputContext(native, value.sidecar, value.proof)
     value.gateway.producer_config = PythonProducerRSIExecutionConfig("openevolve", value.ledger, inputs)
-    value.strategy, value.native = strategy, native
+    value.strategy, value.native, value.bundle_plan, value.bundle_sources = strategy, native, bundle_plan, sources
     return value
 
 
 @contextmanager
-def _waiting(tmp_path, monkeypatch, *, native=True, task_bound=True):
+def _waiting(tmp_path, monkeypatch, *, native=True, task_bound=True, bundle=False):
     original = fixture._setup
     if native:
         # The native inputs exist before owner construction. They are test-only
@@ -159,7 +171,7 @@ def _waiting(tmp_path, monkeypatch, *, native=True, task_bound=True):
         def setup(root, patch):
             with monkeypatch.context() as nested:
                 nested.setattr(fixture, "_setup", original)
-                return _native_setup(root, patch, task_bound=task_bound)
+                return _native_setup(root, patch, task_bound=task_bound, bundle=bundle)
         monkeypatch.setattr(fixture, "_setup", setup)
     with fixture._waiting(tmp_path, monkeypatch) as value:
         wire = fixture._before(value)
@@ -169,13 +181,25 @@ def _waiting(tmp_path, monkeypatch, *, native=True, task_bound=True):
         yield value
 
 
-def _staged(value, *, bad_projection=False, record_mismatch=False):
+def _staged(value, *, bad_projection=False, record_mismatch=False, bundle_fault=None):
     wire = deepcopy(value.wave.state["producer_publication_lineage"])
     entry, strategy = wire["batches"][0], value.strategy
     candidate = value.journal.candidates[0]
-    record = Candidate(candidate.candidate_id, f"evolution/candidates/{candidate.candidate_id}/main.py",
+    root = f"evolution/candidates/{candidate.candidate_id}"
+    bundle = value.bundle_plan
+    if bundle is not None and bundle_fault == "bundle-digest":
+        bundle = replace(bundle, files=tuple(replace(item, sha256="f" * 64) for item in bundle.files))
+    code = "unlisted.py" if bundle_fault == "entrypoint" else bundle.entrypoint if bundle else "main.py"
+    record = Candidate(candidate.candidate_id, root + "/" + code,
         None, 0, 0, "population", 0, EvaluationReport("1", "inert", 1, 1.0, {}, (), quality=1.0),
-        metadata={"producer_bundle": {}}, created_at=0.0)
+        metadata={"producer_bundle": {}}, created_at=0.0,
+        source_sha256=_sha(b"# inert\n") if bundle else None,
+        receipt_sha256="c" * 64 if bundle else None, integrity={} if bundle else None,
+        bundle_evidence={"protocol": "lunar-population-bundle-v1", "source_root": root,
+            "bundle_path": root + "/bundle-manifest.json", "bundle_sha256": bundle.digest(),
+            "run_root": "evolution/bundle-attempts/.bundle-run-" + "a" * 24,
+            "evaluation_path": "evolution/bundle-attempts/.bundle-run-" + "a" * 24 + "/evaluations/.candidate-evaluation-" + "b" * 24,
+            **{name: "d" * 64 for name in ("plan_sha256", "admission_sha256", "completion_sha256", "evaluation_sha256")}} if bundle else None)
     record_bytes = canonical_json(record.to_dict())
     if record_mismatch:
         # Keep retained record/receipt/material bytes unchanged while fabricating
@@ -183,7 +207,15 @@ def _staged(value, *, bad_projection=False, record_mismatch=False):
         record = replace(record, metadata={"producer_bundle": {}, "fabricated": True})
     receipt = canonical_json({"publication_receipt_sha256": "c" * 64})
     candidate_root = value.batch / "stage/candidates" / candidate.candidate_id
-    for name, raw in (("record.json", record_bytes), ("receipt.json", receipt), ("main.py", b"# inert\n")):
+    sidecar = "solve/" if bundle else ""
+    contents = {sidecar + "record.json": record_bytes, sidecar + "receipt.json": receipt,
+                **(value.bundle_sources if bundle else {"main.py": b"# inert\n"})}
+    if bundle:
+        contents["bundle-manifest.json"] = canonical_json(bundle.to_dict())
+        if bundle_fault in {"source-size", "source-sha"}:
+            contents["helper.py"] = (b"# coherent descriptor, different bundle declaration\n"
+                                     if bundle_fault == "source-size" else b"# change\n")
+    for name, raw in contents.items():
         _write(candidate_root / name, raw)
     binding = value.batch / "native-drafts" / candidate.candidate_id / "draft-binding.json"
     _write(binding, canonical_json({"protocol": "lunar-native-draft-binding-v1", "ordinal": 0,
@@ -192,7 +224,8 @@ def _staged(value, *, bad_projection=False, record_mismatch=False):
                                                     "parent_id", "generation", "iteration", "island_id")}}))
     retained = _collect_retained_evidence(value.workspace, (binding, value.batch / "journal.prepared.json"))
     evidence = canonical_json(retained)
-    _write(candidate_root / "retained.json", evidence)
+    _write(candidate_root / (sidecar + "retained.json"), evidence)
+    contents[sidecar + "retained.json"] = evidence
     staged = replace(value.journal, state="publishing", publication_phase="staged", journal_sha256=None,
         candidates=(replace(candidate, status="admitted", execution_receipt_sha256="e" * 64,
                             evaluation_receipt_sha256="d" * 64, publication_receipt_sha256="c" * 64),))
@@ -214,12 +247,12 @@ def _staged(value, *, bad_projection=False, record_mismatch=False):
     _write(value.batch / "stage/state.json", state)
     _write(value.batch / "journal.staged.json", canonical_json(staged.to_dict()))
     descriptors = [{"path": name, "size": path.stat().st_size, "sha256": _sha(path.read_bytes())}
-                   for name in ("record.json", "receipt.json", "main.py", "retained.json")
+                   for name in contents
                    for path in (candidate_root / name,)]
     manifest = staging.ProducerBundlePublicationManifest(staged.journal_id, staged.digest(), preflight.digest(),
         staged.base_archive_sha256, staged.base_state_sha256, _sha(archive), _sha(state), (candidate.candidate_id,),
         ({"candidate_id": candidate.candidate_id, "paths": descriptors, "record_sha256": _sha(record_bytes),
-          "receipt_sha256": _sha(receipt), "retained_evidence": {"path": "retained.json", "sha256": _sha(evidence),
+          "receipt_sha256": _sha(receipt), "retained_evidence": {"path": sidecar + "retained.json", "sha256": _sha(evidence),
                                                                   "evidence_sha256": retained["evidence_sha256"]}},))
     _write(value.batch / "manifest.json", canonical_json(manifest.to_dict()))
     pins, sources = {}, {}
@@ -396,6 +429,28 @@ def test_archive_projection_cannot_substitute_manifest_candidate_record(tmp_path
             value.owner.checkpoint_staged(wire)
         fixture._unchanged(value, before)
         assert value.ledger.controller_checkpoint_history(value.binding.run_id) == history
+
+
+@pytest.mark.parametrize("fault", [None, "source-size", "source-sha", "bundle-digest", "entrypoint"])
+def test_original_bundle_declarations_bind_staged_materials_before_success_cas(tmp_path, monkeypatch, fault):
+    with _waiting(tmp_path, monkeypatch, bundle=True) as value:
+        wire, before = _staged(value, bundle_fault=fault), fixture._capture(value)
+        history = value.ledger.controller_checkpoint_history(value.binding.run_id)
+        if fault is not None:
+            with pytest.raises(RSILearningError, match="candidate_bundle_source_drift|candidate_materials_invalid"):
+                value.owner.checkpoint_staged(wire)
+            fixture._unchanged(value, before)
+            assert value.ledger.controller_checkpoint_history(value.binding.run_id) == history
+            assert value.owner._poisoned
+            return
+        entry = wire["batches"][0]
+        files = {item["candidate_id"]: item for item in value.manifest.to_dict()["files"]}
+        assert value.owner._candidate_materials(entry, files, (value.batch / "stage/archive.jsonl").read_bytes(),
+            staged=True) == {value.staged.candidates[0].candidate_id: value.bundle_sources}
+        value.owner.checkpoint_staged(wire)
+        value.owner.checkpoint_terminal(_terminal(value))
+        assert value.owner._phase == "terminal" and not value.owner._poisoned
+        assert value.ledger.episode_result(value.episode_id) is None
 
 
 @pytest.mark.parametrize("target", ["config", "authority", "contract", "nested-contract"])
