@@ -24,10 +24,11 @@ success publication. This gate closes no owner bridge task.
 
 ## Remaining PB-02/PB-03 online owner bridge acceptance
 
-PB-03b below verifies only the original-BRS before/prepared checkpoint primitive.
-The online mailbox/controller/scheduler composition, persisted pre-wave policy and
-complete publication lifecycle in this matrix remain open; a passing primitive
-case does not mark the corresponding online boundary complete.
+PB-03b below verifies only the original-BRS before/prepared checkpoint primitive;
+PB-03c separately verifies the original persisted policy. The online
+mailbox/controller/scheduler composition and complete publication lifecycle in
+this matrix remain open; a passing primitive or policy case does not mark the
+corresponding online boundary complete.
 
 | ID | Boundary | Required assertion |
 | --- | --- | --- |
@@ -112,8 +113,8 @@ owner/thread/claim/request/source/control/budget drift refusal; bounded detached
 wire; genuine descriptor/snapshot/file pins; hooks outside the observation mutex;
 live method/helper fingerprints; competing CAS, lost readback and stale capture;
 completed-return and original DRS facade refusal. The owner remains private and
-first-ordinal only. Its BRS policy is pinned at construction, not in the original
-persisted pre-wave policy. `production_admission=false`, `online_publication=false`
+first-ordinal only. On that source its BRS policy is pinned at construction;
+PB-03c below adds the original persisted pre-wave pin. `production_admission=false`, `online_publication=false`
 and the fixture's `producer_multi_episode_publication=false` remain unchanged.
 There is no staged/terminal, rejection C1/P/C2, online transaction, reconcile or
 successor implementation in this slice.
@@ -184,3 +185,81 @@ captured pair. The final inventory includes
 `test_late_owner_gate_cannot_adopt_a_same_payload_new_reference_revision`; its
 injection is at the late controller gate continuation. The original failed result
 is preserved and is not reclassified by the later passing run.
+
+## PB-03c original pre-wave policy acceptance
+
+The frozen product/test source is commit
+`399958c79e21fb300c661bd3366c58f21f24d546`, tree
+`4892b1c0ae6290353cb92629657aa72a5d4bbc9a`. The final four-process local run passed
+**402 = 21 new + 381 original** cases, zero failures/errors/skips. Disjoint group
+sizes are exactly 73/166/134/29; the complete twelve-module inventory is:
+
+| Group | Module under `tests/` | Cases |
+| --- | --- | ---: |
+| 0 | `test_rsi_brs_prewave_policy.py` | 21 |
+| 0 | `test_rsi_brs_publication_lineage_owner.py` | 37 |
+| 0 | `test_rsi_publication_lineage_checkpoint_kernel.py` | 15 |
+| 1 | `test_rsi_python_brs_selected_service.py` | 28 |
+| 1 | `test_rsi_python_brs_selected_settlement.py` | 85 |
+| 1 | `test_rsi_python_brs_owner.py` | 23 |
+| 1 | `test_rsi_python_brs_publication.py` | 30 |
+| 2 | `test_rsi_python_publication.py` | 52 |
+| 2 | `test_rsi_python_admission_flow.py` | 54 |
+| 2 | `test_rsi_publication_lineage_owner.py` | 28 |
+| 3 | `test_rsi_fingerprint.py` | 19 |
+| 3 | `test_rsi_resume_contract.py` | 10 |
+
+The new tests verify persistence before any worker, identical original policy in
+the create-run record/fingerprint/all checkpoints, all existing recomputation
+boundaries, missing/changed original/fingerprint/intermediate/latest pin refusal,
+old-run refusal without backfill, JSON-only locked historical checks, pin-only
+selected service compatibility, and unchanged DRS/provider-free/multiworker field
+selection. Fixtures block subprocess execution and network connections. The legacy
+child/publication flags remain false in the genuine BRS fixture. The policy is
+non-authorizing: `production_admission=false`, `online_publication=false`.
+
+All nine exits are zero: installed-origin, collection, four pytest groups, full
+Ruff over `src tests tools`, compileall over the same scope, and `git diff --check`.
+Python 3.11.15 / pytest 9.1.1 used this checkout's own editable install at
+`/private/tmp/lunar-brs-prewave-policy/.venv/bin/python`, no `PYTHONPATH`, and short
+isolated temporary directories. Package origin and direct URL agree. Before/after
+source maps match all **2,038 tracked files**.
+
+| Evidence | SHA256 |
+| --- | --- |
+| `src/lunar_evolution/rsi_brs_publication_lineage.py` | `c64f8cccffa2a85c18538bd5435d337cd3f6530eee951ebeee7bd22c82dae8ac` |
+| `src/lunar_evolution/rsi_controller.py` | `86f6d3e11cd84e8c3248494f2ed44904e4e76ed2cfe1e8b9b90ec35b19fe80f1` |
+| `tests/test_rsi_brs_prewave_policy.py` | `e724311d257d0acd2d9fbd8f014c9506b34a63608f22dfc0c211e56f95365ecc` |
+| `inventory.json` | `00e0c4e065f6aac34c066e30062bc65b4fe4b7e93f3f6beb7cef99c8860db08a` |
+| `result.json` | `9f229e688a6ec33625f0a92c327e550a4ebda36e8dc11a33cc5eaf7c7a0f6b3d` |
+| `group-0.xml` | `330451488c54089e27344c02102d5280b8a9d272197eff10c261b66565bf8447` |
+| `group-1.xml` | `4ca6303be522e511ff221c6c9867068be5cf5b3224570ab2c6d0249198179e56` |
+| `group-2.xml` | `c514e6992102f74da1adb5ee478420cdb50e885237a59bd4cc7168e06c12c1d3` |
+| `group-3.xml` | `202e0708a4e587567c7e9cfb4b8df573ae2348e882df78b911d57fa68901eac6` |
+
+The raw XML, exact inventories, argv/cwd, exit records, stdout/stderr, installed
+origin, source maps and driver summary remain in
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/reports/brs-prewave-policy-20261015/final-candidate/`.
+The implementing task's stdlib-only raw/source verification passed **6,173
+assertions**, including every source SHA/mode/size against immutable git blobs.
+This is not an independent agent's raw review. Its script is the sibling
+`audit_final402.py` (SHA256
+`30916c57592f605032b9322e4c80f505e04614c68ea8fdc248a7ac721c981651`);
+output `final402-review.json` has SHA256
+`2ccfbfa104c940f8416d81247005f89c3d2ae36a4af6a985e7f307cf1ba93007`.
+The first read-only audit attempt stalled in piped `git cat-file --batch` and was
+terminated without a verdict; its script and attempt record are preserved as
+`audit_final402-initial.py` and `audit-initial-attempt.json`. Bounded temporary-file
+stdin fixed the verifier invocation. No product/test run was repeated or replaced.
+
+Separate independent code review of `399958c` passed without blockers. The earlier
+21-case development evidence stays in `development-1/` and is not added to this
+402 count. The separate selected-owner episode-settlement race fix is absent from
+this frozen source; this compatibility pass does not claim that race is fixed.
+Combining the two changes requires preserving original `mode`/`plan` fingerprint
+arguments in the extracted fixed-pin projection and fresh integrated-source
+validation. Final-source CI remains separate.
+
+PB-03c closes original policy persistence only. Online owner transaction/mailbox
+composition, staged/terminal lineage, rejection C1/P/C2, reconcile, serial successor
+and policy/memory composition remain open; public native BRS remains closed.

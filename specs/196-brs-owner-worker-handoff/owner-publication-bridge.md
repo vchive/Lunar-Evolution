@@ -90,9 +90,15 @@ original DRS mutation facade explicitly refuses this owner.
 
 Its distinct protocol is `lunar-rsi-brs-lineage-checkpoint-v1`. Its policy pins
 `mode=brs`, `max_workers=1`, `production_admission=false` and
-`online_publication=false`, but **only at owner construction**. It does not add this
-policy to the original persisted pre-wave run record. Online PB-03 integration must
-persist and bind that policy before the original dispatch. The genuine BRS fixture
+`online_publication=false`. PB-03b initially pinned it only at owner construction.
+PB-03c now retains dedicated `producer_brs_checkpoint_policy` metadata in the
+original create-run payload before the first running transition, original run
+fingerprint and every controller checkpoint. Selection is limited to new exact
+producer-sidecar, single-worker BRS runs; DRS, provider-free and multiworker field
+selection is unchanged. The owner checks the complete durable history and current
+policy, refusing missing or changed original pins without migration or backfill.
+JSON-only history checks do not invoke source/configuration callbacks under the
+short observation mutex. See `prewave-policy.md`. The genuine BRS fixture
 retains `producer_multi_episode_publication=false`; construction is no publication
 or dispatch grant.
 
@@ -120,6 +126,12 @@ Exact evidence and preserved failures are recorded in `publication-validation.md
 This closes no staged, terminal, rejection, publication transaction, reconcile or
 serial successor path.
 
+The separate PB-03c frozen acceptance at `399958c` passed **402 = 21 new + 381
+original** cases, all static/install/source checks, and independent code review.
+Its original-policy metadata grants no online transaction capability. These
+different source acceptances are not summed; final integrated-source CI remains
+separate.
+
 Mailbox, nonce and owner objects are ephemeral and cannot be recovered from files.
 Interrupted producer work remains an unknown started obligation. Queued requests are
 not resubmitted for fresh authority. CAS/commit with lost ACK or failed readback retains
@@ -129,8 +141,8 @@ reconciliation. Existing DRS inspections do not authorize BRS reconciliation.
 
 The next implementation slices remain open:
 
-- Persisted pre-wave BRS policy and online composition of the private before/prepared
-  owner with the original controller and scheduler transaction lifecycle.
+- Online composition of the private before/prepared owner and its persisted
+  original BRS policy with the controller and scheduler transaction lifecycle.
 - One-shot mailbox transport is implemented in the successor candidate
   (`publication-mailbox.md`); focused acceptance and its controller/pre-publication
   scheduler dispatch integration remain separate open work.

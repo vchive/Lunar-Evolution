@@ -1,7 +1,8 @@
 # PB-03c — persisted original BRS checkpoint policy
 
-Status: selection A accepted within Feature 196; implementation candidate complete,
-final-source validation pending. No online runtime availability is implied.
+Status: selection A implemented within Feature 196 at `399958c`; the frozen
+402-case local acceptance and static/install/source checks passed. Final integrated
+source CI remains separate. No online runtime availability is implied.
 
 ## Gap and smallest compatible selection
 
@@ -65,8 +66,18 @@ contract, never permission to execute or publish.
 The initial development run passed 21 new cases with zero failures/errors/skips;
 its original source map, argv, XML and exit remain in ignored
 `.lunar-evolution/reports/brs-prewave-policy-20261015/development-1/`.
-Full Ruff over `src tests tools` also passed. This development run does not substitute
-for the pending frozen-source compatibility acceptance. Use provider-free local
-fixtures only; retain each failed run separately. Frozen acceptance must record exact focused inventory,
-raw XML and exit records, source/install identity, full Ruff over `src tests tools`,
-compileall and `git diff --check`. Independent review is assigned after freezing.
+The separate frozen source is `399958c79e21fb300c661bd3366c58f21f24d546`, tree
+`4892b1c0ae6290353cb92629657aa72a5d4bbc9a`. Its final four-process run passed
+**402 = 21 new + 381 original** cases with zero failures/errors/skips. Disjoint
+groups contain 73/166/134/29 nodes. All nine exits are zero: installed origin,
+collection, four pytest groups, full Ruff over `src tests tools`, compileall over
+the same scope, and `git diff --check`. All 2,038 tracked files match before/after.
+The own-worktree Python 3.11.15 editable install was used without `PYTHONPATH`.
+
+Exact module inventories, raw XML, argv/cwd, exits, source identity and evidence
+digests are recorded in `publication-validation.md`; the raw directory is
+`.lunar-evolution/reports/brs-prewave-policy-20261015/final-candidate/`.
+Independent code review of the frozen product/test source passed with no blockers.
+Use provider-free local fixtures only. This acceptance belongs to that source;
+it does not claim the separate selected-owner terminal race fix is present or
+replace final integrated-source validation.
