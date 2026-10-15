@@ -18,7 +18,7 @@ objects are neither serialized nor invoked; the owner must reconstruct original
 output from durable evidence rather than trust those worker objects.
 
 Require prepared/no-publication run state, completed successful receipt, brokered
-eligible output, original receipt/output/native capture agreement, selected
+preparation-only output (`publication_eligible is False`), original receipt/output/native capture agreement, selected
 request/M0/run/episode, and common native launch/journal/parent/child/intent/
 attestation/contract/evaluator/environment identities. Preserve the distinction
 between Python runtime terminal evidence and the native process terminal capture.
@@ -36,6 +36,20 @@ and the original one-shot owner/worker mailbox, plus drift, malformed/subclass/
 callback inputs, original pin mismatch, canonical detachment and zero side effects.
 Existing preparation/mailbox tests, Ruff, compileall and diff-check remain gates.
 `online_publication=false` and `production_admission=false` remain unchanged.
+
+## Preparation-only correction — 2026-10-16 successor
+
+The original projector required `publication_eligible is True`, while the actual
+`prepare_native_trusted_output` and read-only recovery always leave this field
+false. The original prepublication fixture explicitly supplied true and therefore
+missed that composition defect. The successor requires the exact false value,
+uses the output DTO's real default in the shared fixture, and rejects true,
+integer zero and null. The mailbox payload still carries only comparison evidence
+and omits any publication grant. It cannot authorize an owner transaction.
+
+The earlier frozen test results below remain evidence for their original source;
+they do not validate this corrected contract. Final successor validation is
+recorded separately after integration with the owner reader and prepared-pin entry.
 
 ## Frozen local acceptance
 

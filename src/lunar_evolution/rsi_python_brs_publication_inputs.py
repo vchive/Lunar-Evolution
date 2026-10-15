@@ -143,7 +143,10 @@ def _request_from_native_preparation(
             or parsed_receipt.gate_released is not True
             or type(parsed_receipt.cleanup_status) is not str
             or parsed_receipt.cleanup_status not in {"cleaned", "already_exited"}
-            or output_values["publication_eligible"] is not True
+            # The retained output reader always returns preparation-only evidence.
+            # Transport must preserve that state rather than require a fabricated
+            # publication grant; the original owner supplies its own later scope.
+            or output_values["publication_eligible"] is not False
             or output_values["request_coverage"] != "brokered_requests_only" or retained.state != "prepared"
             or envelope.status != "completed"):
         _fail("state_invalid")
