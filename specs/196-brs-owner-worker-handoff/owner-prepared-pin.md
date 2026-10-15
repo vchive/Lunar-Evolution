@@ -32,11 +32,24 @@ All configuration/source hooks finish outside the short observation mutex.
 The entry retains the actual native cancellation callable and monotonic control
 without creating a replacement. Its timing values, clock, stage observer, lock
 and cancellation callback identities stay fixed, matching the existing native
-prepublication control pin. Cancellation must return an exact boolean. The live
+prepublication control pin. Only the exact control class and its eight original
+instance fields are accepted; subclasses and method shadows are refused before
+invocation. The original class `check` implementation handles the same control.
+Cancellation must return an exact boolean. The live
 control/cancellation check also runs after each pre-CAS source gate, including
 the kernel's last `active` check, and again after post-CAS hooks. A cancellation
 or elapsed deadline at the final source hook therefore prevents the reference
 write instead of merely refusing its later acknowledgment.
+
+The original admission channel must remain open with its original owner/run and
+episode set, selected episode/handoff digest and already bound nonce. No selected
+completion, ready request, ACK, pending queue or service may exist. These checks
+run under the original channel condition at entry, after the final pre-CAS hooks
+and while the shared wave advances. This preserves the first selection; it never
+consumes a second nonce or rebinds a completed/closed channel.
+The combined source must include the companion persisted-policy binding for the
+admission channel and control source/method/helper closure; this three-file slice
+does not alter or migrate the original policy by itself.
 
 The final durable observation must show exactly adjacent old and new history
 entries and the exact returned head/payload. A later same-payload revision is a
@@ -77,6 +90,9 @@ deadline, replaced clock/stage/lock/cancellation callbacks, cancellation,
 monotonic timeout and non-boolean cancellation results. The final pre-CAS source
 hook cancellation/timeout cases require zero pin calls and unchanged durable
 head.
+Channel refusal covers closure before the pin (zero CAS), closure after the pin
+(durable evidence and stale poisoned capture), changed owner/run/episode set,
+selection/digest/nonce/completion and condition replacement during the operation.
 
 Development results are retained separately under
 `.lunar-evolution/reports/brs-owner-prepared-pin/`. They are macOS development

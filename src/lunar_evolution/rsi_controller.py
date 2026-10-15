@@ -2723,6 +2723,8 @@ class RSILearningController:
         An uncertain pin poisons that owner and never adopts the latest head.
         """
         import math
+        from collections import deque
+        from threading import Condition
 
         from .automatic_solve_lifecycle import SolveExecutionControl
         from .producer_bundle_lineage import (
@@ -2730,6 +2732,7 @@ class RSILearningController:
             verify_persisted_lineage_snapshot,
         )
         from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_python_brs_admission import BRSAdmissionChannel
 
         if (type(self) is not RSILearningController or type(owner) is not _BRSLineageCheckpointOwner
                 or owner._controller is not self):
@@ -2740,6 +2743,37 @@ class RSILearningController:
                 raise RSILearningError("rsi_python_brs_owner_prepared_unavailable")
             owner._before_entry(json.loads(owner._before_bytes))
             wave, plan, journal = owner._wave, owner._plan, owner._prepared
+            channel = owner._channel
+            if type(channel) is not BRSAdmissionChannel or type(channel._condition) is not Condition:
+                raise RSILearningError("rsi_python_brs_owner_prepared_channel_invalid")
+            channel_condition = channel._condition
+            selected_nonce = json.loads(owner._handoff_bytes)["lease_nonce"]
+            selected_sha256 = hashlib.sha256(owner._handoff_bytes).hexdigest()
+
+            def channel_live():
+                with channel_condition:
+                    if (owner._channel is not channel or wave.channel is not channel
+                            or channel._condition is not channel_condition or channel._closed is not False
+                            or type(channel._owner_thread) is not int or channel._owner_thread != owner._thread
+                            or type(channel._run_id) is not str or channel._run_id != wave.run_id
+                            or type(wave.episode_ids) is not tuple or any(type(item) is not str for item in wave.episode_ids)
+                            or type(channel._episode_ids) is not frozenset
+                            or any(type(item) is not str for item in channel._episode_ids)
+                            or channel._episode_ids != frozenset(wave.episode_ids)
+                            or channel._handoff_mode is not True or channel._servicing is not False
+                            or type(channel._selected_episode_id) is not str
+                            or channel._selected_episode_id != owner._request.episode_id
+                            or type(channel._selected_handoff_sha256) is not str
+                            or channel._selected_handoff_sha256 != selected_sha256
+                            or type(channel._consumed_handoff_nonces) is not set
+                            or any(type(item) is not str for item in channel._consumed_handoff_nonces)
+                            or channel._consumed_handoff_nonces != {selected_nonce}
+                            or type(channel._completed_selected_episodes) is not set or channel._completed_selected_episodes
+                            or type(channel._requests) is not dict or channel._requests
+                            or type(channel._queue) is not deque or channel._queue):
+                        raise RSILearningError("rsi_python_brs_owner_prepared_channel_invalid")
+
+            channel_live()
             prepared_path = owner._workspace / "evolution/producer-batches" / journal.journal_id / "journal.prepared.json"
             prepared_pin = capture_lineage_snapshot_pin(prepared_path, name="journal.prepared.json")
             native = owner._native
@@ -2751,7 +2785,13 @@ class RSILearningController:
                 # adding an unpinned live helper dependency to this owner policy.
                 if execution_control is None:
                     return None
-                if not isinstance(execution_control, SolveExecutionControl):
+                if type(execution_control) is not SolveExecutionControl:
+                    raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid")
+                attributes = object.__getattribute__(execution_control, "__dict__")
+                if (type(attributes) is not dict or any(type(key) is not str for key in attributes)
+                        or set(attributes) != {"timeout_seconds", "_clock", "started_at", "deadline",
+                                               "_cancellation_callbacks", "_cancelled", "_observe_stage", "_lock"}
+                        or type(attributes["_cancelled"]) is not bool):
                     raise RSILearningError("rsi_python_brs_owner_prepared_control_invalid")
                 times = (execution_control.started_at, execution_control.deadline, execution_control.timeout_seconds)
                 try:
@@ -2784,7 +2824,7 @@ class RSILearningController:
                             raise RSILearningError("rsi_python_brs_owner_prepared_cancelled")
                     control_unchanged()
                     if execution_control is not None:
-                        execution_control.check("rsi_brs_owner_prepared_pin")
+                        SolveExecutionControl.check(execution_control, "rsi_brs_owner_prepared_pin")
                 except RSILearningError:
                     raise
                 except Exception as exc:
@@ -2812,6 +2852,7 @@ class RSILearningController:
                 owner._check_owner()
                 native_live()
                 owner._identity()
+                channel_live()
                 if (owner._phase != "before" or owner._head != captured_head
                         or owner._payload != captured_payload):
                     raise RSILearningError("rsi_python_brs_owner_prepared_stale")
@@ -2871,9 +2912,10 @@ class RSILearningController:
                         or history[-1] != (head, expected)):
                     raise RSILearningError("rsi_python_brs_owner_prepared_readback_invalid")
                 owner._history(expected)
-            with self._python_admission_brs_observations():
+            with self._python_admission_brs_observations(), channel_condition:
                 self._python_admission_assert_brs_wave(wave, owner=True)
                 self._python_admission_selected_brs_identity(wave, owner._handoff)
+                channel_live()
                 if (owner._poisoned or owner._phase != "before"
                         or owner._wave is not wave or wave.state is not owner._state
                         or owner._head != captured_head or owner._payload != captured_payload

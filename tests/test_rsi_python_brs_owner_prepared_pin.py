@@ -6,7 +6,7 @@ import socket
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy, deepcopy
-from threading import RLock, get_ident
+from threading import Condition, RLock, get_ident
 
 import pytest
 import test_rsi_brs_publication_lineage_owner as fixture
@@ -261,10 +261,83 @@ def test_post_pin_source_hook_can_observe_short_mutex_without_advancing_capture(
         _quiet(value)
 
 
+@pytest.mark.parametrize("fault", ["before-close", "before-owner", "before-run", "before-episodes",
+                                  "before-selection", "before-sha", "before-nonce", "before-completed",
+                                  "post-close", "post-selection", "post-condition", "last-active-close"])
+def test_original_channel_must_remain_live_and_selected_without_ready_ack(tmp_path, monkeypatch, fault):
+    with fixture._waiting(tmp_path, monkeypatch) as value:
+        value.owner.checkpoint_before(fixture._before(value))
+        before = fixture._capture(value)
+        exact, pin = value.controller._python_admission_pin_exact, value.ledger.pin_python_admission_record
+        config = value.gateway.rsi_fingerprint_config
+        channel, calls, durable, active_calls, final_active = value.wave.channel, [], [], [], []
+
+        def change():
+            if fault.endswith("close"):
+                channel.close()
+            elif fault.endswith("owner"):
+                channel._owner_thread += 1
+            elif fault.endswith("run"):
+                channel._run_id = "foreign"
+            elif fault.endswith("episodes"):
+                channel._episode_ids = frozenset({value.episode_id})
+            elif fault.endswith("selection"):
+                channel._selected_episode_id = value.sibling_id
+            elif fault.endswith("sha"):
+                channel._selected_handoff_sha256 = "e" * 64
+            elif fault.endswith("nonce"):
+                channel._consumed_handoff_nonces.clear()
+            elif fault.endswith("completed"):
+                channel._completed_selected_episodes.add(value.episode_id)
+            elif fault.endswith("condition"):
+                channel._condition = Condition()
+
+        def post_pin(*args, **kwargs):
+            if fault == "last-active-close":
+                active = kwargs["active"]
+                def last_active():
+                    active_calls.append(True)
+                    if len(active_calls) == 2:
+                        final_active.append(True)
+                    return active()
+                kwargs["active"] = last_active
+            result = exact(*args, **kwargs)
+            durable.append((result[1], deepcopy(result[3])))
+            change()
+            return result
+
+        def observed(*args, **kwargs):
+            calls.append(True)
+            return pin(*args, **kwargs)
+
+        def source():
+            if final_active:
+                channel.close()
+            return config()
+
+        monkeypatch.setattr(value.ledger, "pin_python_admission_record", observed)
+        monkeypatch.setattr(value.gateway, "rsi_fingerprint_config", source)
+        if fault.startswith("before-"):
+            change()
+        else:
+            monkeypatch.setattr(value.controller, "_python_admission_pin_exact", post_pin)
+        with pytest.raises(RSILearningError, match="owner_prepared_channel_invalid"):
+            _pin(value)
+        fixture._unchanged(value, before)
+        assert value.owner._poisoned
+        if fault.startswith("before-") or fault == "last-active-close":
+            assert calls == [] and value.ledger.controller_checkpoint(value.binding.run_id) == (before[0], before[2])
+        else:
+            assert calls == [True] and value.ledger.controller_checkpoint(value.binding.run_id) == durable[0]
+        _quiet(value)
+
+
 @pytest.mark.parametrize("fault", ["none", "pre-cancel", "pre-nonbool", "post-cancel", "post-timeout",
                                   "post-object", "post-deadline", "post-clock", "post-stage", "post-lock",
                                   "post-callback", "post-cancellation", "post-source-hook-cancel",
-                                  "last-active-cancel", "last-active-timeout"])
+                                  "last-active-cancel", "last-active-timeout", "pre-subclass",
+                                  "pre-shadow-check", "pre-shadow-is_cancelled", "pre-shadow-_now",
+                                  "post-shadow-check", "post-shadow-is_cancelled", "post-shadow-_now"])
 def test_real_native_control_is_fixed_and_live_across_prepared_cas(tmp_path, monkeypatch, fault):
     now, signal = [0.0], [False]
     control = SolveExecutionControl(30, clock=lambda: now[0], started_at=0)
@@ -287,7 +360,11 @@ def test_real_native_control_is_fixed_and_live_across_prepared_cas(tmp_path, mon
         before = fixture._capture(value)
         exact, config = value.controller._python_admission_pin_exact, value.gateway.rsi_fingerprint_config
         pin = value.ledger.pin_python_admission_record
-        durable, hooks, pin_calls, active_calls, at_last_active = [], [], [], [], []
+        durable, hooks, pin_calls, active_calls, at_last_active, shadows = [], [], [], [], [], []
+
+        def unexpected(*_args, **_kwargs):
+            shadows.append(True)
+            return 1
 
         def observe():
             with value.controller._python_admission_brs_observations():
@@ -335,6 +412,9 @@ def test_real_native_control_is_fixed_and_live_across_prepared_cas(tmp_path, mon
                 control.add_cancellation_callback(lambda: False)
             elif fault == "post-cancellation":
                 object.__setattr__(value.native, "cancelled", lambda: False)
+            elif fault.startswith("post-shadow-"):
+                control.cancel()
+                setattr(control, fault.removeprefix("post-shadow-"), unexpected)
             return result
 
         def observed_pin(*args, **kwargs):
@@ -346,6 +426,13 @@ def test_real_native_control_is_fixed_and_live_across_prepared_cas(tmp_path, mon
         monkeypatch.setattr(value.gateway, "rsi_fingerprint_config", source)
         if fault == "pre-cancel":
             control.cancel()
+        elif fault.startswith("pre-shadow-"):
+            control.cancel()
+            setattr(control, fault.removeprefix("pre-shadow-"), unexpected)
+        elif fault == "pre-subclass":
+            class ControlShadow(SolveExecutionControl):
+                check = unexpected
+            object.__setattr__(value.native, "execution_control", ControlShadow(30, clock=lambda: 0, started_at=0))
         elif fault == "pre-nonbool":
             class BooleanShadow:
                 def __bool__(self):
@@ -370,4 +457,5 @@ def test_real_native_control_is_fixed_and_live_across_prepared_cas(tmp_path, mon
                 assert hooks
             if fault.startswith("last-active-"):
                 assert hooks and len(active_calls) == 2
+        assert shadows == []
         _quiet(value)
