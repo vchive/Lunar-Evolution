@@ -1,9 +1,11 @@
 # PB-03h — private original-BRS native transaction dispatch
 
-Status: design for the next implementation slice, based on `855b08e`. No dispatch
-implementation or success-path acceptance is supplied by this document. PB-03g's
-success retention/precommit facades are a prerequisite. The governing scope is
-`owner-publication-bridge.md`; public native BRS remains refused.
+Status: private dispatch implementation is complete in the current candidate,
+based on `644ebde` plus the deterministic latency-test correction. PB-03g's
+success retention/precommit facades remain the prerequisite source. The governing
+scope is `owner-publication-bridge.md`; public native BRS remains refused. The
+focused fixture and static results are recorded separately from the pending
+cross-platform source/CI acceptance.
 
 ## Original authority and shared implementation
 
@@ -89,3 +91,48 @@ failure evidence. Freeze exact source before installed-source/platform acceptanc
 This design adds no scheduler routing, public flag, remote evaluator, production
 runtime, solver campaign, serial successor or multi-machine service. Keep
 `online_publication=false` and `production_admission=false`.
+
+## Current implementation boundary
+
+The private `_run_original_brs_native_publication` entry recovers retained native
+drafts through the genuine original reader and calls the shared native transaction
+kernel. The owner's exact unbound methods acknowledge before, prepared, staged and
+terminal evidence. The native prepared anchor is pinned through the original
+controller method; no ready/ACK message, worker return or result settlement occurs.
+The public transaction and commit wrappers retain their DRS-only signatures and
+owner checks. Public/no-owner population projection still passes through its
+existing public wrapper; only this private BRS route selects the shared internal
+projection directly.
+
+This first slice requires the original, exact `SolveExecutionControl` whose
+`_clock is time.monotonic`. Missing controls and caller-supplied clocks are refused
+before source/control callbacks or effects. The shared native numeric gate invokes
+that original clock; allowing arbitrary clocks would permit a callback after the
+final evidence observation. Existing public DRS control support is unchanged.
+
+The checkpoint projection validates the actual current-workspace held lock using
+the existing lock-inode checker. A foreign-only held lock fails closed. Full
+source/control predicates run unlocked, followed by original receipt/handoff/anchor
+reads, the retained numeric gate and the fixed original scope/channel tail. The
+timeout observer follows the same ordering. Only bounded regular-file reads and
+the original retained receipt/handoff pins are used; the receipt inode observed at
+entry is an additional drift check, never a substitute for historical creator pins.
+
+The original policy now binds this finite dispatch/helper chain, shared transaction
+and staging functions, native control composition, original prepared-pin method,
+receipt parser and canonical application globals. It does not add a new authority
+lifecycle or relax the persisted `online_publication=false` boundary.
+
+The controlled-deadline helper keeps its public behavior for DRS. For this exact
+private owner only, its lock-held control check receives the already captured
+original numeric revalidator. That path checks the retained monotonic deadline and
+local cancellation state without replaying cancellation callbacks under the
+publication lock. Parent predicates remain sampled by the ordinary unlocked
+checkpoint projection; no callback is removed from the original control object.
+
+Only nonempty native success is supported. A native all-rejected result is retained
+as native evidence and then refused by this private owner dispatch. Ambiguous
+publication/CAS failures poison the owner and preserve the native marker/evidence;
+there is no retry, refreshed deadline or latest-head adoption. Controller mailbox
+routing, rejection provenance, reconcile, successor and worker/result settlement
+remain separate work.

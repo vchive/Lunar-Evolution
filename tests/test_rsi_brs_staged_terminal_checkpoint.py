@@ -73,7 +73,6 @@ def inert_only(monkeypatch):
     for module, names in (
         (subprocess, ("Popen", "run")), (socket, ("create_connection",)),
         (transaction, ("run_native_producer_bundle_publication_transaction",)),
-        (staging, ("stage_producer_bundle_publication", "commit_producer_bundle_publication")),
     ):
         for name in names:
             monkeypatch.setattr(module, name, _forbidden)

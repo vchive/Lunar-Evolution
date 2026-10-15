@@ -1,5 +1,15 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 并行继续：PB-03h 私有原生 BRS dispatch 候选
+
+当前候选 worktree `codex/brs-private-native-dispatch` 已把 PB-03h 接到原有 native transaction/staging/commit kernel：只接受真实原始 `_BRSLineageCheckpointOwner`，复用原 owner/thread/lease/episode/claim/handoff/channel/budget 与 source/control fingerprints；锁外完成完整观察，锁内使用原始 numeric revalidator；原 execution receipt 的 inode pin 在 locked/final boundary 复验。public DRS/BRS gate、`online_publication=false` 和 `production_admission=false` 保持不变，不新增 permit、attestation、scheduler 或 authority。
+
+本候选本地结果：PB-03h focused 15/15，原 owner lineage 37/37，transaction control 30/30，staging compatibility 17/17；Ruff、compileall、`git diff --check` 通过。确定性 latency fixture 已合入，旧真实 sleep 失败材料仍保留为 `NOT_ACCEPTED` 历史，不能与新来源混用。Mac/Linux 72-case 新冻结与 source/import/XML/nodeid/tree 独审尚未完成，当前不能宣称 PB-03h 已合入 main。
+
+主 checkout 仍是 `main 0cb49ab`，PR109（`b6faf226`）仍为 Draft/UNSTABLE，33-job CI 尚未结束；不得修改、取消或追加提交。PB-03h 应在自身 source/tree/bundle 冻结、双平台回归和独立审计通过后另开面向 main 的 PR。
+
+仍开放的 P0/P1：controller owner-thread mailbox 与真实 response acceptance、native result durable CAS、close/join 后 settlement、unknown reconcile、serial successor，以及不同 child ID/新 approved memory 的多 episode DRS/BRS；真实 CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI/Linux acceptance 仍未验收。P2 的 remote evaluator、外部 worker authentication、多机 ownership、distributed scheduler/service API、remote Shinka/Slurm 继续后置。
+
 ## 2026-10-16 后继：success 高层留存候选与统一验收
 
 `7a21ed831113a30917dbeb378b31e2450dae2fe0`在独立分支实现原BRS owner的

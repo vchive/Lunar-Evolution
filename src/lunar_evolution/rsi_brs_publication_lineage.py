@@ -180,6 +180,7 @@ def _validate_persisted_policy(
 
 def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
+    import contextlib
     import sys
     from types import FunctionType
 
@@ -194,15 +195,20 @@ def _policy() -> dict[str, Any]:
         native_trusted_scheduler,
         native_trusted_streams,
         producer_bundle_admission,
+        producer_bundle_control,
+        producer_bundle_deadline,
         producer_bundle_handoff,
         producer_bundle_lineage,
         producer_bundle_population,
         producer_bundle_preflight,
         producer_bundle_staging,
+        producer_bundle_transaction,
         producer_handoff,
         producer_process,
         producer_request_transport,
         python_producer_admission_handoff,
+        rsi_controller,
+        rsi_python_brs_native_dispatch,
         rsi_python_brs_publication_inputs,
         rsi_python_brs_publication_mailbox,
         rsi_python_brs_publication_recovery,
@@ -230,6 +236,15 @@ def _policy() -> dict[str, Any]:
     from .rsi_python_scheduler_inputs import _context
 
     reader = rsi_python_brs_publication_recovery
+    dispatch = rsi_python_brs_native_dispatch
+    transaction = producer_bundle_transaction
+    control_binding = producer_bundle_control.bind_native_producer_bundle_control
+    control_implementation = getattr(control_binding, "__wrapped__", None)
+    closure = getattr(control_binding, "__closure__", None)
+    if (type(control_binding) is not FunctionType or type(control_implementation) is not FunctionType
+            or type(closure) is not tuple or len(closure) != 1
+            or closure[0].cell_contents is not control_implementation):
+        _fail("native_dispatch_control_binding_drift")
     aliases = (
         (persist_lineage_bytes_snapshot, producer_bundle_lineage.persist_lineage_bytes_snapshot),
         (persist_lineage_snapshot, producer_bundle_lineage.persist_lineage_snapshot),
@@ -245,6 +260,17 @@ def _policy() -> dict[str, Any]:
          python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
         (reader._prepublication_control_pin, native_trusted_scheduler._prepublication_control_pin),
         (reader.SolveExecutionControl, automatic_solve_lifecycle.SolveExecutionControl),
+        (dispatch.SolveExecutionControl, automatic_solve_lifecycle.SolveExecutionControl),
+        (dispatch._BRSLineageCheckpointOwner, _BRSLineageCheckpointOwner),
+        (dispatch.capture_lineage_snapshot_pin, producer_bundle_lineage.capture_lineage_snapshot_pin),
+        (dispatch.verify_persisted_lineage_snapshot, producer_bundle_lineage.verify_persisted_lineage_snapshot),
+        (dispatch.parse_producer_execution_receipt, producer_process.parse_producer_execution_receipt),
+        (transaction.bind_native_producer_bundle_control, producer_bundle_control.bind_native_producer_bundle_control),
+        (transaction.native_producer_bundle_budget_sha256, producer_bundle_control.native_producer_bundle_budget_sha256),
+        (transaction.persist_controlled_producer_bundle_intent, producer_bundle_deadline.persist_controlled_producer_bundle_intent),
+        (transaction.stage_producer_bundle_publication, producer_bundle_staging.stage_producer_bundle_publication),
+        (transaction.commit_producer_bundle_publication, producer_bundle_staging.commit_producer_bundle_publication),
+        (transaction.parse_producer_execution_receipt, producer_process.parse_producer_execution_receipt),
         (native_trusted_scheduler.recover_native_trusted_execution_receipt,
          native_trusted_receipt.recover_native_trusted_execution_receipt),
         (native_trusted_scheduler.prepare_native_trusted_output, native_trusted_output.prepare_native_trusted_output),
@@ -319,6 +345,23 @@ def _policy() -> dict[str, Any]:
           for name in ("check", "is_cancelled", "_now")),
         (automatic_solve_lifecycle._finite_time, automatic_solve_lifecycle),
         (automatic_solve_lifecycle._stage_name, automatic_solve_lifecycle),
+        *((getattr(dispatch, name), dispatch) for name in (
+            "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
+            "_call_original_brs_owner", "_run_original_brs_native_publication")),
+        *((getattr(transaction, name), transaction) for name in (
+            "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+            "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
+            "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
+            "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")),
+        *((getattr(producer_bundle_staging, name), producer_bundle_staging) for name in (
+            "commit_producer_bundle_publication", "_commit_producer_bundle_publication",
+            "_commit_original_brs_producer_bundle_publication", "stage_producer_bundle_publication")),
+        (control_binding, contextlib),
+        (control_implementation, producer_bundle_control),
+        (producer_bundle_control.native_producer_bundle_budget_sha256, producer_bundle_control),
+        (rsi_controller.RSILearningController._pin_python_admission_for_original_brs_owner, rsi_controller),
+        (producer_process.parse_producer_execution_receipt, producer_process),
+        (producer_bundle_deadline.persist_controlled_producer_bundle_intent, producer_bundle_deadline),
     )
     if any(type(function) is not FunctionType or function.__globals__ is not vars(module)
            for function, module in entries):
@@ -358,6 +401,8 @@ def _policy() -> dict[str, Any]:
                                             "rsi_python_brs_publication_recovery.py",
                                             "rsi_python_brs_publication_inputs.py",
                                             "rsi_python_brs_publication_mailbox.py", "rsi_native_plan.py",
+                                            "rsi_python_brs_native_dispatch.py", "producer_bundle_control.py",
+                                            "producer_bundle_deadline.py",
                                             "rsi_gateway.py", "rsi_python_brs_admission.py",
                                             "automatic_solve_lifecycle.py", "native_trusted_scheduler.py",
                                             "native_trusted_output.py", "native_trusted_receipt.py",
@@ -419,6 +464,26 @@ def _policy() -> dict[str, Any]:
                 "capture": component_fingerprint(native_trusted_capture.recover_native_trusted_output_capture),
                 "handoff": component_fingerprint(
                     python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
+            },
+            "private_native_dispatch": {
+                "helpers": {name: component_fingerprint(getattr(dispatch, name)) for name in (
+                    "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
+                    "_call_original_brs_owner", "_run_original_brs_native_publication")},
+                "transaction": {name: component_fingerprint(getattr(transaction, name)) for name in (
+                    "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+                    "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
+                    "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
+                    "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")},
+                "staging": {name: component_fingerprint(getattr(producer_bundle_staging, name)) for name in (
+                    "commit_producer_bundle_publication", "_commit_producer_bundle_publication",
+                    "_commit_original_brs_producer_bundle_publication", "stage_producer_bundle_publication")},
+                "control_binding": component_fingerprint(control_binding, config={}),
+                "control_implementation": component_fingerprint(control_implementation),
+                "budget": component_fingerprint(producer_bundle_control.native_producer_bundle_budget_sha256),
+                "deadline": component_fingerprint(producer_bundle_deadline.persist_controlled_producer_bundle_intent),
+                "prepared_pin": component_fingerprint(
+                    rsi_controller.RSILearningController._pin_python_admission_for_original_brs_owner),
+                "receipt_parser": component_fingerprint(producer_process.parse_producer_execution_receipt),
             },
             "owner": component_fingerprint(_BRSLineageCheckpointOwner, config={}),
             "methods": {name: component_fingerprint(getattr(_BRSLineageCheckpointOwner, name)) for name in (

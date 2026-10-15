@@ -301,13 +301,15 @@ def persist_controlled_producer_bundle_intent(
     control: SolveExecutionControl,
     *,
     checkpoint: Callable[[str], object],
+    native_numeric_revalidate: Callable[[str], float] | None = None,
 ) -> ProducerBundleDeadline:
     """Create both records under one publication lock, or reuse the retained exact intent.
 
     A deadline-only interrupted preparation is reusable. A prepared intent without a deadline,
     or any later evidence without both records, is rejected rather than allocated fresh budget.
     """
-    if not isinstance(control, SolveExecutionControl) or not callable(checkpoint):
+    if (not isinstance(control, SolveExecutionControl) or not callable(checkpoint)
+            or (native_numeric_revalidate is not None and not callable(native_numeric_revalidate))):
         _fail("control_invalid")
     intent, journal_digest = _intent_content(journal)
     chain = None
@@ -331,7 +333,10 @@ def persist_controlled_producer_bundle_intent(
             chain.check()
             _check_held_publication_lock()
             checkpoint("producer_deadline_locked")
-            control.check("producer_deadline_locked")
+            if native_numeric_revalidate is None:
+                control.check("producer_deadline_locked")
+            else:
+                native_numeric_revalidate("producer_deadline_locked")
             path = batch / _NAME
             intent_present = _present(batch / _INTENT_NAME)
             if intent_present:
