@@ -37,6 +37,14 @@ REGISTRATION_COUNT = 24
 ARCHIVE_COLLECTION_SHA256 = "1f5259be4ab980b16b60dfef08e7c8842f3562ecc7e3974b002f863cbc249001"
 UV_VERSION = "0.11.8"
 SHARD_ALGORITHM = "sha256-path-utf8-mod-v1"
+HEAVY_SHARD_ALGORITHM = "sha256-path-utf8-mod-six-explicit-heavy-v2"
+HEAVY_CURRENT_FILE = "tests/test_rsi_multi_episode_rejection_flow.py"
+HEAVY_CURRENT_NODES = tuple(
+    f"{HEAVY_CURRENT_FILE}::"
+    "test_original_three_attempt_mixed_drs_and_terminal_readonly_replay"
+    f"[{identity}]"
+    for identity in ("V2-T1-RPP", "V2-T2-PRP", "V2-T3-RRR")
+)
 NATIVE_E2E_SELECTION = (
     "tests/test_automatic_detach_phase_c.py",
     "tests/test_conversational_automatic_bundle.py",
@@ -309,6 +317,37 @@ def partition_current_nodes(nodes, *, shard_index, shard_count):
     ).hexdigest(), 16) % shard_count == shard_index)
 
 
+def _heavy_index(heavy_index):
+    if type(heavy_index) is not int or not 0 <= heavy_index < len(HEAVY_CURRENT_NODES):
+        raise RegressionError("invalid current heavy index")
+
+
+def _heavy_inventory(nodes):
+    checked = _current_nodes(nodes)
+    actual = tuple(node for node in checked if node.partition("::")[0] == HEAVY_CURRENT_FILE)
+    if actual != HEAVY_CURRENT_NODES:
+        raise RegressionError("explicit heavy file changed its exact collection inventory")
+    return checked
+
+
+def partition_isolated_current_nodes(nodes, *, shard_index, shard_count):
+    """Keep six whole-file shards and reserve the three explicit heavy nodes."""
+    _shard_bounds(shard_index, shard_count)
+    if shard_count != 6:
+        raise RegressionError("isolated heavy schedule requires six ordinary shards")
+    checked = _heavy_inventory(nodes)
+    return tuple(node for node in partition_current_nodes(
+        checked, shard_index=shard_index, shard_count=shard_count,
+    ) if node.partition("::")[0] != HEAVY_CURRENT_FILE)
+
+
+def partition_heavy_current_nodes(nodes, *, heavy_index):
+    """Select one reviewed function-scoped mixed case without hashing other nodes."""
+    _heavy_index(heavy_index)
+    _heavy_inventory(nodes)
+    return (HEAVY_CURRENT_NODES[heavy_index],)
+
+
 def _junit_summary(report, *, pytest_exit_code, expected_count, frozen=False,
                    expected_nodes=None):
     """Read one retained report without running tests or changing evidence."""
@@ -471,41 +510,69 @@ def _exclude_current_history(repo, index):
         raise RegressionError("historical test files must not also run against the current product")
 
 
-def run_current(repo, junit_dir, *, shard_index, shard_count):
+def run_current(repo, junit_dir, *, shard_index, shard_count, isolate_heavy=False):
     # Reject malformed requests before resolving or touching any report path.
     _shard_bounds(shard_index, shard_count)
+    if type(isolate_heavy) is not bool or (isolate_heavy and shard_count != 6):
+        raise RegressionError("isolated heavy schedule requires six ordinary shards")
+    return _run_current_selection(
+        repo, junit_dir, shard_index=shard_index, shard_count=shard_count,
+        isolate_heavy=isolate_heavy,
+    )
+
+
+def run_current_heavy(repo, junit_dir, *, heavy_index):
+    _heavy_index(heavy_index)
+    return _run_current_selection(repo, junit_dir, heavy_index=heavy_index, isolate_heavy=True)
+
+
+def _run_current_selection(repo, junit_dir, *, shard_index=None, shard_count=None,
+                           heavy_index=None, isolate_heavy=False):
     repo, junit_dir = repo.resolve(), junit_dir.resolve()
-    report = junit_dir / f"current-shard-{shard_index}.xml"
-    sidecar = junit_dir / f"current-shard-{shard_index}.summary.json"
+    label = f"current-shard-{shard_index}" if heavy_index is None else f"current-heavy-{heavy_index}"
+    report = junit_dir / f"{label}.xml"
+    sidecar = junit_dir / f"{label}.summary.json"
     _fresh_reports(junit_dir, (report.name, sidecar.name))
     junit_dir.mkdir(parents=True, exist_ok=True)
     index = _load_index(repo)
     _exclude_current_history(repo, index)
     origins = _verify_imports(repo)
     full_nodes = _current_nodes(_collect(repo, ("tests",)))
-    selected = partition_current_nodes(
-        full_nodes, shard_index=shard_index, shard_count=shard_count,
-    )
+    if heavy_index is not None:
+        selected = partition_heavy_current_nodes(full_nodes, heavy_index=heavy_index)
+    else:
+        partition = partition_isolated_current_nodes if isolate_heavy else partition_current_nodes
+        selected = partition(full_nodes, shard_index=shard_index, shard_count=shard_count)
     if not selected:
         raise RegressionError("current shard selected no test files")
     files = tuple(sorted({node.partition("::")[0] for node in selected}))
     for filename in files:
         _regular_file(repo, filename)
-    recollected = _current_nodes(_collect(repo, files))
+    selections = selected if heavy_index is not None else files
+    recollected = _current_nodes(_collect(repo, selections))
     if recollected != selected:
-        raise RegressionError("selected current files changed their exact collection inventory")
+        raise RegressionError("selected current selections changed their exact collection inventory")
     version = {
-        "schema_version": 1, "suite": "current", "offline": True,
+        "schema_version": 1, "suite": "current" if heavy_index is None else "current-heavy",
+        "offline": True,
         **_checkout_identity(repo, origins),
-        "shard_algorithm": SHARD_ALGORITHM, "shard_index": shard_index,
-        "shard_count": shard_count, "full_nodes": full_nodes,
+        "shard_algorithm": HEAVY_SHARD_ALGORITHM if isolate_heavy else SHARD_ALGORITHM,
+        "full_nodes": full_nodes,
         "full_collected": len(full_nodes), "full_inventory_sha256": _inventory_sha256(full_nodes),
         "selected_nodes": selected, "selected_inventory_sha256": _inventory_sha256(selected),
         "selected_files": files, "collected": len(selected),
     }
+    if heavy_index is None:
+        version.update(shard_index=shard_index, shard_count=shard_count)
+    else:
+        version.update(heavy_index=heavy_index, heavy_count=len(HEAVY_CURRENT_NODES))
+    if isolate_heavy:
+        version.update(heavy_nodes=HEAVY_CURRENT_NODES,
+                       heavy_inventory_sha256=_inventory_sha256(HEAVY_CURRENT_NODES),
+                       selection_mode="files" if heavy_index is None else "node")
     print(json.dumps(version, sort_keys=True), flush=True)
     phase = _pytest_phase(
-        repo, files, report, expected_count=len(selected), expected_nodes=selected,
+        repo, selections, report, expected_count=len(selected), expected_nodes=selected,
     )
     result = {**version, **phase}
     _write_summary(sidecar, result)
@@ -625,21 +692,39 @@ def run(repo, junit_dir):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--junit-dir", type=Path, required=True)
-    parser.add_argument("--suite", choices=("all", "native-e2e", "current", "history"), default="all")
+    parser.add_argument("--suite", choices=("all", "native-e2e", "current", "current-heavy", "history"),
+                        default="all")
     parser.add_argument("--shard-index", type=int)
     parser.add_argument("--shard-count", type=int)
+    parser.add_argument("--isolate-heavy", action="store_true")
+    parser.add_argument("--heavy-index", type=int)
     arguments = parser.parse_args(argv)
     if arguments.suite == "current":
         try:
             _shard_bounds(arguments.shard_index, arguments.shard_count)
+            if arguments.isolate_heavy and arguments.shard_count != 6:
+                raise RegressionError("isolated heavy schedule requires six ordinary shards")
         except RegressionError as exc:
             parser.error(str(exc))
     elif arguments.shard_index is not None or arguments.shard_count is not None:
         parser.error("shard index/count are only valid for the current suite")
+    if arguments.isolate_heavy and arguments.suite != "current":
+        parser.error("isolate-heavy is only valid for the current suite")
+    if arguments.suite == "current-heavy":
+        try:
+            _heavy_index(arguments.heavy_index)
+        except RegressionError as exc:
+            parser.error(str(exc))
+    elif arguments.heavy_index is not None:
+        parser.error("heavy index is only valid for the current-heavy suite")
     try:
         if arguments.suite == "current":
+            options = {"isolate_heavy": True} if arguments.isolate_heavy else {}
             return run_current(REPO, arguments.junit_dir,
-                               shard_index=arguments.shard_index, shard_count=arguments.shard_count)
+                               shard_index=arguments.shard_index, shard_count=arguments.shard_count,
+                               **options)
+        if arguments.suite == "current-heavy":
+            return run_current_heavy(REPO, arguments.junit_dir, heavy_index=arguments.heavy_index)
         if arguments.suite == "history":
             return run_history(REPO, arguments.junit_dir)
         if arguments.suite == "native-e2e":

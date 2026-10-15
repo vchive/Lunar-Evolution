@@ -189,13 +189,18 @@ GitHub Actions 在 Ubuntu 上运行 Python 3.11/3.12/3.13 的 focused、current 
 
 ```bash
 .venv/bin/python tools/run_tests.py \
-  --suite current --shard-index 0 --shard-count 6 \
+  --suite current --shard-index 0 --shard-count 6 --isolate-heavy \
   --junit-dir .lunar-evolution/test-results
 ```
 
+完整 current 覆盖需要普通分片 0–5，以及三个独立重用例。重用例使用各自新结果目录，
+分别运行 `--suite current-heavy --heavy-index 0`、`1`、`2`；它们与普通分片的精确
+清单互斥且并集等于完整 collection。省略 `--isolate-heavy` 的旧 current 命令仍按
+完整文件划分全部用例，但会把同文件的三个重用例放在同一分片，可能超过 CI job 时限。
+
 测试保持 provider-free，不会因为运行测试而发起模型调用、远程 evaluator 或真实 solver campaign。
 
-Linux / SSH 服务器的独立环境、六分片并行运行和日志保留步骤见 [Linux 开发指南](docs/linux-development.md)。
+Linux / SSH 服务器的独立环境、六个普通分片加三个重用例的并行运行和日志保留步骤见 [Linux 开发指南](docs/linux-development.md)。
 
 ## 路线图与明确边界
 
@@ -203,7 +208,7 @@ Linux / SSH 服务器的独立环境、六分片并行运行和日志保留步�
 
 单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已合入 main。当前批次的剩余出口是：
 
-- PR103 已把 PR100/PR101 恢复批次、parser、六分片 CI 及 BRS handoff/service ancestry 组合到单一 `main`-based 候选；待该候选完成最终来源 CI、原始日志/产物与来源审计后合入连续 DRS 发布。
+- PR103 已把 PR100/PR101 恢复批次、parser 及 BRS handoff/service ancestry 组合到单一 `main`-based 候选。原完整 CI 为21 success、3 cancelled，缺少最终覆盖；重用例独立分片修复仍须完成最终来源 CI 和独立审计后合入。
 - known rejection 三组混合链已通过；PR103 是当前统一出口，不再要求按 PR100→PR101→PR103 顺序逐个合入。
 
 恢复始终复核原 claim、预算、身份、deadline 与取消门禁；没有原始证据的中断保留 unknown，不启动后继 child。

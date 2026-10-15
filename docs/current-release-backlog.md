@@ -10,6 +10,13 @@
 admission/publication → receipt/verifier → 只读恢复已完成本地 fixture 验收并合入。
 默认 staging-only、生产 CLI native 拒绝和 `production_admission=false` 保留。
 
+PR103 `9203ef1` 的 [CI 38688233723](https://github.com/vchive/Lunar-Evolution/actions/runs/38688233723)
+最终为 **21 success、3 current-5 cancelled，NOT_ACCEPTED**。三份取消产物缺少最终
+JUnit/summary，不能合入；24 份原始产物及日志已核对，成功部分不替代缺失的覆盖。
+新修复把同文件内三个重 mixed 用例各放到独立 job，保留六个普通文件分片和完整用例
+清单校验；新来源仍须完成 focused/static、三版完整 CI 和独立审计。旧官方结果及
+服务器第5片原运行保持不变，partial progress 不算通过。详细来源见 HANDOFF 最新条目。
+
 PR100 原 head `c73650a` 的
 [CI 38582309622](https://github.com/vchive/Lunar-Evolution/actions/runs/38582309622)
 已失败：actor evidence 替换竞态 fixture 提前在源码读取中触发；原失败与取消证据保留。
@@ -65,7 +72,7 @@ P0。新整合来源仍需 focused gate、完整六分片、三版正式 CI 和�
 | --- | --- | --- |
 | PR100/PR103 连续发布与历史恢复 | append lineage、原 owner/CAS、独立 held pins、fresh dispatch lease、ready capsule、历史只读 inspection 已实现；三轮 DRS 已有本地验收，最终集成候选集中在 PR103。 | PR103 最终 head 全部 CI jobs 完成，原始 log/ZIP/JUnit/inventory 与 checkout/source/tree/import 独立一致；合入 main。 |
 | Known rejection 原始恢复验收 | 原 owner、T4/T5、连续 reconcile 与 RPP/PRP/RRR 全部通过；mixed 原 XML/SQLite/source 独立审查通过，证据边界详见 HANDOFF。 | 本地出口已关闭；最终集成来源仍须 CI/审计和合入，不能将冻结来源结果直接改称新 parser 候选验收。 |
-| PR103 恢复批次最终集成发布 | 统一候选包含 known rejection、BRS partial-wave 修复、parser、六分片 CI 及 BRS handoff/service ancestry；默认/v1 与 BRS wire 保持原契约。 | PR103 最终实际推送的集成 head 通过 focused/static checks、完整 CI、raw/source/tree 独立审计，再合入 main。 |
+| PR103 恢复批次最终集成发布 | 统一候选包含 known rejection、BRS partial-wave 修复、parser 及 BRS handoff/service ancestry；`9203ef1` 官方21 success/3 cancelled，整轮未获接受。正在拆分同文件的三个重用例，保留六个普通分片及全部 inventory。 | 修复后的最终实际推送 head 通过 focused/static checks、完整 CI、raw/source/tree 独立审计，再合入 main。 |
 | 发布文档与证据状态 | GitHub README、台账和对应 SDD 按代码与验收区分状态。 | 用最终实际结果更新状态，链接可用；不把 partial log、不同 source 的局部成功或 skipped Linux gate 当作接受。 |
 
 Known rejection 复用原评测证据结算失败结果；拒绝与进程故障分别处理，不生成官方成功。

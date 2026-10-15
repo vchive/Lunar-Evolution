@@ -134,6 +134,30 @@ PR99 `0cb49ab`。final-head focused 360=354 pass/6原架构 skips，独立静态
 旧 `bd902c9` shard2 原 traceback 已确认 deadline fixture 在不完整 writer 记录处
 按原 path_invalid gate 拒绝；原失败整轮保留。未运行真实模型/solver、WebAgent、
 远程 evaluator、公司平台或 CPython/toolchain target。
+## 2026-10-15 PR103 完整 CI 未获接受，重用例独立分片修复
+
+PR103 来源 `9203ef1f0c3b5dd69e09c8cdb79b92c5af5e1e76` 的官方
+[run 38688233723](https://github.com/vchive/Lunar-Evolution/actions/runs/38688233723)
+已结束：21 jobs success、3 个 Python 版本的 current-5 cancelled。取消时运行约六小时，
+原始日志没有明确写出 timeout 原因；不能把推测当作官方结论。三份取消产物缺少最终
+JUnit 和 summary，整轮 **NOT_ACCEPTED**，不能合入 main。实际 tested merge
+`6b7ad595fde11fa6a17c686481d2a1baa75291ed`、tree
+`44a22a47815bfec85652d97a320e6161e2e05412`；24 份原 ZIP/log 已独立核对，
+21 份成功证据有效，但不补足缺失的完整覆盖。16,503-case inventory SHA
+`3717e2ca0ab236b1299b2f8380f7b63caaa8c3d415d2ac1cefa6810927dd5078`。
+
+current-5 三版均运行到 `test_rsi_multi_episode_rejection_flow.py` 的三组 mixed
+用例。现有 whole-file 算法把三案放到同一 job；增加普通文件分片数不能拆开该文件。
+后继修复保留六个普通文件分片，将原三案各放到独立 job，严格检查完整 collection、
+互斥并集、exact selected nodes 和 JUnit 身份，不删用例、不缩小测试或放宽门槛。
+这属于新来源，需要自己的 focused/static、完整三版 CI 与独立审计。
+
+原 Linux 六分片运行保持冻结，0–4 完成14,008 cases、零failure/error、83skips；
+第5片在2026-10-15 14:12 UTC只读检查时已完成第2个 mixed 案，最后一案仍运行。
+partial stdout 不是最终 XML；不终止、不改写该运行。原始 terminal/取消审计保留在
+ignored reports `pr103-deadline-final-9203ef1/official-terminal-20261015T114956Z/`。
+main 仍为 PR99 `0cb49ab`。公共 native BRS、真实 runtime/producer/CLI 仍是 P1，
+`production_admission=false`，仅使用本地 inert/provider-free fixtures。
 
 ## 2026-10-15 deadline 并发 fixture 的确定性修复
 

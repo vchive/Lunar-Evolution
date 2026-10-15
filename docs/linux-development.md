@@ -42,13 +42,15 @@ git diff --check
 
 用改动实际覆盖的测试替换示例 focused test。运行 native fixture 前确认 Linux、C 编译器和所需内核功能可用；查看 skip、failure 和 error 的具体原因。
 
-## 六个 current 分片
+## 六个普通 current 分片与三个独立重用例
 
-当前回归使用 `tools/run_tests.py`，分片索引为 **0、1、2、3、4、5**，统一 `--shard-count 6`。分片划分是确定的；六个分片必须使用同一个 Git 提交。`current` 不包含独立的 focused 和 history 角色，不能据此声称完整 CI 已通过。完整角色及 Python 版本以 [workflow](../.github/workflows/test.yml) 为准。
+当前 CI 使用 `tools/run_tests.py`，六个普通分片统一 `--shard-count 6 --isolate-heavy`，另以 `current-heavy` 独立执行三个明确登记的 mixed 用例。九个角色必须使用同一 Git 提交；普通分片与重用例的清单互斥，并集必须等于完整 collection。focused 和 history 仍分别运行，完整角色及 Python 版本以 [workflow](../.github/workflows/test.yml) 为准。
+
+旧 `current --shard-count 6` 不带 `--isolate-heavy` 时仍完整运行六个 whole-file 分片；同文件的三个重用例会串行，可能超过 CI job 时限。已有旧版运行不要中途更换算法或补写 summary，新方案应另建目录和源码快照。
 
 `current` 内的 runner 回归也会读取固定历史提交，因此 current 和 history 都需要先检查完整历史。浅 clone 在联网时先执行 `git fetch --unshallow origin`；也可以显式 fetch 下列固定对象。不要更改 runner 中的 pins 来绕过缺失历史。
 
-先在仓库根目录检查固定对象，再创建一轮全新的目录和六个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
+先在仓库根目录检查固定对象，再创建一轮全新的目录和九个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
 
 ```bash
 set -euo pipefail
@@ -64,8 +66,8 @@ run_parent="$(dirname "$PWD")/lunar-local-runs"
 mkdir -p "$run_parent"
 run_root="$(mktemp -d "$run_parent/$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:12}-XXXXXX")"
 printf '%s\n' "$revision" > "$run_root/revision.txt"
-for shard_index in 0 1 2 3 4 5; do
-  shard_root="$run_root/current-$shard_index"
+for test_role in current-0 current-1 current-2 current-3 current-4 current-5 heavy-0 heavy-1 heavy-2; do
+  shard_root="$run_root/$test_role"
   mkdir -p "$shard_root/home" "$shard_root/results"
   # binding 会重复记录绝对路径；使用短、独占的临时根，保持原字节上限。
   mktemp -d /tmp/le.XXXXXXXX > "$shard_root/tmp-root.txt"
@@ -79,12 +81,17 @@ done
 printf 'run_root=%s\n' "$run_root"
 ```
 
-在六个 SSH 终端分别运行下面一段，将 `run_root` 设为上一步打印的绝对路径，将 `shard_index` 分别设为 0 到 5。每个分片独占 checkout、`.venv`、`TMPDIR`、Lunar home 和 results；不要让多个测试进程共享 SQLite/WAL 或同一临时目录。CPU 和内存资源由运行者按机器负载分配，先保守运行再增加并发。已有 `tmux` 时可在会话内运行测试，断线后重新 attach；不需要安装常驻服务。
+为九个角色分别运行下面一段，将 `run_root` 设为上一步打印的绝对路径，`test_role` 分别设为 `current-0` 到 `current-5`、`heavy-0` 到 `heavy-2`。每个角色独占 checkout、`.venv`、`TMPDIR`、Lunar home 和 results；不要让多个测试进程共享 SQLite/WAL 或同一临时目录。CPU 和内存资源由运行者按机器负载分配，先保守运行再增加并发。已有 `tmux` 时可在会话内运行测试，断线后重新 attach；不需要安装常驻服务。
 
 ```bash
 run_root='/absolute/path/to/this-run'
-shard_index=0
-shard_root="$run_root/current-$shard_index"
+test_role=current-0
+case "$test_role" in
+  current-[0-5]) suite_args=(--suite current --shard-index "${test_role#current-}" --shard-count 6 --isolate-heavy) ;;
+  heavy-[0-2]) suite_args=(--suite current-heavy --heavy-index "${test_role#heavy-}") ;;
+  *) echo 'invalid test role' >&2; exit 1 ;;
+esac
+shard_root="$run_root/$test_role"
 cd "$shard_root/checkout"
 export PATH="$PWD/.venv/bin:$HOME/.local/bin:$PATH"
 export PYTHONPATH="$PWD/src"
@@ -102,8 +109,7 @@ python --version > "$shard_root/results/python.txt" 2>&1
 # 即使测试失败，也保存日志和原始退出码。
 set +e
 set -o pipefail
-python tools/run_tests.py --suite current \
-  --shard-index "$shard_index" --shard-count 6 \
+python tools/run_tests.py "${suite_args[@]}" \
   --junit-dir "$shard_root/results" \
   2>&1 | tee "$shard_root/results/pytest.log"
 pipeline_status=("${PIPESTATUS[@]}")
@@ -129,6 +135,6 @@ uv pip install --no-config --reinstall-package pytest \
 
 ## 结果边界与清理
 
-六分片通过仅证明该提交在这台机器上的 current 测试结果。正式合入仍需核实精确 head/base、GitHub Actions 全部必需角色、原始 artifact 和 source/tree provenance。provider-free 成功不代表真实 solver、原生工具链或生产 admission 已验收；`production_admission=false` 保持原有边界。
+九个 current 角色通过仅证明该提交在这台机器上的 current 测试结果。正式合入仍需核实精确 head/base、GitHub Actions 全部必需角色、原始 artifact 和 source/tree provenance。provider-free 成功不代表真实 solver、原生工具链或生产 admission 已验收；`production_admission=false` 保持原有边界。
 
 结束前保留需要审查的日志和提交身份。只在确认没有运行中的测试、需要保留的修改或未归档产物后，才使用 `git worktree remove` 清理对应 checkout；日志位于外部 results，可独立保留。各 `tmp-root.txt` 中的短临时根也应先检查和归档，再由创建者单独清理，不要删除其他用户或其他运行的 `/tmp` 目录。开发记录和后续验收条件见 [当前发布台账](current-release-backlog.md)。
