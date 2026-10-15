@@ -143,7 +143,7 @@ static int ipc(const char *op, int id) {
     observed(result, error, 0); return 0;
 }
 static int messages(const char *op, int fd, int file) {
-    char bytes[8] = "IPC-MARK";
+    char bytes[8] = {'I','P','C','-','M','A','R','K'};
     union { struct cmsghdr aligned; char bytes[CMSG_SPACE(sizeof(int))]; } control;
     memset(&control, 0, sizeof(control));
     struct iovec iov = {bytes, sizeof(bytes)};
