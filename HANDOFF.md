@@ -1,5 +1,51 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 并行整合：BRS checkpoint、策略持久化与等待竞态
+
+本轮后继在草稿 [PR108](https://github.com/vchive/Lunar-Evolution/pull/108)，base 为
+PR107。主仓 main 仍是 PR99 `0cb49ab`。分支已同步 PR103 `935ab57` 的 33-job
+调度，保留六个普通文件分片并独立运行三个 mixed 用例；PR103 的实际 tested merge
+`d00bd9060e6df8edc393fb1bd049df8d430e4a63` / tree `2105ba086cd1d109ccfb581e4fbf3faf2b5d72ff`
+已通过官方 artifact、非 echo 原始日志、immutable Git API 和独立来源审查。
+这只是来源锁，尚不表示全部 CI 验收；原服务器长回归与旧失败/取消证据继续保留。
+
+已实现私有 producer prepublication stop：原 receipt/output/handoff 完成后停在 transaction、
+evaluation、admission 和 lineage 之前，最终 lifecycle hook 后重读原 file/control pins。
+共用 checkpoint kernel 和原 BRS 首 ordinal before/prepared owner 要求真实 running episode、
+started claim、原 owner/wave/handoff/M0/request/plan/budget。before、admission reference、
+prepared evidence 是三个独立的原 captured-head CAS；任何不确定写回保留 stale/poisoned
+owner 和 durable obligation，不从最新记录补 authority。fresh binding parser 仅复用同次
+尚未逃逸的 strict tree。冻结 `e30f5f8` 的 installed Linux 450 项回归全部通过，14 exits
+与静态检查为零、2,036 tracked files 前后及 immutable blobs 一致；root 已复核原始审计。
+证据在 ignored `p1-integrated-linux-e30f5f8-20261015/`。
+
+PB-03c 将专用 `producer_brs_checkpoint_policy` 固定到原 create-run、run fingerprint 和
+每个 checkpoint，独立于 DRS publication policy；缺少或改变原 pin 的旧 run 不迁移。
+只选择 exact sidecar-bound、mode=brs、max_workers=1 的 metadata，不授予执行权。
+`399958c` 的四组 402 项回归全部通过，原始验收和后续整合来源分别记录。
+
+并行发现并修复实际成功竞态：owner 等待期间的完整 admission 检查会捕获 running
+head，再与 worker 的自然 completed 更新冲突。现在 pending loop 只使用 owner-only
+fixed-pin gate；原真实 ACK、worker entry、future.result 后和 close/shutdown 后仍做
+完整 gate/CAS。source/config hooks 保持短 mutex 外，store/channel/generic DRS 未放宽。
+`27929e7` 的 174 项兼容与最终 owner-only `1603330` 的 16 项针对性测试分别通过，
+原失败重现保留在 `brs-selected-owner-wait-20261016/`。另外 `2576d2b` 仅修两处 inert
+fixture，121 项通过；它没有冒称修复产品竞态。三条来源不能相加当成整合验收。
+
+最终整合冻结 `9d66b2382e85392bc2c134edff998899473e1f84` / tree
+`89aed1b7e65ccc2304e9d8bec69b81fd37ec95ef` 已包含全部产品/测试改动，并保留新
+fixed projection 的 mode/plan fingerprint 参数。5090gpu 正在新 own-editable checkout
+一次运行 265 个不同 cases（78/85/73/29）；最终 XML/exit/source 审查未完成前不写通过。
+CI focused gates 为 preparation/policy 189 项和 selected service/wait 38 项。
+后续 docs/annotation 收尾不改变该冻结的产品和测试 bytes。
+
+完整 owner publication transaction、staged/terminal、rejection C1/P/C2、BRS reconcile、
+serial successor 和 policy/memory composition 仍开放。真实 source/toolchain/sealed runtime、
+实际 OpenEvolve/Shinka project lifecycle 与生产 CLI/Linux acceptance 也未关闭；P2 另列。
+公共 native BRS 保持拒绝，`online_publication=false`、`production_admission=false`。
+本轮只有本地 inert/provider-free fixtures，无真实模型/solver/campaign、CPython/toolchain
+目标、WebAgent、远程 evaluator 或公司平台。
+
 ## 2026-10-15 PB-03a checkpoint 共用逻辑与 P0 分片修复
 
 PB-03a 从 PR107 `ed66333` 延续，两个产品提交为 `13e3b78` 与 `3c0d74e`。

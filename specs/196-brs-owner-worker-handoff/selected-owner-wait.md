@@ -56,3 +56,25 @@ head, adopt a new state, retry or fabricate a phase.
 The parallel pre-wave policy change adds `mode` and `plan` to `_run_fingerprint` at
 the selected projection call. Integration must carry those arguments to the extracted
 fixed projection rather than restoring the old call signature.
+
+
+## Frozen local acceptance
+
+The implementation at `27929e752ad35b9bb5dadf5d3e16cb36b4ec7048` passed 174 distinct
+compatibility cases in disjoint 36/85/53 groups. A separate owner-only hardening at
+`1603330d1b6f772113a30ae694e7d0c0c91c4f7f` requires the actual owner both before and
+after the fixed projection. Two added wrong-thread/unowned cases prove refusal
+before source hooks, SQL/file changes or a return receipt. The final source passed
+16 targeted cases, zero failures/errors/skips, with full Ruff, compileall and
+diff-check exits zero, own editable imports and 2,038 tracked source files unchanged.
+The earlier 174-case result is not relabeled as final-source acceptance.
+
+Independent read-only code review covered both commits. Root verified all 65 copied
+evidence files, the exact final 16-case XML, zero exits and identical source maps.
+Original failing positive/negative diagnostic logs and frozen-source replay scripts
+remain unchanged. Evidence is retained under ignored
+`.lunar-evolution/reports/brs-selected-owner-wait-20261016/`.
+
+The integrated source `9d66b23` also contains persisted pre-wave policy, corrected
+fixtures and the new CI topology; its 265-case Linux run is a separate qualification.
+This slice does not implement publication, public native BRS or production admission.
