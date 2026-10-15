@@ -1,5 +1,24 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 并行后继：preparation → mailbox 证据接线
+
+PB-02c 新私有 `_request_from_native_preparation` 将原 producer-only preparation、
+selected handoff、显式 native plan 和原 owner captured digests 转成现有 one-shot
+mailbox 请求。先核 exact DTO/primitive shape 和非 slots request 的完整字段，再按
+原 native 上限 canonical detach/reparse；核 receipt/output/envelope/capture/file-pin、
+request/M0 和原 launch identities。未消费 worker drafts/bundles，不读文件/ledger，
+不执行 recovery、transaction、ACK、lineage 或预算变化。owner fresh recovery 仍缺。
+
+冻结 `1ca432563f1bdd4122076b3f03a837f7579cbeb7` / tree
+`8039d534486cb0967fc44e61e6e0d0b8185863e9`：macOS Python3.11 与新独立 Linux
+Python3.12 各自 **179 pass（35新 + 67 preparation + 77 mailbox）**，零 failure/error/skip；
+不能相加称358个用例。own-editable、PYTHONPATH unset、全仓 Ruff/compileall/diff-check
+通过，2,045 tracked files 前后不变；Linux原始XML/13 exits/Git blobs独立核验通过，
+代码独审通过。ignored reports 在 `brs-preparation-mailbox-inputs-20261016/`。
+后续 docs/workflow 只新增35-case gate及其annotation，产品/测试bytes不变。
+staged/terminal primitive 正在另一工作区开发；完整在线 owner 事务、rejection、
+reconcile 和 serial successor 仍未完成。此后继未合入 main，production admission仍关闭。
+
 ## 2026-10-16 并行整合：BRS checkpoint、策略持久化与等待竞态
 
 本轮后继在草稿 [PR108](https://github.com/vchive/Lunar-Evolution/pull/108)，base 为

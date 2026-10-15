@@ -24,6 +24,11 @@ Linux 针对性回归全部通过、零 failure/error/skip；原始证据、own-
 各来源计数相加。这些后继还没有合入 main，公共
 native BRS 仍关闭，`production_admission=false`。
 
+并行 PB-02c 已实现 producer preparation → 原 mailbox 的非授权证据转换；冻结
+`1ca4325` 的 macOS/Linux 各自 179 cases 通过，独立代码与 Linux raw/source 审查通过。
+它不替代 owner 的 fresh durable recovery，也没有接通在线发布事务。staged/terminal
+checkpoint primitive 在独立后继开发，当前不标为完成。
+
 当前已确认的 main 基线为 `0cb49abb146d91cb59b71de45d01e16217ebed8d`（PR99）。
 单 child 的原 controller → owner/CAS → gateway → claim/running → scheduler →
 admission/publication → receipt/verifier → 只读恢复已完成本地 fixture 验收并合入。
