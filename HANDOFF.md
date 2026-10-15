@@ -15,8 +15,9 @@ channel/control/head；取消、关闭或不确定读回保留文件、旧 captu
 - `05cd548f7c4da324342327fabeca1ed68e49907d` / tree
   `9d3c530849088e7ac7e5e091268b899d33fc1683`：macOS own-editable Python3.11.15
   的498个不同 cases（113/143/181/61）全通过，零失败/错误/跳过，16 exits全0，
-  2,053 tracked files前后与Git blobs一致；完整 raw/source 独审已接受。Linux同来源
-  的113/181/61已通过，143组仍运行，尚不称Linux498通过。
+  2,053 tracked files前后与Git blobs一致；完整 raw/source 独审已接受。Linux独立
+  own-editable Python3.12.3同来源498也全通过，16 exits全0，完整raw/source/import
+  独审已接受；两端是相同498个不同cases，不能相加为996。
 - `855b08e` / tree `b5052bc3bf779d62067a7a34f462abdb7e88737c`：macOS独立
   own-editable Python3.11.15的34个不同 cases（31新+3明确兼容）全通过，零失败/
   错误/跳过，13 exits全0，2,055 tracked files前后与Git blobs一致；完整 raw/source

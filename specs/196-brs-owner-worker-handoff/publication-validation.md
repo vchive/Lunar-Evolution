@@ -393,8 +393,16 @@ collection/install/test/static exits were zero. All 2,053 tracked files match fr
 Git blobs and stayed unchanged. The complete raw/source/import/XML review accepted
 this focused result; report SHA256
 `d13197146f11620292cd0853725d870c50093f37fe89910effcb65ba93f0f94c`.
-The same-source independent Linux Python3.12.3 run has completed 113/181/61; its 143
-group is still running. Linux 498 acceptance is therefore pending. Original raw,
+The same-source independent Linux own-editable Python3.12.3 run also passed all 498
+in the same four disjoint groups, zero failures/errors/skips, all 16 exits zero and
+2,053 tracked files unchanged against Git blobs. Complete raw/source/import review
+accepted, report SHA256
+`1bc97abc0bb8d43c5ec8d499667801ede10cf4faac3f45d4f07d016a5b50235e`.
+The transported 69-file archive SHA256 is
+`e46e4390dd7d950fe142f9e64abc46944438203a5a8eb76a8671dea5a9dbd7b5`;
+the original 19-file preflight snapshot and review remain separately preserved.
+The two platforms share the same 498-node inventory and are not added into 996.
+Original raw,
 source snapshots, configs, bundle pins and reviews are preserved in ignored
 `.lunar-evolution/reports/brs-owner-evidence-integration-20261016/`.
 

@@ -3,8 +3,8 @@
 ## 本轮后继开发状态
 
 原主控 retained native reader、显式 prepared-reference 登记和原 false preparation
-契约修复已在`05cd548`整合：macOS498个不同focused cases全通过，raw/source独审
-接受；Linux的113/181/61组已通过，143组仍运行。高层before留存在`855b08e`实现：
+契约修复已在`05cd548`整合：macOS/Linux各498个不同focused cases全通过，
+完整raw/source/import独审接受。高层before留存在`855b08e`实现：
 macOS/Linux各34例（31新+3兼容）全通过并获独审。两来源分别验收，不能累计，
 也不称855已重新通过498。详情见Feature196 `publication-validation.md`。
 
