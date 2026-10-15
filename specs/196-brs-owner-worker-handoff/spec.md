@@ -13,6 +13,13 @@ selected execution through the existing CAS and full readback. Public native BRS
 selected-child producer staging, sibling transition and publication remain open;
 no existing provider-free DRS/BRS behavior is changed.
 
+The next bounded slice closes the legacy active-worker publication helper and the
+generic/DRS facade and native scheduler bypasses. A BRS worker can still request an
+exact prepared pin/ACK, but cannot execute a publication transaction. Successful
+publication and rejection C1/P/C2 remain unimplemented for native BRS. The actual
+pre-publication owner bridge and its timing constraints are described in
+[`owner-publication-bridge.md`](owner-publication-bridge.md).
+
 The first implementation accepts a fresh BRS wave with `max_workers=1`. The parent
 controller reserves the complete wave once, freezes one root memory snapshot (`M0`),
 and selects one ordinal at a time. A worker may perform the selected child's producer

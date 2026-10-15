@@ -873,6 +873,23 @@ class NativeRSISchedulerProvider:
             _fail("python_admission_record_invalid")
         return result
 
+    def _refuse_brs_worker_publication(self) -> None:
+        # This provider executes the complete publication transaction on its calling
+        # thread. A ready/ACK pin cannot authorize that transaction on a BRS worker.
+        # Keep the existing pin-only bridge available; a future owner bridge must
+        # move the whole transaction (and rejection provenance) before enabling this.
+        from .rsi_python_publication import (
+            RSIPythonPublicationError,
+            _refuse_active_brs_worker_publication,
+        )
+
+        try:
+            _refuse_active_brs_worker_publication(self._python_admission_controller)
+        except RSIPythonPublicationError as exc:
+            raise NativeRSISchedulerProviderError(
+                "rsi_native_scheduler_brs_owner_publication_required",
+            ) from exc
+
     def _python_publication_join(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan, inputs: NativeRSIInputDescriptor,
     ) -> dict[str, Any]:
@@ -882,6 +899,7 @@ class NativeRSISchedulerProvider:
         Its returned creation pin, prepared notification and first record digest
         stay scoped to this single dispatch; no restart or legacy adoption occurs.
         """
+        self._refuse_brs_worker_publication()
         supplier = getattr(self.context, "python_handoff_after_execution", None)
         if supplier is None:
             return {}
@@ -1658,6 +1676,7 @@ class NativeRSISchedulerProvider:
     ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence | NativeRSIRejectionEvidence:
         if not isinstance(request, SolverRequest) or not isinstance(plan, NativeRSIExecutionPlan):
             _fail("input_invalid")
+        self._refuse_brs_worker_publication()
         context = self.context
         inputs = self._inputs(require_unexpired=True)
         memory = _memory_from_request_inputs(inputs, request)

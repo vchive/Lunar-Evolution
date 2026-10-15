@@ -74,6 +74,19 @@ C1/P/C2 不完整、missing、unknown、配置/来源漂移、取消或 deadline
 
 ## P1：下一轮接线与真实本地验收
 
+私有 selected checkpoint settlement 已创建 stacked draft
+[PR105](https://github.com/vchive/Lunar-Evolution/pull/105)：base 为 PR103 分支，
+head `868bccccc9ede2cd035d28b16cfb316fef049c0a`，仅 9 个后继文件。
+它的 CI 不能代替 PR103 或 main 的验收；PR103 合入后再核对 retarget 后的差异和来源。
+
+其后继 worker publication refusal 关闭了实际已发现的边界缺口：legacy worker helper、
+generic/DRS facade 与 scheduler live BRS path 不能在 worker 线程执行发布。pin-only
+ready/ACK 仍可用。该拒绝不是 owner publication 的成功路径：下一步必须在 worker
+已有 receipt/output/handoff、episode/claim 仍自然为 running/started 时，将完整
+transaction 和 rejection C1/P/C2 continuation 交给原 owner；不能等 completed return
+后伪造 DRS scope。实现顺序与恢复边界见
+[owner-publication-bridge.md](../specs/196-brs-owner-worker-handoff/owner-publication-bridge.md)。
+
 | 工作 | 当前边界 | 结束条件 |
 | --- | --- | --- |
 | BRS partial-wave durable resume | 已在 PR101 集成树接入 completed-obligation 与 pending-dispatch 分离、锁外 replay callback 和 exact identity/head 复核；347 个本地 cases、789 文件 source map、Ruff/compileall/diff-check 已通过。仍不授予 completed child 新 token，也不启用 native multi-child。 | 随 PR103 统一候选完成最终 integrated source/CI/audit 和合入；产品行为保持 provider-free。 |

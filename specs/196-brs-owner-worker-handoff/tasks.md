@@ -14,7 +14,8 @@
   while keeping the existing DRS owner path and public APIs unchanged. The seam is
   provider-free and remains opt-in; it does not advertise native BRS.
 - [x] Integrate this channel binding into the private controller ready/ack service loop
-  and enforce owner CAS/publication semantics there. Source/configuration hooks run
+  and enforce the exact prepared-admission owner CAS there. Publication is not included.
+  Source/configuration hooks run
   before the short observation lock; the channel enforces selected episode, exact ready
   digest, duplicate refusal, detached ACK state and close/error wakeups.
 - [x] BRS-2c: persist one successful selected-service result through the private
@@ -26,6 +27,10 @@
 - [ ] Keep publication-lineage mutation, C1/P/C2 and publication head advancement
   on the owner thread; prohibit worker parent/lineage ownership. The private result
   checkpoint sub-slice above does not close this publication obligation.
+- [x] Refuse the legacy active-worker publication facade and generic/DRS/scheduler
+  bypasses before plan callbacks, scheduler input observation or transaction execution.
+  Preserve pin-only ready/ACK and DRS paths. This refusal does not implement an owner
+  publication bridge; the remaining stages are in `owner-publication-bridge.md`.
 - [ ] Add ordinal serial transition and partial-wave recovery without dropping
   completed obligations or refreshing sibling requests/budgets.
 - [x] Add the focused matrix in `validation.md`; this slice locally exercises the
@@ -33,7 +38,7 @@
   remain open.
 - [x] Run local provider-free focused tests, Ruff, compileall and diff checks for the
   private seam; native multi-child, sealed runtime and production admission remain open.
-- [ ] Run an independent final-source CI and raw/source/tree audit before opening a
+- [ ] Run an independent final-source CI and raw/source/tree audit before merging the
   PR. Do not mark native BRS available from design or mocked tests alone.
 
 Implementation note (selected owner-service slice): a private controller seam now binds one

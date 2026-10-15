@@ -1,5 +1,29 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-15 BRS worker publication refusal（后继切片）
+
+P1 settlement 已创建 stacked draft PR105，head `868bccc`，base 为 PR103 候选分支。
+它没有合入 main，自己的 CI 也不能代替 PR103 的验收。主仓库仍保持 PR99 main
+`0cb49ab`；PR103 head `9203ef1` 的最终 CI/raw/source/tree 审计继续独立推进。
+
+并行审查核实了下一片的时序冲突：selected-return 在 worker 已保存 result、episode
+completed、channel close/executor shutdown 后才签发，而原 DRS lineage owner 必须
+在真实 running episode/started claim 下构造。不能通过伪造 DRS scope 或回写状态接入。
+此外 scheduler 在调用线程执行完整 publication transaction 和 rejection provenance，
+只代理 lineage callbacks 不能保证 owner-only publication。
+
+本后继切片拒绝 legacy active BRS worker helper、generic/DRS publication facade
+及 native scheduler worker 旁路，拒绝先于 plan callback、scheduler input/source I/O、
+native dispatch、ready、evaluation 或 publication。保留兼容符号、pin-only ready/ACK、
+既有 DRS 与 read-only resume。完整 owner publication 尚未接通；成功路径仍使用
+before→staged→terminal，C1/P/C2 仅指现有 known-rejection 契约。
+
+下一步按 Feature196 `owner-publication-bridge.md` 实现独立 BRS owner/policy、
+pre-publication mailbox 和 owner 完整事务，再做 rejection/串行 ordinal/reconcile。
+本切片不放开公共 native BRS、生产 CLI、真实 producer 或 sealed runtime，
+`production_admission=false`；仅 provider-free/inert fixture。最终来源测试结果和
+CI/审计状态须按实际记录补齐，不能沿用 PR105 的 360-case 结果。
+
 ## 2026-10-15 私有 BRS owner checkpoint settlement（后继分支）
 
 本分支 `codex/brs-selected-owner-settlement` 从 PR103 最终候选 `9203ef1` 分出；

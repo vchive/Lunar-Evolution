@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from test_rsi_native_scheduler_prepared_boundary import _provider
-from test_rsi_python_admission import _rows
+from test_rsi_python_admission import _files, _rows
 from test_rsi_python_admission_flow import _lose_record
 from test_rsi_python_admission_owner import (
     _EvaluationBoundary,
@@ -57,10 +57,9 @@ def _joined_provider(value, monkeypatch, events):
     return provider
 
 
-@pytest.mark.parametrize("mode", ["drs", "brs"])
 @pytest.mark.parametrize("lose_after_pin", [False, True])
 def test_opted_in_scheduler_pins_real_owner_before_evaluation_and_retains_loss(
-    tmp_path, monkeypatch, mode, lose_after_pin,
+    tmp_path, monkeypatch, lose_after_pin,
 ):
     value = _unregistered_publication(tmp_path)
     events, records, evaluations, checkpoints = [], [], [], []
@@ -69,7 +68,7 @@ def test_opted_in_scheduler_pins_real_owner_before_evaluation_and_retains_loss(
 
     def inert_native_attempt(workspace, **kwargs):
         # This substitutes only the native process stages. The actual publication,
-        # handoff pin, original controller CAS and BRS ready/ack channel remain real.
+        # handoff pin and original DRS controller CAS remain real.
         events.append("native-output")
         assert not _rows(value)["rsi_python_admissions"]
         receipt = SimpleNamespace(receipt_sha256=value.handoff.native_execution_receipt_sha256)
@@ -113,12 +112,8 @@ def test_opted_in_scheduler_pins_real_owner_before_evaluation_and_retains_loss(
     monkeypatch.setattr(transaction, "_verify_native_execution_receipt_link", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(value.strategy.context.bundle_pipeline, "evaluate_draft_non_publishing", inert_evaluation)
     expected = RSILearningError if lose_after_pin else _EvaluationBoundary
-    with pytest.raises(expected):
-        if mode == "drs":
-            with _owner(value):
-                provider(value.request, value.plan)
-        else:
-            _drive(value, monkeypatch, lambda: provider(value.request, value.plan))
+    with pytest.raises(expected), _owner(value):
+        provider(value.request, value.plan)
 
     assert events == ["native-output", "handoff", "prepared", "pinned"]
     assert evaluations == ([] if lose_after_pin else ["evaluated"])
@@ -132,6 +127,54 @@ def test_opted_in_scheduler_pins_real_owner_before_evaluation_and_retains_loss(
         assert _state(value) == checkpoints[0]
     assert (value.batch / "journal.prepared.json").is_file()
     assert len(_rows(value)["rsi_python_admissions"]) == (0 if lose_after_pin else 1)
+
+
+@pytest.mark.parametrize("entry", ["dispatch", "join"])
+@pytest.mark.parametrize("supplier", ["configured", "disabled", "callback-context"])
+def test_brs_scheduler_refuses_worker_publication_before_inputs_or_callbacks(
+    tmp_path, monkeypatch, entry, supplier,
+):
+    value = _unregistered_publication(tmp_path)
+    events = []
+    provider = _joined_provider(value, monkeypatch, events)
+    if supplier == "disabled":
+        provider.context.python_handoff_after_execution = None
+    elif supplier == "callback-context":
+        class CallbackContext:
+            def __getattribute__(self, name):
+                pytest.fail("BRS worker read scheduler context before publication refusal")
+
+        provider.context = CallbackContext()
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("BRS worker reached native/input/ready/evaluator/publication boundary")
+
+    monkeypatch.setattr(provider, "_inputs", forbidden)
+    monkeypatch.setattr(scheduler, "run_native_trusted_producer", forbidden)
+    monkeypatch.setattr(scheduler, "run_native_trusted_producer_outcome", forbidden)
+    monkeypatch.setattr(transaction, "run_native_producer_bundle_publication_transaction", forbidden)
+    monkeypatch.setattr(value.controller, "_request_python_admission_for_brs_worker", forbidden)
+    monkeypatch.setattr(value.strategy.context.bundle_pipeline, "evaluate_draft_non_publishing", forbidden)
+    observations = []
+
+    def operation():
+        before = _rows(value), _files(value)
+        try:
+            if entry == "dispatch":
+                provider(value.request, value.plan)
+            else:
+                provider._python_publication_join(value.request, value.plan, object())
+        finally:
+            observations.append((_rows(value), _files(value)) == before)
+
+    with pytest.raises(
+        scheduler.NativeRSISchedulerProviderError,
+        match="^rsi_native_scheduler_brs_owner_publication_required$",
+    ):
+        _drive(value, monkeypatch, operation)
+    assert observations == [True]
+    assert events == []
+    assert not _rows(value)["rsi_python_admissions"]
 
 
 @pytest.mark.parametrize("field", ["episode_id", "native_plan_sha256", "prepared_journal_sha256"])

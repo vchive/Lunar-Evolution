@@ -23,11 +23,11 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 同 workspace 连续 DRS 发布 | 🧪 [PR103](https://github.com/vchive/Lunar-Evolution/pull/103) 待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
 | DRS known rejection | 🧪 PR103 待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
 | BRS partial-wave resume | 🧪 PR103 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
-| 多 child native BRS | 🧪 私有 service 已验证 | Feature196 的 selected owner service、detached handoff/ACK 已验证；本开发分支新增 owner checkpoint settlement，360 项本地回归及独立审计通过，未进入 PR103/main。公共 native BRS、多 child staging/publication 与生产 admission 仍关闭。 |
+| 多 child native BRS | 🧪 私有 service 已验证 | Feature196 的 selected owner service、detached handoff/ACK 已验证；[PR105](https://github.com/vchive/Lunar-Evolution/pull/105) 的 owner checkpoint settlement 通过 360 项本地回归，待最终 CI/集成。后继切片拒绝 worker 发布与 scheduler 旁路，完整 owner publication bridge 仍待实现。公共 native BRS 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-恢复、parser 与私有 selected service 已集中到 PR103；本分支的新增 checkpoint settlement 是其后继切片。PR100、PR101 等较早 PR 保留历史实现和验证记录。当前 main 仍是 PR99 基线，最终集成提交的完整 CI、独立审计与合入尚未完成。CI badge 表示 main 的 workflow 状态；候选提交的证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
+恢复、parser 与私有 selected service 已集中到 PR103；PR105 的 checkpoint settlement 和 worker publication refusal 是后继切片。PR100、PR101 等较早 PR 保留历史实现和验证记录。当前 main 仍是 PR99 基线，最终集成提交的完整 CI、独立审计与合入尚未完成。CI badge 表示 main 的 workflow 状态；候选提交的证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
 
 ## 主要能力
 
