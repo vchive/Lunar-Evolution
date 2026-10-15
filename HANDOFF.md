@@ -1,5 +1,38 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 并行后继：原主控 retained reader 与 prepared 登记
+
+本轮继续 Feature196，未改变公开 native BRS、`online_publication=false` 或
+`production_admission=false`。后继分支修正 PB-02c 的真实状态契约：底层 output
+preparation/recovery 始终保留 `publication_eligible=false`，旧转换器却要求 true，
+共享 fixture 还手工提供 true。现在使用原 false 默认值，严格拒绝 true/0/null，
+mailbox 仍只传证据。修复 `9fe060a` 的 181 项开发回归与静态检查通过，独立代码审查
+通过；原 179 项来源与测试结果保留，不能代替本轮来源。
+
+并行新增原注册 BRS owner 的 retained-context reader 和显式 prepared-reference
+登记入口。reader 从原 owner context 重新读取 native receipt、capture/broker、output
+和 creator-pinned handoff；不采用 worker drafts/bundles。登记入口复用原 store 的
+原子 admission-reference CAS，只有完整相邻读回才推进 wave；随后由既有
+`acknowledge_prepared` 独立登记 evidence checkpoint。两者要求原 owner、run lease、
+自然 running episode/started claim、原预算/来源/控制和仍开放的原 selected channel。
+取消、过期、替换、晚关闭及不确定写回保留证据和 stale/poisoned owner，不重试或
+采用最新 head。最终统一来源的回归和独审另行记录，开发结果不作为统一验收。
+
+真实 receipt/output/capture/broker/handoff 读取使用本地 inert 文件；terminal 和 formal
+receipt 的底层 projection 明确为 fixture doubles，不是 native runtime 验收。未运行
+真实模型/solver/campaign、CPython/toolchain、WebAgent、远程 evaluator 或公司平台。
+原服务器长回归继续运行，不停止、不重启、不改写其历史结果。
+
+P0 仍是冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109) 的完整 CI、
+actual checkout/source/import/raw 独审及 main 合并；head `b6faf226` 不追加提交。
+2026-10-16 本轮单次证据检查仍为 1 running / 32 queued，0 completed，未获得接受。
+新修复与两个新入口在隔离后继分支，不能归入 PR109 的旧测试来源。
+
+P1 下一步仍须接完整 owner transaction、拒绝 C1/P/C2、独立 result delivery/settlement，
+再做 BRS reconcile、serial successor 与 policy/memory。真实 source/toolchain/sealed
+runtime、OpenEvolve/Shinka project lifecycle 和生产 CLI/Linux acceptance 仍开放；
+P2 外部认证、多机 ownership、分布式调度/服务化后置。
+
 ## 2026-10-16 并行继续：preparation/mailbox 与 staged/terminal
 
 本轮将两个独立切片合并到统一产品/测试来源 `01c3bd1222fa6226762dbd65817e0d60d607330e`，

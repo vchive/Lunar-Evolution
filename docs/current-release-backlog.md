@@ -1,5 +1,14 @@
 # Current release backlog — 2026-10-16
 
+## 本轮后继开发状态
+
+隔离后继继续补原主控 retained native reader 和显式 prepared-reference 登记；
+另修正 preparation-only output 的实际 false 状态契约。它们仍须统一来源回归与独审，
+没有启用 online publication 或公开 native BRS。局部 reader/登记完成后，仍缺完整
+owner transaction、拒绝结算、result delivery、reconcile、连续 ordinal 与 memory
+组合。冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109) 的完整 33-job
+CI 和 main 合并是独立 P0，后继不追加或取消其来源。详见 HANDOFF 最新条目。
+
 ## 2026-10-16：私有成功检查点与证据转换
 
 PB-02c preparation → mailbox detached evidence 和 PB-03d 原 BRS owner
