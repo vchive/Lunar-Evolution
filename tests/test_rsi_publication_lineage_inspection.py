@@ -21,6 +21,7 @@ from lunar_evolution.producer_bundle_lineage import (
     LineageSnapshotPin,
     ProducerLineageTerminal,
 )
+from lunar_evolution.producer_bundle_lineage_v2 import ProducerLineageBeforeIntentV2
 from lunar_evolution.producer_bundle_publication import parse_producer_bundle_publication_journal
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_learning import EMPTY_MEMORY_SNAPSHOT, MemorySnapshot
@@ -31,9 +32,12 @@ from lunar_evolution.rsi_native_candidate import (
 from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
 from lunar_evolution.rsi_producer_staging_capsule import materialize_ready
 from lunar_evolution.rsi_publication_lineage import (
+    _PROTOCOL,
+    _PROTOCOL_V2,
     RSIPublicationLineageInspection,
     _LineageEvidenceReader,
     _require_marker_absent,
+    _V2LineageEvidenceReader,
 )
 
 
@@ -176,7 +180,20 @@ def test_inspection_rejects_nested_callbacks_before_serialization(tmp_path, targ
     assert observed == []
 
 
-def _phase_entry(phase):
+@pytest.fixture(params=[_PROTOCOL, _PROTOCOL_V2], ids=["v1", "v2"])
+def shape_reader(request):
+    class Reader(_V2LineageEvidenceReader):
+        __slots__ = ("_association", "_run_id")
+
+    reader = Reader()
+    reader._association = {"protocol": request.param}
+    reader._run_id = "run-1"
+    expected_v2 = request.param == _PROTOCOL_V2
+    assert reader._is_v2() is expected_v2
+    return reader, expected_v2
+
+
+def _phase_entry(phase, *, v2=False):
     def pin(name):
         return LineageSnapshotPin(name, "a" * 64, 1, 1, 2, 1, 3, mtime_ns=4, ctime_ns=5).to_dict()
 
@@ -198,13 +215,24 @@ def _phase_entry(phase):
         entry.update(terminal={}, terminal_file_pin=pin("terminal.json"), published_journal={},
                      head_sources={name: pin(name + "-before") for name in ("archive", "state")})
         entry["evidence_pins"].update({name: pin(name) for name in ("journal.published.json", "terminal.json")})
+    if v2:
+        entry["before"] = ProducerLineageBeforeIntentV2(
+            run_id="run-1", journal_id=entry["journal_id"], ordinal=entry["ordinal"],
+            previous_attempt_journal_id=None, previous_attempt_outcome=None,
+            previous_attempt_terminal_sha256=None, previous_attempt_lineage_sha256=None,
+            published_predecessor_journal_id=None, published_predecessor_terminal_sha256=None,
+            published_predecessor_lineage_sha256=None,
+            archive=LineageSnapshotPin.from_dict(entry["snapshots"]["archive-before"]),
+            state=LineageSnapshotPin.from_dict(entry["snapshots"]["state-before"]),
+        ).to_dict()
+        entry["before_file_pin"] = pin("before-v2.json")
     return entry
 
 
 @pytest.mark.parametrize("phase", ["before", "staged", "terminal"])
-def test_history_phase_shape_requires_all_original_pins(phase):
-    entry = _phase_entry(phase)
-    reader = _LineageEvidenceReader()
+def test_history_phase_shape_requires_all_original_pins(phase, shape_reader):
+    reader, expected_v2 = shape_reader
+    entry = _phase_entry(phase, v2=expected_v2)
     reader._validate_entry_shape(entry)
     for field in ("before_file_pin", "before_sources", "snapshots", "evidence_pins"):
         changed = copy.deepcopy(entry)
@@ -220,24 +248,25 @@ def test_history_phase_shape_requires_all_original_pins(phase):
 
 
 @pytest.mark.parametrize("field", ["before_sources", "after_sources", "head_sources"])
-def test_empty_or_renamed_source_pin_map_cannot_skip_original_file_gate(field):
-    reader = _LineageEvidenceReader()
-    entry = _phase_entry("terminal")
+def test_empty_or_renamed_source_pin_map_cannot_skip_original_file_gate(field, shape_reader):
+    reader, expected_v2 = shape_reader
+    entry = _phase_entry("terminal", v2=expected_v2)
     entry[field] = {}
     with pytest.raises(ValueError, match="source_pins_invalid"):
         reader._validate_entry_shape(entry)
-    entry = _phase_entry("terminal")
+    entry = _phase_entry("terminal", v2=expected_v2)
     entry[field]["archive"]["name"] = "foreign-source"
     with pytest.raises(ValueError, match="source_pins_invalid"):
         reader._validate_entry_shape(entry)
 
 
 @pytest.mark.parametrize("phase", ["before", "staged"])
-def test_later_terminal_fields_cannot_appear_as_precommit_history(phase):
-    entry = _phase_entry("terminal")
+def test_later_terminal_fields_cannot_appear_as_precommit_history(phase, shape_reader):
+    reader, expected_v2 = shape_reader
+    entry = _phase_entry("terminal", v2=expected_v2)
     entry["state"] = phase
     with pytest.raises(ValueError, match="history_phase_pins_invalid"):
-        _LineageEvidenceReader()._validate_entry_shape(entry)
+        reader._validate_entry_shape(entry)
 
 
 def _read_history(frames):
