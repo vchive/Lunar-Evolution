@@ -2527,6 +2527,33 @@ class StartedRSIRejectionInspection(_V2InspectionBase):
                          expected_provenance_file_pin=expected_provenance_file_pin)
 
 
+def _publication_lineage_checkpoint_delta(
+    captured_payload: bytes, wire: dict[str, Any],
+) -> dict[str, Any]:
+    """Build one bounded lineage delta; this pure helper grants no owner authority.
+
+    Refactoring this source changes the original publication policy fingerprint.
+    Persisted policies still require their original implementation; this helper
+    does not migrate an old policy or adopt a newer checkpoint.
+    """
+    expected = json.loads(captured_payload)
+    expected[_FIELD] = wire
+    try:
+        _raw(expected)
+    except (ValueError, TypeError) as exc:
+        raise RSILearningError("rsi_publication_lineage_capacity_exceeded") from exc
+    return expected
+
+
+def _validate_publication_lineage_checkpoint_readback(
+    *, expected_head: str, expected_payload: bytes,
+    observed_head: str | None, observed_payload: bytes | None,
+) -> None:
+    """Compare already-observed bytes without reading or refreshing owner state."""
+    if observed_head != expected_head or observed_payload != expected_payload:
+        _fail("acknowledgement_readback_invalid")
+
+
 def acknowledge_publication_lineage_for_active_flow(controller: Any, owner: RSIPublicationLineage) -> str:
     """Write and acknowledge only the capsule's exact adjacent lineage increment."""
     if type(owner) is not RSIPublicationLineage or controller is not owner._controller:
@@ -2544,19 +2571,20 @@ def acknowledge_publication_lineage_for_active_flow(controller: Any, owner: RSIP
     if owner._is_v2():
         state = owner._check_owner(check_budget=owner._phase != "staged" and not terminal_evidence)
     context = owner._context
-    expected = json.loads(context.payload)
-    expected[_FIELD] = wire
-    try:
-        _raw(expected)
-    except (ValueError, TypeError) as exc:
-        raise RSILearningError("rsi_publication_lineage_capacity_exceeded") from exc
+    expected = _publication_lineage_checkpoint_delta(context.payload, wire)
     payload = controller._python_admission_flow_payload(expected)
     # State, sidecar and source checks above precede this original compare-and-swap.
     head = owner._ledger.write_controller_checkpoint(owner._plan.run_id, expected, expected_sha256=owner._head)
     with owner._ledger.read_only_observations():
         observed = owner._ledger.controller_checkpoint(owner._plan.run_id)
-        if observed is None or observed[0] != head or controller._python_admission_flow_payload(observed[1]) != payload:
-            _fail("acknowledgement_readback_invalid")
+        observed_head = None if observed is None else observed[0]
+        observed_payload = None
+        if observed is not None and observed_head == head:
+            observed_payload = controller._python_admission_flow_payload(observed[1])
+        _validate_publication_lineage_checkpoint_readback(
+            expected_head=head, expected_payload=payload,
+            observed_head=observed_head, observed_payload=observed_payload,
+        )
         controller._python_admission_assert_flow_context(context, owner._plan.run_id, owner._request.episode_id)
         controller._validate_original_run_checkpoint_producer_binding(owner._ledger.get_run(owner._plan.run_id), expected)
     acknowledged = replace(context, checkpoint_sha256=head, payload=payload)
