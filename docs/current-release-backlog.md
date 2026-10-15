@@ -2,12 +2,18 @@
 
 ## 本轮后继开发状态
 
-隔离后继继续补原主控 retained native reader 和显式 prepared-reference 登记；
-另修正 preparation-only output 的实际 false 状态契约。它们仍须统一来源回归与独审，
-没有启用 online publication 或公开 native BRS。局部 reader/登记完成后，仍缺完整
-owner transaction、拒绝结算、result delivery、reconcile、连续 ordinal 与 memory
-组合。冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109) 的完整 33-job
-CI 和 main 合并是独立 P0，后继不追加或取消其来源。详见 HANDOFF 最新条目。
+原主控 retained native reader、显式 prepared-reference 登记和原 false preparation
+契约修复已在`05cd548`整合：macOS498个不同focused cases全通过，raw/source独审
+接受；Linux的113/181/61组已通过，143组仍运行。高层before留存在`855b08e`实现：
+macOS/Linux各34例（31新+3兼容）全通过并获独审。两来源分别验收，不能累计，
+也不称855已重新通过498。详情见Feature196 `publication-validation.md`。
+
+现在并行开发staged/precommit/terminal高层接口并核对exact BRS私有transaction
+dispatch。完整owner transaction、controller/mailbox service、拒绝C1/P/C2、独立
+result delivery/settlement、reconcile、连续ordinal与policy/memory仍开放。
+冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109)的完整33-job CI、
+actual checkout/source/import/raw独审和main合并是独立P0，后继不追加或取消其来源。
+公开native BRS、online publication与production admission仍关闭。详见HANDOFF最新条目。
 
 ## 2026-10-16：私有成功检查点与证据转换
 

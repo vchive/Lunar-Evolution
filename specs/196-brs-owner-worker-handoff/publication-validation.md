@@ -377,3 +377,56 @@ actual merge/tree/ordered-parent/import/raw audit, and verified main merge. The
 public native BRS refusal, `online_publication=false` and
 `production_admission=false` remain unchanged. No actual producer, model/solver,
 CPython/toolchain target, campaign, WebAgent or remote evaluator was executed.
+
+## Original-owner retained reader / prepared composition — 2026-10-16
+
+Frozen commit `05cd548f7c4da324342327fabeca1ed68e49907d`, tree
+`9d3c530849088e7ac7e5e091268b899d33fc1683`, contains the false preparation
+contract correction, retained native reader, explicit prepared-reference pin and
+reader → before → reference → evidence composition. The 498 distinct cases form
+four disjoint groups: 113 new reader/reference/composition, 143 original checkpoint,
+181 preparation/mailbox and 61 compatibility. The exact inventory SHA256 is
+`b90786c40236e27176cf33f303177fae62dfbd2bbbf5b2cd23239d3bea3e2aef`.
+
+macOS own-editable Python3.11.15 passed all 498, zero failures/errors/skips; all 16
+collection/install/test/static exits were zero. All 2,053 tracked files match frozen
+Git blobs and stayed unchanged. The complete raw/source/import/XML review accepted
+this focused result; report SHA256
+`d13197146f11620292cd0853725d870c50093f37fe89910effcb65ba93f0f94c`.
+The same-source independent Linux Python3.12.3 run has completed 113/181/61; its 143
+group is still running. Linux 498 acceptance is therefore pending. Original raw,
+source snapshots, configs, bundle pins and reviews are preserved in ignored
+`.lunar-evolution/reports/brs-owner-evidence-integration-20261016/`.
+
+## Original-owner before retention facade — 2026-10-16
+
+Frozen commit `855b08edd4de3dc0c379b99caa034e42f16efc4b`, tree
+`b5052bc3bf779d62067a7a34f462abdb7e88737c`, adds the original owner
+`validate_before` / `retain_before` facade. It retains actual bounded snapshots and
+the native before descriptor before the original captured-head CAS. Independent
+code review accepted the final source after channel/control/final-CAS hardening.
+The transaction/staging entry gates remain DRS-only; this is no publication grant.
+
+macOS own-editable Python3.11.15 and Linux own-editable Python3.12.3 each passed the
+same 34 distinct cases: the 31-case new module plus 3 explicit original compatibility
+selectors. Both have zero failures/errors/skips and all 13 process exits zero,
+including full Ruff/compileall/diff-check. All 2,055 tracked files match frozen Git
+blobs and stayed unchanged. Exact inventory SHA256:
+`6cb5010681fa6c5655ff4581172240b170dcb04972f629f2213cbdb1a4e4e457`.
+Mac raw/source/import/XML independent review accepted, report SHA256
+`a9b2775bd76b2e76e59bee925bb2ef0876d58068e8cb148416e37824b8a3bee4`.
+Linux full raw was transported with archive SHA256
+`a2146d1830351c537f96cff8a20542171c7f29529222a9458196ae4c08fe2a06`;
+its independent final raw/source review accepted, report SHA256
+`3aecb67a8440a7306e7667bc3e1a566c6abb8e71252362a0eb1cdaaf4454a8b4`.
+All materials are preserved in
+ignored `.lunar-evolution/reports/brs-owner-before-evidence-855b08e-20261016/`.
+
+The 34 cases at 855 are separate from the 498 at 05cd548; neither is added into a
+single-source 532 count, and the 855 tree has not rerun the full 498. The workflow
+suffix adds the 31-case gate and matching annotation; its 60 explicit focused XMLs
+have an exact one-to-one annotation mapping. Product/test/tool bytes remain frozen
+through documentation/workflow changes. PR109 remains separately frozen at b6faf226
+with 58 focused XMLs and still needs complete 33-job official CI, actual checkout/
+source/import/raw review and verified main merge. Only inert/provider-free fixtures
+were used; public native BRS, online publication and production admission stay closed.

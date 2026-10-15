@@ -1,5 +1,45 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 后继收尾：原 owner 证据组合与 before 高层留存
+
+后继工作区为 `/private/tmp/lunar-brs-owner-evidence-integration`，产品/测试已推进到
+`855b08edd4de3dc0c379b99caa034e42f16efc4b`。原主控 retained reader、显式
+prepared-reference pin 与 evidence ACK 已组合验证；before 高层接口新增真实
+archive/state 快照、descriptor 留存，再执行原 checkpoint CAS。创建前统一检查
+64 MiB 聚合、16 MiB 单快照与112 KiB checkpoint 容量，最终 callback 后仍检查原
+channel/control/head；取消、关闭或不确定读回保留文件、旧 capture 与 poisoned owner。
+没有放开原 DRS-only transaction/staging gate，公开 native BRS 仍拒绝。
+
+验收分开绑定两个冻结来源，不能累计为同一轮：
+
+- `05cd548f7c4da324342327fabeca1ed68e49907d` / tree
+  `9d3c530849088e7ac7e5e091268b899d33fc1683`：macOS own-editable Python3.11.15
+  的498个不同 cases（113/143/181/61）全通过，零失败/错误/跳过，16 exits全0，
+  2,053 tracked files前后与Git blobs一致；完整 raw/source 独审已接受。Linux同来源
+  的113/181/61已通过，143组仍运行，尚不称Linux498通过。
+- `855b08e` / tree `b5052bc3bf779d62067a7a34f462abdb7e88737c`：macOS独立
+  own-editable Python3.11.15的34个不同 cases（31新+3明确兼容）全通过，零失败/
+  错误/跳过，13 exits全0，2,055 tracked files前后与Git blobs一致；完整 raw/source
+  独审已接受。Linux同来源34组也全通过且完整raw/source独审接受；这不代表在855上
+  重新跑过完整498组。
+
+原始材料分别在 ignored `brs-owner-evidence-integration-20261016/` 和
+`brs-owner-before-evidence-855b08e-20261016/`。两条原服务器长shard继续运行，
+不停止、不重启。全部新增验证仅使用本地 inert/provider-free fixtures。
+
+P0冻结[PR109](https://github.com/vchive/Lunar-Evolution/pull/109)仍保持
+`b6faf226`，run38775669197上次完整probe为1 success、7 running、25 queued，
+仅history3.11 artifact已审；未通过完整33-job验收、尚未合入main。不能用后继
+05cd548/855b08e结果替代它的actual checkout/source/import/raw证据。
+
+P1下一段并行开发原owner的`retain_staged`、`verify_precommit`、`retain_terminal`
+高层接口，同时核对exact BRS私有transaction dispatch的锁外完整观察、锁内固定身份/
+durable evidence与原`revalidate_after_observation`顺序。完整owner transaction、
+controller/mailbox service、拒绝C1/P/C2、独立result delivery/settlement、BRS只读
+reconcile、serial successor和policy/memory仍开放。真实source/toolchain/sealed runtime、
+OpenEvolve/Shinka project lifecycle与生产CLI/Linux验收另列P1；P2外部认证、多机
+ownership与分布式服务继续后置。`online_publication=false`、`production_admission=false`。
+
 ## 2026-10-16 并行后继：原主控 retained reader 与 prepared 登记
 
 本轮继续 Feature196，未改变公开 native BRS、`online_publication=false` 或
