@@ -62,17 +62,23 @@ from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.rsi_python_brs_publication_inputs import _request_from_native_preparation
 from lunar_evolution.rsi_python_brs_publication_mailbox import build_brs_owner_publication_request
 
-_TERMINAL_HOOK = None
+_BRS_NATIVE_READER_TERMINAL_HOOK = None
 
 
 def _receipt_projection(workspace, **_kwargs):
+    import json
+
+    from lunar_evolution.producer_process import parse_producer_execution_receipt
+
     return parse_producer_execution_receipt(json.loads(
         (Path(workspace) / "fixture-native-receipt-projection.json").read_bytes()))
 
 
 def _terminal_projection(workspace, **_kwargs):
-    if _TERMINAL_HOOK is not None:
-        _TERMINAL_HOOK()
+    import json
+
+    if _BRS_NATIVE_READER_TERMINAL_HOOK is not None:
+        _BRS_NATIVE_READER_TERMINAL_HOOK()
     return json.loads((Path(workspace) / "fixture-native-terminal-projection.json").read_bytes())
 
 
@@ -105,10 +111,15 @@ class _Trap:
 def _setup(root, patch):
     # Install stable source-bound inert projections before create-run captures
     # the original BRS policy; changing a reader afterward correctly drifts.
-    patch.setattr(receipt_module, "build_native_trusted_execution_receipt", _receipt_projection)
-    patch.setattr(output_module, "recover_native_trusted_attempt", _terminal_projection)
-    patch.setattr(attempt_module, "recover_native_trusted_attempt", _terminal_projection)
-    patch.setattr(receipt_module, "recover_native_trusted_attempt", _terminal_projection)
+    receipt_projection = FunctionType(_receipt_projection.__code__, vars(receipt_module),
+                                      _receipt_projection.__name__)
+    terminal_projection = FunctionType(_terminal_projection.__code__, vars(attempt_module),
+                                       _terminal_projection.__name__)
+    patch.setattr(attempt_module, "_BRS_NATIVE_READER_TERMINAL_HOOK", None, raising=False)
+    patch.setattr(receipt_module, "build_native_trusted_execution_receipt", receipt_projection)
+    patch.setattr(output_module, "recover_native_trusted_attempt", terminal_projection)
+    patch.setattr(attempt_module, "recover_native_trusted_attempt", terminal_projection)
+    patch.setattr(receipt_module, "recover_native_trusted_attempt", terminal_projection)
     value = native_fixture._native_setup(root, patch)
     native, intent = value.native, value.native.intent
     source = b"# inert candidate\n"
@@ -316,7 +327,7 @@ def test_constructor_captured_owner_scope_cannot_advance_during_read(tmp_path, m
 def test_late_owner_control_failure_discards_recovered_output(tmp_path, monkeypatch):
     with _waiting(tmp_path, monkeypatch) as value:
         reader = _reader(value)
-        monkeypatch.setitem(globals(), "_TERMINAL_HOOK", value.wave.channel.close)
+        monkeypatch.setattr(attempt_module, "_BRS_NATIVE_READER_TERMINAL_HOOK", value.wave.channel.close)
         with pytest.raises(RSILearningError):
             reader.recover(value.request_message)
 
@@ -361,7 +372,7 @@ def test_current_native_cancellation_refuses_without_changing_deadline(tmp_path,
         if timing == "before":
             control.cancel()
         else:
-            monkeypatch.setitem(globals(), "_TERMINAL_HOOK", control.cancel)
+            monkeypatch.setattr(attempt_module, "_BRS_NATIVE_READER_TERMINAL_HOOK", control.cancel)
         with pytest.raises(SolveExecutionCancelled):
             reader.recover(value.request_message)
         assert (control.started_at, control.deadline, control.timeout_seconds) == original
@@ -444,7 +455,7 @@ def test_last_source_hook_cancellation_or_timeout_refuses(tmp_path, monkeypatch,
 
         monkeypatch.setattr(value.gateway, "rsi_fingerprint_config", hook)
         reader = _reader(value)
-        monkeypatch.setitem(globals(), "_TERMINAL_HOOK", lambda: armed.__setitem__(0, True))
+        monkeypatch.setattr(attempt_module, "_BRS_NATIVE_READER_TERMINAL_HOOK", lambda: armed.__setitem__(0, True))
         with pytest.raises(SolveExecutionCancelled if change == "cancel" else SolveExecutionBudgetExceeded):
             reader.recover(value.request_message)
 
@@ -483,6 +494,42 @@ def test_same_code_different_globals_alias_refuses(tmp_path, monkeypatch, name):
         clone.__module__, clone.__qualname__ = original.__module__, original.__qualname__
         clone.__kwdefaults__ = original.__kwdefaults__
         monkeypatch.setattr(recovery, name, clone)
+        with pytest.raises(RSILearningError):
+            reader.recover(value.request_message)
+
+
+@pytest.mark.parametrize("group", ["context", "scheduler", "receipt", "output", "handoff", "control"])
+def test_simultaneously_rebound_canonical_entry_globals_refuse(tmp_path, monkeypatch, group):
+    from lunar_evolution import native_trusted_scheduler as scheduler
+    from lunar_evolution import python_producer_admission_handoff as handoff_module
+    from lunar_evolution import rsi_python_scheduler_inputs as scheduler_inputs
+
+    with _waiting(tmp_path, monkeypatch) as value:
+        reader = _reader(value)
+        if group == "context":
+            bindings = ((scheduler_inputs, "_context"), (recovery, "_context"))
+        elif group == "scheduler":
+            bindings = ((scheduler, "recover_native_trusted_producer"),
+                        (recovery, "recover_native_trusted_producer"))
+        elif group == "receipt":
+            bindings = ((receipt_module, "recover_native_trusted_execution_receipt"),
+                        (scheduler, "recover_native_trusted_execution_receipt"),
+                        (output_module, "recover_native_trusted_execution_receipt"))
+        elif group == "output":
+            bindings = ((output_module, "prepare_native_trusted_output"),
+                        (scheduler, "prepare_native_trusted_output"))
+        elif group == "handoff":
+            bindings = ((handoff_module, "read_python_producer_admission_handoff_pinned"),
+                        (recovery, "read_python_producer_admission_handoff_pinned"))
+        else:
+            bindings = ((SolveExecutionControl, "check"),)
+        original = getattr(*bindings[0])
+        clone = FunctionType(original.__code__, dict(original.__globals__), original.__name__,
+                             original.__defaults__, original.__closure__)
+        clone.__module__, clone.__qualname__ = original.__module__, original.__qualname__
+        clone.__kwdefaults__ = original.__kwdefaults__
+        for module, name in bindings:
+            monkeypatch.setattr(module, name, clone)
         with pytest.raises(RSILearningError):
             reader.recover(value.request_message)
 
