@@ -32,6 +32,7 @@ _SCRIPT = r'''
 import errno
 import fcntl
 import importlib
+import importlib.util
 import json
 import os
 import stat
@@ -79,15 +80,29 @@ assert "" not in initial_path
 for excluded in (str(Path.cwd()), str(Path(__file__).parent), sdk, decoy):
     assert excluded not in initial_path
 # The decoys are readable and valid Python. Isolated imports must ignore them.
-for directory in (Path.cwd(), Path(__file__).parent, Path(decoy)):
+decoy_directories = (Path.cwd(), Path(__file__).parent, Path(decoy))
+for directory in decoy_directories:
     assert (directory / "lunar_decoy.py").read_text().endswith("VALUE = 42\n")
 for name in ("lunar_decoy", "sitecustomize", "usercustomize"):
+    spec = importlib.util.find_spec(name)
+    if spec is not None:
+        # Installed CPython can supply a system sitecustomize even under -I -S.
+        # Check resolution without executing host customization code. Only the
+        # fixture's readable decoys must remain unreachable through imports.
+        assert spec.origin is not None
+        if spec.origin not in {"built-in", "frozen"}:
+            origin = Path(os.path.abspath(spec.origin))
+            assert not any(origin.is_relative_to(directory) for directory in decoy_directories), (
+                "isolated fixture resolved a customization decoy", name, spec.origin,
+            )
+        continue
     try:
         importlib.import_module(name)
     except ModuleNotFoundError as exc:
         assert exc.name == name
     else:
         raise AssertionError("isolated fixture imported a customization decoy")
+assert "sitecustomize" not in sys.modules and "usercustomize" not in sys.modules
 try:
     (Path.cwd().parent / "ungranted-sentinel").read_bytes()
 except PermissionError:
@@ -223,6 +238,46 @@ def test_actual_python_sdk_pipe_flags_stdio_and_original_fd_closure(tmp_path, pr
         respond(fixture, _encode(_response()))
         _assert_result(fixture, prepared, {"http_status": 200, "body": "inert-pong"})
     assert fixture.process.returncode == 0
+    assert not fixture.owned_fds
+
+
+@pytest.mark.parametrize("name", ["lunar_decoy", "sitecustomize", "usercustomize"])
+@pytest.mark.parametrize("directory", ["cwd", "script", "environment"])
+def test_import_resolution_refuses_created_decoy_before_execution(
+    tmp_path, prepared, name, directory,
+):
+    # Route a real child import lookup to each readable fixture decoy without
+    # adding that directory to sys.path or executing the marker-writing module.
+    origin = {
+        "cwd": "Path.cwd()", "script": "Path(__file__).parent", "environment": "Path(decoy)",
+    }[directory]
+    injection = f'''
+class FixtureDecoyFinder:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == {name!r}:
+            return importlib.util.spec_from_file_location(
+                fullname, str({origin} / {name + ".py"!r}),
+            )
+sys.meta_path.insert(0, FixtureDecoyFinder())
+'''
+    anchor = 'for name in ("lunar_decoy", "sitecustomize", "usercustomize"):'
+    assert _SCRIPT.count(anchor) == 1
+    script = _SCRIPT.replace(anchor, injection + "\n" + anchor, 1)
+    with start_python_fixture(tmp_path, prepared, script) as fixture:
+        _release(fixture)
+        terminal = _frame(fixture.frame)
+        assert terminal.kind == "terminal" and terminal.sequence == 3
+        assert terminal.launch_sha256 == fixture.launch.launch_sha256
+        assert terminal.intent_sha256 == fixture.launch.intent_sha256
+        stdout, stderr = collect_python(fixture)
+        assert fixture.process.returncode == 1
+        assert stdout == b""
+        assert b"isolated fixture resolved a customization decoy" in stderr
+        assert os.read(fixture.request, 1) == b""
+        assert not (fixture.working / "python-work-marker").exists()
+        assert not (fixture.output / "python-output-marker").exists()
+        for decoy_name in ("lunar_decoy", "sitecustomize", "usercustomize"):
+            assert not (fixture.working / f"{decoy_name}-loaded").exists()
     assert not fixture.owned_fds
 
 
