@@ -5,8 +5,11 @@ and owner publication. It does not grant BRS publication authority or wire the p
 RSI provider. The original BRS provider refusal remains in place.
 
 Status: private seam implemented; 67 new cases and 91 existing scheduler/join/outcome
-cases pass locally (158 distinct, zero failures/errors/skips). Independent source
-review completed; final integrated source acceptance and CI remain separate.
+cases pass locally (158 distinct, zero failures/errors/skips). The later frozen Linux
+foundation `e30f5f8` passed 450 distinct cases, including these scheduler/parser and
+checkpoint boundaries. Its exact XML, all 14 exits, own editable imports and all
+2,036 source/Git blobs passed independent review. These overlapping source results
+are not added together; the successor integrated-source run and CI remain separate.
 
 The private scheduler entry accepts the existing launch inputs, one handoff supplier
 and one evidence revalidator. It has no strategy, prepared observer, lineage owner,
@@ -33,8 +36,16 @@ check its own original lifecycle before admitting a new stage.
 
 The result contains the normal preparation-only run and a detached strict handoff
 sidecar. It is evidence for a future original-owner request, never a publication or
-completed-child capability. Online worker waiting, owner policy/transaction/CAS,
+completed-child capability. Original policy persistence is implemented separately in
+`prewave-policy.md`. Online mailbox/worker composition, the complete owner transaction,
 rejection C1/P/C2, recovery and ordinal transitions remain separate PB-03–PB-05 work.
+
+Frozen Linux evidence is retained in ignored
+`.lunar-evolution/reports/p1-integrated-linux-e30f5f8-20261015/`. The original
+394-case Linux run at `200b6bb` had two decoder-depth oracle failures and remains
+preserved. The tests-only portability follow-up accepts only the original schema or
+JSON refusal at natural decoder depth and adds forced-RecursionError cases; it does
+not change product parsing. The final 450-case source includes that follow-up.
 
 Provider-free tests must cover the real handoff writer/reader with inert attempt,
 receipt and output stages: stage ordering; transaction absence; bad bindings/pins;
