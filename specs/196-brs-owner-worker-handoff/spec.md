@@ -23,8 +23,10 @@ pre-publication owner bridge and its timing constraints are described in
 The first implementation accepts a fresh BRS wave with `max_workers=1`. The parent
 controller reserves the complete wave once, freezes one root memory snapshot (`M0`),
 and selects one ordinal at a time. A worker may perform the selected child's producer
-work and submit prepared admission evidence. The owning controller thread performs
-all controller, ledger, workspace, admission CAS, and publication mutations.
+work and original execution-record lifecycle. The owning controller thread performs
+controller checkpoint, admission CAS, shared publication workspace and lineage mutations.
+Worker writes of its original running episode/native result do not grant authority
+over those owner operations.
 
 This slice uses the existing in-process ready/ack channel and existing durable rows.
 It introduces no SQL table, ledger row kind, wire protocol, RPC, scheduler service,
@@ -40,11 +42,12 @@ invoke publication-lineage owner operations, save the checkpoint, and close the 
 
 The **selected worker** receives a one-shot, in-memory dispatch handoff for one
 `(run_id, wave_id, episode_id, ordinal)`. It may run the selected child's producer
-and evaluator seams, observe its own execution evidence, and submit one prepared
+seams, observe its own execution evidence, and submit one prepared
 `BRSAdmissionReady` request through the existing channel. It never receives the parent
 controller lock or a publication-lineage owner object. It never writes the controller
 checkpoint, changes a head, settles another episode, chooses a later ordinal, or
-calls a public DRS mutation API.
+calls a public DRS mutation API. In the planned publication bridge, publication
+evaluation and the complete archive/lineage/rejection transaction run on the owner.
 
 Ready/ack has one meaning: it proves the exact prepared admission record was pinned by
 the owner and returns its retained record digest. It does not authorize launch,

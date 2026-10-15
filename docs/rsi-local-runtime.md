@@ -17,9 +17,18 @@
 继续接通相邻准备成功的单个 child。它要求原 `PythonProducerRSISolverGateway`、同一
 ledger、sidecar 和 stager；原 run 及全部历史版本固定此配置，恢复时不能增删。默认值仍为
 `False`，CLI native 选择仍拒绝。该配置的单 child 本地 fixture 闭环、中断恢复和最终来源
-CI 已验收并合入 main；三轮 DRS（PR100）仍在验证，真实 runtime 和多 episode DRS/BRS
+CI 已验收并合入 main；连续 DRS/恢复已集中到 PR103 最终候选，真实 runtime 和多 episode DRS/BRS
 尚未验收，`production_admission=false`。规格见
 [`child-execution-flow.md`](../specs/191-python-worker-adapter/child-execution-flow.md)。
+
+Feature196 的私有 selected BRS service 和 owner checkpoint settlement 不授予 worker
+发布权。`run_rsi_python_bundle_publication_for_active_brs_worker` 保留导出和调用签名，
+固定返回 `rsi_python_publication_brs_worker_publication_forbidden`；同一 BRS invocation
+调用 generic/DRS 发布入口或 native scheduler 也会前置拒绝。prepared ready/ACK 仅证明
+原 admission pin，不能当作 publication token。DRS 和只读 resume 保持原语义。
+完整 BRS owner 发布、serial successor 和真实 producer/CLI 仍待接线，当前不要将该
+拒绝理解成 native BRS 已可用。下一步边界见
+[`owner-publication-bridge.md`](../specs/196-brs-owner-worker-handoff/owner-publication-bridge.md)。
 
 ## 1. 选择治理入口
 

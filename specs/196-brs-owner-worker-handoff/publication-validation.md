@@ -48,5 +48,45 @@ Required current slice checks include `test_rsi_python_brs_publication.py`, exis
 service/checkpoint regressions, plus Ruff over `src tests tools`, compileall and
 `git diff --check`. Final-source CI and independent evidence review remain separate.
 
-No current run result is recorded yet. Future OB cases are requirements, not test
+The final local eight-way run tested commit
+`9684c6a773f5293c61201bc189ebc6197b121e91`, tree
+`78aa65de6d16d4394365ddd4c0da267b756c5dec`: **261 passed, zero failures,
+errors or skips**. Disjoint groups contain 35/28/36/37/29/34/31/31 nodes. All eight
+pytest exits, collection, installed-origin, Ruff (`src tests tools`), compileall and
+`git diff --check` exits are zero. Source maps before/after are identical.
+
+Inventory SHA256:
+`4f8ddcac0338c425d706cd98306bff2d6c88f0629889224d4b53446532fd774e`.
+Controller SHA256:
+`50c8b97941f7972300cb50714d40c9ee4bf72ed5fe6c5f3220e812f92bd1d63c`.
+Publication module SHA256:
+`e5da26c0b9ab97df828c4c5326d0d7c6e0f11954674c52e5f7071e917acab485`.
+BRS publication test SHA256:
+`0a00adde95b58ef8819c36bdd3982dd0acd626bcda8aca8a6a82189908a5f235`.
+
+Raw result, exact inventories, JUnit, stdout/stderr, source/install and all exit
+records are retained locally under ignored
+`.lunar-evolution/reports/brs-owner-boundary-20261015/final-261/`, and on the
+server under `/home/qinzhiqing/vchive/lunar-owner-boundary-final-22fypesh/`.
+The original 209-case run at `e4f6a13` had 206 passes and 3 failures because its
+global test spy also blocked the legitimate owner admission check after ACK.
+Its original raw evidence remains in `failed-209/`; later passing runs do not
+reclassify or replace it. The corrected spy checks the worker thread only.
+
+The final documentation/workflow successor leaves all product and test bytes equal
+to the tested commit. CI now requires the exact 116-case BRS three-module inventory
+and a separate 14-case scheduler join gate. Independent stdlib-only evidence review passed 6,204 assertions: all 2,024 source
+files (SHA/mode/size) match immutable commit blobs, exact disjoint inventory and
+XML agree, all exits are zero and installed origins point to the remote frozen tree.
+The reviewer independently downloaded the same 60 raw files; bytes match the local
+copy. Ignored review JSON is
+`.lunar-evolution/reports/pb01-final-independent-review-20261015/review.json`, SHA256
+`8b81b2f29addbf22fe37c36dd9b5e471a9e5c7b59766fbb89942ea402da62ad3`.
+This local run and review do not replace final CI. Future OB cases remain requirements, not test
 or runtime completion claims.
+
+A separate local workflow-compatibility run passed the 63 admission-channel and
+23 BRS owner cases (86 total, zero failures/errors/skips, pytest exit 0); its XML
+is retained beside the final-261 directory as `workflow-compat-86.xml`. Pytest
+reported cleanup warnings for old read-only fixture garbage directories. This
+supplementary run is separate from the exact 261-case acceptance inventory.

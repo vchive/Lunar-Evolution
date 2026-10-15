@@ -21,8 +21,18 @@ before→staged→terminal，C1/P/C2 仅指现有 known-rejection 契约。
 下一步按 Feature196 `owner-publication-bridge.md` 实现独立 BRS owner/policy、
 pre-publication mailbox 和 owner 完整事务，再做 rejection/串行 ordinal/reconcile。
 本切片不放开公共 native BRS、生产 CLI、真实 producer 或 sealed runtime，
-`production_admission=false`；仅 provider-free/inert fixture。最终来源测试结果和
-CI/审计状态须按实际记录补齐，不能沿用 PR105 的 360-case 结果。
+`production_admission=false`；仅 provider-free/inert fixture。
+
+最终八路 focused 在 `9684c6a` / tree `78aa65de` 完成：261 pass，零 failure/error/skip，
+8 exits、collection/install、全仓 Ruff、compileall、diff-check 均为0，源码前后不变。
+精确互斥 inventory SHA `4f8ddcac0338c425d706cd98306bff2d6c88f0629889224d4b53446532fd774e`。
+原始报告保留于 ignored `brs-owner-boundary-20261015/final-261/` 与服务器
+`lunar-owner-boundary-final-22fypesh`。原209-case run的3个 spy fixture failures原样保留；
+不将后续通过回写为原轮成功。产品/测试 bytes 在收尾文档及 workflow 更新中保持不变；
+workflow 的三模块精确计数更新为116，另设14-case scheduler join gate。
+独立审计已通过6,204条断言，2,024份源码逐项匹配immutable blobs，独立拉取的60份raw
+与本机相同；review JSON SHA `8b81b2f29addbf22fe37c36dd9b5e471a9e5c7b59766fbb89942ea402da62ad3`。
+最终 CI/合入仍单列；不能沿用 PR105 的360-case结果。
 
 ## 2026-10-15 私有 BRS owner checkpoint settlement（后继分支）
 

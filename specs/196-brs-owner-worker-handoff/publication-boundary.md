@@ -1,6 +1,6 @@
 # Feature 196 — BRS owner publication boundary
 
-**Status: PB-01 refusal slice implemented in an isolated branch; validation pending.
+**Status: PB-01 refusal slice implemented in an isolated branch; 261-case local focused acceptance passed; final-source CI pending.
 Owner publication, online prepared bridge and ordinal transitions remain design-only.**
 
 Reference source is `868bccccc9ede2cd035d28b16cfb316fef049c0a`. The private selected
