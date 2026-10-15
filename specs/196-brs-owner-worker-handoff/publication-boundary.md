@@ -25,10 +25,11 @@ calls and original DRS ownership retain their existing semantics. Read-only resu
 is unchanged. Prepared admission through the existing ready/ACK channel stays
 available independently; an ACK is never publication authority.
 
-This slice does not create an owner publication facade. The native scheduler's
-separate direct transaction route requires its own BRS worker refusal at the
-original provider boundary. A Python helper gate is not a sandbox against arbitrary
-code invoking unrelated standalone native APIs.
+This slice does not create an owner publication facade. The combined scheduler slice
+also refuses its direct transaction route on a BRS worker before input or context
+callbacks. A negative invocation marker covers entry/source hooks and nested scopes
+that suppress active/dispatch capabilities. A Python helper gate is not a sandbox
+against arbitrary code invoking unrelated standalone native APIs.
 
 ## Two existing lineage sequences must remain distinct
 
@@ -72,9 +73,13 @@ after a completed result if that would repeat evaluation or publication.
 
 ## Next design dependency: prepared-stage owner online bridge
 
-PB-02/PB-03 remain blocked on a separate precise online bridge contract. The worker
-must submit its original prepared evidence while the original selected invocation
-is still live and wait without owning the controller/observation/publication lock.
+PB-02/PB-03 still require an implemented online bridge; its design is in
+`owner-publication-bridge.md`. The worker submits receipt/output/handoff/admission plan
+and original pins before entering the transaction, while the selected invocation
+is still live, then waits without owning the controller/observation/publication lock.
+The owner transaction creates the actual prepared journal/anchor and its observer
+performs the exact prepared pin/CAS. A worker-written prepared journal is not a
+prerequisite publication request or publication authority.
 The owner must service that request on its original thread, preserving the run
 lease and revalidating the complete selected handoff, M0, original reservation,
 request, source/configuration, native plan, prepared journal, anchor and claim.

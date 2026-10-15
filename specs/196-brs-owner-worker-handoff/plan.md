@@ -14,7 +14,8 @@ The implementation must consume the existing contracts in this order:
    one-call owner permit; worker capability is invocation-scoped and cannot carry
    controller ownership.
 5. Existing publication-lineage v2 and known-rejection settlement: owner-thread
-   CAS and ordinal head continuity after the child returns.
+   transaction/CAS while the selected invocation is naturally running/started, before
+   the worker completes its result. Completed return cannot construct a lineage owner.
 6. Partial-wave recovery: completed child obligations remain in the wave scope,
    while only the selected missing child can receive a fresh dispatch handoff.
 
@@ -28,10 +29,15 @@ reusing a retained ready message, or turning a read-only inspector into authorit
   policy, thread, nonce, and `max_workers` drift before worker effects.
 - **BRS-2b owner service loop**: bind the existing ready/ack channel to the selected
   handoff, service requests while futures run, and close before executor shutdown.
-  Keep controller/observation/workspace locks out of waits and callbacks.
+  Retain the run ownership lease; keep observation/workspace mutation locks out of
+  waits and callbacks.
 - **BRS-2c worker return boundary**: let the worker return only its execution result
   and retained admission digest. Keep publication, checkpoint save, head advance,
   and all C1/P/C2 decisions on the owner thread.
+- **Owner publication bridge (open)**: after receipt/output/handoff and before the
+  publication transaction, block the worker on a separate one-shot mailbox. The
+  owner performs the complete transaction and rejection continuation; only then may
+  the worker finish its result and the existing BRS-2c retirement/settlement run.
 - **BRS-2d serial next-ordinal transition**: after a durable terminal result, create
   a new handoff against the new owner head. Preserve the original wave reservation
   and `M0`; never prebind every child to one stale publication base.

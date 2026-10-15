@@ -85,21 +85,25 @@ The planned call sequence is:
 2. The owner creates the selected child's exact staging/dispatch permit while holding
    the existing owner context. The run ownership lease remains held for the whole
    live wave, including waits, so another process cannot mistake it for recovery.
-3. The worker enters its invocation scope with the one-shot handoff, runs only the
-   selected child, and sends the canonical prepared plan/journal/anchor bytes through
-   the existing ready channel.
+3. The worker enters its invocation scope with the one-shot handoff and runs only
+   the selected producer. After receipt/output/handoff, it submits bounded original
+   evidence to a separate publication mailbox and waits before any transaction.
 4. While any future is running, the owner services ready requests without holding the
    observation mutex or workspace mutation lock while waiting or running a worker
    callback. It retains the run ownership lease; the original owner-thread and CAS
    checks still guard each short admission mutation. It verifies the original
    wave/request and performs the existing precise admission CAS.
-5. The owner sends the exact acknowledgement digest. The worker revalidates its own
-   durable evidence and returns a result envelope; it cannot mutate lineage.
-6. The owner, on its thread, settles the selected execution, serializes publication
-   against the current head, advances the wave state, and only then selects the next
-   ordinal. Shared-workspace publication is therefore ordinal and owner-serialized.
-7. On close, the owner closes the channel before executor shutdown and wakes every
-   waiter. A racing durable pin remains an obligation; it is never rolled back.
+5. The owner executes the complete publication transaction while the original episode
+   is running and claim is started. Its prepared observer pins the actual journal/anchor
+   by exact CAS. Existing ready/ACK remains a pin-only facility, not a prerequisite
+   publication grant. Success uses before/staged/terminal; rejection C1/P/C2 also runs
+   on this owner before detached publication-result delivery.
+6. The worker revalidates the returned evidence, then completes its normal native result
+   and episode. It never receives a lineage owner or publication capability.
+7. On close, the owner closes the channel/mailbox before executor shutdown and wakes
+   every waiter. A racing durable pin remains an obligation. Only successful shutdown
+   permits the existing selected execution checkpoint settlement; serial next ordinal
+   still needs an independent exact transition.
 
 The owner may service a queued ready request while an earlier ordinal future runs,
 but it must not let a later child publish against a stale head. If a head, payload,
