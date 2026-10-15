@@ -1674,9 +1674,9 @@ class NativeRSISchedulerProvider:
     def __call__(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
     ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence | NativeRSIRejectionEvidence:
+        self._refuse_brs_worker_publication()
         if not isinstance(request, SolverRequest) or not isinstance(plan, NativeRSIExecutionPlan):
             _fail("input_invalid")
-        self._refuse_brs_worker_publication()
         context = self.context
         inputs = self._inputs(require_unexpired=True)
         memory = _memory_from_request_inputs(inputs, request)

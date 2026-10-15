@@ -177,6 +177,28 @@ def test_brs_scheduler_refuses_worker_publication_before_inputs_or_callbacks(
     assert not _rows(value)["rsi_python_admissions"]
 
 
+@pytest.mark.parametrize("argument", ["request", "plan"])
+def test_brs_scheduler_refuses_before_worker_input_class_callbacks(tmp_path, monkeypatch, argument):
+    value = _unregistered_publication(tmp_path)
+    events, callbacks = [], []
+    provider = _joined_provider(value, monkeypatch, events)
+
+    class CallbackInput:
+        def __getattribute__(self, name):
+            callbacks.append(name)
+            pytest.fail("BRS scheduler read worker input before publication refusal")
+
+    request = CallbackInput() if argument == "request" else value.request
+    plan = CallbackInput() if argument == "plan" else value.plan
+    with pytest.raises(
+        scheduler.NativeRSISchedulerProviderError,
+        match="^rsi_native_scheduler_brs_owner_publication_required$",
+    ):
+        _drive(value, monkeypatch, lambda: provider(request, plan))
+    assert callbacks == events == []
+    assert not _rows(value)["rsi_python_admissions"]
+
+
 @pytest.mark.parametrize("field", ["episode_id", "native_plan_sha256", "prepared_journal_sha256"])
 def test_drs_bridge_refuses_a_valid_record_from_other_prepared_evidence(tmp_path, field):
     value = _unregistered_publication(tmp_path)
