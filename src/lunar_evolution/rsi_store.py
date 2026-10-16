@@ -1642,6 +1642,105 @@ class RSILedger:
             ).fetchone()
             return self._native_claim_row(row, status=result.status)
 
+    def accept_native_episode_result(
+        self,
+        request: SolverRequest,
+        *,
+        plan_sha256: str,
+        result: SolverResult,
+        expected_claim: NativeEpisodeClaim,
+        controller_run_id: str,
+        expected_controller_checkpoint_sha256: str,
+        expected_episode_record_sha256: str,
+    ) -> NativeEpisodeClaim:
+        """Accept one worker result under the original controller owner and CAS pins.
+
+        ``publish_native_episode_result`` is the worker-side create-only write. This
+        companion is the owner-side response boundary: it requires the controller lock,
+        the exact current checkpoint and episode head, and the original native claim in
+        one SQLite transaction. It may fill a missing result row only after those pins
+        match; an existing row must contain the exact same request/result bytes. No
+        episode transition, publication or memory mutation is performed here.
+        """
+        if not isinstance(request, SolverRequest) or not isinstance(result, SolverResult):
+            raise RSILearningError("rsi_native_episode_result_invalid")
+        if not isinstance(expected_claim, NativeEpisodeClaim):
+            raise RSILearningError("rsi_native_episode_claim_identity_invalid")
+        controller_run_id = _id(controller_run_id, name="native_controller_run_id")
+        expected_controller_checkpoint_sha256 = _digest(
+            expected_controller_checkpoint_sha256,
+            name="native_controller_checkpoint_sha256",
+        )
+        expected_episode_record_sha256 = _digest(
+            expected_episode_record_sha256,
+            name="native_episode_record_sha256",
+        )
+        if result.episode_id != request.episode_id or result.request_sha256 != request.digest():
+            raise RSILearningError("rsi_native_episode_result_request_mismatch")
+        plan_sha256 = self._native_claim_plan(plan_sha256)
+        request_sha256 = request.digest()
+        self._assert_controller_lock(controller_run_id)
+        request_wire = canonical_json(request.to_dict(), maximum=128 * 1024).decode("utf-8")
+        result_wire = canonical_json(result.to_dict(), maximum=128 * 1024).decode("utf-8")
+        result_digest = hashlib.sha256(result_wire.encode("utf-8")).hexdigest()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._assert_controller_lock(controller_run_id)
+            history = self._controller_checkpoint_history_tx(connection, controller_run_id)
+            if not history or history[-1][0] != expected_controller_checkpoint_sha256:
+                raise RSILearningError("rsi_native_episode_controller_checkpoint_conflict")
+            claim_row = connection.execute(
+                "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
+                (request.episode_id,),
+            ).fetchone()
+            if claim_row is None:
+                raise RSILearningError("rsi_native_episode_claim_missing")
+            if (claim_row["request_sha256"] != request_sha256
+                    or claim_row["plan_sha256"] != plan_sha256):
+                raise RSILearningError("rsi_native_episode_claim_binding_drift")
+            actual_claim = self._native_claim_row(claim_row, status="started")
+            if actual_claim != replace(expected_claim, status="started"):
+                raise RSILearningError("rsi_native_episode_claim_identity_drift")
+            episode = self._head(connection, request.episode_id)
+            if episode is None or episode.record_sha256 != expected_episode_record_sha256:
+                raise RSILearningError("rsi_native_episode_record_conflict")
+            try:
+                durable_episode = PracticeEpisode.from_dict(episode.payload)
+            except (TypeError, ValueError, RSILearningError) as exc:
+                raise RSILearningError("rsi_native_episode_record_corrupt") from exc
+            if (
+                durable_episode.episode_id != request.episode_id
+                or durable_episode.request_sha256 != request_sha256
+                or durable_episode.status != result.status
+                or durable_episode.contract_sha256 != request.contract_sha256
+                or durable_episode.evaluator_sha256 != request.evaluator_sha256
+                or durable_episode.environment_sha256 != request.environment_sha256
+                or durable_episode.memory_snapshot_sha256 != request.memory_snapshot_sha256
+                or durable_episode.solver_id != request.solver_id
+            ):
+                raise RSILearningError("rsi_native_episode_result_binding_drift")
+            existing = connection.execute(
+                "SELECT request_sha256, request_payload, result_payload, result_sha256 "
+                "FROM rsi_episode_results WHERE episode_id = ?",
+                (request.episode_id,),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["request_sha256"] != request_sha256
+                    or existing["request_payload"] != request_wire
+                    or existing["result_payload"] != result_wire
+                    or existing["result_sha256"] != result_digest
+                ):
+                    raise RSILearningError("rsi_native_episode_result_conflict")
+            else:
+                connection.execute(
+                    "INSERT INTO rsi_episode_results VALUES (?, ?, ?, ?, ?, ?)",
+                    (request.episode_id, request_sha256, request_wire, result_wire,
+                     result_digest, utc_now()),
+                )
+            self._assert_controller_lock(controller_run_id)
+            return self._native_claim_row(claim_row, status=result.status)
+
     def recover_native_episode_claim(
         self, request: SolverRequest, *, plan_sha256: str,
     ) -> NativeEpisodeClaim:

@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
+from collections import deque
+from contextlib import nullcontext
 from dataclasses import fields, replace
 from pathlib import Path
-from threading import get_ident
+from threading import Condition, get_ident
 from typing import Any
 
 from . import _benchmark_files as _files
@@ -28,9 +31,14 @@ from .producer_bundle_lineage import (
     ProducerLineageStagedTransition,
     ProducerLineageTerminal,
     capture_lineage_snapshot_pin,
+    persist_lineage_bytes_snapshot,
+    persist_lineage_descriptor,
+    persist_lineage_snapshot,
     verify_persisted_lineage_snapshot,
 )
+from .producer_bundle_preflight import compute_archive_prefix_digest
 from .producer_bundle_publication import parse_producer_bundle_publication_journal
+from .python_producer_admission_handoff import read_python_producer_admission_handoff_pinned
 from .rsi_budget import RSIRunBudget
 from .rsi_gateway import SolverRequest
 from .rsi_identity import component_fingerprint
@@ -172,7 +180,39 @@ def _validate_persisted_policy(
 
 def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
-    from . import evolution
+    import contextlib
+    import sys
+    from types import FunctionType
+
+    from . import (
+        automatic_solve_lifecycle,
+        evolution,
+        native_trusted_attempt,
+        native_trusted_capture,
+        native_trusted_cleanup,
+        native_trusted_output,
+        native_trusted_receipt,
+        native_trusted_scheduler,
+        native_trusted_streams,
+        producer_bundle_admission,
+        producer_bundle_control,
+        producer_bundle_deadline,
+        producer_bundle_handoff,
+        producer_bundle_lineage,
+        producer_bundle_population,
+        producer_bundle_preflight,
+        producer_bundle_staging,
+        producer_bundle_transaction,
+        producer_handoff,
+        producer_process,
+        producer_request_transport,
+        python_producer_admission_handoff,
+        rsi_controller,
+        rsi_python_brs_native_dispatch,
+        rsi_python_brs_publication_inputs,
+        rsi_python_brs_publication_mailbox,
+        rsi_python_brs_publication_recovery,
+    )
     from . import rsi_python_scheduler_inputs as scheduler_inputs
     from .algorithm import (
         AlgorithmProblemContract,
@@ -194,6 +234,144 @@ def _policy() -> dict[str, Any]:
     )
     from .producer_bundle_transaction import _records_from_archive
     from .rsi_python_scheduler_inputs import _context
+
+    reader = rsi_python_brs_publication_recovery
+    dispatch = rsi_python_brs_native_dispatch
+    transaction = producer_bundle_transaction
+    control_binding = producer_bundle_control.bind_native_producer_bundle_control
+    control_implementation = getattr(control_binding, "__wrapped__", None)
+    closure = getattr(control_binding, "__closure__", None)
+    if (type(control_binding) is not FunctionType or type(control_implementation) is not FunctionType
+            or type(closure) is not tuple or len(closure) != 1
+            or closure[0].cell_contents is not control_implementation):
+        _fail("native_dispatch_control_binding_drift")
+    aliases = (
+        (persist_lineage_bytes_snapshot, producer_bundle_lineage.persist_lineage_bytes_snapshot),
+        (persist_lineage_snapshot, producer_bundle_lineage.persist_lineage_snapshot),
+        (persist_lineage_descriptor, producer_bundle_lineage.persist_lineage_descriptor),
+        (compute_archive_prefix_digest, producer_bundle_preflight.compute_archive_prefix_digest),
+        (read_python_producer_admission_handoff_pinned,
+         python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
+        (reader._context, scheduler_inputs._context),
+        (reader._request, rsi_python_brs_publication_mailbox._request),
+        (reader._request_from_native_preparation, rsi_python_brs_publication_inputs._request_from_native_preparation),
+        (reader.recover_native_trusted_producer, native_trusted_scheduler.recover_native_trusted_producer),
+        (reader.read_python_producer_admission_handoff_pinned,
+         python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
+        (reader._prepublication_control_pin, native_trusted_scheduler._prepublication_control_pin),
+        (reader.SolveExecutionControl, automatic_solve_lifecycle.SolveExecutionControl),
+        (dispatch.SolveExecutionControl, automatic_solve_lifecycle.SolveExecutionControl),
+        (dispatch._BRSLineageCheckpointOwner, _BRSLineageCheckpointOwner),
+        (dispatch.capture_lineage_snapshot_pin, producer_bundle_lineage.capture_lineage_snapshot_pin),
+        (dispatch.verify_persisted_lineage_snapshot, producer_bundle_lineage.verify_persisted_lineage_snapshot),
+        (dispatch.parse_producer_execution_receipt, producer_process.parse_producer_execution_receipt),
+        (transaction.bind_native_producer_bundle_control, producer_bundle_control.bind_native_producer_bundle_control),
+        (transaction.native_producer_bundle_budget_sha256, producer_bundle_control.native_producer_bundle_budget_sha256),
+        (transaction.persist_controlled_producer_bundle_intent, producer_bundle_deadline.persist_controlled_producer_bundle_intent),
+        (transaction.stage_producer_bundle_publication, producer_bundle_staging.stage_producer_bundle_publication),
+        (transaction.commit_producer_bundle_publication, producer_bundle_staging.commit_producer_bundle_publication),
+        (transaction.parse_producer_execution_receipt, producer_process.parse_producer_execution_receipt),
+        (native_trusted_scheduler.recover_native_trusted_execution_receipt,
+         native_trusted_receipt.recover_native_trusted_execution_receipt),
+        (native_trusted_scheduler.prepare_native_trusted_output, native_trusted_output.prepare_native_trusted_output),
+        (native_trusted_output.recover_native_trusted_execution_receipt,
+         native_trusted_receipt.recover_native_trusted_execution_receipt),
+        (native_trusted_output.recover_native_trusted_output_capture,
+         native_trusted_capture.recover_native_trusted_output_capture),
+        (native_trusted_output.recover_native_trusted_attempt, native_trusted_attempt.recover_native_trusted_attempt),
+        (native_trusted_receipt.recover_native_trusted_attempt, native_trusted_attempt.recover_native_trusted_attempt),
+        (native_trusted_receipt.recover_native_trusted_stream_capture,
+         native_trusted_streams.recover_native_trusted_stream_capture),
+        (native_trusted_receipt.recover_native_trusted_cleanup, native_trusted_cleanup.recover_native_trusted_cleanup),
+        (native_trusted_receipt.recover_native_trusted_output_capture,
+         native_trusted_capture.recover_native_trusted_output_capture),
+        (native_trusted_output.prepare_producer_bundle_manifest, producer_bundle_handoff.prepare_producer_bundle_manifest),
+        (native_trusted_output.prepare_producer_bundle_drafts, producer_bundle_population.prepare_producer_bundle_drafts),
+        (native_trusted_output.build_producer_bundle_admission_plan,
+         producer_bundle_admission.build_producer_bundle_admission_plan),
+        (native_trusted_output._read_envelope, producer_process._read_envelope),
+        (native_trusted_output.parse_producer_envelope, producer_handoff.parse_producer_envelope),
+        (native_trusted_capture.read_host_request_journal, producer_request_transport.read_host_request_journal),
+    )
+    if any(actual is not canonical for actual, canonical in aliases):
+        _fail("native_reader_binding_drift")
+    # Code fingerprints do not capture a function's globals. Pin the finite
+    # recovery entry chain to its canonical application module dictionary too.
+    # This also refuses replacing both sides of an import alias with one clone.
+    entries = (
+        *((getattr(producer_bundle_lineage, name), producer_bundle_lineage) for name in (
+            "persist_lineage_bytes_snapshot", "persist_lineage_snapshot", "persist_lineage_descriptor",
+            "_create_lineage_file", "_observe_file", "verify_lineage_snapshot_pin")),
+        (compute_archive_prefix_digest, producer_bundle_preflight),
+        *((getattr(evolution.PopulationStrategy, name), evolution) for name in (
+            "_validate_candidate_integrity_state", "_active", "_reconstruct_population_projection",
+            "_producer_admission_events", "_apply_producer_admissions", "_trim", "_capacity", "_candidates",
+            "_rank", "_family_elites", "_candidate_family")),
+        (evolution._novelty, evolution), (evolution._tokens, evolution),
+        *((getattr(_BRSLineageCheckpointOwner, name), sys.modules[__name__]) for name in (
+            "retain_staged", "verify_precommit", "retain_terminal", "_success_observe", "_success_fixed",
+            "_success_capacity", "_success_scope", "_success_control_live", "_success_allowance",
+            "_success_cap_unchanged",
+            "_success_entry", "_verify_staged_projection", "_candidate_materials")),
+        *((getattr(producer_bundle_staging, name), producer_bundle_staging) for name in (
+            "_load_marker", "_check_held_publication_lock", "_read", "_sha", "_canonical", "_marker_bytes", "_pretty", "_fail")),
+        *((getattr(producer_bundle_staging.ProducerBundlePublicationManifest, name), producer_bundle_staging)
+          for name in ("to_dict", "digest")),
+        *((getattr(reader._BRSRetainedNativePreparationReader, name), reader)
+          for name in ("__init__", "_scope", "_check", "_project", "recover")),
+        *((getattr(reader, name), reader) for name in (
+            "_fail", "_copy", "_comparison_preparation", "_arguments", "_dto_policy", "_control_pin")),
+        (rsi_python_brs_publication_inputs._request_from_native_preparation, rsi_python_brs_publication_inputs),
+        (scheduler_inputs._context, scheduler_inputs),
+        (rsi_python_brs_publication_mailbox._request, rsi_python_brs_publication_mailbox),
+        (native_trusted_scheduler.recover_native_trusted_producer, native_trusted_scheduler),
+        (native_trusted_scheduler._prepublication_control_pin, native_trusted_scheduler),
+        (native_trusted_receipt.recover_native_trusted_execution_receipt, native_trusted_receipt),
+        (native_trusted_receipt.build_native_trusted_execution_receipt, native_trusted_receipt),
+        (native_trusted_attempt.recover_native_trusted_attempt, native_trusted_attempt),
+        (native_trusted_streams.recover_native_trusted_stream_capture, native_trusted_streams),
+        (native_trusted_cleanup.recover_native_trusted_cleanup, native_trusted_cleanup),
+        (native_trusted_capture.recover_native_trusted_output_capture, native_trusted_capture),
+        (native_trusted_output.prepare_native_trusted_output, native_trusted_output),
+        (producer_process._read_envelope, producer_process),
+        (producer_handoff.parse_producer_envelope, producer_handoff),
+        (producer_bundle_handoff.prepare_producer_bundle_manifest, producer_bundle_handoff),
+        (producer_bundle_population.prepare_producer_bundle_drafts, producer_bundle_population),
+        (producer_bundle_admission.build_producer_bundle_admission_plan, producer_bundle_admission),
+        (python_producer_admission_handoff.read_python_producer_admission_handoff_pinned,
+         python_producer_admission_handoff),
+        (producer_request_transport.read_host_request_journal, producer_request_transport),
+        *((getattr(automatic_solve_lifecycle.SolveExecutionControl, name), automatic_solve_lifecycle)
+          for name in ("check", "is_cancelled", "_now")),
+        (automatic_solve_lifecycle._finite_time, automatic_solve_lifecycle),
+        (automatic_solve_lifecycle._stage_name, automatic_solve_lifecycle),
+        *((getattr(dispatch, name), dispatch) for name in (
+            "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
+            "_call_original_brs_owner", "_run_original_brs_native_publication")),
+        *((getattr(transaction, name), transaction) for name in (
+            "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+            "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
+            "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
+            "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")),
+        *((getattr(producer_bundle_staging, name), producer_bundle_staging) for name in (
+            "commit_producer_bundle_publication", "_commit_producer_bundle_publication",
+            "_commit_original_brs_producer_bundle_publication", "stage_producer_bundle_publication")),
+        (control_binding, contextlib),
+        (control_implementation, producer_bundle_control),
+        (producer_bundle_control.native_producer_bundle_budget_sha256, producer_bundle_control),
+        (rsi_controller.RSILearningController._pin_python_admission_for_original_brs_owner, rsi_controller),
+        (producer_process.parse_producer_execution_receipt, producer_process),
+        (producer_bundle_deadline.persist_controlled_producer_bundle_intent, producer_bundle_deadline),
+    )
+    if any(type(function) is not FunctionType or function.__globals__ is not vars(module)
+           for function, module in entries):
+        _fail("native_reader_globals_drift")
+    journal_defaults = producer_request_transport.read_host_request_journal.__kwdefaults__
+    if (type(journal_defaults) is not dict or any(type(key) is not str for key in journal_defaults)
+            or set(journal_defaults) != {"deadline", "monotonic", "expected_file_identity"}
+            or journal_defaults["deadline"] is not None or journal_defaults["expected_file_identity"] is not None
+            or journal_defaults["monotonic"] is not time.monotonic):
+        _fail("native_reader_binding_drift")
 
     return {
         "protocol": _PROTOCOL, "mode": "brs", "max_workers": 1,
@@ -219,7 +397,94 @@ def _policy() -> dict[str, Any]:
                                             "rsi_producer_staging_capsule.py", "producer_bundle_recovery.py",
                                             "producer_bundle_staging.py", "evolution.py", "algorithm.py",
                                             "candidate_bundle.py", "producer_bundle_transaction.py",
-                                            "rsi_python_scheduler_inputs.py")},
+                                            "rsi_python_scheduler_inputs.py",
+                                            "rsi_python_brs_publication_recovery.py",
+                                            "rsi_python_brs_publication_inputs.py",
+                                            "rsi_python_brs_publication_mailbox.py", "rsi_native_plan.py",
+                                            "rsi_python_brs_native_dispatch.py", "producer_bundle_control.py",
+                                            "producer_bundle_deadline.py",
+                                            "rsi_gateway.py", "rsi_python_brs_admission.py",
+                                            "automatic_solve_lifecycle.py", "native_trusted_scheduler.py",
+                                            "native_trusted_output.py", "native_trusted_receipt.py",
+                                            "native_trusted_capture.py", "native_trusted_attempt.py",
+                                            "native_trusted_streams.py", "native_trusted_cleanup.py",
+                                            "_benchmark_files.py", "bundle_evolution.py",
+                                            "native_bootstrap.py", "producer_bootstrap.py",
+                                            "producer_launcher.py", "producer_process.py",
+                                            "producer_bundle_handoff.py", "producer_bundle_population.py",
+                                            "producer_bundle_preflight.py",
+                                            "producer_handoff.py", "producer_request_transport.py",
+                                            "python_producer_admission_handoff.py")},
+            "retained_native_reader": {
+                "methods": {name: component_fingerprint(getattr(
+                    rsi_python_brs_publication_recovery._BRSRetainedNativePreparationReader, name))
+                    for name in ("__init__", "_scope", "_check", "_project", "recover")},
+                "helpers": {name: component_fingerprint(getattr(rsi_python_brs_publication_recovery, name))
+                    for name in ("_fail", "_copy", "_comparison_preparation", "_arguments", "_dto_policy", "_control_pin")},
+                "dto_types": reader._dto_policy(),
+                "projector": component_fingerprint(rsi_python_brs_publication_inputs._request_from_native_preparation),
+                "projector_binding": component_fingerprint(
+                    rsi_python_brs_publication_recovery._request_from_native_preparation),
+                "context_binding": component_fingerprint(rsi_python_brs_publication_recovery._context),
+                "request_binding": component_fingerprint(rsi_python_brs_publication_recovery._request),
+                "control_pin": component_fingerprint(rsi_python_brs_publication_recovery._prepublication_control_pin),
+                "control_check": component_fingerprint(rsi_python_brs_publication_recovery.SolveExecutionControl.check),
+                "control_cancelled": component_fingerprint(rsi_python_brs_publication_recovery.SolveExecutionControl.is_cancelled),
+                "control_clock": component_fingerprint(rsi_python_brs_publication_recovery.SolveExecutionControl._now),
+                "control_finite_time": component_fingerprint(automatic_solve_lifecycle._finite_time),
+                "control_stage_name": component_fingerprint(automatic_solve_lifecycle._stage_name),
+                "channel": component_fingerprint(rsi_python_brs_publication_recovery.BRSAdmissionChannel, config={}),
+                "recovery_binding": component_fingerprint(
+                    rsi_python_brs_publication_recovery.recover_native_trusted_producer),
+                "handoff_binding": component_fingerprint(
+                    rsi_python_brs_publication_recovery.read_python_producer_admission_handoff_pinned),
+                "native_recovery": component_fingerprint(native_trusted_scheduler.recover_native_trusted_producer),
+                "native_receipt_binding": component_fingerprint(
+                    native_trusted_scheduler.recover_native_trusted_execution_receipt),
+                "native_output_binding": component_fingerprint(native_trusted_scheduler.prepare_native_trusted_output),
+                "output": component_fingerprint(native_trusted_output.prepare_native_trusted_output),
+                "output_receipt_binding": component_fingerprint(
+                    native_trusted_output.recover_native_trusted_execution_receipt),
+                "output_capture_binding": component_fingerprint(
+                    native_trusted_output.recover_native_trusted_output_capture),
+                "output_terminal_binding": component_fingerprint(native_trusted_output.recover_native_trusted_attempt),
+                "receipt": component_fingerprint(native_trusted_receipt.recover_native_trusted_execution_receipt),
+                "receipt_projection": component_fingerprint(native_trusted_receipt.build_native_trusted_execution_receipt),
+                "receipt_terminal": component_fingerprint(native_trusted_receipt.recover_native_trusted_attempt),
+                "receipt_streams": component_fingerprint(native_trusted_receipt.recover_native_trusted_stream_capture),
+                "receipt_cleanup": component_fingerprint(native_trusted_receipt.recover_native_trusted_cleanup),
+                "receipt_capture": component_fingerprint(native_trusted_receipt.recover_native_trusted_output_capture),
+                "output_manifest": component_fingerprint(native_trusted_output.prepare_producer_bundle_manifest),
+                "output_drafts": component_fingerprint(native_trusted_output.prepare_producer_bundle_drafts),
+                "output_admission": component_fingerprint(native_trusted_output.build_producer_bundle_admission_plan),
+                "output_read_envelope": component_fingerprint(native_trusted_output._read_envelope),
+                "output_parse_envelope": component_fingerprint(native_trusted_output.parse_producer_envelope),
+                "broker_journal": component_fingerprint(native_trusted_capture.read_host_request_journal,
+                    config={"deadline": None, "expected_file_identity": None, "monotonic": "time.monotonic"}),
+                "capture": component_fingerprint(native_trusted_capture.recover_native_trusted_output_capture),
+                "handoff": component_fingerprint(
+                    python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
+            },
+            "private_native_dispatch": {
+                "helpers": {name: component_fingerprint(getattr(dispatch, name)) for name in (
+                    "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
+                    "_call_original_brs_owner", "_run_original_brs_native_publication")},
+                "transaction": {name: component_fingerprint(getattr(transaction, name)) for name in (
+                    "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+                    "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
+                    "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
+                    "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")},
+                "staging": {name: component_fingerprint(getattr(producer_bundle_staging, name)) for name in (
+                    "commit_producer_bundle_publication", "_commit_producer_bundle_publication",
+                    "_commit_original_brs_producer_bundle_publication", "stage_producer_bundle_publication")},
+                "control_binding": component_fingerprint(control_binding, config={}),
+                "control_implementation": component_fingerprint(control_implementation),
+                "budget": component_fingerprint(producer_bundle_control.native_producer_bundle_budget_sha256),
+                "deadline": component_fingerprint(producer_bundle_deadline.persist_controlled_producer_bundle_intent),
+                "prepared_pin": component_fingerprint(
+                    rsi_controller.RSILearningController._pin_python_admission_for_original_brs_owner),
+                "receipt_parser": component_fingerprint(producer_process.parse_producer_execution_receipt),
+            },
             "owner": component_fingerprint(_BRSLineageCheckpointOwner, config={}),
             "methods": {name: component_fingerprint(getattr(_BRSLineageCheckpointOwner, name)) for name in (
                 "__init__", "_identity", "_check_owner", "_running", "_before_entry", "_write",
@@ -227,6 +492,12 @@ def _policy() -> dict[str, Any]:
                 "_native_strategy", "_strategy_identity", "_history", "_success_entry",
                 "_initial_window", "_candidate_materials", "_verify_staged_projection",
                 "checkpoint_staged", "checkpoint_terminal",
+                "validate_before", "retain_before", "_before_unlocked", "_before_channel", "_live_before", "_before_wire",
+                "_before_control_state", "_before_control_live",
+                "retain_staged", "verify_precommit", "retain_terminal",
+                "_success_observe", "_success_fixed", "_success_capacity", "_success_scope",
+                "_success_control_live", "_success_allowance",
+                "_success_cap_unchanged",
             )},
             "readers": {name: component_fingerprint(getattr(lineage._LineageEvidenceReader, name)) for name in (
                 "_is_v2", "_validate_entry_shape", "_validate_source_pin_maps", "_verify_descriptor", "_snapshot_bytes",
@@ -273,6 +544,21 @@ def _policy() -> dict[str, Any]:
             "journal_parser": component_fingerprint(parse_producer_bundle_publication_journal),
             "capture_pin": component_fingerprint(capture_lineage_snapshot_pin),
             "verify_pin": component_fingerprint(verify_persisted_lineage_snapshot),
+            "before_persistence": {name: component_fingerprint(getattr(producer_bundle_lineage, name)) for name in (
+                "persist_lineage_bytes_snapshot", "persist_lineage_snapshot", "persist_lineage_descriptor",
+                "_create_lineage_file", "_observe_file", "verify_lineage_snapshot_pin",
+            )},
+            "before_population": {name: component_fingerprint(getattr(PopulationStrategy, name)) for name in (
+                "_validate_candidate_integrity_state", "_active",
+            )},
+            "before_prefix": component_fingerprint(compute_archive_prefix_digest),
+            "before_handoff": component_fingerprint(read_python_producer_admission_handoff_pinned),
+            "success_native": {
+                "marker_helpers": {name: component_fingerprint(getattr(producer_bundle_staging, name)) for name in (
+                    "_load_marker", "_check_held_publication_lock", "_read", "_sha", "_canonical", "_marker_bytes", "_pretty", "_fail")},
+                "manifest_write": component_fingerprint(producer_bundle_staging.ProducerBundlePublicationManifest.to_dict),
+                "manifest_digest": component_fingerprint(producer_bundle_staging.ProducerBundlePublicationManifest.digest),
+            },
             "shared_retained_bytes": component_fingerprint(lineage.RSIPublicationLineage._retained_bytes),
         },
     }
@@ -290,6 +576,10 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     __slots__ = (
         "_association",
         "_before_bytes",
+        "_before_cancelled",
+        "_before_channel_condition",
+        "_before_control",
+        "_before_control_pin",
         "_budget_bytes",
         "_channel",
         "_claim",
@@ -314,6 +604,8 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_provided_plan",
         "_provided_request",
         "_request",
+        "_retaining_before",
+        "_retaining_success",
         "_run_head",
         "_run_id",
         "_selected_context",
@@ -327,7 +619,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_strategy_config",
         "_strategy_context",
         "_strategy_contract",
+        "_success_deadline",
         "_thread",
+        "_validated_before",
         "_wave",
         "_workspace",
     )
@@ -364,6 +658,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._ledger, self._gateway = controller.ledger, controller.gateway
         self._workspace, self._sidecar, self._thread = wave.workspace, wave.sidecar, get_ident()
         self._channel, self._handoff, self._selected_context = wave.channel, handoff, context
+        self._before_channel_condition = self._channel._condition
         self._budget_bytes = controller._python_admission_flow_payload(wave.budget_state)
         self._handoff_bytes = BRSSelectedChildHandoff.canonical_bytes.fget(handoff)
         self._selected_context_bytes = canonical_json(BRSChildHandoffContext.to_dict(context))
@@ -423,6 +718,11 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 self._strategy_config, self._strategy_authority, self._strategy_contract,
             )
         self._phase, self._poisoned, self._prepared, self._before_bytes = "new", False, None, None
+        self._validated_before, self._retaining_before, self._retaining_success = None, False, None
+        self._success_deadline = None
+        self._before_control = None if self._native is None else self._native.execution_control
+        self._before_cancelled = None if self._native is None else self._native.cancelled
+        self._before_control_pin = self._before_control_state()
         self._check_owner(registered=False)
         if self._state.get(_FIELD) is not None:
             _fail("fresh_lineage_required")
@@ -497,13 +797,20 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             _fail("root_proof_drift")
 
     def _check_owner(self, *, captured: bool = True, registered: bool = True) -> dict[str, Any]:
+        scope, allowance = self._retaining_success, self._success_deadline
         self._identity(captured=captured, registered=registered)
         # Source/configuration callbacks can wait for another observer. They must
         # finish outside the short observation mutex and any workspace write lock.
         self._controller._python_admission_assert_selected_brs(self._wave, self._handoff)
+        if scope is not None:
+            self._success_scope(scope)
+            self._success_cap_unchanged(allowance)
         self._identity(captured=captured, registered=registered)
         if self._native is not None:
             self._native_strategy()
+        if scope is not None:
+            self._success_scope(scope)
+            self._success_cap_unchanged(allowance)
         with self._ledger.read_only_observations():
             self._running()
             self._controller._python_admission_active_brs_owner(self._wave)
@@ -648,6 +955,271 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             if filename == "seed-commit.json" or _files.read_regular_file(path, lineage.MAX_LINEAGE_SNAPSHOT_BYTES).strip():
                 _fail("success_initial_window_required")
 
+    def _before_unlocked(self) -> None:
+        from .producer_bundle_staging import _HELD_PUBLICATION_LOCKS
+
+        # Unlike the DRS facade, the BRS owner performs source/config callbacks.
+        # Refuse a locked caller before any such observation, including reentry.
+        if type(self) is not _BRSLineageCheckpointOwner or _HELD_PUBLICATION_LOCKS.get():
+            _fail("before_unlocked_owner_required")
+
+    def _before_channel(self) -> None:
+        from .rsi_python_brs_admission import BRSAdmissionChannel
+
+        channel, condition = self._channel, self._before_channel_condition
+        if type(channel) is not BRSAdmissionChannel or type(condition) is not Condition:
+            _fail("before_channel_drift")
+        nonce = json.loads(self._handoff_bytes)["lease_nonce"]
+        digest = hashlib.sha256(self._handoff_bytes).hexdigest()
+        with condition:
+            if (self._wave.channel is not channel or channel._condition is not condition
+                    or channel._closed is not False or type(channel._owner_thread) is not int
+                    or channel._owner_thread != self._thread or type(channel._run_id) is not str
+                    or channel._run_id != self._run_id or type(self._wave.episode_ids) is not tuple
+                    or any(type(item) is not str for item in self._wave.episode_ids)
+                    or type(channel._episode_ids) is not frozenset
+                    or any(type(item) is not str for item in channel._episode_ids)
+                    or channel._episode_ids != frozenset(self._wave.episode_ids)
+                    or channel._handoff_mode is not True or channel._servicing is not False
+                    or type(channel._selected_episode_id) is not str
+                    or channel._selected_episode_id != self._request.episode_id
+                    or type(channel._selected_handoff_sha256) is not str or channel._selected_handoff_sha256 != digest
+                    or type(channel._consumed_handoff_nonces) is not set
+                    or any(type(item) is not str for item in channel._consumed_handoff_nonces)
+                    or channel._consumed_handoff_nonces != {nonce}
+                    or type(channel._completed_selected_episodes) is not set or channel._completed_selected_episodes
+                    or type(channel._requests) is not dict or channel._requests
+                    or type(channel._queue) is not deque or channel._queue):
+                _fail("before_channel_drift")
+
+    def _before_control_state(self):
+        from .automatic_solve_lifecycle import SolveExecutionControl
+        from .rsi_python_brs_publication_recovery import _control_pin
+
+        control = self._before_control
+        if (self._native is not None and (self._native.execution_control is not control
+                or self._native.cancelled is not self._before_cancelled)):
+            _fail("before_control_drift")
+        if control is not None:
+            if type(control) is not SolveExecutionControl:
+                _fail("before_control_drift")
+            # Refuse foreign numeric types before the shared finite-time helper
+            # can compare their metaclass against its allowed scalar types.
+            values = object.__getattribute__(control, "__dict__")
+            if (type(values) is not dict or any(type(key) is not str for key in values)
+                    or any(type(values.get(name)) is not int and type(values.get(name)) is not float
+                           for name in ("started_at", "deadline", "timeout_seconds"))):
+                _fail("before_control_drift")
+        return _control_pin(control)
+
+    def _before_control_live(self) -> float | None:
+        from .automatic_solve_lifecycle import SolveExecutionControl
+
+        if self._before_control_state() != self._before_control_pin:
+            _fail("before_control_drift")
+        if self._before_cancelled is not None:
+            cancelled = self._before_cancelled()
+            if type(cancelled) is not bool or cancelled:
+                _fail("before_control_cancelled")
+        if self._before_control_state() != self._before_control_pin:
+            _fail("before_control_drift")
+        remaining = None
+        if self._before_control is not None:
+            remaining = SolveExecutionControl.check(self._before_control, "rsi_brs_before_evidence")
+        if self._before_control_state() != self._before_control_pin:
+            _fail("before_control_drift")
+        return remaining
+
+    def _live_before(self, archive: bytes, state_bytes: bytes) -> None:
+        path = self._workspace / "evolution/archive.jsonl"
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            if archive:
+                _fail("before_source_drift")
+        else:
+            if _files.read_regular_file(path, lineage.MAX_LINEAGE_SNAPSHOT_BYTES) != archive:
+                _fail("before_source_drift")
+        if (_files.read_regular_file(self._workspace / "evolution/state.json", lineage.MAX_LINEAGE_SNAPSHOT_BYTES)
+                != state_bytes or lineage._root_pin(self._workspace) != self._association["workspace"]):
+            _fail("before_source_drift")
+        lineage._require_marker_absent(self._workspace)
+
+    def validate_before(self, journal: Any, base_archive: bytes, base_state_bytes: bytes,
+                        strategy: Any, *, admission_plan: Any = None) -> tuple[tuple[str, ...], ...]:
+        """Observe only the original first native prefix; retain no files or CAS."""
+        from .evolution import CandidateIntegrityAuthority, EvolutionConfig, PopulationStrategy
+        from .producer_bundle_admission import ProducerBundleAdmissionPlan
+        from .producer_bundle_publication import ProducerBundlePublicationJournal
+
+        try:
+            self._before_unlocked()
+            lineage._publication_shapes(journal, admission_plan)
+            if (type(journal) is not ProducerBundlePublicationJournal or type(strategy) is not PopulationStrategy
+                    or type(base_archive) is not bytes or type(base_state_bytes) is not bytes):
+                _fail("before_inputs_invalid")
+            self._check_owner()
+            self._before_channel()
+            self._native_strategy()
+            self._before_control_live()
+            self._identity()
+            self._before_channel()
+            if self._phase not in {"new", "before", "prepared-evidence"} or strategy is not self._strategy:
+                _fail("before_unavailable")
+            if (len(base_archive) > lineage.MAX_LINEAGE_SNAPSHOT_BYTES
+                    or len(base_state_bytes) > lineage.MAX_LINEAGE_SNAPSHOT_BYTES):
+                _fail("capacity_exceeded")
+            parsed = parse_producer_bundle_publication_journal(journal.to_dict())
+            if admission_plan is None:
+                if self._validated_before is None:
+                    _fail("before_admission_required")
+                admission_plan = parse_producer_bundle_admission_plan(json.loads(self._validated_before)["admission_plan"])
+            if type(admission_plan) is not ProducerBundleAdmissionPlan:
+                _fail("before_inputs_invalid")
+            admission = parse_producer_bundle_admission_plan(admission_plan.to_dict())
+            binding = self._sidecar.binding
+            authority = (binding.contract_sha256, self._plan.evaluator_kind, binding.evaluator_fingerprint,
+                binding.intent.runner_fingerprint, binding.dependency_sha256, binding.environment_sha256)
+            if (parsed != journal or parsed.state != "prepared"
+                    or (parsed.run_id, parsed.journal_id, parsed.parent_task_id, parsed.task_id) !=
+                    (self._run_id, self._plan.journal_id, self._plan.parent_task_id, self._plan.task_id)
+                    or parsed.admission_sha256 != admission.digest()
+                    or parsed.base_archive_sha256 != lineage._sha(base_archive)
+                    or parsed.base_state_sha256 != lineage._sha(base_state_bytes)
+                    or (parsed.contract_sha256, parsed.evaluator_kind, parsed.evaluator_fingerprint,
+                        parsed.runner_fingerprint, parsed.dependency_sha256, parsed.environment_sha256) != authority
+                    or (admission.contract_sha256, admission.evaluator_kind, admission.evaluator_fingerprint,
+                        admission.runner_fingerprint, admission.dependency_sha256, admission.environment_sha256) != authority
+                    or tuple((item.bundle_id, item.bundle_sha256) for item in parsed.candidates) !=
+                    tuple((item.bundle_id, item.bundle_sha256) for item in admission.bundles)
+                    or parsed.population_config_sha256 != lineage._sha(lineage._raw(
+                        EvolutionConfig.to_dict(self._strategy_config)))
+                    or parsed.num_islands != self._strategy_config.num_islands):
+                _fail("before_binding_invalid")
+            state = json.loads(base_state_bytes)
+            if (type(state) is not dict or state.get("config") != EvolutionConfig.to_dict(self._strategy_config)
+                    or state.get("candidate_integrity_authority") !=
+                    CandidateIntegrityAuthority.to_dict(self._strategy_authority)
+                    or state.get("contract_sha256") != parsed.contract_sha256):
+                _fail("native_configuration_drift")
+            self._initial_window(base_archive, base_state_bytes)
+            if (type(state.get("active_ids")) is not dict
+                    or parsed.archive_prefix_sha256 != compute_archive_prefix_digest(
+                        lineage._sha(base_archive), lineage._sha(base_state_bytes),
+                        strategy_config_sha256=lineage._sha(lineage._raw(state["config"])),
+                        active_ids_sha256=lineage._sha(lineage._raw(state["active_ids"])))):
+                _fail("before_prefix_drift")
+            if parsed.python_handoff_file_pin is None or parsed.native_execution_receipt_sha256 is None:
+                _fail("before_handoff_required")
+            held = read_python_producer_admission_handoff_pinned(
+                self._workspace / "evolution/producer-batches" / self._plan.journal_id,
+                expected_file_pin=parsed.python_handoff_file_pin,
+            ).handoff
+            if ((held.run_id, held.journal_id, held.parent_task_id, held.task_id, held.binding_sha256,
+                 held.launch_intent_sha256, held.attestation_sha256, held.handoff_sha256,
+                 held.native_execution_receipt_sha256, held.admission_plan_sha256) !=
+                (self._run_id, self._plan.journal_id, self._plan.parent_task_id, self._plan.task_id,
+                 binding.binding_sha256, binding.intent_sha256, binding.attestation_sha256,
+                 parsed.python_handoff_sha256, parsed.native_execution_receipt_sha256, admission.digest())):
+                _fail("before_handoff_drift")
+            self._live_before(base_archive, base_state_bytes)
+            PopulationStrategy._validate_candidate_integrity_state(strategy, state)
+            PopulationStrategy._active(strategy, state)
+            self._check_owner()
+            self._before_control_live()
+            self._identity()
+            self._before_channel()
+            capture = lineage._raw({"journal": parsed.to_dict(), "admission_plan": admission.to_dict()})
+            if (self._validated_before is not None and self._validated_before != capture
+                    or self._prepared is not None and self._prepared != parsed):
+                _fail("before_capture_drift")
+            self._live_before(base_archive, base_state_bytes)
+            self._validated_before = capture
+            return ()
+        except BaseException:
+            self._poisoned = True
+            raise
+
+    def _before_wire(self, journal, admission, archive_pin, state_pin, descriptor_pin, sources):
+        before = ProducerLineageBeforeIntent(self._run_id, journal.journal_id, 0, None, None, archive_pin, state_pin)
+        return {**self._association, "batches": [{
+            "journal_id": journal.journal_id, "ordinal": 0, "episode_id": self._request.episode_id,
+            "request_sha256": self._request.digest(), "memory_snapshot_sha256": self._memory.digest(),
+            "native_plan_sha256": self._plan.plan_sha256, "admission_plan": admission.to_dict(),
+            "prepared_journal": journal.to_dict(), "before": before.to_dict(),
+            "before_file_pin": descriptor_pin.to_dict(),
+            "snapshots": {"archive-before": archive_pin.to_dict(), "state-before": state_pin.to_dict()},
+            "before_sources": sources, "state": "before", "evidence_pins": {},
+        }], "head": None, "rejections": []}
+
+    def retain_before(self, journal: Any, base_archive: bytes, base_state_bytes: bytes) -> None:
+        """Create genuine first-before evidence, then use the original checkpoint CAS."""
+        try:
+            self._before_unlocked()
+            if self._retaining_before or self._phase != "new" or self._validated_before is None:
+                _fail("before_retention_unavailable")
+            self._retaining_before = True
+            admission = parse_producer_bundle_admission_plan(json.loads(self._validated_before)["admission_plan"])
+            self.validate_before(journal, base_archive, base_state_bytes, self._strategy, admission_plan=admission)
+            self._before_channel()
+            empty = {**self._association, "batches": [], "head": None, "rejections": []}
+            total = lineage.RSIPublicationLineage._retained_bytes(empty, self._state)
+            if total + len(base_archive) + len(base_state_bytes) > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+                _fail("capacity_exceeded")
+            archive_path, state_path = self._workspace / "evolution/archive.jsonl", self._workspace / "evolution/state.json"
+            try:
+                archive_path.lstat()
+            except FileNotFoundError:
+                archive_source = None
+                sources = {"archive": {"missing": True, "parent": lineage._root_pin(archive_path.parent)}}
+            else:
+                archive_source = capture_lineage_snapshot_pin(archive_path, name="archive-before")
+                sources = {"archive": archive_source.to_dict()}
+            state_source = capture_lineage_snapshot_pin(state_path, name="state-before")
+            sources["state"] = state_source.to_dict()
+            for source, raw in ((archive_source, base_archive), (state_source, base_state_bytes)):
+                if source is not None and (source.sha256 != lineage._sha(raw) or source.size != len(raw)):
+                    _fail("before_source_drift")
+            # Maximum inode/stat fields bound the checkpoint before any create.
+            # These synthetic pins are used only for capacity; never as evidence.
+            def capacity_pin(name, size):
+                maximum = 2**64 - 1
+                return LineageSnapshotPin(name, "f" * 64, size, maximum, maximum, maximum, maximum,
+                    mtime_ns=maximum, ctime_ns=maximum)
+            projected = self._before_wire(journal, admission,
+                capacity_pin("archive-before.snapshot", len(base_archive)),
+                capacity_pin("state-before.snapshot", len(base_state_bytes)), capacity_pin("before.json", 4096), sources)
+            lineage.RSIPublicationLineage._retained_bytes(projected, self._state)
+            lineage._raw(lineage._publication_lineage_checkpoint_delta(self._payload, projected))
+            self.validate_before(journal, base_archive, base_state_bytes, self._strategy, admission_plan=admission)
+            self._before_channel()
+            if archive_source is None:
+                archive_file, archive_pin = persist_lineage_bytes_snapshot(self._workspace, journal.journal_id,
+                    name="archive-before", raw=base_archive, expected_sha256=lineage._sha(base_archive), retained_bytes=total)
+            else:
+                archive_file, archive_pin = persist_lineage_snapshot(self._workspace, journal.journal_id,
+                    name="archive-before", source=archive_path, expected_pin=archive_source, retained_bytes=total)
+            state_file, state_pin = persist_lineage_snapshot(self._workspace, journal.journal_id,
+                name="state-before", source=state_path, expected_pin=state_source, retained_bytes=total + archive_pin.size)
+            for path, pin, raw in ((archive_file, archive_pin, base_archive), (state_file, state_pin, base_state_bytes)):
+                verify_persisted_lineage_snapshot(path, pin)
+                if _files.read_regular_file(path, lineage.MAX_LINEAGE_SNAPSHOT_BYTES) != raw:
+                    _fail("before_snapshot_drift")
+                verify_persisted_lineage_snapshot(path, pin)
+            before = ProducerLineageBeforeIntent(self._run_id, journal.journal_id, 0, None, None, archive_pin, state_pin)
+            _path, descriptor_pin = persist_lineage_descriptor(self._workspace, before)
+            wire = self._before_wire(journal, admission, archive_pin, state_pin, descriptor_pin, sources)
+            self.validate_before(journal, base_archive, base_state_bytes, self._strategy, admission_plan=admission)
+            if self._retaining_before is not True:
+                _fail("before_retention_scope_drift")
+            self._before_channel()
+            _BRSLineageCheckpointOwner.checkpoint_before(self, wire)
+        except BaseException:
+            self._poisoned = True
+            raise
+        finally:
+            self._retaining_before = False
+
     def _candidate_materials(self, entry, files, archive_after: bytes, *, staged: bool):
         """Bind archive rows to verified materials and retain exact source bytes."""
         from .candidate_bundle import parse_candidate_source_bundle
@@ -752,11 +1324,23 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         if observed != expected or lineage._sha(raw["state-after"]) != entry["state_projection_sha256"]:
             _fail("state_projection_drift")
 
-    def _success_entry(self, wire: object, *, phase: str) -> dict[str, Any]:
+    def _success_entry(self, wire: object, *, phase: str, observing: bool = False,
+                       fixed: bool = False) -> dict[str, Any]:
         from .rsi_python_admission import validate_rsi_python_admission_shapes
 
+        scope, allowance = self._retaining_success, self._success_deadline
         validate_rsi_python_admission_shapes(wire)
-        self._native_strategy()
+        if type(observing) is not bool or type(fixed) is not bool:
+            _fail("success_invalid")
+        if observing or fixed:
+            self._strategy_identity()
+            if self._native is None:
+                _fail("native_strategy_required")
+        else:
+            self._native_strategy()
+        if scope is not None:
+            self._success_scope(scope)
+            self._success_cap_unchanged(allowance)
         # The shared terminal schema binds its task directly to this episode.
         # Legacy root-task before/prepared evidence cannot mint that association.
         if self._plan.task_id != self._request.episode_id:
@@ -774,9 +1358,11 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             _fail("success_invalid")
         self._validate_entry_shape(entry)
         old = json.loads(self._payload).get(_FIELD)
-        if (type(old) is not dict or (self._phase, phase) not in {
-                ("prepared-evidence", "staged"), ("staged", "terminal")
-        } or old != self._state.get(_FIELD)):
+        if (type(old) is not dict or old != self._state.get(_FIELD)
+                or (observing and (self._phase != "staged" or phase != "staged" or detached != old))
+                or (not observing and (self._phase, phase) not in {
+                    ("prepared-evidence", "staged"), ("staged", "terminal")
+                })):
             _fail("success_unavailable")
         previous = old["batches"][0]
         for key, value in previous.items():
@@ -869,6 +1455,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             lineage.RSIPublicationLineage._verify_after_source_pins(self, entry)
         for name, held_pin in entry["evidence_pins"].items():
             verify_persisted_lineage_snapshot(batch / name, LineageSnapshotPin.from_dict(held_pin))
+        if scope is not None:
+            self._success_scope(scope)
+            self._success_cap_unchanged(allowance)
         return detached
 
     def _before_entry(self, wire: object, *, live_sources: bool = True) -> dict[str, Any]:
@@ -934,6 +1523,11 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         return detached
 
     def _write(self, wire: dict[str, Any]) -> str:
+        retaining_before = self._retaining_before
+        retaining_success = self._retaining_success
+        if type(retaining_before) is not bool:
+            _fail("before_retention_scope_drift")
+        self._success_scope(retaining_success)
         self._check_owner()
         phase = wire["batches"][0]["state"]
         wire = self._before_entry(wire) if phase == "before" else self._success_entry(wire, phase=phase)
@@ -953,7 +1547,33 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         expected = lineage._publication_lineage_checkpoint_delta(self._payload, wire)
         payload = self._controller._python_admission_flow_payload(expected)
         self._identity()
+        if self._retaining_before is not retaining_before:
+            _fail("before_retention_scope_drift")
+        self._success_scope(retaining_success)
+        if retaining_before:
+            self._before_control_live()
+            self._identity()
+            with self._ledger.read_only_observations():
+                self._running()
+                self._controller._python_admission_active_brs_owner(self._wave)
+                self._history()
+            self._before_entry(wire)
+            self._before_channel()
+        if retaining_success is not None:
+            started = time.monotonic()
+            self._success_entry(wire, phase=phase)
+            self._success_control_live(started)
+            self._success_fixed()
+            self._success_entry(wire, phase=phase, fixed=True)
+            self._success_scope(retaining_success)
+            self._success_fixed()
         head = self._ledger.write_controller_checkpoint(self._run_id, expected, expected_sha256=self._head)
+        if retaining_success is not None:
+            self._success_control_live(time.monotonic())
+        elif retaining_before:
+            self._before_control_live()
+        if retaining_success is not None:
+            self._success_entry(wire, phase=phase, fixed=True)
         with self._ledger.read_only_observations():
             observed = self._ledger.controller_checkpoint(self._run_id)
             observed_head = None if observed is None else observed[0]
@@ -969,11 +1589,23 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 self._ledger.get_run(self._run_id), expected,
             )
             self._history(expected)
+        if retaining_success is not None:
+            self._success_allowance()
+            self._before_channel()
         # No shared state or captured authority advances before the entire readback.
-        with self._controller._python_admission_brs_observations():
+        with self._controller._python_admission_brs_observations(), (
+            self._before_channel_condition if retaining_before or retaining_success is not None else nullcontext()
+        ):
             # Keep source fingerprints and all configuration hooks out of this
             # short observation mutex. The complete gate just ran above.
             self._controller._python_admission_assert_brs_wave(self._wave, owner=True)
+            if self._retaining_before is not retaining_before:
+                _fail("before_retention_scope_drift")
+            self._success_scope(retaining_success)
+            if retaining_success is not None:
+                self._success_allowance()
+            if retaining_before or retaining_success is not None:
+                self._before_channel()
             if (self._wave.state is not self._state or self._wave.selected_handoff is not self._handoff
                     or self._wave.selected_context is not self._selected_context
                     or self._wave.checkpoint_sha256 != self._head or self._wave.payload != self._payload
@@ -989,7 +1621,10 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     def checkpoint_before(self, wire: object) -> str:
         """CAS one genuine first-before observation; no descriptor creation/publication."""
         try:
+            retaining_before = self._retaining_before
             self._check_owner()
+            if self._retaining_before is not retaining_before:
+                _fail("before_retention_scope_drift")
             if self._phase != "new" or self._state.get(_FIELD) is not None:
                 _fail("before_unavailable")
             detached = self._before_entry(wire)
@@ -1071,6 +1706,262 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         except BaseException:
             self._poisoned = True
             raise
+
+    def _success_scope(self, expected: str | None) -> None:
+        current = self._retaining_success
+        if (current is not None and (type(current) is not str or current not in {"staged", "terminal"})
+                or current != expected or (current is not None and self._retaining_before is not False)):
+            _fail("success_retention_scope_drift")
+
+    def _success_fixed(self, _stage: str | None = None) -> dict[str, Any]:
+        """Observe fixed original pins only; never invoke hooks or reacquire the run lease."""
+        self._identity()
+        self._success_allowance()
+        with self._ledger.read_only_observations():
+            self._running()
+            self._controller._python_admission_active_brs_owner(self._wave)
+            self._history()
+        self._before_channel()
+        return self._state
+
+    def _success_allowance(self) -> None:
+        """Charge this retention's conservative monotonic cap without user callbacks."""
+        if self._before_control_state() != self._before_control_pin:
+            _fail("before_control_drift")
+        if self._before_control is not None:
+            with self._before_control._lock:
+                if self._before_control._cancelled is not False:
+                    _fail("before_control_cancelled")
+        if self._success_deadline is not None:
+            if self._retaining_success is None or type(self._success_deadline) is not float:
+                _fail("success_allowance_drift")
+            if time.monotonic() >= self._success_deadline:
+                _fail("success_allowance_exhausted")
+
+    def _success_cap_unchanged(self, expected: float | None) -> None:
+        if ((expected is not None and type(expected) is not float)
+                or self._success_deadline is not expected):
+            _fail("success_allowance_drift")
+
+    def _success_control_live(self, started: float) -> None:
+        scope, allowance = self._retaining_success, self._success_deadline
+        self._success_allowance()
+        remaining = self._before_control_live()
+        self._success_scope(scope)
+        self._success_cap_unchanged(allowance)
+        self._success_allowance()
+        if remaining is not None and scope is not None:
+            deadline = started + remaining
+            if allowance is None:
+                self._success_deadline = deadline
+            else:
+                self._success_deadline = min(allowance, deadline)
+        self._success_allowance()
+
+    def _success_observe(self, _stage: str | None = None) -> dict[str, Any]:
+        """Run original full source/control observations outside publication locks."""
+        self._before_unlocked()
+        started = time.monotonic()
+        self._check_owner()
+        self._success_control_live(started)
+        return self._success_fixed()
+
+    def _success_capacity(self, wire: dict[str, Any]) -> int:
+        """Bound real snapshot bytes and conservative new file pins before any create."""
+        total = lineage.RSIPublicationLineage._retained_bytes(wire, self._state)
+        projected = json.loads(lineage._raw(wire))
+        entry = projected["batches"][0]
+        maximum = 2**64 - 1
+        names = ("staged_file_pin",) if entry["state"] == "staged" else ("terminal_file_pin",)
+        pins = [entry[name] for name in names]
+        if entry["state"] == "staged":
+            pins.extend(entry["snapshots"][name] for name in ("archive-after", "state-after"))
+        for pin in pins:
+            pin.update({name: maximum for name in
+                        ("device", "inode", "parent_device", "parent_inode", "mtime_ns", "ctime_ns")})
+        lineage._raw(lineage._publication_lineage_checkpoint_delta(self._payload, projected))
+        return total
+
+    def retain_staged(self, staged: Any, manifest: Any) -> None:
+        """Retain genuine native after evidence, then acknowledge its original BRS CAS."""
+        from .producer_bundle_publication import ProducerBundlePublicationJournal
+        from .producer_bundle_staging import ProducerBundlePublicationManifest
+
+        if type(self) is not _BRSLineageCheckpointOwner:
+            _fail("owner_invalid")
+        try:
+            self._before_unlocked()
+            lineage._publication_shapes(staged, manifest)
+            if (type(staged) is not ProducerBundlePublicationJournal
+                    or type(manifest) is not ProducerBundlePublicationManifest
+                    or self._phase != "prepared-evidence" or self._retaining_success is not None
+                    or self._retaining_before is not False or self._plan.task_id != self._request.episode_id):
+                _fail("staged_retention_unavailable")
+            self._retaining_success = "staged"
+            self._success_deadline = None
+            self._success_observe()
+            wire = json.loads(self._payload)[_FIELD]
+            entry = wire["batches"][0]
+            lineage.RSIPublicationLineage._verify_before_source_pins(self, entry)
+            batch = recovery._batch(self._workspace, self._plan.journal_id)
+            if (staged.journal_id != self._plan.journal_id or staged.state != "publishing"
+                    or staged.publication_phase != "staged" or manifest.journal_id != staged.journal_id
+                    or manifest.journal_sha256 != staged.digest()
+                    or manifest.base_archive_sha256 != self._prepared.base_archive_sha256
+                    or manifest.base_state_sha256 != self._prepared.base_state_sha256):
+                _fail("staged_association_invalid")
+            evidence = {name: capture_lineage_snapshot_pin(batch / name, name=name).to_dict()
+                        for name in ("journal.staged.json", "manifest.json", "preflight.json")}
+            if recovery._read_journal(batch / "journal.staged.json") != staged:
+                _fail("staged_journal_drift")
+            preflight = recovery._read_json(batch / "preflight.json", 128 * 1024)
+            preflight_sha = recovery._check_preflight(preflight, staged,
+                parse_producer_bundle_admission_plan(entry["admission_plan"]))
+            raw_manifest = recovery._read_json(batch / "manifest.json", 256 * 1024)
+            manifest_sha, ids, _paths, _files_map = recovery._manifest(raw_manifest, staged, preflight_sha)
+            if manifest_sha != manifest.digest() or ids != manifest.candidate_ids or raw_manifest != manifest.to_dict():
+                _fail("staged_manifest_drift")
+            sources, contents, snapshots = {}, {}, {}
+            for name in ("archive", "state"):
+                path = batch / "stage" / (name + (".jsonl" if name == "archive" else ".json"))
+                source = capture_lineage_snapshot_pin(path, name=name + "-after")
+                raw = _files.read_regular_file(path, lineage.MAX_LINEAGE_SNAPSHOT_BYTES)
+                if lineage._sha(raw) != getattr(manifest, name + "_after_sha256") or source.sha256 != lineage._sha(raw):
+                    _fail("staged_snapshot_drift")
+                sources[name], contents[name] = source.to_dict(), raw
+                snapshots[name + "-after"] = replace(source, name=name + "-after.snapshot").to_dict()
+            transition = ProducerLineageStagedTransition(self._run_id, staged.journal_id, 0,
+                entry["before"]["descriptor_sha256"], staged.digest(), manifest.digest(),
+                manifest.archive_after_sha256, manifest.state_after_sha256, manifest.candidate_ids)
+            capacity_pin = replace(LineageSnapshotPin.from_dict(sources["state"]), name="staged.json",
+                sha256=lineage._sha(transition.to_json()), size=len(transition.to_json()))
+            entry.update(state="staged", staged=transition.to_dict(), staged_file_pin=capacity_pin.to_dict(),
+                state_projection_sha256=lineage._sha(contents["state"]), after_sources=sources)
+            entry["snapshots"].update(snapshots)
+            entry["evidence_pins"].update(evidence)
+            self._success_capacity(wire)
+            total = lineage.RSIPublicationLineage._retained_bytes(json.loads(self._payload)[_FIELD], self._state)
+            self._success_observe()
+            lineage.RSIPublicationLineage._verify_before_source_pins(self, entry)
+            for name, pin in evidence.items():
+                verify_persisted_lineage_snapshot(batch / name, LineageSnapshotPin.from_dict(pin))
+            for name in ("archive", "state"):
+                source = batch / "stage" / (name + (".jsonl" if name == "archive" else ".json"))
+                path, pin = persist_lineage_snapshot(self._workspace, staged.journal_id,
+                    name=name + "-after", source=source, expected_pin=LineageSnapshotPin.from_dict(sources[name]),
+                    retained_bytes=total)
+                if _files.read_regular_file(path, lineage.MAX_LINEAGE_SNAPSHOT_BYTES) != contents[name]:
+                    _fail("staged_snapshot_drift")
+                verify_persisted_lineage_snapshot(path, pin)
+                entry["snapshots"][name + "-after"] = pin.to_dict()
+                total += pin.size
+            _path, pin = persist_lineage_descriptor(self._workspace, transition)
+            entry["staged_file_pin"] = pin.to_dict()
+            self._success_scope("staged")
+            _BRSLineageCheckpointOwner.checkpoint_staged(self, wire)
+        except BaseException:
+            self._poisoned = True
+            raise
+        finally:
+            self._retaining_success = None
+            self._success_deadline = None
+
+    def verify_precommit(self, staged: Any, manifest: Any) -> None:
+        """Read original staged evidence under its genuine lock, without user hooks."""
+        from . import producer_bundle_staging as staging
+        from .producer_bundle_publication import ProducerBundlePublicationJournal
+
+        if type(self) is not _BRSLineageCheckpointOwner:
+            _fail("owner_invalid")
+        try:
+            lineage._publication_shapes(staged, manifest)
+            if (type(staged) is not ProducerBundlePublicationJournal
+                    or type(manifest) is not staging.ProducerBundlePublicationManifest
+                    or self._phase != "staged" or self._retaining_success is not None
+                    or self._success_deadline is not None):
+                _fail("precommit_state_invalid")
+            held = staging._HELD_PUBLICATION_LOCKS.get()
+            if not any(path.parent.parent == self._workspace for path, _fd, _info in held):
+                _fail("publication_lock_required")
+            staging._check_held_publication_lock()
+            self._success_fixed()
+            wire = self._success_entry(json.loads(self._payload)[_FIELD], phase="staged", observing=True)
+            transition = ProducerLineageStagedTransition.from_dict(wire["batches"][0]["staged"])
+            if (staged.journal_id != self._plan.journal_id or staged.digest() != transition.journal_sha256
+                    or manifest.digest() != transition.manifest_sha256):
+                _fail("precommit_association_invalid")
+            marker, _raw_marker = staging._load_marker(self._workspace / "evolution/producer-publication.json")
+            if (marker["status"] != "staged" or marker["journal_id"] != staged.journal_id
+                    or marker["journal_sha256"] != staged.digest() or marker["manifest_sha256"] != manifest.digest()):
+                _fail("precommit_marker_drift")
+            self._success_fixed()
+            staging._check_held_publication_lock()
+        except BaseException:
+            self._poisoned = True
+            raise
+
+    def retain_terminal(self, published: Any, manifest: Any) -> None:
+        """Retain an already published native success terminal; never commit or settle."""
+        from .producer_bundle_publication import ProducerBundlePublicationJournal
+        from .producer_bundle_staging import ProducerBundlePublicationManifest
+
+        if type(self) is not _BRSLineageCheckpointOwner:
+            _fail("owner_invalid")
+        try:
+            self._before_unlocked()
+            lineage._publication_shapes(published, manifest)
+            if (type(published) is not ProducerBundlePublicationJournal
+                    or type(manifest) is not ProducerBundlePublicationManifest or self._phase != "staged"
+                    or self._retaining_success is not None or self._retaining_before is not False):
+                _fail("terminal_retention_unavailable")
+            self._retaining_success = "terminal"
+            self._success_deadline = None
+            self._success_observe()
+            wire = json.loads(self._payload)[_FIELD]
+            entry = wire["batches"][0]
+            transition = self._verify_descriptor(entry, "staged")
+            batch = recovery._batch(self._workspace, self._plan.journal_id)
+            if (published.journal_id != self._plan.journal_id or published.state != "published"
+                    or published.publication_phase != "committed" or manifest.digest() != transition.manifest_sha256
+                    or published.archive_after_sha256 != transition.archive_after_sha256
+                    or published.state_after_sha256 != transition.state_after_sha256
+                    or tuple(item.candidate_id for item in published.candidates if item.status == "admitted")
+                        != transition.candidate_ids):
+                _fail("terminal_association_invalid")
+            evidence = {name: capture_lineage_snapshot_pin(batch / name, name=name).to_dict()
+                        for name in ("journal.published.json", "terminal.json")}
+            if recovery._read_journal(batch / "journal.published.json") != published:
+                _fail("published_journal_drift")
+            observed = recovery._verify_terminal_batch_evidence(self._workspace, batch, published, manifest.digest())
+            if observed.terminal_marker_sha256 != published.terminal_marker_sha256:
+                _fail("terminal_marker_drift")
+            lineage._require_marker_absent(self._workspace)
+            terminal = ProducerLineageTerminal(self._run_id, published.journal_id, 0, transition.digest(),
+                published.terminal_marker_sha256, transition.archive_after_sha256, transition.state_after_sha256)
+            head_sources = {name: capture_lineage_snapshot_pin(self._workspace / "evolution" /
+                (name + (".jsonl" if name == "archive" else ".json")), name=name + "-before").to_dict()
+                for name in ("archive", "state")}
+            capacity_pin = replace(LineageSnapshotPin.from_dict(head_sources["state"]), name="terminal.json",
+                sha256=lineage._sha(terminal.to_json()), size=len(terminal.to_json()))
+            entry.update(state="terminal", terminal=terminal.to_dict(), terminal_file_pin=capacity_pin.to_dict(),
+                published_journal=published.to_dict(), head_sources=head_sources)
+            entry["evidence_pins"].update(evidence)
+            wire["head"] = {"journal_id": published.journal_id, "terminal_sha256": terminal.terminal_sha256,
+                "lineage_sha256": terminal.digest()}
+            self._success_capacity(wire)
+            self._success_observe()
+            for name, pin in evidence.items():
+                verify_persisted_lineage_snapshot(batch / name, LineageSnapshotPin.from_dict(pin))
+            _path, pin = persist_lineage_descriptor(self._workspace, terminal)
+            entry["terminal_file_pin"] = pin.to_dict()
+            self._success_scope("terminal")
+            _BRSLineageCheckpointOwner.checkpoint_terminal(self, wire)
+        except BaseException:
+            self._poisoned = True
+            raise
+        finally:
+            self._retaining_success = None
+            self._success_deadline = None
 
     def checkpoint_staged(self, wire: object) -> str:
         """Acknowledge existing staged success evidence, without staging artifacts."""

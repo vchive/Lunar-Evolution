@@ -1226,14 +1226,63 @@ def commit_producer_bundle_publication(
     checkpoint: Callable[[str], object] | None = None,
     lineage_owner: object | None = None,
 ) -> ProducerBundlePublicationJournal:
-    """Expose one complete staged batch; any uncertain boundary remains terminal."""
-    _validate_python_handoff_pin(journal)
-    revalidate = None
+    """Expose one staged batch through the unchanged public DRS-only owner gate."""
     if lineage_owner is not None:
         from . import rsi_publication_lineage
 
         if type(lineage_owner) is not getattr(rsi_publication_lineage, "RSIPublicationLineage", None):
             _fail("producer_bundle_publication_lineage_owner_invalid")
+    return _commit_producer_bundle_publication(
+        workspace, journal, checkpoint=checkpoint, lineage_owner=lineage_owner,
+    )
+
+
+def _commit_original_brs_producer_bundle_publication(
+    workspace: str | Path, journal: ProducerBundlePublicationJournal, *,
+    checkpoint: Callable[[str], object], lineage_owner: object, original_receipt_pin: object,
+) -> ProducerBundlePublicationJournal:
+    from .rsi_python_brs_native_dispatch import _fixed_original_brs_owner
+
+    _fixed_original_brs_owner(lineage_owner)
+    return _commit_producer_bundle_publication(
+        workspace, journal, checkpoint=checkpoint, lineage_owner=lineage_owner,
+        _original_brs_owner=lineage_owner, _original_brs_receipt_pin=original_receipt_pin,
+    )
+
+
+def _commit_producer_bundle_publication(
+    workspace: str | Path,
+    journal: ProducerBundlePublicationJournal,
+    *,
+    checkpoint: Callable[[str], object] | None = None,
+    lineage_owner: object | None = None,
+    _original_brs_owner: object | None = None,
+    _original_brs_receipt_pin: object | None = None,
+) -> ProducerBundlePublicationJournal:
+    """Expose one complete staged batch; any uncertain boundary remains terminal."""
+    _validate_python_handoff_pin(journal)
+    if _original_brs_owner is not None and lineage_owner is not _original_brs_owner:
+        _fail("producer_bundle_publication_lineage_owner_invalid")
+    if _original_brs_owner is not None:
+        from .producer_bundle_lineage import LineageSnapshotPin, verify_persisted_lineage_snapshot
+
+        if type(_original_brs_receipt_pin) is not LineageSnapshotPin:
+            _fail("producer_bundle_publication_brs_receipt_pin_invalid")
+    elif _original_brs_receipt_pin is not None:
+        _fail("producer_bundle_publication_brs_receipt_pin_invalid")
+    revalidate = None
+    if lineage_owner is not None:
+        from . import rsi_publication_lineage
+
+        if _original_brs_owner is None:
+            if type(lineage_owner) is not getattr(rsi_publication_lineage, "RSIPublicationLineage", None):
+                _fail("producer_bundle_publication_lineage_owner_invalid")
+        else:
+            from .rsi_python_brs_native_dispatch import _fixed_original_brs_owner
+
+            if lineage_owner is not _original_brs_owner:
+                _fail("producer_bundle_publication_lineage_owner_invalid")
+            _fixed_original_brs_owner(_original_brs_owner)
         # Retain the original composed control before any checkpoint callback. The
         # final lineage/evidence observations must consume that same allowance.
         revalidate = getattr(checkpoint, "revalidate_after_observation", None)
@@ -1265,15 +1314,27 @@ def commit_producer_bundle_publication(
             # The original controller already owns its lock.  This exact capsule performs
             # bounded observations and checks its held CAS; it must not acquire that lock
             # in reverse or invoke a user callback while publication is locked.
-            rsi_publication_lineage.RSIPublicationLineage.verify_precommit(
-                lineage_owner, staged_journal, manifest,
-            )
+            if _original_brs_owner is None:
+                rsi_publication_lineage.RSIPublicationLineage.verify_precommit(
+                    lineage_owner, staged_journal, manifest,
+                )
+            else:
+                from .rsi_python_brs_native_dispatch import _call_original_brs_owner
+
+                _call_original_brs_owner(_original_brs_owner, "verify_precommit", staged_journal, manifest)
             _verify_stage(batch, manifest, staged_journal)
             _verify_python_handoff(batch, staged_journal)
             # This original native gate samples only local cancellation and the
             # fixed native/parent deadlines. It does not replay caller callbacks
             # after the held lineage, stage and handoff evidence was verified.
+            if _original_brs_owner is not None:
+                _fixed_original_brs_owner(_original_brs_owner)
+                verify_persisted_lineage_snapshot(batch / "execution-receipt.json", _original_brs_receipt_pin)
             revalidate("producer_commit_verified")
+            if _original_brs_owner is not None:
+                from .rsi_python_brs_native_dispatch import _original_brs_numeric_tail
+
+                _original_brs_numeric_tail(_original_brs_owner)
         # Once the first target is moved, all failures are unknown and marker status is durable.
         unknown_marker = marker_payload(journal_id=journal.journal_id, journal_sha256=manifest.journal_sha256,
                                          manifest_sha256=manifest.digest(), status="unknown")

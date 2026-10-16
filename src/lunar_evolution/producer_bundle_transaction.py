@@ -398,6 +398,28 @@ def _lineage_call(lineage_owner: object, method: str, *args: object, **kwargs: o
     return getattr(RSIPublicationLineage, method)(lineage_owner, *args, **kwargs)
 
 
+def _validate_native_lineage_scope(public_multi: bool, owner: object | None, original_brs: object | None) -> None:
+    if original_brs is None:
+        _validate_lineage_owner(public_multi, owner)
+        return
+    if public_multi is not False or owner is not original_brs:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_brs_owner_invalid")
+    from .rsi_python_brs_native_dispatch import _fixed_original_brs_owner
+
+    _fixed_original_brs_owner(original_brs)
+
+
+def _native_lineage_call(owner: object, original_brs: object | None, method: str,
+                         *args: object, **kwargs: object) -> Any:
+    if original_brs is None:
+        return _lineage_call(owner, method, *args, **kwargs)
+    if owner is not original_brs:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_brs_owner_invalid")
+    from .rsi_python_brs_native_dispatch import _call_original_brs_owner
+
+    return _call_original_brs_owner(original_brs, method, *args, **kwargs)
+
+
 def _ensure_append_population_window(
     state: Mapping[str, Any], records: Sequence[Candidate], strategy: PopulationStrategy,
     *, prior_events: tuple[tuple[str, ...], ...],
@@ -435,6 +457,24 @@ def derive_population_state_after(
     lineage_owner: object | None = None,
     base_state_bytes: bytes | None = None,
 ) -> dict[str, Any]:
+    """Derive the native projection through the unchanged public DRS-only gate."""
+    return _derive_population_state_after(
+        base_state, base_archive, artifacts, journal=journal, strategy=strategy,
+        lineage_owner=lineage_owner, base_state_bytes=base_state_bytes,
+    )
+
+
+def _derive_population_state_after(
+    base_state: Mapping[str, Any],
+    base_archive: bytes,
+    artifacts: Sequence[ProducerBundlePublicationArtifact],
+    *,
+    journal: ProducerBundlePublicationJournal,
+    strategy: PopulationStrategy,
+    lineage_owner: object | None = None,
+    base_state_bytes: bytes | None = None,
+    _original_brs_owner: object | None = None,
+) -> dict[str, Any]:
     """Derive the initial native population projection from the frozen prefix and admissions."""
 
     if (
@@ -461,10 +501,10 @@ def derive_population_state_after(
         _ensure_initial_population_window(base_state, before, strategy)
         prior_events = ()
     else:
-        _validate_lineage_owner(True, lineage_owner)
+        _validate_native_lineage_scope(_original_brs_owner is None, lineage_owner, _original_brs_owner)
         if type(base_state_bytes) is not bytes or _sha(base_state_bytes) != journal.base_state_sha256:
             raise NativeProducerBundleTransactionError("producer_bundle_transaction_lineage_prefix_invalid")
-        prior_events = _lineage_call(lineage_owner, "validate_before", journal, base_archive, base_state_bytes, strategy)
+        prior_events = _native_lineage_call(lineage_owner, _original_brs_owner, "validate_before", journal, base_archive, base_state_bytes, strategy)
         _ensure_append_population_window(base_state, before, strategy, prior_events=prior_events)
 
     admission_ids = [item.candidate_id for item in added]
@@ -547,6 +587,42 @@ def run_native_producer_bundle_publication_transaction(
     producer_multi_episode_publication: bool = False,
     lineage_owner: object | None = None,
 ) -> NativeProducerBundleTransactionResult:
+    """Evaluate and publish through the unchanged public DRS-only owner gate."""
+    _validate_lineage_owner(producer_multi_episode_publication, lineage_owner)
+    return _run_bound_native_producer_bundle_publication_transaction(
+        workspace, strategy, drafts, admission_plan, journal_id=journal_id,
+        run_id=run_id, parent_task_id=parent_task_id, task_id=task_id,
+        budget_sha256=budget_sha256, native_execution_receipt_sha256=native_execution_receipt_sha256,
+        python_handoff_sha256=python_handoff_sha256, python_handoff_file_pin=python_handoff_file_pin,
+        execution_control=execution_control, continuation_guard=continuation_guard,
+        evidence_revalidator=evidence_revalidator, prepared_observer=prepared_observer,
+        producer_multi_episode_publication=producer_multi_episode_publication, lineage_owner=lineage_owner,
+    )
+
+
+def _run_bound_native_producer_bundle_publication_transaction(
+    workspace: str | Path,
+    strategy: PopulationStrategy,
+    drafts: Sequence[ProducerBundleDraft],
+    admission_plan: ProducerBundleAdmissionPlan,
+    *,
+    journal_id: str,
+    run_id: str | None = None,
+    parent_task_id: str = "producer",
+    task_id: str = "native-bundle-publication",
+    budget_sha256: str | None = None,
+    native_execution_receipt_sha256: str | None = None,
+    python_handoff_sha256: str | None = None,
+    python_handoff_file_pin: PythonProducerAdmissionHandoffFilePin | None = None,
+    execution_control: SolveExecutionControl | None = None,
+    continuation_guard: Callable[[str], None] | None = None,
+    evidence_revalidator: Callable[[str], None] | None = None,
+    prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
+    producer_multi_episode_publication: bool = False,
+    lineage_owner: object | None = None,
+    _original_brs_owner: object | None = None,
+    _original_brs_receipt_pin: object | None = None,
+) -> NativeProducerBundleTransactionResult:
     """Evaluate imported material and atomically publish the valid native subset.
 
     A supplied control is owned by the caller and must be retained across in-process retries.
@@ -563,7 +639,23 @@ def run_native_producer_bundle_publication_transaction(
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_evidence_revalidator_invalid")
     if prepared_observer is not None and not callable(prepared_observer):
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_prepared_observer_invalid")
-    _validate_lineage_owner(producer_multi_episode_publication, lineage_owner)
+    _validate_native_lineage_scope(producer_multi_episode_publication, lineage_owner, _original_brs_owner)
+    if _original_brs_owner is not None:
+        from .producer_bundle_lineage import LineageSnapshotPin
+
+        if type(_original_brs_receipt_pin) is not LineageSnapshotPin:
+            raise NativeProducerBundleTransactionError("producer_bundle_transaction_brs_receipt_pin_invalid")
+    elif _original_brs_receipt_pin is not None:
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_brs_receipt_pin_invalid")
+    if _original_brs_owner is not None and (
+            type(workspace) is not type(_original_brs_owner._workspace)
+            or workspace != _original_brs_owner._workspace or strategy is not _original_brs_owner._strategy
+            or execution_control is not _original_brs_owner._before_control
+            or (run_id, journal_id, parent_task_id, task_id) != (
+                _original_brs_owner._run_id, _original_brs_owner._plan.journal_id,
+                _original_brs_owner._plan.parent_task_id, _original_brs_owner._plan.task_id)
+            or continuation_guard is not None or evidence_revalidator is None or prepared_observer is None):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_brs_inputs_invalid")
     if python_handoff_sha256 is not None and native_execution_receipt_sha256 is None:
         raise NativeProducerBundleTransactionError(
             "producer_bundle_transaction_python_handoff_execution_link_missing"
@@ -589,7 +681,8 @@ def run_native_producer_bundle_publication_transaction(
                "evidence_revalidator": evidence_revalidator,
                "prepared_observer": prepared_observer,
                "producer_multi_episode_publication": producer_multi_episode_publication,
-               "lineage_owner": lineage_owner}
+               "lineage_owner": lineage_owner, "_original_brs_owner": _original_brs_owner,
+               "_original_brs_receipt_pin": _original_brs_receipt_pin}
     derived_budget = native_producer_bundle_budget_sha256(strategy, execution_control)
     if budget_sha256 is not None and budget_sha256 != derived_budget:
         raise NativeProducerBundleTransactionError("producer_bundle_transaction_budget_mismatch")
@@ -651,14 +744,20 @@ def _run_native_producer_bundle_publication_transaction(
     prepared_observer: Callable[[ProducerBundlePublicationJournal], None] | None = None,
     producer_multi_episode_publication: bool = False,
     lineage_owner: object | None = None,
+    _original_brs_owner: object | None = None,
+    _original_brs_receipt_pin: object | None = None,
 ) -> NativeProducerBundleTransactionResult:
-    _validate_lineage_owner(producer_multi_episode_publication, lineage_owner)
+    _validate_native_lineage_scope(producer_multi_episode_publication, lineage_owner, _original_brs_owner)
     checkpoint("producer_preparation")
     if evidence_revalidator is not None:
         checkpoint.observe_checkpoint_before_evidence("producer_preparation")
         evidence_revalidator("producer_preparation")
         if hasattr(checkpoint, "revalidate_after_observation"):
             checkpoint.revalidate_after_observation("producer_preparation")
+            if _original_brs_owner is not None:
+                from .rsi_python_brs_native_dispatch import _original_brs_numeric_tail
+
+                _original_brs_numeric_tail(_original_brs_owner)
         elif strategy._cancelled():
             raise SolveExecutionCancelled("producer_preparation")
 
@@ -717,7 +816,66 @@ def _run_native_producer_bundle_publication_transaction(
         # Its missing anchor is uncertainty, never permission to create a fresh one.
         admission_anchor = _verify_python_admission_attempt_anchor(root, python_handoff)
 
+    def observe_original_handoff() -> None:
+        _verify_native_execution_receipt_link(
+            root, journal_id=journal_id, run_id=run_id, parent_task_id=parent_task_id,
+            task_id=task_id, receipt_sha256=native_execution_receipt_sha256,
+        )
+        _verify_python_handoff_link(
+            root, journal_id=journal_id, run_id=run_id, parent_task_id=parent_task_id,
+            task_id=task_id, admission_plan=admission_plan,
+            native_execution_receipt_sha256=native_execution_receipt_sha256,
+            python_handoff_sha256=python_handoff_sha256,
+            python_handoff_file_pin=python_handoff_file_pin, prepared_journal=anchored_journal,
+        )
+        if admission_anchor is not None and python_handoff is not None:
+            _verify_python_admission_attempt_anchor(root, python_handoff)
+        if _original_brs_owner is not None:
+            from .producer_bundle_lineage import verify_persisted_lineage_snapshot
+
+            verify_persisted_lineage_snapshot(
+                root / "evolution/producer-batches" / journal_id / "execution-receipt.json",
+                _original_brs_receipt_pin,
+            )
+
+    retained_revalidate = getattr(original_checkpoint, "revalidate_after_observation", None)
+    if _original_brs_owner is not None and not callable(retained_revalidate):
+        raise NativeProducerBundleTransactionError("producer_bundle_transaction_brs_control_invalid")
+
     def checkpoint_with_handoff(stage: str) -> object:
+        if _original_brs_owner is not None:
+            from .producer_bundle_staging import (
+                _HELD_PUBLICATION_LOCKS,
+                _LOCK_NAME,
+                _check_held_publication_lock,
+            )
+            from .rsi_python_brs_native_dispatch import (
+                _fixed_original_brs_owner,
+                _original_brs_numeric_tail,
+            )
+
+            # Waiting for the lock is still an unlocked full-observation boundary.
+            # Only the actual acquired lock selects this callback-free projection.
+            held_locks = _HELD_PUBLICATION_LOCKS.get()
+            if held_locks:
+                current_lock = root / "evolution" / _LOCK_NAME
+                if not any(lock == current_lock for lock, _descriptor, _info in held_locks):
+                    raise NativeProducerBundleTransactionError("producer_bundle_transaction_brs_foreign_lock")
+                _check_held_publication_lock()
+                _fixed_original_brs_owner(_original_brs_owner)
+                observe_original_handoff()
+                result = retained_revalidate(stage)
+                _original_brs_numeric_tail(_original_brs_owner)
+                return result
+            original_checkpoint(stage)
+            original_checkpoint.observe_checkpoint_before_evidence(stage)
+            if evidence_revalidator is not None:
+                evidence_revalidator(stage)
+            _fixed_original_brs_owner(_original_brs_owner)
+            observe_original_handoff()
+            result = retained_revalidate(stage)
+            _original_brs_numeric_tail(_original_brs_owner)
+            return result
         result = original_checkpoint(stage)
         if evidence_revalidator is not None:
             original_checkpoint.observe_checkpoint_before_evidence(stage)
@@ -778,6 +936,11 @@ def _run_native_producer_bundle_publication_transaction(
             _verify_python_admission_attempt_anchor(root, python_handoff)
         if evidence_revalidator is not None:
             evidence_revalidator(stage)
+            if _original_brs_owner is not None:
+                from .rsi_python_brs_native_dispatch import _fixed_original_brs_owner
+
+                _fixed_original_brs_owner(_original_brs_owner)
+                observe_original_handoff()
             revalidate = getattr(original_checkpoint, "revalidate_after_observation", None)
             observed_at = execution_control._now() if execution_control is not None else time.monotonic()
             deadline = sampled_at + remaining
@@ -793,6 +956,10 @@ def _run_native_producer_bundle_publication_transaction(
                 raise SolveExecutionBudgetExceeded(
                     stage, started_at=sampled_at, deadline=deadline, observed_at=observed_at,
                 )
+            if _original_brs_owner is not None:
+                from .rsi_python_brs_native_dispatch import _original_brs_numeric_tail
+
+                _original_brs_numeric_tail(_original_brs_owner)
         return remaining
 
     pipeline.set_remaining_timeout(timeout_with_handoff)
@@ -858,7 +1025,7 @@ def _run_native_producer_bundle_publication_transaction(
         if lineage_owner is None:
             _ensure_initial_population_window(base_state, _records_from_archive(base_archive), strategy)
         else:
-            prior_events = _lineage_call(lineage_owner, "validate_before", journal, base_archive, base_state_bytes, strategy,
+            prior_events = _native_lineage_call(lineage_owner, _original_brs_owner, "validate_before", journal, base_archive, base_state_bytes, strategy,
                                          admission_plan=admission_plan)
             _ensure_append_population_window(base_state, _records_from_archive(base_archive), strategy,
                                              prior_events=prior_events)
@@ -875,7 +1042,7 @@ def _run_native_producer_bundle_publication_transaction(
     artifacts: list[ProducerBundlePublicationArtifact] = []
     rejected: list[str] = []
     if lineage_owner is not None:
-        _lineage_call(lineage_owner, "retain_before", journal, base_archive, base_state_bytes)
+        _native_lineage_call(lineage_owner, _original_brs_owner, "retain_before", journal, base_archive, base_state_bytes)
     try:
         checkpoint("producer_prepared_intent")
         if python_handoff is not None:
@@ -894,6 +1061,10 @@ def _run_native_producer_bundle_publication_transaction(
         else:
             retained = persist_controlled_producer_bundle_intent(
                 root, journal, execution_control, checkpoint=checkpoint,
+                native_numeric_revalidate=(
+                    getattr(checkpoint, "revalidate_after_observation", None)
+                    if _original_brs_owner is not None else None
+                ),
             )
             checkpoint.bind_retained_deadline(retained.check)
             checkpoint("producer_prepared_intent")
@@ -912,7 +1083,7 @@ def _run_native_producer_bundle_publication_transaction(
         )
         if terminal is not None:
             if lineage_owner is not None:
-                _lineage_call(lineage_owner, "retain_terminal", terminal, None)
+                _native_lineage_call(lineage_owner, _original_brs_owner, "retain_terminal", terminal, None)
             if evidence_revalidator is not None:
                 checkpoint.observe_cancellation_before_evidence("producer_terminal_replay")
                 evidence_revalidator("producer_terminal_replay")
@@ -1002,7 +1173,7 @@ def _run_native_producer_bundle_publication_transaction(
             elif strategy._cancelled():
                 raise SolveExecutionCancelled("producer_all_rejected")
         if lineage_owner is not None:
-            _lineage_call(lineage_owner, "retain_terminal", terminal, None)
+            _native_lineage_call(lineage_owner, _original_brs_owner, "retain_terminal", terminal, None)
         return NativeProducerBundleTransactionResult(
             journal=journal, preflight=preflight, evaluations=tuple(evaluations),
             admitted_candidate_ids=(), rejected_candidate_ids=tuple(rejected), artifacts=(),
@@ -1010,11 +1181,16 @@ def _run_native_producer_bundle_publication_transaction(
             terminal_journal=terminal,
         )
 
-    state_after = derive_population_state_after(
-        base_state, base_archive, artifacts, journal=journal, strategy=strategy,
-        lineage_owner=lineage_owner,
-        base_state_bytes=base_state_bytes if lineage_owner is not None else None,
-    )
+    projection_options = {
+        "journal": journal, "strategy": strategy, "lineage_owner": lineage_owner,
+        "base_state_bytes": base_state_bytes if lineage_owner is not None else None,
+    }
+    if _original_brs_owner is None:
+        state_after = derive_population_state_after(base_state, base_archive, artifacts, **projection_options)
+    else:
+        state_after = _derive_population_state_after(
+            base_state, base_archive, artifacts, **projection_options, _original_brs_owner=_original_brs_owner,
+        )
     try:
         checkpoint("producer_staging")
         manifest = stage_producer_bundle_publication(
@@ -1025,15 +1201,23 @@ def _run_native_producer_bundle_publication_transaction(
         staged = parse_producer_bundle_publication_journal(
             root / "evolution" / "producer-batches" / journal_id / "journal.json",
         )
-        if producer_multi_episode_publication:
-            _lineage_call(lineage_owner, "retain_staged", staged, manifest)
+        if producer_multi_episode_publication or _original_brs_owner is not None:
+            _native_lineage_call(lineage_owner, _original_brs_owner, "retain_staged", staged, manifest)
         checkpoint("producer_commit")
         if lineage_owner is None:
             published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint)
+        elif _original_brs_owner is not None:
+            from .producer_bundle_staging import _commit_original_brs_producer_bundle_publication
+
+            published = _commit_original_brs_producer_bundle_publication(
+                root, staged, checkpoint=checkpoint, lineage_owner=_original_brs_owner,
+                original_receipt_pin=_original_brs_receipt_pin,
+            )
+            _native_lineage_call(lineage_owner, _original_brs_owner, "retain_terminal", published, manifest)
         else:
             published = commit_producer_bundle_publication(root, staged, checkpoint=checkpoint,
                                                             lineage_owner=lineage_owner)
-            _lineage_call(lineage_owner, "retain_terminal", published, manifest)
+            _native_lineage_call(lineage_owner, _original_brs_owner, "retain_terminal", published, manifest)
         _verify_python_handoff_link(
             root,
             journal_id=journal_id,

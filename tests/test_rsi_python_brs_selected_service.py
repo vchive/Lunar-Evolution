@@ -8,6 +8,7 @@ episode settlement, and channel completion.
 
 from __future__ import annotations
 
+import sqlite3
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -231,6 +232,26 @@ def test_actual_selected_service_acknowledges_and_settles_only_first_original_in
     assert value.ledger.get_run(value.binding.run_id).state == "running"
     assert _evidence_files(value) == files
     assert len(_rows(value)["rsi_python_admissions"]) == 1
+
+
+def test_selected_owner_acceptance_recreates_missing_native_result_row(tmp_path, monkeypatch):
+    """The owner CAS may fill only a missing immutable result after all pins match."""
+    value = _fixture(tmp_path, monkeypatch)
+
+    def drop_worker_result(request):
+        execution = _ack_and_result(value, request)
+        with sqlite3.connect(value.ledger.database) as connection:
+            connection.execute(
+                "DELETE FROM rsi_episode_results WHERE episode_id = ?", (request.episode_id,),
+            )
+        assert value.ledger.episode_result(request.episode_id) is None
+        return execution
+
+    value.operation = drop_worker_result
+    with _wave(value) as wave:
+        execution = value.controller._python_admission_run_selected_brs_intent(wave)
+        assert value.ledger.episode_result(value.episode_id) == (execution.request, execution.result)
+        assert wave.channel._completed_selected_episodes == {value.episode_id}
 
 
 def test_selected_service_closes_before_shutdown_on_worker_failure(tmp_path, monkeypatch):

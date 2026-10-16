@@ -292,6 +292,40 @@ class BRSAdmissionChannel:
             self._selected_handoff_sha256 = None
             self._condition.notify_all()
 
+    def assert_selected_handoff_acknowledged(self, episode_id: str) -> tuple[str, str, str, str]:
+        """Check the selected request's retained ACK without retiring the binding.
+
+        The owner uses this immediately before accepting a worker result.  It is a
+        read-only channel check: it does not mark the handoff complete, refresh any
+        identity, or grant publication authority.
+        """
+        if threading.get_ident() != self._owner_thread:
+            _fail("handoff_owner_required")
+        if type(episode_id) is not str:
+            _fail("handoff_episode_invalid")
+        with self._condition:
+            if self._closed:
+                _fail("closed")
+            if self._selected_episode_id != episode_id:
+                _fail("selected_episode_mismatch")
+            pending = self._requests.get(episode_id)
+            if (pending is None or pending.state != "done" or pending.ack is None
+                    or pending.cancelled or pending.error is not None
+                    or pending.binding_sha256 != self._selected_handoff_sha256
+                    or self._servicing or self._queue):
+                _fail("handoff_not_acknowledged")
+            if type(pending.ack) is not BRSAdmissionAck:
+                _fail("ack_invalid")
+            ack = BRSAdmissionAck(pending.ack.run_id, pending.ack.episode_id,
+                                  pending.ack.request_sha256, pending.ack.record_sha256)
+            fields = (ack.run_id, ack.episode_id, ack.request_sha256, ack.record_sha256)
+            if (type(pending.ack_fields) is not tuple or len(pending.ack_fields) != 4
+                    or any(type(value) is not str for value in pending.ack_fields)
+                    or fields != pending.ack_fields
+                    or fields[:3] != (self._run_id, episode_id, pending.ready.request_sha256)):
+                _fail("ack_mismatch")
+            return fields
+
     def request(self, ready: BRSAdmissionReady, *, check: Callable[[], None]) -> BRSAdmissionAck:
         if type(ready) is not BRSAdmissionReady:
             _fail("ready_invalid")

@@ -1,5 +1,24 @@
 # Current release backlog — 2026-10-16
 
+## 本轮后继开发状态
+
+原主控 retained native reader、显式 prepared-reference 登记和原 false preparation
+契约修复已在`05cd548`整合：macOS/Linux各498个不同focused cases全通过，
+完整raw/source/import独审接受。高层before留存在`855b08e`实现：
+macOS/Linux各34例（31新+3兼容）全通过并获独审。两来源分别验收，不能累计，
+也不称855已重新通过498。详情见Feature196 `publication-validation.md`。
+
+staged/precommit/terminal高层接口候选`7a21ed8`已完成静态独审；PB-03h exact BRS
+私有transaction dispatch已在当前候选实现（SDD：Feature196
+`private-native-dispatch.md`）。当前候选的15/15 native-dispatch、37/37
+owner-lineage、30/30 transaction-control和17/17 staging-compatibility均通过，
+确定性 latency fixture 已合入，Ruff/compileall/diff-check通过。完整owner
+transaction、controller/mailbox service、拒绝C1/P/C2、独立
+result delivery/settlement、reconcile、连续ordinal与policy/memory仍开放。
+冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109)的完整33-job CI、
+actual checkout/source/import/raw独审和main合并是独立P0，后继不追加或取消其来源。
+公开native BRS、online publication与production admission仍关闭。详见HANDOFF最新条目。
+
 ## 2026-10-16：私有成功检查点与证据转换
 
 PB-02c preparation → mailbox detached evidence 和 PB-03d 原 BRS owner
@@ -11,10 +30,12 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 当前优先级：
 
-- P0：最终集成候选的完整 CI、原始产物/source/import/tree 独审与 main 合并。
-- P1：原 owner retained native evidence recovery、BRS prepared pin、原 transaction
-  owner dispatch、rejection C1/P/C2、独立 return/settlement；再接 reconcile、serial
-  successor 与 policy/memory。已具备的检查点不等于这些在线执行链路已接通。
+- P0：PB-03h 候选的 72-case provider-free 回归与 source/import/XML/nodeid/tree 独审已完成，
+  当前只剩新 PR 的完整 CI 与 main 合并；冻结 PR109 不修改、不取消、不追加提交。
+- P1：staged/precommit/terminal 高层接口、原 transaction owner dispatch、controller/
+  mailbox service、rejection C1/P/C2、独立 return/settlement；再接 reconcile、serial
+  successor 与 policy/memory。retained reader、prepared pin 已完成顶部所列后继验收；
+  已具备的私有接口和检查点仍不等于完整在线执行链路已接通。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
   生产 CLI/Linux acceptance 仍按原独立范围开放，本轮不运行真实目标来替代验收设计。
 - P2：外部认证、多机 ownership、分布式调度/服务化继续后置。
@@ -30,7 +51,7 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 ## 当前状态与本轮出口
 
-2026-10-16 最新检查点：main 仍为下面的 PR99 基线。P0 当前出口改为顶部说明的
+2026-10-16 最新检查点：main 已合入 PR109，当前为 `319c8ab79805031a724d0964ebd497c16359753c`。P0 当前出口改为顶部说明的
 base-main 统一后继；它包含 PR103/105/106/107/108 的真实 Git 祖先，并须验收自己
 最终 head 的完整 33-job、actual merge/source/import/raw 证据后合入。
 PR103 `935ab57` 的 [CI 38752535974](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)
@@ -56,7 +77,7 @@ native BRS 仍关闭，`production_admission=false`。
 staged/terminal checkpoint primitive 已在统一 `01c3bd1` 实现并通过独立源码审查；
 完整 online composition、最终 focused/raw 与正式 CI 分别记录，不把 primitive 当作发布执行。
 
-当前已确认的 main 基线为 `0cb49abb146d91cb59b71de45d01e16217ebed8d`（PR99）。
+历史记录中的 main 基线为 `0cb49abb146d91cb59b71de45d01e16217ebed8d`（PR99）；当前 main 已更新为 PR109 merge `319c8ab`。
 单 child 的原 controller → owner/CAS → gateway → claim/running → scheduler →
 admission/publication → receipt/verifier → 只读恢复已完成本地 fixture 验收并合入。
 默认 staging-only、生产 CLI native 拒绝和 `production_admission=false` 保留。

@@ -1,4 +1,117 @@
+# 当前状态（2026-10-16，主线已更新）
+
+- `main` 已合入 PR109，当前 merge commit 为 `319c8ab79805031a724d0964ebd497c16359753c`；PR109 的 33 个 CI job 已成功。
+- 当前后继候选基于完整 `219536d` 与 main 合并，另含 PB-03h 私有原生 BRS dispatch 及 PB-03i owner-thread native-result CAS；公开 native BRS、`online_publication=false`、`production_admission=false` 仍保持关闭。
+- PB-03h 的本轮 72-case provider-free focused 回归及 raw/source/import/XML/tree 审计已记录在 `specs/196-brs-owner-worker-handoff/pb03h-integrated-audit.md`；当前 PR112 仍需完成自己的三版本 CI 后才能合入 main。PB-03i 的 owner-result CAS 保护包含在同一候选中。
+- P1 仍开放：完整在线 owner/mailbox composition、rejection C1/P/C2、unknown reconcile、serial successor、policy/memory，以及真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
+- P2（远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）继续后置。仅使用本地 inert/provider-free fixture，不运行 WebAgent、远程 evaluator 或真实 campaign。
+
+以下旧条目保留为历史交接证据，不能覆盖上述当前状态。
+
 # Lunar Evolution 交接记录
+
+## 2026-10-16 并行继续：PB-03h 私有原生 BRS dispatch 候选
+
+当前候选 worktree `codex/brs-private-native-dispatch` 已把 PB-03h 接到原有 native transaction/staging/commit kernel：只接受真实原始 `_BRSLineageCheckpointOwner`，复用原 owner/thread/lease/episode/claim/handoff/channel/budget 与 source/control fingerprints；锁外完成完整观察，锁内使用原始 numeric revalidator；原 execution receipt 的 inode pin 在 locked/final boundary 复验。public DRS/BRS gate、`online_publication=false` 和 `production_admission=false` 保持不变，不新增 permit、attestation、scheduler 或 authority。
+
+本候选本地结果：PB-03h focused 15/15，原 owner lineage 37/37，transaction control 30/30，staging compatibility 17/17；Ruff、compileall、`git diff --check` 通过。确定性 latency fixture 已合入，旧真实 sleep 失败材料仍保留为 `NOT_ACCEPTED` 历史，不能与新来源混用。Mac/Linux 72-case 新冻结与 source/import/XML/nodeid/tree 独审尚未完成，当前不能宣称 PB-03h 已合入 main。
+
+主 checkout 仍是 `main 0cb49ab`，PR109（`b6faf226`）仍为 Draft/UNSTABLE，33-job CI 尚未结束；不得修改、取消或追加提交。PB-03h 应在自身 source/tree/bundle 冻结、双平台回归和独立审计通过后另开面向 main 的 PR。
+
+仍开放的 P0/P1：controller owner-thread mailbox 与真实 response acceptance、native result durable CAS、close/join 后 settlement、unknown reconcile、serial successor，以及不同 child ID/新 approved memory 的多 episode DRS/BRS；真实 CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI/Linux acceptance 仍未验收。P2 的 remote evaluator、外部 worker authentication、多机 ownership、distributed scheduler/service API、remote Shinka/Slurm 继续后置。
+
+## 2026-10-16 后继：success 高层留存候选与统一验收
+
+`7a21ed831113a30917dbeb378b31e2450dae2fe0`在独立分支实现原BRS owner的
+`retain_staged`、`verify_precommit`、`retain_terminal`，现整合到后继候选。
+staged/terminal留存原快照和descriptor，再执行原checkpoint CAS；precommit在真实
+publication lock内只核固定身份和durable evidence，不运行source/config/control hooks。
+临时numeric cap只收窄本次retention allowance，在最后evidence后/CAS前及readback
+推进前重检；不刷新原预算，不持久化新预算。原channel保持empty，不以旧fixture的
+ready/ACK完成记录扩大许可。取消/close/不确定写回保留文件、旧head与poisoned owner。
+
+最终产品静态独审通过；最终开发选择8项通过，旧开发33项单独保留，不能当作最终38。
+本轮将在整合冻结来源执行Mac/Linux各72项：38新+31 before+3明确原兼容，尚未验收。
+CI增加38-case gate及annotation。实际运行与raw/source审查结果随后单独登记。
+公开native BRS和原DRS-only transaction/staging gate保持；PB-03h私有dispatch仍未实现，
+SDD见`specs/196-brs-owner-worker-handoff/private-native-dispatch.md`。后续仍是完整
+controller/mailbox事务、拒绝C1/P/C2、独立result delivery/settlement、reconcile、
+serial successor与policy/memory；真实runtime/project/生产CLI验收另列P1。
+`online_publication=false`、`production_admission=false`。仅本地inert/provider-free fixtures。
+
+## 2026-10-16 后继收尾：原 owner 证据组合与 before 高层留存
+
+后继工作区为 `/private/tmp/lunar-brs-owner-evidence-integration`，产品/测试已推进到
+`855b08edd4de3dc0c379b99caa034e42f16efc4b`。原主控 retained reader、显式
+prepared-reference pin 与 evidence ACK 已组合验证；before 高层接口新增真实
+archive/state 快照、descriptor 留存，再执行原 checkpoint CAS。创建前统一检查
+64 MiB 聚合、16 MiB 单快照与112 KiB checkpoint 容量，最终 callback 后仍检查原
+channel/control/head；取消、关闭或不确定读回保留文件、旧 capture 与 poisoned owner。
+没有放开原 DRS-only transaction/staging gate，公开 native BRS 仍拒绝。
+
+验收分开绑定两个冻结来源，不能累计为同一轮：
+
+- `05cd548f7c4da324342327fabeca1ed68e49907d` / tree
+  `9d3c530849088e7ac7e5e091268b899d33fc1683`：macOS own-editable Python3.11.15
+  的498个不同 cases（113/143/181/61）全通过，零失败/错误/跳过，16 exits全0，
+  2,053 tracked files前后与Git blobs一致；完整 raw/source 独审已接受。Linux独立
+  own-editable Python3.12.3同来源498也全通过，16 exits全0，完整raw/source/import
+  独审已接受；两端是相同498个不同cases，不能相加为996。
+- `855b08e` / tree `b5052bc3bf779d62067a7a34f462abdb7e88737c`：macOS独立
+  own-editable Python3.11.15的34个不同 cases（31新+3明确兼容）全通过，零失败/
+  错误/跳过，13 exits全0，2,055 tracked files前后与Git blobs一致；完整 raw/source
+  独审已接受。Linux同来源34组也全通过且完整raw/source独审接受；这不代表在855上
+  重新跑过完整498组。
+
+原始材料分别在 ignored `brs-owner-evidence-integration-20261016/` 和
+`brs-owner-before-evidence-855b08e-20261016/`。两条原服务器长shard继续运行，
+不停止、不重启。全部新增验证仅使用本地 inert/provider-free fixtures。
+
+P0冻结[PR109](https://github.com/vchive/Lunar-Evolution/pull/109)仍保持
+`b6faf226`，run38775669197上次完整probe为1 success、7 running、25 queued，
+仅history3.11 artifact已审；未通过完整33-job验收、尚未合入main。不能用后继
+05cd548/855b08e结果替代它的actual checkout/source/import/raw证据。
+
+P1下一段并行开发原owner的`retain_staged`、`verify_precommit`、`retain_terminal`
+高层接口，同时核对exact BRS私有transaction dispatch的锁外完整观察、锁内固定身份/
+durable evidence与原`revalidate_after_observation`顺序。完整owner transaction、
+controller/mailbox service、拒绝C1/P/C2、独立result delivery/settlement、BRS只读
+reconcile、serial successor和policy/memory仍开放。真实source/toolchain/sealed runtime、
+OpenEvolve/Shinka project lifecycle与生产CLI/Linux验收另列P1；P2外部认证、多机
+ownership与分布式服务继续后置。`online_publication=false`、`production_admission=false`。
+
+## 2026-10-16 并行后继：原主控 retained reader 与 prepared 登记
+
+本轮继续 Feature196，未改变公开 native BRS、`online_publication=false` 或
+`production_admission=false`。后继分支修正 PB-02c 的真实状态契约：底层 output
+preparation/recovery 始终保留 `publication_eligible=false`，旧转换器却要求 true，
+共享 fixture 还手工提供 true。现在使用原 false 默认值，严格拒绝 true/0/null，
+mailbox 仍只传证据。修复 `9fe060a` 的 181 项开发回归与静态检查通过，独立代码审查
+通过；原 179 项来源与测试结果保留，不能代替本轮来源。
+
+并行新增原注册 BRS owner 的 retained-context reader 和显式 prepared-reference
+登记入口。reader 从原 owner context 重新读取 native receipt、capture/broker、output
+和 creator-pinned handoff；不采用 worker drafts/bundles。登记入口复用原 store 的
+原子 admission-reference CAS，只有完整相邻读回才推进 wave；随后由既有
+`acknowledge_prepared` 独立登记 evidence checkpoint。两者要求原 owner、run lease、
+自然 running episode/started claim、原预算/来源/控制和仍开放的原 selected channel。
+取消、过期、替换、晚关闭及不确定写回保留证据和 stale/poisoned owner，不重试或
+采用最新 head。最终统一来源的回归和独审另行记录，开发结果不作为统一验收。
+
+真实 receipt/output/capture/broker/handoff 读取使用本地 inert 文件；terminal 和 formal
+receipt 的底层 projection 明确为 fixture doubles，不是 native runtime 验收。未运行
+真实模型/solver/campaign、CPython/toolchain、WebAgent、远程 evaluator 或公司平台。
+原服务器长回归继续运行，不停止、不重启、不改写其历史结果。
+
+P0 仍是冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109) 的完整 CI、
+actual checkout/source/import/raw 独审及 main 合并；head `b6faf226` 不追加提交。
+2026-10-16 本轮单次证据检查仍为 1 running / 32 queued，0 completed，未获得接受。
+新修复与两个新入口在隔离后继分支，不能归入 PR109 的旧测试来源。
+
+P1 下一步仍须接完整 owner transaction、拒绝 C1/P/C2、独立 result delivery/settlement，
+再做 BRS reconcile、serial successor 与 policy/memory。真实 source/toolchain/sealed
+runtime、OpenEvolve/Shinka project lifecycle 和生产 CLI/Linux acceptance 仍开放；
+P2 外部认证、多机 ownership、分布式调度/服务化后置。
 
 ## 2026-10-16 并行继续：preparation/mailbox 与 staged/terminal
 
