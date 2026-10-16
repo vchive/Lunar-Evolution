@@ -1,4 +1,20 @@
-# Current release backlog — 2026-10-16
+# Current release backlog — 2026-10-17
+
+## 2026-10-17：BRS durable reconcile obligation 基础层（PR113 候选）
+
+当前集成候选 `4c86fe0` 基于 `main` 的 `a8996a3`，尚未合入主分支。本轮已完成
+BRS durable reconcile obligation 的最小持久化基础层：controller checkpoint 可以在锁内
+原子登记、读取、校验、幂等重放和按 obligation digest 删除 owner obligation。记录固定
+run/episode/request/native-plan/checkpoint/episode-record 指纹，并校验 phase、mailbox、
+transaction、worker profile 和终止状态；缺失、冲突、漂移或未知状态均拒绝继续。
+
+该基础层是显式 opt-in 的 recovery fence，**不等于 controller online reconcile 已接通**。
+当前 `_drive_brs()`、`resume()` 和默认调度路径不会自动消费 obligation、探测 worker/process/
+mailbox/result evidence 或推进 phase；也不会把 `unknown` 推断为成功。下一步 P1 需要把
+obligation 接到 selected handoff 前后的 controller checkpoint，并实现显式
+`reconcile_brs_selected`，只在完整 process/native/mailbox/result evidence 通过后推进或
+结算。对应 focused obligation 回归为 9/9，当前核心 provider-free focused 组合为 88 项
+通过；这些本地结果不替代 PR113 的完整 CI、来源审计和合入。
 
 ## 本轮后继开发状态
 
@@ -15,10 +31,11 @@ owner-lineage、30/30 transaction-control和17/17 staging-compatibility均通过
 确定性 latency fixture 已合入，Ruff/compileall/diff-check通过。当前 P1 集成分支又接入
 私有 owner/mailbox composition、exact result delivery/one-shot settlement、本机
 process/workspace reconcile evidence、serial successor 的 fresh handoff/claim/dispatch、
-rejection C1/P/C2 adapter 和 policy/memory shadow gate；完整 owner transaction、controller-
-level durable reconcile 与真实 runtime 仍开放。
-冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109)的完整33-job CI、
-actual checkout/source/import/raw独审和main合并是独立P0，后继不追加或取消其来源。
+rejection C1/P/C2 adapter、policy/memory shadow gate，以及 BRS durable obligation 持久化基础层；
+完整 owner transaction、controller-level online reconcile 与真实 runtime 仍开放。
+当前 [PR113](https://github.com/vchive/Lunar-Evolution/pull/113) 候选的完整 33-job CI、
+actual checkout/source/import/raw/tree 独审和 main 合并是 P0 出口；不要把本地 focused
+结果或旧 PR 的来源当成该候选的最终验收。
 公开native BRS、online publication与production admission仍关闭。详见HANDOFF最新条目。
 
 ## 2026-10-16：私有成功检查点与证据转换
@@ -32,13 +49,15 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 当前优先级：
 
-- P0：PB-03h 候选的 72-case provider-free 回归与 source/import/XML/nodeid/tree 独审已完成，
-  当前只剩新 PR 的完整 CI 与 main 合并；冻结 PR109 不修改、不取消、不追加提交。
+- P0：当前 PR113 候选的 PB-03h 及 durable-obligation provider-free focused 回归和
+  source/import/XML/nodeid/tree 审计已完成；当前只剩该 PR 的完整 CI 与 main 合并。
 - P1：当前分支已完成私有 owner/mailbox composition、exact result delivery/settlement、
-  本机 process/workspace evidence、serial successor dispatch、rejection C1/P/C2 adapter
-  和 policy/memory shadow gate 的 provider-free 最小切片；仍需接完整 durable reconcile，
-  以及真实 runtime/producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继
-  验收；这些私有接口仍不等于公开 native BRS 或生产 admission 已开启。
+  本机 process/workspace evidence、serial successor dispatch、rejection C1/P/C2 adapter、
+  policy/memory shadow gate 和 durable obligation 持久化基础层的 provider-free 最小切片；
+  仍需把 obligation 接入 controller selected handoff 前后的 checkpoint，并完成显式
+  online reconcile（含完整 process/native/mailbox/result evidence）以及真实 runtime/
+  producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继验收；这些私有接口
+  仍不等于公开 native BRS 或生产 admission 已开启。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
   生产 CLI/Linux acceptance 仍按原独立范围开放，本轮不运行真实目标来替代验收设计。
 - P2：外部认证、多机 ownership、分布式调度/服务化继续后置。
@@ -54,7 +73,12 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 ## 当前状态与本轮出口
 
-2026-10-16 最新检查点：main 已合入 PR109，当前为 `319c8ab79805031a724d0964ebd497c16359753c`。P0 当前出口改为顶部说明的
+2026-10-17 最新检查点：main 已合入 PR112，当前为 `a8996a3c94f5b07873e39e28c3ebff3953d1fa6c`；PR113 候选 HEAD 为
+`4c86fe0`。本轮已完成 BRS durable reconcile obligation 持久化基础层，但 controller online
+reconcile 仍未接通；P0 是 PR113 的完整 CI、来源审计与合入，P1 是显式 online reconcile
+以及真实 runtime/producer/CLI 验收。以下 2026-10-16 内容保留为当时来源记录：
+
+2026-10-16 检查点：main 已合入 PR109，当前为 `319c8ab79805031a724d0964ebd497c16359753c`。P0 当前出口改为顶部说明的
 base-main 统一后继；它包含 PR103/105/106/107/108 的真实 Git 祖先，并须验收自己
 最终 head 的完整 33-job、actual merge/source/import/raw 证据后合入。
 PR103 `935ab57` 的 [CI 38752535974](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)

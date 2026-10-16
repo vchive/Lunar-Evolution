@@ -1,9 +1,10 @@
-# 当前状态（2026-10-16，主线已更新）
+# 当前状态（2026-10-17，PR113 P1 集成候选）
 
-- `main` 已合入 PR109，当前 merge commit 为 `319c8ab79805031a724d0964ebd497c16359753c`；PR109 的 33 个 CI job 已成功。
-- 当前后继候选基于完整 `219536d` 与 main 合并，另含 PB-03h 私有原生 BRS dispatch 及 PB-03i owner-thread native-result CAS；公开 native BRS、`online_publication=false`、`production_admission=false` 仍保持关闭。
-- PB-03h 的本轮 72-case provider-free focused 回归及 raw/source/import/XML/tree 审计已记录在 `specs/196-brs-owner-worker-handoff/pb03h-integrated-audit.md`；当前 PR112 仍需完成自己的三版本 CI 后才能合入 main。PB-03i 的 owner-result CAS 保护包含在同一候选中。
-- P1 仍开放：完整在线 owner/mailbox composition、rejection C1/P/C2、unknown reconcile、serial successor、policy/memory，以及真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
+- 当前集成工作树为 `/private/tmp/lunar-p1-integration`，分支为 `codex/p1-integration`，候选 HEAD 为 `4c86fe0`；它以 `main` 基线 `a8996a3`（PR112 merge）为起点，当前尚未合入 `main`。
+- 本轮新增 BRS durable reconcile obligation 基础层：controller checkpoint 中可原子地登记、读取、校验、幂等重放和按 digest 删除 owner obligation；obligation 固定 run/episode/request/plan/checkpoint/record 指纹，并约束 mailbox、transaction、phase 与终止状态。对应 focused obligation 回归为 9/9，核心 provider-free focused 组合为 88 项通过。
+- 这只是显式 opt-in 的 durable recovery fence。controller 的在线 reconcile 仍未接通：`_drive_brs()`、`resume()` 和默认调度路径不会自动消费 obligation、探测 worker/process/mailbox 或推进 phase；`unknown` 仍不会被推断为成功。下一步必须在 selected handoff 前后接入 controller checkpoint，并以完整 process/native/mailbox/result evidence 实现显式 `reconcile_brs_selected`。
+- 当前候选同时保留 PB-03h 私有 native dispatch、owner/mailbox composition、exact result delivery/settlement、serial successor、rejection C1/P/C2 adapter、policy/memory shadow gate 和本机 process/workspace evidence；公开 native BRS、`online_publication=false`、`production_admission=false` 仍保持关闭。
+- P0 是当前候选自己的完整 CI、actual checkout/source/import/raw/tree 审计和 PR113 合入；P1 仍开放 controller-level online reconcile 以及真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
 - P2（远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）继续后置。仅使用本地 inert/provider-free fixture，不运行 WebAgent、远程 evaluator 或真实 campaign。
 
 以下旧条目保留为历史交接证据，不能覆盖上述当前状态。
