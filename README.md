@@ -23,11 +23,11 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 同 workspace 连续 DRS 发布 | 🧪 统一候选待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
 | DRS known rejection | 🧪 统一候选待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
 | BRS partial-wave resume | 🧪 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
-| 多 child native BRS | 🧪 私有 P1 组件已接线 | PB-03h native dispatch、owner result CAS、私有 owner/mailbox bridge、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate、BRS durable obligation 与显式 selected reconcile facade 已合入 `main`；controller online phase CAS 尚未接通。公共 native BRS 与生产 admission 仍关闭。 |
+| 多 child native BRS | 🧪 私有 P1 组件已接线 | PB-03h native dispatch、owner result CAS、私有 owner/mailbox bridge、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate、BRS durable obligation、显式 selected reconcile facade 与 controller-owned phase CAS helper 已合入候选；默认 `_drive_brs()`/`resume()` 和 selected handoff wiring 尚未接通。公共 native BRS 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-恢复、parser、selected service、worker 发布拒绝与私有成功检查点已集中到 PR112 并合入 `main`。PR113 随后增加 BRS durable obligation 与显式 selected reconcile facade，并已以合并提交 `22ec975` 合入 `main`。facade 只做完整 evidence 的纯审计，不写 ledger、不接入 `_drive_brs()` / `resume()`，未知状态仍不会自动推进。当前发布台账记录了 controller phase CAS、真实 runtime 和 producer 验收的剩余边界。
+恢复、parser、selected service、worker 发布拒绝与私有成功检查点已集中到 PR112 并合入 `main`。PR113 随后增加 BRS durable obligation 与显式 selected reconcile facade，并已以合并提交 `22ec975` 合入 `main`；当前候选再增加 controller-owned phase CAS helper。facade 只做完整 evidence 的纯审计，helper 只在显式调用、controller lock 和 checkpoint CAS 下推进相邻 phase，均不接入默认 `_drive_brs()` / `resume()`，未知状态仍不会自动推进。当前发布台账记录了 selected handoff wiring、真实 runtime 和 producer 验收的剩余边界。
 
 ## 主要能力
 
@@ -215,7 +215,7 @@ Linux / SSH 服务器的独立环境、六个普通分片加三个重用例的�
 
 ### P1：多 child BRS 与真实本地运行时
 
-- 按 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 接通原 owner 的 retained recovery、native transaction、拒绝分支和独立结果交付。当前集成分支已具备私有 owner/mailbox composition、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate 和 BRS durable obligation 持久化基础层；controller-level online reconcile（selected handoff 前后的 checkpoint 消费、process/native/mailbox/result evidence 复核和显式 phase 推进）仍需完成，真实 runtime/producer/CLI 验收也仍开放。私有检查点已开发，不等于公开 native BRS 可用。
+- 按 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 接通原 owner 的 retained recovery、native transaction、拒绝分支和独立结果交付。当前集成分支已具备私有 owner/mailbox composition、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate、BRS durable obligation 持久化基础层和显式 controller phase CAS helper；默认 controller online reconcile（selected handoff 前后的自动 checkpoint 消费、process/native/mailbox/result evidence 复核和调度 wiring）仍需完成，真实 runtime/producer/CLI 验收也仍开放。私有检查点已开发，不等于公开 native BRS 可用。
 - 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。
 - 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。
 - 保留 provider-free 默认值；producer score 仍须经独立 verifier/evaluation 才能产生官方结论。

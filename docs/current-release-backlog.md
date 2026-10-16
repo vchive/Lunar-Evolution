@@ -1,5 +1,21 @@
 # Current release backlog — 2026-10-17
 
+## 2026-10-17：controller-owned BRS reconcile phase CAS（本轮完成）
+
+在 selected reconcile facade 之上，本轮增加 `RSILedger.apply_brs_reconcile_decision`
+及同义 `reconcile_brs_selected` controller helper。它要求调用方提供完整
+`BRSReconcileDecision` 与 `BRSReconcileEvidence`，在原 obligation digest、evidence digest
+和 controller lock 均匹配时，通过 checkpoint CAS 只推进相邻 phase：
+`selected → worker_running/reconcile_required`、`reconcile_required → settled`。
+`manual_review` 保持原 checkpoint 不变，`drifted` 明确拒绝；captured checkpoint identity
+不会被刷新。对应 6 项 phase-CAS focused tests、obligation/facade 回归及 Ruff、compileall、
+diff-check 已通过。
+
+这是显式 opt-in persistence boundary，不代表默认 `_drive_brs()`、`resume()` 或 selected
+handoff 已自动接入；完整 process/native/mailbox/result evidence 仍需由本地 adapter 先观察。
+真实 CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收仍
+开放，远程 evaluator、外部 worker authentication、多机 ownership 与分布式 scheduler 继续后置。
+
 ## 2026-10-17：PR113 合入与 selected reconcile facade
 
 PR113 已以合并提交 `22ec975` 合入 `main`。在 durable obligation 基础层之上，本轮增加
@@ -9,8 +25,8 @@ drifted 与完整 terminal evidence；仅返回只读 decision，不写 ledger�
 `_drive_brs()`/`resume()`，也不把 `unknown` 推断为成功。对应 10 项 facade 与 19 项
 obligation/resume focused 回归通过，Ruff、compileall、diff-check 通过。
 
-下一步 P1 是 controller-owned phase CAS：在 selected handoff 前后登记 obligation，消费
-facade decision，并在 controller lock 下按相邻 phase 推进或保留 manual review。真实
+下一步 P1 是把已完成的 controller-owned phase CAS helper 接到 selected handoff 前后的
+controller checkpoint，并由默认路径显式调用；真实
 CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收仍开放；
 远程 evaluator、外部 worker authentication、多机 ownership 与分布式 scheduler 继续后置。
 
@@ -22,10 +38,10 @@ BRS durable reconcile obligation 的最小持久化基础层：controller checkp
 run/episode/request/native-plan/checkpoint/episode-record 指纹，并校验 phase、mailbox、
 transaction、worker profile 和终止状态；缺失、冲突、漂移或未知状态均拒绝继续。
 
-该基础层是显式 opt-in 的 recovery fence，**不等于 controller online reconcile 已接通**。
+该基础层是显式 opt-in 的 recovery fence，**不等于默认 controller online reconcile 已接通**；phase CAS helper 需要显式调用，且不改变默认 `_drive_brs()`/`resume()`。
 当前 `_drive_brs()`、`resume()` 和默认调度路径不会自动消费 obligation、探测 worker/process/
-mailbox/result evidence 或推进 phase；也不会把 `unknown` 推断为成功。下一步 P1 需要把 obligation 接到 selected handoff 前后的 controller checkpoint，并消费
-facade decision 在 controller lock 下推进相邻 phase。对应 focused obligation 回归为 9/9，
+mailbox/result evidence 或推进 phase；也不会把 `unknown` 推断为成功。后续 P1 仍需把 obligation 接到默认 selected handoff 前后的 controller checkpoint，并由默认路径显式消费
+facade decision。对应 focused obligation 回归为 9/9，
 facade 回归为 10/10；这些本地结果不替代真实 runtime/producer 验收。
 
 ## 本轮后继开发状态
@@ -44,7 +60,7 @@ owner-lineage、30/30 transaction-control和17/17 staging-compatibility均通过
 私有 owner/mailbox composition、exact result delivery/one-shot settlement、本机
 process/workspace reconcile evidence、serial successor 的 fresh handoff/claim/dispatch、
 rejection C1/P/C2 adapter、policy/memory shadow gate，以及 BRS durable obligation 持久化基础层；
-完整 owner transaction、controller-level online reconcile 与真实 runtime 仍开放。
+完整 owner transaction、默认 controller-level online reconcile wiring 与真实 runtime 仍开放。
 当前 [PR113](https://github.com/vchive/Lunar-Evolution/pull/113) 候选的完整 33-job CI、
 actual checkout/source/import/raw/tree 独审和 main 合并是 P0 出口；不要把本地 focused
 结果或旧 PR 的来源当成该候选的最终验收。
@@ -65,8 +81,8 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 - P1：当前分支已完成私有 owner/mailbox composition、exact result delivery/settlement、
   本机 process/workspace evidence、serial successor dispatch、rejection C1/P/C2 adapter、
   policy/memory shadow gate 和 durable obligation 持久化基础层的 provider-free 最小切片；
-  已增加显式 selected reconcile facade；仍需把 obligation 接入 controller selected handoff
-  前后的 checkpoint，并完成 online phase CAS（含完整 process/native/mailbox/result evidence）以及真实 runtime/
+  已增加显式 selected reconcile facade 和 controller-owned phase CAS helper；仍需把 obligation
+  接入默认 controller selected handoff 前后的 checkpoint，并完成 online wiring（含完整 process/native/mailbox/result evidence）以及真实 runtime/
   producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继验收；这些私有接口
   仍不等于公开 native BRS 或生产 admission 已开启。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
