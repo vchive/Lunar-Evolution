@@ -51,7 +51,7 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 ## 当前状态与本轮出口
 
-2026-10-16 最新检查点：main 仍为下面的 PR99 基线。P0 当前出口改为顶部说明的
+2026-10-16 最新检查点：main 已合入 PR109，当前为 `319c8ab79805031a724d0964ebd497c16359753c`。P0 当前出口改为顶部说明的
 base-main 统一后继；它包含 PR103/105/106/107/108 的真实 Git 祖先，并须验收自己
 最终 head 的完整 33-job、actual merge/source/import/raw 证据后合入。
 PR103 `935ab57` 的 [CI 38752535974](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)
@@ -77,7 +77,7 @@ native BRS 仍关闭，`production_admission=false`。
 staged/terminal checkpoint primitive 已在统一 `01c3bd1` 实现并通过独立源码审查；
 完整 online composition、最终 focused/raw 与正式 CI 分别记录，不把 primitive 当作发布执行。
 
-当前已确认的 main 基线为 `0cb49abb146d91cb59b71de45d01e16217ebed8d`（PR99）。
+历史记录中的 main 基线为 `0cb49abb146d91cb59b71de45d01e16217ebed8d`（PR99）；当前 main 已更新为 PR109 merge `319c8ab`。
 单 child 的原 controller → owner/CAS → gateway → claim/running → scheduler →
 admission/publication → receipt/verifier → 只读恢复已完成本地 fixture 验收并合入。
 默认 staging-only、生产 CLI native 拒绝和 `production_admission=false` 保留。

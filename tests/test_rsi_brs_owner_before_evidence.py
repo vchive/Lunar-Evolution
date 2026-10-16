@@ -46,7 +46,9 @@ def inert_only(monkeypatch):
     for module, names in (
         (subprocess, ("Popen", "run")), (socket, ("create_connection",)),
         (transaction, ("run_native_producer_bundle_publication_transaction",)),
-        (staging, ("stage_producer_bundle_publication", "commit_producer_bundle_publication")),
+        # Keep canonical stage/commit identities for the BRS policy fingerprint;
+        # block their actual publication paths through unpinned staging helpers.
+        (staging, ("_journal_for_stage", "_verify_stage")),
         (bundle_evolution, ("evaluate_candidate_execution",)),
     ):
         for name in names:

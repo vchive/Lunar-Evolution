@@ -1,18 +1,21 @@
 # P1 CLI / local producer composition gap report
 
-Date: 2026-10-12
-Baseline: PR59 `a6a8eb262a9ef79a6468e02f4d5c158afaf718a3`
+Date: 2026-10-16
+Baseline: current `main` `319c8ab` (PR109 on top of the PR99 single-child baseline)
 Scope: provider-free local inspection only; no model, WebAgent, remote evaluator, or real
 OpenEvolve/Shinka campaign was run.
 
-Current correction, 2026-10-13: the retained `rsi replay` inspector, replay gateway
-and durable `rsi resume` CLI are implemented and merged. PR64's integrated source
-passed 15 checks; later replay-context changes from PR73 keep their original failed
-CI evidence and must not borrow that older acceptance. The latest integration and
-raw/source/tree obligations are tracked in
+Current correction, 2026-10-16: the retained `rsi replay` inspector, replay gateway,
+durable `rsi resume` CLI, and bounded OpenEvolve/Shinka result exporter are implemented
+in the current integration line. Their provider-free local evidence is a read-only
+contract/replay boundary; it does not accept a project runtime or a producer campaign.
+PR64's integrated source passed 15 checks; later replay-context changes from PR73 keep
+their original failed CI evidence and must not borrow that older acceptance. The latest
+integration and raw/source/tree obligations are tracked in
 [`../../docs/current-release-backlog.md`](../../docs/current-release-backlog.md).
-The open P1 development is the local retained result/exporter join and subsequent
-runtime-gated producer CLI acceptance, not another replay/result DTO.
+The remaining P1 work is source/toolchain/static-runtime acceptance, sealed startup and
+lifecycle observation, and an explicit producer-backed CLI on that accepted runtime. It
+is not another replay/result DTO or exporter join.
 `production_admission=false`.
 
 ## Finding
@@ -31,11 +34,13 @@ The existing local producer paths are separate:
 - `rsi_native_gateway` / `rsi_native_scheduler` compose a programmatic local native gateway,
   but there is no production CLI entry that stages the request and invokes that composition.
 - `rsi inspect` and `rsi reconcile` inspect the RSI ledger, while candidate-bundle inspection
-  commands inspect candidate evidence; neither provides one read-only replay from a retained
-  producer result into a `SolverResult` bound to an RSI episode.
+  commands inspect candidate evidence. The provider-free `rsi replay` path now supplies the
+  retained producer-to-episode read-only comparison; it does not launch a producer or settle
+  a new episode. What remains missing is an explicit producer-backed execution path after a
+  real runtime has been accepted.
 
-This is a real P1 wiring gap. It is not a missing DTO or a reason to add another solver-result
-schema.
+This remains a real P1 runtime/CLI execution gap after the provider-free replay/export slice.
+It is not a missing DTO or a reason to add another solver-result schema.
 
 ## Reproduction evidence
 
@@ -120,7 +125,8 @@ The existing `rsi run --solver openevolve|shinka` remains the provider-free cont
 but its JSON now states `solver_execution: provider_free_fixture`,
 `production_admission: false`, and `warning: rsi_producer_replay_required`. It is therefore not
 silently reported as a producer campaign. A later `rsi producer-run` command can own the real
-local native lifecycle, but that is a separate acceptance slice.
+local native lifecycle, but that is a separate acceptance slice; no such production command is
+claimed by this report.
 
 ## Acceptance tests for the slice
 

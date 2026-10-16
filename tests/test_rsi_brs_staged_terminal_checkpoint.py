@@ -73,6 +73,11 @@ def inert_only(monkeypatch):
     for module, names in (
         (subprocess, ("Popen", "run")), (socket, ("create_connection",)),
         (transaction, ("run_native_producer_bundle_publication_transaction",)),
+        # Keep canonical stage/commit function identities bound for the policy
+        # fingerprint while blocking any unexpected staging side effect below
+        # their stable internal helpers.  `_load_manifest` remains readable so
+        # success facades can inspect their explicitly written inert fixture.
+        (staging, ("_journal_for_stage", "_verify_stage")),
     ):
         for name in names:
             monkeypatch.setattr(module, name, _forbidden)
@@ -547,7 +552,7 @@ def test_new_live_dependencies_cannot_run_after_replacement(tmp_path, monkeypatc
     with _waiting(tmp_path, monkeypatch) as value:
         wire, before = _staged(value), fixture._capture(value)
         monkeypatch.setattr(brs._BRSLineageCheckpointOwner, method, _forbidden)
-        with pytest.raises(RSILearningError, match="policy_drift"):
+        with pytest.raises(RSILearningError, match="(?:policy_drift|native_reader_globals_drift)"):
             value.owner.checkpoint_staged(wire)
         fixture._unchanged(value, before)
 
@@ -557,7 +562,7 @@ def test_native_context_helper_rebinding_refuses_before_callback(tmp_path, monke
     with _waiting(tmp_path, monkeypatch) as value:
         wire, before = _staged(value), fixture._capture(value)
         monkeypatch.setattr(scheduler_inputs, method, _forbidden)
-        with pytest.raises(RSILearningError, match="policy_drift"):
+        with pytest.raises(RSILearningError, match="(?:policy_drift|native_reader_globals_drift)"):
             value.owner.checkpoint_staged(wire)
         fixture._unchanged(value, before)
 
