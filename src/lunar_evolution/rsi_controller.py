@@ -5288,7 +5288,10 @@ class RSILearningController:
         _id(run_id, "run_id")
         if self.ledger is None:
             raise RSILearningError("rsi_resume_requires_ledger")
-        if not isinstance(evidence, Mapping):
+        # Evidence is a security-sensitive boundary.  Accept only a plain dict so
+        # mapping subclasses cannot run user code from ``items``/``__iter__`` while
+        # the controller is deciding which durable obligations to consume.
+        if type(evidence) is not dict:
             raise RSILearningError("rsi_brs_reconcile_evidence_mapping_invalid")
         from .rsi_brs_reconcile import (
             BRSReconcileConsumption,
@@ -5301,8 +5304,8 @@ class RSILearningController:
             _id(episode_id, "episode_id")
             if type(value) is BRSReconcileEvidence:
                 parsed[episode_id] = value
-            elif isinstance(value, Mapping):
-                parsed[episode_id] = BRSReconcileEvidence.from_dict(dict(value))
+            elif type(value) is dict:
+                parsed[episode_id] = BRSReconcileEvidence.from_dict(value)
             else:
                 raise RSILearningError("rsi_brs_reconcile_evidence_invalid")
 

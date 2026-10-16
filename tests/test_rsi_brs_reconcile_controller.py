@@ -249,3 +249,18 @@ def test_controller_resume_brs_reconcile_rejects_unknown_episode_before_consumin
             },
         )
     assert episode_id in ledger.controller_brs_reconcile_obligations(run_id)
+
+
+def test_controller_resume_brs_reconcile_rejects_mapping_subclasses(tmp_path: Path) -> None:
+    ledger, run_id, episode_id, _request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    registration = _register(ledger, run_id, checkpoint, handoff, episode_sha)
+    controller = RSILearningController(DeterministicMockSolver(), ledger=ledger)
+
+    class EvidenceDict(dict):
+        pass
+
+    with pytest.raises(RSILearningError, match="evidence_mapping_invalid"):
+        controller.resume_brs_reconcile(
+            run_id, EvidenceDict({episode_id: _evidence(registration.obligation).to_dict()}),
+        )
+    assert episode_id in ledger.controller_brs_reconcile_obligations(run_id)
