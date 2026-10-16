@@ -27,3 +27,17 @@ evidence, M0 preservation, and non-authority of the returned selection.
 The online PB-03 owner publication bridge, C1/P/C2 settlement, read-only
 reconcile, and production native BRS admission remain open. This primitive is
 not evidence that those capabilities are available.
+
+## Fresh successor claim boundary
+
+`claim_brs_successor(ledger, selection, request, ...)` is the first online
+boundary after the detached transition. It accepts only an exact
+`BRSNativeChildSelection` and `SolverRequest` pair, then delegates to the
+existing guarded `RSILedger.claim_native_episode` operation with the new
+controller checkpoint digest. The caller must already hold the controller
+lock. The ledger transaction therefore rejects a stale owner head, duplicate
+claim, existing episode/result, or an unclaimed result without creating a new
+row. The returned `NativeEpisodeClaim` is launch state only; it does not carry
+the previous ordinal's claim, nonce, receipt, owner object, or publication
+authority. Publication, C1/P/C2, and sibling dispatch remain separate owner
+operations.

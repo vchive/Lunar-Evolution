@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from .rsi_gateway import SolverRequest
 from .rsi_python_brs_child_policy import (
     MAX_BRS_CHILD_ATTEMPTS,
     BRSChildPolicyError,
@@ -20,6 +21,7 @@ from .rsi_python_brs_child_policy import (
     BRSNativeChildSelection,
     preflight_native_brs_child,
 )
+from .rsi_store import NativeEpisodeClaim, RSILedger
 
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
@@ -179,9 +181,77 @@ def advance_brs_ordinal(
     return BRSOrdinalSuccessor(successor, observed, successor.select_next_pending())
 
 
+def claim_brs_successor(
+    ledger: RSILedger,
+    selection: BRSNativeChildSelection,
+    request: SolverRequest,
+    *,
+    plan_sha256: str,
+    controller_run_id: str,
+    expected_controller_checkpoint_sha256: str,
+) -> NativeEpisodeClaim:
+    """Create one fresh, owner-CAS-bound claim for a serial successor.
+
+    ``advance_brs_ordinal`` intentionally returns a descriptive selection only.  This
+    narrow bridge is the next online boundary: it revalidates the selected identity,
+    checks the request digest, and delegates the atomic create-only operation to the
+    existing ledger.  The caller must already hold the controller lock; the guarded
+    ledger operation rejects a stale head, duplicate claim, unclaimed result, or any
+    other attempt to replay the prior ordinal.  A claim is launch state only and never
+    grants publication or lineage authority.
+    """
+    if type(ledger) is not RSILedger:
+        _fail("ledger_invalid")
+    if type(selection) is not BRSNativeChildSelection:
+        _fail("selection_invalid")
+    if type(request) is not SolverRequest:
+        _fail("request_invalid")
+    try:
+        # Rebuild strict detached values before calculating the request digest.  This
+        # also rejects object.__setattr__ mutations on an otherwise frozen selection.
+        selected = BRSNativeChildSelection(
+            run_id=selection.run_id,
+            wave=selection.wave,
+            ordinal=selection.ordinal,
+            episode_id=selection.episode_id,
+            request_sha256=selection.request_sha256,
+            root_snapshot_sha256=selection.root_snapshot_sha256,
+            planned_budget=selection.planned_budget,
+            consumed_budget=selection.consumed_budget,
+            authority=selection.authority,
+        )
+        expected = SolverRequest.from_dict(request.to_dict())
+    except (BRSChildPolicyError, TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise BRSOrdinalSuccessorError("claim_shape_invalid") from exc
+    if selected.authority is not False:
+        _fail("claim_authority_invalid")
+    try:
+        request_sha256 = expected.digest()
+    except (AttributeError, TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise BRSOrdinalSuccessorError("claim_request_invalid") from exc
+    if (
+        expected.episode_id != selected.episode_id
+        or request_sha256 != selected.request_sha256
+    ):
+        _fail("claim_binding_mismatch")
+    try:
+        return ledger.claim_native_episode(
+            expected,
+            plan_sha256=plan_sha256,
+            controller_run_id=controller_run_id,
+            expected_controller_checkpoint_sha256=expected_controller_checkpoint_sha256,
+        )
+    except Exception as exc:
+        # Do not leak a ledger object or turn a stale/duplicate claim into a retryable
+        # successor.  The original exception remains available as ``__cause__`` for
+        # local diagnostics while callers receive one stable refusal class.
+        raise BRSOrdinalSuccessorError("claim_refused") from exc
+
+
 __all__ = [
     "BRSOrdinalCompletion",
     "BRSOrdinalSuccessor",
     "BRSOrdinalSuccessorError",
     "advance_brs_ordinal",
+    "claim_brs_successor",
 ]
