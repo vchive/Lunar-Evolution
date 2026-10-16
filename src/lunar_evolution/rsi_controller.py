@@ -2351,9 +2351,42 @@ class RSILearningController:
                 raise RSILearningError("rsi_python_brs_admission_selected_result_invalid")
             with wave.ledger.read_only_observations():
                 episode = wave.ledger.get_episode(handoff.episode_id)
+            if episode is None or episode.payload != wire["episode"]:
+                raise RSILearningError("rsi_python_brs_admission_selected_result_invalid")
+            # The worker may have written the immutable result before returning, but the
+            # owner must accept that response against the exact current controller/episode
+            # heads before the ready channel is completed.  This owner-side CAS can fill a
+            # missing result row after a crash between worker result and episode append;
+            # it never advances the episode or publication lineage.
+            from .rsi_native_plan import NativeRSIExecutionPlan
+
+            reference = wave.state.get("python_admission_refs", {}).get(handoff.episode_id)
+            wave.channel.assert_selected_handoff_acknowledged(handoff.episode_id)
+            try:
+                if type(reference) is not dict:
+                    raise ValueError("admission reference")
+                native_plan = NativeRSIExecutionPlan.from_dict(reference["native_plan"])
+                claim = wave.ledger.inspect_native_episode_claim(
+                    execution.request, plan_sha256=native_plan.plan_sha256,
+                )
+                if claim is None:
+                    raise ValueError("native claim")
+                accepted_claim = wave.ledger.accept_native_episode_result(
+                    execution.request,
+                    plan_sha256=native_plan.plan_sha256,
+                    result=execution.result,
+                    expected_claim=claim,
+                    controller_run_id=wave.run_id,
+                    expected_controller_checkpoint_sha256=wave.checkpoint_sha256,
+                    expected_episode_record_sha256=episode.record_sha256,
+                )
+                if accepted_claim.status != execution.result.status:
+                    raise ValueError("native result status")
+            except (KeyError, TypeError, ValueError, RSILearningError) as exc:
+                raise RSILearningError("rsi_python_brs_admission_selected_result_invalid") from exc
+            with wave.ledger.read_only_observations():
                 result = wave.ledger.episode_result(handoff.episode_id)
-            if (episode is None or episode.payload != wire["episode"]
-                    or result != (execution.request, execution.result)):
+            if result != (execution.request, execution.result):
                 raise RSILearningError("rsi_python_brs_admission_selected_result_invalid")
             wave.channel.complete_selected_handoff(handoff.episode_id)
         finally:
