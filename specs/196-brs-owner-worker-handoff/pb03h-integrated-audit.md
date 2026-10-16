@@ -18,6 +18,11 @@ audit did not create tracked files. Ignored raw materials are retained under:
 .lunar-evolution/reports/pb03h-integrated-audit-20261016/
 ```
 
+Commit `342a83a` adds this audit document after the run; it contains no
+product or test changes. The focused evidence remains bound to the frozen
+`bd1d195` source above, while the pull request head includes only this tracked
+report as the post-audit delta.
+
 The machine-readable audit record is `report.json` in that directory. Its
 SHA-256 is `ca8e4961835c442dd9fc2197681d4c17a7a895d0ad524780df1f70be1b097b58`.
 
