@@ -1,5 +1,13 @@
 # Current release backlog — 2026-10-17
 
+## 2026-10-17：controller explicit reconcile resume facade 与 runtime gap audit（本轮完成）
+
+PR118（`a82f55a`）增加 `RSILearningController.resume_brs_reconcile`：它在单次 per-run owner lock 下先解析全部 DTO/wire evidence，预拒绝未知 episode，再按稳定 episode 顺序调用 `consume_brs_selected_reconcile`。只有完整 `already_terminal` evidence 会消费 obligation；unknown、manual review、recoverable、abandoned 和 drifted 保留 checkpoint。PR119（`545e9d8`）进一步将输入收窄为 plain dict，拒绝 mapping 子类在安全边界执行调用方代码。
+
+PR120（`79ead61`）记录真实 lifecycle gap：OpenEvolve native 已有 provider-free trusted 单次路径，Shinka 仍是只读 SQLite/source exporter；真实 CPython/source/toolchain/sealed runtime profile、项目 entrypoint、取消/清理原始证据和 production CLI 尚未验收。当前不把 fixture 接到 `native-producer`，也不启动真实 campaign。
+
+当前 P1 下一步是冻结一个真实 runtime profile 后再接一个项目入口并完成 Linux 中断矩阵；P2 继续后置。
+
 ## 2026-10-17：selected obligation registration 与 terminal consume（本轮完成）
 
 PR116（合并提交 `0eacf72`）在 phase CAS 之上增加两个显式、owner-locked 的 provider-free API：`register_brs_selected_obligation` 在 selected handoff、native plan/prepared pin 和 episode record 已冻结后登记 durable obligation；`consume_brs_selected_reconcile` 在 resume-time 重新校验 immutable bindings，并且只在完整 terminal evidence 下通过最新 checkpoint head 做 CAS 消费。registration 保留 append 前 captured parent digest，返回 append 后 checkpoint head；精确重放幂等。
