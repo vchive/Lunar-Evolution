@@ -27,6 +27,7 @@ from lunar_evolution import RSILearningError, rsi_controller
 from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.rsi_budget import RSIRunBudget
 from lunar_evolution.rsi_fingerprint import RSIFingerprintError
+from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
 
 no_external_execution = selected_service.no_external_execution
 
@@ -115,6 +116,29 @@ def test_owner_settlement_adds_only_selected_execution_by_real_cas_and_readback(
         _assert_single_worker(value)
         _refused(value, wave, lambda: _settle(value, record, wave, execution),
                  match="^rsi_python_brs_admission_selected_settlement_unavailable$")
+
+
+def test_owner_result_acceptance_refuses_stale_controller_checkpoint(tmp_path, monkeypatch):
+    value = _fixture(tmp_path, monkeypatch)
+    with _wave(value) as wave:
+        _record, execution = _returned(value, wave)
+        reference = wave.state["python_admission_refs"][value.episode_id]
+        plan = NativeRSIExecutionPlan.from_dict(reference["native_plan"])
+        claim = value.ledger.inspect_native_episode_claim(
+            execution.request, plan_sha256=plan.plan_sha256,
+        )
+        assert claim is not None
+        with pytest.raises(RSILearningError, match="controller_checkpoint_conflict"):
+            value.ledger.accept_native_episode_result(
+                execution.request,
+                plan_sha256=plan.plan_sha256,
+                result=execution.result,
+                expected_claim=claim,
+                controller_run_id=value.binding.run_id,
+                expected_controller_checkpoint_sha256=OTHER,
+                expected_episode_record_sha256=execution.episode.record_sha256,
+            )
+        assert value.ledger.episode_result(value.episode_id) == (execution.request, execution.result)
 
 
 def test_settlement_source_hooks_and_real_save_do_not_hold_observation_mutex(tmp_path, monkeypatch):
