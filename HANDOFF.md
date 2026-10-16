@@ -1,11 +1,11 @@
-# 当前状态（2026-10-17，P1 controller phase CAS）
+# 当前状态（2026-10-17，P1 explicit reconcile registration/consume）
 
-- PR113 已合入 `main`，合并提交为 `22ec975`；下一轮工作基于该主线提交，在独立分支实现显式 reconcile facade。
-- 本轮新增 BRS durable reconcile obligation 基础层：controller checkpoint 中可原子地登记、读取、校验、幂等重放和按 digest 删除 owner obligation；obligation 固定 run/episode/request/plan/checkpoint/record 指纹，并约束 mailbox、transaction、phase 与终止状态。对应 focused obligation 回归为 9/9，核心 provider-free focused 组合为 88 项通过。
-- 已新增显式 opt-in `reconcile_brs_selected` 纯 facade：它只校验完整 process/native/mailbox/result evidence，返回 `already_terminal`、`recoverable`、`manual_review` 或 `drifted` 决策，不写 ledger、不接入 `_drive_brs()`/`resume()`，也不会把 `unknown` 推断为成功。随后新增 `RSILedger.apply_brs_reconcile_decision`（及同义 controller helper）：在 controller lock 下重新验证 decision/evidence digest，并用 checkpoint CAS 推进相邻 obligation phase；`manual_review` 保持只读，drift 拒绝。
-- 当前候选同时保留 PB-03h 私有 native dispatch、owner/mailbox composition、exact result delivery/settlement、serial successor、rejection C1/P/C2 adapter、policy/memory shadow gate 和本机 process/workspace evidence；公开 native BRS、`online_publication=false`、`production_admission=false` 仍保持关闭。
-- P0 的 PR113 已完成合入；P1 的 controller-owned phase CAS 显式 helper 已完成，但尚未接入默认 `_drive_brs()`/`resume()` 或 selected handoff wiring。真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收仍开放。
-- P2（远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）继续后置。仅使用本地 inert/provider-free fixture，不运行 WebAgent、远程 evaluator 或真实 campaign。
+- PR115 已合入 `main`（`be73a52`）：controller-owned BRS reconcile phase CAS。
+- PR116 已合入 `main`（`0eacf72`）：selected handoff 后的显式 obligation registration，以及 owner-locked terminal reconcile consume；保留 captured parent head，使用 append 后 head 做 CAS。
+- `unknown`、`manual_review`、`recoverable`、`drifted` 均不会删除 obligation 或自动重启；只有完整 terminal evidence 才允许显式 consume。
+- 这些 API 仍是 provider-free、显式 opt-in seam；默认 `_drive_brs()`、`resume()`、public native BRS 和 `production_admission` 不自动接入，`online_publication=false`。
+- P1 仍开放：把显式 seam 接到已批准的 selected owner lifecycle、真实 CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
+- P2（远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）继续后置。仅运行本地 inert/provider-free fixture，不运行 WebAgent、远程 evaluator 或真实 campaign。
 
 以下旧条目保留为历史交接证据，不能覆盖上述当前状态。
 
