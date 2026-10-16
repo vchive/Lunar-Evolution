@@ -111,3 +111,19 @@ def test_adapter_shape_checks_p_readback_before_callback_methods(tmp_path, monke
     with pytest.raises(composition.BRSRejectionCompositionError):
         composition.compose_brs_rejection_c1_p_c2(owner, lineage, evidence)
     assert called == []
+
+
+def test_adapter_shape_checks_c1_binding_before_comparison(tmp_path, monkeypatch):
+    evidence = rejection_evidence()
+    owner, lineage = _owner(evidence, tmp_path)
+    binding = replace(evidence.lineage)
+    object.__setattr__(binding, "checkpoint_sha256", lambda: "callback")
+    touched = []
+    monkeypatch.setattr(RSIPublicationLineage, "rejection_provenance_binding",
+                        lambda _self: binding)
+    monkeypatch.setattr(composition, "persist_native_rsi_rejection_provenance",
+                        lambda *_args, **_kwargs: touched.append("P"))
+
+    with pytest.raises(composition.BRSRejectionCompositionError):
+        composition.compose_brs_rejection_c1_p_c2(owner, lineage, evidence)
+    assert touched == []

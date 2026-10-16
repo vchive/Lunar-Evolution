@@ -101,6 +101,14 @@ def _lineage_identity(owner: object, lineage_owner: object, binding: RejectionLi
     """Bind BRS and original-lineage identities before P is created."""
     if type(lineage_owner) is not RSIPublicationLineage:
         _fail("lineage_owner_invalid")
+    from .rsi_native_rejection import _dto_shape
+
+    if type(binding) is not RejectionLineageC1Binding:
+        _fail("c1_invalid")
+    try:
+        _dto_shape(binding)
+    except Exception as exc:
+        raise BRSRejectionCompositionError("c1_invalid") from exc
     try:
         pairs = (
             (owner._run_id, lineage_owner._run_id),
