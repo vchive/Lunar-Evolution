@@ -21,3 +21,12 @@ never treats unknown as success, retries, refreshes a head, or relaunches work.
 The APIs are intentionally not wired into the ordinary BRS driver or public admission path. Real
 process/evaluator adapters and production admission require a separate approved integration and
 remain outside this feature.
+
+`RSILearningController.resume_brs_reconcile(run_id, evidence_by_episode)` is the controller
+facade for this seam. It accepts a mapping from episode id to either a strict
+`BRSReconcileEvidence` value or its `to_dict()` form, acquires the per-run controller lock once,
+and consumes entries in deterministic episode-id order. Unknown episode keys and malformed wire
+values are rejected before any consume starts. The facade never calls ordinary `resume()`,
+`_drive_brs()`, or a solver. It returns one `BRSReconcileConsumption` per accepted key; only
+`already_terminal` evidence removes an obligation, while `manual_review`, `recoverable`,
+`abandoned`, and `drifted` outcomes retain it for a later explicit observation.
