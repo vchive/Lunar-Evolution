@@ -99,6 +99,13 @@ def test_terminal_evidence_requires_all_independent_legs() -> None:
     assert result.outcome == "manual_review"
 
 
+def test_explicit_abandoned_terminal_is_not_reported_as_success() -> None:
+    obligation = _obligation()
+    result = reconcile_brs_selected(obligation, _evidence(obligation, terminal_status="abandoned"))
+    assert result.outcome == "abandoned"
+    assert result.recommended_phase == "reconcile_required"
+
+
 def test_evidence_wire_is_strict_and_round_trips() -> None:
     obligation = _obligation()
     evidence = _evidence(obligation)

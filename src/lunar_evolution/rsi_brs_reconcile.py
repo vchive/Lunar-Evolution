@@ -484,6 +484,8 @@ def reconcile_brs_selected(
         return _decision(obligation, evidence, "manual_review", "transaction is not terminal")
     if evidence.controller_observed_terminal is not True or evidence.cleanup_confirmed is not True:
         return _decision(obligation, evidence, "manual_review", "terminal cleanup not observed")
+    if evidence.terminal_status == "abandoned":
+        return _decision(obligation, evidence, "abandoned", "explicit abandoned terminal evidence verified")
     return _decision(obligation, evidence, "already_terminal", "explicit terminal evidence verified")
 
 

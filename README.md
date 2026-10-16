@@ -23,11 +23,11 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 同 workspace 连续 DRS 发布 | 🧪 统一候选待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
 | DRS known rejection | 🧪 统一候选待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
 | BRS partial-wave resume | 🧪 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
-| 多 child native BRS | 🧪 私有 P1 组件已接线 | PB-03h native dispatch、owner result CAS、私有 owner/mailbox bridge、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate 与 BRS durable reconcile obligation 已在集成分支通过 provider-free focused 回归；controller online reconcile 尚未接通，候选尚未合入 `main`。公共 native BRS 与生产 admission 仍关闭。 |
+| 多 child native BRS | 🧪 私有 P1 组件已接线 | PB-03h native dispatch、owner result CAS、私有 owner/mailbox bridge、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate、BRS durable obligation 与显式 selected reconcile facade 已合入 `main`；controller online phase CAS 尚未接通。公共 native BRS 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-恢复、parser、selected service、worker 发布拒绝与私有成功检查点已集中到 PR112 并合入 `main`。当前 `main` 为 merge commit `a8996a3`。PR113 的集成候选在此基线上增加 BRS durable reconcile obligation：它提供显式 opt-in 的 checkpoint CAS、digest 校验、幂等 replay 和精确删除，但尚未接入 `_drive_brs()` / `resume()` 的在线 reconcile；未知状态仍不会自动推进。候选提交的实际来源、证据与结束条件见 [当前发布台账](docs/current-release-backlog.md)。
+恢复、parser、selected service、worker 发布拒绝与私有成功检查点已集中到 PR112 并合入 `main`。PR113 随后增加 BRS durable obligation 与显式 selected reconcile facade，并已以合并提交 `22ec975` 合入 `main`。facade 只做完整 evidence 的纯审计，不写 ledger、不接入 `_drive_brs()` / `resume()`，未知状态仍不会自动推进。当前发布台账记录了 controller phase CAS、真实 runtime 和 producer 验收的剩余边界。
 
 ## 主要能力
 
