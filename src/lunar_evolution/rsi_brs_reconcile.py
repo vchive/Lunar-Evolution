@@ -103,9 +103,9 @@ class BRSReconcileObligation:
         if self.terminal_status is not None:
             _text(self.terminal_status, "terminal_status", limit=64)
         if self.worker_profile is not None:
-            clean = _json_value(dict(self.worker_profile), name="worker_profile")
-            if type(clean) is not dict:
+            if type(self.worker_profile) is not dict:
                 raise RSILearningError("rsi_brs_reconcile_worker_profile_invalid")
+            clean = _json_value(self.worker_profile, name="worker_profile")
             object.__setattr__(self, "worker_profile", clean)
         if self.phase == "settled" and self.transaction_state != "settled":
             raise RSILearningError("rsi_brs_reconcile_settled_transaction_invalid")
@@ -125,7 +125,10 @@ class BRSReconcileObligation:
             "episode_record_sha256": self.episode_record_sha256,
             "native_claim_sha256": self.native_claim_sha256,
             "owner_result_sha256": self.owner_result_sha256,
-            "worker_profile": dict(self.worker_profile) if self.worker_profile is not None else None,
+            "worker_profile": (
+                _json_value(self.worker_profile, name="worker_profile")
+                if self.worker_profile is not None else None
+            ),
             "mailbox_state": self.mailbox_state,
             "transaction_state": self.transaction_state,
             "terminal_status": self.terminal_status,
@@ -165,6 +168,8 @@ class BRSReconcileObligation:
         ))}
         if (phase != "reconcile_required" and self.phase != "reconcile_required"
                 and phase != self.phase and order.get(phase, -1) != order.get(self.phase, -1) + 1):
+            raise RSILearningError("rsi_brs_reconcile_phase_transition_invalid")
+        if self.phase == "reconcile_required" and phase not in {"reconcile_required", "settled"}:
             raise RSILearningError("rsi_brs_reconcile_phase_transition_invalid")
         return replace(
             self, phase=phase,
@@ -248,7 +253,9 @@ def remove_brs_reconcile_obligation(state: dict[str, Any], episode_id: str, *, e
     existing = current.get(episode_id)
     if existing is None:
         return
-    if expected_digest is not None and existing.digest() != _sha(expected_digest, "obligation_digest"):
+    if expected_digest is None:
+        raise RSILearningError("rsi_brs_reconcile_obligation_digest_required")
+    if existing.digest() != _sha(expected_digest, "obligation_digest"):
         raise RSILearningError("rsi_brs_reconcile_obligation_conflict")
     current.pop(episode_id)
     state[FIELD] = {key: current[key].to_dict() for key in sorted(current)}

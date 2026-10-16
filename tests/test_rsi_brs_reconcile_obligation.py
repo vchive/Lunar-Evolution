@@ -85,6 +85,21 @@ def test_phase_transition_preserves_captured_identity_and_forbids_skip() -> None
             "settled", transaction_state="settled")
     with pytest.raises(RSILearningError, match="phase_terminal"):
         settled.advance("worker_running")
+    reconciled = obligation.advance("reconcile_required", terminal_status="failed")
+    with pytest.raises(RSILearningError, match="phase_transition"):
+        reconciled.advance("worker_running")
+
+
+def test_worker_profile_is_detached_and_exact_dict_only() -> None:
+    request = _request()
+    profile = _obligation(request)
+    wire = profile.to_dict()
+    wire["worker_profile"] = {"pid": 123, "argv": ["fixture"]}
+    with_profile = BRSReconcileObligation.from_dict(wire)
+    assert with_profile.to_dict()["worker_profile"] == {"pid": 123, "argv": ["fixture"]}
+    wire["worker_profile"] = {"bad": object()}
+    with pytest.raises(RSILearningError, match="worker_profile"):
+        BRSReconcileObligation.from_dict(wire)
 
 
 def test_mutable_state_put_is_idempotent_and_conflicts_are_rejected() -> None:
