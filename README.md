@@ -23,7 +23,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 同 workspace 连续 DRS 发布 | 🧪 统一候选待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
 | DRS known rejection | 🧪 统一候选待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
 | BRS partial-wave resume | 🧪 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
-| 多 child native BRS | 🧪 私有组件已合入 | PB-03h 私有 native dispatch、owner result CAS、ordinal successor 和 72-case provider-free 审计已合入 `main`（PR112）；完整在线 owner 发布、恢复与连续 child 接线仍开放。公共 native BRS 与生产 admission 仍关闭。 |
+| 多 child native BRS | 🧪 私有 P1 组件已接线 | PB-03h native dispatch、owner result CAS、私有 owner/mailbox bridge、exact result delivery/settlement、serial successor claim/dispatch 与本机 unknown reconcile 已在集成分支通过 provider-free focused 回归；尚未合入 `main`。公共 native BRS 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
@@ -208,14 +208,14 @@ Linux / SSH 服务器的独立环境、六个普通分片加三个重用例的�
 
 单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已合入 main。当前批次的剩余出口是：
 
-- PR112 已将 PR103/105/106/107/108 以及 PB-03h/PB-03i 后继提交合入 `main`；本地 72-case 审计通过，合并后的 33-job CI 仍在等待 GitHub runner。
+- PR112 已将 PR103/105/106/107/108 以及 PB-03h/PB-03i 后继提交合入 `main`；其本地 72-case 审计已通过。当前 P1 集成分支继续叠加私有 owner/mailbox、settlement、serial successor 和本机 reconcile 切片，需新的 PR CI 后再合入 `main`。
 - known rejection 三组混合链已有独立本地证据；历史失败、取消和局部成功保留原标签，不代替最终候选完整 CI。
 
 恢复始终复核原 claim、预算、身份、deadline 与取消门禁；没有原始证据的中断保留 unknown，不启动后继 child。
 
 ### P1：多 child BRS 与真实本地运行时
 
-- 按 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 接通原 owner 的 retained recovery、native transaction、拒绝分支和独立结果交付，再完成 reconciliation、连续 child 和记忆策略。私有检查点已开发，不等于公开 native BRS 可用。
+- 按 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 接通原 owner 的 retained recovery、native transaction、拒绝分支和独立结果交付。当前集成分支已具备私有 owner/mailbox composition、exact result delivery/settlement、serial successor claim/dispatch 与本机 process/workspace evidence；rejection C1/P/C2、完整 durable reconcile、policy/memory composition 仍需接线。私有检查点已开发，不等于公开 native BRS 可用。
 - 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。
 - 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。
 - 保留 provider-free 默认值；producer score 仍须经独立 verifier/evaluation 才能产生官方结论。

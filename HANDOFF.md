@@ -8277,3 +8277,24 @@ authoritative result handoff and durable publication/recovery remain open.
 本轮本地验证：新增 resume matrix 13/13、preclaim 三个 focused case 通过；全仓 Ruff、compileall、`git diff --check` 通过，README 相对链接存在。GitHub main CI 的历史 run `38426186975` 长时间卡在 in-progress，后续 push 已触发新的 run；在 GitHub API 恢复前不能把主线 CI 写成全绿。
 
 下一项 P0 仍是受 runtime acceptance 约束的 claim → producer execution → receipt/publication/recovery 接线。当前 ready entry 继续 fail-closed，不能把只读 preclaim 当成真实 producer dispatch。真实 CPython/toolchain/sealed runtime、OpenEvolve/Shinka process lifecycle 和生产 CLI 仍是 P1；remote evaluator、external worker authentication、多机 ownership、distributed scheduler 和 service API 仍是 P2。
+# 当前集成状态（2026-10-16，P1 并行切片）
+
+- `main` 的已合入基线为 `a8996a3`；当前 P1 集成分支为
+  `codex/p1-integration`，尚未创建新 PR，也未合入 `main`。
+- 已在该分支完成并通过 provider-free focused 回归：
+  - PB-03 私有 owner/mailbox composition；
+  - exact owner-result delivery 与一次性 settlement（callback 失败固定为 unknown，禁止重试）；
+  - PB-04 本机 process/workspace evidence adapter（PID/PGID/start identity 与
+    workspace/transport/journal device+inode 只读核验）；
+  - PB-05 serial successor 的 terminal verified-head → fresh handoff → guarded claim
+    → bounded dispatch 生命周期。
+- 当前分支新增提交：`69d0c8c`、`195c691`、`a192a48`、`1742356`、`afa82a0`、
+  `508e0a2`、`2a824c0`、`9254cbb`。combined focused 66 cases 通过，Ruff、compileall、
+  `git diff --check` 通过。
+- 这些切片仍保持 `online_publication=false`、`production_admission=false`，不启动真实
+  producer、模型、WebAgent、远程 evaluator 或公司评测平台。它们是私有接线原语，不代表
+  公开 native BRS、真实 OpenEvolve/Shinka runtime 或生产 CLI 已验收。
+- 仍开放的 P1：rejection C1 → provenance P → C2、controller-level durable reconcile
+  的完整在线接线、policy/memory composition、真实 CPython/source/toolchain/sealed runtime、
+  OpenEvolve/Shinka lifecycle 与生产 Linux CLI acceptance。P2 的 remote evaluator、外部
+  worker authentication、多机 ownership、分布式 scheduler/service API 继续后置。

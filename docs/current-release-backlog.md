@@ -12,9 +12,10 @@ staged/precommit/terminal高层接口候选`7a21ed8`已完成静态独审；PB-0
 私有transaction dispatch已在当前候选实现（SDD：Feature196
 `private-native-dispatch.md`）。当前候选的15/15 native-dispatch、37/37
 owner-lineage、30/30 transaction-control和17/17 staging-compatibility均通过，
-确定性 latency fixture 已合入，Ruff/compileall/diff-check通过。完整owner
-transaction、controller/mailbox service、拒绝C1/P/C2、独立
-result delivery/settlement、reconcile、连续ordinal与policy/memory仍开放。
+确定性 latency fixture 已合入，Ruff/compileall/diff-check通过。当前 P1 集成分支又接入
+私有 owner/mailbox composition、exact result delivery/one-shot settlement、本机
+process/workspace reconcile evidence，以及 serial successor 的 fresh handoff/claim/dispatch；
+完整 owner transaction、拒绝 C1/P/C2、durable reconcile 与 policy/memory 仍开放。
 冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109)的完整33-job CI、
 actual checkout/source/import/raw独审和main合并是独立P0，后继不追加或取消其来源。
 公开native BRS、online publication与production admission仍关闭。详见HANDOFF最新条目。
@@ -32,10 +33,11 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 - P0：PB-03h 候选的 72-case provider-free 回归与 source/import/XML/nodeid/tree 独审已完成，
   当前只剩新 PR 的完整 CI 与 main 合并；冻结 PR109 不修改、不取消、不追加提交。
-- P1：staged/precommit/terminal 高层接口、原 transaction owner dispatch、controller/
-  mailbox service、rejection C1/P/C2、独立 return/settlement；再接 reconcile、serial
-  successor 与 policy/memory。retained reader、prepared pin 已完成顶部所列后继验收；
-  已具备的私有接口和检查点仍不等于完整在线执行链路已接通。
+- P1：当前分支已完成私有 owner/mailbox composition、exact result delivery/settlement、
+  本机 process/workspace evidence 和 serial successor dispatch 的 provider-free 最小切片；
+  仍需接 rejection C1/P/C2、完整 durable reconcile、policy/memory，以及真实 runtime/
+  producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继验收；这些私有接口
+  仍不等于公开 native BRS 或生产 admission 已开启。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
   生产 CLI/Linux acceptance 仍按原独立范围开放，本轮不运行真实目标来替代验收设计。
 - P2：外部认证、多机 ownership、分布式调度/服务化继续后置。
@@ -172,7 +174,7 @@ transaction 和 rejection C1/P/C2 continuation 交给原 owner；不能等 compl
 | 工作 | 当前边界 | 结束条件 |
 | --- | --- | --- |
 | BRS partial-wave durable resume | 已在 PR101 集成树接入 completed-obligation 与 pending-dispatch 分离、锁外 replay callback 和 exact identity/head 复核；347 个本地 cases、789 文件 source map、Ruff/compileall/diff-check 已通过。仍不授予 completed child 新 token，也不启用 native multi-child。 | 随顶部统一后继完成最终 integrated source/CI/audit 和合入；产品行为保持 provider-free。 |
-| Native 多 child BRS | provider-free BRS 和单 Python child ready/ack 已存在；PR102 提供 detached handoff/channel，PR104 私有 selected owner service 已通过 175 个 provider-free focused cases（104 existing + 13 ACK + 30 handoff + 28 service），含锁、预算、指纹、结果和 durable ACK 边界；本分支已新增私有 owner 对本次 service 返回结果的 checkpoint CAS/完整读回，最终 callback hardening 整合来源的 360 cases、全仓静态及独立 raw/source/install/exit 审计已通过，已包含于顶部统一候选但尚未合入 main。此切片不包含 publication 或 sibling transition；公共 native BRS 仍未启用。 | 按 [Feature196](../specs/196-brs-owner-worker-handoff/spec.md) 接通 selected child staging/claim、原 owner/CAS、ready/ack、串行 publication 与完整中断验收；完成最终来源 CI 与独立审计。 |
+| Native 多 child BRS | provider-free BRS、ready/ack、owner CAS、私有 owner/mailbox composition、exact result delivery/settlement、serial successor claim/dispatch 与本机 process/workspace evidence 已在当前集成分支接线；focused slices 及静态检查通过，尚未合入 main。此切片仍保持 public native BRS 与 production admission 关闭。 | 按 [Feature196](../specs/196-brs-owner-worker-handoff/spec.md) 接通 rejection C1/P/C2、完整 durable recovery、policy/memory 与中断验收；完成最终来源 CI、独立审计并合入 main。 |
 | 真实 Python runtime | bounded source/build/runtime contracts 和原 executable owner 已存在；真实 source/toolchain/static image/sealed startup 未验收。 | 完成下表 G0–G3/F01–F05 的真实 bytes、构建 closure、startup/input/lifecycle 和 dedicated Linux no-skip evidence。 |
 | 本地 OpenEvolve/Shinka 与生产用 RSI CLI | adapter、bounded result exporter、native scheduler/claim/receipt mapper 和单 episode 组合已存在。当前 `rsi run` / `rsi resume` solver 选项仍是 `provider_free_fixture`。 | 至少一个实际 project profile/lifecycle 在 accepted runtime 下验收，opt-in CLI 消费原 request/memory/result/publication 证据，支持取消和只读恢复；不会落入 fixture gateway。 |
 
