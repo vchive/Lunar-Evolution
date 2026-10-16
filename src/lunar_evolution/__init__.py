@@ -806,6 +806,25 @@ from .rsi_adapters import (
     ProviderFreeSolverGateway,
     fixture_solver_gateway,
 )
+from .rsi_brs_reconcile import (
+    MAILBOX_STATES as BRS_RECONCILE_MAILBOX_STATES,
+)
+from .rsi_brs_reconcile import (
+    PHASES as BRS_RECONCILE_PHASES,
+)
+from .rsi_brs_reconcile import (
+    PROTOCOL as BRS_RECONCILE_PROTOCOL,
+)
+from .rsi_brs_reconcile import (
+    TRANSACTION_STATES as BRS_RECONCILE_TRANSACTION_STATES,
+)
+from .rsi_brs_reconcile import (
+    BRSReconcileObligation,
+    parse_brs_reconcile_obligations,
+    put_brs_reconcile_obligation,
+    remove_brs_reconcile_obligation,
+    validate_brs_reconcile_obligations,
+)
 from .rsi_budget import RSIRunBudget
 from .rsi_cleanroom_admission import (
     CleanRoomAdmissionError,
@@ -963,17 +982,6 @@ from .rsi_noise_confidence import (
     recover_confidence_report,
 )
 from .rsi_parent_budget import ParentRunBudget
-from .rsi_brs_reconcile import (
-    BRSReconcileObligation,
-    MAILBOX_STATES as BRS_RECONCILE_MAILBOX_STATES,
-    PHASES as BRS_RECONCILE_PHASES,
-    PROTOCOL as BRS_RECONCILE_PROTOCOL,
-    TRANSACTION_STATES as BRS_RECONCILE_TRANSACTION_STATES,
-    parse_brs_reconcile_obligations,
-    put_brs_reconcile_obligation,
-    remove_brs_reconcile_obligation,
-    validate_brs_reconcile_obligations,
-)
 from .rsi_python_admission_bridge import (
     MAX_PYTHON_ADMISSION_BRIDGE_BYTES,
     PYTHON_ADMISSION_BRIDGE_PROTOCOL,
@@ -1124,6 +1132,10 @@ __all__ = [
     "BENCHMARK_STRATEGIES",
     "BENCHMARK_TASK_PROTOCOL",
     "BENCHMARK_TASK_SCHEMA_VERSION",
+    "BRS_RECONCILE_MAILBOX_STATES",
+    "BRS_RECONCILE_PHASES",
+    "BRS_RECONCILE_PROTOCOL",
+    "BRS_RECONCILE_TRANSACTION_STATES",
     "BUILD_CLOSURE_SCHEMA",
     "CANDIDATE_BUNDLE_PROTOCOL",
     "CANDIDATE_BUNDLE_SCHEMA_VERSION",
@@ -1263,6 +1275,7 @@ __all__ = [
     "AgentResult",
     "AgentSelectionError",
     "AggregateUsage",
+    "BRSReconcileObligation",
     "BaselineProvenance",
     "BenchmarkComparisonError",
     "BenchmarkComparisonPlan",
@@ -1800,6 +1813,7 @@ __all__ = [
     "parse_benchmark_comparison_result",
     "parse_benchmark_task_envelope",
     "parse_bootstrap_handshake_frame",
+    "parse_brs_reconcile_obligations",
     "parse_candidate_evaluation_report",
     "parse_candidate_evaluation_spec",
     "parse_candidate_execution_admission",
@@ -1867,6 +1881,7 @@ __all__ = [
     "publish_acceptance_observation_binding",
     "publish_native_campaign_audit",
     "publish_producer_bundle_publication",
+    "put_brs_reconcile_obligation",
     "read_bundle_delivery_materials",
     "read_candidate_source_files",
     "read_host_request_journal",
@@ -1896,6 +1911,7 @@ __all__ = [
     "remote_status",
     "remote_submit",
     "remote_sync",
+    "remove_brs_reconcile_obligation",
     "replay_python_producer_admission_handoff",
     "replay_python_producer_admission_handoff_file",
     "resolve_candidate_integrity_authority",
@@ -1931,6 +1947,7 @@ __all__ = [
     "start_native_trusted_stream_capture",
     "translate_memory",
     "validate_benchmark_comparison_plan",
+    "validate_brs_reconcile_obligations",
     "validate_candidate_execution_admission",
     "validate_candidate_source_bundle",
     "validate_candidate_workspace_plan",
