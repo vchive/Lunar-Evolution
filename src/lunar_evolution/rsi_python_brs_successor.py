@@ -10,6 +10,7 @@ returned selection to a *fresh* owner context and nonce.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -20,6 +21,12 @@ from .rsi_python_brs_child_policy import (
     BRSNativeChildPreflight,
     BRSNativeChildSelection,
     preflight_native_brs_child,
+)
+from .rsi_python_brs_handoff import (
+    BRSChildHandoffContext,
+    BRSChildHandoffError,
+    BRSSelectedChildHandoff,
+    validate_brs_child_handoff,
 )
 from .rsi_store import NativeEpisodeClaim, RSILedger
 
@@ -115,6 +122,37 @@ class BRSOrdinalSuccessor:
             _fail("completion_invalid")
         if self.next_selection is not None and type(self.next_selection) is not BRSNativeChildSelection:
             _fail("selection_invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class BRSOrdinalSuccessorDispatch:
+    """Result of one owner-controlled terminal-to-successor dispatch boundary.
+
+    ``dispatch_result`` is an opaque provider-free fixture observation.  It is
+    deliberately not interpreted as a solver result, publication receipt or
+    ownership token.  A failed dispatch leaves the durable claim in ``started``
+    state and must be reconciled by a separate recovery path.
+    """
+
+    status: Literal["dispatched", "wave_complete"]
+    successor: BRSOrdinalSuccessor
+    handoff: BRSSelectedChildHandoff | None
+    claim: NativeEpisodeClaim | None
+    dispatch_result: object | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in {"dispatched", "wave_complete"}:
+            _fail("dispatch_status_invalid")
+        if type(self.successor) is not BRSOrdinalSuccessor:
+            _fail("dispatch_successor_invalid")
+        if self.status == "wave_complete":
+            if self.successor.next_selection is not None or self.handoff is not None or self.claim is not None:
+                _fail("dispatch_completion_shape_invalid")
+        else:
+            if (self.successor.next_selection is None
+                    or type(self.handoff) is not BRSSelectedChildHandoff
+                    or type(self.claim) is not NativeEpisodeClaim):
+                _fail("dispatch_started_shape_invalid")
 
 
 def advance_brs_ordinal(
@@ -248,10 +286,95 @@ def claim_brs_successor(
         raise BRSOrdinalSuccessorError("claim_refused") from exc
 
 
+def dispatch_brs_successor(
+    preflight: BRSNativeChildPreflight,
+    completion: BRSOrdinalCompletion,
+    current: BRSChildHandoffContext,
+    request: SolverRequest,
+    ledger: RSILedger,
+    *,
+    plan_sha256: str,
+    controller_run_id: str,
+    expected_controller_checkpoint_sha256: str,
+    dispatch: Callable[[BRSSelectedChildHandoff, SolverRequest, NativeEpisodeClaim], object],
+    consumed_nonces: tuple[str, ...] = (),
+    lease_nonce: str | None = None,
+) -> BRSOrdinalSuccessorDispatch:
+    """Complete the narrow owner-side terminal -> fresh handoff -> claim boundary.
+
+    The preceding ordinal is advanced only from an exact terminal completion.  A
+    pending successor is then bound to the *new* verified owner head, receives a
+    fresh detached nonce, and is validated before the guarded ledger claim.  The
+    injected ``dispatch`` callback is called only after the claim transaction
+    returns; it is a local launch seam and receives no publication authority.  A
+    callback error therefore leaves the durable started claim in place and is
+    surfaced without retry or claim deletion.
+
+    The caller must hold the original controller lock while this function runs.
+    This helper does not inspect a workspace, spawn a process, reserve a second
+    wave budget, settle a result, or enable public/native BRS.
+    """
+    if type(current) is not BRSChildHandoffContext:
+        _fail("handoff_context_invalid")
+    if not callable(dispatch):
+        _fail("dispatch_callback_invalid")
+    if type(expected_controller_checkpoint_sha256) is not str:
+        _fail("checkpoint_invalid")
+    try:
+        # Reconstruct caller DTOs before comparing fields. Frozen dataclasses can
+        # still be modified with object.__setattr__ by a hostile worker.
+        observed = BRSOrdinalCompletion(**completion.to_dict())
+        context = BRSChildHandoffContext(**current.to_dict())
+    except (AttributeError, TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise BRSOrdinalSuccessorError("handoff_context_invalid") from exc
+    if context.head_sha256 != observed.verified_head_sha256:
+        _fail("verified_head_mismatch")
+    if context.head_sha256 != expected_controller_checkpoint_sha256:
+        _fail("checkpoint_mismatch")
+    successor = advance_brs_ordinal(preflight, observed)
+    selection = successor.next_selection
+    if selection is None:
+        return BRSOrdinalSuccessorDispatch("wave_complete", successor, None, None)
+    if type(consumed_nonces) is not tuple:
+        _fail("nonce_state_invalid")
+    try:
+        handoff = BRSSelectedChildHandoff.from_selection(
+            selection, context, lease_nonce=lease_nonce,
+        )
+        validate_brs_child_handoff(
+            handoff, successor.preflight, context, consumed_nonces=consumed_nonces,
+        )
+    except BRSChildHandoffError as exc:
+        # Preserve the handoff gate's stable suffix without exposing arbitrary
+        # callback/object details through this boundary.
+        prefix = "rsi_python_brs_child_policy_handoff_"
+        text = str(exc)
+        if text.startswith(prefix):
+            code = text[len(prefix):]
+            raise BRSOrdinalSuccessorError("handoff_" + code) from exc
+        raise BRSOrdinalSuccessorError("handoff_refused") from exc
+    claim = claim_brs_successor(
+        ledger, selection, request, plan_sha256=plan_sha256,
+        controller_run_id=controller_run_id,
+        expected_controller_checkpoint_sha256=expected_controller_checkpoint_sha256,
+    )
+    if claim.status != "started":
+        _fail("claim_status_invalid")
+    try:
+        dispatch_result = dispatch(handoff, request, claim)
+    except BaseException as exc:
+        raise BRSOrdinalSuccessorError("dispatch_failed") from exc
+    return BRSOrdinalSuccessorDispatch(
+        "dispatched", successor, handoff, claim, dispatch_result,
+    )
+
+
 __all__ = [
     "BRSOrdinalCompletion",
     "BRSOrdinalSuccessor",
+    "BRSOrdinalSuccessorDispatch",
     "BRSOrdinalSuccessorError",
     "advance_brs_ordinal",
     "claim_brs_successor",
+    "dispatch_brs_successor",
 ]
