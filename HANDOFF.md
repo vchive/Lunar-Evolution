@@ -2,7 +2,7 @@
 
 - `main` 已合入 PR109，当前 merge commit 为 `319c8ab79805031a724d0964ebd497c16359753c`；PR109 的 33 个 CI job 已成功。
 - 当前后继候选基于完整 `219536d` 与 main 合并，另含 PB-03h 私有原生 BRS dispatch 及 PB-03i owner-thread native-result CAS；公开 native BRS、`online_publication=false`、`production_admission=false` 仍保持关闭。
-- PB-03h/03i 仍需本轮自己的 Mac/Linux focused 回归、source/import/XML/tree 审计和完整 CI；通过后才可建面向 main 的 PR。
+- PB-03h 的本轮 72-case provider-free focused 回归及 raw/source/import/XML/tree 审计已记录在 `specs/196-brs-owner-worker-handoff/pb03h-integrated-audit.md`；当前 PR112 仍需完成自己的三版本 CI 后才能合入 main。PB-03i 的 owner-result CAS 保护包含在同一候选中。
 - P1 仍开放：完整在线 owner/mailbox composition、rejection C1/P/C2、unknown reconcile、serial successor、policy/memory，以及真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
 - P2（远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）继续后置。仅使用本地 inert/provider-free fixture，不运行 WebAgent、远程 evaluator 或真实 campaign。
 

@@ -30,8 +30,8 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 当前优先级：
 
-- P0：PB-03h 候选的 Mac/Linux 72-case 完整回归、source/import/XML/nodeid/tree 独审，
-  新 PR 的完整 CI 与 main 合并；冻结 PR109 不修改、不取消、不追加提交。
+- P0：PB-03h 候选的 72-case provider-free 回归与 source/import/XML/nodeid/tree 独审已完成，
+  当前只剩新 PR 的完整 CI 与 main 合并；冻结 PR109 不修改、不取消、不追加提交。
 - P1：staged/precommit/terminal 高层接口、原 transaction owner dispatch、controller/
   mailbox service、rejection C1/P/C2、独立 return/settlement；再接 reconcile、serial
   successor 与 policy/memory。retained reader、prepared pin 已完成顶部所列后继验收；
