@@ -14,14 +14,15 @@ from dataclasses import dataclass
 from typing import Literal
 
 from .rsi_python_brs_child_policy import (
+    MAX_BRS_CHILD_ATTEMPTS,
     BRSChildPolicyError,
     BRSNativeChildPreflight,
     BRSNativeChildSelection,
-    MAX_BRS_CHILD_ATTEMPTS,
     preflight_native_brs_child,
 )
 
 _SHA = re.compile(r"^[0-9a-f]{64}$")
+_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _OUTCOMES = frozenset({"completed", "rejected"})
 
 
@@ -64,13 +65,13 @@ class BRSOrdinalCompletion:
     verified_head_sha256: str
 
     def __post_init__(self) -> None:
-        if type(self.run_id) is not str or not self.run_id:
+        if type(self.run_id) is not str or _ID.fullmatch(self.run_id) is None:
             _fail("run_id_invalid")
         if type(self.wave) is not int or self.wave < 0:
             _fail("wave_invalid")
         if type(self.ordinal) is not int or self.ordinal < 0:
             _fail("ordinal_invalid")
-        if type(self.episode_id) is not str or not self.episode_id:
+        if type(self.episode_id) is not str or _ID.fullmatch(self.episode_id) is None:
             _fail("episode_id_invalid")
         if self.episode_id != f"{self.run_id}-practice-{self.wave}-{self.ordinal}":
             _fail("episode_identity_invalid")
