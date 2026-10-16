@@ -32,6 +32,13 @@ PHASES = frozenset({
 })
 MAILBOX_STATES = frozenset({"none", "open", "queued", "inflight", "delivered", "abandoned", "closed"})
 TRANSACTION_STATES = frozenset({"not_started", "before", "prepared", "staged", "terminal", "rejected", "unknown", "settled"})
+RECONCILE_OUTCOMES = frozenset({
+    "already_terminal", "recoverable", "abandoned", "drifted", "manual_review",
+})
+PROCESS_STATES = frozenset({"running", "exited", "unknown"})
+TERMINAL_STATUSES = frozenset({
+    "completed", "failed", "cancelled", "timed_out", "abandoned", "unknown",
+})
 
 
 def _text(value: object, name: str, *, limit: int = 256) -> str:
@@ -244,6 +251,242 @@ def put_brs_reconcile_obligation(state: dict[str, Any], obligation: BRSReconcile
     state[FIELD] = {key: current[key].to_dict() for key in sorted(current)}
 
 
+@dataclass(frozen=True, slots=True)
+class BRSReconcileEvidence:
+    """A bounded, controller-observed evidence envelope for one BRS obligation.
+
+    This value is deliberately only an observation DTO.  It does not inspect a process,
+    acquire ownership, read a mailbox, or write a controller checkpoint.  The four evidence
+    digests are supplied by an explicit local adapter which has already performed those reads;
+    ``reconcile_brs_selected`` checks their shape and exact obligation bindings before returning
+    an audit decision.  Missing evidence is represented by ``None`` and never upgrades an
+    unknown result to success.
+    """
+
+    obligation_sha256: str
+    handoff_sha256: str
+    request_sha256: str
+    native_plan_sha256: str
+    controller_checkpoint_sha256: str
+    episode_record_sha256: str
+    native_claim_sha256: str | None = None
+    owner_result_sha256: str | None = None
+    process_state: str = "unknown"
+    process_evidence_sha256: str | None = None
+    native_evidence_sha256: str | None = None
+    mailbox_evidence_sha256: str | None = None
+    result_evidence_sha256: str | None = None
+    mailbox_state: str = "none"
+    transaction_state: str = "unknown"
+    terminal_status: str | None = None
+    controller_observed_terminal: bool = False
+    cleanup_confirmed: bool = False
+    source: str = "controller-observed-v1"
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        _sha(self.obligation_sha256, "obligation")
+        for value, name in (
+            (self.handoff_sha256, "handoff"), (self.request_sha256, "request"),
+            (self.native_plan_sha256, "native_plan"),
+            (self.controller_checkpoint_sha256, "controller_checkpoint"),
+            (self.episode_record_sha256, "episode_record"),
+        ):
+            _sha(value, name)
+        for value, name in (
+            (self.native_claim_sha256, "native_claim"),
+            (self.owner_result_sha256, "owner_result"),
+            (self.process_evidence_sha256, "process_evidence"),
+            (self.native_evidence_sha256, "native_evidence"),
+            (self.mailbox_evidence_sha256, "mailbox_evidence"),
+            (self.result_evidence_sha256, "result_evidence"),
+        ):
+            if value is not None:
+                _sha(value, name)
+        if self.process_state not in PROCESS_STATES:
+            raise RSILearningError("rsi_brs_reconcile_process_state_invalid")
+        if self.mailbox_state not in MAILBOX_STATES:
+            raise RSILearningError("rsi_brs_reconcile_mailbox_state_invalid")
+        if self.transaction_state not in TRANSACTION_STATES:
+            raise RSILearningError("rsi_brs_reconcile_transaction_state_invalid")
+        if self.terminal_status is not None and self.terminal_status not in TERMINAL_STATUSES:
+            raise RSILearningError("rsi_brs_reconcile_terminal_status_invalid")
+        if type(self.controller_observed_terminal) is not bool or type(self.cleanup_confirmed) is not bool:
+            raise RSILearningError("rsi_brs_reconcile_observation_invalid")
+        if self.source != "controller-observed-v1":
+            raise RSILearningError("rsi_brs_reconcile_source_invalid")
+        if type(self.reason) is not str or len(self.reason) > 512 or any(
+            char in self.reason for char in "\x00\r\n"
+        ):
+            raise RSILearningError("rsi_brs_reconcile_reason_invalid")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "protocol": PROTOCOL + ":evidence",
+            "obligation_sha256": self.obligation_sha256,
+            "handoff_sha256": self.handoff_sha256,
+            "request_sha256": self.request_sha256,
+            "native_plan_sha256": self.native_plan_sha256,
+            "controller_checkpoint_sha256": self.controller_checkpoint_sha256,
+            "episode_record_sha256": self.episode_record_sha256,
+            "native_claim_sha256": self.native_claim_sha256,
+            "owner_result_sha256": self.owner_result_sha256,
+            "process_state": self.process_state,
+            "process_evidence_sha256": self.process_evidence_sha256,
+            "native_evidence_sha256": self.native_evidence_sha256,
+            "mailbox_evidence_sha256": self.mailbox_evidence_sha256,
+            "result_evidence_sha256": self.result_evidence_sha256,
+            "mailbox_state": self.mailbox_state,
+            "transaction_state": self.transaction_state,
+            "terminal_status": self.terminal_status,
+            "controller_observed_terminal": self.controller_observed_terminal,
+            "cleanup_confirmed": self.cleanup_confirmed,
+            "source": self.source,
+            "reason": self.reason,
+        }
+
+    def digest(self) -> str:
+        return hashlib.sha256(canonical_json(self.to_dict(), maximum=_MAX_BYTES)).hexdigest()
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> BRSReconcileEvidence:
+        if type(value) is not dict:
+            raise RSILearningError("rsi_brs_reconcile_evidence_invalid")
+        expected = set(cls.__dataclass_fields__) | {"protocol"}
+        if set(value) != expected or value.get("protocol") != PROTOCOL + ":evidence":
+            raise RSILearningError("rsi_brs_reconcile_evidence_invalid")
+        clean = dict(value)
+        clean.pop("protocol")
+        try:
+            return cls(**clean)
+        except (TypeError, ValueError, RSILearningError) as exc:
+            if isinstance(exc, RSILearningError):
+                raise
+            raise RSILearningError("rsi_brs_reconcile_evidence_invalid") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class BRSReconcileDecision:
+    """Pure audit result returned by :func:`reconcile_brs_selected`.
+
+    ``recommended_phase`` is advisory.  The caller must persist an adjacent obligation phase
+    under its controller lock; this DTO never mutates a checkpoint or invokes the default BRS
+    driver.  ``status`` is kept as a read-only alias for callers that use status terminology.
+    """
+
+    outcome: str
+    recommended_phase: str
+    obligation_sha256: str
+    evidence_sha256: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        if self.outcome not in RECONCILE_OUTCOMES:
+            raise RSILearningError("rsi_brs_reconcile_outcome_invalid")
+        if self.recommended_phase not in PHASES:
+            raise RSILearningError("rsi_brs_reconcile_phase_invalid")
+        _sha(self.obligation_sha256, "obligation")
+        _sha(self.evidence_sha256, "evidence")
+        if type(self.reason) is not str or not self.reason or len(self.reason) > 512 or any(
+            char in self.reason for char in "\x00\r\n"
+        ):
+            raise RSILearningError("rsi_brs_reconcile_reason_invalid")
+
+    @property
+    def status(self) -> str:
+        return self.outcome
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "protocol": PROTOCOL + ":decision",
+            "outcome": self.outcome,
+            "recommended_phase": self.recommended_phase,
+            "obligation_sha256": self.obligation_sha256,
+            "evidence_sha256": self.evidence_sha256,
+            "reason": self.reason,
+        }
+
+    def digest(self) -> str:
+        return hashlib.sha256(canonical_json(self.to_dict(), maximum=_MAX_BYTES)).hexdigest()
+
+
+def _recommended_phase(obligation: BRSReconcileObligation, outcome: str) -> str:
+    if outcome == "already_terminal":
+        return "settled" if obligation.phase == "reconcile_required" else "reconcile_required"
+    if outcome == "recoverable":
+        return obligation.phase if obligation.phase != "selected" else "worker_running"
+    if obligation.phase == "settled":
+        return "settled"
+    return "reconcile_required"
+
+
+def _decision(
+    obligation: BRSReconcileObligation, evidence: BRSReconcileEvidence, outcome: str, reason: str,
+) -> BRSReconcileDecision:
+    return BRSReconcileDecision(
+        outcome=outcome, recommended_phase=_recommended_phase(obligation, outcome),
+        obligation_sha256=obligation.digest(), evidence_sha256=evidence.digest(), reason=reason,
+    )
+
+
+def reconcile_brs_selected(
+    obligation: BRSReconcileObligation, evidence: BRSReconcileEvidence,
+) -> BRSReconcileDecision:
+    """Audit one selected BRS obligation using explicit local evidence.
+
+    This is intentionally a pure opt-in facade.  It performs no process or mailbox reads, does
+    not infer success from ``unknown``, and does not write the ledger.  A caller may persist the
+    returned recommended phase only after independently performing the corresponding CAS and
+    controller-lock checks.
+    """
+    if not isinstance(obligation, BRSReconcileObligation):
+        raise RSILearningError("rsi_brs_reconcile_obligation_invalid")
+    if not isinstance(evidence, BRSReconcileEvidence):
+        raise RSILearningError("rsi_brs_reconcile_evidence_invalid")
+    if evidence.obligation_sha256 != obligation.digest():
+        return _decision(obligation, evidence, "drifted", "obligation digest mismatch")
+    for field in (
+        "handoff_sha256", "request_sha256", "native_plan_sha256",
+        "controller_checkpoint_sha256", "episode_record_sha256",
+    ):
+        if getattr(evidence, field) != getattr(obligation, field):
+            return _decision(obligation, evidence, "drifted", f"{field} mismatch")
+    for field in ("native_claim_sha256", "owner_result_sha256"):
+        captured = getattr(obligation, field)
+        observed = getattr(evidence, field)
+        if observed != captured:
+            return _decision(obligation, evidence, "drifted", f"{field} mismatch")
+    if evidence.process_evidence_sha256 is None:
+        return _decision(obligation, evidence, "manual_review", "process evidence missing")
+    if evidence.process_state == "unknown":
+        return _decision(obligation, evidence, "manual_review", "process state unknown")
+    if evidence.process_state == "running":
+        if evidence.terminal_status is not None or evidence.transaction_state in {"terminal", "settled"}:
+            return _decision(obligation, evidence, "drifted", "running process has terminal state")
+        return _decision(obligation, evidence, "recoverable", "worker process is still running")
+    # An exited process is only terminal when every independent evidence leg is present.
+    if evidence.terminal_status in {None, "unknown"}:
+        return _decision(obligation, evidence, "manual_review", "terminal status missing or unknown")
+    if any(
+        value is None for value in (
+            evidence.native_evidence_sha256, evidence.mailbox_evidence_sha256,
+            evidence.result_evidence_sha256,
+        )
+    ):
+        return _decision(obligation, evidence, "manual_review", "terminal evidence incomplete")
+    if evidence.native_claim_sha256 is not None and evidence.native_evidence_sha256 != evidence.native_claim_sha256:
+        return _decision(obligation, evidence, "drifted", "native evidence mismatch")
+    if evidence.owner_result_sha256 is not None and evidence.result_evidence_sha256 != evidence.owner_result_sha256:
+        return _decision(obligation, evidence, "drifted", "result evidence mismatch")
+    if evidence.mailbox_state not in {"closed", "delivered"}:
+        return _decision(obligation, evidence, "manual_review", "mailbox is not terminal")
+    if evidence.transaction_state not in {"terminal", "settled"}:
+        return _decision(obligation, evidence, "manual_review", "transaction is not terminal")
+    if evidence.controller_observed_terminal is not True or evidence.cleanup_confirmed is not True:
+        return _decision(obligation, evidence, "manual_review", "terminal cleanup not observed")
+    return _decision(obligation, evidence, "already_terminal", "explicit terminal evidence verified")
+
+
 def remove_brs_reconcile_obligation(state: dict[str, Any], episode_id: str, *, expected_digest: str | None = None) -> None:
     """Remove only an exact obligation after successful durable settlement."""
     if type(state) is not dict:
@@ -265,11 +508,17 @@ __all__ = [
     "FIELD",
     "MAILBOX_STATES",
     "PHASES",
+    "PROCESS_STATES",
     "PROTOCOL",
+    "RECONCILE_OUTCOMES",
+    "TERMINAL_STATUSES",
     "TRANSACTION_STATES",
+    "BRSReconcileDecision",
+    "BRSReconcileEvidence",
     "BRSReconcileObligation",
     "parse_brs_reconcile_obligations",
     "put_brs_reconcile_obligation",
+    "reconcile_brs_selected",
     "remove_brs_reconcile_obligation",
     "validate_brs_reconcile_obligations",
 ]
