@@ -1,10 +1,13 @@
-# 当前状态（2026-10-17，P1 explicit reconcile registration/consume）
+# 当前状态（2026-10-17，P1 explicit reconcile resume seam）
 
 - PR115 已合入 `main`（`be73a52`）：controller-owned BRS reconcile phase CAS。
 - PR116 已合入 `main`（`0eacf72`）：selected handoff 后的显式 obligation registration，以及 owner-locked terminal reconcile consume；保留 captured parent head，使用 append 后 head 做 CAS。
+- PR118 已合入 `main`（`a82f55a`）：`RSILearningController.resume_brs_reconcile` 在单次 owner lock 下预解析并批量消费 evidence；普通 `resume()`、`_drive_brs()` 和 solver dispatch 不变。
+- PR119 已合入 `main`（`545e9d8`）：拒绝 mapping 子类输入，避免 reconcile resume 解析边界执行调用方代码。
+- PR120 已合入 `main`（`79ead61`）：记录真实 runtime/producer lifecycle gap；OpenEvolve native 与 Shinka read-only exporter 仍不能冒充真实 Python project acceptance。
 - `unknown`、`manual_review`、`recoverable`、`drifted` 均不会删除 obligation 或自动重启；只有完整 terminal evidence 才允许显式 consume。
-- 这些 API 仍是 provider-free、显式 opt-in seam；默认 `_drive_brs()`、`resume()`、public native BRS 和 `production_admission` 不自动接入，`online_publication=false`。
-- P1 仍开放：把显式 seam 接到已批准的 selected owner lifecycle、真实 CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
+- 这些 API 仍是 provider-free、显式 opt-in seam；public native BRS、`production_admission` 和 `online_publication` 仍关闭。
+- P1 仍开放：把显式 seam 接到已批准的 selected owner lifecycle、冻结真实 CPython/source/toolchain/sealed runtime profile、完成 OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
 - P2（远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）继续后置。仅运行本地 inert/provider-free fixture，不运行 WebAgent、远程 evaluator 或真实 campaign。
 
 以下旧条目保留为历史交接证据，不能覆盖上述当前状态。
