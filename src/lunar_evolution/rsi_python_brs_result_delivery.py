@@ -19,7 +19,7 @@ import json
 import math
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, NoReturn
 
 from .candidate_evaluation_spec import canonical_json
@@ -114,6 +114,8 @@ def _canonical_payload(raw: object) -> dict[str, Any]:
         canonical = canonical_json(parsed, maximum=MAX_BRS_OWNER_RESULT_BYTES)
     except BRSOwnerResultDeliveryError:
         raise
+    except RSILearningError as exc:
+        raise BRSOwnerResultDeliveryError("payload_invalid") from exc
     except (UnicodeError, TypeError, ValueError, OverflowError, RecursionError) as exc:
         raise BRSOwnerResultDeliveryError("payload_invalid") from exc
     if canonical != raw:
@@ -154,6 +156,14 @@ def build_brs_owner_result_payload(
         _fail("request_invalid")
     if type(handoff) is not BRSSelectedChildHandoff:
         _fail("handoff_invalid")
+    try:
+        request = BRSOwnerPublicationRequest(
+            request.run_id, request.episode_id, request.handoff_sha256,
+            request.payload, request.request_sha256,
+        )
+        handoff = BRSSelectedChildHandoff(**BRSSelectedChildHandoff.to_dict(handoff))
+    except (AttributeError, TypeError, ValueError, RSILearningError) as exc:
+        raise BRSOwnerResultDeliveryError("identity_invalid") from exc
     journal = _journal(result)
     if (request.run_id, request.episode_id, request.handoff_sha256) != (
         handoff.run_id, handoff.episode_id, handoff.sha256,
@@ -168,7 +178,7 @@ def build_brs_owner_result_payload(
     if (journal.run_id != handoff.run_id or journal.task_id != handoff.episode_id
             or journal.native_execution_receipt_sha256 is None):
         _fail("journal_binding_mismatch")
-    admitted = tuple(result.admitted_candidate_ids)
+    admitted = result.admitted_candidate_ids
     if type(admitted) is not tuple or any(type(item) is not str or not item for item in admitted):
         _fail("candidate_ids_invalid")
     if len(set(admitted)) != len(admitted):
@@ -282,7 +292,10 @@ class BRSOwnerResultSettlement:
             _fail("settlement_unavailable")
         self._state = "inflight"
         try:
-            value = callback(self._delivery)
+            # Do not expose the retained object itself: frozen dataclasses can still
+            # be mutated with object.__setattr__ by a hostile callback.
+            callback_delivery = replace(self._delivery)
+            value = callback(callback_delivery)
         except BaseException as exc:
             self._state = "unknown"
             raise BRSOwnerResultDeliveryError("settlement_unknown") from exc
@@ -305,6 +318,14 @@ def deliver_brs_owner_result(
         _fail("request_invalid")
     if type(handoff) is not BRSSelectedChildHandoff:
         _fail("handoff_invalid")
+    try:
+        request = BRSOwnerPublicationRequest(
+            request.run_id, request.episode_id, request.handoff_sha256,
+            request.payload, request.request_sha256,
+        )
+        handoff = BRSSelectedChildHandoff(**BRSSelectedChildHandoff.to_dict(handoff))
+    except (AttributeError, TypeError, ValueError, RSILearningError) as exc:
+        raise BRSOwnerResultDeliveryError("identity_invalid") from exc
     try:
         # Frozen DTOs can still be changed with object.__setattr__.  Rebuild the
         # transport response before observing identity or payload bytes so a forged
@@ -330,10 +351,14 @@ def deliver_brs_owner_result(
         handoff.run_id, handoff.episode_id, handoff.sha256, request.request_sha256, handoff.request_sha256,
     ):
         _fail("payload_binding_mismatch")
-    if expected_native_plan_sha256 is not None and parsed["native_plan_sha256"] != expected_native_plan_sha256:
-        _fail("preparation_mismatch")
-    if expected_journal_sha256 is not None and parsed["journal_sha256"] != expected_journal_sha256:
-        _fail("journal_mismatch")
+    if expected_native_plan_sha256 is not None:
+        _sha(expected_native_plan_sha256, "expected_native_plan_sha256")
+        if parsed["native_plan_sha256"] != expected_native_plan_sha256:
+            _fail("preparation_mismatch")
+    if expected_journal_sha256 is not None:
+        _sha(expected_journal_sha256, "expected_journal_sha256")
+        if parsed["journal_sha256"] != expected_journal_sha256:
+            _fail("journal_mismatch")
     delivery = BRSOwnerResultDelivery(
         run_id=parsed["run_id"], episode_id=parsed["episode_id"],
         handoff_sha256=parsed["handoff_sha256"], request_sha256=parsed["request_sha256"],
