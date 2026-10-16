@@ -10,6 +10,8 @@ import pytest
 from lunar_evolution import (
     EMPTY_MEMORY_SNAPSHOT,
     BRSReconcileEvidence,
+    DeterministicMockSolver,
+    RSILearningController,
     RSILearningError,
     RSILedger,
     RSIPracticeEpisode,
@@ -192,4 +194,58 @@ def test_unknown_or_drifted_evidence_never_consumes(tmp_path: Path) -> None:
         )
     assert result.decision.outcome == "drifted"
     assert result.consumed is False
+    assert episode_id in ledger.controller_brs_reconcile_obligations(run_id)
+
+
+def test_controller_resume_brs_reconcile_consumes_terminal_wire_evidence(tmp_path: Path) -> None:
+    ledger, run_id, episode_id, _request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    registration = _register(ledger, run_id, checkpoint, handoff, episode_sha)
+    controller = RSILearningController(DeterministicMockSolver(), ledger=ledger)
+
+    result = controller.resume_brs_reconcile(
+        run_id, {episode_id: _evidence(registration.obligation).to_dict()},
+    )
+
+    assert set(result) == {episode_id}
+    assert result[episode_id].decision.outcome == "already_terminal"
+    assert result[episode_id].consumed is True
+    assert ledger.controller_brs_reconcile_obligations(run_id) == {}
+
+
+def test_controller_resume_brs_reconcile_keeps_unknown_and_drift_read_only(tmp_path: Path) -> None:
+    ledger, run_id, episode_id, _request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    registration = _register(ledger, run_id, checkpoint, handoff, episode_sha)
+    controller = RSILearningController(DeterministicMockSolver(), ledger=ledger)
+    before = ledger.controller_checkpoint(run_id)
+
+    unknown = controller.resume_brs_reconcile(
+        run_id, {episode_id: _evidence(registration.obligation, process_state="unknown")},
+    )
+    assert unknown[episode_id].decision.outcome == "manual_review"
+    assert unknown[episode_id].consumed is False
+    assert ledger.controller_checkpoint(run_id) == before
+
+    drifted = controller.resume_brs_reconcile(
+        run_id,
+        {episode_id: _evidence(registration.obligation, obligation_sha256=OTHER)},
+    )
+    assert drifted[episode_id].decision.outcome == "drifted"
+    assert drifted[episode_id].consumed is False
+    assert ledger.controller_checkpoint(run_id) == before
+    assert episode_id in ledger.controller_brs_reconcile_obligations(run_id)
+
+
+def test_controller_resume_brs_reconcile_rejects_unknown_episode_before_consuming(tmp_path: Path) -> None:
+    ledger, run_id, episode_id, _request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    registration = _register(ledger, run_id, checkpoint, handoff, episode_sha)
+    controller = RSILearningController(DeterministicMockSolver(), ledger=ledger)
+
+    with pytest.raises(RSILearningError, match="obligation_missing"):
+        controller.resume_brs_reconcile(
+            run_id,
+            {
+                episode_id: _evidence(registration.obligation),
+                "unknown-episode": _evidence(registration.obligation),
+            },
+        )
     assert episode_id in ledger.controller_brs_reconcile_obligations(run_id)

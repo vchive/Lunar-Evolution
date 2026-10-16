@@ -5266,6 +5266,61 @@ class RSILearningController:
             return self._resume_locked(run_id, now=now, observed_fingerprints=observed_fingerprints,
                                        budget_policy=budget_policy)
 
+    def resume_brs_reconcile(
+        self,
+        run_id: str,
+        evidence: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Consume explicit BRS reconcile evidence under the controller owner lock.
+
+        ``evidence`` maps each selected episode id to either a
+        :class:`BRSReconcileEvidence` value or its strict ``to_dict`` wire form.  The
+        method only delegates to ``consume_brs_selected_reconcile``; that helper removes
+        an obligation only for complete, independently observed terminal evidence.  A
+        running, unknown, incomplete, manual-review, or drifted observation is returned
+        as a read-only consumption and leaves its durable obligation in place.  No solver
+        request, retry, or ordinary ``resume()`` drive is started by this API.
+
+        The entire batch runs under one per-run controller lock.  Evidence is parsed before
+        any ledger mutation and entries are consumed in episode-id order so malformed input
+        cannot cause a later entry to be silently skipped after an earlier terminal consume.
+        """
+        _id(run_id, "run_id")
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        if not isinstance(evidence, Mapping):
+            raise RSILearningError("rsi_brs_reconcile_evidence_mapping_invalid")
+        from .rsi_brs_reconcile import (
+            BRSReconcileConsumption,
+            BRSReconcileEvidence,
+            consume_brs_selected_reconcile,
+        )
+
+        parsed: dict[str, BRSReconcileEvidence] = {}
+        for episode_id, value in evidence.items():
+            _id(episode_id, "episode_id")
+            if type(value) is BRSReconcileEvidence:
+                parsed[episode_id] = value
+            elif isinstance(value, Mapping):
+                parsed[episode_id] = BRSReconcileEvidence.from_dict(dict(value))
+            else:
+                raise RSILearningError("rsi_brs_reconcile_evidence_invalid")
+
+        results: dict[str, BRSReconcileConsumption] = {}
+        with self.ledger.controller_lock(run_id):
+            if self.ledger.get_run(run_id) is None:
+                raise RSILearningError("rsi_run_missing")
+            # Reject unknown keys before the first consume so one malformed batch cannot
+            # leave an earlier terminal entry consumed while a later key fails lookup.
+            obligations = self.ledger.controller_brs_reconcile_obligations(run_id)
+            if any(episode_id not in obligations for episode_id in parsed):
+                raise RSILearningError("rsi_brs_reconcile_obligation_missing")
+            for episode_id in sorted(parsed):
+                results[episode_id] = consume_brs_selected_reconcile(
+                    self.ledger, run_id, episode_id, parsed[episode_id],
+                )
+        return results
+
     def _resume_locked(self, run_id: str, *, now: object | None = None,
                        observed_fingerprints: Mapping[str, Any] | None = None,
                        budget_policy: Mapping[str, Any] | None = None) -> LearningRunResult:
