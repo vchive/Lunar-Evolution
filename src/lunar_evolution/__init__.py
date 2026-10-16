@@ -813,15 +813,27 @@ from .rsi_brs_reconcile import (
     PHASES as BRS_RECONCILE_PHASES,
 )
 from .rsi_brs_reconcile import (
+    PROCESS_STATES as BRS_RECONCILE_PROCESS_STATES,
+)
+from .rsi_brs_reconcile import (
     PROTOCOL as BRS_RECONCILE_PROTOCOL,
+)
+from .rsi_brs_reconcile import (
+    RECONCILE_OUTCOMES as BRS_RECONCILE_OUTCOMES,
+)
+from .rsi_brs_reconcile import (
+    TERMINAL_STATUSES as BRS_RECONCILE_TERMINAL_STATUSES,
 )
 from .rsi_brs_reconcile import (
     TRANSACTION_STATES as BRS_RECONCILE_TRANSACTION_STATES,
 )
 from .rsi_brs_reconcile import (
+    BRSReconcileDecision,
+    BRSReconcileEvidence,
     BRSReconcileObligation,
     parse_brs_reconcile_obligations,
     put_brs_reconcile_obligation,
+    reconcile_brs_selected,
     remove_brs_reconcile_obligation,
     validate_brs_reconcile_obligations,
 )
@@ -1133,8 +1145,11 @@ __all__ = [
     "BENCHMARK_TASK_PROTOCOL",
     "BENCHMARK_TASK_SCHEMA_VERSION",
     "BRS_RECONCILE_MAILBOX_STATES",
+    "BRS_RECONCILE_OUTCOMES",
     "BRS_RECONCILE_PHASES",
+    "BRS_RECONCILE_PROCESS_STATES",
     "BRS_RECONCILE_PROTOCOL",
+    "BRS_RECONCILE_TERMINAL_STATUSES",
     "BRS_RECONCILE_TRANSACTION_STATES",
     "BUILD_CLOSURE_SCHEMA",
     "CANDIDATE_BUNDLE_PROTOCOL",
@@ -1275,6 +1290,8 @@ __all__ = [
     "AgentResult",
     "AgentSelectionError",
     "AggregateUsage",
+    "BRSReconcileDecision",
+    "BRSReconcileEvidence",
     "BRSReconcileObligation",
     "BaselineProvenance",
     "BenchmarkComparisonError",
@@ -1891,6 +1908,7 @@ __all__ = [
     "read_python_producer_admission_handoff",
     "read_python_producer_admission_handoff_pinned",
     "read_python_producer_binding_sidecar",
+    "reconcile_brs_selected",
     "reconcile_python_producer_admission_handoff",
     "reconcile_python_producer_terminal",
     "reconcile_remote_state",

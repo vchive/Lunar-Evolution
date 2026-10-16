@@ -1,8 +1,22 @@
 # Current release backlog — 2026-10-17
 
-## 2026-10-17：BRS durable reconcile obligation 基础层（PR113 候选）
+## 2026-10-17：PR113 合入与 selected reconcile facade
 
-当前集成候选 `4c86fe0` 基于 `main` 的 `a8996a3`，尚未合入主分支。本轮已完成
+PR113 已以合并提交 `22ec975` 合入 `main`。在 durable obligation 基础层之上，本轮增加
+显式 opt-in 的 `reconcile_brs_selected` 纯 facade：它绑定 obligation digest 和全部
+captured identity，检查 process/native/mailbox/result evidence，区分 running、unknown、
+drifted 与完整 terminal evidence；仅返回只读 decision，不写 ledger、不推进默认
+`_drive_brs()`/`resume()`，也不把 `unknown` 推断为成功。对应 10 项 facade 与 19 项
+obligation/resume focused 回归通过，Ruff、compileall、diff-check 通过。
+
+下一步 P1 是 controller-owned phase CAS：在 selected handoff 前后登记 obligation，消费
+facade decision，并在 controller lock 下按相邻 phase 推进或保留 manual review。真实
+CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收仍开放；
+远程 evaluator、外部 worker authentication、多机 ownership 与分布式 scheduler 继续后置。
+
+## 2026-10-17：BRS durable reconcile obligation 基础层（已合入 PR113）
+
+PR113 当前合并提交为 `22ec975`，基于 `main` 的 `a8996a3`。本轮已完成
 BRS durable reconcile obligation 的最小持久化基础层：controller checkpoint 可以在锁内
 原子登记、读取、校验、幂等重放和按 obligation digest 删除 owner obligation。记录固定
 run/episode/request/native-plan/checkpoint/episode-record 指纹，并校验 phase、mailbox、
@@ -10,11 +24,9 @@ transaction、worker profile 和终止状态；缺失、冲突、漂移或未知
 
 该基础层是显式 opt-in 的 recovery fence，**不等于 controller online reconcile 已接通**。
 当前 `_drive_brs()`、`resume()` 和默认调度路径不会自动消费 obligation、探测 worker/process/
-mailbox/result evidence 或推进 phase；也不会把 `unknown` 推断为成功。下一步 P1 需要把
-obligation 接到 selected handoff 前后的 controller checkpoint，并实现显式
-`reconcile_brs_selected`，只在完整 process/native/mailbox/result evidence 通过后推进或
-结算。对应 focused obligation 回归为 9/9，当前核心 provider-free focused 组合为 88 项
-通过；这些本地结果不替代 PR113 的完整 CI、来源审计和合入。
+mailbox/result evidence 或推进 phase；也不会把 `unknown` 推断为成功。下一步 P1 需要把 obligation 接到 selected handoff 前后的 controller checkpoint，并消费
+facade decision 在 controller lock 下推进相邻 phase。对应 focused obligation 回归为 9/9，
+facade 回归为 10/10；这些本地结果不替代真实 runtime/producer 验收。
 
 ## 本轮后继开发状态
 
@@ -49,13 +61,12 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 当前优先级：
 
-- P0：当前 PR113 候选的 PB-03h 及 durable-obligation provider-free focused 回归和
-  source/import/XML/nodeid/tree 审计已完成；当前只剩该 PR 的完整 CI 与 main 合并。
+- P0：PR113 已完成合入；主线 CI 仍按 GitHub Actions 独立运行并保留原始结果。
 - P1：当前分支已完成私有 owner/mailbox composition、exact result delivery/settlement、
   本机 process/workspace evidence、serial successor dispatch、rejection C1/P/C2 adapter、
   policy/memory shadow gate 和 durable obligation 持久化基础层的 provider-free 最小切片；
-  仍需把 obligation 接入 controller selected handoff 前后的 checkpoint，并完成显式
-  online reconcile（含完整 process/native/mailbox/result evidence）以及真实 runtime/
+  已增加显式 selected reconcile facade；仍需把 obligation 接入 controller selected handoff
+  前后的 checkpoint，并完成 online phase CAS（含完整 process/native/mailbox/result evidence）以及真实 runtime/
   producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继验收；这些私有接口
   仍不等于公开 native BRS 或生产 admission 已开启。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
