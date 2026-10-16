@@ -5,7 +5,9 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+import ntpath
 import os
+import pathlib
 import shutil
 import socket
 import stat
@@ -677,12 +679,26 @@ def test_parse_is_effect_free_and_checks_are_read_only_no_launch_import_or_grant
     def forbidden(*args, **kwargs):
         pytest.fail("filesystem preflight must not import, execute, write, or change permissions")
 
+    def no_dependency_import(name, globals=None, locals=None, fromlist=(), level=0):
+        # CPython 3.12 PurePath requests already loaded ntpath during path parsing.
+        # This exception belongs only to pathlib, never to the preflight modules.
+        if (name == "ntpath" and globals is pathlib.__dict__ and level == 0
+                and (fromlist is None or fromlist == ())):
+            return ntpath
+        return forbidden()
+
+    def check_import_gate():
+        for name in ("ntpath", "lunar_evolution.cli", "unapproved_runtime_dependency"):
+            with pytest.raises(pytest.fail.Exception, match="filesystem preflight must not import"):
+                builtins.__import__(name)
+
     with monkeypatch.context() as effects:
         for name in ("write", "mkdir", "chmod", "fchmod", "rename", "replace", "unlink"):
             effects.setattr(runtime.os, name, forbidden)
         effects.setattr(subprocess, "Popen", forbidden)
         effects.setattr(subprocess, "run", forbidden)
-        effects.setattr(builtins, "__import__", forbidden)
+        effects.setattr(builtins, "__import__", no_dependency_import)
+        check_import_gate()
         assert build(tree) == tree.closed
         assert verify(tree).tree_sha256 == tree.closed.tree_sha256
     # monkeypatch itself imports inspect while registering a patch; set the import gate last.
@@ -692,6 +708,7 @@ def test_parse_is_effect_free_and_checks_are_read_only_no_launch_import_or_grant
             effects.setattr(runtime.os, name, forbidden)
         effects.setattr(subprocess, "Popen", forbidden)
         effects.setattr(subprocess, "run", forbidden)
-        effects.setattr(builtins, "__import__", forbidden)
+        effects.setattr(builtins, "__import__", no_dependency_import)
+        check_import_gate()
         assert runtime.parse_python_runtime_tree_manifest(raw) == tree.closed
     assert _inventory(tree.base) == before

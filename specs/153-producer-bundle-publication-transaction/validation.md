@@ -119,3 +119,32 @@ test doubles; they do not establish production launcher ownership, cross-process
 recovery, controller-owned request transport, or real OpenEvolve/Shinka campaigns. T153-06f and
 the local supporting slice are complete; T153-07 and the production integration boundary remain
 open.
+
+## 2026-10-15 deterministic concurrent deadline preparation
+
+The controlled lock-wait checkpoint intentionally rejects a visible but incomplete deadline.
+A separate real-process probe at `bd902c9` paused an exclusive writer after file creation and
+before its first write; the original reader refused with
+`producer_bundle_deadline_path_invalid`, and the writer completed after release. Ten isolated
+passes of the earlier unsynchronized test do not disprove that write window or erase the failure
+observed in the complete server run. That run's final traceback was still pending at this checkpoint;
+the probe is not presented as its confirmed diagnosis.
+
+The success fixture now pauses the writer after the original deadline fsync and before the
+prepared-intent write. Two real waiters must each encounter `LOCK_EX | LOCK_NB` contention before
+release; all three return identical original clock bytes and verify the same prepared intent.
+Two new cases pause the original first write at zero and eight bytes. Waiters must respectively
+return the exact `path_invalid` and `invalid` deadline codes, preserving bytes, inode, metadata,
+caller allowance/start/deadline and the absence of a prepared intent. The writer then completes
+using its original record, which the restore API verifies. Synchronization uses bounded pipes;
+all owned children are reaped on success, failure or timeout. Production code, read checks,
+publication locking, byte ceilings and automatic-retry policy are unchanged.
+
+The isolated test commit `6f9a47d78b5b46ef71ab45e11c3e94ca1da3b5f0` passed all three affected
+cases and the five-file deadline/intent/transaction/transaction-control/bundle-control scope:
+**122 passed, zero failures/errors/skips**, 23.912 seconds. Focused XML SHA256:
+`51a351fdd2cf7fb2d521dce6eaaafeb930f2f5a52d1939a146f649b62eed6256`.
+Ruff, compileall, embedded child-script compilation and diff-check passed; an anchored process
+check found no owned test Python child remaining. The initial child-script escaping failure is
+retained separately. Independent review confirmed real lock contention and unchanged product
+gates. Final integrated-source full regression, official CI and audit remain required.

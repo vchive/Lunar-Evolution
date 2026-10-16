@@ -1,5 +1,77 @@
 # Validation plan
 
+## 2026-10-14 actual plan-mutation refusal correction
+
+The complete owner regression exposed an unnormalized original plan parser
+error in the prior source. Only `NativeRSIExecutionPlanError` is normalized to
+the existing `rsi_publication_lineage_dispatch_inputs_drift` with its cause;
+the original shape/reparse and refusal gates remain. The actual mutation case
+now requires the exact public code and original parser cause. Independent
+source review accepts this minimal correction.
+
+The final frozen inventory is `source-before-ready-capsule-plan-refusal.json`,
+772 files, map SHA-256
+`4f46b0c7d1901bb4c0c30439d9e7e55a1371aec4395b93273f7505fa67d6aaa1`.
+All groups are rerunning against it. Earlier XMLs, including complete core and
+compatibility passes, the actual failure and deliberately interrupted partitions,
+remain evidence of their own revisions and are excluded from this final count.
+PR100 remains draft until the final local inventories and exact-head full CI
+with independent raw/source/tree audit pass.
+
+## 2026-10-14 pinned ready capsule: corrected source acceptance in progress
+
+The three-child actual flow exposed the original 112 KiB checkpoint capacity
+failure after its first settlement. `ready-capsule.md` keeps that ceiling and
+the original binding/input/aggregate bounds; only opted-in MEP ready evidence
+is externalized under the original preparing permit and ready CAS.
+
+The corrected final inventory is
+`.lunar-evolution/reports/multi-episode-final/source-before-ready-capsule-corrected.json`:
+772 files, files-map SHA-256
+`d1f673ee3016e73b67e80cf4421c4b701d96942695b8b3b58da50742e3d63288`.
+Independent source review is complete with no new blocker. The corrected core
+XML has 179 distinct cases, zero failures/errors/skips, and all 772 before/after
+pins match. The three-child flow, default/historical compatibility and 72 owner/
+inspection cases are still running; the latter use six disjoint collection
+partitions recorded in `owner-inspection-corrected-partitions.json`.
+
+The original dispatch-corrected capacity failure, developmental XMLs, first
+capsule freeze and interrupted sequential inventories remain diagnostic evidence.
+Four final pure consumer tests landed after the first capsule freeze, so that
+inventory was superseded. No interrupted, overlapping or earlier-source count
+is added to the final result. Final combined XML/source audit and this slice's
+own complete CI remain pending. `all_rejected`, BRS and production acceptance
+remain separate open obligations.
+
+## 2026-10-14 sequential append-lineage validation in progress
+
+The current isolated worktree is validating the implementation described in
+`multi-episode-publication.md`. Product and tests are frozen under
+`.lunar-evolution/reports/multi-episode-final/source-before-dispatch-corrected.json`:
+768 source/test/tool/fixture/config files, files-map SHA-256
+`1db39b19584d26a0bccc4c3e00edae448a9f304f48b76a2c769e3cec3b1c6fff`.
+The earlier source pins, interrupted flows and failed setup/assertion XMLs remain
+retained; they do not count as successful final acceptance.
+
+Independent source review covers shape-before-serialization, original phase/CAS
+order and independently held source pins, bounded aggregate snapshots, dangling
+marker refusal, original native result/provenance/receipt association and the
+final original cancellation/deadline gate. A second review confirmed that the
+original lexical dispatch lease is also retained in the frozen flow context
+before the first owner capture; replacing the readable controller field with an
+equal tuple cannot supply the missing original authority. Cleanup revokes this
+ephemeral association without reverting the acknowledged checkpoint head.
+
+Parallel local inventories cover the three-child DRS publication/memory/replay
+flow, owner and historical inspection, original recovery, publication gates,
+identity/cache, policy/config/read-only join and default controller/native
+compatibility. Full-flow fixtures forbid subprocess launch; only original inert
+native/candidate/evaluator seams are substituted. The final per-inventory results
+and before/after source comparison must be recorded after all sessions finish.
+No aggregate pass count or completed multi-episode acceptance is claimed yet.
+The opted-in `all_rejected` path remains explicitly refused; BRS, real runtime,
+production CLI and this slice's own final CI/raw-source/tree audit remain open.
+
 ## 2026-10-14 explicit single-child execution
 
 The frozen local source passes **300 distinct cases**, zero failures, errors or
@@ -31,8 +103,9 @@ Whole-source Ruff, compileall and diff checks pass. Ten documented README mock/
 RSI CLI commands exit zero (init/run/status/events/resume/solve and RSI
 run/inspect/usage/resume). Raw XML, source pins and summaries are in the
 ignored `.lunar-evolution/reports/child-execution/final/` directory. This
-source still needs its own full CI, raw/source/tree audit and merge;
-multi-episode DRS/BRS, real Python/toolchain/sealed runtime, OpenEvolve/Shinka
+source has now passed PR99 head `80d3f3af` CI `38517739592` (15/15 jobs),
+independent raw/source/tree audit and merge as `0cb49abb`. Its merged tree
+matches the tested merge tree. Multi-episode DRS/BRS, real Python/toolchain/sealed runtime, OpenEvolve/Shinka
 lifecycle and production CLI remain unaccepted; `production_admission=false`.
 
 ## 2026-10-13 controller-called per-episode staging
@@ -559,3 +632,22 @@ manifest/launch records self-bind bytes/device/inode without an independently re
 original timestamp, so a touch completed before observation remains accepted. Two reads
 are not an atomic filesystem snapshot. Live runtime/handoff composition and the full
 process/runtime/journal interruption matrix remain separate work.
+
+
+## 2026-10-15 server layout and historical-object preflight
+
+The first six-shard server run at `f9048df` failed; its raw 16,484-case inventory,
+XML/logs and source receipts are retained. Deep temporary roots expanded repeated
+absolute fixture paths beyond the existing 32,768-byte staging binding limit (an
+original retained binding measured 36,701 canonical bytes). Follow-up local runs use
+fresh, independently owned short temporary roots. The production byte ceilings remain
+unchanged, and a short test layout grants no exception to those ceilings.
+
+The shallow clone also lacked the runner's fixed archive, frozen and product Git
+objects. Current runner tests use those objects too, so the Linux guide now requires
+all three before current or history execution. The repository was fetched intact;
+no historical pins or archive bytes were edited. In the correctly installed independent
+Python3.12 environment with a short temporary root, the complete regression-runner
+module and the two original rejection-mode checkpoint cases passed 77 cases, with no
+failures, errors or skips (23.430 seconds). This focused run confirms the repaired
+preconditions; it does not substitute for the final complete current or official matrix.

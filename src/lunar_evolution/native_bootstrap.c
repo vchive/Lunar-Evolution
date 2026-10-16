@@ -53,7 +53,8 @@ static const uint32_t K[64] = {
 static uint32_t rr(uint32_t x,int n){return (x>>n)|(x<<(32-n));}
 static uint32_t beword(const unsigned char *p){return ((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3];}
 static void SHA_BLOCK(SHA_CTX *c,const unsigned char *p){uint32_t w[64],a,b,d,e,f,g,h,t1,t2; int i;
-  for(i=0;i<16;i++)w[i]=beword(p+4*i); for(i=16;i<64;i++){uint32_t s0=rr(w[i-15],7)^rr(w[i-15],18)^(w[i-15]>>3),s1=rr(w[i-2],17)^rr(w[i-2],19)^(w[i-2]>>10);w[i]=w[i-16]+s0+w[i-7]+s1;}
+  for(i=0;i<16;i++)w[i]=beword(p+4*i);
+  for(i=16;i<64;i++){uint32_t s0=rr(w[i-15],7)^rr(w[i-15],18)^(w[i-15]>>3),s1=rr(w[i-2],17)^rr(w[i-2],19)^(w[i-2]>>10);w[i]=w[i-16]+s0+w[i-7]+s1;}
   a=c->h[0];b=c->h[1];d=c->h[3];e=c->h[4];f=c->h[5];g=c->h[6];h=c->h[7];uint32_t cc=c->h[2];
   for(i=0;i<64;i++){uint32_t S1=rr(e,6)^rr(e,11)^rr(e,25),ch=(e&f)^((~e)&g);t1=h+S1+ch+K[i]+w[i];uint32_t S0=rr(a,2)^rr(a,13)^rr(a,22),ma=(a&b)^(a&cc)^(b&cc);t2=S0+ma;h=g;g=f;f=e;e=d+t1;d=cc;cc=b;b=a;a=t1+t2;}
   c->h[0]+=a;c->h[1]+=b;c->h[2]+=cc;c->h[3]+=d;c->h[4]+=e;c->h[5]+=f;c->h[6]+=g;c->h[7]+=h;}
@@ -1254,5 +1255,7 @@ int main(int argc, char **argv) {
 #endif
     if (finish_controller_guard(&guard) != 0) stop_own_guarded_group(&guard);
     free_control(&c); close(frame_fd);
-    if (WIFEXITED(status)) return WEXITSTATUS(status); if (WIFSIGNALED(status)) return 128 + WTERMSIG(status); return 77;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return 77;
 }

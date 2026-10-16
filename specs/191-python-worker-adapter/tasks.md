@@ -1,5 +1,32 @@
 # Tasks
 
+## Sequential DRS append lineage continuation
+
+- [x] Specify `ready-capsule.md` after actual checkpoint capacity refusal; keep
+  the original 112 KiB ceiling and default full-ready wire unchanged.
+- [x] Add MEP-only create-only full-ready snapshots, independently retained pins,
+  original ready CAS acknowledgement and callback-free read-only materialization.
+- [x] Bind immutable original mode/history and shared capsule/lineage 64 MiB
+  accounting before evidence I/O; preserve preparing/unknown orphan semantics.
+- [ ] Accept the full three-child flow and default/staging/recovery compatibility
+  on the corrected 772-file frozen source; pure/core and compatibility development
+  success alone cannot close this acceptance.
+- [x] Specify the same-workspace opt-in in `multi-episode-publication.md`; keep
+  default initial-only publication and legacy terminal recovery unchanged.
+- [x] Add exact fresh dispatch leases, original owner/CAS scopes, bounded
+  before/staged/terminal pins and a separate read-only historical inspection.
+- [x] Join explicit lineage to original transaction/precommit gates and retained
+  native replay; recheck original cancellation/deadlines after chain observation.
+- [ ] Accept the integrated three-child DRS flow and read-only historical replay
+  from one frozen product/test source, with original receipt-threshold judging,
+  distinct child identities and M0 → practice commit M1 → target M1.
+- [ ] Complete the interruption/drift matrix and this slice's own full
+  CI/raw-source/tree audit and merge; preserve earlier failed/interrupted evidence.
+- [ ] Support the independently verified `all_rejected` opt-in outcome without
+  advancing lineage or repeating evaluation; currently explicitly refused.
+- [ ] Accept BRS and actual runtime/production CLI separately; neither is covered
+  by this sequential inert DRS slice.
+
 ## Explicit fresh child execution continuation
 
 - [x] Specify `child-execution-flow.md`; persist the original opt-in and exact
@@ -17,7 +44,8 @@
 - [x] Complete unified single-child success/interruption/recovery regression:
   300 distinct cases, zero failures/errors/skips; frozen 223 product files,
   whole-source Ruff/compileall/diff checks and ten README CLI commands pass.
-- [ ] Complete this slice's own full CI/raw-source audit and merge.
+- [x] Complete this slice's own full CI/raw-source audit and merge: PR99 head
+  `80d3f3af`, run `38517739592`, merge `0cb49abb`; tested/merged trees agree.
 - [ ] Accept multiple DRS episodes with distinct child IDs, practice learning and
   changed approved memory; accept BRS separately before any production CLI claim.
 
@@ -35,9 +63,12 @@
   inode pin; retain strict bound identity and refuse binding removal or drift.
 - [x] Add claim race/interruption, preclaim control and gateway/scheduler
   composition regression cases; complete independent code review.
-- [ ] Complete unified final-source regression, full CI/raw-source audit and merge.
-- [ ] Connect retained claims to child execution, receipt/admission/publication
-  and recovery before enabling multi-episode DRS/BRS or production CLI dispatch.
+- [x] Complete unified final-source regression, full CI/raw-source audit and merge:
+  PR98 head `8e56b42f`, run `38511478558`, merge `4767e539`.
+- [x] Connect adjacent fresh claims to single-child execution,
+  receipt/admission/publication and recovery through PR99. Readback of an existing
+  claim grants no continuation; multi-episode DRS/BRS and production CLI remain
+  separately gated above.
 
 ## Controller-called per-episode staging continuation
 

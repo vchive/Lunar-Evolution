@@ -32,7 +32,9 @@ from .native_bootstrap import NativeBootstrapArtifact
 from .native_trusted_failure import NativeTrustedProducerFailure, recover_native_trusted_failure
 from .native_trusted_output import NativeTrustedOutputPreparation
 from .native_trusted_scheduler import (
+    NativeTrustedProducerRecovery,
     NativeTrustedProducerRun,
+    recover_native_trusted_producer,
     run_native_trusted_producer,
     run_native_trusted_producer_outcome,
 )
@@ -43,10 +45,17 @@ from .producer_bundle_intent import (
     verify_producer_bundle_prepared_intent,
     verify_producer_bundle_python_handoff_anchor,
 )
+from .producer_bundle_lineage_v2 import ProducerLineageRejectedTerminalV2
 from .producer_bundle_publication import (
+    ProducerBundlePublicationCandidate,
     ProducerBundlePublicationJournal,
     parse_producer_bundle_publication_journal,
 )
+from .producer_bundle_rejection import (
+    VerifiedProducerBundleRejection,
+    _verify_terminal_batch_rejection_evidence,
+)
+from .producer_bundle_transaction import NativeProducerBundleTransactionResult
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
 from .producer_process import ProducerExecutionReceipt
 from .python_producer_admission_anchor import (
@@ -86,6 +95,14 @@ from .rsi_native_provenance import (
     NATIVE_RSI_PROVENANCE_NAME,
     persist_native_rsi_provenance,
     read_native_rsi_provenance,
+)
+from .rsi_native_rejection import (
+    NATIVE_RSI_REJECTION_PROVENANCE_NAME,
+    NativeRSIRejectionEvidence,
+    NativeRSIRejectionFilePin,
+    RejectionLineageC1Binding,
+    persist_native_rsi_rejection_provenance,
+    read_native_rsi_rejection_provenance,
 )
 from .rsi_native_retained import NativeRetainedCandidateEvidence, read_native_retained_candidate
 from .rsi_python_admission_bridge import (
@@ -452,8 +469,10 @@ def _preparation_receipt(context: NativeRSISchedulerContext, evidence: NativeRet
 def _read_retained(
     context: NativeRSISchedulerContext, *, candidate_id: str, journal_sha256: str,
     producer_receipt_sha256: str,
+    lineage_inspection: object | None = None,
 ) -> NativeRetainedCandidateEvidence:
     try:
+        options = {} if lineage_inspection is None else {"lineage_inspection": lineage_inspection}
         return read_native_retained_candidate(
             context.workspace, candidate_id=candidate_id,
             expected_journal_sha256=journal_sha256,
@@ -463,6 +482,7 @@ def _read_retained(
             evaluator_fingerprint=context.evaluator_fingerprint,
             runner_fingerprint=context.runner_fingerprint, dependency_sha256=context.dependency_sha256,
             environment_sha256=context.environment_sha256, require_broker=True,
+            **options,
         )
     except Exception as exc:
         raise NativeRSISchedulerProviderError("rsi_native_scheduler_retained_invalid") from exc
@@ -482,6 +502,66 @@ def _provenance_payload(
     }
 
 
+def _rejection_native_shapes(value: object) -> None:
+    """Inspect only exact native DTO fields before comparisons or serialization.
+
+    The live receipt/output must agree with original native readback. Refusing
+    nested callback values first keeps that comparison from invoking a caller's
+    equality or serializer. The original native reader still supplies authority.
+    """
+    from .candidate_bundle import CandidateSourceBundle, CandidateSourceFile
+    from .evolution import CandidateDraft
+    from .producer_bundle_admission import ProducerBundleAdmissionItem, ProducerBundleAdmissionPlan
+    from .producer_bundle_handoff import VerifiedProducerBundle
+    from .producer_bundle_population import ProducerBundleDraft
+    from .producer_handoff import ProducerMaterial, ProducerResultEnvelope
+    from .producer_process import ProducerEnvelopeEvidence, ProducerStreamEvidence
+    from .rsi_python_admission import validate_rsi_python_admission_shapes
+
+    validate_rsi_python_admission_shapes(value, dto_types=(
+        NativeTrustedProducerRecovery, ProducerExecutionReceipt, NativeTrustedOutputPreparation,
+        ProducerStreamEvidence, ProducerEnvelopeEvidence, ProducerResultEnvelope, ProducerMaterial,
+        VerifiedProducerBundle, CandidateSourceBundle, CandidateSourceFile, ProducerBundleDraft,
+        CandidateDraft, ProducerBundleAdmissionPlan, ProducerBundleAdmissionItem,
+    ))
+
+
+def _rejected_descriptor(binding: RejectionLineageC1Binding) -> ProducerLineageRejectedTerminalV2:
+    """Project the original owner's complete C1 binding, never a discovered file."""
+    if type(binding) is not RejectionLineageC1Binding:
+        _fail("rejection_lineage_invalid")
+    binding = RejectionLineageC1Binding.from_dict(binding.to_dict())
+    rejected = ProducerLineageRejectedTerminalV2(**{
+        name: getattr(binding, name) for name in (
+            "run_id", "journal_id", "episode_id", "ordinal", "before_sha256",
+            "prepared_journal_sha256", "terminal_journal_sha256", "rejection_manifest_sha256",
+            "terminal_marker_sha256", "candidate_ids", "archive_sha256", "state_sha256",
+        )
+    })
+    if rejected.digest() != binding.rejected_sha256:
+        _fail("rejection_lineage_changed")
+    return rejected
+
+
+def _rejection_live_run_shape(run: object) -> None:
+    from .rsi_python_admission import validate_rsi_python_admission_shapes
+
+    if (type(run) is not NativeTrustedProducerRun
+            or type(run.publication) is not NativeProducerBundleTransactionResult
+            or type(run.publication.terminal_journal) is not ProducerBundlePublicationJournal
+            or type(run.publication.journal) is not ProducerBundlePublicationJournal):
+        _fail("rejection_run_invalid")
+    _rejection_native_shapes(run.receipt)
+    _rejection_native_shapes(run.output)
+    validate_rsi_python_admission_shapes(
+        (run.status, run.publication.publication_status, run.publication.journal,
+         run.publication.terminal_journal, run.publication.admitted_candidate_ids,
+         run.publication.rejected_candidate_ids, run.publication.artifacts),
+        dto_types=(ProducerBundlePublicationJournal, ProducerBundlePublicationCandidate,
+                   PythonProducerAdmissionHandoffFilePin),
+    )
+
+
 class NativeRSISchedulerProvider:
     """Callable provider that launches exactly one validated native scheduler attempt."""
 
@@ -493,6 +573,10 @@ class NativeRSISchedulerProvider:
         # producer-sidecar path.  Keeping it out of the immutable context and
         # fingerprint avoids hashing thread locals or mutable controller state.
         self._python_admission_controller: Any | None = None
+        self._python_admission_replay_controller: Any | None = None
+        # This observation belongs only to the original active dispatch stack.
+        # Restart and historical inspection cannot populate or refresh it.
+        self._live_rejection: tuple[Any, ...] | None = None
         # Freeze before any launch. Recovery compares this prepared pin to the durable sidecar;
         # neither provider checks nor restart may silently pin a replacement database.
         self._failure_ledger_identity = (
@@ -517,6 +601,50 @@ class NativeRSISchedulerProvider:
         if existing is not None and existing is not controller:
             _fail("python_admission_controller_changed")
         self._python_admission_controller = controller
+
+    def bind_python_admission_replay_controller(self, controller: Any) -> None:
+        """Associate read-only lineage inspection without enabling fresh dispatch."""
+        from .rsi_controller import RSILearningController
+
+        if (type(controller) is not RSILearningController
+                or controller.producer_multi_episode_publication is not True
+                or controller.producer_child_execution is not True
+                or controller.ledger is not self.context.failure_ledger
+                or controller.producer_workspace is None
+                or Path(controller.producer_workspace).expanduser().absolute()
+                != Path(self.context.workspace).expanduser().absolute()):
+            _fail("python_replay_controller_invalid")
+        existing = self._python_admission_replay_controller
+        if existing is not None and existing is not controller:
+            _fail("python_replay_controller_changed")
+        self._python_admission_replay_controller = controller
+
+    def _retained_lineage_options(
+        self, request: SolverRequest, memory: MemorySnapshot, plan: NativeRSIExecutionPlan,
+    ) -> dict[str, Any]:
+        controller = self._python_admission_replay_controller
+        if controller is None:
+            return {}
+        self.bind_python_admission_replay_controller(controller)
+        with controller.ledger.read_only_observations():
+            claim = controller.ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        # Before the mapper saves the native result, the fresh publication must
+        # still satisfy the original current-head gate. Never catch that gate's
+        # refusal to adopt a historical proof for a started attempt.
+        if claim is None or claim.status == "started":
+            return {}
+        from .rsi_publication_lineage import (
+            RSIPublicationLineageInspection,
+            RSIPublicationLineageV2Inspection,
+        )
+
+        flag = controller.producer_known_rejection
+        if type(flag) is not bool:
+            _fail("rejection_configuration_invalid")
+        inspection_type = RSIPublicationLineageV2Inspection if flag else RSIPublicationLineageInspection
+        return {"lineage_inspection": inspection_type(
+            controller, request=request, memory=memory, native_plan=plan,
+        )}
 
     def _python_admission_descriptor(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
@@ -745,15 +873,33 @@ class NativeRSISchedulerProvider:
             _fail("python_admission_record_invalid")
         return result
 
+    def _refuse_brs_worker_publication(self) -> None:
+        # This provider executes the complete publication transaction on its calling
+        # thread. A ready/ACK pin cannot authorize that transaction on a BRS worker.
+        # Keep the existing pin-only bridge available; a future owner bridge must
+        # move the whole transaction (and rejection provenance) before enabling this.
+        from .rsi_python_publication import (
+            RSIPythonPublicationError,
+            _refuse_active_brs_worker_publication,
+        )
+
+        try:
+            _refuse_active_brs_worker_publication(self._python_admission_controller)
+        except RSIPythonPublicationError as exc:
+            raise NativeRSISchedulerProviderError(
+                "rsi_native_scheduler_brs_owner_publication_required",
+            ) from exc
+
     def _python_publication_join(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan, inputs: NativeRSIInputDescriptor,
-    ) -> dict[str, Callable[..., Any]]:
+    ) -> dict[str, Any]:
         """Build lazy local hooks without reading post-execution evidence.
 
         The context supplier was fingerprinted before the controller froze its run.
         Its returned creation pin, prepared notification and first record digest
         stay scoped to this single dispatch; no restart or legacy adoption occurs.
         """
+        self._refuse_brs_worker_publication()
         supplier = getattr(self.context, "python_handoff_after_execution", None)
         if supplier is None:
             return {}
@@ -770,6 +916,17 @@ class NativeRSISchedulerProvider:
         wait_check = getattr(controller, "_python_admission_bridge_wait_check", None)
         if not callable(wait_check):
             _fail("python_admission_wait_check_missing")
+        lineage_owner = None
+        publication_flag = getattr(controller, "producer_multi_episode_publication", False)
+        if type(publication_flag) is not bool:
+            _fail("multi_episode_configuration_invalid")
+        if publication_flag:
+            from .rsi_publication_lineage import RSIPublicationLineage
+
+            lineage_owner = RSIPublicationLineage(
+                controller, request=request,
+                memory=_memory_from_request_inputs(inputs, request), native_plan=plan,
+            )
         supplied: PythonProducerAdmissionHandoffSidecar | None = None
         output_plan = None
         admitted = None
@@ -833,13 +990,19 @@ class NativeRSISchedulerProvider:
                 )
                 if admitted.native_plan != plan or admitted.prepared_journal != journal:
                     _fail("python_admission_reference_mismatch")
+                if lineage_owner is not None:
+                    lineage_owner.acknowledge_prepared(journal, record_sha256)
                 revalidate("rsi_native_after_python_pin")
 
-        return {
+        hooks = {
             "python_handoff_after_execution": obtain_handoff,
             "prepared_observer": pin_prepared,
             "evidence_revalidator": revalidate,
         }
+        if lineage_owner is not None:
+            hooks["producer_multi_episode_publication"] = True
+            hooks["lineage_owner"] = lineage_owner
+        return hooks
 
     def assert_failure_ledger(self, ledger: RSILedger) -> None:
         """Verify explicit failure wiring against the original database, never repin it."""
@@ -849,6 +1012,29 @@ class NativeRSISchedulerProvider:
                 or _read_ledger_identity(self.context.failure_ledger) != self._failure_ledger_identity
                 or _read_ledger_identity(ledger) != self._failure_ledger_identity):
             _fail("failure_ledger_changed")
+
+    def assert_rejection_ledger(self, ledger: RSILedger) -> None:
+        """Require the explicit original ledger and constructor inode pin."""
+        if (type(ledger) is not RSILedger or ledger is not self.context.failure_ledger
+                or self._failure_ledger_identity is None):
+            _fail("rejection_ledger_missing")
+        self.assert_failure_ledger(ledger)
+
+    def _rejection_claim(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, *, live: bool,
+        expected: NativeEpisodeClaim | None = None,
+    ) -> NativeEpisodeClaim:
+        ledger = self.context.failure_ledger
+        self.assert_rejection_ledger(ledger)
+        with ledger.read_only_observations():
+            claim = ledger.inspect_native_episode_claim(request, plan_sha256=plan.plan_sha256)
+        self.assert_rejection_ledger(ledger)
+        if type(claim) is not NativeEpisodeClaim or claim.status != ("started" if live else "failed"):
+            _fail("rejection_claim_missing")
+        original = replace(claim, status="started")
+        if expected is not None and original != expected:
+            _fail("rejection_claim_changed")
+        return original
 
     def _failure_claim(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan, *, live: bool,
@@ -872,20 +1058,25 @@ class NativeRSISchedulerProvider:
         return original
 
     def _provenance_kind(self) -> str:
-        """Both exact terminal files are checked through a held no-follow directory chain."""
+        """All three terminal names are inventoried under a no-follow directory chain."""
         chain = None
         try:
             chain = DirectoryChain(self.provenance_batch, "rsi_native_scheduler_provenance_invalid")
             present = []
-            for name in (NATIVE_RSI_PROVENANCE_NAME, NATIVE_RSI_FAILURE_PROVENANCE_NAME):
+            for name in (
+                NATIVE_RSI_PROVENANCE_NAME, NATIVE_RSI_FAILURE_PROVENANCE_NAME,
+                NATIVE_RSI_REJECTION_PROVENANCE_NAME,
+            ):
                 try:
                     os.stat(name, dir_fd=chain.fd, follow_symlinks=False)
                     present.append(name)
                 except FileNotFoundError:
                     pass
             chain.check()
-            if len(present) == 2:
+            if len(present) > 1:
                 _fail("conflicting_provenance")
+            if NATIVE_RSI_REJECTION_PROVENANCE_NAME in present:
+                return "rejection"
             return "failure" if NATIVE_RSI_FAILURE_PROVENANCE_NAME in present else "success"
         except NativeRSISchedulerProviderError:
             raise
@@ -1077,17 +1268,304 @@ class NativeRSISchedulerProvider:
             _fail("preclaim_context_changed")
         inspect_ledger_identity()
 
+    def _native_rejection_snapshot(
+        self, plan: NativeRSIExecutionPlan, binding: RejectionLineageC1Binding, *,
+        inspection: object | None = None,
+        live_run: NativeTrustedProducerRun | None = None,
+    ) -> tuple[NativeTrustedProducerRecovery, VerifiedProducerBundleRejection]:
+        """Reconstruct original producer output and every native rejected candidate.
+
+        The immutable native verifier deliberately has no current population
+        prefix fallback. The exact original owner or sealed inspection checks
+        that separate lineage authority before and after this reader.
+        """
+        if live_run is not None:
+            _rejection_live_run_shape(live_run)
+        context = self.context
+        root = Path(context.workspace).expanduser().absolute()
+        batch = self.provenance_batch
+        pins = {
+            "intent": context.intent, "attestation": context.attestation, "artifact": context.artifact,
+            "contract": context.contract, "groups": context.groups, "evaluator_kind": context.evaluator_kind,
+            "evaluator_fingerprint": context.evaluator_fingerprint,
+            "runner_fingerprint": context.runner_fingerprint, "dependency_sha256": context.dependency_sha256,
+            "environment_sha256": context.environment_sha256, "require_broker": True,
+        }
+
+        def native() -> NativeTrustedProducerRecovery:
+            recovered = recover_native_trusted_producer(root, **pins)
+            if type(recovered) is not NativeTrustedProducerRecovery:
+                _fail("rejection_native_invalid")
+            _rejection_native_shapes(recovered)
+            receipt, output = recovered.receipt, recovered.output
+            if (recovered.status != "recovered" or receipt.status != "completed"
+                    or receipt.receipt_sha256 != receipt.digest()
+                    or output.execution_receipt_sha256 != receipt.receipt_sha256
+                    or type(output.publication_eligible) is not bool
+                    or output.request_coverage != "brokered_requests_only"):
+                _fail("rejection_native_invalid")
+            _sha(output.output_capture_sha256, "rejection_output")
+            if any(getattr(receipt, field) != getattr(plan, field) for field in (
+                "launch_id", "journal_id", "run_id", "parent_task_id", "task_id",
+                "intent_sha256", "attestation_sha256",
+            )):
+                _fail("rejection_native_binding_mismatch")
+            return recovered
+
+        def observe(recovered: NativeTrustedProducerRecovery) -> VerifiedProducerBundleRejection:
+            prepared = parse_producer_bundle_publication_journal(batch / "journal.prepared.json")
+            terminal = parse_producer_bundle_publication_journal(batch / "journal.json")
+            if (prepared.digest() != binding.prepared_journal_sha256
+                    or terminal.digest() != binding.terminal_journal_sha256
+                    or prepared.admission_sha256 != recovered.output.admission_plan.digest()
+                    or terminal.native_execution_receipt_sha256 != recovered.receipt.receipt_sha256
+                    or tuple((item.bundle_id, item.bundle_sha256) for item in terminal.candidates)
+                    != tuple((item.bundle_id, item.bundle_sha256)
+                             for item in recovered.output.admission_plan.bundles)):
+                _fail("rejection_native_binding_mismatch")
+            authority = {
+                "journal_id": plan.journal_id, "run_id": plan.run_id,
+                "parent_task_id": plan.parent_task_id, "task_id": plan.task_id,
+                "contract_sha256": plan.request.contract_sha256,
+                "evaluator_kind": context.evaluator_kind, "evaluator_fingerprint": context.evaluator_fingerprint,
+                "runner_fingerprint": context.runner_fingerprint, "dependency_sha256": context.dependency_sha256,
+                "environment_sha256": context.environment_sha256,
+            }
+            if any(getattr(terminal, field) != expected for field, expected in authority.items()):
+                _fail("rejection_native_binding_mismatch")
+            if live_run is not None and (
+                        type(live_run.status) is not str or live_run.status != "all_rejected"
+                        or type(live_run.publication.publication_status) is not str
+                        or live_run.publication.publication_status != "all_rejected"
+                        or live_run.publication.journal != prepared
+                        or live_run.publication.terminal_journal != terminal
+                        or type(live_run.publication.admitted_candidate_ids) is not tuple
+                        or live_run.publication.admitted_candidate_ids != ()
+                        or type(live_run.publication.rejected_candidate_ids) is not tuple
+                        or live_run.publication.rejected_candidate_ids != binding.candidate_ids
+                        or type(live_run.publication.artifacts) is not tuple
+                        or live_run.publication.artifacts != () or live_run.publication.manifest is not None
+                        or live_run.publication.published_journal is not None
+                        or live_run.receipt != recovered.receipt or live_run.output != recovered.output):
+                _fail("rejection_run_changed")
+            if inspection is None:
+                observed = _verify_terminal_batch_rejection_evidence(root, batch, prepared, terminal=terminal)
+            else:
+                from .rsi_publication_lineage import (
+                    RSIPublicationLineageV2Inspection,
+                    StartedRSIRejectionInspection,
+                )
+
+                inspection_type = type(inspection)
+                if inspection_type not in {RSIPublicationLineageV2Inspection, StartedRSIRejectionInspection}:
+                    _fail("rejection_inspection_invalid")
+                observed = inspection_type.inspect_rejection(
+                    inspection, root, recovered.output.admission_plan, terminal,
+                )
+            if type(observed) is not VerifiedProducerBundleRejection:
+                _fail("rejection_native_invalid")
+            VerifiedProducerBundleRejection.__post_init__(observed)
+            if (observed.terminal != terminal or observed.manifest_sha256 != binding.rejection_manifest_sha256
+                    or observed.candidate_ids != binding.candidate_ids):
+                _fail("rejection_native_binding_mismatch")
+            return observed
+
+        before = native()
+        evidence = observe(before)
+        after = native()
+        repeated = observe(after)
+        if after != before or repeated != evidence:
+            _fail("rejection_native_changed")
+        return after, repeated
+
+    def _read_rejection(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, inputs: NativeRSIInputDescriptor, *,
+        authority: object, live: bool, expected_binding: RejectionLineageC1Binding | None = None,
+        expected_file_pin: NativeRSIRejectionFilePin | None = None,
+        expected_config: dict[str, Any] | None = None,
+    ) -> NativeRSIRejectionEvidence:
+        """Read P only through independently held original C1/C2 authority."""
+        from .rsi_publication_lineage import (
+            RSIPublicationLineage,
+            RSIPublicationLineageV2Inspection,
+            StartedRSIRejectionInspection,
+        )
+
+        authority_type = type(authority)
+        allowed = {RSIPublicationLineage, StartedRSIRejectionInspection} if live else {RSIPublicationLineageV2Inspection}
+        if authority_type not in allowed:
+            _fail("rejection_inspection_invalid")
+
+        def held() -> tuple[RejectionLineageC1Binding, NativeRSIRejectionFilePin]:
+            binding = authority_type.rejection_provenance_binding(authority)
+            pin = authority_type.rejection_provenance_file_pin(authority)
+            if type(binding) is not RejectionLineageC1Binding or type(pin) is not NativeRSIRejectionFilePin:
+                _fail("rejection_inspection_invalid")
+            binding = RejectionLineageC1Binding.from_dict(binding.to_dict())
+            pin = NativeRSIRejectionFilePin.from_dict(pin.to_dict())
+            if (binding.run_id != plan.run_id or binding.episode_id != request.episode_id
+                    or binding.journal_id != plan.journal_id
+                    or expected_binding is not None and binding != expected_binding
+                    or expected_file_pin is not None and pin != expected_file_pin):
+                _fail("rejection_lineage_changed")
+            return binding, pin
+
+        try:
+            config = self.rsi_fingerprint_config()
+            if expected_config is not None and config != expected_config:
+                _fail("rejection_context_changed")
+            binding, file_pin = held()
+            saved = read_native_rsi_rejection_provenance(self.provenance_batch, expected_file_pin=file_pin)
+            if (saved.plan != plan or saved.input_binding_sha256 != inputs.launch_binding_sha256
+                    or dict(saved.ledger_identity) != self._failure_ledger_identity or saved.lineage != binding
+                    or saved.rejected != _rejected_descriptor(binding)):
+                _fail("rejection_provenance_drift")
+            self._rejection_claim(request, plan, live=live, expected=saved.claim)
+            recovery, observation = self._native_rejection_snapshot(
+                plan, binding, inspection=None if authority_type is RSIPublicationLineage else authority,
+            )
+            reconstructed = NativeRSIRejectionEvidence(
+                plan=plan, input_binding_sha256=inputs.launch_binding_sha256,
+                ledger_identity=self._failure_ledger_identity, claim=saved.claim,
+                lineage=binding, rejected=_rejected_descriptor(binding), terminal=observation.terminal,
+                producer_execution_receipt_sha256=recovery.receipt.receipt_sha256,
+                producer_output_sha256=recovery.output.output_capture_sha256,
+                execution_receipt_sha256s=observation.execution_receipt_sha256s,
+                evaluation_receipt_sha256s=observation.evaluation_receipt_sha256s,
+                retained_evidence_sha256s=observation.retained_evidence_sha256s,
+            )
+            if reconstructed.to_dict() != saved.to_dict():
+                _fail("rejection_provenance_drift")
+            if (self._inputs(require_unexpired=False) != inputs or self.rsi_fingerprint_config() != config
+                    or held() != (binding, file_pin)
+                    or read_native_rsi_rejection_provenance(self.provenance_batch, expected_file_pin=file_pin) != saved
+                    or self._provenance_kind() != "rejection"):
+                _fail("rejection_provenance_changed")
+            self._rejection_claim(request, plan, live=live, expected=saved.claim)
+            if held() != (binding, file_pin):
+                _fail("rejection_lineage_changed")
+            return saved
+        except NativeRSISchedulerProviderError:
+            raise
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError("rsi_native_scheduler_rejection_provenance_invalid") from exc
+
+    def recover_rejection(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, *, inspection: object,
+    ) -> NativeRSIRejectionEvidence:
+        """Read an explicitly selected C2-complete started claim without settlement."""
+        from .rsi_publication_lineage import StartedRSIRejectionInspection
+
+        if (type(inspection) is not StartedRSIRejectionInspection
+                or type(request) is not SolverRequest or type(plan) is not NativeRSIExecutionPlan):
+            _fail("rejection_inspection_invalid")
+        inputs = self._inputs(require_unexpired=False)
+        _assert_plan_binding(request, _memory_from_request_inputs(inputs, request), plan, self.context, inputs)
+        self._rejection_claim(request, plan, live=True)
+        if self._provenance_kind() != "rejection":
+            _fail("rejection_provenance_missing")
+        return self._read_rejection(request, plan, inputs, authority=inspection, live=True)
+
+    def recover_live_rejection(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan,
+    ) -> NativeRSIRejectionEvidence:
+        """Repeat original active owner/C2 observation inside the fresh dispatch stack."""
+        from .rsi_controller import RSILearningController
+        from .rsi_publication_lineage import RSIPublicationLineage
+
+        saved = self._live_rejection
+        if type(saved) is not tuple or len(saved) != 8:
+            _fail("rejection_live_owner_missing")
+        owner, controller, original_request, original_plan, inputs, config, binding, pin = saved
+        if (type(owner) is not RSIPublicationLineage or type(controller) is not RSILearningController
+                or self._python_admission_controller is not controller or controller.producer_known_rejection is not True
+                or type(request) is not SolverRequest or type(plan) is not NativeRSIExecutionPlan
+                or request != original_request or plan != original_plan):
+            _fail("rejection_live_owner_changed")
+        repeated_inputs = self._inputs(require_unexpired=False)
+        if repeated_inputs != inputs:
+            _fail("rejection_input_changed")
+        _assert_plan_binding(request, _memory_from_request_inputs(inputs, request), plan, self.context, inputs)
+        return self._read_rejection(
+            request, plan, inputs, authority=owner, live=True,
+            expected_binding=binding, expected_file_pin=pin, expected_config=config,
+        )
+
+    def _persist_live_rejection(
+        self, request: SolverRequest, plan: NativeRSIExecutionPlan, inputs: NativeRSIInputDescriptor, *,
+        run: NativeTrustedProducerRun, owner: object, claim: NativeEpisodeClaim | None,
+        config: dict[str, Any],
+    ) -> NativeRSIRejectionEvidence:
+        """Original live C1 -> fresh publishing-FD P pin -> same-owner C2."""
+        from .rsi_publication_lineage import RSIPublicationLineage
+
+        if type(owner) is not RSIPublicationLineage or claim is None:
+            _fail("rejection_live_owner_missing")
+        controller = self._python_admission_controller
+        try:
+            self._rejection_claim(request, plan, live=True, expected=claim)
+            binding = RSIPublicationLineage.rejection_provenance_binding(owner)
+            rejected = _rejected_descriptor(binding)
+            recovery, observation = self._native_rejection_snapshot(plan, binding, live_run=run)
+            evidence = NativeRSIRejectionEvidence(
+                plan=plan, input_binding_sha256=inputs.launch_binding_sha256,
+                ledger_identity=self._failure_ledger_identity, claim=claim,
+                lineage=binding, rejected=rejected, terminal=observation.terminal,
+                producer_execution_receipt_sha256=recovery.receipt.receipt_sha256,
+                producer_output_sha256=recovery.output.output_capture_sha256,
+                execution_receipt_sha256s=observation.execution_receipt_sha256s,
+                evaluation_receipt_sha256s=observation.evaluation_receipt_sha256s,
+                retained_evidence_sha256s=observation.retained_evidence_sha256s,
+            )
+            if (self._inputs(require_unexpired=False) != inputs or self.rsi_fingerprint_config() != config
+                    or self._python_admission_controller is not controller
+                    or RSIPublicationLineage.rejection_provenance_binding(owner) != binding):
+                _fail("rejection_input_changed")
+            self._rejection_claim(request, plan, live=True, expected=claim)
+            digest, file_pin = persist_native_rsi_rejection_provenance(
+                self.provenance_batch, evidence, retained_bytes=binding.retained_bytes,
+            )
+            readback = read_native_rsi_rejection_provenance(self.provenance_batch, expected_file_pin=file_pin)
+            if readback.to_dict() != evidence.to_dict() or readback.provenance_sha256 != digest:
+                _fail("rejection_provenance_changed")
+            if (self._inputs(require_unexpired=False) != inputs or self.rsi_fingerprint_config() != config
+                    or self._python_admission_controller is not controller
+                    or RSIPublicationLineage.rejection_provenance_binding(owner) != binding):
+                _fail("rejection_input_changed")
+            self._rejection_claim(request, plan, live=True, expected=claim)
+            RSIPublicationLineage.acknowledge_rejection_provenance(owner, readback, file_pin)
+            if RSIPublicationLineage.rejection_provenance_file_pin(owner) != file_pin:
+                _fail("rejection_lineage_changed")
+            self._live_rejection = (
+                owner, controller, request, plan, inputs, config, binding, file_pin,
+            )
+            return self.recover_live_rejection(request, plan)
+        except NativeRSISchedulerProviderError:
+            raise
+        except Exception as exc:
+            raise NativeRSISchedulerProviderError("rsi_native_scheduler_rejection_provenance_invalid") from exc
+
     def recover(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
-    ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence:
+    ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence | NativeRSIRejectionEvidence:
         """Revalidate existing provenance and artifacts; never launch or settle a started claim."""
         inputs = self._inputs(require_unexpired=False)
         memory = _memory_from_request_inputs(inputs, request)
         _assert_plan_binding(request, memory, plan, self.context, inputs)
         if self.context.failure_ledger is not None:
             self.assert_failure_ledger(self.context.failure_ledger)
-        if self._provenance_kind() == "failure":
+        kind = self._provenance_kind()
+        if kind == "failure":
             return self._recover_failure(request, plan, inputs)
+        if kind == "rejection":
+            self._rejection_claim(request, plan, live=False)
+            options = self._retained_lineage_options(request, memory, plan)
+            from .rsi_publication_lineage import RSIPublicationLineageV2Inspection
+
+            inspection = options.get("lineage_inspection")
+            if type(inspection) is not RSIPublicationLineageV2Inspection:
+                _fail("rejection_inspection_invalid")
+            return self._read_rejection(request, plan, inputs, authority=inspection, live=False)
         try:
             saved = read_native_rsi_provenance(self.provenance_batch)
             candidate = NativeCandidateRecord.from_dict(saved["bundle"]["candidate"])
@@ -1095,6 +1573,7 @@ class NativeRSISchedulerProvider:
                 self.context, candidate_id=candidate.candidate_id,
                 journal_sha256=saved["publication_journal_sha256"],
                 producer_receipt_sha256=saved["producer_execution_receipt_sha256"],
+                **self._retained_lineage_options(request, memory, plan),
             )
             bundle = _retained_bundle(request, evidence, _preparation_receipt(self.context, evidence))
             expected = _provenance_payload(plan, inputs, evidence, bundle)
@@ -1194,19 +1673,41 @@ class NativeRSISchedulerProvider:
 
     def __call__(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
-    ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence:
+    ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence | NativeRSIRejectionEvidence:
+        self._refuse_brs_worker_publication()
         if not isinstance(request, SolverRequest) or not isinstance(plan, NativeRSIExecutionPlan):
             _fail("input_invalid")
         context = self.context
         inputs = self._inputs(require_unexpired=True)
         memory = _memory_from_request_inputs(inputs, request)
         _assert_plan_binding(request, memory, plan, context, inputs)
+        controller = self._python_admission_controller
+        rejection_flag = getattr(controller, "producer_known_rejection", False)
+        if type(rejection_flag) is not bool:
+            _fail("rejection_configuration_invalid")
+        rejection_config = None
+        if rejection_flag:
+            if self._python_admission_controller is not controller:
+                _fail("python_admission_controller_changed")
+            from .rsi_controller import RSILearningController
+
+            if (type(controller) is not RSILearningController
+                    or controller.producer_multi_episode_publication is not True
+                    or controller.producer_child_execution is not True
+                    or context.python_handoff_after_execution is None
+                    or controller.ledger is not context.failure_ledger):
+                _fail("rejection_configuration_invalid")
+            self.assert_rejection_ledger(context.failure_ledger)
+            rejection_config = self.rsi_fingerprint_config()
         python_join = self._python_publication_join(request, plan, inputs)
         claim = None
         if context.failure_ledger is not None:
             claim = self._failure_claim(request, plan, live=True)
-            if self._provenance_kind() == "failure":
+            kind = self._provenance_kind()
+            if kind == "failure":
                 _fail("failure_recovery_required")
+            if kind == "rejection":
+                _fail("rejection_recovery_required")
         parent_deadline = None
         if inputs.deadline_unix is not None:
             mapped_start = time.monotonic()
@@ -1263,11 +1764,22 @@ class NativeRSISchedulerProvider:
             return recovered
         if python_join:
             python_join["evidence_revalidator"]("rsi_native_python_scheduler_return")
+        if rejection_flag:
+            if self._python_admission_controller is not controller:
+                _fail("python_admission_controller_changed")
+            if type(run) is not NativeTrustedProducerRun or type(run.status) is not str:
+                _fail("rejection_run_invalid")
+            if run.status == "all_rejected":
+                return self._persist_live_rejection(
+                    request, plan, inputs, run=run, owner=python_join.get("lineage_owner"),
+                    claim=claim, config=rejection_config,
+                )
         projected = _build_receipts(request, context, run)
         _publication, journal = _journal_for_published_run(run)
         evidence = _read_retained(
             context, candidate_id=projected.candidate.candidate_id,
             journal_sha256=journal.digest(), producer_receipt_sha256=run.receipt.receipt_sha256,
+            **self._retained_lineage_options(request, _memory_from_request_inputs(inputs, request), plan),
         )
         bundle = _retained_bundle(request, evidence, projected.candidate.candidate_receipt_sha256)
         if bundle != projected or self._inputs(require_unexpired=False) != inputs:

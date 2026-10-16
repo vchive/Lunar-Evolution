@@ -226,12 +226,17 @@ def test_same_bytes_replacement_during_read_is_rejected(tmp_path: Path, bundle, 
     bridge, episode, request, result, _decision, _evidence = bundle
     store, _ = retained(tmp_path, bundle)
     target = record_path(store, episode)
+    target_info = target.stat()
+    target_identity = target_info.st_dev, target_info.st_ino
     original_read, replaced = os.read, False
 
     def racing_read(descriptor, size):
         nonlocal replaced
         data = original_read(descriptor, size)
-        if data and not replaced:
+        opened = os.fstat(descriptor)
+        # os.read is shared with fresh component-source fingerprint reads. Inject
+        # only after reading the original evidence inode, not during pins(bridge).
+        if data and not replaced and (opened.st_dev, opened.st_ino) == target_identity:
             replaced = True
             if replace_directory:
                 store.root.rename(tmp_path / "retained-original")
@@ -245,6 +250,7 @@ def test_same_bytes_replacement_during_read_is_rejected(tmp_path: Path, bundle, 
     monkeypatch.setattr("lunar_evolution.rsi_actor_evidence_store.os.read", racing_read)
     with pytest.raises(ActorEvidenceStoreError, match="storage_changed|directory_changed"):
         store.load(episode, request, result, **pins(bridge))
+    assert replaced, "the original evidence read must exercise the replacement race"
 
 
 def admission_request(request, evidence):

@@ -22,6 +22,7 @@ from .native_trusted_failure import NativeTrustedProducerFailure
 from .rsi_gateway import SolverRequest, SolverResult
 from .rsi_native_plan import NativeRSIExecutionPlan
 from .rsi_native_provenance import NATIVE_RSI_PROVENANCE_NAME
+from .rsi_native_provenance_names import NATIVE_RSI_REJECTION_PROVENANCE_NAME
 from .rsi_store import NativeEpisodeClaim, RSILedger
 
 NATIVE_RSI_FAILURE_PROVENANCE_NAME = "native-rsi.failure-provenance.json"
@@ -209,11 +210,12 @@ def _directory(batch: Path) -> DirectoryChain:
 
 def _assert_no_success(chain: DirectoryChain) -> None:
     chain.check()
-    try:
-        os.stat(NATIVE_RSI_PROVENANCE_NAME, dir_fd=chain.fd, follow_symlinks=False)
-    except FileNotFoundError:
-        return
-    _fail("conflicting_provenance")
+    for name in (NATIVE_RSI_PROVENANCE_NAME, NATIVE_RSI_REJECTION_PROVENANCE_NAME):
+        try:
+            os.stat(name, dir_fd=chain.fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        _fail("conflicting_provenance")
 
 
 def _read_once(chain: DirectoryChain) -> tuple[bytes, os.stat_result]:

@@ -274,12 +274,18 @@ def test_same_content_path_replacement_during_read_is_rejected(tmp_path: Path, m
     bridge, episode, request, result = completed(root, candidate_path=candidate_path)
     workspace = root / "episodes" / episode.episode_id
     original_read = os.read
+    original_candidate = (workspace / candidate_path).stat()
     swapped = False
 
     def replace_after_read(descriptor, size):
         nonlocal swapped
         data = original_read(descriptor, size)
-        if size > 1 and not swapped:
+        observed = os.fstat(descriptor)
+        # Source fingerprints also read files; inject drift only while the
+        # verifier holds this original candidate FD, after its path pins exist.
+        if (size > 1 and not swapped
+                and (observed.st_dev, observed.st_ino)
+                == (original_candidate.st_dev, original_candidate.st_ino)):
             swapped = True
             path = {
                 "file": workspace / candidate_path, "parent": workspace / "src",

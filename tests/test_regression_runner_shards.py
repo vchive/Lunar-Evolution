@@ -84,7 +84,7 @@ def _xml(nodes, *, skip=False, failure=False, error=False, counters=None):
     return ET.tostring(root)
 
 
-@pytest.mark.parametrize("count", [1, 2, 3, 5])
+@pytest.mark.parametrize("count", [1, 2, 3, 5, 6])
 def test_partition_conserves_every_node_and_file_across_collection_order(count):
     nodes = _inventory(count)
     shards = [runner.partition_current_nodes(nodes, shard_index=index, shard_count=count)
@@ -102,10 +102,134 @@ def test_partition_conserves_every_node_and_file_across_collection_order(count):
         assert all(set(shard).isdisjoint(other) for other in shards[index + 1:])
 
 
+def test_six_shards_refine_three_without_changing_full_inventory_or_file_grouping():
+    nodes = _inventory(6)
+    old = [runner.partition_current_nodes(nodes, shard_index=index, shard_count=3)
+           for index in range(3)]
+    new = [runner.partition_current_nodes(nodes, shard_index=index, shard_count=6)
+           for index in range(6)]
+    assert runner.SHARD_ALGORITHM == "sha256-path-utf8-mod-v1"
+    assert tuple(sorted(node for shard in new for node in shard)) == nodes
+    assert sum(map(len, new)) == len(nodes)
+    for index, shard in enumerate(old):
+        refined = tuple(sorted((*new[index], *new[index + 3])))
+        assert refined == shard
+        assert _digest(refined) == _digest(shard)
+        files = {node.split("::", 1)[0] for node in shard}
+        for part in (new[index], new[index + 3]):
+            part_files = {node.split("::", 1)[0] for node in part}
+            assert part_files <= files
+            assert set(part) == {node for node in nodes if node.split("::", 1)[0] in part_files}
+    assert all(set(shard).isdisjoint(other)
+               for index, shard in enumerate(new) for other in new[index + 1:])
+
+
 def test_empty_pure_partition_does_not_invent_or_reassign_a_file():
     nodes = ("tests/test_one.py::TestGroup::test_parameter[::/value]",)
     selected = (_assigned("tests/test_one.py", 3) + 1) % 3
     assert runner.partition_current_nodes(nodes, shard_index=selected, shard_count=3) == ()
+
+
+def test_isolated_schedule_conserves_inventory_without_reassigning_ordinary_files():
+    ordinary = _inventory(6)
+    nodes = tuple(sorted((*ordinary, *runner.HEAVY_CURRENT_NODES)))
+    shards = [runner.partition_isolated_current_nodes(nodes, shard_index=index, shard_count=6)
+              for index in range(6)]
+    heavy = [runner.partition_heavy_current_nodes(nodes, heavy_index=index) for index in range(3)]
+    assert runner.HEAVY_SHARD_ALGORITHM == "sha256-path-utf8-mod-six-explicit-heavy-v2"
+    assert tuple(sorted(node for part in (*shards, *heavy) for node in part)) == nodes
+    assert sum(map(len, (*shards, *heavy))) == len(nodes)
+    for index, shard in enumerate(shards):
+        assert shard == runner.partition_current_nodes(ordinary, shard_index=index, shard_count=6)
+        assert runner.partition_isolated_current_nodes(
+            list(reversed(nodes)), shard_index=index, shard_count=6,
+        ) == shard
+    for index, shard in enumerate(heavy):
+        assert shard == (runner.HEAVY_CURRENT_NODES[index],)
+        assert runner.partition_heavy_current_nodes(list(reversed(nodes)), heavy_index=index) == shard
+    assert all(set(part).isdisjoint(other) for index, part in enumerate((*shards, *heavy))
+               for other in (*shards, *heavy)[index + 1:])
+
+
+@pytest.mark.parametrize("drift", ["missing_file", "missing_node", "extra_node", "renamed", "duplicate"])
+@pytest.mark.parametrize("kind", ["ordinary", "heavy"])
+def test_explicit_heavy_inventory_drift_refuses_every_partition(drift, kind):
+    heavy = runner.HEAVY_CURRENT_NODES
+    changed = {
+        "missing_file": (), "missing_node": heavy[:-1],
+        "extra_node": (*heavy, f"{runner.HEAVY_CURRENT_FILE}::test_new"),
+        "renamed": (*heavy[:-1], heavy[-1].replace("V2-T3-RRR", "renamed")),
+        "duplicate": (*heavy, heavy[0]),
+    }[drift]
+    nodes = (*_inventory(6), *changed)
+    with pytest.raises(runner.RegressionError):
+        if kind == "ordinary":
+            runner.partition_isolated_current_nodes(nodes, shard_index=0, shard_count=6)
+        else:
+            runner.partition_heavy_current_nodes(nodes, heavy_index=0)
+
+
+@pytest.mark.parametrize("heavy_index", [None, -1, 3, True, False, "0", 0.0])
+def test_invalid_heavy_index_refuses_before_any_effect(tmp_path, monkeypatch, heavy_index):
+    for name in ("_fresh_reports", "_load_index", "_verify_imports", "_collect", "_pytest_phase"):
+        monkeypatch.setattr(runner, name, _forbidden)
+    with pytest.raises(runner.RegressionError):
+        runner.run_current_heavy(tmp_path, tmp_path / "reports", heavy_index=heavy_index)
+    assert not (tmp_path / "reports").exists()
+
+
+@pytest.mark.parametrize("count,isolate", [(3, True), (9, True), (6, 1), (6, None), (6, "yes")])
+def test_invalid_isolated_schedule_refuses_before_any_effect(tmp_path, monkeypatch, count, isolate):
+    monkeypatch.setattr(runner, "_run_current_selection", _forbidden)
+    with pytest.raises(runner.RegressionError):
+        runner.run_current(tmp_path, tmp_path / "reports", shard_index=0,
+                           shard_count=count, isolate_heavy=isolate)
+    assert not (tmp_path / "reports").exists()
+
+
+@pytest.mark.parametrize("flags", [
+    ["--suite", "current-heavy"],
+    ["--suite", "current-heavy", "--heavy-index", "-1"],
+    ["--suite", "current-heavy", "--heavy-index", "3"],
+    ["--suite", "current-heavy", "--heavy-index", "0", "--shard-index", "0"],
+    ["--suite", "current-heavy", "--heavy-index", "0", "--shard-count", "6"],
+    ["--suite", "current-heavy", "--heavy-index", "0", "--isolate-heavy"],
+    ["--suite", "current", "--shard-index", "0", "--shard-count", "3", "--isolate-heavy"],
+    ["--suite", "current", "--shard-index", "0", "--shard-count", "6", "--heavy-index", "0"],
+    ["--suite", "history", "--isolate-heavy"],
+    ["--suite", "native-e2e", "--isolate-heavy"], ["--isolate-heavy"],
+    ["--suite", "history", "--heavy-index", "0"],
+    ["--suite", "native-e2e", "--heavy-index", "0"], ["--heavy-index", "0"],
+])
+def test_heavy_cli_refuses_missing_or_mixed_flags_before_dispatch(tmp_path, monkeypatch, flags):
+    for name in ("run", "run_native_e2e", "run_current", "run_current_heavy", "run_history"):
+        monkeypatch.setattr(runner, name, _forbidden)
+    with pytest.raises(SystemExit) as error:
+        runner.main(["--junit-dir", str(tmp_path), *flags])
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize("index", range(3))
+def test_heavy_cli_dispatches_only_explicit_index(tmp_path, monkeypatch, index):
+    calls = []
+    monkeypatch.setattr(runner, "run_current_heavy", lambda *args, **kwargs: (
+        calls.append((args, kwargs)) or 7
+    ))
+    assert runner.main(["--suite", "current-heavy", "--heavy-index", str(index),
+                        "--junit-dir", str(tmp_path)]) == 7
+    assert calls == [((runner.REPO, tmp_path), {"heavy_index": index})]
+
+
+def test_isolated_cli_dispatches_six_ordinary_shards(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(runner, "run_current", lambda *args, **kwargs: (
+        calls.append((args, kwargs)) or 7
+    ))
+    assert runner.main(["--suite", "current", "--shard-index", "5", "--shard-count", "6",
+                        "--isolate-heavy", "--junit-dir", str(tmp_path)]) == 7
+    assert calls == [((runner.REPO, tmp_path), {
+        "shard_index": 5, "shard_count": 6, "isolate_heavy": True,
+    })]
 
 
 @pytest.mark.parametrize("nodes", [
@@ -187,6 +311,7 @@ def test_cli_routes_new_suites_and_preserves_default_all(tmp_path, monkeypatch, 
 
 @pytest.mark.parametrize("suite,artifact", [
     ("current", "current-shard-1.xml"), ("current", "current-shard-1.summary.json"),
+    ("current-heavy", "current-heavy-1.xml"), ("current-heavy", "current-heavy-1.summary.json"),
     ("history", "archived.xml"), ("history", "archived.retry1.xml"),
     ("history", "frozen123.xml"), ("history", "history.summary.json"),
 ])
@@ -217,6 +342,8 @@ def test_new_suites_preserve_existing_evidence_before_any_execution(
     with pytest.raises(runner.RegressionError):
         if suite == "current":
             runner.run_current(tmp_path, reports, shard_index=1, shard_count=3)
+        elif suite == "current-heavy":
+            runner.run_current_heavy(tmp_path, reports, heavy_index=1)
         else:
             runner.run_history(tmp_path, reports)
     assert retained.lstat().st_ino == inode
@@ -243,10 +370,20 @@ def test_summary_exclusive_creation_preserves_evidence_that_arrived_after_prefli
     assert capsys.readouterr().out == ""
 
 
-def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=None, skip=False):
-    nodes = _inventory()
-    selected = tuple(node for node in nodes if _assigned(node.split("::", 1)[0], 3) == 1)
+def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=None, skip=False,
+                   shard_index=1, shard_count=3, isolate_heavy=False, heavy_index=None):
+    nodes = _inventory(shard_count)
+    if isolate_heavy:
+        nodes = tuple(sorted((*nodes, *runner.HEAVY_CURRENT_NODES)))
+    if heavy_index is not None:
+        selected = (runner.HEAVY_CURRENT_NODES[heavy_index],)
+    else:
+        selected = tuple(node for node in nodes
+                         if _assigned(node.split("::", 1)[0], shard_count) == shard_index
+                         and (not isolate_heavy
+                              or node.partition("::")[0] != runner.HEAVY_CURRENT_FILE))
     files = tuple(sorted({node.split("::", 1)[0] for node in selected}))
+    selections = selected if heavy_index is not None else files
     for relative in files:
         source = tmp_path / relative
         source.parent.mkdir(parents=True, exist_ok=True)
@@ -268,30 +405,31 @@ def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=No
         calls.append(("collect", tuple(selection)))
         if tuple(selection) == ("tests",):
             return nodes
-        assert tuple(selection) == files
+        assert tuple(selection) == selections
         if collection_drift == "missing":
             return selected[:-1]
         if collection_drift == "extra":
             return (*selected, next(node for node in nodes if node not in selected))
         if collection_drift == "duplicate":
-            return (*selected[:-1], selected[0])
+            return (*selected, selected[0])
         return tuple(reversed(selected))
 
     def execute(command, **kwargs):
         calls.append(("execute", tuple(command)))
         assert kwargs["cwd"] == tmp_path
-        assert tuple(command[-len(files):]) == files
+        assert tuple(command[-len(selections):]) == selections
         xml_nodes = selected
         if xml_drift == "missing":
             xml_nodes = selected[:-1]
         elif xml_drift == "extra":
             xml_nodes = (*selected, "tests/test_unselected.py::test_extra")
         elif xml_drift == "duplicate":
-            xml_nodes = (*selected[:-1], selected[0])
+            xml_nodes = (*selected, selected[0])
         elif xml_drift == "wrong_class":
-            xml_nodes = tuple(node.replace("::TestGroup::", "::OtherGroup::") for node in selected)
+            xml_nodes = tuple(node.replace("::test_", "::OtherGroup::test_") for node in selected)
         elif xml_drift == "wrong_parameter":
-            xml_nodes = tuple(node.replace("[dict::with/slash]", "[dict::with/other]") for node in selected)
+            xml_nodes = tuple(node.replace("[dict::with/slash]", "[dict::with/other]")
+                              .replace("[V2-", "[altered-V2-") for node in selected)
         report = Path(next(item.split("=", 1)[1] for item in command if item.startswith("--junitxml=")))
         raw = _xml(xml_nodes, skip=skip)
         if xml_drift == "missing_xml":
@@ -313,14 +451,21 @@ def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=No
     return nodes, selected, files, imports, calls
 
 
-@pytest.mark.parametrize("skip", [False, True])
+@pytest.mark.parametrize("shard_index,shard_count,skip", [
+    (1, 3, False), (1, 3, True), *((index, 6, False) for index in range(6)),
+], ids=["three-shards", "three-shards-with-visible-skip",
+        *(f"six-shards-{index}" for index in range(6))])
 def test_current_records_actual_source_shard_inventory_junit_and_visible_skips(
-    tmp_path, monkeypatch, capsys, skip,
+    tmp_path, monkeypatch, capsys, shard_index, shard_count, skip,
 ):
-    nodes, selected, files, imports, calls = _current_mocks(tmp_path, monkeypatch, skip=skip)
+    nodes, selected, files, imports, calls = _current_mocks(
+        tmp_path, monkeypatch, skip=skip, shard_index=shard_index, shard_count=shard_count,
+    )
     reports = tmp_path / "reports"
-    assert runner.run_current(tmp_path, reports, shard_index=1, shard_count=3) == 0
-    summary = json.loads((reports / "current-shard-1.summary.json").read_bytes())
+    assert runner.run_current(
+        tmp_path, reports, shard_index=shard_index, shard_count=shard_count,
+    ) == 0
+    summary = json.loads((reports / f"current-shard-{shard_index}.summary.json").read_bytes())
     assert summary == json.loads(capsys.readouterr().out.splitlines()[-1])
     assert summary["schema_version"] == 1
     assert summary["suite"] == "current" and summary["offline"] is True
@@ -328,7 +473,7 @@ def test_current_records_actual_source_shard_inventory_junit_and_visible_skips(
     assert summary["working_tree"] is True and summary["imports"] == imports
     assert summary["python"] == sys.executable
     assert summary["python_version"] == f"{sys.version_info.major}.{sys.version_info.minor}"
-    assert (summary["shard_index"], summary["shard_count"]) == (1, 3)
+    assert (summary["shard_index"], summary["shard_count"]) == (shard_index, shard_count)
     assert summary["shard_algorithm"] == "sha256-path-utf8-mod-v1"
     assert summary["full_nodes"] == list(nodes)
     assert summary["full_collected"] == len(nodes)
@@ -339,10 +484,120 @@ def test_current_records_actual_source_shard_inventory_junit_and_visible_skips(
     assert summary["collected"] == summary["tests"] == summary["reported_testcases"] == len(selected)
     assert summary["skipped"] == summary["skipped_elements"] == int(skip)
     assert summary["failures"] == summary["errors"] == summary["exit_code"] == 0
-    assert summary["junit"] == str(reports / "current-shard-1.xml")
-    assert summary["junit_sha256"] == hashlib.sha256((reports / "current-shard-1.xml").read_bytes()).hexdigest()
+    junit = reports / f"current-shard-{shard_index}.xml"
+    assert summary["junit"] == str(junit)
+    assert summary["junit_sha256"] == hashlib.sha256(junit.read_bytes()).hexdigest()
     assert not (reports / "current.xml").exists()
     assert [call[0] for call in calls] == ["collect", "collect", "execute"]
+
+
+@pytest.mark.parametrize("role,index", [*(('ordinary', index) for index in range(6)),
+                                        *(('heavy', index) for index in range(3))])
+def test_isolated_roles_bind_full_inventory_selected_execution_and_junit(
+    tmp_path, monkeypatch, capsys, role, index,
+):
+    heavy_index = index if role == "heavy" else None
+    nodes, selected, files, imports, calls = _current_mocks(
+        tmp_path, monkeypatch, shard_index=index, shard_count=6,
+        isolate_heavy=True, heavy_index=heavy_index,
+    )
+    reports = tmp_path / "reports"
+    if heavy_index is None:
+        result = runner.run_current(tmp_path, reports, shard_index=index, shard_count=6,
+                                    isolate_heavy=True)
+        label = f"current-shard-{index}"
+        selections = files
+    else:
+        result = runner.run_current_heavy(tmp_path, reports, heavy_index=index)
+        label = f"current-heavy-{index}"
+        selections = selected
+    assert result == 0
+    summary = json.loads((reports / f"{label}.summary.json").read_bytes())
+    assert summary == json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert summary["suite"] == ("current" if heavy_index is None else "current-heavy")
+    assert summary["shard_algorithm"] == runner.HEAVY_SHARD_ALGORITHM
+    assert summary["selection_mode"] == ("files" if heavy_index is None else "node")
+    assert summary["full_nodes"] == list(nodes)
+    assert summary["full_inventory_sha256"] == _digest(nodes)
+    assert summary["full_collected"] == len(nodes)
+    assert summary["selected_nodes"] == list(selected)
+    assert summary["selected_inventory_sha256"] == _digest(selected)
+    assert summary["selected_files"] == list(files)
+    assert summary["heavy_nodes"] == list(runner.HEAVY_CURRENT_NODES)
+    assert summary["heavy_inventory_sha256"] == _digest(runner.HEAVY_CURRENT_NODES)
+    assert summary["commit"] == _COMMIT and summary["tree"] == _TREE
+    assert summary["imports"] == imports
+    assert summary["collected"] == summary["tests"] == summary["reported_testcases"] == len(selected)
+    assert all(summary[field] == 0 for field in ("failures", "errors", "skipped", "exit_code"))
+    if heavy_index is None:
+        assert (summary["shard_index"], summary["shard_count"]) == (index, 6)
+        assert "heavy_index" not in summary
+        assert runner.HEAVY_CURRENT_FILE not in files
+    else:
+        assert (summary["heavy_index"], summary["heavy_count"]) == (index, 3)
+        assert "shard_index" not in summary and "shard_count" not in summary
+        assert selected == (runner.HEAVY_CURRENT_NODES[index],)
+    assert calls[:2] == [("collect", ("tests",)), ("collect", selections)]
+    assert calls[2][0] == "execute" and tuple(calls[2][1][-len(selections):]) == selections
+    junit = reports / f"{label}.xml"
+    assert summary["junit"] == str(junit)
+    assert summary["junit_sha256"] == hashlib.sha256(junit.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("role", ["ordinary", "heavy"])
+@pytest.mark.parametrize("drift", ["missing", "extra", "duplicate"])
+def test_isolated_selected_recollection_drift_refuses_before_execution(
+    tmp_path, monkeypatch, role, drift,
+):
+    *_, calls = _current_mocks(tmp_path, monkeypatch, shard_count=6, isolate_heavy=True,
+                              heavy_index=1 if role == "heavy" else None, collection_drift=drift)
+    with pytest.raises(runner.RegressionError):
+        if role == "heavy":
+            runner.run_current_heavy(tmp_path, tmp_path / "reports", heavy_index=1)
+        else:
+            runner.run_current(tmp_path, tmp_path / "reports", shard_index=1, shard_count=6,
+                               isolate_heavy=True)
+    assert [call[0] for call in calls] == ["collect", "collect"]
+
+
+@pytest.mark.parametrize("drift", [
+    "missing", "extra", "duplicate", "wrong_class", "wrong_parameter", "missing_xml", "malformed",
+])
+def test_heavy_junit_drift_cannot_report_success_even_with_pytest_zero(tmp_path, monkeypatch, drift):
+    _current_mocks(tmp_path, monkeypatch, shard_count=6, isolate_heavy=True,
+                   heavy_index=1, xml_drift=drift)
+    reports = tmp_path / "reports"
+    assert runner.run_current_heavy(tmp_path, reports, heavy_index=1) != 0
+    summary = json.loads((reports / "current-heavy-1.summary.json").read_bytes())
+    assert summary["pytest_exit_code"] == 0 and summary["exit_code"] != 0
+    assert summary["validation_error"]
+
+
+@pytest.mark.parametrize("role", ["ordinary", "heavy"])
+@pytest.mark.parametrize("drift", ["missing_file", "missing_node", "extra_node", "renamed"])
+def test_isolated_full_inventory_drift_refuses_before_any_selected_execution(
+    tmp_path, monkeypatch, role, drift,
+):
+    heavy = runner.HEAVY_CURRENT_NODES
+    changed = {
+        "missing_file": (), "missing_node": heavy[:-1],
+        "extra_node": (*heavy, f"{runner.HEAVY_CURRENT_FILE}::test_new"),
+        "renamed": (*heavy[:-1], heavy[-1].replace("V2-T3-RRR", "renamed")),
+    }[drift]
+    calls = []
+    monkeypatch.setattr(runner, "_verify_imports", lambda _: [])
+    monkeypatch.setattr(runner, "_collect", lambda *_args, **_kwargs: (
+        calls.append("collect") or (*_inventory(6), *changed)
+    ))
+    monkeypatch.setattr(runner, "_load_index", lambda _: {"test_files": [], "support_files": []})
+    monkeypatch.setattr(runner, "_pytest_phase", _forbidden)
+    with pytest.raises(runner.RegressionError):
+        if role == "heavy":
+            runner.run_current_heavy(tmp_path, tmp_path / "reports", heavy_index=0)
+        else:
+            runner.run_current(tmp_path, tmp_path / "reports", shard_index=0, shard_count=6,
+                               isolate_heavy=True)
+    assert calls == ["collect"]
 
 
 @pytest.mark.parametrize("drift", ["missing", "extra", "duplicate"])
@@ -423,6 +678,36 @@ def test_real_inert_pytest_class_and_parameter_ids_match_retained_junit(tmp_path
     assert result["tests"] == result["reported_testcases"] == 2
     assert sorted((case.get("classname"), case.get("name"))
                   for case in ET.parse(report).iter("testcase")) == sorted(map(_key, nodes))
+
+
+def test_real_inert_heavy_node_selections_collect_and_execute_exactly_once(tmp_path):
+    # Identical addresses, deliberately inert bodies: the original long flows never run here.
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tmp_path / runner.HEAVY_CURRENT_FILE).write_text(
+        "import pytest\n"
+        "@pytest.mark.parametrize('value', [1, 2, 3], "
+        "ids=['V2-T1-RPP', 'V2-T2-PRP', 'V2-T3-RRR'])\n"
+        "def test_original_three_attempt_mixed_drs_and_terminal_readonly_replay(value, tmp_path):\n"
+        "    assert value in (1, 2, 3)\n"
+        "    assert tmp_path.is_dir()\n",
+        encoding="utf-8",
+    )
+    nodes = runner._collect(tmp_path, ("tests",))
+    assert nodes == runner.HEAVY_CURRENT_NODES
+    executed = []
+    for index in range(3):
+        selected = runner.partition_heavy_current_nodes(nodes, heavy_index=index)
+        assert runner._collect(tmp_path, selected) == selected
+        report = tmp_path / f"inert-heavy-{index}.xml"
+        result = runner._pytest_phase(
+            tmp_path, selected, report, expected_count=1, expected_nodes=selected,
+        )
+        assert result["exit_code"] == result["pytest_exit_code"] == 0
+        assert result["tests"] == result["reported_testcases"] == 1
+        executed.extend((case.get("classname"), case.get("name"))
+                        for case in ET.parse(report).iter("testcase"))
+    assert sorted(executed) == sorted(map(_key, nodes))
 
 
 @pytest.mark.parametrize("damage", ["failure", "error", "unreported_skip", "wrong_skip_count"])

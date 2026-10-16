@@ -298,3 +298,28 @@ success reconciliation, complete egress, or machine-restart recovery.
 
 No WebAgent, remote evaluator or company evaluation platform is required or authorized by this
 local validation procedure.
+
+## 2026-10-15 lineage fixture initialization and effect-free import trap
+
+The first Linux six-shard run at `f9048df` remains failed evidence. Its eight bare
+lineage-reader failures lacked the association normally established by construction;
+Python3.12 also exposes pathlib's access to already-loaded ntpath inside the original
+read-only import trap. The corrections are limited to test setup and trap precision.
+
+The three affected lineage tests now cover both original protocol versions with
+explicitly initialized association context. Expected protocol and generated fixture
+data come independently from the parameter; the production classifier is asserted
+against that expectation. Missing original pins, empty/renamed source maps and
+premature terminal fields retain their original rejection assertions. The import
+exception requires pathlib's exact globals, level zero and empty fromlist, and the
+module must already be loaded. Direct ntpath, CLI and other dependency imports remain
+trapped; original IO/process/permission checks remain.
+
+The affected scope passed **17 cases**, zero failures/errors/skips (0.608 seconds).
+XML SHA256: `9e176af236ceab6a89b4aed41671e6e4549f778dc1cb124a95f58415155a3779`.
+Original nine-case failure reproduction and interrupted full-module runs are retained.
+The complete 199-case modules did not finish in those attempts and are not claimed as
+passing; their unchanged controller-heavy cases remain in the complete current
+regression. Ruff across src/tests/tools, compileall and diff-check passed for the
+slice. Final integrated-source regression, official matrix and independent audit
+remain open. Only local provider-free fixtures ran; `production_admission=false`.

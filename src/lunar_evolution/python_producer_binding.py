@@ -296,66 +296,6 @@ def _budget_shape(value: object, *, depth: int = 0) -> None:
             _fail("budget_shape_invalid")
 
 
-def _validate_parts(
-    runtime_manifest: PythonRuntimeManifest,
-    runtime_tree: PythonRuntimeTreeManifest,
-    intent: ProducerLaunchIntent,
-    attestation: ProducerLaunchAttestation,
-    *,
-    fixture_case: str,
-    deadline_unix: float,
-    request_budget: int,
-    output_max_bytes: int,
-    wall_timeout_seconds: int,
-    broker_policy: str,
-) -> None:
-    manifest = _reparse_runtime(runtime_manifest)
-    tree = _reparse_tree(runtime_tree)
-    parsed_intent = _reparse_intent(intent)
-    parsed_attestation = _reparse_attestation(attestation)
-    if tree.declared_manifest != manifest:
-        _fail("runtime_tree_manifest_mismatch")
-    if tree.declared_manifest.target != manifest.target:
-        _fail("runtime_target_mismatch")
-    try:
-        verify_producer_launch_attestation(parsed_intent, parsed_attestation)
-    except ProducerLaunchError as exc:
-        raise PythonProducerBindingError("attestation_intent_mismatch") from exc
-    if type(fixture_case) is not str or fixture_case not in _FIXTURE_CASES:
-        _fail("fixture_case_invalid")
-    if type(broker_policy) is not str or broker_policy not in _BROKER_POLICIES:
-        _fail("broker_policy_invalid")
-    deadline = _deadline(deadline_unix)
-    _positive_int(request_budget, "request_budget_invalid")
-    _positive_int(output_max_bytes, "output_budget_invalid")
-    _positive_int(wall_timeout_seconds, "wall_timeout_invalid")
-    if request_budget != parsed_intent.max_requests:
-        _fail("request_budget_mismatch")
-    if output_max_bytes != parsed_intent.output_max_bytes:
-        _fail("output_budget_mismatch")
-    if wall_timeout_seconds != parsed_intent.wall_timeout_seconds:
-        _fail("wall_timeout_mismatch")
-    if deadline < float(wall_timeout_seconds):
-        _fail("deadline_wall_timeout_invalid")
-    interpreter = _interpreter(manifest)
-    if (
-        # The native launch intent labels its own producer root (currently the
-        # fixed ``producer-root`` label); the runtime inventory may use a
-        # different logical root label.  The portable relative path and all
-        # observed executable identity pins are the binding authority.
-        parsed_intent.executable_relative != interpreter.relative_path
-        or parsed_intent.executable_sha256 != interpreter.sha256
-        or parsed_intent.executable_size != interpreter.size
-        or parsed_intent.executable_device != interpreter.device
-        or parsed_intent.executable_inode != interpreter.inode
-        or parsed_intent.executable_mtime_ns != interpreter.mtime_ns
-        or parsed_intent.executable_ctime_ns != interpreter.ctime_ns
-    ):
-        _fail("interpreter_identity_mismatch")
-    if parsed_attestation.intent_sha256 != parsed_intent.intent_sha256:
-        _fail("attestation_intent_mismatch")
-
-
 @dataclass(frozen=True, slots=True)
 class PythonProducerBinding:
     """Immutable, canonical join of pinned producer inputs.
@@ -380,17 +320,68 @@ class PythonProducerBinding:
     protocol: str = PYTHON_PRODUCER_BINDING_PROTOCOL
 
     def __post_init__(self) -> None:
+        self._validate_header()
+        manifest = _reparse_runtime(self.runtime_manifest)
+        tree = _reparse_tree(self.runtime_tree)
+        intent = _reparse_intent(self.intent)
+        attestation = _reparse_attestation(self.attestation)
+        self._validate_join(manifest, tree, intent, attestation)
+        self._validate_digest()
+
+    def _validate_header(self) -> None:
         if type(self.schema_version) is not str or self.schema_version != PYTHON_PRODUCER_BINDING_SCHEMA_VERSION:
             _fail("schema_invalid")
         if type(self.protocol) is not str or self.protocol != PYTHON_PRODUCER_BINDING_PROTOCOL:
             _fail("protocol_invalid")
         _deadline(self.deadline_unix)
-        _validate_parts(
-            self.runtime_manifest, self.runtime_tree, self.intent, self.attestation,
-            fixture_case=self.fixture_case, deadline_unix=self.deadline_unix,
-            request_budget=self.request_budget, output_max_bytes=self.output_max_bytes,
-            wall_timeout_seconds=self.wall_timeout_seconds, broker_policy=self.broker_policy,
-        )
+
+    def _validate_join(
+        self, manifest: PythonRuntimeManifest, tree: PythonRuntimeTreeManifest,
+        intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
+    ) -> None:
+        if tree.declared_manifest != manifest:
+            _fail("runtime_tree_manifest_mismatch")
+        if tree.declared_manifest.target != manifest.target:
+            _fail("runtime_target_mismatch")
+        try:
+            verify_producer_launch_attestation(intent, attestation)
+        except ProducerLaunchError as exc:
+            raise PythonProducerBindingError("attestation_intent_mismatch") from exc
+        if type(self.fixture_case) is not str or self.fixture_case not in _FIXTURE_CASES:
+            _fail("fixture_case_invalid")
+        if type(self.broker_policy) is not str or self.broker_policy not in _BROKER_POLICIES:
+            _fail("broker_policy_invalid")
+        deadline = _deadline(self.deadline_unix)
+        _positive_int(self.request_budget, "request_budget_invalid")
+        _positive_int(self.output_max_bytes, "output_budget_invalid")
+        _positive_int(self.wall_timeout_seconds, "wall_timeout_invalid")
+        if self.request_budget != intent.max_requests:
+            _fail("request_budget_mismatch")
+        if self.output_max_bytes != intent.output_max_bytes:
+            _fail("output_budget_mismatch")
+        if self.wall_timeout_seconds != intent.wall_timeout_seconds:
+            _fail("wall_timeout_mismatch")
+        if deadline < float(self.wall_timeout_seconds):
+            _fail("deadline_wall_timeout_invalid")
+        interpreter = _interpreter(manifest)
+        if (
+            # The native launch intent labels its own producer root (currently the
+            # fixed ``producer-root`` label); the runtime inventory may use a
+            # different logical root label.  The portable relative path and all
+            # observed executable identity pins are the binding authority.
+            intent.executable_relative != interpreter.relative_path
+            or intent.executable_sha256 != interpreter.sha256
+            or intent.executable_size != interpreter.size
+            or intent.executable_device != interpreter.device
+            or intent.executable_inode != interpreter.inode
+            or intent.executable_mtime_ns != interpreter.mtime_ns
+            or intent.executable_ctime_ns != interpreter.ctime_ns
+        ):
+            _fail("interpreter_identity_mismatch")
+        if attestation.intent_sha256 != intent.intent_sha256:
+            _fail("attestation_intent_mismatch")
+
+    def _validate_digest(self) -> None:
         if self.binding_sha256 is not None:
             _sha(self.binding_sha256, "binding_digest_invalid")
             if self.binding_sha256 != self._digest_unchecked():
@@ -574,17 +565,33 @@ def parse_python_producer_binding(value: bytes | str) -> PythonProducerBinding:
         if type(raw["broker_policy"]) is not str or raw["broker_policy"] not in _BROKER_POLICIES:
             _fail("broker_policy_invalid")
         _sha(raw["binding_sha256"], "binding_digest_invalid")
-        result = PythonProducerBinding(
-            runtime_manifest=runtime_manifest, runtime_tree=runtime_tree, intent=intent,
-            attestation=attestation, fixture_case=raw["fixture_case"],
-            deadline_unix=_deadline(raw["deadline_unix"]),
-            request_budget=_positive_int(raw["request_budget"], "request_budget_invalid"),
-            output_max_bytes=_positive_int(raw["output_max_bytes"], "output_budget_invalid"),
-            wall_timeout_seconds=_positive_int(raw["wall_timeout_seconds"], "wall_timeout_invalid"),
-            broker_policy=raw["broker_policy"], binding_sha256=raw["binding_sha256"],
-            schema_version=raw["schema_version"], protocol=raw["protocol"],
-        )
-        canonical = _canonical(result.to_dict())
+        # The tree was parsed and fully validated above from strict JSON. It
+        # has never escaped this operation. Keep the public constructor's full
+        # caller-DTO reparse gate; only this parser-local assembly reuses the
+        # fresh tree while retaining runtime/launch checks in their old order.
+        result = object.__new__(PythonProducerBinding)
+        values = {
+            "runtime_manifest": runtime_manifest, "runtime_tree": runtime_tree,
+            "intent": intent, "attestation": attestation, "fixture_case": raw["fixture_case"],
+            "deadline_unix": _deadline(raw["deadline_unix"]),
+            "request_budget": _positive_int(raw["request_budget"], "request_budget_invalid"),
+            "output_max_bytes": _positive_int(raw["output_max_bytes"], "output_budget_invalid"),
+            "wall_timeout_seconds": _positive_int(raw["wall_timeout_seconds"], "wall_timeout_invalid"),
+            "broker_policy": raw["broker_policy"], "binding_sha256": raw["binding_sha256"],
+            "schema_version": raw["schema_version"], "protocol": raw["protocol"],
+        }
+        for name, item in values.items():
+            object.__setattr__(result, name, item)
+        result._validate_header()
+        manifest = _reparse_runtime(runtime_manifest)
+        _sha(runtime_tree.tree_sha256, "runtime_tree_digest_invalid")
+        checked_intent = _reparse_intent(intent)
+        checked_attestation = _reparse_attestation(attestation)
+        result._validate_join(manifest, runtime_tree, checked_intent, checked_attestation)
+        result._validate_digest()
+        # Keep the previous parser-local canonical wire comparison, without
+        # re-entering the public caller-DTO validator before the result escapes.
+        canonical = _canonical(result._to_dict_unchecked())
         if (canonical != value if type(value) is bytes else canonical.decode("utf-8") != value):
             _fail("noncanonical_json")
         return result

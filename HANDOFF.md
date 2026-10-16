@@ -1,5 +1,691 @@
 # Lunar Evolution 交接记录
 
+## 2026-10-16 并行继续：preparation/mailbox 与 staged/terminal
+
+本轮将两个独立切片合并到统一产品/测试来源 `01c3bd1222fa6226762dbd65817e0d60d607330e`，
+tree `e414add9b3488141bd773599c3fc5ef1d76652be`。PB-02c 只把原 producer
+preparation 转换为 detached mailbox 证据；PB-03d 只验证已有 staged/terminal
+文件并执行原 owner checkpoint CAS。二者均不启动 transaction、evaluation 或 publication。
+
+PB-03d 冻结原 native context/strategy/config/authority，复验完整投影、manifest record、
+暂存源码与 bundle 声明，并要求原 launch 的 task_id 已等于选中 episode_id。
+旧 root-task before/prepared 支持保留，不能被改写成 success 关联。新增方法和依赖纳入
+原 durable policy fingerprint；旧缺失/不同 policy 不迁移、不补写。失败保留原 durable
+证据和 stale captured head，poison 当前 owner，不刷新、重试或伪造 DRS scope。
+独立产品源码审查通过；统一来源 Mac/Linux 各通过相同的 322 个不同 case：179
+preparation/mailbox + 143 checkpoint，零 failure/error/skip，静态检查通过。Mac 的两组
+分别为 Python3.11.15 和 3.13.12（后者 own editable venv 含 system-site-packages），
+Linux 两组均为各自隔离 Python3.12.3；不称单 Mac Python profile 322 或两平台合计644。
+2,047 tracked files 前后不变，exact XML/inventory/source/import/exit 与原始字节独审见
+Feature196 `publication-validation.md` 和 ignored `brs-combined-checkpoints-20261016`。
+另一次全量仅 collection 为17,094 nodes、额外执行0 case，不是全量 pass。
+
+下一步仍是原 owner retained-context recovery、显式 BRS prepared-pin 入口、exact native
+transaction dispatch、owner rejection C1/P/C2 与独立 mailbox return/settlement，然后才是
+reconcile、serial successor、policy/memory。公开 native BRS、生产 runtime/CLI 验收不因
+这两个私有切片完成。`online_publication=false`、`production_admission=false`。
+本轮只运行本地 inert/provider-free fixture；未运行真实模型/solver/campaign、CPython/toolchain
+构建目标、WebAgent、远程 evaluator 或公司平台。修复前 `97bb774` 与开发失败原始证据单独保留，
+不替换或累计到新来源验收。当前 main/PR 完整 CI 与 merge 状态另行核实。
+独立 Git 祖先/路径审查确认统一候选包含 PR103/105/106/107/108 全部 heads；main
+相对共同祖先只有历史差别、tree 相同。最终后继将直接 base main，要求自身完整
+33-job CI 和 actual merge/source/import/raw 独审；通过合入后才关闭已被包含的旧 PR。
+旧 PR 的局部成功、取消或 focused 数量不能代替这份统一候选验收。
+
+
+## 2026-10-16 并行后继：preparation → mailbox 证据接线
+
+PB-02c 新私有 `_request_from_native_preparation` 将原 producer-only preparation、
+selected handoff、显式 native plan 和原 owner captured digests 转成现有 one-shot
+mailbox 请求。先核 exact DTO/primitive shape 和非 slots request 的完整字段，再按
+原 native 上限 canonical detach/reparse；核 receipt/output/envelope/capture/file-pin、
+request/M0 和原 launch identities。未消费 worker drafts/bundles，不读文件/ledger，
+不执行 recovery、transaction、ACK、lineage 或预算变化。owner fresh recovery 仍缺。
+
+冻结 `1ca432563f1bdd4122076b3f03a837f7579cbeb7` / tree
+`8039d534486cb0967fc44e61e6e0d0b8185863e9`：macOS Python3.11 与新独立 Linux
+Python3.12 各自 **179 pass（35新 + 67 preparation + 77 mailbox）**，零 failure/error/skip；
+不能相加称358个用例。own-editable、PYTHONPATH unset、全仓 Ruff/compileall/diff-check
+通过，2,045 tracked files 前后不变；Linux原始XML/13 exits/Git blobs独立核验通过，
+代码独审通过。ignored reports 在 `brs-preparation-mailbox-inputs-20261016/`。
+后续 docs/workflow 只新增35-case gate及其annotation，产品/测试bytes不变。
+staged/terminal primitive 正在另一工作区开发；完整在线 owner 事务、rejection、
+reconcile 和 serial successor 仍未完成。此后继未合入 main，production admission仍关闭。
+
+## 2026-10-16 并行整合：BRS checkpoint、策略持久化与等待竞态
+
+本轮后继在草稿 [PR108](https://github.com/vchive/Lunar-Evolution/pull/108)，base 为
+PR107。主仓 main 仍是 PR99 `0cb49ab`。分支已同步 PR103 `935ab57` 的 33-job
+调度，保留六个普通文件分片并独立运行三个 mixed 用例；PR103 的实际 tested merge
+`d00bd9060e6df8edc393fb1bd049df8d430e4a63` / tree `2105ba086cd1d109ccfb581e4fbf3faf2b5d72ff`
+已通过官方 artifact、非 echo 原始日志、immutable Git API 和独立来源审查。
+这只是来源锁，尚不表示全部 CI 验收；原服务器长回归与旧失败/取消证据继续保留。
+
+已实现私有 producer prepublication stop：原 receipt/output/handoff 完成后停在 transaction、
+evaluation、admission 和 lineage 之前，最终 lifecycle hook 后重读原 file/control pins。
+共用 checkpoint kernel 和原 BRS 首 ordinal before/prepared owner 要求真实 running episode、
+started claim、原 owner/wave/handoff/M0/request/plan/budget。before、admission reference、
+prepared evidence 是三个独立的原 captured-head CAS；任何不确定写回保留 stale/poisoned
+owner 和 durable obligation，不从最新记录补 authority。fresh binding parser 仅复用同次
+尚未逃逸的 strict tree。冻结 `e30f5f8` 的 installed Linux 450 项回归全部通过，14 exits
+与静态检查为零、2,036 tracked files 前后及 immutable blobs 一致；root 已复核原始审计。
+证据在 ignored `p1-integrated-linux-e30f5f8-20261015/`。
+
+PB-03c 将专用 `producer_brs_checkpoint_policy` 固定到原 create-run、run fingerprint 和
+每个 checkpoint，独立于 DRS publication policy；缺少或改变原 pin 的旧 run 不迁移。
+只选择 exact sidecar-bound、mode=brs、max_workers=1 的 metadata，不授予执行权。
+`399958c` 的四组 402 项回归全部通过，原始验收和后续整合来源分别记录。
+
+并行发现并修复实际成功竞态：owner 等待期间的完整 admission 检查会捕获 running
+head，再与 worker 的自然 completed 更新冲突。现在 pending loop 只使用 owner-only
+fixed-pin gate；原真实 ACK、worker entry、future.result 后和 close/shutdown 后仍做
+完整 gate/CAS。source/config hooks 保持短 mutex 外，store/channel/generic DRS 未放宽。
+`27929e7` 的 174 项兼容与最终 owner-only `1603330` 的 16 项针对性测试分别通过，
+原失败重现保留在 `brs-selected-owner-wait-20261016/`。另外 `2576d2b` 仅修两处 inert
+fixture，121 项通过；它没有冒称修复产品竞态。三条来源不能相加当成整合验收。
+
+最终整合冻结 `9d66b2382e85392bc2c134edff998899473e1f84` / tree
+`89aed1b7e65ccc2304e9d8bec69b81fd37ec95ef` 已包含全部产品/测试改动，并保留新
+fixed projection 的 mode/plan fingerprint 参数。5090gpu 新 own-editable checkout
+一次完成 265 个不同 cases（78/85/73/29），全部通过、零 failure/error/skip；17 个
+collection/install/test/static exits 全为零，2,042 tracked source files 前后相同。
+原始 XML/exit/own-editable/Git source 已独立核验，root 重跑独立审计通过；原始归档在
+ignored `p1-final-integrated-linux-9d66b23-20261016/`。归档 SHA256
+`6c39bc08119945703cdf7f3a0f8b45bba71707743c6a2cc2e7b0730c1ca10f5b`。
+另一次原 runner 全量 collection 只收集 16,989 节点、额外执行 0 case；六普通分片与
+三 heavy 节点精确互斥覆盖，inventory SHA256
+`380f69413192540e3c4056f5e62830f937e74ff0098d3bbc9a9cb6d65919267d`。
+CI focused gates 为 preparation/policy 189 项和 selected service/wait 38 项。
+后续 docs/annotation 收尾不改变该冻结的产品和测试 bytes。
+
+完整 owner publication transaction、staged/terminal、rejection C1/P/C2、BRS reconcile、
+serial successor 和 policy/memory composition 仍开放。真实 source/toolchain/sealed runtime、
+实际 OpenEvolve/Shinka project lifecycle 与生产 CLI/Linux acceptance 也未关闭；P2 另列。
+公共 native BRS 保持拒绝，`online_publication=false`、`production_admission=false`。
+本轮只有本地 inert/provider-free fixtures，无真实模型/solver/campaign、CPython/toolchain
+目标、WebAgent、远程 evaluator 或公司平台。
+
+## 2026-10-15 PB-03a checkpoint 共用逻辑与 P0 分片修复
+
+PB-03a 从 PR107 `ed66333` 延续，两个产品提交为 `13e3b78` 与 `3c0d74e`。
+仅在 `rsi_publication_lineage.py` 提取纯 checkpoint delta/readback helpers；DRS
+原 owner/terminal gates、captured-head CAS、read-only scope、context/root-binding
+顺序和失败后 stale/poisoned owner 保持。两个新增函数显式纳入 live component
+fingerprint；进程内替换 helper 即使文件 bytes 不变也先拒绝，不迁移旧 policy。
+此修改会改变新 run 的 policy/source 指纹，既有持久化 run 继续遵守 drift gate。
+
+最终产品/测试来源 `3c0d74e7f97c7e98a8f4e68bcc439275e272dd8f` / tree
+`3830617dc27fc1bbbfe3149f09fd21a35a3568a9` 验证17个独立 cases：15新 helper/
+owner/CAS/drift 案，加原成功 publication/只读 inspection 与原拒绝 C1/P/C2 各1案。
+17 pass、零failure/error/skip；7份exit均0，own editable install准确，2030个tracked
+files前后不变，Ruff/compileall/diff-check通过。raw在 ignored
+`pb03-kernel-and-final872-independent-20261015/final-17/`；原first13的6pass/7个
+深路径setup failures、shortpath13 pass均保留原来源，不并入最终17计数。
+独审发现的live helper依赖缺口已修复；原48组合差分属于修复前来源，最终17另验。
+PB-03在线BRS owner/policy/完整事务仍未实现，PB-04 reconcile、PB-05 serial successor
+及真实runtime/producer/CLI仍为P1；public native BRS关闭，`production_admission=false`。
+
+P0已独立推送 PR103 `935ab57`，新官方run为
+[38752535974](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)。
+新调度保留6普通文件分片，3个mixed用例各独立job，共33jobs；macOS及5090gpu独立
+Linux均279 pass、零failure/error/skip，静态与source审查通过。Linux完整collection
+16583、9分区互斥完整，SHA `df3b1aba3a3823c9cc4c4c4c2a8f3664adca65fae374c75fa8621d3cd647c1e5`。
+这些不替代新官方CI；原`9203ef1`官方21 success/3 cancelled保持NOT_ACCEPTED，
+原服务器第5片保持原来源及独立证据。main仍PR99 `0cb49ab`。PR105–107均是stacked后继，
+上游合入后须依次同步新base并验收实际最终来源，不复用旧24-job结果。
+
+## 2026-10-15 并行后继：owner 邮箱与纯解析去重
+
+发布边界拒绝切片已推送 stacked draft PR106，head `ffa98e7`，base PR105。
+261-case整合focused及独立原始证据审计通过；补充86-case channel/owner兼容通过。
+PR103当前仍是P0合入出口，20/24官方jobs成功，余下4个继续验收；服务器全量
+六分片0–4完成14,008 cases、零failure/error、83skips，第5片仍待最终证据。
+这些是检查点，不能描述为已合入或完整通过。
+
+本后继分支从PR106分出，独立纯transport `BRSOwnerPublicationMailbox` 绑定原
+selected handoff、owner/worker thread和owner冻结的head/state，传递canonical有界
+receipt/output/admission/native-plan digest及原handoff creator file pin。one-shot
+请求不运行controller/native transaction，也不授予publication权限。wait/check/handler
+在condition锁外；close-before-worker-accept、取消、handler/readback失败保留未确认，
+禁止retry/refresh/repair。完整BRS owner policy/lineage/CAS、producer-only调度插槽、
+rejection C1/P/C2、reconcile与serial successor仍是P1开放项。
+
+并行纯解析优化只在同一次strict tree parse内复用刚完成校验且未逃逸的manifest，
+公开DTO、构造/verify/build gates、source/config hooks和所有fresh observations保持。
+独立切片405 focused通过，27个新语义tests在原baseline也通过；root只读代码审查通过。
+单次validator profile的总调用数由16,140,170降至13,852,568，source-read198、
+config7、preflight2次不变；前后机器负载不同，不据wall time推导端到端倍数。
+本分支最终来源 `b468f55` / tree `859a2acb` 的服务器八路整合回归完成：872 distinct
+cases全部通过，零failure/error/skip，18模块、8组124/91/112/122/99/111/117/96。
+13份exit均0，installed editable origin/源码前后不变、Ruff/compileall/diff-check通过。
+inventory SHA `b738da3c674aa7651840aec6b7a3e7fc0baf2a325e7e36c51ff05e5c359c47ea`。
+raw在ignored `brs-mailbox-parser-20261015/final-872/` 和服务器
+`lunar-mailbox-parser-final-4949k5nr`；原开发44/47/72轮失败XML原样保留，不能回写成功。
+独立final source/spec/workflow审查通过；raw/gitblob/install/XML独审通过6,219断言，
+2,029trackedfiles与immutable blobs逐项相同，review SHA
+`866333e2b6c984535d539f7988138ceb653d0d47c803379a56757c6c6d836660`。
+收尾文档不改任何产品/测试bytes；最终CI/合入仍开放。
+仅本地inert/provider-free fixtures，`production_admission=false`，公共native BRS仍拒绝。
+
+## 2026-10-15 BRS worker publication refusal（后继切片）
+
+P1 settlement 已创建 stacked draft PR105，head `868bccc`，base 为 PR103 候选分支。
+它没有合入 main，自己的 CI 也不能代替 PR103 的验收。主仓库仍保持 PR99 main
+`0cb49ab`；PR103 head `9203ef1` 的最终 CI/raw/source/tree 审计继续独立推进。
+
+并行审查核实了下一片的时序冲突：selected-return 在 worker 已保存 result、episode
+completed、channel close/executor shutdown 后才签发，而原 DRS lineage owner 必须
+在真实 running episode/started claim 下构造。不能通过伪造 DRS scope 或回写状态接入。
+此外 scheduler 在调用线程执行完整 publication transaction 和 rejection provenance，
+只代理 lineage callbacks 不能保证 owner-only publication。
+
+本后继切片拒绝 legacy active BRS worker helper、generic/DRS publication facade
+及 native scheduler worker 旁路，拒绝先于 plan callback、scheduler input/source I/O、
+native dispatch、ready、evaluation 或 publication。保留兼容符号、pin-only ready/ACK、
+既有 DRS 与 read-only resume。完整 owner publication 尚未接通；成功路径仍使用
+before→staged→terminal，C1/P/C2 仅指现有 known-rejection 契约。
+
+下一步按 Feature196 `owner-publication-bridge.md` 实现独立 BRS owner/policy、
+pre-publication mailbox 和 owner 完整事务，再做 rejection/串行 ordinal/reconcile。
+本切片不放开公共 native BRS、生产 CLI、真实 producer 或 sealed runtime，
+`production_admission=false`；仅 provider-free/inert fixture。
+
+最终八路 focused 在 `9684c6a` / tree `78aa65de` 完成：261 pass，零 failure/error/skip，
+8 exits、collection/install、全仓 Ruff、compileall、diff-check 均为0，源码前后不变。
+精确互斥 inventory SHA `4f8ddcac0338c425d706cd98306bff2d6c88f0629889224d4b53446532fd774e`。
+原始报告保留于 ignored `brs-owner-boundary-20261015/final-261/` 与服务器
+`lunar-owner-boundary-final-22fypesh`。原209-case run的3个 spy fixture failures原样保留；
+不将后续通过回写为原轮成功。产品/测试 bytes 在收尾文档及 workflow 更新中保持不变；
+workflow 的三模块精确计数更新为116，另设14-case scheduler join gate。
+独立审计已通过6,204条断言，2,024份源码逐项匹配immutable blobs，独立拉取的60份raw
+与本机相同；review JSON SHA `8b81b2f29addbf22fe37c36dd9b5e471a9e5c7b59766fbb89942ea402da62ad3`。
+最终 CI/合入仍单列；不能沿用 PR105 的360-case结果。
+
+## 2026-10-15 私有 BRS owner checkpoint settlement（后继分支）
+
+本分支 `codex/brs-selected-owner-settlement` 从 PR103 最终候选 `9203ef1` 分出；
+新增 private `_python_admission_settle_selected_brs_execution`。只有原 selected
+service 及 executor shutdown 成功后才签发 in-memory return receipt，绑定 exact
+execution 对象/字节、原 handoff/owner/state、ACK、durable episode/result、M0 和预算。
+owner 使用原 `_save_flow` captured-head CAS 和完整 readback 登记 selected execution；
+成功前不推进 wave head，unknown/写后 drift 保留 durable obligation、恢复原 state
+对象/预算/旧 head，禁止 retry、latest-head adoption、repair 或 sibling dispatch。
+source/config hooks 和 save 均在短 observation mutex 外，run ownership 仍持有。
+
+首次 34-case 尝试因 runner 300s 超时只留 partial，不算接受。首个六路来源
+`132e530`/`7983f4d` 为 272 cases：269 pass、3 failures、零 errors/skips；两个预算
+fault 对 unlimited remaining=None 做减法，另一个预期错误码与原 checkpoint conflict
+契约不符。原失败保留，fixture 改用真实 budget consume，精确核原 conflict。
+独立审查还发现写后 actual owner/state 身份缺口，已补冻结 handoff 和原 state 引用。
+后续 `eb01d461`/`ea478ae` 六路 274 cases 全部通过，raw XML、exact inventory union、
+installed origins、source unchanged、退出链已审查。不能把它改称最终 hardening 验收。
+
+最后集中补 exact DTO 属性字典/keys、identity-only type dispatch 和 safe detachment
+顺序，防 worker-held callback 在拒绝前执行；相邻 flow payload/wave state 保持同一
+无 callback 契约。32 快速负例已通过；最终八路整合回归 **360 pass、零 failure/
+error/skip**（85 新模块 + 221 既有 BRS + 54 原 flow），最慢分组 244.25s。
+Ruff/compileall/diff-check、installed origins、源码冻结、8 exits 和 raw XML/inventory
+精确互斥并集均通过两次独立审查。最终 controller SHA `5f2d932b`、test SHA
+`00229c85`；inventory SHA `c84aa8e73886640ad9784e35b534d35bc85e427ad83d15f5aa92bf45fc0f1943`。
+原始报告 `final-eight-1rb__9zs` 在本机和服务器保留，root 独审 SHA
+`81eae45be2ee940124c06d8f405796176a4ef1ca1a333c409c8852850340b6f0`。
+只有本地私有 checkpoint 子项已关闭，最终 CI/集成与 PR 仍待处理。此切片没有接
+公共 native BRS、staging/publication、ordinal transition，
+也未增加 SQL/wire schema；`production_admission=false`，仅本地 inert/provider-free。
+
+P0 与该后继切片分离：PR103 head `9203ef1`、官方 run `38688233723`，main 仍为
+PR99 `0cb49ab`。final-head focused 360=354 pass/6原架构 skips，独立静态/source
+检查通过；服务器完整 16,503 cases 六分片及官方24-job最终审计尚待完成。
+旧 `bd902c9` shard2 原 traceback 已确认 deadline fixture 在不完整 writer 记录处
+按原 path_invalid gate 拒绝；原失败整轮保留。未运行真实模型/solver、WebAgent、
+远程 evaluator、公司平台或 CPython/toolchain target。
+## 2026-10-15 PR103 完整 CI 未获接受，重用例独立分片修复
+
+PR103 来源 `9203ef1f0c3b5dd69e09c8cdb79b92c5af5e1e76` 的官方
+[run 38688233723](https://github.com/vchive/Lunar-Evolution/actions/runs/38688233723)
+已结束：21 jobs success、3 个 Python 版本的 current-5 cancelled。取消时运行约六小时，
+原始日志没有明确写出 timeout 原因；不能把推测当作官方结论。三份取消产物缺少最终
+JUnit 和 summary，整轮 **NOT_ACCEPTED**，不能合入 main。实际 tested merge
+`6b7ad595fde11fa6a17c686481d2a1baa75291ed`、tree
+`44a22a47815bfec85652d97a320e6161e2e05412`；24 份原 ZIP/log 已独立核对，
+21 份成功证据有效，但不补足缺失的完整覆盖。16,503-case inventory SHA
+`3717e2ca0ab236b1299b2f8380f7b63caaa8c3d415d2ac1cefa6810927dd5078`。
+
+current-5 三版均运行到 `test_rsi_multi_episode_rejection_flow.py` 的三组 mixed
+用例。现有 whole-file 算法把三案放到同一 job；增加普通文件分片数不能拆开该文件。
+后继修复保留六个普通文件分片，将原三案各放到独立 job，严格检查完整 collection、
+互斥并集、exact selected nodes 和 JUnit 身份，不删用例、不缩小测试或放宽门槛。
+这属于新来源，需要自己的 focused/static、完整三版 CI 与独立审计。
+
+原 Linux 六分片运行保持冻结，0–4 完成14,008 cases、零failure/error、83skips；
+第5片在2026-10-15 14:12 UTC只读检查时已完成第2个 mixed 案，最后一案仍运行。
+partial stdout 不是最终 XML；不终止、不改写该运行。原始 terminal/取消审计保留在
+ignored reports `pr103-deadline-final-9203ef1/official-terminal-20261015T114956Z/`。
+main 仍为 PR99 `0cb49ab`。公共 native BRS、真实 runtime/producer/CLI 仍是 P1，
+`production_admission=false`，仅使用本地 inert/provider-free fixtures。
+
+## 2026-10-15 deadline 并发 fixture 的确定性修复
+
+`bd902c9` 的整合 focused gate 已通过：238 cases = 232 pass、6 原架构 skips、
+零 failure/error，source/install 身份和全仓静态检查通过。修复已推送 PR103，
+新官方 run 为 `38685683296`；首批三版 history 原始 artifact/log 与实际 merge
+`574cb2fa` 的 tree/parents/source 已独立审查，不能据此接受尚未完成的 current/focused。
+服务器 v2 六分片完整收集 16,501 cases，精确互斥并集已确认；运行中 shard2 出现
+1F，当前检查点尚无最终 traceback，不能描述为整轮通过或已确认根因。
+
+独立真实进程 probe 已证实原并发 fixture 的全成功假设超出契约：writer 持锁创建
+deadline 后、首写前，waiter 会在原 lock-wait guard 拒绝空记录。生产代码明确要求
+保留不完整证据并拒绝，不允许吞错、删除记录或自动分配新预算。原单案 10 次独立
+pass 不抹去这个窗口，也不代替原失败 trace。测试切片改用有界 pipe 同步完整记录后
+的真实锁争用，并补零字节/八字节写入窗口的精确拒绝、原 bytes/inode/metadata/预算
+和 prepared 状态验证。仅修改测试，所有自有子进程在 finally 回收。
+
+独立切片 `6f9a47d` 的 3 个受影响 cases 和 122-case 五文件 focused 全部通过，
+无 skips/failures/errors；Ruff、compileall、diff-check 和独立代码审查通过。
+详细范围、原始失败保留与 XML SHA 见 Feature153 validation。README 统一指向
+PR103 发布出口；Feature153 设计仅澄清现有并发拒绝契约。此后仍需最终整合来源的
+focused/full current、三版正式 CI 和 raw/source/tree/import 独审，才可合入 main。
+当前 main 仍为 PR99 `0cb49ab`；native BRS、sealed runtime 与实际 producer/CLI
+验收未关闭，`production_admission=false`，仅本地 inert/provider-free fixtures。
+
+## 2026-10-15 Linux 完整回归失败后的集成修复
+
+服务器首轮六分片来源为 `f9048df`，结果为 **16,484 distinct cases：15,976 pass、
+234 failures、188 errors、86 skips**，整轮失败。原始 XML、stdout、inventory 和
+source/import 身份记录保留于独立 run-root；stderr 为空不代表通过，后续结果不覆盖原失败。
+
+独立修复已整合：严格 GCC 生成 fixture 换行及八字节 IPC marker、Python pipe 中
+系统 customization 与实际 decoy 来源区分、lineage reader 的 v1/v2 association 初始化、
+Python3.12 pathlib 已加载 ntpath 的窄 import-trap 例外。原 production 字节上限、
+编译 warning/hardening、file/inode/source/CAS 和 effect-free 门禁不变。Linux 流程另
+要求三个固定历史对象齐全，并为每分片分配短且独占的 TMPDIR。
+
+当前已有的独立证据：GCC 切片 167 cases（161 pass、6 原架构 skips），Python pipe
+完整模块 34 pass，reader/import-trap 受影响范围 17 pass，runner/原 rejection-mode
+范围 77 pass。各范围、原失败及 XML SHA 见 Feature157/160/191 validation；
+这些局部结果可能跨来源，不相加声称完整集成验收。reader/runtime 两个完整模块的
+199-case 尝试未完成，不能描述为通过，未改的重案例交由完整集成回归覆盖。
+
+本轮出口是最终提交的整合 focused gate、新六分片 current、三版正式 CI 与独立
+raw/source/tree/import 审计，再合入 PR103/main；目前均未据此关闭。
+冻结的旧 PR103 来源和官方 run 保持原证据身份，不能充当新修复提交的验收。
+仅本地 inert/provider-free fixtures，`production_admission=false`；真实 native BRS、
+sealed runtime 和 OpenEvolve/Shinka producer/CLI 验收仍按台账开放。
+
+## 2026-10-15 Linux 开发环境与严格 GCC 编译兼容
+
+新增独立 Linux / SSH 开发流程，固定每个 worktree 自己的 uv/Python 环境、console
+launcher、TMPDIR、Lunar home 和六分片结果目录；不依赖系统 ensurepip，也不安装
+runner/service。README 的 current 示例同步为六分片，并链接
+[Linux 开发指南](docs/linux-development.md)。当前 provider-free 回归使用 CPU，GPU
+不参与这些测试。服务器补充结果不能替代三版 Python 的正式 CI 与原始产物审计。
+
+以 PR103 `49b9df9` 为基线的独立开发树复现 GCC 11/12/13/15 在三个既有同行语句上
+触发严格 `misleading-indentation` 错误。修复只调整换行，C/header 去空白字节相同，
+编译参数与运行门禁不变；显式 GCC13/15 编译、51 个相关测试通过，2 个 Darwin-only
+用例在 Linux 跳过。新增显式 GCC descriptor 回归，避免默认 Clang 掩盖该问题。
+独立本树 uv/Python3.12 环境中该新回归另有 1 pass，CLI/import/install 身份已核实；
+Ruff、compileall、diff-check 均通过。详细证据边界见 Feature157 validation。
+
+本切片与冻结的 PR103 候选分离；PR103 最终来源 CI/原始产物审计和合入仍开放。
+不据此关闭 native BRS、sealed runtime 或真实 producer 验收；仅本地 inert/provider-free
+fixtures，`production_admission=false`。
+
+## 2026-10-15 BRS private selected-service slice integrated into candidate
+
+PR104 的 owner-service 分支已在当前 candidate 合入。它新增私有、provider-free
+selected BRS service：完整 wave 绑定一个 selected handoff，保留原 owner/CAS、预算、
+指纹、source hook、ready/ack 和 durable result；source/configuration hooks 在短观察锁
+外执行，handoff 使用严格 canonical digest，worker 结果要求精确 DTO 类型和 verifier
+一致性，channel ACK 与调用者对象分离。当前 focused gate 拆成 104 个既有 BRS、13 个
+ACK detached、28 个 selected service，共 175 个不同本地 cases，零失败/错误/跳过；
+完整来源和 SHA 证据留在 PR104 树 ignored reports。最终候选合并回归的 175 个 cases
+单次运行耗时 220.881 秒，结果为零失败/错误/跳过。公共 `_drive_brs` 仍拒绝 native
+multi-child，`production_admission=false`，因此这不是 native producer/runtime 验收。
+
+README 和 Feature196 tasks/validation 已更新以反映该边界。PR104 原先仅 103-case
+workflow gate 已更正为 104，并增加独立 13/28-case gates。最终 candidate 的 24-job
+workflow 另已将 current regression 从三分片拆为六分片；原 6 小时 timeout 与 actor
+fixture failure 证据保留。PR103 已将 PR100/PR101 的恢复、parser、六分片 CI 以及
+PR102/PR104 的 BRS handoff/service ancestry 整合到同一候选，并已把 base 切换为 `main`；
+主出口是 PR103 的最终来源 CI、raw/source/tree audit 与合入，不再要求按
+PR100→PR101→PR103 顺序逐个合入。
+
+## 2026-10-15 当前出口：mixed 已通过，PR100 原 CI 失败已修复
+
+当前 main 仍为 PR99 `0cb49ab`。原 PR100 `c73650a` 的 CI `38582309622`
+已结束为 failure：Python 3.13 current-0 的 actor evidence 同字节替换测试未抛异常，
+3.11/3.12 current-0 取消。官方 check-run annotations 已确认两者触及
+`maximum execution time of 6h0m0s`，不是失败联动。原始 log、ZIP、XML 和官方 digest
+均保留，不算接受；回归正在沿同一分片协议从三个 current 分片拆为六个，保留全量覆盖。
+根因是全局 `os.read` hook 在 `pins(bridge)` 的 fresh source fingerprint 读取时提前
+替换了证据，发生在 evidence open 前。修复 `9db1ffd` 仅将 hook 绑定原证据 dev/inode，
+并断言实际触发；生产 reader、fresh source 和 inode gate 保持。76 个 store/verifier
+cases、全仓 Ruff、compileall、diff-check 通过，已正常推送原 PR100 branch。
+新 PR100 CI `38651297182` 已由官方 API 确认排队；其最终接受仍开放。
+
+冻结发布树的 RPP、PRP、RRR 三案全部结束，各 1 pass，耗时分别为 5334.763、
+5329.049、6717.501 秒。独立 stdlib-only 审查核对原 XML、SQLite、checkpoint chain、
+claims/results、预算、archive genesis prefix、lineage、rejection provenance、file/inode
+pins 与 terminal readonly replay，全部通过。报告保留在冻结树 ignored
+`.lunar-evolution/reports/mixed-independent-review-20261014T194936288214Z/review.json`，
+SHA256 `b22c89efafab56e7d7f35e80d651eefc6f445883c17c8f7b0feee54b6f19ec33`。
+原 PID 的 cwd/PYTHONPATH 已核实；没有独立的原启动 `sys.modules` origin receipt，
+此限制继续保留。这些结果不改称后续 parser/fixture 候选的完整验收。
+
+PR103 是独立修复与 parser 联合候选，已包含 PR100 `9db1ffd` 的原 ancestry。
+原 publication fixture 已补 inert evidence digest；parser 只移除构造后的重复验证。
+最终集成 CI、raw/source/tree audit 与合入仍开放。原 PR101 CI 的三版 focused failure
+和后续 current cancellation 保留，不能合入未经修复的 `c75de8c`。
+
+P1 的 PR102 是 detached selected handoff/channel；PR104 是私有 controller owner service，
+尚未接公共 native BRS dispatch。正在补实际 service 正路径和边界测试，既有 owner
+文件的23 cases不等于23个新接线测试。真实 runtime/producer/CLI 继续待验收，P2 后置。
+本轮只使用本地 inert/provider-free fixtures，`production_admission=false`。
+下方旧 pending/running 段落是历史检查点；当前状态以本节和最新官方 head/run 为准。
+
+## 2026-10-15 PR101 focused CI 修复与性能切片联合候选
+
+PR101 原 `c75de8c` 的 CI `38612673297` 在 Python 3.11/3.13 focused 均暴露同一
+测试 fixture 问题：模拟 retained evidence 缺 `evidence_sha256`。独立修复
+`ddaaa21` 已推送 `codex/pr101-focused-repair`；只补 fixture 字段，生产校验、真实
+prepared/preflight/terminal、inode、checkpoint 与只读 drift 断言保持。
+显式本树 `PYTHONPATH` 重现原两案失败后，52 个 publication 和31个相邻 transaction/
+interruption cases 全过。原失败/通过 XML 与导入来源保留；一次未设 `PYTHONPATH`
+而导入主仓 main 的结果明确不计入接受。
+
+独立 `codex/pr101-final-candidate` 已将该修复与 parser 切片 `66251b0` 组合。
+parser 仅避免 fresh exact DTO 构造后立即重复外层验证；公开 serializer、子 DTO、
+file/inode/source/config/CAS 门禁保持。独立源码审查通过，单次 warmed parser
+测量降低 41.58%，不能推导端到端提速。联合候选 **227 distinct cases**、零失败/
+错误/跳过，147.819秒；Ruff、compileall、diff-check 通过。原 XML SHA
+`949d1c10361806ab20d50d270576b69344c9b77d8c5ccde8b97c16c74bcab45b`，
+scoped 759-file src/tests map 与 import origin 保留在本树 ignored reports。
+
+原发布树 `c75de8c` 的 RPP/PRP/RRR 仍冻结运行，不能把联合候选的局部结果算成它的
+完整验收。原PID环境已核实 `PYTHONPATH=src:tests`，cwd为发布树；该controller显式
+使用 main 不支持的参数与新模块，排除了默认 main 导入，但未取得单独的原启动
+sys.modules origin receipt。PR100 最后完整官方状态仍12/15成功，剩三版current-0；
+完整 CI/独审/合入尚未完成。PR101 仍 draft、head仍c75；正文已注明原失败及独立修复。
+最终出口仍为原mixed三案独审、PR100接受/main同步、最终候选CI/独审与PR101合入。
+
+BRS detached handoff与selected-channel切片在独立PR102草稿，controller owner service
+接线另树并行开发；native多child BRS未启用。真实runtime/producer/CLI为后续P1，
+P2继续后置。本轮只使用本地 inert/provider-free fixture，不启动真实target/campaign。
+
+## 2026-10-15 PR101 发布候选与并行 BRS 接线
+
+当前 main 仍为 PR99 `0cb49ab`；PR100 `c73650a` 的最后可信状态为完整 CI
+10/15 jobs 成功，剩余 current shards 与最终独立审计未关闭。GitHub API 间歇 TCP reset，
+不能据此前状态宣称合入。
+
+当前恢复发布候选为 [PR101](https://github.com/vchive/Lunar-Evolution/pull/101)，
+位于 `codex/rsi-recovery-release`。原 mixed RPP/PRP 的 archive 断言漏掉 fixture
+genesis candidate；`e5e7dbc` 已改为保留原 genesis prefix 再比较本轮 published candidates。
+旧失败 XML 原样保留，修正后的 RPP/PRP/RRR 正在本发布树重新运行，尚未计为通过。
+RRR 旧冻结来源也保留其运行和证据，不能与本树结果混算。
+
+本轮已将 Feature196 owner/worker handoff 的独立 SDD 纳入 tracked specs；纯 BRS
+child preflight 已实现，selection 固定 `authority=False`。owner-created handoff、
+owner service loop、selected-ordinal dispatch 和 native 多 child BRS 仍未启用。
+下一实现切片在独立工作树开发，不修改当前长测的产品/测试源码。
+
+README 与发布台账现已明确 main/PR100/PR101 的区别、P0 出口及 P1/P2 边界。
+README 中 init、mock run/status/events/resume/solve 和 RSI run/inspect/usage/resume
+共 10 条入口已在独立本地 home 实际通过；RSI 仍为 provider-free fixture，
+`production_admission=false`。原始 smoke 记录保留在 ignored
+`.lunar-evolution/reports/readme-smoke-20261015.json`。
+
+待办仍为 mixed 三案最终 XML/SQLite/source 独审、PR100 完整 CI/审计/合入、同步 main、
+PR101 最终来源回归/CI/独审/合入。真实 Python runtime、实际 producer project/CLI
+是后续 P1；多机/服务/远程 evaluator/模型训练为后置 P2。只使用本地 inert/provider-free
+fixtures，不运行 WebAgent、远程 evaluator、公司平台、真实 toolchain target 或 campaign。
+
+## 2026-10-15 恢复批次集成：原始中断与连续 reconcile 已关闭本地验收
+
+主仓 main 仍是 PR99 `0cb49abb146d91cb59b71de45d01e16217ebed8d`。
+PR100 最终 head `c73650afe3cdc9f1dc3c08ec74d8df12a7b75b01` 的完整 CI
+`38582309622` 与独立 raw/source/tree 审计尚未完成，尚未合入；冻结 checkout 不修改。
+本批最终集成在 `codex/rsi-recovery-release` 独立工作树，以 `9cbf622` 为基线，
+包含 PR100 最终 head 与 known-rejection v2 的产品代码。此记录不提前关闭最终 CI 或 release。
+
+Known-rejection v2 的原始本地验收已完成：478 个不同 focused cases、两个原 owner
+terminal/started 案、原 C2 连续四个 durable reconcile 中断、原两个有序候选拒绝、
+C1/no-P 与原 P/no-C2、缺 terminal/partial terminal/terminal-before-C1 三个早界。
+11 份原始 XML 的独立并集是 **487 distinct cases**，零 failure/error/skip；分别保留
+788/789/790-file source maps，不伪装成同一最终集成来源。早界测试通过后仅修说明文字，
+原 XML、运行时源和 AST 等值记录仍保留。
+
+连续 reconcile 的原始长测耗时 4315.288 秒（约 72 分钟），四项 stale pins 在预算前
+拒绝；reservation/result/episode/checkpoint 连续中断最终只保留一次 unknown retry、
+一次 solver invocation、一次原 claim/result/reconciliation，revision 10，checkpoint
+峰值 41,273 bytes。最终仍是 running/producer_staged：reconcile 只登记原失败，不驱动
+后继。这是正确状态，不把它写成整个 run 完成。
+
+RPP/PRP/RRR 三个原三轮 mixed fixture 仍在独立 790-file 冻结树运行；只有结束并独审
+原 XML/SQLite/source 后才关闭 T1–T3。T4 使用独立修正后的双 BundleGroup 原始 fixture；
+旧 test API/collection 错误、原开发失败和中断证据都保留，不采用失败版测试。
+
+并行发现既有 BRS partial-wave 恢复缺口：已完成 child 的 retained admission reference
+被仅包含 pending sibling 的 wave scope 误判 foreign。独立树已复现原失败，并实现原
+whole-plan obligations 与 pending-only fresh channel/token 分离；completed replay 在短
+观察锁外，随后复验原 head/payload/controller/ledger/workspace/sidecar/gateway/proof。
+26 个 focused 与 321 个兼容 cases 已通过（347 个不同 named cases，零 failure/error/skip）；789 文件 source map 前后完全一致 `a7d0791f8b689cd9a0ca5300cff0c23c04428be84cf83b392aa34369b9fca9c1`。此修复不启用 native 多 child BRS。
+README 与当前台账已重整，发布仍以最终来源 CI/审计与实际 main 状态为准。
+
+剩余出口：mixed 三案、接受 PR100 main 后同步、最终集成
+focused/Ruff/compileall/diff-check、完整 CI/原日志与产物/source/tree 独审、PR 合入。BRS partial-wave
+修复已在本集成树验证，但未改变 native multi-child BRS 的 P1 范围。
+下一 P1 为独立 native 多 child BRS、真实 source/toolchain/static runtime、sealed startup/
+input/lifecycle、实际项目 profile 和 opt-in CLI；P2 多机/服务/训练后置。仅本地 inert
+fixtures，`production_admission=false`；不运行真实模型、toolchain target、campaign、
+WebAgent、远程 evaluator 或公司平台。
+
+## 2026-10-15 并行集成：fresh v2 已实现，原始恢复验收中
+
+PR100 的冻结最终 head 为 `c73650afe3cdc9f1dc3c08ec74d8df12a7b75b01`；完整
+CI `38582309622` 和独立 raw/source/tree 审计仍在进行，尚未合入。不要把旧 `a62`
+或 `2e` 的本地三轮成功当作这一最终来源的 CI，也不要修改冻结 checkout。
+
+独立分支 `codex/known-rejection-drs` 已接通 fresh
+`producer_known_rejection=True` 的 controller、owner、scheduler 和 gateway。该模式
+要求原 child execution 与 multi-episode publication 同时开启，只允许 DRS；默认/v1、
+BRS 和生产 CLI 不变。原 all-rejected terminal → C1 → 独立 0400 provenance P →
+C2、单次 unknown evidence 预算、原四项恢复 pins 与严格 checkpoint delta 均已实现。
+恢复只登记原失败结果，不驱动后继 child，不把拒绝视作进程故障或官方成功。
+
+第一轮联合 focused 为 476 个不同 case、零 failure/error/skip，测试期间 787 文件
+source inventory 未变。真实原路径随后发现一处接线错误：child resolver 返回 exact
+`PythonProducerRSISolverGateway`，不能要求其 type 是父类 `NativeRSISolverGateway`。
+已改为原 exact child、非 root、同 ledger，继承 reader 使用原 native class dispatch；
+独立源码复核通过。v2 inspector 也已补 nested DTO extra-field gate，避免在拒绝前调用
+污染的 serializer。早期原 XML 全部保留；archive 断言改为原 genesis 字节比较。
+
+当前冻结的集成来源为 788 文件，map
+`275e3f44385ebdce9ec43f7e585ea21d445043db781f33f1e773f2191e9fc85d`。
+两个真实 owner cases、原 C2 四个连续中断恢复、RPP/PRP/RRR 三个独立三轮流程正在
+并行运行，最终 focused 也在同源重测。尚未据 unit seams、开发失败或未结束的运行关闭
+v2 acceptance；完整中断矩阵、最终 CI/独立审计和接受 PR100 main 后同步仍是出口。
+详见 Feature191 `known-rejection-v2*.md`。ignored reports 保留原 source maps/XML。
+
+多 child BRS 仅有 ignored 最小 SDD 草案，待 v2 DRS 稳定后建立 tracked feature。
+真实 source/toolchain/static build/sealed startup/input consumption、项目 profile/lifecycle
+和 opt-in CLI/Linux 验收仍开放；P2 多机与服务化后置。README 第一轮已随 PR99 发布。
+本轮只跑本地 inert fixtures，不运行真实模型、CPython/toolchain target、campaign、
+WebAgent、远程 evaluator 或公司平台，`production_admission=false`。
+
+## 2026-10-14 Known rejection v2 并行开发检查点
+
+独立 `codex/known-rejection-drs` 分支补齐 fresh-v2 before/rejected 描述符、原生
+拒绝证据只读校验、严格 failed mapper、原发布 FD 返回的独立 0400 provenance pin，
+以及 success/process-failure/rejection 三向文件排他。A/B 已交叉审查；发现的两个
+shape 检查顺序问题已修正，新增 callback traps。纯 DTO 的 process-failure writer
+测试补齐剩余 sibling 拒绝方向，无 native 编译或目标执行。
+
+联合 focused 回归 290 distinct cases 全过，零失败/错误/跳过，13.07 秒；全仓 Ruff、
+compileall、diff-check 通过。781 文件前后 source map 一致，详见 Feature191
+`known-rejection-v2-validation.md`。这里只完成 helpers，C1/P/C2 owner、scheduler、
+gateway/controller reconcile 和 R-P-P/P-R-P/R-R-R 整体验收尚未完成。
+
+为并行推进，后续集成开发使用独立分支，不改 PR100 的最终 c73650a 冻结 checkout。
+新 fresh-DRS API `producer_known_rejection=False` 的规格已固定；最终集成验收和
+release 必须先同步到通过验收的 PR100 main 基线。PR100 仍 draft，最终 CI
+38582309622 在运行；此记录不能宣称已合入。主仓 main 仍 0cb49ab。
+
+下一步：A 实现 owner/inspection/capacity，B 接 scheduler，root 接 gateway/controller
+与 immutable mode；共享文件只由指定 owner 修改。所有工作继续只用本地 inert/
+provider-free fixture，`production_admission=false`，P2 后置。
+
+## 2026-10-14 Linux guardian fixture 的独立 FD 修正
+
+旧 `a62ac647` 的 Python 3.13 current-1 raw XML 除 5 个 Actor hook 失败外，还有
+guardian 正常启动测试失败：固定模拟 pidfd 77 与该 runner 的真实 bootstrap_fd 77
+相同，产品正确触发 borrowed alias 拒绝。仅将测试的 fake pidfd 改为当前全部 pipe
+FD 最大值加一，mock 返回与 owner 断言使用同一变量；产品 fresh-FD 门禁不变。
+独立审查、ruff、compileall、diff-check 通过。Darwin 本地 skip 不算 Linux 接受；
+最终 CI 必须原 readiness test 无 skip 通过。
+
+修正位于独立 `pr100-guardian-fixture` 工作树，保留正在回归的 `2e0ff07` checkout
+及其原 freeze。新 773 文件 freeze 相对该来源仅改变 guardian test，最终完整 CI
+要重新核对所有 current inventory、三轮 DRS case 与 raw/source/tree；之前的通过与
+失败均按其原 source 保留。此条是提交时检查点，不能据此宣称 CI/合入成功。
+
+## 2026-10-14 三轮闭环通过；CI 候选读取负例接线修正
+
+`a62ac647` 的完整三轮 DRS fixture 已通过：三个不同 child、连续 publication、
+practice memory 晋级、target retry 和终态只读恢复；XML 记录 1 passed、零失败/
+错误/跳过，4141.438 秒。原 XML SHA 为 `7c68b43817947f0f20103519bcd6f67df1eb728c6828c499c48adbff7045d975`；
+独立 post-run 773 文件复核与 `6b8bb05f…` 冻结来源一致。
+
+该 head 的完整 CI 在 Python 3.12/3.13 current-1 暴露 Actor verifier 的 5 个替换负例
+失败：原测试 hook 在任意 `os.read(size>1)` 后替换路径，性能优化新增的源码指纹
+读取会在候选 FD/path pins 建立之前触发它。修正仅让测试 hook 比对原候选的
+device/inode 后注入；产品、原 drift diagnosis 和禁止 clean-room evaluation 的
+断言均不变。独立审查通过，Actor 43 cases 与 identity/cache 44 cases 通过；ruff、
+compileall、diff-check 通过。失败 XML/ZIP 与旧来源成功证据保留，不能据旧 head 合入。
+
+新的 773 文件 freeze map 为 `558e77d973b7ccb6b926e16eaeeea9868d1019e371cedc84dc9add88a754ae03`，
+相对上一来源仅 `tests/test_rsi_actor_verifier.py` 改变。最终 head 的完整 CI、三轮
+回归与独立 raw/source/tree 审计仍是合入条件。纯 rejection helpers 在独立
+`codex/known-rejection-drs` 工作树并行开发，不属于 PR100，不开启 production；
+owner integration/release 等待 PR100 的最终验收与合入。
+
+## 2026-10-14 三轮 DRS 的第二轮 staged marker 接线修复
+
+缺锁测试修正的独立 focused 用例已通过（1 case，零失败/错误/跳过，967.437 秒）；
+772 文件运行后与 `8404b3c7…` 一致。PR100 的 `3caba97` 已推送并启动完整 CI，
+仍保持 draft，不能把旧来源局部成功算成该提交的完整验收。
+
+原三轮 fixture 的完整 XML 实际记录 1 failure（2389.833 秒）：第二 practice 已到
+staged；`commit` 在把 marker 从 staged 改成 unknown **之前**调用 owner precommit，
+历史链校验却调用原 public archive 的 `offspring_outcomes`，被本次 staged marker
+正确拒绝。没有第三轮成功证据。失败 XML、原 checkpoint、raw trace 全部保留。
+
+最小修复仅在原 live owner 的 precommit 里构造局部只读 inspection view，要求原
+controller CAS/lease、publication lock、完整 staged marker 与 journal/manifest 绑定，
+前后复查 marker 原 bytes/inode/stat；普通 reader、外来 marker 和 unknown 仍拒绝。
+原 strategy/archive 不修改，view 不返回、不持久化，也无写入权。实现已独立审查，
+57 个新 marker 快测和 12 个邻接 commit-control 用例共 69 passed，零失败/错误/跳过；
+ruff、compileall、diff-check 通过。最终 773 文件冻结 map 为
+`6b8bb05fa649390f85677b282a1bac6f132e2c636904d45ba9ecad294530367d`，
+三轮回归已在这一来源重新启动；仍需完整 CI/raw/source/tree 审计，不能提前合入。
+容量只读预检未发现确定 blocker，但第三轮完整终态条件估计仅余约 2–3 KiB，
+不是全 schema 上界，必须以实际每帧回归为准。此条是提交时检查点，最终结果见 PR100。
+
+## 2026-10-14 PR100 测试锁修正与文档校准
+
+原 `db04c72` 来源的默认/单 child 96 cases 和历史兼容 158 cases 已完整通过；
+多个 owner/inspection 分区也通过，三轮完整 DRS 仍运行。part5 的真实失败来自测试
+在单 child fixture 完成、controller guard 释放后直接更新 checkpoint：产品正确拒绝
+`rsi_controller_lock_required`，未进入预期 inspection drift 检查。失败、中断 XML 和
+原始 source/log 全部保留，不计入成功。
+
+最小修正仅在该测试故意 CAS 更新时取得原 run 的 `controller_lock`。使用独立工作树
+`/tmp/le-pr100-lock-fix`，保留原冻结工作树及长测试继续运行；未修改产品源码。
+772 文件的新 map 为 `8404b3c7c09ef84e8bd52c1d0335e301f9d41ff5c78719e6d19891f13f6b2c31`，
+与 `4f46b0c7…` 仅 inspection 测试文件不同。独立审查通过；单用例 focused 验证与
+新 head 完整 CI 并行收尾，最终以新 head 的完整 current inventory/raw XML/source/tree
+证明验收，不能把旧来源局部成功替代最终通过。此条是提交时检查点，最终结果见 PR100。
+
+README 与 RSI 指南校准 HOME 优先级、环境变量密钥示例、认证条件和 PR99 已完成的
+单 child fixture；三轮 DRS、真实 runtime 和生产 CLI 不提前声明验收。README 示例
+仅做 argparse 验证，11 组可解析、8 个本地链接存在。
+
+剩余顺序：P0 完成当前 DRS 验收/合入及 known all_rejected 正常结算/重放；P1 为多
+Python child BRS、真实 source/toolchain/static closure、sealed startup/input/lifecycle、
+至少一个实际项目 profile 和 opt-in CLI。P2 远程/多机/服务/训练继续后置。
+只用本地 inert/provider-free fixture，`production_admission=false`。
+
+## 2026-10-14 PR100 草稿与 plan drift 异常修复
+
+PR100 已创建并保持 draft：`https://github.com/vchive/Lunar-Evolution/pull/100`。
+最初 head `c99265b` 与 CI `38543950522` 保留为原来源，不能用它关闭新来源验收。
+真实 owner 负例发现原 dispatch plan 被修改时底层 `NativeRSIExecutionPlanError` 泄漏；
+最小修复只规范为原 `rsi_publication_lineage_dispatch_inputs_drift`，保留 cause、原
+shape/reparse/owner/CAS/预算门禁。原实际 mutation 测试补精确 code/cause 断言，
+独立代码审查已通过。中断长组、原失败 trace 和旧通过 XML 都保留，不计入新来源。
+
+当前最终冻结 `source-before-ready-capsule-plan-refusal.json`：772 文件，map SHA
+`4f46b0c7d1901bb4c0c30439d9e7e55a1371aec4395b93273f7505fa67d6aaa1`。
+它与前一 corrected 来源只差 lineage 源码和 owner 测试；各组正在重跑。6 个互不重叠
+owner/inspection 分区、三轮 flow、默认单 child 与历史兼容全部须通过，再独审原始
+XML/source 和对应最新 head 的完整 CI。没有真实模型、runtime、campaign 或远程评测。
+本地性能采样及后续 all-rejected/BRS 最小出口仅写入 ignored 只读报告，不改本批范围。
+
+## 2026-10-14 多 episode 容量修复与统一并行验收
+
+三轮 inert DRS 首次完整验收在第一轮 settlement 后实际触发
+`rsi_producer_episode_checkpoint_capacity_exhausted`：原 canonical checkpoint
+70,438 bytes，下一轮保守预留合计 121,338 bytes，超过原 112 KiB。仅降低固定预留
+不能解决第三轮完整状态容量；失败 XML、source pins 和只读容量分析继续保留。
+
+本轮按 Feature191 `ready-capsule.md` 完成 MEP-only ready capsule：完整 ready 先通过原
+binding/input/plan/root 校验，再由原 preparing permit create-only 留存本地证据文件；
+checkpoint 仅保存原始文件 pin，原 ready CAS 首次确认它。默认单 child 的完整 ready
+格式保持；reader 只读，不能采用 orphan、刷新 pin、恢复 launch permit 或扩写 state。
+binding 32 KiB、capsule 64 KiB、reference 8 KiB、checkpoint 112 KiB 和共同 64 MiB
+证据预算均保留。全部历史模式固定，combined aggregate 在证据文件 I/O 前检查。
+
+独立代码审查未发现本轮 blocker。最终来源正在并行回归：
+`source-before-ready-capsule-corrected.json` 包含 772 个 source/test/tool/config 文件，
+map SHA `d1f673ee3016e73b67e80cf4421c4b701d96942695b8b3b58da50742e3d63288`。
+core 179 distinct cases 已通过且前后 pins 一致；三轮完整闭环、历史/默认兼容和 72 项
+owner/inspection 回归仍运行中，后者按原 collection 拆为 6 个不重叠分区。早期 freeze
+后补入 4 条 pure consumer 测试，因此原来源与中断 XML 不计入最终验收。
+所有证据位于 ignored `.lunar-evolution/reports/multi-episode-final/`。
+
+本批尚未创建 PR/合入，不能关闭完整 MEP 验收。`all_rejected`、BRS、多轮中断扩展、
+真实 CPython/toolchain/runtime、OpenEvolve/Shinka lifecycle 与生产 CLI 仍开放。
+只用本地 inert/provider-free fixture；`production_admission=false`，P2 继续后置。
+
+## 2026-10-14 合入单 child 与 README；多 episode 并行开发中
+
+PR99 已按授权合入 `main 0cb49abb146d91cb59b71de45d01e16217ebed8d`，主目录已
+安全 fast-forward 且 clean。最终 head `80d3f3af45b53013cce0a7bc69ddf87f7d1e1f16`
+通过 CI run `38517739592` 的 15/15 jobs，15 份 artifacts 已独立审查；每版 current
+15,664 个不同 case、92 个明示 skips、零 failures/errors。合入 tree
+`2990ac0326b811ebb34c921c7419571a64c52ba4` 与原 tested tree 完全相同；新 merge
+parents 已核实。README 的安装、普通任务、RSI fixture、架构与状态说明已发布到首页。
+单 child 接线已验收，但不关闭真实 runtime、生产 CLI 或多 episode 的验收项。
+
+`codex/multi-episode-publication` 继续同 workspace 的显式 append lineage：原 owner/CAS、
+fresh dispatch lease、独立只读历史 chain inspection、原 native deadline/cancellation 门禁
+和严格 held pins。实现与独立审查并行，正在修复 publication DTO shape-first、每历史阶段
+pin-map/预算、原 result/provenance 关联等边界。早期中断/测试输出保留，不计为验收成功。
+真实三 episode 闭环及最终统一来源回归仍未完成；all-rejected opt-in 尚明确拒绝。
+
+性能 slice `318e51c` 缓存普通源码文件的成功解析，仍实时读取精确源码 bytes 与配置/
+defaults/closure/code hooks；65 项 identity 开发测试通过，31 dependencies 局部 warm
+benchmark 约快 10 倍。它不跳过 filesystem、ledger、预算或 publication 校验，最终
+workflow 回归仍需使用其自身统一来源。
+
+验收发现 native mapper 原本不填 `solver_score`，默认 target judge 会接受 validity 1 的
+completed candidate。三 episode fixture 因此使用已有 `target_judge` 配置接口，先核实
+原 evaluator report/evaluation receipt/journal/result 摘要，再判断 0/9 阈值；不伪造
+SolverResult 或修改 native wire。仅本地 inert/provider-free fixture，
+`production_admission=false`；未运行真实模型、CPython/toolchain、campaign、远程
+evaluator、WebAgent 或公司平台。P2 多机/服务化继续后置。
+
 ## 2026-10-14 并行继续：显式单 child 完整执行与恢复
 
 本轮在 `codex/child-execution-flow` 延续原 child claim/preclaim 来源，新增显式

@@ -18,6 +18,7 @@ from .rsi_native_candidate import (
     NativePublicationReceipt,
 )
 from .rsi_native_plan import NativeRSIExecutionPlan
+from .rsi_native_provenance_names import NATIVE_RSI_PROVENANCE_NAMES
 
 NATIVE_RSI_PROVENANCE_NAME = "native-rsi.provenance.json"
 MAX_NATIVE_RSI_PROVENANCE_BYTES = 1024 * 1024
@@ -136,10 +137,22 @@ def _metadata(info: os.stat_result) -> tuple[int, ...]:
             info.st_mode, info.st_nlink)
 
 
+def _assert_exclusive(chain: DirectoryChain) -> None:
+    chain.check()
+    for name in NATIVE_RSI_PROVENANCE_NAMES:
+        if name == NATIVE_RSI_PROVENANCE_NAME:
+            continue
+        try:
+            os.stat(name, dir_fd=chain.fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        _fail("conflicting_provenance")
+
+
 def _read_once(chain: DirectoryChain) -> tuple[bytes, os.stat_result]:
     descriptor = None
     try:
-        chain.check()
+        _assert_exclusive(chain)
         before = os.stat(NATIVE_RSI_PROVENANCE_NAME, dir_fd=chain.fd, follow_symlinks=False)
         if (not stat.S_ISREG(before.st_mode) or before.st_nlink != 1
                 or stat.S_IMODE(before.st_mode) != 0o400):
@@ -161,7 +174,7 @@ def _read_once(chain: DirectoryChain) -> tuple[bytes, os.stat_result]:
         if (_metadata(before) != _metadata(after) or _metadata(after) != _metadata(named)
                 or len(raw) != before.st_size):
             _fail("changed")
-        chain.check()
+        _assert_exclusive(chain)
         return bytes(raw), after
     except FileNotFoundError as exc:
         raise NativeRSIProvenanceError("missing") from exc
@@ -182,7 +195,7 @@ def _read(chain: DirectoryChain) -> dict[str, Any]:
         if raw != repeated or _metadata(before) != _metadata(after):
             _fail("changed")
         _record(repeated, after)
-        chain.check()
+        _assert_exclusive(chain)
         return value
     except NativeRSIProvenanceError:
         raise
@@ -224,7 +237,7 @@ def persist_native_rsi_provenance(batch: Path, payload: dict[str, Any]) -> str:
     chain = _directory(batch)
     descriptor = None
     try:
-        chain.check()
+        _assert_exclusive(chain)
         try:
             descriptor = os.open(NATIVE_RSI_PROVENANCE_NAME,
                                  os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
@@ -243,18 +256,18 @@ def persist_native_rsi_provenance(batch: Path, payload: dict[str, Any]) -> str:
         raw = _canonical({**body, "provenance_sha256": digest})
         view = memoryview(raw)
         while view:
-            chain.check()
+            _assert_exclusive(chain)
             count = os.write(descriptor, view)
             if count <= 0:
                 _fail("write_failed")
             view = view[count:]
         os.fsync(descriptor)
-        chain.check()
+        _assert_exclusive(chain)
         retained = _read(chain)
         if retained != {**body, "provenance_sha256": digest}:
             _fail("changed")
         os.fsync(chain.fd)
-        chain.check()
+        _assert_exclusive(chain)
         return digest
     except NativeRSIProvenanceError:
         raise

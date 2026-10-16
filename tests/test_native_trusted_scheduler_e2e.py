@@ -95,7 +95,8 @@ def fixture(tmp_path: Path, endpoint: str, *, delay: int = 0, candidate_delay: i
         ' FILE *f = fopen("started", "wb"); if(!f || fputs("target",f)<0 || fclose(f)!=0)return 2;\n'
         f' sleep({delay});\n'
         # The endpoint is running, so denial must be an OS permission failure, not refused I/O.
-        ' if(argc!=2)return 20; int s=socket(AF_INET,SOCK_STREAM,0);\n'
+        ' if(argc!=2)return 20;\n'
+        ' int s=socket(AF_INET,SOCK_STREAM,0);\n'
         ' if(s>=0){struct sockaddr_in a;memset(&a,0,sizeof(a));a.sin_family=AF_INET;\n'
         ' a.sin_port=htons((unsigned short)atoi(argv[1]));a.sin_addr.s_addr=htonl(INADDR_LOOPBACK);\n'
         ' int connected=connect(s,(struct sockaddr*)&a,sizeof(a));int e=errno;close(s);\n'
@@ -117,7 +118,7 @@ def fixture(tmp_path: Path, endpoint: str, *, delay: int = 0, candidate_delay: i
         program += f' f=fopen({json.dumps("../output/" + path)},"wb");\n'
         program += f' if(!f||fputs({json.dumps(source)},f)<0||fclose(f)!=0)return {30 + index};\n'
     program += ' f=fopen("../output/producer-result.json","wb");\n'
-    program += f' if(!f||fputs({json.dumps(body)},f)<0||fclose(f)!=0)return 35;return 0;}}\n'
+    program += f' if(!f||fputs({json.dumps(body)},f)<0||fclose(f)!=0)return 35;\n return 0;}}\n'
     source_path = producer / "target.c"
     source_path.write_text(program)
     target = producer / "target"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Any, NoReturn
 
 from .candidate_evaluation_spec import canonical_json, strict_json
 from .native_bootstrap import NativeBootstrapArtifact
+from .producer_bundle_lineage import MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES
 from .producer_launcher import (
     ProducerLaunchAttestation,
     ProducerLaunchIntent,
@@ -36,6 +38,14 @@ from .rsi_native_inputs import (
     validate_native_rsi_launch_inputs,
 )
 from .rsi_native_plan import NativeRSIExecutionPlan
+from .rsi_producer_staging_capsule import (
+    MAX_READY_CAPSULE_BYTES,
+    MAX_READY_CAPSULE_REFERENCE_BYTES,
+    materialize_ready,
+    persist_ready_capsule,
+    retained_publication_evidence_bytes,
+    retained_ready_capsule_bytes,
+)
 from .rsi_python_scheduler_inputs import _shape, _sidecar
 
 PRODUCER_STAGING_PROTOCOL = "lunar-rsi-producer-episode-staging-v1"
@@ -193,6 +203,10 @@ class PythonProducerEpisodeStager:
                 "request_type": component_fingerprint(SolverRequest, config={}),
                 "memory_type": component_fingerprint(MemorySnapshot, config={}),
                 "episode_type": component_fingerprint(PracticeEpisode, config={}),
+                "ready_capsule_writer": component_fingerprint(persist_ready_capsule),
+                "ready_capsule_reader": component_fingerprint(materialize_ready),
+                "ready_capsule_budget": component_fingerprint(retained_ready_capsule_bytes),
+                "retained_evidence_budget": component_fingerprint(retained_publication_evidence_bytes),
             },
         }
 
@@ -243,7 +257,31 @@ class PythonProducerEpisodeStager:
             return 0
         if len(entries) >= self.config.max_episodes:
             _fail("capacity_exhausted")
-        growth = len(_wire(root.to_dict(), MAX_STAGING_BINDING_BYTES)) + 3 * (len(request_raw) + len(memory_raw)) + 16 * 1024
+        publication = state.get("producer_multi_episode_publication")
+        if publication is not None and publication is not True:
+            _fail("original_mode_mismatch")
+        if publication is True:
+            if retained_publication_evidence_bytes(state) + MAX_READY_CAPSULE_BYTES > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+                _fail("capacity_exhausted")
+            # Only the independently acknowledged capsule reference enters the
+            # checkpoint. Reserve the exact identity projection plus its bounded
+            # reference; the original full binding limit remains active.
+            token = _sha({"run_id": episode.run_id, "episode_id": episode.episode_id,
+                          "request": request.digest()})[:32]
+            identity = {
+                "run_id": episode.run_id, "episode_id": episode.episode_id,
+                "original_run_request_sha256": "f" * 64,
+                "original_run_record_sha256": "f" * 64,
+                "origin_checkpoint_sha256": "f" * 64,
+                "intent": {"episode": episode_wire, "request": request.to_dict()},
+                "request_sha256": request.digest(), "memory": memory.to_dict(),
+                "memory_snapshot_sha256": memory.digest(), "journal_id": "rsi-stage-" + token,
+                "launch_id": "rsi-launch-" + token, "policy": self.policy(),
+            }
+            growth = len(_wire({"state": "ready", "identity": identity, "ready": None,
+                                "failure_code": None})) + MAX_READY_CAPSULE_REFERENCE_BYTES
+        else:
+            growth = len(_wire(root.to_dict(), MAX_STAGING_BINDING_BYTES)) + 3 * (len(request_raw) + len(memory_raw)) + 16 * 1024
         # Before reservation, include the exact pending intent plus bounded budget,
         # current-episode and phase growth. Once intent is durable those bytes are
         # already in state, so the second preflight cannot newly reject that growth.
@@ -319,6 +357,11 @@ class PythonProducerEpisodeStager:
         _shape(memory)
         if type(state) is not dict or type(request) is not SolverRequest or type(memory) is not MemorySnapshot:
             _fail("request_memory_invalid")
+        original_ledger = controller.ledger
+        ledger_stat = original_ledger.database.lstat()
+        if not stat.S_ISREG(ledger_stat.st_mode) or ledger_stat.st_nlink != 1:
+            _fail("owner_required")
+        ledger_identity = ledger_stat.st_dev, ledger_stat.st_ino
         if (controller.producer_stager is not self or not controller.ledger.controller_lock_held(state["run_id"])
                 or state.get("mode") != "drs"):
             _fail("owner_required")
@@ -378,7 +421,37 @@ class PythonProducerEpisodeStager:
             "input_manifest": strict_json(inputs.manifest_json),
         }
         self.validate_ready(identity, ready)
+        if state.get("producer_multi_episode_publication") is True:
+            self._assert_staging_owner(controller, state, expected_checkpoint_sha256,
+                                       original_ledger, ledger_identity)
+            retained_bytes = retained_publication_evidence_bytes(state)
+            ready = persist_ready_capsule(
+                self.config.workspace, identity["journal_id"], ready, retained_bytes=retained_bytes,
+            )
+            self._assert_staging_owner(controller, state, expected_checkpoint_sha256,
+                                       original_ledger, ledger_identity)
         return ready
+
+    def _assert_staging_owner(self, controller: Any, state: dict, expected_head: str,
+                              original_ledger: Any, ledger_identity: tuple[int, int]) -> None:
+        self._assert_config()
+        if (controller.producer_stager is not self
+                or controller.ledger is not original_ledger
+                or controller.producer_sidecar is not self.config.root_sidecar
+                or Path(controller.producer_workspace).absolute() != self.config.workspace
+                or controller.producer_multi_episode_publication is not True):
+            _fail("staging_checkpoint_conflict")
+        current_stat = original_ledger.database.lstat()
+        if (not stat.S_ISREG(current_stat.st_mode) or current_stat.st_nlink != 1
+                or (current_stat.st_dev, current_stat.st_ino) != ledger_identity):
+            _fail("staging_checkpoint_conflict")
+        if (not controller.ledger.controller_lock_held(state["run_id"])
+                or controller.ledger.controller_checkpoint(state["run_id"]) != (expected_head, state)):
+            _fail("staging_checkpoint_conflict")
+        self._root()
+        for episode_id, entry in state["producer_episode_staging"].items():
+            if entry["state"] == "preparing":
+                self.assert_unattempted(controller, episode_id)
 
     def validate_ready(self, identity: dict, ready: dict) -> None:
         try:
@@ -437,6 +510,12 @@ class PythonProducerEpisodeStager:
                 or Path(controller.producer_workspace).absolute() != self.config.workspace):
             _fail("controller_root_mismatch")
         original = controller.ledger.history(state["run_id"])[0]
+        publication = original.payload.get("producer_multi_episode_publication")
+        if publication is not None and publication is not True:
+            _fail("original_mode_mismatch")
+        if (state.get("producer_multi_episode_publication") is not publication
+                or controller.producer_multi_episode_publication is not (publication is True)):
+            _fail("original_mode_mismatch")
         policy = self.policy()
         if original.payload.get("producer_staging_policy") != policy or state.get("producer_staging_policy") != policy:
             _fail("original_mode_mismatch")
@@ -451,12 +530,14 @@ class PythonProducerEpisodeStager:
         launches = {self.config.root_sidecar.binding.intent.launch_id}
         previous_digest = None
         for snapshot_digest, snapshot in snapshots:
-            if snapshot.get("producer_staging_policy") != policy:
+            if (snapshot.get("producer_staging_policy") != policy
+                    or snapshot.get("producer_multi_episode_publication") is not publication):
                 _fail("original_mode_mismatch")
             entries = snapshot.get("producer_episode_staging", {})
             if type(entries) is not dict or len(entries) > self.config.max_episodes or not retained.keys() <= entries.keys():
                 _fail("history_missing")
             _wire(snapshot)
+            retained_publication_evidence_bytes(snapshot)
             for episode_id, entry in entries.items():
                 if (type(entry) is not dict or set(entry) != {"state", "identity", "ready", "failure_code"}
                         or type(entry["state"]) is not str
@@ -525,7 +606,11 @@ class PythonProducerEpisodeStager:
                     if entry["failure_code"] is not None:
                         _fail("history_invalid")
                     if previous is None or previous["state"] == "preparing":
-                        ready = entry["ready"]
+                        ready = materialize_ready(
+                            entry["ready"], allow_capsule=publication is True,
+                            expected_workspace=self.config.workspace,
+                            expected_journal_id=identity["journal_id"],
+                        )
                         if (type(ready) is not dict or type(ready.get("binding")) is not dict
                                 or type(ready["binding"].get("attestation")) is not dict
                                 or type(ready["binding"]["attestation"].get("nonce")) is not str):
@@ -540,7 +625,12 @@ class PythonProducerEpisodeStager:
             previous_digest = snapshot_digest
         for entry in retained.values():
             if entry["state"] == "ready":
-                self.validate_ready(entry["identity"], entry["ready"])
+                ready = materialize_ready(
+                    entry["ready"], allow_capsule=publication is True,
+                    expected_workspace=self.config.workspace,
+                    expected_journal_id=entry["identity"]["journal_id"],
+                )
+                self.validate_ready(entry["identity"], ready)
 
 
 __all__ = ["PythonProducerEpisodeStager", "PythonProducerEpisodeStagingConfig"]

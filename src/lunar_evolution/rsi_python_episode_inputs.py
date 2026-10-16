@@ -10,6 +10,8 @@ from .python_producer_binding_store import PythonProducerBindingSidecar
 from .rsi_gateway import SolverRequest
 from .rsi_learning import MemorySnapshot, RSILearningError
 from .rsi_native_inputs import NATIVE_RSI_INPUT_MARKER
+from .rsi_producer_staging_capsule import materialize_ready, retained_publication_evidence_bytes
+from .rsi_python_admission import validate_rsi_python_admission_shapes
 from .rsi_python_scheduler_inputs import (
     PythonRSISchedulerInputContext,
     PythonRSISchedulerInputError,
@@ -69,9 +71,15 @@ def resolve_python_rsi_episode_input_context(
             if type(entry) is not dict or entry.get("state") != "ready":
                 _fail("child_proof_not_ready")
             ready, identity = entry["ready"], entry["identity"]
+            validate_rsi_python_admission_shapes((ready, identity))
             if (identity["intent"]["request"] != request.to_dict()
                     or identity["memory"] != memory.to_dict()):
                 _fail("request_memory_drift")
+            retained_publication_evidence_bytes(state)
+            ready = materialize_ready(
+                ready, allow_capsule=state.get("producer_multi_episode_publication") is True,
+                expected_workspace=native.workspace, expected_journal_id=identity["journal_id"],
+            )
             binding = parse_python_producer_binding(canonical_json(ready["binding"], maximum=2 * 1024 * 1024))
             root_wire, child_wire = root_sidecar.binding.to_dict(), binding.to_dict()
             unchanged = set(root_wire) - {"intent", "attestation", "binding_sha256"}

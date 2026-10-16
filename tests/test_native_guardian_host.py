@@ -200,8 +200,11 @@ def test_start_consumes_exact_ready_byte_and_returns_live_owner(monkeypatch):
     with _pipes() as pairs:
         life, finish, ackread = pairs[0], pairs[1], pairs[2]
         bootstrap_fd = pairs[3][0]
+        # The fake pidfd must be distinct from every live borrowed pipe FD.
+        # A fixed number can collide with descriptors allocated by the suite.
+        fake_group_fd = max(fd for pair in pairs for fd in pair) + 1
         os.write(ackread[1], b"R")
-        monkeypatch.setattr(os, "pidfd_open", lambda pid, flags: 77)
+        monkeypatch.setattr(os, "pidfd_open", lambda pid, flags: fake_group_fd)
         monkeypatch.setattr(os, "getpgid", lambda pid: pid)
         monkeypatch.setattr(os, "getsid", lambda pid: pid)
         monkeypatch.setattr(signal, "pidfd_send_signal", lambda *args: None)
@@ -212,6 +215,6 @@ def test_start_consumes_exact_ready_byte_and_returns_live_owner(monkeypatch):
             deadline=time.monotonic() + 2, deadline_ns=time.monotonic_ns() + 2_000_000_000,
         )
         assert owner._watcher is watcher
-        assert owner._group_fd == 77
+        assert owner._group_fd == fake_group_fd
     process.kill()
     process.wait(timeout=2)

@@ -1,6 +1,6 @@
 # Draft: multi-episode DRS publication and historical recovery
 
-**Status: design draft only; not implemented or accepted.** This document extends
+**Status: experimental implementation in progress; not accepted.** This document extends
 the experimental [single-child execution flow](child-execution-flow.md). It does
 not mark that flow, real runtime acceptance or multi-episode execution complete.
 The existing Feature 153 publication contract and default refusals remain active
@@ -56,6 +56,17 @@ The second option is independent, strictly boolean and defaults to `False`. It
 requires the existing child-execution opt-in and exact original Python producer
 gateway/ledger/stager. Unsupported configuration and BRS refuse before run
 creation. Single-child opt-in alone does not authorize repeated publication.
+
+The publication owner must also hold the exact fresh dispatch lease from the
+adjacent original one-call child continuation. The lease exists only while that
+continuation is executing, and binds the original state, child gateway, request,
+historical memory and native plan. Construction and every subsequent observation
+check the original provider/controller binding, started claim and running episode,
+as well as the live DTO contents. Exiting the dispatch clears the lease even on
+interruption. Opening an owner scope or reading ready/started evidence does not
+create a lease. A separate read-only chain inspection may verify retained terminal
+materials; it cannot create this owner, dispatch, acknowledge a checkpoint or
+grant permission to publish.
 
 For a new opted-in run only, retain the option, policy/dependency fingerprint,
 original workspace identity, original run/proof association and bounded episode
@@ -134,6 +145,17 @@ terminal and unchanged before/after archive/state evidence. It does not supply a
 published predecessor or a reason to replay evaluation. The minimal acceptance
 uses validity 1 throughout, so target threshold failure is not confused with
 this separate rejection outcome.
+
+The native receipt mapper currently preserves `solver_score=None`; its immutable
+receipt wires do not carry scalar quality. The acceptance fixture must configure
+the existing `target_judge` interface with a frozen report-threshold judge. That
+judge reads the native evaluator report through the original evaluation-receipt
+builder and verifies the receipt digest against both the published journal and
+the mapped result before testing the report's `combined_score`. It must not
+inject a score into `SolverResult`, infer quality from a producer envelope, or
+modify native receipt/provenance schemas. "Original judge" below means this
+original configured judge. Default native judging continues to accept a valid,
+completed result when no separate quality criterion is configured.
 
 ## Fresh publication, locks and CAS
 

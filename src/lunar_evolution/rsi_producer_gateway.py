@@ -317,6 +317,11 @@ def resolve_python_producer_episode_gateway(
                     or ledger.controller_checkpoint(run_id) != checkpoint):
                 _fail("episode_evidence_drift")
             controller._validate_producer_checkpoint(run_id, state)
+            if controller.producer_multi_episode_publication is True:
+                child.config.receipt_provider.bind_python_admission_replay_controller(controller)
+                child._assert_ledger()
+                if ledger.controller_checkpoint(run_id) != checkpoint:
+                    _fail("episode_evidence_drift")
             return child
     except PythonProducerRSIGatewayError:
         raise

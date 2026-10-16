@@ -284,7 +284,7 @@ def _declared_manifest(value: object) -> declared.PythonRuntimeManifest:
     return declared.parse_python_runtime_manifest(value.to_json())
 
 
-def _validate_tree(tree: PythonRuntimeTreeManifest) -> None:
+def _validated_tree_members(tree: PythonRuntimeTreeManifest) -> tuple[PythonRuntimeTreeDirectory, ...]:
     directories = _collection(tree.directories, maximum=MAX_PYTHON_RUNTIME_TREE_ENTRIES)
     _declared_shape(tree.declared_manifest)
     if len(directories) + len(tree.declared_manifest.files) > MAX_PYTHON_RUNTIME_TREE_ENTRIES:
@@ -299,7 +299,20 @@ def _validate_tree(tree: PythonRuntimeTreeManifest) -> None:
     for item in directories:
         item.__post_init__()
     _sha(tree.tree_sha256)
+    return directories
+
+
+def _validate_tree(tree: PythonRuntimeTreeManifest) -> None:
+    directories = _validated_tree_members(tree)
     original = _declared_manifest(tree.declared_manifest)
+    _validate_tree_graph(tree, directories, original)
+
+
+def _validate_tree_graph(
+    tree: PythonRuntimeTreeManifest,
+    directories: tuple[PythonRuntimeTreeDirectory, ...],
+    original: declared.PythonRuntimeManifest,
+) -> None:
     keys = tuple(_key(item) for item in directories)
     if keys != tuple(sorted(set(keys))):
         _fail("directories_not_canonical")
@@ -341,6 +354,23 @@ def _validate_tree(tree: PythonRuntimeTreeManifest) -> None:
     body.pop("tree_sha256")
     if _sha(tree.tree_sha256) != _digest(body):
         _fail("digest_mismatch")
+
+
+def _parsed_tree(
+    original: declared.PythonRuntimeManifest,
+    directories: tuple[PythonRuntimeTreeDirectory, ...],
+    tree_sha256: str,
+) -> PythonRuntimeTreeManifest:
+    # Only the parser calls this with its freshly parsed exact DTOs. No caller
+    # value or callback intervenes before graph/digest validation. Public DTO
+    # construction and revalidation still use the full _declared_manifest gate.
+    tree = object.__new__(PythonRuntimeTreeManifest)
+    object.__setattr__(tree, "declared_manifest", original)
+    object.__setattr__(tree, "directories", directories)
+    object.__setattr__(tree, "tree_sha256", tree_sha256)
+    members = _validated_tree_members(tree)
+    _validate_tree_graph(tree, members, original)
+    return tree
 
 
 def _fingerprint(info: os.stat_result) -> tuple[int, ...]:
@@ -697,7 +727,7 @@ def parse_python_runtime_tree_manifest(value: bytes | str) -> PythonRuntimeTreeM
         directories = []
         for item in values:
             directories.append(PythonRuntimeTreeDirectory(**{**item, "children": tuple(item["children"])}))
-        return PythonRuntimeTreeManifest(original, tuple(directories), payload["tree_sha256"])
+        return _parsed_tree(original, tuple(directories), payload["tree_sha256"])
     except PythonRuntimeTreeError:
         raise
     except (declared.PythonRuntimeError, TypeError, ValueError, AttributeError,

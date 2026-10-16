@@ -145,6 +145,7 @@ def _workspace_identity(root: Path) -> tuple[int, int]:
 def _inspect(
     root: Path, *, candidate_id: str, expected_journal_sha256: str,
     expected_producer_execution_receipt_sha256: str, recovery_pins: dict[str, Any],
+    lineage_inspection: object | None = None,
 ) -> _Snapshot:
     recovery = recover_native_trusted_producer(root, **recovery_pins)
     if (recovery.status != "recovered" or recovery.receipt.status != "completed"
@@ -166,7 +167,20 @@ def _inspect(
     )
     if any(getattr(journal, key) != getattr(intent, key) for key in authority):
         _fail("publication_authority_mismatch")
-    publication = resume_producer_bundle_publication(root, recovery.output.admission_plan, journal)
+    if lineage_inspection is None:
+        publication = resume_producer_bundle_publication(root, recovery.output.admission_plan, journal)
+    else:
+        from .rsi_publication_lineage import (
+            RSIPublicationLineageInspection,
+            RSIPublicationLineageV2Inspection,
+        )
+
+        inspection_type = type(lineage_inspection)
+        if inspection_type not in {RSIPublicationLineageInspection, RSIPublicationLineageV2Inspection}:
+            _fail("lineage_inspection_invalid")
+        publication = inspection_type.inspect(
+            lineage_inspection, root, recovery.output.admission_plan, journal,
+        )
     if (publication.status != "published" or publication.journal_sha256 != expected_journal_sha256
             or candidate_id not in publication.candidate_ids):
         _fail("candidate_not_published")
@@ -232,6 +246,7 @@ def read_native_retained_candidate(
     groups: Sequence[BundleGroup], evaluator_kind: str, evaluator_fingerprint: str,
     runner_fingerprint: str, dependency_sha256: str, environment_sha256: str,
     require_broker: bool = True,
+    lineage_inspection: object | None = None,
 ) -> NativeRetainedCandidateEvidence:
     """Read exactly one already published candidate, without execution or RSI attribution.
 
@@ -253,6 +268,14 @@ def read_native_retained_candidate(
             or any(not isinstance(group, BundleGroup) for group in groups)
             or type(require_broker) is not bool):
         _fail("input_invalid")
+    if lineage_inspection is not None:
+        from .rsi_publication_lineage import (
+            RSIPublicationLineageInspection,
+            RSIPublicationLineageV2Inspection,
+        )
+
+        if type(lineage_inspection) not in {RSIPublicationLineageInspection, RSIPublicationLineageV2Inspection}:
+            _fail("lineage_inspection_invalid")
     try:
         root = files.absolute_path(workspace)
         identity = _workspace_identity(root)
@@ -268,6 +291,8 @@ def read_native_retained_candidate(
             "expected_producer_execution_receipt_sha256": expected_producer_execution_receipt_sha256,
             "recovery_pins": recovery_pins,
         }
+        if lineage_inspection is not None:
+            pins["lineage_inspection"] = lineage_inspection
         before = _inspect(root, **pins)
         material = read_bundle_delivery_materials(root, before.candidate)
         portable = tuple(sorted(material.items()))
