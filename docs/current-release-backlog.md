@@ -1,5 +1,13 @@
 # Current release backlog — 2026-10-17
 
+## 2026-10-17：selected obligation registration 与 terminal consume（本轮完成）
+
+PR116（合并提交 `0eacf72`）在 phase CAS 之上增加两个显式、owner-locked 的 provider-free API：`register_brs_selected_obligation` 在 selected handoff、native plan/prepared pin 和 episode record 已冻结后登记 durable obligation；`consume_brs_selected_reconcile` 在 resume-time 重新校验 immutable bindings，并且只在完整 terminal evidence 下通过最新 checkpoint head 做 CAS 消费。registration 保留 append 前 captured parent digest，返回 append 后 checkpoint head；精确重放幂等。
+
+unknown、manual review、recoverable 和 drifted evidence 均保持 obligation 与 checkpoint 不变，不会刷新 head、重试或启动 worker。对应 controller focused 25 项、扩展 reconcile/handoff/result 86 项，以及 Ruff、compileall、diff-check 均通过。该切片仍不改变默认 `_drive_brs()`/`resume()`、public native BRS 或生产 admission。
+
+下一步 P1 是在已批准的 selected owner lifecycle 中显式调用 registration/consume，并完成真实 CPython/source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
+
 ## 2026-10-17：controller-owned BRS reconcile phase CAS（本轮完成）
 
 在 selected reconcile facade 之上，本轮增加 `RSILedger.apply_brs_reconcile_decision`
