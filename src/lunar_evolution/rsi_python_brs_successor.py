@@ -17,6 +17,7 @@ from .rsi_python_brs_child_policy import (
     BRSChildPolicyError,
     BRSNativeChildPreflight,
     BRSNativeChildSelection,
+    MAX_BRS_CHILD_ATTEMPTS,
     preflight_native_brs_child,
 )
 
@@ -159,7 +160,7 @@ def advance_brs_ordinal(
             _fail("budget_exhausted")
         consumed[counter] = used + 1
     attempts = current.attempts + 1
-    if attempts > 8:
+    if attempts > MAX_BRS_CHILD_ATTEMPTS:
         _fail("attempts_exhausted")
     next_wire = current.to_dict()
     next_wire["executions"] = executions
