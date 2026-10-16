@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+from threading import get_ident
+
 import pytest
 
+from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_python_brs_child_policy import preflight_native_brs_child
+from lunar_evolution.rsi_python_brs_handoff import BRSChildHandoffContext
 from lunar_evolution.rsi_python_brs_successor import (
     BRSOrdinalCompletion,
+    BRSOrdinalSuccessorDispatch,
     BRSOrdinalSuccessorError,
     advance_brs_ordinal,
+    claim_brs_successor,
+    dispatch_brs_successor,
 )
+from lunar_evolution.rsi_store import RSILedger
 
 DIGESTS = iter(f"{value:x}" * 64 for value in range(1, 20))
 RUN = "successor-run"
@@ -112,3 +120,228 @@ def test_missing_or_invalid_owner_evidence_refuses(field):
     value[field] = "0" * 64
     with pytest.raises(BRSOrdinalSuccessorError, match=f"{field}_invalid"):
         BRSOrdinalCompletion(**value)
+
+
+def _successor_request() -> tuple[object, SolverRequest]:
+    request = SolverRequest.build(
+        episode_id=f"{RUN}-practice-4-1",
+        contract_sha256="a" * 64,
+        evaluator_sha256="b" * 64,
+        environment_sha256="c" * 64,
+        memory_snapshot_sha256="d" * 64,
+        solver_id="fixture",
+        solver_settings={"iterations": 1},
+        budget={"wall_timeout_seconds": 5},
+        practice_charter={"goal": "successor"},
+    )
+    wire = _wire()
+    wire["intents"][1]["request_sha256"] = request.digest()
+    return preflight_native_brs_child(wire).select_next_pending(), request
+
+
+def test_successor_claim_requires_fresh_owner_checkpoint_and_exact_request(tmp_path):
+    selection, request = _successor_request()
+    assert selection is not None
+    ledger = RSILedger(tmp_path / "successor.sqlite3")
+    with ledger.controller_lock(RUN):
+        head = ledger.write_controller_checkpoint(
+            RUN, {"run_id": RUN, "state": "running"}, expected_sha256=None,
+        )
+        claim = claim_brs_successor(
+            ledger, selection, request, plan_sha256="9" * 64,
+            controller_run_id=RUN, expected_controller_checkpoint_sha256=head,
+        )
+    assert claim.status == "started"
+    assert ledger.inspect_native_episode_claim(request, plan_sha256="9" * 64) == claim
+
+
+def test_successor_claim_refuses_stale_head_and_duplicate_without_new_rows(tmp_path):
+    selection, request = _successor_request()
+    assert selection is not None
+    ledger = RSILedger(tmp_path / "successor-refusal.sqlite3")
+    with ledger.controller_lock(RUN):
+        head = ledger.write_controller_checkpoint(
+            RUN, {"run_id": RUN, "state": "running"}, expected_sha256=None,
+        )
+        with pytest.raises(BRSOrdinalSuccessorError, match="claim_refused"):
+            claim_brs_successor(
+                ledger, selection, request, plan_sha256="9" * 64,
+                controller_run_id=RUN, expected_controller_checkpoint_sha256="f" * 64,
+            )
+        assert ledger.inspect_native_episode_claim(request, plan_sha256="9" * 64) is None
+        claim_brs_successor(
+            ledger, selection, request, plan_sha256="9" * 64,
+            controller_run_id=RUN, expected_controller_checkpoint_sha256=head,
+        )
+        with pytest.raises(BRSOrdinalSuccessorError, match="claim_refused"):
+            claim_brs_successor(
+                ledger, selection, request, plan_sha256="9" * 64,
+                controller_run_id=RUN, expected_controller_checkpoint_sha256=head,
+            )
+
+
+def test_successor_claim_refuses_request_or_selection_drift_before_ledger(tmp_path):
+    selection, request = _successor_request()
+    assert selection is not None
+    ledger = RSILedger(tmp_path / "successor-binding.sqlite3")
+    changed = SolverRequest.build(
+        episode_id=request.episode_id,
+        contract_sha256="e" * 64,
+        evaluator_sha256=request.evaluator_sha256,
+        environment_sha256=request.environment_sha256,
+        memory_snapshot_sha256=request.memory_snapshot_sha256,
+        solver_id=request.solver_id,
+    )
+    with pytest.raises(BRSOrdinalSuccessorError, match="claim_binding_mismatch"):
+        claim_brs_successor(
+            ledger, selection, changed, plan_sha256="9" * 64,
+            controller_run_id=RUN, expected_controller_checkpoint_sha256="8" * 64,
+        )
+
+
+def _dispatch_context(head: str) -> BRSChildHandoffContext:
+    return BRSChildHandoffContext(
+        controller_id="controller-successor",
+        ledger_id="ledger-successor",
+        workspace_id="workspace-successor",
+        sidecar_id="sidecar-successor",
+        owner_thread_id=get_ident(),
+        head_sha256=head,
+        state_sha256="a" * 64,
+        source_sha256="b" * 64,
+        policy_sha256="c" * 64,
+        execution_control_sha256="d" * 64,
+    )
+
+
+def _next_request() -> SolverRequest:
+    return SolverRequest.build(
+        episode_id=f"{RUN}-practice-4-2",
+        contract_sha256="a" * 64,
+        evaluator_sha256="b" * 64,
+        environment_sha256="c" * 64,
+        memory_snapshot_sha256="d" * 64,
+        solver_id="fixture",
+        solver_settings={"iterations": 1},
+        budget={"wall_timeout_seconds": 5},
+        practice_charter={"goal": "successor"},
+    )
+
+
+def test_successor_dispatch_composes_terminal_fresh_handoff_claim_and_callback(tmp_path):
+    _selection, terminal_request = _successor_request()
+    request = _next_request()
+    ledger = RSILedger(tmp_path / "successor-dispatch.sqlite3")
+    calls = []
+    with ledger.controller_lock(RUN):
+        head = ledger.write_controller_checkpoint(
+            RUN, {"run_id": RUN, "state": "running"}, expected_sha256=None,
+        )
+        context = _dispatch_context(head)
+        completion = _completion(request=terminal_request.digest(), ordinal=1)
+        completion = BRSOrdinalCompletion(**(completion.to_dict() | {"verified_head_sha256": head}))
+
+        def dispatch(handoff, dispatched_request, claim):
+            calls.append((handoff, dispatched_request, claim))
+            return {"fixture": "queued"}
+
+        wire = _wire()
+        wire["intents"][1]["request_sha256"] = terminal_request.digest()
+        wire["intents"][2]["request_sha256"] = request.digest()
+        result = dispatch_brs_successor(
+            preflight_native_brs_child(wire), completion, context, request, ledger,
+            plan_sha256="9" * 64, controller_run_id=RUN,
+            expected_controller_checkpoint_sha256=head, dispatch=dispatch,
+        )
+
+    assert isinstance(result, BRSOrdinalSuccessorDispatch)
+    assert result.status == "dispatched"
+    assert result.handoff is not None and result.handoff.ordinal == 2
+    assert result.handoff.lease_nonce not in {"A" * 32, "B" * 32}
+    assert result.claim is not None and result.claim.status == "started"
+    assert result.dispatch_result == {"fixture": "queued"}
+    assert len(calls) == 1 and calls[0][0] is result.handoff
+    assert calls[0][1] == request and calls[0][2] == result.claim
+    assert ledger.inspect_native_episode_claim(request, plan_sha256="9" * 64) == result.claim
+
+
+def test_successor_dispatch_keeps_started_claim_when_provider_free_callback_fails(tmp_path):
+    _selection, terminal_request = _successor_request()
+    request = _next_request()
+    ledger = RSILedger(tmp_path / "successor-dispatch-failed.sqlite3")
+    with ledger.controller_lock(RUN):
+        head = ledger.write_controller_checkpoint(
+            RUN, {"run_id": RUN, "state": "running"}, expected_sha256=None,
+        )
+        context = _dispatch_context(head)
+        completion = BRSOrdinalCompletion(**(_completion(request=terminal_request.digest(), ordinal=1).to_dict()
+                                             | {"verified_head_sha256": head}))
+        wire = _wire()
+        wire["intents"][1]["request_sha256"] = terminal_request.digest()
+        wire["intents"][2]["request_sha256"] = request.digest()
+
+        def dispatch(*_args):
+            raise RuntimeError("fixture callback failure")
+
+        with pytest.raises(BRSOrdinalSuccessorError, match="dispatch_failed"):
+            dispatch_brs_successor(
+                preflight_native_brs_child(wire), completion, context, request, ledger,
+                plan_sha256="9" * 64, controller_run_id=RUN,
+                expected_controller_checkpoint_sha256=head, dispatch=dispatch,
+            )
+
+    assert ledger.inspect_native_episode_claim(request, plan_sha256="9" * 64).status == "started"
+
+
+def test_successor_dispatch_rejects_stale_verified_head_before_claim_or_callback(tmp_path):
+    _selection, terminal_request = _successor_request()
+    request = _next_request()
+    ledger = RSILedger(tmp_path / "successor-dispatch-stale.sqlite3")
+    calls = []
+    with ledger.controller_lock(RUN):
+        head = ledger.write_controller_checkpoint(
+            RUN, {"run_id": RUN, "state": "running"}, expected_sha256=None,
+        )
+        context = _dispatch_context(head)
+        completion = _completion(request=terminal_request.digest(), ordinal=1)
+        wire = _wire()
+        wire["intents"][1]["request_sha256"] = terminal_request.digest()
+        wire["intents"][2]["request_sha256"] = request.digest()
+        with pytest.raises(BRSOrdinalSuccessorError, match="verified_head_mismatch"):
+            dispatch_brs_successor(
+                preflight_native_brs_child(wire), completion, context, request, ledger,
+                plan_sha256="9" * 64, controller_run_id=RUN,
+                expected_controller_checkpoint_sha256=head, dispatch=lambda *_args: calls.append(1),
+            )
+    assert calls == []
+    assert ledger.inspect_native_episode_claim(request, plan_sha256="9" * 64) is None
+
+
+def test_successor_dispatch_reports_wave_complete_without_claim_or_callback(tmp_path):
+    selection, request = _successor_request()
+    assert selection is not None
+    ledger = RSILedger(tmp_path / "successor-dispatch-complete.sqlite3")
+    calls = []
+    with ledger.controller_lock(RUN):
+        head = ledger.write_controller_checkpoint(
+            RUN, {"run_id": RUN, "state": "running"}, expected_sha256=None,
+        )
+        context = _dispatch_context(head)
+        completion = BRSOrdinalCompletion(**(_completion(request=request.digest(), ordinal=1).to_dict()
+                                             | {"verified_head_sha256": head}))
+        wire = _wire(
+            executions=[f"{RUN}-practice-4-0"],
+            budget=_budget(episodes=3, used=1),
+        )
+        # The completion consumes the last intent in this two-intent fixture by
+        # supplying a detached preflight with only two intents.
+        wire["intents"] = wire["intents"][:2]
+        wire["intents"][1]["request_sha256"] = request.digest()
+        result = dispatch_brs_successor(
+            preflight_native_brs_child(wire), completion, context, request, ledger,
+            plan_sha256="9" * 64, controller_run_id=RUN,
+            expected_controller_checkpoint_sha256=head,
+            dispatch=lambda *_args: calls.append(1),
+        )
+    assert result.status == "wave_complete"
+    assert result.handoff is None and result.claim is None and calls == []

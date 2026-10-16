@@ -782,6 +782,86 @@ class RSILedger:
         history = self.controller_checkpoint_history(run_id)
         return history[-1] if history else None
 
+    def controller_brs_reconcile_obligations(self, run_id: str) -> dict[str, Any]:
+        """Read the exact BRS owner obligations from the latest checkpoint.
+
+        This is deliberately a read-only projection.  It does not infer worker
+        liveness and never authorizes a retry or a terminal result.
+        """
+        from .rsi_brs_reconcile import parse_brs_reconcile_obligations
+
+        checkpoint = self.controller_checkpoint(run_id)
+        if checkpoint is None:
+            return {}
+        obligations = parse_brs_reconcile_obligations(checkpoint[1].get("brs_reconcile_obligations"))
+        return {episode_id: obligation.to_dict() for episode_id, obligation in obligations.items()}
+
+    def write_brs_reconcile_obligation(
+        self, run_id: str, obligation: object, *, expected_checkpoint_sha256: str | None,
+    ) -> str:
+        """Persist one owner obligation as an opt-in controller checkpoint delta.
+
+        ``controller_checkpoint_sha256`` on the obligation is the captured parent
+        head.  The method checks that head before writing, so a caller cannot
+        attach an obligation to a refreshed/latest checkpoint.  Replaying the
+        exact same obligation is idempotent and does not append a new checkpoint.
+        """
+        from .rsi_brs_reconcile import (
+            FIELD,
+            BRSReconcileObligation,
+            put_brs_reconcile_obligation,
+            validate_brs_reconcile_obligations,
+        )
+
+        if not isinstance(obligation, BRSReconcileObligation) or obligation.run_id != run_id:
+            raise RSILearningError("rsi_brs_reconcile_obligation_invalid")
+        self._assert_controller_lock(run_id)
+        _digest(expected_checkpoint_sha256, name="brs_reconcile_checkpoint")
+        current = self.controller_checkpoint(run_id)
+        if current is None or current[0] != expected_checkpoint_sha256:
+            raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+        state = json.loads(canonical_json(current[1], maximum=8 * 1024 * 1024))
+        existing = state.get(FIELD, {}).get(obligation.episode_id)
+        if existing is not None and existing == obligation.to_dict():
+            return current[0]
+        if existing is not None:
+            raise RSILearningError("rsi_brs_reconcile_obligation_conflict")
+        put_brs_reconcile_obligation(state, obligation)
+        validate_brs_reconcile_obligations(
+            state, run_id=run_id, checkpoint_sha256=expected_checkpoint_sha256,
+            intents=state.get("intents"),
+        )
+        return self.write_controller_checkpoint(run_id, state, expected_sha256=expected_checkpoint_sha256)
+
+    def remove_brs_reconcile_obligation(
+        self, run_id: str, episode_id: str, *, expected_checkpoint_sha256: str | None,
+        expected_obligation_digest: str | None = None,
+    ) -> str:
+        """Remove one obligation only after an exact owner settlement boundary."""
+        from .rsi_brs_reconcile import (
+            FIELD,
+            parse_brs_reconcile_obligations,
+            remove_brs_reconcile_obligation,
+            validate_brs_reconcile_obligations,
+        )
+
+        self._assert_controller_lock(run_id)
+        _digest(expected_checkpoint_sha256, name="brs_reconcile_checkpoint")
+        current = self.controller_checkpoint(run_id)
+        if current is None or current[0] != expected_checkpoint_sha256:
+            raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+        state = json.loads(canonical_json(current[1], maximum=8 * 1024 * 1024))
+        obligations = parse_brs_reconcile_obligations(state.get(FIELD))
+        if episode_id not in obligations:
+            return current[0]
+        remove_brs_reconcile_obligation(
+            state, episode_id, expected_digest=expected_obligation_digest,
+        )
+        validate_brs_reconcile_obligations(
+            state, run_id=run_id, intents=state.get("intents"),
+        )
+        return self.write_controller_checkpoint(run_id, state, expected_sha256=expected_checkpoint_sha256)
+
     def write_controller_checkpoint(
         self, run_id: str, state: Mapping[str, Any], *, expected_sha256: str | None
     ) -> str:

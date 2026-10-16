@@ -15,6 +15,7 @@ from .rsi_store import RSILedger
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _TERMINAL = frozenset({"failed", "timed_out", "cancelled", "abandoned"})
 _MAX = 128 * 1024
+_RECONCILIATION_SOURCE = "controller-observed-v1"
 
 
 class ExternalWorkerEvidenceError(RSILearningError):
@@ -125,6 +126,60 @@ class ExternalWorkerInspection:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalWorkerReconcileEvidence:
+    """Controller-owned evidence which settles one quarantined ``unknown`` worker.
+
+    The evidence is deliberately narrower than a terminal receipt.  It must name the exact
+    profile and unknown checkpoint being settled, and can only settle to a non-success terminal
+    state after the controller has observed both the terminal process state and cleanup.  This is
+    a local, provider-free binding; ``source`` identifies the protocol boundary but does not
+    authenticate a remote operator or grant distributed ownership.
+    """
+
+    profile_sha256: str
+    unknown_checkpoint_sha256: str
+    status: str
+    terminal_receipt_sha256: str
+    controller_observed_terminal: bool
+    cleanup_confirmed: bool
+    source: str = _RECONCILIATION_SOURCE
+    reason: str = "controller settled quarantined worker"
+
+    def __post_init__(self) -> None:
+        for value, name in ((self.profile_sha256, "profile"),
+                            (self.unknown_checkpoint_sha256, "unknown_checkpoint"),
+                            (self.terminal_receipt_sha256, "terminal_receipt")):
+            if type(value) is not str or _SHA.fullmatch(value) is None:
+                raise ExternalWorkerEvidenceError(f"external_worker_{name}_invalid")
+        if self.status not in _TERMINAL:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_state_invalid")
+        if type(self.controller_observed_terminal) is not bool or type(self.cleanup_confirmed) is not bool:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_observation_invalid")
+        if self.controller_observed_terminal is not True or self.cleanup_confirmed is not True:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_observation_invalid")
+        if self.source != _RECONCILIATION_SOURCE:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_source_invalid")
+        if (type(self.reason) is not str or not self.reason.strip() or len(self.reason) > 512
+                or any(char in self.reason for char in "\x00\r\n")):
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_reason_invalid")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "profile_sha256": self.profile_sha256,
+            "unknown_checkpoint_sha256": self.unknown_checkpoint_sha256,
+            "status": self.status,
+            "terminal_receipt_sha256": self.terminal_receipt_sha256,
+            "controller_observed_terminal": self.controller_observed_terminal,
+            "cleanup_confirmed": self.cleanup_confirmed,
+            "source": self.source,
+            "reason": self.reason,
+        }
+
+    def digest(self) -> str:
+        return hashlib.sha256(canonical_json(self.to_dict(), maximum=_MAX)).hexdigest()
+
+
 class ExternalWorkerEvidenceStore:
     """Append-only worker claim, heartbeat and terminal receipts in the RSI ledger."""
 
@@ -187,8 +242,64 @@ class ExternalWorkerEvidenceStore:
         if terminal is not None and terminal[1]["status"] == "completed":
             terminal_result = terminal[1]["result"]
             self._validate_event(binding, terminal_result["status"], terminal_result)
+            if terminal_result["status"] == "unknown":
+                # A quarantined terminal can only leave quarantine through the separate,
+                # controller-owned reconciliation callback.  The original unknown callback is
+                # retained as the parent checkpoint and is never rewritten in place.
+                reconciliation = self.journal.inspect(
+                    self.scope_id, profile.episode_id + ":unknown-reconcile"
+                )
+                if reconciliation is not None:
+                    reconcile_digest, reconcile_state = reconciliation
+                    if reconcile_state["status"] != "completed":
+                        raise ExternalWorkerEvidenceError("external_worker_reconcile_required")
+                    reconcile_result = reconcile_state["result"]
+                    reconcile_binding = {
+                        **binding,
+                        "unknown_checkpoint_sha256": terminal[0],
+                        "unknown_terminal_receipt_sha256": terminal_result["event"].get(
+                            "terminal_receipt_sha256"
+                        ),
+                        "evidence_sha256": reconcile_result["event"].get("evidence_sha256"),
+                    }
+                    if self.journal.digest(reconcile_state["binding"]) != self.journal.digest(
+                        reconcile_binding
+                    ):
+                        raise ExternalWorkerEvidenceError("external_worker_reconcile_binding_drift")
+                    self._validate_reconciliation_event(
+                        reconcile_binding, reconcile_result
+                    )
+                    return reconcile_digest, reconcile_result
             return terminal[0], terminal_result
         return digest, result
+
+    @staticmethod
+    def _validate_reconciliation_event(
+        binding: Mapping[str, Any], value: Mapping[str, Any]
+    ) -> None:
+        if type(value) is not dict or set(value) != {"status", "event"}:
+            raise ExternalWorkerEvidenceError("external_worker_receipt_invalid")
+        status, event = value["status"], value["event"]
+        if status not in _TERMINAL or type(event) is not dict:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_state_invalid")
+        if event.get("kind") != "unknown-reconcile":
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_event_invalid")
+        if event.get("owner_token_sha256") != binding["profile"]["owner_token_sha256"]:
+            raise ExternalWorkerEvidenceError("external_worker_owner_mismatch")
+        if event.get("status") != status:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_state_invalid")
+        if event.get("controller_observed_terminal") is not True or event.get("cleanup_confirmed") is not True:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_observation_invalid")
+        if event.get("unknown_checkpoint_sha256") != binding.get("unknown_checkpoint_sha256"):
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_checkpoint_conflict")
+        if event.get("unknown_terminal_receipt_sha256") != binding.get("unknown_terminal_receipt_sha256"):
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_checkpoint_conflict")
+        if _SHA.fullmatch(event.get("terminal_receipt_sha256", "")) is None:
+            raise ExternalWorkerEvidenceError("external_worker_terminal_receipt_invalid")
+        if _SHA.fullmatch(event.get("evidence_sha256", "")) is None:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_evidence_invalid")
+        if type(event.get("reason")) is not str or not event["reason"]:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_reason_invalid")
 
     def heartbeat(self, profile: ExternalWorkerTrustProfile, *, checkpoint_sha256: str,
                   heartbeat_sha256: str) -> ExternalWorkerState:
@@ -236,6 +347,78 @@ class ExternalWorkerEvidenceStore:
         assert found is not None
         return ExternalWorkerState(profile, result["status"], 2, result["event"], found[0])
 
+    def reconcile_unknown(
+        self, profile: ExternalWorkerTrustProfile, *, evidence: ExternalWorkerReconcileEvidence
+    ) -> ExternalWorkerState:
+        """Settle an ``unknown`` terminal using an exact controller-owned evidence record.
+
+        This operation appends a new callback after the original unknown terminal.  It never
+        overwrites or reuses the unknown callback, cannot produce ``completed``, and is idempotent
+        only for the exact same evidence binding.  The method is intentionally local: the source
+        marker is a protocol boundary and does not claim remote authentication.
+        """
+        if not isinstance(profile, ExternalWorkerTrustProfile):
+            raise ExternalWorkerEvidenceError("external_worker_profile_invalid")
+        if not isinstance(evidence, ExternalWorkerReconcileEvidence):
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_evidence_invalid")
+        if evidence.profile_sha256 != profile.digest():
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_profile_drift")
+        current_sha, current = self._state(profile)
+        if current["status"] in _TERMINAL:
+            replay = self.journal.inspect(self.scope_id, profile.episode_id + ":unknown-reconcile")
+            if replay is None or replay[1]["status"] != "completed":
+                raise ExternalWorkerEvidenceError("external_worker_reconcile_not_required")
+            event = replay[1]["result"].get("event", {})
+            if event.get("evidence_sha256") != evidence.digest():
+                raise ExternalWorkerEvidenceError("external_worker_reconcile_conflict")
+            return ExternalWorkerState(profile, current["status"], 3, current["event"], current_sha)
+        if current["status"] != "unknown":
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_not_required")
+        terminal = self.journal.inspect(self.scope_id, profile.episode_id + ":terminal")
+        if terminal is None or terminal[1]["status"] != "completed":
+            raise ExternalWorkerEvidenceError("external_worker_terminal_corrupt")
+        terminal_result = terminal[1]["result"]
+        self._validate_event(self._binding(profile), terminal_result["status"], terminal_result)
+        if terminal_result["status"] != "unknown" or current_sha != terminal[0]:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_not_required")
+        if evidence.unknown_checkpoint_sha256 != terminal[0]:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_checkpoint_conflict")
+        if evidence.terminal_receipt_sha256 == terminal_result["event"].get("terminal_receipt_sha256"):
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_receipt_conflict")
+        binding = {
+            **self._binding(profile),
+            "unknown_checkpoint_sha256": terminal[0],
+            "unknown_terminal_receipt_sha256": terminal_result["event"].get(
+                "terminal_receipt_sha256"
+            ),
+            "evidence_sha256": evidence.digest(),
+        }
+        event = {
+            "kind": "unknown-reconcile",
+            "status": evidence.status,
+            "terminal_receipt_sha256": evidence.terminal_receipt_sha256,
+            "unknown_checkpoint_sha256": terminal[0],
+            "unknown_terminal_receipt_sha256": terminal_result["event"].get(
+                "terminal_receipt_sha256"
+            ),
+            "evidence_sha256": evidence.digest(),
+            "controller_observed_terminal": True,
+            "cleanup_confirmed": True,
+            "owner_token_sha256": profile.owner_token_sha256,
+            "reason": evidence.reason,
+        }
+        result = self.journal.invoke(
+            self.scope_id,
+            profile.episode_id + ":unknown-reconcile",
+            binding=binding,
+            call=lambda: {"status": evidence.status, "event": event},
+            validate=lambda value: self._validate_reconciliation_event(binding, value),
+        )
+        found = self.journal.inspect(self.scope_id, profile.episode_id + ":unknown-reconcile")
+        if found is None:
+            raise ExternalWorkerEvidenceError("external_worker_reconcile_missing")
+        return ExternalWorkerState(profile, result["status"], 3, result["event"], found[0])
+
     def inspect(self, profile: ExternalWorkerTrustProfile) -> ExternalWorkerState:
         _digest, current = self._state(profile)
         return ExternalWorkerState(profile, current["status"], 0, current["event"], _digest)
@@ -258,22 +441,12 @@ class ExternalWorkerEvidenceStore:
         binding = self._binding(profile)
         if self.journal.digest(claim_state["binding"]) != self.journal.digest(binding):
             raise ExternalWorkerEvidenceError("external_worker_profile_drift")
-        claim_result = None
         if claim_state["status"] == "completed":
             claim_result = claim_state["result"]
             self._validate_event(binding, claim_result["status"], claim_result)
-        terminal = self.journal.inspect(self.scope_id, profile.episode_id + ":terminal")
-        latest_digest = claim_digest
-        status = "running" if claim_result is None else claim_result["status"]
-        event: Mapping[str, Any] = claim_result["event"] if claim_result else {}
-        if terminal is not None:
-            latest_digest, terminal_state = terminal
-            if terminal_state["status"] != "completed":
-                raise ExternalWorkerEvidenceError("external_worker_terminal_corrupt")
-            terminal_result = terminal_state["result"]
-            self._validate_event(binding, terminal_result["status"], terminal_result)
-            status = terminal_result["status"]
-            event = terminal_result["event"]
+        latest_digest, current = self._state(profile)
+        status = current["status"]
+        event: Mapping[str, Any] = current["event"] if status != "running" else {}
         return ExternalWorkerInspection(
             profile_sha256=profile.digest(),
             status=status,
@@ -303,5 +476,5 @@ class ExternalWorkerEvidenceStore:
 
 __all__ = [
     "ExternalWorkerEvidenceError", "ExternalWorkerEvidenceStore", "ExternalWorkerInspection",
-    "ExternalWorkerState", "ExternalWorkerTrustProfile",
+    "ExternalWorkerReconcileEvidence", "ExternalWorkerState", "ExternalWorkerTrustProfile",
 ]

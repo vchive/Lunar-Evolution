@@ -1,4 +1,20 @@
-# Current release backlog — 2026-10-16
+# Current release backlog — 2026-10-17
+
+## 2026-10-17：BRS durable reconcile obligation 基础层（PR113 候选）
+
+当前集成候选 `4c86fe0` 基于 `main` 的 `a8996a3`，尚未合入主分支。本轮已完成
+BRS durable reconcile obligation 的最小持久化基础层：controller checkpoint 可以在锁内
+原子登记、读取、校验、幂等重放和按 obligation digest 删除 owner obligation。记录固定
+run/episode/request/native-plan/checkpoint/episode-record 指纹，并校验 phase、mailbox、
+transaction、worker profile 和终止状态；缺失、冲突、漂移或未知状态均拒绝继续。
+
+该基础层是显式 opt-in 的 recovery fence，**不等于 controller online reconcile 已接通**。
+当前 `_drive_brs()`、`resume()` 和默认调度路径不会自动消费 obligation、探测 worker/process/
+mailbox/result evidence 或推进 phase；也不会把 `unknown` 推断为成功。下一步 P1 需要把
+obligation 接到 selected handoff 前后的 controller checkpoint，并实现显式
+`reconcile_brs_selected`，只在完整 process/native/mailbox/result evidence 通过后推进或
+结算。对应 focused obligation 回归为 9/9，当前核心 provider-free focused 组合为 88 项
+通过；这些本地结果不替代 PR113 的完整 CI、来源审计和合入。
 
 ## 本轮后继开发状态
 
@@ -12,11 +28,14 @@ staged/precommit/terminal高层接口候选`7a21ed8`已完成静态独审；PB-0
 私有transaction dispatch已在当前候选实现（SDD：Feature196
 `private-native-dispatch.md`）。当前候选的15/15 native-dispatch、37/37
 owner-lineage、30/30 transaction-control和17/17 staging-compatibility均通过，
-确定性 latency fixture 已合入，Ruff/compileall/diff-check通过。完整owner
-transaction、controller/mailbox service、拒绝C1/P/C2、独立
-result delivery/settlement、reconcile、连续ordinal与policy/memory仍开放。
-冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109)的完整33-job CI、
-actual checkout/source/import/raw独审和main合并是独立P0，后继不追加或取消其来源。
+确定性 latency fixture 已合入，Ruff/compileall/diff-check通过。当前 P1 集成分支又接入
+私有 owner/mailbox composition、exact result delivery/one-shot settlement、本机
+process/workspace reconcile evidence、serial successor 的 fresh handoff/claim/dispatch、
+rejection C1/P/C2 adapter、policy/memory shadow gate，以及 BRS durable obligation 持久化基础层；
+完整 owner transaction、controller-level online reconcile 与真实 runtime 仍开放。
+当前 [PR113](https://github.com/vchive/Lunar-Evolution/pull/113) 候选的完整 33-job CI、
+actual checkout/source/import/raw/tree 独审和 main 合并是 P0 出口；不要把本地 focused
+结果或旧 PR 的来源当成该候选的最终验收。
 公开native BRS、online publication与production admission仍关闭。详见HANDOFF最新条目。
 
 ## 2026-10-16：私有成功检查点与证据转换
@@ -30,12 +49,15 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 当前优先级：
 
-- P0：PB-03h 候选的 72-case provider-free 回归与 source/import/XML/nodeid/tree 独审已完成，
-  当前只剩新 PR 的完整 CI 与 main 合并；冻结 PR109 不修改、不取消、不追加提交。
-- P1：staged/precommit/terminal 高层接口、原 transaction owner dispatch、controller/
-  mailbox service、rejection C1/P/C2、独立 return/settlement；再接 reconcile、serial
-  successor 与 policy/memory。retained reader、prepared pin 已完成顶部所列后继验收；
-  已具备的私有接口和检查点仍不等于完整在线执行链路已接通。
+- P0：当前 PR113 候选的 PB-03h 及 durable-obligation provider-free focused 回归和
+  source/import/XML/nodeid/tree 审计已完成；当前只剩该 PR 的完整 CI 与 main 合并。
+- P1：当前分支已完成私有 owner/mailbox composition、exact result delivery/settlement、
+  本机 process/workspace evidence、serial successor dispatch、rejection C1/P/C2 adapter、
+  policy/memory shadow gate 和 durable obligation 持久化基础层的 provider-free 最小切片；
+  仍需把 obligation 接入 controller selected handoff 前后的 checkpoint，并完成显式
+  online reconcile（含完整 process/native/mailbox/result evidence）以及真实 runtime/
+  producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继验收；这些私有接口
+  仍不等于公开 native BRS 或生产 admission 已开启。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
   生产 CLI/Linux acceptance 仍按原独立范围开放，本轮不运行真实目标来替代验收设计。
 - P2：外部认证、多机 ownership、分布式调度/服务化继续后置。
@@ -51,7 +73,12 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 
 ## 当前状态与本轮出口
 
-2026-10-16 最新检查点：main 已合入 PR109，当前为 `319c8ab79805031a724d0964ebd497c16359753c`。P0 当前出口改为顶部说明的
+2026-10-17 最新检查点：main 已合入 PR112，当前为 `a8996a3c94f5b07873e39e28c3ebff3953d1fa6c`；PR113 候选 HEAD 为
+`4c86fe0`。本轮已完成 BRS durable reconcile obligation 持久化基础层，但 controller online
+reconcile 仍未接通；P0 是 PR113 的完整 CI、来源审计与合入，P1 是显式 online reconcile
+以及真实 runtime/producer/CLI 验收。以下 2026-10-16 内容保留为当时来源记录：
+
+2026-10-16 检查点：main 已合入 PR109，当前为 `319c8ab79805031a724d0964ebd497c16359753c`。P0 当前出口改为顶部说明的
 base-main 统一后继；它包含 PR103/105/106/107/108 的真实 Git 祖先，并须验收自己
 最终 head 的完整 33-job、actual merge/source/import/raw 证据后合入。
 PR103 `935ab57` 的 [CI 38752535974](https://github.com/vchive/Lunar-Evolution/actions/runs/38752535974)
@@ -172,7 +199,7 @@ transaction 和 rejection C1/P/C2 continuation 交给原 owner；不能等 compl
 | 工作 | 当前边界 | 结束条件 |
 | --- | --- | --- |
 | BRS partial-wave durable resume | 已在 PR101 集成树接入 completed-obligation 与 pending-dispatch 分离、锁外 replay callback 和 exact identity/head 复核；347 个本地 cases、789 文件 source map、Ruff/compileall/diff-check 已通过。仍不授予 completed child 新 token，也不启用 native multi-child。 | 随顶部统一后继完成最终 integrated source/CI/audit 和合入；产品行为保持 provider-free。 |
-| Native 多 child BRS | provider-free BRS 和单 Python child ready/ack 已存在；PR102 提供 detached handoff/channel，PR104 私有 selected owner service 已通过 175 个 provider-free focused cases（104 existing + 13 ACK + 30 handoff + 28 service），含锁、预算、指纹、结果和 durable ACK 边界；本分支已新增私有 owner 对本次 service 返回结果的 checkpoint CAS/完整读回，最终 callback hardening 整合来源的 360 cases、全仓静态及独立 raw/source/install/exit 审计已通过，已包含于顶部统一候选但尚未合入 main。此切片不包含 publication 或 sibling transition；公共 native BRS 仍未启用。 | 按 [Feature196](../specs/196-brs-owner-worker-handoff/spec.md) 接通 selected child staging/claim、原 owner/CAS、ready/ack、串行 publication 与完整中断验收；完成最终来源 CI 与独立审计。 |
+| Native 多 child BRS | provider-free BRS、ready/ack、owner CAS、私有 owner/mailbox composition、exact result delivery/settlement、serial successor claim/dispatch 与本机 process/workspace evidence 已在当前集成分支接线；focused slices 及静态检查通过，尚未合入 main。此切片仍保持 public native BRS 与 production admission 关闭。 | 按 [Feature196](../specs/196-brs-owner-worker-handoff/spec.md) 接通 rejection C1/P/C2、完整 durable recovery、policy/memory 与中断验收；完成最终来源 CI、独立审计并合入 main。 |
 | 真实 Python runtime | bounded source/build/runtime contracts 和原 executable owner 已存在；真实 source/toolchain/static image/sealed startup 未验收。 | 完成下表 G0–G3/F01–F05 的真实 bytes、构建 closure、startup/input/lifecycle 和 dedicated Linux no-skip evidence。 |
 | 本地 OpenEvolve/Shinka 与生产用 RSI CLI | adapter、bounded result exporter、native scheduler/claim/receipt mapper 和单 episode 组合已存在。当前 `rsi run` / `rsi resume` solver 选项仍是 `provider_free_fixture`。 | 至少一个实际 project profile/lifecycle 在 accepted runtime 下验收，opt-in CLI 消费原 request/memory/result/publication 证据，支持取消和只读恢复；不会落入 fixture gateway。 |
 

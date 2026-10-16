@@ -25,3 +25,4 @@ T169-08 的 bootstrap-only 分类不足，T169-09 本地修正完成，当前分
 所有 trusted status 都以完整 trusted-local receipts 为前提；不等于外部项目身份认证。
 
 真实外部 worker 来源认证、远程/多机 ownership lease、官方远程 evaluator、真实 OpenEvolve/Shinka campaign 不属于本地完成声明。
+- [x] T169-10 增加本机只读 process/workspace evidence adapter：重新检查 PID/PGID/start identity 与 workspace/transport/journal device+inode；仅在进程组消失且所有对象匹配时生成失败类 unknown reconcile evidence，权限/漂移/缺失保持 fail-closed。远程认证、多机 ownership 和真实 worker campaign 仍不在范围内。

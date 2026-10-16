@@ -1,9 +1,10 @@
-# 当前状态（2026-10-16，主线已更新）
+# 当前状态（2026-10-17，PR113 P1 集成候选）
 
-- `main` 已合入 PR109，当前 merge commit 为 `319c8ab79805031a724d0964ebd497c16359753c`；PR109 的 33 个 CI job 已成功。
-- 当前后继候选基于完整 `219536d` 与 main 合并，另含 PB-03h 私有原生 BRS dispatch 及 PB-03i owner-thread native-result CAS；公开 native BRS、`online_publication=false`、`production_admission=false` 仍保持关闭。
-- PB-03h 的本轮 72-case provider-free focused 回归及 raw/source/import/XML/tree 审计已记录在 `specs/196-brs-owner-worker-handoff/pb03h-integrated-audit.md`；当前 PR112 仍需完成自己的三版本 CI 后才能合入 main。PB-03i 的 owner-result CAS 保护包含在同一候选中。
-- P1 仍开放：完整在线 owner/mailbox composition、rejection C1/P/C2、unknown reconcile、serial successor、policy/memory，以及真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
+- 当前集成工作树为 `/private/tmp/lunar-p1-integration`，分支为 `codex/p1-integration`，候选 HEAD 为 `4c86fe0`；它以 `main` 基线 `a8996a3`（PR112 merge）为起点，当前尚未合入 `main`。
+- 本轮新增 BRS durable reconcile obligation 基础层：controller checkpoint 中可原子地登记、读取、校验、幂等重放和按 digest 删除 owner obligation；obligation 固定 run/episode/request/plan/checkpoint/record 指纹，并约束 mailbox、transaction、phase 与终止状态。对应 focused obligation 回归为 9/9，核心 provider-free focused 组合为 88 项通过。
+- 这只是显式 opt-in 的 durable recovery fence。controller 的在线 reconcile 仍未接通：`_drive_brs()`、`resume()` 和默认调度路径不会自动消费 obligation、探测 worker/process/mailbox 或推进 phase；`unknown` 仍不会被推断为成功。下一步必须在 selected handoff 前后接入 controller checkpoint，并以完整 process/native/mailbox/result evidence 实现显式 `reconcile_brs_selected`。
+- 当前候选同时保留 PB-03h 私有 native dispatch、owner/mailbox composition、exact result delivery/settlement、serial successor、rejection C1/P/C2 adapter、policy/memory shadow gate 和本机 process/workspace evidence；公开 native BRS、`online_publication=false`、`production_admission=false` 仍保持关闭。
+- P0 是当前候选自己的完整 CI、actual checkout/source/import/raw/tree 审计和 PR113 合入；P1 仍开放 controller-level online reconcile 以及真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI 验收。
 - P2（远程 evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）继续后置。仅使用本地 inert/provider-free fixture，不运行 WebAgent、远程 evaluator 或真实 campaign。
 
 以下旧条目保留为历史交接证据，不能覆盖上述当前状态。
@@ -8277,3 +8278,31 @@ authoritative result handoff and durable publication/recovery remain open.
 本轮本地验证：新增 resume matrix 13/13、preclaim 三个 focused case 通过；全仓 Ruff、compileall、`git diff --check` 通过，README 相对链接存在。GitHub main CI 的历史 run `38426186975` 长时间卡在 in-progress，后续 push 已触发新的 run；在 GitHub API 恢复前不能把主线 CI 写成全绿。
 
 下一项 P0 仍是受 runtime acceptance 约束的 claim → producer execution → receipt/publication/recovery 接线。当前 ready entry 继续 fail-closed，不能把只读 preclaim 当成真实 producer dispatch。真实 CPython/toolchain/sealed runtime、OpenEvolve/Shinka process lifecycle 和生产 CLI 仍是 P1；remote evaluator、external worker authentication、多机 ownership、distributed scheduler 和 service API 仍是 P2。
+# 当前集成状态（2026-10-16，P1 并行切片）
+
+- `main` 的已合入基线为 `a8996a3`；当前 P1 集成分支为
+  `codex/p1-integration`，尚未创建新 PR，也未合入 `main`。
+- 已在该分支完成并通过 provider-free focused 回归：
+  - PB-03 私有 owner/mailbox composition；
+  - exact owner-result delivery 与一次性 settlement（callback 失败固定为 unknown，禁止重试）；
+  - PB-04 本机 process/workspace evidence adapter（PID/PGID/start identity 与
+    workspace/transport/journal device+inode 只读核验）；
+  - PB-05 serial successor 的 terminal verified-head → fresh handoff → guarded claim
+    → bounded dispatch 生命周期。
+  - PB-06 policy/memory composition：publication 与 memory admission 分离，只有独立
+    verifier、snapshot lineage 和 compatibility pins 满足时才生成 shadow admission；
+    不直接激活 memory。
+  - rejection C1 → provenance P → C2 私有 adapter：复用原 lineage owner 的 C1/C2 CAS、
+    create-only provenance 和精确 file pin/readback；不打开 native BRS。
+- 当前分支新增提交：`69d0c8c`、`195c691`、`a192a48`、`1742356`、`afa82a0`、
+  `508e0a2`、`2a824c0`、`9254cbb`、`667a985`、`f50831f`、`01bbe7e`。combined
+  focused 88 cases 通过，Ruff、compileall、
+  `git diff --check` 通过。
+- 这些切片仍保持 `online_publication=false`、`production_admission=false`，不启动真实
+  producer、模型、WebAgent、远程 evaluator 或公司评测平台。它们是私有接线原语，不代表
+  公开 native BRS、真实 OpenEvolve/Shinka runtime 或生产 CLI 已验收。
+- 仍开放的 P1：controller-level durable reconcile 的完整在线接线、真实 CPython/source/
+  toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 与生产 Linux CLI acceptance。
+  当前两个 rejection/policy slices 仍是私有 provider-free composition，不是完整在线
+  publication 或 production admission。P2 的 remote evaluator、外部
+  worker authentication、多机 ownership、分布式 scheduler/service API 继续后置。
