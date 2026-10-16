@@ -14,8 +14,9 @@ staged/precommit/terminal高层接口候选`7a21ed8`已完成静态独审；PB-0
 owner-lineage、30/30 transaction-control和17/17 staging-compatibility均通过，
 确定性 latency fixture 已合入，Ruff/compileall/diff-check通过。当前 P1 集成分支又接入
 私有 owner/mailbox composition、exact result delivery/one-shot settlement、本机
-process/workspace reconcile evidence，以及 serial successor 的 fresh handoff/claim/dispatch；
-完整 owner transaction、拒绝 C1/P/C2、durable reconcile 与 policy/memory 仍开放。
+process/workspace reconcile evidence、serial successor 的 fresh handoff/claim/dispatch、
+rejection C1/P/C2 adapter 和 policy/memory shadow gate；完整 owner transaction、controller-
+level durable reconcile 与真实 runtime 仍开放。
 冻结 [PR109](https://github.com/vchive/Lunar-Evolution/pull/109)的完整33-job CI、
 actual checkout/source/import/raw独审和main合并是独立P0，后继不追加或取消其来源。
 公开native BRS、online publication与production admission仍关闭。详见HANDOFF最新条目。
@@ -34,10 +35,10 @@ Mac 的179/143两组使用Python3.11/3.13，Linux各自为隔离Python3.12；具
 - P0：PB-03h 候选的 72-case provider-free 回归与 source/import/XML/nodeid/tree 独审已完成，
   当前只剩新 PR 的完整 CI 与 main 合并；冻结 PR109 不修改、不取消、不追加提交。
 - P1：当前分支已完成私有 owner/mailbox composition、exact result delivery/settlement、
-  本机 process/workspace evidence 和 serial successor dispatch 的 provider-free 最小切片；
-  仍需接 rejection C1/P/C2、完整 durable reconcile、policy/memory，以及真实 runtime/
-  producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继验收；这些私有接口
-  仍不等于公开 native BRS 或生产 admission 已开启。
+  本机 process/workspace evidence、serial successor dispatch、rejection C1/P/C2 adapter
+  和 policy/memory shadow gate 的 provider-free 最小切片；仍需接完整 durable reconcile，
+  以及真实 runtime/producer/CLI 验收。retained reader、prepared pin 已完成顶部所列后继
+  验收；这些私有接口仍不等于公开 native BRS 或生产 admission 已开启。
 - P1：真实来源/工具链、sealed runtime、OpenEvolve/Shinka project lifecycle 和
   生产 CLI/Linux acceptance 仍按原独立范围开放，本轮不运行真实目标来替代验收设计。
 - P2：外部认证、多机 ownership、分布式调度/服务化继续后置。

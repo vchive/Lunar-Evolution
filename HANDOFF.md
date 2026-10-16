@@ -8288,13 +8288,20 @@ authoritative result handoff and durable publication/recovery remain open.
     workspace/transport/journal device+inode 只读核验）；
   - PB-05 serial successor 的 terminal verified-head → fresh handoff → guarded claim
     → bounded dispatch 生命周期。
+  - PB-06 policy/memory composition：publication 与 memory admission 分离，只有独立
+    verifier、snapshot lineage 和 compatibility pins 满足时才生成 shadow admission；
+    不直接激活 memory。
+  - rejection C1 → provenance P → C2 私有 adapter：复用原 lineage owner 的 C1/C2 CAS、
+    create-only provenance 和精确 file pin/readback；不打开 native BRS。
 - 当前分支新增提交：`69d0c8c`、`195c691`、`a192a48`、`1742356`、`afa82a0`、
-  `508e0a2`、`2a824c0`、`9254cbb`。combined focused 66 cases 通过，Ruff、compileall、
+  `508e0a2`、`2a824c0`、`9254cbb`、`667a985`、`f50831f`、`01bbe7e`。combined
+  focused 88 cases 通过，Ruff、compileall、
   `git diff --check` 通过。
 - 这些切片仍保持 `online_publication=false`、`production_admission=false`，不启动真实
   producer、模型、WebAgent、远程 evaluator 或公司评测平台。它们是私有接线原语，不代表
   公开 native BRS、真实 OpenEvolve/Shinka runtime 或生产 CLI 已验收。
-- 仍开放的 P1：rejection C1 → provenance P → C2、controller-level durable reconcile
-  的完整在线接线、policy/memory composition、真实 CPython/source/toolchain/sealed runtime、
-  OpenEvolve/Shinka lifecycle 与生产 Linux CLI acceptance。P2 的 remote evaluator、外部
+- 仍开放的 P1：controller-level durable reconcile 的完整在线接线、真实 CPython/source/
+  toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 与生产 Linux CLI acceptance。
+  当前两个 rejection/policy slices 仍是私有 provider-free composition，不是完整在线
+  publication 或 production admission。P2 的 remote evaluator、外部
   worker authentication、多机 ownership、分布式 scheduler/service API 继续后置。
