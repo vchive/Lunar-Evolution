@@ -833,6 +833,93 @@ class RSILedger:
         )
         return self.write_controller_checkpoint(run_id, state, expected_sha256=expected_checkpoint_sha256)
 
+    def apply_brs_reconcile_decision(
+        self, run_id: str, episode_id: str, decision: object, *,
+        expected_checkpoint_sha256: str, evidence: object,
+    ) -> str:
+        """Apply one explicit BRS reconcile decision under the controller lock.
+
+        ``reconcile_brs_selected`` remains a pure audit facade.  This opt-in helper is the
+        controller-owned persistence boundary: it re-runs that facade against the exact
+        obligation currently stored at ``expected_checkpoint_sha256``, then appends at most one
+        adjacent obligation phase using the checkpoint hash as a compare-and-swap pin.  Caller
+        supplied decisions or evidence are never trusted on their own.  Manual review leaves the
+        checkpoint untouched; drift is rejected.
+        """
+        from .rsi_brs_reconcile import (
+            FIELD,
+            BRSReconcileDecision,
+            BRSReconcileEvidence,
+            BRSReconcileObligation,
+            parse_brs_reconcile_obligations,
+            reconcile_brs_selected,
+            validate_brs_reconcile_obligations,
+        )
+
+        _id(run_id, name="run_id")
+        _id(episode_id, name="episode_id")
+        _digest(expected_checkpoint_sha256, name="brs_reconcile_checkpoint")
+        if not isinstance(decision, BRSReconcileDecision):
+            raise RSILearningError("rsi_brs_reconcile_decision_invalid")
+        if not isinstance(evidence, BRSReconcileEvidence):
+            raise RSILearningError("rsi_brs_reconcile_evidence_required")
+        self._assert_controller_lock(run_id)
+        current = self.controller_checkpoint(run_id)
+        if current is None or current[0] != expected_checkpoint_sha256:
+            raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+        state = json.loads(canonical_json(current[1], maximum=8 * 1024 * 1024))
+        if state.get("run_id") != run_id:
+            raise RSILearningError("rsi_brs_reconcile_run_binding_invalid")
+        obligations = parse_brs_reconcile_obligations(state.get(FIELD))
+        obligation = obligations.get(episode_id)
+        if not isinstance(obligation, BRSReconcileObligation):
+            raise RSILearningError("rsi_brs_reconcile_obligation_missing")
+        if decision.obligation_sha256 != obligation.digest():
+            raise RSILearningError("rsi_brs_reconcile_decision_binding_conflict")
+        if decision.evidence_sha256 != evidence.digest():
+            raise RSILearningError("rsi_brs_reconcile_decision_evidence_conflict")
+        observed = reconcile_brs_selected(obligation, evidence)
+        if observed.to_dict() != decision.to_dict():
+            raise RSILearningError("rsi_brs_reconcile_decision_conflict")
+        if observed.outcome == "drifted":
+            raise RSILearningError("rsi_brs_reconcile_drifted")
+        # A manual-review decision is deliberately retained as a read-only gate.  In particular,
+        # it cannot manufacture the terminal_status required by the reconcile_required phase.
+        if observed.outcome == "manual_review":
+            return current[0]
+        target = observed.recommended_phase
+        if target == obligation.phase:
+            return current[0]
+        if observed.outcome not in {"recoverable", "already_terminal", "abandoned"}:
+            raise RSILearningError("rsi_brs_reconcile_outcome_invalid")
+        kwargs: dict[str, Any] = {
+            "mailbox_state": evidence.mailbox_state,
+            "transaction_state": evidence.transaction_state,
+            "terminal_status": evidence.terminal_status,
+        }
+        if target == "settled":
+            # The obligation schema requires a settled transaction for the settled phase.
+            kwargs["transaction_state"] = "settled"
+        advanced = obligation.advance(target, **kwargs)
+        state[FIELD][episode_id] = advanced.to_dict()
+        validate_brs_reconcile_obligations(
+            state, run_id=run_id, intents=state.get("intents"),
+        )
+        self._assert_controller_lock(run_id)
+        return self.write_controller_checkpoint(
+            run_id, state, expected_sha256=expected_checkpoint_sha256,
+        )
+
+    def reconcile_brs_selected(
+        self, run_id: str, episode_id: str, decision: object, *,
+        expected_checkpoint_sha256: str, evidence: object,
+    ) -> str:
+        """Alias for :meth:`apply_brs_reconcile_decision` for controller callers."""
+        return self.apply_brs_reconcile_decision(
+            run_id, episode_id, decision,
+            expected_checkpoint_sha256=expected_checkpoint_sha256, evidence=evidence,
+        )
+
     def remove_brs_reconcile_obligation(
         self, run_id: str, episode_id: str, *, expected_checkpoint_sha256: str | None,
         expected_obligation_digest: str | None = None,
