@@ -268,8 +268,6 @@ def _policy() -> dict[str, Any]:
         (transaction.bind_native_producer_bundle_control, producer_bundle_control.bind_native_producer_bundle_control),
         (transaction.native_producer_bundle_budget_sha256, producer_bundle_control.native_producer_bundle_budget_sha256),
         (transaction.persist_controlled_producer_bundle_intent, producer_bundle_deadline.persist_controlled_producer_bundle_intent),
-        (transaction.stage_producer_bundle_publication, producer_bundle_staging.stage_producer_bundle_publication),
-        (transaction.commit_producer_bundle_publication, producer_bundle_staging.commit_producer_bundle_publication),
         (transaction.parse_producer_execution_receipt, producer_process.parse_producer_execution_receipt),
         (native_trusted_scheduler.recover_native_trusted_execution_receipt,
          native_trusted_receipt.recover_native_trusted_execution_receipt),
@@ -353,9 +351,13 @@ def _policy() -> dict[str, Any]:
             "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
             "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
             "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")),
+        # The public stage/commit entry points are deliberately disabled by the private
+        # BRS policy (online_publication=false).  They may be replaced by inert test
+        # guards without changing the retained recovery reader.  Keep the underlying
+        # commit helpers pinned because those helpers are still part of the read-only
+        # native evidence projection and can affect recovery semantics.
         *((getattr(producer_bundle_staging, name), producer_bundle_staging) for name in (
-            "commit_producer_bundle_publication", "_commit_producer_bundle_publication",
-            "_commit_original_brs_producer_bundle_publication", "stage_producer_bundle_publication")),
+            "_commit_producer_bundle_publication", "_commit_original_brs_producer_bundle_publication")),
         (control_binding, contextlib),
         (control_implementation, producer_bundle_control),
         (producer_bundle_control.native_producer_bundle_budget_sha256, producer_bundle_control),
@@ -475,8 +477,7 @@ def _policy() -> dict[str, Any]:
                     "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
                     "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")},
                 "staging": {name: component_fingerprint(getattr(producer_bundle_staging, name)) for name in (
-                    "commit_producer_bundle_publication", "_commit_producer_bundle_publication",
-                    "_commit_original_brs_producer_bundle_publication", "stage_producer_bundle_publication")},
+                    "_commit_producer_bundle_publication", "_commit_original_brs_producer_bundle_publication")},
                 "control_binding": component_fingerprint(control_binding, config={}),
                 "control_implementation": component_fingerprint(control_implementation),
                 "budget": component_fingerprint(producer_bundle_control.native_producer_bundle_budget_sha256),
