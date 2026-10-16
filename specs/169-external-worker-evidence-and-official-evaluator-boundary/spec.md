@@ -21,3 +21,15 @@ Feature 160 已完成本地 native RSI 的 request/memory/plan、candidate、exe
 ## Non-goals
 
 本 feature 不启动真实 OpenEvolve/Shinka campaign、不访问远程 evaluator、不提供分布式 lease、不增加自动后台 scheduler，也不把模型分数直接写入 memory。
+
+## 本机 process/workspace evidence adapter（P1 窄接线）
+
+`external_worker_process_evidence.py` 提供只读的本机 `observe_local_worker()`。它重新读取
+claim 中的 PID/PGID/start identity，并用当前主机的进程接口核对精确进程和私有进程组；同时用
+`lstat` 比较 workspace、transport、journal 的设备号/inode，拒绝符号链接替换。只有 PID 已退出、
+进程组也已消失、三处对象仍匹配时，观察结果才允许通过 `reconcile_evidence()` 绑定到失败、取消、
+超时或放弃收据。
+
+该适配器不会发信号、启动 worker、把权限错误当作退出、或提供远程来源认证。进程身份不可读、
+进程组 probe 被拒绝、对象缺失或指纹漂移都会保留为 `unknown`/`drifted`，不得生成 reconcile
+证据。它只证明一次本机观察，不能推导多机 ownership、exactly-once 或官方 evaluator 结果。
