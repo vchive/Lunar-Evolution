@@ -5350,6 +5350,36 @@ class RSILearningController:
                 )
         return results
 
+    def reconcile_brs_terminal(
+        self, run_id: str, episode_id: str, *, workspace, native_plan,
+        intent=None, attestation=None, artifact=None,
+    ) -> dict:
+        """Freshly observe independent terminal evidence, then explicitly consume.
+
+        A caller supplies original native contexts, never a ready report or cleanup
+        flags. Incomplete observations remain read-only. The existing consume checks
+        every ledger source pin again inside its removal/CAS transaction.
+        """
+        from .rsi_brs_terminal_evidence import _compose_brs_terminal_evidence
+
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        with self.ledger.controller_lock(run_id):
+            if self.ledger.get_run(run_id) is None:
+                raise RSILearningError("rsi_run_missing")
+            report, evidence, pins = _compose_brs_terminal_evidence(
+                self.ledger, run_id, episode_id, workspace=workspace, native_plan=native_plan,
+                intent=intent, attestation=attestation, artifact=artifact,
+            )
+            consumption = None
+            if report["status"] == "ready" and evidence is not None and pins is not None:
+                consumption = self.ledger._consume_brs_reconcile_obligation(
+                    run_id, episode_id, evidence, expected_pins=pins,
+                )
+            return {"observation": report, "consumption": consumption}
+
     def _resume_locked(self, run_id: str, *, now: object | None = None,
                        observed_fingerprints: Mapping[str, Any] | None = None,
                        budget_policy: Mapping[str, Any] | None = None) -> LearningRunResult:

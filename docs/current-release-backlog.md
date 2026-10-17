@@ -1,5 +1,24 @@
 # Current release backlog — 2026-10-17
 
+## 当前后继：独立终态恢复证据
+
+- P0：PR123–126 的完整 CI 和依赖顺序合入。PR126 冻结 `74a3f52` 已通过
+  macOS/Linux 各相同561项 scoped 验证和独审；最新完整33项 CI仍全部排队。
+- P1（本轮）：独立 callback/worker terminal 持久观察、callback 前 durable ACK、
+  只读独立证据组合，以及显式 fresh-compose + 同事务 source pins consume。
+  契约见 [terminal-recovery-evidence.md](../specs/196-brs-owner-worker-handoff/terminal-recovery-evidence.md)。
+  代码和组件回归已完成；冻结来源的双平台验收及独审单独记录在对应PR和ignored
+  validation原始材料。本提交不提前宣称完整CI或最终验收通过。
+- P1（后续）：原生 all-rejected C1/P/C2、serial successor、真实 source/toolchain/
+  sealed runtime、OpenEvolve/Shinka lifecycle和生产CLI/Linux中断验收。
+- P2：外部认证、多机ownership、分布式服务和远程evaluator继续后置。
+
+仅本地 inert/provider-free fixtures。原unknown capture不能补录升级；传输、callback、
+worker退出、原producer cleanup和自然episode终态分别取证。公开native BRS、
+production admission和online publication继续关闭。
+
+下列各节为此前切片的历史记录。
+
 ## 当前后继：持久化恢复观察
 
 - P0：PR123/124/125 的完整 CI 与依赖顺序合入。三个候选分别有各自冻结来源的

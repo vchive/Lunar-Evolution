@@ -1,5 +1,22 @@
 # Feature 196 tasks — implementation tracking
 
+## Terminal recovery successor — 2026-10-17
+
+Contract: [terminal-recovery-evidence.md](terminal-recovery-evidence.md).
+
+- [x] Persist original-session delivery, callback and worker-terminal observations
+  without changing the old mailbox history, obligation, root cursor or budget.
+- [x] Require durable delivery/start ACK before the one-shot callback; preserve
+  unknown and independently verify natural Future/executor/thread completion.
+- [x] Compose exact envelope, original publication/materials, native cleanup,
+  canonical claim/result and legal terminal episode from read-only sources.
+- [x] Fresh-compose under the controller lock and recheck every ledger pin inside
+  the existing consume/removal transaction.
+- [ ] Cover natural inert completion, missing/unknown/drift, rebuilt-ledger reads,
+  callback failure and consume-time concurrent change; run static checks.
+- [ ] Freeze one source, accept matching macOS/Linux scoped tests and independent
+  review, publish successor PR; merge only after full prerequisite CI passes.
+
 ## Durable recovery evidence follow-up
 
 Contract: [durable-recovery-evidence.md](durable-recovery-evidence.md).

@@ -184,6 +184,8 @@ def _policy() -> dict[str, Any]:
     import dataclasses
     import re
     import sys
+    import threading
+    from concurrent.futures import Future, ThreadPoolExecutor
     from types import FunctionType
 
     from . import (
@@ -218,6 +220,7 @@ def _policy() -> dict[str, Any]:
         rsi_brs_mailbox_evidence,
         rsi_brs_native_process_evidence,
         rsi_brs_reconcile,
+        rsi_brs_terminal_evidence,
         rsi_controller,
         rsi_python_brs_handoff,
         rsi_python_brs_native_dispatch,
@@ -226,6 +229,7 @@ def _policy() -> dict[str, Any]:
         rsi_python_brs_publication_mailbox,
         rsi_python_brs_publication_recovery,
         rsi_python_brs_result_delivery,
+        rsi_python_brs_terminal_lifecycle,
         rsi_store,
     )
     from . import rsi_python_scheduler_inputs as scheduler_inputs
@@ -248,6 +252,7 @@ def _policy() -> dict[str, Any]:
         PopulationStrategy,
     )
     from .producer_bundle_transaction import _records_from_archive
+    from .rsi_learning import PracticeEpisode
     from .rsi_python_scheduler_inputs import _context
 
     reader = rsi_python_brs_publication_recovery
@@ -255,9 +260,13 @@ def _policy() -> dict[str, Any]:
     delivery = rsi_python_brs_result_delivery
     mailbox_evidence = rsi_brs_mailbox_evidence
     process_evidence = rsi_brs_native_process_evidence
+    terminal = rsi_python_brs_terminal_lifecycle
+    composer = rsi_brs_terminal_evidence
     for module, names in (
         (process_evidence, ("_FIELDS", "_REF_FIELDS", "_PIN_FIELDS", "_REASONS")),
         (mailbox_evidence, ("_BINDING_FIELDS", "_OBSERVATION_FIELDS")),
+        (terminal, ("_BINDING_FIELDS", "_OBSERVATION_FIELDS")),
+        (composer, ("_PIN_FIELDS", "_REPORT_FIELDS", "_TERMINAL_STATUSES")),
     ):
         for name in names:
             value = getattr(module, name)
@@ -265,6 +274,7 @@ def _policy() -> dict[str, Any]:
                 _fail("mailbox_evidence_policy_drift")
     for module, names in (
         (process_evidence, ("_NAMES",)), (mailbox_evidence, ("STAGES", "_MESSAGE_DIGESTS")),
+        (terminal, ("STAGES",)),
     ):
         for name in names:
             value = getattr(module, name)
@@ -273,14 +283,18 @@ def _policy() -> dict[str, Any]:
     for module, names in (
         (process_evidence, ("PROTOCOL", "ROLE")),
         (mailbox_evidence, ("BINDING_PROTOCOL", "OBSERVATION_PROTOCOL")),
+        (terminal, ("BINDING_PROTOCOL", "OBSERVATION_PROTOCOL")),
+        (composer, ("PROTOCOL",)),
     ):
         if any(type(getattr(module, name)) is not str for name in names):
             _fail("mailbox_evidence_policy_drift")
     if (any(type(value) is not int for value in (
             process_evidence._MAX, process_evidence._MAX_FILE, mailbox_evidence.MAX_BRS_MAILBOX_EVIDENCE_BYTES,
-            _candidate_workspace_io._FLAGS))
+            _candidate_workspace_io._FLAGS, terminal.MAX_BRS_TERMINAL_EVIDENCE_BYTES,
+            composer.MAX_BRS_TERMINAL_REPORT_BYTES))
             or any(type(value) is not re.Pattern or type(value.pattern) is not str for value in (
-                process_evidence._SHA, process_evidence._ID, mailbox_evidence._SHA))):
+                process_evidence._SHA, process_evidence._ID, mailbox_evidence._SHA,
+                terminal._SHA, composer._SHA))):
         _fail("mailbox_evidence_policy_drift")
     if (type(delivery._PROTOCOL) is not str or type(delivery._STATUSES) is not frozenset
             or any(type(value) is not str for value in delivery._STATUSES)
@@ -382,6 +396,26 @@ def _policy() -> dict[str, Any]:
         (process_evidence.verify_trusted_bootstrap_process_registration,
          producer_bootstrap.verify_trusted_bootstrap_process_registration),
         (process_evidence._process_owner_identity, producer_process._process_owner_identity),
+        (terminal.canonical_json, candidate_evaluation_spec.canonical_json),
+        (terminal.parse_brs_mailbox_binding, mailbox_evidence.parse_brs_mailbox_binding),
+        (terminal.validate_brs_mailbox_history, mailbox_evidence.validate_brs_mailbox_history),
+        (terminal.validate_brs_mailbox_root_history, mailbox_evidence.validate_brs_mailbox_root_history),
+        (terminal.BRSSelectedChildHandoff, rsi_python_brs_handoff.BRSSelectedChildHandoff),
+        (terminal.BRSOwnerPublicationMailbox, rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox),
+        (terminal.BRSOwnerPublicationRequest, rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest),
+        (terminal.BRSOwnerPublicationResponse, rsi_python_brs_publication_mailbox.BRSOwnerPublicationResponse),
+        (terminal.deliver_brs_owner_result, delivery.deliver_brs_owner_result),
+        (composer.canonical_json, candidate_evaluation_spec.canonical_json),
+        (composer.inspect_brs_mailbox_evidence, mailbox_evidence.inspect_brs_mailbox_evidence),
+        (composer.observe_native_process_binding, process_evidence.observe_native_process_binding),
+        (composer.BRSReconcileEvidence, rsi_brs_reconcile.BRSReconcileEvidence),
+        (composer._validate_brs_episode_history, rsi_brs_reconcile._validate_brs_episode_history),
+        (composer.parse_brs_reconcile_obligations, rsi_brs_reconcile.parse_brs_reconcile_obligations),
+        (composer.inspect_brs_worker_terminal_evidence, terminal.inspect_brs_worker_terminal_evidence),
+        (composer.PracticeEpisode, PracticeEpisode),
+        (terminal.Future, Future), (terminal.ThreadPoolExecutor, ThreadPoolExecutor),
+        (terminal.threading, threading), (terminal.time, time),
+        (terminal.threading.get_ident, get_ident),
     )
     if any(actual is not canonical for actual, canonical in aliases):
         _fail("native_reader_binding_drift")
@@ -391,6 +425,23 @@ def _policy() -> dict[str, Any]:
     entries = (
         (_retain_mailbox_observation, sys.modules[__name__]),
         (_mailbox_fixed_tail, sys.modules[__name__]),
+        *((getattr(terminal, name), terminal) for name in (
+            "_fail", "_plain", "_clean", "_digest", "_sha", "parse_brs_terminal_binding",
+            "brs_terminal_evidence_namespace", "_messages", "parse_brs_terminal_observation",
+            "build_brs_terminal_observation", "validate_brs_terminal_history",
+            "inspect_brs_worker_terminal_evidence", "open_brs_terminal_lifecycle")),
+        *((getattr(terminal._PrimitiveExchange, name), terminal)
+          for name in ("__init__", "submit", "fail")),
+        *((getattr(terminal._BRSWorkerTerminalEndpoint, name), terminal)
+          for name in ("__init__", "receive_and_settle")),
+        (terminal._BRSWorkerTerminalEndpoint.status.fget, terminal),
+        *((getattr(terminal.BRSOwnerTerminalLifecycle, name), terminal)
+          for name in ("_fixed", "_append", "_drain", "serve")),
+        (terminal.BRSOwnerTerminalLifecycle.worker_endpoint.fget, terminal),
+        *((getattr(composer, name), composer) for name in (
+            "_fail", "_plain", "_clean", "_digest", "_sha", "_text", "_pins",
+            "parse_brs_terminal_observation", "_ledger_terminal", "_publication", "_finish",
+            "_compose_brs_terminal_evidence", "inspect_brs_terminal_observation")),
         (_candidate_workspace_io.fail, _candidate_workspace_io),
         (_candidate_workspace_io.identity, _candidate_workspace_io),
         *((getattr(_candidate_workspace_io.DirectoryChain, name), _candidate_workspace_io)
@@ -432,7 +483,19 @@ def _policy() -> dict[str, Any]:
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
             "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
-            "_native_claim_row", "append_brs_mailbox_observation")),
+            "_native_claim_row", "append_brs_mailbox_observation", "append_brs_terminal_observation",
+            "read_brs_terminal_evidence_snapshot", "_brs_terminal_evidence_snapshot_tx",
+            "_consume_brs_reconcile_obligation")),
+        (PracticeEpisode.from_dict.__func__, sys.modules[PracticeEpisode.__module__]),
+        (PracticeEpisode.to_record_dict, sys.modules[PracticeEpisode.__module__]),
+        (recovery.resume_producer_bundle_publication, recovery),
+        (producer_bundle_lineage.read_lineage_descriptor_pinned, producer_bundle_lineage),
+        *((getattr(Future, name), sys.modules[Future.__module__])
+          for name in ("done", "running", "exception", "result")),
+        (ThreadPoolExecutor.shutdown, sys.modules[ThreadPoolExecutor.__module__]),
+        (threading.Thread.is_alive, threading), (threading.current_thread, threading),
+        *((getattr(threading.Condition, name), threading)
+          for name in ("wait", "notify_all", "__enter__", "__exit__")),
         *((getattr(rsi_python_brs_owner_bridge, name), rsi_python_brs_owner_bridge) for name in (
             "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
             "_response_payload")),
@@ -562,6 +625,7 @@ def _policy() -> dict[str, Any]:
                                for name in ("rsi_brs_publication_lineage.py", "rsi_publication_lineage.py",
                                             "rsi_controller.py", "rsi_store.py", "rsi_brs_reconcile.py",
                                             "rsi_brs_mailbox_evidence.py", "rsi_brs_native_process_evidence.py",
+                                            "rsi_brs_terminal_evidence.py", "rsi_python_brs_terminal_lifecycle.py",
                                             "_candidate_workspace_io.py",
                                             "rsi_python_brs_owner_bridge.py", "producer_bundle_lineage.py",
                                             "producer_bundle_admission.py", "producer_bundle_publication.py",
@@ -732,6 +796,39 @@ def _policy() -> dict[str, Any]:
                 "identity_flags": delivery._ID.flags,
                 "digest_pattern": delivery._SHA.pattern,
                 "digest_flags": delivery._SHA.flags,
+            },
+            "terminal_recovery": {
+                "methods": [component_fingerprint(function) for function, module in entries if module is terminal],
+                "protocols": [terminal.BINDING_PROTOCOL, terminal.OBSERVATION_PROTOCOL],
+                "stages": list(terminal.STAGES),
+                "max_bytes": terminal.MAX_BRS_TERMINAL_EVIDENCE_BYTES,
+                "fields": [sorted(terminal._BINDING_FIELDS), sorted(terminal._OBSERVATION_FIELDS)],
+                "pattern": terminal._SHA.pattern,
+                "pattern_flags": terminal._SHA.flags,
+                "store": {name: component_fingerprint(getattr(rsi_store.RSILedger, name)) for name in (
+                    "append_brs_terminal_observation", "read_brs_terminal_evidence_snapshot",
+                    "_brs_terminal_evidence_snapshot_tx", "_consume_brs_reconcile_obligation")},
+                "controller": component_fingerprint(rsi_controller.RSILearningController.reconcile_brs_terminal),
+                "composer_methods": [component_fingerprint(function) for function, module in entries if module is composer],
+                "composer_protocol": composer.PROTOCOL,
+                "composer_max_bytes": composer.MAX_BRS_TERMINAL_REPORT_BYTES,
+                "composer_fields": [sorted(composer._PIN_FIELDS), sorted(composer._REPORT_FIELDS),
+                                    sorted(composer._TERMINAL_STATUSES)],
+                "composer_pattern": composer._SHA.pattern,
+                "composer_pattern_flags": composer._SHA.flags,
+                "stdlib_methods": {name: component_fingerprint(function) for name, function in (
+                    *(("future_" + name, getattr(Future, name)) for name in ("done", "running", "exception", "result")),
+                    ("shutdown", ThreadPoolExecutor.shutdown), ("thread_alive", threading.Thread.is_alive),
+                    ("current_thread", threading.current_thread),
+                    *(("condition_" + name, getattr(threading.Condition, name))
+                      for name in ("wait", "notify_all", "__enter__", "__exit__")),
+                )},
+                "publication_readers": {name: component_fingerprint(function) for name, function in (
+                    ("recovery", recovery.resume_producer_bundle_publication),
+                    ("descriptor", producer_bundle_lineage.read_lineage_descriptor_pinned),
+                    ("episode_read", PracticeEpisode.from_dict.__func__),
+                    ("episode_write", PracticeEpisode.to_record_dict),
+                )},
             },
             "reconcile_registration": {
                 "helpers": {name: component_fingerprint(getattr(rsi_brs_reconcile, name)) for name in (
