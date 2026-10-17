@@ -799,6 +799,8 @@ class RSILedger:
     def write_brs_reconcile_obligation(
         self, run_id: str, obligation: object, *, expected_checkpoint_sha256: str | None,
         expected_episode_record_sha256: str | None = None,
+        expected_run_record_sha256: str | None = None,
+        expected_native_claim_sha256: str | None = None,
     ) -> str:
         """Persist one owner obligation as an opt-in controller checkpoint delta.
 
@@ -818,18 +820,28 @@ class RSILedger:
             raise RSILearningError("rsi_brs_reconcile_obligation_invalid")
         self._assert_controller_lock(run_id)
         _digest(expected_checkpoint_sha256, name="brs_reconcile_checkpoint")
+        for pin, name in (
+            (expected_run_record_sha256, "brs_reconcile_run"),
+            (expected_native_claim_sha256, "brs_reconcile_native_claim"),
+        ):
+            if pin is not None:
+                _digest(pin, name=name)
+                if expected_episode_record_sha256 is None:
+                    raise RSILearningError("rsi_brs_reconcile_episode_pin_required")
         current = self.controller_checkpoint(run_id)
         if current is None or current[0] != expected_checkpoint_sha256:
             raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
         state = json.loads(canonical_json(current[1], maximum=8 * 1024 * 1024))
         existing = state.get(FIELD, {}).get(obligation.episode_id)
-        if existing is not None and existing == obligation.to_dict():
+        replay = existing is not None and existing == obligation.to_dict()
+        if replay and expected_episode_record_sha256 is None:
             return current[0]
-        if existing is not None:
+        if existing is not None and not replay:
             raise RSILearningError("rsi_brs_reconcile_obligation_conflict")
-        if obligation.controller_checkpoint_sha256 != expected_checkpoint_sha256:
+        if not replay and obligation.controller_checkpoint_sha256 != expected_checkpoint_sha256:
             raise RSILearningError("rsi_brs_reconcile_checkpoint_binding_invalid")
-        put_brs_reconcile_obligation(state, obligation)
+        if not replay:
+            put_brs_reconcile_obligation(state, obligation)
         validate_brs_reconcile_obligations(
             state, run_id=run_id, intents=state.get("intents"),
         )
@@ -846,6 +858,26 @@ class RSILedger:
                         or episode.request_sha256 != obligation.request_sha256
                         or episode.payload.get("run_id") != run_id):
                     raise RSILearningError("rsi_brs_reconcile_episode_binding_invalid")
+                if expected_run_record_sha256 is not None and run.record_sha256 != expected_run_record_sha256:
+                    raise RSILearningError("rsi_brs_reconcile_run_binding_invalid")
+                if expected_native_claim_sha256 is not None:
+                    row = connection.execute(
+                        "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (obligation.episode_id,),
+                    ).fetchone()
+                    if (row is None or row["request_sha256"] != obligation.request_sha256
+                            or row["plan_sha256"] != obligation.native_plan_sha256
+                            or row["claim_sha256"] != expected_native_claim_sha256
+                            or obligation.native_claim_sha256 != expected_native_claim_sha256
+                            or self._native_result_status(
+                                connection, obligation.episode_id, obligation.request_sha256,
+                            ) is not None):
+                        raise RSILearningError("rsi_brs_reconcile_native_claim_binding_invalid")
+                    self._native_claim_row(row, status="started")
+                if replay:
+                    head = self._controller_checkpoint_history_tx(connection, run_id)
+                    if not head or head[-1][0] != expected_checkpoint_sha256:
+                        raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+                    return current[0]
                 return self._append_controller_checkpoint_tx(
                     connection, run_id, state, expected_sha256=expected_checkpoint_sha256,
                 )

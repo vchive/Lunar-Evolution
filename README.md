@@ -27,7 +27,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-BRS 中断恢复需要显式提交证据；普通 `resume` 遇到未消费的 obligation 会返回 `rsi_brs_reconcile_required`。只有与本地 ledger 终态、原 native plan/claim 和已保存 result 一致的证据才能消费对应 obligation；unknown、running 和 drift 保留记录。多条 obligation 分别处理，单次消费在同一个 SQLite 事务内完成校验和 checkpoint CAS。批量 API 按项提交，后项失败时已成功项保持提交，调用方应先读取剩余 obligation。详见[恢复契约](specs/196-brs-owner-worker-handoff/reconcile-controller-consume.md)及[发布台账](docs/current-release-backlog.md)。
+BRS 中断恢复需要显式提交证据；普通 `resume` 遇到未消费的 obligation 会返回 `rsi_brs_reconcile_required`。只有与本地 ledger 终态、原 native plan/claim 和已保存 result 一致的证据才能消费对应 obligation；unknown、running 和 drift 保留记录。多条 obligation 分别处理，单次消费在同一个 SQLite 事务内完成校验和 checkpoint CAS。批量 API 按项提交，后项失败时已成功项保持提交，调用方应先读取剩余 obligation。当前后继正在把原 owner 的恢复义务登记接到私有 mailbox publication 边界；publication 成功不会自动清除义务，真实运行时与生产 CLI 验收仍开放。详见[恢复契约](specs/196-brs-owner-worker-handoff/reconcile-controller-consume.md)、[mailbox 登记契约](specs/196-brs-owner-worker-handoff/owner-mailbox-reconcile-registration.md)及[发布台账](docs/current-release-backlog.md)。
 
 ## 主要能力
 

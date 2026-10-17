@@ -1,5 +1,22 @@
 # Feature 196 tasks — implementation tracking
 
+## Original owner mailbox registration follow-up
+
+Contract: [owner-mailbox-reconcile-registration.md](owner-mailbox-reconcile-registration.md).
+
+- [x] Add one-shot registration to the original new-phase lineage owner; validate original
+  run/episode/claim pins in the checkpoint transaction.
+- [x] Verify the exact adjacent obligation-only delta and recheck source/control before
+  advancing the owner and wave cursors; preserve captures and poison uncertain writes.
+- [x] Register in the original private mailbox composition before service/transaction;
+  reject a foreign mailbox before mutation and retain the fence on every outcome.
+- [x] Pin new dependencies and add focused local fault coverage.
+- [ ] Independently validate the frozen source on macOS/Linux. Required full CI and merge
+  remain separate; see the PR evidence for actual results.
+
+Automatic terminal consume, producer-first-launch registration and real runtime/
+OpenEvolve/Shinka/production CLI acceptance remain open outside this slice.
+
 ## Recovery correctness follow-up
 
 - [x] Fence ordinary resume, drive and finalization on any latest unconsumed BRS
