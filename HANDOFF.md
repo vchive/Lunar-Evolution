@@ -7,6 +7,7 @@
 - 任意不确定写入保留 durable obligation、旧本地 capture 与 poisoned owner，不重试。publication 成功仍保留义务，终态消费继续要求独立完整证据。
 - 本轮不声称覆盖 producer 首次执行前登记，也不把 executor join 当成 producer cleanup；直接私有 native-dispatch primitive、自动终态恢复、真实 runtime/producer/CLI 和 P2 继续各按其既有边界处理。
 - 当前为开发状态；本轮最终冻结来源、macOS/Linux 回归与独立审查结果在 PR 和本地原始材料中另行记录。仅本地 inert/provider-free fixtures；public native BRS、`production_admission`、`online_publication` 继续关闭。
+- 首次 `c0c7238` 的 macOS288项通过；Linux首次回归出现 inert worker 的90秒等待超时，原始失败材料单独保留，不计通过。后继仅将该 fixture 生命周期绑定到 `finally` 显式释放，并把初始化也纳入清理；产品预算、时钟和源码不变，最终双平台验收绑定新冻结来源。
 
 以下为上轮冻结候选的记录。
 

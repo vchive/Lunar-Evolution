@@ -73,6 +73,10 @@ uncertainty, source/control drift and retained ordinary-resume fence. Check that
 transaction execution observes the already-durable obligation and that publication success does
 not consume it. Reuse existing terminal-consume tests rather than weakening their evidence gate.
 
+The inert waiting worker lives until the fixture explicitly releases it in `finally`.
+A fixed 90-second event wait must not fabricate worker failure during CPU-heavy validation.
+Queue acquisition and cleanup joins remain bounded, and product deadlines/budgets are unchanged.
+
 After integration, freeze one source and run disjoint focused groups in separate own-editable
 checkouts on macOS and `5090gpu` Linux. Preserve collection/JUnit/source/import/exit evidence;
 run Ruff, compileall and `git diff --check`. Independent review and the required full Actions
