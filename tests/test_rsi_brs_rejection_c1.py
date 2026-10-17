@@ -47,6 +47,7 @@ from lunar_evolution import (
     producer_bundle_rejection,
 )
 from lunar_evolution import producer_bundle_staging as staging
+from lunar_evolution import rsi_brs_native_process_evidence as process_evidence
 from lunar_evolution import rsi_brs_publication_lineage as brs
 from lunar_evolution.automatic_solve_lifecycle import (
     SolveExecutionBudgetExceeded,
@@ -300,6 +301,10 @@ def _native_setup(root, patch, *, count, context, original_owner_setup):
         budget_sha256=native_producer_bundle_budget_sha256(strategy, control),
         candidates=tuple(replace(value.journal.candidates[0], bundle_id=item.bundle_id,
             bundle_sha256=item.bundle_sha256, island_id=i % strategy.config.num_islands,
+            # Use the native transaction's preparation binding for this actual
+            # prepared admission item; a generic placeholder receipt is shared.
+            preparation_receipt_sha256=_sha(canonical_json({
+                "plan_sha256": value.admission.digest(), "bundle_id": item.bundle_id, "ordinal": i})),
             candidate_id=derive_producer_bundle_candidate_id(value.journal.journal_id, i, item.bundle_id, item.bundle_sha256))
             for i, item in enumerate(value.admission.bundles)), journal_sha256=None)
     (value.batch / "journal.prepared.json").write_bytes(_intent_content(value.journal)[0])
@@ -327,7 +332,7 @@ def _waiting(tmp_path, monkeypatch, *, count=1, acknowledge=True):
                                        retained_fixture._terminal_projection.__name__)
     monkeypatch.setattr(native_trusted_attempt, "_BRS_NATIVE_READER_TERMINAL_HOOK", None, raising=False)
     monkeypatch.setattr(native_trusted_receipt, "build_native_trusted_execution_receipt", receipt_projection)
-    for module in (native_trusted_attempt, native_trusted_output, native_trusted_receipt):
+    for module in (native_trusted_attempt, native_trusted_output, native_trusted_receipt, process_evidence):
         monkeypatch.setattr(module, "recover_native_trusted_attempt", terminal_projection)
     original = owner_fixture._setup
     monkeypatch.setattr(owner_fixture, "_setup", lambda root, patch: _native_setup(

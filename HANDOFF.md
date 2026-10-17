@@ -11,6 +11,10 @@
   exact相邻读回与canonical最终读核。独审目前未见产品阻塞；75项pure容量/依赖
   检查、真实native fixture与单例owner正向检查通过。最终用例计数以冻结验收为准，
   双平台回归仍待冻结后运行。
+- 首次冻结`986d9b1`的scope回归已发现两处fixture失败：双候选重复preparation
+  receipt，以及lazy-import native process reader投影alias未恢复造成后续指纹漂移。
+  原始双平台材料保留为NOT_ACCEPTED；后继只修fixture，最终冻结结果另行记录，
+  不能把首次源码独审或开发单例通过当作该scope验收通过。
 - 本轮契约 [rejection-owner-c1.md](specs/196-brs-owner-worker-handoff/rejection-owner-c1.md)
   仅补原 exact BRS owner 的 ordinal-zero `prepared-evidence -> rejected` C1，
   不构造 DRS continuation。使用真实原生拒绝材料的本地 inert fixture；显式 fresh
