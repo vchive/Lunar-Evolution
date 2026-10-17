@@ -14,6 +14,7 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from threading import get_ident
 from typing import Any
 
 from .candidate_evaluation_spec import canonical_json
@@ -574,11 +575,23 @@ def register_brs_selected_obligation(
         raise RSILearningError("rsi_brs_reconcile_native_plan_invalid")
     if not ledger.controller_lock_held(selected.run_id):
         raise RSILearningError("rsi_brs_reconcile_owner_required")
+    if selected.owner_thread_id != get_ident():
+        raise RSILearningError("rsi_brs_reconcile_owner_thread_invalid")
+    if selected.head_sha256 != controller_checkpoint_sha256:
+        raise RSILearningError("rsi_brs_reconcile_handoff_head_invalid")
     with ledger.read_only_observations():
-        checkpoint = ledger.controller_checkpoint(selected.run_id)
+        checkpoints = ledger.controller_checkpoint_history(selected.run_id)
         episode = ledger.get_episode(selected.episode_id)
-    if checkpoint is None:
+        run = ledger.get_run(selected.run_id)
+    if not checkpoints:
         raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+    checkpoint = checkpoints[-1]
+    captured = next((state for head, state in checkpoints if head == controller_checkpoint_sha256), None)
+    if captured is None:
+        raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+    state_sha256 = hashlib.sha256(canonical_json(captured, maximum=8 * 1024 * 1024)).hexdigest()
+    if selected.state_sha256 != state_sha256:
+        raise RSILearningError("rsi_brs_reconcile_handoff_state_invalid")
     if (episode is None or episode.record_sha256 != episode_record_sha256
             or episode.logical_id != selected.episode_id
             or episode.payload.get("run_id") != selected.run_id
@@ -606,17 +619,52 @@ def register_brs_selected_obligation(
             existing = parse_brs_reconcile_obligations(checkpoint[1].get(FIELD)).get(
                 selected.episode_id
             )
-        if existing is not None and existing.to_dict() == obligation.to_dict():
-            return BRSReconcileRegistration(obligation, checkpoint[0])
+        if (existing is not None and existing.to_dict() == obligation.to_dict()
+                and len(checkpoints) > 1 and checkpoints[-2][0] == controller_checkpoint_sha256):
+            expected = dict(captured)
+            put_brs_reconcile_obligation(expected, obligation)
+            if checkpoint[1] == expected:
+                return BRSReconcileRegistration(obligation, checkpoint[0])
         raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+    if run is None or run.state != "running" or episode.state != "running":
+        raise RSILearningError("rsi_brs_reconcile_running_owner_required")
     next_head = ledger.write_brs_reconcile_obligation(
         selected.run_id, obligation, expected_checkpoint_sha256=controller_checkpoint_sha256,
+        expected_episode_record_sha256=episode_record_sha256,
     )
     with ledger.read_only_observations():
         retained = ledger.controller_brs_reconcile_obligations(selected.run_id).get(selected.episode_id)
     if retained != obligation.to_dict():
         raise RSILearningError("rsi_brs_reconcile_registration_readback_invalid")
     return BRSReconcileRegistration(obligation, next_head)
+
+
+def _validate_brs_episode_history(obligation: BRSReconcileObligation, history: tuple[Any, ...]) -> Any:
+    """Bind the original episode capture to its verified natural ledger successors.
+
+    Neither the captured obligation nor the evidence is refreshed to a terminal head.
+    The current head may move only along the original request's append-only episode
+    history. This helper is also usable by the controller's read-only batch preflight.
+    """
+    from .rsi_learning import PracticeEpisode
+    from .rsi_store import RSILedger
+
+    if not history or not any(record.record_sha256 == obligation.episode_record_sha256 for record in history):
+        raise RSILearningError("rsi_brs_reconcile_episode_binding_invalid")
+    previous = None
+    for revision, record in enumerate(history):
+        if (record.kind != "episode" or record.logical_id != obligation.episode_id
+                or record.request_sha256 != obligation.request_sha256
+                or record.payload.get("run_id") != obligation.run_id or record.revision != revision
+                or record.parent_record_sha256 != (previous.record_sha256 if previous else None)):
+            raise RSILearningError("rsi_brs_reconcile_episode_binding_invalid")
+        episode = PracticeEpisode.from_dict(record.payload)
+        if episode.status != record.state or episode.request_sha256 != record.request_sha256:
+            raise RSILearningError("rsi_brs_reconcile_episode_binding_invalid")
+        if previous is not None:
+            RSILedger._check_episode_head(previous, episode)
+        previous = record
+    return history[-1]
 
 
 def consume_brs_selected_reconcile(
@@ -642,41 +690,7 @@ def consume_brs_selected_reconcile(
         raise RSILearningError("rsi_brs_reconcile_evidence_invalid")
     if not ledger.controller_lock_held(run_id):
         raise RSILearningError("rsi_brs_reconcile_owner_required")
-    checkpoint = ledger.controller_checkpoint(run_id)
-    if checkpoint is None:
-        raise RSILearningError("rsi_brs_reconcile_checkpoint_missing")
-    with ledger.read_only_observations():
-        obligations = parse_brs_reconcile_obligations(checkpoint[1].get(FIELD))
-        obligation = obligations.get(episode_id)
-        episode = ledger.get_episode(episode_id)
-    if obligation is None:
-        raise RSILearningError("rsi_brs_reconcile_obligation_missing")
-    if episode is None:
-        raise RSILearningError("rsi_brs_reconcile_episode_binding_invalid")
-    # The obligation captures the parent head used for its registration.  The
-    # registration itself appends a new checkpoint containing that obligation, so
-    # validating against the latest digest would incorrectly reject every valid
-    # resume.  The ledger CAS below still requires the latest head; validation here
-    # checks immutable run/request/episode bindings only.
-    validate_brs_reconcile_obligations(
-        checkpoint[1], run_id=run_id, intents=checkpoint[1].get("intents"),
-        episode_heads={episode_id: episode},
-    )
-    if evidence.obligation_sha256 != obligation.digest():
-        decision = _decision(obligation, evidence, "drifted", "obligation digest mismatch")
-    else:
-        decision = reconcile_brs_selected(obligation, evidence)
-    if decision.outcome != "already_terminal":
-        return BRSReconcileConsumption(decision, checkpoint[0], False)
-    next_head = ledger.remove_brs_reconcile_obligation(
-        run_id, episode_id, expected_checkpoint_sha256=checkpoint[0],
-        expected_obligation_digest=obligation.digest(),
-    )
-    with ledger.read_only_observations():
-        remaining = ledger.controller_brs_reconcile_obligations(run_id).get(episode_id)
-    if remaining is not None:
-        raise RSILearningError("rsi_brs_reconcile_consume_readback_invalid")
-    return BRSReconcileConsumption(decision, next_head, True)
+    return ledger._consume_brs_reconcile_obligation(run_id, episode_id, evidence)
 
 
 __all__ = [

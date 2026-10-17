@@ -798,6 +798,7 @@ class RSILedger:
 
     def write_brs_reconcile_obligation(
         self, run_id: str, obligation: object, *, expected_checkpoint_sha256: str | None,
+        expected_episode_record_sha256: str | None = None,
     ) -> str:
         """Persist one owner obligation as an opt-in controller checkpoint delta.
 
@@ -826,12 +827,114 @@ class RSILedger:
             return current[0]
         if existing is not None:
             raise RSILearningError("rsi_brs_reconcile_obligation_conflict")
+        if obligation.controller_checkpoint_sha256 != expected_checkpoint_sha256:
+            raise RSILearningError("rsi_brs_reconcile_checkpoint_binding_invalid")
         put_brs_reconcile_obligation(state, obligation)
         validate_brs_reconcile_obligations(
-            state, run_id=run_id, checkpoint_sha256=expected_checkpoint_sha256,
-            intents=state.get("intents"),
+            state, run_id=run_id, intents=state.get("intents"),
         )
+        if expected_episode_record_sha256 is not None:
+            _digest(expected_episode_record_sha256, name="brs_reconcile_episode")
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                run = self._head(connection, run_id)
+                episode = self._head(connection, obligation.episode_id)
+                if (run is None or run.kind != "run" or run.state != "running"
+                        or episode is None or episode.kind != "episode" or episode.state != "running"
+                        or episode.record_sha256 != expected_episode_record_sha256
+                        or obligation.episode_record_sha256 != expected_episode_record_sha256
+                        or episode.request_sha256 != obligation.request_sha256
+                        or episode.payload.get("run_id") != run_id):
+                    raise RSILearningError("rsi_brs_reconcile_episode_binding_invalid")
+                return self._append_controller_checkpoint_tx(
+                    connection, run_id, state, expected_sha256=expected_checkpoint_sha256,
+                )
         return self.write_controller_checkpoint(run_id, state, expected_sha256=expected_checkpoint_sha256)
+
+    def _consume_brs_reconcile_obligation(self, run_id: str, episode_id: str, evidence: object):
+        """Check terminal ledger truth and remove one obligation in the same transaction."""
+        from .rsi_brs_reconcile import (
+            BRSReconcileConsumption,
+            _decision,
+            _validate_brs_episode_history,
+            reconcile_brs_selected,
+            remove_brs_reconcile_obligation,
+            validate_brs_reconcile_obligations,
+        )
+
+        self._assert_controller_lock(run_id)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            checkpoints = self._controller_checkpoint_history_tx(connection, run_id)
+            if not checkpoints:
+                raise RSILearningError("rsi_brs_reconcile_checkpoint_missing")
+            head, state = checkpoints[-1]
+            obligations = validate_brs_reconcile_obligations(
+                state, run_id=run_id, intents=state.get("intents"),
+            )
+            obligation = obligations.get(episode_id)
+            if obligation is None:
+                raise RSILearningError("rsi_brs_reconcile_obligation_missing")
+            rows = connection.execute(
+                "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
+            ).fetchall()
+            episode_history = tuple(self._row_to_record(row) for row in rows)
+            episode = _validate_brs_episode_history(obligation, episode_history)
+            decision = reconcile_brs_selected(obligation, evidence)
+            if decision.outcome == "already_terminal":
+                if episode.state in {"planned", "running", "unknown"}:
+                    decision = _decision(obligation, evidence, "manual_review", "episode is not terminal in ledger")
+                elif episode.state != evidence.terminal_status:
+                    decision = _decision(obligation, evidence, "drifted", "terminal episode status mismatch")
+                else:
+                    decision = self._brs_terminal_result_decision_tx(connection, obligation, evidence, episode, decision)
+            if decision.outcome != "already_terminal":
+                return BRSReconcileConsumption(decision, head, False)
+            remove_brs_reconcile_obligation(state, episode_id, expected_digest=obligation.digest())
+            validate_brs_reconcile_obligations(state, run_id=run_id, intents=state.get("intents"))
+            next_head = self._append_controller_checkpoint_tx(connection, run_id, state, expected_sha256=head)
+            return BRSReconcileConsumption(decision, next_head, True)
+
+    def _brs_terminal_result_decision_tx(self, connection, obligation, evidence, episode, decision):
+        """Use the original native claim and immutable saved result, never DTO flags alone."""
+        from .rsi_brs_reconcile import _decision
+
+        status = self._native_result_status(connection, obligation.episode_id, obligation.request_sha256)
+        claim_row = connection.execute(
+            "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (obligation.episode_id,),
+        ).fetchone()
+        if status is None or claim_row is None:
+            return _decision(obligation, evidence, "manual_review", "durable native result or claim missing")
+        if (claim_row["request_sha256"] != obligation.request_sha256
+                or claim_row["plan_sha256"] != obligation.native_plan_sha256):
+            return _decision(obligation, evidence, "drifted", "durable native claim binding mismatch")
+        claim = self._native_claim_row(claim_row, status=status)
+        row = connection.execute(
+            "SELECT request_payload, result_payload, result_sha256 FROM rsi_episode_results WHERE episode_id = ?",
+            (obligation.episode_id,),
+        ).fetchone()
+        request = SolverRequest.from_dict(json.loads(row["request_payload"]))
+        result = SolverResult.from_dict(json.loads(row["result_payload"]))
+        durable_episode = PracticeEpisode.from_dict(episode.payload)
+        # The runner and explicit reconcile adapter have distinct, established
+        # fallback reasons for a result that carries no reason of its own.
+        terminal_reasons = {result.terminal_reason} if result.terminal_reason else {
+            f"solver_{status}", f"reconciled_worker_{status}",
+        }
+        if (status != evidence.terminal_status or evidence.native_evidence_sha256 != claim.claim_sha256
+                or evidence.result_evidence_sha256 != row["result_sha256"]
+                or any(getattr(durable_episode, name) != getattr(request, name) for name in (
+                    "contract_sha256", "evaluator_sha256", "environment_sha256", "memory_snapshot_sha256", "solver_id",
+                )) or any(getattr(durable_episode, name) != getattr(result, name) for name in (
+                    "trace_digest", "candidate_source_sha256", "dependency_sha256",
+                    "trace_events", "actor_fingerprint",
+                )) or (status == "completed" and any(
+                    getattr(durable_episode, name) != getattr(result, name) for name in (
+                        "candidate_receipt_sha256", "execution_receipt_sha256", "official_evaluation_receipt_sha256",
+                    )
+                )) or (status != "completed" and durable_episode.terminal_reason not in terminal_reasons)):
+            return _decision(obligation, evidence, "drifted", "durable terminal result binding mismatch")
+        return decision
 
     def apply_brs_reconcile_decision(
         self, run_id: str, episode_id: str, decision: object, *,
@@ -966,21 +1069,27 @@ class RSILedger:
             raise RSILearningError("rsi_controller_checkpoint_invalid")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            self._checkpoint_reference_write_tx(connection, run_id, clean)
-            row = connection.execute(
-                "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
-                "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,)
-            ).fetchone()
-            parent = row["checkpoint_sha256"] if row else None
-            if parent != expected_sha256:
-                raise RSILearningError("rsi_controller_checkpoint_conflict")
-            self._assert_controller_lock(run_id)
-            revision = row["revision"] + 1 if row else 0
-            digest = self._checkpoint_digest(run_id, revision, parent, clean)
-            connection.execute(
-                "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
-                (run_id, revision, parent, json.dumps(clean, sort_keys=True), digest),
-            )
+            return self._append_controller_checkpoint_tx(connection, run_id, clean, expected_sha256=expected_sha256)
+
+    def _append_controller_checkpoint_tx(
+        self, connection: sqlite3.Connection, run_id: str, clean: dict[str, Any], *, expected_sha256: str | None,
+    ) -> str:
+        """Append the original checkpoint CAS within an already-held SQLite transaction."""
+        self._checkpoint_reference_write_tx(connection, run_id, clean)
+        row = connection.execute(
+            "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
+            "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,)
+        ).fetchone()
+        parent = row["checkpoint_sha256"] if row else None
+        if parent != expected_sha256:
+            raise RSILearningError("rsi_controller_checkpoint_conflict")
+        self._assert_controller_lock(run_id)
+        revision = row["revision"] + 1 if row else 0
+        digest = self._checkpoint_digest(run_id, revision, parent, clean)
+        connection.execute(
+            "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
+            (run_id, revision, parent, json.dumps(clean, sort_keys=True), digest),
+        )
         return digest
 
     @staticmethod
