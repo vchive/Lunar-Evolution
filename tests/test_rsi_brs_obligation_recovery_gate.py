@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from lunar_evolution import (
     SolverResult,
     fixture_solver_gateway,
 )
+from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.rsi_brs_reconcile import FIELD
 
 HEX = "a" * 64
@@ -26,20 +28,26 @@ EPISODE_ID = RUN_ID + "-practice-0-0"
 
 
 class CountingGateway:
-    def __init__(self) -> None:
+    def __init__(self, *, native_ledger: RSILedger | None = None) -> None:
         self.calls = 0
+        self.native_ledger = native_ledger
 
     def rsi_fingerprint_config(self):
         return {"fixture": "brs-recovery-fence-v1"}
 
     def run(self, request: SolverRequest) -> SolverResult:
         self.calls += 1
+        if self.native_ledger is not None:
+            self.native_ledger.claim_native_episode(request, plan_sha256=HEX)
         return fixture_solver_gateway("mock").run(request)
 
 
-def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, terminal: bool = False):
+def _run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, terminal: bool = False,
+    native_claim: bool = False,
+):
     ledger = RSILedger(tmp_path / "rsi.sqlite3")
-    gateway = CountingGateway()
+    gateway = CountingGateway(native_ledger=ledger if native_claim else None)
     controller = RSILearningController(gateway, ledger=ledger)
     target = controller._target_episode(
         RUN_ID, RUN_ID + "-target", {
@@ -143,15 +151,20 @@ def test_direct_drive_reads_durable_fence_even_when_local_state_omits_it(
 def test_terminal_replay_ignores_only_consumed_historical_obligations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ledger, controller, gateway = _run(tmp_path, monkeypatch, terminal=True)
+    ledger, controller, gateway = _run(tmp_path, monkeypatch, terminal=True, native_claim=True)
     obligation = _retain(ledger)
+    request, result = ledger.episode_result(EPISODE_ID)
+    claim = ledger.inspect_native_episode_claim(request, plan_sha256=HEX)
+    assert claim is not None and claim.status == "completed"
     evidence = BRSReconcileEvidence(
         obligation_sha256=obligation.digest(), handoff_sha256=obligation.handoff_sha256,
         request_sha256=obligation.request_sha256, native_plan_sha256=obligation.native_plan_sha256,
         controller_checkpoint_sha256=obligation.controller_checkpoint_sha256,
         episode_record_sha256=obligation.episode_record_sha256,
-        process_state="exited", process_evidence_sha256=HEX, native_evidence_sha256=HEX,
-        mailbox_evidence_sha256=HEX, result_evidence_sha256=HEX, mailbox_state="closed",
+        process_state="exited", process_evidence_sha256=HEX,
+        native_evidence_sha256=claim.claim_sha256, mailbox_evidence_sha256=HEX,
+        result_evidence_sha256=hashlib.sha256(canonical_json(result.to_dict())).hexdigest(),
+        mailbox_state="closed",
         transaction_state="terminal", terminal_status="completed",
         controller_observed_terminal=True, cleanup_confirmed=True,
     )
