@@ -1,24 +1,40 @@
 """Private original-BRS checkpoint primitives, without an online publication facade.
 
-The first before/prepared pair and adjacent success staged/terminal observations
-are supported. Rejection, recovery, successor and online owner composition remain
-separate. This module never dispatches, evaluates, stages or publishes artifacts.
+The first before/prepared pair, adjacent success staged/terminal observations and
+explicit first-ordinal rejection C1 are supported. Rejection provenance, recovery,
+successor and online composition remain separate. This module never dispatches,
+evaluates, stages or publishes artifacts.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import time
 from collections import deque
+from contextlib import _GeneratorContextManager as _ORIGINAL_CONTEXT_MANAGER
 from contextlib import nullcontext
 from dataclasses import fields, replace
+from hashlib import sha256 as _ORIGINAL_SHA256
+from json import dumps as _ORIGINAL_JSON_DUMPS
+from json import loads as _ORIGINAL_JSON_LOADS
+from math import isfinite as _ORIGINAL_ISFINITE
+from os import fstat as _ORIGINAL_FSTAT
+from os import stat as _ORIGINAL_STAT
 from pathlib import Path
+from sqlite3 import Row as _ORIGINAL_SQLITE_ROW
+from sqlite3 import connect as _ORIGINAL_SQLITE_CONNECT
+from stat import S_ISDIR as _ORIGINAL_ISDIR
+from stat import S_ISREG as _ORIGINAL_ISREG
 from threading import Condition, get_ident
+from time import monotonic as _ORIGINAL_MONOTONIC
 from typing import Any
 
 from . import _benchmark_files as _files
 from . import producer_bundle_recovery as recovery
+from . import rsi_brs_rejection_owner as rejection
 from . import rsi_publication_lineage as lineage
 from .algorithm import ALGORITHM_FAMILY_REPERTOIRES as _ORIGINAL_FAMILY_REPERTOIRES
 from .candidate_evaluation_spec import canonical_json
@@ -48,6 +64,10 @@ from .rsi_native_plan import NativeRSIExecutionPlan
 _FIELD = "producer_publication_lineage"
 _PROTOCOL = "lunar-rsi-brs-lineage-checkpoint-v1"
 _RUN_POLICY_FIELD = "producer_brs_checkpoint_policy"
+_ORIGINAL_RUNTIME_CODES = tuple((function, getattr(function, "__code__", None)) for function in (
+    _ORIGINAL_JSON_LOADS, _ORIGINAL_JSON_DUMPS, _ORIGINAL_ISDIR, _ORIGINAL_ISREG,
+    _ORIGINAL_CONTEXT_MANAGER.__init__, _ORIGINAL_CONTEXT_MANAGER.__enter__, _ORIGINAL_CONTEXT_MANAGER.__exit__,
+))
 
 
 def _fail(reason: str) -> None:
@@ -182,9 +202,20 @@ def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
     import contextlib
     import dataclasses
+    import math
     import re
+    import sqlite3
     import sys
     import threading
+    # Refuse substituted runtime readers before hashing/serializing policy itself.
+    if any(actual is not original for actual, original in (
+        (sqlite3.connect, _ORIGINAL_SQLITE_CONNECT), (sqlite3.Row, _ORIGINAL_SQLITE_ROW),
+        (json.loads, _ORIGINAL_JSON_LOADS), (json.dumps, _ORIGINAL_JSON_DUMPS),
+        (hashlib.sha256, _ORIGINAL_SHA256), (os.fstat, _ORIGINAL_FSTAT), (os.stat, _ORIGINAL_STAT),
+        (stat.S_ISDIR, _ORIGINAL_ISDIR), (stat.S_ISREG, _ORIGINAL_ISREG),
+        (contextlib._GeneratorContextManager, _ORIGINAL_CONTEXT_MANAGER),
+    )) or any(getattr(function, "__code__", None) is not code for function, code in _ORIGINAL_RUNTIME_CODES):
+        _fail("rejection_policy_drift")
     from concurrent.futures import Future, ThreadPoolExecutor
     from types import FunctionType
 
@@ -207,9 +238,12 @@ def _policy() -> dict[str, Any]:
         producer_bundle_deadline,
         producer_bundle_handoff,
         producer_bundle_lineage,
+        producer_bundle_lineage_v2,
         producer_bundle_population,
         producer_bundle_preflight,
         producer_bundle_publication,
+        producer_bundle_receipts,
+        producer_bundle_rejection,
         producer_bundle_staging,
         producer_bundle_transaction,
         producer_handoff,
@@ -220,8 +254,16 @@ def _policy() -> dict[str, Any]:
         rsi_brs_mailbox_evidence,
         rsi_brs_native_process_evidence,
         rsi_brs_reconcile,
+        rsi_brs_rejection_c1,
+        rsi_brs_rejection_capacity,
+        rsi_brs_rejection_owner,
         rsi_brs_terminal_evidence,
+        rsi_budget,
         rsi_controller,
+        rsi_fingerprint,
+        rsi_native_rejection,
+        rsi_producer_staging_capsule,
+        rsi_python_admission,
         rsi_python_brs_handoff,
         rsi_python_brs_native_dispatch,
         rsi_python_brs_owner_bridge,
@@ -262,6 +304,29 @@ def _policy() -> dict[str, Any]:
     process_evidence = rsi_brs_native_process_evidence
     terminal = rsi_python_brs_terminal_lifecycle
     composer = rsi_brs_terminal_evidence
+    rejection_owner = rsi_brs_rejection_owner
+    rejection_wire = rsi_brs_rejection_c1
+    rejection_capacity = rsi_brs_rejection_capacity
+    rejection_methods = (
+        "_history", "_rejection_scope", "_rejection_allowance", "_rejection_control_live",
+        "_rejection_cap_unchanged", "_rejection_fixed", "_rejection_observe", "_rejection_materials",
+        "_rejection_readback", "_rejection_readback_observe", "_rejection_final_readback",
+        "_rejection_capacity", "_rejected_entry", "retain_rejected_terminal", "checkpoint_rejected",
+    )
+    for value in (rejection_wire._BASE_FIELDS, rejection_wire._REJECTED_FIELDS):
+        if type(value) is not frozenset or any(type(item) is not str for item in value):
+            _fail("rejection_policy_drift")
+    if (any(type(value) is not str for value in (
+            rejection_wire.REJECTION_SCHEMA, rejection_capacity._BRS_PROTOCOL,
+            rejection_capacity._REJECTION_SCHEMA, rejection_owner._FIELD))
+            or type(rejection_capacity._OBSERVATION_FIELDS) is not tuple
+            or any(type(value) is not str for value in rejection_capacity._OBSERVATION_FIELDS)
+            or type(rejection_capacity._IDENTIFIER) is not re.Pattern
+            or type(rejection_capacity._IDENTIFIER.pattern) is not str
+            or any(type(value) is not int for value in (
+                rejection_capacity._MAX_INT, rejection_capacity.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES,
+                rejection_capacity.MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES))):
+        _fail("rejection_policy_drift")
     for module, names in (
         (process_evidence, ("_FIELDS", "_REF_FIELDS", "_PIN_FIELDS", "_REASONS")),
         (mailbox_evidence, ("_BINDING_FIELDS", "_OBSERVATION_FIELDS")),
@@ -303,6 +368,29 @@ def _policy() -> dict[str, Any]:
             or type(delivery._ID) is not re.Pattern or type(delivery._SHA) is not re.Pattern
             or type(delivery._ID.pattern) is not str or type(delivery._SHA.pattern) is not str):
         _fail("owner_result_policy_drift")
+    native_sets = ((producer_bundle_rejection, ("_EVIDENCE_FIELDS", "_MANIFEST_FIELDS")),
+                   (producer_bundle_receipts, ("_EXECUTION_FIELDS", "_EVALUATION_FIELDS", "_EVALUATION_OPTIONAL_FIELDS",
+                                              "_RETAINED_EVIDENCE_FIELDS", "_RETAINED_ENTRY_FIELDS")))
+    native_patterns = (producer_bundle_rejection._DIGEST, producer_bundle_receipts._SHA256, producer_bundle_receipts._ID)
+    native_protocols = (producer_bundle_rejection._PROTOCOL, producer_bundle_receipts._EXECUTION_PROTOCOL,
+                        producer_bundle_receipts._EVALUATION_PROTOCOL, producer_bundle_receipts._RETAINED_EVIDENCE_PROTOCOL,
+                        producer_bundle_lineage_v2.LINEAGE_V2_PROTOCOL, producer_bundle_lineage_v2.LINEAGE_V2_SCHEMA_VERSION)
+    native_limits = (producer_bundle_rejection._MAX_BYTES, producer_bundle_receipts._MAX_RECEIPT_BYTES,
+                     producer_bundle_receipts._MAX_RETAINED_EVIDENCE_ENTRIES,
+                     producer_bundle_lineage_v2.MAX_LINEAGE_BATCHES, producer_bundle_lineage_v2.MAX_LINEAGE_DESCRIPTOR_BYTES)
+    if (any(type(getattr(module, name)) is not set or any(type(item) is not str for item in getattr(module, name))
+            for module, names in native_sets for name in names)
+            or any(type(value) is not re.Pattern or type(value.pattern) is not str for value in native_patterns)
+            or any(type(value) is not str for value in native_protocols)
+            or any(type(value) is not int for value in native_limits)):
+        _fail("rejection_policy_drift")
+    for binding in (rsi_store.RSILedger.read_only_observations,
+                    rsi_controller.RSILearningController._python_admission_brs_observations):
+        implementation = getattr(binding, "__wrapped__", None)
+        captures = getattr(binding, "__closure__", None)
+        if (type(binding) is not FunctionType or type(implementation) is not FunctionType
+                or type(captures) is not tuple or len(captures) != 1 or captures[0].cell_contents is not implementation):
+            _fail("rejection_policy_drift")
     transaction = producer_bundle_transaction
     control_binding = producer_bundle_control.bind_native_producer_bundle_control
     control_implementation = getattr(control_binding, "__wrapped__", None)
@@ -312,6 +400,47 @@ def _policy() -> dict[str, Any]:
             or closure[0].cell_contents is not control_implementation):
         _fail("native_dispatch_control_binding_drift")
     aliases = (
+        (rejection, rejection_owner),
+        *((getattr(_BRSLineageCheckpointOwner, name), getattr(rejection_owner, name))
+          for name in rejection_methods),
+        (rejection_owner._files, _files), (rejection_owner.recovery, recovery),
+        (rejection_owner.lineage, lineage), (rejection_owner.replace, dataclasses.replace),
+        (rejection_owner.math, math), (rejection_owner.math.isfinite, _ORIGINAL_ISFINITE),
+        (rejection_owner.time.monotonic, _ORIGINAL_MONOTONIC),
+        (rejection_owner.time, time), (rejection_owner.json, json),
+        (rejection_wire.hashlib, hashlib), (rejection_capacity.hashlib, hashlib),
+        (rsi_store.sqlite3, sqlite3), (rsi_store.json, json), (rsi_store.hashlib, hashlib),
+        (rsi_store.os, os), (rsi_store.stat, stat), (rsi_store.threading, threading),
+        (rsi_store.threading.get_ident, get_ident), (rsi_controller.get_ident, get_ident),
+        (rsi_store.canonical_json, candidate_evaluation_spec.canonical_json),
+        (rsi_controller.canonical_json, candidate_evaluation_spec.canonical_json),
+        (lineage.canonical_json, candidate_evaluation_spec.canonical_json),
+        (rejection_owner.LineageSnapshotPin, producer_bundle_lineage.LineageSnapshotPin),
+        (rejection_owner.capture_lineage_snapshot_pin, producer_bundle_lineage.capture_lineage_snapshot_pin),
+        (rejection_owner.verify_persisted_lineage_snapshot, producer_bundle_lineage.verify_persisted_lineage_snapshot),
+        (rejection_owner.ProducerLineageRejectedTerminalV2, producer_bundle_lineage_v2.ProducerLineageRejectedTerminalV2),
+        (rejection_owner.persist_lineage_v2_descriptor, producer_bundle_lineage_v2.persist_lineage_v2_descriptor),
+        (rejection_owner.read_lineage_v2_descriptor_pinned, producer_bundle_lineage_v2.read_lineage_v2_descriptor_pinned),
+        (rejection_owner.parse_producer_bundle_publication_journal,
+         producer_bundle_publication.parse_producer_bundle_publication_journal),
+        (rejection_wire.LineageSnapshotPin, producer_bundle_lineage.LineageSnapshotPin),
+        (rejection_wire.ProducerLineageBeforeIntent, producer_bundle_lineage.ProducerLineageBeforeIntent),
+        (rejection_wire.ProducerLineageRejectedTerminalV2, producer_bundle_lineage_v2.ProducerLineageRejectedTerminalV2),
+        (rejection_wire.parse_producer_bundle_publication_journal,
+         producer_bundle_publication.parse_producer_bundle_publication_journal),
+        (rejection_wire.validate_rsi_python_admission_shapes, rsi_python_admission.validate_rsi_python_admission_shapes),
+        (rejection_capacity.LineageSnapshotPin, producer_bundle_lineage.LineageSnapshotPin),
+        (rejection_capacity._validate_retained_evidence, producer_bundle_receipts._validate_retained_evidence),
+        (rejection_capacity._shape, rsi_producer_staging_capsule._shape),
+        (rejection_capacity.retained_ready_capsule_bytes, rsi_producer_staging_capsule.retained_ready_capsule_bytes),
+        *((getattr(producer_bundle_rejection, name), getattr(producer_bundle_staging, name)) for name in (
+            "_batch", "_canonical", "_confined", "_directory", "_file_descriptor", "_present", "_pretty", "_read",
+            "_regular", "_validate_python_handoff_pin", "_verify_python_handoff", "_workspace", "verify_native_publication_intent")),
+        *((getattr(producer_bundle_rejection, name), getattr(producer_bundle_receipts, name)) for name in (
+            "ProducerBundleEvaluationReceipt", "ProducerBundleExecutionReceipt", "_collect_retained_evidence",
+            "build_native_producer_bundle_evaluation_receipt", "build_native_producer_bundle_execution_receipt")),
+        *((getattr(producer_bundle_lineage_v2, name), getattr(producer_bundle_lineage, name)) for name in (
+            "LineageSnapshotPin", "_absolute_path", "_create_lineage_file", "_id", "_int", "_observe_file", "_sha", "lineage_directory")),
         (persist_lineage_bytes_snapshot, producer_bundle_lineage.persist_lineage_bytes_snapshot),
         (persist_lineage_snapshot, producer_bundle_lineage.persist_lineage_snapshot),
         (persist_lineage_descriptor, producer_bundle_lineage.persist_lineage_descriptor),
@@ -423,6 +552,58 @@ def _policy() -> dict[str, Any]:
     # recovery entry chain to its canonical application module dictionary too.
     # This also refuses replacing both sides of an import alias with one clone.
     entries = (
+        *((getattr(rejection_owner, name), rejection_owner) for name in ("_fail", *rejection_methods)),
+        *((getattr(rejection_wire, name), rejection_wire) for name in (
+            "_fail", "rejected_c1_entry", "rejected_c1_index", "validate_rejected_c1_transition")),
+        *((getattr(rejection_capacity, name), rejection_capacity) for name in (
+            "_fail", "_identifier", "_pin_record", "_add_material", "retained_brs_c1_evidence_bytes")),
+        *((getattr(producer_bundle_lineage_v2, name), producer_bundle_lineage_v2) for name in (
+            "_fail", "_plain", "_canonical", "_normalized_snapshot_pin", "_pin_payload", "_wire",
+            "_association", "_seal", "parse_lineage_v2_descriptor", "persist_lineage_v2_descriptor",
+            "read_lineage_v2_descriptor_pinned")),
+        *((getattr(producer_bundle_lineage_v2.ProducerLineageRejectedTerminalV2, name), producer_bundle_lineage_v2)
+          for name in ("__post_init__", "_validated_payload", "to_dict", "to_json", "digest")),
+        (producer_bundle_lineage_v2.ProducerLineageRejectedTerminalV2.from_dict.__func__, producer_bundle_lineage_v2),
+        *((getattr(producer_bundle_rejection, name), producer_bundle_rejection) for name in (
+            "_fail", "_sha", "_prepared", "_preflight", "_json", "_verify_receipts",
+            "_verify_terminal_batch_rejection_evidence",
+            "_verify_rejection_files", "_exact_evidence_shape")),
+        (producer_bundle_rejection.VerifiedProducerBundleRejection.__post_init__, producer_bundle_rejection),
+        *((getattr(producer_bundle_receipts, name), producer_bundle_receipts) for name in (
+            "_fail", "_digest", "_identifier", "_canonical", "_object", "_sha", "_digest_payload", "_mapping",
+            "_validate_retained_evidence", "_retained_evidence_digest", "_retained_evidence_payload",
+            "_retained_entry", "_collect_retained_evidence", "verify_native_retained_evidence", "_normal_report",
+            "build_native_producer_bundle_execution_receipt", "build_native_producer_bundle_evaluation_receipt")),
+        *((getattr(kind, name), producer_bundle_receipts) for kind in (
+            producer_bundle_receipts.ProducerBundleExecutionReceipt, producer_bundle_receipts.ProducerBundleEvaluationReceipt)
+          for name in ("__post_init__", "to_dict", "digest")),
+        *((kind.from_dict.__func__, producer_bundle_receipts) for kind in (
+            producer_bundle_receipts.ProducerBundleExecutionReceipt, producer_bundle_receipts.ProducerBundleEvaluationReceipt)),
+        (producer_bundle_staging.verify_native_publication_intent, producer_bundle_staging),
+        *((getattr(_ORIGINAL_CONTEXT_MANAGER, name), contextlib) for name in ("__init__", "__enter__", "__exit__")),
+        (rsi_store._id, rsi_store),
+        (rsi_store.RSILedger.read_only_observations, contextlib),
+        (rsi_store.RSILedger.read_only_observations.__wrapped__, rsi_store),
+        *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
+            "_connect", "_checkpoint_python_references", "_checkpoint_digest", "_checkpoint_reference_rows_tx",
+            "_python_admission_row", "controller_lock_held", "_assert_controller_lock")),
+        (rsi_controller.RSILearningController._python_admission_brs_observations, contextlib),
+        (rsi_controller.RSILearningController._python_admission_brs_observations.__wrapped__, rsi_controller),
+        (rsi_controller.RSILearningController._python_admission_flow_payload, rsi_controller),
+        (rsi_controller.RSILearningController._python_admission_assert_brs_wave, rsi_controller),
+        (rsi_controller._record_digest, rsi_controller),
+        (rsi_controller.RSILearningController._run_fingerprint, rsi_controller),
+        *((getattr(rsi_fingerprint, name), rsi_fingerprint) for name in (
+            "ensure_fingerprint_compatible", "compare_fingerprint_contracts", "_normalize_json", "_json_value", "_settings")),
+        *((getattr(rsi_fingerprint.RSIFingerprintContract, name), rsi_fingerprint)
+          for name in ("__post_init__", "digest", "to_dict")),
+        (rsi_fingerprint.RSIFingerprintContract.from_dict.__func__, rsi_fingerprint),
+        (rsi_budget.RSIRunBudget.load.__func__, rsi_budget),
+        *((getattr(rsi_budget.RSIRunBudget, name), rsi_budget)
+          for name in ("__init__", "_validate", "assert_matches", "check", "_check_unlocked", "_check_depth", "to_dict")),
+        (rsi_producer_staging_capsule.retained_ready_capsule_bytes, rsi_producer_staging_capsule),
+        (rsi_producer_staging_capsule._shape, rsi_producer_staging_capsule),
+        (rsi_python_admission.validate_rsi_python_admission_shapes, rsi_python_admission),
         (_retain_mailbox_observation, sys.modules[__name__]),
         (_mailbox_fixed_tail, sys.modules[__name__]),
         *((getattr(terminal, name), terminal) for name in (
@@ -607,11 +788,57 @@ def _policy() -> dict[str, Any]:
 
     return {
         "protocol": _PROTOCOL, "mode": "brs", "max_workers": 1,
+        "rejection_schema": rejection_wire.REJECTION_SCHEMA,
         "production_admission": False, "online_publication": False,
         "max_batches": MAX_LINEAGE_BATCHES,
         "max_checkpoint_bytes": lineage._MAX_CHECKPOINT_BYTES,
         "max_aggregate_snapshot_bytes": MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES,
         "dependencies": {
+            "rejection_c1": {
+                "owner_methods": {name: component_fingerprint(getattr(rejection_owner, name))
+                                  for name in ("_fail", *rejection_methods)},
+                "wire_helpers": {name: component_fingerprint(function) for function, module in entries
+                                 if module is rejection_wire for name in (function.__name__,)},
+                "capacity_helpers": {name: component_fingerprint(function) for function, module in entries
+                                     if module is rejection_capacity for name in (function.__name__,)},
+                "descriptor_helpers": [component_fingerprint(function) for function, module in entries
+                                       if module is producer_bundle_lineage_v2],
+                "native_helpers": {name: [component_fingerprint(function) for function, module in entries
+                                         if module is canonical] for name, canonical in (
+                                             ("rejection", producer_bundle_rejection),
+                                             ("receipts", producer_bundle_receipts))},
+                "native_intent": component_fingerprint(producer_bundle_staging.verify_native_publication_intent),
+                "final_readers": {name: [component_fingerprint(function, config={} if module is contextlib else None)
+                                         for function, module in entries if module is canonical]
+                                  for name, canonical in (("ledger", rsi_store), ("controller", rsi_controller),
+                                                          ("contextmanager", contextlib))},
+                "ready_helpers": [component_fingerprint(function) for function, module in entries
+                                  if module is rsi_producer_staging_capsule],
+                "source_control": {name: [component_fingerprint(function) for function, module in entries if module is canonical]
+                                   for name, canonical in (("budget", rsi_budget), ("fingerprint", rsi_fingerprint))},
+                "shape": component_fingerprint(rsi_python_admission.validate_rsi_python_admission_shapes),
+                "fields": [sorted(rejection_wire._BASE_FIELDS), sorted(rejection_wire._REJECTED_FIELDS)],
+                "owner_field": rejection_owner._FIELD,
+                "native_fields": {module.__name__.rsplit(".", 1)[-1]: {name: sorted(getattr(module, name)) for name in names}
+                                  for module, names in native_sets},
+                "native_patterns": [[value.pattern, value.flags] for value in native_patterns],
+                "native_protocols": list(native_protocols),
+                "native_limits": list(native_limits),
+                "capacity_protocols": [rejection_capacity._BRS_PROTOCOL, rejection_capacity._REJECTION_SCHEMA,
+                                       rejection_capacity.READY_CAPSULE_PROTOCOL],
+                "capacity_limits": [rejection_capacity._MAX_INT,
+                                    rejection_capacity.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES,
+                                    rejection_capacity.MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES,
+                                    rsi_native_rejection.MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES],
+                "capacity_fields": list(rejection_capacity._OBSERVATION_FIELDS),
+                "capacity_pattern": rejection_capacity._IDENTIFIER.pattern,
+                "capacity_pattern_flags": rejection_capacity._IDENTIFIER.flags,
+                "module_sources": {name: hashlib.sha256(_files.read_regular_file(
+                    Path(__file__).parent / name, 1024 * 1024)).hexdigest() for name in (
+                        "rsi_brs_rejection_owner.py", "rsi_brs_rejection_c1.py", "rsi_brs_rejection_capacity.py",
+                        "producer_bundle_lineage_v2.py", "producer_bundle_rejection.py",
+                        "producer_bundle_receipts.py", "rsi_native_rejection.py", "rsi_budget.py", "rsi_fingerprint.py")},
+            },
             "policy": component_fingerprint(_policy),
             "failure": component_fingerprint(_fail),
             "selection": component_fingerprint(_policy_required),
@@ -1076,8 +1303,11 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_provided_plan",
         "_provided_request",
         "_reconcile_registration_started",
+        "_rejection_deadline",
+        "_rejection_file_pin",
         "_request",
         "_retaining_before",
+        "_retaining_rejection",
         "_retaining_success",
         "_run_head",
         "_run_id",
@@ -1197,6 +1427,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._mailbox_history_bytes = b"[]"
         self._validated_before, self._retaining_before, self._retaining_success = None, False, None
         self._success_deadline = None
+        self._retaining_rejection, self._rejection_deadline, self._rejection_file_pin = False, None, None
         self._before_control = None if self._native is None else self._native.execution_control
         self._before_cancelled = None if self._native is None else self._native.cancelled
         self._before_control_pin = self._before_control_state()
@@ -1504,54 +1735,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                  binding.intent.runner_fingerprint, binding.dependency_sha256, binding.environment_sha256)):
             _fail("native_strategy_binding_invalid")
 
-    def _history(self, state: dict[str, Any] | None = None) -> None:
-        # The DRS history reader requires its public opt-in. Use the same strict
-        # single-batch progression with BRS's existing pure capacity accounting;
-        # never manufacture that DRS flag in real or synthetic state.
-        previous = None
-        for _head, snapshot in self._ledger.controller_checkpoint_history(self._run_id):
-            wire = snapshot.get(_FIELD)
-            if wire is None:
-                if previous is not None:
-                    _fail("history_drift")
-                continue
-            if (type(wire) is not dict or set(wire) != {*self._association, "batches", "head", "rejections"}
-                    or any(wire[key] != item for key, item in self._association.items())
-                    or type(wire["batches"]) is not list or len(wire["batches"]) != 1
-                    or wire["rejections"] != []):
-                _fail("history_drift")
-            entry = wire["batches"][0]
-            if type(entry) is not dict or entry.get("state") not in {"before", "staged", "terminal"}:
-                _fail("history_drift")
-            self._validate_entry_shape(entry)
-            lineage.RSIPublicationLineage._retained_bytes(wire, snapshot)
-            terminal = entry.get("terminal")
-            expected_head = None if terminal is None else {
-                "journal_id": entry["journal_id"], "terminal_sha256": terminal["terminal_sha256"],
-                "lineage_sha256": terminal["descriptor_sha256"],
-            }
-            if wire["head"] != expected_head:
-                _fail("history_drift")
-            if previous is None:
-                if entry["state"] != "before" or entry["evidence_pins"] != {}:
-                    _fail("history_drift")
-            else:
-                old = previous["batches"][0]
-                phases = ("before", "staged", "terminal")
-                if not 0 <= phases.index(entry["state"]) - phases.index(old["state"]) <= 1:
-                    _fail("history_drift")
-                for key, item in old.items():
-                    if key in {"snapshots", "evidence_pins"}:
-                        if any(entry[key].get(name) != pin for name, pin in item.items()):
-                            _fail("history_drift")
-                    elif key != "state" and entry.get(key) != item:
-                        _fail("history_drift")
-                if (old["state"] == "before" and entry["state"] == "staged"
-                        and set(old["evidence_pins"]) != {"journal.prepared.json"}):
-                    _fail("history_drift")
-            previous = wire
-        if (self._state if state is None else state).get(_FIELD) != previous:
-            _fail("history_drift")
+    _history = rejection._history
 
     def _initial_window(self, archive: bytes, state_bytes: bytes) -> None:
         from .producer_bundle_transaction import _records_from_archive
@@ -2332,7 +2516,8 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     def _success_scope(self, expected: str | None) -> None:
         current = self._retaining_success
         if (current is not None and (type(current) is not str or current not in {"staged", "terminal"})
-                or current != expected or (current is not None and self._retaining_before is not False)):
+                or current != expected or self._retaining_rejection is not False
+                or (current is not None and self._retaining_before is not False)):
             _fail("success_retention_scope_drift")
 
     def _success_fixed(self, _stage: str | None = None) -> dict[str, Any]:
@@ -2608,3 +2793,18 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         except BaseException:
             self._poisoned = True
             raise
+
+    _rejection_scope = rejection._rejection_scope
+    _rejection_allowance = rejection._rejection_allowance
+    _rejection_cap_unchanged = rejection._rejection_cap_unchanged
+    _rejection_control_live = rejection._rejection_control_live
+    _rejection_fixed = rejection._rejection_fixed
+    _rejection_observe = rejection._rejection_observe
+    _rejection_materials = rejection._rejection_materials
+    _rejection_capacity = rejection._rejection_capacity
+    _rejected_entry = rejection._rejected_entry
+    _rejection_readback = rejection._rejection_readback
+    _rejection_readback_observe = rejection._rejection_readback_observe
+    _rejection_final_readback = rejection._rejection_final_readback
+    retain_rejected_terminal = rejection.retain_rejected_terminal
+    checkpoint_rejected = rejection.checkpoint_rejected
