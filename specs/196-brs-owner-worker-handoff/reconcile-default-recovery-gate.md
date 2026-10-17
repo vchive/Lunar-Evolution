@@ -28,3 +28,9 @@ binding validation and CAS; a later binding/storage failure may follow an earlie
 consume. This slice does not add a batch transaction. A later composition may validate all
 selected episode histories while holding the owner lock before the first consume, using the
 same single-episode validation kernel, without promising rollback of durable writes.
+
+`rsi inspect` reports the same latest-head recovery fence in its existing
+`reconcile.required` boolean. Any retained obligation keeps the flag true, including an
+unknown or settled phase on an otherwise completed run. Once exact consumption removes it,
+historical entries do not affect the flag. The legacy output schema stays unchanged; inspection
+does not probe processes, retry work, or modify the ledger.

@@ -6555,8 +6555,10 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
                         if (ledger.get_episode(episode_id) is not None
                             and ledger.get_episode(episode_id).state == "unknown")
                     ]
+                    brs_obligations = ledger.controller_brs_reconcile_obligations(args.logical_id)
                     payload["reconcile"] = {
-                        "required": record.state == "unknown" or bool(unknown_episode_ids),
+                        "required": record.state == "unknown" or bool(unknown_episode_ids)
+                        or bool(brs_obligations),
                         "run_state": record.state,
                         "unknown_episode_ids": unknown_episode_ids,
                     }
