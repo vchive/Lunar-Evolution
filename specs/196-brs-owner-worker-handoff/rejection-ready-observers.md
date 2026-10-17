@@ -20,6 +20,10 @@ RLock, bound native operations and waiter deque. It checks the finite Condition
 methods and their declared transitive dependencies against independently retained
 import-time bindings. A first capture must reject already replaced methods or
 aliases; accepting current code as the baseline is insufficient.
+Preserve the original presence or absence of stdlib aliases with an independently
+held missing sentinel: Python3.12 does not expose `threading._islice`. Absence is
+different from a present null value; adding, deleting or replacing a binding must
+still fail against that platform's retained original domain.
 
 Validate exact types, plain string attribute keys, allowed instance attributes and
 bounded native waiter domains before invoking methods, performing lookups or

@@ -106,6 +106,13 @@ def _build_guards():
     builtin_names = ("type", "len", "vars", "id", "zip", "tuple", "dict", "str", "set", "any",
                      "AttributeError", "RuntimeError", "ValueError")
     builtin_bindings = plain_tuple((name, namespace_of(builtins)[name]) for name in builtin_names)
+    # Some supported CPython releases omit this unused threading alias. Keep
+    # the original absence distinct from None and retain the canonical C type
+    # independently when the alias is present; never baseline it at capture.
+    missing = object()
+    original_islice = namespace_of(threading).get("_islice", missing)
+    if original_islice is not missing and original_islice is not itertools.islice:
+        raise error_type(prefix + "alias_drift")
     edges = (
         (_thread, "RLock", lock_type), (_thread, "LockType", waiter_type),
         (_thread, "allocate_lock", _thread.allocate_lock),
@@ -113,7 +120,7 @@ def _build_guards():
         (threading, "Condition", condition_type), (threading, "RLock", threading.RLock),
         (threading, "_CRLock", lock_type), (threading, "_PyRLock", threading._PyRLock),
         (threading, "_allocate_lock", _thread.allocate_lock),
-        (threading, "_deque", deque_type), (threading, "_islice", itertools.islice),
+        (threading, "_deque", deque_type), (threading, "_islice", original_islice),
         (types, "FunctionType", function_type), (types, "ModuleType", module_type),
         (types, "BuiltinMethodType", bound_type),
     )
@@ -147,7 +154,7 @@ def _build_guards():
             if registry.get(name) is not module:
                 raise error_type(prefix + "module_registry")
         for owner, name, original in edges:
-            if namespace_of(owner).get(name) is not original:
+            if namespace_of(owner).get(name, missing) is not original:
                 raise error_type(prefix + "alias_drift")
         for name, original in builtin_bindings:
             if builtin_namespace.get(name) is not original:
@@ -178,7 +185,7 @@ def _build_guards():
         for owner, descriptors in ((lock_type, lock_descriptors),
                                    (waiter_type, waiter_descriptors)):
             for name, original in descriptors:
-                if namespace_of(owner).get(name) is not original:
+                if namespace_of(owner).get(name, missing) is not original:
                     raise error_type(prefix + "native_descriptor")
         for pin in function_pins:
             (function, code, namespace, defaults, kwdefaults, kwitems, closure, captures,

@@ -243,7 +243,7 @@ def test_independent_module_aliases_cannot_be_replaced(monkeypatch, owner, name)
     condition = threading.Condition()
     snapshot = _CAPTURE(condition)
     with monkeypatch.context() as patch:
-        patch.setattr(owner, name, object())
+        patch.setattr(owner, name, object(), raising=False)
         _reject(condition)
         _reject(condition, snapshot)
 
@@ -391,3 +391,28 @@ def test_module_namespace_is_bounded(monkeypatch):
             patch.setattr(threading, f"ready_sync_bound_{index}", None, raising=False)
         _reject(condition)
         _reject(condition, snapshot)
+
+
+def test_optional_islice_alias_cannot_be_added_or_replaced_with_none(monkeypatch):
+    condition = threading.Condition()
+    snapshot = _CAPTURE(condition)
+    with monkeypatch.context() as patch:
+        patch.setattr(threading, "_islice", None, raising=False)
+        _reject(condition)
+        _reject(condition, snapshot)
+
+
+def test_optional_islice_original_presence_and_absence_are_preserved(monkeypatch):
+    condition = threading.Condition()
+    snapshot = _CAPTURE(condition)
+    originally_present = "_islice" in vars(threading)
+    with monkeypatch.context() as patch:
+        patch.delattr(threading, "_islice", raising=False)
+        if originally_present:
+            _reject(condition)
+            _reject(condition, snapshot)
+        else:
+            # Supported CPython 3.12 releases have no alias at import time.
+            assert _CAPTURE(condition)[0] is condition
+            _ASSERT(condition, snapshot)
+    _ASSERT(condition, snapshot)

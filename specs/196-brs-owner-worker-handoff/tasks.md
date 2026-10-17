@@ -191,10 +191,12 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
   guard and selected queued-request identity observer described in
   [rejection-ready-observers.md](rejection-ready-observers.md). Neither observer
   grants a ready scope, semantic validity or ACK authority. The two observers have
-  169 scoped development cases; three additional real close/cancel/legacy-service
+  171 scoped development cases; three additional real close/cancel/legacy-service
   transition cases passed. Matching frozen macOS/Linux evidence is recorded
   separately; owner integration and the complete final-reader graph remain the
-  unchecked tasks below.
+  unchecked tasks below. The first frozen `a7ee168` remains NOT_ACCEPTED after a
+  Python3.12 optional-alias inventory failure; use only the successor's complete
+  matching dual-platform evidence, never accumulated old results.
 - [ ] Retain the exact original C2/reference canonical bytes, original admission
   record digest, run/episode/started claim and writer-returned P custody before
   consuming a one-shot ready scope; preserve the old empty-channel guard.

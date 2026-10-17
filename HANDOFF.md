@@ -11,12 +11,17 @@
   bound operations、deque和有限代码/模块依赖；后者在原native锁下只读保留
   queued pending/ready/containers的原对象身份和严格primitive字段，不运行
   DTO serializer/JSON，不arm/dequeue/构造或发布ACK，不授予owner或语义权限。
-- 两模块共169项开发检查，加上原ledger/channel/handoff的联合316项通过；
-  另补真实close/cancel/legacy-service三项状态转换用例通过。Ruff、compileall、
+- 两模块共171项开发检查，加上原ledger/channel/handoff和真实close/cancel/
+  legacy-service三项状态转换的联合321项通过。Ruff、compileall、
   diff-check通过，独立scoped产品审查无阻塞；单一最终来源的双平台验收和最终
   raw审查另存于ignored
-  `.lunar-evolution/validation/rejection-ready-observers-20261018-qepiyo0c/`。
+  `.lunar-evolution/validation/rejection-ready-observers-reviewed-20261018-nna8t06h/`。
   本提交不提前声称该最终验收或完整CI通过。
+- 首次冻结`a7ee168`在macOS319项通过，但Linux因Python3.12.3没有
+  `threading._islice`而119失败/200通过。该来源和raw保留NOT_ACCEPTED于
+  `.lunar-evolution/validation/rejection-ready-observers-20261018-qepiyo0c/`。
+  后继以独立missing sentinel固定各平台原alias存在/缺失，新增/删除/换None
+  继续拒绝；增加两项无skip用例，不能累计旧来源结果。
 - 设计见 [rejection-ready-observers.md](specs/196-brs-owner-worker-handoff/rejection-ready-observers.md)。
   原owner one-shot状态、C2/reference/P原capture、完整语义验证bracket、
   observation/physical/deadline有限gate和staged ACK仍未接线，不能把只读capsule
