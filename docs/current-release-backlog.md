@@ -1,5 +1,23 @@
 # Current release backlog — 2026-10-17
 
+## 当前后继：持久化恢复观察
+
+- P0：PR123/124/125 的完整 CI 与依赖顺序合入。三个候选分别有各自冻结来源的
+  双平台 scoped 验收；PR125 `1e7f6cf` 的相同213项用例、静态检查和独审通过，
+  最近33项 Actions 仍排队。不得用 scoped 结果代替完整 CI。
+- P1（本轮）：原 owner 的 mailbox 四阶段观察持久化、原 native producer 记录绑定、
+  重建 ledger 的只读核验。契约见 [durable-recovery-evidence.md](../specs/196-brs-owner-worker-handoff/durable-recovery-evidence.md)。
+  side namespace 不推进原 root 或消费 obligation；原进程材料缺失固定 unknown。
+- P1（后续）：自动终态证据组合/consume、serial successor 在线组合，以及真实
+  source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle、生产 CLI/Linux 中断验收。
+  transport receipt、detached callback 或旧 producer cleanup 均不能代替 episode 终态。
+- P2：外部 worker 认证、多机 ownership、分布式 scheduler/service 与远程 evaluator
+  后置，不作为当前单机正确性的开发前置。
+
+当前分支 `codex/brs-durable-recovery-evidence` 的实现已完成，最终冻结双平台验收仍待完成；仅本地
+inert/provider-free fixture，公开 native BRS、production admission 与 online publication
+继续关闭。下列各节保留各候选当时的记录。
+
 ## 当前后继：完整 mailbox result envelope 组合
 
 PR124 最终 `56745c2` 已获 macOS/Linux 各288项相同 scoped fixture 回归和独审通过；

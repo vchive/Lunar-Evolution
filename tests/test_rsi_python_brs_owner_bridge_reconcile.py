@@ -30,7 +30,7 @@ tmp_path = native_fixture.tmp_path
 
 
 @contextmanager
-def _mailbox_worker(tmp_path, monkeypatch, *, validity=1, on_response=None):
+def _mailbox_worker(tmp_path, monkeypatch, *, validity=1, on_response=None, worker_check=None):
     class PublicationReady(Event):
         publication = None
 
@@ -53,7 +53,10 @@ def _mailbox_worker(tmp_path, monkeypatch, *, validity=1, on_response=None):
         def request():
             assert get_ident() == value.worker_thread
             try:
-                response = mailbox.request(value.request_message, check=lambda: None)
+                response = mailbox.request(
+                    value.request_message,
+                    check=(lambda: None) if worker_check is None else lambda: worker_check(value, mailbox),
+                )
                 if on_response is not None:
                     on_response(value, response)
                 responses.put(response)

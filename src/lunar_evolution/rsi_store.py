@@ -883,6 +883,76 @@ class RSILedger:
                 )
         return self.write_controller_checkpoint(run_id, state, expected_sha256=expected_checkpoint_sha256)
 
+    def append_brs_mailbox_observation(
+        self, binding: object, observation: object, *, expected_sha256: str | None,
+    ) -> str:
+        """Append one side-journal observation without advancing its original run.
+
+        Both original run and namespace locks must belong to this thread. The
+        root, unchanged obligation and running native owner are checked in the
+        same SQLite write transaction as the strictly adjacent side-journal CAS.
+        This writer neither acknowledges an owner cursor nor retries any effect.
+        """
+        from .rsi_brs_mailbox_evidence import (
+            brs_mailbox_evidence_namespace,
+            parse_brs_mailbox_binding,
+            parse_brs_mailbox_observation,
+            validate_brs_mailbox_history,
+            validate_brs_mailbox_root_history,
+        )
+        from .rsi_brs_reconcile import FIELD
+
+        captured = parse_brs_mailbox_binding(binding)
+        record = parse_brs_mailbox_observation(observation)
+        if record["binding"] != captured:
+            raise RSILearningError("rsi_brs_mailbox_evidence_binding_drift")
+        run_id, episode_id = captured["run_id"], captured["episode_id"]
+        namespace = brs_mailbox_evidence_namespace(captured)
+        self._assert_controller_lock(run_id)
+        self._assert_controller_lock(namespace)
+        if captured["handoff"]["owner_thread_id"] != threading.get_ident():
+            raise RSILearningError("rsi_brs_mailbox_evidence_owner_required")
+        if expected_sha256 is not None:
+            _digest(expected_sha256, name="brs_mailbox_evidence_checkpoint")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            roots = self._controller_checkpoint_history_tx(connection, run_id)
+            if not roots or roots[-1][0] != record["root_checkpoint_sha256"]:
+                raise RSILearningError("rsi_brs_mailbox_evidence_root_drift")
+            if roots[-1][1].get(FIELD, {}).get(episode_id) != captured["obligation"]:
+                raise RSILearningError("rsi_brs_mailbox_evidence_obligation_drift")
+            run, episode = self._head(connection, run_id), self._head(connection, episode_id)
+            if (run is None or run.kind != "run" or run.state != "running"
+                    or run.record_sha256 != captured["run_record_sha256"]
+                    or episode is None or episode.kind != "episode" or episode.state != "running"
+                    or episode.record_sha256 != captured["episode_record_sha256"]
+                    or episode.payload.get("run_id") != run_id
+                    or episode.request_sha256 != captured["selected_request_sha256"]):
+                raise RSILearningError("rsi_brs_mailbox_evidence_record_drift")
+            row = connection.execute(
+                "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (episode_id,),
+            ).fetchone()
+            if (row is None or row["request_sha256"] != captured["selected_request_sha256"]
+                    or row["plan_sha256"] != captured["native_plan_sha256"]
+                    or row["claim_sha256"] != captured["native_claim_sha256"]
+                    or self._native_result_status(
+                        connection, episode_id, captured["selected_request_sha256"],
+                    ) is not None):
+                raise RSILearningError("rsi_brs_mailbox_evidence_native_claim_drift")
+            self._native_claim_row(row, status="started")
+            history = self._controller_checkpoint_history_tx(connection, namespace)
+            actual = history[-1][0] if history else None
+            if actual != expected_sha256:
+                raise RSILearningError("rsi_brs_mailbox_evidence_checkpoint_conflict")
+            # A provisional distinct digest is only a structural history marker;
+            # the original checkpoint writer computes the actual chained digest.
+            prospective = [*history, (record["observation_sha256"], record)]
+            validate_brs_mailbox_history(prospective, binding=captured)
+            validate_brs_mailbox_root_history(roots, prospective, binding=captured)
+            return self._append_controller_checkpoint_tx(
+                connection, namespace, record, expected_sha256=expected_sha256,
+            )
+
     def _consume_brs_reconcile_obligation(self, run_id: str, episode_id: str, evidence: object):
         """Check terminal ledger truth and remove one obligation in the same transaction."""
         from .rsi_brs_reconcile import (
