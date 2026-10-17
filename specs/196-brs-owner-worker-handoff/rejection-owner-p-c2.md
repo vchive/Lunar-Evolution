@@ -116,6 +116,8 @@ and closure fingerprint checks remain active.
 Also pin the original function attribute entries by key and value identity before
 any fingerprint call. New fingerprint hooks or `__wrapped__` attributes must fail
 without executing a callback after the final physical material check.
+Retain original default/keyword-default objects and keyword entries too; refuse
+a substituted mapping before any `.items()` call could execute a callback.
 
 Develop in parallel with exclusive file ownership: pure parser/accounting and
 their tests; original-owner scope/history/provenance methods; policy wiring

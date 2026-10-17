@@ -171,3 +171,28 @@ def test_new_callable_attributes_are_refused_before_any_fingerprint_callback(
     with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejection_policy_drift$"):
         owner._policy()
     assert calls == []
+
+
+@pytest.mark.parametrize("fault", ["mapping-callback", "replace", "mutate"])
+def test_original_keyword_defaults_are_checked_before_mapping_observation(
+    monkeypatch, original_policy, fault,
+):
+    function = provenance._readback
+    defaults = function.__kwdefaults__
+    assert defaults == {"final": False}
+    calls = []
+
+    class ObservedDefaults(dict):
+        def items(self):
+            calls.append("items")
+            raise AssertionError("keyword-default callback ran after the final material check")
+
+    if fault == "mapping-callback":
+        monkeypatch.setattr(function, "__kwdefaults__", ObservedDefaults(defaults))
+    elif fault == "replace":
+        monkeypatch.setattr(function, "__kwdefaults__", dict(defaults))
+    else:
+        monkeypatch.setitem(defaults, "final", True)
+    with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejection_policy_drift$"):
+        owner._policy()
+    assert calls == []

@@ -21,7 +21,7 @@
   112KiB checkpoint及所有容量/指纹上限。不能只hash源文件而省略live依赖校验。
 - 首次P/C2冻结 `fc54109` 的373项双平台材料保留为NOT_ACCEPTED：独立审查确认
   原函数新增fingerprint hook属性可在末次P检查后执行且保持相同policy。
-  后继仅追加外层原function属性条目pin及10项拒绝回调测试；最终来源另行验收，
+  后继仅追加外层原function属性/默认参数条目pin及13项拒绝回调测试；最终来源另行验收，
   不能因旧case全部通过而升级首次冻结的结论。
 - P/C2不等于actual ready/ACK、拒绝dispatch/result/recovery、root execution settlement、
   owner retirement或reserved-wave serial successor。真实runtime/project/CLI仍未验收。
