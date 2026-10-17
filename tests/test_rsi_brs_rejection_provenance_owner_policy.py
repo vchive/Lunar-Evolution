@@ -196,3 +196,59 @@ def test_original_keyword_defaults_are_checked_before_mapping_observation(
     with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejection_policy_drift$"):
         owner._policy()
     assert calls == []
+
+
+@pytest.mark.parametrize("kind", ["object", "string-subclass"])
+def test_keyword_default_key_domain_precedes_hash_or_equality(monkeypatch, original_policy, kind):
+    defaults = provenance._readback.__kwdefaults__
+    calls = []
+
+    class ObservedKey:
+        def __hash__(self):
+            calls.append("hash")
+            return hash("final")
+
+        def __eq__(self, other):
+            calls.append("equality")
+            return other == "final"
+
+    class ObservedString(str, ObservedKey):
+        __hash__ = ObservedKey.__hash__
+        __eq__ = ObservedKey.__eq__
+
+    key = ObservedKey() if kind == "object" else ObservedString("final")
+    monkeypatch.delitem(defaults, "final")
+    monkeypatch.setitem(defaults, key, False)
+    calls.clear()
+    with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejection_policy_drift$"):
+        owner._policy()
+    assert calls == []
+
+
+@pytest.mark.parametrize("target,name", [
+    (provenance, "_wire"),
+    (provenance_policy, "_check_function"),
+])
+@pytest.mark.parametrize("attribute", ["__name__", "__qualname__", "__module__"])
+@pytest.mark.parametrize("kind", ["changed", "string-subclass"])
+def test_original_plain_function_labels_precede_fingerprint_use(
+    monkeypatch, original_policy, target, name, attribute, kind,
+):
+    function = getattr(target, name)
+    original = getattr(function, attribute)
+    calls = []
+
+    class ObservedString(str):
+        def __hash__(self):
+            calls.append("hash")
+            return str.__hash__(self)
+
+        def __eq__(self, other):
+            calls.append("equality")
+            return str.__eq__(self, other)
+
+    changed = "foreign-label" if kind == "changed" else ObservedString(original)
+    monkeypatch.setattr(function, attribute, changed)
+    with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejection_policy_drift$"):
+        owner._policy()
+    assert calls == []

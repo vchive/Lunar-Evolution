@@ -118,6 +118,11 @@ any fingerprint call. New fingerprint hooks or `__wrapped__` attributes must fai
 without executing a callback after the final physical material check.
 Retain original default/keyword-default objects and keyword entries too; refuse
 a substituted mapping before any `.items()` call could execute a callback.
+Check the plain-string domain of attribute and keyword-default keys before
+membership or lookup, including keys mutated inside the original dictionary.
+Independently retain the original plain `__name__`, `__qualname__` and
+`__module__` labels and check their types and values before a helper name or
+fingerprint can observe them. Subclass labels must fail before equality/hash.
 
 Develop in parallel with exclusive file ownership: pure parser/accounting and
 their tests; original-owner scope/history/provenance methods; policy wiring

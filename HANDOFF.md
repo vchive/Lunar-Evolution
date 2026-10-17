@@ -21,8 +21,13 @@
   112KiB checkpoint及所有容量/指纹上限。不能只hash源文件而省略live依赖校验。
 - 首次P/C2冻结 `fc54109` 的373项双平台材料保留为NOT_ACCEPTED：独立审查确认
   原函数新增fingerprint hook属性可在末次P检查后执行且保持相同policy。
-  后继仅追加外层原function属性/默认参数条目pin及13项拒绝回调测试；最终来源另行验收，
-  不能因旧case全部通过而升级首次冻结的结论。
+  第二次冻结 `5d9218a` 的386项材料也为NOT_ACCEPTED：独审发现原kwdefaults字典
+  等长换入非plain-str key及函数metadata的str子类仍可进入动态观察。两份旧runner已
+  精确停止并保留partial raw，不能因旧case通过而升级结论。
+- 后继补齐属性/kwdefaults的plain-str key域及原函数name/qualname/module标签pin，
+  在membership、equality/hash和fingerprint前拒绝类型漂移；新增14项测试。
+  最新216项pure/native/owner-policy开发回归通过，Ruff、compileall、diff-check通过。
+  等完整有限投影代码复核通过后，再冻结新来源并重跑双平台；不能累加旧来源结果。
 - P/C2不等于actual ready/ACK、拒绝dispatch/result/recovery、root execution settlement、
   owner retirement或reserved-wave serial successor。真实runtime/project/CLI仍未验收。
   仅本地inert/provider-free fixtures；public native BRS、production admission和
