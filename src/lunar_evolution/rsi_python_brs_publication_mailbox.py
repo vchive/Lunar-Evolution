@@ -137,6 +137,14 @@ def _digest(domain: bytes, *parts: str | bytes) -> str:
     return hashlib.sha256(domain + b"\0" + b"\0".join(raw)).hexdigest()
 
 
+def _primitive_fields(values: tuple, payload_index: int) -> tuple:
+    if (type(values) is not tuple or len(values) != payload_index + 2
+            or any(type(value) is not (bytes if index == payload_index else str)
+                   for index, value in enumerate(values))):
+        _fail("snapshot_invalid")
+    return values
+
+
 @dataclass(frozen=True, slots=True)
 class BRSOwnerPublicationRequest:
     run_id: str
@@ -253,6 +261,7 @@ class BRSOwnerPublicationMailbox:
         self._submitting = False
         self._servicing = False
         self._retained_request: BRSOwnerPublicationRequest | None = None
+        self._retained_request_fields: tuple | None = None
         self._response_fields: tuple | None = None
         self._accepted = False
         self._error: str | None = None
@@ -267,6 +276,24 @@ class BRSOwnerPublicationMailbox:
             _fail("closed")
         if self._status != "open" or self._submitting:
             _fail("duplicate_request")
+
+    def _observation_snapshot(self) -> tuple:
+        """Copy fixed primitives under the condition; validate DTOs outside it."""
+        if threading.get_ident() != self._owner_thread:
+            _fail("owner_required")
+        with self._condition:
+            status, accepted = self._status, self._accepted
+            request_fields = self._retained_request_fields
+            response = self._response_fields
+            if (type(status) is not str or type(accepted) is not bool
+                    or (request_fields is not None and (type(request_fields) is not tuple or len(request_fields) != 5))
+                    or (response is not None and (type(response) is not tuple or len(response) != 6))):
+                _fail("snapshot_invalid")
+            for values, payload_index in ((request_fields, 3), (response, 4)):
+                if values is not None and any(type(value) is not (bytes if index == payload_index else str)
+                                              for index, value in enumerate(values)):
+                    _fail("snapshot_invalid")
+            return status, accepted, request_fields, response
 
     def request(
         self, request: BRSOwnerPublicationRequest, *, check: Callable[[], None],
@@ -283,6 +310,10 @@ class BRSOwnerPublicationMailbox:
             _fail("capture_mismatch")
         if not callable(check):
             _fail("check_invalid")
+        request_fields = _primitive_fields((
+            detached.run_id, detached.episode_id, detached.handoff_sha256,
+            detached.payload, detached.request_sha256,
+        ), 3)
         with self._condition:
             self._available()
             self._submitting = True
@@ -294,22 +325,32 @@ class BRSOwnerPublicationMailbox:
         with self._condition:
             self._available()
             self._retained_request = detached
+            self._retained_request_fields = request_fields
             self._status = "queued"
             self._condition.notify_all()
         try:
             while True:
                 check()
+                fields = None
                 with self._condition:
                     if self._error is not None:
                         _fail(self._error)
                     if self._response_fields is not None:
-                        # Return a new DTO; retained state is strict immutable primitives.
-                        response = BRSOwnerPublicationResponse(*self._response_fields)
-                        self._accepted = True
-                        return response
-                    if self._closed:
+                        fields = self._response_fields
+                    elif self._closed:
                         _fail("closed")
-                    self._condition.wait(_POLL_SECONDS)
+                    else:
+                        self._condition.wait(_POLL_SECONDS)
+                if fields is not None:
+                    # DTO validators and any descriptor access stay outside the
+                    # condition. Receipt is recorded only after construction.
+                    response = BRSOwnerPublicationResponse(*fields)
+                    with self._condition:
+                        if (self._closed or self._error is not None or self._status != "delivered"
+                                or self._response_fields != fields):
+                            _fail("delivery_unknown")
+                        self._accepted = True
+                    return response
         except BaseException:
             with self._condition:
                 self._status = "abandoned"
@@ -321,11 +362,14 @@ class BRSOwnerPublicationMailbox:
     def service(
         self, handler: Callable[[BRSOwnerPublicationRequest], bytes], *,
         check: Callable[[], None], timeout: float = _POLL_SECONDS,
+        _response_observer: Callable[[BRSOwnerPublicationRequest, BRSOwnerPublicationResponse], None] | None = None,
     ) -> bool:
         if threading.get_ident() != self._owner_thread:
             _fail("owner_required")
         if not callable(handler) or not callable(check):
             _fail("handler_invalid")
+        if _response_observer is not None and not callable(_response_observer):
+            _fail("observer_invalid")
         if (type(timeout) is not int and type(timeout) is not float) or (
             timeout < 0 or timeout > 60 or not math.isfinite(timeout)
         ):
@@ -356,8 +400,15 @@ class BRSOwnerPublicationMailbox:
                 _fail("request_mutated")
             response = build_brs_owner_publication_response(original, payload)
             check()
-            fields = (response.run_id, response.episode_id, response.handoff_sha256,
-                      response.request_sha256, response.payload, response.response_sha256)
+            fields = _primitive_fields((
+                response.run_id, response.episode_id, response.handoff_sha256,
+                response.request_sha256, response.payload, response.response_sha256,
+            ), 4)
+            if _response_observer is not None:
+                # Persistence and all callbacks run before delivery and outside
+                # the condition. The observer receives detached exact DTOs.
+                _response_observer(_request(original), BRSOwnerPublicationResponse(*fields))
+                check()
             with self._condition:
                 if self._closed or self._status != "inflight" or self._error is not None:
                     _fail("delivery_unknown")

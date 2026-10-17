@@ -3,8 +3,8 @@
 This module composes the already validated, provider-free pieces without exposing a
 public BRS route.  The selected worker submits a detached request and waits on the
 one-shot mailbox; only the original owner thread runs the private native transaction.
-The response is a bounded status summary and never an admission, lineage, or
-publication capability.  Public native BRS and production admission remain refused.
+The response contains the existing exact result envelope, without granting admission,
+lineage or publication authority. Public native BRS and production admission remain refused.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from .rsi_python_brs_native_dispatch import (
 from .rsi_python_brs_publication_mailbox import (
     BRSOwnerPublicationMailbox,
     BRSOwnerPublicationRequest,
+    BRSOwnerPublicationResponse,
 )
 from .rsi_python_brs_result_delivery import build_brs_owner_result_payload
 
@@ -128,37 +129,82 @@ def run_brs_owner_publication_mailbox(
     _require_disabled_policy(owner)
     _require_original_mailbox(owner, mailbox)
     _BRSLineageCheckpointOwner.retain_reconcile_obligation(owner)
-    handoff_bytes = owner._handoff_bytes
-    result_holder: list[tuple[NativeProducerBundleTransactionResult, bytes]] = []
-
-    def observe() -> None:
-        check()
-        _original_control(owner)
-        # Mailbox check callbacks run outside its condition. Recheck the original
-        # source/policy and running claim before both dispatch and byte delivery.
-        _BRSLineageCheckpointOwner._success_fixed(owner)
-
-    def handle(request: BRSOwnerPublicationRequest) -> bytes:
-        if type(request) is not BRSOwnerPublicationRequest:
-            _fail("request_invalid")
-        if result_holder:
-            _fail("duplicate_request")
-        request_fields = (request.run_id, request.episode_id, request.handoff_sha256,
-                          request.payload, request.request_sha256)
-        result = _run_original_brs_native_publication(
-            owner, request, original_preparation=original_preparation,
+    try:
+        status, accepted, request_fields, _response_fields = BRSOwnerPublicationMailbox._observation_snapshot(mailbox)
+        _BRSLineageCheckpointOwner.retain_mailbox_observation(
+            owner, "owner_capture", mailbox_state=status, worker_receipt_observed=accepted,
+            request=None if request_fields is None else BRSOwnerPublicationRequest(*request_fields),
         )
-        # Native execution receives its own request DTO. Build against the
-        # immutable entry capture, never that DTO or a mutable latest handoff.
-        payload = _response_payload(
-            result, BRSOwnerPublicationRequest(*request_fields),
-            BRSSelectedChildHandoff(**json.loads(handoff_bytes)),
-        )
-        result_holder.append((result, payload))
-        return payload
+        handoff_bytes = owner._handoff_bytes
+        result_holder: list[tuple[NativeProducerBundleTransactionResult, bytes]] = []
+        generated_fields_holder: list[tuple] = []
 
-    served = BRSOwnerPublicationMailbox.service(mailbox, handle, check=observe, timeout=timeout)
-    if served is not True or len(result_holder) != 1:
-        _fail("mailbox_not_served")
-    transaction, response = result_holder[0]
-    return BRSOwnerMailboxBridgeResult(transaction, response)
+        def observe() -> None:
+            check()
+            _original_control(owner)
+            # Mailbox check callbacks run outside its condition. Recheck the original
+            # source/policy and running claim before both dispatch and byte delivery.
+            _BRSLineageCheckpointOwner._success_fixed(owner)
+
+        def handle(request: BRSOwnerPublicationRequest) -> bytes:
+            if type(request) is not BRSOwnerPublicationRequest:
+                _fail("request_invalid")
+            if result_holder:
+                _fail("duplicate_request")
+            request_fields = (request.run_id, request.episode_id, request.handoff_sha256,
+                              request.payload, request.request_sha256)
+            status, accepted, captured_request, _response_fields = BRSOwnerPublicationMailbox._observation_snapshot(mailbox)
+            if captured_request != request_fields:
+                _fail("request_snapshot_drift")
+            _BRSLineageCheckpointOwner.retain_mailbox_observation(
+                owner, "request_observed", mailbox_state=status, worker_receipt_observed=accepted,
+                request=BRSOwnerPublicationRequest(*request_fields),
+            )
+            result = _run_original_brs_native_publication(
+                owner, request, original_preparation=original_preparation,
+            )
+            # Native execution receives its own request DTO. Build against the
+            # immutable entry capture, never that DTO or a mutable latest handoff.
+            payload = _response_payload(
+                result, BRSOwnerPublicationRequest(*request_fields),
+                BRSSelectedChildHandoff(**json.loads(handoff_bytes)),
+            )
+            result_holder.append((result, payload))
+            return payload
+
+        def generated(request: BRSOwnerPublicationRequest, response: BRSOwnerPublicationResponse) -> None:
+            status, accepted, request_fields, response_fields = BRSOwnerPublicationMailbox._observation_snapshot(mailbox)
+            if response_fields is not None or request_fields != (
+                request.run_id, request.episode_id, request.handoff_sha256, request.payload, request.request_sha256,
+            ):
+                _fail("response_snapshot_drift")
+            _BRSLineageCheckpointOwner.retain_mailbox_observation(
+                owner, "response_generated", mailbox_state=status, worker_receipt_observed=accepted,
+                request=request, response=response,
+            )
+            generated_fields_holder.append((
+                response.run_id, response.episode_id, response.handoff_sha256,
+                response.request_sha256, response.payload, response.response_sha256,
+            ))
+
+        served = BRSOwnerPublicationMailbox.service(
+            mailbox, handle, check=observe, timeout=timeout, _response_observer=generated,
+        )
+        if served is not True or len(result_holder) != 1:
+            _fail("mailbox_not_served")
+        status, accepted, request_fields, response_fields = BRSOwnerPublicationMailbox._observation_snapshot(mailbox)
+        if request_fields is None or len(generated_fields_holder) != 1:
+            _fail("transport_snapshot_invalid")
+        generated_fields = generated_fields_holder[0]
+        if ((response_fields is None and status != "abandoned")
+                or (response_fields is not None and response_fields != generated_fields)):
+            _fail("transport_snapshot_invalid")
+        _BRSLineageCheckpointOwner.retain_mailbox_observation(
+            owner, "transport_observed", mailbox_state=status, worker_receipt_observed=accepted,
+            request=BRSOwnerPublicationRequest(*request_fields), response=BRSOwnerPublicationResponse(*generated_fields),
+        )
+        transaction, response = result_holder[0]
+        return BRSOwnerMailboxBridgeResult(transaction, response)
+    except BaseException:
+        owner._poisoned = True
+        raise

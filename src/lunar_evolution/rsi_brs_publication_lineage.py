@@ -187,9 +187,11 @@ def _policy() -> dict[str, Any]:
     from types import FunctionType
 
     from . import (
+        _candidate_workspace_io,
         automatic_solve_lifecycle,
         candidate_evaluation_spec,
         evolution,
+        native_bootstrap,
         native_trusted_attempt,
         native_trusted_capture,
         native_trusted_cleanup,
@@ -197,6 +199,7 @@ def _policy() -> dict[str, Any]:
         native_trusted_receipt,
         native_trusted_scheduler,
         native_trusted_streams,
+        producer_bootstrap,
         producer_bundle_admission,
         producer_bundle_control,
         producer_bundle_deadline,
@@ -208,9 +211,12 @@ def _policy() -> dict[str, Any]:
         producer_bundle_staging,
         producer_bundle_transaction,
         producer_handoff,
+        producer_launcher,
         producer_process,
         producer_request_transport,
         python_producer_admission_handoff,
+        rsi_brs_mailbox_evidence,
+        rsi_brs_native_process_evidence,
         rsi_brs_reconcile,
         rsi_controller,
         rsi_python_brs_handoff,
@@ -247,6 +253,35 @@ def _policy() -> dict[str, Any]:
     reader = rsi_python_brs_publication_recovery
     dispatch = rsi_python_brs_native_dispatch
     delivery = rsi_python_brs_result_delivery
+    mailbox_evidence = rsi_brs_mailbox_evidence
+    process_evidence = rsi_brs_native_process_evidence
+    for module, names in (
+        (process_evidence, ("_FIELDS", "_REF_FIELDS", "_PIN_FIELDS", "_REASONS")),
+        (mailbox_evidence, ("_BINDING_FIELDS", "_OBSERVATION_FIELDS")),
+    ):
+        for name in names:
+            value = getattr(module, name)
+            if type(value) is not frozenset or any(type(item) is not str for item in value):
+                _fail("mailbox_evidence_policy_drift")
+    for module, names in (
+        (process_evidence, ("_NAMES",)), (mailbox_evidence, ("STAGES", "_MESSAGE_DIGESTS")),
+    ):
+        for name in names:
+            value = getattr(module, name)
+            if type(value) is not tuple or any(type(item) is not str for item in value):
+                _fail("mailbox_evidence_policy_drift")
+    for module, names in (
+        (process_evidence, ("PROTOCOL", "ROLE")),
+        (mailbox_evidence, ("BINDING_PROTOCOL", "OBSERVATION_PROTOCOL")),
+    ):
+        if any(type(getattr(module, name)) is not str for name in names):
+            _fail("mailbox_evidence_policy_drift")
+    if (any(type(value) is not int for value in (
+            process_evidence._MAX, process_evidence._MAX_FILE, mailbox_evidence.MAX_BRS_MAILBOX_EVIDENCE_BYTES,
+            _candidate_workspace_io._FLAGS))
+            or any(type(value) is not re.Pattern or type(value.pattern) is not str for value in (
+                process_evidence._SHA, process_evidence._ID, mailbox_evidence._SHA))):
+        _fail("mailbox_evidence_policy_drift")
     if (type(delivery._PROTOCOL) is not str or type(delivery._STATUSES) is not frozenset
             or any(type(value) is not str for value in delivery._STATUSES)
             or type(delivery._FIELDS) is not set or any(type(value) is not str for value in delivery._FIELDS)
@@ -280,6 +315,7 @@ def _policy() -> dict[str, Any]:
         (rsi_python_brs_owner_bridge._BRSLineageCheckpointOwner, _BRSLineageCheckpointOwner),
         (rsi_python_brs_owner_bridge.BRSOwnerPublicationMailbox, rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox),
         (rsi_python_brs_owner_bridge.BRSOwnerPublicationRequest, rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest),
+        (rsi_python_brs_owner_bridge.BRSOwnerPublicationResponse, rsi_python_brs_publication_mailbox.BRSOwnerPublicationResponse),
         (rsi_python_brs_owner_bridge.BRSSelectedChildHandoff, rsi_python_brs_handoff.BRSSelectedChildHandoff),
         (rsi_python_brs_handoff.canonical_json, candidate_evaluation_spec.canonical_json),
         (delivery.canonical_json, candidate_evaluation_spec.canonical_json),
@@ -327,6 +363,25 @@ def _policy() -> dict[str, Any]:
         (native_trusted_output._read_envelope, producer_process._read_envelope),
         (native_trusted_output.parse_producer_envelope, producer_handoff.parse_producer_envelope),
         (native_trusted_capture.read_host_request_journal, producer_request_transport.read_host_request_journal),
+        (mailbox_evidence.canonical_json, candidate_evaluation_spec.canonical_json),
+        (mailbox_evidence.parse_native_process_binding, process_evidence.parse_native_process_binding),
+        (mailbox_evidence.BRSReconcileObligation, rsi_brs_reconcile.BRSReconcileObligation),
+        (mailbox_evidence.BRSSelectedChildHandoff, rsi_python_brs_handoff.BRSSelectedChildHandoff),
+        (mailbox_evidence.BRSOwnerPublicationRequest, rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest),
+        (mailbox_evidence.BRSOwnerPublicationResponse, rsi_python_brs_publication_mailbox.BRSOwnerPublicationResponse),
+        (process_evidence.canonical_json, candidate_evaluation_spec.canonical_json),
+        (process_evidence.DirectoryChain, _candidate_workspace_io.DirectoryChain),
+        (process_evidence.NativeBootstrapArtifact, native_bootstrap.NativeBootstrapArtifact),
+        (process_evidence.NativeRSIExecutionPlan, NativeRSIExecutionPlan),
+        (process_evidence.ProducerLaunchIntent, producer_launcher.ProducerLaunchIntent),
+        (process_evidence.ProducerLaunchAttestation, producer_launcher.ProducerLaunchAttestation),
+        (process_evidence.recover_native_trusted_attempt, native_trusted_attempt.recover_native_trusted_attempt),
+        (process_evidence.recover_native_trusted_execution_receipt, native_trusted_receipt.recover_native_trusted_execution_receipt),
+        (process_evidence.verify_native_trusted_cleanup, native_trusted_cleanup.verify_native_trusted_cleanup),
+        (process_evidence.build_trusted_bootstrap_launch, producer_bootstrap.build_trusted_bootstrap_launch),
+        (process_evidence.verify_trusted_bootstrap_process_registration,
+         producer_bootstrap.verify_trusted_bootstrap_process_registration),
+        (process_evidence._process_owner_identity, producer_process._process_owner_identity),
     )
     if any(actual is not canonical for actual, canonical in aliases):
         _fail("native_reader_binding_drift")
@@ -334,6 +389,26 @@ def _policy() -> dict[str, Any]:
     # recovery entry chain to its canonical application module dictionary too.
     # This also refuses replacing both sides of an import alias with one clone.
     entries = (
+        (_retain_mailbox_observation, sys.modules[__name__]),
+        (_mailbox_fixed_tail, sys.modules[__name__]),
+        (_candidate_workspace_io.fail, _candidate_workspace_io),
+        (_candidate_workspace_io.identity, _candidate_workspace_io),
+        *((getattr(_candidate_workspace_io.DirectoryChain, name), _candidate_workspace_io)
+          for name in ("__init__", "check", "close")),
+        (_candidate_workspace_io.DirectoryChain.fd.fget, _candidate_workspace_io),
+        *((getattr(mailbox_evidence, name), mailbox_evidence) for name in (
+            "_fail", "_sha", "_plain", "_clean", "_digest", "parse_brs_mailbox_binding",
+            "build_brs_mailbox_binding", "brs_mailbox_evidence_namespace", "parse_brs_mailbox_observation",
+            "build_brs_mailbox_observation", "validate_brs_mailbox_history", "inspect_brs_mailbox_evidence",
+            "validate_brs_mailbox_root_history")),
+        *((getattr(process_evidence, name), process_evidence) for name in (
+            "_fail", "_plain", "_sha", "_number", "_digest", "_owner", "parse_native_process_binding",
+            "_workspace", "_identity", "_pairs", "_entry", "_records", "_plan",
+            "capture_native_process_binding", "_group", "_process", "observe_native_process_binding")),
+        (native_trusted_cleanup.verify_native_trusted_cleanup, native_trusted_cleanup),
+        (producer_bootstrap.build_trusted_bootstrap_launch, producer_bootstrap),
+        (producer_bootstrap.verify_trusted_bootstrap_process_registration, producer_bootstrap),
+        (producer_process._process_owner_identity, producer_process),
         *((getattr(producer_bundle_lineage, name), producer_bundle_lineage) for name in (
             "persist_lineage_bytes_snapshot", "persist_lineage_snapshot", "persist_lineage_descriptor",
             "_create_lineage_file", "_observe_file", "verify_lineage_snapshot_pin")),
@@ -350,13 +425,14 @@ def _policy() -> dict[str, Any]:
             "_success_entry", "_verify_staged_projection", "_candidate_materials")),
         *((getattr(_BRSLineageCheckpointOwner, name), sys.modules[__name__]) for name in (
             "retain_reconcile_obligation", "_reconcile_registration_observe", "_reconcile_registration_readback",
-            "_reconcile_registration_fixed")),
+            "_reconcile_registration_fixed", "retain_mailbox_observation", "_mailbox_native_arguments",
+            "_mailbox_process_unchanged", "_mailbox_readback")),
         *((getattr(rsi_brs_reconcile, name), rsi_brs_reconcile) for name in (
             "register_brs_selected_obligation", "put_brs_reconcile_obligation", "validate_brs_reconcile_obligations")),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
             "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
-            "_native_claim_row")),
+            "_native_claim_row", "append_brs_mailbox_observation")),
         *((getattr(rsi_python_brs_owner_bridge, name), rsi_python_brs_owner_bridge) for name in (
             "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
             "_response_payload")),
@@ -391,10 +467,12 @@ def _policy() -> dict[str, Any]:
           for name in ("_fail", "_identity", "_digest", "_int")),
         *((getattr(rsi_python_brs_publication_mailbox, name), rsi_python_brs_publication_mailbox) for name in (
             "_fail", "_identity", "_sha", "_shape", "_payload", "_request_payload", "_digest",
-            "build_brs_owner_publication_response")),
+            "_primitive_fields", "build_brs_owner_publication_response")),
         (rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest.__post_init__, rsi_python_brs_publication_mailbox),
         (rsi_python_brs_publication_mailbox.BRSOwnerPublicationResponse.__post_init__, rsi_python_brs_publication_mailbox),
         (rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox.service, rsi_python_brs_publication_mailbox),
+        (rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox.request, rsi_python_brs_publication_mailbox),
+        (rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox._observation_snapshot, rsi_python_brs_publication_mailbox),
         *((getattr(python_producer_admission_handoff, name), python_producer_admission_handoff) for name in (
             "parse_python_producer_admission_handoff_file_pin", "_validate_file_pin_payload",
             "_canonical", "_strict_json", "_pairs", "_sha", "_identifier", "_fail")),
@@ -483,6 +561,8 @@ def _policy() -> dict[str, Any]:
             "module_sources": {name: hashlib.sha256(_files.read_regular_file(Path(__file__).parent / name, 1024 * 1024)).hexdigest()
                                for name in ("rsi_brs_publication_lineage.py", "rsi_publication_lineage.py",
                                             "rsi_controller.py", "rsi_store.py", "rsi_brs_reconcile.py",
+                                            "rsi_brs_mailbox_evidence.py", "rsi_brs_native_process_evidence.py",
+                                            "_candidate_workspace_io.py",
                                             "rsi_python_brs_owner_bridge.py", "producer_bundle_lineage.py",
                                             "producer_bundle_admission.py", "producer_bundle_publication.py",
                                             "rsi_python_admission.py", "rsi_python_brs_handoff.py",
@@ -578,6 +658,42 @@ def _policy() -> dict[str, Any]:
                 "receipt_parser": component_fingerprint(producer_process.parse_producer_execution_receipt),
             },
             "owner": component_fingerprint(_BRSLineageCheckpointOwner, config={}),
+            "mailbox_recovery_evidence": {
+                "owner_append": component_fingerprint(_retain_mailbox_observation),
+                "owner_fixed_tail": component_fingerprint(_mailbox_fixed_tail),
+                "methods": {
+                    name: [component_fingerprint(function) for function, canonical_module in entries
+                           if canonical_module is module]
+                    for name, module in (("mailbox_schema", mailbox_evidence), ("native_process", process_evidence))
+                },
+                "protocols": [mailbox_evidence.BINDING_PROTOCOL, mailbox_evidence.OBSERVATION_PROTOCOL,
+                              process_evidence.PROTOCOL, process_evidence.ROLE],
+                "stages": list(mailbox_evidence.STAGES),
+                "limits": [mailbox_evidence.MAX_BRS_MAILBOX_EVIDENCE_BYTES, process_evidence._MAX,
+                           process_evidence._MAX_FILE],
+                "process_shapes": {name: sorted(getattr(process_evidence, name)) for name in (
+                    "_FIELDS", "_REF_FIELDS", "_PIN_FIELDS", "_REASONS")},
+                "process_entries": list(process_evidence._NAMES),
+                "observation_shapes": {name: sorted(getattr(mailbox_evidence, name)) for name in (
+                    "_BINDING_FIELDS", "_OBSERVATION_FIELDS", "_MESSAGE_DIGESTS")},
+                "process_patterns": [process_evidence._SHA.pattern, process_evidence._ID.pattern],
+                "mailbox_pattern": mailbox_evidence._SHA.pattern,
+                "observer_snapshot": component_fingerprint(
+                    rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox._observation_snapshot),
+                "store": component_fingerprint(rsi_store.RSILedger.append_brs_mailbox_observation),
+                "native_dependencies": {name: component_fingerprint(function) for name, function in (
+                    ("cleanup", native_trusted_cleanup.verify_native_trusted_cleanup),
+                    ("launch", producer_bootstrap.build_trusted_bootstrap_launch),
+                    ("registration", producer_bootstrap.verify_trusted_bootstrap_process_registration),
+                    ("owner_identity", producer_process._process_owner_identity),
+                )},
+                "directory_methods": {name: component_fingerprint(getattr(_candidate_workspace_io.DirectoryChain, name))
+                                      for name in ("__init__", "check", "close")},
+                "directory_fd": component_fingerprint(_candidate_workspace_io.DirectoryChain.fd.fget),
+                "directory_flags": _candidate_workspace_io._FLAGS,
+                "directory_helpers": {name: component_fingerprint(getattr(_candidate_workspace_io, name))
+                                      for name in ("fail", "identity")},
+            },
             "owner_result_delivery": {
                 "helpers": {name: component_fingerprint(getattr(delivery, name)) for name in (
                     "_fail", "_id", "_sha", "_shape", "_canonical_payload", "_journal",
@@ -643,6 +759,8 @@ def _policy() -> dict[str, Any]:
                 "_success_cap_unchanged",
                 "retain_reconcile_obligation", "_reconcile_registration_observe", "_reconcile_registration_readback",
                 "_reconcile_registration_fixed",
+                "retain_mailbox_observation", "_mailbox_native_arguments", "_mailbox_process_unchanged",
+                "_mailbox_readback",
             )},
             "readers": {name: component_fingerprint(getattr(lineage._LineageEvidenceReader, name)) for name in (
                 "_is_v2", "_validate_entry_shape", "_validate_source_pin_maps", "_verify_descriptor", "_snapshot_bytes",
@@ -709,6 +827,115 @@ def _policy() -> dict[str, Any]:
     }
 
 
+def _mailbox_native_arguments(self) -> dict[str, Any]:
+    """Use the original native context; never infer a BRS worker process."""
+    from .rsi_python_brs_publication_recovery import _arguments
+
+    arguments = {"workspace": self._workspace, "native_plan": self._plan}
+    if self._native is not None:
+        retained = _arguments(self)
+        arguments.update({name: retained[name] for name in ("workspace", "intent", "attestation", "artifact")})
+    return arguments
+
+def _mailbox_process_unchanged(self, binding: dict[str, Any]) -> None:
+    from .rsi_brs_native_process_evidence import observe_native_process_binding
+
+    observed = observe_native_process_binding(
+        binding["capture"]["native_process"], **self._mailbox_native_arguments(),
+    )
+    if observed["status"] == "drifted":
+        _fail("mailbox_native_binding_drift")
+
+def _mailbox_readback(self, namespace: str, expected: list, binding: dict[str, Any]) -> None:
+    from .rsi_brs_mailbox_evidence import validate_brs_mailbox_history
+
+    with self._ledger.read_only_observations():
+        actual = self._ledger.controller_checkpoint_history(namespace)
+        root = self._ledger.controller_checkpoint_history(self._run_id)
+    if actual != expected or not root or root[-1] != (self._head, json.loads(self._payload)):
+        _fail("mailbox_observation_readback_invalid")
+    validate_brs_mailbox_history(actual, binding=binding)
+
+
+def _mailbox_fixed_tail(self) -> None:
+    """Last original numeric/lease/channel check, without observing source hooks."""
+    from .rsi_python_brs_native_dispatch import _original_brs_numeric_tail
+
+    _original_brs_numeric_tail(self)
+    _BRSLineageCheckpointOwner._success_allowance(self)
+    RSIRunBudget.load(self._wave.budget_state).check()
+    if self._before_control is not None and time.monotonic() >= self._before_control.deadline:
+        _fail("mailbox_observation_deadline_exhausted")
+
+
+def _retain_mailbox_observation(
+    self, stage: str, *, mailbox_state: str, worker_receipt_observed: bool,
+    request: object = None, response: object = None,
+) -> str:
+    """Append an adjacent original-owner observation, without advancing root.
+
+    The acknowledged side cursor stays old on every uncertain append or
+    readback. Such failures poison the ephemeral owner and retain its fence.
+    """
+    from .rsi_brs_mailbox_evidence import (
+        brs_mailbox_evidence_namespace,
+        build_brs_mailbox_binding,
+        build_brs_mailbox_observation,
+        parse_brs_mailbox_binding,
+    )
+    from .rsi_brs_native_process_evidence import capture_native_process_binding
+    from .rsi_brs_reconcile import FIELD, BRSReconcileObligation
+
+    if type(self) is not _BRSLineageCheckpointOwner:
+        _fail("owner_invalid")
+    try:
+        self._success_observe()
+        if stage == "owner_capture":
+            if self._mailbox_capture_started is not False or self._mailbox_binding_bytes is not None:
+                _fail("mailbox_capture_unavailable")
+            self._mailbox_capture_started = True
+            obligation = BRSReconcileObligation.from_dict(self._state[FIELD][self._request.episode_id])
+            binding = build_brs_mailbox_binding(
+                obligation=obligation, handoff=self._handoff,
+                run_record_sha256=self._run_head, episode_record_sha256=self._episode_head,
+                native_process=capture_native_process_binding(**self._mailbox_native_arguments()),
+            )
+        else:
+            if self._mailbox_capture_started is not True or type(self._mailbox_binding_bytes) is not bytes:
+                _fail("mailbox_capture_required")
+            binding = parse_brs_mailbox_binding(json.loads(self._mailbox_binding_bytes))
+        history = [tuple(item) for item in json.loads(self._mailbox_history_bytes)]
+        namespace = brs_mailbox_evidence_namespace(binding)
+        record = build_brs_mailbox_observation(
+            binding, stage=stage, root_checkpoint_sha256=self._head,
+            mailbox_state=mailbox_state, worker_receipt_observed=worker_receipt_observed,
+            request=request, response=response,
+        )
+        self._mailbox_process_unchanged(binding)
+        self._success_observe()
+        root_head = self._head
+        with self._ledger.controller_lock(namespace):
+            self._mailbox_readback(namespace, history, binding)
+            _mailbox_fixed_tail(self)
+            head = self._ledger.append_brs_mailbox_observation(
+                binding, record, expected_sha256=None if not history else history[-1][0],
+            )
+            expected = [*history, (head, record)]
+            self._mailbox_readback(namespace, expected, binding)
+        self._mailbox_process_unchanged(binding)
+        self._success_observe()
+        if self._head != root_head:
+            _fail("mailbox_observation_root_drift")
+        self._mailbox_readback(namespace, expected, binding)
+        _mailbox_fixed_tail(self)
+        self._mailbox_binding_bytes = lineage._raw(binding)
+        self._mailbox_history_bytes = lineage._raw(expected)
+        return head
+    except BaseException:
+        self._poisoned = True
+        raise
+
+
 class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     """Exact original BRS owner for bounded first-batch success checkpoints.
 
@@ -735,6 +962,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_handoff_bytes",
         "_head",
         "_ledger",
+        "_mailbox_binding_bytes",
+        "_mailbox_capture_started",
+        "_mailbox_history_bytes",
         "_memory",
         "_native",
         "_native_config",
@@ -865,6 +1095,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             )
         self._phase, self._poisoned, self._prepared, self._before_bytes = "new", False, None, None
         self._reconcile_registration_started = False
+        self._mailbox_binding_bytes = None
+        self._mailbox_capture_started = False
+        self._mailbox_history_bytes = b"[]"
         self._validated_before, self._retaining_before, self._retaining_success = None, False, None
         self._success_deadline = None
         self._before_control = None if self._native is None else self._native.execution_control
@@ -1012,6 +1245,12 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         except BaseException:
             self._poisoned = True
             raise
+
+    _mailbox_native_arguments = _mailbox_native_arguments
+    _mailbox_process_unchanged = _mailbox_process_unchanged
+    _mailbox_readback = _mailbox_readback
+
+    retain_mailbox_observation = _retain_mailbox_observation
 
     def _identity(self, *, captured: bool = True, registered: bool = True) -> None:
         from .rsi_controller import RSILearningController, _PythonAdmissionBRSWave

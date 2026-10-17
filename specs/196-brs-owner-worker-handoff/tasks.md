@@ -1,5 +1,21 @@
 # Feature 196 tasks — implementation tracking
 
+## Durable recovery evidence follow-up
+
+Contract: [durable-recovery-evidence.md](durable-recovery-evidence.md).
+
+- [x] Strictly bind original obligation, handoff, run/episode/claim and original
+  native process records; keep missing original process material permanently unknown.
+- [x] Append at most four original-owner mailbox observations in an independent
+  checkpoint namespace, with original root/obligation/claim checks in the side CAS.
+- [x] Capture the actual request, generated response and transport snapshot outside
+  callback-sensitive locks; distinguish receipt from callback and terminal results.
+- [x] Add a rebuilt-ledger read-only inspector; reject drift, retain partial evidence
+  and never reconstruct the owner, retry publication or consume an obligation.
+- [ ] Validate genuine-owner integration, fault cases and unchanged recovery fences;
+  freeze one source for identical macOS/Linux cases and independent review.
+- [ ] Complete required GitHub CI and prerequisite merges before main integration.
+
 ## Exact mailbox result composition follow-up
 
 Contract: [exact-mailbox-result-composition.md](exact-mailbox-result-composition.md).
@@ -10,8 +26,9 @@ Contract: [exact-mailbox-result-composition.md](exact-mailbox-result-composition
   policy contract; preserve all existing owner, registration and native refusal gates.
 - [x] Exercise original-worker delivery and one-shot detached callbacks, unknown/duplicate
   refusal and retained reconcile fence with the real inert kernel.
-- [ ] Freeze and independently validate the final source on macOS/Linux; full CI and
-  dependent PR merges remain separate. Automatic terminal recovery remains open.
+- [x] Freeze PR125 source `1e7f6cf` and independently validate the same 213 distinct
+  scoped cases on macOS/Linux, static checks and raw/source evidence. The earlier
+  `9436283` failures remain NOT_ACCEPTED. Full CI and dependent merges remain open.
 
 ## Original owner mailbox registration follow-up
 
@@ -42,8 +59,9 @@ OpenEvolve/Shinka/production CLI acceptance remain open outside this slice.
 - [x] Validate natural episode successors and actual terminal native claim/result
   within the same transaction as obligation removal and checkpoint CAS; support
   independent consumption of multiple obligations. See `reconcile-controller-consume.md`.
-- [ ] Complete final-source macOS/Linux checks, independent review and required CI
-  before merging this follow-up. Local fixture success does not close runtime acceptance.
+- [x] Validate PR123 frozen `96a7394` on macOS/Linux: the same 374 distinct scoped
+  cases, static checks and independent review passed. Required full CI and main merge
+  remain open; local fixture success does not close runtime acceptance.
 
 ## Original implementation slices
 

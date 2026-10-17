@@ -119,6 +119,9 @@ def _setup(root, patch):
     patch.setattr(receipt_module, "build_native_trusted_execution_receipt", receipt_projection)
     patch.setattr(output_module, "recover_native_trusted_attempt", terminal_projection)
     patch.setattr(attempt_module, "recover_native_trusted_attempt", terminal_projection)
+    from lunar_evolution import rsi_brs_native_process_evidence as process_evidence
+
+    patch.setattr(process_evidence, "recover_native_trusted_attempt", terminal_projection)
     patch.setattr(receipt_module, "recover_native_trusted_attempt", terminal_projection)
     value = native_fixture._native_setup(root, patch)
     native, intent = value.native, value.native.intent
