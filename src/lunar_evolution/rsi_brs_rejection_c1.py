@@ -8,9 +8,13 @@ from .producer_bundle_lineage import LineageSnapshotPin, ProducerLineageBeforeIn
 from .producer_bundle_lineage_v2 import ProducerLineageRejectedTerminalV2
 from .producer_bundle_publication import parse_producer_bundle_publication_journal
 from .rsi_learning import RSILearningError
+from .rsi_native_rejection import NativeRSIRejectionFilePin
 from .rsi_python_admission import validate_rsi_python_admission_shapes
 
 REJECTION_SCHEMA = "lunar-rsi-brs-rejection-c1-v1"
+REJECTION_PROVENANCE_SCHEMA = "lunar-rsi-brs-rejection-provenance-c2-v1"
+_BRS_PROTOCOL = "lunar-rsi-brs-lineage-checkpoint-v1"
+_PROVENANCE_FIELDS = frozenset({"provenance_sha256", "file_pin"})
 
 _BASE_FIELDS = frozenset({
     "journal_id", "ordinal", "episode_id", "request_sha256", "memory_snapshot_sha256",
@@ -110,3 +114,52 @@ def validate_rejected_c1_transition(previous: object, current: object) -> None:
                 _fail("delta_invalid")
         elif key != "state" and rejected.get(key) != value:
             _fail("delta_invalid")
+
+
+def rejected_provenance_entry(entry: object) -> ProducerLineageRejectedTerminalV2:
+    """Parse C2 data only; the owner must independently read and verify P.
+
+    The provenance digest hashes the native body, whereas the file pin hashes
+    the complete file including its digest field. They are separate identities.
+    """
+    validate_rsi_python_admission_shapes(entry)
+    if type(entry) is not dict:
+        _fail("provenance_invalid")
+    reference = entry.get("rejection_provenance")
+    if type(reference) is not dict or set(reference) != _PROVENANCE_FIELDS:
+        _fail("provenance_invalid")
+    digest = reference["provenance_sha256"]
+    if (type(digest) is not str or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest)):
+        _fail("provenance_invalid")
+    NativeRSIRejectionFilePin.from_dict(reference["file_pin"])
+    return rejected_c1_entry({**entry, "rejection_provenance": None})
+
+
+def rejected_provenance_index(entry: object) -> list[dict[str, object]]:
+    rejected = rejected_provenance_entry(entry)
+    return [{"ordinal": 0, "journal_id": rejected.journal_id, "rejected_sha256": rejected.digest()}]
+
+
+def validate_rejected_provenance_transition(previous: object, current: object) -> None:
+    """Admit only the original null-to-present provenance field delta, once."""
+    validate_rsi_python_admission_shapes((previous, current))
+    if (type(previous) is not dict or type(current) is not dict or set(previous) != set(current)
+            or previous.get("protocol") != _BRS_PROTOCOL
+            or "head" not in previous
+            or type(previous.get("batches")) is not list or len(previous["batches"]) != 1
+            or type(current.get("batches")) is not list or len(current["batches"]) != 1
+            or previous.get("head") is not None or current.get("head") is not None):
+        _fail("provenance_delta_invalid")
+    before, after = previous["batches"][0], current["batches"][0]
+    rejected_c1_entry(before)
+    rejected_provenance_entry(after)
+    if (previous.get("rejections") != rejected_c1_index(before)
+            or current.get("rejections") != rejected_provenance_index(after)):
+        _fail("provenance_delta_invalid")
+    for key, value in previous.items():
+        if key != "batches" and current[key] != value:
+            _fail("provenance_delta_invalid")
+    for key, value in before.items():
+        if key != "rejection_provenance" and after[key] != value:
+            _fail("provenance_delta_invalid")

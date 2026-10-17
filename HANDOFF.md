@@ -1,4 +1,32 @@
-# 当前后继开发（2026-10-18，original BRS rejection C1）
+# 当前后继开发（2026-10-18，original BRS rejection P/C2）
+
+- 在独立分支 `codex/brs-rejection-provenance` 延续 PR128 冻结 `3366036`。
+  主 checkout 的本地提交和未提交规格保持原样；不修改前置冻结分支。
+- PR128 同一库存255项 scoped cases 已在 macOS Python3.11.15 / Linux
+  Python3.12.3 全通过，静态检查及独立产品/raw/source/import审查接受；PR已ready。
+  原始材料在主 checkout ignored
+  `.lunar-evolution/validation/rejection-c1-fixed-20261018-34eiv4li/`。
+  首次 `986d9b1` 的失败材料保留 NOT_ACCEPTED。完整CI和main合入仍是独立门槛。
+- PR129 是独立main热修：修正selected-service/settlement CI用例数、回补owner fixture
+  finally清理，并为严格recovery bytes断言增加诊断。最终 `49fecb4` 已push且PR ready；
+  162项开发回归来自前一 `e278a60`，最终仅诊断差异的正向单例另验，不能混称重跑。
+  PR123–129最近完整CI均queued，尚未合main，不因排队跳过门槛。
+- 本轮契约 [rejection-owner-p-c2.md](specs/196-brs-owner-worker-handoff/rejection-owner-p-c2.md)：
+  原exact owner成功C1后create-only留存独立0400 provenance P，随后C2只填一个字段。
+  strict C2/容量85项和native policy78项开发测试通过；真实sealed输入的原owner单候选
+  C1/P/C2正向及25项owner故障矩阵通过。三处live-code漂移红测已通过外层原代码对象
+  pin修复，26项集成policy及163项pure/native policy开发回归通过，末次观察6项负测
+  也全部通过。最终冻结同库存双平台验收仍待完成；开发轮不能代替最终冻结来源。
+- 新policy完整有限投影逐次求值后只存canonical摘要，保持既有128KiB run record、
+  112KiB checkpoint及所有容量/指纹上限。不能只hash源文件而省略live依赖校验。
+- P/C2不等于actual ready/ACK、拒绝dispatch/result/recovery、root execution settlement、
+  owner retirement或reserved-wave serial successor。真实runtime/project/CLI仍未验收。
+  仅本地inert/provider-free fixtures；public native BRS、production admission和
+  online publication保持关闭，P2后置。
+
+以下为 PR128 的历史开发记录，其最终 scoped 结果以上节及对应材料为准。
+
+# 前一后继开发（2026-10-18，original BRS rejection C1）
 
 - 新隔离分支 `codex/brs-rejection-c1` 从 PR127 冻结 `f0e39b9` 继续，保留前置
   冻结来源与主 checkout 的本地提交/未提交文档。工作树已创建但因本聊天附件数
