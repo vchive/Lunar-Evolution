@@ -30,7 +30,7 @@ tmp_path = native_fixture.tmp_path
 
 
 @contextmanager
-def _mailbox_worker(tmp_path, monkeypatch):
+def _mailbox_worker(tmp_path, monkeypatch, *, validity=1, on_response=None):
     class PublicationReady(Event):
         publication = None
 
@@ -46,14 +46,17 @@ def _mailbox_worker(tmp_path, monkeypatch):
             return released
 
     monkeypatch.setattr(owner_fixture, "Event", PublicationReady)
-    with native_fixture._waiting(tmp_path, monkeypatch) as value:
+    with native_fixture._waiting(tmp_path, monkeypatch, validity=validity) as value:
         responses = Queue()
         mailbox = BRSOwnerPublicationMailbox(value.wave.selected_handoff, worker_thread=value.worker_thread)
 
         def request():
             assert get_ident() == value.worker_thread
             try:
-                responses.put(mailbox.request(value.request_message, check=lambda: None))
+                response = mailbox.request(value.request_message, check=lambda: None)
+                if on_response is not None:
+                    on_response(value, response)
+                responses.put(response)
             except BaseException as exc:
                 responses.put(exc)
                 raise

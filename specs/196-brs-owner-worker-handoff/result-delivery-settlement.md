@@ -1,5 +1,9 @@
 # PB-03j — exact owner-result delivery and one-shot settlement
 
+The private owner mailbox now has a follow-up to compose this envelope directly;
+see [exact mailbox result composition](exact-mailbox-result-composition.md). A detached
+callback settlement is separate from controller wave settlement and process cleanup.
+
 This slice adds a provider-free result envelope for the private owner/mailbox bridge.
 The owner projects the immutable transaction terminal journal into bounded canonical
 bytes with the selected run, episode, mailbox request, selected request, handoff and

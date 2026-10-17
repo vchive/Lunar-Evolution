@@ -1,6 +1,21 @@
 # Current release backlog — 2026-10-17
 
-## 当前后继：原 owner mailbox 的恢复义务登记
+## 当前后继：完整 mailbox result envelope 组合
+
+PR124 最终 `56745c2` 已获 macOS/Linux 各288项相同 scoped fixture 回归和独审通过；
+PR123/124 的完整33-job CI仍排队，尚未合入 main。当前 `codex/brs-exact-result-composition`
+在该冻结来源上接通原 owner mailbox → 既有 exact result envelope → 原 worker one-shot
+callback。契约见 [Feature196](../specs/196-brs-owner-worker-handoff/exact-mailbox-result-composition.md)。
+
+本轮保留原native all-rejected refusal，不伪造legacy ready ACK/selected-return。callback只
+处理detached观察，不写episode/result，不证明process cleanup，也不消费恢复义务。实现与
+最终冻结验收正在进行；自动终态恢复仍需独立证据observer和durable capture，真实runtime/
+OpenEvolve/Shinka lifecycle/生产CLI验收继续开放。P2继续后置。
+
+
+以下为此前切片的历史记录，不覆盖上述当前状态。
+
+## 此前切片：原 owner mailbox 的恢复义务登记
 
 `codex/brs-owner-lifecycle` 基于 PR123 的 `96a7394`，开发原 owner 的一次性
 `retain_reconcile_obligation`，并由私有 mailbox composition 在 publication 事务前调用。

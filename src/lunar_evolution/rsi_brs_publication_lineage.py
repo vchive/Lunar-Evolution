@@ -181,11 +181,14 @@ def _validate_persisted_policy(
 def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
     import contextlib
+    import dataclasses
+    import re
     import sys
     from types import FunctionType
 
     from . import (
         automatic_solve_lifecycle,
+        candidate_evaluation_spec,
         evolution,
         native_trusted_attempt,
         native_trusted_capture,
@@ -201,6 +204,7 @@ def _policy() -> dict[str, Any]:
         producer_bundle_lineage,
         producer_bundle_population,
         producer_bundle_preflight,
+        producer_bundle_publication,
         producer_bundle_staging,
         producer_bundle_transaction,
         producer_handoff,
@@ -209,11 +213,13 @@ def _policy() -> dict[str, Any]:
         python_producer_admission_handoff,
         rsi_brs_reconcile,
         rsi_controller,
+        rsi_python_brs_handoff,
         rsi_python_brs_native_dispatch,
         rsi_python_brs_owner_bridge,
         rsi_python_brs_publication_inputs,
         rsi_python_brs_publication_mailbox,
         rsi_python_brs_publication_recovery,
+        rsi_python_brs_result_delivery,
         rsi_store,
     )
     from . import rsi_python_scheduler_inputs as scheduler_inputs
@@ -240,6 +246,14 @@ def _policy() -> dict[str, Any]:
 
     reader = rsi_python_brs_publication_recovery
     dispatch = rsi_python_brs_native_dispatch
+    delivery = rsi_python_brs_result_delivery
+    if (type(delivery._PROTOCOL) is not str or type(delivery._STATUSES) is not frozenset
+            or any(type(value) is not str for value in delivery._STATUSES)
+            or type(delivery._FIELDS) is not set or any(type(value) is not str for value in delivery._FIELDS)
+            or type(delivery.MAX_BRS_OWNER_RESULT_BYTES) is not int
+            or type(delivery._ID) is not re.Pattern or type(delivery._SHA) is not re.Pattern
+            or type(delivery._ID.pattern) is not str or type(delivery._SHA.pattern) is not str):
+        _fail("owner_result_policy_drift")
     transaction = producer_bundle_transaction
     control_binding = producer_bundle_control.bind_native_producer_bundle_control
     control_implementation = getattr(control_binding, "__wrapped__", None)
@@ -262,6 +276,26 @@ def _policy() -> dict[str, Any]:
         (reader.read_python_producer_admission_handoff_pinned,
          python_producer_admission_handoff.read_python_producer_admission_handoff_pinned),
         (reader._prepublication_control_pin, native_trusted_scheduler._prepublication_control_pin),
+        (rsi_python_brs_owner_bridge.build_brs_owner_result_payload, delivery.build_brs_owner_result_payload),
+        (rsi_python_brs_owner_bridge._BRSLineageCheckpointOwner, _BRSLineageCheckpointOwner),
+        (rsi_python_brs_owner_bridge.BRSOwnerPublicationMailbox, rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox),
+        (rsi_python_brs_owner_bridge.BRSOwnerPublicationRequest, rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest),
+        (rsi_python_brs_owner_bridge.BRSSelectedChildHandoff, rsi_python_brs_handoff.BRSSelectedChildHandoff),
+        (rsi_python_brs_handoff.canonical_json, candidate_evaluation_spec.canonical_json),
+        (delivery.canonical_json, candidate_evaluation_spec.canonical_json),
+        (delivery.replace, dataclasses.replace),
+        (delivery.ProducerBundlePublicationJournal, producer_bundle_publication.ProducerBundlePublicationJournal),
+        (delivery.NativeProducerBundleTransactionResult, transaction.NativeProducerBundleTransactionResult),
+        (delivery.BRSSelectedChildHandoff, rsi_python_brs_handoff.BRSSelectedChildHandoff),
+        (delivery.BRSOwnerPublicationRequest, rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest),
+        (delivery.BRSOwnerPublicationResponse, rsi_python_brs_publication_mailbox.BRSOwnerPublicationResponse),
+        (delivery._request_payload, rsi_python_brs_publication_mailbox._request_payload),
+        (rsi_python_brs_publication_mailbox.parse_python_producer_admission_handoff_file_pin,
+         python_producer_admission_handoff.parse_python_producer_admission_handoff_file_pin),
+        (producer_bundle_publication.strict_json, candidate_evaluation_spec.strict_json),
+        (producer_bundle_publication._producer_identifier, producer_bundle_handoff._identifier),
+        (producer_bundle_publication.parse_python_producer_admission_handoff_file_pin,
+         python_producer_admission_handoff.parse_python_producer_admission_handoff_file_pin),
         (reader.SolveExecutionControl, automatic_solve_lifecycle.SolveExecutionControl),
         (dispatch.SolveExecutionControl, automatic_solve_lifecycle.SolveExecutionControl),
         (dispatch._BRSLineageCheckpointOwner, _BRSLineageCheckpointOwner),
@@ -324,9 +358,48 @@ def _policy() -> dict[str, Any]:
             "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
             "_native_claim_row")),
         *((getattr(rsi_python_brs_owner_bridge, name), rsi_python_brs_owner_bridge) for name in (
-            "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy")),
+            "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
+            "_response_payload")),
         (rsi_python_brs_owner_bridge._original_control, dispatch),
         (rsi_python_brs_owner_bridge._run_original_brs_native_publication, dispatch),
+        (rsi_python_brs_owner_bridge.build_brs_owner_result_payload, delivery),
+        *((getattr(delivery, name), delivery) for name in (
+            "_fail", "_id", "_sha", "_shape", "_canonical_payload", "_journal",
+            "build_brs_owner_result_payload", "deliver_brs_owner_result")),
+        *((getattr(delivery.BRSOwnerResultDelivery, name), delivery)
+          for name in ("__post_init__", "to_dict")),
+        *((getattr(delivery.BRSOwnerResultSettlement, name), delivery)
+          for name in ("__init__", "settle")),
+        (delivery.BRSOwnerResultSettlement.delivery.fget, delivery),
+        (delivery.BRSOwnerResultSettlement.status.fget, delivery),
+        *((getattr(candidate_evaluation_spec, name), candidate_evaluation_spec)
+          for name in ("canonical_json", "strict_json", "_fail", "_maximum", "_json_bytes")),
+        *((getattr(producer_bundle_publication, name), producer_bundle_publication) for name in (
+            "_fail", "_digest", "_identifier", "_optional_identifier", "_canonical", "_object",
+            "_bounded_int", "parse_producer_bundle_publication_journal")),
+        *((getattr(producer_bundle_publication.ProducerBundlePublicationJournal, name), producer_bundle_publication)
+          for name in ("__post_init__", "_payload_dict", "to_dict", "digest")),
+        (producer_bundle_publication.ProducerBundlePublicationJournal.from_dict.__func__, producer_bundle_publication),
+        *((getattr(producer_bundle_publication.ProducerBundlePublicationCandidate, name), producer_bundle_publication)
+          for name in ("__post_init__", "to_dict")),
+        (producer_bundle_publication.ProducerBundlePublicationCandidate.from_dict.__func__, producer_bundle_publication),
+        *((getattr(rsi_python_brs_handoff.BRSSelectedChildHandoff, name), rsi_python_brs_handoff)
+          for name in ("__post_init__", "to_dict")),
+        (rsi_python_brs_handoff.BRSSelectedChildHandoff.canonical_bytes.fget, rsi_python_brs_handoff),
+        (rsi_python_brs_handoff.BRSSelectedChildHandoff.sha256.fget, rsi_python_brs_handoff),
+        *((getattr(rsi_python_brs_handoff, name), rsi_python_brs_handoff)
+          for name in ("_fail", "_identity", "_digest", "_int")),
+        *((getattr(rsi_python_brs_publication_mailbox, name), rsi_python_brs_publication_mailbox) for name in (
+            "_fail", "_identity", "_sha", "_shape", "_payload", "_request_payload", "_digest",
+            "build_brs_owner_publication_response")),
+        (rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest.__post_init__, rsi_python_brs_publication_mailbox),
+        (rsi_python_brs_publication_mailbox.BRSOwnerPublicationResponse.__post_init__, rsi_python_brs_publication_mailbox),
+        (rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox.service, rsi_python_brs_publication_mailbox),
+        *((getattr(python_producer_admission_handoff, name), python_producer_admission_handoff) for name in (
+            "parse_python_producer_admission_handoff_file_pin", "_validate_file_pin_payload",
+            "_canonical", "_strict_json", "_pairs", "_sha", "_identifier", "_fail")),
+        *((getattr(python_producer_admission_handoff.PythonProducerAdmissionHandoffFilePin, name),
+           python_producer_admission_handoff) for name in ("__post_init__", "_payload", "to_dict")),
         *((getattr(producer_bundle_staging, name), producer_bundle_staging) for name in (
             "_load_marker", "_check_held_publication_lock", "_read", "_sha", "_canonical", "_marker_bytes", "_pretty", "_fail")),
         *((getattr(producer_bundle_staging.ProducerBundlePublicationManifest, name), producer_bundle_staging)
@@ -420,6 +493,7 @@ def _policy() -> dict[str, Any]:
                                             "rsi_python_brs_publication_recovery.py",
                                             "rsi_python_brs_publication_inputs.py",
                                             "rsi_python_brs_publication_mailbox.py", "rsi_native_plan.py",
+                                            "rsi_python_brs_result_delivery.py", "candidate_evaluation_spec.py",
                                             "rsi_python_brs_native_dispatch.py", "producer_bundle_control.py",
                                             "producer_bundle_deadline.py",
                                             "rsi_gateway.py", "rsi_python_brs_admission.py",
@@ -504,6 +578,45 @@ def _policy() -> dict[str, Any]:
                 "receipt_parser": component_fingerprint(producer_process.parse_producer_execution_receipt),
             },
             "owner": component_fingerprint(_BRSLineageCheckpointOwner, config={}),
+            "owner_result_delivery": {
+                "helpers": {name: component_fingerprint(getattr(delivery, name)) for name in (
+                    "_fail", "_id", "_sha", "_shape", "_canonical_payload", "_journal",
+                    "build_brs_owner_result_payload", "deliver_brs_owner_result")},
+                "dto": component_fingerprint(delivery.BRSOwnerResultDelivery, config={}),
+                "settlement": component_fingerprint(delivery.BRSOwnerResultSettlement, config={}),
+                "journal": component_fingerprint(producer_bundle_publication.ProducerBundlePublicationJournal, config={}),
+                "candidate": component_fingerprint(producer_bundle_publication.ProducerBundlePublicationCandidate, config={}),
+                "bridge_builder": component_fingerprint(rsi_python_brs_owner_bridge.build_brs_owner_result_payload),
+                "canonical": {name: component_fingerprint(getattr(candidate_evaluation_spec, name))
+                              for name in ("canonical_json", "strict_json", "_fail", "_maximum", "_json_bytes")},
+                "journal_helpers": {name: component_fingerprint(getattr(producer_bundle_publication, name)) for name in (
+                    "_fail", "_digest", "_identifier", "_optional_identifier", "_canonical", "_object",
+                    "_bounded_int", "parse_producer_bundle_publication_journal")},
+                "request_helpers": {name: component_fingerprint(getattr(rsi_python_brs_publication_mailbox, name))
+                                    for name in ("_identity", "_sha", "_shape", "_payload", "_request_payload", "_digest",
+                                                 "build_brs_owner_publication_response")},
+                "handoff_helpers": {name: component_fingerprint(getattr(rsi_python_brs_handoff, name))
+                                    for name in ("_fail", "_identity", "_digest", "_int")},
+                "projection_methods": {
+                    name: [component_fingerprint(function) for function, canonical_module in entries
+                           if canonical_module is module]
+                    for name, module in (
+                        ("result_delivery", delivery), ("publication_journal", producer_bundle_publication),
+                        ("selected_handoff", rsi_python_brs_handoff),
+                        ("publication_mailbox", rsi_python_brs_publication_mailbox),
+                        ("canonical_json", candidate_evaluation_spec),
+                        ("admission_file_pin", python_producer_admission_handoff),
+                    )
+                },
+                "protocol": delivery._PROTOCOL,
+                "statuses": sorted(delivery._STATUSES),
+                "fields": sorted(delivery._FIELDS),
+                "max_bytes": delivery.MAX_BRS_OWNER_RESULT_BYTES,
+                "identity_pattern": delivery._ID.pattern,
+                "identity_flags": delivery._ID.flags,
+                "digest_pattern": delivery._SHA.pattern,
+                "digest_flags": delivery._SHA.flags,
+            },
             "reconcile_registration": {
                 "helpers": {name: component_fingerprint(getattr(rsi_brs_reconcile, name)) for name in (
                     "register_brs_selected_obligation", "put_brs_reconcile_obligation",
@@ -514,7 +627,7 @@ def _policy() -> dict[str, Any]:
                     "_native_claim_row")},
                 "bridge": {name: component_fingerprint(getattr(rsi_python_brs_owner_bridge, name)) for name in (
                     "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
-                    "_original_control", "_run_original_brs_native_publication")},
+                    "_original_control", "_run_original_brs_native_publication", "_response_payload")},
             },
             "methods": {name: component_fingerprint(getattr(_BRSLineageCheckpointOwner, name)) for name in (
                 "__init__", "_identity", "_check_owner", "_running", "_before_entry", "_write",

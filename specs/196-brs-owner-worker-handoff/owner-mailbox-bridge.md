@@ -1,5 +1,9 @@
 # PB-03 — private owner/mailbox composition slice
 
+The exact-result composition follow-up upgrades this private response to the existing
+result-delivery protocol; see [the follow-up contract](exact-mailbox-result-composition.md).
+The summary below describes this original slice, not the current follow-up wire.
+
 This slice composes the existing one-shot `BRSOwnerPublicationMailbox` with the
 private original-owner native success dispatch.  The owner calls
 `run_brs_owner_publication_mailbox` on its original thread after the worker has
