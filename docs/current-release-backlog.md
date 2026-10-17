@@ -2,7 +2,7 @@
 
 ## 当前候选：BRS recovery correctness
 
-`codex/p1-recovery-integration` 修复三项现有行为：未消费 obligation 阻止默认
+`codex/p1-recovery-final` 修复三项现有行为：未消费 obligation 阻止默认
 resume/drive/finalization，`rsi inspect` 正确报告 reconcile，selected terminal consume
 必须与实际 ledger/native claim/result 一致。注册验证原 handoff 的 owner thread/head/state，
 拒绝无关后续 checkpoint 上的重放；多 obligation 保持各自 capture 并独立消费。

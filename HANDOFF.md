@@ -1,6 +1,6 @@
 # 当前开发候选（2026-10-17，BRS recovery correctness）
 
-- 隔离分支 `codex/p1-recovery-integration` 基于 `origin/main c18e1d5`；本候选尚未合入 main，不能以此前已合入的小 PR 或排队中的 CI 代替本候选验收。
+- 隔离分支 `codex/p1-recovery-final` 基于 `origin/main c18e1d5`；本候选尚未合入 main，不能以此前已合入的小 PR 或排队中的 CI 代替本候选验收。
 - 默认 `resume`、drive 和 finalization 现在同时检查本地 state 与最新 durable checkpoint；任何未消费 obligation 都返回 `rsi_brs_reconcile_required`，包括 unknown/settled phase。消费后的历史不会阻止终态只读 replay。
 - `rsi inspect` 沿用原输出结构，将最新未消费 obligation 纳入 `reconcile.required`，不探测进程、不写 ledger。
 - selected registration 核 owner thread、captured head/state；只允许相邻、无其他变化的精确重放。多条 obligation 保留各自的原 parent capture。
