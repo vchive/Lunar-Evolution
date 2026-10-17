@@ -1,4 +1,18 @@
-# 当前状态（2026-10-17，P1 explicit reconcile resume seam）
+# 当前开发候选（2026-10-17，BRS recovery correctness）
+
+- 隔离分支 `codex/p1-recovery-integration` 基于 `origin/main c18e1d5`；本候选尚未合入 main，不能以此前已合入的小 PR 或排队中的 CI 代替本候选验收。
+- 默认 `resume`、drive 和 finalization 现在同时检查本地 state 与最新 durable checkpoint；任何未消费 obligation 都返回 `rsi_brs_reconcile_required`，包括 unknown/settled phase。消费后的历史不会阻止终态只读 replay。
+- `rsi inspect` 沿用原输出结构，将最新未消费 obligation 纳入 `reconcile.required`，不探测进程、不写 ledger。
+- selected registration 核 owner thread、captured head/state；只允许相邻、无其他变化的精确重放。多条 obligation 保留各自的原 parent capture。
+- terminal consume 保留原 episode capture，校验合法后继、实际 ledger 终态、原 native claim/request/plan 与 canonical saved result。校验和 obligation removal/checkpoint CAS 在同一 SQLite 事务内；running 或未知状态不会被 DTO flags 清除。
+- 批量 facade 先校验 wire shape 与已知 keys，再逐项提交；后项失败不会回滚已提交项，调用方应读取剩余 obligation。见 Feature196 `reconcile-controller-consume.md` 和 `reconcile-default-recovery-gate.md`。
+- 本轮统一回归使用独立 own-editable macOS Python3.11 与服务器 Python3.12 环境，保存 collection、JUnit、import/source/tree、退出码及静态检查原始材料；GitHub 三版完整 CI 仍是单独门槛，queued 不算通过。
+- 当前仍缺真实 CPython/source/toolchain/sealed runtime，以及实际 OpenEvolve/Shinka lifecycle 和生产 CLI 验收；服务器现有 C fixture/wheel build 不能代替这些材料。public native BRS、`production_admission`、`online_publication` 继续关闭；P2 继续后置。
+- 主 checkout 的本地提交与未提交 `specs/160-rsi-learning-mode/p1-cli-producer-gap-report.md` 保留；不得为同步候选而 reset 或覆盖。
+
+以下条目是各自提交当时的历史状态；当前候选以本节和本 PR 的实际检查结果为准。
+
+# 历史状态（2026-10-17，P1 explicit reconcile resume seam）
 
 - PR115 已合入 `main`（`be73a52`）：controller-owned BRS reconcile phase CAS。
 - PR116 已合入 `main`（`0eacf72`）：selected handoff 后的显式 obligation registration，以及 owner-locked terminal reconcile consume；保留 captured parent head，使用 append 后 head 做 CAS。
