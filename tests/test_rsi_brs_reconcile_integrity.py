@@ -73,6 +73,85 @@ def test_registration_rechecks_episode_capture_in_checkpoint_transaction(tmp_pat
     assert ledger.controller_checkpoint_history(run_id) == before
 
 
+def test_original_owner_pins_are_checked_inside_registration_transaction(tmp_path: Path, monkeypatch) -> None:
+    ledger, run_id, _episode_id, request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    run_sha = ledger.get_run(run_id).record_sha256
+    claim = ledger.claim_native_episode(request, plan_sha256=HEX)
+    original = ledger._native_result_status
+    observations = []
+
+    def observe(connection, episode_id, request_sha256):
+        with sqlite3.connect(ledger.database, timeout=0) as other, pytest.raises(sqlite3.OperationalError, match="locked"):
+            other.execute("BEGIN IMMEDIATE")
+        observations.append(episode_id)
+        return original(connection, episode_id, request_sha256)
+
+    monkeypatch.setattr(ledger, "_native_result_status", observe)
+    registration = _register(
+        ledger, run_id, checkpoint, handoff, episode_sha, expected_run_record_sha256=run_sha,
+        expected_native_claim_sha256=claim.claim_sha256,
+    )
+    assert observations == [request.episode_id]
+    assert registration.obligation.native_claim_sha256 == claim.claim_sha256
+    assert registration.obligation.controller_checkpoint_sha256 == checkpoint
+    assert registration.obligation.episode_record_sha256 == episode_sha
+
+
+@pytest.mark.parametrize("drift", ["run_head", "run_terminal", "claim_missing", "claim_plan", "result"])
+def test_original_owner_pins_reject_drift_at_the_registration_write_boundary(
+    tmp_path: Path, monkeypatch, drift: str,
+) -> None:
+    ledger, run_id, episode_id, request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    run_sha = ledger.get_run(run_id).record_sha256
+    claim = ledger.claim_native_episode(request, plan_sha256=HEX)
+    original = ledger.write_brs_reconcile_obligation
+
+    def write(*args, **kwargs):
+        if drift.startswith("run_"):
+            ledger.transition(
+                run_id, state="failed" if drift == "run_terminal" else "running",
+                expected_record_sha256=run_sha, payload_patch={"original_owner_pin_drift": True},
+            )
+        elif drift in {"claim_missing", "claim_plan"}:
+            # Simulate an independently replaced/corrupted durable owner claim
+            # after facade observation, before the checkpoint transaction.
+            with sqlite3.connect(ledger.database) as connection:
+                connection.execute("DELETE FROM rsi_native_episode_claims WHERE episode_id = ?", (episode_id,))
+            if drift == "claim_plan":
+                ledger.claim_native_episode(request, plan_sha256=OTHER)
+        else:
+            ledger.publish_native_episode_result(
+                request, plan_sha256=HEX, result=DeterministicMockSolver().run(request), expected_claim=claim,
+            )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ledger, "write_brs_reconcile_obligation", write)
+    before = ledger.controller_checkpoint_history(run_id)
+    with pytest.raises(RSILearningError, match="rsi_brs_reconcile_.*binding_invalid"):
+        _register(
+            ledger, run_id, checkpoint, handoff, episode_sha, expected_run_record_sha256=run_sha,
+            expected_native_claim_sha256=claim.claim_sha256,
+        )
+    assert ledger.controller_checkpoint_history(run_id) == before
+    assert ledger.controller_brs_reconcile_obligations(run_id) == {}
+
+
+def test_original_owner_registration_replay_does_not_bypass_started_claim_pin(tmp_path: Path) -> None:
+    ledger, run_id, episode_id, request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    run_sha = ledger.get_run(run_id).record_sha256
+    claim = ledger.claim_native_episode(request, plan_sha256=HEX)
+    kwargs = {"expected_run_record_sha256": run_sha, "expected_native_claim_sha256": claim.claim_sha256}
+    _register(ledger, run_id, checkpoint, handoff, episode_sha, **kwargs)
+    ledger.publish_native_episode_result(
+        request, plan_sha256=HEX, result=DeterministicMockSolver().run(request), expected_claim=claim,
+    )
+    before = ledger.controller_checkpoint_history(run_id)
+    with pytest.raises(RSILearningError, match="native_claim_binding_invalid"):
+        _register(ledger, run_id, checkpoint, handoff, episode_sha, **kwargs)
+    assert ledger.controller_checkpoint_history(run_id) == before
+    assert episode_id in ledger.controller_brs_reconcile_obligations(run_id)
+
+
 @pytest.mark.parametrize("scope", ["run", "episode"])
 def test_new_registration_requires_natural_running_owner_scope(tmp_path: Path, scope: str) -> None:
     ledger, run_id, episode_id, request, checkpoint, handoff, episode_sha = _fixture(tmp_path)

@@ -1,4 +1,16 @@
-# 当前开发候选（2026-10-17，BRS recovery correctness）
+# 当前后继开发（2026-10-17，original owner mailbox registration）
+
+- `codex/brs-owner-lifecycle` 基于 PR123 冻结 head `96a7394`，使用独立 worktree，不改主 checkout 或 PR123 源码。
+- PR123 的 macOS Python3.11/Linux Python3.12 各374项定向回归、静态检查和独立审查已通过；完整33-job Actions仍排队，尚未合入 main。本后继不能代替该门槛。
+- 本轮按 Feature196 [owner-mailbox-reconcile-registration.md](specs/196-brs-owner-worker-handoff/owner-mailbox-reconcile-registration.md) 接入原 owner 的一次性恢复义务登记，并在私有 mailbox composition 的 publication 事务前自动调用。
+- 只允许原 running run/episode、started claim、plan、线程/锁、handoff 与原 head/state；事务内校验原 pins，只追加 obligation。完整相邻读回和 source/control 复验成功后才一起推进原 owner/wave 游标，不刷新 handoff capture。
+- 任意不确定写入保留 durable obligation、旧本地 capture 与 poisoned owner，不重试。publication 成功仍保留义务，终态消费继续要求独立完整证据。
+- 本轮不声称覆盖 producer 首次执行前登记，也不把 executor join 当成 producer cleanup；直接私有 native-dispatch primitive、自动终态恢复、真实 runtime/producer/CLI 和 P2 继续各按其既有边界处理。
+- 当前为开发状态；本轮最终冻结来源、macOS/Linux 回归与独立审查结果在 PR 和本地原始材料中另行记录。仅本地 inert/provider-free fixtures；public native BRS、`production_admission`、`online_publication` 继续关闭。
+
+以下为上轮冻结候选的记录。
+
+# 前一候选（2026-10-17，BRS recovery correctness）
 
 - 隔离分支 `codex/p1-recovery-final` 基于 `origin/main c18e1d5`；本候选尚未合入 main，不能以此前已合入的小 PR 或排队中的 CI 代替本候选验收。
 - 默认 `resume`、drive 和 finalization 现在同时检查本地 state 与最新 durable checkpoint；任何未消费 obligation 都返回 `rsi_brs_reconcile_required`，包括 unknown/settled phase。消费后的历史不会阻止终态只读 replay。

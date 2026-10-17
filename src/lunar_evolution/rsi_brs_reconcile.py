@@ -544,6 +544,8 @@ def register_brs_selected_obligation(
     native_plan_sha256: str,
     controller_checkpoint_sha256: str,
     episode_record_sha256: str,
+    expected_run_record_sha256: str | None = None,
+    expected_native_claim_sha256: str | None = None,
     worker_profile: Mapping[str, Any] | None = None,
     mailbox_state: str = "open",
     transaction_state: str = "not_started",
@@ -571,6 +573,12 @@ def register_brs_selected_obligation(
         (episode_record_sha256, "episode_record"),
     ):
         _sha(value, name)
+    for value, name in (
+        (expected_run_record_sha256, "run_record"),
+        (expected_native_claim_sha256, "native_claim"),
+    ):
+        if value is not None:
+            _sha(value, name)
     if native_plan_sha256 == "0" * 64:
         raise RSILearningError("rsi_brs_reconcile_native_plan_invalid")
     if not ledger.controller_lock_held(selected.run_id):
@@ -606,6 +614,7 @@ def register_brs_selected_obligation(
         native_plan_sha256=native_plan_sha256,
         controller_checkpoint_sha256=controller_checkpoint_sha256,
         episode_record_sha256=episode_record_sha256,
+        native_claim_sha256=expected_native_claim_sha256,
         worker_profile=worker_profile,
         mailbox_state=mailbox_state,
         transaction_state=transaction_state,
@@ -624,6 +633,16 @@ def register_brs_selected_obligation(
             expected = dict(captured)
             put_brs_reconcile_obligation(expected, obligation)
             if checkpoint[1] == expected:
+                if expected_run_record_sha256 is not None or expected_native_claim_sha256 is not None:
+                    # Optional original-owner pins also constrain an otherwise
+                    # idempotent replay, using the same atomic ledger checks.
+                    replay_head = ledger.write_brs_reconcile_obligation(
+                        selected.run_id, obligation, expected_checkpoint_sha256=checkpoint[0],
+                        expected_episode_record_sha256=episode_record_sha256,
+                        expected_run_record_sha256=expected_run_record_sha256,
+                        expected_native_claim_sha256=expected_native_claim_sha256,
+                    )
+                    return BRSReconcileRegistration(obligation, replay_head)
                 return BRSReconcileRegistration(obligation, checkpoint[0])
         raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
     if run is None or run.state != "running" or episode.state != "running":
@@ -631,6 +650,8 @@ def register_brs_selected_obligation(
     next_head = ledger.write_brs_reconcile_obligation(
         selected.run_id, obligation, expected_checkpoint_sha256=controller_checkpoint_sha256,
         expected_episode_record_sha256=episode_record_sha256,
+        expected_run_record_sha256=expected_run_record_sha256,
+        expected_native_claim_sha256=expected_native_claim_sha256,
     )
     with ledger.read_only_observations():
         retained = ledger.controller_brs_reconcile_obligations(selected.run_id).get(selected.episode_id)

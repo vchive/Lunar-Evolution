@@ -1,5 +1,21 @@
 # Current release backlog — 2026-10-17
 
+## 当前后继：原 owner mailbox 的恢复义务登记
+
+`codex/brs-owner-lifecycle` 基于 PR123 的 `96a7394`，开发原 owner 的一次性
+`retain_reconcile_obligation`，并由私有 mailbox composition 在 publication 事务前调用。
+只追加精确 obligation；同事务校验原 run/episode/claim pins，相邻读回与原 source/control
+复验通过后才同步 owner/wave 游标。未知结果保留义务并 poison 原 owner，不重试或刷新 capture。
+
+契约见 [Feature196](../specs/196-brs-owner-worker-handoff/owner-mailbox-reconcile-registration.md)。
+本轮回归、独审与完整 CI 尚待最终来源验收。PR123 已有双平台各374项 scoped 本地通过，
+其33-job完整 CI仍排队，尚未合入 main。
+
+本切片只覆盖 mailbox publication 边界，producer preparation 已发生；它不自动消费
+terminal obligation，不覆盖首次 producer launch，也不启用 public native BRS。自动终态恢复、
+真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle、生产 CLI/Linux 中断矩阵
+继续为 P1；P2 继续后置。
+
 ## 当前候选：BRS recovery correctness
 
 `codex/p1-recovery-final` 修复三项现有行为：未消费 obligation 阻止默认

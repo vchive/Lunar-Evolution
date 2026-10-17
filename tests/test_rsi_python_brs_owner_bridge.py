@@ -25,8 +25,13 @@ def test_owner_bridge_serves_one_detached_request_and_keeps_summary_non_authoriz
         publication_status="published",
     )
     calls = []
+    # Transport-only test: genuine owner/capture/ledger acceptance is exercised
+    # separately with the real waiting-worker fixture. No fake owner is accepted
+    # by the product gates here; every owner-specific seam is explicitly doubled.
     monkeypatch.setattr(bridge, "_original_control", lambda owner: owner)
     monkeypatch.setattr(bridge, "_require_disabled_policy", lambda owner: None)
+    monkeypatch.setattr(bridge, "_require_original_mailbox", lambda owner, mailbox: None)
+    monkeypatch.setattr(bridge._BRSLineageCheckpointOwner, "retain_reconcile_obligation", lambda owner: "a" * 64)
     monkeypatch.setattr(bridge, "_run_original_brs_native_publication",
                         lambda owner, request, *, original_preparation: calls.append(
                             (owner, request, original_preparation)) or transaction)

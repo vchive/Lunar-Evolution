@@ -207,11 +207,14 @@ def _policy() -> dict[str, Any]:
         producer_process,
         producer_request_transport,
         python_producer_admission_handoff,
+        rsi_brs_reconcile,
         rsi_controller,
         rsi_python_brs_native_dispatch,
+        rsi_python_brs_owner_bridge,
         rsi_python_brs_publication_inputs,
         rsi_python_brs_publication_mailbox,
         rsi_python_brs_publication_recovery,
+        rsi_store,
     )
     from . import rsi_python_scheduler_inputs as scheduler_inputs
     from .algorithm import (
@@ -311,6 +314,19 @@ def _policy() -> dict[str, Any]:
             "_success_capacity", "_success_scope", "_success_control_live", "_success_allowance",
             "_success_cap_unchanged",
             "_success_entry", "_verify_staged_projection", "_candidate_materials")),
+        *((getattr(_BRSLineageCheckpointOwner, name), sys.modules[__name__]) for name in (
+            "retain_reconcile_obligation", "_reconcile_registration_observe", "_reconcile_registration_readback",
+            "_reconcile_registration_fixed")),
+        *((getattr(rsi_brs_reconcile, name), rsi_brs_reconcile) for name in (
+            "register_brs_selected_obligation", "put_brs_reconcile_obligation", "validate_brs_reconcile_obligations")),
+        *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
+            "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
+            "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
+            "_native_claim_row")),
+        *((getattr(rsi_python_brs_owner_bridge, name), rsi_python_brs_owner_bridge) for name in (
+            "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy")),
+        (rsi_python_brs_owner_bridge._original_control, dispatch),
+        (rsi_python_brs_owner_bridge._run_original_brs_native_publication, dispatch),
         *((getattr(producer_bundle_staging, name), producer_bundle_staging) for name in (
             "_load_marker", "_check_held_publication_lock", "_read", "_sha", "_canonical", "_marker_bytes", "_pretty", "_fail")),
         *((getattr(producer_bundle_staging.ProducerBundlePublicationManifest, name), producer_bundle_staging)
@@ -393,7 +409,8 @@ def _policy() -> dict[str, Any]:
                                    "value": _family_repertoires()},
             "module_sources": {name: hashlib.sha256(_files.read_regular_file(Path(__file__).parent / name, 1024 * 1024)).hexdigest()
                                for name in ("rsi_brs_publication_lineage.py", "rsi_publication_lineage.py",
-                                            "rsi_controller.py", "rsi_store.py", "producer_bundle_lineage.py",
+                                            "rsi_controller.py", "rsi_store.py", "rsi_brs_reconcile.py",
+                                            "rsi_python_brs_owner_bridge.py", "producer_bundle_lineage.py",
                                             "producer_bundle_admission.py", "producer_bundle_publication.py",
                                             "rsi_python_admission.py", "rsi_python_brs_handoff.py",
                                             "rsi_producer_staging_capsule.py", "producer_bundle_recovery.py",
@@ -487,6 +504,18 @@ def _policy() -> dict[str, Any]:
                 "receipt_parser": component_fingerprint(producer_process.parse_producer_execution_receipt),
             },
             "owner": component_fingerprint(_BRSLineageCheckpointOwner, config={}),
+            "reconcile_registration": {
+                "helpers": {name: component_fingerprint(getattr(rsi_brs_reconcile, name)) for name in (
+                    "register_brs_selected_obligation", "put_brs_reconcile_obligation",
+                    "validate_brs_reconcile_obligations")},
+                "store": {name: component_fingerprint(getattr(rsi_store.RSILedger, name)) for name in (
+                    "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
+                    "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
+                    "_native_claim_row")},
+                "bridge": {name: component_fingerprint(getattr(rsi_python_brs_owner_bridge, name)) for name in (
+                    "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
+                    "_original_control", "_run_original_brs_native_publication")},
+            },
             "methods": {name: component_fingerprint(getattr(_BRSLineageCheckpointOwner, name)) for name in (
                 "__init__", "_identity", "_check_owner", "_running", "_before_entry", "_write",
                 "checkpoint_before", "acknowledge_prepared", "_accept_prepared_reference",
@@ -499,6 +528,8 @@ def _policy() -> dict[str, Any]:
                 "_success_observe", "_success_fixed", "_success_capacity", "_success_scope",
                 "_success_control_live", "_success_allowance",
                 "_success_cap_unchanged",
+                "retain_reconcile_obligation", "_reconcile_registration_observe", "_reconcile_registration_readback",
+                "_reconcile_registration_fixed",
             )},
             "readers": {name: component_fingerprint(getattr(lineage._LineageEvidenceReader, name)) for name in (
                 "_is_v2", "_validate_entry_shape", "_validate_source_pin_maps", "_verify_descriptor", "_snapshot_bytes",
@@ -604,6 +635,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_provided_memory",
         "_provided_plan",
         "_provided_request",
+        "_reconcile_registration_started",
         "_request",
         "_retaining_before",
         "_retaining_success",
@@ -719,6 +751,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 self._strategy_config, self._strategy_authority, self._strategy_contract,
             )
         self._phase, self._poisoned, self._prepared, self._before_bytes = "new", False, None, None
+        self._reconcile_registration_started = False
         self._validated_before, self._retaining_before, self._retaining_success = None, False, None
         self._success_deadline = None
         self._before_control = None if self._native is None else self._native.execution_control
@@ -729,6 +762,144 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             _fail("fresh_lineage_required")
         controller._python_admission_brs_local.lineage_checkpoint_owner = self
 
+    def _reconcile_registration_fixed(self) -> None:
+        """Recheck fixed old-capture facts without source or control callbacks."""
+        self._identity()
+        if (self._reconcile_registration_started is not True or self._phase != "new"
+                or self._retaining_before is not False or self._retaining_success is not None
+                or self._success_deadline is not None or self._state.get(_FIELD) is not None
+                or self._head != self._handoff.head_sha256
+                or hashlib.sha256(self._payload).hexdigest() != self._handoff.state_sha256):
+            _fail("reconcile_registration_unavailable")
+        self._before_channel()
+        RSIRunBudget.load(self._wave.budget_state).check()
+        if self._before_control_state() != self._before_control_pin:
+            _fail("before_control_drift")
+        if self._before_control is not None:
+            with self._before_control._lock:
+                if self._before_control._cancelled is not False:
+                    _fail("before_control_cancelled")
+            if time.monotonic() >= self._before_control.deadline:
+                _fail("reconcile_registration_deadline_exhausted")
+        with self._ledger.read_only_observations():
+            self._running()
+
+    def _reconcile_registration_observe(self, expected: dict[str, Any]) -> None:
+        """Observe the staged exact delta while every local owner capture stays old.
+
+        The durable obligation may already be appended. Ordinary owner checks
+        require durable/local head equality and cannot authorize this window.
+        This validation returns no capability and never adopts a latest head.
+        """
+        from .rsi_controller import _record_digest
+        from .rsi_fingerprint import RSIFingerprintContract, ensure_fingerprint_compatible
+
+        self._before_unlocked()
+        self._reconcile_registration_fixed()
+        self._before_control_live()
+        captured = json.loads(self._payload)
+        with self._ledger.read_only_observations():
+            original = self._ledger.history(self._run_id)[0]
+            actual, _ = self._controller._run_fingerprint(
+                **captured["pins"], memory_snapshot_sha256=self._memory.digest(),
+                mode=captured["mode"], plan=captured["plan"],
+            )
+            ensure_fingerprint_compatible(
+                RSIFingerprintContract.from_dict(original.payload["fingerprints"]["run_fingerprint"]), actual,
+            )
+            run = self._ledger.get_run(self._run_id)
+            self._controller._validate_original_run_checkpoint_producer_binding(run, expected)
+            self._controller._validate_python_admission_references(self._run_id, expected)
+            self._controller._validate_producer_staging(run, expected)
+            self._history(expected)
+        budget = RSIRunBudget.load(captured["budget_state"])
+        budget.assert_matches(original.payload["budget"])
+        budget.check()
+        policy = {
+            "plan": captured["plan"], "pins": captured["pins"],
+            "planned": budget.to_dict()["planned"],
+            "producer_checkpoint_binding": captured.get("producer_checkpoint_binding"),
+            "solver_settings": actual.to_dict()["solver_settings"],
+        }
+        control = {"budget_state": budget.to_dict(), "status": captured["status"]}
+        context = self._selected_context
+        if (actual.digest() != context.source_sha256 or _record_digest(policy) != context.policy_sha256
+                or _record_digest(control) != context.execution_control_sha256):
+            _fail("reconcile_registration_authority_drift")
+        self._identity()
+        if self._native is not None:
+            self._native_strategy()
+        self._reconcile_registration_fixed()
+
+    def _reconcile_registration_readback(self, head: str, expected: dict[str, Any]) -> None:
+        """Require the returned head to be exactly the original head's successor."""
+        with self._ledger.read_only_observations():
+            history = self._ledger.controller_checkpoint_history(self._run_id)
+            if (type(head) is not str or head == self._head or len(history) < 2
+                    or history[-2] != (self._head, json.loads(self._payload))
+                    or history[-1] != (head, expected)):
+                _fail("reconcile_registration_readback_invalid")
+
+    def retain_reconcile_obligation(self) -> str:
+        """Append one publication recovery fence under the genuine original owner.
+
+        This one-shot method changes only the existing obligation field and
+        acknowledges its exact adjacent CAS. The original handoff/context are
+        immutable; neither a result nor process cleanup is inferred here.
+        """
+        if type(self) is not _BRSLineageCheckpointOwner:
+            _fail("owner_invalid")
+        from .rsi_brs_reconcile import (
+            FIELD,
+            BRSReconcileObligation,
+            put_brs_reconcile_obligation,
+            register_brs_selected_obligation,
+        )
+
+        try:
+            self._before_unlocked()
+            self._identity()
+            if self._reconcile_registration_started is not False:
+                _fail("reconcile_registration_unavailable")
+            self._reconcile_registration_started = True
+            self._reconcile_registration_fixed()
+            self._check_owner()
+            self._before_control_live()
+            self._reconcile_registration_fixed()
+            obligation = BRSReconcileObligation(
+                self._run_id, self._request.episode_id, "selected", self._handoff.sha256,
+                self._request.digest(), self._plan.plan_sha256, self._head, self._episode_head,
+                native_claim_sha256=self._claim.claim_sha256, mailbox_state="open",
+            )
+            expected = json.loads(self._payload)
+            if self._request.episode_id in expected.get(FIELD, {}):
+                _fail("reconcile_registration_unavailable")
+            put_brs_reconcile_obligation(expected, obligation)
+            payload = self._controller._python_admission_flow_payload(expected)
+            registration = register_brs_selected_obligation(
+                self._ledger, self._handoff, native_plan_sha256=self._plan.plan_sha256,
+                controller_checkpoint_sha256=self._head, episode_record_sha256=self._episode_head,
+                expected_run_record_sha256=self._run_head,
+                expected_native_claim_sha256=self._claim.claim_sha256,
+            )
+            if registration.obligation.to_dict() != obligation.to_dict():
+                _fail("reconcile_registration_readback_invalid")
+            head = registration.checkpoint_sha256
+            self._reconcile_registration_readback(head, expected)
+            # No shared state is refreshed to let ordinary owner checks pass.
+            self._reconcile_registration_observe(expected)
+            self._reconcile_registration_readback(head, expected)
+            with self._controller._python_admission_brs_observations(), self._before_channel_condition:
+                self._reconcile_registration_fixed()
+                self._reconcile_registration_readback(head, expected)
+                self._state[FIELD] = expected[FIELD]
+                self._wave.checkpoint_sha256, self._wave.payload = head, payload
+                self._head, self._payload = head, payload
+            return head
+        except BaseException:
+            self._poisoned = True
+            raise
+
     def _identity(self, *, captured: bool = True, registered: bool = True) -> None:
         from .rsi_controller import RSILearningController, _PythonAdmissionBRSWave
         from .rsi_python_admission import validate_rsi_python_admission_shapes
@@ -737,6 +908,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
 
         controller, wave = self._controller, self._wave
         if (type(self) is not _BRSLineageCheckpointOwner or self._poisoned
+                or type(self._reconcile_registration_started) is not bool
                 or type(controller) is not RSILearningController or type(wave) is not _PythonAdmissionBRSWave
                 or type(wave.run_id) is not str or wave.run_id != self._run_id
                 or type(wave.owner_thread) is not int or wave.owner_thread != self._thread
