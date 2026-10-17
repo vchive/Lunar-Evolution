@@ -1,3 +1,31 @@
+# 当前后继开发（2026-10-18，rejection ready 的只读 ledger 基础）
+
+- 独立分支 `codex/brs-rejection-ready` 延续 P/C2 最终源码 `de4fae1`；不修改
+  前置冻结工作树或主 checkout 的本地提交/未提交规格。
+- P/C2 最终 `de4fae1` 的同库存400项在 macOS Python3.11.15 / Linux Python3.12.3
+  各全通过，独立产品/input/raw/source/import审查接受，PR130已ready。此前 home quota
+  setup失败和 `/tmp` inode耗尽的不完整执行均单独保留，不能累计为通过。
+  原始材料为主 checkout ignored
+  `.lunar-evolution/validation/rejection-p-c2-reviewed-20261018-h3obzmql/`。
+- 已实现独立内部 `rsi_brs_rejection_ready_ledger`：对预冻结run/wave/held-reference
+  episode域，在单次非创建、query-only SQLite事务内捕获/比较六张业务表完整原行和
+  原 `sqlite_schema` 来源。严格primitive、128KiB整行/16MiB整体/4096行有界，拒绝
+  增删改、类型漂移、越域admission、view/virtual替换；不调用controller/source hooks。
+  本轮54项真实本地SQLite开发测试通过、无skip，Ruff/compileall/diff-check通过；
+  独立源码审查已接受；最终同来源双平台材料在PR和ignored
+  `.lunar-evolution/validation/rejection-ready-ledger-20261018-yqx86o4s/`另行记录，
+  不与前置P/C2的400项材料累计。
+- 该helper仅提供比较数据，不验证owner/完整语义，不代替原database inode gate，
+  不授予ACK或执行权限。调用方必须在同read snapshot完成语义验证，或证明完整
+  raw前后capture相等；实际owner/channel/Condition有限依赖guard、物理pins、deadline
+  和 staged ACK仍未接线。见 [rejection-owner-ready.md](specs/196-brs-owner-worker-handoff/rejection-owner-ready.md)。
+- PR123–130尚未合main；最新PR123/125/126各1项CI运行，其余仍排队。
+  public native BRS、production admission、online publication保持关闭；仅本地
+  inert/provider-free fixtures，不运行真实模型/solver、WebAgent或远程/公司evaluator；
+  P2继续后置。
+
+以下为前置P/C2开发记录；最终验收状态以对应冻结材料和PR为准。
+
 # 当前后继开发（2026-10-18，original BRS rejection P/C2）
 
 - 在独立分支 `codex/brs-rejection-provenance` 延续 PR128 冻结 `3366036`。
