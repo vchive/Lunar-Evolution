@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 import pytest
+from test_rsi_brs_rejection_provenance_wire import _wires
 
 from lunar_evolution import rsi_brs_rejection_capacity as capacity
 from lunar_evolution import rsi_producer_staging_capsule as capsule
@@ -192,3 +193,120 @@ def test_referenced_native_record_accepts_real_modes_without_snapshot_repacking(
     # Native tables deliberately do not have LineageSnapshotPin mode/parent fields.
     assert all("mode" not in item for item in tables["c1"]["entries"])
     assert capacity.retained_brs_c1_evidence_bytes(state, wire, tables) == _actual_without_tables(wire) + 7
+
+
+def _c2_fixture(count=2):
+    c1, c2 = _wires(count)
+    entry = c1["batches"][0]
+    tables = {}
+    prepared = entry["evidence_pins"]["journal.prepared.json"]
+    for index, candidate_id in enumerate(entry["rejected"]["candidate_ids"]):
+        shared = _file("evolution/producer-batches/" + entry["journal_id"] + "/journal.prepared.json",
+                       prepared["inode"], prepared["size"])
+        shared["sha256"] = prepared["sha256"]
+        directory = {"path": "evolution/bundle-attempts", "kind": "directory", "size": None,
+                     "sha256": None, "device": 1, "inode": 99, "mtime_ns": 10, "ctime_ns": 11}
+        tables[candidate_id] = _table([
+            shared, directory, _file("evolution/native/" + candidate_id + "/output", 100 + index),
+            _file("evolution/native/" + candidate_id + "/empty", 200 + index, 0),
+        ])
+    return {"producer_publication_lineage": c1}, c2, tables
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_c2_counts_actual_provenance_once_without_future_reserve_or_io(count, monkeypatch):
+    state, wire, tables = _c2_fixture(count)
+    original = deepcopy((state, wire, tables))
+    c1_actual = capacity.retained_brs_c1_evidence_bytes(state, state["producer_publication_lineage"], tables)
+    pin = wire["batches"][0]["rejection_provenance"]["file_pin"]
+    monkeypatch.setattr("pathlib.Path.stat", lambda *_args, **_kwargs: pytest.fail("capacity read disk"))
+    monkeypatch.setattr("pathlib.Path.lstat", lambda *_args, **_kwargs: pytest.fail("capacity read disk"))
+    monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: pytest.fail("capacity read disk"))
+    assert capacity.retained_brs_c2_evidence_bytes(state, wire, tables) == c1_actual + pin["size"]
+    assert (state, wire, tables) == original
+    with pytest.raises(RSILearningError, match="shape_invalid"):
+        capacity.retained_brs_c1_evidence_bytes(state, wire, tables)
+
+
+def test_c2_actual_p_exact_aggregate_boundary_and_one_byte_over():
+    state, wire, tables = _c2_fixture(1)
+    pin = wire["batches"][0]["rejection_provenance"]["file_pin"]
+    pin["size"] = MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES
+    remaining = MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES - _actual_without_tables(wire) - 7 - pin["size"]
+    extra = []
+    while remaining:
+        size = min(remaining, MAX_LINEAGE_SNAPSHOT_BYTES)
+        extra.append(_file("evolution/large/" + str(len(extra)), 500 + len(extra), size))
+        remaining -= size
+    candidate = next(iter(tables))
+    original = tables[candidate]["entries"]
+    tables[candidate] = _table(original + extra)
+    assert capacity.retained_brs_c1_evidence_bytes(state, state["producer_publication_lineage"], tables) == (
+        MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES - MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES)
+    assert capacity.retained_brs_c2_evidence_bytes(state, wire, tables) == MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES
+    extra[-1]["size"] += 1
+    tables[candidate] = _table(original + extra)
+    with pytest.raises(RSILearningError, match="aggregate_exhausted"):
+        capacity.retained_brs_c2_evidence_bytes(state, wire, tables)
+
+
+@pytest.mark.parametrize("domain", ["snapshot", "evidence", "native", "directory", "ready"])
+def test_c2_provenance_inode_cannot_alias_any_original_material(domain):
+    state, wire, tables = _c2_fixture(1)
+    pin = wire["batches"][0]["rejection_provenance"]["file_pin"]
+    pin["inode"] = {"snapshot": 1, "evidence": 11, "native": 100, "directory": 99, "ready": 77}[domain]
+    if domain == "ready":
+        state["producer_multi_episode_publication"] = True
+        state["producer_episode_staging"] = {"one": {"ready": {
+            "protocol": capsule.READY_CAPSULE_PROTOCOL, "workspace": "/fixture", "journal_id": "journal",
+            "workspace_identity": {"device": 1, "inode": 1000},
+            "file_pin": _pin("rsi-ready.snapshot", 77, 17),
+        }}}
+    with pytest.raises(RSILearningError, match="material_alias"):
+        capacity.retained_brs_c2_evidence_bytes(state, wire, tables)
+
+
+def test_c2_keeps_native_pin_mode_and_complete_observation_record(monkeypatch):
+    state, wire, tables = _c2_fixture(1)
+    original = capacity._add_material
+    observed = []
+
+    def record(materials, identities, path, value):
+        if path.endswith("/native-rsi.rejection-provenance.json"):
+            observed.append(dict(value))
+        return original(materials, identities, path, value)
+
+    monkeypatch.setattr(capacity, "_add_material", record)
+    capacity.retained_brs_c2_evidence_bytes(state, wire, tables)
+    pin = wire["batches"][0]["rejection_provenance"]["file_pin"]
+    assert observed == [{"kind": "file", **{key: value for key, value in pin.items() if key != "name"}}]
+    assert observed[0]["mode"] == 0o400 and observed[0]["nlink"] == 1
+
+
+@pytest.mark.parametrize("mutation", ["missing-c1", "already-c2", "root", "source", "order", "missing-table"])
+def test_c2_requires_original_c1_wire_and_original_candidate_domain(mutation):
+    state, wire, tables = _c2_fixture()
+    if mutation == "missing-c1":
+        state.pop("producer_publication_lineage")
+    elif mutation == "already-c2":
+        state["producer_publication_lineage"] = deepcopy(wire)
+    elif mutation == "root":
+        wire["run_id"] = "foreign"
+    elif mutation == "source":
+        wire["batches"][0]["before_sources"]["new"] = True
+    elif mutation == "order":
+        tables = dict(reversed(tuple(tables.items())))
+    else:
+        tables.pop(next(iter(tables)))
+    with pytest.raises((RSILearningError, ValueError)):
+        capacity.retained_brs_c2_evidence_bytes(state, wire, tables)
+
+
+def test_c2_fixed_p_path_must_be_absent_from_original_c1_materials():
+    state, wire, tables = _c2_fixture(1)
+    candidate = next(iter(tables))
+    pin = wire["batches"][0]["rejection_provenance"]["file_pin"]
+    path = "evolution/producer-batches/journal/" + pin["name"]
+    tables[candidate] = _table([*tables[candidate]["entries"], _file(path, pin["inode"], pin["size"])])
+    with pytest.raises(RSILearningError, match="provenance_domain_invalid"):
+        capacity.retained_brs_c2_evidence_bytes(state, wire, tables)

@@ -216,7 +216,9 @@ def retain_rejected_terminal(self, terminal: Any) -> None:
                 or self._rejection_file_pin is not None or self._retaining_before is not False
                 or self._retaining_success is not None or self._success_deadline is not None
                 or json.loads(self._policy_bytes).get("rejection_schema") != REJECTION_SCHEMA
-                or self._native is None or self._plan.task_id != self._request.episode_id):
+                or self._native is None or self._plan.task_id != self._request.episode_id
+                or self._rejection_c1_capture is not None or self._retaining_rejection_provenance is not False
+                or self._rejection_provenance_file_pin is not None):
             _fail("rejected_retention_unavailable")
         self._retaining_rejection = True
         self._rejection_observe()
@@ -429,11 +431,13 @@ def checkpoint_rejected(self, wire: object) -> str:
                     or self._wave.checkpoint_sha256 != self._head or self._wave.payload != self._payload
                     or self._controller.ledger is not self._ledger or self._controller.gateway is not self._gateway
                     or self._controller.producer_workspace is not self._workspace
-                    or self._controller.producer_sidecar is not self._sidecar):
+                    or self._controller.producer_sidecar is not self._sidecar
+                    or self._rejection_c1_capture is not None):
                 _fail("owner_drift")
             self._state[_FIELD] = json.loads(lineage._raw(detached))
             self._wave.checkpoint_sha256, self._wave.payload = head, payload
             self._head, self._payload = head, payload
+            self._rejection_c1_capture = (head, payload)
             self._phase = "rejected"
         return head
     except BaseException:
@@ -443,10 +447,14 @@ def checkpoint_rejected(self, wire: object) -> str:
 
 def _history(self, state: dict[str, Any] | None = None) -> None:
     from .rsi_brs_rejection_c1 import (
+        REJECTION_PROVENANCE_SCHEMA,
         REJECTION_SCHEMA,
         rejected_c1_entry,
         rejected_c1_index,
+        rejected_provenance_entry,
+        rejected_provenance_index,
         validate_rejected_c1_transition,
+        validate_rejected_provenance_transition,
     )
 
     # The DRS history reader requires its public opt-in. Use the same strict
@@ -469,8 +477,15 @@ def _history(self, state: dict[str, Any] | None = None) -> None:
         if entry["state"] == "rejected":
             if json.loads(self._policy_bytes).get("rejection_schema") != REJECTION_SCHEMA:
                 _fail("rejected_policy_required")
-            rejected_c1_entry(entry)
-            if wire["head"] is not None or wire["rejections"] != rejected_c1_index(entry):
+            if entry.get("rejection_provenance") is None:
+                rejected_c1_entry(entry)
+                index = rejected_c1_index(entry)
+            else:
+                if json.loads(self._policy_bytes).get("rejection_provenance_schema") != REJECTION_PROVENANCE_SCHEMA:
+                    _fail("rejected_provenance_policy_required")
+                rejected_provenance_entry(entry)
+                index = rejected_provenance_index(entry)
+            if wire["head"] is not None or wire["rejections"] != index:
                 _fail("history_drift")
         else:
             if wire["rejections"] != []:
@@ -492,7 +507,7 @@ def _history(self, state: dict[str, Any] | None = None) -> None:
             if entry["state"] == "rejected":
                 if old["state"] == "rejected":
                     if wire != previous:
-                        _fail("history_drift")
+                        validate_rejected_provenance_transition(previous, wire)
                 else:
                     validate_rejected_c1_transition(previous, wire)
                 previous = wire

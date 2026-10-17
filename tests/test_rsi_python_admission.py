@@ -92,7 +92,9 @@ def _setup(tmp_path: Path, *, originally_bound: bool = True):
         budget=RSIRunBudget.create({"deadline_unix": DEADLINE, "max_solver_invocations": 3}),
     )
     batch = tmp_path / "evolution/producer-batches" / intent.journal_id
-    batch.mkdir(parents=True, mode=0o700)
+    # A stricter fixture may have already sealed create-only native inputs in
+    # this batch before constructing the launch intent and original sidecar.
+    batch.mkdir(parents=True, mode=0o700, exist_ok=True)
     sidecar = persist_python_producer_binding(tmp_path, binding=binding)
     proof = PythonProducerCheckpointBinding.from_sidecar(sidecar)
     ledger = RSILedger(tmp_path / "rsi.sqlite3")

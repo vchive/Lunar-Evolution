@@ -12,7 +12,10 @@ from .producer_bundle_lineage import (
 )
 from .producer_bundle_receipts import _validate_retained_evidence
 from .rsi_learning import RSILearningError
-from .rsi_native_rejection import MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES
+from .rsi_native_rejection import (
+    MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES,
+    NativeRSIRejectionFilePin,
+)
 from .rsi_producer_staging_capsule import (
     READY_CAPSULE_PROTOCOL,
     _shape,
@@ -21,6 +24,7 @@ from .rsi_producer_staging_capsule import (
 
 _BRS_PROTOCOL = "lunar-rsi-brs-lineage-checkpoint-v1"
 _REJECTION_SCHEMA = "lunar-rsi-brs-rejection-c1-v1"
+_LINEAGE_FIELD = "producer_publication_lineage"
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _MAX_INT = 2**64 - 1
 _OBSERVATION_FIELDS = (
@@ -84,6 +88,18 @@ def retained_brs_c1_evidence_bytes(state: object, wire: object, retained_tables:
     zero-byte regular files without repacking their native modes as snapshot pins.
     No disk observation, flag rewriting, owner callback or checkpoint write occurs.
     """
+    total, _materials, _identities = _retained_brs_c1_materials(
+        state, wire, retained_tables, provenance_reserve=MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES)
+    return total
+
+
+def _retained_brs_c1_materials(
+    state: object, wire: object, retained_tables: object, *, provenance_reserve: int,
+) -> tuple[int, dict[str, dict[str, Any]], dict[tuple[int, int], str]]:
+    """Accumulate the finite C1 material domain for the two bounded kernels."""
+    if type(provenance_reserve) is not int or provenance_reserve not in {
+            0, MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES}:
+        _fail("shape_invalid")
     _shape(state)
     _shape(wire)
     _shape(retained_tables)
@@ -154,11 +170,44 @@ def retained_brs_c1_evidence_bytes(state: object, wire: object, retained_tables:
             path = observation["path"]
             record = {key: value for key, value in observation.items() if key != "path"}
             total += _add_material(materials, identities, path, record)
-            if total + MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+            if total + provenance_reserve > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
                 _fail("aggregate_exhausted")
-    if total + MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+    if total + provenance_reserve > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+        _fail("aggregate_exhausted")
+    return total, materials, identities
+
+
+def retained_brs_c2_evidence_bytes(
+    captured_c1_state: object, c2_wire: object, retained_tables: object,
+) -> int:
+    """Count original C1 material plus actual P under its native 0400 pin.
+
+    The captured state must contain its original C1 wire. The pure transition
+    check binds C2 to that wire; the original owner must still independently
+    verify the captured state, unchanged native tables and held publishing pin.
+    No future P reservation is added after counting the actual provenance file.
+    """
+    from .rsi_brs_rejection_c1 import validate_rejected_provenance_transition
+
+    _shape(captured_c1_state)
+    _shape(c2_wire)
+    _shape(retained_tables)
+    if type(captured_c1_state) is not dict:
+        _fail("shape_invalid")
+    c1_wire = captured_c1_state.get(_LINEAGE_FIELD)
+    validate_rejected_provenance_transition(c1_wire, c2_wire)
+    total, materials, identities = _retained_brs_c1_materials(
+        captured_c1_state, c1_wire, retained_tables, provenance_reserve=0)
+    entry = c2_wire["batches"][0]
+    pin = NativeRSIRejectionFilePin.from_dict(entry["rejection_provenance"]["file_pin"])
+    path = "evolution/producer-batches/" + entry["journal_id"] + "/" + pin.name
+    if path in materials:
+        _fail("provenance_domain_invalid")
+    record = {"kind": "file", **{field: getattr(pin, field) for field in _OBSERVATION_FIELDS}}
+    total += _add_material(materials, identities, path, record)
+    if total > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
         _fail("aggregate_exhausted")
     return total
 
 
-__all__ = ["retained_brs_c1_evidence_bytes"]
+__all__ = ["retained_brs_c1_evidence_bytes", "retained_brs_c2_evidence_bytes"]

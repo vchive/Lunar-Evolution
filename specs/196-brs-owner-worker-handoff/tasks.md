@@ -12,9 +12,11 @@ Contract: [rejection-owner-c1.md](rejection-owner-c1.md).
   and future P reservation within unchanged aggregate/checkpoint bounds.
 - [x] Pin explicit fresh rejection schema and all new finite dependencies; retain
   old shared-reader, dispatch and public admission refusal gates.
-- [ ] Validate real owner/inert native fixtures and negative/compatibility cases,
-  then freeze one source for same-inventory macOS/Linux scoped tests and review.
-- [ ] Publish successor PR; complete prerequisite full CI before dependent merges.
+- [x] Freeze PR128 `3366036`; accept the same 255 distinct scoped cases on
+  macOS/Linux with static checks and independent product/raw/source/import review.
+  The earlier `986d9b1` failures remain NOT_ACCEPTED.
+- [x] Publish PR128 and mark ready with its exact scoped validation evidence.
+- [ ] Complete prerequisite full CI before dependent merges.
 
 ## Terminal recovery successor — 2026-10-17
 
@@ -49,6 +51,21 @@ Contract: [durable-recovery-evidence.md](durable-recovery-evidence.md).
 - [ ] Validate genuine-owner integration, fault cases and unchanged recovery fences;
   freeze one source for identical macOS/Linux cases and independent review.
 - [ ] Complete required GitHub CI and prerequisite merges before main integration.
+
+## Original owner rejection P/C2 follow-up
+
+Contract: [rejection-owner-p-c2.md](rejection-owner-p-c2.md).
+
+- [x] Add strict separate C2 parser/index/one-field transition and actual-P
+  accounting; preserve C1 null/reservation semantics and all existing caps.
+- [x] Capture the original confirmed C1 and implement same-owner create-only P
+  retention, original pin custody, scoped C2 CAS/readback and poisoned failures.
+- [x] Bind the finite fresh policy and canonical dependencies within current
+  fingerprint limits; retain empty ready channel and closed public gates.
+- [ ] Verify real original-owner one/two-candidate fixtures and fault windows;
+  freeze matching macOS/Linux source/inventory and independently audit evidence.
+- [ ] Pass complete dependency-ordered CI before main merge. This slice does
+  not close actual ready/dispatch/result/recovery/root/successor acceptance.
 
 ## Exact mailbox result composition follow-up
 
