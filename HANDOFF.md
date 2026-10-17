@@ -1,3 +1,29 @@
+# 当前后继开发（2026-10-17，independent terminal recovery）
+
+- 分支 `codex/brs-terminal-recovery` 基于 PR126 冻结 `74a3f52`，使用独立
+  worktree；主 checkout 的本地提交和未提交规格文档保持原样。
+- PR126 的 macOS Python3.11.15 / Linux Python3.12.3 各相同561个 scoped cases、
+  静态检查及独立产品/来源/原始材料审查通过。最终材料在主 checkout ignored
+  `.lunar-evolution/validation/durable-evidence-74a3f52-20261017-utt8qpno/`；旧
+  `ef7ee90` 失败材料保持 NOT_ACCEPTED，不能累计到最终来源。
+- PR123/124/125/126 尚未合入 main；最新 PR126 完整33-job CI全部queued。
+  scoped 验证不能代替完整 CI，也不因排队而强行合并或取消前置run。
+- 本轮契约见 [terminal-recovery-evidence.md](specs/196-brs-owner-worker-handoff/terminal-recovery-evidence.md)：
+  增加独立 delivery/callback/worker terminal 观察，闭合 callback 前持久化 ACK
+  门槛；只读组合原 publication、原 producer cleanup、自然 episode 和 exact result。
+  显式 controller fresh-compose 后复用已有consume，同事务重验全部ledger source pins。
+- 本轮代码、组件和原子性回归已完成，新增165项组合/兼容开发回归通过；六个自然
+  集成场景的开发轮为5通过、1正确拒绝但测试期待有误（夹具已修正）。原始开发材料
+  `/private/tmp/lunar-natural-six-n8bkoclq/`不作为最终冻结来源的验收替代。
+  最终冻结来源的相同库存双平台验收、原始材料和独审结论单独记录在对应PR及主
+  checkout ignored validation目录；本提交不提前宣称其结果。unknown capture不补录、callback
+  unknown不重试；worker线程退出、原producer进程cleanup和episode终态分别验证。
+  只用本地 inert/provider-free fixtures，public native BRS、production admission、
+  online publication继续关闭；all-rejected、serial successor、真实runtime/project/CLI
+  验收及P2仍另列后续。
+
+以下为 PR126 的历史开发记录；最终验收以本节和对应 PR 的冻结材料为准。
+
 # 当前后继开发（2026-10-17，durable recovery evidence）
 
 - 隔离分支 `codex/brs-durable-recovery-evidence` 基于 PR125 冻结来源 `1e7f6cf`。不改主 checkout 的本地提交和未提交文档，不追加修改 PR123/124/125 的冻结来源。

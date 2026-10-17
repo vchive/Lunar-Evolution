@@ -953,7 +953,133 @@ class RSILedger:
                 connection, namespace, record, expected_sha256=expected_sha256,
             )
 
-    def _consume_brs_reconcile_obligation(self, run_id: str, episode_id: str, evidence: object):
+    def append_brs_terminal_observation(
+        self, binding: object, observation: object, *, expected_sha256: str | None,
+    ) -> str:
+        """Append original-owner terminal facts without consuming or advancing its run."""
+        from .rsi_brs_mailbox_evidence import (
+            validate_brs_mailbox_history,
+            validate_brs_mailbox_root_history,
+        )
+        from .rsi_brs_reconcile import FIELD, BRSReconcileObligation, _validate_brs_episode_history
+        from .rsi_python_brs_terminal_lifecycle import (
+            brs_terminal_evidence_namespace,
+            parse_brs_terminal_binding,
+            parse_brs_terminal_observation,
+            validate_brs_terminal_history,
+        )
+
+        captured = parse_brs_terminal_binding(binding)
+        record = parse_brs_terminal_observation(observation)
+        if record["binding"] != captured:
+            raise RSILearningError("rsi_brs_terminal_binding_drift")
+        mailbox = captured["mailbox_binding"]
+        run_id, episode_id = mailbox["run_id"], mailbox["episode_id"]
+        namespace = brs_terminal_evidence_namespace(captured)
+        self._assert_controller_lock(run_id)
+        self._assert_controller_lock(namespace)
+        if captured["owner_thread_id"] != threading.get_ident():
+            raise RSILearningError("rsi_brs_terminal_owner_required")
+        if expected_sha256 is not None:
+            _digest(expected_sha256, name="brs_terminal_checkpoint")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            snapshot = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
+            roots = snapshot["roots"]
+            if roots[-1][0] != record["root_checkpoint_sha256"]:
+                raise RSILearningError("rsi_brs_terminal_root_drift")
+            if roots[-1][1].get(FIELD, {}).get(episode_id) != mailbox["obligation"]:
+                raise RSILearningError("rsi_brs_terminal_obligation_drift")
+            side = snapshot["mailbox_history"]
+            latest = validate_brs_mailbox_history(side, binding=mailbox)
+            validate_brs_mailbox_root_history(roots, side, binding=mailbox)
+            if latest is None or len(side) != 4:
+                raise RSILearningError("rsi_brs_terminal_transport_missing")
+            run = self._head(connection, run_id)
+            if (run is None or run.kind != "run" or run.state != "running"
+                    or run.record_sha256 != mailbox["run_record_sha256"]):
+                raise RSILearningError("rsi_brs_terminal_run_drift")
+            obligation = BRSReconcileObligation.from_dict(mailbox["obligation"])
+            episode = _validate_brs_episode_history(obligation, snapshot["episode_history"])
+            claim = snapshot["native_claim"]
+            if claim is None or claim.claim_sha256 != mailbox["native_claim_sha256"]:
+                raise RSILearningError("rsi_brs_terminal_native_claim_drift")
+            if record["stage"] != "worker_terminal" and (
+                    episode.state != "running" or episode.record_sha256 != mailbox["episode_record_sha256"]
+                    or snapshot["saved_result"] is not None or claim.status != "started"):
+                raise RSILearningError("rsi_brs_terminal_running_capture_drift")
+            if (record["stage"] == "delivery" and record["facts"]["publication"]["lineage"]
+                    != roots[-1][1].get("producer_publication_lineage")):
+                raise RSILearningError("rsi_brs_terminal_publication_drift")
+            history = snapshot["terminal_history"]
+            actual = history[-1][0] if history else None
+            if actual != expected_sha256:
+                raise RSILearningError("rsi_brs_terminal_checkpoint_conflict")
+            validate_brs_terminal_history(
+                [*history, (record["observation_sha256"], record)], binding=captured,
+            )
+            return self._append_controller_checkpoint_tx(
+                connection, namespace, record, expected_sha256=expected_sha256,
+            )
+
+    def _brs_terminal_evidence_snapshot_tx(self, connection, run_id: str, episode_id: str) -> dict:
+        """Read all ledger legs from one snapshot; filesystem evidence stays separate."""
+        from .rsi_brs_reconcile import FIELD, parse_brs_reconcile_obligations
+
+        roots = self._controller_checkpoint_history_tx(connection, run_id)
+        if not roots:
+            raise RSILearningError("rsi_brs_terminal_root_missing")
+        obligation = parse_brs_reconcile_obligations(roots[-1][1].get(FIELD)).get(episode_id)
+        if obligation is None:
+            raise RSILearningError("rsi_brs_terminal_obligation_missing")
+        digest = obligation.digest()
+        mailbox = self._controller_checkpoint_history_tx(connection, "rsi-brs-mailbox:" + digest)
+        terminal = self._controller_checkpoint_history_tx(connection, "rsi-brs-terminal:" + digest)
+        rows = connection.execute(
+            "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
+        ).fetchall()
+        episodes = tuple(self._row_to_record(row) for row in rows)
+        run = self._head(connection, run_id)
+        status = self._native_result_status(connection, episode_id, obligation.request_sha256)
+        claim_row = connection.execute(
+            "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (episode_id,),
+        ).fetchone()
+        claim = self._native_claim_row(claim_row, status=status or "started") if claim_row else None
+        if claim is not None and (claim.request_sha256 != obligation.request_sha256
+                                  or claim.plan_sha256 != obligation.native_plan_sha256):
+            raise RSILearningError("rsi_brs_terminal_native_claim_drift")
+        result_row = connection.execute(
+            "SELECT request_payload, result_payload, result_sha256 FROM rsi_episode_results WHERE episode_id = ?",
+            (episode_id,),
+        ).fetchone()
+        saved = None if result_row is None else (
+            SolverRequest.from_dict(json.loads(result_row["request_payload"])),
+            SolverResult.from_dict(json.loads(result_row["result_payload"])),
+        )
+        pins = {
+            "root_checkpoint_sha256": roots[-1][0],
+            "mailbox_checkpoint_sha256": mailbox[-1][0] if mailbox else None,
+            "terminal_checkpoint_sha256": terminal[-1][0] if terminal else None,
+            "run_record_sha256": run.record_sha256 if run else None,
+            "episode_record_sha256": episodes[-1].record_sha256 if episodes else None,
+            "native_claim_sha256": claim.claim_sha256 if claim else None,
+            "result_sha256": result_row["result_sha256"] if result_row else None,
+            "obligation_sha256": digest,
+        }
+        return {"roots": roots, "mailbox_history": mailbox, "terminal_history": terminal,
+                "episode_history": episodes, "native_claim": claim, "saved_result": saved, "pins": pins}
+
+    def read_brs_terminal_evidence_snapshot(self, run_id: str, episode_id: str) -> dict:
+        """Observe existing evidence without initializing or writing any ledger files."""
+        _id(run_id, name="run_id")
+        _id(episode_id, name="episode_id")
+        with self.read_only_observations(), self._connect() as connection:
+            connection.execute("BEGIN")
+            return self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
+
+    def _consume_brs_reconcile_obligation(
+        self, run_id: str, episode_id: str, evidence: object, *, expected_pins: dict | None = None,
+    ):
         """Check terminal ledger truth and remove one obligation in the same transaction."""
         from .rsi_brs_reconcile import (
             BRSReconcileConsumption,
@@ -967,6 +1093,12 @@ class RSILedger:
         self._assert_controller_lock(run_id)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if expected_pins is not None:
+                actual = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)["pins"]
+                if (type(expected_pins) is not dict or set(expected_pins) != set(actual)
+                        or any(type(key) is not str or type(value) not in {str, type(None)}
+                               for key, value in expected_pins.items()) or actual != expected_pins):
+                    raise RSILearningError("rsi_brs_terminal_consume_drift")
             checkpoints = self._controller_checkpoint_history_tx(connection, run_id)
             if not checkpoints:
                 raise RSILearningError("rsi_brs_reconcile_checkpoint_missing")
