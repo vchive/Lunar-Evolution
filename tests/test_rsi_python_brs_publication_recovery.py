@@ -243,7 +243,14 @@ def test_genuine_original_owner_recovers_detached_native_output_without_writes(t
         assert value.owner._head == head and value.wave.budget_state == budget
         after = _files(value.workspace)
         assert before.keys() == after.keys()
-        assert all(before[path][0] == after[path][0] for path in before)
+        assert all(before[path][0] == after[path][0] for path in before), {
+            str(path.relative_to(value.workspace)): {
+                "before_sha256": hashlib.sha256(before[path][0]).hexdigest(),
+                "after_sha256": hashlib.sha256(after[path][0]).hexdigest(),
+            }
+            for path in sorted(before)
+            if before[path][0] != after[path][0]
+        }
         assert all((before[path][1].st_ino, before[path][1].st_mtime_ns, before[path][1].st_size)
                    == (after[path][1].st_ino, after[path][1].st_mtime_ns, after[path][1].st_size)
                    for path in before if not path.name.endswith("-shm"))

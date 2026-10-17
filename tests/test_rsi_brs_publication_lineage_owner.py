@@ -124,8 +124,10 @@ def _waiting(tmp_path, monkeypatch):
         plan = _plan(value.binding, request, value.controller.snapshot)
         value.ledger.claim_native_episode(request, plan_sha256=plan.plan_sha256)
         messages.put((request, plan, get_ident()))
-        if not ready.wait(timeout=90):
-            raise AssertionError("fixture owner did not release worker")
+        # This inert worker belongs to the fixture scope. CPU-heavy source/policy
+        # observations must not invent a solver failure after a wall-clock delay;
+        # the owner-side finally always releases both events before bounded join.
+        ready.wait()
         if not stop.is_set():
             digest = value.controller._request_python_admission_for_brs_worker(
                 value.binding.run_id, request.episode_id, native_plan=plan,
@@ -133,18 +135,17 @@ def _waiting(tmp_path, monkeypatch):
                 wait_check=lambda: None,
             )
             messages.put(digest)
-            if not stop.wait(timeout=90):
-                raise AssertionError("fixture owner did not stop worker")
+            stop.wait()
         raise _StopWorker()
 
     value.operation = operation
     with selected._wave(value) as wave, ThreadPoolExecutor(max_workers=1) as pool:
         handoff = value.controller._python_admission_bind_selected_brs_handoff(wave)
         future = pool.submit(value.controller._execute_brs_intent, wave, wave.state, handoff.episode_id, handoff)
-        request, plan, worker_thread = messages.get(timeout=15)
-        value.request, value.plan, value.worker_thread = request, plan, worker_thread
-        value.ready, value.messages = ready, messages
         try:
+            request, plan, worker_thread = messages.get(timeout=15)
+            value.request, value.plan, value.worker_thread = request, plan, worker_thread
+            value.ready, value.messages = ready, messages
             owner = brs._BRSLineageCheckpointOwner(
                 value.controller, wave, request=request, memory=value.controller.snapshot, native_plan=plan,
             )
