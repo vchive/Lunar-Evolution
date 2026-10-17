@@ -1,5 +1,21 @@
 # Feature 196 tasks — implementation tracking
 
+## Original rejection C1 successor — 2026-10-18
+
+Contract: [rejection-owner-c1.md](rejection-owner-c1.md).
+
+- [x] Add the original ordinal-zero BRS owner's strict rejected outcome, original
+  native material verification and create-only descriptor retention.
+- [x] Require internal original retention scope, exact adjacent C1 CAS/readback
+  and fixed final owner gates; preserve old cursors/files on uncertainty.
+- [x] Count all original native retained material plus ready/before/descriptors
+  and future P reservation within unchanged aggregate/checkpoint bounds.
+- [x] Pin explicit fresh rejection schema and all new finite dependencies; retain
+  old shared-reader, dispatch and public admission refusal gates.
+- [ ] Validate real owner/inert native fixtures and negative/compatibility cases,
+  then freeze one source for same-inventory macOS/Linux scoped tests and review.
+- [ ] Publish successor PR; complete prerequisite full CI before dependent merges.
+
 ## Terminal recovery successor — 2026-10-17
 
 Contract: [terminal-recovery-evidence.md](terminal-recovery-evidence.md).
@@ -12,10 +28,11 @@ Contract: [terminal-recovery-evidence.md](terminal-recovery-evidence.md).
   canonical claim/result and legal terminal episode from read-only sources.
 - [x] Fresh-compose under the controller lock and recheck every ledger pin inside
   the existing consume/removal transaction.
-- [ ] Cover natural inert completion, missing/unknown/drift, rebuilt-ledger reads,
+- [x] Cover natural inert completion, missing/unknown/drift, rebuilt-ledger reads,
   callback failure and consume-time concurrent change; run static checks.
-- [ ] Freeze one source, accept matching macOS/Linux scoped tests and independent
-  review, publish successor PR; merge only after full prerequisite CI passes.
+- [x] Freeze PR127 `f0e39b9`, accept the same 302 scoped cases on macOS/Linux
+  plus independent product/raw review, and publish the ready successor PR.
+- [ ] Merge only after full prerequisite CI passes.
 
 ## Durable recovery evidence follow-up
 

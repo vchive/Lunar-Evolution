@@ -1,4 +1,21 @@
-# Current release backlog — 2026-10-17
+# Current release backlog — 2026-10-18
+
+## 当前后继：原 BRS owner 拒绝 C1
+
+- P0：PR123–127完整CI及依赖顺序合入。PR127冻结`f0e39b9`的相同302项scoped
+  双平台与独审接受，PR已ready；完整CI最近各33项排队，仍未合入main。
+- P1本轮：仅原owner ordinal-zero拒绝C1，显式fresh schema、完整native material
+  与create-only descriptor、原scope/CAS/readback、完整retained容量和future P预留。
+  首次`986d9b1`scope因双候选fixture receipt复用及lazy reader alias恢复缺失失败；
+  原始材料保留NOT_ACCEPTED，test-only后继重新冻结回归。
+  见 [rejection-owner-c1.md](../specs/196-brs-owner-worker-handoff/rejection-owner-c1.md)。
+- P1后续：同owner P/C2与拒绝lifecycle；root execution settlement/owner retirement；
+  已预留整wave预算的serial接线；真实source/toolchain/sealed runtime、
+  OpenEvolve/Shinka lifecycle与生产CLI/Linux中断验收。
+- P2继续后置。public native BRS、production admission、online publication仍关闭。
+
+当前普通consume不会结算root execution；detached successor会再次增加计数，不能
+直接接到已预留整wave的controller。本轮开发状态不代替其后独立冻结验收。
 
 ## 当前后继：独立终态恢复证据
 

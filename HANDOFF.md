@@ -1,3 +1,34 @@
+# 当前后继开发（2026-10-18，original BRS rejection C1）
+
+- 新隔离分支 `codex/brs-rejection-c1` 从 PR127 冻结 `f0e39b9` 继续，保留前置
+  冻结来源与主 checkout 的本地提交/未提交文档。工作树已创建但因本聊天附件数
+  达上限而未注册附件；直接使用返回目录，不重复创建。
+- PR127 的同库存302个 scoped cases 在 macOS Python3.11.15 / Linux Python3.12.3
+  全通过，静态检查及独立产品/raw/source/import审查接受，PR已ready。原始材料在
+  主 checkout ignored `.lunar-evolution/validation/terminal-recovery-f0e39b9-20261017-24d07fne/`。
+  PR123–127 最近完整CI各33项均排队，尚未合入 main；queued不算通过。
+- C1实现已包括finite deadline/原file pin保持、CAS后full source/native材料复验、
+  exact相邻读回与canonical最终读核。独审目前未见产品阻塞；75项pure容量/依赖
+  检查、真实native fixture与单例owner正向检查通过。最终用例计数以冻结验收为准，
+  双平台回归仍待冻结后运行。
+- 首次冻结`986d9b1`的scope回归已发现两处fixture失败：双候选重复preparation
+  receipt，以及lazy-import native process reader投影alias未恢复造成后续指纹漂移。
+  原始双平台材料保留为NOT_ACCEPTED；后继只修fixture，最终冻结结果另行记录，
+  不能把首次源码独审或开发单例通过当作该scope验收通过。
+- 本轮契约 [rejection-owner-c1.md](specs/196-brs-owner-worker-handoff/rejection-owner-c1.md)
+  仅补原 exact BRS owner 的 ordinal-zero `prepared-evidence -> rejected` C1，
+  不构造 DRS continuation。使用真实原生拒绝材料的本地 inert fixture；显式 fresh
+  rejection schema、原文件inode/bytes、容量/时钟/控制与相邻CAS/readback均需通过。
+- 尚缺后续同owner P/C2、拒绝dispatch/result/recovery、root execution settlement和
+  owner retirement、reserved-wave serial successor、真实runtime/project/CLI验收。
+  现consume只清obligation，不写root executions；整wave已预留预算，不能直接复用
+  会再次计数的detached successor。P2仍后置。
+- public native BRS、production admission、online publication仍关闭；不运行
+  WebAgent、真实模型/solver campaign或远程/公司evaluator。本轮验收结果须在冻结
+  后另记，不能提前宣称完成。
+
+以下为 PR127 的历史开发记录，其最终scoped验收以上节及对应PR/raw为准。
+
 # 当前后继开发（2026-10-17，independent terminal recovery）
 
 - 分支 `codex/brs-terminal-recovery` 基于 PR126 冻结 `74a3f52`，使用独立
