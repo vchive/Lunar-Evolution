@@ -144,3 +144,30 @@ def test_live_code_drift_with_unchanged_source_location_is_observed(
     assert changed.co_firstlineno == code.co_firstlineno
     monkeypatch.setattr(function, "__code__", changed)
     _assert_drift(original_policy)
+
+
+@pytest.mark.parametrize("target,name", [
+    (provenance, "_wire"),
+    (provenance_policy, "_check_function"),
+])
+@pytest.mark.parametrize("attribute", [
+    "rsi_fingerprint_config", "fingerprint_config",
+    "rsi_fingerprint_code", "fingerprint_code", "__wrapped__",
+])
+def test_new_callable_attributes_are_refused_before_any_fingerprint_callback(
+    monkeypatch, original_policy, target, name, attribute,
+):
+    function = getattr(target, name)
+    assert attribute not in function.__dict__
+    code = function.__code__
+    calls = []
+
+    def injected():
+        calls.append(attribute)
+        raise AssertionError("fingerprint callback ran after the final physical material check")
+
+    monkeypatch.setattr(function, attribute, injected, raising=False)
+    assert getattr(target, name) is function and function.__code__ is code
+    with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_rejection_policy_drift$"):
+        owner._policy()
+    assert calls == []

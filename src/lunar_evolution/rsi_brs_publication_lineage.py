@@ -74,7 +74,8 @@ _ORIGINAL_RUNTIME_CODES = tuple((function, getattr(function, "__code__", None)) 
 # Source fingerprints still bind defaults/captures, but a live code replacement
 # can preserve the source locator and therefore requires these original objects.
 _ORIGINAL_PROVENANCE_CODES = tuple(
-    (module, name, vars(module)[name], vars(module)[name].__code__)
+    (module, name, vars(module)[name], vars(module)[name].__code__,
+     tuple(vars(module)[name].__dict__.items()))
     for module, names in (
         (provenance, (
             "_fail", "_owner", "_capture", "_custody", "_unchanged", "_allowance", "_control",
@@ -220,7 +221,10 @@ def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
     if any(vars(module).get(name) is not function or function.__globals__ is not vars(module)
            or function.__code__ is not code
-           for module, name, function, code in _ORIGINAL_PROVENANCE_CODES):
+           or type(function.__dict__) is not dict or len(function.__dict__) != len(attributes)
+           or any(key not in function.__dict__ or function.__dict__[key] is not value
+                  for key, value in attributes)
+           for module, name, function, code, attributes in _ORIGINAL_PROVENANCE_CODES):
         _fail("rejection_policy_drift")
     import contextlib
     import dataclasses

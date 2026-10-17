@@ -113,6 +113,9 @@ its module globals and original executable code object. Check these pins before
 calling a policy helper; source text alone cannot detect a live `__code__` change,
 and a mutable checker must not be its own sole guard. Existing callable defaults
 and closure fingerprint checks remain active.
+Also pin the original function attribute entries by key and value identity before
+any fingerprint call. New fingerprint hooks or `__wrapped__` attributes must fail
+without executing a callback after the final physical material check.
 
 Develop in parallel with exclusive file ownership: pure parser/accounting and
 their tests; original-owner scope/history/provenance methods; policy wiring
