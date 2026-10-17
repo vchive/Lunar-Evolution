@@ -23,11 +23,11 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | 同 workspace 连续 DRS 发布 | 🧪 统一候选待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
 | DRS known rejection | 🧪 统一候选待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
 | BRS partial-wave resume | 🧪 本地已验证 | 已修复 completed admission obligation 被 pending-only scope 误判的问题；待最终集成 CI、审计与合入。 |
-| 多 child native BRS | 🧪 私有 P1 组件已接线 | PB-03h native dispatch、owner result CAS、私有 owner/mailbox bridge、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate、BRS durable obligation、显式 selected reconcile facade、controller-owned phase CAS helper，以及 owner-locked selected obligation registration/terminal consume API 已合入 `main`；默认 `_drive_brs()`/`resume()` 仍不自动探测或重启，public BRS 与生产 admission 仍关闭。 |
+| 多 child native BRS | 🧪 私有组件可回归 | 已有 owner/mailbox、result CAS、delivery/settlement、serial successor 和显式 reconcile API。未消费的 BRS obligation 会阻止默认恢复、推进和终结；消费时核对原始记录的合法后继、持久化终态及 native claim/result。public native BRS 与生产 admission 仍关闭。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
-恢复、parser、selected service、worker 发布拒绝与私有成功检查点已集中到 PR112 并合入 `main`。PR113 随后增加 BRS durable obligation 与显式 selected reconcile facade，并已以合并提交 `22ec975` 合入 `main`；当前主线已增加 controller-owned phase CAS 以及显式 selected obligation registration/terminal consume。facade 只做完整 evidence 的纯审计，helper 只在显式调用、controller lock 和 checkpoint CAS 下推进或消费，unknown/manual/drift 保留 obligation；默认 `_drive_brs()` / `resume()` 仍不自动探测、重启或消费。当前发布台账记录了默认 wiring、真实 runtime 和 producer 验收的剩余边界。
+BRS 中断恢复需要显式提交证据；普通 `resume` 遇到未消费的 obligation 会返回 `rsi_brs_reconcile_required`。只有与本地 ledger 终态、原 native plan/claim 和已保存 result 一致的证据才能消费对应 obligation；unknown、running 和 drift 保留记录。多条 obligation 分别处理，单次消费在同一个 SQLite 事务内完成校验和 checkpoint CAS。批量 API 按项提交，后项失败时已成功项保持提交，调用方应先读取剩余 obligation。详见[恢复契约](specs/196-brs-owner-worker-handoff/reconcile-controller-consume.md)及[发布台账](docs/current-release-backlog.md)。
 
 ## 主要能力
 

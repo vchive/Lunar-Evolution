@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from pathlib import Path
 from threading import get_ident
 
@@ -19,6 +21,7 @@ from lunar_evolution import (
     consume_brs_selected_reconcile,
     register_brs_selected_obligation,
 )
+from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.rsi_brs_reconcile import FIELD
 from lunar_evolution.rsi_python_brs_handoff import BRSSelectedChildHandoff
 
@@ -66,15 +69,15 @@ def _fixture(tmp_path: Path) -> tuple[
         ordinal=0,
         episode_id=episode_id,
         request_sha256=request.digest(),
-        root_snapshot_sha256=HEX,
+        root_snapshot_sha256=EMPTY_MEMORY_SNAPSHOT.digest(),
         selection_sha256=HEX,
         controller_id="controller",
         ledger_id="ledger",
         workspace_id="workspace",
         sidecar_id="sidecar",
         owner_thread_id=get_ident(),
-        head_sha256=HEX,
-        state_sha256=HEX,
+        head_sha256=checkpoint,
+        state_sha256=hashlib.sha256(canonical_json(state)).hexdigest(),
         source_sha256=HEX,
         policy_sha256=HEX,
         execution_control_sha256=HEX,
@@ -129,6 +132,34 @@ def _evidence(obligation, **changes: object) -> BRSReconcileEvidence:
     return BRSReconcileEvidence(**values)
 
 
+def _terminal_evidence(ledger, request, obligation, *, status="completed", native_claim=True, native_result=True):
+    """Advance the real local episode/claim/result rows; no worker or model runs."""
+    result = DeterministicMockSolver(terminal_status=status).run(request)
+    claim = ledger.claim_native_episode(request, plan_sha256=obligation.native_plan_sha256) if native_claim else None
+    current = ledger.get_episode(request.episode_id)
+    episode = RSIPracticeEpisode.from_dict(current.payload)
+    terminal = replace(episode, status=status, previous_record_sha256=episode.record_sha256,
+                       terminal_reason=None if status == "completed" else result.terminal_reason,
+                       **{name: getattr(result, name) for name in (
+                           "trace_digest", "candidate_receipt_sha256", "execution_receipt_sha256",
+                           "official_evaluation_receipt_sha256", "candidate_source_sha256",
+                           "dependency_sha256", "trace_events", "actor_fingerprint",
+                       )})
+    ledger.append_episode_record(terminal, expected_record_sha256=current.record_sha256)
+    if native_result:
+        if native_claim:
+            ledger.publish_native_episode_result(request, plan_sha256=obligation.native_plan_sha256,
+                                                 result=result, expected_claim=claim)
+        else:
+            ledger.save_episode_result(request, result)
+    return _evidence(
+        obligation, terminal_status=status, native_evidence_sha256=(
+            claim.claim_sha256 if claim is not None else HEX
+        ),
+        result_evidence_sha256=hashlib.sha256(canonical_json(result.to_dict())).hexdigest(),
+    )
+
+
 def test_registration_requires_owner_and_binds_exact_heads(tmp_path: Path) -> None:
     ledger, run_id, _episode_id, _request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
     with pytest.raises(RSILearningError, match="owner_required"):
@@ -155,7 +186,7 @@ def test_registration_refuses_stale_or_foreign_binding(tmp_path: Path, field: st
                 ledger,
                 handoff,
                 native_plan_sha256=value if field == "native_plan_sha256" else HEX,
-                controller_checkpoint_sha256=OTHER if field == "episode_record_sha256" else checkpoint,
+                controller_checkpoint_sha256=checkpoint,
                 episode_record_sha256=value if field == "episode_record_sha256" else episode_sha,
             )
 
@@ -174,11 +205,12 @@ def test_resume_nonterminal_reconcile_preserves_head_and_obligation(tmp_path: Pa
 
 
 def test_resume_terminal_evidence_consumes_exact_obligation(tmp_path: Path) -> None:
-    ledger, run_id, episode_id, _request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    ledger, run_id, episode_id, request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
     registration = _register(ledger, run_id, checkpoint, handoff, episode_sha)
+    evidence = _terminal_evidence(ledger, request, registration.obligation)
     with ledger.controller_lock(run_id):
         result = consume_brs_selected_reconcile(
-            ledger, run_id, episode_id, _evidence(registration.obligation),
+            ledger, run_id, episode_id, evidence,
         )
     assert result.decision.outcome == "already_terminal"
     assert result.consumed is True
@@ -198,12 +230,13 @@ def test_unknown_or_drifted_evidence_never_consumes(tmp_path: Path) -> None:
 
 
 def test_controller_resume_brs_reconcile_consumes_terminal_wire_evidence(tmp_path: Path) -> None:
-    ledger, run_id, episode_id, _request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
+    ledger, run_id, episode_id, request, checkpoint, handoff, episode_sha = _fixture(tmp_path)
     registration = _register(ledger, run_id, checkpoint, handoff, episode_sha)
+    evidence = _terminal_evidence(ledger, request, registration.obligation)
     controller = RSILearningController(DeterministicMockSolver(), ledger=ledger)
 
     result = controller.resume_brs_reconcile(
-        run_id, {episode_id: _evidence(registration.obligation).to_dict()},
+        run_id, {episode_id: evidence.to_dict()},
     )
 
     assert set(result) == {episode_id}

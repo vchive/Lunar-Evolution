@@ -1,5 +1,23 @@
 # Current release backlog — 2026-10-17
 
+## 当前候选：BRS recovery correctness
+
+`codex/p1-recovery-final` 修复三项现有行为：未消费 obligation 阻止默认
+resume/drive/finalization，`rsi inspect` 正确报告 reconcile，selected terminal consume
+必须与实际 ledger/native claim/result 一致。注册验证原 handoff 的 owner thread/head/state，
+拒绝无关后续 checkpoint 上的重放；多 obligation 保持各自 capture 并独立消费。
+终态校验与删除通过同一 SQLite 事务完成；批量 API 仍是逐项提交，失败后先读取剩余记录。
+契约与具体任务见 [Feature196](../specs/196-brs-owner-worker-handoff/tasks.md)。
+
+- P0：完成该候选的统一 macOS/Linux focused 回归、静态检查、独立审查及所需 GitHub CI，
+  全部通过后合入 main。排队或取消的旧 run 不作为完整通过证据。
+- P1：显式 API 尚未成为自动 selected-owner recovery。真实 source/toolchain/build closure、
+  sealed runtime、OpenEvolve/Shinka project lifecycle、生产 CLI 和 Linux 中断矩阵仍未验收；
+  不以 fixture 或已有 wheel/C build 代替真实 Python runtime。
+- P2：远程 evaluator、外部 worker 认证、多机 ownership 和分布式服务继续后置。
+
+以下是历史批次记录，不覆盖本节的候选状态和剩余边界。
+
 ## 2026-10-17：controller explicit reconcile resume facade 与 runtime gap audit（本轮完成）
 
 PR118（`a82f55a`）增加 `RSILearningController.resume_brs_reconcile`：它在单次 per-run owner lock 下先解析全部 DTO/wire evidence，预拒绝未知 episode，再按稳定 episode 顺序调用 `consume_brs_selected_reconcile`。只有完整 `already_terminal` evidence 会消费 obligation；unknown、manual review、recoverable、abandoned 和 drifted 保留 checkpoint。PR119（`545e9d8`）进一步将输入收窄为 plain dict，拒绝 mapping 子类在安全边界执行调用方代码。

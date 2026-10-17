@@ -1,5 +1,22 @@
 # Feature 196 tasks — implementation tracking
 
+## Recovery correctness follow-up
+
+- [x] Fence ordinary resume, drive and finalization on any latest unconsumed BRS
+  obligation, including unknown/settled phases; preserve legacy terminal replay after
+  explicit consumption. See `reconcile-default-recovery-gate.md`.
+- [x] Report retained obligations through the existing `rsi inspect` reconcile flag
+  without changing the response schema or inspecting processes.
+- [x] Bind selected registration to the owner thread and captured head/state; refuse
+  replay through unrelated later checkpoints and retain each obligation's own capture.
+- [x] Validate natural episode successors and actual terminal native claim/result
+  within the same transaction as obligation removal and checkpoint CAS; support
+  independent consumption of multiple obligations. See `reconcile-controller-consume.md`.
+- [ ] Complete final-source macOS/Linux checks, independent review and required CI
+  before merging this follow-up. Local fixture success does not close runtime acceptance.
+
+## Original implementation slices
+
 - [x] Freeze the detached handoff fields, canonical serialization, one-shot nonce,
   and selected-ordinal identity without adding persistence schema. Implemented as a
   pure helper using the existing BRS child preflight; it is not wired to dispatch.

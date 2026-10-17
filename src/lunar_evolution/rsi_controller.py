@@ -4678,6 +4678,7 @@ class RSILearningController:
         self, record: RSIRecord | None, state: dict[str, Any], status: str, *,
         expected_checkpoint_sha256: str | None = None,
     ) -> LearningRunResult:
+        self._assert_brs_reconcile_clear(state["run_id"], state)
         state.update(status=status, phase="terminal")
         # Keep the historical two-argument override surface usable for callers
         # that instrument `_save_flow`; the CAS keyword is only needed for the
@@ -5148,6 +5149,7 @@ class RSILearningController:
         return self._finish_flow(record, state, "failed")
 
     def _drive_brs(self, record: RSIRecord | None, state: dict[str, Any]) -> LearningRunResult:
+        self._assert_brs_reconcile_clear(state["run_id"], state)
         plan, pins, run_id = state["plan"], state["pins"], state["run_id"]
         decisions = [self._decision_from_dict(item) for item in plan["practices"]]
         parent = MemorySnapshot.from_dict(state["root_snapshot"]).digest()
@@ -5213,7 +5215,30 @@ class RSILearningController:
             self._commit_flow(record, state, execution, decision, frozen_parent=parent)
         return self._finish_flow(record, state, "completed")
 
+    def _assert_brs_reconcile_clear(
+        self, run_id: str, state: Mapping[str, Any] | None,
+    ) -> None:
+        """Fence default progress until explicit evidence consumption removes obligations.
+
+        Check the latest durable head as well as the caller's state: a stale local state
+        must not overwrite a retained owner obligation. Historical consumed obligations
+        are intentionally not consulted, so terminal replay stays read-only after an
+        explicit successful consume. A retained fence never asserts worker recoverability.
+        """
+        from .rsi_brs_reconcile import FIELD, validate_brs_reconcile_obligations
+
+        def require_clear(checkpoint_state: Mapping[str, Any] | None) -> None:
+            if (checkpoint_state is not None and FIELD in checkpoint_state
+                    and validate_brs_reconcile_obligations(checkpoint_state, run_id=run_id)):
+                raise RSILearningError("rsi_brs_reconcile_required")
+
+        require_clear(state)
+        if self.ledger is not None:
+            checkpoint = self.ledger.controller_checkpoint(run_id)
+            require_clear(checkpoint[1] if checkpoint else None)
+
     def _drive(self, record: RSIRecord | None, state: dict[str, Any], *, now: object | None = None) -> LearningRunResult:
+        self._assert_brs_reconcile_clear(state["run_id"], state)
         try:
             if state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
                 return self._finish_flow(record, state, state["status"])
@@ -5281,9 +5306,10 @@ class RSILearningController:
         as a read-only consumption and leaves its durable obligation in place.  No solver
         request, retry, or ordinary ``resume()`` drive is started by this API.
 
-        The entire batch runs under one per-run controller lock.  Evidence is parsed before
-        any ledger mutation and entries are consumed in episode-id order so malformed input
-        cannot cause a later entry to be silently skipped after an earlier terminal consume.
+        The entire batch runs under one per-run controller lock. Evidence wire shape and
+        selected keys are checked before mutation; entries are then consumed in episode-id
+        order. Each consume has its own binding checks and CAS. This is not an atomic batch:
+        a later ledger/evidence failure does not undo an earlier successful consume.
         """
         _id(run_id, "run_id")
         if self.ledger is None:
@@ -5331,6 +5357,7 @@ class RSILearningController:
         if record is None:
             raise RSILearningError("rsi_run_missing")
         entry_checkpoint = self.ledger.controller_checkpoint(run_id)
+        self._assert_brs_reconcile_clear(run_id, entry_checkpoint[1] if entry_checkpoint else None)
         self._validate_run_checkpoint_producer_binding(
             record, entry_checkpoint[1] if entry_checkpoint else None,
         )
