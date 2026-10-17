@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 from test_rsi_python_brs_publication_mailbox import _handoff, _ready
@@ -32,10 +33,18 @@ def test_owner_bridge_serves_one_detached_request_and_keeps_summary_non_authoriz
     monkeypatch.setattr(bridge, "_require_disabled_policy", lambda owner: None)
     monkeypatch.setattr(bridge, "_require_original_mailbox", lambda owner, mailbox: None)
     monkeypatch.setattr(bridge._BRSLineageCheckpointOwner, "retain_reconcile_obligation", lambda owner: "a" * 64)
+    monkeypatch.setattr(bridge._BRSLineageCheckpointOwner, "_success_fixed", lambda owner: None)
     monkeypatch.setattr(bridge, "_run_original_brs_native_publication",
                         lambda owner, request, *, original_preparation: calls.append(
                             (owner, request, original_preparation)) or transaction)
-    monkeypatch.setattr(bridge, "_response_payload", lambda result: b'{"status":"published"}')
+    payload_calls = []
+
+    def response_payload(result, request, selected_handoff):
+        payload_calls.append((result, request, selected_handoff))
+        return b'{"status":"published"}'
+
+    monkeypatch.setattr(bridge, "_response_payload", response_payload)
+    owner = SimpleNamespace(_handoff=handoff, _handoff_bytes=handoff.canonical_bytes)
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         worker = pool.submit(threading.get_ident).result(timeout=5)
@@ -43,7 +52,7 @@ def test_owner_bridge_serves_one_detached_request_and_keeps_summary_non_authoriz
         try:
             pending = pool.submit(mailbox.request, _ready(handoff), check=lambda: None)
             result = bridge.run_brs_owner_publication_mailbox(
-                object(), mailbox, preparation, check=lambda: None, timeout=5,
+                owner, mailbox, preparation, check=lambda: None, timeout=5,
             )
             response = pending.result(timeout=5)
         finally:
@@ -53,6 +62,8 @@ def test_owner_bridge_serves_one_detached_request_and_keeps_summary_non_authoriz
     assert result.response_payload == b'{"status":"published"}'
     assert response.payload == result.response_payload
     assert len(calls) == 1 and calls[0][2] is preparation
+    assert len(payload_calls) == 1 and payload_calls[0][0] is transaction
+    assert payload_calls[0][1] == _ready(handoff) and payload_calls[0][2] == handoff
     assert mailbox.status == "delivered"
 
 

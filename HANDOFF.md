@@ -1,3 +1,14 @@
+# 当前后继开发（2026-10-17，exact mailbox result composition）
+
+- `codex/brs-exact-result-composition` 基于 PR124 冻结来源 `56745c2`，使用独立 worktree；主 checkout 的本地提交和未提交文档保持原样。
+- PR124 的最终 macOS Python3.11.15 / Linux Python3.12.3 各288个相同定向用例、Ruff/compileall/diff-check与产品/原始材料独审通过；旧 `c0c7238` Linux284通过/4个fixture失败单独保留 NOT_ACCEPTED。PR123/124完整33-job CI仍排队，均未合入 main。
+- 本轮契约为 [exact-mailbox-result-composition.md](specs/196-brs-owner-worker-handoff/exact-mailbox-result-composition.md)：把原 owner mailbox 的三字段私有摘要升级为现有 exact result envelope，冻结原 handoff/request，直接复用既有builder与worker parser，返回已交付的同一份bytes。
+- 原 worker 可使用既有 one-shot detached callback gate；callback成功不等于controller settlement、自然episode终态、native result或process cleanup。恢复义务始终保留，未知结果不重试。
+- 原native BRS all-rejected拒绝继续保留，不为builder的纯DTO rejection支持伪造C1/P/C2、ready ACK或legacy selected-return。
+- 当前为开发状态；最终来源双平台结果另行记录。仅本地 inert/provider-free fixture；public native BRS、`production_admission`、`online_publication`继续关闭。自动终态observer/consume、durable mailbox/process profile capture及真实runtime/project/CLI验收仍开放。
+
+以下为 PR124 的历史实现记录。
+
 # 当前后继开发（2026-10-17，original owner mailbox registration）
 
 - `codex/brs-owner-lifecycle` 基于 PR123 冻结 head `96a7394`，使用独立 worktree，不改主 checkout 或 PR123 源码。

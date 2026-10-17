@@ -14,12 +14,11 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .candidate_evaluation_spec import canonical_json
 from .native_trusted_scheduler import _NativeTrustedPythonProducerPreparation
-from .producer_bundle_publication import ProducerBundlePublicationJournal
 from .producer_bundle_transaction import NativeProducerBundleTransactionResult
 from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
 from .rsi_learning import RSILearningError
+from .rsi_python_brs_handoff import BRSSelectedChildHandoff
 from .rsi_python_brs_native_dispatch import (
     _original_control,
     _run_original_brs_native_publication,
@@ -28,6 +27,7 @@ from .rsi_python_brs_publication_mailbox import (
     BRSOwnerPublicationMailbox,
     BRSOwnerPublicationRequest,
 )
+from .rsi_python_brs_result_delivery import build_brs_owner_result_payload
 
 
 class BRSOwnerMailboxBridgeError(RSILearningError):
@@ -45,7 +45,7 @@ def _fail(code: str) -> None:
 class BRSOwnerMailboxBridgeResult:
     """Owner result plus the detached response bytes delivered to the worker.
 
-    ``response_payload`` is an observation-only summary.  It intentionally omits
+    ``response_payload`` contains the exact detached result bytes delivered. It omits
     drafts, paths, strategy objects, lineage owner data and any admission token.
     """
 
@@ -53,22 +53,12 @@ class BRSOwnerMailboxBridgeResult:
     response_payload: bytes
 
 
-def _response_payload(result: NativeProducerBundleTransactionResult) -> bytes:
-    if type(result) is not NativeProducerBundleTransactionResult:
-        _fail("transaction_invalid")
-    journal = result.published_journal
-    ids = result.admitted_candidate_ids
-    if (result.publication_status != "published" or type(journal) is not ProducerBundlePublicationJournal
-            or journal.state != "published" or type(ids) is not tuple or not ids
-            or any(type(value) is not str or not value for value in ids)):
-        _fail("success_required")
-    # The worker receives only detached, bounded observation data.  It cannot use
-    # this summary to claim publication authority or mutate controller state.
-    return canonical_json({
-        "protocol": "lunar-rsi-brs-owner-result-v1",
-        "publication_status": "published",
-        "admitted_candidate_ids": list(ids),
-    }, maximum=8 * 1024 * 1024)
+def _response_payload(
+    result: NativeProducerBundleTransactionResult,
+    request: BRSOwnerPublicationRequest,
+    handoff: BRSSelectedChildHandoff,
+) -> bytes:
+    return build_brs_owner_result_payload(result, request, handoff)
 
 
 def _require_disabled_policy(owner: object) -> None:
@@ -138,21 +128,37 @@ def run_brs_owner_publication_mailbox(
     _require_disabled_policy(owner)
     _require_original_mailbox(owner, mailbox)
     _BRSLineageCheckpointOwner.retain_reconcile_obligation(owner)
-    result_holder: list[NativeProducerBundleTransactionResult] = []
+    handoff_bytes = owner._handoff_bytes
+    result_holder: list[tuple[NativeProducerBundleTransactionResult, bytes]] = []
+
+    def observe() -> None:
+        check()
+        _original_control(owner)
+        # Mailbox check callbacks run outside its condition. Recheck the original
+        # source/policy and running claim before both dispatch and byte delivery.
+        _BRSLineageCheckpointOwner._success_fixed(owner)
 
     def handle(request: BRSOwnerPublicationRequest) -> bytes:
         if type(request) is not BRSOwnerPublicationRequest:
             _fail("request_invalid")
         if result_holder:
             _fail("duplicate_request")
+        request_fields = (request.run_id, request.episode_id, request.handoff_sha256,
+                          request.payload, request.request_sha256)
         result = _run_original_brs_native_publication(
             owner, request, original_preparation=original_preparation,
         )
-        result_holder.append(result)
-        return _response_payload(result)
+        # Native execution receives its own request DTO. Build against the
+        # immutable entry capture, never that DTO or a mutable latest handoff.
+        payload = _response_payload(
+            result, BRSOwnerPublicationRequest(*request_fields),
+            BRSSelectedChildHandoff(**json.loads(handoff_bytes)),
+        )
+        result_holder.append((result, payload))
+        return payload
 
-    served = BRSOwnerPublicationMailbox.service(mailbox, handle, check=check, timeout=timeout)
+    served = BRSOwnerPublicationMailbox.service(mailbox, handle, check=observe, timeout=timeout)
     if served is not True or len(result_holder) != 1:
         _fail("mailbox_not_served")
-    response = _response_payload(result_holder[0])
-    return BRSOwnerMailboxBridgeResult(result_holder[0], response)
+    transaction, response = result_holder[0]
+    return BRSOwnerMailboxBridgeResult(transaction, response)

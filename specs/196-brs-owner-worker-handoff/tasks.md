@@ -1,5 +1,18 @@
 # Feature 196 tasks — implementation tracking
 
+## Exact mailbox result composition follow-up
+
+Contract: [exact-mailbox-result-composition.md](exact-mailbox-result-composition.md).
+
+- [x] Freeze the original handoff/request before the native transaction and build the
+  existing exact result payload once; return the exact bytes delivered by the mailbox.
+- [x] Pin builder/projection dependencies and canonical module globals in the original
+  policy contract; preserve all existing owner, registration and native refusal gates.
+- [x] Exercise original-worker delivery and one-shot detached callbacks, unknown/duplicate
+  refusal and retained reconcile fence with the real inert kernel.
+- [ ] Freeze and independently validate the final source on macOS/Linux; full CI and
+  dependent PR merges remain separate. Automatic terminal recovery remains open.
+
 ## Original owner mailbox registration follow-up
 
 Contract: [owner-mailbox-reconcile-registration.md](owner-mailbox-reconcile-registration.md).
@@ -11,8 +24,8 @@ Contract: [owner-mailbox-reconcile-registration.md](owner-mailbox-reconcile-regi
 - [x] Register in the original private mailbox composition before service/transaction;
   reject a foreign mailbox before mutation and retain the fence on every outcome.
 - [x] Pin new dependencies and add focused local fault coverage.
-- [ ] Independently validate the frozen source on macOS/Linux. Required full CI and merge
-  remain separate; see the PR evidence for actual results.
+- [x] Independently validate PR124 frozen `56745c2` on macOS/Linux: the same 288
+  scoped cases passed on each platform. Required full CI and merge remain separate.
 
 Automatic terminal consume, producer-first-launch registration and real runtime/
 OpenEvolve/Shinka/production CLI acceptance remain open outside this slice.
