@@ -5,6 +5,7 @@
 - PR123/124/125 尚未合入 main；PR125 最近检查仍为33项 CI 排队，排队不算通过。
 - 本轮 SDD：[durable-recovery-evidence.md](specs/196-brs-owner-worker-handoff/durable-recovery-evidence.md)。并行实现原 owner 的四阶段 mailbox 观察持久化、原 native producer process records 绑定和重建 ledger 的只读核验。复用底层 checkpoint journal 独立 namespace；不使用两态 callback journal，不回填旧 obligation 的 `worker_profile=None`。
 - side observation 不推进原 root checkpoint、owner/wave 游标、预算或恢复义务。worker 领取 response DTO、callback、native producer 已 cleanup 和 episode 终态是不同事实；缺失保持 unknown，漂移拒绝，不自动 consume 或重试 publication。
+- 首次冻结 `ef7ee90` 的 macOS561项为560通过/1个旧 transport-only fixture失败；另外验收脚本误拆参数中含 `::` 的nodeid，原始材料保留 NOT_ACCEPTED。后继仅补齐旧fixture的新观察seam及repo外case-key解析，产品源码不变；最终双平台结果单独记录。
 - 四阶段持久化、只读核验与原生进程证据实现已完成，并经交叉源码审查；最终冻结双平台回归仍待完成。后续仍需自动终态证据组合/consume、serial successor 在线组合、真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI/Linux 验收。P2 继续后置；仅本地 inert/provider-free fixtures，public native BRS、`production_admission`、`online_publication` 保持关闭。
 
 以下为 PR125 的历史开发记录；该候选最终来源和验收以本节为准。

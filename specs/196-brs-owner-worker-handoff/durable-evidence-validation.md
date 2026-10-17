@@ -42,3 +42,13 @@ pending run passed. Any failed attempt remains separately NOT_ACCEPTED.
 
 Complete GitHub CI and prerequisite main merges remain separate gates. Public
 native BRS, production admission and online publication remain disabled.
+
+## First frozen attempt (not accepted)
+
+`ef7ee90` macOS ran 561 cases: 560 passed and one old transport-only
+fixture failed because its explicit observation seam double was missing. The
+product correctly refused the fake owner. Three additional driver failures came
+from splitting `::` inside a parameter ID. Preserve all raw results as
+NOT_ACCEPTED; do not treat the corrected parser as changing those exit codes.
+The follow-up changes the fixture and external JUnit-key parser only, preserving
+product bytes. Its same-inventory final-source run is separate.
