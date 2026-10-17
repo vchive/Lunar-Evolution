@@ -5,6 +5,7 @@
 - 本轮契约为 [exact-mailbox-result-composition.md](specs/196-brs-owner-worker-handoff/exact-mailbox-result-composition.md)：把原 owner mailbox 的三字段私有摘要升级为现有 exact result envelope，冻结原 handoff/request，直接复用既有builder与worker parser，返回已交付的同一份bytes。
 - 原 worker 可使用既有 one-shot detached callback gate；callback成功不等于controller settlement、自然episode终态、native result或process cleanup。恢复义务始终保留，未知结果不重试。
 - 原native BRS all-rejected拒绝继续保留，不为builder的纯DTO rejection支持伪造C1/P/C2、ready ACK或legacy selected-return。
+- 首次冻结 `9436283` 的 macOS/Linux 各213项回归均为140通过/73失败，原始材料保留 `NOT_ACCEPTED`；新增 projection-method 指纹列表68项超过既有solver-settings每容器64项上限。后继只按canonical模块分组，保留所有指纹与原容量限制，并通过实际fingerprint规范化验证；不能把旧结果计为通过。
 - 当前为开发状态；最终来源双平台结果另行记录。仅本地 inert/provider-free fixture；public native BRS、`production_admission`、`online_publication`继续关闭。自动终态observer/consume、durable mailbox/process profile capture及真实runtime/project/CLI验收仍开放。
 
 以下为 PR124 的历史实现记录。

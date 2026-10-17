@@ -597,10 +597,17 @@ def _policy() -> dict[str, Any]:
                                                  "build_brs_owner_publication_response")},
                 "handoff_helpers": {name: component_fingerprint(getattr(rsi_python_brs_handoff, name))
                                     for name in ("_fail", "_identity", "_digest", "_int")},
-                "projection_methods": [component_fingerprint(function) for function, module in entries
-                                       if module in (delivery, producer_bundle_publication,
-                                                     rsi_python_brs_handoff, rsi_python_brs_publication_mailbox,
-                                                     candidate_evaluation_spec, python_producer_admission_handoff)],
+                "projection_methods": {
+                    name: [component_fingerprint(function) for function, canonical_module in entries
+                           if canonical_module is module]
+                    for name, module in (
+                        ("result_delivery", delivery), ("publication_journal", producer_bundle_publication),
+                        ("selected_handoff", rsi_python_brs_handoff),
+                        ("publication_mailbox", rsi_python_brs_publication_mailbox),
+                        ("canonical_json", candidate_evaluation_spec),
+                        ("admission_file_pin", python_producer_admission_handoff),
+                    )
+                },
                 "protocol": delivery._PROTOCOL,
                 "statuses": sorted(delivery._STATUSES),
                 "fields": sorted(delivery._FIELDS),

@@ -24,7 +24,7 @@ from lunar_evolution import rsi_python_brs_owner_bridge as bridge
 from lunar_evolution import rsi_python_brs_publication_mailbox as mailbox_module
 from lunar_evolution import rsi_python_brs_result_delivery as delivery
 from lunar_evolution.producer_bundle_publication import ProducerBundlePublicationJournal
-from lunar_evolution.rsi_fingerprint import RSIFingerprintError
+from lunar_evolution.rsi_fingerprint import RSIFingerprintContract, RSIFingerprintError
 from lunar_evolution.rsi_python_brs_publication_mailbox import (
     BRSOwnerPublicationMailbox,
     build_brs_owner_publication_request,
@@ -221,6 +221,17 @@ def test_original_result_policy_keeps_public_admission_disabled():
     policy = lineage._policy()
     assert policy["online_publication"] is False
     assert policy["production_admission"] is False
+    # Exercise the controller's actual policy nesting and bounded identity
+    # normalization, rather than accepting a policy which only builds as a dict.
+    contract = RSIFingerprintContract.build(
+        contract_sha256=OTHER, evaluator_sha256=OTHER, environment_sha256=OTHER,
+        memory_snapshot_sha256=OTHER, solver_id="inert-brs-policy",
+        solver_settings={"producer_brs_checkpoint_policy": policy},
+        actor_fingerprint=OTHER, verifier_fingerprint=OTHER,
+        curriculum_fingerprint=OTHER, target_judge_fingerprint=OTHER,
+    )
+    assert contract.to_dict()["solver_settings"]["producer_brs_checkpoint_policy"] == policy
+    assert RSIFingerprintContract.from_dict(contract.to_dict()) == contract
 
 
 def test_result_builder_source_drift_refuses_before_reconcile_write_or_publication(tmp_path, monkeypatch):
