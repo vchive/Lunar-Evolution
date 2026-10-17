@@ -48,8 +48,9 @@ Contract: [durable-recovery-evidence.md](durable-recovery-evidence.md).
   callback-sensitive locks; distinguish receipt from callback and terminal results.
 - [x] Add a rebuilt-ledger read-only inspector; reject drift, retain partial evidence
   and never reconstruct the owner, retry publication or consume an obligation.
-- [ ] Validate genuine-owner integration, fault cases and unchanged recovery fences;
-  freeze one source for identical macOS/Linux cases and independent review.
+- [x] Validate PR126 frozen `74a3f52` with the same 561 scoped cases on
+  macOS/Linux, static checks and independent product/raw/source review. Earlier
+  `ef7ee90` failures remain NOT_ACCEPTED; complete CI and main merge are separate.
 - [ ] Complete required GitHub CI and prerequisite merges before main integration.
 
 ## Original owner rejection P/C2 follow-up
@@ -62,8 +63,9 @@ Contract: [rejection-owner-p-c2.md](rejection-owner-p-c2.md).
   retention, original pin custody, scoped C2 CAS/readback and poisoned failures.
 - [x] Bind the finite fresh policy and canonical dependencies within current
   fingerprint limits; retain empty ready channel and closed public gates.
-- [ ] Verify real original-owner one/two-candidate fixtures and fault windows;
-  freeze matching macOS/Linux source/inventory and independently audit evidence.
+- [x] Verify PR130 frozen `de4fae1` with the same 400 scoped cases on
+  macOS/Linux, static checks and independent product/raw/source review. Earlier
+  `fc54109`/`5d9218a` and incomplete environment attempts remain NOT_ACCEPTED.
 - [ ] Pass complete dependency-ordered CI before main merge. This slice does
   not close actual ready/dispatch/result/recovery/root/successor acceptance.
 
@@ -182,8 +184,17 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
 - [x] Validate that helper using real local SQLite mutation/absence/capacity/WAL
   cases, focused tests and static checks. Owner/Condition policy and matching frozen
   final-source ready acceptance remain the separate tasks below. Development: 54
-  focused cases passed with no skips; matching final-source platform evidence is
-  recorded separately and does not imply owner/ACK integration.
+  focused cases passed with no skips. PR131 frozen `62eec36` passed the same 54
+  cases on macOS/Linux and independent final raw/source/import review; this does
+  not imply owner/ACK integration or complete CI/main integration.
+- [x] Implement and development-test the read-only original Condition/native-operation
+  guard and selected queued-request identity observer described in
+  [rejection-ready-observers.md](rejection-ready-observers.md). Neither observer
+  grants a ready scope, semantic validity or ACK authority. The two observers have
+  169 scoped development cases; three additional real close/cancel/legacy-service
+  transition cases passed. Matching frozen macOS/Linux evidence is recorded
+  separately; owner integration and the complete final-reader graph remain the
+  unchecked tasks below.
 - [ ] Retain the exact original C2/reference canonical bytes, original admission
   record digest, run/episode/started claim and writer-returned P custody before
   consuming a one-shot ready scope; preserve the old empty-channel guard.

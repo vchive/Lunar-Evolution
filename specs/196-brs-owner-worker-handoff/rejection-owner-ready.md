@@ -4,10 +4,12 @@
 
 This describes the successor to [rejection-owner-p-c2.md](rejection-owner-p-c2.md),
 based on `de4fae1f0228863df4f647c7c02fda0da847753b`. The internal raw-ledger helper
-sub-slice is implemented with 54 local development checks; this does not implement or
-accept the full owner/selected-ready ACK contract below. Matching final-source helper
-evidence is recorded separately. Preceding P/C2 validation, complete CI and main
-integration are separate.
+sub-slice in PR131 is independently accepted on frozen `62eec36`, with the same 54
+cases passing on macOS/Linux and zero failures/errors/skips. This does not implement
+or accept the full owner/selected-ready ACK contract below. The next read-only
+synchronization/channel observation prerequisites are described in
+[rejection-ready-observers.md](rejection-ready-observers.md). Preceding P/C2 validation,
+complete CI and main integration are separate.
 
 After its own confirmed ordinal-zero C2/P, the exact original
 `_BRSLineageCheckpointOwner` may acknowledge one actual ready request from its original

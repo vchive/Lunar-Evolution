@@ -1,3 +1,33 @@
+# 当前后继开发（2026-10-18，rejection ready 的同步与队列观察基础）
+
+- 隔离分支 `codex/brs-ready-staging` 从 PR131 冻结 `62eec36` 继续，不改前置
+  冻结工作树或主 checkout 的用户提交/未提交文档。
+- PR131 只读 ledger helper 的同库存54项在 macOS Python3.11.15/Linux
+  Python3.12.3 各全通过，独立最终 raw/source/import 复核接受，PR已ready。
+  `.lunar-evolution/validation/rejection-ready-ledger-20261018-yqx86o4s/` 保存
+  完整材料；最初macOS editable路径失败独立保留，不累计为通过。
+- 新增未接线的 `rsi_brs_rejection_ready_sync` 和
+  `rsi_brs_rejection_ready_channel`。前者独立固定原Condition/native RLock、
+  bound operations、deque和有限代码/模块依赖；后者在原native锁下只读保留
+  queued pending/ready/containers的原对象身份和严格primitive字段，不运行
+  DTO serializer/JSON，不arm/dequeue/构造或发布ACK，不授予owner或语义权限。
+- 两模块共169项开发检查，加上原ledger/channel/handoff的联合316项通过；
+  另补真实close/cancel/legacy-service三项状态转换用例通过。Ruff、compileall、
+  diff-check通过，独立scoped产品审查无阻塞；单一最终来源的双平台验收和最终
+  raw审查另存于ignored
+  `.lunar-evolution/validation/rejection-ready-observers-20261018-qepiyo0c/`。
+  本提交不提前声称该最终验收或完整CI通过。
+- 设计见 [rejection-ready-observers.md](specs/196-brs-owner-worker-handoff/rejection-ready-observers.md)。
+  原owner one-shot状态、C2/reference/P原capture、完整语义验证bracket、
+  observation/physical/deadline有限gate和staged ACK仍未接线，不能把只读capsule
+  当许可或清空旧channel来绕过空域检查。dispatch/result/reconcile/root/serial及
+  真实runtime/CLI验收仍后续；public native BRS、production admission和online
+  publication保持关闭，P2和remote evaluator后置。
+- PR123–131仍待完整CI和按依赖合main；不使用本地scoped回归代替该门槛。
+  所有执行仍仅本地inert/provider-free fixtures，允许5090gpu作CPU回归环境。
+
+以下为前置只读ledger开发记录；最终验收以对应冻结材料和PR为准。
+
 # 当前后继开发（2026-10-18，rejection ready 的只读 ledger 基础）
 
 - 独立分支 `codex/brs-rejection-ready` 延续 P/C2 最终源码 `de4fae1`；不修改
