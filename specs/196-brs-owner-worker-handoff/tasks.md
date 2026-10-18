@@ -172,8 +172,8 @@ remain refused.
 ## Rejected original owner selected-ready successor — 2026-10-18
 
 Contract: [rejection-owner-ready.md](rejection-owner-ready.md). The raw-ledger,
-queued observers and connected pre-arm capture are implemented; unchecked owner/ACK tasks below do not declare
-implementation or acceptance. Preceding
+queued observers, connected pre-arm capture and bounded staged-ACK prerequisites are
+implemented; unchecked owner/ACK tasks below do not declare implementation or acceptance. Preceding
 P/C2 validation and complete dependency-ordered CI remain independent requirements.
 
 - [x] Implement the internal bounded raw-row snapshot/comparer for the six scoped
@@ -201,7 +201,9 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
   record digest, run/episode/started claim and writer-returned P custody before
   consuming a one-shot ready scope; preserve the old empty-channel guard. See
   [rejection-ready-capture.md](rejection-ready-capture.md). Failure poisons; success
-  neither arms nor grants ACK authority. Frozen dual-platform validation is separate.
+  neither arms nor grants ACK authority. PR133 passed the same 544 frozen cases on
+  macOS/Linux plus independent review; its full CI/main integration remains pending.
+  The new prerequisite wiring below needs its own frozen-source validation.
 - [ ] Add a dedicated exact-owner staged-ACK service using the real original
   channel/pending/request, with no arbitrary handler or commit callback API. Keep
   ACK/fields private until the final gate, and preserve the old service semantics.
@@ -210,6 +212,21 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
   Never call pin/register, append a checkpoint or reserve another attempt.
 - [x] Add an independently retained finite pre-arm live-dependency guard. This
   does not complete the physical/context/DTO graph needed for final ACK acceptance.
+- [x] Retain and recheck original controller observation, ledger controller-guard
+  and optional execution-control native RLocks/namespaces/thread in one owner
+  pre-arm capsule. Capture/assert are read-only, never acquire locks or grant leases;
+  replacement during unlocked validation refuses without refreshing the capsule.
+- [x] Add the finite detached ACK constructor/slot/dataclass-metadata guard and
+  passive inflight/committed readers over the original queued capsule. Include their
+  declared code/closure/runtime graph in the outer pre-arm policy. These readers
+  never perform transport transitions, attach ACKs or prove actual worker receipt.
+- [x] Replace raw-ledger urllib quoting with bounded stateless UTF-8 URI encoding,
+  preserving `safe="/"`, the original path limits, `mode=ro`, complete six-table/schema
+  rows and capacities. Remove the now-unused mutable quoter/cache dependency pins.
+- [ ] Freeze and validate the connected prerequisite successor on matching macOS/
+  Linux source and ordered inventory, with independent product/raw/import review.
+  PR134's separate fixture race fix passed 10 focused cases; its CI/main integration
+  remains pending and does not provide acceptance for the new product source.
 - [ ] Finish and independently review the finite final-reader graph, transitive
   ledger/physical/DTO/context dependencies, source/code/default/metadata pins and
   exact-type/shadow refusal before enabling the genuine original-worker fixture.
@@ -219,6 +236,9 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
 - [ ] Commit original ACK/done/owner state once under the final condition hold.
   Retain every assigned ACK field permanently on notification/context-exit or
   postcommit uncertainty; poison/close without clearing, replacing or reissuing it.
+- [ ] Guard the worker's original ACK-constructor graph again after its external
+  check callback and immediately before return-ACK construction, without changing
+  legacy request/service semantics or creating a worker ownership grant.
 - [ ] Add scoped fixed postcommit inspection while old provenance getters continue
   refusing a nonempty channel. Leave handoff selected and uncompleted; do not issue
   selected-return, result/claim settlement or reconcile/root authority.

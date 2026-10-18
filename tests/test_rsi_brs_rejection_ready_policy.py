@@ -8,7 +8,6 @@ import hashlib
 import json
 import sqlite3
 import sys
-import urllib.parse
 from types import FunctionType
 
 import pytest
@@ -41,6 +40,13 @@ def test_compact_projection_is_stable_json_safe_and_grants_no_authority():
     assert len(json.dumps(first, sort_keys=True).encode()) < MAX_IDENTITY_BYTES
 
 
+@pytest.mark.parametrize("declared", [policy.state.queued._PENDING, policy.state.queued._READY])
+def test_state_class_slot_declarations_are_checked_before_policy_projection(declared, monkeypatch):
+    monkeypatch.setattr(declared, "__slots__", ("foreign",))
+    with pytest.raises(RSILearningError, match="rejection_ready_state_invalid"):
+        policy.rejection_ready_capture_policy()
+
+
 @pytest.mark.parametrize("module,name", [
     (policy.owner, "_fail"), (policy.owner, "_owner"),
     (policy.owner, "_custody"), (policy.owner, "_assert_custody"),
@@ -52,12 +58,17 @@ def test_compact_projection_is_stable_json_safe_and_grants_no_authority():
     (policy.reference, "_capture"), (policy.reference, "_check"),
     (policy.reference, "validate_existing_rejection_reference"),
     (policy.ledger, "_fail"), (policy.ledger, "_path"),
+    (policy.ledger, "_readonly_uri"),
     (policy.ledger, "_identifier"), (policy.ledger, "_domain"),
     (policy.ledger, "_row_size"), (policy.ledger, "_schema_size"),
     (policy.ledger, "_snapshot_shape"), (policy.ledger, "_read"),
     (policy.ledger, "read_rejection_ready_rows"),
     (policy.ledger, "assert_rejection_ready_rows"),
     (policy.sync, "capture_ready_condition"), (policy.sync, "assert_ready_condition"),
+    (policy.ack, "assert_rejection_ready_ack_graph"),
+    (policy.ack, "build_rejection_ready_ack"), (policy.ack, "assert_rejection_ready_ack"),
+    (policy.locks, "capture_rejection_ready_locks"), (policy.locks, "assert_rejection_ready_locks"),
+    (policy.state, "assert_selected_ready_inflight"), (policy.state, "assert_selected_ready_committed"),
 ])
 def test_declared_capture_helpers_are_not_replaceable(module, name, monkeypatch):
     monkeypatch.setattr(module, name, _forbidden)
@@ -66,8 +77,7 @@ def test_declared_capture_helpers_are_not_replaceable(module, name, monkeypatch)
 
 @pytest.mark.parametrize("function", [
     policy.owner._empty, policy.reference._capture, policy.ledger._read,
-    json.loads, json_spec.canonical_json, urllib.parse.quote_from_bytes,
-    urllib.parse._Quoter.__missing__,
+    json.loads, json_spec.canonical_json, policy.ledger._readonly_uri,
 ])
 def test_original_function_code_cannot_change(function, monkeypatch):
     monkeypatch.setattr(function, "__code__", _forbidden.__code__)
@@ -136,14 +146,11 @@ def test_original_aliases_and_finite_domains_cannot_drift(module, name, monkeypa
 
 
 @pytest.mark.parametrize("module,name", [
-    (policy.ledger, "quote"), (sqlite3, "connect"), (_sqlite3, "connect"),
+    (sqlite3, "connect"), (_sqlite3, "connect"),
     (sqlite3, "Connection"), (_sqlite3, "Connection"),
     (sqlite3, "Cursor"), (_sqlite3, "Cursor"),
     (sqlite3, "Error"), (_sqlite3, "Error"),
     (sqlite3, "DataError"), (_sqlite3, "DataError"), (sqlite3, "SQLITE_LIMIT_LENGTH"),
-    (urllib.parse, "quote"), (urllib.parse, "quote_from_bytes"),
-    (urllib.parse, "_byte_quoter_factory"), (urllib.parse, "_Quoter"),
-    (urllib.parse, "_ALWAYS_SAFE"), (urllib.parse, "_ALWAYS_SAFE_BYTES"),
     (hashlib, "sha256"), (json, "loads"), (json, "dumps"),
     (json_spec, "canonical_json"),
 ])
@@ -170,16 +177,6 @@ def test_shared_serializer_and_all_capture_aliases_cannot_be_changed_together(mo
     _refuses()
 
 
-def test_quoter_wrapper_and_class_member_graph_cannot_change(monkeypatch):
-    monkeypatch.setattr(urllib.parse._byte_quoter_factory, "__wrapped__", _forbidden)
-    _refuses()
-
-
-def test_original_quoter_class_method_cannot_change(monkeypatch):
-    monkeypatch.setattr(urllib.parse._Quoter, "__missing__", _forbidden)
-    _refuses()
-
-
 def test_publication_owner_capture_alias_is_the_original_function(monkeypatch):
     monkeypatch.setattr(publication._BRSLineageCheckpointOwner,
                         "retain_rejection_ready_capture", _forbidden)
@@ -200,14 +197,18 @@ def test_replacing_sys_modules_cannot_hide_the_original_registry(monkeypatch):
 @pytest.mark.parametrize("name", [
     "lunar_evolution.rsi_brs_rejection_ready_owner", "lunar_evolution.rsi_brs_rejection_ready_sync",
     "lunar_evolution.rsi_brs_rejection_ready_reference", "lunar_evolution.rsi_brs_rejection_ready_ledger",
-    "lunar_evolution.rsi_brs_publication_lineage", "sqlite3", "urllib.parse",
+    "lunar_evolution.rsi_brs_publication_lineage", "sqlite3",
+    "lunar_evolution.rsi_brs_rejection_ready_ack",
+    "lunar_evolution.rsi_brs_rejection_ready_locks",
+    "lunar_evolution.rsi_brs_rejection_ready_state",
 ])
 def test_canonical_module_registry_bindings_cannot_change(name, monkeypatch):
     monkeypatch.setitem(sys.modules, name, object())
     _refuses()
 
 
-@pytest.mark.parametrize("module", [policy.owner, policy.reference, policy.ledger, policy.sync])
+@pytest.mark.parametrize("module", [policy.owner, policy.reference, policy.ledger, policy.sync,
+                                    policy.ack, policy.locks, policy.state])
 def test_capture_namespaces_have_an_exact_key_domain(module, monkeypatch):
     monkeypatch.setattr(module, "invented_alias", _forbidden, raising=False)
     _refuses()
@@ -276,3 +277,10 @@ def test_oversized_registry_is_rejected_without_visiting_all_entries(monkeypatch
     finally:
         for name in additions:
             sys.modules.pop(name, None)
+
+
+@pytest.mark.parametrize("function", policy.state._STATE_FUNCTIONS)
+def test_finite_transition_reader_local_codes_are_independently_held(function, monkeypatch):
+    monkeypatch.setattr(function, "__code__", _forbidden.__code__ if not function.__closure__
+                        else function.__code__.replace(co_name="foreign"))
+    _refuses()

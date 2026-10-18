@@ -17,6 +17,14 @@ of the original complete wave episode IDs and all held C2 admission-reference ep
 Existing original run/episode/claim, budget/M0/intents/executions, P body/writer-returned
 pin, source/material pins and database inode checks remain in force.
 
+The staged-ACK prerequisite successor additionally stores
+`_rejection_ready_locks_capture` once before dynamic pre-arm validation. It holds the
+exact controller observation, ledger controller-guard and optional execution-control
+native RLocks, original instance namespaces and capturing thread. It is part of the
+retained owner custody and is rechecked without acquiring those locks or refreshing
+their identities. A replacement discovered during a callback poisons the consumed
+capture attempt while retaining the original capsule.
+
 The existing-reference reader passes original run/C2/episode heads explicitly to
 `RSILedger.python_admission_record`. It compares every head returned by rebuilt evidence
 to those held heads and compares complete canonical record/reference bytes. It never
@@ -36,7 +44,13 @@ reader functions/constants, original observer entry points and declared runtime 
 It rejects function/code/default/closure/metadata/namespace drift before constructing the
 compact policy projection. The enclosing owner policy independently retains that guard's
 entry and closure. This projection is for unlocked pre-arm validation; complete final ACK
-physical/context/DTO custody and stdlib cache-state review remain required.
+physical/context/DTO custody remains required. The successor holds the finite ACK
+constructor/slot/metadata graph before capture, and declares the passive inflight/
+committed readers and their local helper graph in that projection. The raw SQL URI
+uses stateless UTF-8 percent encoding, preserving the original path domain and `mode=ro`;
+urllib's quoter functions and mutable cache are no longer dependencies of this reader.
+ACK construction remains detached, and neither passive reader is called to transition
+the owner or pending request during pre-arm capture.
 
 Validation uses the genuine waiting worker and sealed local one/two-candidate fixtures.
 Tests cover no durable/file/claim/budget change, original heads, one-shot consumption,

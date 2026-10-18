@@ -2,8 +2,8 @@
 
 The enclosing BRS policy independently holds this entry point and its source. This
 projection observes the declared capture/reference/read-only helpers; it does not
-call them or validate an owner. Complete final ACK physical/context custody and
-stdlib cache state remain outside this pre-arm projection.
+call them or validate an owner. The complete final ACK physical/context reader
+graph remains outside this pre-arm projection.
 """
 
 from __future__ import annotations
@@ -15,12 +15,14 @@ import json
 import sqlite3
 import sys
 import types
-import urllib.parse
 from pathlib import Path
 
+from . import rsi_brs_rejection_ready_ack as ack
 from . import rsi_brs_rejection_ready_ledger as ledger
+from . import rsi_brs_rejection_ready_locks as locks
 from . import rsi_brs_rejection_ready_owner as owner
 from . import rsi_brs_rejection_ready_reference as reference
+from . import rsi_brs_rejection_ready_state as state
 from . import rsi_brs_rejection_ready_sync as sync
 from .rsi_learning import RSILearningError
 
@@ -39,10 +41,14 @@ def _build_policy():
                  "_empty", "_check_original", "retain_rejection_ready_capture")),
         (reference, ("_fail", "_digest", "_identifier", "_shadows", "_capture", "_check",
                      "validate_existing_rejection_reference")),
-        (ledger, ("_fail", "_path", "_identifier", "_domain", "_row_size", "_schema_size",
+        (ledger, ("_fail", "_path", "_readonly_uri", "_identifier", "_domain", "_row_size", "_schema_size",
                   "_snapshot_shape", "_read", "read_rejection_ready_rows",
                   "assert_rejection_ready_rows")),
         (sync, ("capture_ready_condition", "assert_ready_condition")),
+        (ack, ("assert_rejection_ready_ack_graph", "build_rejection_ready_ack",
+               "assert_rejection_ready_ack")),
+        (locks, ("capture_rejection_ready_locks", "assert_rejection_ready_locks")),
+        (state, ("assert_selected_ready_inflight", "assert_selected_ready_committed")),
     )
 
     def pack(module, name, function):
@@ -58,48 +64,34 @@ def _build_policy():
 
     pins = [pack(module, name, namespace_of(module)[name])
             for module, names in function_names for name in names]
-    parse = urllib.parse
-    # These are explicit known quote edges, not a recursively discovered graph.
-    for module, names in ((parse, ("quote", "quote_from_bytes")),
-                          (json, ("loads", "dumps"))):
-        pins.extend(pack(module, name, namespace_of(module)[name]) for name in names)
-    factory = parse._byte_quoter_factory
-    wrapped = factory.__wrapped__
-    pins.append(pack(parse, "_byte_quoter_factory.__wrapped__", wrapped))
-    quoter = parse._Quoter
-    quoter_members = plain_tuple(namespace_of(quoter).items())
-    quoter_bases, quoter_mro = quoter.__bases__, quoter.__mro__
-    for name in ("__init__", "__missing__"):
-        function = namespace_of(quoter)[name]
-        # Class functions still resolve their globals in urllib.parse.
-        pins.append(pack(parse, "_Quoter." + name, function))
+    # Known runtime JSON edges remain part of unlocked semantic capture. Raw
+    # final SQL URI encoding is now stateless and has no urllib cache graph.
+    pins.extend(pack(json, name, namespace_of(json)[name]) for name in ("loads", "dumps"))
+    pins.extend(pack(state, function.__qualname__, function) for function in state._STATE_FUNCTIONS)
+    state_guard = state._STATE_FUNCTIONS[1]
     # Shared canonical serializer aliases are executable Python dependencies too.
     serializer = owner.canonical_json
     serializer_module = registry[serializer.__module__]
     pins.append(pack(serializer_module, "canonical_json", serializer))
     pins = plain_tuple(pins)
 
-    modules = (owner, reference, ledger, sync)
+    modules = (owner, reference, ledger, sync, ack, locks, state)
     namespaces = plain_tuple((module, namespace_of(module),
                               plain_tuple(namespace_of(module).items())) for module in modules)
     runtime_modules = plain_tuple((module, namespace_of(module)) for module in (
-        _sqlite3, sqlite3, parse, json, hashlib, builtins, types, sys, serializer_module))
+        _sqlite3, sqlite3, json, hashlib, builtins, types, sys, serializer_module))
     registered = plain_tuple((module.__name__, module) for module in (*modules,
                              *(module for module, _namespace in runtime_modules)))
     missing = object()
     connection_type, cursor_type = _sqlite3.Connection, _sqlite3.Cursor
     edges = (
-        (ledger, "sqlite3", sqlite3), (ledger, "quote", parse.quote),
+        (ledger, "sqlite3", sqlite3),
         (sqlite3, "connect", _sqlite3.connect), (_sqlite3, "connect", _sqlite3.connect),
         (sqlite3, "Connection", connection_type), (_sqlite3, "Connection", connection_type),
         (sqlite3, "Cursor", cursor_type), (_sqlite3, "Cursor", cursor_type),
         (sqlite3, "Error", _sqlite3.Error), (sqlite3, "DataError", _sqlite3.DataError),
         (_sqlite3, "Error", _sqlite3.Error), (_sqlite3, "DataError", _sqlite3.DataError),
         (sqlite3, "SQLITE_LIMIT_LENGTH", sqlite3.SQLITE_LIMIT_LENGTH),
-        (parse, "quote", parse.quote), (parse, "quote_from_bytes", parse.quote_from_bytes),
-        (parse, "_byte_quoter_factory", factory), (parse, "_Quoter", quoter),
-        (parse, "_ALWAYS_SAFE", parse._ALWAYS_SAFE),
-        (parse, "_ALWAYS_SAFE_BYTES", parse._ALWAYS_SAFE_BYTES),
         (hashlib, "sha256", hashlib.sha256), (json, "loads", json.loads),
         (json, "dumps", json.dumps),
         (serializer_module, "canonical_json", serializer),
@@ -179,8 +171,6 @@ def _build_policy():
         for module, name, original in edges:
             if namespace_of(module).get(name, missing) is not original:
                 raise error_type(prefix)
-        if factory.__wrapped__ is not wrapped:
-            raise error_type(prefix)
         for name, original in builtin_bindings:
             if builtin_namespace.get(name, missing) is not original:
                 raise error_type(prefix)
@@ -192,14 +182,6 @@ def _build_policy():
             for name, value in builtin_bindings:
                 if namespace.get(name, value) is not value or domain.get(name, missing) is not value:
                     raise error_type(prefix)
-        current = namespace_of(quoter)
-        if (quoter.__bases__ is not quoter_bases or quoter.__mro__ is not quoter_mro
-                or length(current) != length(quoter_members)
-                or some(kind(key) is not plain_str for key in current)):
-            raise error_type(prefix)
-        for name, original in quoter_members:
-            if current.get(name, missing) is not original:
-                raise error_type(prefix)
         for name, original in sqlite_descriptors:
             declaration = (cursor_type if name.startswith("cursor.") else connection_type)
             field = name.removeprefix("cursor.")
@@ -249,6 +231,10 @@ def _build_policy():
             raise error_type(prefix)
         if namespace_of(owner_class).get("retain_rejection_ready_capture") is not method:
             raise error_type(prefix)
+        # Inspect the original finite constructor graph before an owner capture
+        # can retain any related state. This performs no construction/publication.
+        ack.assert_rejection_ready_ack_graph()
+        state_guard()
         return {"protocol": protocol, "sha256": digest}
 
     return project

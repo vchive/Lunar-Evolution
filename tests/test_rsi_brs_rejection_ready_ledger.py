@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import urllib.parse
 from threading import Event, Thread
 
 import pytest
 
 from lunar_evolution.rsi_brs_rejection_ready_ledger import (
+    _readonly_uri,
     assert_rejection_ready_rows,
     read_rejection_ready_rows,
 )
@@ -55,8 +57,8 @@ _ROWS = {
 }
 
 
-def _database(tmp_path, *, schema=_SCHEMA):
-    path = tmp_path / "ledger ?#%.sqlite3"
+def _database(tmp_path, *, schema=_SCHEMA, name="ledger ?#%.sqlite3"):
+    path = tmp_path / name
     with sqlite3.connect(path) as connection:
         connection.executescript(schema)
         for table, rows in _ROWS.items():
@@ -72,6 +74,110 @@ def _capture(path):
 def _files(directory):
     return {path.name: (path.stat().st_ino, path.stat().st_mode,
                         hashlib.sha256(path.read_bytes()).hexdigest()) for path in directory.iterdir()}
+
+
+@pytest.mark.parametrize("path,encoded", [
+    ("/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-~/",
+     "/ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-~/"),
+    ("/月球/é/🚀 ?#%+&=.sqlite3",
+     "/%E6%9C%88%E7%90%83/%C3%A9/%F0%9F%9A%80%20%3F%23%25%2B%26%3D.sqlite3"),
+    ("/%2F/%3F?mode=rw#x", "/%252F/%253F%3Fmode%3Drw%23x"),
+    ("/\t\n\r\x01\x7f", "/%09%0A%0D%01%7F"),
+    ("/!\"$'()*,;:<>@[\\]^`{|}",
+     "/%21%22%24%27%28%29%2A%2C%3B%3A%3C%3E%40%5B%5C%5D%5E%60%7B%7C%7D"),
+    ("//localhost/a/../b/./", "//localhost/a/../b/./"),
+])
+def test_stateless_readonly_uri_preserves_safe_and_utf8_path_bytes(path, encoded):
+    assert _readonly_uri(path) == "file:" + encoded + "?mode=ro"
+
+
+def test_stateless_uri_retains_original_codepoint_bound_without_narrowing_utf8():
+    assert _readonly_uri("/" + "🚀" * 4095) == (
+        "file:/" + "%F0%9F%9A%80" * 4095 + "?mode=ro")
+
+
+@pytest.mark.parametrize("path", [None, b"/ledger", "", "relative", "file:/ledger", "/nul\x00x",
+                                  "/bad-high-\ud800", "/bad-low-\udfff", "/" + "x" * 4096])
+def test_uri_refuses_original_invalid_path_domain_before_sqlite(path, monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("invalid path reached SQLite")
+
+    monkeypatch.setattr(sqlite3, "connect", forbidden)
+    with pytest.raises(RSILearningError, match="ledger_path_invalid"):
+        _readonly_uri(path)
+    with pytest.raises(RSILearningError, match="ledger_path_invalid"):
+        read_rejection_ready_rows(path, run_id=_RUN, episode_ids=_EPISODES)
+
+
+def test_uri_refuses_path_subclass_before_its_operations():
+    class Foreign(str):
+        def startswith(self, *args, **kwargs):
+            raise AssertionError("foreign startswith")
+
+        def encode(self, *args, **kwargs):
+            raise AssertionError("foreign encode")
+
+    with pytest.raises(RSILearningError, match="ledger_path_invalid"):
+        _readonly_uri(Foreign("/ledger"))
+
+
+@pytest.mark.parametrize("name", ["月球 é🚀 ?#%.sqlite3", "ledger?mode=rw&cache=shared#%.sqlite3",
+                                  "literal%2F%3F%23.sqlite3"])
+def test_special_path_reader_opens_real_sqlite_in_noncreating_readonly_mode(tmp_path, monkeypatch, name):
+    path = _database(tmp_path, name=name)
+    before = _files(tmp_path)
+    real_connect, opened = sqlite3.connect, []
+
+    def connect(database_uri, **kwargs):
+        connection = real_connect(database_uri, **kwargs)
+        try:
+            # Check mode=ro before the reader's query_only pragma is applied.
+            assert connection.execute("PRAGMA query_only").fetchone() == (0,)
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                connection.execute("CREATE TABLE forbidden_write (value TEXT)")
+        except BaseException:
+            connection.close()
+            raise
+        opened.append((database_uri, kwargs))
+        return connection
+
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    snapshot = _capture(path)
+    assert_rejection_ready_rows(str(path), snapshot)
+    assert len(opened) == 2
+    assert all(uri == _readonly_uri(str(path)) and kwargs == {
+        "uri": True, "timeout": 30.0, "isolation_level": None,
+    } for uri, kwargs in opened)
+    assert _files(tmp_path) == before
+
+
+def test_mutable_stdlib_quote_entrypoints_are_not_reader_dependencies(tmp_path, monkeypatch):
+    path = _database(tmp_path, name="月球 ?#%.sqlite3")
+    before = _files(tmp_path)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("stdlib quote dependency")
+
+    monkeypatch.setattr(urllib.parse, "quote", forbidden)
+    monkeypatch.setattr(urllib.parse, "quote_from_bytes", forbidden)
+    monkeypatch.setattr(urllib.parse, "_byte_quoter_factory", forbidden)
+    snapshot = _capture(path)
+    assert_rejection_ready_rows(str(path), snapshot)
+    assert _files(tmp_path) == before
+
+
+def test_poisoned_stdlib_cached_quoter_cannot_change_readonly_database_path(tmp_path, monkeypatch):
+    path = _database(tmp_path, name="月球 ?#%.sqlite3")
+    before = _files(tmp_path)
+    original = urllib.parse.quote(str(path), safe="/")
+    # CPython's cache returns a bound dict getter: mutating the retained mapping
+    # changes quote() while all quote functions and class methods retain identity.
+    quoter = urllib.parse._byte_quoter_factory(b"/").__self__
+    monkeypatch.setitem(quoter, ord("%"), "%2F?mode=rw&ignored=")
+    assert urllib.parse.quote(str(path), safe="/") != original
+    snapshot = _capture(path)
+    assert_rejection_ready_rows(str(path), snapshot)
+    assert _files(tmp_path) == before
 
 
 def test_same_complete_rows_and_absent_domains_are_read_only(tmp_path):

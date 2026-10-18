@@ -1,3 +1,38 @@
+# 当前后继开发（2026-10-18，staged ACK 的有限前置原语）
+
+- 隔离分支 `codex/brs-rejection-ready-service` 基于 PR133，并带入 PR134 的
+  SQLite scratch-path fixture 修复；不修改前置冻结树或主 checkout 的用户文档。
+- PR133 原 owner pre-arm capture 的同库存544项已在 macOS/Linux 各全通过，
+  独立产品/raw/source/import复核通过；PR134 fixture专项10项通过。两项完整
+  CI/main合入仍待完成，不能把局部结果当完整CI，也不能累计成新来源验收。
+- 本轮仅完成 staged ACK prerequisites：原pre-arm owner一次保留controller
+  observation、ledger controller-guard及可选control的exact native RLock、原
+  namespace和线程，并在既有语义/material bracket内重验原capsule。锁capture/
+  assert不获取锁、不等待、不证明lease，也不刷新被替换的原对象。
+- 新ACK helper固定原generated constructor、post-init/helper/error/regex、native
+  slots、dataclass metadata、closure及runtime/builtin图，只构造/核验脱离pending的
+  四字符串ACK。新inflight/committed reader只比较原queued capsule中的自然pending/
+  ready/container身份，不arm/dequeue/commit，不清字段，也不证明真实worker receipt。
+  fixture-only状态赋值不构成生产staged-service验收。
+- raw SQL URI改为有界stateless UTF-8 percent encoding，保持原`safe="/"`、路径
+  限制、`mode=ro`及六表/schema/caps；移除已无关的urllib quoter/cache依赖。外层
+  capture policy独立固定新增entry/local reader代码、closure和原namespace；原owner
+  capture实际接入lock capsule和ACK graph检查。当前来源的冻结focused、双平台及
+  独审结果需后续单独记录，本文不提前宣称通过。
+- 下一项P0仍是exact-owner一次性service/arm/dequeue、worker外部check后ACK
+  constructor前的re-entry guard、完整finite physical/deadline final gate，以及
+  staged ACK可见性/失败后永久保留已赋值前缀/真实receipt。后续拒绝dispatch、
+  result/recovery、root settlement、owner retirement和serial successor仍未关闭。
+  P1真实runtime、OpenEvolve/Shinka lifecycle与生产CLI验收仍后续。
+- 继续按现有SDD，不扩大P2/多机/remote evaluator。public native BRS、
+  `production_admission`、`online_publication`保持关闭；只运行本地inert/provider-free
+  fixtures，5090gpu可用于CPU回归。规范和验证计划见
+  [rejection-owner-ready.md](specs/196-brs-owner-worker-handoff/rejection-owner-ready.md)、
+  [tasks.md](specs/196-brs-owner-worker-handoff/tasks.md) 和
+  [validation.md](specs/196-brs-owner-worker-handoff/validation.md)。
+
+以下为前置pre-arm capture开发记录；最终验收以各冻结材料和PR为准。
+
 # 当前后继开发（2026-10-18，原 rejected owner 的一次性 pre-arm capture）
 
 - 隔离分支 `codex/brs-rejection-ready-owner` 从 PR132 冻结 `046bab8` 继续；

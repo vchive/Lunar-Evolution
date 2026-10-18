@@ -39,7 +39,9 @@ def test_original_owner_captures_reference_materials_and_rows_without_ready(tmp_
         capture = value.owner._rejection_ready_capture
         assert type(capture) is tuple and len(capture) == 6
         held, rows, sync, scope, existing, payload = capture
-        assert all(item is original for item, original in zip(held[:-1], custody[:-1], strict=True))
+        assert all(item is original for item, original in zip(held[:-2], custody[:-2], strict=True))
+        assert held[-2] is value.owner._rejection_ready_locks_capture
+        assert held[-2][:3] == (value.controller, value.ledger, value.owner._before_control)
         assert held[-1] is sync and value.owner._rejection_ready_sync_capture is sync
         assert sync[0] is value.owner._before_channel_condition
         assert scope[:2] == (value.binding.run_id, value.episode_id)
@@ -56,6 +58,48 @@ def test_original_owner_captures_reference_materials_and_rows_without_ready(tmp_
         assert value.owner._phase == "rejected-provenance" and value.owner._poisoned is False
         assert value.owner._rejection_ready_capture_started is True
         fixture.c1._quiet(value)
+
+
+@pytest.mark.parametrize("target", ["controller", "ledger", "control"])
+def test_original_native_lock_replacement_during_callback_refuses_without_refresh(
+        tmp_path, monkeypatch, target):
+    from threading import RLock
+
+    active = {}
+
+    def cancelled():
+        value = active.get("value")
+        if value is not None and not active.get("changed"):
+            active["changed"] = True
+            owner = value.owner
+            obj, name = {
+                "controller": (value.controller, "_python_admission_brs_observation_lock"),
+                "ledger": (value.ledger, "_controller_guards_lock"),
+                "control": (owner._before_control, "_lock"),
+            }[target]
+            active["object"], active["name"], active["original"] = obj, name, getattr(obj, name)
+            setattr(obj, name, RLock())
+        return False
+
+    monkeypatch.setattr(fixture.c1, "_unlocked_cancelled", cancelled)
+    with fixture.c1._waiting(tmp_path, monkeypatch) as value:
+        _retain(value)
+        assert value.owner._before_control is not None
+        active["value"] = value
+        try:
+            # The pre-existing control fingerprint detects its replaced native
+            # lock before the later retained-lock custody comparison.
+            reason = "before_control_drift" if target == "control" else "locks_custody_drift"
+            with pytest.raises(RSILearningError, match=reason):
+                value.owner.retain_rejection_ready_capture()
+            assert active["changed"] is True
+            assert value.owner._poisoned is True and value.owner._rejection_ready_capture is None
+            capture = value.owner._rejection_ready_locks_capture
+            assert capture[{"controller": 3, "ledger": 4, "control": 5}[target]] is active["original"]
+            fixture.c1._quiet(value)
+        finally:
+            if active.get("changed"):
+                setattr(active["object"], active["name"], active["original"])
 
 
 def test_successful_capture_cannot_be_refreshed_or_retried(tmp_path, monkeypatch):
