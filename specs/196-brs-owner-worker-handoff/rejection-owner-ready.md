@@ -11,6 +11,10 @@ synchronization/channel observation prerequisites are described in
 [rejection-ready-observers.md](rejection-ready-observers.md). Preceding P/C2 validation,
 complete CI and main integration are separate.
 
+The connected pre-arm implementation is specified separately in
+[rejection-ready-capture.md](rejection-ready-capture.md). Its one-shot capture is not
+arming and does not implement the staged ACK interfaces or final-reader contract below.
+
 After its own confirmed ordinal-zero C2/P, the exact original
 `_BRSLineageCheckpointOwner` may acknowledge one actual ready request from its original
 selected worker against the existing admission record. Preserve the original owning
