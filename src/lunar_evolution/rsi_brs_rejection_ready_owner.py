@@ -166,6 +166,9 @@ def retain_rejection_ready_capture(self) -> None:
         provenance._allowance(self)
         _empty(self, condition_capture, held)
         self._rejection_ready_capture = (held, rows, condition_capture, scope, existing, ready_payload)
+        from .rsi_brs_rejection_ready_final import capture_rejection_ready_final
+
+        self._rejection_ready_final_capture = capture_rejection_ready_final(self)
     except BaseException:
         self._poisoned = True
         raise

@@ -27,6 +27,7 @@ _CONTROLLER_READERS = (
     "_python_admission_selected_brs_identity", "_python_admission_sidecar",
     "_validate_original_producer_checkpoint", "_validate_original_run_checkpoint_producer_binding",
     "_validate_python_admission_record_evidence", "_validate_python_admission_references",
+    "_python_admission_existing_rejection_brs_ready",
 )
 _LEDGER_READERS = (
     "_assert_controller_lock", "_checkpoint_binding", "_checkpoint_digest", "_checkpoint_python_references",
@@ -252,4 +253,88 @@ def validate_existing_rejection_reference(owner: object) -> tuple[bytes, bytes, 
     return reference_bytes, record_bytes, digest, episodes
 
 
-__all__ = ["validate_existing_rejection_reference"]
+def _active_reference_check(owner: object, ready: object) -> tuple:
+    """Validate a live staged request without invoking the old empty-channel gate."""
+    from . import rsi_brs_rejection_ready_owner as ready_owner
+    from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+    from .rsi_brs_rejection_ready_service import validate_active_ready
+    from .rsi_controller import RSILearningController
+    from .rsi_store import RSILedger
+
+    capture = validate_active_ready(owner, ready)
+    if any(value is not original for value, original in zip(
+            ready_owner._custody(owner), capture[0], strict=True)):
+        _fail("capture_drift")
+    _shadows(owner._controller, RSILearningController, _CONTROLLER_READERS)
+    _shadows(owner._ledger, RSILedger, _LEDGER_READERS)
+    _BRSLineageCheckpointOwner._before_unlocked(owner)
+    _BRSLineageCheckpointOwner._before_control_live(owner)
+    _BRSLineageCheckpointOwner._identity(owner)
+    with RSILedger.read_only_observations(owner._ledger):
+        _BRSLineageCheckpointOwner._running(owner)
+    if (owner._rejection_ready_capture is not capture
+            or any(value is not original for value, original in zip(
+                ready_owner._custody(owner), capture[0], strict=True))):
+        _fail("capture_drift")
+    validate_active_ready(owner, ready)
+    return capture
+
+
+def validate_active_rejection_reference(owner: object, ready: object) -> str:
+    """Rebuild only the original admission bound to the active natural pending.
+
+    Dynamic semantic observations run outside the final short locks. The service
+    still compares the complete original raw rows and physical evidence before
+    making an ACK visible; this function never registers or pins a reference.
+    """
+    from .rsi_controller import RSILearningController
+    from .rsi_python_admission import (
+        RSIPythonAdmissionRecord,
+        validate_rsi_python_admission_reference_record,
+    )
+    from .rsi_store import RSILedger
+
+    capture = _active_reference_check(owner, ready)
+    reference_bytes, record_bytes, digest, _episodes = capture[4]
+    selected = json.loads(reference_bytes)
+    controller, ledger = owner._controller, owner._ledger
+    run, episode = capture[3][:2]
+    run_head, episode_head = owner._run_head, owner._episode_head
+    c2 = owner._rejection_provenance_c2_capture
+    with RSILedger.read_only_observations(ledger):
+        original = RSILedger.python_admission_record(
+            ledger, run, episode, selected["journal_id"], expected_record_sha256=digest,
+            expected_run_record_sha256=run_head, expected_checkpoint_sha256=c2[0],
+            expected_episode_record_sha256=episode_head,
+        )
+        if type(original) is not RSIPythonAdmissionRecord or RSIPythonAdmissionRecord.to_json(original) != record_bytes:
+            _fail("record_drift")
+        anchor = original.admission_anchor["anchor_sha256"]
+        plan, journal, binding = RSILearningController._python_admission_inputs(
+            controller, owner._plan, owner._prepared, anchor)
+        rebuilt, observed_run, observed_checkpoint, observed_episode = (
+            RSILearningController._python_admission_evidence(controller, run, episode, plan, journal, binding, anchor)
+        )
+        for observed, expected in ((observed_run, run_head), (observed_checkpoint, c2[0]),
+                                   (observed_episode, episode_head)):
+            if type(observed) is not str or observed != expected:
+                _fail("evidence_head_drift")
+        current = RSILedger.python_admission_record(
+            ledger, run, episode, selected["journal_id"], expected_record_sha256=digest,
+            expected_run_record_sha256=run_head, expected_checkpoint_sha256=c2[0],
+            expected_episode_record_sha256=episode_head,
+        )
+        if (type(rebuilt) is not RSIPythonAdmissionRecord or type(current) is not RSIPythonAdmissionRecord
+                or RSIPythonAdmissionRecord.to_json(rebuilt) != record_bytes
+                or RSIPythonAdmissionRecord.to_json(current) != record_bytes):
+            _fail("record_drift")
+        checked = validate_rsi_python_admission_reference_record(selected, current, run_id=run, episode_id=episode)
+        if canonical_json(checked, maximum=_MAX_REFERENCE_BYTES) != reference_bytes:
+            _fail("reference_drift")
+        RSILearningController._validate_python_admission_references(controller, run, json.loads(c2[1]))
+    if _active_reference_check(owner, ready) is not capture:
+        _fail("capture_drift")
+    return digest
+
+
+__all__ = ["validate_active_rejection_reference", "validate_existing_rejection_reference"]

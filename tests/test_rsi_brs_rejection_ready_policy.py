@@ -69,6 +69,13 @@ def test_state_class_slot_declarations_are_checked_before_policy_projection(decl
     (policy.ack, "build_rejection_ready_ack"), (policy.ack, "assert_rejection_ready_ack"),
     (policy.locks, "capture_rejection_ready_locks"), (policy.locks, "assert_rejection_ready_locks"),
     (policy.state, "assert_selected_ready_inflight"), (policy.state, "assert_selected_ready_committed"),
+    (policy.reference, "_active_reference_check"), (policy.reference, "validate_active_rejection_reference"),
+    (policy.admission, "_assert_rejection_ready_worker_ack_graph"),
+    (policy.service, "service_rejection_ready"), (policy.service, "validate_active_ready"),
+    (policy.service, "_make_failure_handler"),
+    (policy.final, "capture_rejection_ready_final"),
+    (policy.final, "assert_rejection_ready_final"), (policy.final, "rejection_ready_deadlines"),
+    (policy.final_policy, "build_rejection_ready_final_guard"),
 ])
 def test_declared_capture_helpers_are_not_replaceable(module, name, monkeypatch):
     monkeypatch.setattr(module, name, _forbidden)
@@ -81,6 +88,12 @@ def test_declared_capture_helpers_are_not_replaceable(module, name, monkeypatch)
 ])
 def test_original_function_code_cannot_change(function, monkeypatch):
     monkeypatch.setattr(function, "__code__", _forbidden.__code__)
+    _refuses()
+
+
+@pytest.mark.parametrize("function", policy.final._FINAL_FUNCTIONS[-3:])
+def test_final_bootstrap_guard_and_refusal_code_are_independently_held(function, monkeypatch):
+    monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
     _refuses()
 
 
@@ -283,4 +296,14 @@ def test_oversized_registry_is_rejected_without_visiting_all_entries(monkeypatch
 def test_finite_transition_reader_local_codes_are_independently_held(function, monkeypatch):
     monkeypatch.setattr(function, "__code__", _forbidden.__code__ if not function.__closure__
                         else function.__code__.replace(co_name="foreign"))
+    _refuses()
+
+
+@pytest.mark.parametrize("declared,name", [
+    (policy.controller.RSILearningController, "_python_admission_existing_rejection_brs_ready"),
+    (policy.admission.BRSAdmissionChannel, "_service_selected_rejection_ready"),
+    (publication._BRSLineageCheckpointOwner, "service_rejection_ready"),
+])
+def test_new_canonical_staged_entry_alias_cannot_be_replaced(declared, name, monkeypatch):
+    monkeypatch.setattr(declared, name, _forbidden)
     _refuses()

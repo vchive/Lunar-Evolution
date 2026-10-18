@@ -225,3 +225,34 @@ The root auditor does not import or execute the product. Raw evidence is retaine
 on the server and copied into ignored local reports. Only documentation acceptance
 status was updated after the final freeze; controller, tests and workflow remained
 byte-identical to the accepted focused source. CI/integration remains pending.
+
+
+## Original-owner staged ACK development and frozen validation — 2026-10-18
+
+The internal dedicated service is now connected to the original owner, channel and
+read-only controller root. Development validation includes the first genuine
+one-candidate original-worker ACK/receipt on `6422073` (one pass, 54.33 seconds),
+98 final-reader component cases and 105 worker/legacy cases. These development
+runs have different scopes and are not accumulated into frozen acceptance.
+
+The first snapshot smoke on `fd279a0` failed on an incorrect `before-v2.json`
+filename; retain that raw failure separately. The successor reads the original
+`before.json` pin, obtains P from confirmed C2 when C1 contains a null provenance
+entry, and preserves absence of optional original native sidecars. It also holds
+MRO declarations, namespace key domains and exact primitive types before any
+possible callback; no capture is refreshed after failure.
+
+The new frozen validation must run one ordered, disjoint inventory on macOS and
+Linux, using each runtime's own editable installation and unchanged tracked
+source. It includes all preceding 868-case prerequisites plus the service,
+worker and final-reader files. The service inventory includes one/two-candidate
+actual receipt, permanent timeout, early natural ready refusal, an inflight
+callback failure and notification uncertainty that preserves the full ACK.
+Fixture-only partial-prefix tests do not imply worker nonreceipt. The original
+record, captures, raw rows, budgets, publication and execution state remain held.
+
+Acceptance additionally requires independent product, raw/XML/order, source and
+import review. Local scoped success does not replace the complete 33-job CI or
+main integration. Public dispatch/admission and online publication stay closed;
+rejection dispatch/result/recovery/root/retirement/serial and P1 runtime/solver/
+production CLI remain successors.

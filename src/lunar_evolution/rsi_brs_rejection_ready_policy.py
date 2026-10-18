@@ -1,9 +1,9 @@
-"""Finite live dependencies of original-owner pre-arm capture, without ACK authority.
+"""Finite live dependencies of original-owner capture and dedicated staged ACK.
 
 The enclosing BRS policy independently holds this entry point and its source. This
-projection observes the declared capture/reference/read-only helpers; it does not
-call them or validate an owner. The complete final ACK physical/context reader
-graph remains outside this pre-arm projection.
+projection observes the declared capture/reference/read-only/service helpers; it
+does not call them or validate an owner. Final physical/context observations use
+the separately held dedicated reader graph under the original short locks.
 """
 
 from __future__ import annotations
@@ -18,12 +18,17 @@ import types
 from pathlib import Path
 
 from . import rsi_brs_rejection_ready_ack as ack
+from . import rsi_brs_rejection_ready_final as final
+from . import rsi_brs_rejection_ready_final_policy as final_policy
 from . import rsi_brs_rejection_ready_ledger as ledger
 from . import rsi_brs_rejection_ready_locks as locks
 from . import rsi_brs_rejection_ready_owner as owner
 from . import rsi_brs_rejection_ready_reference as reference
+from . import rsi_brs_rejection_ready_service as service
 from . import rsi_brs_rejection_ready_state as state
 from . import rsi_brs_rejection_ready_sync as sync
+from . import rsi_controller as controller
+from . import rsi_python_brs_admission as admission
 from .rsi_learning import RSILearningError
 
 
@@ -40,7 +45,8 @@ def _build_policy():
         (owner, ("_fail", "_owner", "_custody", "_assert_custody", "_domain", "_payload",
                  "_empty", "_check_original", "retain_rejection_ready_capture")),
         (reference, ("_fail", "_digest", "_identifier", "_shadows", "_capture", "_check",
-                     "validate_existing_rejection_reference")),
+                     "validate_existing_rejection_reference", "_active_reference_check",
+                     "validate_active_rejection_reference")),
         (ledger, ("_fail", "_path", "_readonly_uri", "_identifier", "_domain", "_row_size", "_schema_size",
                   "_snapshot_shape", "_read", "read_rejection_ready_rows",
                   "assert_rejection_ready_rows")),
@@ -49,6 +55,11 @@ def _build_policy():
                "assert_rejection_ready_ack")),
         (locks, ("capture_rejection_ready_locks", "assert_rejection_ready_locks")),
         (state, ("assert_selected_ready_inflight", "assert_selected_ready_committed")),
+        (service, ("_fail", "_timeout", "_set_pending", "_owner", "_empty_transport", "_remaining",
+                   "_take_ready", "validate_active_ready", "_preserve_failure", "service_rejection_ready",
+                   "_build_service_entry", "_make_failure_handler")),
+        (final, ("capture_rejection_ready_final", "assert_rejection_ready_final", "rejection_ready_deadlines")),
+        (final_policy, ("build_rejection_ready_final_guard",)),
     )
 
     def pack(module, name, function):
@@ -68,6 +79,17 @@ def _build_policy():
     # final SQL URI encoding is now stateless and has no urllib cache graph.
     pins.extend(pack(json, name, namespace_of(json)[name]) for name in ("loads", "dumps"))
     pins.extend(pack(state, function.__qualname__, function) for function in state._STATE_FUNCTIONS)
+    pins.extend(pack(service, function.__qualname__, function) for function in service._SERVICE_FUNCTIONS)
+    pins.extend(pack(final if function.__globals__ is namespace_of(final) else final_policy,
+                     function.__qualname__, function) for function in final._FINAL_FUNCTIONS)
+    pins.extend(pack(final_policy, function.__qualname__, function)
+                for function in final_policy._FINAL_POLICY_FUNCTIONS)
+    pins.append(pack(controller, "_python_admission_existing_rejection_brs_ready",
+                     controller.RSILearningController._python_admission_existing_rejection_brs_ready))
+    pins.append(pack(admission, "_assert_rejection_ready_worker_ack_graph",
+                     admission._assert_rejection_ready_worker_ack_graph))
+    pins.append(pack(admission, "_service_selected_rejection_ready",
+                     admission.BRSAdmissionChannel._service_selected_rejection_ready))
     state_guard = state._STATE_FUNCTIONS[1]
     # Shared canonical serializer aliases are executable Python dependencies too.
     serializer = owner.canonical_json
@@ -75,7 +97,7 @@ def _build_policy():
     pins.append(pack(serializer_module, "canonical_json", serializer))
     pins = plain_tuple(pins)
 
-    modules = (owner, reference, ledger, sync, ack, locks, state)
+    modules = (owner, reference, ledger, sync, ack, locks, state, service, admission, final, final_policy)
     namespaces = plain_tuple((module, namespace_of(module),
                               plain_tuple(namespace_of(module).items())) for module in modules)
     runtime_modules = plain_tuple((module, namespace_of(module)) for module in (
@@ -120,6 +142,8 @@ def _build_policy():
         builtin_domains.append((namespace, namespace.get("__builtins__"), domain))
     builtin_domains = plain_tuple(builtin_domains)
     method = owner.retain_rejection_ready_capture
+    existing_ready = controller.RSILearningController._python_admission_existing_rejection_brs_ready
+    channel_service = admission.BRSAdmissionChannel._service_selected_rejection_ready
     condition_assert = sync.assert_ready_condition
     publication_name = owner.__package__ + ".rsi_brs_publication_lineage"
     sources = {module.__name__.rsplit(".", 1)[-1]: hashlib.sha256(
@@ -129,7 +153,7 @@ def _build_policy():
                   "functions": [[module.__name__, list(names)] for module, names in function_names],
                   "ledger_limits": [ledger._MAX_ROWS, ledger._MAX_IDS, ledger._MAX_ROW_BYTES,
                                     ledger._MAX_BYTES],
-                  "scope": "read-only-pre-arm; no-owner-permit-or-ACK"}
+                  "scope": "original-owner-capture-and-staged-ACK; no-dispatch-or-settlement"}
     digest = hashlib.sha256(json.dumps(projection, sort_keys=True,
                                       separators=(",", ":")).encode()).hexdigest()
     protocol = projection["protocol"]
@@ -230,6 +254,12 @@ def _build_policy():
             # The class is resolved only after its enclosing module is initialized.
             raise error_type(prefix)
         if namespace_of(owner_class).get("retain_rejection_ready_capture") is not method:
+            raise error_type(prefix)
+        if namespace_of(owner_class).get("service_rejection_ready") is not service.service_rejection_ready:
+            raise error_type(prefix)
+        if (namespace_of(controller.RSILearningController).get("_python_admission_existing_rejection_brs_ready")
+                is not existing_ready or namespace_of(admission.BRSAdmissionChannel).get(
+                    "_service_selected_rejection_ready") is not channel_service):
             raise error_type(prefix)
         # Inspect the original finite constructor graph before an owner capture
         # can retain any related state. This performs no construction/publication.

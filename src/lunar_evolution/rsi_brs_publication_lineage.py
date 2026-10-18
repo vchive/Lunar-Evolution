@@ -39,6 +39,7 @@ from . import rsi_brs_rejection_provenance as provenance
 from . import rsi_brs_rejection_provenance_policy as _provenance_policy
 from . import rsi_brs_rejection_ready_owner as ready_owner
 from . import rsi_brs_rejection_ready_policy as ready_policy
+from . import rsi_brs_rejection_ready_service as ready_service
 from . import rsi_publication_lineage as lineage
 from .algorithm import ALGORITHM_FAMILY_REPERTOIRES as _ORIGINAL_FAMILY_REPERTOIRES
 from .candidate_evaluation_spec import canonical_json
@@ -1434,9 +1435,15 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_rejection_provenance_evidence",
         "_rejection_provenance_file_pin",
         "_rejection_provenance_sha256",
+        "_rejection_ready_ack",
+        "_rejection_ready_ack_fields",
         "_rejection_ready_capture",
         "_rejection_ready_capture_started",
+        "_rejection_ready_commit_started",
+        "_rejection_ready_final_capture",
         "_rejection_ready_locks_capture",
+        "_rejection_ready_stage",
+        "_rejection_ready_state",
         "_rejection_ready_sync_capture",
         "_request",
         "_retaining_before",
@@ -1567,6 +1574,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._rejection_provenance_deadline = self._rejection_provenance_file_pin = None
         self._rejection_provenance_evidence = self._rejection_provenance_sha256 = None
         self._rejection_ready_capture_started, self._rejection_ready_capture = False, None
+        self._rejection_ready_state, self._rejection_ready_stage = "unused", None
+        self._rejection_ready_ack, self._rejection_ready_ack_fields = None, None
+        self._rejection_ready_commit_started, self._rejection_ready_final_capture = False, None
         self._rejection_ready_locks_capture = None
         self._rejection_ready_sync_capture = None
         from .rsi_native_scheduler import _read_ledger_identity
@@ -2962,3 +2972,4 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     acknowledge_rejection_provenance = provenance.acknowledge_rejection_provenance
     rejection_provenance_file_pin = provenance.rejection_provenance_file_pin
     retain_rejection_ready_capture = ready_owner.retain_rejection_ready_capture
+    service_rejection_ready = ready_service.service_rejection_ready

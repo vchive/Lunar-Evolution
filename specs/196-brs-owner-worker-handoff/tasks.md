@@ -204,7 +204,7 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
   neither arms nor grants ACK authority. PR133 passed the same 544 frozen cases on
   macOS/Linux plus independent review; its full CI/main integration remains pending.
   The new prerequisite wiring below needs its own frozen-source validation.
-- [ ] Add a dedicated exact-owner staged-ACK service using the real original
+- [x] Add a dedicated exact-owner staged-ACK service using the real original
   channel/pending/request, with no arbitrary handler or commit callback API. Keep
   ACK/fields private until the final gate, and preserve the old service semantics.
 - [x] Add the private read-only existing-reference reader; compare the complete
@@ -223,23 +223,26 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
 - [x] Replace raw-ledger urllib quoting with bounded stateless UTF-8 URI encoding,
   preserving `safe="/"`, the original path limits, `mode=ro`, complete six-table/schema
   rows and capacities. Remove the now-unused mutable quoter/cache dependency pins.
-- [ ] Freeze and validate the connected prerequisite successor on matching macOS/
+- [x] Freeze and validate the connected prerequisite successor on matching macOS/
   Linux source and ordered inventory, with independent product/raw/import review.
   PR134's separate fixture race fix passed 10 focused cases; its CI/main integration
   remains pending and does not provide acceptance for the new product source.
+  PR135 frozen `e45c11c` passed the same 868 cases on macOS/Linux with no failures,
+  errors or skips; independent product/raw/source/import review accepted that
+  prerequisite scope. Its complete CI and main integration remain pending.
 - [ ] Finish and independently review the finite final-reader graph, transitive
   ledger/physical/DTO/context dependencies, source/code/default/metadata pins and
   exact-type/shadow refusal before enabling the genuine original-worker fixture.
-- [ ] Enforce observation RLock -> original condition -> read-only ledger order;
+- [x] Enforce observation RLock -> original condition -> read-only ledger order;
   keep dynamic callbacks and waits outside short locks, and close before worker/
   executor cleanup. Timeout consumes the scope and forbids retry.
-- [ ] Commit original ACK/done/owner state once under the final condition hold.
+- [x] Commit original ACK/done/owner state once under the final condition hold.
   Retain every assigned ACK field permanently on notification/context-exit or
   postcommit uncertainty; poison/close without clearing, replacing or reissuing it.
-- [ ] Guard the worker's original ACK-constructor graph again after its external
+- [x] Guard the worker's original ACK-constructor graph again after its external
   check callback and immediately before return-ACK construction, without changing
   legacy request/service semantics or creating a worker ownership grant.
-- [ ] Add scoped fixed postcommit inspection while old provenance getters continue
+- [x] Add scoped fixed postcommit inspection while old provenance getters continue
   refusing a nonempty channel. Leave handoff selected and uncompleted; do not issue
   selected-return, result/claim settlement or reconcile/root authority.
 - [ ] Extend sealed one/two-candidate fixtures with the original `_waiting` worker,

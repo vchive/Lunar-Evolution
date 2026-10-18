@@ -2674,6 +2674,16 @@ class RSILearningController:
                 raise RSILearningError("rsi_python_brs_admission_stale")
             return wave.state, wave.checkpoint_sha256
 
+    def _python_admission_existing_rejection_brs_ready(self, owner, ready) -> str:
+        """Read an existing original admission only for its active staged request."""
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_brs_rejection_ready_reference import validate_active_rejection_reference
+
+        if (type(self) is not RSILearningController or type(owner) is not _BRSLineageCheckpointOwner
+                or owner._controller is not self):
+            raise RSILearningError("rsi_python_brs_existing_rejection_owner_invalid")
+        return validate_active_rejection_reference(owner, ready)
+
     def _python_admission_service_brs_ready(self, wave: _PythonAdmissionBRSWave, ready) -> str:
         from .producer_bundle_publication import parse_producer_bundle_publication_journal
         from .rsi_native_plan import NativeRSIExecutionPlan
