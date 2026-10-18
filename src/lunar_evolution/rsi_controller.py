@@ -2409,6 +2409,119 @@ class RSILearningController:
             )
         return execution
 
+    def _python_admission_settle_original_brs_terminal(self, owner: object, session: object) -> str:
+        """Settle one natural rejected terminal, then retire its original live authority."""
+        from concurrent.futures import Future
+
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner, _policy
+        from .rsi_brs_reconcile import (
+            FIELD,
+            parse_brs_reconcile_obligations,
+            remove_brs_reconcile_obligation,
+        )
+        from .rsi_brs_rejection_ready_state import assert_selected_ready_committed
+        from .rsi_python_brs_admission import BRSAdmissionChannel
+        from .rsi_python_brs_native_dispatch import _rejection_committed
+        from .rsi_python_brs_terminal_lifecycle import BRSOwnerTerminalLifecycle
+
+        if (type(owner) is not _BRSLineageCheckpointOwner or owner._controller is not self
+                or type(session) is not BRSOwnerTerminalLifecycle or session._owner is not owner):
+            raise RSILearningError("rsi_brs_terminal_original_session_required")
+        BRSOwnerTerminalLifecycle._fixed(session)
+        _rejection_committed(owner)
+        wave, ledger, key = owner._wave, owner._ledger, owner._request.episode_id
+        if (session._started is not True or session._result is None
+                or session._result.transaction.publication_status != "all_rejected"
+                or len(session._history) != 4 or not Future.done(session._future)
+                or Future.exception(session._future) is not None
+                or session._thread.is_alive() or session._mailbox._closed is not True
+                or session._mailbox._status != "delivered"):
+            raise RSILearningError("rsi_brs_terminal_original_terminal_required")
+        execution = Future.result(session._future)
+        if (type(execution) is not EpisodeExecution or type(execution.request) is not SolverRequest
+                or type(execution.result) is not SolverResult or type(execution.episode) is not PracticeEpisode
+                or type(execution.verifier) is not VerifierDecision or execution.request != owner._request
+                or execution.result.status != "failed" or execution.verifier.outcome == "pass"):
+            raise RSILearningError("rsi_brs_terminal_original_result_invalid")
+        wire = RSILearningController._serialize_execution(execution)
+        original_scope = (owner._controller, owner._wave, owner._ledger, owner._gateway,
+                          owner._workspace, owner._sidecar, owner._channel, owner._handoff,
+                          owner._selected_context, session._scope, session._mailbox, session._future,
+                          session._executor, session._thread, session._endpoint, session._exchange,
+                          session._exchange.condition, wave.budget_state,
+                          owner._rejection_ready_capture, owner._rejection_ready_stage,
+                          owner._rejection_ready_ack, owner._rejection_ready_ack_fields)
+        old_head, old_payload, policy_bytes = owner._head, owner._payload, owner._policy_bytes
+        handoff_bytes, context_bytes = owner._handoff_bytes, owner._selected_context_bytes
+        original_channel = owner._channel
+        before = json.loads(owner._payload)
+        obligation = parse_brs_reconcile_obligations(before.get(FIELD)).get(key)
+        if obligation is None or key in before["executions"]:
+            raise RSILearningError("rsi_brs_terminal_original_settlement_unavailable")
+        proposed = deepcopy(before)
+        proposed["executions"][key] = wire
+        proposed.update(phase="evaluated", current_episode_id=key)
+        remove_brs_reconcile_obligation(proposed, key, expected_digest=obligation.digest())
+        proposed_bytes = self._python_admission_flow_payload(proposed)
+        # This is a consumed attempt before the first write. An uncertain write
+        # never permits this live owner to repeat reconciliation or dispatch.
+        wave.selected_settlement_started = True
+        try:
+            native = owner._native
+            observed = RSILearningController._reconcile_brs_terminal_locked(
+                self, owner._run_id, key, workspace=owner._workspace, native_plan=owner._plan,
+                intent=native.intent, attestation=native.attestation, artifact=native.artifact,
+            )
+            consumption = observed["consumption"]
+            if consumption is None or consumption.consumed is not True:
+                raise RSILearningError("rsi_brs_terminal_original_settlement_incomplete")
+            with self._python_admission_brs_observations(), ledger.read_only_observations():
+                checkpoint = ledger.controller_checkpoint(owner._run_id)
+                if (checkpoint is None or checkpoint[0] != consumption.checkpoint_sha256
+                        or self._python_admission_flow_payload(checkpoint[1]) != proposed_bytes
+                        or get_ident() != owner._thread or not wave.active
+                        or self._python_admission_brs_wave is not wave or wave.state is not owner._state
+                        or self.ledger is not ledger or wave.ledger is not ledger
+                        or not ledger.controller_lock_held(owner._run_id)
+                        or wave.checkpoint_sha256 != old_head or wave.payload != old_payload
+                        or owner._head != old_head or owner._payload != old_payload
+                        or owner._phase != "rejected-provenance" or owner._poisoned is not False
+                        or owner._policy_bytes != policy_bytes or canonical_json(_policy()) != policy_bytes
+                        or owner._handoff_bytes != handoff_bytes or owner._selected_context_bytes != context_bytes
+                        or wave.channel is not original_channel or wave.selected_handoff is not original_scope[7]
+                        or wave.selected_context is not original_scope[8]
+                        or wave.selected_handoff_sha256 != hashlib.sha256(handoff_bytes).hexdigest()
+                        or wave.selected_worker_started is not True or wave.selected_settlement_started is not True
+                        or any(current is not held for current, held in zip(
+                            (owner._controller, owner._wave, owner._ledger, owner._gateway,
+                             owner._workspace, owner._sidecar, owner._channel, owner._handoff,
+                             owner._selected_context, session._scope, session._mailbox, session._future,
+                             session._executor, session._thread, session._endpoint, session._exchange,
+                             session._exchange.condition, wave.budget_state,
+                             owner._rejection_ready_capture, owner._rejection_ready_stage,
+                             owner._rejection_ready_ack, owner._rejection_ready_ack_fields), original_scope, strict=True))
+                        or self.producer_workspace is not original_scope[4]
+                        or self.producer_sidecar is not original_scope[5] or self.gateway is not original_scope[3]
+                        or self._python_admission_flow_payload(wave.budget_state) != owner._budget_bytes
+                        or getattr(self._python_admission_brs_local, "lineage_checkpoint_owner", None) is not owner
+                        or RSILearningController._serialize_execution(Future.result(original_scope[11])) != wire):
+                    raise RSILearningError("rsi_brs_terminal_original_readback_drift")
+            # Retire only after the exact root result and removed fence are durable.
+            assert_selected_ready_committed(original_channel, original_scope[19],
+                                           original_scope[20], original_scope[21])
+            BRSAdmissionChannel.complete_selected_handoff(original_channel, key)
+            wave.state.clear()
+            wave.state.update(checkpoint[1])
+            wave.checkpoint_sha256, wave.payload = checkpoint[0], proposed_bytes
+            wave.selected_handoff = wave.selected_context = wave.selected_handoff_sha256 = None
+            wave.selected_worker_started = False
+            owner._phase, owner._poisoned, session._poisoned = "retired", True, True
+            self._python_admission_brs_local.lineage_checkpoint_owner = None
+            return checkpoint[0]
+        except BaseException:
+            owner._poisoned, session._poisoned = True, True
+            raise
+
     def _python_admission_settle_selected_brs_execution(
         self, record: RSIRecord, wave: _PythonAdmissionBRSWave, execution: EpisodeExecution,
     ) -> str:
@@ -2673,6 +2786,16 @@ class RSILearningController:
                     or self._python_admission_flow_payload(checkpoint[1]) != wave.payload):
                 raise RSILearningError("rsi_python_brs_admission_stale")
             return wave.state, wave.checkpoint_sha256
+
+    def _python_admission_existing_rejection_brs_ready(self, owner, ready) -> str:
+        """Read an existing original admission only for its active staged request."""
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_brs_rejection_ready_reference import validate_active_rejection_reference
+
+        if (type(self) is not RSILearningController or type(owner) is not _BRSLineageCheckpointOwner
+                or owner._controller is not self):
+            raise RSILearningError("rsi_python_brs_existing_rejection_owner_invalid")
+        return validate_active_rejection_reference(owner, ready)
 
     def _python_admission_service_brs_ready(self, wave: _PythonAdmissionBRSWave, ready) -> str:
         from .producer_bundle_publication import parse_producer_bundle_publication_journal
@@ -4678,6 +4801,7 @@ class RSILearningController:
         self, record: RSIRecord | None, state: dict[str, Any], status: str, *,
         expected_checkpoint_sha256: str | None = None,
     ) -> LearningRunResult:
+        self._assert_brs_reconcile_clear(state["run_id"], state)
         state.update(status=status, phase="terminal")
         # Keep the historical two-argument override surface usable for callers
         # that instrument `_save_flow`; the CAS keyword is only needed for the
@@ -5148,6 +5272,7 @@ class RSILearningController:
         return self._finish_flow(record, state, "failed")
 
     def _drive_brs(self, record: RSIRecord | None, state: dict[str, Any]) -> LearningRunResult:
+        self._assert_brs_reconcile_clear(state["run_id"], state)
         plan, pins, run_id = state["plan"], state["pins"], state["run_id"]
         decisions = [self._decision_from_dict(item) for item in plan["practices"]]
         parent = MemorySnapshot.from_dict(state["root_snapshot"]).digest()
@@ -5213,7 +5338,30 @@ class RSILearningController:
             self._commit_flow(record, state, execution, decision, frozen_parent=parent)
         return self._finish_flow(record, state, "completed")
 
+    def _assert_brs_reconcile_clear(
+        self, run_id: str, state: Mapping[str, Any] | None,
+    ) -> None:
+        """Fence default progress until explicit evidence consumption removes obligations.
+
+        Check the latest durable head as well as the caller's state: a stale local state
+        must not overwrite a retained owner obligation. Historical consumed obligations
+        are intentionally not consulted, so terminal replay stays read-only after an
+        explicit successful consume. A retained fence never asserts worker recoverability.
+        """
+        from .rsi_brs_reconcile import FIELD, validate_brs_reconcile_obligations
+
+        def require_clear(checkpoint_state: Mapping[str, Any] | None) -> None:
+            if (checkpoint_state is not None and FIELD in checkpoint_state
+                    and validate_brs_reconcile_obligations(checkpoint_state, run_id=run_id)):
+                raise RSILearningError("rsi_brs_reconcile_required")
+
+        require_clear(state)
+        if self.ledger is not None:
+            checkpoint = self.ledger.controller_checkpoint(run_id)
+            require_clear(checkpoint[1] if checkpoint else None)
+
     def _drive(self, record: RSIRecord | None, state: dict[str, Any], *, now: object | None = None) -> LearningRunResult:
+        self._assert_brs_reconcile_clear(state["run_id"], state)
         try:
             if state["status"] in {"completed", "failed", "cancelled", "budget_exhausted"}:
                 return self._finish_flow(record, state, state["status"])
@@ -5281,9 +5429,10 @@ class RSILearningController:
         as a read-only consumption and leaves its durable obligation in place.  No solver
         request, retry, or ordinary ``resume()`` drive is started by this API.
 
-        The entire batch runs under one per-run controller lock.  Evidence is parsed before
-        any ledger mutation and entries are consumed in episode-id order so malformed input
-        cannot cause a later entry to be silently skipped after an earlier terminal consume.
+        The entire batch runs under one per-run controller lock. Evidence wire shape and
+        selected keys are checked before mutation; entries are then consumed in episode-id
+        order. Each consume has its own binding checks and CAS. This is not an atomic batch:
+        a later ledger/evidence failure does not undo an earlier successful consume.
         """
         _id(run_id, "run_id")
         if self.ledger is None:
@@ -5324,6 +5473,65 @@ class RSILearningController:
                 )
         return results
 
+    def reconcile_brs_terminal(
+        self, run_id: str, episode_id: str, *, workspace, native_plan,
+        intent=None, attestation=None, artifact=None,
+    ) -> dict:
+        """Freshly observe independent terminal evidence, then explicitly consume.
+
+        A caller supplies original native contexts, never a ready report or cleanup
+        flags. Incomplete observations remain read-only. The existing consume checks
+        every ledger source pin again inside its removal/CAS transaction.
+        """
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        with self.ledger.controller_lock(run_id):
+            return RSILearningController._reconcile_brs_terminal_locked(
+                self, run_id, episode_id, workspace=workspace, native_plan=native_plan,
+                intent=intent, attestation=attestation, artifact=artifact,
+            )
+
+    def _reconcile_brs_terminal_locked(
+        self, run_id: str, episode_id: str, *, workspace, native_plan,
+        intent=None, attestation=None, artifact=None,
+    ) -> dict:
+        """Compose and consume under the caller's existing original run lease."""
+        from .rsi_brs_terminal_evidence import _compose_brs_terminal_evidence
+
+        _id(run_id, "run_id")
+        _id(episode_id, "episode_id")
+        if self.ledger is None:
+            raise RSILearningError("rsi_resume_requires_ledger")
+        self.ledger._assert_controller_lock(run_id)
+        if self.ledger.get_run(run_id) is None:
+            raise RSILearningError("rsi_run_missing")
+        report, evidence, pins = _compose_brs_terminal_evidence(
+            self.ledger, run_id, episode_id, workspace=workspace, native_plan=native_plan,
+            intent=intent, attestation=attestation, artifact=artifact,
+        )
+        consumption = None
+        if report["status"] == "ready" and evidence is not None and pins is not None:
+            record = self.ledger.get_run(run_id)
+            self._validate_resume_identity(record, None, None)
+            snapshot = self.ledger.read_brs_terminal_evidence_snapshot(run_id, episode_id)
+            saved, episodes = snapshot["saved_result"], snapshot["episode_history"]
+            if saved is None or not episodes:
+                raise RSILearningError("rsi_brs_terminal_root_result_missing")
+            request, result = saved
+            episode = PracticeEpisode.from_dict(episodes[-1].payload)
+            verifier = episode.verifier
+            if verifier is None:
+                if result.status == "completed":
+                    raise RSILearningError("rsi_brs_terminal_root_verifier_missing")
+                verifier = LocalExactVerifier.verify(LocalExactVerifier(), episode, request, result)
+            wire = RSILearningController._serialize_execution(EpisodeExecution(episode, request, result, verifier))
+            consumption = self.ledger._consume_brs_reconcile_obligation(
+                run_id, episode_id, evidence, expected_pins=pins, settled_execution=wire,
+            )
+        return {"observation": report, "consumption": consumption}
+
     def _resume_locked(self, run_id: str, *, now: object | None = None,
                        observed_fingerprints: Mapping[str, Any] | None = None,
                        budget_policy: Mapping[str, Any] | None = None) -> LearningRunResult:
@@ -5331,6 +5539,7 @@ class RSILearningController:
         if record is None:
             raise RSILearningError("rsi_run_missing")
         entry_checkpoint = self.ledger.controller_checkpoint(run_id)
+        self._assert_brs_reconcile_clear(run_id, entry_checkpoint[1] if entry_checkpoint else None)
         self._validate_run_checkpoint_producer_binding(
             record, entry_checkpoint[1] if entry_checkpoint else None,
         )

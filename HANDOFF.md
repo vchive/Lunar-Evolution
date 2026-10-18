@@ -1,4 +1,341 @@
-# 当前状态（2026-10-17，P1 explicit reconcile resume seam）
+# 当前开发（2026-10-18，单个原始 ordinal 的拒绝生命周期）
+
+- 前置 staged ACK 最终 `c445a612` 已完成同库存 macOS Python3.11.15 / Linux
+  Python3.12.3 各1,079项（0失败/错误/跳过），2,157源码与每平台124份原始材料、
+  source/import/raw独立审查通过。PR136已ready，尚未合main；完整33-job CI和依赖
+  合入仍待完成。封存材料：主checkout ignored validation/
+  `rejection-staged-ack-20261018-llo7u7ne`，不得继续改写该目录。
+- 当前隔离树为 `codex/brs-rejected-lifecycle`，基于上述来源。并行实现一个原selected
+  ordinal的actual rejection dispatch→C1/P/C2→自然ready/ACK→mailbox result→failed
+  episode/result→原子root execution/fence消费→owner retirement，以及显式中断恢复。
+  契约为Feature196 `rejected-owner-lifecycle.md`；public入口和生产门槛保持关闭。
+- 开发首失败均保留：macOS fixture缺声明的target snapshot、policy重复使run行超
+  128KiB、ACK后mailbox误走empty-channel gate，以及live root恢复重复获取原flock。
+  已修这些接线；原public恢复仍获取一次不可重入锁，live路径仅复用原held lease。
+  新fixture的failed SolverResult必填字段遗漏也已修，不作为产品故障。
+- snapshot4的Mac开发记录中，单/双候选拒绝、callback unknown、fresh-controller
+  root恢复、native unknown和相邻root race共6项通过；该source的live root因上述
+  flock问题失败。后续源码还补齐新增ready依赖身份/代码固定、3个真实锁用例和
+  4个root写入/退出中断用例。最终来源14项集成用例及组件兼容回归仍待统一验证，
+  不累计旧source通过数。额外诊断faulthandler选项下Linux有exit-11未归因，raw保留，
+  最终须按正常pytest入口重验。CI另修2项精确错误码预期与只读审计SQLite-shm路径。
+- 长测试改用固定源码开发副本和其自有editable venv；主开发树可以同时修改。
+  当前开发raw及snapshot记录在主checkout ignored validation/
+  `rejected-lifecycle-dev-20261018`。最终提交后仍需独立冻结验收/完整CI。
+- 后继P0为reserved-wave serial continuation（新child绑定、append lineage、预算
+  不重复计数、partial-wave恢复）；P1为真实sealed CPython/toolchain、OpenEvolve/
+  Shinka项目lifecycle和生产CLI验收。P2/多机/外部认证/remote evaluator继续后置。
+  仅本地inert/provider-free fixtures，允许5090gpu跑CPU回归；不运行真实model/solver、
+  WebAgent或远程/公司evaluator。主checkout用户修改继续原样保留。
+
+以下保留前置开发记录；以各来源最终证据为准。
+
+# 当前后继开发（2026-10-18，原 rejected owner 的 staged ACK 服务）
+
+- 隔离分支 `codex/brs-rejection-staged-ack` 从 PR135 冻结 `e45c11c` 继续，
+  不修改主 checkout 用户文档或前置冻结树。PR135 的同库存868项已在 macOS
+  Python3.11.15 / Linux Python3.12.3 各全通过，独立产品、原始结果、source 和
+  import 复核接受；完整 CI 与依赖合入 main 仍未完成。
+- 本轮并行实现 dedicated `service_rejection_ready`、原 channel 的私有委托、
+  controller 只读 existing-reference root。一次消费原 owner scope，等待原自然
+  pending，保留同一 capsule，经 observation RLock -> 原 Condition -> read-only
+  ledger 最终校验后才发布 ACK；失败 poison/close 并永久保留已赋值前缀。
+- 最终只读校验单独保留原 C1/C2/P 完整物理证据、native sidecars/输出、runtime
+  manifest/目录、原 source、六表 raw rows/schema、ledger inode、原 DTO/context
+  和预算/执行控制 deadlines。不可刷新 capture、注册/重 pin、计费或 settle。
+- worker 在外部 check 返回后、构造返回 ACK 前重验原 constructor graph，并要求
+  done、servicing=false、完整四字段 ACK；旧通道行为保留。所有新增生产代码的
+  开发回归和完整同源双平台验收分别记录，本文不提前宣称最终通过。
+- 原 worker 单候选 genuine 开发 smoke 在冻结 `6422073` 通过（54.33秒），
+  已证明实际 receipt 与原 durable/material 状态不变；早期错误文件名失败独立保留，
+  不累计为验收。仍需匹配库存双平台回归、其余 genuine 场景、独立审查及完整 CI。后继 P0 拒绝 dispatch、result/recovery、root settlement、owner retirement、
+  serial successor 与 P1 runtime、OpenEvolve/Shinka lifecycle、生产 CLI 尚未关闭。
+  不得将内部 ACK 误报为全部功能完成或已可发布。
+- public native BRS、`production_admission`、`online_publication`继续关闭；仅本地
+  inert/provider-free fixture，可在5090gpu跑CPU回归。不运行 WebAgent、真实模型/
+  solver、远程或公司 evaluator。P2/多机/外部认证不扩展。
+
+以下保留前置开发记录；最终接受以各冻结材料和 PR 为准。
+
+# 当前后继开发（2026-10-18，staged ACK 的有限前置原语）
+
+- 隔离分支 `codex/brs-rejection-ready-service` 基于 PR133，并带入 PR134 的
+  SQLite scratch-path fixture 修复；不修改前置冻结树或主 checkout 的用户文档。
+- PR133 原 owner pre-arm capture 的同库存544项已在 macOS/Linux 各全通过，
+  独立产品/raw/source/import复核通过；PR134 fixture专项10项通过。两项完整
+  CI/main合入仍待完成，不能把局部结果当完整CI，也不能累计成新来源验收。
+- 本轮仅完成 staged ACK prerequisites：原pre-arm owner一次保留controller
+  observation、ledger controller-guard及可选control的exact native RLock、原
+  namespace和线程，并在既有语义/material bracket内重验原capsule。锁capture/
+  assert不获取锁、不等待、不证明lease，也不刷新被替换的原对象。
+- 新ACK helper固定原generated constructor、post-init/helper/error/regex、native
+  slots、dataclass metadata、closure及runtime/builtin图，只构造/核验脱离pending的
+  四字符串ACK。新inflight/committed reader只比较原queued capsule中的自然pending/
+  ready/container身份，不arm/dequeue/commit，不清字段，也不证明真实worker receipt。
+  fixture-only状态赋值不构成生产staged-service验收。
+- raw SQL URI改为有界stateless UTF-8 percent encoding，保持原`safe="/"`、路径
+  限制、`mode=ro`及六表/schema/caps；移除已无关的urllib quoter/cache依赖。外层
+  capture policy独立固定新增entry/local reader代码、closure和原namespace；原owner
+  capture实际接入lock capsule和ACK graph检查。当前来源的冻结focused、双平台及
+  独审结果需后续单独记录，本文不提前宣称通过。
+- 下一项P0仍是exact-owner一次性service/arm/dequeue、worker外部check后ACK
+  constructor前的re-entry guard、完整finite physical/deadline final gate，以及
+  staged ACK可见性/失败后永久保留已赋值前缀/真实receipt。后续拒绝dispatch、
+  result/recovery、root settlement、owner retirement和serial successor仍未关闭。
+  P1真实runtime、OpenEvolve/Shinka lifecycle与生产CLI验收仍后续。
+- 继续按现有SDD，不扩大P2/多机/remote evaluator。public native BRS、
+  `production_admission`、`online_publication`保持关闭；只运行本地inert/provider-free
+  fixtures，5090gpu可用于CPU回归。规范和验证计划见
+  [rejection-owner-ready.md](specs/196-brs-owner-worker-handoff/rejection-owner-ready.md)、
+  [tasks.md](specs/196-brs-owner-worker-handoff/tasks.md) 和
+  [validation.md](specs/196-brs-owner-worker-handoff/validation.md)。
+
+以下为前置pre-arm capture开发记录；最终验收以各冻结材料和PR为准。
+
+# 当前后继开发（2026-10-18，原 rejected owner 的一次性 pre-arm capture）
+
+- 隔离分支 `codex/brs-rejection-ready-owner` 从 PR132 冻结 `046bab8` 继续；
+  不修改前置冻结工作树或主 checkout 的用户提交/未提交文档。
+- PR132 同库存321项在 macOS Python3.11.15/Linux Python3.12.3 各全通过，
+  独立产品/raw/source/import审查接受，PR已ready，尚未合main。旧Python3.12
+  optional-alias失败来源单独保留，不累计。
+- 本轮接入原 owner 的 `retain_rejection_ready_capture()`：原C1/P/C2后仅能
+  捕获一次，保留原对象custody、完整六表raw rows/schema、原Condition/native
+  RLock、原scope、既有admission/reference canonical bytes/digest及原ready三字段
+  payload。失败poison，不刷新head、不重试、不arm/dequeue/ACK。
+- 新只读reference reader始终将原run/C2/episode heads传给canonical ledger，
+  将重建evidence的三个head逐一比原held值，完整record/reference bytes比较及全部
+  held refs复验在原raw前后相等证明中完成，不register/pin/CAS、不写预算或结果。
+- 新独立pre-arm live guard覆盖新增函数/closure/metadata/namespace、raw SQL
+  reader/constants和声明runtime边；外层owner policy另固定该guard的代码与closure。
+  原empty-channel gate在capture存在时使用held native RLock并于锁内重验原同步
+  capsule，保留旧空域拒绝。完整final ACK reader图仍后续。
+- 开发曾发现readers影子检查误拒合法inert `_execute_intent` fixture seam，已改为
+  明确只读self-dispatch库存；另修正集成callsite参数。早期失败raw不作通过证据。
+  reference单/双候选正向smoke与124项guard测试已通过，最终联合focused/static、
+  同源双平台材料及独审由后续冻结验收单独记录，不在本提交提前宣称通过。
+- CI诊断确认PR123/124/125已有pytest全部通过，但selected-service实际39项、
+  workflow仍要求38项导致gate失败；PR129已有39/86修复，本分支纳入同样两处
+  CI gate修复，避免后继继续沿用旧库存。失败日志、JUnit及离线复现保存在主
+  checkout ignored validation/ci-focused-failures-20261018-sn938w4b。
+- 下一项P0是实际原pending的一次性armed/inflight状态、完整finite final readers及
+  staged ACK提交；之后是拒绝dispatch/result/recovery、root settlement、owner
+  retirement和reserved-wave serial successor。P1仍缺真实runtime、OpenEvolve/
+  Shinka lifecycle和生产CLI验收。完整CI通过后按依赖合main；本地scoped证据不能
+  替代。public native BRS、production admission、online publication保持关闭，
+  P2/remote evaluator后置；只用本地inert/provider-free fixtures，5090gpu可跑CPU回归。
+
+以下为前置观察器开发记录；最终验收以各冻结材料和PR为准。
+
+# 当前后继开发（2026-10-18，rejection ready 的同步与队列观察基础）
+
+- 隔离分支 `codex/brs-ready-staging` 从 PR131 冻结 `62eec36` 继续，不改前置
+  冻结工作树或主 checkout 的用户提交/未提交文档。
+- PR131 只读 ledger helper 的同库存54项在 macOS Python3.11.15/Linux
+  Python3.12.3 各全通过，独立最终 raw/source/import 复核接受，PR已ready。
+  `.lunar-evolution/validation/rejection-ready-ledger-20261018-yqx86o4s/` 保存
+  完整材料；最初macOS editable路径失败独立保留，不累计为通过。
+- 新增未接线的 `rsi_brs_rejection_ready_sync` 和
+  `rsi_brs_rejection_ready_channel`。前者独立固定原Condition/native RLock、
+  bound operations、deque和有限代码/模块依赖；后者在原native锁下只读保留
+  queued pending/ready/containers的原对象身份和严格primitive字段，不运行
+  DTO serializer/JSON，不arm/dequeue/构造或发布ACK，不授予owner或语义权限。
+- 两模块共171项开发检查，加上原ledger/channel/handoff和真实close/cancel/
+  legacy-service三项状态转换的联合321项通过。Ruff、compileall、
+  diff-check通过，独立scoped产品审查无阻塞；单一最终来源的双平台验收和最终
+  raw审查另存于ignored
+  `.lunar-evolution/validation/rejection-ready-observers-reviewed-20261018-nna8t06h/`。
+  本提交不提前声称该最终验收或完整CI通过。
+- 首次冻结`a7ee168`在macOS319项通过，但Linux因Python3.12.3没有
+  `threading._islice`而119失败/200通过。该来源和raw保留NOT_ACCEPTED于
+  `.lunar-evolution/validation/rejection-ready-observers-20261018-qepiyo0c/`。
+  后继以独立missing sentinel固定各平台原alias存在/缺失，新增/删除/换None
+  继续拒绝；增加两项无skip用例，不能累计旧来源结果。
+- 设计见 [rejection-ready-observers.md](specs/196-brs-owner-worker-handoff/rejection-ready-observers.md)。
+  原owner one-shot状态、C2/reference/P原capture、完整语义验证bracket、
+  observation/physical/deadline有限gate和staged ACK仍未接线，不能把只读capsule
+  当许可或清空旧channel来绕过空域检查。dispatch/result/reconcile/root/serial及
+  真实runtime/CLI验收仍后续；public native BRS、production admission和online
+  publication保持关闭，P2和remote evaluator后置。
+- PR123–131仍待完整CI和按依赖合main；不使用本地scoped回归代替该门槛。
+  所有执行仍仅本地inert/provider-free fixtures，允许5090gpu作CPU回归环境。
+
+以下为前置只读ledger开发记录；最终验收以对应冻结材料和PR为准。
+
+# 当前后继开发（2026-10-18，rejection ready 的只读 ledger 基础）
+
+- 独立分支 `codex/brs-rejection-ready` 延续 P/C2 最终源码 `de4fae1`；不修改
+  前置冻结工作树或主 checkout 的本地提交/未提交规格。
+- P/C2 最终 `de4fae1` 的同库存400项在 macOS Python3.11.15 / Linux Python3.12.3
+  各全通过，独立产品/input/raw/source/import审查接受，PR130已ready。此前 home quota
+  setup失败和 `/tmp` inode耗尽的不完整执行均单独保留，不能累计为通过。
+  原始材料为主 checkout ignored
+  `.lunar-evolution/validation/rejection-p-c2-reviewed-20261018-h3obzmql/`。
+- 已实现独立内部 `rsi_brs_rejection_ready_ledger`：对预冻结run/wave/held-reference
+  episode域，在单次非创建、query-only SQLite事务内捕获/比较六张业务表完整原行和
+  原 `sqlite_schema` 来源。严格primitive、128KiB整行/16MiB整体/4096行有界，拒绝
+  增删改、类型漂移、越域admission、view/virtual替换；不调用controller/source hooks。
+  本轮54项真实本地SQLite开发测试通过、无skip，Ruff/compileall/diff-check通过；
+  独立源码审查已接受；最终同来源双平台材料在PR和ignored
+  `.lunar-evolution/validation/rejection-ready-ledger-20261018-yqx86o4s/`另行记录，
+  不与前置P/C2的400项材料累计。
+- 该helper仅提供比较数据，不验证owner/完整语义，不代替原database inode gate，
+  不授予ACK或执行权限。调用方必须在同read snapshot完成语义验证，或证明完整
+  raw前后capture相等；实际owner/channel/Condition有限依赖guard、物理pins、deadline
+  和 staged ACK仍未接线。见 [rejection-owner-ready.md](specs/196-brs-owner-worker-handoff/rejection-owner-ready.md)。
+- PR123–130尚未合main；最新PR123/125/126各1项CI运行，其余仍排队。
+  public native BRS、production admission、online publication保持关闭；仅本地
+  inert/provider-free fixtures，不运行真实模型/solver、WebAgent或远程/公司evaluator；
+  P2继续后置。
+
+以下为前置P/C2开发记录；最终验收状态以对应冻结材料和PR为准。
+
+# 当前后继开发（2026-10-18，original BRS rejection P/C2）
+
+- 在独立分支 `codex/brs-rejection-provenance` 延续 PR128 冻结 `3366036`。
+  主 checkout 的本地提交和未提交规格保持原样；不修改前置冻结分支。
+- PR128 同一库存255项 scoped cases 已在 macOS Python3.11.15 / Linux
+  Python3.12.3 全通过，静态检查及独立产品/raw/source/import审查接受；PR已ready。
+  原始材料在主 checkout ignored
+  `.lunar-evolution/validation/rejection-c1-fixed-20261018-34eiv4li/`。
+  首次 `986d9b1` 的失败材料保留 NOT_ACCEPTED。完整CI和main合入仍是独立门槛。
+- PR129 是独立main热修：修正selected-service/settlement CI用例数、回补owner fixture
+  finally清理，并为严格recovery bytes断言增加诊断。最终 `49fecb4` 已push且PR ready；
+  162项开发回归来自前一 `e278a60`，最终仅诊断差异的正向单例另验，不能混称重跑。
+  PR123–129最近完整CI均queued，尚未合main，不因排队跳过门槛。
+- 本轮契约 [rejection-owner-p-c2.md](specs/196-brs-owner-worker-handoff/rejection-owner-p-c2.md)：
+  原exact owner成功C1后create-only留存独立0400 provenance P，随后C2只填一个字段。
+  strict C2/容量85项和native policy78项开发测试通过；真实sealed输入的原owner单候选
+  C1/P/C2正向及25项owner故障矩阵通过。三处live-code漂移红测已通过外层原代码对象
+  pin修复，26项集成policy及163项pure/native policy开发回归通过，末次观察6项负测
+  也全部通过。最终冻结同库存双平台验收仍待完成；开发轮不能代替最终冻结来源。
+- 新policy完整有限投影逐次求值后只存canonical摘要，保持既有128KiB run record、
+  112KiB checkpoint及所有容量/指纹上限。不能只hash源文件而省略live依赖校验。
+- 首次P/C2冻结 `fc54109` 的373项双平台材料保留为NOT_ACCEPTED：独立审查确认
+  原函数新增fingerprint hook属性可在末次P检查后执行且保持相同policy。
+  第二次冻结 `5d9218a` 的386项材料也为NOT_ACCEPTED：独审发现原kwdefaults字典
+  等长换入非plain-str key及函数metadata的str子类仍可进入动态观察。两份旧runner已
+  精确停止并保留partial raw，不能因旧case通过而升级结论。
+- 后继补齐属性/kwdefaults的plain-str key域及原函数name/qualname/module标签pin，
+  在membership、equality/hash和fingerprint前拒绝类型漂移；新增14项测试。
+  最新216项pure/native/owner-policy开发回归通过，Ruff、compileall、diff-check通过。
+  等完整有限投影代码复核通过后，再冻结新来源并重跑双平台；不能累加旧来源结果。
+- P/C2不等于actual ready/ACK、拒绝dispatch/result/recovery、root execution settlement、
+  owner retirement或reserved-wave serial successor。真实runtime/project/CLI仍未验收。
+  仅本地inert/provider-free fixtures；public native BRS、production admission和
+  online publication保持关闭，P2后置。
+
+以下为 PR128 的历史开发记录，其最终 scoped 结果以上节及对应材料为准。
+
+# 前一后继开发（2026-10-18，original BRS rejection C1）
+
+- 新隔离分支 `codex/brs-rejection-c1` 从 PR127 冻结 `f0e39b9` 继续，保留前置
+  冻结来源与主 checkout 的本地提交/未提交文档。工作树已创建但因本聊天附件数
+  达上限而未注册附件；直接使用返回目录，不重复创建。
+- PR127 的同库存302个 scoped cases 在 macOS Python3.11.15 / Linux Python3.12.3
+  全通过，静态检查及独立产品/raw/source/import审查接受，PR已ready。原始材料在
+  主 checkout ignored `.lunar-evolution/validation/terminal-recovery-f0e39b9-20261017-24d07fne/`。
+  PR123–127 最近完整CI各33项均排队，尚未合入 main；queued不算通过。
+- C1实现已包括finite deadline/原file pin保持、CAS后full source/native材料复验、
+  exact相邻读回与canonical最终读核。独审目前未见产品阻塞；75项pure容量/依赖
+  检查、真实native fixture与单例owner正向检查通过。最终用例计数以冻结验收为准，
+  双平台回归仍待冻结后运行。
+- 首次冻结`986d9b1`的scope回归已发现两处fixture失败：双候选重复preparation
+  receipt，以及lazy-import native process reader投影alias未恢复造成后续指纹漂移。
+  原始双平台材料保留为NOT_ACCEPTED；后继只修fixture，最终冻结结果另行记录，
+  不能把首次源码独审或开发单例通过当作该scope验收通过。
+- 本轮契约 [rejection-owner-c1.md](specs/196-brs-owner-worker-handoff/rejection-owner-c1.md)
+  仅补原 exact BRS owner 的 ordinal-zero `prepared-evidence -> rejected` C1，
+  不构造 DRS continuation。使用真实原生拒绝材料的本地 inert fixture；显式 fresh
+  rejection schema、原文件inode/bytes、容量/时钟/控制与相邻CAS/readback均需通过。
+- 尚缺后续同owner P/C2、拒绝dispatch/result/recovery、root execution settlement和
+  owner retirement、reserved-wave serial successor、真实runtime/project/CLI验收。
+  现consume只清obligation，不写root executions；整wave已预留预算，不能直接复用
+  会再次计数的detached successor。P2仍后置。
+- public native BRS、production admission、online publication仍关闭；不运行
+  WebAgent、真实模型/solver campaign或远程/公司evaluator。本轮验收结果须在冻结
+  后另记，不能提前宣称完成。
+
+以下为 PR127 的历史开发记录，其最终scoped验收以上节及对应PR/raw为准。
+
+# 当前后继开发（2026-10-17，independent terminal recovery）
+
+- 分支 `codex/brs-terminal-recovery` 基于 PR126 冻结 `74a3f52`，使用独立
+  worktree；主 checkout 的本地提交和未提交规格文档保持原样。
+- PR126 的 macOS Python3.11.15 / Linux Python3.12.3 各相同561个 scoped cases、
+  静态检查及独立产品/来源/原始材料审查通过。最终材料在主 checkout ignored
+  `.lunar-evolution/validation/durable-evidence-74a3f52-20261017-utt8qpno/`；旧
+  `ef7ee90` 失败材料保持 NOT_ACCEPTED，不能累计到最终来源。
+- PR123/124/125/126 尚未合入 main；最新 PR126 完整33-job CI全部queued。
+  scoped 验证不能代替完整 CI，也不因排队而强行合并或取消前置run。
+- 本轮契约见 [terminal-recovery-evidence.md](specs/196-brs-owner-worker-handoff/terminal-recovery-evidence.md)：
+  增加独立 delivery/callback/worker terminal 观察，闭合 callback 前持久化 ACK
+  门槛；只读组合原 publication、原 producer cleanup、自然 episode 和 exact result。
+  显式 controller fresh-compose 后复用已有consume，同事务重验全部ledger source pins。
+- 本轮代码、组件和原子性回归已完成，新增165项组合/兼容开发回归通过；六个自然
+  集成场景的开发轮为5通过、1正确拒绝但测试期待有误（夹具已修正）。原始开发材料
+  `/private/tmp/lunar-natural-six-n8bkoclq/`不作为最终冻结来源的验收替代。
+  最终冻结来源的相同库存双平台验收、原始材料和独审结论单独记录在对应PR及主
+  checkout ignored validation目录；本提交不提前宣称其结果。unknown capture不补录、callback
+  unknown不重试；worker线程退出、原producer进程cleanup和episode终态分别验证。
+  只用本地 inert/provider-free fixtures，public native BRS、production admission、
+  online publication继续关闭；all-rejected、serial successor、真实runtime/project/CLI
+  验收及P2仍另列后续。
+
+以下为 PR126 的历史开发记录；最终验收以本节和对应 PR 的冻结材料为准。
+
+# 当前后继开发（2026-10-17，durable recovery evidence）
+
+- 隔离分支 `codex/brs-durable-recovery-evidence` 基于 PR125 冻结来源 `1e7f6cf`。不改主 checkout 的本地提交和未提交文档，不追加修改 PR123/124/125 的冻结来源。
+- PR125 的 macOS Python3.11.15 / Linux Python3.12.3 各相同213项 scoped fixture 回归、Ruff/compileall/diff-check 和独立产品/来源审查通过。原始材料位于主 checkout ignored `.lunar-evolution/validation/exact-result-1e7f6cf-20261017-7c2vfggr/`。此前 `9436283` 的失败材料仍为 NOT_ACCEPTED；不能累计或替代最终结果。
+- PR123/124/125 尚未合入 main；PR125 最近检查仍为33项 CI 排队，排队不算通过。
+- 本轮 SDD：[durable-recovery-evidence.md](specs/196-brs-owner-worker-handoff/durable-recovery-evidence.md)。并行实现原 owner 的四阶段 mailbox 观察持久化、原 native producer process records 绑定和重建 ledger 的只读核验。复用底层 checkpoint journal 独立 namespace；不使用两态 callback journal，不回填旧 obligation 的 `worker_profile=None`。
+- side observation 不推进原 root checkpoint、owner/wave 游标、预算或恢复义务。worker 领取 response DTO、callback、native producer 已 cleanup 和 episode 终态是不同事实；缺失保持 unknown，漂移拒绝，不自动 consume 或重试 publication。
+- 首次冻结 `ef7ee90` 的 macOS561项为560通过/1个旧 transport-only fixture失败；另外验收脚本误拆参数中含 `::` 的nodeid，原始材料保留 NOT_ACCEPTED。后继仅补齐旧fixture的新观察seam及repo外case-key解析，产品源码不变；最终双平台结果单独记录。
+- 四阶段持久化、只读核验与原生进程证据实现已完成，并经交叉源码审查；最终冻结双平台回归仍待完成。后续仍需自动终态证据组合/consume、serial successor 在线组合、真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle 和生产 CLI/Linux 验收。P2 继续后置；仅本地 inert/provider-free fixtures，public native BRS、`production_admission`、`online_publication` 保持关闭。
+
+以下为 PR125 的历史开发记录；该候选最终来源和验收以本节为准。
+
+# 当前后继开发（2026-10-17，exact mailbox result composition）
+
+- `codex/brs-exact-result-composition` 基于 PR124 冻结来源 `56745c2`，使用独立 worktree；主 checkout 的本地提交和未提交文档保持原样。
+- PR124 的最终 macOS Python3.11.15 / Linux Python3.12.3 各288个相同定向用例、Ruff/compileall/diff-check与产品/原始材料独审通过；旧 `c0c7238` Linux284通过/4个fixture失败单独保留 NOT_ACCEPTED。PR123/124完整33-job CI仍排队，均未合入 main。
+- 本轮契约为 [exact-mailbox-result-composition.md](specs/196-brs-owner-worker-handoff/exact-mailbox-result-composition.md)：把原 owner mailbox 的三字段私有摘要升级为现有 exact result envelope，冻结原 handoff/request，直接复用既有builder与worker parser，返回已交付的同一份bytes。
+- 原 worker 可使用既有 one-shot detached callback gate；callback成功不等于controller settlement、自然episode终态、native result或process cleanup。恢复义务始终保留，未知结果不重试。
+- 原native BRS all-rejected拒绝继续保留，不为builder的纯DTO rejection支持伪造C1/P/C2、ready ACK或legacy selected-return。
+- 首次冻结 `9436283` 的 macOS/Linux 各213项回归均为140通过/73失败，原始材料保留 `NOT_ACCEPTED`；新增 projection-method 指纹列表68项超过既有solver-settings每容器64项上限。后继只按canonical模块分组，保留所有指纹与原容量限制，并通过实际fingerprint规范化验证；不能把旧结果计为通过。
+- 当前为开发状态；最终来源双平台结果另行记录。仅本地 inert/provider-free fixture；public native BRS、`production_admission`、`online_publication`继续关闭。自动终态observer/consume、durable mailbox/process profile capture及真实runtime/project/CLI验收仍开放。
+
+以下为 PR124 的历史实现记录。
+
+# 当前后继开发（2026-10-17，original owner mailbox registration）
+
+- `codex/brs-owner-lifecycle` 基于 PR123 冻结 head `96a7394`，使用独立 worktree，不改主 checkout 或 PR123 源码。
+- PR123 的 macOS Python3.11/Linux Python3.12 各374项定向回归、静态检查和独立审查已通过；完整33-job Actions仍排队，尚未合入 main。本后继不能代替该门槛。
+- 本轮按 Feature196 [owner-mailbox-reconcile-registration.md](specs/196-brs-owner-worker-handoff/owner-mailbox-reconcile-registration.md) 接入原 owner 的一次性恢复义务登记，并在私有 mailbox composition 的 publication 事务前自动调用。
+- 只允许原 running run/episode、started claim、plan、线程/锁、handoff 与原 head/state；事务内校验原 pins，只追加 obligation。完整相邻读回和 source/control 复验成功后才一起推进原 owner/wave 游标，不刷新 handoff capture。
+- 任意不确定写入保留 durable obligation、旧本地 capture 与 poisoned owner，不重试。publication 成功仍保留义务，终态消费继续要求独立完整证据。
+- 本轮不声称覆盖 producer 首次执行前登记，也不把 executor join 当成 producer cleanup；直接私有 native-dispatch primitive、自动终态恢复、真实 runtime/producer/CLI 和 P2 继续各按其既有边界处理。
+- 当前为开发状态；本轮最终冻结来源、macOS/Linux 回归与独立审查结果在 PR 和本地原始材料中另行记录。仅本地 inert/provider-free fixtures；public native BRS、`production_admission`、`online_publication` 继续关闭。
+- 首次 `c0c7238` 的 macOS288项通过；Linux首次回归出现 inert worker 的90秒等待超时，原始失败材料单独保留，不计通过。后继仅将该 fixture 生命周期绑定到 `finally` 显式释放，并把初始化也纳入清理；产品预算、时钟和源码不变，最终双平台验收绑定新冻结来源。
+
+以下为上轮冻结候选的记录。
+
+# 前一候选（2026-10-17，BRS recovery correctness）
+
+- 隔离分支 `codex/p1-recovery-final` 基于 `origin/main c18e1d5`；本候选尚未合入 main，不能以此前已合入的小 PR 或排队中的 CI 代替本候选验收。
+- 默认 `resume`、drive 和 finalization 现在同时检查本地 state 与最新 durable checkpoint；任何未消费 obligation 都返回 `rsi_brs_reconcile_required`，包括 unknown/settled phase。消费后的历史不会阻止终态只读 replay。
+- `rsi inspect` 沿用原输出结构，将最新未消费 obligation 纳入 `reconcile.required`，不探测进程、不写 ledger。
+- selected registration 核 owner thread、captured head/state；只允许相邻、无其他变化的精确重放。多条 obligation 保留各自的原 parent capture。
+- terminal consume 保留原 episode capture，校验合法后继、实际 ledger 终态、原 native claim/request/plan 与 canonical saved result。校验和 obligation removal/checkpoint CAS 在同一 SQLite 事务内；running 或未知状态不会被 DTO flags 清除。
+- 批量 facade 先校验 wire shape 与已知 keys，再逐项提交；后项失败不会回滚已提交项，调用方应读取剩余 obligation。见 Feature196 `reconcile-controller-consume.md` 和 `reconcile-default-recovery-gate.md`。
+- 本轮统一回归使用独立 own-editable macOS Python3.11 与服务器 Python3.12 环境，保存 collection、JUnit、import/source/tree、退出码及静态检查原始材料；GitHub 三版完整 CI 仍是单独门槛，queued 不算通过。
+- 当前仍缺真实 CPython/source/toolchain/sealed runtime，以及实际 OpenEvolve/Shinka lifecycle 和生产 CLI 验收；服务器现有 C fixture/wheel build 不能代替这些材料。public native BRS、`production_admission`、`online_publication` 继续关闭；P2 继续后置。
+- 主 checkout 的本地提交与未提交 `specs/160-rsi-learning-mode/p1-cli-producer-gap-report.md` 保留；不得为同步候选而 reset 或覆盖。
+
+以下条目是各自提交当时的历史状态；当前候选以本节和本 PR 的实际检查结果为准。
+
+# 历史状态（2026-10-17，P1 explicit reconcile resume seam）
 
 - PR115 已合入 `main`（`be73a52`）：controller-owned BRS reconcile phase CAS。
 - PR116 已合入 `main`（`0eacf72`）：selected handoff 后的显式 obligation registration，以及 owner-locked terminal reconcile consume；保留 captured parent head，使用 append 后 head 做 CAS。
