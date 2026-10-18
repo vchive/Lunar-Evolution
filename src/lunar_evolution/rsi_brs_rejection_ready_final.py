@@ -277,8 +277,18 @@ def _build_readers():
             return "opaque", marker, identity(declared)
         if some(kind(name) is not plain_str for name in fields):
             fail("shape_invalid")
+        hierarchy = type_get(declared, "__mro__")
+        hierarchy_domain = plain_tuple((identity(base), plain_tuple(
+            (name, identity(item)) for name, item in type_get(base, "__dict__").items()))
+                                       for base in hierarchy)
         values = []
         dictionary_descriptor = members.get("__dict__")
+        if kind(dictionary_descriptor) is not getset_type:
+            for base in hierarchy:
+                candidate = type_get(base, "__dict__").get("__dict__")
+                if kind(candidate) is getset_type:
+                    dictionary_descriptor = candidate
+                    break
         namespace = (dict_get(dictionary_descriptor, value, declared)
                      if kind(dictionary_descriptor) is getset_type else None)
         if namespace is not None and (kind(namespace) is not plain_dict
@@ -287,8 +297,6 @@ def _build_readers():
         namespace_domain = (None if namespace is None else
                             (identity(namespace), plain_tuple(ordering(namespace))))
         for name in ordering(fields):
-            if kind(name) is not plain_str:
-                fail("shape_invalid")
             descriptor = members.get(name)
             if kind(descriptor) is member_type:
                 item = member_get(descriptor, value, declared)
@@ -299,15 +307,24 @@ def _build_readers():
             values.append((name, frozen(item, depth + 1, remaining, seen)))
         return ("dto", marker, identity(declared),
                 plain_tuple((name, identity(item)) for name, item in members.items()),
-                namespace_domain, plain_tuple(values))
+                identity(hierarchy), hierarchy_domain, namespace_domain, plain_tuple(values))
 
     def binding(instance, name, deep=False):
         declared = kind(instance)
         if kind(declared) is not type or kind(name) is not plain_str:
             fail("instance_invalid")
         members = type_get(declared, "__dict__")
+        hierarchy = type_get(declared, "__mro__")
+        hierarchy_pins = plain_tuple((base, plain_tuple(type_get(base, "__dict__").items()))
+                                     for base in hierarchy)
         descriptor = members.get(name)
         dictionary_descriptor = members.get("__dict__")
+        if kind(dictionary_descriptor) is not getset_type:
+            for base in hierarchy:
+                candidate = type_get(base, "__dict__").get("__dict__")
+                if kind(candidate) is getset_type:
+                    dictionary_descriptor = candidate
+                    break
         if kind(descriptor) is member_type:
             namespace, value = None, member_get(descriptor, instance, declared)
         elif kind(dictionary_descriptor) is getset_type:
@@ -320,13 +337,18 @@ def _build_readers():
             fail("instance_invalid")
         return (instance, declared, plain_tuple(members.items()), name, descriptor,
                 dictionary_descriptor, namespace, value, frozen(value) if deep else None, deep,
-                None if namespace is None else plain_tuple(ordering(namespace)))
+                None if namespace is None else plain_tuple(ordering(namespace)), hierarchy, hierarchy_pins)
 
     def assert_binding(pin):
         (instance, declared, members, name, descriptor, dictionary_descriptor,
-         namespace, original, content, deep, namespace_domain) = pin
-        if kind(instance) is not declared:
+         namespace, original, content, deep, namespace_domain, hierarchy, hierarchy_pins) = pin
+        if kind(instance) is not declared or type_get(declared, "__mro__") is not hierarchy:
             fail("custody_drift")
+        for base, base_members in hierarchy_pins:
+            current_base = type_get(base, "__dict__")
+            if (length(current_base) != length(base_members)
+                    or some(current_base.get(key, missing) is not item for key, item in base_members)):
+                fail("declaration_drift")
         current_members = type_get(declared, "__dict__")
         if (length(current_members) != length(members)
                 or some(current_members.get(key, missing) is not value for key, value in members)):
@@ -409,7 +431,12 @@ def _build_readers():
             files[path] = observed
             return observed
 
-        for key, name in (("before_file_pin", "before-v2.json"), ("rejected_file_pin", "rejected.json")):
+        for key in ("before_file_pin", "rejected_file_pin"):
+            name = entry[key]["name"]
+            if (kind(name) is not plain_str
+                    or (key == "before_file_pin" and name not in ("before.json", "before-v2.json"))
+                    or (key == "rejected_file_pin" and name != "rejected.json")):
+                fail("original_file_pin_drift")
             pin_matches_file(add(lineage_path + name), entry[key])
         for pin in entry["snapshots"].values():
             pin_matches_file(add(lineage_path + pin["name"]), pin)
@@ -440,7 +467,8 @@ def _build_readers():
                 add(path, absent=True)
             else:
                 pin_matches_file(add(path), pin)
-        p_pin = entry.get("rejection_provenance", {}).get("file_pin")
+        provenance_entry = entry.get("rejection_provenance")
+        p_pin = provenance_entry.get("file_pin") if kind(provenance_entry) is plain_dict else None
         # C1 predates P, so the original writer pin lives in the confirmed C2.
         if p_pin is None:
             c2 = decode(owner._rejection_provenance_c2_capture[1])
@@ -505,13 +533,24 @@ def _build_readers():
                 raw = observe_file(path, max_material, retain=True)
                 if raw[:4] != observed[:4]:
                     fail("capture_drift")
-                value = decode(raw[4]).get(field)
+                document = decode(raw[4])
+                value = document.get(field)
                 relative = value.get("journal_relative_path") if kind(value) is plain_dict else value
                 if relative is not None:
                     if (kind(relative) is not plain_str or relative.startswith("/")
                             or some(part in ("", ".", "..") for part in relative.split("/"))):
                         fail("path_invalid")
-                    add(batch + "/" + relative, 128 * 1024 * 1024)
+                    retained = add(batch + "/" + relative, 128 * 1024 * 1024)
+                    info = retained[2]
+                    if field == "broker_evidence":
+                        if ((info[0], info[1], info[4], retained[3])
+                                != (*value["journal_file_identity"], value["journal_bytes"],
+                                    value["journal_sha256"])):
+                            fail("native_broker_journal_drift")
+                    elif ((info[4], retained[3])
+                            != (document["target_execution_snapshot_size"],
+                                document["target_execution_snapshot_sha256"])):
+                        fail("native_target_snapshot_drift")
         output_capture = observe_file(batch + "/native-trusted-output-capture.json", max_material, retain=True)
         for material in decode(output_capture[4])["materials"]:
             relative = material["path"]
@@ -526,7 +565,11 @@ def _build_readers():
                         material["ctime_ns"], material["sha256"])):
                 fail("native_output_material_drift")
         nonce = sha256(owner._native.attestation.nonce.encode("utf-8")).hexdigest()
-        add(workspace + "/evolution/producer-nonces/" + nonce + ".json", max_material)
+        nonce_path = workspace + "/evolution/producer-nonces/" + nonce + ".json"
+        try:
+            add(nonce_path, max_material)
+        except absent_error:
+            add(nonce_path, absent=True)
         add(str(owner._native.artifact.path), max_runtime)
         # Retain each concrete loaded Lunar source once. The existing policy
         # has already checked canonical source fingerprints before this call.
@@ -599,6 +642,9 @@ def _build_readers():
                 or fields != (capture[3][0], capture[3][1], stage[3][3], capture[4][2])):
             fail("staged_identity_drift")
         inflight_assert(owner._channel, stage)
+        namespace = object_get(owner._channel, "__dict__")
+        if kind(namespace) is not plain_dict or namespace.get("_rejection_ready_worker_guarded") is not True:
+            fail("worker_unguarded")
         ack_assert(ack, fields)
 
     def assert_impl(owner, capsule):

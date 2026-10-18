@@ -100,6 +100,33 @@ def test_timeout_consumes_arm_without_creating_pending_or_ack():
     assert not channel._queue and channel._requests == {}
 
 
+def test_armed_worker_guard_cannot_be_reset_before_service_observation():
+    owner, capture = _transport()
+    channel, errors = owner._channel, []
+
+    def reset_guard():
+        try:
+            with channel._condition:
+                while not channel._rejection_ready_worker_guarded:
+                    assert channel._condition.wait(5)
+                channel._rejection_ready_worker_guarded = False
+                channel._condition.notify_all()
+        except BaseException as error:  # noqa: BLE001 - retain thread outcome.
+            errors.append(error)
+
+    thread = Thread(target=reset_guard, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(RSILearningError, match="service_worker_guard_drift"):
+            service._take_ready(owner, capture, time.monotonic() + 5, (), ())
+    finally:
+        service._preserve_failure(owner, capture[2], None)
+        thread.join(5)
+    assert not thread.is_alive() and errors == []
+    assert owner._poisoned is True and channel._closed is True
+    assert not channel._queue and channel._requests == {}
+
+
 def _post_when_armed(channel, scope, release, results, errors):
     try:
         with channel._condition:

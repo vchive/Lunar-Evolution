@@ -203,6 +203,8 @@ def _take_ready(owner: object, capture: tuple, expiry: float,
             guard()
             sync.assert_ready_condition(condition[0], condition)
             namespace = queued._namespace(channel)
+            if namespace["_rejection_ready_worker_guarded"] is not True:
+                _fail("worker_guard_drift")
             queue = namespace["_queue"]
             if type(queue) is not deque or queue is not original[2]:
                 _fail("transport_identity_drift")
@@ -239,6 +241,8 @@ def validate_active_ready(owner: object, ready: object) -> tuple:
             or capsule[1] is not capture[2]):
         _fail("active_ready_required")
     state.assert_selected_ready_inflight(owner._channel, capsule)
+    if queued._namespace(owner._channel)["_rejection_ready_worker_guarded"] is not True:
+        _fail("worker_guard_drift")
     run, episode, payload, request_digest = capsule[3]
     expected = hashlib.sha256(b"lunar-rsi-python-brs-ready-v1\0" + run.encode("utf-8")
                               + b"\0" + episode.encode("utf-8") + b"\0" + payload).hexdigest()

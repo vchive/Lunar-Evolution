@@ -9,11 +9,13 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
+import test_rsi_brs_rejection_ready_state as inflight_tests
 
 from lunar_evolution import rsi_brs_rejection_ready_final as final
 from lunar_evolution.rsi_learning import RSILearningError
 
 _CORE = {function.__name__: function for function in final._FINAL_FUNCTIONS}
+queued = inflight_tests.queued
 
 
 def _file(tmp_path, raw=b"original\x00full bytes"):
@@ -218,6 +220,70 @@ def test_foreign_metaclass_equality_cannot_run_during_exact_type_checks(function
     assert not calls
 
 
+@pytest.mark.parametrize("hook", ["__getattribute__", "__setattr__"])
+def test_original_base_class_lookup_drift_refuses_without_callback(monkeypatch, hook):
+    class Base:
+        pass
+
+    @dataclass
+    class Holder(Base):
+        payload: object
+
+    value = Holder({"original": True})
+    pin = _CORE["binding"](value, "payload", True)
+    calls = []
+
+    def foreign(*_args):
+        calls.append("base lookup callback")
+        raise AssertionError
+
+    monkeypatch.setattr(Base, hook, foreign, raising=False)
+    with pytest.raises(RSILearningError, match="declaration_drift"):
+        _CORE["assert_binding"](pin)
+    assert not calls
+
+
+def test_nested_dto_frozen_observation_includes_original_base_declarations(monkeypatch):
+    class Base:
+        pass
+
+    @dataclass
+    class Holder(Base):
+        payload: object
+
+    value = Holder({"original": True})
+    original = _CORE["frozen"](value)
+    calls = []
+
+    def foreign(*_args):
+        calls.append("base lookup callback")
+        raise AssertionError
+
+    monkeypatch.setattr(Base, "__getattribute__", foreign, raising=False)
+    assert _CORE["frozen"](value) != original
+    assert not calls
+
+
+def test_foreign_dataclass_field_key_is_refused_before_sorting(monkeypatch):
+    calls = []
+
+    class Foreign:
+        def __lt__(self, _other):
+            calls.append("field ordering")
+            raise AssertionError
+
+        def __gt__(self, _other):
+            calls.append("field ordering")
+            raise AssertionError
+
+    fields = dict(_DTO.__dataclass_fields__)
+    fields[Foreign()] = object()
+    monkeypatch.setattr(_DTO, "__dataclass_fields__", fields)
+    with pytest.raises(RSILearningError, match="shape_invalid"):
+        _CORE["frozen"](_DTO({"original": True}))
+    assert not calls
+
+
 def _tail(deadline):
     owner = SimpleNamespace(
         _poisoned=False, _phase="rejected-provenance", _retaining_before=False,
@@ -270,3 +336,19 @@ def test_staged_tail_refuses_equal_reconstructed_identity_before_transport_dispa
     capture = (None, None, condition, scope, (None, None, "a" * 64), b"payload")
     with pytest.raises(RSILearningError, match="staged_identity_drift"):
         _CORE["staged_tail"](owner, capture, stage, ack, fields)
+
+
+def test_final_tail_requires_original_worker_guard_before_ack(queued):
+    with inflight_tests._inflight(queued) as (stage, pending):
+        fields = inflight_tests._fields(stage)
+        ack = inflight_tests.ack_graph.build_rejection_ready_ack(fields)
+        owner = SimpleNamespace(
+            _rejection_ready_stage=stage, _rejection_ready_ack=ack,
+            _rejection_ready_ack_fields=fields, _rejection_ready_state="inflight",
+            _rejection_ready_commit_started=False, _channel=queued[0])
+        capture = (None, None, stage[1], stage[0], (None, None, fields[3]), stage[3][2])
+        assert queued[0].__dict__["_rejection_ready_worker_guarded"] is False
+        with pytest.raises(RSILearningError, match="worker_unguarded"):
+            _CORE["staged_tail"](owner, capture, stage, ack, fields)
+        assert pending.ack is None and pending.ack_fields is None
+        assert queued[4] == []
