@@ -1436,6 +1436,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_rejection_provenance_sha256",
         "_rejection_ready_capture",
         "_rejection_ready_capture_started",
+        "_rejection_ready_locks_capture",
         "_rejection_ready_sync_capture",
         "_request",
         "_retaining_before",
@@ -1566,6 +1567,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._rejection_provenance_deadline = self._rejection_provenance_file_pin = None
         self._rejection_provenance_evidence = self._rejection_provenance_sha256 = None
         self._rejection_ready_capture_started, self._rejection_ready_capture = False, None
+        self._rejection_ready_locks_capture = None
         self._rejection_ready_sync_capture = None
         from .rsi_native_scheduler import _read_ledger_identity
         self._rejection_ledger_identity = (None if self._native is None else

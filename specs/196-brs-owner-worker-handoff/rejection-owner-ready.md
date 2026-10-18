@@ -15,6 +15,37 @@ The connected pre-arm implementation is specified separately in
 [rejection-ready-capture.md](rejection-ready-capture.md). Its one-shot capture is not
 arming and does not implement the staged ACK interfaces or final-reader contract below.
 
+### Implemented staged-ACK prerequisites — 2026-10-18
+
+The successor adds three bounded readers and removes a mutable URI dependency; it
+does not enable the dedicated service interfaces below. The pre-arm owner now retains
+the exact controller observation RLock, ledger controller-guard RLock and optional
+execution-control RLock, their original namespaces and capturing thread. Those locks
+are comparison data: capture/assert neither acquire them nor prove a controller lease.
+The capsule is retained once in `_rejection_ready_locks_capture`, included in owner
+custody and rechecked through the existing pre-arm semantic/material bracket.
+
+The ACK helper independently guards the original generated constructor, post-init,
+identity/digest/error helpers, native slots, dataclass metadata, closure cells and
+declared runtime/builtin aliases. It can build or check a detached ACK with four exact
+strings; it never attaches one to a pending request. The original worker `request`
+root code is held, but the integrity check after its external worker callback and
+immediately before its return-ACK constructor is still a required successor change.
+
+Passive inflight/committed readers compare the same original queued capsule, pending,
+ready and containers after a transition performed elsewhere. They do not arm, dequeue,
+commit or clear any field, validate original admission/material semantics, or prove
+worker receipt. Their transition fixtures use natural worker enqueue plus fixture-only
+state assignments; they do not exercise a production staged-ACK service.
+
+The raw SQL reader now uses bounded stateless UTF-8 percent encoding with the same
+safe bytes as `quote(path, safe="/")`. SQLite remains non-creating and read-only; the
+six-table/schema inventory and capacities are unchanged. The capture policy holds the
+new reader/guard functions, local state-reader graph and original closure cells, and
+no longer depends on urllib's mutable quoter cache. This is not the complete physical
+final-reader graph. Full service, one-shot transport transitions, final physical and
+deadline gates, permanent partial-ACK retention and actual receipt remain P0 below.
+
 After its own confirmed ordinal-zero C2/P, the exact original
 `_BRSLineageCheckpointOwner` may acknowledge one actual ready request from its original
 selected worker against the existing admission record. Preserve the original owning

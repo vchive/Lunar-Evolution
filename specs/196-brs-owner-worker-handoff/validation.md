@@ -1,5 +1,68 @@
 # Feature 196 validation plan
 
+## Staged-ACK prerequisites — 2026-10-18
+
+This successor validates bounded primitives and their pre-arm wiring. It does not
+validate a staged service, ACK visibility, permanent partial assignment, actual worker
+receipt, the full physical final-reader graph or public native BRS.
+
+| Source / scope | Recorded result | Boundary |
+| --- | --- | --- |
+| PR133 original-owner pre-arm capture | Matching macOS/Linux inventories: 544 cases each passed; independent product/raw/source/import review passed | No arm, dequeue or ACK. Full CI/main integration pending. |
+| PR134 SQLite scratch-path fixture race fix | 10 focused cases passed | Fixture-only scope; full CI/main integration pending. |
+| Current staged-ACK prerequisites | New lock/ACK/state/URI component cases and connected pre-arm lock-replacement cases are implemented; final frozen evidence is pending | Do not combine earlier-source counts into this acceptance or claim a complete ACK service. |
+
+Development component scope:
+
+```bash
+PYTHONPATH=src:tests python -m pytest -q \
+  tests/test_rsi_brs_rejection_ready_locks.py \
+  tests/test_rsi_brs_rejection_ready_ack.py \
+  tests/test_rsi_brs_rejection_ready_state.py \
+  tests/test_rsi_brs_rejection_ready_ledger.py \
+  tests/test_rsi_brs_rejection_ready_policy.py
+ruff check src tests tools
+python -m compileall -q src tests tools
+git diff --check
+```
+
+Freeze the complete source before genuine owner tests, then include
+`test_rsi_brs_rejection_ready_owner.py`, existing reference/sync/channel readers,
+original admission/handoff and original provenance-policy regression inventory.
+Collect the exact ordered node IDs from that frozen checkout; independent groups
+must form the same complete disjoint union on both platforms. Each installed editable
+environment must import its own frozen checkout, preserve source before/after and
+record collection/pytest/static exits and zero-failure/error/skip JUnit. Component
+tests must not be presented as genuine original-owner or actual worker ACK evidence.
+
+Required current assertions:
+
+- Original controller observation/ledger guard/optional control RLocks and namespaces
+  are retained before callbacks. Replacing any one during genuine pre-arm validation
+  refuses, poisons and retains the old capsule. Pure capture/assert do not acquire a
+  lock or wait for another thread holding it, and confer no controller lease.
+- ACKs are detached exact DTOs over four plain strings. Alias/code/default/closure/
+  metadata/dataclass/slot/regex/runtime mutations refuse before foreign callbacks;
+  changed Python error initializers are bypassed by the refusal allocation path.
+- Passive state readers retain the natural original queued pending/ready/container
+  identities after fixture-only transitions. They reject reconstructed pending/ACK/
+  field tuples and never clear retained evidence. These fixture assignments do not
+  test production transition order, permanent ACK retention or actual receipt.
+- Stateless URI encoding preserves strict UTF-8, the existing 4096-codepoint bound,
+  slash and unreserved ASCII, encodes reserved/Unicode bytes, and rejects foreign
+  path subclasses before operations. Real special-character SQLite files remain
+  read-only before `query_only`; poisoning the old quoter cache has no effect.
+- The outer policy holds all new exported closures and declared state local readers;
+  pre-arm checks observe the ACK graph and original lock capsule without publishing
+  anything. Existing six-table/schema/capacity, P/inode, budget/claim/result/publication
+  and old empty-channel refusals remain intact.
+
+Successor P0 acceptance must additionally cover the exact-owner one-shot service,
+staged transport and last-gate ACK visibility, worker callback-to-constructor re-entry
+guard, finite physical/deadline tail and pre/postassignment failure retention. Public
+native BRS, `production_admission` and `online_publication` remain closed. Only local
+inert/provider-free fixtures are permitted; no real solver, WebAgent or remote evaluator.
+
 ## PB-03a checkpoint delta/readback extraction
 
 Final product/test source `3c0d74e7f97c7e98a8f4e68bcc439275e272dd8f`, tree

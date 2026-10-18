@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 import sqlite3
 from typing import NoReturn
-from urllib.parse import quote
 
 from .producer_bundle_lineage import MAX_LINEAGE_SNAPSHOT_BYTES
 from .rsi_learning import RSILearningError
@@ -61,6 +60,25 @@ def _path(value: object) -> str:
     except UnicodeError:
         _fail("path_invalid")
     return value
+
+
+def _readonly_uri(value: object) -> str:
+    """Encode only a bounded original absolute path, without mutable quote caches.
+
+    The safe bytes match ``quote(path, safe="/")``: ASCII alphanumerics,
+    ``_.-~`` and slash. UTF-8 is strict, and every other byte is independently
+    percent encoded, so path query/fragment characters cannot alter ``mode=ro``.
+    """
+    path = _path(value)
+    parts = []
+    for byte in path.encode("utf-8"):
+        if (65 <= byte <= 90 or 97 <= byte <= 122 or 48 <= byte <= 57
+                or byte in b"_.-~/"):
+            parts.append(chr(byte))
+        else:
+            parts.append("%" + "0123456789ABCDEF"[byte >> 4]
+                         + "0123456789ABCDEF"[byte & 15])
+    return "file:" + "".join(parts) + "?mode=ro"
 
 
 def _identifier(value: object) -> str:
@@ -149,7 +167,7 @@ def _read(path: str, run_id: str, episodes: tuple[str, ...],
           held: _Snapshot | None) -> tuple[tuple[_Row, ...], _Groups]:
     connection = None
     try:
-        connection = sqlite3.connect("file:" + quote(path, safe="/") + "?mode=ro",
+        connection = sqlite3.connect(_readonly_uri(path),
                                      uri=True, timeout=30.0, isolation_level=None)
         connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _MAX_ROW_BYTES)
         connection.execute("PRAGMA query_only = ON")

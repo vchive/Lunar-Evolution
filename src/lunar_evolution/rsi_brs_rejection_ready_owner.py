@@ -11,7 +11,9 @@ import hashlib
 import json
 
 from . import rsi_brs_rejection_provenance as provenance
+from . import rsi_brs_rejection_ready_ack as ack_graph
 from . import rsi_brs_rejection_ready_ledger as raw_ledger
+from . import rsi_brs_rejection_ready_locks as locks
 from . import rsi_brs_rejection_ready_reference as reference
 from . import rsi_brs_rejection_ready_sync as sync
 from .candidate_evaluation_spec import canonical_json
@@ -26,7 +28,7 @@ _CAPTURES = (
     "_rejection_provenance_evidence", "_rejection_provenance_sha256",
     "_rejection_provenance_file_pin", "_budget_bytes", "_handoff_bytes",
     "_selected_context_bytes", "_run_head", "_episode_head", "_head", "_payload", "_policy_bytes",
-    "_rejection_ready_sync_capture",
+    "_rejection_ready_locks_capture", "_rejection_ready_sync_capture",
 )
 _CONTROLLER_READERS = (*reference._CONTROLLER_READERS,
     "_python_admission_active_brs_owner", "_python_admission_assert_selected_brs",
@@ -64,6 +66,9 @@ def _assert_custody(owner, held: tuple) -> None:
         _fail("custody_drift")
     reference._shadows(owner._controller, RSILearningController, _CONTROLLER_READERS)
     reference._shadows(owner._ledger, RSILedger, reference._LEDGER_READERS)
+    locks.assert_rejection_ready_locks(owner._controller, owner._ledger, owner._before_control,
+                                     owner._rejection_ready_locks_capture)
+    ack_graph.assert_rejection_ready_ack_graph()
     provenance._allowance(owner)
     if RSILearningController._python_admission_flow_payload(owner._state) != owner._payload:
         _fail("original_c2_drift")
@@ -127,9 +132,13 @@ def retain_rejection_ready_capture(self) -> None:
             _fail("policy_drift")
         _owner(self)
         if (self._rejection_ready_capture_started is not False
-                or self._rejection_ready_capture is not None or self._rejection_ready_sync_capture is not None):
+                or self._rejection_ready_capture is not None or self._rejection_ready_sync_capture is not None
+                or self._rejection_ready_locks_capture is not None):
             _fail("capture_already_consumed")
         self._rejection_ready_capture_started = True
+        self._rejection_ready_locks_capture = locks.capture_rejection_ready_locks(
+            self._controller, self._ledger, self._before_control)
+        ack_graph.assert_rejection_ready_ack_graph()
         # Do not invoke the old Condition context before checking native custody.
         condition_capture = sync.capture_ready_condition(self._before_channel_condition)
         self._rejection_ready_sync_capture = condition_capture
