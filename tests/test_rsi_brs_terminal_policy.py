@@ -8,8 +8,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import pytest
 
 from lunar_evolution import rsi_brs_terminal_evidence as composer
+from lunar_evolution import rsi_python_brs_admission as admission
 from lunar_evolution import rsi_python_brs_terminal_lifecycle as terminal
 from lunar_evolution.rsi_brs_publication_lineage import _policy
+from lunar_evolution.rsi_controller import RSILearningController
 from lunar_evolution.rsi_learning import RSILearningError
 
 
@@ -43,9 +45,28 @@ def _replacement(*_args, **_kwargs):
     (threading.Condition, "__enter__"),
     (threading.Condition, "__exit__"),
     (threading, "get_ident"),
+    (RSILearningController, "_reconcile_brs_terminal_locked"),
 ])
 def test_terminal_runtime_method_replacement_invalidates_policy(monkeypatch, original_policy, target, name):
     monkeypatch.setattr(target, name, _replacement)
+    _assert_drift(original_policy)
+
+
+@pytest.mark.parametrize("name", ["BRSAdmissionAck", "BRSAdmissionChannel", "build_brs_admission_ready"])
+def test_terminal_admission_alias_replacement_refuses_before_runtime(monkeypatch, original_policy, name):
+    monkeypatch.setattr(terminal, name, _replacement)
+    with pytest.raises(RSILearningError, match="^rsi_brs_publication_lineage_native_reader_binding_drift$"):
+        _policy()
+
+
+def test_canonical_admission_ready_code_change_invalidates_policy(monkeypatch, original_policy):
+    builder = admission.build_brs_admission_ready
+
+    def changed(run_id, episode_id, payload):
+        raise AssertionError("policy fingerprinting must not execute the changed ready builder")
+
+    monkeypatch.setattr(builder, "__code__", changed.__code__)
+    assert terminal.build_brs_admission_ready is builder
     _assert_drift(original_policy)
 
 

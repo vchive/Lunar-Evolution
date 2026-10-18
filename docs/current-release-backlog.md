@@ -1,3 +1,21 @@
+## 2026-10-18 当前执行清单
+
+当前开发按以下出口推进；组件测试通过、最终来源验收、完整CI与main合入分别记录。
+
+| 优先级 | 连续交付结果 | 当前状态 |
+| --- | --- | --- |
+| P0 | 原rejected owner自然ready/ACK | PR136最终`c445a612`同库存1,079项在macOS/Linux各全过，独立source/import/raw复核通过，PR已ready；完整CI/main待完成。 |
+| P0 | 单原始ordinal拒绝到root结算/owner退出与明确恢复 | `codex/brs-rejected-lifecycle`已接通自然拒绝/ACK/mailbox/failed result与原子root结算；修复live恢复重入flock。14项集成场景、组件兼容、独立复核及完整CI仍待最终同源结果。 |
+| P0 | 原整wave reservation下的serial continuation | 仍需新child原始绑定、append lineage、逐episode sidecar、无重复预算和partial-wave恢复；不能把已有detached successor当作完成。 |
+| P1 | 实际sealed Python runtime、一个项目再第二个、生产CLI | source/installation/build/startup/input/handoff比较器和adapter/exporter已有；真实输入、实物构建/运行证据、项目lifecycle及CLI验收仍未完成。 |
+| P2 | 多机ownership、外部认证、分布式调度和remote evaluator | 后置，不进入当前开发批次。 |
+
+PR136接受材料已封存在主checkout ignored
+`.lunar-evolution/validation/rejection-staged-ack-20261018-llo7u7ne/`。
+当前行为开发的失败和固定源码副本记录在
+`.lunar-evolution/validation/rejected-lifecycle-dev-20261018/`，不得混算为最终验收。
+公开native BRS、`production_admission`、`online_publication`保持关闭。
+
 # Current release backlog — 2026-10-18
 
 ## 当前后继：原 BRS owner 拒绝 C1

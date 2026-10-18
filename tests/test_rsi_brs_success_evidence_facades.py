@@ -288,7 +288,9 @@ def test_new_live_precommit_dependencies_refuse_foreign_globals(monkeypatch, ent
     original = getattr(target, name)
     clone = FunctionType(original.__code__, dict(original.__globals__), original.__name__, original.__defaults__, original.__closure__)
     monkeypatch.setattr(target, name, clone)
-    with pytest.raises(RSILearningError, match="native_reader_globals_drift"):
+    expected = ("^rsi_brs_publication_lineage_native_reader_binding_drift$"
+                if entry == "read" else "native_reader_globals_drift")
+    with pytest.raises(RSILearningError, match=expected):
         brs._policy()
 
 

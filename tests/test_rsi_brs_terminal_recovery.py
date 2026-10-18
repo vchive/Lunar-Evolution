@@ -334,7 +334,7 @@ def test_explicit_consume_rechecks_root_pins_after_fresh_composition(tmp_path, m
     original = value.ledger._consume_brs_reconcile_obligation
     observed = []
 
-    def racing_consume(run_id, episode_id, evidence, *, expected_pins=None):
+    def racing_consume(run_id, episode_id, evidence, *, expected_pins=None, settled_execution=None):
         assert expected_pins is not None
         head, state = value.ledger.controller_checkpoint(run_id)
         assert expected_pins["root_checkpoint_sha256"] == head
@@ -342,7 +342,8 @@ def test_explicit_consume_rechecks_root_pins_after_fresh_composition(tmp_path, m
         # A legitimate adjacent root append between the independent read and
         # consume must invalidate that read, even when its payload is equal.
         value.ledger.write_controller_checkpoint(run_id, state, expected_sha256=head)
-        return original(run_id, episode_id, evidence, expected_pins=expected_pins)
+        return original(run_id, episode_id, evidence, expected_pins=expected_pins,
+                        settled_execution=settled_execution)
 
     monkeypatch.setattr(value.ledger, "_consume_brs_reconcile_obligation", racing_consume)
     before = value.ledger.controller_brs_reconcile_obligations(value.binding.run_id)

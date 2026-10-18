@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import json
+import stat
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
 
@@ -22,6 +25,7 @@ from lunar_evolution.rsi_brs_terminal_evidence import (
     PROTOCOL,
     _digest,
     _ledger_terminal,
+    _publication,
     inspect_brs_terminal_observation,
     parse_brs_terminal_observation,
 )
@@ -324,3 +328,139 @@ def test_missing_claim_or_saved_result_never_derives_terminal(capture, missing):
     snapshot, obligation = _terminal_snapshot(capture)
     snapshot[missing] = None
     assert _ledger_terminal(snapshot, obligation, capture.binding) is None
+
+
+@contextmanager
+def _rejected_publication_fixture(tmp_path, monkeypatch, *, count=1):
+    """Real original C1/P/C2 with inert process/evaluator boundaries only."""
+    import test_rsi_brs_rejection_provenance as rejection
+
+    with monkeypatch.context() as patch:
+        rejection.inert_only.__wrapped__(patch)
+        rejection.sealed_launch.__wrapped__(patch)
+        with rejection.c1._waiting(tmp_path, patch, count=count) as value:
+            value.owner.retain_rejected_terminal(value.terminal)
+            value.owner.retain_rejection_provenance()
+            value.publication = {
+                "lineage": deepcopy(value.wave.state["producer_publication_lineage"]),
+                "journal": value.terminal.to_dict(), "manifest": None,
+            }
+            value.mailbox_binding = {
+                "run_id": value.binding.run_id, "episode_id": value.episode_id,
+                "selected_request_sha256": value.request.digest(),
+                "native_plan_sha256": value.plan.plan_sha256,
+                "native_claim_sha256": value.owner._claim.claim_sha256,
+            }
+            with value.ledger.read_only_observations():
+                value.roots = value.ledger.controller_checkpoint_history(value.binding.run_id)
+            yield value
+
+
+def _rejected_read(value, *, publication=None, roots=None, ledger=None):
+    return _publication(
+        value.workspace, value.publication if publication is None else publication,
+        value.mailbox_binding, value.roots if roots is None else roots,
+        ledger=value.ledger if ledger is None else ledger,
+    )
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_rejected_publication_reobserves_original_c1_p_c2_without_writes(tmp_path, monkeypatch, count):
+    import test_rsi_brs_rejection_provenance as rejection
+    from test_rsi_python_admission import _rows
+
+    with _rejected_publication_fixture(tmp_path, monkeypatch, count=count) as value:
+        original = rejection.c1.owner_fixture._capture(value)
+        files = rejection.c1._native_material_snapshot(value)
+        rows = _rows(value)
+        assert _rejected_read(value) == value.terminal.digest()
+        assert _rejected_read(value) == value.terminal.digest()
+        assert _rows(value) == rows
+        assert rejection.c1._native_material_snapshot(value) == files
+        rejection.c1.owner_fixture._unchanged(value, original)
+        rejection.c1._quiet(value)
+        assert value.publication["manifest"] is None
+
+
+def test_rejected_publication_requires_complete_adjacent_original_checkpoints(tmp_path, monkeypatch):
+    with _rejected_publication_fixture(tmp_path, monkeypatch) as value:
+        index = next(index for index, (head, _state) in enumerate(value.roots)
+                     if head == value.owner._rejection_c1_capture[0])
+        cases = []
+        for missing in (index - 1, index, index + 1):
+            cases.append(value.roots[:missing] + value.roots[missing + 1:])
+        for changed in (index, index + 1):
+            roots = deepcopy(value.roots)
+            roots[changed][1]["budget_state"]["fixture_drift"] = 1
+            cases.append(roots)
+        # A later checkpoint with identical C1 bytes cannot replace P's exact head.
+        roots = deepcopy(value.roots)
+        roots[index] = (OTHER, roots[index][1])
+        cases.append(roots)
+        for roots in cases:
+            with pytest.raises((RSILearningError, ValueError)):
+                _rejected_read(value, roots=roots)
+
+
+def test_rejected_publication_requires_no_manifest_and_original_provenance(tmp_path, monkeypatch):
+    with _rejected_publication_fixture(tmp_path, monkeypatch) as value:
+        for field in ("manifest", "provenance", "journal", "head", "ordinal"):
+            publication = deepcopy(value.publication)
+            entry = publication["lineage"]["batches"][0]
+            if field == "manifest":
+                publication["manifest"] = {}
+            elif field == "provenance":
+                entry["rejection_provenance"] = None
+            elif field == "journal":
+                publication["journal"] = value.journal.to_dict()
+            elif field == "head":
+                publication["lineage"]["head"] = {"journal_id": value.plan.journal_id}
+            else:
+                entry["ordinal"] = 1
+            roots = deepcopy(value.roots)
+            roots[-1][1]["producer_publication_lineage"] = publication["lineage"]
+            with pytest.raises((RSILearningError, ValueError)):
+                _rejected_read(value, publication=publication, roots=roots)
+        with pytest.raises(RSILearningError, match="rejection_provenance_required"):
+            _publication(value.workspace, value.publication, value.mailbox_binding, value.roots)
+
+
+@pytest.mark.parametrize("target", ["provenance", "rejected", "journal", "retained", "population"])
+def test_rejected_publication_refuses_same_bytes_replaced_original_inodes(tmp_path, monkeypatch, target):
+    from lunar_evolution.rsi_native_rejection import NATIVE_RSI_REJECTION_PROVENANCE_NAME
+
+    with _rejected_publication_fixture(tmp_path, monkeypatch) as value:
+        if target == "provenance":
+            path = value.batch / NATIVE_RSI_REJECTION_PROVENANCE_NAME
+        elif target == "rejected":
+            path = value.batch / "lineage/rejected.json"
+        elif target == "journal":
+            path = value.batch / "journal.json"
+        elif target == "population":
+            path = value.workspace / "evolution/state.json"
+        else:
+            candidate = value.terminal.candidates[0].candidate_id
+            table = json.loads((value.batch / "rejections" / (candidate + ".json")).read_bytes())["retained_evidence"]
+            relative = next(item["path"] for item in table["entries"]
+                            if item["kind"] == "file" and "/source/" in item["path"])
+            path = value.workspace / relative
+        raw, mode = path.read_bytes(), stat.S_IMODE(path.stat().st_mode)
+        path.rename(path.with_name(path.name + ".original"))
+        path.write_bytes(raw)
+        path.chmod(mode)
+        with pytest.raises((RSILearningError, ValueError)):
+            _rejected_read(value)
+
+
+def test_rejected_publication_never_backfills_missing_p_or_adopts_another_ledger(tmp_path, monkeypatch):
+    from lunar_evolution.rsi_native_rejection import NATIVE_RSI_REJECTION_PROVENANCE_NAME
+
+    with _rejected_publication_fixture(tmp_path, monkeypatch) as value:
+        other = RSILedger(tmp_path / "other-ledger.sqlite3")
+        with pytest.raises(RSILearningError, match="rejection_provenance_drift"):
+            _rejected_read(value, ledger=other)
+        path = value.batch / NATIVE_RSI_REJECTION_PROVENANCE_NAME
+        path.rename(path.with_name(path.name + ".original"))
+        with pytest.raises(ValueError):
+            _rejected_read(value)
+        assert not path.exists()

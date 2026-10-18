@@ -1,3 +1,35 @@
+# 当前开发（2026-10-18，单个原始 ordinal 的拒绝生命周期）
+
+- 前置 staged ACK 最终 `c445a612` 已完成同库存 macOS Python3.11.15 / Linux
+  Python3.12.3 各1,079项（0失败/错误/跳过），2,157源码与每平台124份原始材料、
+  source/import/raw独立审查通过。PR136已ready，尚未合main；完整33-job CI和依赖
+  合入仍待完成。封存材料：主checkout ignored validation/
+  `rejection-staged-ack-20261018-llo7u7ne`，不得继续改写该目录。
+- 当前隔离树为 `codex/brs-rejected-lifecycle`，基于上述来源。并行实现一个原selected
+  ordinal的actual rejection dispatch→C1/P/C2→自然ready/ACK→mailbox result→failed
+  episode/result→原子root execution/fence消费→owner retirement，以及显式中断恢复。
+  契约为Feature196 `rejected-owner-lifecycle.md`；public入口和生产门槛保持关闭。
+- 开发首失败均保留：macOS fixture缺声明的target snapshot、policy重复使run行超
+  128KiB、ACK后mailbox误走empty-channel gate，以及live root恢复重复获取原flock。
+  已修这些接线；原public恢复仍获取一次不可重入锁，live路径仅复用原held lease。
+  新fixture的failed SolverResult必填字段遗漏也已修，不作为产品故障。
+- snapshot4的Mac开发记录中，单/双候选拒绝、callback unknown、fresh-controller
+  root恢复、native unknown和相邻root race共6项通过；该source的live root因上述
+  flock问题失败。后续源码还补齐新增ready依赖身份/代码固定、3个真实锁用例和
+  4个root写入/退出中断用例。最终来源14项集成用例及组件兼容回归仍待统一验证，
+  不累计旧source通过数。额外诊断faulthandler选项下Linux有exit-11未归因，raw保留，
+  最终须按正常pytest入口重验。CI另修2项精确错误码预期与只读审计SQLite-shm路径。
+- 长测试改用固定源码开发副本和其自有editable venv；主开发树可以同时修改。
+  当前开发raw及snapshot记录在主checkout ignored validation/
+  `rejected-lifecycle-dev-20261018`。最终提交后仍需独立冻结验收/完整CI。
+- 后继P0为reserved-wave serial continuation（新child绑定、append lineage、预算
+  不重复计数、partial-wave恢复）；P1为真实sealed CPython/toolchain、OpenEvolve/
+  Shinka项目lifecycle和生产CLI验收。P2/多机/外部认证/remote evaluator继续后置。
+  仅本地inert/provider-free fixtures，允许5090gpu跑CPU回归；不运行真实model/solver、
+  WebAgent或远程/公司evaluator。主checkout用户修改继续原样保留。
+
+以下保留前置开发记录；以各来源最终证据为准。
+
 # 当前后继开发（2026-10-18，原 rejected owner 的 staged ACK 服务）
 
 - 隔离分支 `codex/brs-rejection-staged-ack` 从 PR135 冻结 `e45c11c` 继续，

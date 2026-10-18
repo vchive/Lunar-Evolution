@@ -21,6 +21,7 @@ from .rsi_learning import RSILearningError
 from .rsi_python_brs_handoff import BRSSelectedChildHandoff
 from .rsi_python_brs_native_dispatch import (
     _original_control,
+    _rejection_committed,
     _run_original_brs_native_publication,
 )
 from .rsi_python_brs_publication_mailbox import (
@@ -102,6 +103,7 @@ def run_brs_owner_publication_mailbox(
     *,
     check: Callable[[], None],
     timeout: float = 0.05,
+    _terminal_lifecycle: object = None,
 ) -> BRSOwnerMailboxBridgeResult:
     """Serve one selected-worker request on the original owner thread.
 
@@ -144,7 +146,10 @@ def run_brs_owner_publication_mailbox(
             _original_control(owner)
             # Mailbox check callbacks run outside its condition. Recheck the original
             # source/policy and running claim before both dispatch and byte delivery.
-            _BRSLineageCheckpointOwner._success_fixed(owner)
+            if owner._rejection_ready_state == "committed":
+                _rejection_committed(owner)
+            else:
+                _BRSLineageCheckpointOwner._success_fixed(owner)
 
         def handle(request: BRSOwnerPublicationRequest) -> bytes:
             if type(request) is not BRSOwnerPublicationRequest:
@@ -163,6 +168,15 @@ def run_brs_owner_publication_mailbox(
             result = _run_original_brs_native_publication(
                 owner, request, original_preparation=original_preparation,
             )
+            if result.publication_status == "all_rejected":
+                from .rsi_python_brs_terminal_lifecycle import BRSOwnerTerminalLifecycle
+
+                if (type(_terminal_lifecycle) is not BRSOwnerTerminalLifecycle
+                        or _terminal_lifecycle._owner is not owner
+                        or _terminal_lifecycle._mailbox is not mailbox):
+                    _fail("rejection_lifecycle_required")
+                BRSOwnerTerminalLifecycle._service_rejection_admission(_terminal_lifecycle, timeout=timeout)
+                _rejection_committed(owner)
             # Native execution receives its own request DTO. Build against the
             # immutable entry capture, never that DTO or a mutable latest handoff.
             payload = _response_payload(

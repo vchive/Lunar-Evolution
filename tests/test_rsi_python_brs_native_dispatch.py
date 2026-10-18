@@ -36,6 +36,7 @@ from lunar_evolution.automatic_solve_lifecycle import SolveExecutionControl
 from lunar_evolution.bundle_evolution import MultiFileCandidatePipeline
 from lunar_evolution.candidate_evaluation_spec import CandidateEvaluationSpec
 from lunar_evolution.producer_bundle_control import native_producer_bundle_budget_sha256
+from lunar_evolution.producer_bundle_rejection import ProducerBundleRejectionError
 from lunar_evolution.rsi_learning import RSILearningError
 
 
@@ -308,9 +309,9 @@ def test_public_native_transaction_still_refuses_brs_owner_before_evaluation(tmp
         _unchanged(value, before)
 
 
-def test_all_rejected_native_terminal_is_retained_then_brs_refuses_without_publication(tmp_path, monkeypatch):
+def test_synthetic_rejected_terminal_without_genuine_materials_remains_refused(tmp_path, monkeypatch):
     with _waiting(tmp_path, monkeypatch, validity=0) as value:
-        with pytest.raises(RSILearningError, match="all_rejected_unsupported"):
+        with pytest.raises(ProducerBundleRejectionError, match="producer_bundle_rejection_evidence_invalid"):
             _call(value)
         terminal = json.loads((value.batch / "journal.json").read_bytes())
         assert terminal["state"] == "all_rejected"

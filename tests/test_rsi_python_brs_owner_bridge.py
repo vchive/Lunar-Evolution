@@ -55,7 +55,8 @@ def test_owner_bridge_serves_one_detached_request_and_keeps_summary_non_authoriz
         return b'{"status":"published"}'
 
     monkeypatch.setattr(bridge, "_response_payload", response_payload)
-    owner = SimpleNamespace(_handoff=handoff, _handoff_bytes=handoff.canonical_bytes)
+    owner = SimpleNamespace(_handoff=handoff, _handoff_bytes=handoff.canonical_bytes,
+                            _rejection_ready_state="unused")
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         worker = pool.submit(threading.get_ident).result(timeout=5)
@@ -97,7 +98,8 @@ def test_owner_bridge_serves_one_detached_request_and_keeps_summary_non_authoriz
     assert requested[4].request_sha256 != handoff.request_sha256
     assert not hasattr(response, "owner_result_sha256")
     assert not hasattr(response, "transaction")
-    assert vars(owner) == {"_handoff": handoff, "_handoff_bytes": handoff.canonical_bytes}
+    assert vars(owner) == {"_handoff": handoff, "_handoff_bytes": handoff.canonical_bytes,
+                           "_rejection_ready_state": "unused"}
 
 
 @pytest.mark.parametrize("field", ["mailbox", "preparation"])

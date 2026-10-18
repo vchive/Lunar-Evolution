@@ -78,20 +78,53 @@ def _original_brs_numeric_tail(owner: object) -> None:
 
 
 def _call_original_brs_owner(owner: object, method: str, *args: object, **kwargs: object) -> Any:
-    """Finite exact unbound dispatch; instance hooks and rejection are not grants."""
+    """Finite exact unbound dispatch under the same original owner."""
     _fixed_original_brs_owner(owner)
     if method not in {"validate_before", "retain_before", "retain_staged", "verify_precommit", "retain_terminal"}:
         _fail("method_invalid")
-    if method == "retain_terminal" and (len(args) != 2 or args[1] is None):
-        _fail("all_rejected_unsupported")
+    if method == "retain_terminal":
+        if len(args) != 2 or kwargs:
+            _fail("terminal_arguments_invalid")
+        if args[1] is None:
+            return _BRSLineageCheckpointOwner.retain_rejected_terminal(owner, args[0])
     return getattr(_BRSLineageCheckpointOwner, method)(owner, *args, **kwargs)
+
+
+def _rejection_committed(owner: object) -> None:
+    """Observe the held C2 and committed ACK without re-entering empty transport gates."""
+    from .rsi_brs_rejection_ready_state import assert_selected_ready_committed
+
+    owner = _original_control(owner)
+    _BRSLineageCheckpointOwner._identity(owner)
+    capture, capsule = owner._rejection_ready_capture, owner._rejection_ready_stage
+    if (owner._phase != "rejected-provenance" or owner._poisoned is not False
+            or type(capture) is not tuple or len(capture) != 6
+            or owner._rejection_ready_capture_started is not True
+            or owner._rejection_provenance_c2_capture != (owner._head, owner._payload)
+            or owner._rejection_ready_state != "committed"
+            or owner._rejection_ready_commit_started is not True
+            or type(capsule) is not tuple or len(capsule) != 4
+            or capsule[0] is not capture[3] or capsule[1] is not capture[2]
+            or owner._rejection_ready_ack is None or type(owner._rejection_ready_ack_fields) is not tuple
+            or len(owner._rejection_ready_ack_fields) != 4
+            or owner._rejection_ready_ack_fields[3] != capture[4][2]):
+        _fail("rejection_commit_required")
+    assert_selected_ready_committed(owner._channel, capsule, owner._rejection_ready_ack,
+                                   owner._rejection_ready_ack_fields)
+    _original_control(owner)
+    with owner._before_control._lock:
+        if owner._before_control._cancelled is not False:
+            _fail("rejection_control_cancelled")
+    if (time.monotonic() >= owner._before_control.deadline
+            or (owner._plan.deadline_unix is not None and time.time() >= owner._plan.deadline_unix)):
+        _fail("rejection_control_expired")
 
 
 def _run_original_brs_native_publication(
     owner: object, worker_request: BRSOwnerPublicationRequest, *,
     original_preparation: _NativeTrustedPythonProducerPreparation,
 ) -> NativeProducerBundleTransactionResult:
-    """Run one native success while the original selected worker remains waiting."""
+    """Run one native terminal while the original selected worker remains waiting."""
     from . import rsi_python_brs_publication_recovery as reader_module
     from .native_trusted_scheduler import recover_native_trusted_producer
     from .producer_bundle_transaction import (
@@ -159,9 +192,19 @@ def _run_original_brs_native_publication(
             prepared_observer=prepared, lineage_owner=owner, _original_brs_owner=owner,
             _original_brs_receipt_pin=receipt_pin,
         )
-        if (result.publication_status != "published" or not result.admitted_candidate_ids
-                or owner._phase != "terminal"):
-            _fail("success_required")
+        if result.publication_status == "all_rejected":
+            if (result.admitted_candidate_ids or result.manifest is not None
+                    or result.published_journal is not None or result.terminal_journal is None
+                    or owner._phase != "rejected"):
+                _fail("rejection_terminal_invalid")
+            _BRSLineageCheckpointOwner.retain_rejection_provenance(owner)
+            _BRSLineageCheckpointOwner.retain_rejection_ready_capture(owner)
+            if (owner._phase != "rejected-provenance" or owner._rejection_ready_state != "unused"
+                    or owner._rejection_ready_capture is None):
+                _fail("rejection_capture_required")
+        elif (result.publication_status != "published" or not result.admitted_candidate_ids
+              or owner._phase != "terminal"):
+            _fail("terminal_required")
         _fixed_original_brs_owner(owner)
         return result
     except BaseException:

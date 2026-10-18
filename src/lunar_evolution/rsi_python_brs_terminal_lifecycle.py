@@ -22,6 +22,11 @@ from .rsi_brs_mailbox_evidence import (
     validate_brs_mailbox_root_history,
 )
 from .rsi_learning import RSILearningError
+from .rsi_python_brs_admission import (
+    BRSAdmissionAck,
+    BRSAdmissionChannel,
+    build_brs_admission_ready,
+)
 from .rsi_python_brs_handoff import BRSSelectedChildHandoff
 from .rsi_python_brs_publication_mailbox import (
     BRSOwnerPublicationMailbox,
@@ -129,25 +134,41 @@ def _messages(facts: dict, binding: dict):
 
     journal = ProducerBundlePublicationJournal.from_dict(publication["journal"])
     lineage, manifest = publication["lineage"], publication["manifest"]
-    if (journal.state != "published" or gate.delivery.publication_status != "published"
+    if (journal.state not in {"published", "all_rejected"}
+            or gate.delivery.publication_status != journal.state
             or gate.delivery.journal_sha256 != journal.digest()
             or journal.run_id != mailbox["run_id"] or journal.task_id != mailbox["episode_id"]
             or gate.delivery.terminal_marker_sha256 != journal.terminal_marker_sha256
             or gate.delivery.archive_after_sha256 != journal.archive_after_sha256
             or gate.delivery.state_after_sha256 != journal.state_after_sha256
             or gate.delivery.selected_request_sha256 != mailbox["selected_request_sha256"]
-            or type(lineage) is not dict or type(manifest) is not dict
-            or manifest.get("journal_id") != journal.journal_id
-            or manifest.get("archive_after_sha256") != journal.archive_after_sha256
-            or manifest.get("state_after_sha256") != journal.state_after_sha256
-            or manifest.get("manifest_sha256") != _digest(manifest, "manifest_sha256")
+            or type(lineage) is not dict
             or type(lineage.get("batches")) is not list or len(lineage["batches"]) != 1
-            or type(lineage["batches"][0]) is not dict
-            or lineage["batches"][0].get("state") != "terminal"
-            or type(lineage.get("head")) is not dict
-            or lineage["head"].get("journal_id") != journal.journal_id
-            or lineage["head"].get("terminal_sha256") != journal.terminal_marker_sha256):
+            or type(lineage["batches"][0]) is not dict):
         _fail("publication_invalid")
+    if journal.state == "published":
+        if (type(manifest) is not dict or manifest.get("journal_id") != journal.journal_id
+                or manifest.get("archive_after_sha256") != journal.archive_after_sha256
+                or manifest.get("state_after_sha256") != journal.state_after_sha256
+                or manifest.get("manifest_sha256") != _digest(manifest, "manifest_sha256")
+                or lineage["batches"][0].get("state") != "terminal"
+                or type(lineage.get("head")) is not dict
+                or lineage["head"].get("journal_id") != journal.journal_id
+                or lineage["head"].get("terminal_sha256") != journal.terminal_marker_sha256):
+            _fail("publication_invalid")
+    else:
+        from .rsi_brs_rejection_c1 import rejected_provenance_entry, rejected_provenance_index
+
+        entry = lineage["batches"][0]
+        rejected = rejected_provenance_entry(entry)
+        if (manifest is not None or lineage.get("head") is not None
+                or lineage.get("rejections") != rejected_provenance_index(entry)
+                or entry["rejected_journal"] != journal.to_dict()
+                or entry["request_sha256"] != mailbox["selected_request_sha256"]
+                or entry["native_plan_sha256"] != mailbox["native_plan_sha256"]
+                or (rejected.run_id, rejected.episode_id, rejected.journal_id) !=
+                    (mailbox["run_id"], mailbox["episode_id"], journal.journal_id)):
+            _fail("publication_invalid")
     return message, result
 
 
@@ -275,7 +296,8 @@ def inspect_brs_worker_terminal_evidence(ledger: object, run_id: str, episode_id
 class _PrimitiveExchange:
     """Exact primitives under the condition; durable work remains with the owner."""
 
-    __slots__ = ("acked", "condition", "deadline", "entered", "events", "failed")
+    __slots__ = ("acked", "admission_ack", "admission_offer", "admission_state", "condition", "deadline",
+                 "entered", "events", "failed")
 
     def __init__(self, deadline: float | None) -> None:
         self.condition = threading.Condition()
@@ -284,6 +306,8 @@ class _PrimitiveExchange:
         self.failed = False
         self.entered = False
         self.deadline = deadline
+        self.admission_offer, self.admission_ack = None, None
+        self.admission_state = "unused"
 
     def submit(self, event: tuple, check) -> None:
         if (type(event) is not tuple or not event or type(event[0]) is not str
@@ -332,41 +356,134 @@ class _PrimitiveExchange:
 
 
 class _BRSWorkerTerminalEndpoint:
-    __slots__ = ("_exchange", "_handoff_bytes", "_mailbox", "_plan_sha256", "_scope", "_status",
-                 "_worker_object_id", "_worker_thread")
+    __slots__ = ("_admission_ack", "_admission_channel", "_admission_condition", "_admission_offer", "_exchange",
+                 "_handoff_bytes", "_mailbox", "_plan_sha256", "_scope", "_status", "_worker_object_id",
+                 "_worker_thread")
 
-    def __init__(self, mailbox, exchange, handoff_bytes, plan_sha256, worker_thread, worker_object_id):
+    def __init__(self, mailbox, exchange, handoff_bytes, plan_sha256, worker_thread, worker_object_id,
+                 admission_channel=None):
+        if admission_channel is not None and type(admission_channel) is not BRSAdmissionChannel:
+            _fail("worker_invalid")
         self._mailbox, self._exchange = mailbox, exchange
         self._handoff_bytes, self._plan_sha256 = handoff_bytes, plan_sha256
         self._worker_thread, self._status = worker_thread, "pending"
         self._worker_object_id = worker_object_id
-        self._scope = (mailbox, exchange, handoff_bytes, plan_sha256, worker_thread, worker_object_id)
+        self._admission_channel = admission_channel
+        self._admission_condition = None if admission_channel is None else admission_channel._condition
+        self._admission_offer = self._admission_ack = None
+        self._scope = (mailbox, exchange, handoff_bytes, plan_sha256, worker_thread, worker_object_id,
+                       admission_channel, self._admission_condition)
 
     @property
     def status(self) -> str:
         return self._status
 
-    def receive_and_settle(self, request: BRSOwnerPublicationRequest, *, callback, check):
+    def _identity(self):
         if (type(self) is not _BRSWorkerTerminalEndpoint or type(self._scope) is not tuple
-                or len(self._scope) != 6 or type(self._mailbox) is not BRSOwnerPublicationMailbox
+                or len(self._scope) != 8 or type(self._mailbox) is not BRSOwnerPublicationMailbox
                 or type(self._exchange) is not _PrimitiveExchange
                 or self._scope[0] is not self._mailbox or self._scope[1] is not self._exchange
                 or any(type(item) is not kind for item, kind in zip(
-                    self._scope[2:], (bytes, str, int, int), strict=True))
-                or self._scope[2:] != (self._handoff_bytes, self._plan_sha256,
-                                       self._worker_thread, self._worker_object_id)
+                    self._scope[2:6], (bytes, str, int, int), strict=True))
+                or self._scope[2:6] != (self._handoff_bytes, self._plan_sha256,
+                                        self._worker_thread, self._worker_object_id)
+                or self._scope[6] is not self._admission_channel
+                or self._scope[7] is not self._admission_condition
                 or threading.get_ident() != self._worker_thread
-                or id(threading.current_thread()) != self._worker_object_id
-                or not callable(callback) or not callable(check)):
+                or id(threading.current_thread()) != self._worker_object_id):
+            _fail("worker_invalid")
+        channel, condition = self._scope[6:]
+        if channel is None:
+            if condition is not None:
+                _fail("worker_invalid")
+        elif (type(channel) is not BRSAdmissionChannel or type(condition) is not threading.Condition
+                or channel._condition is not condition):
+            _fail("worker_invalid")
+
+    def _wait_check(self, check):
+        # The original mailbox invokes this outside its condition. The original
+        # budget callback also remains outside both transport conditions.
+        check()
+        _BRSWorkerTerminalEndpoint._identity(self)
+        exchange, channel = self._exchange, self._admission_channel
+        with exchange.condition:
+            offer, status, ack = exchange.admission_offer, exchange.admission_state, exchange.admission_ack
+            if exchange.failed or type(status) is not str:
+                _fail("admission_unavailable")
+            if offer is None:
+                if (status != "unused" or ack is not None or self._admission_offer is not None
+                        or self._admission_ack is not None):
+                    _fail("admission_drift")
+                return
+            if type(offer) is not bytes or channel is None:
+                _fail("admission_drift")
+            if status == "received":
+                if (self._admission_offer is not offer or self._admission_ack is not ack
+                        or type(ack) is not tuple or len(ack) != 4
+                        or any(type(item) is not str for item in ack)):
+                    _fail("admission_drift")
+                return
+            if (status != "offered" or ack is not None or self._admission_offer is not None
+                    or self._admission_ack is not None):
+                _fail("admission_drift")
+        with self._admission_condition:
+            guarded = channel._rejection_ready_worker_guarded
+            if type(guarded) is not bool or channel._closed:
+                _fail("admission_unavailable")
+            if guarded is False:
+                return  # The owner must arm before any natural ready is built.
+        with exchange.condition:
+            if (exchange.failed or exchange.admission_offer is not offer
+                    or exchange.admission_state != "offered" or exchange.admission_ack is not None):
+                _fail("admission_drift")
+            exchange.admission_state = "requested"
+            self._admission_offer = offer
+        handoff = BRSSelectedChildHandoff(**json.loads(self._handoff_bytes))
+        ready = build_brs_admission_ready(handoff.run_id, handoff.episode_id, offer)
+        # Do not pass this wrapper recursively: the admission request invokes
+        # only the already-held original worker check while waiting for its ACK.
+        acknowledgement = BRSAdmissionChannel.request(channel, ready, check=check)
+        _BRSWorkerTerminalEndpoint._identity(self)
+        if type(acknowledgement) is not BRSAdmissionAck:
+            _fail("admission_drift")
+        fields = (acknowledgement.run_id, acknowledgement.episode_id,
+                  acknowledgement.request_sha256, acknowledgement.record_sha256)
+        if (any(type(item) is not str for item in fields)
+                or fields[:3] != (handoff.run_id, handoff.episode_id, ready.request_sha256)):
+            _fail("admission_drift")
+        with exchange.condition:
+            if (exchange.failed or exchange.admission_offer is not offer
+                    or exchange.admission_state != "requested" or exchange.admission_ack is not None):
+                _fail("admission_drift")
+            exchange.admission_ack, exchange.admission_state = fields, "received"
+            self._admission_ack = fields
+            exchange.condition.notify_all()
+
+    def receive_and_settle(self, request: BRSOwnerPublicationRequest, *, callback, check):
+        _BRSWorkerTerminalEndpoint._identity(self)
+        if not callable(callback) or not callable(check):
             _fail("worker_invalid")
         if self._status != "pending":
             _fail("worker_unavailable")
         self._status = "inflight"
+        exchange = self._exchange
         try:
-            response = BRSOwnerPublicationMailbox.request(self._mailbox, request, check=check)
+            response = BRSOwnerPublicationMailbox.request(
+                self._mailbox, request, check=lambda: _BRSWorkerTerminalEndpoint._wait_check(self, check),
+            )
             handoff = BRSSelectedChildHandoff(**json.loads(self._handoff_bytes))
             gate = deliver_brs_owner_result(response, request, handoff,
                                            expected_native_plan_sha256=self._plan_sha256)
+            with exchange.condition:
+                if gate.delivery.publication_status == "all_rejected":
+                    if (type(exchange.admission_offer) is not bytes
+                            or self._admission_offer is not exchange.admission_offer
+                            or exchange.admission_state != "received"
+                            or self._admission_ack is not exchange.admission_ack):
+                        _fail("admission_receipt_missing")
+                elif (exchange.admission_offer is not None or exchange.admission_state != "unused"
+                      or exchange.admission_ack is not None):
+                    _fail("admission_drift")
             fields = ((request.run_id, request.episode_id, request.handoff_sha256,
                        request.payload, request.request_sha256),
                       (response.run_id, response.episode_id, response.handoff_sha256,
@@ -387,6 +504,7 @@ class _BRSWorkerTerminalEndpoint:
             return value
         except BaseException:
             self._status = "unknown"
+            _PrimitiveExchange.fail(exchange)
             raise
 
 
@@ -440,6 +558,8 @@ class BRSOwnerTerminalLifecycle:
                 or self._endpoint._mailbox is not self._mailbox or self._endpoint._exchange is not self._exchange
                 or self._endpoint._worker_thread != self._thread.ident
                 or self._endpoint._worker_object_id != id(self._thread)
+                or self._endpoint._admission_channel is not self._owner._channel
+                or self._endpoint._admission_condition is not self._owner._before_channel_condition
                 or self._mailbox._terminal_lifecycle_opened is not True
                 or self._executor._max_workers != 1):
             _fail("session_drift")
@@ -489,11 +609,14 @@ class BRSOwnerTerminalLifecycle:
                     or response[4] != self._result.response_payload):
                 _fail("delivery_drift")
             transaction = self._result.transaction
+            journal = (transaction.published_journal if transaction.publication_status == "published"
+                       else transaction.terminal_journal)
             facts = {"request_fields": [*request[:3], request[3].decode("utf-8"), request[4]],
                      "response_fields": [*response[:4], response[4].decode("utf-8"), response[5]],
                      "publication": {"lineage": _clean(self._owner._state["producer_publication_lineage"]),
-                                     "journal": transaction.published_journal.to_dict(),
-                                     "manifest": transaction.manifest.to_dict()}}
+                                     "journal": journal.to_dict(),
+                                     "manifest": (None if transaction.manifest is None
+                                                  else transaction.manifest.to_dict())}}
         else:
             if ((stage == "callback_started" and len(event) != 1)
                     or (stage == "callback_finished" and (len(event) != 2
@@ -510,6 +633,44 @@ class BRSOwnerTerminalLifecycle:
             self._exchange.condition.notify_all()
         return True
 
+    def _service_rejection_admission(self, *, timeout: float):
+        """Offer original comparison bytes and consume the existing owner service once."""
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+
+        self._fixed()
+        owner, exchange = self._owner, self._exchange
+        capture = owner._rejection_ready_capture
+        if (self._started is not True or self._result is not None
+                or owner._phase != "rejected-provenance" or type(capture) is not tuple
+                or len(capture) != 6 or type(capture[5]) is not bytes
+                or owner._rejection_ready_state != "unused"):
+            _fail("admission_unavailable")
+        payload = capture[5]
+        try:
+            with exchange.condition:
+                if (exchange.failed or exchange.admission_state != "unused"
+                        or exchange.admission_offer is not None or exchange.admission_ack is not None):
+                    _fail("admission_unavailable")
+                exchange.admission_offer, exchange.admission_state = payload, "offered"
+                exchange.condition.notify_all()
+            digest = _BRSLineageCheckpointOwner.service_rejection_ready(owner, timeout=timeout)
+            self._fixed()
+            if (owner._rejection_ready_capture is not capture or owner._rejection_ready_state != "committed"
+                    or digest != capture[4][2]):
+                _fail("admission_drift")
+            with exchange.condition:
+                if (exchange.failed or exchange.admission_offer is not payload
+                        or type(exchange.admission_state) is not str
+                        or exchange.admission_state not in {"requested", "received"}
+                        or (exchange.admission_state == "received"
+                            and exchange.admission_ack != owner._rejection_ready_ack_fields)):
+                    _fail("admission_drift")
+            return digest
+        except BaseException:
+            self._poisoned, owner._poisoned = True, True
+            _PrimitiveExchange.fail(exchange)
+            raise
+
     def serve(self, original_preparation, *, check, timeout: float = .05):
         """Run the old bridge, drain real worker events, and join the original executor."""
         from .rsi_python_brs_owner_bridge import run_brs_owner_publication_mailbox
@@ -522,6 +683,7 @@ class BRSOwnerTerminalLifecycle:
         try:
             self._result = run_brs_owner_publication_mailbox(
                 self._owner, self._mailbox, original_preparation, check=check, timeout=timeout,
+                _terminal_lifecycle=self,
             )
             value = {"protocol": BINDING_PROTOCOL,
                      "mailbox_binding": json.loads(self._owner._mailbox_binding_bytes),
@@ -609,6 +771,7 @@ def open_brs_terminal_lifecycle(owner: object, mailbox: object, *, future: objec
     session._endpoint = _BRSWorkerTerminalEndpoint(
         mailbox, session._exchange, owner._handoff_bytes, owner._plan.plan_sha256,
         mailbox._worker_thread, id(threads[0]),
+        owner._channel,
     )
     session._binding, session._head, session._history = None, None, []
     session._started, session._poisoned, session._result = False, False, None

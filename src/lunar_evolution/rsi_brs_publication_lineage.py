@@ -318,10 +318,12 @@ def _policy() -> dict[str, Any]:
         rsi_budget,
         rsi_controller,
         rsi_fingerprint,
+        rsi_gateway,
         rsi_native_rejection,
         rsi_native_scheduler,
         rsi_producer_staging_capsule,
         rsi_python_admission,
+        rsi_python_brs_admission,
         rsi_python_brs_handoff,
         rsi_python_brs_native_dispatch,
         rsi_python_brs_owner_bridge,
@@ -631,6 +633,9 @@ def _policy() -> dict[str, Any]:
         (terminal.BRSOwnerPublicationMailbox, rsi_python_brs_publication_mailbox.BRSOwnerPublicationMailbox),
         (terminal.BRSOwnerPublicationRequest, rsi_python_brs_publication_mailbox.BRSOwnerPublicationRequest),
         (terminal.BRSOwnerPublicationResponse, rsi_python_brs_publication_mailbox.BRSOwnerPublicationResponse),
+        (terminal.BRSAdmissionAck, rsi_python_brs_admission.BRSAdmissionAck),
+        (terminal.BRSAdmissionChannel, rsi_python_brs_admission.BRSAdmissionChannel),
+        (terminal.build_brs_admission_ready, rsi_python_brs_admission.build_brs_admission_ready),
         (terminal.deliver_brs_owner_result, delivery.deliver_brs_owner_result),
         (composer.canonical_json, candidate_evaluation_spec.canonical_json),
         (composer.inspect_brs_mailbox_evidence, mailbox_evidence.inspect_brs_mailbox_evidence),
@@ -709,6 +714,7 @@ def _policy() -> dict[str, Any]:
         (rsi_python_admission.validate_rsi_python_admission_shapes, rsi_python_admission),
         (_retain_mailbox_observation, sys.modules[__name__]),
         (_mailbox_fixed_tail, sys.modules[__name__]),
+        (_mailbox_observe, sys.modules[__name__]),
         *((getattr(terminal, name), terminal) for name in (
             "_fail", "_plain", "_clean", "_digest", "_sha", "parse_brs_terminal_binding",
             "brs_terminal_evidence_namespace", "_messages", "parse_brs_terminal_observation",
@@ -717,15 +723,20 @@ def _policy() -> dict[str, Any]:
         *((getattr(terminal._PrimitiveExchange, name), terminal)
           for name in ("__init__", "submit", "fail")),
         *((getattr(terminal._BRSWorkerTerminalEndpoint, name), terminal)
-          for name in ("__init__", "receive_and_settle")),
+          for name in ("__init__", "_identity", "_wait_check", "receive_and_settle")),
         (terminal._BRSWorkerTerminalEndpoint.status.fget, terminal),
         *((getattr(terminal.BRSOwnerTerminalLifecycle, name), terminal)
-          for name in ("_fixed", "_append", "_drain", "serve")),
+          for name in ("_fixed", "_append", "_drain", "_service_rejection_admission", "serve")),
         (terminal.BRSOwnerTerminalLifecycle.worker_endpoint.fget, terminal),
         *((getattr(composer, name), composer) for name in (
             "_fail", "_plain", "_clean", "_digest", "_sha", "_text", "_pins",
-            "parse_brs_terminal_observation", "_ledger_terminal", "_publication", "_finish",
+            "parse_brs_terminal_observation", "_ledger_terminal", "_publication", "_rejected_publication", "_finish",
             "_compose_brs_terminal_evidence", "inspect_brs_terminal_observation")),
+        *((getattr(rsi_controller.RSILearningController, name), rsi_controller) for name in (
+            "reconcile_brs_terminal", "_reconcile_brs_terminal_locked", "_python_admission_settle_original_brs_terminal",
+            "_serialize_execution", "_deserialize_execution")),
+        (rsi_python_brs_admission.build_brs_admission_ready, rsi_python_brs_admission),
+        (rsi_gateway.LocalExactVerifier.verify, rsi_gateway),
         (_candidate_workspace_io.fail, _candidate_workspace_io),
         (_candidate_workspace_io.identity, _candidate_workspace_io),
         *((getattr(_candidate_workspace_io.DirectoryChain, name), _candidate_workspace_io)
@@ -769,7 +780,7 @@ def _policy() -> dict[str, Any]:
             "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
             "_native_claim_row", "append_brs_mailbox_observation", "append_brs_terminal_observation",
             "read_brs_terminal_evidence_snapshot", "_brs_terminal_evidence_snapshot_tx",
-            "_consume_brs_reconcile_obligation")),
+            "_consume_brs_reconcile_obligation", "_settle_brs_terminal_execution_tx")),
         (PracticeEpisode.from_dict.__func__, sys.modules[PracticeEpisode.__module__]),
         (PracticeEpisode.to_record_dict, sys.modules[PracticeEpisode.__module__]),
         (recovery.resume_producer_bundle_publication, recovery),
@@ -784,6 +795,7 @@ def _policy() -> dict[str, Any]:
             "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
             "_response_payload")),
         (rsi_python_brs_owner_bridge._original_control, dispatch),
+        (rsi_python_brs_owner_bridge._rejection_committed, dispatch),
         (rsi_python_brs_owner_bridge._run_original_brs_native_publication, dispatch),
         (rsi_python_brs_owner_bridge.build_brs_owner_result_payload, delivery),
         *((getattr(delivery, name), delivery) for name in (
@@ -859,7 +871,7 @@ def _policy() -> dict[str, Any]:
         (automatic_solve_lifecycle._stage_name, automatic_solve_lifecycle),
         *((getattr(dispatch, name), dispatch) for name in (
             "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
-            "_call_original_brs_owner", "_run_original_brs_native_publication")),
+            "_call_original_brs_owner", "_run_original_brs_native_publication", "_rejection_committed")),
         *((getattr(transaction, name), transaction) for name in (
             "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
             "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
@@ -1055,7 +1067,7 @@ def _policy() -> dict[str, Any]:
             "private_native_dispatch": {
                 "helpers": {name: component_fingerprint(getattr(dispatch, name)) for name in (
                     "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
-                    "_call_original_brs_owner", "_run_original_brs_native_publication")},
+                    "_call_original_brs_owner", "_run_original_brs_native_publication", "_rejection_committed")},
                 "transaction": {name: component_fingerprint(getattr(transaction, name)) for name in (
                     "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
                     "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
@@ -1075,6 +1087,7 @@ def _policy() -> dict[str, Any]:
             "mailbox_recovery_evidence": {
                 "owner_append": component_fingerprint(_retain_mailbox_observation),
                 "owner_fixed_tail": component_fingerprint(_mailbox_fixed_tail),
+                "owner_observe": component_fingerprint(_mailbox_observe),
                 "methods": {
                     name: [component_fingerprint(function) for function, canonical_module in entries
                            if canonical_module is module]
@@ -1147,8 +1160,11 @@ def _policy() -> dict[str, Any]:
                 "digest_pattern": delivery._SHA.pattern,
                 "digest_flags": delivery._SHA.flags,
             },
-            "terminal_recovery": {
+            # Recompute the full live finite graph before compact persistence.
+            # This preserves every code/default/closure observation and the row cap.
+            "terminal_recovery": hashlib.sha256(canonical_json({
                 "methods": [component_fingerprint(function) for function, module in entries if module is terminal],
+                "admission_ready": component_fingerprint(rsi_python_brs_admission.build_brs_admission_ready),
                 "protocols": [terminal.BINDING_PROTOCOL, terminal.OBSERVATION_PROTOCOL],
                 "stages": list(terminal.STAGES),
                 "max_bytes": terminal.MAX_BRS_TERMINAL_EVIDENCE_BYTES,
@@ -1157,8 +1173,12 @@ def _policy() -> dict[str, Any]:
                 "pattern_flags": terminal._SHA.flags,
                 "store": {name: component_fingerprint(getattr(rsi_store.RSILedger, name)) for name in (
                     "append_brs_terminal_observation", "read_brs_terminal_evidence_snapshot",
-                    "_brs_terminal_evidence_snapshot_tx", "_consume_brs_reconcile_obligation")},
-                "controller": component_fingerprint(rsi_controller.RSILearningController.reconcile_brs_terminal),
+                    "_brs_terminal_evidence_snapshot_tx", "_consume_brs_reconcile_obligation",
+                    "_settle_brs_terminal_execution_tx")},
+                "controller": {name: component_fingerprint(getattr(rsi_controller.RSILearningController, name))
+                               for name in ("reconcile_brs_terminal", "_reconcile_brs_terminal_locked",
+                                            "_python_admission_settle_original_brs_terminal",
+                                            "_serialize_execution", "_deserialize_execution")},
                 "composer_methods": [component_fingerprint(function) for function, module in entries if module is composer],
                 "composer_protocol": composer.PROTOCOL,
                 "composer_max_bytes": composer.MAX_BRS_TERMINAL_REPORT_BYTES,
@@ -1179,7 +1199,7 @@ def _policy() -> dict[str, Any]:
                     ("episode_read", PracticeEpisode.from_dict.__func__),
                     ("episode_write", PracticeEpisode.to_record_dict),
                 )},
-            },
+            })).hexdigest(),
             "reconcile_registration": {
                 "helpers": {name: component_fingerprint(getattr(rsi_brs_reconcile, name)) for name in (
                     "register_brs_selected_obligation", "put_brs_reconcile_obligation",
@@ -1190,7 +1210,7 @@ def _policy() -> dict[str, Any]:
                     "_native_claim_row")},
                 "bridge": {name: component_fingerprint(getattr(rsi_python_brs_owner_bridge, name)) for name in (
                     "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",
-                    "_original_control", "_run_original_brs_native_publication", "_response_payload")},
+                    "_original_control", "_rejection_committed", "_run_original_brs_native_publication", "_response_payload")},
             },
             "methods": {name: component_fingerprint(getattr(_BRSLineageCheckpointOwner, name)) for name in (
                 "__init__", "_identity", "_check_owner", "_running", "_before_entry", "_write",
@@ -1306,13 +1326,38 @@ def _mailbox_readback(self, namespace: str, expected: list, binding: dict[str, A
 
 def _mailbox_fixed_tail(self) -> None:
     """Last original numeric/lease/channel check, without observing source hooks."""
-    from .rsi_python_brs_native_dispatch import _original_brs_numeric_tail
+    from .rsi_python_brs_native_dispatch import _original_brs_numeric_tail, _rejection_committed
 
-    _original_brs_numeric_tail(self)
+    if type(self._rejection_ready_state) is not str:
+        _fail("mailbox_rejection_state_invalid")
+    if self._rejection_ready_state == "committed":
+        _rejection_committed(self)
+    else:
+        _original_brs_numeric_tail(self)
     _BRSLineageCheckpointOwner._success_allowance(self)
     RSIRunBudget.load(self._wave.budget_state).check()
     if self._before_control is not None and time.monotonic() >= self._before_control.deadline:
         _fail("mailbox_observation_deadline_exhausted")
+
+
+def _mailbox_observe(self) -> None:
+    """Keep full source/running checks while observing the committed rejection transport."""
+    from .rsi_python_brs_native_dispatch import _rejection_committed
+
+    if type(self._rejection_ready_state) is not str:
+        _fail("mailbox_rejection_state_invalid")
+    if self._rejection_ready_state != "committed":
+        _BRSLineageCheckpointOwner._success_observe(self)
+        return
+    _BRSLineageCheckpointOwner._before_unlocked(self)
+    _rejection_committed(self)
+    _BRSLineageCheckpointOwner._check_owner(self)
+    _BRSLineageCheckpointOwner._before_control_live(self)
+    with self._ledger.read_only_observations():
+        _BRSLineageCheckpointOwner._running(self)
+        self._controller._python_admission_active_brs_owner(self._wave)
+        _BRSLineageCheckpointOwner._history(self)
+    _rejection_committed(self)
 
 
 def _retain_mailbox_observation(
@@ -1336,7 +1381,7 @@ def _retain_mailbox_observation(
     if type(self) is not _BRSLineageCheckpointOwner:
         _fail("owner_invalid")
     try:
-        self._success_observe()
+        _mailbox_observe(self)
         if stage == "owner_capture":
             if self._mailbox_capture_started is not False or self._mailbox_binding_bytes is not None:
                 _fail("mailbox_capture_unavailable")
@@ -1359,7 +1404,7 @@ def _retain_mailbox_observation(
             request=request, response=response,
         )
         self._mailbox_process_unchanged(binding)
-        self._success_observe()
+        _mailbox_observe(self)
         root_head = self._head
         with self._ledger.controller_lock(namespace):
             self._mailbox_readback(namespace, history, binding)
@@ -1370,7 +1415,7 @@ def _retain_mailbox_observation(
             expected = [*history, (head, record)]
             self._mailbox_readback(namespace, expected, binding)
         self._mailbox_process_unchanged(binding)
-        self._success_observe()
+        _mailbox_observe(self)
         if self._head != root_head:
             _fail("mailbox_observation_root_drift")
         self._mailbox_readback(namespace, expected, binding)

@@ -229,14 +229,56 @@ def _reader(value):
     return recovery._BRSRetainedNativePreparationReader(value.owner, original_preparation=value.preparation)
 
 
-def _files(root):
-    return {path: (path.read_bytes(), path.stat()) for path in root.rglob("*") if path.is_file()}
+def _files(root, *, sqlite_shm=None):
+    # A selected SQLite shared-memory file can change during a read transaction.
+    # Exclude only its exact path before metadata/bytes; database and WAL remain.
+    return {path: (path.read_bytes(), path.stat()) for path in root.rglob("*")
+            if path != sqlite_shm and path.is_file()}
+
+
+def test_recovery_snapshot_excludes_only_exact_sqlite_shared_memory(tmp_path, monkeypatch):
+    database = tmp_path / "ledger.sqlite3"
+    shared_memory = tmp_path / "ledger.sqlite3-shm"
+    durable_paths = {database, tmp_path / "ledger.sqlite3-wal", tmp_path / "other.sqlite3-shm"}
+    retained = tmp_path / "retained"
+    retained.mkdir()
+    durable_paths.add(retained / shared_memory.name)
+    for path in {*durable_paths, shared_memory}:
+        path.write_bytes(path.name.encode())
+    original_is_file, original_read, original_stat = Path.is_file, Path.read_bytes, Path.stat
+
+    def guarded(original):
+        def observe(path, *args, **kwargs):
+            assert path != shared_memory, "selected SQLite scratch file must not be observed"
+            return original(path, *args, **kwargs)
+        return observe
+
+    monkeypatch.setattr(Path, "is_file", guarded(original_is_file))
+    monkeypatch.setattr(Path, "read_bytes", guarded(original_read))
+    monkeypatch.setattr(Path, "stat", guarded(original_stat))
+    before = _files(tmp_path, sqlite_shm=shared_memory)
+    assert set(before) == durable_paths
+    for path in durable_paths:
+        path.write_bytes(b"changed durable bytes")
+    after = _files(tmp_path, sqlite_shm=shared_memory)
+    assert all(before[path][0] != after[path][0] for path in durable_paths)
+
+
+def test_recovery_snapshot_retains_shared_memory_without_explicit_exclusion(tmp_path):
+    shared_memory = tmp_path / "ledger.sqlite3-shm"
+    shared_memory.write_bytes(b"original bytes")
+    before = _files(tmp_path)
+    assert set(before) == {shared_memory}
+    shared_memory.write_bytes(b"changed bytes")
+    assert _files(tmp_path)[shared_memory][0] != before[shared_memory][0]
 
 
 def test_genuine_original_owner_recovers_detached_native_output_without_writes(tmp_path, monkeypatch):
     with _waiting(tmp_path, monkeypatch) as value:
         reader = _reader(value)
-        before, head, budget = _files(value.workspace), value.owner._head, dict(value.wave.budget_state)
+        sqlite_shm = value.ledger.database.with_name(value.ledger.database.name + "-shm")
+        before = _files(value.workspace, sqlite_shm=sqlite_shm)
+        head, budget = value.owner._head, dict(value.wave.budget_state)
         result = reader.recover(value.request_message)
         assert result.output.publication_eligible is False
         assert result.output.drafts[0].draft.source_files == {"main.py": "# inert candidate\n"}
@@ -244,12 +286,19 @@ def test_genuine_original_owner_recovers_detached_native_output_without_writes(t
         assert result.receipt is not value.preparation.run.receipt
         assert result.output is not value.prepared_output
         assert value.owner._head == head and value.wave.budget_state == budget
-        after = _files(value.workspace)
+        after = _files(value.workspace, sqlite_shm=sqlite_shm)
         assert before.keys() == after.keys()
-        assert all(before[path][0] == after[path][0] for path in before)
+        assert all(before[path][0] == after[path][0] for path in before), {
+            str(path.relative_to(value.workspace)): {
+                "before_sha256": hashlib.sha256(before[path][0]).hexdigest(),
+                "after_sha256": hashlib.sha256(after[path][0]).hexdigest(),
+            }
+            for path in sorted(before)
+            if before[path][0] != after[path][0]
+        }
         assert all((before[path][1].st_ino, before[path][1].st_mtime_ns, before[path][1].st_size)
                    == (after[path][1].st_ino, after[path][1].st_mtime_ns, after[path][1].st_size)
-                   for path in before if not path.name.endswith("-shm"))
+                   for path in before)
         with pytest.raises(RSILearningError, match="consumed"):
             reader.recover(value.request_message)
 

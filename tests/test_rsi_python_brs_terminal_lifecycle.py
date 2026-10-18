@@ -16,6 +16,7 @@ from test_rsi_python_brs_result_delivery import _request_and_handoff, _response,
 
 from lunar_evolution.candidate_evaluation_spec import canonical_json
 from lunar_evolution.rsi_learning import RSILearningError
+from lunar_evolution.rsi_python_brs_admission import BRSAdmissionChannel
 from lunar_evolution.rsi_python_brs_publication_mailbox import BRSOwnerPublicationMailbox
 from lunar_evolution.rsi_python_brs_terminal_lifecycle import (
     BINDING_PROTOCOL,
@@ -370,3 +371,127 @@ def test_failure_cleanup_uses_retained_original_scope(monkeypatch):
         assert pool._shutdown is True
     assert owner._poisoned is session._poisoned is exchange.failed is True
     assert closed == [mailbox]
+
+
+def test_original_mailbox_worker_performs_one_intermediate_ready_only_after_arm():
+    """Real transport threads; this component fixture creates no owner authority."""
+    request, handoff = _request_and_handoff()
+    response = _response(_transaction(handoff, state="all_rejected"), request, handoff)
+    channel = BRSAdmissionChannel(handoff.run_id, (handoff.episode_id,))
+    exchange = _PrimitiveExchange(time.monotonic() + 10)
+    payload = canonical_json({"native_plan": {}, "prepared_journal": {}, "expected_anchor_sha256": HEX})
+    checked_before_arm, checked_after_receipt = threading.Event(), threading.Event()
+    calls, endpoints = [], []
+    unarmed_checks = 0
+
+    def check():
+        nonlocal unarmed_checks
+        if exchange.admission_state == "received":
+            checked_after_receipt.set()
+        if exchange.admission_offer is payload and channel._rejection_ready_worker_guarded is False:
+            unarmed_checks += 1
+            if unarmed_checks >= 2:
+                checked_before_arm.set()
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        worker_thread = pool.submit(threading.get_ident).result(timeout=3)
+        mailbox = BRSOwnerPublicationMailbox(handoff, worker_thread=worker_thread)
+
+        def worker():
+            endpoint = _BRSWorkerTerminalEndpoint(
+                mailbox, exchange, handoff.canonical_bytes, HEX,
+                threading.get_ident(), id(threading.current_thread()), channel,
+            )
+            endpoints.append(endpoint)
+            return endpoint.receive_and_settle(
+                request, callback=lambda delivery: calls.append(delivery) or "rejected-result", check=check,
+            )
+
+        future = pool.submit(worker)
+        try:
+            with mailbox._condition:
+                while mailbox._status == "open":
+                    assert mailbox._condition.wait(3)
+            with exchange.condition:
+                exchange.admission_offer, exchange.admission_state = payload, "offered"
+            assert checked_before_arm.wait(3)
+            with channel._condition:
+                assert not channel._queue and channel._requests == {}
+                assert exchange.admission_state == "offered" and not calls
+                channel._rejection_ready_worker_guarded = True
+                channel._condition.notify_all()
+            received_payloads = []
+            assert channel.service(lambda ready: received_payloads.append(ready.payload) or HEX, timeout=3)
+            with exchange.condition:
+                while exchange.admission_state == "requested":
+                    assert exchange.condition.wait(3)
+                assert exchange.admission_state == "received" and exchange.admission_offer is payload
+            assert checked_after_receipt.wait(3)
+            assert received_payloads == [payload] and len(channel._requests) == 1 and not calls
+            assert channel._requests[handoff.episode_id].ack_fields == exchange.admission_ack
+            assert mailbox.service(lambda _request: response.payload, check=lambda: None, timeout=3)
+            for count, stage in enumerate(("delivery", "callback_started", "callback_finished"), 1):
+                assert _wait_event(exchange, count)[0] == stage
+                _ack(exchange, count)
+            assert future.result(timeout=3) == "rejected-result"
+            assert len(calls) == 1 and calls[0].publication_status == "all_rejected"
+            assert endpoints[0].status == "settled" and len(channel._requests) == 1
+        finally:
+            exchange.fail()
+            channel.close()
+            mailbox.close()
+
+
+def test_rejected_mailbox_response_without_actual_admission_receipt_never_runs_callback(monkeypatch):
+    request, handoff = _request_and_handoff()
+    response = _response(_transaction(handoff, state="all_rejected"), request, handoff)
+    mailbox = BRSOwnerPublicationMailbox.__new__(BRSOwnerPublicationMailbox)
+    exchange, calls = _PrimitiveExchange(None), []
+    monkeypatch.setattr(BRSOwnerPublicationMailbox, "request", lambda *_args, **_kwargs: response)
+    endpoint = _BRSWorkerTerminalEndpoint(
+        mailbox, exchange, handoff.canonical_bytes, HEX,
+        threading.get_ident(), id(threading.current_thread()),
+    )
+    with pytest.raises(RSILearningError, match="admission_receipt_missing"):
+        endpoint.receive_and_settle(request, callback=lambda value: calls.append(value), check=lambda: None)
+    assert calls == [] and exchange.events == [] and exchange.failed is True
+    assert endpoint.status == "unknown"
+
+
+@pytest.mark.parametrize("guard", [False, None, 1, "True"])
+def test_endpoint_never_builds_or_posts_ready_before_original_guard_is_true(monkeypatch, guard):
+    import lunar_evolution.rsi_python_brs_terminal_lifecycle as lifecycle
+
+    _request, handoff = _request_and_handoff()
+    channel = BRSAdmissionChannel(handoff.run_id, (handoff.episode_id,))
+    channel._rejection_ready_worker_guarded = guard
+    exchange = _PrimitiveExchange(None)
+    exchange.admission_offer, exchange.admission_state = b"original-comparison-bytes", "offered"
+    endpoint = _BRSWorkerTerminalEndpoint(
+        BRSOwnerPublicationMailbox.__new__(BRSOwnerPublicationMailbox), exchange, handoff.canonical_bytes,
+        HEX, threading.get_ident(), id(threading.current_thread()), channel,
+    )
+    monkeypatch.setattr(lifecycle, "build_brs_admission_ready", lambda *_args: pytest.fail("early ready built"))
+    if guard is False:
+        endpoint._wait_check(lambda: None)
+    else:
+        with pytest.raises(RSILearningError, match="admission_unavailable"):
+            endpoint._wait_check(lambda: None)
+    assert channel._requests == {} and exchange.admission_state == "offered"
+    assert endpoint._admission_offer is None
+
+
+def test_wait_check_rechecks_original_channel_identity_after_budget_callback():
+    _request, handoff = _request_and_handoff()
+    channel = BRSAdmissionChannel(handoff.run_id, (handoff.episode_id,))
+    endpoint = _BRSWorkerTerminalEndpoint(
+        BRSOwnerPublicationMailbox.__new__(BRSOwnerPublicationMailbox), _PrimitiveExchange(None),
+        handoff.canonical_bytes, HEX, threading.get_ident(), id(threading.current_thread()), channel,
+    )
+
+    def drift():
+        endpoint._admission_channel = BRSAdmissionChannel(handoff.run_id, (handoff.episode_id,))
+
+    with pytest.raises(RSILearningError, match="worker_invalid"):
+        endpoint._wait_check(drift)
+    assert channel._requests == {}

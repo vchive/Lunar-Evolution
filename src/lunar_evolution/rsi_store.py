@@ -1079,8 +1079,9 @@ class RSILedger:
 
     def _consume_brs_reconcile_obligation(
         self, run_id: str, episode_id: str, evidence: object, *, expected_pins: dict | None = None,
+        settled_execution: dict | None = None,
     ):
-        """Check terminal ledger truth and remove one obligation in the same transaction."""
+        """Check terminal truth and atomically settle the independently observed root result."""
         from .rsi_brs_reconcile import (
             BRSReconcileConsumption,
             _decision,
@@ -1091,6 +1092,8 @@ class RSILedger:
         )
 
         self._assert_controller_lock(run_id)
+        if settled_execution is not None and expected_pins is None:
+            raise RSILearningError("rsi_brs_terminal_settlement_pins_required")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             if expected_pins is not None:
@@ -1124,10 +1127,58 @@ class RSILedger:
                     decision = self._brs_terminal_result_decision_tx(connection, obligation, evidence, episode, decision)
             if decision.outcome != "already_terminal":
                 return BRSReconcileConsumption(decision, head, False)
+            if settled_execution is not None:
+                RSILedger._settle_brs_terminal_execution_tx(
+                    self, connection, state, obligation, episode, settled_execution,
+                )
             remove_brs_reconcile_obligation(state, episode_id, expected_digest=obligation.digest())
             validate_brs_reconcile_obligations(state, run_id=run_id, intents=state.get("intents"))
             next_head = self._append_controller_checkpoint_tx(connection, run_id, state, expected_sha256=head)
             return BRSReconcileConsumption(decision, next_head, True)
+
+    def _settle_brs_terminal_execution_tx(self, connection, state, obligation, episode, wire):
+        """Match the original durable result and diagnostic verifier before one root append."""
+        from .rsi_controller import RSILearningController
+        from .rsi_gateway import LocalExactVerifier
+
+        try:
+            execution = RSILearningController._deserialize_execution(wire)
+            key = obligation.episode_id
+            if (type(state) is not dict or state.get("mode") != "brs"
+                    or state.get("run_id") != obligation.run_id or state.get("status") != "running"
+                    or type(state.get("executions")) is not dict
+                    or type(state.get("intents")) is not dict or key not in state["intents"]
+                    or execution.episode.run_id != obligation.run_id
+                    or execution.request.digest() != obligation.request_sha256
+                    or execution.request.to_dict() != state["intents"][key]["request"]
+                    or execution.episode.to_record_dict() != episode.payload
+                    or execution.request.memory_snapshot_sha256 != MemorySnapshot.from_dict(
+                        state["root_snapshot"]).digest()):
+                raise ValueError("original root execution")
+            saved = connection.execute(
+                "SELECT request_payload, result_payload FROM rsi_episode_results WHERE episode_id = ?", (key,),
+            ).fetchone()
+            if (saved is None or execution.request.to_dict() != json.loads(saved["request_payload"])
+                    or execution.result.to_dict() != json.loads(saved["result_payload"])):
+                raise ValueError("durable execution")
+            original_verifier = execution.episode.verifier
+            if original_verifier is None:
+                if execution.result.status == "completed":
+                    raise ValueError("completed verifier missing")
+                # This local failure diagnosis never calls the configured verifier,
+                # changes the terminal episode or makes memory eligible for promotion.
+                original_verifier = LocalExactVerifier.verify(
+                    LocalExactVerifier(), execution.episode, execution.request, execution.result,
+                )
+            if execution.verifier != original_verifier:
+                raise ValueError("terminal verifier")
+            clean = RSILearningController._serialize_execution(execution)
+            if clean != wire or (key in state["executions"] and state["executions"][key] != clean):
+                raise ValueError("execution drift")
+        except (TypeError, KeyError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_brs_terminal_root_execution_invalid") from exc
+        state["executions"][key] = clean
+        state.update(phase="evaluated", current_episode_id=key)
 
     def _brs_terminal_result_decision_tx(self, connection, obligation, evidence, episode, decision):
         """Use the original native claim and immutable saved result, never DTO flags alone."""
