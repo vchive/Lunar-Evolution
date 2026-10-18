@@ -202,9 +202,13 @@ def _files(value):
     database = value.ledger.database.relative_to(value.workspace)
     # SQLite's connection lifecycle may replace WAL/SHM metadata even for reads.
     # SQL row snapshots independently cover all durable ledger bytes/timestamps.
-    return {name: content for name, content in _durable_snapshot(value.workspace).items()
-            if name != database and not (name.parent == database.parent
-                                         and name.name.startswith(database.name + "-"))}
+    # Exclude before touching metadata: a sidecar can vanish after enumeration.
+    return _durable_snapshot(
+        value.workspace,
+        exclude=lambda name: name == database or (
+            name.parent == database.parent and name.name.startswith(database.name + "-")
+        ),
+    )
 
 
 def _assert_no_effect(value, operation, *, match=None):
