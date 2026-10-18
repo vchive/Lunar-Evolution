@@ -1,4 +1,37 @@
-# 当前开发（2026-10-18，单个原始 ordinal 的拒绝生命周期）
+# 当前开发（2026-10-18，reserved-wave 串行延续）
+
+- 前置拒绝生命周期已冻结为 `ccc754788fb4806b4093c397d9e8bc92792364d9`，tree
+  `daed8cd4da7d7f3348d514fd03d579fe0720706e`。Mac/Linux 各188个不同用例全通过，
+  两端库存一致、零失败/错误/跳过；产品、来源、导入及原始结果审查已归档。
+  [PR137](https://github.com/vchive/Lunar-Evolution/pull/137) 已 ready，核查时33项完整
+  CI仍排队，尚未合main。本地结果不替代完整CI；不启用无required-check保护的自动合入。
+  原始结果及独审位于主checkout ignored
+  `.lunar-evolution/validation/rejected-lifecycle-dev-20261018/`，最终汇总为
+  `final-acceptance-summary.md/json` 与 `final-acceptance-independent-review.md/json`。
+- 本轮独立分支 `codex/brs-reserved-wave-serial` 从CCC延续，冻结前置源码不改。
+  按Feature196 `reserved-wave-serial.md` 并行开发同一完整行为：一次原始预算预留、
+  逐child全新custody、真实自然gateway claim、逐项root结算与部分wave恢复。
+  当前稳定基础包括纯reserved projection、混合历史prefix校验、全域只读ledger观察、
+  从原run/逐条checkpoint推导最早完整reservation，以及一次性preparation交接。
+  五模块开发联合239项全通过；其中A/B/ledger/reservation的202项已独审复跑，
+  exchange另经root审查和focused复跑。它们尚不构成完整serial driver或最终双平台验收。
+- 两层成功语义已核实：native published/result completed后，RSI verifier仍可为
+  pass/fail/unresolved。恢复保留真实已完成尝试，不能因verifier非pass而重复发布；
+  memory promotion继续遵循原verifier规则。完整历史不可采用最新head重建旧authority。
+  独审修复foreign-run admission闭包、嵌套DTO读取顺序、receipt关联及falsey历史执行值。
+- 实际自然接线仍开放：fresh per-child context/resolver、provider preparation/成功及拒绝
+  completion reader、nonzero original owner/C1/P/C2/ready、串行driver/retire、历史物理
+  材料与fresh resume、policy依赖固定和完整行为验收。不得把惰性fixture直接claim的旧测试
+  说成真实gateway→provider验收。新completion reader及reserved rejection过渡并行开发中，
+  不在稳定基础checkpoint中冒称完成。详细任务见reserved-wave-serial-tasks.md。
+- P1仍为真实sealed CPython/toolchain、OpenEvolve/Shinka项目lifecycle与生产CLI验收；
+  P2多机/外部认证/remote evaluator后置。当前只运行本地inert/provider-free fixture，
+  允许5090gpu跑CPU回归；public native BRS、production_admission和online_publication
+  仍关闭。主checkout用户gap-report的原修改及其SHA保持不变。
+
+以下保留前置来源记录，不能将旧时状态当作当前最终状态。
+
+# 前置开发（2026-10-18，单个原始 ordinal 的拒绝生命周期）
 
 - 前置 staged ACK 最终 `c445a612` 已完成同库存 macOS Python3.11.15 / Linux
   Python3.12.3 各1,079项（0失败/错误/跳过），2,157源码与每平台124份原始材料、
