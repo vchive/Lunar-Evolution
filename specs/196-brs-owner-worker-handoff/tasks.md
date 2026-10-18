@@ -171,8 +171,8 @@ remain refused.
 
 ## Rejected original owner selected-ready successor — 2026-10-18
 
-Contract: [rejection-owner-ready.md](rejection-owner-ready.md). Only the raw-ledger
-helper sub-slice is implemented; the unchecked owner/ACK tasks below do not declare
+Contract: [rejection-owner-ready.md](rejection-owner-ready.md). The raw-ledger,
+queued observers and connected pre-arm capture are implemented; unchecked owner/ACK tasks below do not declare
 implementation or acceptance. Preceding
 P/C2 validation and complete dependency-ordered CI remain independent requirements.
 
@@ -197,15 +197,19 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
   unchecked tasks below. The first frozen `a7ee168` remains NOT_ACCEPTED after a
   Python3.12 optional-alias inventory failure; use only the successor's complete
   matching dual-platform evidence, never accumulated old results.
-- [ ] Retain the exact original C2/reference canonical bytes, original admission
+- [x] Implement a one-shot, exact-original-owner pre-arm capture of C2/reference canonical bytes, original admission
   record digest, run/episode/started claim and writer-returned P custody before
-  consuming a one-shot ready scope; preserve the old empty-channel guard.
+  consuming a one-shot ready scope; preserve the old empty-channel guard. See
+  [rejection-ready-capture.md](rejection-ready-capture.md). Failure poisons; success
+  neither arms nor grants ACK authority. Frozen dual-platform validation is separate.
 - [ ] Add a dedicated exact-owner staged-ACK service using the real original
   channel/pending/request, with no arbitrary handler or commit callback API. Keep
   ACK/fields private until the final gate, and preserve the old service semantics.
-- [ ] Add the private read-only existing-reference reader; compare the complete
+- [x] Add the private read-only existing-reference reader; compare the complete
   canonical admission record, original plan/journal/anchor and held C2 heads.
   Never call pin/register, append a checkpoint or reserve another attempt.
+- [x] Add an independently retained finite pre-arm live-dependency guard. This
+  does not complete the physical/context/DTO graph needed for final ACK acceptance.
 - [ ] Finish and independently review the finite final-reader graph, transitive
   ledger/physical/DTO/context dependencies, source/code/default/metadata pins and
   exact-type/shadow refusal before enabling the genuine original-worker fixture.

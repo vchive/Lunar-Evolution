@@ -37,6 +37,8 @@ from . import producer_bundle_recovery as recovery
 from . import rsi_brs_rejection_owner as rejection
 from . import rsi_brs_rejection_provenance as provenance
 from . import rsi_brs_rejection_provenance_policy as _provenance_policy
+from . import rsi_brs_rejection_ready_owner as ready_owner
+from . import rsi_brs_rejection_ready_policy as ready_policy
 from . import rsi_publication_lineage as lineage
 from .algorithm import ALGORITHM_FAMILY_REPERTOIRES as _ORIGINAL_FAMILY_REPERTOIRES
 from .candidate_evaluation_spec import canonical_json
@@ -57,6 +59,7 @@ from .producer_bundle_lineage import (
 from .producer_bundle_preflight import compute_archive_prefix_digest
 from .producer_bundle_publication import parse_producer_bundle_publication_journal
 from .python_producer_admission_handoff import read_python_producer_admission_handoff_pinned
+from .rsi_brs_rejection_ready_sync import assert_ready_condition as _ORIGINAL_READY_CONDITION_ASSERT
 from .rsi_budget import RSIRunBudget
 from .rsi_gateway import SolverRequest
 from .rsi_identity import component_fingerprint
@@ -88,7 +91,12 @@ _ORIGINAL_PROVENANCE_CODES = tuple(
             "acknowledge_rejection_provenance", "rejection_provenance_file_pin")),
         (_provenance_policy, (
             "_fail", "_capture_function", "_constant", "_check_function", "native_rejection_provenance_policy")),
+        (ready_policy, ("rejection_ready_capture_policy",)),
     ) for name in names
+)
+_ORIGINAL_READY_POLICY_CLOSURE = (
+    ready_policy.rejection_ready_capture_policy.__closure__,
+    tuple(cell.cell_contents for cell in ready_policy.rejection_ready_capture_policy.__closure__),
 )
 
 
@@ -237,6 +245,14 @@ def _policy() -> dict[str, Any]:
                   for attribute, original in labels)
            for module, name, function, code, attributes, defaults, kwdefaults, kwitems, labels
            in _ORIGINAL_PROVENANCE_CODES):
+        _fail("rejection_policy_drift")
+    ready_closure, ready_captures = _ORIGINAL_READY_POLICY_CLOSURE
+    try:
+        if (ready_policy.rejection_ready_capture_policy.__closure__ is not ready_closure
+                or any(cell.cell_contents is not original
+                       for cell, original in zip(ready_closure, ready_captures, strict=True))):
+            _fail("rejection_policy_drift")
+    except ValueError:
         _fail("rejection_policy_drift")
     import contextlib
     import dataclasses
@@ -453,6 +469,8 @@ def _policy() -> dict[str, Any]:
             or closure[0].cell_contents is not control_implementation):
         _fail("native_dispatch_control_binding_drift")
     aliases = (
+        (ready_owner, sys.modules["lunar_evolution.rsi_brs_rejection_ready_owner"]),
+        (ready_policy, sys.modules["lunar_evolution.rsi_brs_rejection_ready_policy"]),
         (rejection, rejection_owner),
         (provenance, rsi_brs_rejection_provenance),
         *((getattr(_BRSLineageCheckpointOwner, name), getattr(provenance, name))
@@ -895,6 +913,7 @@ def _policy() -> dict[str, Any]:
                         "rsi_brs_rejection_provenance.py", "rsi_brs_rejection_provenance_policy.py",
                         "rsi_native_scheduler.py")},
             })).hexdigest(),
+            "rejection_ready_capture": ready_policy.rejection_ready_capture_policy(),
             "rejection_c1": {
                 "owner_methods": {name: component_fingerprint(getattr(rejection_owner, name))
                                   for name in ("_fail", *rejection_methods)},
@@ -1415,6 +1434,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_rejection_provenance_evidence",
         "_rejection_provenance_file_pin",
         "_rejection_provenance_sha256",
+        "_rejection_ready_capture",
+        "_rejection_ready_capture_started",
+        "_rejection_ready_sync_capture",
         "_request",
         "_retaining_before",
         "_retaining_rejection",
@@ -1543,6 +1565,8 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._retaining_rejection_provenance = False
         self._rejection_provenance_deadline = self._rejection_provenance_file_pin = None
         self._rejection_provenance_evidence = self._rejection_provenance_sha256 = None
+        self._rejection_ready_capture_started, self._rejection_ready_capture = False, None
+        self._rejection_ready_sync_capture = None
         from .rsi_native_scheduler import _read_ledger_identity
         self._rejection_ledger_identity = (None if self._native is None else
                                            lineage._raw(_read_ledger_identity(self._ledger)))
@@ -1893,9 +1917,14 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         channel, condition = self._channel, self._before_channel_condition
         if type(channel) is not BRSAdmissionChannel or type(condition) is not Condition:
             _fail("before_channel_drift")
+        ready_sync = self._rejection_ready_sync_capture
+        if ready_sync is not None:
+            _ORIGINAL_READY_CONDITION_ASSERT(condition, ready_sync)
         nonce = json.loads(self._handoff_bytes)["lease_nonce"]
         digest = hashlib.sha256(self._handoff_bytes).hexdigest()
-        with condition:
+        with condition if ready_sync is None else ready_sync[1]:
+            if ready_sync is not None:
+                _ORIGINAL_READY_CONDITION_ASSERT(condition, ready_sync)
             if (self._wave.channel is not channel or channel._condition is not condition
                     or channel._closed is not False or type(channel._owner_thread) is not int
                     or channel._owner_thread != self._thread or type(channel._run_id) is not str
@@ -2930,3 +2959,4 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     retain_rejection_provenance = provenance.retain_rejection_provenance
     acknowledge_rejection_provenance = provenance.acknowledge_rejection_provenance
     rejection_provenance_file_pin = provenance.rejection_provenance_file_pin
+    retain_rejection_ready_capture = ready_owner.retain_rejection_ready_capture

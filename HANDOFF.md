@@ -1,3 +1,38 @@
+# 当前后继开发（2026-10-18，原 rejected owner 的一次性 pre-arm capture）
+
+- 隔离分支 `codex/brs-rejection-ready-owner` 从 PR132 冻结 `046bab8` 继续；
+  不修改前置冻结工作树或主 checkout 的用户提交/未提交文档。
+- PR132 同库存321项在 macOS Python3.11.15/Linux Python3.12.3 各全通过，
+  独立产品/raw/source/import审查接受，PR已ready，尚未合main。旧Python3.12
+  optional-alias失败来源单独保留，不累计。
+- 本轮接入原 owner 的 `retain_rejection_ready_capture()`：原C1/P/C2后仅能
+  捕获一次，保留原对象custody、完整六表raw rows/schema、原Condition/native
+  RLock、原scope、既有admission/reference canonical bytes/digest及原ready三字段
+  payload。失败poison，不刷新head、不重试、不arm/dequeue/ACK。
+- 新只读reference reader始终将原run/C2/episode heads传给canonical ledger，
+  将重建evidence的三个head逐一比原held值，完整record/reference bytes比较及全部
+  held refs复验在原raw前后相等证明中完成，不register/pin/CAS、不写预算或结果。
+- 新独立pre-arm live guard覆盖新增函数/closure/metadata/namespace、raw SQL
+  reader/constants和声明runtime边；外层owner policy另固定该guard的代码与closure。
+  原empty-channel gate在capture存在时使用held native RLock并于锁内重验原同步
+  capsule，保留旧空域拒绝。完整final ACK reader图仍后续。
+- 开发曾发现readers影子检查误拒合法inert `_execute_intent` fixture seam，已改为
+  明确只读self-dispatch库存；另修正集成callsite参数。早期失败raw不作通过证据。
+  reference单/双候选正向smoke与124项guard测试已通过，最终联合focused/static、
+  同源双平台材料及独审由后续冻结验收单独记录，不在本提交提前宣称通过。
+- CI诊断确认PR123/124/125已有pytest全部通过，但selected-service实际39项、
+  workflow仍要求38项导致gate失败；PR129已有39/86修复，本分支纳入同样两处
+  CI gate修复，避免后继继续沿用旧库存。失败日志、JUnit及离线复现保存在主
+  checkout ignored validation/ci-focused-failures-20261018-sn938w4b。
+- 下一项P0是实际原pending的一次性armed/inflight状态、完整finite final readers及
+  staged ACK提交；之后是拒绝dispatch/result/recovery、root settlement、owner
+  retirement和reserved-wave serial successor。P1仍缺真实runtime、OpenEvolve/
+  Shinka lifecycle和生产CLI验收。完整CI通过后按依赖合main；本地scoped证据不能
+  替代。public native BRS、production admission、online publication保持关闭，
+  P2/remote evaluator后置；只用本地inert/provider-free fixtures，5090gpu可跑CPU回归。
+
+以下为前置观察器开发记录；最终验收以各冻结材料和PR为准。
+
 # 当前后继开发（2026-10-18，rejection ready 的同步与队列观察基础）
 
 - 隔离分支 `codex/brs-ready-staging` 从 PR131 冻结 `62eec36` 继续，不改前置
