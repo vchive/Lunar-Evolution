@@ -57,6 +57,8 @@ def _assert_custody(owner, held: tuple) -> None:
     if (any(current is not original for current, original in zip(_custody(owner), held, strict=True))
             or type(owner._phase) is not str or owner._phase != "rejected-provenance"
             or owner._poisoned is not False
+            or type(owner._policy_bytes) is not bytes or type(owner._payload) is not bytes
+            or type(owner._head) is not str
             or owner._rejection_ready_capture_started is not True
             or owner._rejection_ready_capture is not None):
         _fail("custody_drift")
@@ -70,7 +72,8 @@ def _assert_custody(owner, held: tuple) -> None:
 def _domain(owner) -> tuple[str, ...]:
     c2 = owner._rejection_provenance_c2_capture
     if (type(c2) is not tuple or len(c2) != 2 or type(c2[0]) is not str
-            or type(c2[1]) is not bytes or (owner._head, owner._payload) != c2):
+            or type(c2[1]) is not bytes or type(owner._head) is not str
+            or type(owner._payload) is not bytes or (owner._head, owner._payload) != c2):
         _fail("original_c2_required")
     state = json.loads(c2[1])
     refs = state.get("python_admission_refs")
@@ -117,6 +120,9 @@ def retain_rejection_ready_capture(self) -> None:
     try:
         if self._poisoned is not False:
             _fail("owner_poisoned")
+        if (type(self._policy_bytes) is not bytes or type(self._payload) is not bytes
+                or type(self._head) is not str):
+            _fail("capture_type_invalid")
         if canonical_json(_policy()) != self._policy_bytes:
             _fail("policy_drift")
         _owner(self)

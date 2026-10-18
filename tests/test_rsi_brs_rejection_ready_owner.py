@@ -200,3 +200,23 @@ def test_enclosing_policy_independently_refuses_capture_guard_closure_drift():
             brs._policy()
     finally:
         cell.cell_contents = original
+
+
+@pytest.mark.parametrize("field", ["_policy_bytes", "_payload", "_head"])
+def test_capture_primitive_types_refuse_before_foreign_equality(field):
+    calls = []
+
+    class Foreign:
+        def __eq__(self, _other):
+            calls.append("eq")
+            raise AssertionError("capture invoked a foreign primitive equality")
+
+        __ne__ = __eq__
+
+    owner = object.__new__(brs._BRSLineageCheckpointOwner)
+    owner._poisoned = False
+    owner._policy_bytes, owner._payload, owner._head = b"{}", b"{}", "a" * 64
+    setattr(owner, field, Foreign())
+    with pytest.raises(RSILearningError, match="capture_type_invalid"):
+        owner.retain_rejection_ready_capture()
+    assert calls == [] and owner._poisoned is True
