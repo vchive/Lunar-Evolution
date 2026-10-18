@@ -250,6 +250,9 @@ def test_worker_abandon_after_delivery_preserves_generated_response_without_rece
         monkeypatch.setattr(transport, "_BRS_EVIDENCE_WORKER_ERRORS", responses, raising=False)
         value.ready.set()
         result = run_brs_owner_publication_mailbox(value.owner, mailbox, value.preparation, check=lambda: None, timeout=10)
+        assert result.worker_receipt_observed is False
+        with pytest.raises(RSILearningError, match="^rsi_python_brs_owner_bridge_worker_receipt_unknown$"):
+            _ = result.transaction
         evidence = inspect_brs_mailbox_evidence(value.ledger, value.binding.run_id, value.episode_id)
         generated, observed = evidence["records"][-2:]
         assert observed["stage"] == "transport_observed" and observed["mailbox_state"] == "abandoned"

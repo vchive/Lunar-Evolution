@@ -54,6 +54,27 @@ class BRSOwnerMailboxBridgeResult:
 
     transaction: NativeProducerBundleTransactionResult
     response_payload: bytes
+    worker_receipt_observed: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.worker_receipt_observed) is not bool:
+            _fail("receipt_invalid")
+
+    def __getattribute__(self, name: str):
+        """Keep an unacknowledged transaction out of settlement callers.
+
+        The owner may retain the detached response bytes as recovery evidence when
+        a worker abandons the mailbox after generation.  That observation does not
+        constitute a worker receipt, however, so exposing the transaction would let
+        a caller accidentally continue into settlement or ordinal advancement.
+        The explicit receipt bit remains readable for recovery/audit code; only the
+        authority-bearing transaction field is fail-closed.
+        """
+        if name == "transaction":
+            receipt = object.__getattribute__(self, "worker_receipt_observed")
+            if receipt is not True:
+                _fail("worker_receipt_unknown")
+        return object.__getattribute__(self, name)
 
 
 def _response_payload(
@@ -256,7 +277,7 @@ def run_brs_owner_publication_mailbox(
             request=BRSOwnerPublicationRequest(*request_fields), response=BRSOwnerPublicationResponse(*generated_fields),
         )
         transaction, response = result_holder[0]
-        return BRSOwnerMailboxBridgeResult(transaction, response)
+        return BRSOwnerMailboxBridgeResult(transaction, response, accepted)
     except BaseException:
         owner._poisoned = True
         raise
