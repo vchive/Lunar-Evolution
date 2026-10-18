@@ -1,3 +1,29 @@
+# 当前后继开发（2026-10-18，原 rejected owner 的 staged ACK 服务）
+
+- 隔离分支 `codex/brs-rejection-staged-ack` 从 PR135 冻结 `e45c11c` 继续，
+  不修改主 checkout 用户文档或前置冻结树。PR135 的同库存868项已在 macOS
+  Python3.11.15 / Linux Python3.12.3 各全通过，独立产品、原始结果、source 和
+  import 复核接受；完整 CI 与依赖合入 main 仍未完成。
+- 本轮并行实现 dedicated `service_rejection_ready`、原 channel 的私有委托、
+  controller 只读 existing-reference root。一次消费原 owner scope，等待原自然
+  pending，保留同一 capsule，经 observation RLock -> 原 Condition -> read-only
+  ledger 最终校验后才发布 ACK；失败 poison/close 并永久保留已赋值前缀。
+- 最终只读校验单独保留原 C1/C2/P 完整物理证据、native sidecars/输出、runtime
+  manifest/目录、原 source、六表 raw rows/schema、ledger inode、原 DTO/context
+  和预算/执行控制 deadlines。不可刷新 capture、注册/重 pin、计费或 settle。
+- worker 在外部 check 返回后、构造返回 ACK 前重验原 constructor graph，并要求
+  done、servicing=false、完整四字段 ACK；旧通道行为保留。所有新增生产代码的
+  开发回归和完整同源双平台验收分别记录，本文不提前宣称最终通过。
+- 仍需完成本轮 genuine 原 worker fixture、匹配库存双平台回归、独立审查及完整
+  CI。后继 P0 拒绝 dispatch、result/recovery、root settlement、owner retirement、
+  serial successor 与 P1 runtime、OpenEvolve/Shinka lifecycle、生产 CLI 尚未关闭。
+  不得将内部 ACK 误报为全部功能完成或已可发布。
+- public native BRS、`production_admission`、`online_publication`继续关闭；仅本地
+  inert/provider-free fixture，可在5090gpu跑CPU回归。不运行 WebAgent、真实模型/
+  solver、远程或公司 evaluator。P2/多机/外部认证不扩展。
+
+以下保留前置开发记录；最终接受以各冻结材料和 PR 为准。
+
 # 当前后继开发（2026-10-18，staged ACK 的有限前置原语）
 
 - 隔离分支 `codex/brs-rejection-ready-service` 基于 PR133，并带入 PR134 的

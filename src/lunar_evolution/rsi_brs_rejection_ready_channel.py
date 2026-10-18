@@ -30,6 +30,7 @@ _CHANNEL_FIELDS = frozenset({
     "_run_id", "_episode_ids", "_owner_thread", "_condition", "_queue", "_requests",
     "_closed", "_servicing", "_handoff_mode", "_selected_episode_id",
     "_selected_handoff_sha256", "_consumed_handoff_nonces", "_completed_selected_episodes",
+    "_rejection_ready_worker_guarded",
 })
 _PENDING_FIELDS = ("ready", "state", "binding_sha256", "ack", "ack_fields", "error", "cancelled")
 _READY_FIELDS = ("run_id", "episode_id", "payload", "request_sha256")
@@ -128,6 +129,8 @@ def _namespace(channel: object) -> dict:
     namespace = _DICT_GET(_CHANNEL_DICT, channel, _CHANNEL)
     if (type(namespace) is not dict or len(namespace) != len(_CHANNEL_FIELDS)
             or any(type(key) is not str for key in namespace) or set(namespace) != _CHANNEL_FIELDS):
+        _fail("channel_invalid")
+    if type(namespace["_rejection_ready_worker_guarded"]) is not bool:
         _fail("channel_invalid")
     return namespace
 

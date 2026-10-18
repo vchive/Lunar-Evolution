@@ -223,10 +223,13 @@ P/C2 validation and complete dependency-ordered CI remain independent requiremen
 - [x] Replace raw-ledger urllib quoting with bounded stateless UTF-8 URI encoding,
   preserving `safe="/"`, the original path limits, `mode=ro`, complete six-table/schema
   rows and capacities. Remove the now-unused mutable quoter/cache dependency pins.
-- [ ] Freeze and validate the connected prerequisite successor on matching macOS/
+- [x] Freeze and validate the connected prerequisite successor on matching macOS/
   Linux source and ordered inventory, with independent product/raw/import review.
   PR134's separate fixture race fix passed 10 focused cases; its CI/main integration
   remains pending and does not provide acceptance for the new product source.
+  PR135 frozen `e45c11c` passed the same 868 cases on macOS/Linux with no failures,
+  errors or skips; independent product/raw/source/import review accepted that
+  prerequisite scope. Its complete CI and main integration remain pending.
 - [ ] Finish and independently review the finite final-reader graph, transitive
   ledger/physical/DTO/context dependencies, source/code/default/metadata pins and
   exact-type/shadow refusal before enabling the genuine original-worker fixture.
