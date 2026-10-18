@@ -14,8 +14,9 @@
 - worker 在外部 check 返回后、构造返回 ACK 前重验原 constructor graph，并要求
   done、servicing=false、完整四字段 ACK；旧通道行为保留。所有新增生产代码的
   开发回归和完整同源双平台验收分别记录，本文不提前宣称最终通过。
-- 仍需完成本轮 genuine 原 worker fixture、匹配库存双平台回归、独立审查及完整
-  CI。后继 P0 拒绝 dispatch、result/recovery、root settlement、owner retirement、
+- 原 worker 单候选 genuine 开发 smoke 在冻结 `6422073` 通过（54.33秒），
+  已证明实际 receipt 与原 durable/material 状态不变；早期错误文件名失败独立保留，
+  不累计为验收。仍需匹配库存双平台回归、其余 genuine 场景、独立审查及完整 CI。后继 P0 拒绝 dispatch、result/recovery、root settlement、owner retirement、
   serial successor 与 P1 runtime、OpenEvolve/Shinka lifecycle、生产 CLI 尚未关闭。
   不得将内部 ACK 误报为全部功能完成或已可发布。
 - public native BRS、`production_admission`、`online_publication`继续关闭；仅本地
