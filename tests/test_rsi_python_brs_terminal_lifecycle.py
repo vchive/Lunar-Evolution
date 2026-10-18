@@ -282,7 +282,8 @@ def test_append_readback_failure_never_advances_local_cursor(capture, monkeypatc
         controller_checkpoint_history=lambda _namespace: deepcopy(durable),
         controller_checkpoint=lambda _run_id: ("b" * 64, {}),
     )
-    session._owner = SimpleNamespace(_ledger=ledger, _head=HEX, _state={}, _run_id=capture.run_id)
+    session._owner = SimpleNamespace(_ledger=ledger, _head=HEX, _state={}, _run_id=capture.run_id,
+                                     _reserved_prefix=None)
     monkeypatch.setattr(BRSOwnerTerminalLifecycle, "_fixed", lambda _self: None)
     with pytest.raises(RSILearningError, match="readback_drift"):
         session._append("delivery", _delivery(capture))
@@ -414,6 +415,7 @@ def test_original_mailbox_worker_performs_one_intermediate_ready_only_after_arm(
                     assert mailbox._condition.wait(3)
             with exchange.condition:
                 exchange.admission_offer, exchange.admission_state = payload, "offered"
+                exchange.admission_kind = "rejection"
             assert checked_before_arm.wait(3)
             with channel._condition:
                 assert not channel._queue and channel._requests == {}
@@ -467,6 +469,7 @@ def test_endpoint_never_builds_or_posts_ready_before_original_guard_is_true(monk
     channel._rejection_ready_worker_guarded = guard
     exchange = _PrimitiveExchange(None)
     exchange.admission_offer, exchange.admission_state = b"original-comparison-bytes", "offered"
+    exchange.admission_kind = "rejection"
     endpoint = _BRSWorkerTerminalEndpoint(
         BRSOwnerPublicationMailbox.__new__(BRSOwnerPublicationMailbox), exchange, handoff.canonical_bytes,
         HEX, threading.get_ident(), id(threading.current_thread()), channel,

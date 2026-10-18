@@ -577,6 +577,9 @@ class NativeRSISchedulerProvider:
         # This observation belongs only to the original active dispatch stack.
         # Restart and historical inspection cannot populate or refresh it.
         self._live_rejection: tuple[Any, ...] | None = None
+        # Private original-worker preparation binding. Public BRS dispatch keeps
+        # its old refusal; this transient object never enters configuration.
+        self._brs_native_binding: object | None = None
         # Freeze before any launch. Recovery compares this prepared pin to the durable sidecar;
         # neither provider checks nor restart may silently pin a replacement database.
         self._failure_ledger_identity = (
@@ -1470,6 +1473,10 @@ class NativeRSISchedulerProvider:
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
     ) -> NativeRSIRejectionEvidence:
         """Repeat original active owner/C2 observation inside the fresh dispatch stack."""
+        if self._brs_native_binding is not None:
+            from .rsi_brs_native_provider import recover_brs_native_rejection
+
+            return recover_brs_native_rejection(self, request, plan)
         from .rsi_controller import RSILearningController
         from .rsi_publication_lineage import RSIPublicationLineage
 
@@ -1674,6 +1681,10 @@ class NativeRSISchedulerProvider:
     def __call__(
         self, request: SolverRequest, plan: NativeRSIExecutionPlan,
     ) -> NativeRSIReceiptBundle | NativeRSIFailureEvidence | NativeRSIRejectionEvidence:
+        if self._brs_native_binding is not None:
+            from .rsi_brs_native_provider import run_brs_native_provider
+
+            return run_brs_native_provider(self, request, plan)
         self._refuse_brs_worker_publication()
         if not isinstance(request, SolverRequest) or not isinstance(plan, NativeRSIExecutionPlan):
             _fail("input_invalid")

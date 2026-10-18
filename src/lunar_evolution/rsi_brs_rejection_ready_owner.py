@@ -28,6 +28,8 @@ _CAPTURES = (
     "_rejection_provenance_evidence", "_rejection_provenance_sha256",
     "_rejection_provenance_file_pin", "_budget_bytes", "_handoff_bytes",
     "_selected_context_bytes", "_run_head", "_episode_head", "_head", "_payload", "_policy_bytes",
+    "_ordinal", "_reserved_prefix", "_reserved_lineage_bytes", "_reserved_original_checkpoint", "_reserved_capture_bytes",
+    "_reserved_scope", "_reserved_gateway", "_root_sidecar",
     "_rejection_ready_locks_capture", "_rejection_ready_sync_capture",
 )
 _CONTROLLER_READERS = (*reference._CONTROLLER_READERS,

@@ -608,8 +608,10 @@ def _compose_brs_terminal_evidence(
         run_history = ledger.history(run_id)
     if not run_history or any(record.payload.get("producer_brs_checkpoint_policy") != policy for record in run_history):
         _fail("policy_drift")
+    publication_reader = (_reserved_publication if roots[0][1].get("plan", {}).get(
+        "reserved_native_serial") is True else _publication)
     try:
-        report["publication_sha256"] = _publication(workspace, publication, binding, roots, ledger=ledger)
+        report["publication_sha256"] = publication_reader(workspace, publication, binding, roots, ledger=ledger)
     except RSILearningError:
         raise
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
@@ -623,7 +625,7 @@ def _compose_brs_terminal_evidence(
         _fail("rejection_result_drift")
     # Reobserve independently pinned files after the ledger projection checks.
     try:
-        publication_sha = _publication(workspace, publication, binding, roots, ledger=ledger)
+        publication_sha = publication_reader(workspace, publication, binding, roots, ledger=ledger)
     except RSILearningError:
         raise
     except (OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
@@ -662,3 +664,271 @@ def inspect_brs_terminal_observation(
         ledger, run_id, episode_id, workspace=workspace, native_plan=native_plan,
         intent=intent, attestation=attestation, artifact=artifact,
     )[0]
+
+
+def _reserved_published_publication(workspace, publication, binding, roots, *, ledger,
+                                    ordinal, prefix, original_lineage_bytes):
+    """Reobserve a real published child under its independently derived prefix."""
+    from . import producer_bundle_recovery as recovery
+    from .producer_bundle_admission import parse_producer_bundle_admission_plan
+    from .producer_bundle_lineage import (
+        LineageSnapshotPin,
+        lineage_directory,
+        read_lineage_descriptor_pinned,
+        verify_persisted_lineage_snapshot,
+    )
+    from .producer_bundle_publication import parse_producer_bundle_publication_journal
+    from .rsi_brs_publication_lineage import _policy
+    from .rsi_publication_lineage import _root_pin
+
+    wire = publication["lineage"]
+    policy = _policy()
+    if (any(state.get("producer_brs_checkpoint_policy") != policy for _head, state in roots)
+            or type(wire) is not dict or wire.get("policy_sha256") != _digest(policy)):
+        _fail("policy_drift")
+    if (type(wire) is not dict or wire.get("protocol") != "lunar-rsi-brs-lineage-checkpoint-v1"
+            or set(wire) != {"protocol", "run_id", "workspace", "run_request_sha256",
+                             "root_proof_sha256", "policy_sha256", "max_batches", "batches", "head", "rejections"}
+            or wire["run_id"] != binding["run_id"]
+            or wire["workspace"] != _root_pin(recovery._workspace(workspace))
+            or type(wire.get("batches")) is not list or len(wire["batches"]) != ordinal + 1
+            or roots[-1][1].get("producer_publication_lineage", {}).get("batches", [])[:ordinal + 1] != wire["batches"]):
+        _fail("publication_lineage_drift")
+    journal = parse_producer_bundle_publication_journal(publication["journal"])
+    if journal.state != "published":
+        _fail("publication_journal_drift")
+    entry = wire["batches"][ordinal]
+    base_fields = {"journal_id", "ordinal", "episode_id", "request_sha256", "memory_snapshot_sha256",
+                   "native_plan_sha256", "admission_plan", "prepared_journal", "before", "before_file_pin",
+                   "snapshots", "before_sources", "state", "evidence_pins", "staged", "staged_file_pin",
+                   "state_projection_sha256", "after_sources", "terminal", "terminal_file_pin",
+                   "published_journal", "head_sources"}
+    if (type(entry) is not dict or set(entry) != base_fields or entry["state"] != "terminal"
+            or type(entry["ordinal"]) is not int or entry["ordinal"] != ordinal
+            or entry["episode_id"] != binding["episode_id"]
+            or entry["request_sha256"] != binding["selected_request_sha256"]
+            or entry["native_plan_sha256"] != binding["native_plan_sha256"]):
+        _fail("publication_entry_drift")
+    journal = parse_producer_bundle_publication_journal(publication["journal"])
+    prepared = parse_producer_bundle_publication_journal(entry["prepared_journal"])
+    plan = parse_producer_bundle_admission_plan(entry["admission_plan"])
+    if (journal.to_dict() != entry["published_journal"] or journal.state != "published"
+            or journal.journal_id != entry["journal_id"] or journal.run_id != binding["run_id"]
+            or journal.task_id != binding["episode_id"] or journal.admission_sha256 != plan.digest()
+            or prepared.state != "prepared" or prepared.run_id != journal.run_id
+            or prepared.task_id != journal.task_id or prepared.journal_id != journal.journal_id
+            or prepared.admission_sha256 != plan.digest()):
+        _fail("publication_journal_drift")
+    batch = recovery._batch(recovery._workspace(workspace), journal.journal_id)
+    descriptors = {}
+    for kind in ("before", "staged", "terminal"):
+        pin = LineageSnapshotPin.from_dict(entry[kind + "_file_pin"])
+        if pin.name != ("before-v2.json" if kind == "before" and ordinal else kind + ".json"):
+            _fail("publication_pin_drift")
+        if kind == "before" and ordinal:
+            from .producer_bundle_lineage_v2 import read_lineage_v2_descriptor_pinned
+            observed = read_lineage_v2_descriptor_pinned(workspace, journal.journal_id,
+                kind="before-v2", expected_file_pin=pin)
+        else:
+            observed = read_lineage_descriptor_pinned(workspace, journal.journal_id, kind=kind, expected_file_pin=pin)
+        if (observed.to_dict() != entry[kind] or observed.run_id != binding["run_id"]
+                or observed.journal_id != journal.journal_id or observed.ordinal != ordinal):
+            _fail("publication_descriptor_drift")
+        descriptors[kind] = observed
+    before, staged, terminal = (descriptors[kind] for kind in ("before", "staged", "terminal"))
+    if ordinal:
+        if ((before.previous_attempt_journal_id, before.previous_attempt_outcome,
+             before.previous_attempt_terminal_sha256, before.previous_attempt_lineage_sha256) != prefix.previous_attempt
+                or (before.published_predecessor_journal_id, before.published_predecessor_terminal_sha256,
+                    before.published_predecessor_lineage_sha256) != (prefix.published_predecessor or (None, None, None))):
+            _fail("publication_predecessor_drift")
+    elif before.predecessor_terminal_sha256 is not None or before.predecessor_lineage_sha256 is not None:
+        _fail("publication_predecessor_drift")
+    if (staged.before_sha256 != before.digest() or terminal.staged_sha256 != staged.digest()
+            or terminal.terminal_sha256 != journal.terminal_marker_sha256
+            or staged.archive_after_sha256 != journal.archive_after_sha256
+            or staged.state_after_sha256 != journal.state_after_sha256
+            or terminal.archive_after_sha256 != staged.archive_after_sha256
+            or terminal.state_after_sha256 != staged.state_after_sha256
+            or prepared.base_archive_sha256 != before.archive.sha256
+            or prepared.base_state_sha256 != before.state.sha256):
+        _fail("publication_chain_drift")
+    snapshots = entry["snapshots"]
+    if (type(snapshots) is not dict or set(snapshots) != {
+        "archive-before", "state-before", "archive-after", "state-after",
+    } or type(entry["evidence_pins"]) is not dict or set(entry["evidence_pins"]) != {
+        "journal.prepared.json", "journal.staged.json", "manifest.json", "preflight.json",
+        "journal.published.json", "terminal.json",
+    }):
+        _fail("publication_pin_drift")
+    for name, raw in snapshots.items():
+        pin = LineageSnapshotPin.from_dict(raw)
+        if pin.name != name + ".snapshot":
+            _fail("publication_pin_drift")
+        verify_persisted_lineage_snapshot(lineage_directory(workspace, journal.journal_id) / pin.name, pin)
+    if (before.archive.to_dict() != snapshots["archive-before"]
+            or before.state.to_dict() != snapshots["state-before"]
+            or snapshots["archive-after"]["sha256"] != staged.archive_after_sha256
+            or snapshots["state-after"]["sha256"] != staged.state_after_sha256):
+        _fail("publication_snapshot_drift")
+    sources = entry["before_sources"]
+    if type(sources) is not dict or set(sources) != {"archive", "state"}:
+        _fail("publication_source_drift")
+    for name, raw in sources.items():
+        snapshot = LineageSnapshotPin.from_dict(snapshots[name + "-before"])
+        if name == "archive" and type(raw) is dict and raw.get("missing") is True:
+            if (set(raw) != {"missing", "parent"} or raw["parent"] != _root_pin(batch.parent.parent)
+                    or snapshot.size != 0 or snapshot.sha256 != hashlib.sha256(b"").hexdigest()):
+                _fail("publication_source_drift")
+        else:
+            pin = LineageSnapshotPin.from_dict(raw)
+            if pin.name != name + "-before" or pin.sha256 != snapshot.sha256 or pin.size != snapshot.size:
+                _fail("publication_source_drift")
+    for field, suffix in (("after_sources", "after"), ("head_sources", "before")):
+        if type(entry[field]) is not dict or set(entry[field]) != {"archive", "state"}:
+            _fail("publication_source_drift")
+        for name, raw in entry[field].items():
+            pin = LineageSnapshotPin.from_dict(raw)
+            snapshot = LineageSnapshotPin.from_dict(snapshots[name + "-after"])
+            if pin.name != name + "-" + suffix or pin.sha256 != snapshot.sha256 or pin.size != snapshot.size:
+                _fail("publication_source_drift")
+            if field == "head_sources":
+                after = LineageSnapshotPin.from_dict(entry["after_sources"][name])
+                if any(getattr(after, key) != getattr(pin, key) for key in (
+                    "device", "inode", "size", "mode", "nlink", "mtime_ns", "sha256",
+                )):
+                    _fail("publication_source_drift")
+                filename = "archive.jsonl" if name == "archive" else "state.json"
+                if len(roots[-1][1]["producer_publication_lineage"]["batches"]) == ordinal + 1:
+                    verify_persisted_lineage_snapshot(batch.parent.parent / filename, pin)
+    for name, raw in entry["evidence_pins"].items():
+        pin = LineageSnapshotPin.from_dict(raw)
+        if pin.name != name:
+            _fail("publication_pin_drift")
+        verify_persisted_lineage_snapshot(batch / name, pin)
+    if (recovery._read_journal(batch / "journal.prepared.json") != prepared
+            or recovery._read_journal(batch / "journal.staged.json").digest() != staged.journal_sha256
+            or recovery._read_json(batch / "manifest.json", 256 * 1024) != publication["manifest"]):
+        _fail("publication_material_drift")
+    preflight = recovery._read_json(batch / "preflight.json", 128 * 1024)
+    staged_journal = recovery._read_journal(batch / "journal.staged.json")
+    preflight_sha = recovery._check_preflight(preflight, staged_journal, plan)
+    manifest_sha, ids, _paths, files = recovery._manifest(publication["manifest"], staged_journal, preflight_sha)
+    recovery._verify_python_handoff(batch, journal, plan)
+    recovery._verify_manifest_files(recovery._workspace(workspace), batch, files, journal)
+    observed = recovery._verify_terminal_batch_evidence(recovery._workspace(workspace), batch, journal, manifest_sha)
+    if (observed.terminal_marker_sha256 != terminal.terminal_sha256
+            or manifest_sha != staged.manifest_sha256 or ids != staged.candidate_ids
+            or observed.archive_after_sha256 != staged.archive_after_sha256
+            or observed.state_after_sha256 != staged.state_after_sha256):
+        _fail("publication_terminal_drift")
+    head = wire.get("head")
+    if head != {"journal_id": journal.journal_id, "terminal_sha256": terminal.terminal_sha256,
+                "lineage_sha256": terminal.digest()}:
+        _fail("publication_head_drift")
+    return journal.digest()
+
+
+def _reserved_publication_scope(workspace, publication, binding, roots, *, ledger):
+    """Derive selected ancestry from the earliest real full reservation, read-only."""
+    from .rsi_brs_lineage_prefix import validate_brs_reserved_prefix
+    from .rsi_brs_reserved_owner import read_reserved_brs_completion_prefix
+    from .rsi_brs_reserved_reservation import read_reserved_brs_completion_reservation
+    from .rsi_store import RSILedger
+
+    if type(ledger) is not RSILedger:
+        _fail("reserved_ledger_invalid")
+    publication, binding = _clean(publication), _clean(binding)
+    if (type(binding.get("handoff")) is not dict or type(binding.get("run_id")) is not str
+            or type(binding.get("episode_id")) is not str):
+        _fail("reserved_selection_drift")
+    if (type(roots) not in {tuple, list} or not roots
+            or any(type(row) is not tuple or len(row) != 2 or type(row[0]) is not str
+                   or type(row[1]) is not dict for row in roots)):
+        _fail("reserved_roots_invalid")
+    for _head, body in roots:
+        _plain(body)
+    with ledger.read_only_observations():
+        actual_roots = RSILedger.controller_checkpoint_history(ledger, binding["run_id"])
+    if canonical_json(list(actual_roots), maximum=8 * 1024 * 1024) != canonical_json(
+            list(roots), maximum=8 * 1024 * 1024):
+        _fail("reserved_roots_drift")
+    current = actual_roots[-1][1]
+    plan = current.get("plan")
+    if (type(plan) is not dict or plan.get("reserved_native_serial") is not True
+            or current.get("mode") != "brs" or plan.get("mode") != "brs"
+            or type(plan.get("max_workers")) is not int or plan["max_workers"] != 1
+            or type(plan.get("wave")) is not int or type(plan.get("practices")) is not list
+            or not 1 <= len(plan["practices"]) <= 8):
+        _fail("reserved_original_required")
+    run_id = binding["run_id"]
+    episodes = tuple(f"{run_id}-practice-{plan['wave']}-{ordinal}"
+                     for ordinal in range(len(plan["practices"])))
+    observed = read_reserved_brs_completion_reservation(ledger, run_id=run_id, episode_ids=episodes,
+        expected_checkpoint_sha256=actual_roots[-1][0])
+    original = (observed.original_checkpoint_sha256, observed.original_state_bytes)
+    full, batches = read_reserved_brs_completion_prefix(ledger, workspace,
+        original_checkpoint=original, expected_checkpoint_sha256=actual_roots[-1][0])
+    ordinal = binding.get("handoff", {}).get("ordinal")
+    domain = json.loads(full.domain_bytes)
+    if (type(ordinal) is not int or not 0 <= ordinal < len(episodes)
+            or ordinal > len(batches) or binding["episode_id"] != episodes[ordinal]
+            or binding["selected_request_sha256"] != domain["request_sha256s"][ordinal]
+            or binding["handoff"]["root_snapshot_sha256"] != domain["root_snapshot_sha256"]):
+        _fail("reserved_selection_drift")
+    domain["episode_ids"], domain["request_sha256s"] = tuple(domain["episode_ids"]), tuple(domain["request_sha256s"])
+    prefix = validate_brs_reserved_prefix(**domain, batches=batches[:ordinal])
+    original_wire = None if ordinal == 0 else batches[ordinal - 1]["root_checkpoint"][1]["producer_publication_lineage"]
+    original_lineage_bytes = None if original_wire is None else canonical_json(original_wire, maximum=128 * 1024)
+    wire = publication.get("lineage")
+    actual_wire = current.get("producer_publication_lineage")
+    if (type(wire) is not dict or type(actual_wire) is not dict
+            or type(wire.get("batches")) is not list or len(wire["batches"]) != ordinal + 1
+            or type(actual_wire.get("batches")) is not list
+            or actual_wire["batches"][:ordinal + 1] != wire["batches"]
+            or wire["batches"][:ordinal] != ([] if original_wire is None else original_wire["batches"])
+            or any(wire.get(key) != actual_wire.get(key) for key in (
+                "protocol", "run_id", "workspace", "run_request_sha256", "root_proof_sha256",
+                "policy_sha256", "max_batches"))):
+        _fail("reserved_publication_drift")
+    active = wire["batches"][ordinal]
+    if ordinal:
+        expected_content = json.loads(prefix.canonical_bytes)["historical_poststate"]
+        before_content = [[active["snapshots"][name]["sha256"], active["snapshots"][name]["size"]]
+                          for name in ("archive-before", "state-before")]
+        previous = original_wire["batches"][-1]
+        previous_sources = previous["before_sources"] if previous["state"] == "rejected" else previous["head_sources"]
+        if before_content != expected_content or active["before_sources"] != previous_sources:
+            _fail("reserved_poststate_drift")
+    old_index = [] if original_wire is None else original_wire["rejections"]
+    expected_index = list(old_index)
+    if active.get("state") == "rejected":
+        from .producer_bundle_lineage_v2 import ProducerLineageRejectedTerminalV2
+        rejected = ProducerLineageRejectedTerminalV2.from_dict(active["rejected"])
+        expected_index.append({"ordinal": ordinal, "journal_id": rejected.journal_id,
+                               "rejected_sha256": rejected.digest()})
+    if wire.get("rejections") != expected_index:
+        _fail("reserved_rejection_index_drift")
+    return ordinal, prefix, original_lineage_bytes, observed
+
+
+def _reserved_publication(workspace, publication, binding, roots, *, ledger):
+    """Explicit private reader; the legacy first-batch API stays unchanged."""
+    from .rsi_brs_rejection_provenance import verify_reserved_rejected_publication
+    from .rsi_store import RSILedger
+
+    if type(ledger) is not RSILedger:
+        _fail("reserved_ledger_invalid")
+    with ledger.read_only_observations():
+        ordinal, prefix, original_lineage_bytes, observed = _reserved_publication_scope(
+            workspace, publication, binding, roots, ledger=ledger)
+        if publication["journal"]["state"] == "all_rejected":
+            result = verify_reserved_rejected_publication(workspace, publication, binding, roots,
+                ledger=ledger, ordinal=ordinal, prefix=prefix, original_lineage_bytes=original_lineage_bytes)
+        else:
+            result = _reserved_published_publication(workspace, publication, binding, roots,
+                ledger=ledger, ordinal=ordinal, prefix=prefix, original_lineage_bytes=original_lineage_bytes)
+        again = _reserved_publication_scope(workspace, publication, binding, roots, ledger=ledger)
+        if again != (ordinal, prefix, original_lineage_bytes, observed):
+            _fail("reserved_observation_changed")
+        return result

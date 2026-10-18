@@ -355,9 +355,28 @@ def validate_brs_reserved_prefix(
             if type(row) is not dict or set(row) != {"relative_path", "file_pin"}:
                 _fail("materials_invalid")
             path, pin = row["relative_path"], _pin(row["file_pin"])
+            # Evidence files under a rejection batch are physically retained at
+            # ``rejections/<candidate>.json``.  Their pin names cannot contain a
+            # slash, so the owner records a deterministic, collision-resistant
+            # pin name instead of the nested relative path.  Keep that mapping
+            # exact; every other material still uses the physical basename as
+            # its pin name.  This preserves the path/inode contract without
+            # pretending the hashed pin is a second physical file.
+            batch_prefix = f"evolution/producer-batches/{journal}/"
+            relative = path[len(batch_prefix):] if type(path) is str and path.startswith(batch_prefix) else None
+            expected_name = path.split("/")[-1] if type(path) is str else None
+            if type(relative) is str and relative.startswith("rejections/"):
+                # A path in this namespace must be one of the terminal's
+                # exact candidate files; never fall back to basename matching
+                # for unknown, nested or non-JSON rejection paths.
+                expected_name = None
+                if relative.endswith(".json") and relative.count("/") == 1:
+                    candidate = relative[len("rejections/"):-len(".json")]
+                    if candidate in ids:
+                        expected_name = "rejection-" + hashlib.sha256(relative.encode()).hexdigest()
             if (type(path) is not str or len(path) > 1024 or any(part in {"", ".", ".."} for part in path.split("/"))
                     or any(char in path for char in "\\\x00\r\n")
-                    or path.split("/")[-1] != pin["name"] or path in observed):
+                    or pin["name"] != expected_name or path in observed):
                 _fail("material_path_invalid")
             observed[path] = pin
             physical = (pin["device"], pin["inode"])

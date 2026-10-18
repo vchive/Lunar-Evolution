@@ -115,7 +115,7 @@ _ALIASES = (
         ("DirectoryChain", workspace_io.DirectoryChain), ("os", os), ("stat", stat), ("RSILedger", store.RSILedger))),
     *((workspace_io, name, original) for name, original in (
         ("os", os), ("stat", stat), ("sys", sys), ("Path", pathlib.Path))),
-    (os, "path", os.path), (pathlib, "os", os),
+    (os, "path", os.path),
     *((pathlib, name, vars(pathlib)[name]) for name in ("Path", "PurePath", "PosixPath", "WindowsPath")),
     (json_spec, "json", json), (json_spec, "math", math),
     *((native_plan, name, original) for name, original in (

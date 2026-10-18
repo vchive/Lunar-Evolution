@@ -15,6 +15,12 @@ from typing import NoReturn
 from .producer_bundle_lineage import MAX_LINEAGE_SNAPSHOT_BYTES
 from .rsi_learning import RSILearningError
 
+# Some Python/SQLite builds attach a warning registry to the module on the
+# first read of a read-only connection.  Declare the interpreter-owned slot up
+# front so the final-reader executable graph sees a stable namespace before any
+# ledger observation occurs.
+__warningregistry__ = {}
+
 _MAX_ROWS = 4096
 _MAX_IDS = 4096
 # Deliberately narrower than the store's 128 KiB payload cap: include row metadata.

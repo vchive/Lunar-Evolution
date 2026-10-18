@@ -1,7 +1,17 @@
 # Reserved-wave serial implementation plan
 
-Status: proposed interfaces and ownership awaiting review; no implementation or
-acceptance is claimed. The governing behavior is
+Status: implementation in progress. The bounded A/B readers, native
+provider/completion, private serial driver and finalization readers now exist in
+the working tree with focused checks; no integrated behavior or final-source
+acceptance is claimed. The latest natural two-child fixture run did not complete
+owner admission and mailbox handoff; the underlying cause remains under
+investigation. The earlier recorded failure
+`rsi_brs_reserved_prefix_material_path_invalid` at
+`read_reserved_brs_prefix -> validate_brs_reserved_prefix` has been repaired by
+an exact rejection-evidence path/pin mapping; the latest integrated failure is
+`rsi_brs_reserved_serial_settled_transport_missing`. Do not weaken the validator,
+owner or lifecycle gates while repairing the settled-transport contract. The
+governing behavior is
 [reserved-wave-serial.md](reserved-wave-serial.md), requirements RW-01 through
 RW-12. Tasks and validation inventory are in
 [reserved-wave-serial-tasks.md](reserved-wave-serial-tasks.md).

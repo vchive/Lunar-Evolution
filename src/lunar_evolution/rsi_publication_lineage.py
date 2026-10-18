@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from threading import get_ident
@@ -2576,21 +2577,25 @@ def acknowledge_publication_lineage_for_active_flow(controller: Any, owner: RSIP
     expected = _publication_lineage_checkpoint_delta(context.payload, wire)
     payload = controller._python_admission_flow_payload(expected)
     # State, sidecar and source checks above precede this original compare-and-swap.
-    head = owner._ledger.write_controller_checkpoint(owner._plan.run_id, expected, expected_sha256=owner._head)
-    with owner._ledger.read_only_observations():
-        observed = owner._ledger.controller_checkpoint(owner._plan.run_id)
-        observed_head = None if observed is None else observed[0]
-        observed_payload = None
-        if observed is not None and observed_head == head:
-            observed_payload = controller._python_admission_flow_payload(observed[1])
-        _validate_publication_lineage_checkpoint_readback(
-            expected_head=head, expected_payload=payload,
-            observed_head=observed_head, observed_payload=observed_payload,
-        )
-        controller._python_admission_assert_flow_context(context, owner._plan.run_id, owner._request.episode_id)
-        controller._validate_original_run_checkpoint_producer_binding(owner._ledger.get_run(owner._plan.run_id), expected)
-    acknowledged = replace(context, checkpoint_sha256=head, payload=payload)
-    state[_FIELD] = wire
-    controller._python_admission_flow_local.active = acknowledged
-    owner._context, owner._head, owner._payload = acknowledged, head, payload
+    wave = getattr(controller, "_python_admission_brs_wave", None)
+    transition = (controller._python_admission_brs_checkpoint_transition(wave)
+                  if wave is not None else nullcontext())
+    with transition:
+            head = owner._ledger.write_controller_checkpoint(owner._plan.run_id, expected, expected_sha256=owner._head)
+            with owner._ledger.read_only_observations():
+                observed = owner._ledger.controller_checkpoint(owner._plan.run_id)
+                observed_head = None if observed is None else observed[0]
+                observed_payload = None
+                if observed is not None and observed_head == head:
+                    observed_payload = controller._python_admission_flow_payload(observed[1])
+                _validate_publication_lineage_checkpoint_readback(
+                    expected_head=head, expected_payload=payload,
+                    observed_head=observed_head, observed_payload=observed_payload,
+                )
+                controller._python_admission_assert_flow_context(context, owner._plan.run_id, owner._request.episode_id)
+                controller._validate_original_run_checkpoint_producer_binding(owner._ledger.get_run(owner._plan.run_id), expected)
+            acknowledged = replace(context, checkpoint_sha256=head, payload=payload)
+            state[_FIELD] = wire
+            controller._python_admission_flow_local.active = acknowledged
+            owner._context, owner._head, owner._payload = acknowledged, head, payload
     return head

@@ -98,8 +98,11 @@ def _build_policy():
     pins = plain_tuple(pins)
 
     modules = (owner, reference, ledger, sync, ack, locks, state, service, admission, final, final_policy)
+    # Python may add a module-local warning registry after a one-time warning.
+    # It is interpreter bookkeeping rather than executable policy input.
     namespaces = plain_tuple((module, namespace_of(module),
-                              plain_tuple(namespace_of(module).items())) for module in modules)
+                              plain_tuple((name, value) for name, value in namespace_of(module).items()
+                                          if name != "__warningregistry__")) for module in modules)
     runtime_modules = plain_tuple((module, namespace_of(module)) for module in (
         _sqlite3, sqlite3, json, hashlib, builtins, types, sys, serializer_module))
     registered = plain_tuple((module.__name__, module) for module in (*modules,
@@ -180,9 +183,10 @@ def _build_policy():
         for module, namespace, saved in namespaces:
             if kind(module) is not module_type or namespace_of(module) is not namespace:
                 raise error_type(prefix)
-            if (length(namespace) != length(saved)
-                    or some(kind(key) is not plain_str for key in namespace)
-                    or plain_set(namespace) != {name for name, _value in saved}):
+            if some(kind(key) is not plain_str for key in namespace):
+                raise error_type(prefix)
+            names = plain_set(name for name in namespace if name != "__warningregistry__")
+            if length(names) != length(saved) or names != {name for name, _value in saved}:
                 raise error_type(prefix)
             for name, original in saved:
                 if namespace.get(name, missing) is not original:

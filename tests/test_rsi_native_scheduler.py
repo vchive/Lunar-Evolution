@@ -167,6 +167,7 @@ def test_scheduler_provider_pins_python_admission_before_live_dispatch(monkeypat
         _python_admission_bridge_wait_check=lambda: None,
     )
     provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider._brs_native_binding = None
     provider.context = context
     provider._python_admission_controller = controller
     seen = []
@@ -204,6 +205,7 @@ def test_scheduler_provider_pins_python_admission_before_live_dispatch(monkeypat
 
 def test_scheduler_provider_bridge_binding_is_single_owner() -> None:
     provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider._brs_native_binding = None
     provider._python_admission_controller = None
     first, second = object(), object()
     provider.bind_python_admission_controller(first)
@@ -282,6 +284,7 @@ def test_scheduler_provider_dispatch_does_not_read_python_admission_evidence(
         failure_ledger=None,
     )
     provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider._brs_native_binding = None
     provider.context = context
     provider._failure_ledger_identity = None
     provider._python_admission_controller = SimpleNamespace(

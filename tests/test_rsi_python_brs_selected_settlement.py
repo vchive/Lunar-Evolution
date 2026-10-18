@@ -576,6 +576,28 @@ def _exact_execution_for_payload_guard():
     return execution
 
 
+def test_payload_guard_accepts_failed_execution_without_episode_verifier():
+    episode_id, digest = "payload-helper-failed", OTHER
+    request = rsi_controller.SolverRequest(
+        episode_id, digest, digest, digest, digest, "native",
+    )
+    check = rsi_controller.VerifierCheck("official_evaluator", "fail", digest)
+    verifier = rsi_controller.VerifierDecision(
+        episode_id, "fail", digest, "inert-payload-helper", digest, (check,),
+        contract_sha256=digest, evaluator_sha256=digest, environment_sha256=digest,
+    )
+    episode = rsi_controller.PracticeEpisode(
+        episode_id, "payload-helper-run", digest, digest, digest, digest, "native", "failed",
+        request_sha256=request.digest(), terminal_reason="inert-payload-helper",
+    )
+    result = rsi_controller.SolverResult(
+        episode_id, request.digest(), "failed", digest, digest, digest, digest,
+        terminal_reason="inert-payload-helper",
+    )
+    execution = rsi_controller.EpisodeExecution(episode, request, result, verifier)
+    assert rsi_controller.RSILearningController._python_admission_selected_brs_execution_payload(execution)
+
+
 @pytest.mark.parametrize("target_name", [
     "execution", "episode", "request", "result", "verifier", "check", "trace",
 ])

@@ -13,6 +13,7 @@ import json
 import sqlite3
 import stat
 import subprocess
+import tempfile
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -43,6 +44,7 @@ from lunar_evolution.evolution import PopulationStrategy
 from lunar_evolution.native_trusted_attempt import NativeTrustedAttemptObservation
 from lunar_evolution.native_trusted_capture import capture_native_trusted_output
 from lunar_evolution.producer_broker_ipc import ProducerBrokerObservation
+from lunar_evolution.producer_handoff import producer_materials_sha256
 from lunar_evolution.producer_process import _digest_without, parse_producer_execution_receipt
 from lunar_evolution.producer_request_transport import (
     HostRequestJournal,
@@ -79,6 +81,23 @@ def _inert_process_boundary(monkeypatch):
 
     monkeypatch.setattr(subprocess, "Popen", forbidden)
     monkeypatch.setattr(subprocess, "run", forbidden)
+
+
+@pytest.fixture
+def tmp_path():
+    """Keep retained binding paths short without changing production wire caps."""
+    # The binding deliberately retains absolute runtime paths.  The reserved
+    # policy graph can therefore make the normal pytest base directory exceed
+    # the unchanged 32 KiB staging limit.  Use a short real directory so this
+    # fixture exercises the same cap without weakening it.  Avoid /tmp's
+    # symlink on macOS because process-boundary readers reject symlink parents.
+    parent = next(
+        str(candidate)
+        for candidate in (Path("/private/tmp"), Path("/var/tmp"), Path("/tmp"))
+        if candidate.is_dir() and not candidate.is_symlink()
+    )
+    with tempfile.TemporaryDirectory(prefix="lce-", dir=parent) as directory:
+        yield Path(directory)
 
 
 def _controller(value, supplier=None, *, execution=True, gateway=None, stager=True):
@@ -267,8 +286,12 @@ class _InertNativeObservation:
             "terminal_sha256": output.process_terminal_sha256,
             "runtime_observation_sha256": "a" * 64,
             "broker_transcript_sha256": receipt.trusted_execution["broker_journal_sha256"],
-            "envelope_sha256": output.envelope_bytes_sha256,
-            "materials_sha256": hashlib.sha256(canonical_json(output.envelope.to_dict())).hexdigest(),
+            # Admission pins the semantic envelope digest.  The hash of the
+            # retained output bytes is independent capture evidence and is
+            # already carried by the native receipt; it must not be reused as
+            # the envelope identity.
+            "envelope_sha256": output.envelope.envelope_sha256,
+            "materials_sha256": producer_materials_sha256(output.envelope),
             "contract_sha256": binding.contract_sha256,
             "evaluator_sha256": binding.evaluator_fingerprint,
             "runner_sha256": binding.intent.runner_fingerprint,
@@ -282,6 +305,8 @@ class _InertNativeObservation:
         handoff = build_python_producer_admission_handoff(**fields)
         batch = controller.producer_workspace / "evolution" / "producer-batches" / receipt.journal_id
         retained = persist_python_producer_admission_handoff_pinned(batch, handoff=handoff)
+        assert retained.handoff.envelope_sha256 == output.envelope.envelope_sha256
+        assert retained.handoff.materials_sha256 == producer_materials_sha256(output.envelope)
         self.handoffs.append(retained)
         return retained
 

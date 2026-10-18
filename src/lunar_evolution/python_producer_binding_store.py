@@ -30,6 +30,7 @@ PYTHON_BINDING_SIDECAR_NAME = "python-producer-binding.json"
 # the persistence boundary (and reads cannot use a narrower truncation limit).
 MAX_PYTHON_BINDING_SIDECAR_BYTES = MAX_PYTHON_PRODUCER_BINDING_BYTES
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_VALIDATED_BINDING_CACHE: dict[int, tuple[PythonProducerBinding, PythonProducerBinding, bytes]] = {}
 _NOT_STARTED_ARTIFACTS = frozenset({
     "attestation-consumption.json", "process-registration.json", "execution-receipt.json",
     "recovery-receipt.json", "native-deadline-binding.json", "terminal.json",
@@ -51,6 +52,9 @@ def _fail(code: str) -> NoReturn:
 def _validated_binding(binding: PythonProducerBinding) -> tuple[PythonProducerBinding, bytes]:
     if type(binding) is not PythonProducerBinding:
         _fail("binding_invalid")
+    cached = _VALIDATED_BINDING_CACHE.get(id(binding))
+    if cached is not None and cached[0] is binding:
+        return cached[1], cached[2]
     try:
         raw = binding.to_json()
         if type(raw) is not bytes:
@@ -64,6 +68,7 @@ def _validated_binding(binding: PythonProducerBinding) -> tuple[PythonProducerBi
         raise PythonProducerBindingStoreError("binding_invalid") from exc
     except (AttributeError, OverflowError, RecursionError, TypeError, UnicodeError, ValueError) as exc:
         raise PythonProducerBindingStoreError("binding_invalid") from exc
+    _VALIDATED_BINDING_CACHE[id(binding)] = (binding, parsed, raw)
     return parsed, raw
 
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -148,6 +149,15 @@ def run_brs_owner_publication_mailbox(
             # source/policy and running claim before both dispatch and byte delivery.
             if owner._rejection_ready_state == "committed":
                 _rejection_committed(owner)
+            elif owner._reserved_prefix is not None and owner._phase == "terminal":
+                from .rsi_python_brs_terminal_lifecycle import BRSOwnerTerminalLifecycle
+
+                if (type(_terminal_lifecycle) is not BRSOwnerTerminalLifecycle
+                        or _terminal_lifecycle._owner is not owner
+                        or _terminal_lifecycle._mailbox is not mailbox):
+                    _fail("published_lifecycle_required")
+                BRSOwnerTerminalLifecycle._assert_published_admission(_terminal_lifecycle)
+                _BRSLineageCheckpointOwner._check_owner(owner)
             else:
                 _BRSLineageCheckpointOwner._success_fixed(owner)
 
@@ -177,6 +187,14 @@ def run_brs_owner_publication_mailbox(
                     _fail("rejection_lifecycle_required")
                 BRSOwnerTerminalLifecycle._service_rejection_admission(_terminal_lifecycle, timeout=timeout)
                 _rejection_committed(owner)
+            elif result.publication_status == "published" and owner._reserved_prefix is not None:
+                from .rsi_python_brs_terminal_lifecycle import BRSOwnerTerminalLifecycle
+
+                if (type(_terminal_lifecycle) is not BRSOwnerTerminalLifecycle
+                        or _terminal_lifecycle._owner is not owner
+                        or _terminal_lifecycle._mailbox is not mailbox):
+                    _fail("published_lifecycle_required")
+                BRSOwnerTerminalLifecycle._service_published_admission(_terminal_lifecycle, timeout=timeout)
             # Native execution receives its own request DTO. Build against the
             # immutable entry capture, never that DTO or a mutable latest handoff.
             payload = _response_payload(
@@ -206,7 +224,27 @@ def run_brs_owner_publication_mailbox(
         )
         if served is not True or len(result_holder) != 1:
             _fail("mailbox_not_served")
-        status, accepted, request_fields, response_fields = BRSOwnerPublicationMailbox._observation_snapshot(mailbox)
+        # ``service`` publishes the response before the worker has necessarily
+        # consumed it.  Persisting ``transport_observed`` during that window
+        # would record a delivered response with an unknown worker receipt and
+        # make a later settled read reject the original transport.  Wait for the
+        # mailbox's one-shot receipt bit under a bounded deadline; the worker
+        # only changes this bit after validating the detached response, so this
+        # does not grant any publication or settlement authority.
+        deadline = time.monotonic() + timeout
+        while True:
+            status, accepted, request_fields, response_fields = BRSOwnerPublicationMailbox._observation_snapshot(mailbox)
+            if accepted:
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _fail("worker_receipt_unknown")
+            time.sleep(min(0.001, remaining))
+        # Re-run the full owner/source check only after the worker has yielded
+        # the receipt.  The check may scan immutable staging evidence; running
+        # it on every poll would starve the worker that is needed to flip the
+        # receipt bit on CPython.
+        check()
         if request_fields is None or len(generated_fields_holder) != 1:
             _fail("transport_snapshot_invalid")
         generated_fields = generated_fields_holder[0]

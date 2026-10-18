@@ -49,6 +49,7 @@ from .producer_python_runtime_tree import (
 from .python_producer_binding import PythonProducerBinding, parse_python_producer_binding
 from .python_producer_binding_store import (
     PythonProducerBindingSidecar,
+    _validated_binding,
     _validated_sidecar_pin,
     read_python_producer_binding_sidecar,
 )
@@ -197,7 +198,7 @@ def _sidecar(value: object, proof: PythonProducerCheckpointBinding) -> PythonPro
         _fail("sidecar_invalid")
     _shape(value)
     try:
-        binding = parse_python_producer_binding(value.binding.to_json())
+        binding, _ = _validated_binding(value.binding)
         _validated_sidecar_pin(value, binding)
         parsed = replace(value, binding=binding)
         proof.validate_sidecar(parsed)

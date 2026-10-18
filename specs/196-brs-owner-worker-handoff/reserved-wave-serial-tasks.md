@@ -1,12 +1,35 @@
 # Reserved-wave serial implementation and acceptance tasks
 
-Status: pure projection/prefix, whole-ledger/original-reservation readers and
-preparation exchange have development implementation and focused checks. Natural
-serial execution and final acceptance remain open. Governing contract:
+Status (working tree 2026-10-19): bounded projection/prefix, whole-ledger and
+original-reservation readers, preparation exchange, native completion/provider,
+private serial driver and finalization readers are implemented with focused
+checks. Natural serial execution is not accepted yet: the latest two-child
+`rejected -> rejected` fixture run did not complete owner admission and mailbox
+handoff. The earlier `rsi_brs_reserved_prefix_material_path_invalid` path/pin
+failure from `read_reserved_brs_prefix -> validate_brs_reserved_prefix` has been
+fixed with strict rejection-evidence mapping; the latest integrated run advances
+to `rsi_brs_reserved_serial_settled_transport_missing`. The settled-transport
+contract is still being diagnosed without weakening fingerprint, material, owner
+or lifecycle gates. Integrated V01-V10 and final-source acceptance remain open.
+Governing contract:
 [reserved-wave-serial.md](reserved-wave-serial.md).
 Ownership/interfaces: [reserved-wave-serial-plan.md](reserved-wave-serial-plan.md).
 These tasks form one complete P0 behavior; they do not reopen public native BRS,
 production admission, online publication, P1 real runtime/CLI or P2.
+
+The following implementation components are present in this working tree and have
+focused checks, but their presence does not mark the integrated tasks or V01-V10
+as complete:
+
+- [x] reserved projection/prefix, whole-ledger and original-reservation readers;
+- [x] fresh child preparation exchange and native provider/completion readers;
+- [x] private reserved owner/policy/rejection readers and serial driver;
+- [x] governed finalization and durable resume/finalization readers.
+
+The component checklist is intentionally separate from the B/C/D implementation
+items below: those items require original custody, live owner admission, mailbox
+handoff, exact root settlement and fault/recovery witnesses in one integrated
+source.
 
 ## 0. Review the contract before coding
 
@@ -24,16 +47,19 @@ production admission, online publication, P1 real runtime/CLI or P2.
 
 ## 1. Parallel implementation lanes
 
-Development checkpoint: five new foundation modules have 239 distinct focused
-cases (95 projection, 65 prefix, 19 ledger, 23 reservation, 37 exchange), all pass.
-The ledger reader scans all original children including claim-before-fence and
-foreign-run admissions; the reservation reader derives the earliest full-budget
-checkpoint from the same verified history without dropping trace fields. The
-exchange transfers one original preparation/endpoint without execution authority.
-These helpers do not complete C01..C09 or D01..D08. Full material observation,
-original owner custody, natural provider integration and final matching-platform
-acceptance are still required. Development raw/independent reviews are retained in
-`rejected-lifecycle-dev-20261018/reserved-wave-a-dev/` under ignored validation.
+Development checkpoint: the original five foundation modules have 239 distinct
+focused cases (95 projection, 65 prefix, 19 ledger, 23 reservation, 37
+exchange). The current working tree adds native provider/completion, reserved
+owner/policy/rejection readers, the serial driver and finalization readers. The
+latest focused evidence reported for this tree is 16 serial-finalization cases,
+5 governed-finalization cases and 79 reserved-policy/provenance cases; these
+are component evidence only. The ledger reader scans all original children,
+including claim-before-fence and foreign-run admissions; the reservation reader
+derives the earliest full-budget checkpoint without dropping trace fields; the
+exchange transfers one original preparation/endpoint without execution
+authority. None of these counts closes the natural two-child integration gate.
+Keep the raw/independent reviews under ignored validation and do not treat them
+as final-source or CI acceptance.
 
 ### A. Original reservation and serial selection — RW-01, RW-02, RW-03, RW-10
 

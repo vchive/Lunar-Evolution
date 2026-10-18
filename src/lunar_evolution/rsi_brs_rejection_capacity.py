@@ -210,4 +210,142 @@ def retained_brs_c2_evidence_bytes(
     return total
 
 
+def _retained_reserved_brs_materials(
+    state, wire, retained_tables, published_tables, *, prefix, original_lineage_bytes,
+    native_plan_sha256, provenance_reserve, with_provenance=False,
+):
+    """Count the complete immutable prefix and active native rejection material.
+
+    These tables are observations supplied by the original owner's independent
+    physical readers. A prefix or a counted table grants no publication authority.
+    Unlike the legacy API, this private kernel explicitly receives the original
+    whole-wire prefix; it never slices a multi-batch wire into a single batch.
+    """
+    from .rsi_brs_reserved_rejection import (
+        _transition_scope,
+        validate_reserved_brs_rejected_entry,
+    )
+
+    _shape(state)
+    _shape(wire)
+    _shape(retained_tables)
+    _shape(published_tables)
+    if (type(state) is not dict or type(wire) is not dict
+            or type(retained_tables) is not dict or type(published_tables) is not dict
+            or type(with_provenance) is not bool
+            or type(provenance_reserve) is not int
+            or provenance_reserve not in {0, MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES}):
+        _fail("shape_invalid")
+    retained_ready_capsule_bytes(state)
+    _before, active, old_index = _transition_scope(wire, wire, prefix, original_lineage_bytes)
+    rejected = validate_reserved_brs_rejected_entry(active, prefix=prefix,
+        native_plan_sha256=native_plan_sha256, with_provenance=with_provenance)
+    if wire["rejections"] != [*old_index, {"ordinal": rejected.ordinal,
+            "journal_id": rejected.journal_id, "rejected_sha256": rejected.digest()}]:
+        _fail("rejection_index_invalid")
+    entries = wire["batches"]
+    rejected_ids = tuple(entry["journal_id"] for entry in entries if entry["state"] == "rejected")
+    published_ids = tuple(entry["journal_id"] for entry in entries if entry["state"] == "terminal")
+    if (any(type(key) is not str for key in retained_tables)
+            or tuple(retained_tables) != rejected_ids
+            or any(type(key) is not str for key in published_tables)
+            or tuple(published_tables) != published_ids):
+        _fail("journal_tables_invalid")
+    materials, identities = {}, {}
+    total = 0
+    workspace = wire["workspace"]["path"]
+    for staging in state.get("producer_episode_staging", {}).values():
+        ready = staging.get("ready")
+        if type(ready) is not dict or ready.get("protocol") != READY_CAPSULE_PROTOCOL:
+            continue
+        if ready["workspace"] != workspace:
+            _fail("ready_domain_invalid")
+        path = "evolution/producer-batches/" + _identifier(ready["journal_id"]) + "/lineage/rsi-ready.snapshot"
+        total += _add_material(materials, identities, path,
+                               _pin_record(ready["file_pin"], name="rsi-ready.snapshot"))
+    for entry in entries:
+        journal = _identifier(entry["journal_id"])
+        base = "evolution/producer-batches/" + journal + "/"
+        for name, pin in entry["snapshots"].items():
+            filename = name + ".snapshot"
+            total += _add_material(materials, identities, base + "lineage/" + filename,
+                                   _pin_record(pin, name=filename))
+        for kind in ("before", "staged", "terminal", "rejected"):
+            field = kind + "_file_pin"
+            if field in entry:
+                name = "before-v2.json" if kind == "before" and entry["ordinal"] else kind + ".json"
+                total += _add_material(materials, identities, base + "lineage/" + name,
+                                       _pin_record(entry[field], name=name))
+        for name, pin in entry["evidence_pins"].items():
+            pin_name = "rejection-" + hashlib.sha256(name.encode()).hexdigest() if name.startswith("rejections/") else name
+            total += _add_material(materials, identities, base + name, _pin_record(pin, name=pin_name))
+        if entry["state"] == "rejected":
+            tables = retained_tables[journal]
+            candidate_ids = entry["rejected"]["candidate_ids"]
+            if type(tables) is not dict or tuple(tables) != tuple(candidate_ids):
+                _fail("candidate_tables_invalid")
+            for table in tables.values():
+                clean = _validate_retained_evidence(table)
+                for observation in clean["entries"]:
+                    total += _add_material(materials, identities, observation["path"],
+                                           {key: value for key, value in observation.items() if key != "path"})
+            reference = entry.get("rejection_provenance")
+            if reference is not None:
+                pin = NativeRSIRejectionFilePin.from_dict(reference["file_pin"])
+                total += _add_material(materials, identities, base + pin.name,
+                    {"kind": "file", **{field: getattr(pin, field) for field in _OBSERVATION_FIELDS}})
+        else:
+            table = published_tables[journal]
+            required = {"kind", "size", "sha256", "device", "inode", "mtime_ns", "ctime_ns"}
+            optional = {"mode", "nlink", "parent_device", "parent_inode"}
+            if (type(table) is not dict or not table or any(type(path) is not str for path in table)
+                    or any(type(record) is not dict or not required <= set(record)
+                           or not set(record) <= required | optional for record in table.values())):
+                _fail("published_tables_invalid")
+            for record in table.values():
+                if any(type(record[field]) is not int or not 0 <= record[field] <= _MAX_INT
+                       for field in optional & set(record)):
+                    _fail("published_tables_invalid")
+            # The native retained-evidence parser validates canonical paths,
+            # numeric bounds and kinds without changing native file modes.
+            observations = [{"path": path, **record} for path, record in table.items()]
+            from .producer_bundle_receipts import _retained_evidence_digest
+            document = {"schema_version": "1", "protocol": "lunar-native-retained-evidence-v1",
+                        "entries": sorted(({key: item[key] for key in (
+                            "path", "kind", "size", "sha256", "device", "inode", "mtime_ns", "ctime_ns")}
+                            for item in observations), key=lambda item: item["path"])}
+            document["evidence_sha256"] = _retained_evidence_digest(document)
+            _validate_retained_evidence(document)
+            for observation in observations:
+                total += _add_material(materials, identities, observation["path"],
+                                       {key: value for key, value in observation.items() if key != "path"})
+        if total + provenance_reserve > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
+            _fail("aggregate_exhausted")
+    return total, materials, identities
+
+
+def _retained_reserved_brs_c1_evidence_bytes(
+    state, wire, retained_tables, published_tables, *, prefix, original_lineage_bytes, native_plan_sha256,
+):
+    return _retained_reserved_brs_materials(state, wire, retained_tables, published_tables,
+        prefix=prefix, original_lineage_bytes=original_lineage_bytes, native_plan_sha256=native_plan_sha256,
+        provenance_reserve=MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES)[0]
+
+
+def _retained_reserved_brs_c2_evidence_bytes(
+    captured_c1_state, c2_wire, retained_tables, published_tables, *, prefix, original_lineage_bytes,
+    native_plan_sha256,
+):
+    from .rsi_brs_reserved_rejection import validate_reserved_brs_c2_transition
+
+    _shape(captured_c1_state)
+    if type(captured_c1_state) is not dict:
+        _fail("shape_invalid")
+    validate_reserved_brs_c2_transition(captured_c1_state.get(_LINEAGE_FIELD), c2_wire, prefix=prefix,
+        original_lineage_bytes=original_lineage_bytes, native_plan_sha256=native_plan_sha256)
+    return _retained_reserved_brs_materials(captured_c1_state, c2_wire, retained_tables, published_tables,
+        prefix=prefix, original_lineage_bytes=original_lineage_bytes, native_plan_sha256=native_plan_sha256,
+        provenance_reserve=0, with_provenance=True)[0]
+
+
 __all__ = ["retained_brs_c1_evidence_bytes", "retained_brs_c2_evidence_bytes"]

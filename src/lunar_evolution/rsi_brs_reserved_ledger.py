@@ -138,7 +138,36 @@ def read_reserved_brs_ledger(
     ledger: RSILedger, *, run_id: str, episode_ids: tuple[str, ...],
     expected_checkpoint_sha256: str,
 ) -> BRSReservedLedgerObservation:
-    """Read the entire original domain under the already-held controller lease.
+    """Observe the whole domain while retaining the original controller lease."""
+    if type(ledger) is not RSILedger:
+        _fail("ledger_invalid")
+    RSILedger._assert_controller_lock(ledger, run_id)
+    result = _observe_reserved_brs_ledger(ledger, run_id=run_id, episode_ids=episode_ids,
+        expected_checkpoint_sha256=expected_checkpoint_sha256)
+    RSILedger._assert_controller_lock(ledger, run_id)
+    return result
+
+
+def read_reserved_brs_completion_ledger(
+    ledger: RSILedger, *, run_id: str, episode_ids: tuple[str, ...],
+    expected_checkpoint_sha256: str,
+) -> BRSReservedLedgerObservation:
+    """Read-only worker evidence; this never grants selection, ownership or a lease.
+
+    Its complete original snapshot and independent readback are identical to the
+    leased observer. Only an original controller can use the separate leased
+    entry before selection or append. A worker cannot acquire that authority by
+    supplying or receiving this descriptive observation.
+    """
+    return _observe_reserved_brs_ledger(ledger, run_id=run_id, episode_ids=episode_ids,
+        expected_checkpoint_sha256=expected_checkpoint_sha256)
+
+
+def _observe_reserved_brs_ledger(
+    ledger: RSILedger, *, run_id: str, episode_ids: tuple[str, ...],
+    expected_checkpoint_sha256: str,
+) -> BRSReservedLedgerObservation:
+    """Observe the entire original domain with a query-only coherent snapshot.
 
     Unlike terminal composition this operation requires no current obligation.
     A native claim alone, an orphan admission/reconciliation row, or a historical
@@ -155,7 +184,6 @@ def read_reserved_brs_ledger(
             or len(set(episode_ids)) != len(episode_ids)):
         _fail("domain_invalid")
     _sha(expected_checkpoint_sha256)
-    RSILedger._assert_controller_lock(ledger, run_id)
     identity = canonical_json(_read_ledger_identity(ledger))
     snapshot = _read_reserved_rows(str(ledger.database), run_id=run_id, episode_ids=episode_ids)
     groups = _rows(snapshot)
@@ -252,7 +280,6 @@ def read_reserved_brs_ledger(
         _fail("rows_changed")
     if canonical_json(_read_ledger_identity(ledger)) != identity:
         _fail("ledger_identity_drift")
-    RSILedger._assert_controller_lock(ledger, run_id)
     return BRSReservedLedgerObservation(
         run_id, episode_ids, parent, canonical_json(state, maximum=_MAX_BYTES),
         identity, snapshot, tuple(traces),

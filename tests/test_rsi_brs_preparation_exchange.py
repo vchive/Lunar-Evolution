@@ -95,6 +95,46 @@ def test_original_preparation_and_endpoint_cross_once_without_native_or_file_wri
     assert {p: p.read_bytes() for p in value.workspace.rglob("*") if p.is_file()} == before
 
 
+def test_original_reserved_endpoint_crosses_with_its_exact_private_scope(prepared):
+    exchange = _exchange(prepared)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = _submit(pool, exchange, prepared)
+        _attach(pool, exchange, future)
+        offer = exchange.take(check=lambda: None)
+        endpoint = _BRSWorkerTerminalEndpoint(
+            BRSOwnerPublicationMailbox(prepared.handoff, worker_thread=offer.thread.ident),
+            _PrimitiveExchange(time.monotonic() + 5), canonical_json(prepared.handoff.to_dict()),
+            prepared.plan.plan_sha256, offer.thread.ident, id(offer.thread), _reserved_success=True,
+        )
+        assert len(endpoint._scope) == 9 and endpoint._scope[-1] is True
+        exchange.return_endpoint(offer, endpoint)
+        assert future.result(timeout=2) is endpoint
+    assert exchange._state == "consumed"
+
+
+@pytest.mark.parametrize("fault", ["flag_type", "reserved_missing", "reserved_false", "legacy_extra"])
+def test_endpoint_private_mode_never_adopts_an_inconsistent_scope(prepared, fault):
+    exchange = _exchange(prepared)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = _submit(pool, exchange, prepared)
+        _attach(pool, exchange, future)
+        offer = exchange.take(check=lambda: None)
+        endpoint = _endpoint(prepared, offer)
+        if fault == "flag_type":
+            endpoint._reserved_success = 1
+        elif fault == "reserved_missing":
+            endpoint._reserved_success = True
+        elif fault == "reserved_false":
+            endpoint._reserved_success, endpoint._scope = True, (*endpoint._scope, False)
+        else:
+            endpoint._scope = (*endpoint._scope, True)
+        with pytest.raises(RSILearningError, match="endpoint_invalid"):
+            exchange.return_endpoint(offer, endpoint)
+        with pytest.raises(RSILearningError, match="unavailable"):
+            future.result(timeout=2)
+    assert exchange._failed is True and exchange._endpoint is None
+
+
 def test_second_take_poisons_original_waiter(prepared):
     exchange = _exchange(prepared)
     with ThreadPoolExecutor(max_workers=1) as pool:

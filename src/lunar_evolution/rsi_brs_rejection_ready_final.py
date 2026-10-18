@@ -418,7 +418,7 @@ def _build_readers():
         if kind(original) is not plain_tuple or length(original) != 6:
             fail("prearm_capture_required")
         c1 = decode(owner._rejection_c1_capture[1])
-        entry = c1["producer_publication_lineage"]["batches"][0]
+        entry = c1["producer_publication_lineage"]["batches"][owner._ordinal]
         workspace = str(owner._workspace)
         batch = workspace + "/evolution/producer-batches/" + owner._plan.journal_id
         lineage_path = batch + "/lineage/"
@@ -461,6 +461,48 @@ def _build_readers():
                                 != (item["device"], item["inode"], item["size"], item["mtime_ns"],
                                     item["ctime_ns"], item["sha256"])):
                             fail("retained_file_drift")
+        if owner._reserved_prefix is not None:
+            from .rsi_brs_rejection_owner import _reserved_material_tables
+
+            rejection_tables, published_tables = _reserved_material_tables(
+                owner, c1["producer_publication_lineage"])
+            for historical in c1["producer_publication_lineage"]["batches"][:owner._ordinal]:
+                historical_batch = workspace + "/evolution/producer-batches/" + historical["journal_id"] + "/"
+                for descriptor_kind in ("before", "staged", "terminal", "rejected"):
+                    field = descriptor_kind + "_file_pin"
+                    if field in historical:
+                        pin = historical[field]
+                        pin_matches_file(add(historical_batch + "lineage/" + pin["name"]), pin)
+                for pin in historical["snapshots"].values():
+                    pin_matches_file(add(historical_batch + "lineage/" + pin["name"]), pin)
+                for name, pin in historical["evidence_pins"].items():
+                    pin_matches_file(add(historical_batch + name), pin)
+                historical_p = historical.get("rejection_provenance")
+                if historical_p is not None:
+                    pin = historical_p["file_pin"]
+                    pin_matches_file(add(historical_batch + pin["name"], 1024 * 1024), pin)
+            native_observations = []
+            for tables in rejection_tables.values():
+                for table in tables.values():
+                    native_observations.extend(table["entries"])
+            for table in published_tables.values():
+                native_observations.extend({"path": path, **record} for path, record in table.items())
+            for item in native_observations:
+                path = workspace + "/" + item["path"]
+                if item["kind"] == "directory":
+                    observed = observe_directory(path)
+                    info = observed[2]
+                    if ((info[0], info[1], info[5], info[6])
+                            != (item["device"], item["inode"], item["mtime_ns"], item["ctime_ns"])):
+                        fail("retained_directory_drift")
+                    directories[path] = observed
+                else:
+                    observed = add(path)
+                    info = observed[2]
+                    if ((info[0], info[1], info[4], info[5], info[6], observed[3])
+                            != (item["device"], item["inode"], item["size"], item["mtime_ns"],
+                                item["ctime_ns"], item["sha256"])):
+                        fail("retained_file_drift")
         for name, pin in entry["before_sources"].items():
             path = workspace + "/evolution/" + name + (".jsonl" if name == "archive" else ".json")
             if pin.get("missing") is True:
@@ -472,7 +514,7 @@ def _build_readers():
         # C1 predates P, so the original writer pin lives in the confirmed C2.
         if p_pin is None:
             c2 = decode(owner._rejection_provenance_c2_capture[1])
-            p_pin = c2["producer_publication_lineage"]["batches"][0]["rejection_provenance"]["file_pin"]
+            p_pin = c2["producer_publication_lineage"]["batches"][owner._ordinal]["rejection_provenance"]["file_pin"]
         p = add(batch + "/native-rsi.rejection-provenance.json", 1024 * 1024, retain=True)
         pin_matches_file(p, p_pin)
         p_body = decode(p[4])
@@ -594,9 +636,17 @@ def _build_readers():
                        "_controller", "_ledger", "_wave", "_channel", "_plan", "_request", "_memory",
                        "_before_control", "_before_control_pin", "_before_cancelled", "_native_inputs",
                        "_native", "_sidecar", "_workspace", "_thread", "_rejection_ready_locks_capture",
-                       "_rejection_ready_sync_capture")
+                       "_rejection_ready_sync_capture", "_ordinal", "_reserved_prefix",
+                       "_reserved_lineage_bytes", "_reserved_original_checkpoint", "_reserved_capture_bytes",
+                       "_reserved_scope", "_reserved_gateway", "_root_sidecar")
         pins.extend(binding(owner, name) for name in owner_names)
-        for name in ("_state", "_plan", "_request", "_memory", "_native", "_native_inputs", "_sidecar"):
+        if owner._reserved_prefix is not None:
+            for name in ("domain_bytes", "batch_bytes", "canonical_bytes"):
+                pins.append(binding(owner._reserved_prefix, name, True))
+            pins.append(binding(owner, "_reserved_scope", True))
+            pins.append(binding(owner._reserved_gateway, "config", True))
+            pins.append(binding(owner._reserved_gateway, "producer_config", True))
+        for name in ("_state", "_plan", "_request", "_memory", "_native", "_native_inputs", "_sidecar", "_root_sidecar"):
             pins.append(binding(owner, name, True))
         for name in ("_native_config", "_strategy_config", "_strategy_context", "_strategy_bytes",
                      "_strategy_authority", "_strategy_archive", "_strategy_contract"):

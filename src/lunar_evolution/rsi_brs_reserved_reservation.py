@@ -13,8 +13,7 @@ from .candidate_evaluation_spec import canonical_json, strict_json
 from .rsi_brs_reserved_ledger import (
     BRSReservedLedgerObservation,
     _rows,
-    assert_reserved_brs_ledger,
-    read_reserved_brs_ledger,
+    read_reserved_brs_completion_ledger,
 )
 from .rsi_brs_reserved_wave import project_reserved_brs_wave
 from .rsi_budget import RSIRunBudget
@@ -56,15 +55,59 @@ def read_reserved_brs_reservation(
     ledger: RSILedger, *, run_id: str, episode_ids: tuple[str, ...],
     expected_checkpoint_sha256: str,
 ) -> BRSReservedReservationObservation:
+    """Observe the original complete reservation under the existing run lease."""
+    if type(ledger) is not RSILedger:
+        _fail("ledger_invalid")
+    RSILedger._assert_controller_lock(ledger, run_id)
+    result = _observe_reserved_brs_reservation(ledger, run_id=run_id, episode_ids=episode_ids,
+        expected_checkpoint_sha256=expected_checkpoint_sha256)
+    RSILedger._assert_controller_lock(ledger, run_id)
+    return result
+
+
+def read_reserved_brs_completion_reservation(
+    ledger: RSILedger, *, run_id: str, episode_ids: tuple[str, ...],
+    expected_checkpoint_sha256: str,
+) -> BRSReservedReservationObservation:
+    """Read-only worker evidence of reservation; never a selection or owner grant."""
+    return _observe_reserved_brs_reservation(ledger, run_id=run_id, episode_ids=episode_ids,
+        expected_checkpoint_sha256=expected_checkpoint_sha256)
+
+
+def read_reserved_brs_finalization_reservation(
+    ledger: RSILedger, *, run_id: str, episode_ids: tuple[str, ...],
+    expected_checkpoint_sha256: str,
+) -> BRSReservedReservationObservation:
+    """Descriptive complete-wave history; never usable for another live selection.
+
+    Effective memory and terminal status may change only after every original
+    execution exists. The separate finalization validator proves those deltas;
+    live and worker-completion readers retain their original strict M0 gate.
+    """
+    if type(ledger) is not RSILedger:
+        _fail("ledger_invalid")
+    RSILedger._assert_controller_lock(ledger, run_id)
+    result = _observe_reserved_brs_reservation(ledger, run_id=run_id, episode_ids=episode_ids,
+        expected_checkpoint_sha256=expected_checkpoint_sha256, finalization=True)
+    if set(strict_json(result.ledger.checkpoint_bytes, maximum=_MAX_BYTES)["executions"]) != set(episode_ids):
+        _fail("finalization_incomplete")
+    RSILedger._assert_controller_lock(ledger, run_id)
+    return result
+
+
+def _observe_reserved_brs_reservation(
+    ledger: RSILedger, *, run_id: str, episode_ids: tuple[str, ...],
+    expected_checkpoint_sha256: str, finalization: bool = False,
+) -> BRSReservedReservationObservation:
     """Derive the first complete reservation, without changing progress or budget.
 
-    Requires the existing run lease. All pre-dispatch journal states must retain
+    All pre-dispatch journal states must retain
     the original plan/policy/M0/deadline and monotonically reserve its ordered
     intents. Every later checkpoint retains that exact full reservation. Attempt
     traces, including orphan admissions and historical fences, remain available
     in ``ledger``; none is discarded as part of finding the baseline.
     """
-    observation = read_reserved_brs_ledger(
+    observation = read_reserved_brs_completion_ledger(
         ledger, run_id=run_id, episode_ids=episode_ids,
         expected_checkpoint_sha256=expected_checkpoint_sha256,
     )
@@ -84,16 +127,20 @@ def read_reserved_brs_reservation(
                 or any(_raw(run_state.get(key)) != _raw(first.get(key)) for key in _FIXED
                        if key.startswith("producer_"))):
             _fail("run_origin_drift")
-        previous_count, original_index = 0, None
+        previous_count, original_index, scheduling_complete = 0, None, False
         for index, state in enumerate(states):
-            if state.get("status") != "running":
+            if (state.get("status") != "running"
+                    and not (finalization and scheduling_complete and state.get("status") == "completed")):
                 _fail("control_changed")
             if any(type(state.get(key, {})) is not dict for key in (
                 "executions", "python_admission_refs", "brs_reconcile_obligations",
             )):
                 _fail("attempt_shape_invalid")
-            if any(_raw(state.get(key)) != _raw(first.get(key)) for key in _FIXED):
+            if any(_raw(state.get(key)) != _raw(first.get(key)) for key in _FIXED
+                   if not (finalization and scheduling_complete and key == "memory_snapshot")):
                 _fail("original_drift")
+            if scheduling_complete and set(state["executions"]) != set(episode_ids):
+                _fail("finalization_incomplete")
             intents = state.get("intents")
             if type(intents) is not dict:
                 _fail("intent_drift")
@@ -103,8 +150,21 @@ def read_reserved_brs_reservation(
                     or count > len(episode_ids)):
                 _fail("reservation_order_drift")
             budget = RSIRunBudget.load(state["budget_state"]).to_dict()
+            extra = {name: 0 for name in budget["consumed"]}
+            events = state.get("external_budget_reservations", {})
+            if events:
+                if not (finalization and scheduling_complete and type(events) is dict):
+                    _fail("budget_drift")
+                # These are only descriptive totals. Finalization independently
+                # joins each receipt to its original generation/campaign binding.
+                for event in events.values():
+                    if type(event) is not dict or event.get("kind") not in {"trial", "reconcile"}:
+                        _fail("budget_drift")
+                    for name in (("transfer_invocations", "evaluator_invocations")
+                                 if event["kind"] == "trial" else ("unknown_retries",)):
+                        extra[name] += 1
             if (_raw(budget["planned"]) != _raw(planned)
-                    or any(value != (count if name in _CHARGED else 0)
+                    or any(value != (count if name in _CHARGED else 0) + extra[name]
                            for name, value in budget["consumed"].items())):
                 _fail("budget_drift")
             if index and any(_raw(intents[key]) != _raw(states[index - 1]["intents"][key])
@@ -117,6 +177,9 @@ def read_reserved_brs_reservation(
                     _fail("attempt_before_reservation")
                 if count == len(episode_ids):
                     original_index = index
+            if (finalization and original_index is not None
+                    and set(state["executions"]) == set(episode_ids)):
+                scheduling_complete = True
             previous_count = count
         if original_index is None:
             _fail("full_reservation_required")
@@ -136,7 +199,10 @@ def read_reserved_brs_reservation(
             observation, rows[original_index]["checkpoint_sha256"],
             hashlib.sha256(raw).hexdigest(), raw,
         )
-        assert_reserved_brs_ledger(ledger, observation)
+        repeated = read_reserved_brs_completion_ledger(ledger, run_id=run_id, episode_ids=episode_ids,
+            expected_checkpoint_sha256=expected_checkpoint_sha256)
+        if repeated != observation:
+            _fail("observation_changed")
         return result
     except RSILearningError:
         raise

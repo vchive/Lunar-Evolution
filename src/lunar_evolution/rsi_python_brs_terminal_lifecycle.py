@@ -25,6 +25,7 @@ from .rsi_learning import RSILearningError
 from .rsi_python_brs_admission import (
     BRSAdmissionAck,
     BRSAdmissionChannel,
+    BRSAdmissionReady,
     build_brs_admission_ready,
 )
 from .rsi_python_brs_handoff import BRSSelectedChildHandoff
@@ -114,7 +115,7 @@ def brs_terminal_evidence_namespace(binding: object) -> str:
     return "rsi-brs-terminal:" + parse_brs_terminal_binding(binding)["mailbox_binding"]["obligation_sha256"]
 
 
-def _messages(facts: dict, binding: dict):
+def _delivery_messages(facts: dict, binding: dict):
     if set(facts) != {"request_fields", "response_fields", "publication"}:
         _fail("delivery_invalid")
     request, response = facts["request_fields"], facts["response_fields"]
@@ -143,9 +144,21 @@ def _messages(facts: dict, binding: dict):
             or gate.delivery.state_after_sha256 != journal.state_after_sha256
             or gate.delivery.selected_request_sha256 != mailbox["selected_request_sha256"]
             or type(lineage) is not dict
-            or type(lineage.get("batches")) is not list or len(lineage["batches"]) != 1
-            or type(lineage["batches"][0]) is not dict):
+            or type(lineage.get("batches")) is not list or not lineage["batches"]
+            or any(type(entry) is not dict for entry in lineage["batches"])):
         _fail("publication_invalid")
+    return message, result, journal, lineage, manifest
+
+
+def _messages(facts: dict, binding: dict, *, reserved: bool = False):
+    if type(reserved) is not bool:
+        _fail("reserved_mode_invalid")
+    if reserved:
+        return _reserved_messages(facts, binding)
+    message, result, journal, lineage, manifest = _delivery_messages(facts, binding)
+    if len(lineage["batches"]) != 1:
+        _fail("publication_invalid")
+    mailbox = binding["mailbox_binding"]
     if journal.state == "published":
         if (type(manifest) is not dict or manifest.get("journal_id") != journal.journal_id
                 or manifest.get("archive_after_sha256") != journal.archive_after_sha256
@@ -172,7 +185,102 @@ def _messages(facts: dict, binding: dict):
     return message, result
 
 
-def parse_brs_terminal_observation(value: object) -> dict:
+def _reserved_messages(facts: dict, binding: dict):
+    """Check detached serial descriptions; original root/material proof is separate."""
+    from .producer_bundle_lineage import (
+        MAX_LINEAGE_BATCHES,
+        ProducerLineageBeforeIntent,
+        ProducerLineageStagedTransition,
+        ProducerLineageTerminal,
+    )
+    from .producer_bundle_lineage_v2 import (
+        ProducerLineageBeforeIntentV2,
+        ProducerLineageRejectedTerminalV2,
+    )
+    from .rsi_native_rejection import NativeRSIRejectionFilePin
+
+    message, result, journal, lineage, manifest = _delivery_messages(facts, binding)
+    mailbox, batches = binding["mailbox_binding"], lineage["batches"]
+    selected = BRSSelectedChildHandoff(**mailbox["handoff"])
+    if (not 0 <= selected.ordinal < MAX_LINEAGE_BATCHES or len(batches) != selected.ordinal + 1
+            or lineage.get("run_id") != selected.run_id):
+        _fail("publication_invalid")
+    previous, published, rejections, journals = None, None, [], set()
+    for ordinal, entry in enumerate(batches):
+        if (type(entry.get("ordinal")) is not int or entry["ordinal"] != ordinal
+                or entry.get("episode_id") != f"{selected.run_id}-practice-{selected.wave}-{ordinal}"):
+            _fail("publication_invalid")
+        before_type = ProducerLineageBeforeIntent if ordinal == 0 else ProducerLineageBeforeIntentV2
+        before = before_type.from_dict(entry["before"])
+        if (before.ordinal != ordinal or before.run_id != selected.run_id
+                or before.journal_id != entry.get("journal_id") or before.journal_id in journals):
+            _fail("publication_invalid")
+        journals.add(before.journal_id)
+        if ordinal == 0:
+            if before.predecessor_terminal_sha256 is not None or before.predecessor_lineage_sha256 is not None:
+                _fail("publication_invalid")
+        elif ((before.previous_attempt_journal_id, before.previous_attempt_outcome,
+               before.previous_attempt_terminal_sha256, before.previous_attempt_lineage_sha256) != previous
+              or (before.published_predecessor_journal_id, before.published_predecessor_terminal_sha256,
+                  before.published_predecessor_lineage_sha256) != (published or (None, None, None))):
+            _fail("publication_invalid")
+        if entry.get("state") == "terminal":
+            terminal = ProducerLineageTerminal.from_dict(entry["terminal"])
+            staged = ProducerLineageStagedTransition.from_dict(entry["staged"])
+            if ((terminal.run_id, terminal.journal_id, terminal.ordinal) !=
+                    (selected.run_id, before.journal_id, ordinal)
+                    or (staged.run_id, staged.journal_id, staged.ordinal) !=
+                    (selected.run_id, before.journal_id, ordinal)
+                    or terminal.staged_sha256 != staged.digest() or staged.before_sha256 != before.digest()):
+                _fail("publication_invalid")
+            marker, outcome = terminal.terminal_sha256, "published"
+            published = (terminal.journal_id, marker, terminal.digest())
+        elif entry.get("state") == "rejected":
+            terminal = ProducerLineageRejectedTerminalV2.from_dict(entry["rejected"])
+            reference = entry.get("rejection_provenance")
+            if (type(reference) is not dict or set(reference) != {"provenance_sha256", "file_pin"}
+                    or (terminal.run_id, terminal.journal_id, terminal.episode_id, terminal.ordinal) !=
+                    (selected.run_id, before.journal_id, entry["episode_id"], ordinal)
+                    or terminal.before_sha256 != before.digest()
+                    or (terminal.archive_sha256, terminal.state_sha256) !=
+                    (before.archive.sha256, before.state.sha256)):
+                _fail("publication_invalid")
+            _sha(reference["provenance_sha256"])
+            NativeRSIRejectionFilePin.from_dict(reference["file_pin"])
+            marker, outcome = terminal.terminal_marker_sha256, "all_rejected"
+            rejections.append({"ordinal": ordinal, "journal_id": terminal.journal_id,
+                               "rejected_sha256": terminal.digest()})
+        else:
+            _fail("publication_invalid")
+        previous = (terminal.journal_id, outcome, marker, terminal.digest())
+    entry = batches[-1]
+    if (entry["journal_id"] != journal.journal_id or entry["episode_id"] != mailbox["episode_id"]
+            or entry.get("request_sha256") != mailbox["selected_request_sha256"]
+            or entry.get("native_plan_sha256") != mailbox["native_plan_sha256"]
+            or entry.get("memory_snapshot_sha256") != selected.root_snapshot_sha256
+            or outcome != journal.state or marker != journal.terminal_marker_sha256
+            or lineage.get("rejections") != rejections
+            or lineage.get("head") != (dict(zip(("journal_id", "terminal_sha256", "lineage_sha256"),
+                                               published, strict=True)) if published else None)):
+        _fail("publication_invalid")
+    if journal.state == "published":
+        if (entry.get("published_journal") != journal.to_dict()
+                or type(manifest) is not dict or manifest.get("journal_id") != journal.journal_id
+                or manifest.get("archive_after_sha256") != journal.archive_after_sha256
+                or manifest.get("state_after_sha256") != journal.state_after_sha256
+                or manifest.get("manifest_sha256") != _digest(manifest, "manifest_sha256")
+                or (terminal.archive_after_sha256, terminal.state_after_sha256) !=
+                    (journal.archive_after_sha256, journal.state_after_sha256)):
+            _fail("publication_invalid")
+    elif (manifest is not None or entry.get("rejected_journal") != journal.to_dict()
+          or terminal.terminal_journal_sha256 != journal.digest()):
+        _fail("publication_invalid")
+    return message, result
+
+
+def parse_brs_terminal_observation(value: object, *, reserved: bool = False) -> dict:
+    if type(reserved) is not bool:
+        _fail("reserved_mode_invalid")
     clean = _clean(value)
     if set(clean) != _OBSERVATION_FIELDS or clean["protocol"] != OBSERVATION_PROTOCOL:
         _fail("observation_invalid")
@@ -185,7 +293,7 @@ def parse_brs_terminal_observation(value: object) -> dict:
     if type(stage) is not str or stage not in STAGES or type(facts) is not dict:
         _fail("observation_invalid")
     if stage == "delivery":
-        _messages(facts, binding)
+        _messages(facts, binding, reserved=reserved)
     elif stage == "callback_started":
         if facts != {"attempt": 1} or type(facts.get("attempt")) is not int:
             _fail("callback_invalid")
@@ -202,16 +310,19 @@ def parse_brs_terminal_observation(value: object) -> dict:
 
 
 def build_brs_terminal_observation(binding: object, *, stage: str,
-                                   root_checkpoint_sha256: str, facts: dict) -> dict:
+                                   root_checkpoint_sha256: str, facts: dict, reserved: bool = False) -> dict:
     binding = parse_brs_terminal_binding(binding)
     value = {"protocol": OBSERVATION_PROTOCOL, "stage": stage, "binding": binding,
              "binding_sha256": binding["binding_sha256"], "root_checkpoint_sha256": root_checkpoint_sha256,
              "facts": _clean(facts)}
     value["observation_sha256"] = _digest(value, "observation_sha256")
-    return parse_brs_terminal_observation(value)
+    return parse_brs_terminal_observation(value, reserved=reserved)
 
 
-def validate_brs_terminal_history(history: object, *, binding: object = None) -> tuple | None:
+def validate_brs_terminal_history(history: object, *, binding: object = None,
+                                  reserved: bool = False) -> tuple | None:
+    if type(reserved) is not bool:
+        _fail("reserved_mode_invalid")
     if type(history) not in {tuple, list} or len(history) > len(STAGES):
         _fail("history_invalid")
     fixed = None if binding is None else parse_brs_terminal_binding(binding)
@@ -221,7 +332,7 @@ def validate_brs_terminal_history(history: object, *, binding: object = None) ->
             _fail("history_invalid")
         head, raw = pair
         _sha(head)
-        record = parse_brs_terminal_observation(raw)
+        record = parse_brs_terminal_observation(raw, reserved=reserved)
         if head in seen or record["stage"] != STAGES[index]:
             _fail("history_invalid")
         seen.add(head)
@@ -245,6 +356,9 @@ def inspect_brs_worker_terminal_evidence(ledger: object, run_id: str, episode_id
 
     if not roots:
         _fail("root_missing")
+    from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+    reserved = reserved_brs_staging_mode(roots[0][1])
     obligation = parse_brs_reconcile_obligations(roots[-1][1].get(FIELD)).get(episode_id)
     if obligation is None:
         _fail("obligation_missing")
@@ -252,7 +366,7 @@ def inspect_brs_worker_terminal_evidence(ledger: object, run_id: str, episode_id
     result = {"status": "missing", "namespace": namespace, "head": None, "binding": None, "records": [],
               "delivery": None, "callback_observation": "unobserved", "worker_terminal": False,
               "terminal_evidence": False, "snapshot_pins": _clean(snapshot["pins"])}
-    latest = validate_brs_terminal_history(history)
+    latest = validate_brs_terminal_history(history, reserved=reserved)
     if latest is None:
         return result
     binding = latest[1]["binding"]
@@ -265,7 +379,7 @@ def inspect_brs_worker_terminal_evidence(ledger: object, run_id: str, episode_id
     if tail is None or len(transport) != 4:
         _fail("transport_incomplete")
     validate_brs_mailbox_root_history(roots, transport, binding=mailbox)
-    records = [parse_brs_terminal_observation(raw) for _head, raw in history]
+    records = [parse_brs_terminal_observation(raw, reserved=reserved) for _head, raw in history]
     indices = {head: index for index, (head, _state) in enumerate(roots)}
     previous = indices[transport[-1][1]["root_checkpoint_sha256"]]
     for record in records:
@@ -277,7 +391,7 @@ def inspect_brs_worker_terminal_evidence(ledger: object, run_id: str, episode_id
                 or state.get("producer_publication_lineage") != records[0]["facts"]["publication"]["lineage"]):
             _fail("root_drift")
         previous = current
-    message, response = _messages(records[0]["facts"], binding)
+    message, response = _messages(records[0]["facts"], binding, reserved=reserved)
     observed = tail[1]
     if (message.request_sha256 != observed["mailbox_request_sha256"]
             or hashlib.sha256(message.payload).hexdigest() != observed["request_payload_sha256"]
@@ -296,7 +410,7 @@ def inspect_brs_worker_terminal_evidence(ledger: object, run_id: str, episode_id
 class _PrimitiveExchange:
     """Exact primitives under the condition; durable work remains with the owner."""
 
-    __slots__ = ("acked", "admission_ack", "admission_offer", "admission_state", "condition", "deadline",
+    __slots__ = ("acked", "admission_ack", "admission_kind", "admission_offer", "admission_state", "condition", "deadline",
                  "entered", "events", "failed")
 
     def __init__(self, deadline: float | None) -> None:
@@ -307,6 +421,7 @@ class _PrimitiveExchange:
         self.entered = False
         self.deadline = deadline
         self.admission_offer, self.admission_ack = None, None
+        self.admission_kind = None
         self.admission_state = "unused"
 
     def submit(self, event: tuple, check) -> None:
@@ -356,13 +471,15 @@ class _PrimitiveExchange:
 
 
 class _BRSWorkerTerminalEndpoint:
-    __slots__ = ("_admission_ack", "_admission_channel", "_admission_condition", "_admission_offer", "_exchange",
-                 "_handoff_bytes", "_mailbox", "_plan_sha256", "_scope", "_status", "_worker_object_id",
+    __slots__ = ("_admission_ack", "_admission_channel", "_admission_condition", "_admission_kind", "_admission_offer", "_exchange",
+                 "_handoff_bytes", "_mailbox", "_plan_sha256", "_reserved_success", "_scope", "_status", "_worker_object_id",
                  "_worker_thread")
 
     def __init__(self, mailbox, exchange, handoff_bytes, plan_sha256, worker_thread, worker_object_id,
-                 admission_channel=None):
+                 admission_channel=None, *, _reserved_success=False):
         if admission_channel is not None and type(admission_channel) is not BRSAdmissionChannel:
+            _fail("worker_invalid")
+        if type(_reserved_success) is not bool:
             _fail("worker_invalid")
         self._mailbox, self._exchange = mailbox, exchange
         self._handoff_bytes, self._plan_sha256 = handoff_bytes, plan_sha256
@@ -371,8 +488,11 @@ class _BRSWorkerTerminalEndpoint:
         self._admission_channel = admission_channel
         self._admission_condition = None if admission_channel is None else admission_channel._condition
         self._admission_offer = self._admission_ack = None
+        self._admission_kind, self._reserved_success = None, _reserved_success
         self._scope = (mailbox, exchange, handoff_bytes, plan_sha256, worker_thread, worker_object_id,
                        admission_channel, self._admission_condition)
+        if _reserved_success:
+            self._scope += (True,)
 
     @property
     def status(self) -> str:
@@ -380,7 +500,9 @@ class _BRSWorkerTerminalEndpoint:
 
     def _identity(self):
         if (type(self) is not _BRSWorkerTerminalEndpoint or type(self._scope) is not tuple
-                or len(self._scope) != 8 or type(self._mailbox) is not BRSOwnerPublicationMailbox
+                or type(self._reserved_success) is not bool
+                or len(self._scope) != (9 if self._reserved_success else 8)
+                or type(self._mailbox) is not BRSOwnerPublicationMailbox
                 or type(self._exchange) is not _PrimitiveExchange
                 or self._scope[0] is not self._mailbox or self._scope[1] is not self._exchange
                 or any(type(item) is not kind for item, kind in zip(
@@ -389,10 +511,11 @@ class _BRSWorkerTerminalEndpoint:
                                         self._worker_thread, self._worker_object_id)
                 or self._scope[6] is not self._admission_channel
                 or self._scope[7] is not self._admission_condition
+                or self._reserved_success and self._scope[8] is not True
                 or threading.get_ident() != self._worker_thread
                 or id(threading.current_thread()) != self._worker_object_id):
             _fail("worker_invalid")
-        channel, condition = self._scope[6:]
+        channel, condition = self._scope[6:8]
         if channel is None:
             if condition is not None:
                 _fail("worker_invalid")
@@ -408,36 +531,43 @@ class _BRSWorkerTerminalEndpoint:
         exchange, channel = self._exchange, self._admission_channel
         with exchange.condition:
             offer, status, ack = exchange.admission_offer, exchange.admission_state, exchange.admission_ack
+            kind = exchange.admission_kind
             if exchange.failed or type(status) is not str:
                 _fail("admission_unavailable")
             if offer is None:
                 if (status != "unused" or ack is not None or self._admission_offer is not None
-                        or self._admission_ack is not None):
+                        or self._admission_ack is not None or self._admission_kind is not None or kind is not None):
                     _fail("admission_drift")
                 return
-            if type(offer) is not bytes or channel is None:
+            if (type(offer) is not bytes or channel is None or type(kind) is not str
+                    or kind not in {"rejection", "published"}
+                    or kind == "published" and self._reserved_success is not True):
                 _fail("admission_drift")
             if status == "received":
                 if (self._admission_offer is not offer or self._admission_ack is not ack
+                        or type(self._admission_kind) is not str or self._admission_kind != kind
                         or type(ack) is not tuple or len(ack) != 4
                         or any(type(item) is not str for item in ack)):
                     _fail("admission_drift")
                 return
             if (status != "offered" or ack is not None or self._admission_offer is not None
-                    or self._admission_ack is not None):
+                    or self._admission_ack is not None or self._admission_kind is not None):
                 _fail("admission_drift")
         with self._admission_condition:
             guarded = channel._rejection_ready_worker_guarded
             if type(guarded) is not bool or channel._closed:
                 _fail("admission_unavailable")
-            if guarded is False:
+            if kind == "published" and guarded is not False:
+                _fail("admission_drift")
+            if kind == "rejection" and guarded is False:
                 return  # The owner must arm before any natural ready is built.
         with exchange.condition:
             if (exchange.failed or exchange.admission_offer is not offer
+                    or type(exchange.admission_kind) is not str or exchange.admission_kind != kind
                     or exchange.admission_state != "offered" or exchange.admission_ack is not None):
                 _fail("admission_drift")
             exchange.admission_state = "requested"
-            self._admission_offer = offer
+            self._admission_offer, self._admission_kind = offer, kind
         handoff = BRSSelectedChildHandoff(**json.loads(self._handoff_bytes))
         ready = build_brs_admission_ready(handoff.run_id, handoff.episode_id, offer)
         # Do not pass this wrapper recursively: the admission request invokes
@@ -452,37 +582,57 @@ class _BRSWorkerTerminalEndpoint:
                 or fields[:3] != (handoff.run_id, handoff.episode_id, ready.request_sha256)):
             _fail("admission_drift")
         with exchange.condition:
-            if (exchange.failed or exchange.admission_offer is not offer
+            if (exchange.failed or exchange.admission_offer is not offer or exchange.admission_kind != kind
                     or exchange.admission_state != "requested" or exchange.admission_ack is not None):
                 _fail("admission_drift")
             exchange.admission_ack, exchange.admission_state = fields, "received"
             self._admission_ack = fields
             exchange.condition.notify_all()
 
-    def receive_and_settle(self, request: BRSOwnerPublicationRequest, *, callback, check):
+    def receive_and_settle(self, request: BRSOwnerPublicationRequest, *, callback, check,
+                           wait_check=None):
         _BRSWorkerTerminalEndpoint._identity(self)
-        if not callable(callback) or not callable(check):
+        if (not callable(callback) or not callable(check)
+                or wait_check is not None and not callable(wait_check)):
             _fail("worker_invalid")
         if self._status != "pending":
             _fail("worker_unavailable")
         self._status = "inflight"
         exchange = self._exchange
         try:
+            # Full source/manifest/fingerprint validation gates entry and every
+            # post-response transition.  While the owner mailbox is waiting,
+            # callers may supply a cheap liveness check so a long wait does not
+            # repeatedly rescan immutable staging evidence.
+            check()
+            waiting = check if wait_check is None else wait_check
             response = BRSOwnerPublicationMailbox.request(
-                self._mailbox, request, check=lambda: _BRSWorkerTerminalEndpoint._wait_check(self, check),
+                self._mailbox, request,
+                check=lambda: _BRSWorkerTerminalEndpoint._wait_check(self, waiting),
             )
+            check()
             handoff = BRSSelectedChildHandoff(**json.loads(self._handoff_bytes))
             gate = deliver_brs_owner_result(response, request, handoff,
                                            expected_native_plan_sha256=self._plan_sha256)
             with exchange.condition:
                 if gate.delivery.publication_status == "all_rejected":
                     if (type(exchange.admission_offer) is not bytes
+                            or type(exchange.admission_kind) is not str or exchange.admission_kind != "rejection"
+                            or type(self._admission_kind) is not str or self._admission_kind != "rejection"
+                            or self._admission_offer is not exchange.admission_offer
+                            or exchange.admission_state != "received"
+                            or self._admission_ack is not exchange.admission_ack):
+                        _fail("admission_receipt_missing")
+                elif self._reserved_success:
+                    if (type(exchange.admission_offer) is not bytes
+                            or type(exchange.admission_kind) is not str or exchange.admission_kind != "published"
+                            or type(self._admission_kind) is not str or self._admission_kind != "published"
                             or self._admission_offer is not exchange.admission_offer
                             or exchange.admission_state != "received"
                             or self._admission_ack is not exchange.admission_ack):
                         _fail("admission_receipt_missing")
                 elif (exchange.admission_offer is not None or exchange.admission_state != "unused"
-                      or exchange.admission_ack is not None):
+                      or exchange.admission_ack is not None or exchange.admission_kind is not None):
                     _fail("admission_drift")
             fields = ((request.run_id, request.episode_id, request.handoff_sha256,
                        request.payload, request.request_sha256),
@@ -522,6 +672,7 @@ class BRSOwnerTerminalLifecycle:
         "_mailbox",
         "_owner",
         "_poisoned",
+        "_published_admission",
         "_result",
         "_scope",
         "_started",
@@ -570,6 +721,7 @@ class BRSOwnerTerminalLifecycle:
         namespace = brs_terminal_evidence_namespace(self._binding)
         record = build_brs_terminal_observation(
             self._binding, stage=stage, root_checkpoint_sha256=owner._head, facts=facts,
+            reserved=owner._reserved_prefix is not None,
         )
         with owner._ledger.controller_lock(namespace):
             head = owner._ledger.append_brs_terminal_observation(self._binding, record, expected_sha256=self._head)
@@ -652,6 +804,7 @@ class BRSOwnerTerminalLifecycle:
                         or exchange.admission_offer is not None or exchange.admission_ack is not None):
                     _fail("admission_unavailable")
                 exchange.admission_offer, exchange.admission_state = payload, "offered"
+                exchange.admission_kind = "rejection"
                 exchange.condition.notify_all()
             digest = _BRSLineageCheckpointOwner.service_rejection_ready(owner, timeout=timeout)
             self._fixed()
@@ -666,6 +819,94 @@ class BRSOwnerTerminalLifecycle:
                             and exchange.admission_ack != owner._rejection_ready_ack_fields)):
                     _fail("admission_drift")
             return digest
+        except BaseException:
+            self._poisoned, owner._poisoned = True, True
+            _PrimitiveExchange.fail(exchange)
+            raise
+
+    def _assert_published_admission(self):
+        """Verify the original successful request/ACK; create no admission or root."""
+        self._fixed()
+        capture = self._published_admission
+        owner, exchange = self._owner, self._exchange
+        if (owner._reserved_prefix is None or owner._phase != "terminal"
+                or type(capture) is not tuple or len(capture) != 4
+                or type(capture[0]) is not str or capture[0] != "committed" or type(capture[1]) is not bytes
+                or type(capture[2]) is not str or type(capture[3]) is not str):
+            _fail("published_admission_unavailable")
+        payload, request_sha, record_sha = capture[1:]
+        fields = BRSAdmissionChannel.assert_selected_handoff_acknowledged(owner._channel, owner._request.episode_id)
+        expected = (owner._run_id, owner._request.episode_id, request_sha, record_sha)
+        if fields != expected:
+            _fail("published_admission_drift")
+        with exchange.condition:
+            if (exchange.failed or type(exchange.admission_kind) is not str or exchange.admission_kind != "published"
+                    or exchange.admission_offer is not payload
+                    or type(exchange.admission_state) is not str
+                    or exchange.admission_state not in {"requested", "received"}
+                    or exchange.admission_state == "requested" and exchange.admission_ack is not None
+                    or exchange.admission_state == "received" and exchange.admission_ack != expected):
+                _fail("published_admission_drift")
+        return record_sha
+
+    def _service_published_admission(self, *, timeout: float):
+        """ACK the existing published admission on the original selected channel."""
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_controller import RSILearningController
+
+        self._fixed()
+        owner, exchange = self._owner, self._exchange
+        if (self._started is not True or self._result is not None
+                or self._published_admission is not None or owner._reserved_prefix is None
+                or owner._phase != "terminal" or self._endpoint._reserved_success is not True):
+            _fail("published_admission_unavailable")
+        _BRSLineageCheckpointOwner._check_owner(owner)
+        _BRSLineageCheckpointOwner._before_channel(owner)
+        state = json.loads(owner._payload)
+        reference = state.get("python_admission_refs", {}).get(owner._request.episode_id)
+        if type(reference) is not dict or type(reference.get("record_sha256")) is not str:
+            _fail("published_admission_drift")
+        with owner._ledger.read_only_observations():
+            retained = owner._ledger.python_admission_record(owner._run_id, owner._request.episode_id,
+                owner._plan.journal_id, expected_record_sha256=reference["record_sha256"])
+        payload = canonical_json({"native_plan": owner._plan.to_dict(),
+            "prepared_journal": owner._prepared.to_dict(),
+            "expected_anchor_sha256": retained.to_dict()["admission_anchor"]["anchor_sha256"]})
+        ready = build_brs_admission_ready(owner._run_id, owner._request.episode_id, payload)
+        digest = RSILearningController._python_admission_existing_published_brs_ready(owner._controller, owner, ready)
+        if digest != reference["record_sha256"]:
+            _fail("published_admission_drift")
+        capture = ("offered", payload, ready.request_sha256, digest)
+        self._published_admission = capture
+        try:
+            with exchange.condition:
+                if (exchange.failed or exchange.admission_state != "unused"
+                        or exchange.admission_offer is not None or exchange.admission_ack is not None
+                        or exchange.admission_kind is not None):
+                    _fail("published_admission_unavailable")
+                exchange.admission_offer, exchange.admission_state = payload, "offered"
+                exchange.admission_kind = "published"
+                exchange.condition.notify_all()
+
+            def existing(incoming):
+                self._fixed()
+                if (self._published_admission is not capture or type(incoming) is not BRSAdmissionReady
+                        or incoming.payload != payload or incoming.request_sha256 != ready.request_sha256
+                        or incoming.run_id != ready.run_id or incoming.episode_id != ready.episode_id):
+                    _fail("published_admission_drift")
+                repeated = RSILearningController._python_admission_existing_published_brs_ready(
+                    owner._controller, owner, incoming)
+                if repeated != digest:
+                    _fail("published_admission_drift")
+                return digest
+
+            if BRSAdmissionChannel.service(owner._channel, existing, timeout=timeout) is not True:
+                _fail("published_admission_missing")
+            if self._published_admission is not capture:
+                _fail("published_admission_drift")
+            self._published_admission = ("committed", payload, ready.request_sha256, digest)
+            _BRSLineageCheckpointOwner._check_owner(owner)
+            return BRSOwnerTerminalLifecycle._assert_published_admission(self)
         except BaseException:
             self._poisoned, owner._poisoned = True, True
             _PrimitiveExchange.fail(exchange)
@@ -772,9 +1013,11 @@ def open_brs_terminal_lifecycle(owner: object, mailbox: object, *, future: objec
         mailbox, session._exchange, owner._handoff_bytes, owner._plan.plan_sha256,
         mailbox._worker_thread, id(threads[0]),
         owner._channel,
+        _reserved_success=owner._reserved_prefix is not None,
     )
     session._binding, session._head, session._history = None, None, []
     session._started, session._poisoned, session._result = False, False, None
+    session._published_admission = None
     session._scope = (owner, mailbox, future, executor, threads[0], session._endpoint,
                       session._exchange, session._exchange.condition)
     mailbox._terminal_lifecycle_opened = True

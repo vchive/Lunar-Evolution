@@ -1,8 +1,18 @@
 # Reserved-wave serial original-owner continuation
 
-Status: reviewed contract; implementation is in progress. Pure comparison, ledger
-and preparation transport foundations have development coverage; natural serial
-execution and final-source acceptance remain open.
+Status: reviewed contract; implementation is in progress. Pure comparison, ledger,
+preparation transport, native provider/completion, serial-driver and finalization
+components have focused development coverage. Natural serial execution and
+final-source acceptance remain open. The current two-child rejected fixture has
+not completed owner admission and mailbox handoff in the latest local run; the
+root cause remains under investigation. This is a development failure, not a
+passed acceptance scenario.
+The earlier recorded failure
+`rsi_brs_reserved_prefix_material_path_invalid` from
+`read_reserved_brs_prefix -> validate_brs_reserved_prefix` is fixed by strict
+rejection-evidence path/pin mapping. The latest integrated run advances to
+`rsi_brs_reserved_serial_settled_transport_missing`; the settled-transport
+contract remains open and must be repaired without weakening the validator.
 This is the next coherent Feature 196 P0 behavior after the original selected-owner
 [known-rejection lifecycle](rejected-owner-lifecycle.md). It is not evidence that
 the preceding lifecycle has completed its separate platform/CI acceptance.

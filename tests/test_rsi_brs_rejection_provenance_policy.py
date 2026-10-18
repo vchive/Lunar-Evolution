@@ -11,6 +11,7 @@ import pathlib
 import re
 import stat
 import sys
+import warnings
 from types import FunctionType
 
 import pytest
@@ -43,6 +44,24 @@ def test_finite_policy_fits_existing_normalizers_and_keeps_native_0400_domain():
     assert first["constants"]["native"]["MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES"] == 1024 * 1024
     assert first["constants"]["native"]["MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES"] == 64 * 1024 * 1024
     assert len(first["functions"]["native"]) < 64
+
+
+def test_warning_registry_does_not_change_finite_policy():
+    first = policy.native_rejection_provenance_policy()
+    registry = {}
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        warnings.warn_explicit(
+            "fixture warning", RuntimeWarning, policy.__file__ or "rsi_brs_rejection_provenance_policy.py", 1,
+            registry=registry,
+        )
+    # ``warn_explicit`` generated the same shape of registry that CPython
+    # stores on a module; install it only for the projection and clean it up.
+    vars(policy)["__warningregistry__"] = registry
+    try:
+        assert policy.native_rejection_provenance_policy() == first
+    finally:
+        vars(policy).pop("__warningregistry__", None)
 
 
 @pytest.mark.parametrize("owner,name", [

@@ -16,13 +16,14 @@ from .producer_bundle_publication import parse_producer_bundle_publication_journ
 from .producer_bundle_rejection import _verify_terminal_batch_rejection_evidence
 from .rsi_brs_rejection_c1 import (
     REJECTION_PROVENANCE_SCHEMA,
-    rejected_c1_entry,
+    rejected_c1_entry,  # noqa: F401 - retained policy identity alias.
     validate_rejected_provenance_transition,
 )
 from .rsi_brs_rejection_capacity import (
-    retained_brs_c1_evidence_bytes,
-    retained_brs_c2_evidence_bytes,
+    retained_brs_c1_evidence_bytes,  # noqa: F401 - retained policy identity alias.
+    retained_brs_c2_evidence_bytes,  # noqa: F401 - retained policy identity alias.
 )
+from .rsi_brs_rejection_owner import _rejection_retained_bytes, _rejection_terminal
 from .rsi_learning import RSILearningError
 from .rsi_native_rejection import (
     NATIVE_RSI_REJECTION_PROVENANCE_NAME,
@@ -51,8 +52,19 @@ def _owner(self) -> None:
         _fail("owner_invalid")
 
 
+def _validate_c2(self, previous, current):
+    if self._reserved_prefix is None:
+        return validate_rejected_provenance_transition(previous, current)
+    from .rsi_brs_reserved_rejection import validate_reserved_brs_c2_transition
+
+    return validate_reserved_brs_c2_transition(previous, current, prefix=self._reserved_prefix,
+        original_lineage_bytes=self._reserved_lineage_bytes, native_plan_sha256=self._plan.plan_sha256)
+
+
 def _capture(self) -> tuple[dict[str, Any], dict[str, Any]]:
     """Use only the independently held successful original C1 capture."""
+    if type(self._ordinal) is not int or not 0 <= self._ordinal < 8:
+        _fail("original_ordinal_invalid")
     capture = self._rejection_c1_capture
     if (type(capture) is not tuple or len(capture) != 2 or type(capture[0]) is not str
             or type(capture[1]) is not bytes or self._phase not in {"rejected", "rejected-provenance"}):
@@ -61,10 +73,10 @@ def _capture(self) -> tuple[dict[str, Any], dict[str, Any]]:
     if self._controller._python_admission_flow_payload(state) != capture[1]:
         _fail("original_c1_drift")
     wire = state.get(_FIELD)
-    if type(wire) is not dict or type(wire.get("batches")) is not list or len(wire["batches"]) != 1:
+    if type(wire) is not dict or type(wire.get("batches")) is not list or len(wire["batches"]) != self._ordinal + 1:
         _fail("original_c1_drift")
-    entry = wire["batches"][0]
-    rejected_c1_entry(entry)
+    entry = wire["batches"][self._ordinal]
+    _rejection_terminal(self, entry)
     if (type(self._rejection_file_pin) is not LineageSnapshotPin
             or LineageSnapshotPin.from_dict(entry["rejected_file_pin"]) != self._rejection_file_pin
             or json.loads(self._policy_bytes).get("rejection_provenance_schema") != REJECTION_PROVENANCE_SCHEMA):
@@ -78,7 +90,7 @@ def _capture(self) -> tuple[dict[str, Any], dict[str, Any]]:
         if (type(c2) is not tuple or len(c2) != 2 or type(c2[0]) is not str or type(c2[1]) is not bytes
                 or current != c2 or self._controller._python_admission_flow_payload(self._state) != c2[1]):
             _fail("original_c2_drift")
-        validate_rejected_provenance_transition(wire, self._state.get(_FIELD))
+        _validate_c2(self, wire, self._state.get(_FIELD))
         expected = lineage._publication_lineage_checkpoint_delta(capture[1], self._state[_FIELD])
         if self._controller._python_admission_flow_payload(expected) != c2[1]:
             _fail("original_c2_drift")
@@ -89,7 +101,9 @@ def _custody(self) -> tuple[Any, ...]:
     return (self._rejection_c1_capture, self._rejection_file_pin, self._rejection_ledger_identity,
             self._rejection_provenance_deadline, self._rejection_provenance_evidence,
             self._rejection_provenance_sha256, self._rejection_provenance_file_pin,
-            self._rejection_provenance_c2_capture)
+            self._rejection_provenance_c2_capture, self._ordinal, self._reserved_prefix,
+            self._reserved_lineage_bytes, self._reserved_original_checkpoint, self._reserved_capture_bytes,
+            self._reserved_scope, self._reserved_gateway, self._root_sidecar)
 
 
 def _unchanged(self, held: tuple[Any, ...]) -> None:
@@ -217,17 +231,11 @@ def _observe(self, expected: dict[str, Any] | None = None) -> None:
 
 
 def _material_tables(self, entry: dict[str, Any], batch) -> dict[str, Any]:
-    tables = {}
-    for candidate_id in rejected_c1_entry(entry).candidate_ids:
-        name = "rejections/" + candidate_id + ".json"
-        pin = LineageSnapshotPin.from_dict(entry["evidence_pins"][name])
-        verify_persisted_lineage_snapshot(batch / name, pin)
-        value = json.loads(_files.read_regular_file(batch / name, lineage.MAX_LINEAGE_SNAPSHOT_BYTES))
-        if type(value) is not dict or type(value.get("retained_evidence")) is not dict:
-            _fail("material_invalid")
-        tables[candidate_id] = value["retained_evidence"]
-        verify_persisted_lineage_snapshot(batch / name, pin)
-    return tables
+    from .rsi_brs_rejection_owner import _read_rejection_tables
+
+    if batch != self._workspace / "evolution/producer-batches" / entry["journal_id"]:
+        _fail("material_domain_drift")
+    return _read_rejection_tables(self, entry)
 
 
 def _fresh(self) -> tuple[NativeRSIRejectionEvidence, dict[str, Any]]:
@@ -235,8 +243,8 @@ def _fresh(self) -> tuple[NativeRSIRejectionEvidence, dict[str, Any]]:
     held = _custody(self)
     _allowance(self)
     state, wire = _capture(self)
-    entry = wire["batches"][0]
-    rejected = rejected_c1_entry(entry)
+    entry = wire["batches"][self._ordinal]
+    rejected = _rejection_terminal(self, entry)
     batch = self._workspace / "evolution/producer-batches" / self._plan.journal_id
     self._native_strategy()
     inputs = validate_python_rsi_scheduler_inputs(self._native_inputs, self._request, self._memory,
@@ -271,9 +279,9 @@ def _fresh(self) -> tuple[NativeRSIRejectionEvidence, dict[str, Any]]:
     if (observed.manifest_sha256 != rejected.rejection_manifest_sha256
             or observed.candidate_ids != rejected.candidate_ids or observed.terminal != terminal):
         _fail("native_rejection_drift")
-    actual = retained_brs_c1_evidence_bytes(state, wire, tables)
+    actual = _rejection_retained_bytes(self, state, wire, tables)
     binding = RejectionLineageC1Binding(
-        run_id=self._run_id, episode_id=self._request.episode_id, journal_id=self._plan.journal_id, ordinal=0,
+        run_id=self._run_id, episode_id=self._request.episode_id, journal_id=self._plan.journal_id, ordinal=self._ordinal,
         checkpoint_sha256=self._rejection_c1_capture[0], rejected_sha256=rejected.digest(), retained_bytes=actual,
         **{name: getattr(rejected, name) for name in (
             "before_sha256", "prepared_journal_sha256", "terminal_journal_sha256", "rejection_manifest_sha256",
@@ -308,14 +316,14 @@ def _fresh(self) -> tuple[NativeRSIRejectionEvidence, dict[str, Any]]:
 def _wire(self, digest: str, pin: NativeRSIRejectionFilePin) -> dict[str, Any]:
     state, original = _capture(self)
     wire = json.loads(lineage._raw(original))
-    wire["batches"][0]["rejection_provenance"] = {"provenance_sha256": digest, "file_pin": pin.to_dict()}
-    validate_rejected_provenance_transition(state[_FIELD], wire)
+    wire["batches"][self._ordinal]["rejection_provenance"] = {"provenance_sha256": digest, "file_pin": pin.to_dict()}
+    _validate_c2(self, state[_FIELD], wire)
     return wire
 
 
 def _capacity(self, wire: dict[str, Any], tables: dict[str, Any]) -> None:
     state, _original = _capture(self)
-    retained_brs_c2_evidence_bytes(state, wire, tables)
+    _rejection_retained_bytes(self, state, wire, tables, c2=True)
     lineage._raw(lineage._publication_lineage_checkpoint_delta(self._rejection_c1_capture[1], wire))
 
 
@@ -489,36 +497,40 @@ def acknowledge_rejection_provenance(self, evidence: NativeRSIRejectionEvidence,
         _read_p(self)
         _policy_gate(self)
         held = _custody(self)
-        head = self._ledger.write_controller_checkpoint(self._run_id, expected,
-                                                       expected_sha256=self._rejection_c1_capture[0])
-        _unchanged(self, held)
-        _control(self)
-        _readback(self, head, expected, payload)
-        _observe(self, expected)
-        _fixed(self, expected)
-        _fresh(self)
-        _read_p(self)
-        _policy_gate(self)
-        _readback(self, head, expected, payload, final=True)
-        held = _custody(self)
-        # No callback or source/configuration hook follows the final material gate.
-        with RSILearningController._python_admission_brs_observations(self._controller), self._before_channel_condition:
-            RSILearningController._python_admission_assert_brs_wave(self._controller, self._wave, owner=True)
+        # This C2 append has the same write-then-adopt gap as C1. Keep the
+        # controller's transition marker live until the owner has installed the
+        # matching in-memory head and state under the observation lock.
+        with RSILearningController._python_admission_brs_checkpoint_transition(self._controller, self._wave):
+            head = self._ledger.write_controller_checkpoint(self._run_id, expected,
+                                                            expected_sha256=self._rejection_c1_capture[0])
             _unchanged(self, held)
-            self._before_channel()
-            if (self._wave.state is not self._state or self._wave.selected_handoff is not self._handoff
-                    or self._wave.selected_context is not self._selected_context
-                    or (self._head, self._payload) != self._rejection_c1_capture
-                    or self._wave.checkpoint_sha256 != self._head or self._wave.payload != self._payload
-                    or self._controller.ledger is not self._ledger or self._controller.gateway is not self._gateway
-                    or self._controller.producer_workspace is not self._workspace
-                    or self._controller.producer_sidecar is not self._sidecar):
-                _fail("owner_drift")
-            self._state[_FIELD] = json.loads(lineage._raw(wire))
-            self._head, self._payload = head, payload
-            self._wave.checkpoint_sha256, self._wave.payload = head, payload
-            self._rejection_provenance_c2_capture = (head, payload)
-            self._phase = "rejected-provenance"
+            _control(self)
+            _readback(self, head, expected, payload)
+            _observe(self, expected)
+            _fixed(self, expected)
+            _fresh(self)
+            _read_p(self)
+            _policy_gate(self)
+            _readback(self, head, expected, payload, final=True)
+            held = _custody(self)
+            # No callback or source/configuration hook follows the final material gate.
+            with RSILearningController._python_admission_brs_observations(self._controller), self._before_channel_condition:
+                RSILearningController._python_admission_assert_brs_wave(self._controller, self._wave, owner=True)
+                _unchanged(self, held)
+                self._before_channel()
+                if (self._wave.state is not self._state or self._wave.selected_handoff is not self._handoff
+                        or self._wave.selected_context is not self._selected_context
+                        or (self._head, self._payload) != self._rejection_c1_capture
+                        or self._wave.checkpoint_sha256 != self._head or self._wave.payload != self._payload
+                        or self._controller.ledger is not self._ledger or self._controller.gateway is not self._gateway
+                        or self._controller.producer_workspace is not self._workspace
+                        or self._controller.producer_sidecar is not self._root_sidecar):
+                    _fail("owner_drift")
+                self._state[_FIELD] = json.loads(lineage._raw(wire))
+                self._head, self._payload = head, payload
+                self._wave.checkpoint_sha256, self._wave.payload = head, payload
+                self._rejection_provenance_c2_capture = (head, payload)
+                self._phase = "rejected-provenance"
     except BaseException:
         self._poisoned = True
         raise
@@ -534,7 +546,7 @@ def rejection_provenance_file_pin(self) -> NativeRSIRejectionFilePin:
         _observe(self)
         _fresh(self)
         evidence = _read_p(self)
-        reference = self._state[_FIELD]["batches"][0]["rejection_provenance"]
+        reference = self._state[_FIELD]["batches"][self._ordinal]["rejection_provenance"]
         if reference != {"provenance_sha256": evidence.provenance_sha256,
                          "file_pin": self._rejection_provenance_file_pin.to_dict()}:
             _fail("original_p_drift")
@@ -544,3 +556,212 @@ def rejection_provenance_file_pin(self) -> NativeRSIRejectionFilePin:
     except BaseException:
         self._poisoned = True
         raise
+
+
+def _verify_reserved_rejected_materials(workspace, entry, *, ledger, roots, ordinal, prefix,
+                                        original_lineage_bytes):
+    """Reobserve settled C1/P/C2 and native receipts without requiring old live heads.
+
+    A later successful batch may replace archive/state source inodes. Historical
+    immutable snapshots and the actual adjacent ledger roots remain mandatory.
+    """
+    from . import producer_bundle_recovery as recovery
+    from .producer_bundle_admission import parse_producer_bundle_admission_plan
+    from .rsi_brs_lineage_prefix import BRSLineagePrefix
+    from .rsi_brs_rejection_capacity import (
+        _retained_reserved_brs_c1_evidence_bytes,
+        _retained_reserved_brs_c2_evidence_bytes,
+    )
+    from .rsi_brs_rejection_owner import (
+        _read_rejection_tables_at,
+        read_reserved_brs_material_tables,
+    )
+    from .rsi_brs_reserved_owner import _descriptor
+    from .rsi_brs_reserved_rejection import (
+        validate_reserved_brs_c1_transition,
+        validate_reserved_brs_c2_transition,
+        validate_reserved_brs_rejected_entry,
+    )
+    from .rsi_python_admission import validate_rsi_python_admission_shapes
+    from .rsi_store import RSILedger
+
+    if (type(ordinal) is not int or not 0 <= ordinal < 8 or type(ledger) is not RSILedger
+            or type(prefix) is not BRSLineagePrefix or type(entry) is not dict
+            or original_lineage_bytes is not None and type(original_lineage_bytes) is not bytes):
+        _fail("historical_ordinal_drift")
+    validate_rsi_python_admission_shapes(entry)
+    if type(roots) is not list or not 1 <= len(roots) <= 4096:
+        _fail("historical_root_snapshot_drift")
+    for row in roots:
+        if type(row) is not tuple or len(row) != 2 or type(row[0]) is not str or type(row[1]) is not dict:
+            _fail("historical_root_snapshot_drift")
+        validate_rsi_python_admission_shapes(row[1])
+    workspace = recovery._workspace(workspace)
+    if ordinal != len(prefix.batch_bytes) or entry.get("ordinal") != ordinal:
+        _fail("historical_ordinal_drift")
+    options = {"prefix": prefix, "original_lineage_bytes": original_lineage_bytes,
+               "native_plan_sha256": entry["native_plan_sha256"]}
+    rejected = validate_reserved_brs_rejected_entry(entry, prefix=prefix,
+        native_plan_sha256=entry["native_plan_sha256"], with_provenance=True)
+    reference = entry["rejection_provenance"]
+    p_pin = NativeRSIRejectionFilePin.from_dict(reference["file_pin"])
+    batch = recovery._batch(workspace, entry["journal_id"])
+    evidence = read_native_rsi_rejection_provenance(batch, expected_file_pin=p_pin)
+    prepared = parse_producer_bundle_publication_journal(entry["prepared_journal"])
+    terminal = parse_producer_bundle_publication_journal(entry["rejected_journal"])
+    plan = parse_producer_bundle_admission_plan(entry["admission_plan"])
+    claim = RSILedger.inspect_native_episode_claim(ledger, evidence.plan.request,
+                                                  plan_sha256=evidence.plan.plan_sha256)
+    if (evidence.provenance_sha256 != reference["provenance_sha256"] or evidence.provenance_file_pin != p_pin
+            or evidence.rejected != rejected or evidence.terminal != terminal
+            or evidence.plan.plan_sha256 != entry["native_plan_sha256"]
+            or evidence.plan.request_sha256 != entry["request_sha256"]
+            or evidence.plan.memory_snapshot_sha256 != entry["memory_snapshot_sha256"]
+            or evidence.plan.run_id != rejected.run_id or evidence.plan.journal_id != entry["journal_id"]
+            or evidence.plan.request.episode_id != entry["episode_id"]
+            or claim is None or claim.claim_sha256 != evidence.claim.claim_sha256
+            or claim.created_at != evidence.claim.created_at
+            or dict(evidence.ledger_identity) != _read_ledger_identity(ledger)
+            or terminal.admission_sha256 != plan.digest() or prepared.admission_sha256 != plan.digest()):
+        _fail("historical_provenance_drift")
+    history = RSILedger.controller_checkpoint_history(ledger, rejected.run_id)
+    if roots != history:
+        _fail("historical_root_snapshot_drift")
+    matches = [index for index, (head, _body) in enumerate(history)
+               if head == evidence.lineage.checkpoint_sha256]
+    if len(matches) != 1 or not 0 < matches[0] < len(history) - 1:
+        _fail("historical_checkpoint_drift")
+    index = matches[0]
+    before_state, c1_state, c2_state = (history[item][1] for item in (index - 1, index, index + 1))
+    c1_wire, c2_wire = c1_state.get(_FIELD), c2_state.get(_FIELD)
+    validate_reserved_brs_c1_transition(before_state.get(_FIELD), c1_wire, **options)
+    validate_reserved_brs_c2_transition(c1_wire, c2_wire, **options)
+    if (c2_wire["batches"][ordinal] != entry
+            or any(body.get(_FIELD, {}).get("batches", [])[:ordinal + 1] != c2_wire["batches"]
+                   for _head, body in history[index + 1:])):
+        _fail("historical_entry_drift")
+    for previous, current, wire in ((before_state, c1_state, c1_wire), (c1_state, c2_state, c2_wire)):
+        if _canonical({**previous, _FIELD: wire}) != \
+                _canonical(current):
+            _fail("historical_checkpoint_delta_drift")
+
+    def observe():
+        if (_descriptor(workspace, entry, "before")["descriptor"] != entry["before"]
+                or read_lineage_v2_descriptor_pinned(workspace, entry["journal_id"], kind="rejected",
+                    expected_file_pin=LineageSnapshotPin.from_dict(entry["rejected_file_pin"])) != rejected):
+            _fail("historical_descriptor_drift")
+        for name, raw in entry["evidence_pins"].items():
+            verify_persisted_lineage_snapshot(batch / name, LineageSnapshotPin.from_dict(raw))
+        recovery._verify_python_handoff(batch, prepared, plan)
+        recovery._verify_python_handoff(batch, terminal, plan)
+        if recovery._read_journal(batch / "journal.prepared.json") != prepared:
+            _fail("historical_prepared_drift")
+        result = []
+        for name in ("archive-before", "state-before"):
+            pin = LineageSnapshotPin.from_dict(entry["snapshots"][name])
+            path = batch / "lineage" / (name + ".snapshot")
+            verify_persisted_lineage_snapshot(path, pin)
+            result.append(_files.read_regular_file(path, lineage.MAX_LINEAGE_SNAPSHOT_BYTES))
+            verify_persisted_lineage_snapshot(path, pin)
+        return tuple(result)
+
+    archive, state_bytes = observe()
+    observed = _verify_terminal_batch_rejection_evidence(workspace, batch, prepared, terminal=terminal)
+    tables = _read_rejection_tables_at(workspace, entry)
+    all_rejected, all_published = read_reserved_brs_material_tables(workspace, c1_wire)
+    actual = _retained_reserved_brs_c1_evidence_bytes(c1_state, c1_wire, all_rejected, all_published, **options)
+    _retained_reserved_brs_c2_evidence_bytes(c1_state, c2_wire, all_rejected, all_published, **options)
+    binding = RejectionLineageC1Binding(run_id=rejected.run_id, episode_id=entry["episode_id"],
+        journal_id=entry["journal_id"], ordinal=ordinal, checkpoint_sha256=history[index][0],
+        rejected_sha256=rejected.digest(), retained_bytes=actual,
+        **{name: getattr(rejected, name) for name in (
+            "before_sha256", "prepared_journal_sha256", "terminal_journal_sha256", "rejection_manifest_sha256",
+            "terminal_marker_sha256", "candidate_ids", "archive_sha256", "state_sha256")})
+    if (evidence.lineage != binding or observed.terminal != terminal
+            or observed.manifest_sha256 != rejected.rejection_manifest_sha256
+            or observed.candidate_ids != rejected.candidate_ids
+            or observed.execution_receipt_sha256s != evidence.execution_receipt_sha256s
+            or observed.evaluation_receipt_sha256s != evidence.evaluation_receipt_sha256s
+            or observed.retained_evidence_sha256s != evidence.retained_evidence_sha256s
+            or _read_rejection_tables_at(workspace, entry) != tables or observe() != (archive, state_bytes)
+            or read_native_rsi_rejection_provenance(batch, expected_file_pin=p_pin) != evidence
+            or dict(evidence.ledger_identity) != _read_ledger_identity(ledger)):
+        _fail("historical_native_material_drift")
+    if RSILedger.controller_checkpoint_history(ledger, rejected.run_id) != history:
+        _fail("historical_root_snapshot_drift")
+    return archive, state_bytes, evidence, terminal
+
+
+def verify_reserved_rejected_history(self, entry, *, ordinal, prefix, original_lineage_bytes):
+    """Validate immutable historical material without reusing old live source heads."""
+    from .rsi_store import RSILedger
+
+    archive, state, _evidence, _terminal = _verify_reserved_rejected_materials(self._workspace, entry,
+        ledger=self._ledger, roots=RSILedger.controller_checkpoint_history(self._ledger, self._run_id),
+        ordinal=ordinal, prefix=prefix, original_lineage_bytes=original_lineage_bytes)
+    return archive, state
+
+
+def verify_reserved_rejected_publication(workspace, publication, binding, roots, *, ledger, ordinal,
+                                         prefix, original_lineage_bytes):
+    """Read a genuine selected reserved rejection without constructing any owner."""
+    from .rsi_store import RSILedger
+
+    if type(ledger) is not RSILedger:
+        _fail("historical_ledger_invalid")
+    with RSILedger.read_only_observations(ledger):
+        return _verify_reserved_rejected_publication(workspace, publication, binding, roots,
+            ledger=ledger, ordinal=ordinal, prefix=prefix, original_lineage_bytes=original_lineage_bytes)
+
+
+def _verify_reserved_rejected_publication(workspace, publication, binding, roots, *, ledger, ordinal,
+                                          prefix, original_lineage_bytes):
+    from . import producer_bundle_recovery as recovery
+    from .rsi_python_admission import validate_rsi_python_admission_shapes
+
+    validate_rsi_python_admission_shapes(publication)
+    validate_rsi_python_admission_shapes(binding)
+    if (type(ordinal) is not int or not 0 <= ordinal < 8 or type(publication) is not dict
+            or type(binding) is not dict
+            or publication.get("manifest") is not None or type(publication.get("lineage")) is not dict
+            or type(publication["lineage"].get("batches")) is not list
+            or len(publication["lineage"]["batches"]) != ordinal + 1):
+        _fail("historical_publication_invalid")
+    wire = publication["lineage"]
+    entry = wire["batches"][ordinal]
+    archive, state, evidence, terminal = _verify_reserved_rejected_materials(workspace, entry,
+        ledger=ledger, roots=roots, ordinal=ordinal, prefix=prefix, original_lineage_bytes=original_lineage_bytes)
+    c1_index = next(index for index, (head, _body) in enumerate(roots)
+                    if head == evidence.lineage.checkpoint_sha256)
+    if (wire != roots[c1_index + 1][1].get(_FIELD)
+            or terminal.to_dict() != publication.get("journal")
+            or evidence.plan.run_id != binding.get("run_id")
+            or entry["episode_id"] != binding.get("episode_id")
+            or entry["request_sha256"] != binding.get("selected_request_sha256")
+            or entry["native_plan_sha256"] != binding.get("native_plan_sha256")
+            or evidence.claim.claim_sha256 != binding.get("native_claim_sha256")):
+        _fail("historical_publication_binding_drift")
+    # A selected latest suffix still names the live untouched prepublication
+    # sources. Historical closed entries may have later successful successors.
+    later_append = any(type(body.get(_FIELD)) is dict
+        and len(body[_FIELD].get("batches", [])) > ordinal + 1 for _head, body in roots)
+    if not later_append:
+        root = recovery._workspace(workspace)
+        for name, raw in entry["before_sources"].items():
+            path = root / "evolution" / ("archive.jsonl" if name == "archive" else "state.json")
+            if type(raw) is dict and raw.get("missing") is True:
+                if (set(raw) != {"missing", "parent"} or name != "archive"
+                        or raw["parent"] != lineage._root_pin(path.parent) or archive != b""):
+                    _fail("historical_live_source_drift")
+                try:
+                    path.lstat()
+                except FileNotFoundError:
+                    pass
+                else:
+                    _fail("historical_live_source_drift")
+            else:
+                verify_persisted_lineage_snapshot(path, LineageSnapshotPin.from_dict(raw))
+        if (lineage._sha(archive) != evidence.rejected.archive_sha256
+                or lineage._sha(state) != evidence.rejected.state_sha256):
+            _fail("historical_live_source_drift")
+    return terminal.digest()

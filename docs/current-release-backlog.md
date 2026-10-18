@@ -1,4 +1,4 @@
-## 2026-10-18 当前执行清单
+## 2026-10-19 当前执行清单
 
 当前开发按以下出口推进；组件测试通过、最终来源验收、完整CI与main合入分别记录。
 
@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | P0 | 原rejected owner自然ready/ACK | PR136最终`c445a612`同库存1,079项在macOS/Linux各全过，独立source/import/raw复核通过，PR已ready；完整CI/main待完成。 |
 | P0 | 单原始ordinal拒绝到root结算/owner退出与明确恢复 | `codex/brs-rejected-lifecycle`已接通自然拒绝/ACK/mailbox/failed result与原子root结算；修复live恢复重入flock。14项集成场景、组件兼容、独立复核及完整CI仍待最终同源结果。 |
-| P0 | 原整wave reservation下的serial continuation | 仍需新child原始绑定、append lineage、逐episode sidecar、无重复预算和partial-wave恢复；不能把已有detached successor当作完成。 |
+| P0 | 原整wave reservation下的serial continuation | 工作树已接入 reserved projection/prefix、全域 ledger/reservation 观察、fresh child preparation exchange、native provider/completion、serial driver 和 finalization readers；组件焦点证据仍不等于集成验收。早先的 material path/pin gate 已通过严格 `rejections/<terminal-id>.json` 映射修复（pure validator 70 项及新增 5 项回归通过），但当前最小 `rejected -> rejected` 双 child 已推进到 `rsi_brs_reserved_serial_settled_transport_missing`，仍未完成 owner admission/mailbox handoff。自然 outcome 矩阵、fresh resume、最终来源验收和 CI 仍待完成。 |
 | P1 | 实际sealed Python runtime、一个项目再第二个、生产CLI | source/installation/build/startup/input/handoff比较器和adapter/exporter已有；真实输入、实物构建/运行证据、项目lifecycle及CLI验收仍未完成。 |
 | P2 | 多机ownership、外部认证、分布式调度和remote evaluator | 后置，不进入当前开发批次。 |
 

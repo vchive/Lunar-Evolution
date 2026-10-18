@@ -40,6 +40,8 @@ from . import rsi_brs_rejection_provenance_policy as _provenance_policy
 from . import rsi_brs_rejection_ready_owner as ready_owner
 from . import rsi_brs_rejection_ready_policy as ready_policy
 from . import rsi_brs_rejection_ready_service as ready_service
+from . import rsi_brs_reserved_owner as reserved_owner
+from . import rsi_brs_reserved_policy as reserved_policy
 from . import rsi_publication_lineage as lineage
 from .algorithm import ALGORITHM_FAMILY_REPERTOIRES as _ORIGINAL_FAMILY_REPERTOIRES
 from .candidate_evaluation_spec import canonical_json
@@ -48,7 +50,6 @@ from .producer_bundle_lineage import (
     MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES,
     MAX_LINEAGE_BATCHES,
     LineageSnapshotPin,
-    ProducerLineageBeforeIntent,
     ProducerLineageStagedTransition,
     ProducerLineageTerminal,
     capture_lineage_snapshot_pin,
@@ -93,11 +94,17 @@ _ORIGINAL_PROVENANCE_CODES = tuple(
         (_provenance_policy, (
             "_fail", "_capture_function", "_constant", "_check_function", "native_rejection_provenance_policy")),
         (ready_policy, ("rejection_ready_capture_policy",)),
+        (reserved_policy, ("_build_reserved_brs_policy", "_build_reserved_brs_policy_entry",
+                           "reserved_brs_policy_projection")),
     ) for name in names
 )
 _ORIGINAL_READY_POLICY_CLOSURE = (
     ready_policy.rejection_ready_capture_policy.__closure__,
     tuple(cell.cell_contents for cell in ready_policy.rejection_ready_capture_policy.__closure__),
+)
+_ORIGINAL_RESERVED_POLICY_CLOSURE = (
+    reserved_policy.reserved_brs_policy_projection.__closure__,
+    tuple(cell.cell_contents for cell in (reserved_policy.reserved_brs_policy_projection.__closure__ or ())),
 )
 
 
@@ -229,6 +236,46 @@ def _validate_persisted_policy(
             _fail("persisted_policy_fingerprint_invalid")
 
 
+_ORIGINAL_RESERVED_PROJECT_CAPTURE = None
+
+
+def _reserved_policy_projection():
+    """Independently retain the lazy graph's original executable closure once."""
+    from types import FunctionType
+
+    global _ORIGINAL_RESERVED_PROJECT_CAPTURE
+    saved = _ORIGINAL_RESERVED_PROJECT_CAPTURE
+
+    def check(capture):
+        function, code, namespace, defaults, kwdefaults, closure, values = capture
+        if (type(function) is not FunctionType or reserved_policy._PROJECT is not function
+                or function.__code__ is not code or function.__globals__ is not namespace
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or function.__closure__ is not closure):
+            _fail("reserved_policy_drift")
+        try:
+            if any(cell.cell_contents is not value for cell, value in zip(closure or (), values, strict=True)):
+                _fail("reserved_policy_drift")
+        except ValueError:
+            _fail("reserved_policy_drift")
+
+    if saved is not None:
+        check(saved)
+    projection = reserved_policy.reserved_brs_policy_projection()
+    if saved is None:
+        project = reserved_policy._PROJECT
+        if type(project) is not FunctionType or project.__globals__ is not vars(reserved_policy):
+            _fail("reserved_policy_drift")
+        saved = (project, project.__code__, project.__globals__, project.__defaults__, project.__kwdefaults__,
+                 project.__closure__, tuple(cell.cell_contents for cell in (project.__closure__ or ())))
+        _ORIGINAL_RESERVED_PROJECT_CAPTURE = saved
+    check(saved)
+    return projection
+
+
+_ORIGINAL_RESERVED_PROJECTION = (_reserved_policy_projection, _reserved_policy_projection.__code__)
+
+
 def _policy() -> dict[str, Any]:
     """Original-run and constructor BRS identity pin, never a dispatch permission."""
     if any(vars(module).get(name) is not function or function.__globals__ is not vars(module)
@@ -255,6 +302,17 @@ def _policy() -> dict[str, Any]:
             _fail("rejection_policy_drift")
     except ValueError:
         _fail("rejection_policy_drift")
+    if (_reserved_policy_projection is not _ORIGINAL_RESERVED_PROJECTION[0]
+            or _reserved_policy_projection.__code__ is not _ORIGINAL_RESERVED_PROJECTION[1]):
+        _fail("reserved_policy_drift")
+    reserved_closure, reserved_captures = _ORIGINAL_RESERVED_POLICY_CLOSURE
+    try:
+        if (reserved_policy.reserved_brs_policy_projection.__closure__ is not reserved_closure
+                or any(cell.cell_contents is not original for cell, original in zip(
+                    reserved_closure or (), reserved_captures, strict=True))):
+            _fail("reserved_policy_drift")
+    except ValueError:
+        _fail("reserved_policy_drift")
     import contextlib
     import dataclasses
     import math
@@ -314,6 +372,7 @@ def _policy() -> dict[str, Any]:
         rsi_brs_rejection_owner,
         rsi_brs_rejection_provenance,
         rsi_brs_rejection_provenance_policy,
+        rsi_brs_reserved_policy,
         rsi_brs_terminal_evidence,
         rsi_budget,
         rsi_controller,
@@ -472,6 +531,7 @@ def _policy() -> dict[str, Any]:
             or closure[0].cell_contents is not control_implementation):
         _fail("native_dispatch_control_binding_drift")
     aliases = (
+        (reserved_policy, rsi_brs_reserved_policy),
         (ready_owner, sys.modules["lunar_evolution.rsi_brs_rejection_ready_owner"]),
         (ready_policy, sys.modules["lunar_evolution.rsi_brs_rejection_ready_policy"]),
         (rejection, rejection_owner),
@@ -655,6 +715,10 @@ def _policy() -> dict[str, Any]:
     # recovery entry chain to its canonical application module dictionary too.
     # This also refuses replacing both sides of an import alias with one clone.
     entries = (
+        (_reserved_policy_projection, sys.modules[__name__]),
+        (rsi_brs_reserved_policy._build_reserved_brs_policy, rsi_brs_reserved_policy),
+        (rsi_brs_reserved_policy._build_reserved_brs_policy_entry, rsi_brs_reserved_policy),
+        (rsi_brs_reserved_policy.reserved_brs_policy_projection, rsi_brs_reserved_policy),
         *((getattr(provenance, name), provenance) for name in provenance_helpers),
         *((getattr(provenance_policy, name), provenance_policy) for name in (
             "_fail", "_constant", "_check_function", "native_rejection_provenance_policy")),
@@ -901,7 +965,7 @@ def _policy() -> dict[str, Any]:
             or journal_defaults["monotonic"] is not time.monotonic):
         _fail("native_reader_binding_drift")
 
-    return {
+    policy = {
         "protocol": _PROTOCOL, "mode": "brs", "max_workers": 1,
         "rejection_schema": rejection_wire.REJECTION_SCHEMA,
         "rejection_provenance_schema": rejection_wire.REJECTION_PROVENANCE_SCHEMA,
@@ -910,6 +974,15 @@ def _policy() -> dict[str, Any]:
         "max_checkpoint_bytes": lineage._MAX_CHECKPOINT_BYTES,
         "max_aggregate_snapshot_bytes": MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES,
         "dependencies": {
+            "reserved_serial": {
+                "graph": _reserved_policy_projection(),
+                "projection_reader": component_fingerprint(_reserved_policy_projection),
+                "entry_builder": component_fingerprint(rsi_brs_reserved_policy._build_reserved_brs_policy_entry),
+                "builder": component_fingerprint(rsi_brs_reserved_policy._build_reserved_brs_policy),
+                "entry": component_fingerprint(rsi_brs_reserved_policy.reserved_brs_policy_projection, config={}),
+                "source_sha256": hashlib.sha256(_files.read_regular_file(
+                    Path(__file__).parent / "rsi_brs_reserved_policy.py", 1024 * 1024)).hexdigest(),
+            },
             # Evaluate the complete finite live graph on every observation, then
             # retain its digest once. Persisting the expanded graph in each run
             # fingerprint would duplicate it beyond the unchanged record cap.
@@ -1292,6 +1365,12 @@ def _policy() -> dict[str, Any]:
             "shared_retained_bytes": component_fingerprint(lineage.RSIPublicationLineage._retained_bytes),
         },
     }
+    # Observe the complete graph above on every call. Persist its large finite
+    # subgraphs once as canonical digests: the run retains this policy both in
+    # the fingerprint and at its original root, under the unchanged record cap.
+    for name in ("rejection_c1", "owner_result_delivery", "retained_native_reader", "module_sources", "methods"):
+        policy["dependencies"][name] = hashlib.sha256(canonical_json(policy["dependencies"][name])).hexdigest()
+    return policy
 
 
 def _mailbox_native_arguments(self) -> dict[str, Any]:
@@ -1428,6 +1507,15 @@ def _retain_mailbox_observation(
         raise
 
 
+def _create_reserved_brs_lineage_owner(controller, wave, *, request, memory, native_plan,
+                                       original_checkpoint, prefix, prefix_batches):
+    """Construct a fresh original owner through the same fully checked initializer."""
+    owner = object.__new__(_BRSLineageCheckpointOwner)
+    _BRSLineageCheckpointOwner._initialize(owner, controller, wave, request=request, memory=memory,
+        native_plan=native_plan, reserved=(original_checkpoint, prefix, prefix_batches))
+    return owner
+
+
 class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     """Exact original BRS owner for bounded first-batch success checkpoints.
 
@@ -1461,6 +1549,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_native",
         "_native_config",
         "_native_inputs",
+        "_ordinal",
         "_payload",
         "_phase",
         "_plan",
@@ -1491,10 +1580,17 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         "_rejection_ready_state",
         "_rejection_ready_sync_capture",
         "_request",
+        "_reserved_capture_bytes",
+        "_reserved_gateway",
+        "_reserved_lineage_bytes",
+        "_reserved_original_checkpoint",
+        "_reserved_prefix",
+        "_reserved_scope",
         "_retaining_before",
         "_retaining_rejection",
         "_retaining_rejection_provenance",
         "_retaining_success",
+        "_root_sidecar",
         "_run_head",
         "_run_id",
         "_selected_context",
@@ -1517,130 +1613,19 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
 
     def __init__(self, controller: Any, wave: Any, *, request: SolverRequest,
                  memory: MemorySnapshot, native_plan: NativeRSIExecutionPlan) -> None:
-        from .rsi_controller import RSILearningController, _PythonAdmissionBRSWave
-        from .rsi_python_admission import validate_rsi_python_admission_shapes
-        from .rsi_python_brs_handoff import BRSChildHandoffContext, BRSSelectedChildHandoff
-        from .rsi_python_scheduler_inputs import _request_memory
-        from .rsi_store import RSILedger
+        self._initialize(controller, wave, request=request, memory=memory, native_plan=native_plan, reserved=None)
 
-        if (type(self) is not _BRSLineageCheckpointOwner or type(controller) is not RSILearningController
-                or type(wave) is not _PythonAdmissionBRSWave or type(controller.ledger) is not RSILedger):
-            _fail("owner_invalid")
-        controller._python_admission_assert_brs_wave(wave, owner=True)
-        handoff, context = wave.selected_handoff, wave.selected_context
-        if type(handoff) is not BRSSelectedChildHandoff or type(context) is not BRSChildHandoffContext:
-            _fail("selection_required")
-        controller._python_admission_selected_brs_identity(wave, handoff)
-        parsed_request, parsed_memory = _request_memory(request, memory)
-        validate_rsi_python_admission_shapes(native_plan, dto_types=(NativeRSIExecutionPlan, SolverRequest))
-        if type(native_plan) is not NativeRSIExecutionPlan:
-            _fail("plan_invalid")
-        plan = NativeRSIExecutionPlan.from_dict(NativeRSIExecutionPlan.to_dict(native_plan))
-        if (plan.request != parsed_request or plan.memory_snapshot_sha256 != parsed_memory.digest()
-                or parsed_request.digest() != handoff.request_sha256 or plan.run_id != wave.run_id
-                or parsed_memory.digest() != handoff.root_snapshot_sha256 or handoff.ordinal != 0):
-            _fail("inputs_invalid")
-        previous = getattr(controller._python_admission_brs_local, "lineage_checkpoint_owner", None)
-        if type(previous) is _BRSLineageCheckpointOwner and previous._wave is wave:
-            _fail("owner_already_created")
-        self._controller, self._wave, self._state = controller, wave, wave.state
-        self._ledger, self._gateway = controller.ledger, controller.gateway
-        self._workspace, self._sidecar, self._thread = wave.workspace, wave.sidecar, get_ident()
-        self._channel, self._handoff, self._selected_context = wave.channel, handoff, context
-        self._before_channel_condition = self._channel._condition
-        self._budget_bytes = controller._python_admission_flow_payload(wave.budget_state)
-        self._handoff_bytes = BRSSelectedChildHandoff.canonical_bytes.fget(handoff)
-        self._selected_context_bytes = canonical_json(BRSChildHandoffContext.to_dict(context))
-        self._provided_request, self._provided_memory, self._provided_plan = request, memory, native_plan
-        self._request, self._memory, self._plan = parsed_request, parsed_memory, plan
-        self._run_id, self._head, self._payload = plan.run_id, wave.checkpoint_sha256, wave.payload
-        self._policy_bytes = lineage._raw(_policy())
-        with self._ledger.read_only_observations():
-            original = self._ledger.history(self._run_id)[0]
-            run = self._ledger.get_run(self._run_id)
-            claim = self._ledger.inspect_native_episode_claim(parsed_request, plan_sha256=plan.plan_sha256)
-            episode = self._ledger.get_episode(parsed_request.episode_id)
-            result = self._ledger.episode_result(parsed_request.episode_id)
-        if (run is None or run.state != "running" or episode is None or episode.state != "running"
-                or claim is None or claim.status != "started" or result is not None
-                or episode.request_sha256 != parsed_request.digest()):
-            _fail("running_claim_required")
-        self._run_head, self._claim, self._episode_head = run.record_sha256, claim, episode.record_sha256
-        self._association = {
-            "protocol": _PROTOCOL, "run_id": self._run_id, "workspace": lineage._root_pin(self._workspace),
-            "run_request_sha256": original.request_sha256,
-            "root_proof_sha256": lineage._sha(lineage._raw(original.payload.get("producer_checkpoint_binding"))),
-            "policy_sha256": lineage._sha(self._policy_bytes), "max_batches": MAX_LINEAGE_BATCHES,
-        }
-        config = getattr(self._gateway, "producer_config", None)
-        self._native_config = config
-        self._native_inputs = self._native = self._strategy = None
-        self._strategy_context = self._strategy_config = self._strategy_authority = None
-        self._strategy_archive = self._strategy_contract = None
-        self._strategy_bytes = None
-        if config is not None:
-            from .evolution import (
-                CandidateIntegrityAuthority,
-                EvolutionConfig,
-                EvolutionContext,
-                PopulationStrategy,
-            )
-            from .rsi_native_scheduler import NativeRSISchedulerContext
-            from .rsi_producer_gateway import PythonProducerRSIExecutionConfig
-            from .rsi_python_scheduler_inputs import PythonRSISchedulerInputContext
-
-            if (type(config) is not PythonProducerRSIExecutionConfig or config.ledger is not self._ledger
-                    or type(config.inputs) is not PythonRSISchedulerInputContext
-                    or type(config.inputs.native_context) is not NativeRSISchedulerContext
-                    or type(config.inputs.native_context.strategy) is not PopulationStrategy):
-                _fail("native_strategy_invalid")
-            self._native_inputs, self._native = config.inputs, config.inputs.native_context
-            self._strategy = self._native.strategy
-            self._strategy_context, self._strategy_config = self._strategy.context, self._strategy.config
-            self._strategy_authority = self._strategy.integrity_authority
-            if (type(self._strategy_context) is not EvolutionContext
-                    or type(self._strategy_config) is not EvolutionConfig
-                    or type(self._strategy_authority) is not CandidateIntegrityAuthority):
-                _fail("native_strategy_invalid")
-            self._strategy_archive, self._strategy_contract = self._strategy.archive, self._strategy_context.contract
-            self._strategy_bytes = _native_snapshot(
-                self._strategy_config, self._strategy_authority, self._strategy_contract,
-            )
-        self._phase, self._poisoned, self._prepared, self._before_bytes = "new", False, None, None
-        self._reconcile_registration_started = False
-        self._mailbox_binding_bytes = None
-        self._mailbox_capture_started = False
-        self._mailbox_history_bytes = b"[]"
-        self._validated_before, self._retaining_before, self._retaining_success = None, False, None
-        self._success_deadline = None
-        self._retaining_rejection, self._rejection_deadline, self._rejection_file_pin = False, None, None
-        self._rejection_c1_capture = self._rejection_provenance_c2_capture = None
-        self._retaining_rejection_provenance = False
-        self._rejection_provenance_deadline = self._rejection_provenance_file_pin = None
-        self._rejection_provenance_evidence = self._rejection_provenance_sha256 = None
-        self._rejection_ready_capture_started, self._rejection_ready_capture = False, None
-        self._rejection_ready_state, self._rejection_ready_stage = "unused", None
-        self._rejection_ready_ack, self._rejection_ready_ack_fields = None, None
-        self._rejection_ready_commit_started, self._rejection_ready_final_capture = False, None
-        self._rejection_ready_locks_capture = None
-        self._rejection_ready_sync_capture = None
-        from .rsi_native_scheduler import _read_ledger_identity
-        self._rejection_ledger_identity = (None if self._native is None else
-                                           lineage._raw(_read_ledger_identity(self._ledger)))
-        self._before_control = None if self._native is None else self._native.execution_control
-        self._before_cancelled = None if self._native is None else self._native.cancelled
-        self._before_control_pin = self._before_control_state()
-        self._check_owner(registered=False)
-        if self._state.get(_FIELD) is not None:
-            _fail("fresh_lineage_required")
-        controller._python_admission_brs_local.lineage_checkpoint_owner = self
+    _initialize = reserved_owner.initialize_reserved_owner
 
     def _reconcile_registration_fixed(self) -> None:
         """Recheck fixed old-capture facts without source or control callbacks."""
         self._identity()
         if (self._reconcile_registration_started is not True or self._phase != "new"
                 or self._retaining_before is not False or self._retaining_success is not None
-                or self._success_deadline is not None or self._state.get(_FIELD) is not None
+                or self._success_deadline is not None
+                or (self._state.get(_FIELD) is not None if self._reserved_prefix is None else
+                    canonical_json(self._state.get(_FIELD), maximum=128 * 1024) !=
+                    (self._reserved_lineage_bytes or b"null"))
                 or self._head != self._handoff.head_sha256
                 or hashlib.sha256(self._payload).hexdigest() != self._handoff.state_sha256):
             _fail("reconcile_registration_unavailable")
@@ -1671,22 +1656,25 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._reconcile_registration_fixed()
         self._before_control_live()
         captured = json.loads(self._payload)
+        # Capture the original fingerprint contract under the read-only scope, then
+        # release it before invoking the fingerprint callbacks.  Those callbacks
+        # are source/configuration observations and may themselves assert that no
+        # ledger observation scope is held (and may block on another observer).
+        # The final read-only pass below rechecks the original record and all
+        # durable references before any local adoption.
         with self._ledger.read_only_observations():
             original = self._ledger.history(self._run_id)[0]
-            actual, _ = self._controller._run_fingerprint(
-                **captured["pins"], memory_snapshot_sha256=self._memory.digest(),
-                mode=captured["mode"], plan=captured["plan"],
-            )
-            ensure_fingerprint_compatible(
-                RSIFingerprintContract.from_dict(original.payload["fingerprints"]["run_fingerprint"]), actual,
-            )
-            run = self._ledger.get_run(self._run_id)
-            self._controller._validate_original_run_checkpoint_producer_binding(run, expected)
-            self._controller._validate_python_admission_references(self._run_id, expected)
-            self._controller._validate_producer_staging(run, expected)
-            self._history(expected)
+            original_payload = json.loads(lineage._raw(original.payload))
+            original_record_sha256 = original.record_sha256
+        actual, _ = self._controller._run_fingerprint(
+            **captured["pins"], memory_snapshot_sha256=self._memory.digest(),
+            mode=captured["mode"], plan=captured["plan"],
+        )
+        ensure_fingerprint_compatible(
+            RSIFingerprintContract.from_dict(original_payload["fingerprints"]["run_fingerprint"]), actual,
+        )
         budget = RSIRunBudget.load(captured["budget_state"])
-        budget.assert_matches(original.payload["budget"])
+        budget.assert_matches(original_payload["budget"])
         budget.check()
         policy = {
             "plan": captured["plan"], "pins": captured["pins"],
@@ -1702,6 +1690,19 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._identity()
         if self._native is not None:
             self._native_strategy()
+        # Reacquire the read-only observation scope after callbacks.  A concurrent
+        # append or source/record drift must fail closed, leaving the durable
+        # obligation for explicit recovery instead of adopting a stale local head.
+        with self._ledger.read_only_observations():
+            current_original = self._ledger.history(self._run_id)[0]
+            if (current_original.record_sha256 != original_record_sha256
+                    or lineage._raw(current_original.payload) != lineage._raw(original_payload)):
+                _fail("reconcile_registration_authority_drift")
+            run = self._ledger.get_run(self._run_id)
+            self._controller._validate_original_run_checkpoint_producer_binding(run, expected)
+            self._controller._validate_python_admission_references(self._run_id, expected)
+            self._controller._validate_producer_staging(run, expected)
+            self._history(expected)
         self._reconcile_registration_fixed()
 
     def _reconcile_registration_readback(self, head: str, expected: dict[str, Any]) -> None:
@@ -1749,25 +1750,36 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 _fail("reconcile_registration_unavailable")
             put_brs_reconcile_obligation(expected, obligation)
             payload = self._controller._python_admission_flow_payload(expected)
-            registration = register_brs_selected_obligation(
-                self._ledger, self._handoff, native_plan_sha256=self._plan.plan_sha256,
-                controller_checkpoint_sha256=self._head, episode_record_sha256=self._episode_head,
-                expected_run_record_sha256=self._run_head,
-                expected_native_claim_sha256=self._claim.claim_sha256,
-            )
-            if registration.obligation.to_dict() != obligation.to_dict():
-                _fail("reconcile_registration_readback_invalid")
-            head = registration.checkpoint_sha256
-            self._reconcile_registration_readback(head, expected)
-            # No shared state is refreshed to let ordinary owner checks pass.
-            self._reconcile_registration_observe(expected)
-            self._reconcile_registration_readback(head, expected)
-            with self._controller._python_admission_brs_observations(), self._before_channel_condition:
-                self._reconcile_registration_fixed()
-                self._reconcile_registration_readback(head, expected)
-                self._state[FIELD] = expected[FIELD]
-                self._wave.checkpoint_sha256, self._wave.payload = head, payload
-                self._head, self._payload = head, payload
+            # The registration append advances the durable controller head before
+            # the owner wave can adopt that head.  Serialize the append and the
+            # final adoption with the shared observation lock.  The expensive
+            # read-only re-observation is deliberately outside that lock: source
+            # fingerprint hooks are allowed to assert that no observation scope
+            # is held, and the final CAS/readback below closes the unlocked
+            # interval before the in-memory wave adopts the new head.
+            with self._controller._python_admission_brs_checkpoint_transition(self._wave):
+                with self._controller._python_admission_brs_observations():
+                    registration = register_brs_selected_obligation(
+                        self._ledger, self._handoff, native_plan_sha256=self._plan.plan_sha256,
+                        controller_checkpoint_sha256=self._head, episode_record_sha256=self._episode_head,
+                        expected_run_record_sha256=self._run_head,
+                        expected_native_claim_sha256=self._claim.claim_sha256,
+                    )
+                    if registration.obligation.to_dict() != obligation.to_dict():
+                        _fail("reconcile_registration_readback_invalid")
+                    head = registration.checkpoint_sha256
+                    self._reconcile_registration_readback(head, expected)
+                # No shared state is refreshed to let ordinary owner checks pass.
+                # This performs only read-only evidence checks and intentionally
+                # runs without the observation lock (see comment above).
+                self._reconcile_registration_observe(expected)
+                with self._controller._python_admission_brs_observations():
+                    self._reconcile_registration_readback(head, expected)
+                    self._reconcile_registration_fixed()
+                    self._reconcile_registration_readback(head, expected)
+                    self._state[FIELD] = expected[FIELD]
+                    self._wave.checkpoint_sha256, self._wave.payload = head, payload
+                    self._head, self._payload = head, payload
             return head
         except BaseException:
             self._poisoned = True
@@ -1785,6 +1797,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         from .rsi_python_brs_handoff import BRSChildHandoffContext, BRSSelectedChildHandoff
         from .rsi_python_scheduler_inputs import _request_memory
 
+        if type(self) is not _BRSLineageCheckpointOwner:
+            _fail("owner_drift")
+        reserved_owner.reserved_prefix_identity(self)
         controller, wave = self._controller, self._wave
         if (type(self) is not _BRSLineageCheckpointOwner or self._poisoned
                 or type(self._reconcile_registration_started) is not bool
@@ -1794,7 +1809,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 or type(wave.checkpoint_sha256) is not str or type(wave.payload) is not bytes
                 or get_ident() != self._thread or controller.ledger is not self._ledger
                 or controller.gateway is not self._gateway or wave.state is not self._state
-                or controller.producer_workspace is not self._workspace or controller.producer_sidecar is not self._sidecar
+                or controller.producer_workspace is not self._workspace or controller.producer_sidecar is not self._root_sidecar
                 or wave.channel is not self._channel or wave.selected_handoff is not self._handoff
                 or wave.selected_context is not self._selected_context or wave.selected_worker_started is not True
                 or wave.selected_return is not None or wave.selected_settlement_started is not False
@@ -1870,7 +1885,8 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         return self._state
 
     def _strategy_identity(self) -> None:
-        if getattr(self._gateway, "producer_config", None) is not self._native_config:
+        native_gateway = reserved_owner.reserved_strategy_scope(self)
+        if getattr(native_gateway, "producer_config", None) is not self._native_config:
             _fail("native_strategy_drift")
         if self._native_config is None:
             return
@@ -1936,8 +1952,25 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
 
     _history = rejection._history
 
+    _validate_entry_shape = reserved_owner.reserved_validate_entry_shape
+    _verify_descriptor = reserved_owner.reserved_verify_descriptor
+    _validate_source_pin_maps = reserved_owner.reserved_validate_source_pin_maps
+    _verify_terminal_entry = reserved_owner.reserved_verify_terminal_entry
+
     def _initial_window(self, archive: bytes, state_bytes: bytes) -> None:
         from .producer_bundle_transaction import _records_from_archive
+
+        if self._reserved_prefix is not None and self._ordinal:
+            from .producer_bundle_transaction import _ensure_append_population_window
+            raw_expected = json.loads(self._reserved_prefix.canonical_bytes)["historical_poststate"]
+            expected = None if raw_expected is None else tuple(tuple(item) for item in raw_expected)
+            if expected is None or tuple((lineage._sha(raw), len(raw)) for raw in (archive, state_bytes)) != expected:
+                _fail("reserved_poststate_drift")
+            _ensure_append_population_window(json.loads(state_bytes), _records_from_archive(archive), self._strategy,
+                prior_events=tuple(tuple(item["staged"]["descriptor"]["candidate_ids"])
+                                   for item in map(json.loads, self._reserved_prefix.batch_bytes)
+                                   if item["outcome"] == "published"))
+            return
 
         state, records = json.loads(state_bytes), _records_from_archive(archive)
         outcome_fields = {"outcome_schema_version", "outcome_start_iteration", "outcome_watermark",
@@ -2145,22 +2178,27 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 _fail("before_capture_drift")
             self._live_before(base_archive, base_state_bytes)
             self._validated_before = capture
-            return ()
+            return (() if self._reserved_prefix is None else
+                    tuple(tuple(item["staged"]["descriptor"]["candidate_ids"])
+                          for item in map(json.loads, self._reserved_prefix.batch_bytes) if item["outcome"] == "published"))
         except BaseException:
             self._poisoned = True
             raise
 
     def _before_wire(self, journal, admission, archive_pin, state_pin, descriptor_pin, sources):
-        before = ProducerLineageBeforeIntent(self._run_id, journal.journal_id, 0, None, None, archive_pin, state_pin)
-        return {**self._association, "batches": [{
-            "journal_id": journal.journal_id, "ordinal": 0, "episode_id": self._request.episode_id,
+        before = reserved_owner.reserved_before(self, journal.journal_id, archive_pin, state_pin)
+        wire = (json.loads(self._reserved_lineage_bytes) if self._reserved_lineage_bytes is not None else
+                {**self._association, "batches": [], "head": None, "rejections": []})
+        wire["batches"].append({
+            "journal_id": journal.journal_id, "ordinal": self._ordinal, "episode_id": self._request.episode_id,
             "request_sha256": self._request.digest(), "memory_snapshot_sha256": self._memory.digest(),
             "native_plan_sha256": self._plan.plan_sha256, "admission_plan": admission.to_dict(),
             "prepared_journal": journal.to_dict(), "before": before.to_dict(),
             "before_file_pin": descriptor_pin.to_dict(),
             "snapshots": {"archive-before": archive_pin.to_dict(), "state-before": state_pin.to_dict()},
             "before_sources": sources, "state": "before", "evidence_pins": {},
-        }], "head": None, "rejections": []}
+        })
+        return wire
 
     def retain_before(self, journal: Any, base_archive: bytes, base_state_bytes: bytes) -> None:
         """Create genuine first-before evidence, then use the original checkpoint CAS."""
@@ -2172,8 +2210,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             admission = parse_producer_bundle_admission_plan(json.loads(self._validated_before)["admission_plan"])
             self.validate_before(journal, base_archive, base_state_bytes, self._strategy, admission_plan=admission)
             self._before_channel()
-            empty = {**self._association, "batches": [], "head": None, "rejections": []}
-            total = lineage.RSIPublicationLineage._retained_bytes(empty, self._state)
+            empty = (json.loads(self._reserved_lineage_bytes) if self._reserved_lineage_bytes is not None else
+                     {**self._association, "batches": [], "head": None, "rejections": []})
+            total = reserved_owner.reserved_retained_bytes(self, empty, self._state)
             if total + len(base_archive) + len(base_state_bytes) > MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES:
                 _fail("capacity_exceeded")
             archive_path, state_path = self._workspace / "evolution/archive.jsonl", self._workspace / "evolution/state.json"
@@ -2198,8 +2237,8 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                     mtime_ns=maximum, ctime_ns=maximum)
             projected = self._before_wire(journal, admission,
                 capacity_pin("archive-before.snapshot", len(base_archive)),
-                capacity_pin("state-before.snapshot", len(base_state_bytes)), capacity_pin("before.json", 4096), sources)
-            lineage.RSIPublicationLineage._retained_bytes(projected, self._state)
+                capacity_pin("state-before.snapshot", len(base_state_bytes)), capacity_pin("before-v2.json" if self._ordinal else "before.json", 4096), sources)
+            reserved_owner.reserved_retained_bytes(self, projected, self._state)
             lineage._raw(lineage._publication_lineage_checkpoint_delta(self._payload, projected))
             self.validate_before(journal, base_archive, base_state_bytes, self._strategy, admission_plan=admission)
             self._before_channel()
@@ -2216,8 +2255,12 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 if _files.read_regular_file(path, lineage.MAX_LINEAGE_SNAPSHOT_BYTES) != raw:
                     _fail("before_snapshot_drift")
                 verify_persisted_lineage_snapshot(path, pin)
-            before = ProducerLineageBeforeIntent(self._run_id, journal.journal_id, 0, None, None, archive_pin, state_pin)
-            _path, descriptor_pin = persist_lineage_descriptor(self._workspace, before)
+            before = reserved_owner.reserved_before(self, journal.journal_id, archive_pin, state_pin)
+            if self._ordinal:
+                from .producer_bundle_lineage_v2 import persist_lineage_v2_descriptor
+                _path, descriptor_pin = persist_lineage_v2_descriptor(self._workspace, before)
+            else:
+                _path, descriptor_pin = persist_lineage_descriptor(self._workspace, before)
             wire = self._before_wire(journal, admission, archive_pin, state_pin, descriptor_pin, sources)
             self.validate_before(journal, base_archive, base_state_bytes, self._strategy, admission_plan=admission)
             if self._retaining_before is not True:
@@ -2360,10 +2403,13 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         detached = json.loads(lineage._raw(wire))
         if (set(detached) != {*self._association, "batches", "head", "rejections"}
                 or any(detached[key] != value for key, value in self._association.items())
-                or detached["rejections"] != [] or type(detached["batches"]) is not list
-                or len(detached["batches"]) != 1):
+                or (detached["rejections"] != [] if self._reserved_prefix is None else
+                    detached["rejections"] != json.loads(self._reserved_lineage_bytes or b'{"rejections":[]}')["rejections"])
+                or type(detached["batches"]) is not list
+                or len(detached["batches"]) != self._ordinal + 1):
             _fail("success_invalid")
-        entry = detached["batches"][0]
+        entry = detached["batches"][self._ordinal]
+        reserved_owner.reserved_wire_scope(self, detached)
         if type(entry) is not dict or entry.get("state") != phase:
             _fail("success_invalid")
         self._validate_entry_shape(entry)
@@ -2374,7 +2420,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                     ("prepared-evidence", "staged"), ("staged", "terminal")
                 })):
             _fail("success_unavailable")
-        previous = old["batches"][0]
+        previous = old["batches"][self._ordinal]
         for key, value in previous.items():
             if key in {"snapshots", "evidence_pins"}:
                 if any(entry[key].get(name) != pin for name, pin in value.items()):
@@ -2382,20 +2428,20 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             elif key != "state" and entry.get(key) != value:
                 _fail("success_delta_invalid")
         before_wire = json.loads(self._before_bytes)
-        before_wire["batches"][0] = {
-            key: entry[key] for key in before_wire["batches"][0]
+        before_wire["batches"][self._ordinal] = {
+            key: entry[key] for key in before_wire["batches"][self._ordinal]
         }
-        before_wire["batches"][0].update(
+        before_wire["batches"][self._ordinal].update(
             state="before", snapshots={name: entry["snapshots"][name] for name in ("archive-before", "state-before")},
             evidence_pins={"journal.prepared.json": entry["evidence_pins"]["journal.prepared.json"]},
         )
         self._before_entry(before_wire, live_sources=phase == "staged")
-        lineage.RSIPublicationLineage._retained_bytes(detached, self._state)
+        reserved_owner.reserved_retained_bytes(self, detached, self._state)
         transition = self._verify_descriptor(entry, "staged")
-        before = ProducerLineageBeforeIntent.from_dict(entry["before"])
+        before = self._verify_descriptor(entry, "before")
         if (type(transition) is not ProducerLineageStagedTransition
                 or (transition.run_id, transition.journal_id, transition.ordinal, transition.before_sha256) !=
-                (self._run_id, self._plan.journal_id, 0, before.digest())):
+                (self._run_id, self._plan.journal_id, self._ordinal, before.digest())):
             _fail("staged_binding_invalid")
         batch = recovery._batch(self._workspace, self._plan.journal_id)
         staged = recovery._read_journal(batch / "journal.staged.json")
@@ -2429,7 +2475,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 "lineage_sha256": terminal.digest(),
             }:
                 _fail("terminal_head_invalid")
-            archive, state_bytes = self._verify_terminal_entry(entry, ordinal=0, previous=None)
+            archive, state_bytes = self._verify_terminal_entry(entry, ordinal=self._ordinal, previous=(detached["batches"][self._ordinal - 1] if self._ordinal else None))
             self._initial_window(
                 self._snapshot_bytes(self._plan.journal_id, entry["snapshots"]["archive-before"], name="archive-before"),
                 self._snapshot_bytes(self._plan.journal_id, entry["snapshots"]["state-before"], name="state-before"),
@@ -2444,7 +2490,8 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                     _fail("terminal_head_drift")
                 verify_persisted_lineage_snapshot(path, pin)
         else:
-            if detached["head"] is not None:
+            if detached["head"] != (None if self._reserved_lineage_bytes is None else
+                                      json.loads(self._reserved_lineage_bytes)["head"]):
                 _fail("staged_head_invalid")
             lineage.RSIPublicationLineage._verify_after_source_pins(self, entry)
             snapshots = entry["snapshots"]
@@ -2479,22 +2526,25 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         detached = json.loads(lineage._raw(wire))
         if (set(detached) != {*self._association, "batches", "head", "rejections"}
                 or any(detached[key] != value for key, value in self._association.items())
-                or detached["head"] is not None or detached["rejections"] != []
-                or type(detached["batches"]) is not list or len(detached["batches"]) != 1):
+                or detached["head"] != (None if self._reserved_lineage_bytes is None else
+                                           json.loads(self._reserved_lineage_bytes)["head"])
+                or detached["rejections"] != ([] if self._reserved_lineage_bytes is None else
+                                                json.loads(self._reserved_lineage_bytes)["rejections"])
+                or type(detached["batches"]) is not list or len(detached["batches"]) != self._ordinal + 1):
             _fail("before_invalid")
-        entry = detached["batches"][0]
+        entry = detached["batches"][self._ordinal]
+        reserved_owner.reserved_wire_scope(self, detached)
         if type(entry) is not dict or entry.get("state") != "before":
             _fail("before_invalid")
         self._validate_entry_shape(entry)
-        before = ProducerLineageBeforeIntent.from_dict(entry["before"])
+        before = self._verify_descriptor(entry, "before")
         plan = parse_producer_bundle_admission_plan(entry["admission_plan"])
         journal = parse_producer_bundle_publication_journal(entry["prepared_journal"])
         if ((entry["journal_id"], entry["ordinal"], entry["episode_id"], entry["request_sha256"],
              entry["memory_snapshot_sha256"], entry["native_plan_sha256"]) !=
-                (self._plan.journal_id, 0, self._request.episode_id, self._request.digest(),
+                (self._plan.journal_id, self._ordinal, self._request.episode_id, self._request.digest(),
                  self._memory.digest(), self._plan.plan_sha256)
-                or (before.run_id, before.journal_id, before.ordinal, before.predecessor_terminal_sha256,
-                    before.predecessor_lineage_sha256) != (self._run_id, self._plan.journal_id, 0, None, None)
+                or before != reserved_owner.reserved_before(self, self._plan.journal_id, before.archive, before.state)
                 or journal.state != "prepared" or journal.admission_sha256 != plan.digest()
                 or (journal.run_id, journal.journal_id, journal.parent_task_id, journal.task_id) !=
                 (self._run_id, self._plan.journal_id, self._plan.parent_task_id, self._plan.task_id)
@@ -2515,7 +2565,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         # Preserve the common ready-capsule + lineage snapshot budget before
         # observing retained files. This BRS protocol uses the pure V1 accounting
         # branch; it neither installs nor impersonates a DRS publication flag.
-        lineage.RSIPublicationLineage._retained_bytes(detached, self._state)
+        reserved_owner.reserved_retained_bytes(self, detached, self._state)
         if self._verify_descriptor(entry, "before") != before:
             _fail("before_descriptor_drift")
         for name in ("archive-before", "state-before"):
@@ -2533,21 +2583,27 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         return detached
 
     def _write(self, wire: dict[str, Any]) -> str:
+        with self._controller._python_admission_brs_checkpoint_transition(self._wave):
+            return self._write_checkpoint_transition(wire)
+
+    def _write_checkpoint_transition(self, wire: dict[str, Any]) -> str:
         retaining_before = self._retaining_before
         retaining_success = self._retaining_success
         if type(retaining_before) is not bool:
             _fail("before_retention_scope_drift")
         self._success_scope(retaining_success)
         self._check_owner()
-        phase = wire["batches"][0]["state"]
+        phase = wire["batches"][self._ordinal]["state"]
         wire = self._before_entry(wire) if phase == "before" else self._success_entry(wire, phase=phase)
         if self._phase == "new":
-            if self._state.get(_FIELD) is not None or wire["batches"][0]["evidence_pins"]:
+            if ((self._state.get(_FIELD) is not None if self._reserved_prefix is None else
+                 canonical_json(self._state.get(_FIELD), maximum=128 * 1024) != (self._reserved_lineage_bytes or b"null"))
+                    or wire["batches"][self._ordinal]["evidence_pins"]):
                 _fail("before_unavailable")
         elif self._phase == "prepared-reference":
             original = json.loads(self._before_bytes)
-            pins = wire["batches"][0]["evidence_pins"]
-            original["batches"][0]["evidence_pins"] = pins
+            pins = wire["batches"][self._ordinal]["evidence_pins"]
+            original["batches"][self._ordinal]["evidence_pins"] = pins
             if set(pins) != {"journal.prepared.json"} or original != wire:
                 _fail("prepared_evidence_delta_invalid")
         elif (self._phase, phase) in {("prepared-evidence", "staged"), ("staged", "terminal")}:
@@ -2621,7 +2677,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                     or self._wave.checkpoint_sha256 != self._head or self._wave.payload != self._payload
                     or self._controller.ledger is not self._ledger or self._controller.gateway is not self._gateway
                     or self._controller.producer_workspace is not self._workspace
-                    or self._controller.producer_sidecar is not self._sidecar):
+                    or self._controller.producer_sidecar is not self._root_sidecar):
                 _fail("owner_drift")
             self._state[_FIELD] = json.loads(lineage._raw(wire))
             self._wave.checkpoint_sha256, self._wave.payload = head, payload
@@ -2635,14 +2691,15 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             self._check_owner()
             if self._retaining_before is not retaining_before:
                 _fail("before_retention_scope_drift")
-            if self._phase != "new" or self._state.get(_FIELD) is not None:
+            if (self._phase != "new" or (self._state.get(_FIELD) is not None if self._reserved_prefix is None else
+                canonical_json(self._state.get(_FIELD), maximum=128 * 1024) != (self._reserved_lineage_bytes or b"null"))):
                 _fail("before_unavailable")
             detached = self._before_entry(wire)
-            if detached["batches"][0]["evidence_pins"]:
+            if detached["batches"][self._ordinal]["evidence_pins"]:
                 _fail("before_invalid")
             head = self._write(detached)
             self._before_bytes = lineage._raw(detached)
-            self._prepared = parse_producer_bundle_publication_journal(detached["batches"][0]["prepared_journal"])
+            self._prepared = parse_producer_bundle_publication_journal(detached["batches"][self._ordinal]["prepared_journal"])
             self._phase = "before"
             return head
         except BaseException:
@@ -2708,7 +2765,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             if parse_producer_bundle_publication_journal(json.loads(raw)) != self._prepared:
                 _fail("prepared_journal_drift")
             verify_persisted_lineage_snapshot(path, pin)
-            wire["batches"][0]["evidence_pins"] = {"journal.prepared.json": pin.to_dict()}
+            wire["batches"][self._ordinal]["evidence_pins"] = {"journal.prepared.json": pin.to_dict()}
             self._before_entry(wire)
             head = self._write(wire)
             self._phase = "prepared-evidence"
@@ -2779,9 +2836,9 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
 
     def _success_capacity(self, wire: dict[str, Any]) -> int:
         """Bound real snapshot bytes and conservative new file pins before any create."""
-        total = lineage.RSIPublicationLineage._retained_bytes(wire, self._state)
+        total = reserved_owner.reserved_retained_bytes(self, wire, self._state)
         projected = json.loads(lineage._raw(wire))
-        entry = projected["batches"][0]
+        entry = projected["batches"][self._ordinal]
         maximum = 2**64 - 1
         names = ("staged_file_pin",) if entry["state"] == "staged" else ("terminal_file_pin",)
         pins = [entry[name] for name in names]
@@ -2812,7 +2869,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             self._success_deadline = None
             self._success_observe()
             wire = json.loads(self._payload)[_FIELD]
-            entry = wire["batches"][0]
+            entry = wire["batches"][self._ordinal]
             lineage.RSIPublicationLineage._verify_before_source_pins(self, entry)
             batch = recovery._batch(self._workspace, self._plan.journal_id)
             if (staged.journal_id != self._plan.journal_id or staged.state != "publishing"
@@ -2841,7 +2898,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                     _fail("staged_snapshot_drift")
                 sources[name], contents[name] = source.to_dict(), raw
                 snapshots[name + "-after"] = replace(source, name=name + "-after.snapshot").to_dict()
-            transition = ProducerLineageStagedTransition(self._run_id, staged.journal_id, 0,
+            transition = ProducerLineageStagedTransition(self._run_id, staged.journal_id, self._ordinal,
                 entry["before"]["descriptor_sha256"], staged.digest(), manifest.digest(),
                 manifest.archive_after_sha256, manifest.state_after_sha256, manifest.candidate_ids)
             capacity_pin = replace(LineageSnapshotPin.from_dict(sources["state"]), name="staged.json",
@@ -2851,7 +2908,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             entry["snapshots"].update(snapshots)
             entry["evidence_pins"].update(evidence)
             self._success_capacity(wire)
-            total = lineage.RSIPublicationLineage._retained_bytes(json.loads(self._payload)[_FIELD], self._state)
+            total = reserved_owner.reserved_retained_bytes(self, json.loads(self._payload)[_FIELD], self._state)
             self._success_observe()
             lineage.RSIPublicationLineage._verify_before_source_pins(self, entry)
             for name, pin in evidence.items():
@@ -2897,7 +2954,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             staging._check_held_publication_lock()
             self._success_fixed()
             wire = self._success_entry(json.loads(self._payload)[_FIELD], phase="staged", observing=True)
-            transition = ProducerLineageStagedTransition.from_dict(wire["batches"][0]["staged"])
+            transition = ProducerLineageStagedTransition.from_dict(wire["batches"][self._ordinal]["staged"])
             if (staged.journal_id != self._plan.journal_id or staged.digest() != transition.journal_sha256
                     or manifest.digest() != transition.manifest_sha256):
                 _fail("precommit_association_invalid")
@@ -2929,7 +2986,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             self._success_deadline = None
             self._success_observe()
             wire = json.loads(self._payload)[_FIELD]
-            entry = wire["batches"][0]
+            entry = wire["batches"][self._ordinal]
             transition = self._verify_descriptor(entry, "staged")
             batch = recovery._batch(self._workspace, self._plan.journal_id)
             if (published.journal_id != self._plan.journal_id or published.state != "published"
@@ -2947,7 +3004,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             if observed.terminal_marker_sha256 != published.terminal_marker_sha256:
                 _fail("terminal_marker_drift")
             lineage._require_marker_absent(self._workspace)
-            terminal = ProducerLineageTerminal(self._run_id, published.journal_id, 0, transition.digest(),
+            terminal = ProducerLineageTerminal(self._run_id, published.journal_id, self._ordinal, transition.digest(),
                 published.terminal_marker_sha256, transition.archive_after_sha256, transition.state_after_sha256)
             head_sources = {name: capture_lineage_snapshot_pin(self._workspace / "evolution" /
                 (name + (".jsonl" if name == "archive" else ".json")), name=name + "-before").to_dict()

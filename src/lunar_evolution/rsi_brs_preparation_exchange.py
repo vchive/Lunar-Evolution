@@ -198,6 +198,24 @@ class _BRSNativePreparationExchange:
             if time.monotonic() >= self._deadline:
                 _fail("expired")
 
+    def _hot_check(self, check, *, owner=False):
+        """Run the caller's cheap liveness gate while waiting for the one-shot handoff.
+
+        Full source/manifest/fingerprint validation remains at offer/take and endpoint
+        transitions.  Waiting iterations only need cancellation/deadline and the
+        caller-owned in-memory scope; this avoids repeatedly rereading staging files.
+        """
+        self._fixed(owner=owner)
+        if not callable(check):
+            _fail("check_invalid")
+        check()
+        self._fixed(owner=owner)
+        with self._condition:
+            if self._failed:
+                _fail("unavailable")
+            if time.monotonic() >= self._deadline:
+                _fail("expired")
+
     def attach_worker(self, future: Future, executor: ThreadPoolExecutor):
         try:
             self._fixed(owner=True)
@@ -232,11 +250,13 @@ class _BRSNativePreparationExchange:
             _fail("offer_drift")
         return offer
 
-    def offer_and_wait(self, preparation, request, plan, claim, *, check):
+    def offer_and_wait(self, preparation, request, plan, claim, *, check, hot_check=None):
         try:
             self._fixed()
             if request is not self._request or threading.current_thread() is self._owner:
                 _fail("worker_invalid")
+            if hot_check is not None and not callable(hot_check):
+                _fail("check_invalid")
             raw = _preparation_bytes(preparation, request, plan, claim)
             if plan.plan_sha256 != self._plan_sha256:
                 _fail("association_invalid")
@@ -249,7 +269,10 @@ class _BRSNativePreparationExchange:
                 self._offer_scope = offer
                 self._condition.notify_all()
             while True:
-                self._check(check)
+                if hot_check is None:
+                    self._check(check)
+                else:
+                    self._hot_check(hot_check)
                 self._original_offer_if_attached(offer)
                 with self._condition:
                     if self._state == "endpoint_bound":
@@ -263,6 +286,7 @@ class _BRSNativePreparationExchange:
                         _fail("state_invalid")
                     self._condition.wait(.05)
             _BRSWorkerTerminalEndpoint._identity(endpoint)
+            self._check(check)
             return endpoint
         except BaseException:
             self._poison()
@@ -274,13 +298,19 @@ class _BRSNativePreparationExchange:
         if attached and self._original_offer() is not offer:
             _fail("offer_drift")
 
-    def take(self, *, check) -> _BRSNativePreparationOffer:
+    def take(self, *, check, hot_check=None) -> _BRSNativePreparationOffer:
         try:
+            if hot_check is not None and not callable(hot_check):
+                _fail("check_invalid")
             while True:
-                self._check(check, owner=True)
+                if hot_check is None:
+                    self._check(check, owner=True)
+                else:
+                    self._hot_check(hot_check, owner=True)
                 with self._condition:
                     state, offer, future = self._state, self._offer, self._future
                 if state == "offered":
+                    self._check(check, owner=True)
                     self._original_offer()
                     with self._condition:
                         if self._failed or self._state != "offered" or self._offer is not offer:
@@ -310,7 +340,10 @@ class _BRSNativePreparationExchange:
                     or endpoint._mailbox._worker_thread != offer.thread.ident
                     or type(endpoint._exchange) is not _PrimitiveExchange
                     or type(endpoint._handoff_bytes) is not bytes
-                    or type(endpoint._scope) is not tuple or len(endpoint._scope) != 8
+                    or type(endpoint._reserved_success) is not bool
+                    or type(endpoint._scope) is not tuple
+                    or len(endpoint._scope) != (9 if endpoint._reserved_success else 8)
+                    or endpoint._reserved_success and endpoint._scope[8] is not True
                     or endpoint._scope[0] is not endpoint._mailbox
                     or endpoint._scope[1] is not endpoint._exchange
                     or endpoint._scope[2] is not endpoint._handoff_bytes

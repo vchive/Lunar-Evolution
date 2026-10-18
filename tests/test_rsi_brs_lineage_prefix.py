@@ -42,6 +42,10 @@ def _sha(value):
     return hashlib.sha256(str(value).encode()).hexdigest()
 
 
+def _material_pin(name, raw=b"", inode=9000):
+    return LineageSnapshotPin(name, hashlib.sha256(raw).hexdigest(), len(raw), 1, inode, 1, 2).to_dict()
+
+
 def _wave(outcomes, *, candidates=1):
     run, wave, memory = "prefix-run", 1, EMPTY_MEMORY_SNAPSHOT
     requests = [SolverRequest.build(episode_id=f"{run}-practice-{wave}-{i}", contract_sha256=_sha("contract"),
@@ -160,6 +164,48 @@ def test_thirty_third_candidate_refuses_without_changing_the_original_domain():
     domain, batches = _wave(("published",) * 3, candidates=11)
     with pytest.raises(RSILearningError, match="candidate_capacity_or_duplicate"):
         validate_brs_reserved_prefix(**domain, batches=batches)
+
+
+@pytest.mark.parametrize("relative", [
+    "rejections/foreign.json",
+    "rejections/candidate-0-0/nested.json",
+    "rejections/candidate-0-0.txt",
+])
+def test_rejection_material_pin_requires_exact_candidate_path_and_hash(relative):
+    domain, batches = _wave(("all_rejected",))
+    changed = deepcopy(batches)
+    pin_name = "rejection-" + hashlib.sha256(b"rejections/candidate-0-0.json").hexdigest()
+    changed[0]["materials"] = (*changed[0]["materials"], {
+        "relative_path": "evolution/producer-batches/journal-0/" + relative,
+        "file_pin": _material_pin(pin_name, b"rejection-evidence", inode=9000),
+    })
+    with pytest.raises(RSILearningError, match="material_path_invalid"):
+        validate_brs_reserved_prefix(**domain, batches=changed)
+
+
+def test_rejection_material_pin_accepts_exact_nested_candidate_path_hash():
+    domain, batches = _wave(("all_rejected",))
+    changed = deepcopy(batches)
+    relative = "rejections/candidate-0-0.json"
+    pin_name = "rejection-" + hashlib.sha256(relative.encode()).hexdigest()
+    changed[0]["materials"] = (*changed[0]["materials"], {
+        "relative_path": "evolution/producer-batches/journal-0/" + relative,
+        "file_pin": _material_pin(pin_name, b"rejection-evidence", inode=9000),
+    })
+    prefix = validate_brs_reserved_prefix(**domain, batches=changed)
+    assert prefix.settled_prefix[0][1] == "all_rejected"
+
+
+def test_rejection_material_pin_rejects_wrong_hash_for_exact_candidate_path():
+    domain, batches = _wave(("all_rejected",))
+    changed = deepcopy(batches)
+    relative = "rejections/candidate-0-0.json"
+    changed[0]["materials"] = (*changed[0]["materials"], {
+        "relative_path": "evolution/producer-batches/journal-0/" + relative,
+        "file_pin": _material_pin("rejection-" + "0" * 64, b"rejection-evidence", inode=9000),
+    })
+    with pytest.raises(RSILearningError, match="material_path_invalid"):
+        validate_brs_reserved_prefix(**domain, batches=changed)
 
 
 @pytest.mark.parametrize("decision", ["pass", "fail", "unresolved"])

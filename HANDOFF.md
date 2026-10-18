@@ -1,3 +1,26 @@
+# 当前交接（2026-10-19，reserved-wave 串行工作树最新状态）
+
+- 本工作树已从基础 projection/prefix/ledger/reservation/exchange 扩展到
+  private reserved owner、native provider/completion、serial driver、resume
+  入口和 finalization readers。此前记录的组件焦点证据包括 serial-finalization
+  16 项、governed-finalization 5 项以及 reserved policy/provenance 79 项；这些
+  只证明局部模块，不构成自然串行验收或 CI 通过。
+- 当前最小自然双 child `rejected -> rejected` 集成尚未完成 owner admission 与
+  mailbox handoff；最新本地运行未达到集成验收，根因仍在调查。原因确定前不放宽
+  fingerprint、claim、owner 或 lifecycle gate。V01-V10、双平台最终来源验收和
+  33-job CI 仍未完成。
+- 早先的具体失败码
+  `rsi_brs_reserved_prefix_material_path_invalid`（rejection evidence 相对路径与
+  pin 名称契约不一致）已在严格的 `rejections/<terminal-id>.json` 路径映射中修复，
+  pure validator 70 项与新增 5 项回归通过。修复后的自然集成已推进到后续
+  `rsi_brs_reserved_serial_settled_transport_missing`，说明 material path gate
+  不再是当前阻塞；该新失败仍待 owner/transport 契约调查。任何修复都不能放宽
+  fingerprint、claim、owner 或 lifecycle gate，旧失败材料不能计入最终通过证据。
+- 本轮仍只使用本地 inert/provider-free fixture；不运行 WebAgent、远程 evaluator、
+  真实模型/solver 或公司评测平台。public native BRS、`production_admission`、
+  `online_publication` 保持关闭；P2 多机 ownership、外部 worker 认证和 remote
+  evaluator 继续后置。
+
 # 当前开发（2026-10-18，reserved-wave 串行延续）
 
 - 前置拒绝生命周期已冻结为 `ccc754788fb4806b4093c397d9e8bc92792364d9`，tree

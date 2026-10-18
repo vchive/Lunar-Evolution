@@ -1,5 +1,26 @@
 # Feature 196 validation plan
 
+## Reserved-wave serial working-tree status — 2026-10-19
+
+The working tree contains the bounded reserved projection/prefix and ledger
+observers, original reservation reader, preparation exchange, native
+provider/completion, reserved owner/policy/rejection readers, private serial
+driver and governed finalization readers. Previously reported focused evidence
+includes 16 serial-finalization cases, 5 governed-finalization cases and 79
+reserved-policy/provenance cases. These are component checks and do not replace
+the integrated behavior gate below.
+
+The latest natural two-child `rejected -> rejected` integration fixture run did
+not complete owner admission and mailbox handoff; the underlying cause remains
+under investigation before changing any fingerprint, claim, owner or lifecycle
+gate. The earlier
+`rsi_brs_reserved_prefix_material_path_invalid` failure at
+`read_reserved_brs_prefix -> validate_brs_reserved_prefix` is repaired by strict
+rejection-evidence path/pin mapping. The latest integrated run advances to
+`rsi_brs_reserved_serial_settled_transport_missing`; no V01-V10 or F01-F05 item
+is complete, and no public native BRS, production admission, remote evaluator or
+real solver has been enabled.
+
 ## Staged-ACK prerequisites — 2026-10-18
 
 This successor validates bounded primitives and their pre-arm wiring. It does not
