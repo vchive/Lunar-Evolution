@@ -1,10 +1,10 @@
-"""Pure Python producer terminal and runtime-observation lifecycle contracts.
+"""Python producer terminal, runtime-observation, and local process contracts.
 
-Feature191's process launcher is intentionally not implemented here.  This module validates
-detached, canonical observations and provides a small facade over the existing native recovery
-reader.  It applies the same fail-closed rules used by the native lifecycle: a missing process or
-cleanup record is ``unknown`` and can never be published; resume/reconcile only replays retained
-records and never starts a process, spends a budget, or writes a second journal.
+The process adapter delegates execution to the existing Feature190 native lifecycle.  It only
+adds the Python binding/sidecar gates before and after that call; it never substitutes a host
+interpreter, changes the native receipt wire, or upgrades a process receipt into runtime or
+publication authority.  A missing process or cleanup record is ``unknown`` and can never be
+published; resume/reconcile only replays retained records and never starts a process.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from .producer_process import (
     ProducerStreamEvidence,
     parse_producer_execution_receipt,
     recover_producer_process,
+    run_producer_process,
 )
 from .python_producer_binding import (
     PythonProducerBinding,
@@ -607,6 +608,90 @@ def bind_python_producer_receipt(
     )
 
 
+def run_python_producer_process(
+    workspace: str | Path,
+    *,
+    binding: PythonProducerBinding,
+    sidecar: PythonProducerBindingSidecar,
+    producer_root: str | Path,
+    expected_run_id: str | None = None,
+    expected_parent_task_id: str | None = None,
+    expected_task_id: str | None = None,
+    monotonic: Any = None,
+    cancelled: Any = None,
+    parent_deadline: float | None = None,
+    popen_factory: Any = None,
+) -> ProducerExecutionReceipt:
+    """Run one locally pinned Python producer through the native lifecycle.
+
+    The binding sidecar is independently checked before and after the native process call.
+    The native launcher remains the authority for executable byte binding, owner registration,
+    FD/stream limits, cancellation, reap, and terminal receipt persistence.  This facade returns
+    that unchanged receipt; callers must still provide a runtime observation before constructing
+    a known Python terminal or admission record.
+    """
+    if type(binding) is not PythonProducerBinding:
+        _fail("binding_invalid")
+    try:
+        binding = parse_python_producer_binding(binding.to_json())
+    except PythonProducerBindingError as exc:
+        raise PythonProducerLifecycleError("binding_invalid") from exc
+    if type(sidecar) is not PythonProducerBindingSidecar:
+        _fail("binding_sidecar_invalid")
+    if not isinstance(workspace, (str, Path)) or not workspace:
+        _fail("workspace_invalid")
+    if not isinstance(producer_root, (str, Path)) or not producer_root:
+        _fail("producer_root_invalid")
+    try:
+        read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+    except PythonProducerBindingStoreError as exc:
+        raise PythonProducerLifecycleError("binding_sidecar_invalid") from exc
+    kwargs: dict[str, object] = {
+        "intent": binding.intent,
+        "attestation": binding.attestation,
+        "producer_root": producer_root,
+        "expected_run_id": expected_run_id,
+        "expected_parent_task_id": expected_parent_task_id,
+        "expected_task_id": expected_task_id,
+        "parent_deadline": parent_deadline,
+        "cancelled": cancelled,
+    }
+    if monotonic is not None:
+        kwargs["monotonic"] = monotonic
+    if popen_factory is not None:
+        kwargs["popen_factory"] = popen_factory
+    try:
+        receipt = run_producer_process(workspace, **kwargs)  # type: ignore[arg-type]
+    except ProducerProcessError as exc:
+        raise PythonProducerLifecycleError("process_execution_invalid") from exc
+    except (OSError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("process_execution_invalid") from exc
+    try:
+        read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+    except PythonProducerBindingStoreError as exc:
+        raise PythonProducerLifecycleError("binding_sidecar_invalid") from exc
+    if type(receipt) is not ProducerExecutionReceipt:
+        _fail("receipt_invalid")
+    try:
+        parsed = parse_producer_execution_receipt(receipt.to_dict())
+    except (ProducerProcessError, TypeError, ValueError) as exc:
+        raise PythonProducerLifecycleError("receipt_invalid") from exc
+    if (
+        parsed.run_id != binding.run_id
+        or parsed.journal_id != binding.intent.journal_id
+        or parsed.launch_id != binding.intent.launch_id
+        or parsed.intent_sha256 != binding.intent_sha256
+        or parsed.attestation_sha256 != binding.attestation_sha256
+        or parsed.execution_snapshot_sha256 != binding.interpreter_sha256
+        or parsed.execution_snapshot_size != binding.interpreter.size
+        or parsed.max_requests != binding.request_budget
+        or parsed.output_max_bytes != binding.output_max_bytes
+        or parsed.wall_timeout_seconds != binding.wall_timeout_seconds
+    ):
+        _fail("receipt_binding_drift")
+    return parsed
+
+
 def recover_python_producer_terminal(
     workspace: str | Path,
     *,
@@ -931,5 +1016,6 @@ __all__ = [
     "reconcile_python_producer_terminal",
     "recover_python_producer_terminal",
     "resume_python_producer_terminal",
+    "run_python_producer_process",
     "validate_python_producer_checkpoint",
 ]

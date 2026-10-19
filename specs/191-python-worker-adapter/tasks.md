@@ -284,6 +284,10 @@
 - [x] Add focused sidecar tests for round-trip, create-only collision, malformed retained
   pins before workspace I/O, missing/replaced/touched/mode/link drift, binding mutation,
   batch-started refusal and temporary-file cleanup.
+- [x] Add the explicit binding-gated local process adapter in
+  `python-process-adapter.md`. It revalidates the sidecar before and after the
+  existing Feature190 native process lifecycle and returns its unchanged receipt;
+  it does not claim runtime observation, evaluator admission or publication.
 
 ## P1 acceptance
 

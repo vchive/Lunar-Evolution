@@ -756,6 +756,7 @@ from .python_producer_lifecycle import (
     reconcile_python_producer_terminal,
     recover_python_producer_terminal,
     resume_python_producer_terminal,
+    run_python_producer_process,
     validate_python_producer_checkpoint,
 )
 from .remote_evolution import (
@@ -1984,6 +1985,7 @@ __all__ = [
     "run_native_trusted_producer_outcome",
     "run_producer_lifecycle",
     "run_producer_process",
+    "run_python_producer_process",
     "run_registered_acceptance",
     "run_rsi_python_bundle_publication",
     "run_rsi_python_bundle_publication_for_active_brs_worker",
