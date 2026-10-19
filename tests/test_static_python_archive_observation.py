@@ -197,6 +197,30 @@ def test_pax_gnu_sparse_and_special_mode_are_rejected() -> None:
         _snapshot((_directory(), None), special), require_profile=False), "member_mode_invalid")
 
 
+def test_bounded_pax_path_is_opt_in_and_replaces_truncated_header_name() -> None:
+    long_name = f"{ROOT}/" + "a" * 150
+    snapshot = _snapshot(
+        (_directory(), None), _file(long_name, b"payload"), format=tarfile.PAX_FORMAT,
+    )
+    _assert_refused(lambda: observe_archive_snapshot(snapshot, require_profile=False),
+                    "member_type_unsupported")
+    result = observe_archive_snapshot(
+        snapshot, require_profile=False, allow_bounded_pax=True,
+    )
+    assert [item.path for item in result.members] == [ROOT, long_name]
+    assert result.members[1].sha256 == hashlib.sha256(b"payload").hexdigest()
+
+
+def test_bounded_pax_rejects_non_path_records() -> None:
+    pax = tarfile.TarInfo(f"{ROOT}/pax")
+    pax.size = 1
+    pax.pax_headers = {"comment": "extension"}
+    _assert_refused(lambda: observe_archive_snapshot(
+        _snapshot((_directory(), None), (pax, b"x"), format=tarfile.PAX_FORMAT),
+        require_profile=False, allow_bounded_pax=True,
+    ), "pax_key_unsupported")
+
+
 def test_duplicate_ancestor_and_missing_root_are_rejected() -> None:
     duplicate = _snapshot(
         (_directory(), None), _file(f"{ROOT}/same", b"a"), _file(f"{ROOT}/same", b"b"))
@@ -327,6 +351,13 @@ def test_profile_flag_requires_exact_bool(flag) -> None:
                     "profile_flag_invalid")
     _assert_refused(lambda: observe_archive_snapshot(_normal_snapshot(), require_profile=flag),
                     "profile_flag_invalid")
+
+
+@pytest.mark.parametrize("flag", [0, 1, None, "false"])
+def test_bounded_pax_flag_requires_exact_bool(flag) -> None:
+    _assert_refused(lambda: observe_archive_snapshot(
+        _normal_snapshot(), require_profile=False, allow_bounded_pax=flag,
+    ), "pax_flag_invalid")
 
 
 def test_bytes_pin_seam_cannot_claim_path_acquisition(monkeypatch) -> None:

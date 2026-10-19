@@ -41,7 +41,12 @@ with no acquired source identity.
 The observer first decodes XZ within the compressed, decoder-memory, and tar
 stream budgets. It then accepts only USTAR headers with the `ustar\0` magic and
 `00` version. PAX and GNU extensions, links, devices, FIFOs, sparse entries,
-non-regular special types, and mode bits outside `0777` are refused. Paths
+non-regular special types, and mode bits outside `0777` are refused by the
+default strict mode. Real CPython 3.13.12 uses a bounded per-file PAX `path`
+record for twelve long names. The explicit `allow_bounded_pax=True` source
+staging path accepts only those `x` records, requires exactly one UTF-8 `path`
+key, caps each record at 64 KiB, and rejects global headers and every other
+key. Paths
 must be UTF-8, rooted under the pinned root directory, and contain no empty,
 `.` or `..` segment, `//`, backslash, control character, colon, or absolute
 prefix. The root directory is required, and duplicate paths and file-directory

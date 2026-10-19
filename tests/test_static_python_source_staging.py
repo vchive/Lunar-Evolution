@@ -231,6 +231,13 @@ def test_bad_profile_flag_refuses_before_filesystem(sources, tmp_path, monkeypat
     _refused(lambda: _stage(bundle, tmp_path / "stage", require_profile=bad))
 
 
+@pytest.mark.parametrize("bad", [0, 1, None, "false"])
+def test_bad_bounded_pax_flag_refuses_before_filesystem(sources, tmp_path, monkeypatch, bad):
+    bundle = _bundle(_entries(sources))
+    _no_filesystem(monkeypatch)
+    _refused(lambda: _stage(bundle, tmp_path / "stage", allow_bounded_pax=bad))
+
+
 @pytest.mark.parametrize("bad", [None, {}, b"archive", "archive.xz"])
 def test_snapshot_does_not_accept_path_or_mapping_fallback(tmp_path, monkeypatch, bad):
     _no_filesystem(monkeypatch)

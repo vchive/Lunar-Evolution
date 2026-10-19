@@ -124,12 +124,15 @@ def stage_archive_sources(
     *,
     expected_manifest_sha256: str,
     require_profile: bool = True,
+    allow_bounded_pax: bool = False,
     deadline: float,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> StaticPythonSourceStaging:
     """Validate all bytes, then stage once through original directory identities.
 
     Explicit inert mode is for local fixtures; it never authenticates a release.
+    ``allow_bounded_pax`` is an explicit real-archive compatibility gate and
+    accepts only the narrow PAX path policy enforced by archive observation.
     A refusal may leave partial files after creation. Nothing is removed or retried.
     """
     parts = _destination_parts(destination)
@@ -164,7 +167,8 @@ def stage_archive_sources(
     try:
         prepared, observed, captured = _prepare_archive_sources(
             snapshot, expected_manifest_sha256=expected_manifest_sha256,
-            require_profile=require_profile, deadline=deadline, monotonic=monotonic,
+            require_profile=require_profile, allow_bounded_pax=allow_bounded_pax,
+            deadline=deadline, monotonic=monotonic,
             capture_all_files=True,
         )
     except StaticPythonSourceProjectionError as exc:

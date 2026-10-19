@@ -3,10 +3,12 @@
 This module is the first real-input gate for Feature189.  A path is opened once
 through private directory descriptors, read into an immutable compressed-byte
 snapshot, and then closed.  Tar/XZ parsing consumes only that snapshot; it never
-reopens a path.  The parser intentionally accepts a small USTAR grammar and
-rejects links, devices, sparse entries, PAX/GNU extensions and path
-normalization.  Signature verification, extraction and publication are separate
-gates and remain unperformed here.
+reopens a path.  The default parser accepts a small USTAR grammar and rejects
+links, devices, sparse entries, PAX/GNU extensions and path normalization.  A
+separate opt-in admits the bounded per-file PAX ``path`` records used by the
+CPython release archive; it still rejects global headers and every other PAX
+key.  Signature verification, extraction and publication are separate gates
+and remain unperformed here.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ MAX_XZ_MEMORY_BYTES = 256 * 1024 * 1024
 MAX_TAR_STREAM_BYTES = 512 * 1024 * 1024
 MAX_TAR_MEMBERS = 65_536
 MAX_TAR_HEADER_BYTES = 512
+MAX_PAX_HEADER_BYTES = 64 * 1024
 MAX_FILE_BYTES = 256 * 1024 * 1024
 MAX_TOTAL_FILE_BYTES = 1024 * 1024 * 1024
 _READ_CHUNK = 64 * 1024
@@ -419,7 +422,9 @@ def _canonical_member_path(raw: str, root: str, *, directory: bool) -> str:
     return "/".join(parts)
 
 
-def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
+def _tar_header(
+    tar_bytes: bytes, cursor: int, *, allow_bounded_pax: bool = False,
+) -> tarfile.TarInfo:
     """Validate raw USTAR grammar before any library extension processing."""
     header = tar_bytes[cursor:cursor + 512]
     if len(header) != 512:
@@ -427,7 +432,10 @@ def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
     if header[257:263] != b"ustar\x00" or header[263:265] != b"00":
         _fail("tar_grammar_unsupported")
     if header[156:157] not in {b"0", b"5"}:
-        _fail("member_type_unsupported")
+        if allow_bounded_pax and header[156:157] == b"x":
+            pass
+        else:
+            _fail("member_type_unsupported")
     for start, end in ((0, 100), (157, 257), (265, 297), (297, 329), (345, 500)):
         field = header[start:end]
         if b"\0" in field and any(field[field.index(b"\0"):]):
@@ -452,6 +460,62 @@ def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
     member.offset = cursor
     member.offset_data = cursor + 512
     return member
+
+
+def _pax_path(tar_bytes: bytes, member: tarfile.TarInfo) -> str:
+    """Read one bounded per-file PAX header and return its path override.
+
+    The CPython release tar uses PAX only for long paths.  To keep the strict
+    USTAR grammar while admitting that upstream archive, this narrow opt-in
+    accepts one ``x`` header containing exactly one UTF-8 ``path`` record. It
+    rejects global headers, all other keys, duplicate records, malformed
+    lengths, control bytes and paths outside the pinned root.
+    """
+    if member.type != b"x":
+        _fail("pax_type_invalid")
+    if member.size < 1 or member.size > MAX_PAX_HEADER_BYTES:
+        _fail("pax_size_invalid")
+    start = member.offset_data
+    end = start + member.size
+    if start < 0 or end > len(tar_bytes):
+        _fail("member_bounds_invalid")
+    payload = tar_bytes[start:end]
+    cursor = 0
+    path: str | None = None
+    while cursor < len(payload):
+        newline = payload.find(b"\n", cursor)
+        if newline < 0:
+            _fail("pax_record_invalid")
+        length_raw = payload[cursor:newline].split(b" ", 1)[0]
+        if (not length_raw or any(byte not in b"0123456789" for byte in length_raw)):
+            _fail("pax_record_invalid")
+        try:
+            length = int(length_raw)
+        except ValueError as exc:
+            raise StaticPythonArchiveObservationError("pax_record_invalid") from exc
+        if length < len(length_raw) + 3 or cursor + length > len(payload):
+            _fail("pax_record_invalid")
+        record = payload[cursor:cursor + length]
+        if record[-1:] != b"\n" or b" " not in record:
+            _fail("pax_record_invalid")
+        body = record[len(length_raw) + 1:-1]
+        if b"=" not in body:
+            _fail("pax_record_invalid")
+        key_raw, value_raw = body.split(b"=", 1)
+        if key_raw != b"path" or path is not None:
+            _fail("pax_key_unsupported")
+        if not value_raw or any(byte < 0x20 or byte == 0x7F for byte in value_raw):
+            _fail("pax_path_invalid")
+        try:
+            path = value_raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise StaticPythonArchiveObservationError("pax_path_invalid") from exc
+        cursor += length
+    if cursor != len(payload) or path is None:
+        _fail("pax_path_missing")
+    # Canonical rooted-path checks are applied after the following member's
+    # kind is known (a directory may carry the conventional trailing slash).
+    return path
 
 
 def _member_bytes(
@@ -484,6 +548,7 @@ def observe_archive_snapshot(
     expected_manifest_sha256: str | None = None,
     require_source_preimages: bool = False,
     require_profile: bool = True,
+    allow_bounded_pax: bool = False,
 ) -> StaticPythonArchiveObservation:
     """Observe actual member bytes from one immutable snapshot.
 
@@ -494,6 +559,7 @@ def observe_archive_snapshot(
     return _observe_archive_snapshot(
         snapshot, expected_manifest_sha256=expected_manifest_sha256,
         require_source_preimages=require_source_preimages, require_profile=require_profile,
+        allow_bounded_pax=allow_bounded_pax,
     )[0]
 
 
@@ -508,11 +574,14 @@ def _observe_archive_snapshot(
     selected_max_file_bytes: int = 0,
     selected_max_total_bytes: int = 0,
     capture_all_files: bool = False,
+    allow_bounded_pax: bool = False,
 ) -> tuple[StaticPythonArchiveObservation, tuple[tuple[str, bytes], ...]]:
     """One bounded decode/walk with an optional installation-owned byte projection.
 
     Full capture retains only actual regular-file payloads from this same walk.
     It does not widen the separate selected-source limits or apply any patches.
+    ``allow_bounded_pax`` is deliberately explicit: it admits only one
+    per-file PAX ``path`` record and keeps the default strict USTAR policy.
     """
     _checkpoint(checkpoint)
     if type(snapshot) is not StaticPythonArchiveSnapshot:
@@ -521,6 +590,8 @@ def _observe_archive_snapshot(
         _fail("profile_flag_invalid")
     if type(capture_all_files) is not bool:
         _fail("capture_flag_invalid")
+    if type(allow_bounded_pax) is not bool:
+        _fail("pax_flag_invalid")
     if type(snapshot.profile_pin_verified) is not bool:
         _fail("snapshot_profile_drift")
     if (type(snapshot.signature_verification) is not str
@@ -568,6 +639,7 @@ def _observe_archive_snapshot(
     total = 0
     selected_total = 0
     selected: list[tuple[str, bytes]] = []
+    pending_pax_path: str | None = None
     cursor = 0
     while cursor + 512 <= len(tar_bytes):
         _checkpoint(checkpoint)
@@ -575,8 +647,19 @@ def _observe_archive_snapshot(
             break
         if len(members) >= MAX_TAR_MEMBERS:
             _fail("member_count_exceeded")
-        member = _tar_header(tar_bytes, cursor)
-        raw_path = _raw_path(tar_bytes, member)
+        member = _tar_header(tar_bytes, cursor, allow_bounded_pax=allow_bounded_pax)
+        if member.type == b"x":
+            if pending_pax_path is not None:
+                _fail("pax_sequence_invalid")
+            pending_pax_path = _pax_path(tar_bytes, member)
+            cursor = ((member.offset_data + member.size + 511) // 512) * 512
+            _checkpoint(checkpoint)
+            continue
+        if pending_pax_path is not None:
+            raw_path = pending_pax_path
+            pending_pax_path = None
+        else:
+            raw_path = _raw_path(tar_bytes, member)
         is_dir = member.type == tarfile.DIRTYPE
         if type(member.mode) is not int or member.mode & ~0o777:
             _fail("member_mode_invalid")
@@ -613,6 +696,8 @@ def _observe_archive_snapshot(
                                                  member.size, member.mode, digest))
         cursor = ((member.offset_data + member.size + 511) // 512) * 512
         _checkpoint(checkpoint)
+    if pending_pax_path is not None:
+        _fail("pax_target_missing")
     remaining = len(tar_bytes) - cursor
     if remaining < 1024 or remaining % 512:
         _fail("tar_end_marker_invalid")

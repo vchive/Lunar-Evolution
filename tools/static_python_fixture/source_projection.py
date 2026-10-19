@@ -94,6 +94,7 @@ def prepare_archive_sources(
     *,
     expected_manifest_sha256: str,
     require_profile: bool = True,
+    allow_bounded_pax: bool = False,
     deadline: float,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> StaticPythonArchiveSourcePreparation:
@@ -101,12 +102,15 @@ def prepare_archive_sources(
 
     The manifest pin and absolute deadline are caller-retained inputs. This
     function has no filesystem, subprocess, network, extraction or build route.
+    ``allow_bounded_pax`` is required for the real CPython archive's bounded
+    long-path records and remains disabled for inert fixtures by default.
     Synthetic snapshots use explicit ``require_profile=False`` and retain the
     skipped metadata status; a failed profile check never falls back to inert.
     """
     return _prepare_archive_sources(
         snapshot, expected_manifest_sha256=expected_manifest_sha256,
-        require_profile=require_profile, deadline=deadline, monotonic=monotonic,
+        require_profile=require_profile, allow_bounded_pax=allow_bounded_pax,
+        deadline=deadline, monotonic=monotonic,
     )[0]
 
 
@@ -115,6 +119,7 @@ def _prepare_archive_sources(
     *,
     expected_manifest_sha256: str,
     require_profile: bool = True,
+    allow_bounded_pax: bool = False,
     deadline: float,
     monotonic: Callable[[], float] = time.monotonic,
     capture_all_files: bool = False,
@@ -127,6 +132,8 @@ def _prepare_archive_sources(
 
     Full capture adds unchanged regular-file payloads to the private return value;
     only the three installation-owned paths are ever passed to source patches.
+    The bounded PAX option is forwarded without changing any source-size or
+    source-preimage limits.
     """
     if (type(expected_manifest_sha256) is not str
             or _SHA.fullmatch(expected_manifest_sha256) is None
@@ -136,6 +143,8 @@ def _prepare_archive_sources(
         _fail("profile_flag_invalid")
     if type(capture_all_files) is not bool:
         _fail("capture_flag_invalid")
+    if type(allow_bounded_pax) is not bool:
+        _fail("pax_flag_invalid")
     if type(deadline) is not float or not math.isfinite(deadline) or deadline <= 0:
         _fail("deadline_invalid")
     if not callable(monotonic):
@@ -179,6 +188,7 @@ def _prepare_archive_sources(
             selected_max_file_bytes=source_patches.MAX_SOURCE_BYTES,
             selected_max_total_bytes=source_patches.MAX_TOTAL_SOURCE_BYTES,
             capture_all_files=capture_all_files,
+            allow_bounded_pax=allow_bounded_pax,
         )
     except StaticPythonArchiveObservationError as exc:
         if type(exc.__cause__) is StaticPythonSourceProjectionError:
