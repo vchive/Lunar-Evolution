@@ -224,6 +224,21 @@ actual checkout/source/import/raw/tree 独审和 main 合并是 P0 出口；不�
 结果或旧 PR 的来源当成该候选的最终验收。
 公开native BRS、online publication与production admission仍关闭。详见HANDOFF最新条目。
 
+## 2026-10-19：启动诊断与本地 producer-process 生命周期 CLI
+
+`7f5dc25`（原始实现提交 `5411e0a`）增加了
+`lunar-static-python-runtime-startup-diagnostic-v1`：它对有独立 SHA-256 pin 的有限 stderr
+做 digest-only 分类（包括 `missing_encodings` 和 `getpath_configuration`），不保留原始 stderr，
+且明确将 `runtime_execution_performed` 与 `production_admission` 保持为 `false`。这只能记录
+5090gpu 构建探针的启动失败诊断，不能证明 sealed Python runtime、owner/lifecycle 或真实
+campaign 已通过。
+
+`7c1de98` 增加 `producer-process inspect` 和需要 `--confirm` 的
+`producer-process cleanup`，复用 retained process journal 的 owner、PID-reuse 和
+recovery-lock 门禁。该 CLI 只提供本地生命周期 plumbing；未启动 OpenEvolve/Shinka、远程
+evaluator 或真实 campaign，也不改变 `production_admission=false`。使用说明见
+[`docs/local-producer-process-cli.md`](local-producer-process-cli.md)。
+
 ## 2026-10-16：私有成功检查点与证据转换
 
 PB-02c preparation → mailbox detached evidence 和 PB-03d 原 BRS owner
