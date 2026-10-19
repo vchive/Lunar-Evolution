@@ -24,6 +24,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | DRS known rejection | 🧪 统一候选待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
 | BRS partial-wave resume | ✅ provider-free 单机链路已合入 | Reserved projection/prefix、全域 ledger/reservation、fresh child preparation exchange、native provider/completion、serial owner、terminal lifecycle、exact root settlement、partial-wave resume 与 finalization replay 已在 PR138 合入；自然 inert 混合波按 ordinal 完成并保持 128 KiB reserved checkpoint 上限。真实 CPython/producer/runtime 仍需独立验收。 |
 | 多 child native BRS | 🧪 私有 provider-free 路径 | 已有 owner/mailbox、result CAS、delivery/settlement、serial successor 和显式 reconcile API。未消费的 BRS obligation 会阻止默认恢复、推进和终结；消费时核对原始记录的合法后继、持久化终态及 native claim/result。serial continuation 仍保持 private，public native BRS 与生产 admission 关闭。 |
+| Feature189 static-Python build probe receipt | ✅ 已合入 | `lunar-static-python-build-probe-v1` 只保存真实构建、ELF 和启动观察；5090gpu 的核心静态链接已记录，但空环境启动仍在 `encodings` 前失败，receipt 不授予 sealed runtime 或生产准入。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
@@ -206,18 +207,14 @@ Linux / SSH 服务器的独立环境、六个普通分片加三个重用例的�
 
 ### P0：收尾当前 DRS/BRS 发布批次
 
-单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路已合入 main。当前批次的剩余出口是：
-
-- PR112 已将 PR103/105/106/107/108 以及 PB-03h/PB-03i 后继提交合入 `main`；其本地 72-case 审计已通过。当前 P1 集成分支继续叠加私有 owner/mailbox、settlement、serial successor 和本机 reconcile 切片，需新的 PR CI 后再合入 `main`。
-- known rejection 三组混合链已有独立本地证据；历史失败、取消和局部成功保留原标签，不代替最终候选完整 CI。
+单 child 的 controller → gateway → scheduler → admission/publication → verifier → recovery 链路，以及 reserved-wave serial owner/ledger/terminal/finalization 链路，已经合入 `main`（PR138，`af1cc62`）。Feature189 的真实构建观察 receipt 也已合入（PR144/145，`cb33a38`/`d6ce8a9`）。这些合入关闭的是 provider-free 控制链和证据传输，不会把本地 fixture 或一次静态链接自动升级为生产能力。
 
 恢复始终复核原 claim、预算、身份、deadline 与取消门禁；没有原始证据的中断保留 unknown，不启动后继 child。
 
 ### P1：多 child BRS 与真实本地运行时
 
-- 按 [Feature196 SDD](specs/196-brs-owner-worker-handoff/spec.md) 接通原 owner 的 retained recovery、native transaction、拒绝分支和独立结果交付。当前集成分支已具备私有 owner/mailbox composition、exact result delivery/settlement、serial successor claim/dispatch、本机 process/workspace evidence、rejection C1/P/C2 adapter、policy/memory shadow gate、BRS durable obligation 持久化基础层、显式 controller phase CAS helper，以及 reserved-wave serial 的 native provider/completion 与 finalization readers；material path/pin gate 已修复，但自然双 child 集成目前推进到 `rsi_brs_reserved_serial_settled_transport_missing`，需先完成 owner/settled transport 契约，再重新跑完整 owner admission/mailbox handoff 矩阵。默认 controller online reconcile 和真实 runtime/producer/CLI 验收仍开放。私有检查点已开发，不等于公开 native BRS 可用。
-- 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。
-- 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。
+- 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。当前 5090gpu 只完成真实 source/archive observation、musl configure 和核心 `make python` 探针；静态 ELF 的空环境启动在 `encodings` 前失败，libffi/optional-module closure、sealed runtime 和 lifecycle 仍开放。
+- 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。当前 `rsi run` 默认保持 provider-free fixture，`rsi replay` 和 Shinka exporter 只消费已完成且有独立 pin 的 retained material。
 - 保留 provider-free 默认值；producer score 仍须经独立 verifier/evaluation 才能产生官方结论。
 
 ### P2：后置能力
