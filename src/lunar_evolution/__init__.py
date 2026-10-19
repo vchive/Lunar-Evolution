@@ -1078,6 +1078,14 @@ from .staged_workflow import (
     StagedWorkflowRunner,
     StagePolicy,
 )
+from .static_python_acceptance import (
+    ACCEPTANCE_SCHEMA as STATIC_PYTHON_ACCEPTANCE_SCHEMA,
+)
+from .static_python_acceptance import (
+    StaticPythonAcceptanceError,
+    StaticPythonProviderFreeAcceptance,
+    compose_static_python_provider_free_acceptance,
+)
 from .static_python_artifact import (
     ARTIFACT_VERIFICATION_SCHEMA,
     StaticPythonArtifactVerification,
@@ -1252,6 +1260,7 @@ __all__ = [
     "RUNTIME_HANDOFF_SCHEMA",
     "RUNTIME_STARTUP_SCHEMA",
     "SHINKA_BINDING_MISMATCH",
+    "STATIC_PYTHON_ACCEPTANCE_SCHEMA",
     "SUPPORTED_FIXTURE_SOLVERS",
     "SUPPORTED_PYTHON_PRODUCERS",
     "TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL",
@@ -1651,12 +1660,14 @@ __all__ = [
     "StagedRunResult",
     "StagedWorkflowConfig",
     "StagedWorkflowRunner",
+    "StaticPythonAcceptanceError",
     "StaticPythonArtifactVerification",
     "StaticPythonArtifactVerificationError",
     "StaticPythonBuildClosure",
     "StaticPythonBuildClosureError",
     "StaticPythonInputResult",
     "StaticPythonInputResultError",
+    "StaticPythonProviderFreeAcceptance",
     "StaticPythonRuntimeHandoff",
     "StaticPythonRuntimeHandoffError",
     "StaticPythonRuntimeStartup",
@@ -1785,6 +1796,7 @@ __all__ = [
     "commit_producer_bundle_publication",
     "compare_fingerprint_contracts",
     "compile_evaluator_bundle",
+    "compose_static_python_provider_free_acceptance",
     "compute_archive_prefix_digest",
     "compute_handoff_fingerprint",
     "compute_seed_identity",

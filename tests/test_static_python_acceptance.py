@@ -8,6 +8,7 @@ from dataclasses import replace
 
 import pytest
 
+import lunar_evolution
 from lunar_evolution import static_python_acceptance as acceptance
 from lunar_evolution.static_python_build_closure import StaticPythonBuildClosure
 from lunar_evolution.static_python_input_result import StaticPythonInputResult
@@ -167,3 +168,15 @@ def test_composition_is_filesystem_and_process_free(monkeypatch):
         installation=bundle[0], build=bundle[1], startup=bundle[2],
         input_result=bundle[3], handoff=bundle[4],
     ).live_acceptance_ready is False
+
+
+def test_provider_free_acceptance_is_exported_as_public_package_contract():
+    bundle = _bundle()
+    result = lunar_evolution.compose_static_python_provider_free_acceptance(
+        installation=bundle[0], build=bundle[1], startup=bundle[2],
+        input_result=bundle[3], handoff=bundle[4],
+    )
+    assert lunar_evolution.STATIC_PYTHON_ACCEPTANCE_SCHEMA == acceptance.ACCEPTANCE_SCHEMA
+    assert isinstance(result, lunar_evolution.StaticPythonProviderFreeAcceptance)
+    assert lunar_evolution.StaticPythonAcceptanceError is acceptance.StaticPythonAcceptanceError
+    assert result.production_admission is False
