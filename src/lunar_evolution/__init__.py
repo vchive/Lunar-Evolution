@@ -999,6 +999,13 @@ from .rsi_noise_confidence import (
     recover_confidence_report,
 )
 from .rsi_parent_budget import ParentRunBudget
+from .rsi_project_lifecycle import (
+    PROJECT_LIFECYCLE_PROTOCOL,
+    PROJECT_LIFECYCLE_SCHEMA_VERSION,
+    ProjectLifecyclePreflightError,
+    ProjectLifecycleProfile,
+    preflight_project_lifecycle,
+)
 from .rsi_python_admission_bridge import (
     MAX_PYTHON_ADMISSION_BRIDGE_BYTES,
     PYTHON_ADMISSION_BRIDGE_PROTOCOL,
@@ -1250,6 +1257,8 @@ __all__ = [
     "PRODUCER_PROCESS_PROTOCOL",
     "PRODUCER_REQUEST_EVIDENCE_PROTOCOL",
     "PRODUCER_REQUEST_EVIDENCE_SCHEMA_VERSION",
+    "PROJECT_LIFECYCLE_PROTOCOL",
+    "PROJECT_LIFECYCLE_SCHEMA_VERSION",
     "PYTHON_ADMISSION_BRIDGE_PROTOCOL",
     "PYTHON_ADMISSION_BRIDGE_SCHEMA_VERSION",
     "PYTHON_ADMISSION_BRS_PIN_HOOK",
@@ -1579,6 +1588,8 @@ __all__ = [
     "ProducerResultEnvelope",
     "ProducerStreamEvidence",
     "ProfileRegistry",
+    "ProjectLifecyclePreflightError",
+    "ProjectLifecycleProfile",
     "ProviderFreeSolverGateway",
     "PythonAdmissionBridge",
     "PythonAdmissionBridgeAdapter",
@@ -1925,6 +1936,7 @@ __all__ = [
     "preflight_acceptance_registration",
     "preflight_producer_bundle_publication",
     "preflight_producer_launch",
+    "preflight_project_lifecycle",
     "prepare_acceptance_campaign",
     "prepare_acceptance_runtime_binding",
     "prepare_native_rsi_inputs",

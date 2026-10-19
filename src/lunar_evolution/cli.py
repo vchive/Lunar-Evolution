@@ -1295,6 +1295,19 @@ def build_parser() -> argparse.ArgumentParser:
     _add_home(rsi_replay_parser)
     _add_json(rsi_replay_parser)
 
+    rsi_project_preflight_parser = rsi_commands.add_parser(
+        "project-preflight",
+        help="validate a detached OpenEvolve/Shinka lifecycle profile without execution",
+    )
+    rsi_project_preflight_parser.add_argument(
+        "profile", type=Path, help="canonical project lifecycle profile JSON",
+    )
+    rsi_project_preflight_parser.add_argument(
+        "--profile-sha256", help="independently retained profile digest",
+    )
+    _add_home(rsi_project_preflight_parser)
+    _add_json(rsi_project_preflight_parser)
+
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
     rsi_reconcile_parser.add_argument(
@@ -6663,6 +6676,17 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             )
             _emit(payload, args.json)
             return 0 if payload["status"] == "completed" else 1
+        if args.command == "rsi" and args.rsi_command == "project-preflight":
+            from .rsi_project_lifecycle import preflight_project_lifecycle
+
+            # Profile preflight is intentionally before _config()/RSILedger creation.  A
+            # malformed or unaccepted project declaration must not initialize controller state,
+            # import a project, or make a process/evaluator launch reachable.
+            payload = preflight_project_lifecycle(
+                args.profile, expected_profile_sha256=args.profile_sha256,
+            )
+            _emit(payload, args.json)
+            return 0 if payload["status"] == "ready" else 1
         config = _config(args)
         if args.command == "init":
             _emit({"home": str(config.home), "status": "initialized"}, args.json)

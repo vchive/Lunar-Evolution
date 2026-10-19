@@ -138,6 +138,8 @@ lunar-evolution rsi resume readme-rsi \
 
 `resume` 复核原 run 的计划、预算、deadline、组件身份和历史记忆。结果为 `unknown` 时需要显式对账，控制器不会自动重启。已有 producer 结果的 `replay` 需要原始文件和独立摘要；高级恢复／重放接口见下面的运行时说明。
 
+未来 OpenEvolve/Shinka 项目接线先经过只读 profile preflight；它只校验固定的 source/runtime/toolchain/request/result 摘要和受控的启动、取消、恢复模式，不启动项目或 evaluator：`lunar-evolution rsi project-preflight PROFILE.json --json`。有效 profile 仍返回 `status=blocked`，直到 sealed runtime、entrypoint 和 Linux lifecycle 验收证据齐全。详见 [`project-lifecycle-preflight.md`](specs/160-rsi-learning-mode/project-lifecycle-preflight.md)。
+
 更完整的 Python API、数据模型、DRS/BRS wave、memory promotion、Actor clean-room evidence 和 producer receipt 说明见 [`docs/rsi-local-runtime.md`](docs/rsi-local-runtime.md) 与 [`specs/160-rsi-learning-mode/`](specs/160-rsi-learning-mode/)。
 
 ## 执行链路
