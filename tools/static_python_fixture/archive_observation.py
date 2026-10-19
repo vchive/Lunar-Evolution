@@ -439,9 +439,9 @@ def _tar_header(
     # POSIX/USTAR permits either ASCII ``0`` or NUL for a regular-file
     # typeflag.  CPython's release archive uses the NUL spelling; retaining
     # it here keeps the grammar strict while accepting the standard form.
-    if header[156:157] not in {b"0", b"5", b"\0", b"L"}:
-        if not (allow_bounded_pax and header[156:157] == b"x"):
-            _fail("member_type_unsupported")
+    if (header[156:157] not in {b"0", b"5", b"\0", b"L"}
+            and not (allow_bounded_pax and header[156:157] == b"x")):
+        _fail("member_type_unsupported")
     if type(allow_bounded_pax) is not bool:
         _fail("pax_flag_invalid")
     for start, end in ((0, 100), (157, 257), (265, 297), (297, 329), (345, 500)):
