@@ -97,6 +97,36 @@ def test_inert_ustar_observation_hashes_and_sorts_members() -> None:
     ]
 
 
+def test_ustar_nul_regular_file_typeflag_is_accepted() -> None:
+    """The real CPython archive uses the POSIX NUL regular-file spelling."""
+    raw = bytearray(_compressed((_directory(), None), _file(f"{ROOT}/nul", b"payload")))
+    tar_bytes = bytearray(lzma.decompress(raw))
+    # The first 512-byte header is the root directory; the file follows it.
+    tar_bytes[512 + 156] = 0
+    tar_bytes[512 + 148:512 + 156] = b" " * 8
+    checksum = sum(tar_bytes[512:1024])
+    tar_bytes[512 + 148:512 + 156] = f"{checksum:06o}\0 ".encode("ascii")
+    snapshot = snapshot_inert_archive_bytes(
+        lzma.compress(bytes(tar_bytes), format=lzma.FORMAT_XZ), "cpython",
+    )
+    result = observe_archive_snapshot(snapshot, require_profile=False)
+    assert result.members[-1].path == f"{ROOT}/nul"
+    assert result.members[-1].sha256 == hashlib.sha256(b"payload").hexdigest()
+
+
+def test_gnu_ustar_magic_spelling_is_accepted() -> None:
+    raw = bytearray(_tar((_directory(), None), _file(f"{ROOT}/gnu", b"payload")))
+    raw[257:265] = b"ustar  \0"
+    raw[148:156] = b" " * 8
+    checksum = sum(raw[:512])
+    raw[148:156] = f"{checksum:06o}\0 ".encode("ascii")
+    result = observe_archive_snapshot(
+        snapshot_inert_archive_bytes(lzma.compress(bytes(raw), format=lzma.FORMAT_XZ), "cpython"),
+        require_profile=False,
+    )
+    assert result.members[-1].path == f"{ROOT}/gnu"
+
+
 def test_snapshot_is_frozen_and_observation_does_not_reopen(monkeypatch) -> None:
     snapshot = _normal_snapshot()
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -182,19 +212,48 @@ def test_links_and_special_file_types_are_rejected(member_type: bytes) -> None:
         _snapshot((_directory(), None), (info, None)), require_profile=False))
 
 
-def test_pax_gnu_sparse_and_special_mode_are_rejected() -> None:
+def test_pax_attributes_and_special_mode_are_rejected() -> None:
     pax = tarfile.TarInfo(f"{ROOT}/pax")
     pax.size = 1
     pax.pax_headers = {"comment": "extension"}
     _assert_refused(lambda: observe_archive_snapshot(
         _snapshot((_directory(), None), (pax, b"x"), format=tarfile.PAX_FORMAT), require_profile=False))
-    long_name = f"{ROOT}/" + "a" * 150
-    _assert_refused(lambda: observe_archive_snapshot(
-        _snapshot((_directory(), None), _file(long_name), format=tarfile.GNU_FORMAT),
-        require_profile=False))
     special = _file(f"{ROOT}/setuid", b"x", mode=0o4755)
     _assert_refused(lambda: observe_archive_snapshot(
         _snapshot((_directory(), None), special), require_profile=False), "member_mode_invalid")
+
+
+def test_pax_path_header_is_bound_to_the_following_member() -> None:
+    long_name = f"{ROOT}/" + "a" * 150
+    snapshot = _snapshot(
+        (_directory(), None), _file(long_name, b"x"), format=tarfile.PAX_FORMAT,
+    )
+    _assert_refused(lambda: observe_archive_snapshot(snapshot, require_profile=False),
+                    "member_type_unsupported")
+    result = observe_archive_snapshot(
+        snapshot, require_profile=False, allow_bounded_pax=True,
+    )
+    assert result.members[-1].path == long_name
+    assert result.members[-1].size == 1
+
+
+def test_bounded_pax_rejects_non_path_records() -> None:
+    pax = tarfile.TarInfo(f"{ROOT}/pax")
+    pax.size = 1
+    pax.pax_headers = {"comment": "extension"}
+    _assert_refused(lambda: observe_archive_snapshot(
+        _snapshot((_directory(), None), (pax, b"x"), format=tarfile.PAX_FORMAT),
+        require_profile=False, allow_bounded_pax=True,
+    ), "pax_header_invalid")
+
+
+def test_gnu_longname_is_bound_to_the_following_member() -> None:
+    long_name = f"{ROOT}/" + "a" * 150
+    result = observe_archive_snapshot(
+        _snapshot((_directory(), None), _file(long_name), format=tarfile.GNU_FORMAT),
+        require_profile=False,
+    )
+    assert result.members[-1].path == long_name
 
 
 def test_duplicate_ancestor_and_missing_root_are_rejected() -> None:
@@ -285,7 +344,7 @@ def test_profile_metadata_validator_is_second_layer(monkeypatch, tmp_path) -> No
     assert calls["require_source_preimages"] is True
 
 
-@pytest.mark.parametrize("member_type", [b"x", b"g", b"L", b"K", b"S", b"\0"])
+@pytest.mark.parametrize("member_type", [b"g", b"K", b"S"])
 def test_extensions_are_refused_before_library_header_parsing(monkeypatch, member_type) -> None:
     raw = _edited_header(_tar((_directory(), None)), 156, 157, member_type)
     snapshot = snapshot_inert_archive_bytes(lzma.compress(raw, format=lzma.FORMAT_XZ), "cpython")

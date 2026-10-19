@@ -5941,7 +5941,12 @@ def _export_shinka(args: argparse.Namespace) -> dict[str, object]:
         program_ids=args.program_ids, top_k=args.top_k,
     )
     return {
-        "status": "exported", "export_root": str(args.output.expanduser().absolute()),
+        # This command only snapshots retained producer material.  Keep the scope explicit in
+        # the CLI projection so a successful export cannot be mistaken for a producer launch,
+        # runtime admission, or publication receipt.
+        "status": "exported", "evidence_scope": "retained_local_material",
+        "solver_execution": "retained_result_export", "production_admission": False,
+        "export_root": str(args.output.expanduser().absolute()),
         "producer_id": envelope.producer_id, "producer_run_id": envelope.producer_run_id,
         "material_count": len(envelope.materials), "contract_sha256": envelope.contract_sha256,
         "envelope_sha256": envelope.envelope_sha256,

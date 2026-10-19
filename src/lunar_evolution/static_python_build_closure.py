@@ -429,6 +429,21 @@ def _cross_check_f01(descriptor: dict, closure: dict) -> None:
         "objects", "archives", "crt_objects", "libc_objects", "libm_objects",
     ) for record in closure["link_closure"][name]):
         _fail("cross_field")
+    # Configuration outputs are part of the reviewed recipe contract even
+    # though they are not link inputs.  Bind each observed record to the
+    # recipe's independently pinned digest so a closure cannot carry a
+    # generated header/map from a different configuration while retaining a
+    # valid link-input manifest.
+    for record_name, recipe_name in (
+        ("generated_config", "generated_config_sha256"),
+        ("module_config", "module_config_sha256"),
+        ("link_map", "link_map_sha256"),
+    ):
+        if not _same_typed(
+            closure["link_closure"][record_name]["sha256"],
+            descriptor["recipe"][recipe_name],
+        ):
+            _fail("cross_field")
 
 
 @dataclass(frozen=True, slots=True)

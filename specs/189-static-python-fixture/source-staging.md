@@ -16,7 +16,8 @@ monotonic deadline. All scalar validation and complete archive/source validation
 precede any destination creation. No caller-defined patch, selected path, source
 mapping, tar reader, extraction callback or observed-inventory DTO is accepted.
 
-Use one decode and the existing strict bounded USTAR walker. Its private staging
+Use one decode and the existing strict bounded archive walker (POSIX USTAR plus
+the pinned archives' narrow pathname metadata forms). Its private staging
 projection retains all actual regular-file payloads under the existing stream,
 member/file/aggregate caps; public three-source preparation still returns only
 three files. The same walker observes the complete canonical inventory. Compare

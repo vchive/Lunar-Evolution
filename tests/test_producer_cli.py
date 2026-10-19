@@ -53,6 +53,9 @@ def test_export_dispatches_without_initializing_or_running_anything(tmp_path, mo
     ]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "exported"
+    assert payload["evidence_scope"] == "retained_local_material"
+    assert payload["solver_execution"] == "retained_result_export"
+    assert payload["production_admission"] is False
     assert payload["material_count"] == 1
     assert payload["envelope_sha256"] == envelope.envelope_sha256
     assert "score" not in payload and "admitted" not in payload

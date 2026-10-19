@@ -137,6 +137,13 @@ def test_profile_mode_keeps_existing_fixed_pin_gate(monkeypatch):
     _refused(lambda: _observe(bundle, require_profile=True), "archive_archive_pin_mismatch")
 
 
+@pytest.mark.parametrize("bad", [0, 1, None, "false"])
+def test_bounded_pax_flag_requires_exact_bool(monkeypatch, bad):
+    bundle = _bundle(_entries())
+    monkeypatch.setattr(archive, "_decompress", lambda *args, **kwargs: pytest.fail("decode"))
+    _refused(lambda: _observe(bundle, allow_bounded_pax=bad), "pax_flag_invalid")
+
+
 @pytest.mark.parametrize("deadline", [None, True, 1, 0.0, -1.0, math.nan, math.inf])
 def test_deadline_shape_refuses_before_decode(monkeypatch, deadline):
     bundle = _bundle(_entries())
