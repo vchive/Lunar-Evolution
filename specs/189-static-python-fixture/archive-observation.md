@@ -41,10 +41,13 @@ with no acquired source identity.
 The observer first decodes XZ within the compressed, decoder-memory, and tar
 stream budgets. It accepts the POSIX `ustar\0`/`00` spelling and the equivalent
 GNU `ustar  \0` spelling. Regular files may use either ASCII `0` or the POSIX
-NUL typeflag. A per-file PAX `path=` record or GNU `LongLink` record is accepted
-only when it is bounded, UTF-8, immediately followed by its member, and contains
-no other metadata; global/unknown extensions, links, devices, FIFOs, sparse
-entries, non-regular special types, and mode bits outside `0777` are refused. Paths
+NUL typeflag. GNU `LongLink` records are accepted only when bounded, UTF-8,
+immediately followed by their member, and contain no other metadata. The real
+CPython archive's per-file PAX `path=` records require the explicit
+`allow_bounded_pax=True` source-observation option; that option accepts only one
+bounded UTF-8 `path` record and keeps the default USTAR/PAX refusal for inert
+fixtures. Global/unknown extensions, links, devices, FIFOs, sparse entries,
+non-regular special types, and mode bits outside `0777` are refused. Paths
 must be UTF-8, rooted under the pinned root directory, and contain no empty,
 `.` or `..` segment, `//`, backslash, control character, colon, or absolute
 prefix. The root directory is required, and duplicate paths and file-directory

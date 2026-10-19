@@ -141,6 +141,7 @@ def observe_snapshot_source_tree(
     expected_manifest_sha256: str,
     expected_source_tree_sha256: str,
     require_profile: bool = True,
+    allow_bounded_pax: bool = False,
     deadline: float,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> StaticPythonSourceTreeObservation:
@@ -149,12 +150,15 @@ def observe_snapshot_source_tree(
     ``expected_manifest_sha256`` and ``expected_source_tree_sha256`` are
     caller-retained independent pins.  They are never inferred from the
     observer's output.  ``require_profile=False`` is an explicit inert-fixture
-    mode and keeps ``profile_pin_verified`` false.
+    mode and keeps ``profile_pin_verified`` false. ``allow_bounded_pax`` is
+    required when observing the real CPython archive's long-path records.
     """
     _pin(expected_manifest_sha256, "manifest_pin")
     _pin(expected_source_tree_sha256, "source_tree_pin")
     if type(require_profile) is not bool:
         _fail("profile_flag_invalid")
+    if type(allow_bounded_pax) is not bool:
+        _fail("pax_flag_invalid")
     if type(deadline) is not float or not math.isfinite(deadline) or deadline <= 0:
         _fail("deadline_invalid")
     if not callable(monotonic):
@@ -187,6 +191,7 @@ def observe_snapshot_source_tree(
             expected_manifest_sha256=expected_manifest_sha256,
             require_profile=require_profile,
             checkpoint=checkpoint,
+            allow_bounded_pax=allow_bounded_pax,
         )
     except StaticPythonArchiveObservationError as exc:
         cause = exc.__cause__

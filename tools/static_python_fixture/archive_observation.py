@@ -425,7 +425,9 @@ def _canonical_member_path(raw: str, root: str, *, directory: bool) -> str:
     return "/".join(parts)
 
 
-def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
+def _tar_header(
+    tar_bytes: bytes, cursor: int, *, allow_bounded_pax: bool = False,
+) -> tarfile.TarInfo:
     """Validate raw USTAR grammar before any library extension processing."""
     header = tar_bytes[cursor:cursor + 512]
     if len(header) != 512:
@@ -437,8 +439,11 @@ def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
     # POSIX/USTAR permits either ASCII ``0`` or NUL for a regular-file
     # typeflag.  CPython's release archive uses the NUL spelling; retaining
     # it here keeps the grammar strict while accepting the standard form.
-    if header[156:157] not in {b"0", b"5", b"\0", b"x", b"L"}:
-        _fail("member_type_unsupported")
+    if header[156:157] not in {b"0", b"5", b"\0", b"L"}:
+        if not (allow_bounded_pax and header[156:157] == b"x"):
+            _fail("member_type_unsupported")
+    if type(allow_bounded_pax) is not bool:
+        _fail("pax_flag_invalid")
     for start, end in ((0, 100), (157, 257), (265, 297), (297, 329), (345, 500)):
         field = header[start:end]
         if b"\0" in field and any(field[field.index(b"\0"):]):
@@ -496,6 +501,8 @@ def _pax_path(tar_bytes: bytes, member: tarfile.TarInfo) -> str:
         body = record[space - cursor + 1:-1]
         key, separator, value = body.partition(b"=")
         if separator != b"=" or key != b"path" or path is not None:
+            _fail("pax_header_invalid")
+        if not value or any(byte < 0x20 or byte == 0x7F for byte in value):
             _fail("pax_header_invalid")
         try:
             path = value.decode("utf-8")
@@ -557,6 +564,7 @@ def observe_archive_snapshot(
     expected_manifest_sha256: str | None = None,
     require_source_preimages: bool = False,
     require_profile: bool = True,
+    allow_bounded_pax: bool = False,
 ) -> StaticPythonArchiveObservation:
     """Observe actual member bytes from one immutable snapshot.
 
@@ -567,6 +575,7 @@ def observe_archive_snapshot(
     return _observe_archive_snapshot(
         snapshot, expected_manifest_sha256=expected_manifest_sha256,
         require_source_preimages=require_source_preimages, require_profile=require_profile,
+        allow_bounded_pax=allow_bounded_pax,
     )[0]
 
 
@@ -581,6 +590,7 @@ def _observe_archive_snapshot(
     selected_max_file_bytes: int = 0,
     selected_max_total_bytes: int = 0,
     capture_all_files: bool = False,
+    allow_bounded_pax: bool = False,
 ) -> tuple[StaticPythonArchiveObservation, tuple[tuple[str, bytes], ...]]:
     """One bounded decode/walk with an optional installation-owned byte projection.
 
@@ -594,6 +604,8 @@ def _observe_archive_snapshot(
         _fail("profile_flag_invalid")
     if type(capture_all_files) is not bool:
         _fail("capture_flag_invalid")
+    if type(allow_bounded_pax) is not bool:
+        _fail("pax_flag_invalid")
     if type(snapshot.profile_pin_verified) is not bool:
         _fail("snapshot_profile_drift")
     if (type(snapshot.signature_verification) is not str
@@ -648,7 +660,9 @@ def _observe_archive_snapshot(
             break
         if len(members) >= MAX_TAR_MEMBERS:
             _fail("member_count_exceeded")
-        member = _tar_header(tar_bytes, cursor)
+        member = _tar_header(tar_bytes, cursor, allow_bounded_pax=allow_bounded_pax)
+        if member.type == tarfile.XHDTYPE and not allow_bounded_pax:
+            _fail("member_type_unsupported")
         metadata_path: str | None = None
         if member.type in {tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME}:
             # PAX/GNU pathname records are metadata, not archive members. Bind
@@ -662,7 +676,7 @@ def _observe_archive_snapshot(
             _checkpoint(checkpoint)
             if cursor + 512 > len(tar_bytes) or tar_bytes[cursor:cursor + 512] == bytes(512):
                 _fail("pax_header_invalid")
-            member = _tar_header(tar_bytes, cursor)
+            member = _tar_header(tar_bytes, cursor, allow_bounded_pax=allow_bounded_pax)
             if member.type in {tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME}:
                 _fail("metadata_header_invalid")
         raw_path = _raw_path(tar_bytes, member)

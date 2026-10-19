@@ -225,12 +225,26 @@ def test_pax_attributes_and_special_mode_are_rejected() -> None:
 
 def test_pax_path_header_is_bound_to_the_following_member() -> None:
     long_name = f"{ROOT}/" + "a" * 150
+    snapshot = _snapshot(
+        (_directory(), None), _file(long_name, b"x"), format=tarfile.PAX_FORMAT,
+    )
+    _assert_refused(lambda: observe_archive_snapshot(snapshot, require_profile=False),
+                    "member_type_unsupported")
     result = observe_archive_snapshot(
-        _snapshot((_directory(), None), _file(long_name, b"x"), format=tarfile.PAX_FORMAT),
-        require_profile=False,
+        snapshot, require_profile=False, allow_bounded_pax=True,
     )
     assert result.members[-1].path == long_name
     assert result.members[-1].size == 1
+
+
+def test_bounded_pax_rejects_non_path_records() -> None:
+    pax = tarfile.TarInfo(f"{ROOT}/pax")
+    pax.size = 1
+    pax.pax_headers = {"comment": "extension"}
+    _assert_refused(lambda: observe_archive_snapshot(
+        _snapshot((_directory(), None), (pax, b"x"), format=tarfile.PAX_FORMAT),
+        require_profile=False, allow_bounded_pax=True,
+    ), "pax_header_invalid")
 
 
 def test_gnu_longname_is_bound_to_the_following_member() -> None:

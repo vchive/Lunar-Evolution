@@ -236,6 +236,13 @@ def test_profile_flag_requires_exact_bool(sources, monkeypatch, bad):
     _refused(lambda: _prepare(bundle, require_profile=bad), "profile_flag_invalid")
 
 
+@pytest.mark.parametrize("bad", [0, 1, None, "false"])
+def test_bounded_pax_flag_requires_exact_bool(sources, monkeypatch, bad):
+    bundle = _bundle(_entries(sources))
+    monkeypatch.setattr(projection, "_observe_archive_snapshot", _forbid)
+    _refused(lambda: _prepare(bundle, allow_bounded_pax=bad), "pax_flag_invalid")
+
+
 def test_selected_size_budget_precedes_member_hash_and_copy(sources, monkeypatch):
     bundle = _bundle(_entries(sources))
     monkeypatch.setattr(preparation, "MAX_SOURCE_BYTES", len(sources[preparation.SOURCE_PATHS[0]]) - 1)
