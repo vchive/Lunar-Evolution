@@ -19,7 +19,10 @@ lunar-evolution evolve ./contract.json \
   --population-size 4 --max-rounds 3 --json --home .lunar
 ```
 
-The first command exports material only. Its output directory must be new, with an existing parent;
+The first command exports material only. Its JSON output includes
+`evidence_scope=retained_local_material`, `solver_execution=retained_result_export`, and
+`production_admission=false`; these fields describe the export boundary and are not a process or
+publication receipt. Its output directory must be new, with an existing parent;
 Shinka's database must be quiescent with no WAL/SHM/rollback-journal sidecars. Repeated `--program-id`
 values select an ordered set, including rows the producer marked incorrect. Alternatively use
 `--top-k N` (default one) to select producer-correct rows by producer score; the two forms are
