@@ -116,3 +116,33 @@ acceptance shortcut.
 
 The archive PAX compatibility change is committed separately from this probe;
 the strict default remains unchanged for inert and untrusted inputs.
+
+## Full static extension probe (2026-10-19)
+
+To remove the earlier dependency-only blocker, a pinned libffi 3.5.2 source
+archive (`f3a3082a23b37c293a4fcd1053147b371f2ff91fa7ea1b2a52e335676bac82dc`)
+was cross-built with Zig 0.16.0/musl using `-fPIC`, and zlib 1.3.1 was rebuilt
+with the same PIC requirement. The resulting CPython build completed its full
+configured module target with 66 shared modules. The static interpreter SHA-256
+was `568c364086ab7574ef1562caf95a6d4de1901677d85b148d1899039c68eb381b` and
+`libpython3.13.a` was
+`505e79699927076b24ade1d6021a76787689a1c486a9e53c644e672a854f0cc`.
+
+The profile deliberately omits `_uuid`: no musl `libuuid.a` was supplied. Other
+optional modules depending on OpenSSL, readline, SQLite, curses, bzip2, lzma,
+dbm or Tk remain missing. This is an explicit module-profile result, not a
+claim that the host-detected optional set is portable.
+
+The ELF is statically linked, has no `PT_INTERP` or `DT_NEEDED`, and the full
+make returned zero. An empty-environment startup still failed before user code:
+
+```text
+Fatal Python error: Failed to import encodings module
+Python runtime state: core initialized
+ModuleNotFoundError: No module named 'encodings'
+```
+
+Therefore this probe closes the PIC dependency and static-link observations but
+does not close sealed startup, finite frozen-module closure, `PyConfig`/getpath,
+owner/lifecycle, or production admission. The failure is retained as runtime
+evidence; no evaluator or producer campaign was run.
