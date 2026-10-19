@@ -10,6 +10,10 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 
 当前主线是单机可靠执行和 RSI（递归学习）控制闭环。RSI 改进候选程序与经验证的任务记忆；模型权重训练和修改 Lunar 自身代码不在当前主线内。RSI producer 路径保持 `production_admission=false`，真实 solver campaign 仍需独立验收。
 
+截至 2026-10-19，`main` 已包含 PR150 的 Python producer receipt 证据修复（`211cfc5`）。
+Feature189 的构建探针 receipt 与静态输入观察也已在主线；PR148 的 runtime startup CLI
+和 PR151 的 Python process adapter 正在等待各自完整 CI，尚未宣称真实 sealed runtime 或生产准入。
+
 [本地试跑](#五分钟本地试跑) · [RSI 示例](#rsi-provider-free-回归) · [执行链路](#执行链路) · [架构说明](docs/architecture.md) · [剩余工作与验收条件](docs/current-release-backlog.md)
 
 ## 当前状态
@@ -20,8 +24,8 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
 | 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |
-| 同 workspace 连续 DRS 发布 | 🧪 统一候选待最终验收 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已有本地验收；最终集成提交仍需完整 CI、独立审计与合入。 |
-| DRS known rejection | 🧪 统一候选待最终验收 | 原 owner、连续 reconcile、早期中断及三组混合链已有本地验收和原证据审查；修复/parser 集成后的完整验收仍开放。 |
+| 同 workspace 连续 DRS 发布 | ✅ P0 控制链已合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已完成主线控制链；真实 producer/runtime 仍按 P1 独立验收。 |
+| DRS known rejection | ✅ P0 控制链已合入 | 原 owner、连续 reconcile、早期中断及三组混合链已纳入主线；真实运行时来源仍不因 fixture 通过而自动放行。 |
 | BRS partial-wave resume | ✅ provider-free 单机链路已合入 | Reserved projection/prefix、全域 ledger/reservation、fresh child preparation exchange、native provider/completion、serial owner、terminal lifecycle、exact root settlement、partial-wave resume 与 finalization replay 已在 PR138 合入；自然 inert 混合波按 ordinal 完成并保持 128 KiB reserved checkpoint 上限。真实 CPython/producer/runtime 仍需独立验收。 |
 | 多 child native BRS | 🧪 私有 provider-free 路径 | 已有 owner/mailbox、result CAS、delivery/settlement、serial successor 和显式 reconcile API。未消费的 BRS obligation 会阻止默认恢复、推进和终结；消费时核对原始记录的合法后继、持久化终态及 native claim/result。serial continuation 仍保持 private，public native BRS 与生产 admission 关闭。 |
 | Feature189 static-Python build probe receipt | ✅ 已合入 | `lunar-static-python-build-probe-v1` 只保存真实构建、ELF 和启动观察；5090gpu 的核心静态链接已记录，但空环境启动仍在 `encodings` 前失败，receipt 不授予 sealed runtime 或生产准入。 |

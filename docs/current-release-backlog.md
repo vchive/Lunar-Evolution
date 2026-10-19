@@ -1,5 +1,12 @@
 ## 2026-10-19 当前执行清单（PR138/139 已合入）
 
+远端 `main` 当前为 `211cfc5`（PR150），已合入 Python producer receipt 的退出、清理和
+流摘要证据修复，并保留 `production_admission=false` 与 `online_publication=false`。
+PR148（runtime startup CLI，`38df27d`）和 PR151（Python process adapter，`d441bd7`）
+已创建并等待完整 33-job CI；在 CI 全部通过、原始产物与源码审计完成前，不将它们写成已合入。
+PR151 只把已验证 binding/sidecar 的 Python 过程接到既有 native process runner，仍不授予
+sealed runtime、评测准入或生产发布。
+
 PR138（`af1cc62`）已将 reserved BRS serial owner/ledger/terminal/finalization 链路合入
 `main`，PR139（`b51d50d`）同步了交接和发布边界。当前 P0 的本地 provider-free
 serial 行为已完成；下面的旧表保留历史批次，不再把它们描述为当前未完成项。
