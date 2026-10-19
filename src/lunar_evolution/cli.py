@@ -977,6 +977,12 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("--program-id", action="append", dest="program_ids", help="select ordered IDs; repeat for more")
     selection.add_argument("--top-k", type=int, help="select top correct rows by producer score (default: 1)")
     _add_json(shinka_parser)
+    build_probe_parser = subparsers.add_parser(
+        "inspect-static-python-build-probe",
+        help="inspect a detached static-Python build probe receipt without execution",
+    )
+    build_probe_parser.add_argument("receipt", type=Path, help="canonical build-probe JSON receipt")
+    _add_json(build_probe_parser)
     benchmark_task_parser = subparsers.add_parser(
         "benchmark-task", help="validate a benchmark task envelope without initialization",
     )
@@ -5953,6 +5959,38 @@ def _export_shinka(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _inspect_static_python_build_probe(args: argparse.Namespace) -> dict[str, object]:
+    from .static_python_build_probe import (
+        MAX_BUILD_PROBE_BYTES,
+        StaticPythonBuildProbeError,
+        parse_static_python_build_probe,
+    )
+
+    try:
+        raw = _read_bounded_regular_file(
+            args.receipt.expanduser(), MAX_BUILD_PROBE_BYTES,
+            error="static_python_build_probe_receipt_invalid",
+        )
+    except (EvolutionError, OSError, TypeError, ValueError, RecursionError):
+        raise ValueError("static_python_build_probe_receipt_invalid") from None
+    try:
+        receipt = parse_static_python_build_probe(raw)
+    except StaticPythonBuildProbeError as exc:
+        raise ValueError(exc.reason) from None
+    return {
+        "status": "observed",
+        "schema": "lunar-static-python-build-probe-v1",
+        "probe_id": receipt.probe_id,
+        "build_status": receipt.build_status,
+        "runtime_status": receipt.runtime_status,
+        "artifact_sha256": receipt.artifact_sha256,
+        "artifact_size": receipt.artifact_size,
+        "receipt_sha256": hashlib.sha256(raw).hexdigest(),
+        "evidence_scope": "detached_build_probe_observation",
+        "production_admission": False,
+    }
+
+
 def _benchmark_task_validate(args: argparse.Namespace) -> dict[str, object]:
     from .benchmark_task import (
         BenchmarkTaskError,
@@ -6439,6 +6477,9 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             return 0
         if args.command == "export-shinka-result":
             _emit(_export_shinka(args), args.json)
+            return 0
+        if args.command == "inspect-static-python-build-probe":
+            _emit(_inspect_static_python_build_probe(args), args.json)
             return 0
         if args.command == "benchmark-task":
             if args.benchmark_task_command != "validate":
