@@ -32,3 +32,15 @@ absolute or traversal paths, duplicate/unsorted dependencies, invalid owner
 integers, pin drift, lifecycle mismatch, and any claim set to `true`. Returned
 data is an immutable DTO containing the original canonical bytes. This slice is
 not evidence that a sealed image was built or that either fixture was executed.
+
+The module also exposes a separate `lunar-static-python-runtime-startup-
+diagnostic-v1` helper for controlled-build failure triage. It accepts only
+bounded stderr bytes plus an independently supplied SHA-256 pin and emits the
+stderr digest/size, a fixed failure code, and `phase="startup"`. The fixed
+codes include `missing_encodings`, `missing_import_bootstrap`,
+`getpath_configuration`, `unknown_startup_failure`, and `no_stderr`; no raw
+stderr is retained. Its claims explicitly keep
+`runtime_execution_performed=false` and `production_admission=false`. This
+diagnostic explains a failed build probe such as CPython's missing `encodings`
+bootstrap, but it does not convert that failure into startup, owner, lifecycle,
+or production evidence.

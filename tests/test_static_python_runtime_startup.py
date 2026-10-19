@@ -200,3 +200,56 @@ def test_json_failure_has_no_retained_decode_context():
         startup.parse_static_python_runtime_startup(b'{"private":"never",', **pins)
     assert str(caught.value) == "static_python_runtime_startup_json"
     assert caught.value.__cause__ is caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "stderr,code",
+    [
+        (
+            (b"Fatal Python error: Failed to import encodings module\n"
+             b"ModuleNotFoundError: No module named 'encodings'\n"),
+            "missing_encodings",
+        ),
+        (b"Fatal Python error: Failed to import _frozen_importlib\n", "missing_import_bootstrap"),
+        (b"Could not find platform independent libraries <prefix>\n", "getpath_configuration"),
+        (b"compiler output without a known bootstrap marker\n", "unknown_startup_failure"),
+        (b"", "no_stderr"),
+    ],
+)
+def test_startup_diagnostic_classifies_known_bootstrap_failures_without_claims(stderr, code):
+    result = startup.diagnose_static_python_runtime_startup(
+        stderr, expected_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+    )
+    payload = result.to_dict()
+    assert result.failure_code == payload["failure_code"] == code
+    assert payload["schema"] == startup.RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA
+    assert payload["phase"] == "startup"
+    assert payload["stderr_size"] == len(stderr)
+    assert payload["stderr_sha256"] == hashlib.sha256(stderr).hexdigest()
+    assert payload["claims"] == {"production_admission": False, "runtime_execution_performed": False}
+    assert result.to_json() == json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+@pytest.mark.parametrize(
+    "stderr,expected,reason",
+    [
+        (b"stderr is retained by digest only", _sha("different"), "stderr_pin"),
+        (b"x" * (startup.MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES + 1), _sha("oversized"), "diagnostic_raw"),
+    ],
+)
+def test_startup_diagnostic_rejects_stale_or_oversized_stderr(stderr, expected, reason):
+    with pytest.raises(startup.StaticPythonRuntimeStartupError) as caught:
+        startup.diagnose_static_python_runtime_startup(
+            stderr, expected_stderr_sha256=expected,
+        )
+    assert caught.value.reason == "static_python_runtime_startup_" + reason
+
+
+def test_startup_diagnostic_does_not_retain_stderr_content_or_execute(monkeypatch):
+    stderr = b"private marker that must not be retained"
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    result = startup.diagnose_static_python_runtime_startup(
+        stderr, expected_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+    )
+    assert "private marker" not in result.to_json().decode()

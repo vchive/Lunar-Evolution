@@ -8,19 +8,30 @@ not an actual startup acceptance.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
 from typing import NoReturn
 
 RUNTIME_STARTUP_SCHEMA = "lunar-static-python-runtime-startup-v1"
+RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA = "lunar-static-python-runtime-startup-diagnostic-v1"
 MAX_RUNTIME_STARTUP_BYTES = 256 * 1024
+MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES = 32 * 1024
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _LABEL = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 _PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./+-]{0,511}\Z")
 _CASES = ("baseline", "loader-negative")
 _MARKER = "--lunar-rsi-input-v1"
 _CLAIMS = ("startup_performed", "loader_negative_verified", "owner_verified", "production_admission")
+_DIAGNOSTIC_CLAIMS = ("runtime_execution_performed", "production_admission")
+_DIAGNOSTIC_PATTERNS = (
+    (b"Failed to import encodings module", "missing_encodings"),
+    (b"ModuleNotFoundError: No module named 'encodings'", "missing_encodings"),
+    (b"Failed to import _frozen_importlib", "missing_import_bootstrap"),
+    (b"Could not find platform independent libraries", "getpath_configuration"),
+    (b"Could not find platform dependent libraries", "getpath_configuration"),
+)
 
 
 class StaticPythonRuntimeStartupError(ValueError):
@@ -114,6 +125,11 @@ def _canonical(value: object) -> bytes:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError):
         _fail("canonical")
+
+
+def _diagnostic_sha(value: object) -> str:
+    """Validate a caller-supplied stderr digest without retaining stderr."""
+    return _sha(value, "stderr_pin")
 
 
 def _record(value: object) -> dict:
@@ -221,4 +237,81 @@ def parse_static_python_runtime_startup(raw: bytes, *, expected_build_closure_sh
     raise StaticPythonRuntimeStartupError(reason) from None
 
 
-__all__ = ["MAX_RUNTIME_STARTUP_BYTES", "RUNTIME_STARTUP_SCHEMA", "StaticPythonRuntimeStartup", "StaticPythonRuntimeStartupError", "parse_static_python_runtime_startup"]
+@dataclass(frozen=True, slots=True)
+class StaticPythonRuntimeStartupDiagnostic:
+    """Bounded startup-failure classification without execution authority.
+
+    The diagnostic retains only a digest and size of caller-provided stderr.
+    It deliberately reports runtime execution and production admission as
+    false: matching a fatal error is useful for build debugging, but cannot
+    establish that a sealed image started or that any work was performed.
+    """
+
+    canonical_bytes: bytes
+    stderr_sha256: str
+    stderr_size: int
+    failure_code: str
+
+    def to_json(self) -> bytes:
+        return self.canonical_bytes
+
+    def to_dict(self) -> dict:
+        return json.loads(self.canonical_bytes)
+
+
+def diagnose_static_python_runtime_startup(
+    stderr: bytes, *, expected_stderr_sha256: str,
+) -> StaticPythonRuntimeStartupDiagnostic:
+    """Classify known CPython bootstrap failures from bounded stderr bytes.
+
+    This helper is intentionally byte-only and side-effect free.  It is a
+    diagnostic gate for controlled build work, not a process observation or a
+    runtime acceptance API.  The supplied digest must be independently pinned
+    by the caller so a stale or substituted log cannot be mistaken for the
+    observed failure.
+    """
+    try:
+        if type(stderr) is not bytes or len(stderr) > MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES:
+            _fail("diagnostic_raw")
+        expected = _diagnostic_sha(expected_stderr_sha256)
+        observed = hashlib.sha256(stderr).hexdigest()
+        if observed != expected:
+            _fail("stderr_pin")
+        failure_code = "no_stderr" if not stderr else "unknown_startup_failure"
+        for marker, code in _DIAGNOSTIC_PATTERNS:
+            if marker in stderr:
+                failure_code = code
+                break
+        payload = {
+            "claims": {name: False for name in _DIAGNOSTIC_CLAIMS},
+            "failure_code": failure_code,
+            "phase": "startup",
+            "schema": RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA,
+            "stderr_sha256": observed,
+            "stderr_size": len(stderr),
+        }
+        canonical = _canonical(payload)
+        return StaticPythonRuntimeStartupDiagnostic(
+            canonical_bytes=canonical,
+            stderr_sha256=observed,
+            stderr_size=len(stderr),
+            failure_code=failure_code,
+        )
+    except _Refusal as exc:
+        reason = exc.reason
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        reason = "diagnostic_json"
+    raise StaticPythonRuntimeStartupError(reason) from None
+
+
+__all__ = [
+    "MAX_RUNTIME_STARTUP_BYTES",
+    "MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES",
+    "RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA",
+    "RUNTIME_STARTUP_SCHEMA",
+    "StaticPythonRuntimeStartup",
+    "StaticPythonRuntimeStartupDiagnostic",
+    "StaticPythonRuntimeStartupError",
+    "diagnose_static_python_runtime_startup",
+    "parse_static_python_runtime_startup",
+]
