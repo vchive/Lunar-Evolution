@@ -39,9 +39,12 @@ with no acquired source identity.
 ## Bounded archive grammar
 
 The observer first decodes XZ within the compressed, decoder-memory, and tar
-stream budgets. It then accepts only USTAR headers with the `ustar\0` magic and
-`00` version. PAX and GNU extensions, links, devices, FIFOs, sparse entries,
-non-regular special types, and mode bits outside `0777` are refused. Paths
+stream budgets. It accepts the POSIX `ustar\0`/`00` spelling and the equivalent
+GNU `ustar  \0` spelling. Regular files may use either ASCII `0` or the POSIX
+NUL typeflag. A per-file PAX `path=` record or GNU `LongLink` record is accepted
+only when it is bounded, UTF-8, immediately followed by its member, and contains
+no other metadata; global/unknown extensions, links, devices, FIFOs, sparse
+entries, non-regular special types, and mode bits outside `0777` are refused. Paths
 must be UTF-8, rooted under the pinned root directory, and contain no empty,
 `.` or `..` segment, `//`, backslash, control character, colon, or absolute
 prefix. The root directory is required, and duplicate paths and file-directory
@@ -81,6 +84,10 @@ The focused suite uses synthetic, inert USTAR/XZ bytes. The path and metadata
 integration tests temporarily replace private profile pins with those fixture
 digests; they do not claim to verify a real CPython or Zig release. The suite
 checks immutable byte-only observation, actual member hashes, canonical
-manifest digests, parser preflight refusals, all bounded reads and budgets,
-symlink and FIFO refusal, inode drift, deadline checkpoints, and cleanup
-failure semantics. Signature verification remains `not-performed` throughout.
+manifest digests, bounded PAX/GNU pathname handling, parser preflight refusals,
+all bounded reads and budgets, symlink and FIFO refusal, inode drift, deadline
+checkpoints, and cleanup failure semantics. Signature verification remains
+`not-performed` throughout. A separate Linux input run on 2026-10-19 observed
+the pinned CPython and Zig archives after independent size/SHA-256 checks; its
+digests and non-admission boundary are recorded in
+[`linux-input-observation-20261019.md`](linux-input-observation-20261019.md).

@@ -3,10 +3,11 @@
 This module is the first real-input gate for Feature189.  A path is opened once
 through private directory descriptors, read into an immutable compressed-byte
 snapshot, and then closed.  Tar/XZ parsing consumes only that snapshot; it never
-reopens a path.  The parser intentionally accepts a small USTAR grammar and
-rejects links, devices, sparse entries, PAX/GNU extensions and path
-normalization.  Signature verification, extraction and publication are separate
-gates and remain unperformed here.
+reopens a path.  The parser accepts a small USTAR grammar plus the bounded
+per-file pathname records used by the pinned CPython and Zig archives.  It
+rejects links, devices, sparse entries, global/unknown metadata and path
+normalization.  Signature verification, extraction and publication are
+separate gates and remain unperformed here.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ MAX_XZ_MEMORY_BYTES = 256 * 1024 * 1024
 MAX_TAR_STREAM_BYTES = 512 * 1024 * 1024
 MAX_TAR_MEMBERS = 65_536
 MAX_TAR_HEADER_BYTES = 512
+MAX_PAX_HEADER_BYTES = 64 * 1024
 MAX_FILE_BYTES = 256 * 1024 * 1024
 MAX_TOTAL_FILE_BYTES = 1024 * 1024 * 1024
 _READ_CHUNK = 64 * 1024
@@ -376,7 +378,11 @@ def _raw_path(tar_bytes: bytes, member: tarfile.TarInfo) -> str:
     header = tar_bytes[offset:offset + MAX_TAR_HEADER_BYTES]
     # USTAR magic/version is deliberately narrower than tarfile's default
     # GNU/PAX-compatible reader.
-    if header[257:263] != b"ustar\x00" or header[263:265] != b"00":
+    # Accept both the POSIX ``ustar\0``/``00`` spelling and the equivalent
+    # GNU tar ``ustar  \0`` spelling used by the Zig release archive.
+    if not (
+        header[257:263] == b"ustar\x00" and header[263:265] == b"00"
+    ) and header[257:265] != b"ustar  \x00":
         _fail("tar_grammar_unsupported")
     name_raw = _zero_terminated_field(header, 0, 100)
     prefix_raw = _zero_terminated_field(header, 345, 500)
@@ -424,9 +430,14 @@ def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
     header = tar_bytes[cursor:cursor + 512]
     if len(header) != 512:
         _fail("tar_header_invalid")
-    if header[257:263] != b"ustar\x00" or header[263:265] != b"00":
+    if not (
+        header[257:263] == b"ustar\x00" and header[263:265] == b"00"
+    ) and header[257:265] != b"ustar  \x00":
         _fail("tar_grammar_unsupported")
-    if header[156:157] not in {b"0", b"5"}:
+    # POSIX/USTAR permits either ASCII ``0`` or NUL for a regular-file
+    # typeflag.  CPython's release archive uses the NUL spelling; retaining
+    # it here keeps the grammar strict while accepting the standard form.
+    if header[156:157] not in {b"0", b"5", b"\0", b"x", b"L"}:
         _fail("member_type_unsupported")
     for start, end in ((0, 100), (157, 257), (265, 297), (297, 329), (345, 500)):
         field = header[start:end]
@@ -452,6 +463,68 @@ def _tar_header(tar_bytes: bytes, cursor: int) -> tarfile.TarInfo:
     member.offset = cursor
     member.offset_data = cursor + 512
     return member
+
+
+def _pax_path(tar_bytes: bytes, member: tarfile.TarInfo) -> str:
+    """Decode one bounded per-file PAX header.
+
+    The release archive uses PAX only to carry long paths.  Accepting that
+    narrow form keeps the tar grammar strict: global headers, timestamps,
+    GNU extensions and every attribute other than ``path`` remain refused.
+    """
+    if (member.type != tarfile.XHDTYPE or type(member.size) is not int
+            or not 0 < member.size <= MAX_PAX_HEADER_BYTES
+            or member.offset_data < 0
+            or member.offset_data + member.size > len(tar_bytes)):
+        _fail("pax_header_invalid")
+    payload = tar_bytes[member.offset_data:member.offset_data + member.size]
+    cursor = 0
+    path: str | None = None
+    while cursor < len(payload):
+        space = payload.find(b" ", cursor)
+        if space <= cursor:
+            _fail("pax_header_invalid")
+        length_raw = payload[cursor:space]
+        if (not length_raw.isdigit() or length_raw.startswith(b"0")):
+            _fail("pax_header_invalid")
+        length = int(length_raw)
+        if length < space - cursor + 3 or cursor + length > len(payload):
+            _fail("pax_header_invalid")
+        record = payload[cursor:cursor + length]
+        if record[-1:] != b"\n":
+            _fail("pax_header_invalid")
+        body = record[space - cursor + 1:-1]
+        key, separator, value = body.partition(b"=")
+        if separator != b"=" or key != b"path" or path is not None:
+            _fail("pax_header_invalid")
+        try:
+            path = value.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise StaticPythonArchiveObservationError("pax_header_invalid") from exc
+        cursor += length
+    if cursor != len(payload) or path is None or not path:
+        _fail("pax_header_invalid")
+    return path
+
+
+def _gnu_long_path(tar_bytes: bytes, member: tarfile.TarInfo) -> str:
+    """Decode one bounded GNU ``LongLink`` pathname record."""
+    if (member.type != tarfile.GNUTYPE_LONGNAME or type(member.size) is not int
+            or not 0 < member.size <= MAX_PAX_HEADER_BYTES
+            or member.offset_data < 0
+            or member.offset_data + member.size > len(tar_bytes)):
+        _fail("gnu_longname_invalid")
+    payload = tar_bytes[member.offset_data:member.offset_data + member.size]
+    nul = payload.find(b"\0")
+    if nul <= 0 or any(payload[nul + 1:]):
+        _fail("gnu_longname_invalid")
+    try:
+        path = payload[:nul].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise StaticPythonArchiveObservationError("gnu_longname_invalid") from exc
+    if not path:
+        _fail("gnu_longname_invalid")
+    return path
 
 
 def _member_bytes(
@@ -576,7 +649,25 @@ def _observe_archive_snapshot(
         if len(members) >= MAX_TAR_MEMBERS:
             _fail("member_count_exceeded")
         member = _tar_header(tar_bytes, cursor)
+        metadata_path: str | None = None
+        if member.type in {tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME}:
+            # PAX/GNU pathname records are metadata, not archive members. Bind
+            # the path to the immediately following header and never expose a
+            # synthetic metadata pathname in the extraction manifest.
+            _raw_path(tar_bytes, member)
+            metadata_path = (_pax_path(tar_bytes, member)
+                             if member.type == tarfile.XHDTYPE
+                             else _gnu_long_path(tar_bytes, member))
+            cursor = ((member.offset_data + member.size + 511) // 512) * 512
+            _checkpoint(checkpoint)
+            if cursor + 512 > len(tar_bytes) or tar_bytes[cursor:cursor + 512] == bytes(512):
+                _fail("pax_header_invalid")
+            member = _tar_header(tar_bytes, cursor)
+            if member.type in {tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME}:
+                _fail("metadata_header_invalid")
         raw_path = _raw_path(tar_bytes, member)
+        if metadata_path is not None:
+            raw_path = metadata_path
         is_dir = member.type == tarfile.DIRTYPE
         if type(member.mode) is not int or member.mode & ~0o777:
             _fail("member_mode_invalid")

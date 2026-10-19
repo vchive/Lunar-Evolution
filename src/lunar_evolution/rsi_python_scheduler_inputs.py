@@ -198,11 +198,18 @@ def _sidecar(value: object, proof: PythonProducerCheckpointBinding) -> PythonPro
         _fail("sidecar_invalid")
     _shape(value)
     try:
-        binding, _ = _validated_binding(value.binding)
-        _validated_sidecar_pin(value, binding)
+        # Keep the exact canonical bytes returned by the detached store
+        # validation for the sidecar pin check below.  Serializing the already
+        # detached binding again would re-run its full runtime-manifest parser
+        # without observing any additional live state.  The first
+        # ``_validated_binding`` call still serializes the caller-owned object,
+        # reparses those bytes, and returns a detached binding; retaining only
+        # those bytes here is a parser-local optimization, not an admission or
+        # validation cache.
+        binding, raw = _validated_binding(value.binding)
+        _validated_sidecar_pin(value, binding, original_binding=value.binding)
         parsed = replace(value, binding=binding)
         proof.validate_sidecar(parsed)
-        raw = binding.to_json()
         if len(raw) != parsed.raw_size or hashlib.sha256(raw).hexdigest() != parsed.raw_sha256:
             _fail("sidecar_invalid")
         return parsed

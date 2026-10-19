@@ -106,8 +106,12 @@ collisions, signature dispositions and fixed source-preimage drift cases. Run
 focused tests, Ruff, compileall and diff checks after changes. Preserve first
 failures; do not invent collected counts or passing CI before execution.
 
-No real archive was downloaded, read, decompressed or extracted by this slice.
-Actual archive size/hash, signature results, safe complete extraction and the
+This pure metadata slice itself does not download, read, decompress or extract
+an archive. A later real-input run independently acquired and observed the
+profile-pinned CPython and Zig bytes; its hashes, manifest pins, staging result
+and remaining non-admission boundaries are recorded in
+[`linux-input-observation-20261019.md`](linux-input-observation-20261019.md).
+Signature verification, safe complete extraction as a release gate, and the
 compiler/sysroot/static input identities remain G1 work. Source application,
 configuration/module closure, same-source frozen headers, direct compile/link,
 ELF inspection and real sealed-target startup/lifecycle remain G2/G3 work.

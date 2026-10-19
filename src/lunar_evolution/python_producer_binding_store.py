@@ -230,12 +230,22 @@ def persist_python_producer_binding(workspace: str | Path, *, binding: PythonPro
 
 def _validated_sidecar_pin(
     expected_sidecar: PythonProducerBindingSidecar, parsed: PythonProducerBinding,
+    *, original_binding: PythonProducerBinding | None = None,
 ) -> None:
     """Validate the retained pin before opening any workspace descriptor."""
     if type(expected_sidecar) is not PythonProducerBindingSidecar:
         _fail("expected_pin_invalid")
     try:
-        pinned, _ = _validated_binding(expected_sidecar.binding)
+        # ``parsed`` is a detached result of validating ``original_binding`` in
+        # this same public call.  When the retained sidecar points at that exact
+        # object, revalidating it would only repeat pure parsing; the identity
+        # check proves this is the same input snapshot.  A different object is
+        # always validated independently, so a forged sidecar cannot borrow a
+        # caller's validation result.
+        if original_binding is not None and expected_sidecar.binding is original_binding:
+            pinned = parsed
+        else:
+            pinned, _ = _validated_binding(expected_sidecar.binding)
     except PythonProducerBindingStoreError as exc:
         raise PythonProducerBindingStoreError("expected_pin_invalid") from exc
     if pinned != parsed:
@@ -275,7 +285,7 @@ def read_python_producer_binding_sidecar(
 ) -> PythonProducerBindingSidecar:
     """Read exact bytes and compare them with the independently retained file pin."""
     parsed, expected_raw = _validated_binding(binding)
-    _validated_sidecar_pin(expected_sidecar, parsed)
+    _validated_sidecar_pin(expected_sidecar, parsed, original_binding=binding)
     batch = _batch_path(workspace, parsed)
     try:
         with _held_directory(batch, create=False) as parent:

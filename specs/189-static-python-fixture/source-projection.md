@@ -66,7 +66,7 @@ failed profile check to inert processing.
 
 1. Revalidate snapshot scalars, immutable compressed bytes, size and digest using
    the existing archive boundary. Consume those bytes only, never a pathname.
-2. Decode and inspect the complete archive under the existing bounded XZ/USTAR
+2. Decode and inspect the complete archive under the existing bounded XZ/archive
    grammar. Retain exact regular-file slices for the three fixed paths while
    preserving all duplicate, ancestor, root, extension and end-marker refusals.
 3. Require the complete canonical manifest digest to equal the external pin.

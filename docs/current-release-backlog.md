@@ -6,7 +6,7 @@ serial 行为已完成；下面的旧表保留历史批次，不再把它们描�
 
 | 优先级 | 当前剩余出口 | 状态 |
 | --- | --- | --- |
-| P1 | Feature189/193 真实 CPython、toolchain/static ELF、sealed runtime 和 Linux lifecycle | 仍开放，需要实际来源、构建和运行授权；DTO/parser/mock fixture 不构成验收 |
+| P1 | Feature189/193 真实 CPython、toolchain/static ELF、sealed runtime 和 Linux lifecycle | 输入 archive/toolchain 已按固定 pin 完成一次独立观察；签名、构建、静态 ELF、sealed runtime 和 lifecycle 仍开放，见 [Linux input observation](../specs/189-static-python-fixture/linux-input-observation-20261019.md) |
 | P1 | Feature191/195 OpenEvolve/Shinka project lifecycle、生产 RSI CLI/Linux acceptance | adapter/exporter 和 provider-free contract 已有，真实 project entrypoint、取消/清理、结果归属和 CLI 验收仍开放 |
 | P2 | remote evaluator、外部 worker 认证、多机 ownership、distributed scheduler/service API | 后置，不进入当前单机正确性批次 |
 
