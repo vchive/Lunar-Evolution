@@ -983,6 +983,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build_probe_parser.add_argument("receipt", type=Path, help="canonical build-probe JSON receipt")
     _add_json(build_probe_parser)
+    startup_parser = subparsers.add_parser(
+        "inspect-static-python-runtime-startup",
+        help="inspect a detached static-Python startup receipt without execution",
+    )
+    startup_parser.add_argument("receipt", type=Path, help="canonical runtime-startup JSON receipt")
+    startup_parser.add_argument("--expected-build-closure-sha256", required=True)
+    startup_parser.add_argument("--expected-binding-sha256", required=True)
+    startup_parser.add_argument("--expected-launch-intent-sha256", required=True)
+    _add_json(startup_parser)
     benchmark_task_parser = subparsers.add_parser(
         "benchmark-task", help="validate a benchmark task envelope without initialization",
     )
@@ -5991,6 +6000,41 @@ def _inspect_static_python_build_probe(args: argparse.Namespace) -> dict[str, ob
     }
 
 
+def _inspect_static_python_runtime_startup(args: argparse.Namespace) -> dict[str, object]:
+    from .static_python_runtime_startup import (
+        MAX_RUNTIME_STARTUP_BYTES,
+        StaticPythonRuntimeStartupError,
+        parse_static_python_runtime_startup,
+    )
+
+    try:
+        raw = _read_bounded_regular_file(
+            args.receipt.expanduser(), MAX_RUNTIME_STARTUP_BYTES,
+            error="static_python_runtime_startup_receipt_invalid",
+        )
+    except (EvolutionError, OSError, TypeError, ValueError, RecursionError):
+        raise ValueError("static_python_runtime_startup_receipt_invalid") from None
+    try:
+        receipt = parse_static_python_runtime_startup(
+            raw,
+            expected_build_closure_sha256=args.expected_build_closure_sha256,
+            expected_binding_sha256=args.expected_binding_sha256,
+            expected_launch_intent_sha256=args.expected_launch_intent_sha256,
+        )
+    except StaticPythonRuntimeStartupError as exc:
+        raise ValueError(exc.reason) from None
+    return {
+        "status": "observed",
+        "schema": "lunar-static-python-runtime-startup-v1",
+        "installation_version": receipt.installation_version,
+        "fixture_case": receipt.fixture_case,
+        "terminal": receipt.terminal,
+        "receipt_sha256": hashlib.sha256(raw).hexdigest(),
+        "evidence_scope": "detached_runtime_startup_observation",
+        "production_admission": False,
+    }
+
+
 def _benchmark_task_validate(args: argparse.Namespace) -> dict[str, object]:
     from .benchmark_task import (
         BenchmarkTaskError,
@@ -6480,6 +6524,9 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             return 0
         if args.command == "inspect-static-python-build-probe":
             _emit(_inspect_static_python_build_probe(args), args.json)
+            return 0
+        if args.command == "inspect-static-python-runtime-startup":
+            _emit(_inspect_static_python_runtime_startup(args), args.json)
             return 0
         if args.command == "benchmark-task":
             if args.benchmark_task_command != "validate":
