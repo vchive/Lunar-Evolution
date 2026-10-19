@@ -8679,6 +8679,27 @@ process, evaluator, solver, publication or recovery effects. Ten focused tests,
 Ruff, compileall and diff checks pass locally. This is a synthetic consistency
 contract only; actual sealed launch, terminal/broker/material evidence,
 authoritative result handoff and durable publication/recovery remain open.
+# 当前交接（2026-10-20，远端 main=b46a47e）
+
+远端 `main` 已合入 PR153、PR154、PR155：启动失败诊断与 retained
+`producer-process inspect/cleanup` CLI、Python producer terminal receipt 的
+`parent_task_id`/`task_id`/`request_timeout_seconds` 绑定，以及 OpenEvolve/Shinka
+项目生命周期 profile preflight。PR154/155 的实现均保持 provider-free；本地 focused
+回归、Ruff、compileall 和 `git diff --check` 已通过。GitHub Actions 当前存在全仓队列
+阻塞，不能把 queued 运行写成完整 CI 通过。
+
+Feature160 的 durable resume、unknown reconcile、fingerprint drift、预算、DRS/BRS
+控制原语已在主线。当前 P1 仍开放：真实 CPython/toolchain/static ELF/sealed startup、
+loader-negative 与 owner/lifecycle Linux acceptance；Feature191/195 的真实
+OpenEvolve/Shinka project lifecycle、producer admission、结果归属和生产 RSI CLI。
+5090gpu 的原始静态 CPython 在 `encodings` 前失败；冻结 `encodings` 的实验镜像只证明
+空启动，仍缺少完整 stdlib closure。不得把该实验或 provider-free fixture 写成生产准入。
+
+本轮文档刷新分支为 `codex/release-status-refresh-20261020`，PR156；生产边界继续为
+`production_admission=false`、`online_publication=false`。P2 的 remote evaluator、
+外部 worker 认证、多机 ownership、分布式 scheduler/service API 仍后置；不运行
+WebAgent、远程 evaluator、公司评测平台或真实 solver campaign。
+
 # 2026-10-14 当前主线同步
 
 当前 `main=dd84c2b`，工作区干净，已推送到 `origin/main`。本轮新增并合入：

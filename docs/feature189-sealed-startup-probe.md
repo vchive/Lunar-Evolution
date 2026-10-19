@@ -105,3 +105,25 @@ freeze the reviewed finite bootstrap and retain source/object/header/link
 pins, then run baseline, codec/import negative probes, original-executable
 owner/lifecycle checks, and cleanup evidence on a dedicated Linux gate. Until
 those observations pass, all runtime and production claims stay false.
+
+## 2026-10-20 frozen-encodings experiment
+
+An additional controlled build on `5090gpu` used the same CPython source family
+with `encodings`, `encodings.aliases`, and `encodings.utf_8` frozen into the
+image. The retained artifact was `/home/qinzhiqing/lunar-cpython-frozen/python`:
+
+| item | value |
+| --- | --- |
+| ELF SHA-256 | `ad52a2764ee24aef0f75e29b8d01cf049081e7c979369c86e05a980bcd78058b` |
+| ELF size | `26198088` bytes |
+| `PT_INTERP` | absent |
+| `DT_NEEDED` | absent |
+
+With `env -i PATH=/usr/bin:/bin HOME=/nonexistent`, the image advanced past the
+`encodings` bootstrap. A `-c 'print(1)'` probe then failed because the finite
+image does not yet contain `linecache` (`ModuleNotFoundError: No module named
+'linecache'`). The binary still accepts stock CPython command-line options and
+does not expose the reviewed `_lunar_static_main._rsi_launch` launcher contract.
+This is useful closure evidence only; it is not sealed-startup, lifecycle, or
+production acceptance. The artifact is retained on the development host rather
+than checked into the repository.

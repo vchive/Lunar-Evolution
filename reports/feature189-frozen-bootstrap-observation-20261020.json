@@ -1,0 +1,30 @@
+{
+  "schema": "lunar-static-python-frozen-bootstrap-observation-v1",
+  "host": "worker01",
+  "target": "/home/qinzhiqing/lunar-cpython-frozen/python",
+  "target_sha256": "ad52a2764ee24aef0f75e29b8d01cf049081e7c979369c86e05a980bcd78058b",
+  "target_size": 26198088,
+  "elf": {
+    "class": "ELF64",
+    "machine": "x86-64",
+    "pt_interp": false,
+    "dt_needed": false
+  },
+  "probe": {
+    "command": "env -i PATH=/usr/bin:/bin LANG=C.UTF-8 /home/qinzhiqing/lunar-cpython-frozen/python -c 'print(1)'",
+    "exit_code": 1,
+    "stdout_size": 0,
+    "stderr_size": 49,
+    "stderr_sha256": "6c29f59aeec62771de59b4daf306136c9f32fa4ec2d565b5994c769a3a9aadba",
+    "failure_code": "missing_linecache"
+  },
+  "claims": {
+    "startup_performed": false,
+    "runtime_execution_performed": false,
+    "fixed_main_verified": false,
+    "broker_exchange_verified": false,
+    "owner_verified": false,
+    "lifecycle_verified": false,
+    "production_admission": false
+  }
+}
