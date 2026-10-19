@@ -103,3 +103,34 @@ def test_adapter_rejects_native_receipt_binding_drift(tmp_path: Path, monkeypatc
         lifecycle.run_python_producer_process(
             tmp_path, binding=binding, sidecar=sidecar, producer_root=tmp_path / "producer-root",
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("parent_task_id", "other-parent"),
+        ("task_id", "other-task"),
+        ("request_timeout_seconds", 6),
+    ),
+)
+def test_adapter_rejects_receipt_parent_or_request_limit_drift(
+    tmp_path: Path, monkeypatch, field: str, value: object,
+) -> None:
+    """The Python binding includes the native task and request identity pins."""
+    binding, sidecar = _binding(tmp_path)
+    receipt = _receipt(binding)
+    drifted = ProducerExecutionReceipt(
+        **{
+            **receipt.to_dict(),
+            field: value,
+            "receipt_sha256": None,
+            "stdout_evidence": receipt.stdout_evidence,
+            "stderr_evidence": receipt.stderr_evidence,
+        }
+    )
+    monkeypatch.setattr(lifecycle, "read_python_producer_binding_sidecar", lambda *_a, **_k: sidecar)
+    monkeypatch.setattr(lifecycle, "run_producer_process", lambda *_a, **_k: drifted)
+    with pytest.raises(lifecycle.PythonProducerLifecycleError, match="receipt_binding_drift"):
+        lifecycle.run_python_producer_process(
+            tmp_path, binding=binding, sidecar=sidecar, producer_root=tmp_path / "producer-root",
+        )
