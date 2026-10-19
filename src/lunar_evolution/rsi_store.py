@@ -174,6 +174,12 @@ class RSILedger:
         self.database = Path(database).expanduser().resolve()
         self._controller_guards: dict[str, tuple[int, int, Path, str, int]] = {}
         self._controller_guards_lock = threading.RLock()
+        # History readers repeatedly verify the same immutable journal rows while
+        # a reserved BRS child is being settled.  Keep a small process-local cache
+        # keyed by the exact persisted payload bytes and its parent.  The canonical
+        # digest algorithm remains unchanged; a changed row, parent, revision, or
+        # run always misses this cache and is fully re-encoded.
+        self._checkpoint_digest_cache: dict[tuple[str, int, str | None, int, bytes], str] = {}
         self._observation_scope = threading.local()
         self.initialize()
 
@@ -350,6 +356,35 @@ class RSILedger:
             "payload": dict(payload),
         }, maximum=8 * 1024 * 1024)).hexdigest()
 
+    def _checkpoint_digest_cached(
+        self,
+        run_id: str,
+        revision: int,
+        parent_sha256: str | None,
+        payload: Mapping[str, Any],
+        *,
+        persisted_payload: str | None = None,
+    ) -> str:
+        """Verify an immutable checkpoint without re-encoding it on every read.
+
+        ``persisted_payload`` is the exact SQLite text.  It is included in the key
+        through a SHA-256 plus length so the cache cannot survive any byte-level
+        row replacement.  The digest is still produced by ``_checkpoint_digest``
+        on a miss, preserving the existing canonical JSON contract.
+        """
+        if type(persisted_payload) is not str:
+            return self._checkpoint_digest(run_id, revision, parent_sha256, payload)
+        raw = persisted_payload.encode("utf-8")
+        key = (run_id, revision, parent_sha256, len(raw), hashlib.sha256(raw).digest())
+        cached = self._checkpoint_digest_cache.get(key)
+        if cached is not None:
+            return cached
+        digest = self._checkpoint_digest(run_id, revision, parent_sha256, payload)
+        if len(self._checkpoint_digest_cache) >= 128:
+            self._checkpoint_digest_cache.clear()
+        self._checkpoint_digest_cache[key] = digest
+        return digest
+
     @staticmethod
     def _checkpoint_python_references(state: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         try:
@@ -397,7 +432,9 @@ class RSILedger:
             if any(key not in current_refs or canonical_json(current_refs[key], maximum=512 * 1024)
                    != canonical_json(value, maximum=512 * 1024) for key, value in references.items()):
                 raise RSILearningError("rsi_python_admission_reference_history_drift")
-            digest = self._checkpoint_digest(run_id, ordinal, parent, payload)
+            digest = self._checkpoint_digest_cached(
+                run_id, ordinal, parent, payload, persisted_payload=row["payload"],
+            )
             if row["revision"] != ordinal or row["parent_sha256"] != parent or row["checkpoint_sha256"] != digest:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
             references = current_refs
@@ -450,7 +487,10 @@ class RSILedger:
             raise RSILearningError("rsi_python_admission_child_proof_corrupt")
         validate_rsi_python_admission_shapes((ready, identity))
         allow_capsule = state.get("producer_multi_episode_publication") is True
-        if allow_capsule and (state.get("mode") != "drs" or state.get("producer_child_execution") is not True):
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+        if allow_capsule and ((state.get("mode") != "drs" and not reserved_brs_staging_mode(state))
+                              or state.get("producer_child_execution") is not True):
             raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         from .rsi_producer_staging_capsule import (
             materialize_ready,
@@ -599,6 +639,9 @@ class RSILedger:
         """Validate the controller-owned staging state without opening another snapshot."""
         if not history:
             raise RSILearningError("rsi_python_admission_checkpoint_missing")
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
+
         policy = history[0][1].get("producer_staging_policy")
         staged = policy is not None or "producer_episode_staging" in history[0][1]
         if not staged:
@@ -616,15 +659,21 @@ class RSILedger:
         if capsule_mode is not None and type(capsule_mode) is not bool:
             raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         states_by_digest = {digest: state for digest, state in history}
-        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
-
+        original_state = history[0][1]
+        serial = reserved_brs_staging_mode(original_state)
         for digest, state in history:
+            if (reserved_brs_staging_mode(state) is not serial
+                    or serial and (state.get("plan") != original_state.get("plan")
+                        or state.get("producer_brs_checkpoint_policy")
+                        != original_state.get("producer_brs_checkpoint_policy"))):
+                raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             if (state.get("run_id") != run_id or state.get("producer_staging_policy") != policy
                     or type(state.get("producer_episode_staging")) is not dict
                     or ("producer_multi_episode_publication" in state
                         and type(state["producer_multi_episode_publication"]) is not bool)
                     or state.get("producer_multi_episode_publication") != capsule_mode
-                    or (capsule_mode is True and (state.get("mode") != "drs"
+                    or (capsule_mode is True and ((state.get("mode") != "drs"
+                        and not reserved_brs_staging_mode(state))
                         or state.get("producer_child_execution") is not True))):
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             retained_publication_evidence_bytes(state)
@@ -729,10 +778,19 @@ class RSILedger:
             history = self._controller_checkpoint_history_tx(connection, run_id)
             if not history:
                 raise RSILearningError("rsi_python_admission_checkpoint_missing")
+            from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+            original_serial = reserved_brs_staging_mode(records[0].payload)
+            if (reserved_brs_staging_mode(history[0][1]) is not original_serial
+                    or original_serial and any(
+                        history[0][1].get(key) != records[0].payload.get(key)
+                        for key in ("plan", "producer_brs_checkpoint_policy"))):
+                raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             original_capsule_mode = records[0].payload.get("producer_multi_episode_publication")
             if ((original_capsule_mode is not None and type(original_capsule_mode) is not bool)
                     or history[0][1].get("producer_multi_episode_publication") != original_capsule_mode
-                    or (original_capsule_mode is True and (records[0].payload.get("mode") != "drs"
+                    or (original_capsule_mode is True and ((records[0].payload.get("mode") != "drs"
+                        and not reserved_brs_staging_mode(records[0].payload))
                         or records[0].payload.get("producer_child_execution") is not True))):
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             self._validate_python_producer_staging_history_tx(
@@ -798,6 +856,9 @@ class RSILedger:
 
     def write_brs_reconcile_obligation(
         self, run_id: str, obligation: object, *, expected_checkpoint_sha256: str | None,
+        expected_episode_record_sha256: str | None = None,
+        expected_run_record_sha256: str | None = None,
+        expected_native_claim_sha256: str | None = None,
     ) -> str:
         """Persist one owner obligation as an opt-in controller checkpoint delta.
 
@@ -817,21 +878,409 @@ class RSILedger:
             raise RSILearningError("rsi_brs_reconcile_obligation_invalid")
         self._assert_controller_lock(run_id)
         _digest(expected_checkpoint_sha256, name="brs_reconcile_checkpoint")
+        for pin, name in (
+            (expected_run_record_sha256, "brs_reconcile_run"),
+            (expected_native_claim_sha256, "brs_reconcile_native_claim"),
+        ):
+            if pin is not None:
+                _digest(pin, name=name)
+                if expected_episode_record_sha256 is None:
+                    raise RSILearningError("rsi_brs_reconcile_episode_pin_required")
         current = self.controller_checkpoint(run_id)
         if current is None or current[0] != expected_checkpoint_sha256:
             raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
         state = json.loads(canonical_json(current[1], maximum=8 * 1024 * 1024))
         existing = state.get(FIELD, {}).get(obligation.episode_id)
-        if existing is not None and existing == obligation.to_dict():
+        replay = existing is not None and existing == obligation.to_dict()
+        if replay and expected_episode_record_sha256 is None:
             return current[0]
-        if existing is not None:
+        if existing is not None and not replay:
             raise RSILearningError("rsi_brs_reconcile_obligation_conflict")
-        put_brs_reconcile_obligation(state, obligation)
+        if not replay and obligation.controller_checkpoint_sha256 != expected_checkpoint_sha256:
+            raise RSILearningError("rsi_brs_reconcile_checkpoint_binding_invalid")
+        if not replay:
+            put_brs_reconcile_obligation(state, obligation)
         validate_brs_reconcile_obligations(
-            state, run_id=run_id, checkpoint_sha256=expected_checkpoint_sha256,
-            intents=state.get("intents"),
+            state, run_id=run_id, intents=state.get("intents"),
         )
+        if expected_episode_record_sha256 is not None:
+            _digest(expected_episode_record_sha256, name="brs_reconcile_episode")
+            with self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                run = self._head(connection, run_id)
+                episode = self._head(connection, obligation.episode_id)
+                if (run is None or run.kind != "run" or run.state != "running"
+                        or episode is None or episode.kind != "episode" or episode.state != "running"
+                        or episode.record_sha256 != expected_episode_record_sha256
+                        or obligation.episode_record_sha256 != expected_episode_record_sha256
+                        or episode.request_sha256 != obligation.request_sha256
+                        or episode.payload.get("run_id") != run_id):
+                    raise RSILearningError("rsi_brs_reconcile_episode_binding_invalid")
+                if expected_run_record_sha256 is not None and run.record_sha256 != expected_run_record_sha256:
+                    raise RSILearningError("rsi_brs_reconcile_run_binding_invalid")
+                if expected_native_claim_sha256 is not None:
+                    row = connection.execute(
+                        "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (obligation.episode_id,),
+                    ).fetchone()
+                    if (row is None or row["request_sha256"] != obligation.request_sha256
+                            or row["plan_sha256"] != obligation.native_plan_sha256
+                            or row["claim_sha256"] != expected_native_claim_sha256
+                            or obligation.native_claim_sha256 != expected_native_claim_sha256
+                            or self._native_result_status(
+                                connection, obligation.episode_id, obligation.request_sha256,
+                            ) is not None):
+                        raise RSILearningError("rsi_brs_reconcile_native_claim_binding_invalid")
+                    self._native_claim_row(row, status="started")
+                if replay:
+                    head = self._controller_checkpoint_history_tx(connection, run_id)
+                    if not head or head[-1][0] != expected_checkpoint_sha256:
+                        raise RSILearningError("rsi_brs_reconcile_checkpoint_conflict")
+                    return current[0]
+                return self._append_controller_checkpoint_tx(
+                    connection, run_id, state, expected_sha256=expected_checkpoint_sha256,
+                )
         return self.write_controller_checkpoint(run_id, state, expected_sha256=expected_checkpoint_sha256)
+
+    def append_brs_mailbox_observation(
+        self, binding: object, observation: object, *, expected_sha256: str | None,
+    ) -> str:
+        """Append one side-journal observation without advancing its original run.
+
+        Both original run and namespace locks must belong to this thread. The
+        root, unchanged obligation and running native owner are checked in the
+        same SQLite write transaction as the strictly adjacent side-journal CAS.
+        This writer neither acknowledges an owner cursor nor retries any effect.
+        """
+        from .rsi_brs_mailbox_evidence import (
+            brs_mailbox_evidence_namespace,
+            parse_brs_mailbox_binding,
+            parse_brs_mailbox_observation,
+            validate_brs_mailbox_history,
+            validate_brs_mailbox_root_history,
+        )
+        from .rsi_brs_reconcile import FIELD
+
+        captured = parse_brs_mailbox_binding(binding)
+        record = parse_brs_mailbox_observation(observation)
+        if record["binding"] != captured:
+            raise RSILearningError("rsi_brs_mailbox_evidence_binding_drift")
+        run_id, episode_id = captured["run_id"], captured["episode_id"]
+        namespace = brs_mailbox_evidence_namespace(captured)
+        self._assert_controller_lock(run_id)
+        self._assert_controller_lock(namespace)
+        if captured["handoff"]["owner_thread_id"] != threading.get_ident():
+            raise RSILearningError("rsi_brs_mailbox_evidence_owner_required")
+        if expected_sha256 is not None:
+            _digest(expected_sha256, name="brs_mailbox_evidence_checkpoint")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            roots = self._controller_checkpoint_history_tx(connection, run_id)
+            if not roots or roots[-1][0] != record["root_checkpoint_sha256"]:
+                raise RSILearningError("rsi_brs_mailbox_evidence_root_drift")
+            if roots[-1][1].get(FIELD, {}).get(episode_id) != captured["obligation"]:
+                raise RSILearningError("rsi_brs_mailbox_evidence_obligation_drift")
+            run, episode = self._head(connection, run_id), self._head(connection, episode_id)
+            if (run is None or run.kind != "run" or run.state != "running"
+                    or run.record_sha256 != captured["run_record_sha256"]
+                    or episode is None or episode.kind != "episode" or episode.state != "running"
+                    or episode.record_sha256 != captured["episode_record_sha256"]
+                    or episode.payload.get("run_id") != run_id
+                    or episode.request_sha256 != captured["selected_request_sha256"]):
+                raise RSILearningError("rsi_brs_mailbox_evidence_record_drift")
+            row = connection.execute(
+                "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (episode_id,),
+            ).fetchone()
+            if (row is None or row["request_sha256"] != captured["selected_request_sha256"]
+                    or row["plan_sha256"] != captured["native_plan_sha256"]
+                    or row["claim_sha256"] != captured["native_claim_sha256"]
+                    or self._native_result_status(
+                        connection, episode_id, captured["selected_request_sha256"],
+                    ) is not None):
+                raise RSILearningError("rsi_brs_mailbox_evidence_native_claim_drift")
+            self._native_claim_row(row, status="started")
+            history = self._controller_checkpoint_history_tx(connection, namespace)
+            actual = history[-1][0] if history else None
+            if actual != expected_sha256:
+                raise RSILearningError("rsi_brs_mailbox_evidence_checkpoint_conflict")
+            # A provisional distinct digest is only a structural history marker;
+            # the original checkpoint writer computes the actual chained digest.
+            prospective = [*history, (record["observation_sha256"], record)]
+            validate_brs_mailbox_history(prospective, binding=captured)
+            validate_brs_mailbox_root_history(roots, prospective, binding=captured)
+            return self._append_controller_checkpoint_tx(
+                connection, namespace, record, expected_sha256=expected_sha256,
+            )
+
+    def append_brs_terminal_observation(
+        self, binding: object, observation: object, *, expected_sha256: str | None,
+    ) -> str:
+        """Append original-owner terminal facts without consuming or advancing its run."""
+        from .rsi_brs_mailbox_evidence import (
+            validate_brs_mailbox_history,
+            validate_brs_mailbox_root_history,
+        )
+        from .rsi_brs_reconcile import FIELD, BRSReconcileObligation, _validate_brs_episode_history
+        from .rsi_python_brs_terminal_lifecycle import (
+            brs_terminal_evidence_namespace,
+            parse_brs_terminal_binding,
+            parse_brs_terminal_observation,
+            validate_brs_terminal_history,
+        )
+
+        captured = parse_brs_terminal_binding(binding)
+        mailbox = captured["mailbox_binding"]
+        run_id, episode_id = mailbox["run_id"], mailbox["episode_id"]
+        namespace = brs_terminal_evidence_namespace(captured)
+        self._assert_controller_lock(run_id)
+        self._assert_controller_lock(namespace)
+        if captured["owner_thread_id"] != threading.get_ident():
+            raise RSILearningError("rsi_brs_terminal_owner_required")
+        if expected_sha256 is not None:
+            _digest(expected_sha256, name="brs_terminal_checkpoint")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            snapshot = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
+            roots = snapshot["roots"]
+            from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+            reserved = reserved_brs_staging_mode(roots[0][1])
+            record = parse_brs_terminal_observation(observation, reserved=reserved)
+            if record["binding"] != captured:
+                raise RSILearningError("rsi_brs_terminal_binding_drift")
+            if roots[-1][0] != record["root_checkpoint_sha256"]:
+                raise RSILearningError("rsi_brs_terminal_root_drift")
+            if roots[-1][1].get(FIELD, {}).get(episode_id) != mailbox["obligation"]:
+                raise RSILearningError("rsi_brs_terminal_obligation_drift")
+            side = snapshot["mailbox_history"]
+            latest = validate_brs_mailbox_history(side, binding=mailbox)
+            validate_brs_mailbox_root_history(roots, side, binding=mailbox)
+            if latest is None or len(side) != 4:
+                raise RSILearningError("rsi_brs_terminal_transport_missing")
+            run = self._head(connection, run_id)
+            if (run is None or run.kind != "run" or run.state != "running"
+                    or run.record_sha256 != mailbox["run_record_sha256"]):
+                raise RSILearningError("rsi_brs_terminal_run_drift")
+            obligation = BRSReconcileObligation.from_dict(mailbox["obligation"])
+            episode = _validate_brs_episode_history(obligation, snapshot["episode_history"])
+            claim = snapshot["native_claim"]
+            if claim is None or claim.claim_sha256 != mailbox["native_claim_sha256"]:
+                raise RSILearningError("rsi_brs_terminal_native_claim_drift")
+            if record["stage"] != "worker_terminal" and (
+                    episode.state != "running" or episode.record_sha256 != mailbox["episode_record_sha256"]
+                    or snapshot["saved_result"] is not None or claim.status != "started"):
+                raise RSILearningError("rsi_brs_terminal_running_capture_drift")
+            if (record["stage"] == "delivery" and record["facts"]["publication"]["lineage"]
+                    != roots[-1][1].get("producer_publication_lineage")):
+                raise RSILearningError("rsi_brs_terminal_publication_drift")
+            history = snapshot["terminal_history"]
+            actual = history[-1][0] if history else None
+            if actual != expected_sha256:
+                raise RSILearningError("rsi_brs_terminal_checkpoint_conflict")
+            validate_brs_terminal_history(
+                [*history, (record["observation_sha256"], record)], binding=captured, reserved=reserved,
+            )
+            return self._append_controller_checkpoint_tx(
+                connection, namespace, record, expected_sha256=expected_sha256,
+            )
+
+    def _brs_terminal_evidence_snapshot_tx(self, connection, run_id: str, episode_id: str) -> dict:
+        """Read all ledger legs from one snapshot; filesystem evidence stays separate."""
+        from .rsi_brs_reconcile import FIELD, parse_brs_reconcile_obligations
+
+        roots = self._controller_checkpoint_history_tx(connection, run_id)
+        if not roots:
+            raise RSILearningError("rsi_brs_terminal_root_missing")
+        obligation = parse_brs_reconcile_obligations(roots[-1][1].get(FIELD)).get(episode_id)
+        if obligation is None:
+            raise RSILearningError("rsi_brs_terminal_obligation_missing")
+        digest = obligation.digest()
+        mailbox = self._controller_checkpoint_history_tx(connection, "rsi-brs-mailbox:" + digest)
+        terminal = self._controller_checkpoint_history_tx(connection, "rsi-brs-terminal:" + digest)
+        rows = connection.execute(
+            "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
+        ).fetchall()
+        episodes = tuple(self._row_to_record(row) for row in rows)
+        run = self._head(connection, run_id)
+        status = self._native_result_status(connection, episode_id, obligation.request_sha256)
+        claim_row = connection.execute(
+            "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (episode_id,),
+        ).fetchone()
+        claim = self._native_claim_row(claim_row, status=status or "started") if claim_row else None
+        if claim is not None and (claim.request_sha256 != obligation.request_sha256
+                                  or claim.plan_sha256 != obligation.native_plan_sha256):
+            raise RSILearningError("rsi_brs_terminal_native_claim_drift")
+        result_row = connection.execute(
+            "SELECT request_payload, result_payload, result_sha256 FROM rsi_episode_results WHERE episode_id = ?",
+            (episode_id,),
+        ).fetchone()
+        saved = None if result_row is None else (
+            SolverRequest.from_dict(json.loads(result_row["request_payload"])),
+            SolverResult.from_dict(json.loads(result_row["result_payload"])),
+        )
+        pins = {
+            "root_checkpoint_sha256": roots[-1][0],
+            "mailbox_checkpoint_sha256": mailbox[-1][0] if mailbox else None,
+            "terminal_checkpoint_sha256": terminal[-1][0] if terminal else None,
+            "run_record_sha256": run.record_sha256 if run else None,
+            "episode_record_sha256": episodes[-1].record_sha256 if episodes else None,
+            "native_claim_sha256": claim.claim_sha256 if claim else None,
+            "result_sha256": result_row["result_sha256"] if result_row else None,
+            "obligation_sha256": digest,
+        }
+        return {"roots": roots, "mailbox_history": mailbox, "terminal_history": terminal,
+                "episode_history": episodes, "native_claim": claim, "saved_result": saved, "pins": pins}
+
+    def read_brs_terminal_evidence_snapshot(self, run_id: str, episode_id: str) -> dict:
+        """Observe existing evidence without initializing or writing any ledger files."""
+        _id(run_id, name="run_id")
+        _id(episode_id, name="episode_id")
+        with self.read_only_observations(), self._connect() as connection:
+            connection.execute("BEGIN")
+            return self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
+
+    def _consume_brs_reconcile_obligation(
+        self, run_id: str, episode_id: str, evidence: object, *, expected_pins: dict | None = None,
+        settled_execution: dict | None = None,
+    ):
+        """Check terminal truth and atomically settle the independently observed root result."""
+        from .rsi_brs_reconcile import (
+            BRSReconcileConsumption,
+            _decision,
+            _validate_brs_episode_history,
+            reconcile_brs_selected,
+            remove_brs_reconcile_obligation,
+            validate_brs_reconcile_obligations,
+        )
+
+        self._assert_controller_lock(run_id)
+        if settled_execution is not None and expected_pins is None:
+            raise RSILearningError("rsi_brs_terminal_settlement_pins_required")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if expected_pins is not None:
+                actual = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)["pins"]
+                if (type(expected_pins) is not dict or set(expected_pins) != set(actual)
+                        or any(type(key) is not str or type(value) not in {str, type(None)}
+                               for key, value in expected_pins.items()) or actual != expected_pins):
+                    raise RSILearningError("rsi_brs_terminal_consume_drift")
+            checkpoints = self._controller_checkpoint_history_tx(connection, run_id)
+            if not checkpoints:
+                raise RSILearningError("rsi_brs_reconcile_checkpoint_missing")
+            head, state = checkpoints[-1]
+            obligations = validate_brs_reconcile_obligations(
+                state, run_id=run_id, intents=state.get("intents"),
+            )
+            obligation = obligations.get(episode_id)
+            if obligation is None:
+                raise RSILearningError("rsi_brs_reconcile_obligation_missing")
+            rows = connection.execute(
+                "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
+            ).fetchall()
+            episode_history = tuple(self._row_to_record(row) for row in rows)
+            episode = _validate_brs_episode_history(obligation, episode_history)
+            decision = reconcile_brs_selected(obligation, evidence)
+            if decision.outcome == "already_terminal":
+                if episode.state in {"planned", "running", "unknown"}:
+                    decision = _decision(obligation, evidence, "manual_review", "episode is not terminal in ledger")
+                elif episode.state != evidence.terminal_status:
+                    decision = _decision(obligation, evidence, "drifted", "terminal episode status mismatch")
+                else:
+                    decision = self._brs_terminal_result_decision_tx(connection, obligation, evidence, episode, decision)
+            if decision.outcome != "already_terminal":
+                return BRSReconcileConsumption(decision, head, False)
+            if settled_execution is not None:
+                RSILedger._settle_brs_terminal_execution_tx(
+                    self, connection, state, obligation, episode, settled_execution,
+                )
+            remove_brs_reconcile_obligation(state, episode_id, expected_digest=obligation.digest())
+            validate_brs_reconcile_obligations(state, run_id=run_id, intents=state.get("intents"))
+            next_head = self._append_controller_checkpoint_tx(connection, run_id, state, expected_sha256=head)
+            return BRSReconcileConsumption(decision, next_head, True)
+
+    def _settle_brs_terminal_execution_tx(self, connection, state, obligation, episode, wire):
+        """Match the original durable result and diagnostic verifier before one root append."""
+        from .rsi_controller import RSILearningController
+        from .rsi_gateway import LocalExactVerifier
+
+        try:
+            execution = RSILearningController._deserialize_execution(wire)
+            key = obligation.episode_id
+            if (type(state) is not dict or state.get("mode") != "brs"
+                    or state.get("run_id") != obligation.run_id or state.get("status") != "running"
+                    or type(state.get("executions")) is not dict
+                    or type(state.get("intents")) is not dict or key not in state["intents"]
+                    or execution.episode.run_id != obligation.run_id
+                    or execution.request.digest() != obligation.request_sha256
+                    or execution.request.to_dict() != state["intents"][key]["request"]
+                    or execution.episode.to_record_dict() != episode.payload
+                    or execution.request.memory_snapshot_sha256 != MemorySnapshot.from_dict(
+                        state["root_snapshot"]).digest()):
+                raise ValueError("original root execution")
+            saved = connection.execute(
+                "SELECT request_payload, result_payload FROM rsi_episode_results WHERE episode_id = ?", (key,),
+            ).fetchone()
+            if (saved is None or execution.request.to_dict() != json.loads(saved["request_payload"])
+                    or execution.result.to_dict() != json.loads(saved["result_payload"])):
+                raise ValueError("durable execution")
+            original_verifier = execution.episode.verifier
+            if original_verifier is None:
+                if execution.result.status == "completed":
+                    raise ValueError("completed verifier missing")
+                # This local failure diagnosis never calls the configured verifier,
+                # changes the terminal episode or makes memory eligible for promotion.
+                original_verifier = LocalExactVerifier.verify(
+                    LocalExactVerifier(), execution.episode, execution.request, execution.result,
+                )
+            if execution.verifier != original_verifier:
+                raise ValueError("terminal verifier")
+            clean = RSILearningController._serialize_execution(execution)
+            if clean != wire or (key in state["executions"] and state["executions"][key] != clean):
+                raise ValueError("execution drift")
+        except (TypeError, KeyError, ValueError, RSILearningError) as exc:
+            raise RSILearningError("rsi_brs_terminal_root_execution_invalid") from exc
+        state["executions"][key] = clean
+        state.update(phase="evaluated", current_episode_id=key)
+
+    def _brs_terminal_result_decision_tx(self, connection, obligation, evidence, episode, decision):
+        """Use the original native claim and immutable saved result, never DTO flags alone."""
+        from .rsi_brs_reconcile import _decision
+
+        status = self._native_result_status(connection, obligation.episode_id, obligation.request_sha256)
+        claim_row = connection.execute(
+            "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?", (obligation.episode_id,),
+        ).fetchone()
+        if status is None or claim_row is None:
+            return _decision(obligation, evidence, "manual_review", "durable native result or claim missing")
+        if (claim_row["request_sha256"] != obligation.request_sha256
+                or claim_row["plan_sha256"] != obligation.native_plan_sha256):
+            return _decision(obligation, evidence, "drifted", "durable native claim binding mismatch")
+        claim = self._native_claim_row(claim_row, status=status)
+        row = connection.execute(
+            "SELECT request_payload, result_payload, result_sha256 FROM rsi_episode_results WHERE episode_id = ?",
+            (obligation.episode_id,),
+        ).fetchone()
+        request = SolverRequest.from_dict(json.loads(row["request_payload"]))
+        result = SolverResult.from_dict(json.loads(row["result_payload"]))
+        durable_episode = PracticeEpisode.from_dict(episode.payload)
+        # The runner and explicit reconcile adapter have distinct, established
+        # fallback reasons for a result that carries no reason of its own.
+        terminal_reasons = {result.terminal_reason} if result.terminal_reason else {
+            f"solver_{status}", f"reconciled_worker_{status}",
+        }
+        if (status != evidence.terminal_status or evidence.native_evidence_sha256 != claim.claim_sha256
+                or evidence.result_evidence_sha256 != row["result_sha256"]
+                or any(getattr(durable_episode, name) != getattr(request, name) for name in (
+                    "contract_sha256", "evaluator_sha256", "environment_sha256", "memory_snapshot_sha256", "solver_id",
+                )) or any(getattr(durable_episode, name) != getattr(result, name) for name in (
+                    "trace_digest", "candidate_source_sha256", "dependency_sha256",
+                    "trace_events", "actor_fingerprint",
+                )) or (status == "completed" and any(
+                    getattr(durable_episode, name) != getattr(result, name) for name in (
+                        "candidate_receipt_sha256", "execution_receipt_sha256", "official_evaluation_receipt_sha256",
+                    )
+                )) or (status != "completed" and durable_episode.terminal_reason not in terminal_reasons)):
+            return _decision(obligation, evidence, "drifted", "durable terminal result binding mismatch")
+        return decision
 
     def apply_brs_reconcile_decision(
         self, run_id: str, episode_id: str, decision: object, *,
@@ -966,21 +1415,27 @@ class RSILedger:
             raise RSILearningError("rsi_controller_checkpoint_invalid")
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            self._checkpoint_reference_write_tx(connection, run_id, clean)
-            row = connection.execute(
-                "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
-                "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,)
-            ).fetchone()
-            parent = row["checkpoint_sha256"] if row else None
-            if parent != expected_sha256:
-                raise RSILearningError("rsi_controller_checkpoint_conflict")
-            self._assert_controller_lock(run_id)
-            revision = row["revision"] + 1 if row else 0
-            digest = self._checkpoint_digest(run_id, revision, parent, clean)
-            connection.execute(
-                "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
-                (run_id, revision, parent, json.dumps(clean, sort_keys=True), digest),
-            )
+            return self._append_controller_checkpoint_tx(connection, run_id, clean, expected_sha256=expected_sha256)
+
+    def _append_controller_checkpoint_tx(
+        self, connection: sqlite3.Connection, run_id: str, clean: dict[str, Any], *, expected_sha256: str | None,
+    ) -> str:
+        """Append the original checkpoint CAS within an already-held SQLite transaction."""
+        self._checkpoint_reference_write_tx(connection, run_id, clean)
+        row = connection.execute(
+            "SELECT revision, checkpoint_sha256 FROM rsi_controller_journal "
+            "WHERE run_id = ? ORDER BY revision DESC LIMIT 1", (run_id,)
+        ).fetchone()
+        parent = row["checkpoint_sha256"] if row else None
+        if parent != expected_sha256:
+            raise RSILearningError("rsi_controller_checkpoint_conflict")
+        self._assert_controller_lock(run_id)
+        revision = row["revision"] + 1 if row else 0
+        digest = self._checkpoint_digest(run_id, revision, parent, clean)
+        connection.execute(
+            "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
+            (run_id, revision, parent, json.dumps(clean, sort_keys=True), digest),
+        )
         return digest
 
     @staticmethod
@@ -1139,11 +1594,20 @@ class RSILedger:
         if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
             raise RSILearningError("rsi_python_admission_run_conflict")
         staging_history = self._controller_checkpoint_history_tx(connection, admission.run_id)
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+        original_serial = reserved_brs_staging_mode(original.payload)
+        if (staging_history and (reserved_brs_staging_mode(staging_history[0][1]) is not original_serial
+                or original_serial and any(
+                    staging_history[0][1].get(key) != original.payload.get(key)
+                    for key in ("plan", "producer_brs_checkpoint_policy")))):
+            raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         original_capsule_mode = original.payload.get("producer_multi_episode_publication")
         if ((original_capsule_mode is not None and type(original_capsule_mode) is not bool)
                 or (staging_history and staging_history[0][1].get("producer_multi_episode_publication")
                     != original_capsule_mode)
-                or (original_capsule_mode is True and (original.payload.get("mode") != "drs"
+                or (original_capsule_mode is True and ((original.payload.get("mode") != "drs"
+                    and not reserved_brs_staging_mode(original.payload))
                     or original.payload.get("producer_child_execution") is not True))):
             raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         self._validate_python_producer_staging_history_tx(
@@ -1164,7 +1628,9 @@ class RSILedger:
                 state = json.loads(row["payload"])
                 if type(state) is not dict:
                     raise ValueError("checkpoint is not an object")
-                digest = self._checkpoint_digest(admission.run_id, ordinal, parent, state)
+                digest = self._checkpoint_digest_cached(
+                    admission.run_id, ordinal, parent, state, persisted_payload=row["payload"],
+                )
                 budget = RSIRunBudget.load(state["budget_state"])
                 budget.assert_matches(original.payload["budget"])
                 if canonical_json(budget.to_dict()["planned"]) != canonical_json(planned_budget):

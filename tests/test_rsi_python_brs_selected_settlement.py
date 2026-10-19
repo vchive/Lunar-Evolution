@@ -296,7 +296,10 @@ def test_source_hook_cannot_change_original_owner_inputs_between_entry_and_write
         _assert_single_worker(value)
 
 
-@pytest.mark.parametrize("fault", ["missing", "run", "episode", "request", "record", "fields"])
+@pytest.mark.parametrize("fault", [
+    "missing", "run", "episode", "request", "record", "fields",
+    "ready-type", "ready-run", "ready-episode", "ready-request", "request-key",
+])
 def test_owner_settlement_rechecks_retained_ready_ack_after_service_closed(tmp_path, monkeypatch, fault):
     value = _fixture(tmp_path, monkeypatch)
     with _wave(value) as wave:
@@ -306,6 +309,17 @@ def test_owner_settlement_rechecks_retained_ready_ack_after_service_closed(tmp_p
             pending.ack = None
         elif fault == "fields":
             pending.ack_fields = (*pending.ack_fields[:3], OTHER)
+        elif fault == "ready-type":
+            pending.ready = object()
+        elif fault.startswith("ready-"):
+            field = {"ready-run": "run_id", "ready-episode": "episode_id",
+                     "ready-request": "request_sha256"}[fault]
+            object.__setattr__(pending.ready, field, "foreign-id" if field != "request_sha256" else OTHER)
+        elif fault == "request-key":
+            class ForeignKey:
+                def __hash__(self):
+                    return 1
+            wave.channel._requests[ForeignKey()] = pending
         else:
             field = {"run": "run_id", "episode": "episode_id", "request": "request_sha256",
                      "record": "record_sha256"}[fault]
@@ -574,6 +588,28 @@ def _exact_execution_for_payload_guard():
     execution = rsi_controller.EpisodeExecution(episode, request, result, verifier)
     assert rsi_controller.RSILearningController._python_admission_selected_brs_execution_payload(execution)
     return execution
+
+
+def test_payload_guard_accepts_failed_execution_without_episode_verifier():
+    episode_id, digest = "payload-helper-failed", OTHER
+    request = rsi_controller.SolverRequest(
+        episode_id, digest, digest, digest, digest, "native",
+    )
+    check = rsi_controller.VerifierCheck("official_evaluator", "fail", digest)
+    verifier = rsi_controller.VerifierDecision(
+        episode_id, "fail", digest, "inert-payload-helper", digest, (check,),
+        contract_sha256=digest, evaluator_sha256=digest, environment_sha256=digest,
+    )
+    episode = rsi_controller.PracticeEpisode(
+        episode_id, "payload-helper-run", digest, digest, digest, digest, "native", "failed",
+        request_sha256=request.digest(), terminal_reason="inert-payload-helper",
+    )
+    result = rsi_controller.SolverResult(
+        episode_id, request.digest(), "failed", digest, digest, digest, digest,
+        terminal_reason="inert-payload-helper",
+    )
+    execution = rsi_controller.EpisodeExecution(episode, request, result, verifier)
+    assert rsi_controller.RSILearningController._python_admission_selected_brs_execution_payload(execution)
 
 
 @pytest.mark.parametrize("target_name", [

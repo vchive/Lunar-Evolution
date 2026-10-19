@@ -12,6 +12,7 @@ from lunar_evolution.python_producer_binding import build_python_producer_bindin
 from lunar_evolution.python_producer_binding_store import (
     PYTHON_BINDING_SIDECAR_NAME,
     PythonProducerBindingStoreError,
+    _validated_binding,
     persist_python_producer_binding,
     read_python_producer_binding_sidecar,
 )
@@ -85,6 +86,15 @@ def test_invalid_binding_is_normalized_before_workspace_io(tmp_path: Path) -> No
     object.__setattr__(binding, "intent", object())
     with pytest.raises(PythonProducerBindingStoreError, match="binding_invalid"):
         persist_python_producer_binding(tmp_path / "missing", binding=binding)
+
+
+def test_binding_is_revalidated_after_forced_mutation(tmp_path: Path) -> None:
+    """A prior parse must never become an accepted-validation marker."""
+    binding, _batch = _binding(tmp_path)
+    _validated_binding(binding)
+    object.__setattr__(binding, "intent", object())
+    with pytest.raises(PythonProducerBindingStoreError, match="binding_invalid"):
+        _validated_binding(binding)
 
 
 def test_missing_batch_is_a_fixed_missing_binding_error(tmp_path: Path) -> None:

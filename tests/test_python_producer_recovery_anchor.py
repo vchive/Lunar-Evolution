@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import stat
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -43,10 +44,15 @@ _DRIFT_FIELDS = (
 )
 
 
-def _durable_snapshot(root: Path) -> dict[Path, tuple[object, ...]]:
+def _durable_snapshot(
+    root: Path, *, exclude: Callable[[Path], bool] | None = None,
+) -> dict[Path, tuple[object, ...]]:
     """Include names, identities and bytes, avoiding symlink/FIFO reads and atime."""
     result = {}
     for path in root.rglob("*"):
+        name = path.relative_to(root)
+        if exclude is not None and exclude(name):
+            continue
         info = path.lstat()
         identity = (
             info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size,
@@ -56,7 +62,7 @@ def _durable_snapshot(root: Path) -> dict[Path, tuple[object, ...]]:
             path.read_bytes() if stat.S_ISREG(info.st_mode)
             else os.readlink(path) if stat.S_ISLNK(info.st_mode) else None
         )
-        result[path.relative_to(root)] = (*identity, content)
+        result[name] = (*identity, content)
     return result
 
 

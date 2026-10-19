@@ -161,7 +161,18 @@ class PythonProducerRSISolverGateway(NativeRSISolverGateway):
             controller = self.config.receipt_provider._python_admission_controller
             if controller is None:
                 _fail("controller_required")
-            self.bind_python_admission_controller(controller)
+            # The reserved BRS composition binds a fresh child under its original
+            # scope. Its fixed worker gate replaces only the root-only binder;
+            # ordinary native run below remains the sole claim creator.
+            binding = getattr(self.config.receipt_provider, "_brs_native_binding", None)
+            if binding is None:
+                self.bind_python_admission_controller(controller)
+            else:
+                from .rsi_brs_native_provider import assert_brs_native_provider_binding
+
+                assert_brs_native_provider_binding(
+                    self.config.receipt_provider, request, plan, before_claim=True,
+                )
         return super().run(request, memory)
 
     def bind_python_admission_controller(self, controller: Any) -> None:
@@ -233,6 +244,26 @@ class PythonProducerRSISolverGateway(NativeRSISolverGateway):
             raise
         except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RSILearningError) as exc:
             raise PythonProducerRSIGatewayError("rsi_python_producer_gateway_child_controller_evidence_invalid") from exc
+
+    def bind_reserved_brs_child_controller(self, controller, *, wave, scope, handoff) -> None:
+        """Bind one original private BRS child without rotating the root gateway."""
+        from .rsi_brs_serial_driver import _BRSReservedChildScope
+        from .rsi_controller import RSILearningController, _PythonAdmissionBRSWave
+
+        self._assert_ledger()
+        if (type(controller) is not RSILearningController
+                or type(wave) is not _PythonAdmissionBRSWave
+                or type(scope) is not _BRSReservedChildScope
+                or scope.gateway is not self or wave.reserved_scope is not scope
+                or controller.gateway is self or controller.ledger is not self.ledger):
+            _fail("reserved_controller_mismatch")
+        controller._python_admission_assert_reserved_brs_child(wave, scope, handoff, before_claim=True)
+        plan = self._plan(scope.request, scope.memory)
+        if plan.to_dict() != scope.preview_plan.to_dict():
+            _fail("reserved_plan_mismatch")
+        NativeRSISolverGateway.bind_python_admission_controller(self, controller)
+        self._assert_ledger()
+        controller._python_admission_assert_reserved_brs_child(wave, scope, handoff, before_claim=True)
 
 
 def resolve_python_producer_episode_gateway(
@@ -327,6 +358,65 @@ def resolve_python_producer_episode_gateway(
         raise
     except (AttributeError, KeyError, IndexError, TypeError, ValueError, OSError, RSILearningError) as exc:
         raise PythonProducerRSIGatewayError("rsi_python_producer_gateway_episode_evidence_invalid") from exc
+
+
+def resolve_reserved_python_producer_episode_gateway(
+    controller, request: SolverRequest, memory: MemorySnapshot, *, expected_checkpoint_sha256: str,
+) -> PythonProducerRSISolverGateway:
+    """Read a fresh private BRS child context; no binding, claim or dispatch.
+
+    The ordinary selector above keeps its DRS restriction. Original full-wave
+    reservation and the exact retained checkpoint are independently reobserved.
+    """
+    from .rsi_brs_publication_lineage import _policy, _validate_persisted_policy
+    from .rsi_brs_serial_driver import reserved_brs_staging_mode
+    from .rsi_controller import RSILearningController
+    from .rsi_python_episode_inputs import resolve_reserved_python_rsi_episode_input_context
+
+    if (type(controller) is not RSILearningController
+            or type(controller.gateway) is not PythonProducerRSISolverGateway
+            or controller.gateway is not controller._original_producer_child_gateway
+            or type(controller.ledger) is not RSILedger
+            or controller.gateway.ledger is not controller.ledger
+            or controller.producer_child_execution is not True
+            or controller.producer_multi_episode_publication is not True
+            or controller.producer_stager is None):
+        _fail("reserved_controller_mismatch")
+    request, memory = _request_memory(request, memory)
+    root, ledger = controller.gateway, controller.ledger
+    root._assert_ledger()
+    run_id = root.producer_config.inputs.original_producer_checkpoint.run_id
+    RSILedger._assert_controller_lock(ledger, run_id)
+    with ledger.read_only_observations():
+        checkpoint = ledger.controller_checkpoint(run_id)
+        if (checkpoint is None or checkpoint[0] != expected_checkpoint_sha256
+                or not reserved_brs_staging_mode(checkpoint[1])):
+            _fail("reserved_checkpoint_conflict")
+        _validate_persisted_policy(controller, run_id=run_id, state=checkpoint[1], expected=_policy())
+        controller._validate_producer_checkpoint(run_id, checkpoint[1])
+        inputs = resolve_reserved_python_rsi_episode_input_context(
+            root.producer_config.inputs, ledger, request, memory,
+            expected_checkpoint_sha256=expected_checkpoint_sha256,
+        )
+        child = PythonProducerRSISolverGateway(PythonProducerRSIExecutionConfig(
+            root.producer_config.producer_id, ledger, inputs,
+        ))
+        child._plan(request, memory)
+        root._assert_ledger()
+        if (controller.gateway is not root or controller.ledger is not ledger
+                or ledger.controller_checkpoint(run_id) != checkpoint):
+            _fail("reserved_evidence_drift")
+        controller._validate_producer_checkpoint(run_id, checkpoint[1])
+        if controller.producer_multi_episode_publication is True:
+            # Completed reserved children replay through the native rejection /
+            # publication reader.  Retain the controller only as a read-only
+            # lineage inspection authority; it never grants a fresh claim or
+            # dispatch capability to this reconstructed gateway.
+            child.config.receipt_provider.bind_python_admission_replay_controller(controller)
+            child._assert_ledger()
+            if ledger.controller_checkpoint(run_id) != checkpoint:
+                _fail("reserved_evidence_drift")
+        return child
 
 
 def require_fixture_rsi_cli(solver_execution: object) -> None:

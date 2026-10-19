@@ -552,7 +552,9 @@ def test_new_live_dependencies_cannot_run_after_replacement(tmp_path, monkeypatc
     with _waiting(tmp_path, monkeypatch) as value:
         wire, before = _staged(value), fixture._capture(value)
         monkeypatch.setattr(brs._BRSLineageCheckpointOwner, method, _forbidden)
-        with pytest.raises(RSILearningError, match="(?:policy_drift|native_reader_globals_drift)"):
+        expected = ("^rsi_brs_publication_lineage_native_reader_binding_drift$"
+                    if method == "_history" else "(?:policy_drift|native_reader_globals_drift)")
+        with pytest.raises(RSILearningError, match=expected):
             value.owner.checkpoint_staged(wire)
         fixture._unchanged(value, before)
 

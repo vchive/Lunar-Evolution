@@ -331,11 +331,15 @@ def read_python_producer_binding_sidecar(
     }
     if values != expected_values:
         _fail("file_identity_drift")
-    try:
-        reparsed = parse_python_producer_binding(raw)
-    except PythonProducerBindingError as exc:
-        raise PythonProducerBindingStoreError("record_invalid") from exc
-    if reparsed != parsed:
+    # ``_validated_binding`` already parsed and validated the canonical bytes
+    # that produced ``expected_raw``.  The independent file read above proves
+    # that the sidecar contains those exact bytes and that its inode/stat pin
+    # is unchanged, so parsing the same bounded runtime tree a second time
+    # adds no evidence.  Reuse the validated projection; this is material for
+    # reserved serial BRS, where the owner observes the same immutable sidecar
+    # on every mailbox/checkpoint poll.  Any byte or metadata replacement has
+    # already failed closed before this point.
+    if raw != expected_raw:
         _fail("binding_drift")
     return expected_sidecar
 

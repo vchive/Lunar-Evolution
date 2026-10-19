@@ -43,6 +43,34 @@ def resolve_python_rsi_episode_input_context(
     root context remains immutable and independently validated throughout the read.
     No strategy, handoff supplier, broker, solver, or evaluator is invoked.
     """
+    return _resolve_python_rsi_episode_input_context(
+        root_context, ledger, request, memory,
+        expected_checkpoint_sha256=expected_checkpoint_sha256, mode="drs",
+    )
+
+
+def resolve_reserved_python_rsi_episode_input_context(
+    root_context: PythonRSISchedulerInputContext,
+    ledger: RSILedger,
+    request: SolverRequest,
+    memory: MemorySnapshot,
+    *,
+    expected_checkpoint_sha256: str,
+) -> PythonRSISchedulerInputContext:
+    """Read one privately staged original BRS child under its existing run lease.
+
+    This separate read-only entry preserves the public resolver's DRS restriction.
+    It does not bind a controller, claim an episode or authorize execution.
+    """
+    return _resolve_python_rsi_episode_input_context(
+        root_context, ledger, request, memory,
+        expected_checkpoint_sha256=expected_checkpoint_sha256, mode="brs",
+    )
+
+
+def _resolve_python_rsi_episode_input_context(
+    root_context, ledger, request, memory, *, expected_checkpoint_sha256, mode,
+):
     # Exact typed/pure gates run before SQLite and filesystem observations.
     native, root_sidecar = _context(root_context)
     supplied_request, supplied_memory = request, memory
@@ -65,8 +93,33 @@ def resolve_python_rsi_episode_input_context(
             if checkpoint is None or checkpoint[0] != expected_checkpoint_sha256:
                 _fail("checkpoint_conflict")
             state = checkpoint[1]
-            if state.get("mode") != "drs":
+            if state.get("mode") != mode:
                 _fail("mode_invalid")
+            if mode == "brs":
+                from .rsi_brs_reserved_reservation import (
+                    read_reserved_brs_finalization_reservation,
+                    read_reserved_brs_reservation,
+                )
+                from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+                if not reserved_brs_staging_mode(state):
+                    _fail("mode_invalid")
+                plan = state["plan"]
+                domain = tuple(f"{run_id}-practice-{plan['wave']}-{index}"
+                               for index in range(len(plan["practices"])))
+                reservation_reader = (
+                    read_reserved_brs_finalization_reservation
+                    if (state.get("status") == "completed"
+                        and set(state.get("executions", {})) == set(domain))
+                    else read_reserved_brs_reservation
+                )
+                original = reservation_reader(
+                    ledger, run_id=run_id, episode_ids=domain,
+                    expected_checkpoint_sha256=expected_checkpoint_sha256,
+                )
+                if (request.episode_id not in domain
+                        or memory.to_dict() != original.original_state()["root_snapshot"]):
+                    _fail("request_memory_drift")
             entry = state.get("producer_episode_staging", {}).get(request.episode_id)
             if type(entry) is not dict or entry.get("state") != "ready":
                 _fail("child_proof_not_ready")

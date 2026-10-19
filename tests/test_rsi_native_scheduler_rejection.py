@@ -104,6 +104,7 @@ def provider_fixture(tmp_path, monkeypatch):
         cancelled=None, python_handoff_after_execution=lambda *_args: None,
     )
     provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider._brs_native_binding = None
     provider.context = context
     provider._failure_ledger_identity = MappingProxyType(identity)
     provider._python_admission_controller = controller
@@ -225,6 +226,7 @@ def test_three_kind_inventory_preserves_default_and_exact_names(tmp_path, names)
     batch = tmp_path / "evolution/producer-batches/journal"
     batch.mkdir(parents=True)
     provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider._brs_native_binding = None
     provider.context = SimpleNamespace(workspace=tmp_path, intent=SimpleNamespace(journal_id="journal"))
     for name in names:
         (batch / name).write_bytes(b'{"partial":')
@@ -240,6 +242,7 @@ def test_three_kind_inventory_refuses_every_pair_without_adopting(tmp_path, pair
     batch = tmp_path / "evolution/producer-batches/journal"
     batch.mkdir(parents=True)
     provider = NativeRSISchedulerProvider.__new__(NativeRSISchedulerProvider)
+    provider._brs_native_binding = None
     provider.context = SimpleNamespace(workspace=tmp_path, intent=SimpleNamespace(journal_id="journal"))
     for name in pair:
         if kind == "partial":

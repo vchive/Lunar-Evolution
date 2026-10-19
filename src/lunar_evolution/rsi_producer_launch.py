@@ -6,6 +6,7 @@ import hashlib
 import sqlite3
 import stat
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from threading import get_ident
@@ -52,6 +53,29 @@ PRODUCER_STAGING_PROTOCOL = "lunar-rsi-producer-episode-staging-v1"
 MAX_STAGING_BINDING_BYTES = 32 * 1024
 MAX_STAGING_INPUT_BYTES = 8 * 1024
 MAX_STAGING_CHECKPOINT_BYTES = 112 * 1024
+MAX_RESERVED_STAGING_CHECKPOINT_BYTES = 128 * 1024
+
+
+def _checkpoint_maximum(state: object = None) -> int:
+    """Return the snapshot wire cap for the active staging contract.
+
+    Ordinary DRS staging remains pinned to the historical 112 KiB limit.  The
+    original private reserved BRS serial composition already pins a separate
+    128 KiB checkpoint contract, so only complete controller snapshots may use
+    that larger bound.  Child DTOs (requests, bindings, ready evidence) keep
+    their narrower limits regardless of mode.
+    """
+    if type(state) is dict:
+        try:
+            from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+            if reserved_brs_staging_mode(state):
+                return MAX_RESERVED_STAGING_CHECKPOINT_BYTES
+        except (ImportError, AttributeError, TypeError, ValueError):
+            # A malformed or partially initialized state must take the ordinary
+            # conservative path; the authoritative BRS gate runs separately.
+            pass
+    return MAX_STAGING_CHECKPOINT_BYTES
 
 
 def _fail(reason: str) -> NoReturn:
@@ -146,6 +170,14 @@ class PythonProducerEpisodeStager:
         self._artifact = config.artifact
         self._root_sidecar = config.root_sidecar
         self._projection = self._config_wire()
+        self._config_signature = self._signature()
+        # The staging policy's component fingerprint walks the immutable runtime
+        # manifest and dependency graph.  Admission checks may call ``policy``
+        # repeatedly while a mailbox is in flight; retain that exact digest for
+        # this immutable stager instance while `_assert_config` continues to
+        # reject mutable configuration drift.
+        self._policy_fingerprint: str | None = None
+        self._fingerprint_config_cache: dict[str, Any] | None = None
 
     def _config_wire(self) -> bytes:
         self.config.__post_init__()
@@ -168,12 +200,21 @@ class PythonProducerEpisodeStager:
         if (self.config is not self._original_config
                 or self.config.attestation_supplier is not self._supplier
                 or self.config.artifact is not self._artifact or self.config.root_sidecar is not self._root_sidecar
-                or self._config_wire() != self._projection):
+                or self._signature() != self._config_signature):
             _fail("configuration_drift")
+
+    def _signature(self) -> tuple[object, ...]:
+        """Cheap immutable-config identity used on hot admission checks."""
+        config = self.config
+        return (
+            config.workspace, id(config.root_sidecar), id(config.artifact),
+            id(config.attestation_supplier), config.max_episodes,
+        )
 
     def rsi_fingerprint_config(self) -> dict[str, Any]:
         self._assert_config()
-        return {
+        if self._fingerprint_config_cache is None:
+            self._fingerprint_config_cache = {
             "protocol": PRODUCER_STAGING_PROTOCOL,
             "configuration_sha256": hashlib.sha256(self._projection).hexdigest(),
             "production_admission": False,
@@ -208,12 +249,18 @@ class PythonProducerEpisodeStager:
                 "ready_capsule_budget": component_fingerprint(retained_ready_capsule_bytes),
                 "retained_evidence_budget": component_fingerprint(retained_publication_evidence_bytes),
             },
-        }
+            }
+        return deepcopy(self._fingerprint_config_cache)
 
     def policy(self) -> dict[str, Any]:
+        self._assert_config()
+        fingerprint = self._policy_fingerprint
+        if fingerprint is None:
+            fingerprint = component_fingerprint(self)
+            self._policy_fingerprint = fingerprint
         return {
             "protocol": PRODUCER_STAGING_PROTOCOL,
-            "fingerprint": component_fingerprint(self),
+            "fingerprint": fingerprint,
             "root_checkpoint_sha256": _sha(PythonProducerCheckpointBinding.from_sidecar(self.config.root_sidecar).to_dict()),
             "production_admission": False,
         }
@@ -288,7 +335,8 @@ class PythonProducerEpisodeStager:
         pending = 0 if episode.episode_id in state.get("intents", {}) else (
             len(_wire({"episode": episode_wire, "request": request.to_dict()})) + 4096
         )
-        if len(_wire(state)) + pending + growth + 512 > MAX_STAGING_CHECKPOINT_BYTES:
+        checkpoint_maximum = _checkpoint_maximum(state)
+        if len(_wire(state, checkpoint_maximum)) + pending + growth + 512 > checkpoint_maximum:
             _fail("checkpoint_capacity_exhausted")
         return growth
 
@@ -362,8 +410,10 @@ class PythonProducerEpisodeStager:
         if not stat.S_ISREG(ledger_stat.st_mode) or ledger_stat.st_nlink != 1:
             _fail("owner_required")
         ledger_identity = ledger_stat.st_dev, ledger_stat.st_ino
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
         if (controller.producer_stager is not self or not controller.ledger.controller_lock_held(state["run_id"])
-                or state.get("mode") != "drs"):
+                or (state.get("mode") != "drs" and not reserved_brs_staging_mode(state))):
             _fail("owner_required")
         checkpoint = controller.ledger.controller_checkpoint(state["run_id"])
         if checkpoint is None or checkpoint != (expected_checkpoint_sha256, state):
@@ -516,6 +566,14 @@ class PythonProducerEpisodeStager:
         if (state.get("producer_multi_episode_publication") is not publication
                 or controller.producer_multi_episode_publication is not (publication is True)):
             _fail("original_mode_mismatch")
+        # A durable state already carries the policy digest captured when the
+        # stager was created.  Seed the immutable in-process cache from that
+        # digest before walking historical entries; the full run fingerprint
+        # gate independently verifies source/code drift at admission boundaries.
+        persisted_policy = state.get("producer_staging_policy") if type(state) is dict else None
+        if (self._policy_fingerprint is None and type(persisted_policy) is dict
+                and type(persisted_policy.get("fingerprint")) is str):
+            self._policy_fingerprint = persisted_policy["fingerprint"]
         policy = self.policy()
         if original.payload.get("producer_staging_policy") != policy or state.get("producer_staging_policy") != policy:
             _fail("original_mode_mismatch")
@@ -536,7 +594,7 @@ class PythonProducerEpisodeStager:
             entries = snapshot.get("producer_episode_staging", {})
             if type(entries) is not dict or len(entries) > self.config.max_episodes or not retained.keys() <= entries.keys():
                 _fail("history_missing")
-            _wire(snapshot)
+            _wire(snapshot, _checkpoint_maximum(snapshot))
             retained_publication_evidence_bytes(snapshot)
             for episode_id, entry in entries.items():
                 if (type(entry) is not dict or set(entry) != {"state", "identity", "ready", "failure_code"}

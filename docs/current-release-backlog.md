@@ -1,4 +1,125 @@
-# Current release backlog — 2026-10-17
+## 2026-10-19 当前执行清单
+
+当前开发按以下出口推进；组件测试通过、最终来源验收、完整CI与main合入分别记录。
+
+| 优先级 | 连续交付结果 | 当前状态 |
+| --- | --- | --- |
+| P0 | 原rejected owner自然ready/ACK | PR136最终`c445a612`同库存1,079项在macOS/Linux各全过，独立source/import/raw复核通过，PR已ready；完整CI/main待完成。 |
+| P0 | 单原始ordinal拒绝到root结算/owner退出与明确恢复 | `codex/brs-rejected-lifecycle`已接通自然拒绝/ACK/mailbox/failed result与原子root结算；修复live恢复重入flock。14项集成场景、组件兼容、独立复核及完整CI仍待最终同源结果。 |
+| P0 | 原整wave reservation下的serial continuation | 工作树已接入 reserved projection/prefix、全域 ledger/reservation 观察、fresh child preparation exchange、native provider/completion、serial driver 和 finalization readers；组件焦点证据仍不等于集成验收。早先的 material path/pin gate 已通过严格 `rejections/<terminal-id>.json` 映射修复（pure validator 70 项及新增 5 项回归通过），但当前最小 `rejected -> rejected` 双 child 已推进到 `rsi_brs_reserved_serial_settled_transport_missing`，仍未完成 owner admission/mailbox handoff。自然 outcome 矩阵、fresh resume、最终来源验收和 CI 仍待完成。 |
+| P1 | 实际sealed Python runtime、一个项目再第二个、生产CLI | source/installation/build/startup/input/handoff比较器和adapter/exporter已有；真实输入、实物构建/运行证据、项目lifecycle及CLI验收仍未完成。 |
+| P2 | 多机ownership、外部认证、分布式调度和remote evaluator | 后置，不进入当前开发批次。 |
+
+PR136接受材料已封存在主checkout ignored
+`.lunar-evolution/validation/rejection-staged-ack-20261018-llo7u7ne/`。
+当前行为开发的失败和固定源码副本记录在
+`.lunar-evolution/validation/rejected-lifecycle-dev-20261018/`，不得混算为最终验收。
+公开native BRS、`production_admission`、`online_publication`保持关闭。
+
+# Current release backlog — 2026-10-18
+
+## 当前后继：原 BRS owner 拒绝 C1
+
+- P0：PR123–127完整CI及依赖顺序合入。PR127冻结`f0e39b9`的相同302项scoped
+  双平台与独审接受，PR已ready；完整CI最近各33项排队，仍未合入main。
+- P1本轮：仅原owner ordinal-zero拒绝C1，显式fresh schema、完整native material
+  与create-only descriptor、原scope/CAS/readback、完整retained容量和future P预留。
+  首次`986d9b1`scope因双候选fixture receipt复用及lazy reader alias恢复缺失失败；
+  原始材料保留NOT_ACCEPTED，test-only后继重新冻结回归。
+  见 [rejection-owner-c1.md](../specs/196-brs-owner-worker-handoff/rejection-owner-c1.md)。
+- P1后续：同owner P/C2与拒绝lifecycle；root execution settlement/owner retirement；
+  已预留整wave预算的serial接线；真实source/toolchain/sealed runtime、
+  OpenEvolve/Shinka lifecycle与生产CLI/Linux中断验收。
+- P2继续后置。public native BRS、production admission、online publication仍关闭。
+
+当前普通consume不会结算root execution；detached successor会再次增加计数，不能
+直接接到已预留整wave的controller。本轮开发状态不代替其后独立冻结验收。
+
+## 当前后继：独立终态恢复证据
+
+- P0：PR123–126 的完整 CI 和依赖顺序合入。PR126 冻结 `74a3f52` 已通过
+  macOS/Linux 各相同561项 scoped 验证和独审；最新完整33项 CI仍全部排队。
+- P1（本轮）：独立 callback/worker terminal 持久观察、callback 前 durable ACK、
+  只读独立证据组合，以及显式 fresh-compose + 同事务 source pins consume。
+  契约见 [terminal-recovery-evidence.md](../specs/196-brs-owner-worker-handoff/terminal-recovery-evidence.md)。
+  代码和组件回归已完成；冻结来源的双平台验收及独审单独记录在对应PR和ignored
+  validation原始材料。本提交不提前宣称完整CI或最终验收通过。
+- P1（后续）：原生 all-rejected C1/P/C2、serial successor、真实 source/toolchain/
+  sealed runtime、OpenEvolve/Shinka lifecycle和生产CLI/Linux中断验收。
+- P2：外部认证、多机ownership、分布式服务和远程evaluator继续后置。
+
+仅本地 inert/provider-free fixtures。原unknown capture不能补录升级；传输、callback、
+worker退出、原producer cleanup和自然episode终态分别取证。公开native BRS、
+production admission和online publication继续关闭。
+
+下列各节为此前切片的历史记录。
+
+## 当前后继：持久化恢复观察
+
+- P0：PR123/124/125 的完整 CI 与依赖顺序合入。三个候选分别有各自冻结来源的
+  双平台 scoped 验收；PR125 `1e7f6cf` 的相同213项用例、静态检查和独审通过，
+  最近33项 Actions 仍排队。不得用 scoped 结果代替完整 CI。
+- P1（本轮）：原 owner 的 mailbox 四阶段观察持久化、原 native producer 记录绑定、
+  重建 ledger 的只读核验。契约见 [durable-recovery-evidence.md](../specs/196-brs-owner-worker-handoff/durable-recovery-evidence.md)。
+  side namespace 不推进原 root 或消费 obligation；原进程材料缺失固定 unknown。
+- P1（后续）：自动终态证据组合/consume、serial successor 在线组合，以及真实
+  source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle、生产 CLI/Linux 中断验收。
+  transport receipt、detached callback 或旧 producer cleanup 均不能代替 episode 终态。
+- P2：外部 worker 认证、多机 ownership、分布式 scheduler/service 与远程 evaluator
+  后置，不作为当前单机正确性的开发前置。
+
+当前分支 `codex/brs-durable-recovery-evidence` 的实现已完成，最终冻结双平台验收仍待完成；仅本地
+inert/provider-free fixture，公开 native BRS、production admission 与 online publication
+继续关闭。下列各节保留各候选当时的记录。
+
+## 当前后继：完整 mailbox result envelope 组合
+
+PR124 最终 `56745c2` 已获 macOS/Linux 各288项相同 scoped fixture 回归和独审通过；
+PR123/124 的完整33-job CI仍排队，尚未合入 main。当前 `codex/brs-exact-result-composition`
+在该冻结来源上接通原 owner mailbox → 既有 exact result envelope → 原 worker one-shot
+callback。契约见 [Feature196](../specs/196-brs-owner-worker-handoff/exact-mailbox-result-composition.md)。
+
+本轮保留原native all-rejected refusal，不伪造legacy ready ACK/selected-return。callback只
+处理detached观察，不写episode/result，不证明process cleanup，也不消费恢复义务。实现与
+最终冻结验收正在进行；自动终态恢复仍需独立证据observer和durable capture，真实runtime/
+OpenEvolve/Shinka lifecycle/生产CLI验收继续开放。P2继续后置。
+
+
+以下为此前切片的历史记录，不覆盖上述当前状态。
+
+## 此前切片：原 owner mailbox 的恢复义务登记
+
+`codex/brs-owner-lifecycle` 基于 PR123 的 `96a7394`，开发原 owner 的一次性
+`retain_reconcile_obligation`，并由私有 mailbox composition 在 publication 事务前调用。
+只追加精确 obligation；同事务校验原 run/episode/claim pins，相邻读回与原 source/control
+复验通过后才同步 owner/wave 游标。未知结果保留义务并 poison 原 owner，不重试或刷新 capture。
+
+契约见 [Feature196](../specs/196-brs-owner-worker-handoff/owner-mailbox-reconcile-registration.md)。
+本轮回归、独审与完整 CI 尚待最终来源验收。PR123 已有双平台各374项 scoped 本地通过，
+其33-job完整 CI仍排队，尚未合入 main。
+
+本切片只覆盖 mailbox publication 边界，producer preparation 已发生；它不自动消费
+terminal obligation，不覆盖首次 producer launch，也不启用 public native BRS。自动终态恢复、
+真实 source/toolchain/sealed runtime、OpenEvolve/Shinka lifecycle、生产 CLI/Linux 中断矩阵
+继续为 P1；P2 继续后置。
+
+## 当前候选：BRS recovery correctness
+
+`codex/p1-recovery-final` 修复三项现有行为：未消费 obligation 阻止默认
+resume/drive/finalization，`rsi inspect` 正确报告 reconcile，selected terminal consume
+必须与实际 ledger/native claim/result 一致。注册验证原 handoff 的 owner thread/head/state，
+拒绝无关后续 checkpoint 上的重放；多 obligation 保持各自 capture 并独立消费。
+终态校验与删除通过同一 SQLite 事务完成；批量 API 仍是逐项提交，失败后先读取剩余记录。
+契约与具体任务见 [Feature196](../specs/196-brs-owner-worker-handoff/tasks.md)。
+
+- P0：完成该候选的统一 macOS/Linux focused 回归、静态检查、独立审查及所需 GitHub CI，
+  全部通过后合入 main。排队或取消的旧 run 不作为完整通过证据。
+- P1：显式 API 尚未成为自动 selected-owner recovery。真实 source/toolchain/build closure、
+  sealed runtime、OpenEvolve/Shinka project lifecycle、生产 CLI 和 Linux 中断矩阵仍未验收；
+  不以 fixture 或已有 wheel/C build 代替真实 Python runtime。
+- P2：远程 evaluator、外部 worker 认证、多机 ownership 和分布式服务继续后置。
+
+以下是历史批次记录，不覆盖本节的候选状态和剩余边界。
 
 ## 2026-10-17：controller explicit reconcile resume facade 与 runtime gap audit（本轮完成）
 

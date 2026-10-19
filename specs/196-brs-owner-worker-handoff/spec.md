@@ -33,6 +33,23 @@ It introduces no SQL table, ledger row kind, wire protocol, RPC, scheduler servi
 remote worker, remote evaluator, or production admission. `max_workers>1`, multiple
 native children in one shared workspace, and distributed ownership remain later work.
 
+### Current reserved-wave serial extension
+
+The private reserved-wave serial extension is implemented in the current working
+tree as bounded projection/prefix and ledger/reservation readers, fresh preparation
+exchange, native provider/completion, serial driver, rejection readers and governed
+finalization readers. Focused component checks exist, but the natural two-child
+`rejected -> rejected` owner admission/mailbox integration is not accepted. The
+earlier local run stopped at
+`rsi_brs_reserved_prefix_material_path_invalid` while validating the rejection
+evidence material path/pin contract; the strict path/pin mapping is now repaired
+and its focused validator regressions pass. The latest integrated run advances to
+`rsi_brs_reserved_serial_settled_transport_missing`, which remains open until the
+owner/settled-transport contract is repaired and the complete V01-V10 matrix plus
+final-source gates pass. The extension remains private; public native BRS,
+production admission, remote workers/evaluators, distributed ownership and P2
+service paths stay closed.
+
 ## Authority model
 
 The **wave owner** is the controller thread that created the fresh run and holds the
