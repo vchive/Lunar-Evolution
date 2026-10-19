@@ -1,12 +1,19 @@
 ## 2026-10-19 当前执行清单（PR138/139 已合入）
 
+远端 `main` 当前为 `211cfc5`（PR150），已合入 Python producer receipt 的退出、清理和
+流摘要证据修复，并保留 `production_admission=false` 与 `online_publication=false`。
+PR148（runtime startup CLI，`38df27d`）和 PR151（Python process adapter，`d441bd7`）
+已创建并等待完整 33-job CI；在 CI 全部通过、原始产物与源码审计完成前，不将它们写成已合入。
+PR151 只把已验证 binding/sidecar 的 Python 过程接到既有 native process runner，仍不授予
+sealed runtime、评测准入或生产发布。
+
 PR138（`af1cc62`）已将 reserved BRS serial owner/ledger/terminal/finalization 链路合入
 `main`，PR139（`b51d50d`）同步了交接和发布边界。当前 P0 的本地 provider-free
 serial 行为已完成；下面的旧表保留历史批次，不再把它们描述为当前未完成项。
 
 | 优先级 | 当前剩余出口 | 状态 |
 | --- | --- | --- |
-| P1 | Feature189/193 真实 CPython、toolchain/static ELF、sealed runtime 和 Linux lifecycle | 已完成一次真实 source/archive observation、musl configure 和核心 `make python` 探针；26,673,400-byte static ELF 仍是 stock getpath/frozen image，空环境启动在 `encodings` 前失败；libffi/optional-module closure、签名、sealed runtime 和 lifecycle 仍开放，见 [real build probe](../specs/189-static-python-fixture/real-build-probe.md) |
+| P1 | Feature189/193 真实 CPython、toolchain/static ELF、sealed runtime 和 Linux lifecycle | 已完成真实 source/archive observation、PIC libffi/zlib 和完整配置模块构建；静态 ELF 仍是 stock getpath/frozen image，空环境启动在 `encodings` 前失败，`_uuid` 与其他可选依赖仍开放；签名、sealed runtime 和 lifecycle 仍开放，见 [real build probe](../specs/189-static-python-fixture/real-build-probe.md) |
 | P1 | Feature191/195 OpenEvolve/Shinka project lifecycle、生产 RSI CLI/Linux acceptance | adapter/exporter 和 provider-free contract 已有，真实 project entrypoint、取消/清理、结果归属和 CLI 验收仍开放 |
 | P2 | remote evaluator、外部 worker 认证、多机 ownership、distributed scheduler/service API | 后置，不进入当前单机正确性批次 |
 
