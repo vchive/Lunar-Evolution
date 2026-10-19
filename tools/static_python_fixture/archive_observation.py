@@ -669,6 +669,10 @@ def _observe_archive_snapshot(
             # the path to the immediately following header and never expose a
             # synthetic metadata pathname in the extraction manifest.
             _raw_path(tar_bytes, member)
+            if member.type == tarfile.XHDTYPE and (
+                    type(member.mode) is not int or member.mode & ~0o777
+            ):
+                _fail("member_mode_invalid")
             metadata_path = (_pax_path(tar_bytes, member)
                              if member.type == tarfile.XHDTYPE
                              else _gnu_long_path(tar_bytes, member))
