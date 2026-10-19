@@ -8,6 +8,7 @@ import json
 
 import pytest
 
+import lunar_evolution as package
 from lunar_evolution import static_python_build_probe as probe
 
 
@@ -75,6 +76,15 @@ def test_valid_probe_is_canonical_and_detached():
     assert result.to_json() == json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     with pytest.raises(AttributeError):
         result.build_status = "blocked"  # type: ignore[misc]
+
+
+def test_probe_parser_is_part_of_the_public_package_surface():
+    assert package.BUILD_PROBE_SCHEMA == probe.BUILD_PROBE_SCHEMA
+    assert package.MAX_BUILD_PROBE_BYTES == probe.MAX_BUILD_PROBE_BYTES
+    assert package.MAX_STATIC_IMAGE_BYTES == probe.MAX_STATIC_IMAGE_BYTES
+    assert package.StaticPythonBuildProbe is probe.StaticPythonBuildProbe
+    assert package.StaticPythonBuildProbeError is probe.StaticPythonBuildProbeError
+    assert package.parse_static_python_build_probe is probe.parse_static_python_build_probe
 
 
 def test_no_artifact_and_not_run_are_explicit_valid_states():
