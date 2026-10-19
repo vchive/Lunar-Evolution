@@ -680,10 +680,13 @@ def run_python_producer_process(
         parsed.run_id != binding.run_id
         or parsed.journal_id != binding.intent.journal_id
         or parsed.launch_id != binding.intent.launch_id
+        or parsed.parent_task_id != binding.parent_task_id
+        or parsed.task_id != binding.task_id
         or parsed.intent_sha256 != binding.intent_sha256
         or parsed.attestation_sha256 != binding.attestation_sha256
         or parsed.execution_snapshot_sha256 != binding.interpreter_sha256
         or parsed.execution_snapshot_size != binding.interpreter.size
+        or parsed.request_timeout_seconds != binding.intent.request_timeout_seconds
         or parsed.max_requests != binding.request_budget
         or parsed.output_max_bytes != binding.output_max_bytes
         or parsed.wall_timeout_seconds != binding.wall_timeout_seconds
