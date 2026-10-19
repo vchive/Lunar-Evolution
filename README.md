@@ -10,9 +10,10 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 
 当前主线是单机可靠执行和 RSI（递归学习）控制闭环。RSI 改进候选程序与经验证的任务记忆；模型权重训练和修改 Lunar 自身代码不在当前主线内。RSI producer 路径保持 `production_admission=false`，真实 solver campaign 仍需独立验收。
 
-截至 2026-10-19，`main` 已包含 PR150 的 Python producer receipt 证据修复（`211cfc5`）。
-Feature189 的构建探针 receipt 与静态输入观察也已在主线；PR148 的 runtime startup CLI
-和 PR151 的 Python process adapter 正在等待各自完整 CI，尚未宣称真实 sealed runtime 或生产准入。
+截至 2026-10-20，`main` 已包含 PR153/154/155：启动失败诊断与 retained
+producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定，以及
+OpenEvolve/Shinka 项目生命周期 profile preflight。它们都只提供本地、只读或
+provider-free plumbing；真实 sealed runtime、producer campaign 和生产准入仍未开放。
 
 [本地试跑](#五分钟本地试跑) · [RSI 示例](#rsi-provider-free-回归) · [执行链路](#执行链路) · [架构说明](docs/architecture.md) · [剩余工作与验收条件](docs/current-release-backlog.md)
 
@@ -31,6 +32,8 @@ Feature189 的构建探针 receipt 与静态输入观察也已在主线；PR148 
 | Feature189 static-Python build probe receipt | ✅ 已合入 | `lunar-static-python-build-probe-v1` 只保存真实构建、ELF 和启动观察；5090gpu 已完成带 PIC libffi/zlib 的完整配置模块构建，但空环境启动仍在 `encodings` 前失败，receipt 不授予 sealed runtime 或生产准入。 |
 | static Python 启动失败诊断 | 🧪 诊断工具已接入 | [PR153](https://github.com/vchive/Lunar-Evolution/pull/153) 增加 bounded stderr 摘要与固定失败分类；只保留 digest/size，`runtime_execution_performed=false`、`production_admission=false`，不能替代 sealed startup 验收。 |
 | retained producer-process 生命周期 CLI | 🧪 本地 plumbing 已接入 | [PR153](https://github.com/vchive/Lunar-Evolution/pull/153) 提供只读 `producer-process inspect` 与显式确认的 `producer-process cleanup --confirm`；沿用 owner/recovery gate，仍保持 `production_admission=false`，不启动真实 producer 或 campaign。详见 [`docs/local-producer-process-cli.md`](docs/local-producer-process-cli.md)。 |
+| Python producer task/timeout binding | ✅ 已合入 | PR154 将 `parent_task_id`、`task_id` 和 `request_timeout_seconds` 绑定到 terminal receipt；漂移返回 `receipt_binding_drift`，focused regression 保持 provider-free。 |
+| project lifecycle profile preflight | 🧪 只读门禁已合入 | PR155 校验 source/runtime/toolchain/request/result 摘要及固定 bootstrap、cancel、resume 模式；有效 profile 仍返回 `blocked/runtime_acceptance_required`，不启动项目、evaluator 或 RSI ledger。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
@@ -221,8 +224,8 @@ Linux / SSH 服务器的独立环境、六个普通分片加三个重用例的�
 
 ### P1：多 child BRS 与真实本地运行时
 
-- 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。当前 5090gpu 只完成真实 source/archive observation、musl configure 和核心 `make python` 探针；静态 ELF 的空环境启动在 `encodings` 前失败，libffi/optional-module closure、sealed runtime 和 lifecycle 仍开放。
-- 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。当前 `rsi run` 默认保持 provider-free fixture，`rsi replay` 和 Shinka exporter 只消费已完成且有独立 pin 的 retained material。
+- 独立核验 Python source/toolchain/runtime，完成 sealed startup、loader negative tests、owner/lifecycle 和 Linux acceptance matrix。当前 5090gpu 的原始静态 CPython 在 `encodings` 前失败；冻结 `encodings` 的实验镜像可以空启动但仍缺少完整 stdlib closure，sealed runtime 和 lifecycle 仍开放。
+- 基于已有 adapter/exporter 接通实际 OpenEvolve/Shinka project lifecycle、cancel/cleanup、producer admission 和生产用 opt-in CLI。PR155 目前只提供只读 profile preflight；`rsi run` 默认保持 provider-free fixture，真实 project entrypoint 仍需独立验收。
 - 保留 provider-free 默认值；producer score 仍须经独立 verifier/evaluation 才能产生官方结论。
 
 ### P2：后置能力
