@@ -72,5 +72,41 @@ binary therefore cannot close the runtime gate. The next implementation slice
 must provide the reviewed isolated `PyConfig`, finite frozen modules, loader
 closure, and startup receipt before any production admission claim.
 
+## Core-only continuation (2026-10-19)
+
+After the zlib probe, a fresh build directory at
+`/tmp/lunar-toolchains/build-core-noffi` was configured with the pinned Zig
+compiler, the host-local musl zlib archive (`zlib-1.3.1`, SHA-256
+`9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23`) and an
+explicitly untrusted/absent libffi include and library prefix. The command only
+requested CPython's `python` target; it did not claim that optional extension
+discovery was closed. CPython still reported `_ctypes= yes` because the stock
+configure path can discover the host `pkg-config`/libffi metadata even when the
+requested musl prefix is empty. A full `make` must therefore remain blocked at
+the `_ctypes` extension until a separately pinned musl libffi input is either
+provided or the reviewed module manifest disables it.
+
+The core `make -j8 python CFLAGS_NODIST=-Wno-error=date-time` target completed
+and produced a 26,673,400-byte ELF with SHA-256
+`bfc4dbffc882d6f69540823cf32eef3994585c74d994b26677c3e61e17467a69`. Read-only
+inspection observed ELF64, little-endian, `ET_EXEC`, x86-64, nine program
+headers, no `PT_INTERP`, and no dynamic section. These are detached format
+observations only; the image still contains stock getpath/frozen tables and has
+not passed the Feature189 installation descriptor or static-link closure gate.
+
+Running that binary in an empty environment failed before user code with:
+
+```text
+Fatal Python error: Failed to import encodings module
+Python runtime state: core initialized
+ModuleNotFoundError: No module named 'encodings'
+```
+
+This preserves the runtime failure as evidence. It confirms that a successful
+stock static link is not a sealed runtime. The next implementation slice remains
+the same-source finite frozen inventory, isolated `PyConfig`/getpath binding,
+loader-negative cases and native lifecycle receipt. No build, runtime or
+production-admission claim is promoted by this continuation.
+
 The archive PAX compatibility change is committed separately from this probe;
 the strict default remains unchanged for inert and untrusted inputs.
