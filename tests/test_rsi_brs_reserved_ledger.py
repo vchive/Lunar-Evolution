@@ -1,6 +1,8 @@
 """Real SQLite/natural gateway observations without producers or evaluators."""
 from __future__ import annotations
 
+import json
+import sqlite3
 from copy import deepcopy
 from dataclasses import replace
 
@@ -49,6 +51,39 @@ def _read(ledger, ids, head):
 def _plan(request, memory):
     return replace(plan_factory(request, memory), run_id="reserved", task_id=request.episode_id,
                    journal_id=request.episode_id + "-journal", plan_sha256=None)
+
+
+def test_controller_checkpoint_history_revalidates_every_read(tmp_path, monkeypatch):
+    ledger, _ids, _requests, _state, _head = _setup(tmp_path)
+    original = ledger._controller_checkpoint_history_tx
+    calls = []
+
+    def counted(connection, run_id):
+        calls.append(run_id)
+        return original(connection, run_id)
+
+    monkeypatch.setattr(ledger, "_controller_checkpoint_history_tx", counted)
+    first = ledger.controller_checkpoint_history("reserved")
+    first[0][1]["caller_mutation"] = True
+    second = ledger.controller_checkpoint_history("reserved")
+    assert len(calls) == 2
+    assert "caller_mutation" not in second[0][1]
+
+
+def test_oversized_controller_journal_payload_uses_reserved_capacity_error(tmp_path):
+    ledger, ids, _requests, _state, head = _setup(tmp_path)
+    payload = json.dumps({"padding": "x" * (128 * 1024)}, separators=(",", ":"))
+    with sqlite3.connect(ledger.database) as connection:
+        connection.execute(
+            "UPDATE rsi_controller_journal SET payload = ? WHERE run_id = ? AND revision = 0",
+            (payload, "reserved"),
+        )
+    with ledger.controller_lock("reserved"), pytest.raises(
+        RSILearningError, match="rsi_brs_reserved_ledger_capacity_exceeded",
+    ):
+        read_reserved_brs_ledger(
+            ledger, run_id="reserved", episode_ids=ids, expected_checkpoint_sha256=head,
+        )
 
 
 def test_whole_original_domain_read_is_immutable_and_leaves_six_tables_unchanged(tmp_path):

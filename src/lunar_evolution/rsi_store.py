@@ -174,6 +174,12 @@ class RSILedger:
         self.database = Path(database).expanduser().resolve()
         self._controller_guards: dict[str, tuple[int, int, Path, str, int]] = {}
         self._controller_guards_lock = threading.RLock()
+        # History readers repeatedly verify the same immutable journal rows while
+        # a reserved BRS child is being settled.  Keep a small process-local cache
+        # keyed by the exact persisted payload bytes and its parent.  The canonical
+        # digest algorithm remains unchanged; a changed row, parent, revision, or
+        # run always misses this cache and is fully re-encoded.
+        self._checkpoint_digest_cache: dict[tuple[str, int, str | None, int, bytes], str] = {}
         self._observation_scope = threading.local()
         self.initialize()
 
@@ -350,6 +356,35 @@ class RSILedger:
             "payload": dict(payload),
         }, maximum=8 * 1024 * 1024)).hexdigest()
 
+    def _checkpoint_digest_cached(
+        self,
+        run_id: str,
+        revision: int,
+        parent_sha256: str | None,
+        payload: Mapping[str, Any],
+        *,
+        persisted_payload: str | None = None,
+    ) -> str:
+        """Verify an immutable checkpoint without re-encoding it on every read.
+
+        ``persisted_payload`` is the exact SQLite text.  It is included in the key
+        through a SHA-256 plus length so the cache cannot survive any byte-level
+        row replacement.  The digest is still produced by ``_checkpoint_digest``
+        on a miss, preserving the existing canonical JSON contract.
+        """
+        if type(persisted_payload) is not str:
+            return self._checkpoint_digest(run_id, revision, parent_sha256, payload)
+        raw = persisted_payload.encode("utf-8")
+        key = (run_id, revision, parent_sha256, len(raw), hashlib.sha256(raw).digest())
+        cached = self._checkpoint_digest_cache.get(key)
+        if cached is not None:
+            return cached
+        digest = self._checkpoint_digest(run_id, revision, parent_sha256, payload)
+        if len(self._checkpoint_digest_cache) >= 128:
+            self._checkpoint_digest_cache.clear()
+        self._checkpoint_digest_cache[key] = digest
+        return digest
+
     @staticmethod
     def _checkpoint_python_references(state: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         try:
@@ -397,7 +432,9 @@ class RSILedger:
             if any(key not in current_refs or canonical_json(current_refs[key], maximum=512 * 1024)
                    != canonical_json(value, maximum=512 * 1024) for key, value in references.items()):
                 raise RSILearningError("rsi_python_admission_reference_history_drift")
-            digest = self._checkpoint_digest(run_id, ordinal, parent, payload)
+            digest = self._checkpoint_digest_cached(
+                run_id, ordinal, parent, payload, persisted_payload=row["payload"],
+            )
             if row["revision"] != ordinal or row["parent_sha256"] != parent or row["checkpoint_sha256"] != digest:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
             references = current_refs
@@ -602,6 +639,9 @@ class RSILedger:
         """Validate the controller-owned staging state without opening another snapshot."""
         if not history:
             raise RSILearningError("rsi_python_admission_checkpoint_missing")
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
+
         policy = history[0][1].get("producer_staging_policy")
         staged = policy is not None or "producer_episode_staging" in history[0][1]
         if not staged:
@@ -619,9 +659,6 @@ class RSILedger:
         if capsule_mode is not None and type(capsule_mode) is not bool:
             raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         states_by_digest = {digest: state for digest, state in history}
-        from .rsi_brs_serial_driver import reserved_brs_staging_mode
-        from .rsi_producer_staging_capsule import retained_publication_evidence_bytes
-
         original_state = history[0][1]
         serial = reserved_brs_staging_mode(original_state)
         for digest, state in history:
@@ -1591,7 +1628,9 @@ class RSILedger:
                 state = json.loads(row["payload"])
                 if type(state) is not dict:
                     raise ValueError("checkpoint is not an object")
-                digest = self._checkpoint_digest(admission.run_id, ordinal, parent, state)
+                digest = self._checkpoint_digest_cached(
+                    admission.run_id, ordinal, parent, state, persisted_payload=row["payload"],
+                )
                 budget = RSIRunBudget.load(state["budget_state"])
                 budget.assert_matches(original.payload["budget"])
                 if canonical_json(budget.to_dict()["planned"]) != canonical_json(planned_budget):

@@ -933,11 +933,21 @@ class BRSOwnerTerminalLifecycle:
                      "thread_id": f"thread-{id(self._thread):x}"}
             value["binding_sha256"] = _digest(value, "binding_sha256")
             self._binding = parse_brs_terminal_binding(value)
-            while not Future.done(self._future):
-                check()
-                if not self._drain():
-                    with self._exchange.condition:
-                        self._exchange.condition.wait(.05)
+            # The worker has already consumed the owner response; while the
+            # original thread finishes its terminal re-observation, the owner
+            # loop repeatedly calls ``_drain``.  Rebuilding the complete policy
+            # graph on every 50ms poll can monopolize the interpreter and delay
+            # that worker.  Share one thread-local policy observation for this
+            # bounded join loop; the scope is discarded before resume or any
+            # later lifecycle operation.
+            from .rsi_brs_publication_lineage import _policy_observation_scope
+
+            with _policy_observation_scope():
+                while not Future.done(self._future):
+                    check()
+                    if not self._drain():
+                        with self._exchange.condition:
+                            self._exchange.condition.wait(.05)
             while self._drain():
                 pass
             BRSOwnerPublicationMailbox.close(self._mailbox)

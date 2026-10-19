@@ -61,6 +61,33 @@ def _rows(snapshot: tuple) -> dict[str, tuple[dict, ...]]:
             for (name, values), specification in zip(snapshot[4], _TABLES, strict=True)}
 
 
+def _reserved_row_size(row: object, specification: tuple) -> int:
+    """Apply the shared row shape rules under this reader's error namespace.
+
+    ``_row_size`` is shared with the older rejection-ready reader and therefore
+    reports ``rsi_brs_rejection_ready_ledger_*`` errors.  A reserved-domain read
+    must keep its own fail-closed error contract, especially when a controller
+    journal payload approaches the 128 KiB wire cap.  Do not relax that cap or
+    allow a near-cap row to cross into later semantic parsing.
+    """
+    try:
+        return _row_size(row, specification)
+    except RSILearningError as exc:
+        if str(exc).endswith("_capacity_exceeded"):
+            _fail("capacity_exceeded")
+        raise
+
+
+def _reserved_schema_size(rows: object) -> int:
+    """Keep schema-size failures in the reserved reader's error namespace."""
+    try:
+        return _schema_size(rows)
+    except RSILearningError as exc:
+        if str(exc).endswith("_capacity_exceeded"):
+            _fail("capacity_exceeded")
+        raise
+
+
 def _read_reserved_rows(path: str, *, run_id: str, episode_ids: tuple[str, ...]) -> tuple:
     """One raw snapshot, including admissions that misname an original child.
 
@@ -72,7 +99,12 @@ def _read_reserved_rows(path: str, *, run_id: str, episode_ids: tuple[str, ...])
     connection = None
     try:
         connection = sqlite3.connect(_readonly_uri(path), uri=True, timeout=30, isolation_level=None)
-        connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _MAX_BYTES)
+        # Keep SQLite's low-level allocation guard above the per-cell/per-row
+        # protocol cap.  A reserved snapshot may contain several independent
+        # bounded evidence columns in one result row; constraining SQLite's
+        # aggregate string limit to 128 KiB can raise an opaque DataError before
+        # `_row_size` can issue the protocol-specific refusal.
+        connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, _MAX_RAW_BYTES)
         connection.execute("PRAGMA query_only = ON")
         connection.execute("BEGIN")
         names = tuple(item[0] for item in _TABLES)
@@ -81,7 +113,8 @@ def _read_reserved_rows(path: str, *, run_id: str, episode_ids: tuple[str, ...])
             f"({','.join('?' for _ in names)}) ORDER BY name COLLATE BINARY LIMIT ?",
             (*names, len(names) + 1),
         ))
-        size = _schema_size(schema) + len(path.encode("utf-8")) + len(run_id) + sum(map(len, episodes))
+        size = (_reserved_schema_size(schema) + len(path.encode("utf-8")) + len(run_id)
+                + sum(map(len, episodes)))
         count, groups = len(schema), []
         for specification in _TABLES:
             name, columns, scope, order, _, _ = specification
@@ -99,7 +132,7 @@ def _read_reserved_rows(path: str, *, run_id: str, episode_ids: tuple[str, ...])
             rows = []
             size += len(name) + 16
             for row in cursor:
-                size += _row_size(row, specification)
+                size += _reserved_row_size(row, specification)
                 count += 1
                 if count > _MAX_RAW_ROWS or size > _MAX_RAW_BYTES:
                     _fail("capacity_exceeded")
@@ -141,6 +174,12 @@ def read_reserved_brs_ledger(
     """Observe the whole domain while retaining the original controller lease."""
     if type(ledger) is not RSILedger:
         _fail("ledger_invalid")
+    # Validate the database handle before checking the lease.  This keeps the
+    # boundary fail-closed when a caller replaces the database attribute with
+    # an object whose path hooks must never be invoked, while valid databases
+    # still require the original controller lease below.
+    if type(ledger.database) not in {PosixPath, WindowsPath}:
+        _fail("ledger_path_invalid")
     RSILedger._assert_controller_lock(ledger, run_id)
     result = _observe_reserved_brs_ledger(ledger, run_id=run_id, episode_ids=episode_ids,
         expected_checkpoint_sha256=expected_checkpoint_sha256)
@@ -159,6 +198,13 @@ def read_reserved_brs_completion_ledger(
     entry before selection or append. A worker cannot acquire that authority by
     supplying or receiving this descriptive observation.
     """
+    # Do not cache this snapshot from a newly opened SQLite connection.  The
+    # ``data_version`` pragma is connection-local: a fresh connection starts
+    # from the same baseline after every external commit, so using it as a
+    # process-local cache key could reuse an observation that predates a native
+    # claim, result, or reconciliation row.  The raw reader already runs one
+    # coherent query-only transaction; its checkpoint digest cache keeps the
+    # expensive immutable hash-chain work bounded without weakening freshness.
     return _observe_reserved_brs_ledger(ledger, run_id=run_id, episode_ids=episode_ids,
         expected_checkpoint_sha256=expected_checkpoint_sha256)
 
@@ -191,7 +237,9 @@ def _observe_reserved_brs_ledger(
     states, historical = [], {key: [] for key in episode_ids}
     for ordinal, row in enumerate(groups["rsi_controller_journal"]):
         state = _json(row["payload"])
-        expected = RSILedger._checkpoint_digest(run_id, ordinal, parent, state)
+        expected = ledger._checkpoint_digest_cached(
+            run_id, ordinal, parent, state, persisted_payload=row["payload"],
+        )
         if (row["revision"] != ordinal or row["parent_sha256"] != parent
                 or row["checkpoint_sha256"] != expected):
             _fail("checkpoint_corrupt")

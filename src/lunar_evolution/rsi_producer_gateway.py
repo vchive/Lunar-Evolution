@@ -407,6 +407,15 @@ def resolve_reserved_python_producer_episode_gateway(
                 or ledger.controller_checkpoint(run_id) != checkpoint):
             _fail("reserved_evidence_drift")
         controller._validate_producer_checkpoint(run_id, checkpoint[1])
+        if controller.producer_multi_episode_publication is True:
+            # Completed reserved children replay through the native rejection /
+            # publication reader.  Retain the controller only as a read-only
+            # lineage inspection authority; it never grants a fresh claim or
+            # dispatch capability to this reconstructed gateway.
+            child.config.receipt_provider.bind_python_admission_replay_controller(controller)
+            child._assert_ledger()
+            if ledger.controller_checkpoint(run_id) != checkpoint:
+                _fail("reserved_evidence_drift")
         return child
 
 

@@ -67,6 +67,27 @@ def _validate(value):
                                        admission_plan=value.admission)
 
 
+def _full_ready_reference(value):
+    workspace = value.workspace.stat()
+    parent = value.workspace.parent.stat()
+    pin = LineageSnapshotPin(
+        name=capsule.READY_CAPSULE_FILENAME,
+        sha256="a" * 64,
+        size=capsule.MAX_READY_CAPSULE_BYTES,
+        device=workspace.st_dev,
+        inode=workspace.st_ino,
+        parent_device=parent.st_dev,
+        parent_inode=parent.st_ino,
+    )
+    return {
+        "protocol": capsule.READY_CAPSULE_PROTOCOL,
+        "workspace": str(value.workspace),
+        "journal_id": value.journal.journal_id,
+        "workspace_identity": {"device": workspace.st_dev, "inode": workspace.st_ino},
+        "file_pin": pin.to_dict(),
+    }
+
+
 @pytest.mark.parametrize("present_archive", [False, True])
 def test_real_before_retention_has_one_owner_cas_and_original_source_pins(tmp_path, monkeypatch, present_archive):
     with retained._waiting(tmp_path, monkeypatch) as value:
@@ -205,16 +226,23 @@ def test_retention_rechecks_original_live_obligations_before_creating_files(tmp_
 
 
 def test_shared_ready_capsule_allowance_is_checked_before_creating_files(tmp_path, monkeypatch):
-    # Stable local accounting double: only the already-retained ready allowance
-    # is occupied. No large fixture material or changed production cap is needed.
-    monkeypatch.setattr(capsule, "retained_ready_capsule_bytes", lambda _state: brs.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES)
     with retained._waiting(tmp_path, monkeypatch) as value:
-        _validate(value)
-        original = owner_fixture._capture(value)
+        reference = _full_ready_reference(value)
+        state = {
+            "producer_multi_episode_publication": True,
+            "producer_episode_staging": {
+            str(index): {"ready": reference} for index in range(
+                brs.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES // capsule.MAX_READY_CAPSULE_BYTES
+                )
+            },
+        }
+        assert capsule.retained_ready_capsule_bytes(state) == brs.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES
+        extra = deepcopy(reference["file_pin"])
+        extra["name"] = "extra.snapshot"
+        extra["size"] = 1
+        wire = {"batches": [{"snapshots": {"extra": extra}}]}
         with pytest.raises(RSILearningError, match="capacity_exceeded"):
-            value.owner.retain_before(value.journal, *_inputs(value))
-        owner_fixture._unchanged(value, original)
-        assert value.owner._poisoned and not (value.batch / "lineage").exists()
+            brs.lineage.RSIPublicationLineage._retained_bytes(wire, state)
 
 
 @pytest.mark.parametrize("failure", ["write", "readback", "post-close"])

@@ -181,17 +181,21 @@ def _run_original_brs_native_publication(
             )
             _BRSLineageCheckpointOwner.acknowledge_prepared(owner, journal, reference)
 
-        result = _run_bound_native_producer_bundle_publication_transaction(
-            owner._workspace, owner._strategy, recovered.output.drafts, recovered.output.admission_plan,
-            journal_id=owner._plan.journal_id, run_id=owner._run_id,
-            parent_task_id=owner._plan.parent_task_id, task_id=owner._plan.task_id,
-            native_execution_receipt_sha256=recovered.receipt.receipt_sha256,
-            python_handoff_sha256=original.handoff.handoff.handoff_sha256,
-            python_handoff_file_pin=original.handoff.file_pin,
-            execution_control=owner._before_control, evidence_revalidator=observe,
-            prepared_observer=prepared, lineage_owner=owner, _original_brs_owner=owner,
-            _original_brs_receipt_pin=receipt_pin,
-        )
+        from .rsi_brs_publication_lineage import _policy_observation_scope
+
+        with owner._controller._python_admission_brs_full_gate_scope(owner._wave, owner._handoff), \
+                _policy_observation_scope():
+            result = _run_bound_native_producer_bundle_publication_transaction(
+                owner._workspace, owner._strategy, recovered.output.drafts, recovered.output.admission_plan,
+                journal_id=owner._plan.journal_id, run_id=owner._run_id,
+                parent_task_id=owner._plan.parent_task_id, task_id=owner._plan.task_id,
+                native_execution_receipt_sha256=recovered.receipt.receipt_sha256,
+                python_handoff_sha256=original.handoff.handoff.handoff_sha256,
+                python_handoff_file_pin=original.handoff.file_pin,
+                execution_control=owner._before_control, evidence_revalidator=observe,
+                prepared_observer=prepared, lineage_owner=owner, _original_brs_owner=owner,
+                _original_brs_receipt_pin=receipt_pin,
+            )
         if result.publication_status == "all_rejected":
             if (result.admitted_candidate_ids or result.manifest is not None
                     or result.published_journal is not None or result.terminal_journal is None

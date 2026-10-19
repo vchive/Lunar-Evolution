@@ -96,7 +96,10 @@ def _resolve_python_rsi_episode_input_context(
             if state.get("mode") != mode:
                 _fail("mode_invalid")
             if mode == "brs":
-                from .rsi_brs_reserved_reservation import read_reserved_brs_reservation
+                from .rsi_brs_reserved_reservation import (
+                    read_reserved_brs_finalization_reservation,
+                    read_reserved_brs_reservation,
+                )
                 from .rsi_brs_serial_driver import reserved_brs_staging_mode
 
                 if not reserved_brs_staging_mode(state):
@@ -104,7 +107,13 @@ def _resolve_python_rsi_episode_input_context(
                 plan = state["plan"]
                 domain = tuple(f"{run_id}-practice-{plan['wave']}-{index}"
                                for index in range(len(plan["practices"])))
-                original = read_reserved_brs_reservation(
+                reservation_reader = (
+                    read_reserved_brs_finalization_reservation
+                    if (state.get("status") == "completed"
+                        and set(state.get("executions", {})) == set(domain))
+                    else read_reserved_brs_reservation
+                )
+                original = reservation_reader(
                     ledger, run_id=run_id, episode_ids=domain,
                     expected_checkpoint_sha256=expected_checkpoint_sha256,
                 )

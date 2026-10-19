@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from test_rsi_python_brs_publication_mailbox import _handoff, _ready
 from lunar_evolution import rsi_python_brs_owner_bridge as bridge
 from lunar_evolution.native_trusted_scheduler import _NativeTrustedPythonProducerPreparation
 from lunar_evolution.producer_bundle_transaction import NativeProducerBundleTransactionResult
+from lunar_evolution.rsi_controller import RSILearningController, _PythonAdmissionBRSWave
 from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.rsi_python_brs_publication_mailbox import BRSOwnerPublicationMailbox
 
@@ -120,3 +122,26 @@ def test_owner_bridge_refuses_wrong_contract_before_owner_or_worker_effect(monke
             object(), mailbox, preparation, check=lambda: None,
         )
     assert owner_calls == []
+
+
+def test_full_gate_nested_scope_refuses_foreign_wave_or_handoff():
+    controller = object.__new__(RSILearningController)
+    controller._python_admission_brs_local = threading.local()
+
+    def wave():
+        return _PythonAdmissionBRSWave(
+            controller, {}, "run", (), object(), Path("."), object(), threading.get_ident(),
+            "h", b"{}", None, {},
+        )
+
+    outer_wave = wave()
+    foreign_wave = wave()
+    handoff = object()
+    with controller._python_admission_brs_full_gate_scope(outer_wave, handoff):
+        with pytest.raises(RSILearningError, match="rsi_python_brs_admission_scope_invalid"), \
+                controller._python_admission_brs_full_gate_scope(foreign_wave, handoff):
+            pass
+        with pytest.raises(RSILearningError, match="rsi_python_brs_admission_scope_invalid"), \
+                controller._python_admission_brs_full_gate_scope(outer_wave, object()):
+            pass
+    assert getattr(controller._python_admission_brs_local, "full_gate_scope", None) is None

@@ -9,6 +9,7 @@ from threading import Thread
 from types import FunctionType
 
 import pytest
+import test_rsi_brs_owner_before_evidence as before_evidence
 import test_rsi_brs_publication_lineage_owner as owner_fixture
 import test_rsi_brs_staged_terminal_checkpoint as retained
 import test_rsi_python_brs_publication_recovery as native_recovered
@@ -266,16 +267,24 @@ def test_success_owner_is_not_transferrable_to_foreign_thread(tmp_path, monkeypa
 
 def test_shared_ready_allowance_and_after_snapshots_are_bounded_before_creates(tmp_path, monkeypatch):
     with _waiting(tmp_path, monkeypatch) as value:
-        staged, manifest = _stage(value, monkeypatch)
-        before, files = owner_fixture._capture(value), _lineage_files(value)
-        old_size = sum(pin["size"] for pin in value.wave.state["producer_publication_lineage"]["batches"][0]["snapshots"].values())
-        after_size = sum((value.batch / "stage" / name).stat().st_size for name in ("archive.jsonl", "state.json"))
-        monkeypatch.setattr(capsule, "retained_ready_capsule_bytes",
-            lambda _state: brs.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES - old_size - after_size + 1)
-        with pytest.raises(RSILearningError, match="capacity_exceeded"):
-            value.owner.retain_staged(staged, manifest)
-        owner_fixture._unchanged(value, before)
-        assert _lineage_files(value) == files and value.owner._poisoned
+        reference = before_evidence._full_ready_reference(value)
+        state = {
+            "producer_multi_episode_publication": True,
+            "producer_episode_staging": {
+                str(index): {"ready": reference} for index in range(
+                    brs.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES // capsule.MAX_READY_CAPSULE_BYTES
+                )
+            },
+        }
+        extra = dict(reference["file_pin"])
+        extra["name"] = "archive-before.snapshot"
+        extra["size"] = 1
+        state["producer_publication_lineage"] = {
+            "batches": [{"snapshots": {"archive-before": extra}}],
+        }
+        assert capsule.retained_ready_capsule_bytes(state) == brs.MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES
+        with pytest.raises(RSILearningError, match="aggregate_exhausted"):
+            capsule.retained_publication_evidence_bytes(state)
 
 
 @pytest.mark.parametrize("entry", ["marker", "read", "projection", "owner"])

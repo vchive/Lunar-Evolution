@@ -30,7 +30,6 @@ PYTHON_BINDING_SIDECAR_NAME = "python-producer-binding.json"
 # the persistence boundary (and reads cannot use a narrower truncation limit).
 MAX_PYTHON_BINDING_SIDECAR_BYTES = MAX_PYTHON_PRODUCER_BINDING_BYTES
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_VALIDATED_BINDING_CACHE: dict[int, tuple[PythonProducerBinding, PythonProducerBinding, bytes]] = {}
 _NOT_STARTED_ARTIFACTS = frozenset({
     "attestation-consumption.json", "process-registration.json", "execution-receipt.json",
     "recovery-receipt.json", "native-deadline-binding.json", "terminal.json",
@@ -52,9 +51,6 @@ def _fail(code: str) -> NoReturn:
 def _validated_binding(binding: PythonProducerBinding) -> tuple[PythonProducerBinding, bytes]:
     if type(binding) is not PythonProducerBinding:
         _fail("binding_invalid")
-    cached = _VALIDATED_BINDING_CACHE.get(id(binding))
-    if cached is not None and cached[0] is binding:
-        return cached[1], cached[2]
     try:
         raw = binding.to_json()
         if type(raw) is not bytes:
@@ -68,7 +64,6 @@ def _validated_binding(binding: PythonProducerBinding) -> tuple[PythonProducerBi
         raise PythonProducerBindingStoreError("binding_invalid") from exc
     except (AttributeError, OverflowError, RecursionError, TypeError, UnicodeError, ValueError) as exc:
         raise PythonProducerBindingStoreError("binding_invalid") from exc
-    _VALIDATED_BINDING_CACHE[id(binding)] = (binding, parsed, raw)
     return parsed, raw
 
 
@@ -336,11 +331,15 @@ def read_python_producer_binding_sidecar(
     }
     if values != expected_values:
         _fail("file_identity_drift")
-    try:
-        reparsed = parse_python_producer_binding(raw)
-    except PythonProducerBindingError as exc:
-        raise PythonProducerBindingStoreError("record_invalid") from exc
-    if reparsed != parsed:
+    # ``_validated_binding`` already parsed and validated the canonical bytes
+    # that produced ``expected_raw``.  The independent file read above proves
+    # that the sidecar contains those exact bytes and that its inode/stat pin
+    # is unchanged, so parsing the same bounded runtime tree a second time
+    # adds no evidence.  Reuse the validated projection; this is material for
+    # reserved serial BRS, where the owner observes the same immutable sidecar
+    # on every mailbox/checkpoint poll.  Any byte or metadata replacement has
+    # already failed closed before this point.
+    if raw != expected_raw:
         _fail("binding_drift")
     return expected_sidecar
 

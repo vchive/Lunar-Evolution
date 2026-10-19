@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import stat
-from copy import deepcopy
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from threading import get_ident
@@ -53,6 +53,29 @@ PRODUCER_STAGING_PROTOCOL = "lunar-rsi-producer-episode-staging-v1"
 MAX_STAGING_BINDING_BYTES = 32 * 1024
 MAX_STAGING_INPUT_BYTES = 8 * 1024
 MAX_STAGING_CHECKPOINT_BYTES = 112 * 1024
+MAX_RESERVED_STAGING_CHECKPOINT_BYTES = 128 * 1024
+
+
+def _checkpoint_maximum(state: object = None) -> int:
+    """Return the snapshot wire cap for the active staging contract.
+
+    Ordinary DRS staging remains pinned to the historical 112 KiB limit.  The
+    original private reserved BRS serial composition already pins a separate
+    128 KiB checkpoint contract, so only complete controller snapshots may use
+    that larger bound.  Child DTOs (requests, bindings, ready evidence) keep
+    their narrower limits regardless of mode.
+    """
+    if type(state) is dict:
+        try:
+            from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+            if reserved_brs_staging_mode(state):
+                return MAX_RESERVED_STAGING_CHECKPOINT_BYTES
+        except (ImportError, AttributeError, TypeError, ValueError):
+            # A malformed or partially initialized state must take the ordinary
+            # conservative path; the authoritative BRS gate runs separately.
+            pass
+    return MAX_STAGING_CHECKPOINT_BYTES
 
 
 def _fail(reason: str) -> NoReturn:
@@ -312,7 +335,8 @@ class PythonProducerEpisodeStager:
         pending = 0 if episode.episode_id in state.get("intents", {}) else (
             len(_wire({"episode": episode_wire, "request": request.to_dict()})) + 4096
         )
-        if len(_wire(state)) + pending + growth + 512 > MAX_STAGING_CHECKPOINT_BYTES:
+        checkpoint_maximum = _checkpoint_maximum(state)
+        if len(_wire(state, checkpoint_maximum)) + pending + growth + 512 > checkpoint_maximum:
             _fail("checkpoint_capacity_exhausted")
         return growth
 
@@ -570,7 +594,7 @@ class PythonProducerEpisodeStager:
             entries = snapshot.get("producer_episode_staging", {})
             if type(entries) is not dict or len(entries) > self.config.max_episodes or not retained.keys() <= entries.keys():
                 _fail("history_missing")
-            _wire(snapshot)
+            _wire(snapshot, _checkpoint_maximum(snapshot))
             retained_publication_evidence_bytes(snapshot)
             for episode_id, entry in entries.items():
                 if (type(entry) is not dict or set(entry) != {"state", "identity", "ready", "failure_code"}

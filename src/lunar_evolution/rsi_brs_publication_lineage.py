@@ -15,7 +15,7 @@ import stat
 import time
 from collections import deque
 from contextlib import _GeneratorContextManager as _ORIGINAL_CONTEXT_MANAGER
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import fields, replace
 from hashlib import sha256 as _ORIGINAL_SHA256
 from json import dumps as _ORIGINAL_JSON_DUMPS
@@ -28,7 +28,7 @@ from sqlite3 import Row as _ORIGINAL_SQLITE_ROW
 from sqlite3 import connect as _ORIGINAL_SQLITE_CONNECT
 from stat import S_ISDIR as _ORIGINAL_ISDIR
 from stat import S_ISREG as _ORIGINAL_ISREG
-from threading import Condition, get_ident
+from threading import Condition, get_ident, local
 from time import monotonic as _ORIGINAL_MONOTONIC
 from typing import Any
 
@@ -106,6 +106,28 @@ _ORIGINAL_RESERVED_POLICY_CLOSURE = (
     reserved_policy.reserved_brs_policy_projection.__closure__,
     tuple(cell.cell_contents for cell in (reserved_policy.reserved_brs_policy_projection.__closure__ or ())),
 )
+_POLICY_OBSERVATION_LOCAL = local()
+
+
+@contextmanager
+def _policy_observation_scope():
+    """Reuse one fully observed policy graph inside a bounded owner transaction.
+
+    The structural alias/runtime checks in ``_policy`` still run on every call.
+    Only the large component-fingerprint graph is memoized, and the scope is
+    thread-local and short-lived.  The mailbox service performs a fresh policy
+    observation after the scope closes, so drift during the transaction cannot
+    become a durable terminal result.
+    """
+    previous = getattr(_POLICY_OBSERVATION_LOCAL, "cache", None)
+    if previous is not None:
+        yield
+        return
+    _POLICY_OBSERVATION_LOCAL.cache = {}
+    try:
+        yield
+    finally:
+        _POLICY_OBSERVATION_LOCAL.cache = None
 
 
 def _fail(reason: str) -> None:
@@ -177,6 +199,142 @@ def _family_repertoires() -> dict[str, list[str]]:
             or any(type(family) is not str for family in item) for key, item in value.items())):
         _fail("population_repertoires_invalid")
     return {key: list(item) for key, item in value.items()}
+
+
+def _staged_inspection_strategy(strategy: object, workspace: Path, *, force: bool = False) -> object:
+    """Clone only the archive facade needed while a staged marker is held."""
+    from .evolution import CandidateArchive, PopulationStrategy
+
+    marker = workspace / "evolution" / "producer-publication.json"
+    if not force and not (marker.exists() or marker.is_symlink()):
+        return strategy
+    archive = CandidateArchive.__new__(CandidateArchive)
+    archive.workspace = workspace
+    archive.root = workspace / "evolution"
+    archive.candidates_root = archive.root / "candidates"
+    archive.archive_path = archive.root / "archive.jsonl"
+    archive.offspring_outcomes_path = archive.root / "offspring-outcomes.jsonl"
+    archive.state_path = archive.root / "state.json"
+    archive.read_only = True
+    archive._producer_publication_inspection = True
+    view = PopulationStrategy.__new__(PopulationStrategy)
+    view.context, view.config, view.archive = strategy.context, strategy.config, archive
+    return view
+
+
+def _brs_before_channel(owner: object) -> None:
+    """Validate the owner mailbox without inflating the checkpoint-owner source capsule."""
+    from .rsi_python_brs_admission import (
+        BRSAdmissionAck,
+        BRSAdmissionChannel,
+        BRSAdmissionReady,
+        _Pending,
+    )
+
+    channel, condition = owner._channel, owner._before_channel_condition
+    if type(channel) is not BRSAdmissionChannel or type(condition) is not Condition:
+        _fail("before_channel_drift")
+    ready_sync = owner._rejection_ready_sync_capture
+    if ready_sync is not None:
+        _ORIGINAL_READY_CONDITION_ASSERT(condition, ready_sync)
+    nonce = json.loads(owner._handoff_bytes)["lease_nonce"]
+    digest = hashlib.sha256(owner._handoff_bytes).hexdigest()
+    with condition if ready_sync is None else ready_sync[1]:
+        if ready_sync is not None:
+            _ORIGINAL_READY_CONDITION_ASSERT(condition, ready_sync)
+        # Validate the request map's key type before lookup/set comparisons.  A
+        # foreign key can otherwise execute its equality/hash hooks while this
+        # owner is still deciding whether the mailbox is admissible.
+        requests = channel._requests
+        request_keys_are_strings = (
+            type(requests) is dict and all(type(key) is str for key in requests)
+        )
+        pending = requests.get(owner._request.episode_id) if request_keys_are_strings else None
+        ready = pending.ready if type(pending) is _Pending else None
+        ack = pending.ack if type(pending) is _Pending else None
+        expected_episode_id = owner._request.episode_id
+        expected_request_sha256 = owner._handoff.request_sha256
+        prepared_request = None
+        prepared_request_sha256 = None
+        if type(ready) is BRSAdmissionReady:
+            try:
+                prepared_payload = json.loads(ready.payload)
+                prepared_plan = prepared_payload.get("native_plan")
+                prepared_request = prepared_plan.get("request") if type(prepared_plan) is dict else None
+                prepared_request_sha256 = prepared_plan.get("request_sha256") if type(prepared_plan) is dict else None
+            except (TypeError, ValueError, json.JSONDecodeError):
+                prepared_request = None
+        ready_binding = (
+            type(expected_episode_id) is str and type(expected_request_sha256) is str
+            and type(ready) is BRSAdmissionReady
+            and type(ready.run_id) is str and ready.run_id == channel._run_id
+            and type(ready.episode_id) is str and ready.episode_id == expected_episode_id
+            and type(ready.request_sha256) is str
+            and type(prepared_request) is dict
+            and prepared_request.get("episode_id") == expected_episode_id
+            and prepared_request_sha256 == expected_request_sha256
+        )
+        ack_binding = False
+        if ready_binding:
+            ack_binding = (
+                type(ack) is BRSAdmissionAck
+                and type(ack.run_id) is str and ack.run_id == ready.run_id
+                and type(ack.episode_id) is str and ack.episode_id == ready.episode_id
+                and type(ack.request_sha256) is str
+                and ack.request_sha256 == ready.request_sha256
+                and type(ack.record_sha256) is str
+            )
+        ack_fields = pending.ack_fields if type(pending) is _Pending else None
+        ack_fields_binding = (
+            type(ack_fields) is tuple and len(ack_fields) == 4
+            and all(type(value) is str for value in ack_fields)
+            and ack_binding
+            and ack_fields == (ack.run_id, ack.episode_id, ack.request_sha256, ack.record_sha256)
+        )
+        pending_state_binding = (
+            type(pending) is _Pending
+            and type(pending.state) is str and pending.state == "done"
+            and type(pending.cancelled) is bool and pending.cancelled is False
+            and (pending.error is None or type(pending.error) is str)
+            and pending.error is None
+            and type(pending.binding_sha256) is str and pending.binding_sha256 == digest
+        )
+        published_admission_pending = (
+            owner._phase == "terminal"
+            and owner._rejection_ready_state == "unused"
+            and channel._selected_episode_id == expected_episode_id
+            and channel._selected_handoff_sha256 == digest
+            and pending_state_binding
+            and ready_binding and ack_binding and ack_fields_binding
+            and channel._completed_selected_episodes == set()
+            and request_keys_are_strings and set(requests) == {expected_episode_id}
+            and not channel._queue)
+        selected_idle = (
+            channel._selected_episode_id == owner._request.episode_id
+            and channel._selected_handoff_sha256 == digest
+            and not channel._completed_selected_episodes
+            and not channel._requests and not channel._queue)
+        if (owner._wave.channel is not channel or channel._condition is not condition
+                or channel._closed is not False or type(channel._owner_thread) is not int
+                or channel._owner_thread != owner._thread or type(channel._run_id) is not str
+                or channel._run_id != owner._run_id or type(owner._wave.episode_ids) is not tuple
+                or any(type(item) is not str for item in owner._wave.episode_ids)
+                or type(channel._episode_ids) is not frozenset
+                or any(type(item) is not str for item in channel._episode_ids)
+                or channel._episode_ids != frozenset(owner._wave.episode_ids)
+                or channel._handoff_mode is not True or channel._servicing is not False
+                or type(channel._selected_episode_id) is not str
+                or channel._selected_episode_id != owner._request.episode_id
+                or type(channel._selected_handoff_sha256) is not str or channel._selected_handoff_sha256 != digest
+                or type(channel._consumed_handoff_nonces) is not set
+                or any(type(item) is not str for item in channel._consumed_handoff_nonces)
+                or channel._consumed_handoff_nonces != {nonce}
+                or type(channel._completed_selected_episodes) is not set
+                or type(channel._requests) is not dict
+                or type(channel._queue) is not deque
+                or channel._servicing is not False
+                or not (selected_idle or published_admission_pending)):
+            _fail("before_channel_drift")
 
 
 def _policy_required(controller: Any, *, mode: object, plan: object) -> bool:
@@ -964,6 +1122,9 @@ def _policy() -> dict[str, Any]:
             or journal_defaults["deadline"] is not None or journal_defaults["expected_file_identity"] is not None
             or journal_defaults["monotonic"] is not time.monotonic):
         _fail("native_reader_binding_drift")
+    cached = getattr(_POLICY_OBSERVATION_LOCAL, "cache", None)
+    if cached is not None and "policy" in cached:
+        return cached["policy"]
 
     policy = {
         "protocol": _PROTOCOL, "mode": "brs", "max_workers": 1,
@@ -971,7 +1132,7 @@ def _policy() -> dict[str, Any]:
         "rejection_provenance_schema": rejection_wire.REJECTION_PROVENANCE_SCHEMA,
         "production_admission": False, "online_publication": False,
         "max_batches": MAX_LINEAGE_BATCHES,
-        "max_checkpoint_bytes": lineage._MAX_CHECKPOINT_BYTES,
+        "max_checkpoint_bytes": lineage.RESERVED_CHECKPOINT_BYTES,
         "max_aggregate_snapshot_bytes": MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES,
         "dependencies": {
             "reserved_serial": {
@@ -1368,8 +1529,15 @@ def _policy() -> dict[str, Any]:
     # Observe the complete graph above on every call. Persist its large finite
     # subgraphs once as canonical digests: the run retains this policy both in
     # the fingerprint and at its original root, under the unchanged record cap.
-    for name in ("rejection_c1", "owner_result_delivery", "retained_native_reader", "module_sources", "methods"):
+    # Persist only canonical digests for the remaining finite helper graphs.
+    # Their complete graphs are still rebuilt and hashed on every policy
+    # observation, so this compacts the checkpoint wire without weakening drift
+    # detection or changing the live reader dependency set.
+    for name in ("rejection_c1", "owner_result_delivery", "retained_native_reader", "module_sources", "methods",
+                 "private_native_dispatch", "reconcile_registration"):
         policy["dependencies"][name] = hashlib.sha256(canonical_json(policy["dependencies"][name])).hexdigest()
+    if cached is not None:
+        cached["policy"] = policy
     return policy
 
 
@@ -1828,7 +1996,8 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 or self._controller._python_admission_flow_payload(self._state["budget_state"]) != self._budget_bytes
                 or (captured and (wave.checkpoint_sha256 != self._head or wave.payload != self._payload))):
             _fail("checkpoint_drift")
-        if lineage._raw(_policy()) != self._policy_bytes:
+        current_policy_bytes = lineage._raw(_policy())
+        if current_policy_bytes != self._policy_bytes:
             _fail("policy_drift")
         self._strategy_identity()
         _validate_persisted_policy(
@@ -1960,13 +2129,25 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
     def _initial_window(self, archive: bytes, state_bytes: bytes) -> None:
         from .producer_bundle_transaction import _records_from_archive
 
+        # ``stage_producer_bundle_publication`` writes the durable publication
+        # marker before the owner captures staged evidence.  The ordinary
+        # CandidateArchive reader intentionally refuses that marker, but this
+        # owner already holds the staged transaction lock and is validating the
+        # exact bytes supplied by the transaction.  Use the same read-only
+        # inspection view as the publication-lineage precommit gate so the
+        # population-window check cannot mistake a staged, locked transaction
+        # for an unrelated crash recovery obligation.
+        strategy = _staged_inspection_strategy(
+            self._strategy, self._workspace, force=self._reserved_prefix is not None,
+        )
+
         if self._reserved_prefix is not None and self._ordinal:
             from .producer_bundle_transaction import _ensure_append_population_window
             raw_expected = json.loads(self._reserved_prefix.canonical_bytes)["historical_poststate"]
             expected = None if raw_expected is None else tuple(tuple(item) for item in raw_expected)
             if expected is None or tuple((lineage._sha(raw), len(raw)) for raw in (archive, state_bytes)) != expected:
                 _fail("reserved_poststate_drift")
-            _ensure_append_population_window(json.loads(state_bytes), _records_from_archive(archive), self._strategy,
+            _ensure_append_population_window(json.loads(state_bytes), _records_from_archive(archive), strategy,
                 prior_events=tuple(tuple(item["staged"]["descriptor"]["candidate_ids"])
                                    for item in map(json.loads, self._reserved_prefix.batch_bytes)
                                    if item["outcome"] == "published"))
@@ -2002,38 +2183,7 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             _fail("before_unlocked_owner_required")
 
     def _before_channel(self) -> None:
-        from .rsi_python_brs_admission import BRSAdmissionChannel
-
-        channel, condition = self._channel, self._before_channel_condition
-        if type(channel) is not BRSAdmissionChannel or type(condition) is not Condition:
-            _fail("before_channel_drift")
-        ready_sync = self._rejection_ready_sync_capture
-        if ready_sync is not None:
-            _ORIGINAL_READY_CONDITION_ASSERT(condition, ready_sync)
-        nonce = json.loads(self._handoff_bytes)["lease_nonce"]
-        digest = hashlib.sha256(self._handoff_bytes).hexdigest()
-        with condition if ready_sync is None else ready_sync[1]:
-            if ready_sync is not None:
-                _ORIGINAL_READY_CONDITION_ASSERT(condition, ready_sync)
-            if (self._wave.channel is not channel or channel._condition is not condition
-                    or channel._closed is not False or type(channel._owner_thread) is not int
-                    or channel._owner_thread != self._thread or type(channel._run_id) is not str
-                    or channel._run_id != self._run_id or type(self._wave.episode_ids) is not tuple
-                    or any(type(item) is not str for item in self._wave.episode_ids)
-                    or type(channel._episode_ids) is not frozenset
-                    or any(type(item) is not str for item in channel._episode_ids)
-                    or channel._episode_ids != frozenset(self._wave.episode_ids)
-                    or channel._handoff_mode is not True or channel._servicing is not False
-                    or type(channel._selected_episode_id) is not str
-                    or channel._selected_episode_id != self._request.episode_id
-                    or type(channel._selected_handoff_sha256) is not str or channel._selected_handoff_sha256 != digest
-                    or type(channel._consumed_handoff_nonces) is not set
-                    or any(type(item) is not str for item in channel._consumed_handoff_nonces)
-                    or channel._consumed_handoff_nonces != {nonce}
-                    or type(channel._completed_selected_episodes) is not set or channel._completed_selected_episodes
-                    or type(channel._requests) is not dict or channel._requests
-                    or type(channel._queue) is not deque or channel._queue):
-                _fail("before_channel_drift")
+        _brs_before_channel(self)
 
     def _before_control_state(self):
         from .automatic_solve_lifecycle import SolveExecutionControl
@@ -2359,7 +2509,18 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
                 or base.get("candidate_integrity_authority") != CandidateIntegrityAuthority.to_dict(self._strategy_authority)
                 or base.get("contract_sha256") != self._prepared.contract_sha256):
             _fail("native_configuration_drift")
-        events = {"schema_version": "1", "events": [{"after_iteration": 0, "candidate_ids": list(ids)}]}
+        prior_admissions = base.get("producer_admissions")
+        if prior_admissions is None:
+            prior_events = []
+        elif (type(prior_admissions) is dict and set(prior_admissions) == {"schema_version", "events"}
+              and prior_admissions.get("schema_version") == "1"
+              and type(prior_admissions.get("events")) is list):
+            prior_events = list(prior_admissions["events"])
+        else:
+            _fail("native_configuration_drift")
+        events = {"schema_version": "1", "events": [
+            *prior_events, {"after_iteration": 0, "candidate_ids": list(ids)},
+        ]}
         active, best, migration, stagnation = PopulationStrategy._reconstruct_population_projection(
             self._strategy, base | {"producer_admissions": events}, after_records, source_overrides=source_overrides,
         )

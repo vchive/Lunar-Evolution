@@ -279,12 +279,28 @@ class BRSAdmissionChannel:
                 _fail("closed")
             if self._selected_episode_id != episode_id:
                 _fail("selected_episode_mismatch")
+            if (type(self._requests) is not dict
+                    or any(type(key) is not str for key in self._requests)):
+                _fail("ack_invalid")
             pending = self._requests.get(episode_id)
-            if (pending is None or pending.state != "done" or pending.ack is None
-                    or pending.cancelled or pending.error is not None
+            if (type(pending) is not _Pending
+                    or type(pending.state) is not str or pending.state != "done"
+                    or pending.ack is None
+                    or type(pending.cancelled) is not bool or pending.cancelled
+                    or (pending.error is not None and type(pending.error) is not str)
+                    or pending.error is not None
+                    or (pending.binding_sha256 is not None and type(pending.binding_sha256) is not str)
                     or pending.binding_sha256 != self._selected_handoff_sha256
-                    or self._servicing or self._queue):
+                    or type(self._servicing) is not bool or self._servicing
+                    or type(self._queue) is not deque or self._queue):
                 _fail("handoff_not_acknowledged")
+            if type(pending.ready) is not BRSAdmissionReady:
+                _fail("ack_invalid")
+            ready = pending.ready
+            if (type(ready.run_id) is not str or ready.run_id != self._run_id
+                    or type(ready.episode_id) is not str or ready.episode_id != episode_id
+                    or type(ready.request_sha256) is not str):
+                _fail("ack_mismatch")
             if type(pending.ack) is not BRSAdmissionAck:
                 _fail("ack_invalid")
             ack = BRSAdmissionAck(pending.ack.run_id, pending.ack.episode_id,
@@ -293,7 +309,7 @@ class BRSAdmissionChannel:
             if (type(pending.ack_fields) is not tuple or len(pending.ack_fields) != 4
                     or any(type(value) is not str for value in pending.ack_fields)
                     or fields != pending.ack_fields
-                    or fields[:3] != (self._run_id, episode_id, pending.ready.request_sha256)):
+                    or fields[:3] != (ready.run_id, ready.episode_id, ready.request_sha256)):
                 _fail("ack_mismatch")
             self._completed_selected_episodes.add(episode_id)
             self._selected_episode_id = None
@@ -316,12 +332,28 @@ class BRSAdmissionChannel:
                 _fail("closed")
             if self._selected_episode_id != episode_id:
                 _fail("selected_episode_mismatch")
+            if (type(self._requests) is not dict
+                    or any(type(key) is not str for key in self._requests)):
+                _fail("ack_invalid")
             pending = self._requests.get(episode_id)
-            if (pending is None or pending.state != "done" or pending.ack is None
-                    or pending.cancelled or pending.error is not None
+            if (type(pending) is not _Pending
+                    or type(pending.state) is not str or pending.state != "done"
+                    or pending.ack is None
+                    or type(pending.cancelled) is not bool or pending.cancelled
+                    or (pending.error is not None and type(pending.error) is not str)
+                    or pending.error is not None
+                    or (pending.binding_sha256 is not None and type(pending.binding_sha256) is not str)
                     or pending.binding_sha256 != self._selected_handoff_sha256
-                    or self._servicing or self._queue):
+                    or type(self._servicing) is not bool or self._servicing
+                    or type(self._queue) is not deque or self._queue):
                 _fail("handoff_not_acknowledged")
+            if type(pending.ready) is not BRSAdmissionReady:
+                _fail("ack_invalid")
+            ready = pending.ready
+            if (type(ready.run_id) is not str or ready.run_id != self._run_id
+                    or type(ready.episode_id) is not str or ready.episode_id != episode_id
+                    or type(ready.request_sha256) is not str):
+                _fail("ack_mismatch")
             if type(pending.ack) is not BRSAdmissionAck:
                 _fail("ack_invalid")
             ack = BRSAdmissionAck(pending.ack.run_id, pending.ack.episode_id,
@@ -330,7 +362,7 @@ class BRSAdmissionChannel:
             if (type(pending.ack_fields) is not tuple or len(pending.ack_fields) != 4
                     or any(type(value) is not str for value in pending.ack_fields)
                     or fields != pending.ack_fields
-                    or fields[:3] != (self._run_id, episode_id, pending.ready.request_sha256)):
+                    or fields[:3] != (ready.run_id, ready.episode_id, ready.request_sha256)):
                 _fail("ack_mismatch")
             return fields
 

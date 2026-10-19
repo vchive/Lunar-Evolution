@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import FunctionType
 
 from .native_trusted_scheduler import _NativeTrustedPythonProducerPreparation
 from .producer_bundle_transaction import NativeProducerBundleTransactionResult
@@ -31,6 +33,8 @@ from .rsi_python_brs_publication_mailbox import (
     BRSOwnerPublicationResponse,
 )
 from .rsi_python_brs_result_delivery import build_brs_owner_result_payload
+
+_OWNER_STAMP_MODULE_NAMES: tuple[str, ...] | None = None
 
 
 class BRSOwnerMailboxBridgeError(RSILearningError):
@@ -118,7 +122,118 @@ def _require_original_mailbox(owner: _BRSLineageCheckpointOwner, mailbox: BRSOwn
             _fail("mailbox_unavailable")
 
 
+def _clear_owner_observation_caches(owner: object) -> None:
+    """Forget transaction-scoped observations after a caller callback returns.
+
+    The callback is outside the trusted observation boundary and may replace a
+    fingerprinted dependency.  Clear both bounded transaction caches before the
+    canonical owner gate runs so that replacement cannot be hidden by a value
+    captured before the callback.
+    """
+    from . import rsi_brs_publication_lineage as lineage
+
+    policy_cache = getattr(lineage._POLICY_OBSERVATION_LOCAL, "cache", None)
+    if type(policy_cache) is dict:
+        policy_cache.clear()
+    controller = getattr(owner, "_controller", None)
+    local = getattr(controller, "_python_admission_brs_local", None)
+    scope = getattr(local, "full_gate_scope", None)
+    if (type(scope) is tuple and len(scope) == 3 and type(scope[2]) is dict):
+        scope[2].clear()
+
+
+def _owner_dependency_stamp() -> tuple[tuple[str, tuple[tuple[str, int, int], ...]], ...]:
+    """Return a cheap replacement stamp for live Lunar function dependencies.
+
+    Full policy fingerprints are intentionally expensive.  A mailbox callback is
+    outside that trusted boundary, so we only invalidate the transaction caches
+    when it actually replaces a module or class function (the mutation shape the
+    policy gate protects).  The subsequent canonical owner gate still computes
+    the complete fingerprint after invalidation.
+    """
+    global _OWNER_STAMP_MODULE_NAMES
+    if _OWNER_STAMP_MODULE_NAMES is None:
+        _OWNER_STAMP_MODULE_NAMES = tuple(sorted(
+            name for name in sys.modules if name.startswith("lunar_evolution")
+        ))
+    modules: list[tuple[str, tuple[tuple[str, int, int], ...]]] = []
+    for module_name in _OWNER_STAMP_MODULE_NAMES:
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        entries: list[tuple[str, int, int]] = []
+        for name, value in vars(module).items():
+            if isinstance(value, FunctionType):
+                entries.append((name, id(value), id(value.__code__)))
+            elif isinstance(value, type):
+                for method_name, method in vars(value).items():
+                    if isinstance(method, FunctionType):
+                        entries.append((value.__qualname__ + "." + method_name,
+                                        id(method), id(method.__code__)))
+        if entries:
+            modules.append((module_name, tuple(sorted(entries))))
+    return tuple(modules)
+
+
 def run_brs_owner_publication_mailbox(
+    owner: object,
+    mailbox: BRSOwnerPublicationMailbox,
+    original_preparation: _NativeTrustedPythonProducerPreparation,
+    *,
+    check: Callable[[], None],
+    timeout: float = 0.05,
+    _terminal_lifecycle: object = None,
+) -> BRSOwnerMailboxBridgeResult:
+    """Serve one owner mailbox under one bounded policy observation scope.
+
+    Mailbox observation performs several owner identity checks while a worker
+    receipt is being delivered.  Those checks are still complete and fail closed,
+    but they share the immutable policy graph for this one owner transaction.  The
+    scope is thread-local and is discarded when this call returns; later resume or
+    mailbox calls therefore perform a fresh policy observation.
+    """
+    from contextlib import nullcontext
+
+    from .rsi_brs_publication_lineage import _policy_observation_scope
+
+    # The owner callback and the terminal admission service both re-observe the
+    # selected owner gate while the one-shot mailbox transaction is in flight.
+    # Keep one strict observation cache for this bounded transaction so those
+    # callbacks do not repeatedly walk the immutable runtime manifest.  The
+    # cache key includes the live checkpoint head/payload, and the scope is
+    # discarded before any later child, resume, or mailbox transaction.
+    controller = getattr(owner, "_controller", None)
+    full_gate = getattr(controller, "_python_admission_brs_full_gate_scope", None)
+    wave = getattr(owner, "_wave", None)
+    handoff = getattr(owner, "_handoff", None)
+    gate_scope = (full_gate(wave, handoff) if callable(full_gate) else nullcontext())
+    with gate_scope, _policy_observation_scope():
+        result = _run_brs_owner_publication_mailbox(
+            owner, mailbox, original_preparation, check=check, timeout=timeout,
+            _terminal_lifecycle=_terminal_lifecycle,
+        )
+    # The transaction-scoped caches above intentionally cover the worker wait
+    # and native publication path only.  A response can be delivered while a
+    # dependency is replaced before the bridge returns, so the final owner
+    # check must run after both scopes have been cleared and rebuild the live
+    # policy/full-gate observations.
+    # The callback is intentionally not repeated here.  ``service`` and the
+    # post-receipt path already ran it; repeating it would change the callback's
+    # observable contract and can run a worker-facing budget check twice.
+    # ``check`` is caller supplied and may intentionally be a lightweight
+    # fixture callback.  Re-run the canonical owner gate here so a dependency
+    # changed after publication cannot be hidden by that callback or by the
+    # transaction-scoped full-gate cache.
+    if owner._rejection_ready_state == "committed":
+        _rejection_committed(owner)
+    elif owner._reserved_prefix is not None and owner._phase == "terminal":
+        _BRSLineageCheckpointOwner._check_owner(owner)
+    else:
+        _BRSLineageCheckpointOwner._success_fixed(owner)
+    return result
+
+
+def _run_brs_owner_publication_mailbox(
     owner: object,
     mailbox: BRSOwnerPublicationMailbox,
     original_preparation: _NativeTrustedPythonProducerPreparation,
@@ -164,7 +279,10 @@ def run_brs_owner_publication_mailbox(
         generated_fields_holder: list[tuple] = []
 
         def observe() -> None:
+            dependency_stamp = _owner_dependency_stamp()
             check()
+            if dependency_stamp != _owner_dependency_stamp():
+                _clear_owner_observation_caches(owner)
             _original_control(owner)
             # Mailbox check callbacks run outside its condition. Recheck the original
             # source/policy and running claim before both dispatch and byte delivery.
@@ -255,7 +373,12 @@ def run_brs_owner_publication_mailbox(
         deadline = time.monotonic() + timeout
         while True:
             status, accepted, request_fields, response_fields = BRSOwnerPublicationMailbox._observation_snapshot(mailbox)
-            if accepted:
+            # A worker may reject the delivered DTO after the owner has
+            # published it.  ``abandoned`` is then a terminal transport
+            # observation with an intentionally false receipt bit; waiting for
+            # ``accepted`` would poll the fixture evidence again and can turn a
+            # valid unknown receipt into a spurious timeout/queue failure.
+            if accepted or status == "abandoned":
                 break
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -265,7 +388,10 @@ def run_brs_owner_publication_mailbox(
         # the receipt.  The check may scan immutable staging evidence; running
         # it on every poll would starve the worker that is needed to flip the
         # receipt bit on CPython.
+        dependency_stamp = _owner_dependency_stamp()
         check()
+        if dependency_stamp != _owner_dependency_stamp():
+            _clear_owner_observation_caches(owner)
         if request_fields is None or len(generated_fields_holder) != 1:
             _fail("transport_snapshot_invalid")
         generated_fields = generated_fields_holder[0]

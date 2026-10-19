@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import replace
 from pathlib import Path
 from threading import get_ident
@@ -59,6 +60,8 @@ _PROTOCOL = "lunar-rsi-multi-episode-publication-v1"
 _PROTOCOL_V2 = "lunar-rsi-multi-episode-publication-v2"
 _FIELD = "producer_publication_lineage"
 _MAX_CHECKPOINT_BYTES = 112 * 1024
+RESERVED_CHECKPOINT_BYTES = 128 * 1024
+_CHECKPOINT_MAXIMUM = ContextVar("lunar_rsi_checkpoint_maximum", default=_MAX_CHECKPOINT_BYTES)
 
 
 def _fail(reason: str) -> None:
@@ -66,7 +69,23 @@ def _fail(reason: str) -> None:
 
 
 def _raw(value: object) -> bytes:
-    return canonical_json(value, maximum=_MAX_CHECKPOINT_BYTES)
+    return canonical_json(value, maximum=_CHECKPOINT_MAXIMUM.get())
+
+
+@contextmanager
+def reserved_checkpoint_scope():
+    """Temporarily use the private reserved-BRS checkpoint ceiling.
+
+    The ordinary publication lineage contract remains capped at 112 KiB.  A
+    reserved serial wave has an independently pinned 128 KiB contract and may
+    opt into it only while its owner driver retains the original run lease.
+    The context is task-local so a child thread cannot widen unrelated writes.
+    """
+    token = _CHECKPOINT_MAXIMUM.set(RESERVED_CHECKPOINT_BYTES)
+    try:
+        yield
+    finally:
+        _CHECKPOINT_MAXIMUM.reset(token)
 
 
 def _copy(value: object) -> Any:
@@ -2360,7 +2379,22 @@ class _V2InspectionBase(_V2LineageEvidenceReader):
             state = checkpoint[1]
             controller._validate_run_checkpoint_producer_binding(run, state)
             controller._validate_resume_identity(run, None, None)
-            if (state.get("mode") != "drs" or state.get("producer_known_rejection") is not True
+            # The regular v2 inspection is also the read-only rejection replay
+            # authority for the reserved serial BRS path.  BRS deliberately
+            # retains a ``brs`` checkpoint (rather than rewriting it to the
+            # ordinary DRS shape), so accept that mode only when the complete
+            # reserved-single-worker staging predicate holds.  A bare mode
+            # mutation must continue to fail the inspection gate.
+            mode = state.get("mode")
+            if mode == "drs":
+                accepted_mode = True
+            elif mode == "brs":
+                from .rsi_brs_serial_driver import reserved_brs_staging_mode
+
+                accepted_mode = reserved_brs_staging_mode(state)
+            else:
+                accepted_mode = False
+            if (not accepted_mode or state.get("producer_known_rejection") is not True
                     or controller._native_historical_memory(self._run_id, self._request).to_bytes() != self._memory.to_bytes()):
                 _fail("inspection_memory_drift")
             self._validate_history_v2(state)

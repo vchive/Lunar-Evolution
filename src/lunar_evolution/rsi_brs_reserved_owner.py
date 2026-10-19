@@ -385,8 +385,8 @@ def reserved_history(owner, state=None):
 
     reserved_prefix_identity(owner)
     expected_head = owner._head
+    history = owner._ledger.controller_checkpoint_history(owner._run_id)
     if state is not None:
-        history = owner._ledger.controller_checkpoint_history(owner._run_id)
         if (not history or history[-1][1] != state
                 or history[-1][0] != owner._head and (len(history) < 2 or history[-2][0] != owner._head)):
             _fail("history_observation_head_drift")
@@ -402,7 +402,7 @@ def reserved_history(owner, state=None):
     prefixes = [validate_brs_reserved_prefix(**domain, batches=batches[:ordinal])
                 for ordinal in range(owner._ordinal + 1)]
     previous, prior_settled = None, None
-    for _head, snapshot in owner._ledger.controller_checkpoint_history(owner._run_id):
+    for _head, snapshot in history:
         wire = snapshot.get(_FIELD)
         if wire is None:
             if previous is not None:
@@ -477,7 +477,7 @@ def reserved_history(owner, state=None):
             prior = None
             if ordinal:
                 original_entries = settled_wire["batches"][:ordinal]
-                prior_wire = next(body[_FIELD] for _head, body in owner._ledger.controller_checkpoint_history(owner._run_id)
+                prior_wire = next(body[_FIELD] for _head, body in history
                                   if type(body.get(_FIELD)) is dict and body[_FIELD]["batches"] == original_entries)
                 prior = canonical_json(prior_wire, maximum=128 * 1024)
             verify_reserved_rejected_history(owner, entry, ordinal=ordinal,
@@ -967,8 +967,15 @@ def reserved_retained_bytes(owner, wire, state):
             if kind + "_file_pin" in active:
                 name = "before-v2.json" if kind == "before" and owner._ordinal else kind + ".json"
                 pending[base + "lineage/" + name] = active[kind + "_file_pin"]["size"]
-        for name, raw in active["evidence_pins"].items():
-            pending[base + name] = raw["size"]
+        # Once the active batch has reached staged/terminal, the retained native
+        # reader below observes these evidence files physically and adds their
+        # exact pins.  Keep them as placeholders only before that material is
+        # present; counting the same journal.prepared.json (and then rejecting
+        # its intentional overlap) would make a valid published child fail the
+        # capacity gate.
+        if active["state"] not in {"staged", "terminal"}:
+            for name, raw in active["evidence_pins"].items():
+                pending[base + name] = raw["size"]
         for path, size in pending.items():
             if type(size) is not int or size < 0 or path in materials:
                 _fail("capacity_material_invalid")

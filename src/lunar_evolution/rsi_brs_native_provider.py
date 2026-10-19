@@ -218,8 +218,8 @@ class _BRSNativeProviderBinding:
             return self._claim
         _BRSNativeProviderBinding._fixed(self, request, plan)
         inputs = NativeRSISchedulerProvider._inputs(self._provider, require_unexpired=False)
-        if (inputs != self._inputs or canonical_json(
-                NativeRSISchedulerProvider.rsi_fingerprint_config(self._provider)) != self._config):
+        live_config = canonical_json(NativeRSISchedulerProvider.rsi_fingerprint_config(self._provider))
+        if inputs != self._inputs or live_config != self._config:
             _fail("input_drift")
         _assert_plan_binding(request, self._child.memory, plan, context, inputs)
         NativeRSISchedulerProvider.assert_rejection_ledger(self._provider, controller.ledger)
@@ -261,7 +261,13 @@ class _BRSNativeProviderBinding:
         return self._completion
 
     def _reobserve(self, request, plan):
-        _BRSNativeProviderBinding._check(self, request, plan)
+        # The response path already ran the complete gate immediately after
+        # mailbox delivery.  Keep this pre-read check to the captured identity
+        # and live control pins; the final check below is the authoritative
+        # terminal/source reobservation and must remain strict.  Avoiding a
+        # duplicate runtime-manifest walk here keeps the owner free to join the
+        # worker promptly after it has consumed the response.
+        _BRSNativeProviderBinding._check(self, request, plan, hot=True)
         if self._state not in {"callback_returned", "returned"} or self._completion is None or self._pin is None:
             _fail("original_completion_required")
         if self._provenance is not None:

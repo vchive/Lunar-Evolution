@@ -296,7 +296,10 @@ def test_source_hook_cannot_change_original_owner_inputs_between_entry_and_write
         _assert_single_worker(value)
 
 
-@pytest.mark.parametrize("fault", ["missing", "run", "episode", "request", "record", "fields"])
+@pytest.mark.parametrize("fault", [
+    "missing", "run", "episode", "request", "record", "fields",
+    "ready-type", "ready-run", "ready-episode", "ready-request", "request-key",
+])
 def test_owner_settlement_rechecks_retained_ready_ack_after_service_closed(tmp_path, monkeypatch, fault):
     value = _fixture(tmp_path, monkeypatch)
     with _wave(value) as wave:
@@ -306,6 +309,17 @@ def test_owner_settlement_rechecks_retained_ready_ack_after_service_closed(tmp_p
             pending.ack = None
         elif fault == "fields":
             pending.ack_fields = (*pending.ack_fields[:3], OTHER)
+        elif fault == "ready-type":
+            pending.ready = object()
+        elif fault.startswith("ready-"):
+            field = {"ready-run": "run_id", "ready-episode": "episode_id",
+                     "ready-request": "request_sha256"}[fault]
+            object.__setattr__(pending.ready, field, "foreign-id" if field != "request_sha256" else OTHER)
+        elif fault == "request-key":
+            class ForeignKey:
+                def __hash__(self):
+                    return 1
+            wave.channel._requests[ForeignKey()] = pending
         else:
             field = {"run": "run_id", "episode": "episode_id", "request": "request_sha256",
                      "record": "record_sha256"}[fault]

@@ -23,6 +23,7 @@ from .rsi_brs_preparation_exchange import _BRSNativePreparationExchange
 from .rsi_brs_reserved_ledger import assert_reserved_brs_ledger
 from .rsi_brs_reserved_reservation import (
     BRSReservedReservationObservation,
+    read_reserved_brs_finalization_reservation,
     read_reserved_brs_reservation,
 )
 from .rsi_brs_reserved_wave import (
@@ -87,7 +88,7 @@ class _BRSReservedChildScope:
     owner_thread: int
 
 
-def read_reserved_brs_serial_observation(controller, state) -> _BRSReservedSerialObservation:
+def read_reserved_brs_serial_observation(controller, state) -> _BRSReservedSerialObservation | None:
     """Join the original reservation, whole ledger and retained prefix under one lease.
 
     Extra admission, reconciliation and historical-fence traces are inspected
@@ -96,7 +97,10 @@ def read_reserved_brs_serial_observation(controller, state) -> _BRSReservedSeria
     """
     from .rsi_brs_publication_lineage import _policy, _validate_persisted_policy
     from .rsi_brs_rejection_owner import read_reserved_brs_material_inventory
-    from .rsi_brs_reserved_owner import read_reserved_brs_prefix
+    from .rsi_brs_reserved_owner import (
+        read_reserved_brs_finalization_prefix,
+        read_reserved_brs_prefix,
+    )
     from .rsi_controller import RSILearningController
     from .rsi_store import RSILedger
 
@@ -115,10 +119,33 @@ def read_reserved_brs_serial_observation(controller, state) -> _BRSReservedSeria
             or not 1 <= len(plan["practices"]) <= 8):
         _fail("domain_invalid")
     domain = tuple(f"{run_id}-practice-{plan['wave']}-{index}" for index in range(len(plan["practices"])))
-    reservation = read_reserved_brs_reservation(ledger, run_id=run_id, episode_ids=domain,
-                                               expected_checkpoint_sha256=checkpoint[0])
+    # Completed waves use the finalization checkpoint contract.  The running-wave
+    # projection intentionally rejects ``status == completed``; replay must
+    # validate the existing finalization tail instead of reconstructing a
+    # selectable child projection.
+    if (state.get("status") == "completed" and type(state.get("executions")) is dict
+            and set(state["executions"]) == set(domain)):
+        from .rsi_brs_serial_finalization import read_reserved_brs_finalization
+
+        record = ledger.get_run(run_id)
+        if record is None:
+            _fail("run_missing")
+        read_reserved_brs_finalization(controller, record, state)
+        return None
+    reservation_reader = (
+        read_reserved_brs_finalization_reservation
+        if (state.get("status") == "completed" and set(state.get("executions", {})) == set(domain))
+        else read_reserved_brs_reservation
+    )
+    reservation = reservation_reader(ledger, run_id=run_id, episode_ids=domain,
+                                     expected_checkpoint_sha256=checkpoint[0])
     original = (reservation.original_checkpoint_sha256, reservation.original_state_bytes)
-    prefix, batches = read_reserved_brs_prefix(ledger, controller.producer_workspace,
+    prefix_reader = (
+        read_reserved_brs_finalization_prefix
+        if reservation_reader is read_reserved_brs_finalization_reservation
+        else read_reserved_brs_prefix
+    )
+    prefix, batches = prefix_reader(ledger, controller.producer_workspace,
         original_checkpoint=original, expected_checkpoint_sha256=checkpoint[0])
     wire = state.get("producer_publication_lineage")
     if wire is None:
@@ -578,6 +605,22 @@ def read_reserved_brs_published_ready(controller, owner, ready) -> str:
 
 
 def drive_reserved_brs_native_serial(controller, record, state):
+    """Run one original reserved wave under its bounded checkpoint contract."""
+    from .rsi_brs_publication_lineage import _policy_observation_scope
+    from .rsi_publication_lineage import reserved_checkpoint_scope
+
+    # A reserved wave is one bounded owner transaction.  Every observation
+    # still performs the lightweight alias/runtime drift checks in ``_policy``,
+    # while the expensive finite component fingerprint graph is shared for the
+    # duration of this transaction.  Without this scope, the serial driver's
+    # repeated checkpoint/owner polls rebuild the graph for each child check
+    # and can exhaust an otherwise generous wall-clock budget before the worker
+    # gets a chance to settle.
+    with reserved_checkpoint_scope(), _policy_observation_scope():
+        return _drive_reserved_brs_native_serial(controller, record, state)
+
+
+def _drive_reserved_brs_native_serial(controller, record, state):
     """Service one natural child at a time under the caller's original run lease.
 
     No public driver dispatches here. This private composition consumes only an
