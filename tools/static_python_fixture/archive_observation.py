@@ -651,6 +651,8 @@ def _observe_archive_snapshot(
         if member.type == b"x":
             if pending_pax_path is not None:
                 _fail("pax_sequence_invalid")
+            if type(member.mode) is not int or member.mode & ~0o777:
+                _fail("member_mode_invalid")
             pending_pax_path = _pax_path(tar_bytes, member)
             cursor = ((member.offset_data + member.size + 511) // 512) * 512
             _checkpoint(checkpoint)
