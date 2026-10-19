@@ -1,0 +1,27 @@
+{
+  "schema": "lunar-static-python-sealed-startup-probe-v1",
+  "host": "worker01",
+  "target": "/tmp/lunar-toolchains/build-core-noffi/python",
+  "target_sha256": "bfc4dbffc882d6f69540823cf32eef3994585c74d994b26677c3e61e17467a69",
+  "target_size": 26673400,
+  "elf": {
+    "pt_interp": false,
+    "dt_needed": false
+  },
+  "baseline": {
+    "exit_code": 1,
+    "stderr_sha256": "baaec70a3e250906a5a66cfda5f4078f43efc8cb237a5a2dbd0e43616d65fcca",
+    "stderr_size": 223,
+    "failure_code": "missing_encodings"
+  },
+  "claims": {
+    "runtime_execution_performed": false,
+    "startup_performed": false,
+    "owner_verified": false,
+    "production_admission": false
+  },
+  "loader_negative": {
+    "observed": false,
+    "reason": "dynamic-loader invocation reached the same bootstrap failure"
+  }
+}
