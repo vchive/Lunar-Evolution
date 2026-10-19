@@ -1,4 +1,18 @@
-## 2026-10-19 当前执行清单
+## 2026-10-19 当前执行清单（PR138/139 已合入）
+
+PR138（`af1cc62`）已将 reserved BRS serial owner/ledger/terminal/finalization 链路合入
+`main`，PR139（`b51d50d`）同步了交接和发布边界。当前 P0 的本地 provider-free
+serial 行为已完成；下面的旧表保留历史批次，不再把它们描述为当前未完成项。
+
+| 优先级 | 当前剩余出口 | 状态 |
+| --- | --- | --- |
+| P1 | Feature189/193 真实 CPython、toolchain/static ELF、sealed runtime 和 Linux lifecycle | 仍开放，需要实际来源、构建和运行授权；DTO/parser/mock fixture 不构成验收 |
+| P1 | Feature191/195 OpenEvolve/Shinka project lifecycle、生产 RSI CLI/Linux acceptance | adapter/exporter 和 provider-free contract 已有，真实 project entrypoint、取消/清理、结果归属和 CLI 验收仍开放 |
+| P2 | remote evaluator、外部 worker 认证、多机 ownership、distributed scheduler/service API | 后置，不进入当前单机正确性批次 |
+
+`production_admission` 与 `online_publication` 继续关闭；本轮不运行真实 solver、WebAgent、远程 evaluator 或公司评测平台。
+
+## 2026-10-19 当前执行清单（历史批次）
 
 当前开发按以下出口推进；组件测试通过、最终来源验收、完整CI与main合入分别记录。
 
