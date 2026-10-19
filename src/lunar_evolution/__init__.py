@@ -1126,9 +1126,13 @@ from .static_python_runtime_handoff import (
 )
 from .static_python_runtime_startup import (
     MAX_RUNTIME_STARTUP_BYTES,
+    MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES,
+    RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA,
     RUNTIME_STARTUP_SCHEMA,
     StaticPythonRuntimeStartup,
+    StaticPythonRuntimeStartupDiagnostic,
     StaticPythonRuntimeStartupError,
+    diagnose_static_python_runtime_startup,
     parse_static_python_runtime_startup,
 )
 from .trusted_bootstrap_handoff import (
@@ -1236,6 +1240,7 @@ __all__ = [
     "MAX_REQUEST_EVIDENCE_BYTES",
     "MAX_RUNTIME_HANDOFF_BYTES",
     "MAX_RUNTIME_STARTUP_BYTES",
+    "MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES",
     "MAX_STATIC_IMAGE_BYTES",
     "NATIVE_RSI_FAILURE_PROVENANCE_NAME",
     "NATIVE_RSI_INPUT_MARKER",
@@ -1270,6 +1275,7 @@ __all__ = [
     "RSI_PROTOCOL",
     "RSI_SCHEMA_VERSION",
     "RUNTIME_HANDOFF_SCHEMA",
+    "RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA",
     "RUNTIME_STARTUP_SCHEMA",
     "SHINKA_BINDING_MISMATCH",
     "STATIC_PYTHON_ACCEPTANCE_SCHEMA",
@@ -1685,6 +1691,7 @@ __all__ = [
     "StaticPythonRuntimeHandoff",
     "StaticPythonRuntimeHandoffError",
     "StaticPythonRuntimeStartup",
+    "StaticPythonRuntimeStartupDiagnostic",
     "StaticPythonRuntimeStartupError",
     "StoredActorCleanRoomEvidence",
     "StrategyResult",
@@ -1823,6 +1830,7 @@ __all__ = [
     "default_target_judge",
     "derive_population_state_after",
     "derive_producer_bundle_candidate_id",
+    "diagnose_static_python_runtime_startup",
     "ensure_fingerprint_compatible",
     "evaluate_candidate_execution",
     "evaluate_transfer_confidence",
