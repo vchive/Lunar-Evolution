@@ -233,7 +233,7 @@ actual checkout/source/import/raw/tree 独审和 main 合并是 P0 出口；不�
 5090gpu 构建探针的启动失败诊断，不能证明 sealed Python runtime、owner/lifecycle 或真实
 campaign 已通过。
 
-`7c1de98` 增加 `producer-process inspect` 和需要 `--confirm` 的
+[PR153](https://github.com/vchive/Lunar-Evolution/pull/153) 增加 `producer-process inspect` 和需要 `--confirm` 的
 `producer-process cleanup`，复用 retained process journal 的 owner、PID-reuse 和
 recovery-lock 门禁。该 CLI 只提供本地生命周期 plumbing；未启动 OpenEvolve/Shinka、远程
 evaluator 或真实 campaign，也不改变 `production_admission=false`。使用说明见
