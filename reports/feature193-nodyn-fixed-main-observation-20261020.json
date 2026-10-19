@@ -1,0 +1,40 @@
+{
+  "schema": "lunar-static-python-nodyn-fixed-main-observation-v1",
+  "host": "worker01",
+  "target": "/run/user/2110/lunar-probe/nodyn-importdl/python-frozen-main-nodyn",
+  "target_sha256": "0e0de672bc28425a7b6973093db057dbdd6e40a3ce95be252d012f4599e2bd36",
+  "target_size": 24533096,
+  "elf": {
+    "class": "ELF64",
+    "machine": "x86-64",
+    "pt_interp": false,
+    "dt_needed": false,
+    "dynamic_loader_symbols": false
+  },
+  "launcher": {
+    "mode": "fixed_main_broker_fixture",
+    "baseline_exit_code": 0,
+    "baseline_stderr_size": 0,
+    "baseline_computed": 285,
+    "baseline_broker_response_bytes": 86,
+    "baseline_sys_path": []
+  },
+  "loader_negative": {
+    "exit_code": 0,
+    "stderr_size": 0,
+    "direct_attempts": 8,
+    "direct_refusals": 8,
+    "ordinary_attempts": 7,
+    "ordinary_refusals": 7
+  },
+  "claims": {
+    "runtime_execution_performed": false,
+    "installation_accepted": false,
+    "input_consumption_verified": false,
+    "owner_verified": false,
+    "lifecycle_verified": false,
+    "production_admission": false,
+    "online_publication": false
+  },
+  "evidence_scope": "development_host_inert_fixture_observation"
+}
