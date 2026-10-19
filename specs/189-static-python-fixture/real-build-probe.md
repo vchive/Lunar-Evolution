@@ -108,5 +108,11 @@ the same-source finite frozen inventory, isolated `PyConfig`/getpath binding,
 loader-negative cases and native lifecycle receipt. No build, runtime or
 production-admission claim is promoted by this continuation.
 
+The detached observation can be retained in the bounded
+[`build-probe-receipt.md`](build-probe-receipt.md) wire. That parser keeps the
+core-link result, optional-module closure and startup failure as separate
+fields and rejects every capability claim; it is an evidence transport, not an
+acceptance shortcut.
+
 The archive PAX compatibility change is committed separately from this probe;
 the strict default remains unchanged for inert and untrusted inputs.
