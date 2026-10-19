@@ -28,6 +28,14 @@ translation units were compiled with `HAVE_DYNAMIC_LOADING` undefined. The
 temporary patch and objects remain on the development host; they are not an
 accepted source recipe or a checked-in runtime image.
 
+The remote `nodyn-reviewed/rebuild.sh` was rerun from the same reviewed
+inputs. Its script SHA-256 was
+`8c0a447c875983f8b9c0234f59b5d9a20d9c02bef642b2769af10bf9297a0c6a`, and it
+reproduced the executable SHA-256 above. The linked archive had SHA-256
+`76b1bcce1b69f091362f4d1355ec279d94c05630fed14abca2ee2a62e42e136e`. The
+script and archive are temporary host material and are not treated as the
+repository's pinned build recipe.
+
 ## Fixed-main broker probe
 
 The image was invoked through the existing fixed launcher and inert broker
