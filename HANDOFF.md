@@ -1,3 +1,21 @@
+# 当前交接（2026-10-19，PR138 合入 main 后）
+
+- PR138（`af1cc62`）已合入 `main`，完成 Feature196 reserved BRS 串行 owner/ledger
+  链路：原始 reservation、逐 child fresh custody、native provider/completion、
+  ready/ACK/mailbox、terminal lifecycle、exact root settlement、partial-wave resume
+  和 finalization replay。普通 DRS 仍保持原有 112 KiB checkpoint 约束，reserved
+  checkpoint 保持 128 KiB 上限。
+- 本地 provider-free inert 回归已覆盖 `rejected -> published -> rejected` 三子项混合波，
+  children 按 ordinal 完成，最终 checkpoint 约 125 KiB；focused ledger/policy/owner/
+  binding 回归、Ruff、compileall 和 `git diff --check` 已通过。该材料不等同于真实
+  CPython、真实 producer 或远程 evaluator 验收。
+- 当前仍开放的 P1 是 Feature189/193 的真实 CPython/toolchain/static ELF/sealed
+  runtime、Feature191 的真实 OpenEvolve/Shinka project lifecycle，以及生产 RSI
+  CLI/Linux 中断矩阵。这些需要独立的实际来源、工具链和运行授权，不能用 fixture
+  或 DTO/parser 结果代替；本轮没有伪造这些验收。
+- P2（remote evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service
+  API）继续后置，`production_admission` 与 `online_publication` 保持关闭。
+
 # 当前交接（2026-10-19，reserved-wave 串行工作树最新状态）
 
 - 本工作树已从基础 projection/prefix/ledger/reservation/exchange 扩展到
