@@ -992,6 +992,26 @@ def build_parser() -> argparse.ArgumentParser:
     startup_parser.add_argument("--expected-binding-sha256", required=True)
     startup_parser.add_argument("--expected-launch-intent-sha256", required=True)
     _add_json(startup_parser)
+    producer_process_parser = subparsers.add_parser(
+        "producer-process", help="inspect or explicitly clean up one retained local producer attempt",
+    )
+    producer_process_commands = producer_process_parser.add_subparsers(
+        dest="producer_process_command", required=True,
+    )
+    producer_process_inspect = producer_process_commands.add_parser(
+        "inspect", help="read the retained process lifecycle without starting or signalling a process",
+    )
+    producer_process_cleanup = producer_process_commands.add_parser(
+        "cleanup", help="clean up an attempt whose terminal receipt is missing",
+    )
+    producer_process_cleanup.add_argument(
+        "--confirm", action="store_true",
+        help="confirm that cleanup may signal the exact retained process group",
+    )
+    for producer_process_command_parser in (producer_process_inspect, producer_process_cleanup):
+        producer_process_command_parser.add_argument("workspace", type=Path)
+        producer_process_command_parser.add_argument("journal_id")
+        _add_json(producer_process_command_parser)
     benchmark_task_parser = subparsers.add_parser(
         "benchmark-task", help="validate a benchmark task envelope without initialization",
     )
@@ -6035,6 +6055,40 @@ def _inspect_static_python_runtime_startup(args: argparse.Namespace) -> dict[str
     }
 
 
+def _producer_process_lifecycle(args: argparse.Namespace) -> tuple[dict[str, object], int]:
+    """Inspect or explicitly clean up one retained local producer attempt.
+
+    This is deliberately separate from the normal controller/configuration path.  The command
+    consumes only the process lifecycle journal and never creates a run, retries a producer,
+    evaluates material, or changes ``production_admission``.  Cleanup is the one operation that
+    may signal an exact, durably registered process group, so it requires a second explicit
+    ``--confirm`` gate in addition to the subcommand itself.
+    """
+    from .producer_process import recover_producer_process
+
+    command = args.producer_process_command
+    if command == "cleanup" and not args.confirm:
+        raise ValueError("producer_process_cleanup_confirmation_required")
+    cleanup = command == "cleanup"
+    observed = recover_producer_process(
+        args.workspace, journal_id=args.journal_id, cleanup=cleanup,
+    )
+    if not isinstance(observed, dict):
+        raise TypeError("producer_process_lifecycle_observation_invalid")
+    payload = {
+        "operation": command,
+        "workspace": str(args.workspace.expanduser().absolute()),
+        "journal_id": args.journal_id,
+        "status": observed.get("status"),
+        "observation": observed,
+        "evidence_scope": "retained_local_process_lifecycle",
+        "production_admission": False,
+    }
+    exit_code = 1 if cleanup and observed.get("status") == "recovery_required" else 0
+    return payload, exit_code
+
+
+
 def _benchmark_task_validate(args: argparse.Namespace) -> dict[str, object]:
     from .benchmark_task import (
         BenchmarkTaskError,
@@ -6528,6 +6582,10 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
         if args.command == "inspect-static-python-runtime-startup":
             _emit(_inspect_static_python_runtime_startup(args), args.json)
             return 0
+        if args.command == "producer-process":
+            payload, exit_code = _producer_process_lifecycle(args)
+            _emit(payload, args.json)
+            return exit_code
         if args.command == "benchmark-task":
             if args.benchmark_task_command != "validate":
                 raise ValueError("benchmark_task_envelope_invalid")
