@@ -17,7 +17,7 @@ serial 行为已完成；下面的旧表保留历史批次，不再把它们描�
 
 | 优先级 | 当前剩余出口 | 状态 |
 | --- | --- | --- |
-| P1 | Feature189/193 真实 CPython、toolchain/static ELF、sealed runtime 和 Linux lifecycle | 原始静态 CPython 在 `encodings` 前失败；冻结 `encodings` 的实验镜像可以空启动但仍缺少完整 stdlib closure。`_lunar_static_main`、完整 import/codec negative、owner/lifecycle 和 Linux acceptance 仍开放，见 [sealed startup probe](feature189-sealed-startup-probe.md) |
+| P1 | Feature189/193 真实 CPython、toolchain/static ELF、sealed runtime 和 Linux lifecycle | 原始静态 CPython 在 `encodings` 前失败；冻结 `encodings` 的实验镜像可空启动但缺少完整 stdlib closure；no-dynamic fixed-main inert probe 已有独立诊断记录。`_lunar_static_main`、完整 import/codec negative、owner/lifecycle 和 Linux acceptance 仍开放，见 [sealed startup probe](feature189-sealed-startup-probe.md) |
 | P1 | Feature191/195 OpenEvolve/Shinka project lifecycle、生产 RSI CLI/Linux acceptance | PR155 只完成只读 profile preflight；真实 project entrypoint、取消/清理、结果归属、producer admission 和 CLI 验收仍开放 |
 | P2 | remote evaluator、外部 worker 认证、多机 ownership、distributed scheduler/service API | 后置，不进入当前单机正确性批次 |
 
