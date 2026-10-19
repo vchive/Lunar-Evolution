@@ -109,6 +109,12 @@ def _vector() -> tuple[dict, bytes, dict]:
         ],
         "manifest_sha256": "0" * 64,
     }
+    # The F01 recipe independently pins these configuration outputs.  Keep
+    # the F02 records aligned so the vector exercises the positive binding
+    # path; dedicated mutations below prove drift is refused.
+    categories["generated_config"]["sha256"] = descriptor["recipe"]["generated_config_sha256"]
+    categories["module_config"]["sha256"] = descriptor["recipe"]["module_config_sha256"]
+    categories["link_map"]["sha256"] = descriptor["recipe"]["link_map_sha256"]
     for name in ("archives", "crt_objects", "libc_objects", "libm_objects"):
         descriptor["recipe"]["link_inputs"].extend(
             {key: r[key] for key in ("path", "size", "sha256")} for r in categories[name]
@@ -191,6 +197,19 @@ def test_descriptor_cross_field_drift_refuses():
     with pytest.raises(closure.StaticPythonBuildClosureError) as caught:
         _parse(payload, json.dumps(changed, sort_keys=True, separators=(",", ":")).encode(), pins)
     assert caught.value.reason.endswith("cross_field")
+
+
+@pytest.mark.parametrize("field", [
+    "generated_config_sha256", "module_config_sha256", "link_map_sha256",
+])
+def test_configuration_artifact_digest_is_bound_to_f01_recipe(field):
+    payload, descriptor, pins = _vector()
+    changed = json.loads(descriptor.decode())
+    changed["descriptor"]["recipe"][field] = _sha("configuration drift")
+    _rehash_descriptor(changed["descriptor"])
+    changed_raw = _encode(changed)
+    pins.update(_installation_pins(changed))
+    _refuse(lambda: _parse(payload, changed_raw, pins), "cross_field")
 
 
 def test_pins_and_installation_descriptor_are_required_before_side_effects(monkeypatch):
