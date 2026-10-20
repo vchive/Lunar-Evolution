@@ -1324,6 +1324,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(rsi_producer_terminal_parser)
 
+    rsi_producer_acceptance_parser = rsi_commands.add_parser(
+        "producer-acceptance",
+        help="compose retained producer evidence into a blocked acceptance envelope",
+    )
+    rsi_producer_acceptance_parser.add_argument(
+        "profile", type=Path, help="canonical detached project lifecycle profile JSON",
+    )
+    rsi_producer_acceptance_parser.add_argument(
+        "terminal", type=Path, help="canonical retained Python producer terminal JSON",
+    )
+    rsi_producer_acceptance_parser.add_argument(
+        "--binding-sha256", required=True, help="original retained producer binding digest",
+    )
+    rsi_producer_acceptance_parser.add_argument(
+        "--deadline-unix", type=float,
+        help="optional original deadline assertion",
+    )
+    rsi_producer_acceptance_parser.add_argument(
+        "--profile-sha256", help="independently retained profile digest",
+    )
+    rsi_producer_acceptance_parser.add_argument(
+        "--replay-report", type=Path,
+        help="optional retained local replay summary JSON",
+    )
+    _add_json(rsi_producer_acceptance_parser)
+
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
     rsi_reconcile_parser.add_argument(
@@ -6183,6 +6209,44 @@ def _inspect_python_producer_terminal(args: argparse.Namespace) -> tuple[dict[st
     }, exit_code
 
 
+def _read_detached_json_object(path: Path, *, error: str, maximum: int) -> dict[str, object]:
+    """Read one bounded, regular, detached JSON object without initializing local state."""
+    from .candidate_evaluation_spec import CandidateEvaluationError, strict_json
+
+    try:
+        raw = _read_bounded_regular_file(path.expanduser(), maximum, error=error)
+        value = strict_json(raw, maximum)
+    except (CandidateEvaluationError, EvolutionError, OSError, TypeError, ValueError,
+            RecursionError):
+        raise ValueError(error) from None
+    if type(value) is not dict:
+        raise ValueError(error)
+    return value
+
+
+def _producer_acceptance_envelope(args: argparse.Namespace) -> tuple[dict[str, object], int]:
+    """Compose retained profile/terminal/replay reports without opening controller state."""
+    from .rsi_producer_acceptance import build_producer_acceptance_envelope
+    from .rsi_project_lifecycle import preflight_project_lifecycle
+
+    profile = preflight_project_lifecycle(
+        args.profile, expected_profile_sha256=args.profile_sha256,
+    )
+    terminal_args = argparse.Namespace(
+        terminal=args.terminal, binding_sha256=args.binding_sha256,
+        deadline_unix=args.deadline_unix,
+    )
+    terminal, _terminal_exit_code = _inspect_python_producer_terminal(terminal_args)
+    replay = None
+    if args.replay_report is not None:
+        replay = _read_detached_json_object(
+            args.replay_report, error="rsi_producer_acceptance_replay_invalid",
+            maximum=32 * 1024,
+        )
+    envelope = build_producer_acceptance_envelope(profile, terminal, replay)
+    return envelope.to_dict(), 1
+
+
 
 def _benchmark_task_validate(args: argparse.Namespace) -> dict[str, object]:
     from .benchmark_task import (
@@ -6773,6 +6837,12 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             # Terminal inspection is a detached DTO gate.  Keep it before _config()/ledger
             # initialization so malformed or unknown producer evidence cannot create RSI state.
             payload, exit_code = _inspect_python_producer_terminal(args)
+            _emit(payload, args.json)
+            return exit_code
+        if args.command == "rsi" and args.rsi_command == "producer-acceptance":
+            # Acceptance-envelope composition is still detached evidence.  It must remain
+            # before _config()/RSILedger creation and always returns blocked authority flags.
+            payload, exit_code = _producer_acceptance_envelope(args)
             _emit(payload, args.json)
             return exit_code
         config = _config(args)
