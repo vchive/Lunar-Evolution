@@ -27,3 +27,20 @@ retained_local_process_lifecycle` and always reports `production_admission: fals
 still returns `recovery_required` exits nonzero, preserving the existing unknown/reconcile gate.
 This is local lifecycle plumbing, not sealed Python runtime or real OpenEvolve/Shinka campaign
 acceptance.
+
+## Retained Python terminal gate
+
+The Python adapter also exposes a detached terminal check for a caller that already retained a
+canonical `PythonProducerTerminal` and its original binding digest:
+
+```bash
+lunar-evolution rsi producer-terminal TERMINAL.json \
+  --binding-sha256 BINDING_SHA256 --deadline-unix 4102444800 --json
+```
+
+This command only reparses the terminal and validates its binding/deadline pins through the
+existing read-only resume contract. It does not read the sidecar, inspect or signal a process,
+open the RSI ledger, invoke an evaluator, or repair an unknown terminal. A valid terminal returns
+`production_admission: false`; an `unknown` terminal returns `reconcile_required` and exits
+nonzero so it cannot be treated as a completed producer result. This is a retained evidence gate,
+not acceptance of a sealed runtime or a real OpenEvolve/Shinka campaign.

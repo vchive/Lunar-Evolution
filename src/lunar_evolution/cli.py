@@ -1308,6 +1308,22 @@ def build_parser() -> argparse.ArgumentParser:
     _add_home(rsi_project_preflight_parser)
     _add_json(rsi_project_preflight_parser)
 
+    rsi_producer_terminal_parser = rsi_commands.add_parser(
+        "producer-terminal",
+        help="validate one retained Python producer terminal without execution",
+    )
+    rsi_producer_terminal_parser.add_argument(
+        "terminal", type=Path, help="canonical retained Python producer terminal JSON",
+    )
+    rsi_producer_terminal_parser.add_argument(
+        "--binding-sha256", required=True, help="original retained producer binding digest",
+    )
+    rsi_producer_terminal_parser.add_argument(
+        "--deadline-unix", type=float,
+        help="optional original deadline assertion",
+    )
+    _add_json(rsi_producer_terminal_parser)
+
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
     rsi_reconcile_parser.add_argument(
@@ -6101,6 +6117,72 @@ def _producer_process_lifecycle(args: argparse.Namespace) -> tuple[dict[str, obj
     return payload, exit_code
 
 
+def _inspect_python_producer_terminal(args: argparse.Namespace) -> tuple[dict[str, object], int]:
+    """Validate one retained Python terminal without opening controller state.
+
+    This is intentionally a terminal-only boundary.  It does not read a binding sidecar,
+    recover a process, create a ledger, launch a producer, invoke an evaluator, or repair
+    retained evidence.  The caller supplies the original binding (and optionally deadline)
+    pin; an ``unknown`` terminal remains a reconcile-required result.
+    """
+    from .python_producer_lifecycle import (
+        MAX_PYTHON_TERMINAL_BYTES,
+        PythonProducerLifecycleError,
+        parse_python_producer_terminal,
+        resume_python_producer_terminal,
+    )
+
+    try:
+        raw = _read_bounded_regular_file(
+            args.terminal.expanduser(), MAX_PYTHON_TERMINAL_BYTES,
+            error="python_producer_terminal_invalid",
+        )
+        expected_binding: object = args.binding_sha256
+        if args.deadline_unix is not None:
+            expected_binding = {
+                "binding_sha256": args.binding_sha256,
+                "deadline_unix": args.deadline_unix,
+            }
+        terminal = parse_python_producer_terminal(raw)
+        try:
+            retained = resume_python_producer_terminal(
+                terminal, expected_binding=expected_binding,
+            )
+            status = retained.status
+            reason = "retained_terminal_valid"
+            exit_code = 0
+        except PythonProducerLifecycleError as exc:
+            if exc.code != "python_producer_lifecycle_reconcile_required":
+                raise
+            # ``resume`` deliberately refuses unknown.  The DTO has already passed all
+            # binding/digest/deadline checks, so expose the stable gate without pretending
+            # that the worker was successfully reconciled.
+            retained = terminal
+            status = "unknown"
+            reason = "reconcile_required"
+            exit_code = 1
+    except PythonProducerLifecycleError as exc:
+        raise ValueError(exc.code) from None
+    except (EvolutionError, OSError, TypeError, ValueError, RecursionError):
+        raise ValueError("python_producer_terminal_invalid") from None
+    return {
+        "status": status,
+        "reason": reason,
+        "terminal_sha256": retained.terminal_sha256,
+        "binding_sha256": retained.binding_sha256,
+        "run_id": retained.run_id,
+        "journal_id": retained.journal_id,
+        "launch_id": retained.launch_id,
+        "cleanup_status": retained.cleanup_status,
+        "request_count": retained.request_count,
+        "reconcile_required": status == "unknown",
+        "read_only": True,
+        "evidence_scope": "retained_python_terminal",
+        "production_admission": False,
+        "online_publication": False,
+    }, exit_code
+
+
 
 def _benchmark_task_validate(args: argparse.Namespace) -> dict[str, object]:
     from .benchmark_task import (
@@ -6687,6 +6769,12 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             )
             _emit(payload, args.json)
             return 0 if payload["status"] == "ready" else 1
+        if args.command == "rsi" and args.rsi_command == "producer-terminal":
+            # Terminal inspection is a detached DTO gate.  Keep it before _config()/ledger
+            # initialization so malformed or unknown producer evidence cannot create RSI state.
+            payload, exit_code = _inspect_python_producer_terminal(args)
+            _emit(payload, args.json)
+            return exit_code
         config = _config(args)
         if args.command == "init":
             _emit({"home": str(config.home), "status": "initialized"}, args.json)
