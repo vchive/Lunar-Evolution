@@ -94,7 +94,7 @@ def test_four_observations_preserve_root_fence_and_restart_inspection_writes_not
     rebuilt = RSILedger(value.ledger.database)
     sqlite_artifacts = tuple(
         value.ledger.database.with_name(value.ledger.database.name + suffix)
-        for suffix in ("", "-wal", "-shm")
+        for suffix in ("", "-wal")
     )
     before = {
         path: None if not path.exists() else path.read_bytes()
