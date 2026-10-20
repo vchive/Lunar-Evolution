@@ -78,6 +78,25 @@ abd8e59c029dc6f5487c2f3e8defe6f956ad967f1e2994130955b8aa972b68b8
 The failing `traceback` row had empty stdout and stderr SHA-256
 `2a7792e0856644ffa653060fbfc38a21df94ca17ab27e60105456af54b195d27`.
 
+## Follow-up traceback probe
+
+A second disposable relink added source-owned `traceback.py` alongside
+`linecache.py`. It reached the next import boundary and failed closed on
+`collections`:
+
+```text
+probe_sha256:           6b34531e0cbf002c37ced2722dea9d87f5362985a847092936c880cee8e0c057
+Lib/traceback.py:        bbc5061116954fb83d86b196cec3d2164000a5b7b9deaadfbe7c5abe147d1058
+traceback.h:            da3fdd375870f6b4c67bdd93e77aae20eaa0575189482f7647322b089054db81
+command_exit:           1
+next_missing_module:    collections
+stderr_sha256:          60d0563f620ac7e19670863f2eb73baab00e1ed09f3433e8c9714468f87eeada
+```
+
+This follow-up is still a disposable closure experiment. The baseline source
+and executable were restored after relinking; no module was added to Lunar's
+reviewed fixed-main inventory.
+
 The bounded receipt projection for this experiment is:
 
 ```json
