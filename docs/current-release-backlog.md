@@ -15,6 +15,11 @@ detached profile 标为 verified，并明确 accepted runtime、entrypoint、lif
 acceptance 与 controller admission 的阻断原因；不会初始化 ledger、启动 producer 或
 改变 `production_admission=false`。
 
+本轮还用用户提供的外部 benchmark checkout 做了只读 case smoke：复制
+`train_delay_rescheduling` 与 `city_delivery_routing` 到 ignored validation 目录，分别
+用原 evaluator 验证了一个合法提交和一个负向 baseline。源 checkout 未修改，case 结果只
+证明 evaluator/输入复制链路可用，不替代真实模型 campaign、官方 evaluator 或生产验收。
+
 此前已合入 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读

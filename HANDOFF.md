@@ -1,6 +1,6 @@
 # 当前交接（2026-10-20，本地串行回归与 P1 门禁收尾）
 
-- `main` 当前为 `16869c3`（已推送 `origin/main`），完成了三项 provider-free 收尾：producer process 的
+- `main` 当前为 `53f2170`（已推送 `origin/main`），完成了三项 provider-free 收尾：producer process 的
   monotonic/parent deadline 样本统一 fail-closed（异常、bool、NaN、Inf、超大整数和非数值
   均在 claim/nonce/Popen 前拒绝）；static-Python acceptance pins 对五个 DTO section
   强制 exact key-set；runtime/tree binding 增加严格、进程内有界的 validated projection
@@ -11,6 +11,13 @@
   `rejected-rejected`、`published-published`、`published-rejected`、`three-child-mixed`
   均通过（各 case 约 3–4 分钟，未复现此前的 `solver_settings_changed`）。README 的
   provider-free DRS CLI run/inspect/usage/resume 也在唯一临时 home 中实跑成功。
+- 已从用户提供的外部 benchmark checkout 复制两组 case 到 ignored 的
+  `.lunar-evolution/validation/benchmark-cases-20261020/`，原 checkout 未写入：
+  `train_delay_rescheduling` 的本地 evaluator 得到 `validity=1.0`、`overall=0.5282`、
+  `objective=141700`；`city_delivery_routing` 的确定性 12-route submission 得到
+  `validity=1.0`、`overall=0.0379`。同一 city case 的原 9-route baseline 被 evaluator
+  正确拒绝（`validity=0`），作为负向门禁；这些是本地 evaluator smoke evidence，不是模型
+  效果或生产准入结论。
 - 5090gpu 的隔离目录 `/home/qinzhiqing/vchive/lunar-agent-case-20261020` 已用当前
   source 跑 producer/binding/static focused 回归和 `compileall`；受控 frozen CPython
   probe 仍固定失败于 `ModuleNotFoundError: linecache`。进一步检查确认该 binary 的
