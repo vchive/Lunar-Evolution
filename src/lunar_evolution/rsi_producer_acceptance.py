@@ -27,6 +27,8 @@ _PROFILE_PROTOCOL = "lunar-rsi-project-lifecycle-profile-v1"
 _TERMINAL_SCOPE = "retained_python_terminal"
 _REPLAY_SCOPE = "retained_local_comparison"
 _TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "unknown"})
+_VERIFIED_CLEANUP = frozenset({"cleaned", "already_exited"})
+_UNRESOLVED_CLEANUP = frozenset({"unknown", "missing"})
 _REPLAY_STATES = frozenset({"completed", "unknown", "drifted"})
 _REPLAY_FIELDS = frozenset({"status", "evidence_scope", "read_only", "production_admission"})
 _FIELDS = frozenset({
@@ -130,6 +132,16 @@ def _validate_terminal(value: object) -> dict[str, Any]:
         _identifier(terminal[field], "terminal_identity_invalid")
     if type(terminal["cleanup_status"]) is not str or not terminal["cleanup_status"]:
         _fail("terminal_cleanup_invalid")
+    cleanup_status = terminal["cleanup_status"]
+    if cleanup_status not in _VERIFIED_CLEANUP | _UNRESOLVED_CLEANUP:
+        _fail("terminal_cleanup_invalid")
+    # A detached acceptance report must preserve the lifecycle boundary: a known
+    # terminal is only usable after owner cleanup has been observed.  Unknown or
+    # missing cleanup remains a reconcile obligation and can never be presented as
+    # a completed/failed/cancelled terminal.  This is a provider-free gate; it does
+    # not observe a process or make a cleanup claim on behalf of the producer.
+    if terminal["status"] != "unknown" and cleanup_status not in _VERIFIED_CLEANUP:
+        _fail("terminal_cleanup_unverified")
     if type(terminal["request_count"]) is not int or terminal["request_count"] < 0:
         _fail("terminal_request_count_invalid")
     if terminal["reconcile_required"] is not (terminal["status"] == "unknown"):
