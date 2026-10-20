@@ -1,9 +1,8 @@
 # Remaining benchmark case smoke (2026-10-21)
 
-This record covers the three remaining benchmark cases copied from the external
-read-only checkout. The source checkout at
-`/Users/liminghan/Documents/fm/codesets/baidu/acg-fm/famou-bench/` was not
-modified; its `git status --short` was empty after the run. All copied inputs,
+This record covers the three remaining benchmark cases copied from an external
+read-only checkout. That checkout was not modified; its `git status --short`
+was empty after the run. All copied inputs,
 submissions, and raw output are under the ignored
 `.lunar-evolution/validation/benchmark-cases-20261020/` and
 `.lunar-evolution/validation/benchmark-reruns-20261021/` directories.
