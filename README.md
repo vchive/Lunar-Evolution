@@ -26,7 +26,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | 普通任务与 `solve` | ✅ 可用 | 本地 plan、AgentLoop、评测、artifact 和 delivery ledger。 |
-| 外部优化 case 本地 smoke | 🧪 已验证 | 两组只读复制的优化 case 已由原 evaluator 完成合法/负向提交检查；材料在 ignored validation 目录，不改变生产准入。 |
+| 外部优化 case 本地 smoke | 🧪 已验证 | 只读复制的 `train_delay_rescheduling`、`city_delivery_routing` 已由原 evaluator 完成合法/负向提交检查：分别为 `validity=1.0 / overall=0.5282`、12-route `validity=1.0 / overall=0.0379`，9-route baseline 按契约拒绝（`validity=0`）。材料在 ignored validation 目录，不改变生产准入。 |
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
 | 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |
