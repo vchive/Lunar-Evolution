@@ -138,7 +138,10 @@ def test_descriptor_overflow_is_rejected_before_json_parse(monkeypatch):
     ("compile_flags", "-fPIE"),
     ("link_flags", "-shared"),
     ("link_flags", "-pie"),
+    ("link_flags", "-static-pie"),
     ("link_flags", "-ldl"),
+    ("link_flags", "-Wl,-Bdynamic"),
+    ("link_flags", "-Wl,-rpath=/tmp"),
 ])
 def test_no_dynamic_recipe_rejects_loader_or_position_independent_escape(vector, section, flag):
     payload = copy.deepcopy(vector["descriptor"])

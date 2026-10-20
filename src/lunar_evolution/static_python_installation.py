@@ -127,7 +127,8 @@ _REQUIRED_LINK_FLAGS = frozenset(("-static", "-no-pie"))
 _DYNAMIC_FLAG_MARKERS = (
     "--enable-shared", "--with-shared", "--enable-dynamic", "--with-dynamic",
     "--enable-loadable", "--with-system-ffi", "-fpic", "-fpie", "-fPIC", "-fPIE",
-    "-shared", "-pie", "-rdynamic", "-dynamic", "-ldl", "-l:ld-linux",
+    "-shared", "-pie", "-static-pie", "-rdynamic", "-dynamic", "-ldl", "-l:ld-linux",
+    "-Wl,-bdynamic", "-Wl,-rpath", "-Wl,-dynamic-linker", "-Wl,-shared", "-Wl,-pie",
 )
 _FORBIDDEN_LINK_SUFFIXES = (".so", ".so.", ".dylib", ".dll", ".la")
 _SAFE_ENV_VALUE = re.compile(r"[A-Za-z0-9_./:+\-]*\Z")

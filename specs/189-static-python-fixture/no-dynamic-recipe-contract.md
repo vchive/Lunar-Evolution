@@ -11,7 +11,8 @@ non-PIE intent:
 - configure flags include `--disable-shared` and `--without-ensurepip`;
 - compile flags include `-fno-PIE`;
 - link flags include `-static` and `-no-pie`;
-- dynamic-loading, shared, PIE, `-rdynamic`, and `-ldl` flag forms are refused;
+- dynamic-loading, shared, PIE, `-rdynamic`, `-ldl`, `-Bdynamic`, rpath and
+  dynamic-linker flag forms are refused;
 - link inputs cannot be shared libraries (`.so`, `.dylib`, `.dll`, `.la`) or a
   dynamic loader path;
 - flags are unique, contain no whitespace, and environment values use the
