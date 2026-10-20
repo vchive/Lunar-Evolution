@@ -26,7 +26,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | 普通任务与 `solve` | ✅ 可用 | 本地 plan、AgentLoop、评测、artifact 和 delivery ledger。 |
-| 外部优化 case 本地 smoke | 🧪 已验证 | [基础记录](docs/benchmark-case-smoke-20261020.md)、[irregular packing](docs/benchmark-case-smoke-20261021.md) 与[剩余 case](docs/benchmark-case-smoke-20261021-remaining.md)：复制的 `train_delay_rescheduling`、`city_delivery_routing`、`hospital_or_scheduling`、`irregular_packing`、`steel_coil_cutting`、`supply_chain_inventory` 已完成原 evaluator 的合法/负向检查；`ore_reclaiming_scheduling` 只记录了明确的无效控制，材料在 ignored validation 目录，不改变生产准入。 |
+| 外部优化 case 本地 smoke | 🧪 已验证 | [基础记录](docs/benchmark-case-smoke-20261020.md)、[irregular packing](docs/benchmark-case-smoke-20261021.md) 与[剩余 case](docs/benchmark-case-smoke-20261021-remaining.md)：复制的 `train_delay_rescheduling`、`city_delivery_routing`、`hospital_or_scheduling`、`irregular_packing`、`steel_coil_cutting`、`supply_chain_inventory`、`ore_reclaiming_scheduling` 已完成原 evaluator 的合法/负向检查；材料在 ignored validation 目录，不改变生产准入。 |
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
 | 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |

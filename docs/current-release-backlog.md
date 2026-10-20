@@ -11,9 +11,9 @@ compileall 和 `git diff --check` 均通过。
 重复摆放负向 case 得到 `validity=0`；原 checkout 保持 clean。详见
 [`benchmark-case-smoke-20261021.md`](benchmark-case-smoke-20261021.md)。这些结果仍是
 provider-free evaluator-path evidence，不是模型 campaign、远程评测或生产准入。剩余
-`steel_coil_cutting` 与 `supply_chain_inventory` 的正向/负向结果见
+`steel_coil_cutting`、`supply_chain_inventory` 与 `ore_reclaiming_scheduling` 的正向/负向结果见
 [`benchmark-case-smoke-20261021-remaining.md`](benchmark-case-smoke-20261021-remaining.md)；
-`ore_reclaiming_scheduling` 当前只保留失败控制，未声称正向质量。
+这些结果是 evaluator-path smoke，不代表模型 campaign 或优化质量。
 
 P1 的真实 CPython/stdlib closure、source/toolchain/static ELF、sealed startup、owner/lifecycle、
 authoritative input/result、OpenEvolve/Shinka project lifecycle 和 Linux 中断矩阵仍开放；P2 的
