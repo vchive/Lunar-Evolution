@@ -1,6 +1,6 @@
 ## 2026-10-20 当前执行清单（PR153/154/155/160/161 已合入）
 
-远端 `main` 当前为 `8cc311c`，已合入 PR153/154/155/160/161：启动失败诊断与
+远端 `main` 当前为 `39a8726`，已合入 PR153/154/155/160/161：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查，以及 static Python no-dynamic recipe gate。它们保留
