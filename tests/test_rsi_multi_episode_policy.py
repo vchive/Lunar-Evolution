@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import tempfile
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from test_producer_python_runtime import _inventory
-from test_rsi_producer_gateway import _fixture
+from test_rsi_producer_gateway import _fixture as _gateway_fixture
 from test_rsi_producer_staging_controller import ObservedAttestations, _run
 
 from lunar_evolution import RSILearningController, RSILearningError, fixture_solver_gateway
@@ -19,6 +21,19 @@ from lunar_evolution.rsi_publication_lineage import multi_episode_publication_po
 
 class _OwnerLoss(BaseException):
     pass
+
+
+def _fixture(tmp_path, monkeypatch):
+    """Use a short real parent for the unchanged 32 KiB binding wire cap."""
+    candidate = tmp_path
+    if len(str(candidate)) > 96:
+        parent = next(
+            str(path)
+            for path in (Path("/private/tmp"), Path("/var/tmp"), Path("/tmp"))
+            if path.is_dir() and not path.is_symlink()
+        )
+        candidate = Path(tempfile.mkdtemp(prefix="lce-mep-policy-", dir=parent))
+    return _gateway_fixture(candidate, monkeypatch)
 
 
 def _controller(value, *, publication=False, execution=True):
