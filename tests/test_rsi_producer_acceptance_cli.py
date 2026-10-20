@@ -117,6 +117,46 @@ def test_unknown_terminal_keeps_reconcile_gate(tmp_path: Path, capsys: pytest.Ca
     assert "terminal_reconcile" in payload["missing_gates"]
 
 
+@pytest.mark.parametrize("cleanup_status", ["unknown", "missing"])
+def test_known_terminal_with_unresolved_cleanup_is_rejected(
+    tmp_path: Path, cleanup_status: str,
+) -> None:
+    """A detached terminal cannot turn uncertain owner cleanup into acceptance."""
+    profile_path, terminal_path = _write_inputs(tmp_path)
+    retained = json.loads(terminal_path.read_bytes())
+    terminal = {
+        "status": "completed", "reason": "retained_terminal_valid",
+        "terminal_sha256": retained["terminal_sha256"], "binding_sha256": D,
+        "run_id": "run-1", "journal_id": "journal-1", "launch_id": "launch-1",
+        "cleanup_status": cleanup_status, "request_count": 1,
+        "reconcile_required": False, "read_only": True,
+        "evidence_scope": "retained_python_terminal",
+        "production_admission": False, "online_publication": False,
+    }
+    with pytest.raises(ProducerAcceptanceEnvelopeError, match="terminal_cleanup_unverified"):
+        build_producer_acceptance_envelope(
+            preflight_project_lifecycle(profile_path), terminal,
+        )
+
+
+def test_terminal_cleanup_label_is_closed_before_composition(tmp_path: Path) -> None:
+    profile_path, terminal_path = _write_inputs(tmp_path)
+    retained = json.loads(terminal_path.read_bytes())
+    terminal = {
+        "status": "completed", "reason": "retained_terminal_valid",
+        "terminal_sha256": retained["terminal_sha256"], "binding_sha256": D,
+        "run_id": "run-1", "journal_id": "journal-1", "launch_id": "launch-1",
+        "cleanup_status": "cleanup_unverified", "request_count": 1,
+        "reconcile_required": False, "read_only": True,
+        "evidence_scope": "retained_python_terminal",
+        "production_admission": False, "online_publication": False,
+    }
+    with pytest.raises(ProducerAcceptanceEnvelopeError, match="terminal_cleanup_invalid"):
+        build_producer_acceptance_envelope(
+            preflight_project_lifecycle(profile_path), terminal,
+        )
+
+
 def test_completed_replay_removes_only_replay_gate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     profile_path, terminal_path = _write_inputs(tmp_path)
     replay_path = tmp_path / "replay.json"
