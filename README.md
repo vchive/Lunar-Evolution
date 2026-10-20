@@ -10,7 +10,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 
 当前主线是单机可靠执行和 RSI（递归学习）控制闭环。RSI 改进候选程序与经验证的任务记忆；模型权重训练和修改 Lunar 自身代码不在当前主线内。RSI producer 路径保持 `production_admission=false`，真实 solver campaign 仍需独立验收。
 
-截至 2026-10-20，`main` 已包含 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179/182；当前收尾变更还包括：启动失败诊断与
+截至 2026-10-21，`main` 已包含 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179/182；当前 HEAD 还包含安装与构建产物 pin 绑定、完整 build provenance section 校验、reserved serial worker 的绝对 deadline/unknown fence、输入/结果 placeholder pin 拒绝，以及启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance
@@ -26,7 +26,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
 | 普通任务与 `solve` | ✅ 可用 | 本地 plan、AgentLoop、评测、artifact 和 delivery ledger。 |
-| 外部优化 case 本地 smoke | 🧪 已验证 | [本轮记录](docs/benchmark-case-smoke-20261020.md)：只读复制的 `train_delay_rescheduling`、`city_delivery_routing`、`hospital_or_scheduling` 已完成原 evaluator 合法/负向检查；材料在 ignored validation 目录，不改变生产准入。 |
+| 外部优化 case 本地 smoke | 🧪 已验证 | [基础记录](docs/benchmark-case-smoke-20261020.md)、[irregular packing](docs/benchmark-case-smoke-20261021.md) 与[剩余 case](docs/benchmark-case-smoke-20261021-remaining.md)：复制的 `train_delay_rescheduling`、`city_delivery_routing`、`hospital_or_scheduling`、`irregular_packing`、`steel_coil_cutting`、`supply_chain_inventory` 已完成原 evaluator 的合法/负向检查；`ore_reclaiming_scheduling` 只记录了明确的无效控制，材料在 ignored validation 目录，不改变生产准入。 |
 | provider-free RSI（DRS/BRS） | ✅ 可回归 | 本地 mock/fixture；支持 run、inspect、resume、usage、replay、reconcile，不启动真实 producer。 |
 | durable resume / unknown gate / fingerprint / budget | ✅ 已接入 | 恢复前复核原 checkpoint、预算、deadline 和组件身份；未知状态保留证据并拒绝自动重试。 |
 | 单 child producer 执行 | 🧪 已合入的实验 API | PR99 已在 main；显式 `producer_child_execution=True` 的本地 fixture 闭环已验收，默认保持 staging-only。 |
@@ -41,7 +41,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | static Python no-dynamic recipe gate | ✅ 描述符门禁已合入 | [PR161](https://github.com/vchive/Lunar-Evolution/pull/161) 拒绝 shared/PIE/dynamic-loader flags、共享 link inputs、重复或 shell-like 值；这是构建前策略检查，不等于实际 ELF/sealed runtime 验收。 |
 | static Python acceptance envelope provenance | ✅ provider-free 边界已合入 | [PR165](https://github.com/vchive/Lunar-Evolution/pull/165) 将 descriptor、source/toolchain/frozen/link/artifact 的 detached pins 绑定到 canonical wire；`detached-pins-only` 不代表真实构建或 sealed runtime。 |
 | retained producer acceptance envelope | 🧪 本地只读组合已接入 | [PR166](https://github.com/vchive/Lunar-Evolution/pull/166) 提供 `rsi producer-acceptance`，组合 project preflight、terminal 和可选 replay；始终 `blocked/runtime_acceptance_required`，不初始化 ledger、不启动 producer/evaluator。 |
-| detached static-Python acceptance CLI | 🧪 provider-free 组合已接入 | [PR182](https://github.com/vchive/Lunar-Evolution/pull/182) 提供 `rsi static-python-acceptance`，以独立 canonical pins 组合 installation/build/startup/input-result/handoff DTO；命令只读、始终 `status=blocked`，不启动 runtime/evaluator，`production_admission=false`。 |
+| detached static-Python acceptance CLI | 🧪 provider-free 组合已接入 | [PR182](https://github.com/vchive/Lunar-Evolution/pull/182) 提供 `rsi static-python-acceptance`，以独立 canonical pins 组合 installation/build/startup/input-result/handoff DTO；命令只读、始终 `status=blocked`，不启动 runtime/evaluator，`production_admission=false`。输入/结果 DTO 同时拒绝全零和全 f 占位 digest。 |
 | producer cleanup lifecycle gate | ✅ provider-free 门禁已加固 | [PR176](https://github.com/vchive/Lunar-Evolution/pull/176) 要求已知 terminal 只能在 `cleaned` 或 `already_exited` 证据下进入组合 envelope；`unknown`/`missing` 和未审计标签 fail closed，不启动 producer/evaluator。 |
 | producer adapter failure fence | ✅ provider-free 门禁已加固 | [PR178](https://github.com/vchive/Lunar-Evolution/pull/178) 为取消、deadline、cleanup uncertainty 保留固定生命周期错误码，并在 native 失败后复核 binding sidecar；[PR179](https://github.com/vchive/Lunar-Evolution/pull/179) 让 cleanup uncertainty note 覆盖更窄的取消/deadline 标签。 |
 | frozen bootstrap closure observation | 🧪 5090gpu 诊断已记录 | [PR169](https://github.com/vchive/Lunar-Evolution/pull/169) 记录静态 ELF、`--version/--help` 成功，以及 command-body/codec 路径因 `linecache` 缺失失败；不构成 sealed runtime 或 production acceptance。 |

@@ -1,3 +1,9 @@
+# 当前交接（2026-10-21，P1 admission 与 benchmark smoke 收尾）
+
+- `main` 当前包含 `e568761`、`f0aa0ca`、`d65d433` 和 `23d628e`，工作树除本次文档更新外保持干净；四项变更均已完成 focused tests、Ruff、compileall 与 `git diff --check`。static-Python acceptance 现在要求 installation descriptor 与 build closure 的最终 artifact SHA 一致，并要求五个 closure provenance section 全部存在且与 DTO pins 匹配；reserved serial 异常路径先唤醒 worker，再按 retained absolute deadline 有界等待，超时固定进入 `rsi_brs_reserved_serial_worker_unknown`，不会继续 settlement；input/result DTO 拒绝全零和全 f 占位 digest。
+- 从用户提供的只读 benchmark checkout 复制的 `train_delay_rescheduling`、`city_delivery_routing`、`hospital_or_scheduling`、`irregular_packing`、`steel_coil_cutting` 和 `supply_chain_inventory` 已在 ignored validation 目录用原 evaluator 实跑；新增 irregular case 的合法 grid submission 为 `validity=1.0`、`overall=0.0590`，steel/supply-chain 正向 case 分别为 `overall=0.971555` 和 `0.2254`，对应负向 case 都正确拒绝。`ore_reclaiming_scheduling` 目前只保留缺失 pad/重叠控制的失败证据，没有声称正向结果。原 checkout git status 已恢复干净，未写入源目录。完整数字与命令见 [benchmark-case-smoke-20261020.md](docs/benchmark-case-smoke-20261020.md)、[benchmark-case-smoke-20261021.md](docs/benchmark-case-smoke-20261021.md) 和 [benchmark-case-smoke-20261021-remaining.md](docs/benchmark-case-smoke-20261021-remaining.md)。
+- 5090gpu 上继续进行一次 disposable CPython 3.13.12 全冻结 closure probe；它只作为诊断材料，不能替代真实 fixed-main、sealed owner/lifecycle、authoritative input/result 或 production admission。当前仍保持 `production_admission=false`、`online_publication=false`。
+
 # 当前交接（2026-10-20，本地串行回归与 P1 门禁收尾）
 
 - `main` 当前为 `8e4411f`（已推送 `origin/main`），完成了三项 provider-free 收尾及外部 benchmark effect-trial smoke 记录：producer process 的

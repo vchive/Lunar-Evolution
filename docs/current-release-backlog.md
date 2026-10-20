@@ -1,3 +1,25 @@
+## 2026-10-21 当前执行清单（main 本地领先 origin，待推送）
+
+本轮新增四项 provider-free 收尾：static-Python acceptance 强制 installation/build 最终
+artifact pin 一致；build provenance 的五个 closure section 缺失或漂移时直接拒绝；reserved
+serial worker 异常路径在 retained absolute deadline 内有界等待，未退出固定进入 unknown，
+不继续 settlement；input/result DTO 拒绝全零和全 f 占位 digest。对应 focused tests、Ruff、
+compileall 和 `git diff --check` 均通过。
+
+外部只读 benchmark checkout 继续只做复制和本地 evaluator smoke。新增
+`irregular_packing` 合法 20,100 行 grid submission 得到 `validity=1.0`、`overall=0.0590`，
+重复摆放负向 case 得到 `validity=0`；原 checkout 保持 clean。详见
+[`benchmark-case-smoke-20261021.md`](benchmark-case-smoke-20261021.md)。这些结果仍是
+provider-free evaluator-path evidence，不是模型 campaign、远程评测或生产准入。剩余
+`steel_coil_cutting` 与 `supply_chain_inventory` 的正向/负向结果见
+[`benchmark-case-smoke-20261021-remaining.md`](benchmark-case-smoke-20261021-remaining.md)；
+`ore_reclaiming_scheduling` 当前只保留失败控制，未声称正向质量。
+
+P1 的真实 CPython/stdlib closure、source/toolchain/static ELF、sealed startup、owner/lifecycle、
+authoritative input/result、OpenEvolve/Shinka project lifecycle 和 Linux 中断矩阵仍开放；P2 的
+remote evaluator、外部 worker 认证、多机 ownership 和 distributed service 继续后置。保持
+`production_admission=false`、`online_publication=false`。
+
 ## 2026-10-20 当前执行清单（main `8e4411f`，已推送）
 
 本轮 provider-free 收尾已完成：producer process 的启动时钟/parent deadline 统一固定拒绝，
