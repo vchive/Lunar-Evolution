@@ -92,7 +92,14 @@ def test_four_observations_preserve_root_fence_and_restart_inspection_writes_not
     assert value.ledger.episode_result(value.episode_id) is None
     assert value.ledger.controller_brs_reconcile_obligations(value.run_id)[value.episode_id] == value.binding["obligation"]
     rebuilt = RSILedger(value.ledger.database)
-    before = value.ledger.database.read_bytes()
+    sqlite_artifacts = tuple(
+        value.ledger.database.with_name(value.ledger.database.name + suffix)
+        for suffix in ("", "-wal", "-shm")
+    )
+    before = {
+        path: None if not path.exists() else path.read_bytes()
+        for path in sqlite_artifacts
+    }
     original = rebuilt._connect
     statements = []
 
@@ -112,7 +119,10 @@ def test_four_observations_preserve_root_fence_and_restart_inspection_writes_not
     assert result["records"][-1]["worker_receipt_observed"] is True
     assert result["callback_observation"] == result["native_process_observation"] == "unobserved"
     assert result["terminal_evidence"] is False
-    assert value.ledger.database.read_bytes() == before
+    assert {
+        path: None if not path.exists() else path.read_bytes()
+        for path in sqlite_artifacts
+    } == before
     assert all(not statement.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "CREATE"))
                for statement in statements)
 

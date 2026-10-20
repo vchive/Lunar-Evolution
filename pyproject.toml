@@ -32,6 +32,7 @@ lunar_evolution = ["*.c", "*.h"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 addopts = "-q"
 
 [tool.ruff]
