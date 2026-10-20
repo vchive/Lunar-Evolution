@@ -1,9 +1,10 @@
-# 当前交接（2026-10-20，PR171 合入 main 后）
+# 当前交接（2026-10-20，PR173/174 合入 main 后）
 
-- 远端 `main` 当前为 `dc8cf204cd1157b9c779edfd6765ceeda0d06d7d`，PR171 已合入；本地
-  checkout 与远端一致且工作树干净。PR160–171 的代码、测试和状态文档均已在主线。
-- PR171 的 GitHub Actions run `39372475795` 已创建但仍处于 `queued`，包含 33 个
-  Python 3.11/3.12/3.13 job；在它完成前不能把完整 CI 写成通过。此前 provider-free
+- 远端 `main` 当前为 `29d24719da9c98e4e0654e1253ed38d5e2b02331`，PR173/174 已合入；
+  本地 checkout 与远端一致且工作树干净。PR160–174 的代码、测试和状态文档均已在主线。
+- 当前 main push 的 GitHub Actions run `39375566459` 已创建但仍处于 `queued`，包含 33 个
+  Python 3.11/3.12/3.13 job；此前 PR171 run `39372475795` 已被取消。在最新 run
+  完成前不能把完整 CI 写成通过。此前 provider-free
   focused 回归、Ruff、compileall 和 `git diff --check` 已通过。
 - PR173 新增的 linecache closure 仅是受控诊断：source-owned `linecache.py` 已冻结进
   no-dynamic fixed-main，`sys_path=[]`、静态 ELF 与 loader-negative 通过；完整 stdlib
