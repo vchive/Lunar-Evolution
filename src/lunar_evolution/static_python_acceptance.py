@@ -80,6 +80,14 @@ def _wire_digest(value: object) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _canonical_payload(value: object) -> bytes:
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                          allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError):
+        _fail("wire")
+
+
 def _claims_false(value: object, names: tuple[str, ...]) -> None:
     if type(value) is not dict or set(value) != set(names):
         _fail("claims")
@@ -101,6 +109,8 @@ def _payload(item: object) -> dict:
         if type(raw) is not bytes or not 0 < len(raw) <= _MAX_WIRE_BYTES:
             _fail("wire")
         parsed = json.loads(raw.decode("utf-8"))
+        if _canonical_payload(parsed) != raw:
+            _fail("wire")
     except (UnicodeError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
         _fail("wire")
     if type(parsed) is not dict:
@@ -116,13 +126,40 @@ def _verify_descriptor(item: StaticPythonRSIInstallationDescriptor) -> dict:
     # F01's descriptor uses the common claim names, while the detached RSI
     # wrapper keeps the same false-only capability boundary.
     _claims_false(claims, _INSTALL_CLAIMS)
-    if item.installation_version != payload.get("descriptor", {}).get("installation_version"):
+    descriptor = payload.get("descriptor")
+    if type(descriptor) is not dict:
+        _fail("provenance")
+    if item.installation_version != descriptor.get("installation_version"):
         _fail("version")
     _sha(item.descriptor_sha256)
     _sha(item.artifact_sha256)
     _sha(item.frozen_inventory_sha256)
     _sha(item.main_header_sha256)
+    if hashlib.sha256(_canonical_payload(descriptor)).hexdigest() != item.descriptor_sha256:
+        _fail("provenance")
+    for field, value in (
+        ("artifact_sha256", item.artifact_sha256),
+        ("frozen_inventory_sha256", item.frozen_inventory_sha256),
+    ):
+        if field in descriptor and descriptor[field] != value:
+            _fail("provenance")
     return payload
+
+
+def _verify_build_provenance(build: StaticPythonBuildClosure, payload: dict) -> None:
+    """Bind detached DTO pins to the canonical closure sections."""
+    sections = (
+        ("source_identity", "source_tree_sha256", build.source_tree_sha256),
+        ("toolchain_identity", "manifest_sha256", build.toolchain_manifest_sha256),
+        ("frozen_headers", "inventory_sha256", build.frozen_inventory_sha256),
+        ("link_closure", "manifest_sha256", build.link_manifest_sha256),
+        ("elf", "artifact_sha256", build.artifact_sha256),
+    )
+    for section, field, value in sections:
+        _sha(value)
+        declared = payload.get(section)
+        if type(declared) is dict and field in declared and declared[field] != value:
+            _fail("provenance")
 
 
 def _verify_shared_claims(payload: dict, names: tuple[str, ...]) -> None:
@@ -171,6 +208,7 @@ def compose_static_python_provider_free_acceptance(
 
         if build.contract_sha256 != _wire_digest(build.canonical_bytes):
             _fail("digest")
+        _verify_build_provenance(build, build_payload)
         if build.installation_version != installation.installation_version:
             _fail("version")
         if startup.installation_version != installation.installation_version:
@@ -217,6 +255,14 @@ def compose_static_python_provider_free_acceptance(
             "fixture_case": startup.fixture_case,
             "terminal_state": handoff.terminal_state,
             "publication_state": handoff.publication_state,
+            "provenance": {
+                "status": "detached-pins-only",
+                "source_tree_sha256": build.source_tree_sha256,
+                "toolchain_manifest_sha256": build.toolchain_manifest_sha256,
+                "frozen_inventory_sha256": build.frozen_inventory_sha256,
+                "link_manifest_sha256": build.link_manifest_sha256,
+                "artifact_sha256": build.artifact_sha256,
+            },
             "live_acceptance_ready": False,
             "production_admission": False,
         }
