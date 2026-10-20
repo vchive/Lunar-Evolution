@@ -158,7 +158,9 @@ def _verify_build_provenance(build: StaticPythonBuildClosure, payload: dict) -> 
     for section, field, value in sections:
         _sha(value)
         declared = payload.get(section)
-        if type(declared) is dict and field in declared and declared[field] != value:
+        if type(declared) is not dict or field not in declared:
+            _fail("provenance")
+        if declared[field] != value:
             _fail("provenance")
 
 

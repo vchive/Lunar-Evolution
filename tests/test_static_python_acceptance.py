@@ -186,6 +186,24 @@ def test_installation_and_build_artifact_pins_must_match():
     assert caught.value.reason == "static_python_acceptance_provenance"
 
 
+@pytest.mark.parametrize("mutation", [
+    lambda payload: payload.pop("elf"),
+    lambda payload: payload["toolchain_identity"].pop("manifest_sha256"),
+])
+def test_build_provenance_sections_are_required(mutation):
+    installation, build, startup, input_result, handoff = _bundle()
+    payload = build.to_dict()
+    mutation(payload)
+    changed = _raw(payload)
+    build = replace(build, canonical_bytes=changed, contract_sha256=_sha(changed.decode()))
+    with pytest.raises(acceptance.StaticPythonAcceptanceError) as caught:
+        acceptance.compose_static_python_provider_free_acceptance(
+            installation=installation, build=build, startup=startup,
+            input_result=input_result, handoff=handoff,
+        )
+    assert caught.value.reason == "static_python_acceptance_provenance"
+
+
 def test_detached_installation_descriptor_digest_drift_refuses():
     installation, build, startup, input_result, handoff = _bundle()
     installation = replace(installation, descriptor_sha256=_sha("drift"))
