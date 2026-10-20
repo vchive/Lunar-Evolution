@@ -1141,34 +1141,49 @@ def _observe_cancellation(cancelled: Callable[[], bool] | None) -> bool:
     return value
 
 
+def _sample_monotonic(monotonic: Callable[[], float]) -> float:
+    """Read a finite non-bool monotonic sample under the fixed lifecycle contract."""
+    try:
+        current = monotonic()
+    except Exception as exc:
+        raise ProducerProcessError("producer_process_clock_invalid") from exc
+    if type(current) not in (int, float):
+        _fail("producer_process_clock_invalid")
+    try:
+        current = float(current)
+    except (OverflowError, ValueError) as exc:
+        raise ProducerProcessError("producer_process_clock_invalid") from exc
+    if not math.isfinite(current):
+        _fail("producer_process_clock_invalid")
+    return current
+
+
 def _compose_parent_deadline(
     intent: ProducerLaunchIntent,
     monotonic: Callable[[], float],
     parent_deadline: float | None,
 ) -> float:
     """Compose an optional caller deadline in the same monotonic clock domain."""
-    started = monotonic()
-    if type(started) not in (int, float) or not math.isfinite(float(started)):
-        _fail("producer_process_clock_invalid")
-    own_deadline = float(started) + float(intent.wall_timeout_seconds)
+    started = _sample_monotonic(monotonic)
+    own_deadline = started + float(intent.wall_timeout_seconds)
     if parent_deadline is None:
         return own_deadline
-    if type(parent_deadline) not in (int, float) or not math.isfinite(float(parent_deadline)):
+    if type(parent_deadline) not in (int, float):
         _fail("producer_process_parent_deadline_invalid")
-    return min(own_deadline, float(parent_deadline))
+    try:
+        parent_value = float(parent_deadline)
+    except (OverflowError, ValueError) as exc:
+        raise ProducerProcessError("producer_process_parent_deadline_invalid") from exc
+    if not math.isfinite(parent_value):
+        _fail("producer_process_parent_deadline_invalid")
+    return min(own_deadline, parent_value)
 
 
 def _deadline_reached(
     deadline: float, monotonic: Callable[[], float],
 ) -> bool:
     """Sample the launch clock with the same fixed refusal contract as setup."""
-    try:
-        current = monotonic()
-    except Exception as exc:
-        raise ProducerProcessError("producer_process_clock_invalid") from exc
-    if type(current) not in (int, float) or not math.isfinite(float(current)):
-        _fail("producer_process_clock_invalid")
-    return float(current) >= deadline
+    return _sample_monotonic(monotonic) >= deadline
 
 
 def _run_producer_process(

@@ -1,6 +1,14 @@
-## 2026-10-20 当前执行清单（main `270878a`；PR153/154/155/160/161/165/166/169/170/173/176/177/178/179 已合入）
+## 2026-10-20 当前执行清单（本地 main `bb3394a`；远端基线 `1bbfce9`）
 
-本轮代码主线基线为 `270878a`；已合入 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179：启动失败诊断与
+本轮 provider-free 收尾已完成：producer process 的启动时钟/parent deadline 统一固定拒绝，
+static-Python acceptance pins 对五个 DTO section 强制 exact key-set，runtime/tree binding
+使用严格且有界的 validated projection cache（漂移、子类和未知结构仍走完整校验）。producer
+process 17 项、binding/fresh-tree/parser 74 项、static acceptance CLI 4 项通过；四个自然
+reserved serial inert case 也分别通过。5090gpu 隔离目录完成 focused 回归和 compileall，
+但 frozen CPython 仍因 `linecache` 缺失被阻断。README 的本地 DRS run/inspect/usage/resume
+已实跑成功。下面的 P1/P2 边界保持不变。
+
+此前已合入 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance

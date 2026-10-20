@@ -10,7 +10,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 
 当前主线是单机可靠执行和 RSI（递归学习）控制闭环。RSI 改进候选程序与经验证的任务记忆；模型权重训练和修改 Lunar 自身代码不在当前主线内。RSI producer 路径保持 `production_admission=false`，真实 solver campaign 仍需独立验收。
 
-截至 2026-10-20，`main` 已包含 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179/182：启动失败诊断与
+截至 2026-10-20，`main` 已包含 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179/182；当前收尾变更还包括：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance
@@ -32,7 +32,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | 同 workspace 连续 DRS 发布 | ✅ P0 控制链已合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已完成主线控制链；真实 producer/runtime 仍按 P1 独立验收。 |
 | DRS known rejection | ✅ P0 控制链已合入 | 原 owner、连续 reconcile、早期中断及三组混合链已纳入主线；真实运行时来源仍不因 fixture 通过而自动放行。 |
 | BRS partial-wave resume | ✅ provider-free 单机链路已合入 | Reserved projection/prefix、全域 ledger/reservation、fresh child preparation exchange、native provider/completion、serial owner、terminal lifecycle、exact root settlement、partial-wave resume 与 finalization replay 已在 PR138 合入；自然 inert 混合波按 ordinal 完成并保持 128 KiB reserved checkpoint 上限。真实 CPython/producer/runtime 仍需独立验收。 |
-| 多 child native BRS | 🧪 私有 provider-free 路径 | 已有 owner/mailbox、result CAS、delivery/settlement、serial successor 和显式 reconcile API。未消费的 BRS obligation 会阻止默认恢复、推进和终结；消费时核对原始记录的合法后继、持久化终态及 native claim/result。serial continuation 仍保持 private；自然 inert serial integration 仍需修复并复跑，public native BRS 与生产 admission 关闭。 |
+| 多 child native BRS | 🧪 私有 provider-free 路径 | 已有 owner/mailbox、result CAS、delivery/settlement、serial successor 和显式 reconcile API。未消费的 BRS obligation 会阻止默认恢复、推进和终结；消费时核对原始记录的合法后继、持久化终态及 native claim/result。四个自然 inert serial integration case 已通过；serial continuation 仍保持 private，public native BRS 与生产 admission 关闭。 |
 | Feature189 static-Python build probe receipt | ✅ 已合入 | `lunar-static-python-build-probe-v1` 只保存真实构建、ELF 和启动观察；5090gpu 的原始 stock image 仍在 `encodings` 前失败，后续 no-dynamic fixed-main inert probe 已通过 broker/loader-negative 观察但仍不授予 sealed runtime 或生产准入。 |
 | static Python 启动失败诊断 | 🧪 诊断工具已接入 | [PR153](https://github.com/vchive/Lunar-Evolution/pull/153) 增加 bounded stderr 摘要与固定失败分类；只保留 digest/size，`runtime_execution_performed=false`、`production_admission=false`，不能替代 sealed startup 验收。 |
 | retained producer-process 生命周期 CLI | 🧪 本地 plumbing 已接入 | [PR153](https://github.com/vchive/Lunar-Evolution/pull/153) 提供只读 `producer-process inspect` 与显式确认的 `producer-process cleanup --confirm`；沿用 owner/recovery gate，仍保持 `production_admission=false`，不启动真实 producer 或 campaign。详见 [`docs/local-producer-process-cli.md`](docs/local-producer-process-cli.md)。 |

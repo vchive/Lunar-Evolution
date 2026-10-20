@@ -13,8 +13,9 @@ import hashlib
 import json
 import math
 import re
+import threading
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, NoReturn
 
 from . import producer_python_runtime_tree as closed_runtime
@@ -28,12 +29,17 @@ from .producer_launcher import (
     verify_producer_launch_attestation,
 )
 from .producer_python_runtime import (
+    PythonRuntimeDirectory,
     PythonRuntimeFile,
+    PythonRuntimeFileDeclaration,
+    PythonRuntimeImportRoot,
     PythonRuntimeManifest,
+    PythonRuntimeRoot,
     PythonRuntimeTarget,
     parse_python_runtime_manifest,
 )
 from .producer_python_runtime_tree import (
+    PythonRuntimeTreeDirectory,
     PythonRuntimeTreeManifest,
     parse_python_runtime_tree_manifest,
 )
@@ -139,9 +145,103 @@ def _digest_without(value: Mapping[str, object], field: str) -> str:
     return hashlib.sha256(_canonical(body)).hexdigest()
 
 
+# Runtime manifests and closed-tree manifests are immutable DTO graphs.  A binding
+# serializer still has to revalidate its caller-owned graph on every public call,
+# because ``object.__setattr__`` can deliberately tamper with a frozen DTO.  The
+# old path reparsed and reserialized the same large tree for every lifecycle poll.
+# Keep a bounded, process-local cache of *validated projections* keyed by an exact
+# structural token.  The token builder only walks the known DTO classes and plain
+# scalar/tuple values; callback-bearing subclasses return ``None`` and therefore
+# take the unchanged full refusal path before any user code is touched.
+# Keep this deliberately small: a detached manifest/tree may be megabytes, and
+# retaining the source plus validated projection is more expensive than a miss.
+_VALIDATION_CACHE_LIMIT = 16
+_VALIDATION_CACHE_LOCK = threading.RLock()
+_RUNTIME_VALIDATION_CACHE: dict[int, tuple[object, tuple[object, ...], PythonRuntimeManifest]] = {}
+_TREE_VALIDATION_CACHE: dict[int, tuple[object, tuple[object, ...], PythonRuntimeTreeManifest]] = {}
+
+
+def _safe_validation_token(value: object) -> tuple[object, ...] | None:
+    """Build a callback-free immutable token for runtime/tree DTO graphs.
+
+    This is intentionally stricter than the DTO validators: unknown objects and
+    subclasses are not tokenizable, so they cannot gain a cache hit.  Returning
+    ``None`` merely disables the optimization; the existing validators then retain
+    their exact refusal order and callback protection.
+    """
+
+    runtime_types = {
+        PythonRuntimeTarget, PythonRuntimeFileDeclaration, PythonRuntimeImportRoot,
+        PythonRuntimeDirectory, PythonRuntimeRoot, PythonRuntimeFile, PythonRuntimeManifest,
+    }
+    tree_types = {PythonRuntimeTreeDirectory, PythonRuntimeTreeManifest}
+
+    def walk(item: object) -> tuple[object, ...] | None:
+        item_type = type(item)
+        if item is None or item_type in {str, int, float, bool, bytes}:
+            return (item_type, item)
+        if item_type is tuple:
+            parts: list[tuple[object, ...]] = []
+            for child in item:
+                token = walk(child)
+                if token is None:
+                    return None
+                parts.append(token)
+            return (tuple, tuple(parts))
+        if item_type not in runtime_types and item_type not in tree_types:
+            return None
+        parts = []
+        try:
+            for field in fields(item_type):
+                # All tokenizable classes are exact frozen DTOs.  Bypass an
+                # instance-level ``__getattribute__`` replacement so the fast
+                # path itself never invokes caller code.
+                token = walk(object.__getattribute__(item, field.name))
+                if token is None:
+                    return None
+                parts.append((field.name, token))
+        except (AttributeError, TypeError, ValueError):
+            return None
+        return (item_type, tuple(parts))
+
+    return walk(value)
+
+
+def _cached_validation(
+    cache: dict[int, tuple[object, tuple[object, ...], object]],
+    source: object,
+    token: tuple[object, ...] | None,
+) -> object | None:
+    if token is None:
+        return None
+    with _VALIDATION_CACHE_LOCK:
+        entry = cache.get(id(source))
+        if entry is not None and entry[0] is source and entry[1] == token:
+            return entry[2]
+    return None
+
+
+def _remember_validation(
+    cache: dict[int, tuple[object, tuple[object, ...], object]],
+    source: object,
+    token: tuple[object, ...] | None,
+    parsed: object,
+) -> None:
+    if token is None:
+        return
+    with _VALIDATION_CACHE_LOCK:
+        cache[id(source)] = (source, token, parsed)
+        if len(cache) > _VALIDATION_CACHE_LIMIT:
+            cache.pop(next(iter(cache)))
+
+
 def _reparse_runtime(manifest: PythonRuntimeManifest) -> PythonRuntimeManifest:
     if type(manifest) is not PythonRuntimeManifest:
         _fail("runtime_manifest_type_invalid")
+    token = _safe_validation_token(manifest)
+    cached = _cached_validation(_RUNTIME_VALIDATION_CACHE, manifest, token)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
     try:
         # Feature177's exact bounded shape gate refuses callback-bearing nested
         # collections before the original validator or serialization sees them.
@@ -155,12 +255,17 @@ def _reparse_runtime(manifest: PythonRuntimeManifest) -> PythonRuntimeManifest:
     if parsed != manifest:
         _fail("runtime_manifest_drift")
     _sha(parsed.manifest_sha256, "runtime_manifest_digest_invalid")
+    _remember_validation(_RUNTIME_VALIDATION_CACHE, manifest, token, parsed)
     return parsed
 
 
 def _reparse_tree(tree: PythonRuntimeTreeManifest) -> PythonRuntimeTreeManifest:
     if type(tree) is not PythonRuntimeTreeManifest:
         _fail("runtime_tree_type_invalid")
+    token = _safe_validation_token(tree)
+    cached = _cached_validation(_TREE_VALIDATION_CACHE, tree, token)
+    if cached is not None:
+        return cached  # type: ignore[return-value]
     try:
         tree.__post_init__()
         parsed = parse_python_runtime_tree_manifest(tree.to_json())
@@ -171,6 +276,7 @@ def _reparse_tree(tree: PythonRuntimeTreeManifest) -> PythonRuntimeTreeManifest:
     if parsed != tree:
         _fail("runtime_tree_drift")
     _sha(parsed.tree_sha256, "runtime_tree_digest_invalid")
+    _remember_validation(_TREE_VALIDATION_CACHE, tree, token, parsed)
     return parsed
 
 

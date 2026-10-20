@@ -151,3 +151,33 @@ def test_binding_shape_gate_rejects_mutated_callback_collections(tmp_path: Path)
             runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
             deadline_unix=4102444800.0, budget=budget,
         )
+
+
+def test_binding_cached_runtime_tree_still_refuses_post_validation_drift(tmp_path: Path) -> None:
+    """The scoped token cache cannot turn a later frozen-DTO mutation into authority."""
+    manifest, tree, intent, attestation, budget = _fixture(tmp_path)
+    item = binding.build_python_producer_binding(
+        runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
+        deadline_unix=4102444800.0, budget=budget,
+    )
+    # Warm the parser-local projection cache, then make the original tree disagree.
+    item.to_json()
+    object.__setattr__(tree, "tree_sha256", "b" * 64)
+    with pytest.raises(binding.PythonProducerBindingError, match="runtime_tree"):
+        item.to_json()
+
+
+def test_binding_reuses_validated_runtime_tree_projection(tmp_path: Path, monkeypatch) -> None:
+    manifest, tree, intent, attestation, budget = _fixture(tmp_path)
+    item = binding.build_python_producer_binding(
+        runtime_manifest=manifest, runtime_tree=tree, intent=intent, attestation=attestation,
+        deadline_unix=4102444800.0, budget=budget,
+    )
+    item.to_json()
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("validated runtime/tree projection was reparsed")
+
+    monkeypatch.setattr(binding, "parse_python_runtime_manifest", forbidden)
+    monkeypatch.setattr(binding, "parse_python_runtime_tree_manifest", forbidden)
+    item.to_json()

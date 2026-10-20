@@ -119,3 +119,27 @@ def test_static_python_acceptance_rejects_noncanonical_pins_before_state(
     ]) == 2
     assert json.loads(capsys.readouterr().err) == {"error": "static_python_acceptance_pins_invalid"}
     assert not (tmp_path / "home").exists()
+
+
+@pytest.mark.parametrize("mutation", ["extra", "missing"])
+def test_static_python_acceptance_rejects_non_exact_pin_section_keys_before_state(
+    tmp_path: Path,
+    mutation: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    paths, pins_path = _fixture(tmp_path)
+    pins = json.loads(pins_path.read_text(encoding="utf-8"))
+    if mutation == "extra":
+        pins["startup"]["unexpected"] = "a" * 64
+    else:
+        del pins["startup"]["binding_sha256"]
+    _write(pins_path, pins)
+    monkeypatch.setattr(cli, "_config", lambda *_a, **_k: pytest.fail("detached command initialized state"))
+
+    assert cli.main([
+        "rsi", "static-python-acceptance", *(str(path) for path in paths),
+        "--pins", str(pins_path), "--json",
+    ]) == 2
+    assert json.loads(capsys.readouterr().err) == {"error": "static_python_acceptance_pins_invalid"}
+    assert not (tmp_path / "home").exists()

@@ -1,3 +1,26 @@
+# 当前交接（2026-10-20，本地串行回归与 P1 门禁收尾）
+
+- 本地 `main` 在 `bb3394a` 基础上完成了三项 provider-free 收尾：producer process 的
+  monotonic/parent deadline 样本统一 fail-closed（异常、bool、NaN、Inf、超大整数和非数值
+  均在 claim/nonce/Popen 前拒绝）；static-Python acceptance pins 对五个 DTO section
+  强制 exact key-set；runtime/tree binding 增加严格、进程内有界的 validated projection
+  cache。cache 只接受精确 DTO、标量和 tuple，任何子类、未知对象或结构漂移都回到原有完整
+  校验路径，不放宽 fingerprint、owner 或 lifecycle gate。
+- 新增/更新的 focused 回归已通过：producer process 17 项、binding/fresh-tree/parser
+  74 项、static acceptance CLI 4 项；自然 reserved serial 四个 inert case
+  `rejected-rejected`、`published-published`、`published-rejected`、`three-child-mixed`
+  均通过（各 case 约 3–4 分钟，未复现此前的 `solver_settings_changed`）。README 的
+  provider-free DRS CLI run/inspect/usage/resume 也在唯一临时 home 中实跑成功。
+- 5090gpu 的隔离目录 `/home/qinzhiqing/vchive/lunar-agent-case-20261020` 已用当前
+  source 跑 producer/binding/static focused 回归和 `compileall`；受控 frozen CPython
+  probe 仍固定失败于 `ModuleNotFoundError: linecache`，所以它仍是缺失 stdlib closure
+  的诊断证据，不是 sealed runtime 或 production admission。
+- 当前仍保持 `production_admission=false`、`online_publication=false`；不运行 WebAgent、
+  远程 evaluator、真实模型/solver campaign 或公司评测平台。真实 CPython/source/toolchain/
+  static ELF、sealed startup、owner/lifecycle、authoritative input/result、OpenEvolve/
+  Shinka project lifecycle 与 Linux 中断矩阵仍是 P1 出口；remote evaluator、外部 worker
+  认证、多机 ownership 和 distributed service 继续后置。
+
 # 当前交接（2026-10-20，PR182 合入 main 后）
 
 - 远端 `main` 当前为 `e20dcea`，PR182 已合入。新增只读

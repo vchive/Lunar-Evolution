@@ -6290,9 +6290,37 @@ def _read_canonical_detached_json(path: Path, *, maximum: int, error: str) -> tu
         raise ValueError(error) from None
 
 
+_STATIC_PYTHON_ACCEPTANCE_PIN_KEYS: dict[str, tuple[str, ...]] = {
+    "installation": (
+        "contract_sha256", "descriptor_sha256", "installation_version",
+        "artifact_sha256", "frozen_inventory_sha256", "main_header_sha256",
+    ),
+    "build": (
+        "contract_sha256", "source_tree_sha256", "toolchain_manifest_sha256",
+        "frozen_inventory_sha256", "link_manifest_sha256", "artifact_sha256",
+        "installation_version", "installation_contract_sha256",
+        "installation_descriptor_sha256", "installation_frozen_inventory_sha256",
+        "main_header_sha256",
+    ),
+    "startup": ("build_closure_sha256", "binding_sha256", "launch_intent_sha256"),
+    "input_result": (
+        "startup_sha256", "build_closure_sha256", "binding_sha256", "launch_intent_sha256",
+        "manifest_sha256", "report_sha256", "request_sha256", "memory_sha256",
+        "request_size", "memory_size",
+    ),
+    "handoff": (
+        "startup_sha256", "input_result_sha256", "terminal_sha256", "handoff_sha256",
+        "binding_sha256", "launch_intent_sha256", "result_sha256",
+        "publication_intent_sha256", "request_budget", "request_count",
+        "wall_timeout_seconds", "deadline_unix", "terminal_state", "cleanup_status",
+        "publication_state",
+    ),
+}
+
+
 def _static_python_acceptance_pins(value: object) -> dict[str, dict[str, object]]:
     """Validate the detached pin manifest shape before invoking DTO parsers."""
-    sections = ("installation", "build", "startup", "input_result", "handoff")
+    sections = tuple(_STATIC_PYTHON_ACCEPTANCE_PIN_KEYS)
     if type(value) is not dict or value.get("schema") != "lunar-static-python-provider-free-acceptance-pins-v1":
         raise ValueError("static_python_acceptance_pins_invalid")
     if set(value) != {"schema", *sections}:
@@ -6300,7 +6328,7 @@ def _static_python_acceptance_pins(value: object) -> dict[str, dict[str, object]
     pins: dict[str, dict[str, object]] = {}
     for section in sections:
         item = value.get(section)
-        if type(item) is not dict:
+        if type(item) is not dict or set(item) != set(_STATIC_PYTHON_ACCEPTANCE_PIN_KEYS[section]):
             raise ValueError("static_python_acceptance_pins_invalid")
         pins[section] = item
     return pins
