@@ -44,3 +44,25 @@ open the RSI ledger, invoke an evaluator, or repair an unknown terminal. A valid
 `production_admission: false`; an `unknown` terminal returns `reconcile_required` and exits
 nonzero so it cannot be treated as a completed producer result. This is a retained evidence gate,
 not acceptance of a sealed runtime or a real OpenEvolve/Shinka campaign.
+
+## Retained producer acceptance envelope
+
+When the project preflight and Python terminal report are already retained, they can be composed
+with the read-only acceptance-envelope command:
+
+```bash
+lunar-evolution rsi producer-acceptance PROFILE.json TERMINAL.json \
+  --binding-sha256 BINDING_SHA256 [--deadline-unix 4102444800] \
+  [--replay-report REPLAY.json] --json
+```
+
+The command validates the detached project profile, rechecks the retained terminal binding and
+deadline, and optionally consumes a retained local replay summary. It never starts a producer,
+invokes an evaluator, opens the RSI ledger, or publishes a result. Its output is always
+`status: blocked` with `reason: runtime_acceptance_required`, `execution_performed: false`,
+`evaluator_invoked: false`, `production_admission: false`, and `online_publication: false`.
+Missing `terminal_reconcile` or `retained_replay_completed` entries remain explicit gates in
+`missing_gates`; a completed replay only removes the latter evidence gate. Exit status `1`
+therefore means the retained envelope is valid but still blocked, while malformed or drifted
+inputs exit `2`. This is evidence composition for the next runtime-acceptance stage, not a
+runtime or campaign acceptance decision.
