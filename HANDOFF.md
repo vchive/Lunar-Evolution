@@ -1,9 +1,10 @@
-# 当前交接（2026-10-20，PR176 合入 main 后）
+# 当前交接（2026-10-20，PR179 合入 main 后）
 
-- 远端 `main` 当前为 `edcc97f9e1fede2edcd0f2655064641c78e9ccd7`，PR176 已合入；本地
-  checkout 与远端一致且工作树干净。PR160–176 的代码、测试和状态文档均已在主线。
-- 当前 main push 的 GitHub Actions run `39378599077` 已创建但仍处于 `queued`，包含 33 个
-  Python 3.11/3.12/3.13 job；此前 run `39375835650` 已被取消。在最新 run
+- 远端 `main` 当前为 `270878a9ce52d591a13b6c93a788fdef60d2af65`，PR177、178、179 已合入；
+  PR160–179 的代码、测试和状态文档均在主线。本地 checkout 应以该提交为基线。
+- 当前 main push 的 GitHub Actions run `39381323652`（head `270878a`）仍处于 `queued`，
+  包含 33 个 Python 3.11/3.12/3.13 job；此前 PR177/178 的 run
+  `39380090828`/`39380910767` 已被取消。在最新 run
   完成前不能把完整 CI 写成通过。此前 provider-free
   focused 回归、Ruff、compileall 和 `git diff --check` 已通过。
 - PR173 新增的 linecache closure 仅是受控诊断：source-owned `linecache.py` 已冻结进
@@ -12,10 +13,13 @@
 - PR176 要求已知 retained terminal 的 `cleanup_status` 为 `cleaned` 或 `already_exited`；
   `unknown`、`missing` 和未审计标签保持 fail-closed。这是 provider-free 生命周期门禁，
   不观察进程、不执行 cleanup，也不打开 production admission。
+- PR178/179 在 producer adapter 失败路径保留固定的取消、deadline 和 cleanup uncertainty
+  结果；native 失败后复核 binding sidecar，且 cleanup uncertainty note 优先于更窄的
+  取消/deadline 标签，避免无完整 reap/FD 证据时误报更具体终态。
 - 5090gpu 的最新受控 linecache closure probe 已记录在
   `specs/189-static-python-fixture/linecache-closure-probe-20261020.md`：加入
   source-owned `linecache` 后 clean `-S -c` 可通过基础、codecs、os 和 linecache 探针，
-  下一缺口为 `traceback`。该 disposable artifact 没有独立 source/toolchain/ELF 证明，
+  后续受控探针依次定位到 `traceback`、`collections` 和 `keyword`。该 disposable artifact 没有独立 source/toolchain/ELF 证明，
   不能作为 sealed runtime 或生产验收。
 - 当前 P1 仍是完整 CPython/stdlib closure、真实 source/toolchain/static ELF、sealed
   startup、owner/lifecycle、authoritative input/result、OpenEvolve/Shinka project
