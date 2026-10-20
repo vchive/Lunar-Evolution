@@ -1,10 +1,11 @@
-## 2026-10-20 当前执行清单（PR153/154/155/160/161/165/166 已合入）
+## 2026-10-20 当前执行清单（PR153/154/155/160/161/165/166/169/170 已合入）
 
-本轮代码主线基线为 `9e3ac87`；随后仅合入文档状态更新，已合入 PR153/154/155/160/161/165/166：启动失败诊断与
+本轮代码主线基线为 `3acc03a`；随后仅合入文档状态更新，已合入 PR153/154/155/160/161/165/166/169/170：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance
-绑定，以及 retained producer acceptance 的只读组合 CLI。它们保留
+绑定、retained producer acceptance 的只读组合 CLI、5090gpu frozen bootstrap 失败观察，
+以及 detached replay schema 收紧。它们保留
 `production_admission=false` 与 `online_publication=false`，不启动真实 producer、
 evaluator 或 campaign。
 
@@ -13,7 +14,8 @@ PR160 的 terminal 命令只校验已保留的 canonical terminal；`unknown` �
 shared/PIE/dynamic-loader flags、共享 link inputs、重复或 shell-like 值。PR165 将
 静态 acceptance 的 detached pins 与 canonical wire 绑定，并明确 `detached-pins-only`；
 PR166 的 `rsi producer-acceptance` 组合 project preflight、terminal 和可选 replay，始终
-返回 `blocked/runtime_acceptance_required`。这些门禁都不把 DTO 或描述符检查提升为实际
+返回 `blocked/runtime_acceptance_required`。PR169 的 5090gpu 观察确认 command-body 路径
+仍在 `linecache` 缺失处失败；PR170 收紧 replay report 的闭合 schema。这些门禁都不把 DTO 或描述符检查提升为实际
 ELF、sealed runtime、Linux lifecycle 或生产准入；PR155 仍校验 source/runtime/toolchain/
 request/result 摘要，PR154 漂移时返回 `receipt_binding_drift`。
 
