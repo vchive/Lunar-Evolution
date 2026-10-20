@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import subprocess
+import tempfile
 from dataclasses import replace
 from pathlib import Path
 
@@ -92,6 +93,25 @@ def _judged_controller(value):
     return controller, supplier
 
 
+def _bounded_fixture_root(candidate: Path) -> Path:
+    """Keep retained absolute binding paths below the unchanged 32 KiB wire cap.
+
+    ``_successful_fixture`` is imported from another test module, so that module's
+    short-path ``tmp_path`` fixture is not applied when this helper is called from
+    the multi-episode tests.  The binding intentionally retains absolute paths;
+    using a short real temporary parent keeps this acceptance exercising the
+    production cap rather than weakening it for a long pytest-generated path.
+    """
+    if len(str(candidate)) <= 96:
+        return candidate
+    parent = next(
+        str(path)
+        for path in (Path("/private/tmp"), Path("/var/tmp"), Path("/tmp"))
+        if path.is_dir() and not path.is_symlink()
+    )
+    return Path(tempfile.mkdtemp(prefix="lce-mep-", dir=parent))
+
+
 class _ThreeEpisodeObservation(_InertNativeObservation):
     def rsi_fingerprint_config(self):
         return {
@@ -114,7 +134,9 @@ def _no_subprocess(monkeypatch):
 
 
 def _fixture(tmp_path, monkeypatch):
-    value, _old_controller, _old_supplier, _old_observation = _successful_fixture(tmp_path, monkeypatch)
+    value, _old_controller, _old_supplier, _old_observation = _successful_fixture(
+        _bounded_fixture_root(tmp_path), monkeypatch,
+    )
     observation = _ThreeEpisodeObservation()
     value.native = replace(value.native, python_handoff_after_execution=observation)
     value.context = PythonRSISchedulerInputContext(value.native, value.sidecar, value.proof)
