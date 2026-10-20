@@ -1,11 +1,15 @@
-## 2026-10-20 当前执行清单（PR153/154/155/160/161/165/166/169/170/173 已合入）
+## 2026-10-20 当前执行清单（main `edcc97f`；PR153/154/155/160/161/165/166/169/170/173/176 已合入）
 
-本轮代码主线基线为 `3acc03a`；随后仅合入文档状态更新，已合入 PR153/154/155/160/161/165/166/169/170：启动失败诊断与
+本轮代码主线基线为 `edcc97f`；已合入 PR153/154/155/160/161/165/166/169/170/173/176：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance
 绑定、retained producer acceptance 的只读组合 CLI、5090gpu frozen bootstrap 与 linecache
-closure 观察，以及 detached replay schema 收紧。它们保留
+closure 观察、detached replay schema 收紧，以及 known-terminal cleanup 门禁。5090gpu 上
+新增的 source-owned `linecache` closure probe 记录于
+[linecache-closure-probe-20261020.md](../specs/189-static-python-fixture/linecache-closure-probe-20261020.md)，
+仍是诊断材料；它把下一缺口具体定位到 `traceback`，不构成 sealed runtime 或生产准入。
+它们保留
 `production_admission=false` 与 `online_publication=false`，不启动真实 producer、
 evaluator 或 campaign。
 
@@ -17,7 +21,8 @@ PR166 的 `rsi producer-acceptance` 组合 project preflight、terminal 和可�
 返回 `blocked/runtime_acceptance_required`。PR169 的 5090gpu 观察确认 command-body 路径
 仍在 `linecache` 缺失处失败；PR173 仅把 source-owned `linecache.py` 冻结进受控 no-dynamic
 fixed-main 诊断，并验证 loader-negative，不代表完整 stdlib closure；PR170 收紧 replay report 的闭合 schema。这些门禁都不把 DTO 或描述符检查提升为实际
-ELF、sealed runtime、Linux lifecycle 或生产准入；PR155 仍校验 source/runtime/toolchain/
+ELF、sealed runtime、Linux lifecycle 或生产准入；PR176 进一步要求已知 terminal 的
+cleanup_status 为 `cleaned` 或 `already_exited`，但仍只消费 retained evidence；PR155 仍校验 source/runtime/toolchain/
 request/result 摘要，PR154 漂移时返回 `receipt_binding_drift`。
 
 PR138（`af1cc62`）已将 reserved BRS serial owner/ledger/terminal/finalization 链路合入
