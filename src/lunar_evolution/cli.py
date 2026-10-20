@@ -1305,6 +1305,10 @@ def build_parser() -> argparse.ArgumentParser:
     rsi_project_preflight_parser.add_argument(
         "--profile-sha256", help="independently retained profile digest",
     )
+    rsi_project_preflight_parser.add_argument(
+        "--diagnostics", action="store_true",
+        help="include the read-only production RSI capability matrix",
+    )
     _add_home(rsi_project_preflight_parser)
     _add_json(rsi_project_preflight_parser)
 
@@ -7088,14 +7092,22 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             _emit(payload, args.json)
             return 0 if payload["status"] == "completed" else 1
         if args.command == "rsi" and args.rsi_command == "project-preflight":
-            from .rsi_project_lifecycle import preflight_project_lifecycle
+            from .rsi_project_lifecycle import (
+                diagnose_project_lifecycle,
+                preflight_project_lifecycle,
+            )
 
             # Profile preflight is intentionally before _config()/RSILedger creation.  A
             # malformed or unaccepted project declaration must not initialize controller state,
             # import a project, or make a process/evaluator launch reachable.
-            payload = preflight_project_lifecycle(
-                args.profile, expected_profile_sha256=args.profile_sha256,
-            )
+            if args.diagnostics:
+                payload = diagnose_project_lifecycle(
+                    args.profile, expected_profile_sha256=args.profile_sha256,
+                )
+            else:
+                payload = preflight_project_lifecycle(
+                    args.profile, expected_profile_sha256=args.profile_sha256,
+                )
             _emit(payload, args.json)
             return 0 if payload["status"] == "ready" else 1
         if args.command == "rsi" and args.rsi_command == "producer-terminal":

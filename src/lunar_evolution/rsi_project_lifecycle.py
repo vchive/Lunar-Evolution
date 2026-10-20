@@ -29,6 +29,19 @@ _REQUIRED_FIELDS = frozenset({
     "result_schema_sha256", "launch_mode", "cancel_mode", "resume_mode",
 })
 
+# This is deliberately a diagnostic projection rather than an admission policy.  The
+# profile proves only that the detached declaration is well formed; the remaining entries
+# identify the evidence that a future production RSI CLI would still have to acquire.
+PROJECT_LIFECYCLE_DIAGNOSTIC_PROTOCOL = "lunar-rsi-project-lifecycle-diagnostic-v1"
+_DIAGNOSTIC_CAPABILITIES = (
+    ("detached_profile", "verified", "profile_contract"),
+    ("accepted_runtime_profile", "blocked", "accepted_runtime_profile"),
+    ("trusted_project_entrypoint", "blocked", "trusted_project_entrypoint"),
+    ("runtime_lifecycle_acceptance", "blocked", "runtime_lifecycle_acceptance"),
+    ("linux_acceptance_matrix", "blocked", "linux_acceptance_matrix"),
+    ("controller_admission", "blocked", "controller_admission"),
+)
+
 
 class ProjectLifecyclePreflightError(ValueError):
     """Fixed-code profile refusal without caller-controlled path or exception text."""
@@ -207,7 +220,38 @@ def preflight_project_lifecycle(
     }
 
 
+def diagnose_project_lifecycle(
+    profile_path: str | Path, *, expected_profile_sha256: str | None = None,
+) -> dict[str, Any]:
+    """Return a path-free capability matrix for a detached project profile.
+
+    This is intentionally a read-only companion to :func:`preflight_project_lifecycle`.
+    It makes the production RSI CLI boundary inspectable without pretending that a valid
+    profile is a runnable OpenEvolve/Shinka project.  No home, ledger, process, evaluator,
+    network or project import is reachable from this function.
+    """
+    report = preflight_project_lifecycle(
+        profile_path, expected_profile_sha256=expected_profile_sha256,
+    )
+    report["diagnostic_protocol"] = PROJECT_LIFECYCLE_DIAGNOSTIC_PROTOCOL
+    report["capability_matrix"] = [
+        {"capability": capability, "status": status, "gate": gate}
+        for capability, status, gate in _DIAGNOSTIC_CAPABILITIES
+    ]
+    report["production_cli"] = {
+        "status": "blocked",
+        "reason": "runtime_acceptance_required",
+        "execution_performed": False,
+        "evaluator_invoked": False,
+        "production_admission": False,
+        "online_publication": False,
+    }
+    return report
+
+
 __all__ = [
-    "MAX_PROFILE_BYTES", "PROJECT_LIFECYCLE_PROTOCOL", "PROJECT_LIFECYCLE_SCHEMA_VERSION",
-    "ProjectLifecyclePreflightError", "ProjectLifecycleProfile", "preflight_project_lifecycle",
+    "MAX_PROFILE_BYTES", "PROJECT_LIFECYCLE_DIAGNOSTIC_PROTOCOL",
+    "PROJECT_LIFECYCLE_PROTOCOL", "PROJECT_LIFECYCLE_SCHEMA_VERSION",
+    "ProjectLifecyclePreflightError", "ProjectLifecycleProfile", "diagnose_project_lifecycle",
+    "preflight_project_lifecycle",
 ]

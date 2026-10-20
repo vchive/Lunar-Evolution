@@ -12,6 +12,7 @@ from lunar_evolution.rsi_project_lifecycle import (
     PROJECT_LIFECYCLE_PROTOCOL,
     ProjectLifecyclePreflightError,
     ProjectLifecycleProfile,
+    diagnose_project_lifecycle,
     preflight_project_lifecycle,
 )
 
@@ -101,3 +102,33 @@ def test_cli_preflight_does_not_initialize_home(tmp_path: Path, capsys: pytest.C
     assert payload["status"] == "blocked"
     assert payload["evidence_scope"] == "detached_profile_preflight"
     assert not home.exists()
+
+
+def test_project_diagnostic_matrix_is_read_only_and_explicitly_blocked(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile_path = tmp_path / "profile.json"
+    _write_profile(profile_path, _profile())
+    home = tmp_path / "diagnostic-home"
+    monkeypatch.setattr("lunar_evolution.cli._config", lambda _args: pytest.fail("state initialized"))
+    assert main([
+        "rsi", "project-preflight", str(profile_path), "--diagnostics",
+        "--home", str(home), "--json",
+    ]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["diagnostic_protocol"] == "lunar-rsi-project-lifecycle-diagnostic-v1"
+    assert payload["status"] == "blocked"
+    assert payload["production_cli"]["production_admission"] is False
+    assert payload["production_cli"]["execution_performed"] is False
+    matrix = {item["capability"]: item for item in payload["capability_matrix"]}
+    assert matrix["detached_profile"]["status"] == "verified"
+    assert matrix["accepted_runtime_profile"]["status"] == "blocked"
+    assert matrix["linux_acceptance_matrix"]["gate"] == "linux_acceptance_matrix"
+    assert not home.exists()
+
+
+def test_project_diagnostic_reuses_exact_profile_digest_gate(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.json"
+    _write_profile(profile_path, _profile())
+    with pytest.raises(ProjectLifecyclePreflightError, match="profile_digest_drift"):
+        diagnose_project_lifecycle(profile_path, expected_profile_sha256="f" * 64)

@@ -66,3 +66,17 @@ Missing `terminal_reconcile` or `retained_replay_completed` entries remain expli
 therefore means the retained envelope is valid but still blocked, while malformed or drifted
 inputs exit `2`. This is evidence composition for the next runtime-acceptance stage, not a
 runtime or campaign acceptance decision.
+
+## Project lifecycle capability diagnostics
+
+The detached project profile can also be inspected without composing a terminal:
+
+```bash
+lunar-evolution rsi project-preflight PROFILE.json --diagnostics --json
+```
+
+This adds a path-free `capability_matrix` to the blocked preflight report. It marks the profile
+contract as verified and keeps the accepted runtime, trusted entrypoint, lifecycle, Linux matrix
+and controller-admission gates blocked until their independent evidence exists. The command
+still does not initialize the RSI ledger, import a project, launch a process or invoke an
+evaluator; its authority flags remain false.

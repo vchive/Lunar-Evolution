@@ -48,7 +48,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | next frozen stdlib closure probe | 🧪 5090gpu 受控诊断已记录 | [linecache closure probe](specs/189-static-python-fixture/linecache-closure-probe-20261020.md) 证明 `linecache` 加入冻结表后 `-S -c` 可继续到 `traceback`，并保留完整 source/toolchain/ELF/sealed runtime 缺口；不是发布构建。 |
 | detached replay schema gate | ✅ provider-free 边界已加固 | [PR170](https://github.com/vchive/Lunar-Evolution/pull/170) 对 acceptance envelope 的 replay report 强制四字段闭合 schema 和固定类型，拒绝未审计字段/path/authority。 |
 | Python producer task/timeout binding | ✅ 已合入 | PR154 将 `parent_task_id`、`task_id` 和 `request_timeout_seconds` 绑定到 terminal receipt；漂移返回 `receipt_binding_drift`，focused regression 保持 provider-free。 |
-| project lifecycle profile preflight | 🧪 只读门禁已合入 | PR155 校验 source/runtime/toolchain/request/result 摘要及固定 bootstrap、cancel、resume 模式；有效 profile 仍返回 `blocked/runtime_acceptance_required`，不启动项目、evaluator 或 RSI ledger。 |
+| project lifecycle profile preflight | 🧪 只读门禁已合入 | PR155 校验 source/runtime/toolchain/request/result 摘要及固定 bootstrap、cancel、resume 模式；有效 profile 仍返回 `blocked/runtime_acceptance_required`，不启动项目、evaluator 或 RSI ledger。`--diagnostics` 可输出 path-free capability matrix，明确生产 RSI CLI 的剩余门禁。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 
