@@ -561,6 +561,37 @@ def _child_deadline(native, projection):
     return deadline
 
 
+def _shutdown_reserved_serial_executor(pool, future, *, deadline: float) -> bool:
+    """Bound an exceptional serial worker join to the retained child deadline.
+
+    A normal terminal path already observed ``future.done()`` before it reaches the
+    driver cleanup.  On an error path, however, waiting unconditionally on
+    ``ThreadPoolExecutor.shutdown(wait=True)`` could outlive the original RSI wall
+    budget when a worker is stuck in a native boundary.  Wakeups happen before this
+    helper is called; give the worker only the remaining absolute budget, then leave
+    the executor in its fail-closed state and report an unknown worker outcome.
+    """
+    if type(deadline) not in (int, float) or not math.isfinite(deadline):
+        _fail("deadline_invalid")
+    if future is None or future.done():
+        pool.shutdown(wait=True, cancel_futures=True)
+        return False
+    remaining = max(0.0, deadline - time.monotonic())
+    timed_out = False
+    if remaining:
+        try:
+            # ``exception`` waits for the same completion boundary without
+            # replacing the primary lifecycle error with a worker exception.
+            future.exception(timeout=remaining)
+        except TimeoutError:
+            timed_out = True
+    if not timed_out and future.done():
+        pool.shutdown(wait=True, cancel_futures=True)
+        return False
+    pool.shutdown(wait=False, cancel_futures=True)
+    return True
+
+
 def read_reserved_brs_published_ready(controller, owner, ready) -> str:
     """Reobserve success's original retained admission; ACK creates no new record."""
     from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
@@ -670,6 +701,8 @@ def _drive_reserved_brs_native_serial(controller, record, state):
         scope = _BRSReservedChildScope(observation, episode, request, memory, child, preview,
                                        exchange, deadline, threading.get_ident())
         pool = None
+        future = None
+        primary_error = None
         try:
             with reserved_brs_child_wave(controller, state, scope) as wave:
                 handoff = controller._python_admission_bind_selected_brs_handoff(wave)
@@ -722,8 +755,18 @@ def _drive_reserved_brs_native_serial(controller, record, state):
                 controller._python_admission_settle_original_brs_terminal(owner, session)
                 if owner._phase != "retired" or session._poisoned is not True:
                     _fail("retirement_incomplete")
+        except BaseException as error:
+            primary_error = error
+            raise
         finally:
             exchange.fail()
             if pool is not None:
-                pool.shutdown(wait=True)
+                worker_unknown = _shutdown_reserved_serial_executor(
+                    pool, future, deadline=deadline,
+                )
+                if worker_unknown:
+                    unknown = RSILearningError("rsi_brs_reserved_serial_worker_unknown")
+                    if primary_error is not None:
+                        unknown.add_note(f"primary_error={primary_error!r}")
+                    raise unknown
     return finalize_reserved_brs_serial(controller, record, state)
