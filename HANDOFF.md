@@ -1,6 +1,6 @@
 # 当前交接（2026-10-20，本地串行回归与 P1 门禁收尾）
 
-- `main` 当前为 `53f2170`（已推送 `origin/main`），完成了三项 provider-free 收尾：producer process 的
+- `main` 当前为 `f06620e`（已推送 `origin/main`），完成了三项 provider-free 收尾：producer process 的
   monotonic/parent deadline 样本统一 fail-closed（异常、bool、NaN、Inf、超大整数和非数值
   均在 claim/nonce/Popen 前拒绝）；static-Python acceptance pins 对五个 DTO section
   强制 exact key-set；runtime/tree binding 增加严格、进程内有界的 validated projection
@@ -18,6 +18,10 @@
   `validity=1.0`、`overall=0.0379`。同一 city case 的原 9-route baseline 被 evaluator
   正确拒绝（`validity=0`），作为负向门禁；这些是本地 evaluator smoke evidence，不是模型
   效果或生产准入结论。
+- 同一份 `train_delay` 复制 case 还通过 Lunar `effect-kit`/`effect-trial` 的本地
+  deterministic harness 完成 3 次 staging：每次 `validity=1.0`、`overall=0.6827`、
+  `objective=109620`，三次均 ready。该 harness 只调用复制后的原 evaluator；官方 extractor
+  依赖模型 SDK，本轮未调用，因此结果不代表官方 extraction 或真实模型 campaign。
 - 5090gpu 的隔离目录 `/home/qinzhiqing/vchive/lunar-agent-case-20261020` 已用当前
   source 跑 producer/binding/static focused 回归和 `compileall`；受控 frozen CPython
   probe 仍固定失败于 `ModuleNotFoundError: linecache`。进一步检查确认该 binary 的
