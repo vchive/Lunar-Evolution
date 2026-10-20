@@ -165,6 +165,27 @@ def test_detached_build_provenance_drift_refuses():
     assert caught.value.reason == "static_python_acceptance_provenance"
 
 
+def test_installation_and_build_artifact_pins_must_match():
+    installation, build, startup, input_result, handoff = _bundle()
+    artifact = _sha("different-artifact")
+    payload = installation.to_dict()
+    payload["descriptor"]["artifact_sha256"] = artifact
+    changed = _raw(payload)
+    installation = replace(
+        installation,
+        canonical_bytes=changed,
+        contract_sha256=_sha(changed.decode()),
+        descriptor_sha256=_sha(_raw(payload["descriptor"]).decode()),
+        artifact_sha256=artifact,
+    )
+    with pytest.raises(acceptance.StaticPythonAcceptanceError) as caught:
+        acceptance.compose_static_python_provider_free_acceptance(
+            installation=installation, build=build, startup=startup,
+            input_result=input_result, handoff=handoff,
+        )
+    assert caught.value.reason == "static_python_acceptance_provenance"
+
+
 def test_detached_installation_descriptor_digest_drift_refuses():
     installation, build, startup, input_result, handoff = _bundle()
     installation = replace(installation, descriptor_sha256=_sha("drift"))

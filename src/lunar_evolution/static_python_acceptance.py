@@ -211,6 +211,12 @@ def compose_static_python_provider_free_acceptance(
         _verify_build_provenance(build, build_payload)
         if build.installation_version != installation.installation_version:
             _fail("version")
+        # The installation descriptor and build closure describe the same
+        # final image.  Keep their artifact pins coupled before composing a
+        # cross-stage summary; otherwise two independently valid detached
+        # records could be combined into a misleading acceptance chain.
+        if installation.artifact_sha256 != build.artifact_sha256:
+            _fail("provenance")
         if startup.installation_version != installation.installation_version:
             _fail("version")
         if build_payload.get("installation_version") != installation.installation_version:
