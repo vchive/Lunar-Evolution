@@ -1,3 +1,24 @@
+# 当前交接（2026-10-20，PR169/170 合入 main 后）
+
+- 本轮代码主线基线为 `3acc03a`；随后仅合入文档状态更新。PR169 记录 5090gpu 上
+  `/home/qinzhiqing/lunar-cpython-frozen/python` 的静态 ELF（无 `PT_INTERP`/`DT_NEEDED`，
+  26,198,088 bytes），`--version`/`--help` 可用，但 command-body、codec、encodings 和
+  linecache 探针均在 `ModuleNotFoundError: linecache` 前失败。该材料是诊断证据，不是
+  sealed runtime、fixed-main、owner/lifecycle、input/result 或生产验收。
+- PR170 收紧 detached producer acceptance replay report：只允许四个已审计字段、固定字符串
+  类型和 `retained_local_comparison` scope，拒绝额外字段、嵌套对象和潜在 authority/path
+  混入。`production_admission`、`online_publication` 继续为 false。
+- PR165/166 的 acceptance provenance 与 `rsi producer-acceptance` 仍保持 blocked gate；
+  provider-free focused tests、Ruff、compileall、`git diff --check` 继续通过。GitHub Actions
+  的三版本矩阵仍可能 queued，不能写成完整 CI 通过。
+- 当前仍开放的 P1 是完整 CPython/stdlib closure、真实 source/toolchain/static ELF、
+  sealed startup、owner/lifecycle、authoritative input/result、OpenEvolve/Shinka project
+  lifecycle 与生产 CLI/Linux 中断矩阵。P2（remote evaluator、外部 worker 认证、多机
+  ownership、分布式 scheduler/service API）继续后置。
+- 本轮仍只使用本地 inert/provider-free fixture 与受控 GPU 观察；不运行 WebAgent、远程
+  evaluator、真实模型/solver 或公司评测平台。主 checkout 的用户未提交
+  `specs/160-rsi-learning-mode/p1-cli-producer-gap-report.md` 必须保留。
+
 # 当前交接（2026-10-20，PR165/166 合入 main 后）
 
 - 本轮代码主线基线为 `9e3ac87`；随后仅合入文档状态更新。PR165 已合入 static Python acceptance envelope provenance：
