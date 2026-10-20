@@ -162,6 +162,32 @@ def test_replay_authority_or_scope_drift_fails_closed(tmp_path: Path, capsys: py
     assert "rsi_producer_acceptance_replay" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"extra": "ignored"},
+        {"status": ["completed"]},
+        {"evidence_scope": {"value": "retained_local_comparison"}},
+    ],
+)
+def test_replay_report_schema_is_closed_and_types_are_fixed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], change: dict[str, object],
+) -> None:
+    profile_path, terminal_path = _write_inputs(tmp_path)
+    replay_path = tmp_path / "replay.json"
+    replay = {
+        "status": "completed", "evidence_scope": "retained_local_comparison",
+        "read_only": True, "production_admission": False,
+    }
+    replay.update(change)
+    _write(replay_path, replay)
+    assert main([
+        "rsi", "producer-acceptance", str(profile_path), str(terminal_path),
+        "--binding-sha256", D, "--replay-report", str(replay_path), "--json",
+    ]) == 2
+    assert "rsi_producer_acceptance_replay" in capsys.readouterr().err
+
+
 def test_envelope_authority_mutation_and_digest_roundtrip(tmp_path: Path) -> None:
     profile_path, _terminal_path = _write_inputs(tmp_path)
     profile = preflight_project_lifecycle(profile_path)

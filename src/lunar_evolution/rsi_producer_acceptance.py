@@ -28,6 +28,7 @@ _TERMINAL_SCOPE = "retained_python_terminal"
 _REPLAY_SCOPE = "retained_local_comparison"
 _TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "unknown"})
 _REPLAY_STATES = frozenset({"completed", "unknown", "drifted"})
+_REPLAY_FIELDS = frozenset({"status", "evidence_scope", "read_only", "production_admission"})
 _FIELDS = frozenset({
     "schema_version", "protocol", "profile_sha256", "producer_id", "project_id",
     "terminal_sha256", "terminal_status", "replay_status", "replay_evidence_scope",
@@ -144,12 +145,17 @@ def _validate_replay(value: object | None) -> tuple[str | None, str | None]:
     if value is None:
         return None, None
     replay = _mapping(value, "replay_invalid")
-    for field in ("status", "evidence_scope", "read_only", "production_admission"):
-        if field not in replay:
-            _fail("replay_invalid")
-    if replay["status"] not in _REPLAY_STATES:
+    # This is an untrusted detached report.  Keep its wire deliberately closed so
+    # future fields cannot smuggle an unreviewed authority or path-bearing value
+    # into the acceptance envelope.  The report is only a four-field projection;
+    # richer producer material belongs in the separately pinned replay source.
+    if set(replay) != _REPLAY_FIELDS:
+        _fail("replay_invalid")
+    if type(replay["status"]) is not str or replay["status"] not in _REPLAY_STATES:
         _fail("replay_status_invalid")
-    if replay["evidence_scope"] != _REPLAY_SCOPE or replay["read_only"] is not True:
+    if type(replay["evidence_scope"]) is not str or replay["evidence_scope"] != _REPLAY_SCOPE:
+        _fail("replay_scope_invalid")
+    if replay["read_only"] is not True:
         _fail("replay_scope_invalid")
     if replay["production_admission"] is not False:
         _fail("replay_authority_invalid")
