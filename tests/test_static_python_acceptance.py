@@ -33,9 +33,14 @@ def _bundle() -> tuple[
     StaticPythonRuntimeHandoff,
 ]:
     version = "fixture-rsi-v1"
+    descriptor_payload = {
+        "installation_version": version,
+        "artifact_sha256": _sha("artifact"),
+        "frozen_inventory_sha256": _sha("frozen"),
+    }
     install_payload = {
         "schema": "lunar-static-python-rsi-installation-contract-v1",
-        "descriptor": {"installation_version": version},
+        "descriptor": descriptor_payload,
         "claims": {name: False for name in (
             "configured_closure_verified", "compilation_performed", "freezer_performed",
             "runtime_execution_performed", "installation_accepted", "input_consumption_verified",
@@ -44,12 +49,17 @@ def _bundle() -> tuple[
     }
     install_raw = _raw(install_payload)
     installation = StaticPythonRSIInstallationDescriptor(
-        install_raw, _sha(install_raw.decode()), _sha("descriptor"), version,
+        install_raw, _sha(install_raw.decode()), _sha(_raw(descriptor_payload).decode()), version,
         _sha("artifact"), _sha("frozen"), _sha("main-header"),
     )
     build_payload = {
         "schema": "lunar-static-python-build-closure-v1",
         "installation_version": version,
+        "source_identity": {"source_tree_sha256": _sha("source")},
+        "toolchain_identity": {"manifest_sha256": _sha("toolchain")},
+        "frozen_headers": {"inventory_sha256": _sha("inventory")},
+        "link_closure": {"manifest_sha256": _sha("link")},
+        "elf": {"artifact_sha256": _sha("artifact")},
         "claims": {name: False for name in (
             "configured_closure_verified", "compilation_performed", "freezer_performed",
             "link_performed", "artifact_verified", "runtime_execution_performed",
@@ -120,6 +130,8 @@ def test_composition_returns_provider_free_false_claim_summary():
     assert summary["terminal_state"] == "completed"
     assert summary["live_acceptance_ready"] is False
     assert summary["production_admission"] is False
+    assert summary["provenance"]["status"] == "detached-pins-only"
+    assert summary["provenance"]["artifact_sha256"] == _sha("artifact")
     assert result.summary_sha256 == _sha(result.canonical_bytes.decode())
 
 
@@ -140,6 +152,28 @@ def test_cross_contract_digest_drift_refuses(mutation: str, reason: str):
             input_result=input_result, handoff=handoff,
         )
     assert caught.value.reason == "static_python_acceptance_" + reason
+
+
+def test_detached_build_provenance_drift_refuses():
+    installation, build, startup, input_result, handoff = _bundle()
+    build = replace(build, source_tree_sha256=_sha("drift"))
+    with pytest.raises(acceptance.StaticPythonAcceptanceError) as caught:
+        acceptance.compose_static_python_provider_free_acceptance(
+            installation=installation, build=build, startup=startup,
+            input_result=input_result, handoff=handoff,
+        )
+    assert caught.value.reason == "static_python_acceptance_provenance"
+
+
+def test_detached_installation_descriptor_digest_drift_refuses():
+    installation, build, startup, input_result, handoff = _bundle()
+    installation = replace(installation, descriptor_sha256=_sha("drift"))
+    with pytest.raises(acceptance.StaticPythonAcceptanceError) as caught:
+        acceptance.compose_static_python_provider_free_acceptance(
+            installation=installation, build=build, startup=startup,
+            input_result=input_result, handoff=handoff,
+        )
+    assert caught.value.reason == "static_python_acceptance_provenance"
 
 
 def test_nonbaseline_or_capability_claim_is_never_ready():
