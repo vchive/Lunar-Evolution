@@ -53,7 +53,11 @@ def _fail(reason: str) -> NoReturn:
 
 
 def _digest(value: object, reason: str = "digest") -> str:
-    if type(value) is not str or _SHA.fullmatch(value) is None:
+    # A syntactically valid all-zero/all-f placeholder is not an independent
+    # pin.  Keep this parser aligned with the other static-runtime DTO gates
+    # so a caller cannot satisfy cross-pin checks with sentinel digests.
+    if (type(value) is not str or _SHA.fullmatch(value) is None
+            or value in {"0" * 64, "f" * 64}):
         _fail(reason)
     return value
 

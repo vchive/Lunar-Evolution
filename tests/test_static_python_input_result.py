@@ -108,6 +108,21 @@ def test_bounds_pins_and_external_effects_are_refused_or_absent(monkeypatch):
     assert caught.value.reason.endswith("raw")
 
 
+@pytest.mark.parametrize("placeholder", ["0" * 64, "f" * 64])
+@pytest.mark.parametrize("field", [
+    "startup_sha256", "build_closure_sha256", "binding_sha256",
+    "launch_intent_sha256", "manifest_sha256", "report_sha256",
+    "request_sha256", "memory_sha256",
+])
+def test_placeholder_digest_pins_are_rejected_before_projection(placeholder: str, field: str):
+    payload, pins = _vector()
+    payload[field] = placeholder
+    pins["expected_" + field] = placeholder
+    with pytest.raises(contract.StaticPythonInputResultError) as caught:
+        _parse(payload, pins)
+    assert caught.value.reason == "static_python_input_result_pin"
+
+
 def test_error_does_not_retain_malformed_input():
     payload, pins = _vector()
     payload["claims"] = {"raw-secret": "never"}
