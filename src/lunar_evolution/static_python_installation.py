@@ -117,6 +117,21 @@ _BUILD_ENVIRONMENT = {
     "ac_cv_func_dlopen", "ZIG_GLOBAL_CACHE_DIR", "ZIG_LOCAL_CACHE_DIR",
     "CONFIG_SITE", "LUNAR_STATIC_CLEAN_ENV",
 }
+# This is a recipe policy, not an ELF observation.  A descriptor may describe
+# a pending build, but it must never describe flags that silently re-enable a
+# loader or a host-dependent build route.  Keep this policy separate from the
+# eventual machine-derived PT_INTERP/DT_NEEDED checks.
+_REQUIRED_CONFIGURE_FLAGS = frozenset(("--disable-shared", "--without-ensurepip"))
+_REQUIRED_COMPILE_FLAGS = frozenset(("-fno-PIE",))
+_REQUIRED_LINK_FLAGS = frozenset(("-static", "-no-pie"))
+_DYNAMIC_FLAG_MARKERS = (
+    "--enable-shared", "--with-shared", "--enable-dynamic", "--with-dynamic",
+    "--enable-loadable", "--with-system-ffi", "-fpic", "-fpie", "-fPIC", "-fPIE",
+    "-shared", "-pie", "-static-pie", "-rdynamic", "-dynamic", "-ldl", "-l:ld-linux",
+    "-Wl,-bdynamic", "-Wl,-rpath", "-Wl,-dynamic-linker", "-Wl,-shared", "-Wl,-pie",
+)
+_FORBIDDEN_LINK_SUFFIXES = (".so", ".so.", ".dylib", ".dll", ".la")
+_SAFE_ENV_VALUE = re.compile(r"[A-Za-z0-9_./:+\-]*\Z")
 _ELF_FIELDS = {
     "sha256", "size", "elf_class", "byte_order", "machine", "elf_type", "osabi",
     "entry_point", "program_header_count", "section_header_count", "load_segment_count",
@@ -305,19 +320,53 @@ def _recipe(value: object) -> None:
         "generated_config_sha256", "module_config_sha256", "link_inputs",
         "link_map_sha256", "reproducibility",
     })
+    flags: dict[str, list[str]] = {}
     for name in ("configure_flags", "compile_flags", "link_flags"):
-        for flag in _vector(item[name], 128):
-            _text(flag)
+        values = _vector(item[name], 128)
+        parsed: list[str] = []
+        for flag in values:
+            text = _text(flag, 512)
+            # Flags are passed as argv entries by the future controlled driver;
+            # whitespace would make an unreviewed shell-like expansion part of
+            # the recipe and is therefore refused at the descriptor boundary.
+            if any(char.isspace() for char in text) or text in parsed:
+                _fail("recipe")
+            parsed.append(text)
+        flags[name] = parsed
+    required = (
+        ("configure_flags", _REQUIRED_CONFIGURE_FLAGS),
+        ("compile_flags", _REQUIRED_COMPILE_FLAGS),
+        ("link_flags", _REQUIRED_LINK_FLAGS),
+    )
+    for name, expected in required:
+        if not expected.issubset(flags[name]):
+            _fail("recipe")
+    for values in flags.values():
+        lowered = [flag.lower() for flag in values]
+        for flag in lowered:
+            for marker in _DYNAMIC_FLAG_MARKERS:
+                marker = marker.lower()
+                if flag == marker or flag.startswith(marker + "=") or (
+                    marker.startswith("--") and flag.startswith(marker + "-")
+                ):
+                    _fail("recipe")
     for name in ("generated_config_sha256", "module_config_sha256", "link_map_sha256"):
         _sha(item[name])
-    _files(item["link_inputs"], 256)
+    link_inputs = item["link_inputs"]
+    _files(link_inputs, 256)
+    for record in link_inputs:
+        path = record["path"].lower()
+        if path.endswith(_FORBIDDEN_LINK_SUFFIXES) or "/ld-linux" in path or "\\ld.so" in path:
+            _fail("recipe")
     names = []
     for env in _vector(item["environment"], 32):
         env = _object(env, {"name", "value"})
         name = _label(env["name"])
         if name not in _BUILD_ENVIRONMENT:
             _fail("environment")
-        _text(env["value"])
+        value = _text(env["value"], 4096)
+        if _SAFE_ENV_VALUE.fullmatch(value) is None:
+            _fail("environment")
         names.append(name)
     _ordered(names)
     if item["reproducibility"] not in ("not-tested", "byte-identical"):

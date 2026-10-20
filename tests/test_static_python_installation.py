@@ -130,3 +130,52 @@ def test_descriptor_overflow_is_rejected_before_json_parse(monkeypatch):
         ),
         "wire",
     )
+
+@pytest.mark.parametrize("section,flag", [
+    ("configure_flags", "--enable-shared"),
+    ("configure_flags", "--with-dynamic-loading"),
+    ("compile_flags", "-fPIC"),
+    ("compile_flags", "-fPIE"),
+    ("link_flags", "-shared"),
+    ("link_flags", "-pie"),
+    ("link_flags", "-static-pie"),
+    ("link_flags", "-ldl"),
+    ("link_flags", "-Wl,-Bdynamic"),
+    ("link_flags", "-Wl,-rpath=/tmp"),
+])
+def test_no_dynamic_recipe_rejects_loader_or_position_independent_escape(vector, section, flag):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"][section].append(flag)
+    refused(lambda: parse(vector, payload), "recipe")
+
+
+def test_no_dynamic_recipe_requires_static_and_non_pie_link(vector):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"]["link_flags"].remove("-static")
+    refused(lambda: parse(vector, payload), "recipe")
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"]["link_flags"].remove("-no-pie")
+    refused(lambda: parse(vector, payload), "recipe")
+
+
+def test_no_dynamic_recipe_rejects_shared_link_inputs(vector):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"]["link_inputs"][0]["path"] = "objects/libpython.so"
+    refused(lambda: parse(vector, payload), "recipe")
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"]["link_inputs"][0]["path"] = "objects/libpython.dylib"
+    refused(lambda: parse(vector, payload), "recipe")
+
+
+def test_no_dynamic_recipe_rejects_shell_like_environment_values(vector):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"]["environment"][0]["value"] = "C;touch-pwned"
+    refused(lambda: parse(vector, payload), "environment")
+
+
+def test_no_dynamic_recipe_keeps_non_pie_flags_allowed(vector):
+    observed = parse(vector)
+    recipe = observed.to_dict()["recipe"]
+    assert "-fno-PIE" in recipe["compile_flags"]
+    assert "-no-pie" in recipe["link_flags"]
+    assert "-pie" not in recipe["link_flags"]
