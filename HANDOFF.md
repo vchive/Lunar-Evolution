@@ -1,6 +1,6 @@
 # 当前交接（2026-10-20，PR165/166 合入 main 后）
 
-- 远端 `main` 当前为 `9e3ac87`。PR165 已合入 static Python acceptance envelope provenance：
+- 本轮代码主线基线为 `9e3ac87`；随后仅合入文档状态更新。PR165 已合入 static Python acceptance envelope provenance：
   descriptor 的 canonical digest、source/tree、toolchain、frozen、link 和 artifact detached
   pins 必须与 DTO/wire 一致；输出明确 `provenance.status=detached-pins-only`，不代表真实
   构建、ELF、sealed startup 或生产准入。
