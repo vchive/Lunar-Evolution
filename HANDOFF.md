@@ -1,3 +1,26 @@
+# 当前交接（2026-10-20，PR160/161 合入 main 后）
+
+- 远端 `main` 当前为 `8cc311c`。PR160 已合入 retained Python producer terminal 的只读
+  CLI：校验 canonical terminal 的 binding/deadline，`unknown` 固定保持
+  `reconcile_required`；命令在 ledger/config 初始化前返回，不启动 producer/evaluator，
+  也不修改 `production_admission` 或 `online_publication`。
+- PR161 已合入 static Python no-dynamic recipe gate：构建描述符必须声明
+  `--disable-shared`、`--without-ensurepip`、`-fno-PIE`、`-static`、`-no-pie`，并拒绝
+  shared/PIE/dynamic-loader flags、共享 link inputs、重复或 shell-like 环境值。该 gate
+  是构建前纯策略检查；实际 ELF、sealed startup、owner/lifecycle 和生产准入仍需独立
+  Linux 证据，不能把 no-dynamic fixture 观察写成 runtime acceptance。
+- 合入后的 focused 回归通过（82 tests），Ruff、compileall 与 `git diff --check` 通过。
+  GitHub Actions 对这些 PR 的三版本矩阵在核对时仍为 queued；本地结果与 PR 合入记录
+  分开保存，不能把 queued 说成完整 CI 通过。
+- 当前仍开放的 P1 是 Feature189/193 的真实 CPython/toolchain/static ELF/sealed
+  runtime/输入/lifecycle、Feature191/195 的真实 OpenEvolve/Shinka project lifecycle
+  与生产 RSI CLI/Linux 中断矩阵。P2（remote evaluator、外部 worker 认证、多机
+  ownership、分布式 scheduler/service API）继续后置。
+- 本轮仍只使用本地 inert/provider-free fixture；不运行 WebAgent、远程 evaluator、
+  真实模型/solver 或公司评测平台。`production_admission` 与 `online_publication`
+  保持关闭。主 checkout 的用户未提交
+  `specs/160-rsi-learning-mode/p1-cli-producer-gap-report.md` 必须保留。
+
 # 当前交接（2026-10-19，PR138 合入 main 后）
 
 - PR138（`af1cc62`）已合入 `main`，完成 Feature196 reserved BRS 串行 owner/ledger
