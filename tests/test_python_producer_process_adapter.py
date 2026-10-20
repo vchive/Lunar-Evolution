@@ -8,7 +8,11 @@ import pytest
 from test_python_producer_binding import _fixture
 
 from lunar_evolution import python_producer_lifecycle as lifecycle
-from lunar_evolution.producer_process import ProducerExecutionReceipt, ProducerStreamEvidence
+from lunar_evolution.producer_process import (
+    ProducerExecutionReceipt,
+    ProducerProcessError,
+    ProducerStreamEvidence,
+)
 from lunar_evolution.python_producer_binding import build_python_producer_binding
 from lunar_evolution.python_producer_binding_store import persist_python_producer_binding
 
@@ -134,3 +138,57 @@ def test_adapter_rejects_receipt_parent_or_request_limit_drift(
         lifecycle.run_python_producer_process(
             tmp_path, binding=binding, sidecar=sidecar, producer_root=tmp_path / "producer-root",
         )
+
+
+@pytest.mark.parametrize(
+    ("native_code", "adapter_code"),
+    (
+        ("producer_process_cancelled", "process_cancelled"),
+        ("producer_process_wall_timeout", "process_deadline"),
+        ("producer_process_cleanup_unknown", "process_cleanup_unknown"),
+    ),
+)
+def test_adapter_preserves_fixed_native_lifecycle_failure_after_sidecar_recheck(
+    tmp_path: Path, monkeypatch, native_code: str, adapter_code: str,
+) -> None:
+    binding, sidecar = _binding(tmp_path)
+    calls: list[str] = []
+
+    def read_sidecar(*_args, **_kwargs):
+        calls.append("sidecar")
+        return sidecar
+
+    def fail_process(*_args, **_kwargs):
+        calls.append("process")
+        raise ProducerProcessError(native_code)
+
+    monkeypatch.setattr(lifecycle, "read_python_producer_binding_sidecar", read_sidecar)
+    monkeypatch.setattr(lifecycle, "run_producer_process", fail_process)
+    with pytest.raises(lifecycle.PythonProducerLifecycleError, match=adapter_code):
+        lifecycle.run_python_producer_process(
+            tmp_path, binding=binding, sidecar=sidecar, producer_root=tmp_path / "producer-root",
+        )
+    assert calls == ["sidecar", "process", "sidecar"]
+
+
+def test_adapter_prioritizes_sidecar_drift_over_native_failure(tmp_path: Path, monkeypatch) -> None:
+    binding, sidecar = _binding(tmp_path)
+    reads = 0
+
+    def read_sidecar(*_args, **_kwargs):
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            raise lifecycle.PythonProducerBindingStoreError("replaced")
+        return sidecar
+
+    monkeypatch.setattr(lifecycle, "read_python_producer_binding_sidecar", read_sidecar)
+    monkeypatch.setattr(
+        lifecycle, "run_producer_process",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ProducerProcessError("producer_process_cancelled")),
+    )
+    with pytest.raises(lifecycle.PythonProducerLifecycleError, match="binding_sidecar_invalid"):
+        lifecycle.run_python_producer_process(
+            tmp_path, binding=binding, sidecar=sidecar, producer_root=tmp_path / "producer-root",
+        )
+    assert reads == 2

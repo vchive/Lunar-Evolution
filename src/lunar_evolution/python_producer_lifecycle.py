@@ -84,6 +84,27 @@ def _fail(code: str) -> NoReturn:
     raise PythonProducerLifecycleError(code)
 
 
+_PROCESS_FAILURE_CODES = {
+    # Keep lifecycle outcomes distinguishable at the adapter boundary without exposing
+    # producer-controlled error text or allowing a thrown native error to look successful.
+    "producer_process_cancelled": "process_cancelled",
+    "producer_process_wall_timeout": "process_deadline",
+    "producer_process_cleanup_unknown": "process_cleanup_unknown",
+}
+
+
+def _process_failure_code(error: ProducerProcessError) -> str:
+    """Map native lifecycle failures to the adapter's fixed, bounded error vocabulary."""
+    mapped = _PROCESS_FAILURE_CODES.get(error.code)
+    if mapped is not None:
+        return mapped
+    # Native cleanup can be attached as a fixed note when a primary failure has already
+    # occurred. Preserve that uncertainty rather than returning a generic execution error.
+    if "producer_process_cleanup_unknown" in getattr(error, "__notes__", ()):
+        return "process_cleanup_unknown"
+    return "process_execution_invalid"
+
+
 def _canonical(value: object, maximum: int) -> bytes:
     try:
         raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
@@ -663,8 +684,19 @@ def run_python_producer_process(
     try:
         receipt = run_producer_process(workspace, **kwargs)  # type: ignore[arg-type]
     except ProducerProcessError as exc:
-        raise PythonProducerLifecycleError("process_execution_invalid") from exc
+        # A native refusal may happen after a launch claim or process registration. Re-read
+        # the independently retained sidecar before surfacing the fixed failure code so a
+        # concurrent replacement cannot be hidden by a lifecycle error.
+        try:
+            read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+        except PythonProducerBindingStoreError as sidecar_exc:
+            raise PythonProducerLifecycleError("binding_sidecar_invalid") from sidecar_exc
+        raise PythonProducerLifecycleError(_process_failure_code(exc)) from exc
     except (OSError, TypeError, ValueError) as exc:
+        try:
+            read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
+        except PythonProducerBindingStoreError as sidecar_exc:
+            raise PythonProducerLifecycleError("binding_sidecar_invalid") from sidecar_exc
         raise PythonProducerLifecycleError("process_execution_invalid") from exc
     try:
         read_python_producer_binding_sidecar(workspace, binding=binding, expected_sidecar=sidecar)
