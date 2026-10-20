@@ -1,4 +1,4 @@
-## 2026-10-20 当前执行清单（main `dec9695`，已推送）
+## 2026-10-20 当前执行清单（main `8e4411f`，已推送）
 
 本轮 provider-free 收尾已完成：producer process 的启动时钟/parent deadline 统一固定拒绝，
 static-Python acceptance pins 对五个 DTO section 强制 exact key-set，runtime/tree binding
@@ -9,6 +9,10 @@ reserved serial inert case 也分别通过。5090gpu 隔离目录完成 focused 
 为空且 `python313.zip` 不存在，所以 `linecache`/`traceback`/`collections`/`keyword`
 等 stdlib closure 仍被阻断。README 的本地 DRS run/inspect/usage/resume
 已实跑成功。下面的 P1/P2 边界保持不变。
+
+`8e4411f` 还固定了 pytest 的本地 `src` 解析路径，并让只读 mailbox inspection
+同时核对 SQLite 主库、WAL 和 SHM 快照；多 episode fixture 使用短临时父目录触发
+原有 32 KiB binding ceiling，不改变生产上限。
 
 Feature191/195 另增加了只读 `rsi project-preflight --diagnostics` 能力矩阵。它只把
 detached profile 标为 verified，并明确 accepted runtime、entrypoint、lifecycle、Linux
