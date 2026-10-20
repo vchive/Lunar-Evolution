@@ -1,6 +1,6 @@
 # 当前交接（2026-10-20，PR160/161 合入 main 后）
 
-- 远端 `main` 当前为 `8cc311c`。PR160 已合入 retained Python producer terminal 的只读
+- 远端 `main` 当前为 `39a8726`。PR160 已合入 retained Python producer terminal 的只读
   CLI：校验 canonical terminal 的 binding/deadline，`unknown` 固定保持
   `reconcile_required`；命令在 ledger/config 初始化前返回，不启动 producer/evaluator，
   也不修改 `production_admission` 或 `online_publication`。
