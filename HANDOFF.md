@@ -1,3 +1,20 @@
+# 当前交接（2026-10-20，PR171 合入 main 后）
+
+- 远端 `main` 当前为 `dc8cf204cd1157b9c779edfd6765ceeda0d06d7d`，PR171 已合入；本地
+  checkout 与远端一致且工作树干净。PR160–171 的代码、测试和状态文档均已在主线。
+- PR171 的 GitHub Actions run `39372475795` 已创建但仍处于 `queued`，包含 33 个
+  Python 3.11/3.12/3.13 job；在它完成前不能把完整 CI 写成通过。此前 provider-free
+  focused 回归、Ruff、compileall 和 `git diff --check` 已通过。
+- 当前 P1 仍是完整 CPython/stdlib closure、真实 source/toolchain/static ELF、sealed
+  startup、owner/lifecycle、authoritative input/result、OpenEvolve/Shinka project
+  lifecycle 与生产 CLI/Linux 中断矩阵。5090gpu 目前只有 bounded bootstrap/linecache
+  失败观察和 inert loader-negative 诊断，未授予 runtime 或 production admission。
+- P2（remote evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service
+  API）继续后置；`production_admission=false`、`online_publication=false` 保持不变。
+- 本轮仍只使用本地 inert/provider-free fixture 与受控 GPU 观察；不运行 WebAgent、远程
+  evaluator、真实模型/solver 或公司评测平台。主 checkout 的用户未提交
+  `specs/160-rsi-learning-mode/p1-cli-producer-gap-report.md` 必须保留。
+
 # 当前交接（2026-10-20，PR169/170 合入 main 后）
 
 - 本轮代码主线基线为 `3acc03a`；随后仅合入文档状态更新。PR169 记录 5090gpu 上
