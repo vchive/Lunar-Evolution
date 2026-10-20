@@ -97,6 +97,22 @@ This follow-up is still a disposable closure experiment. The baseline source
 and executable were restored after relinking; no module was added to Lunar's
 reviewed fixed-main inventory.
 
+A third disposable relink added `collections` as a package alongside
+`linecache` and `traceback`. It reached the next dependency boundary:
+
+```text
+probe_sha256:           583b215f69a2a5727931747fade84b333476ffb6aa2119915793430f12795b22
+Lib/collections/__init__.py: a090a33d65e65cda1a1098d9505f99f5ae0003caa4c1d0885bc1eebf0de0aa28
+collections.h:          32d5097fab339c37cd56032f52dfb186fefc664ab66c302e2681940dc1afd62f
+command_exit:           1
+next_missing_module:    keyword
+stderr_sha256:          53f5169171d288bf03c95ef72ccb05eb44cfb06a633d12cda0ffcced0ee4328b
+```
+
+The import chain is therefore currently observed as
+`linecache → traceback → collections → keyword`; this is a finite diagnostic
+trail, not a claim that the closure is complete.
+
 The bounded receipt projection for this experiment is:
 
 ```json
