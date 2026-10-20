@@ -1,6 +1,6 @@
 # 当前交接（2026-10-20，本地串行回归与 P1 门禁收尾）
 
-- `main` 当前为 `f06620e`（已推送 `origin/main`），完成了三项 provider-free 收尾：producer process 的
+- `main` 当前为 `dec9695`（已推送 `origin/main`），完成了三项 provider-free 收尾及外部 benchmark effect-trial smoke 记录：producer process 的
   monotonic/parent deadline 样本统一 fail-closed（异常、bool、NaN、Inf、超大整数和非数值
   均在 claim/nonce/Popen 前拒绝）；static-Python acceptance pins 对五个 DTO section
   强制 exact key-set；runtime/tree binding 增加严格、进程内有界的 validated projection
