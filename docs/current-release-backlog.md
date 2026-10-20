@@ -6,6 +6,11 @@ serial worker 异常路径在 retained absolute deadline 内有界等待，未�
 不继续 settlement；input/result DTO 拒绝全零和全 f 占位 digest。对应 focused tests、Ruff、
 compileall 和 `git diff --check` 均通过。
 
+本机额外执行了 226 个 native-e2e：全部通过。`current-0` 分片也完成了 3,666 个
+收集项，但在 macOS/CPython 3.13 上有 73 个既有失败；首要失败是 fixture 的
+32 KiB staging wire 上限和临时目录清理权限，基线 `50f32db` 在同一环境重跑得到相同
+失败，不能归因于本轮改动。Ubuntu CI 矩阵仍是发布判定依据。
+
 外部只读 benchmark checkout 继续只做复制和本地 evaluator smoke。新增
 `irregular_packing` 合法 20,100 行 grid submission 得到 `validity=1.0`、`overall=0.0590`，
 重复摆放负向 case 得到 `validity=0`；原 checkout 保持 clean。详见
