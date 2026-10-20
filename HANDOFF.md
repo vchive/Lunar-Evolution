@@ -9,7 +9,7 @@
   shared/PIE/dynamic-loader flags、共享 link inputs、重复或 shell-like 环境值。该 gate
   是构建前纯策略检查；实际 ELF、sealed startup、owner/lifecycle 和生产准入仍需独立
   Linux 证据，不能把 no-dynamic fixture 观察写成 runtime acceptance。
-- 合入后的 focused 回归通过（82 tests），Ruff、compileall 与 `git diff --check` 通过。
+- 合入后的 focused 回归通过（178 tests），Ruff、compileall 与 `git diff --check` 通过。
   GitHub Actions 对这些 PR 的三版本矩阵在核对时仍为 queued；本地结果与 PR 合入记录
   分开保存，不能把 queued 说成完整 CI 通过。
 - 当前仍开放的 P1 是 Feature189/193 的真实 CPython/toolchain/static ELF/sealed
