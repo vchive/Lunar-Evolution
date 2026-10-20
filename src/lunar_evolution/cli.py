@@ -1350,6 +1350,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(rsi_producer_acceptance_parser)
 
+    rsi_static_python_acceptance_parser = rsi_commands.add_parser(
+        "static-python-acceptance",
+        help="compose five detached static-Python DTOs into a provider-free blocked summary",
+    )
+    rsi_static_python_acceptance_parser.add_argument(
+        "installation", type=Path, help="canonical detached RSI installation descriptor JSON",
+    )
+    rsi_static_python_acceptance_parser.add_argument(
+        "build", type=Path, help="canonical detached static-Python build-closure JSON",
+    )
+    rsi_static_python_acceptance_parser.add_argument(
+        "startup", type=Path, help="canonical detached runtime-startup JSON",
+    )
+    rsi_static_python_acceptance_parser.add_argument(
+        "input_result", type=Path, help="canonical detached input/result JSON",
+    )
+    rsi_static_python_acceptance_parser.add_argument(
+        "handoff", type=Path, help="canonical detached runtime-handoff JSON",
+    )
+    rsi_static_python_acceptance_parser.add_argument(
+        "--pins", "--independent-pins", dest="pins", type=Path, required=True,
+        help="canonical JSON manifest containing every independent parser pin",
+    )
+    _add_json(rsi_static_python_acceptance_parser)
+
     rsi_reconcile_parser = rsi_commands.add_parser("reconcile", help="reconcile an RSI worker state explicitly")
     rsi_reconcile_parser.add_argument("episode_id")
     rsi_reconcile_parser.add_argument(
@@ -6247,6 +6272,218 @@ def _producer_acceptance_envelope(args: argparse.Namespace) -> tuple[dict[str, o
     return envelope.to_dict(), 1
 
 
+def _read_canonical_detached_json(path: Path, *, maximum: int, error: str) -> tuple[bytes, dict[str, object]]:
+    """Read one bounded canonical JSON object without touching controller state."""
+    try:
+        raw = _read_bounded_regular_file(path.expanduser(), maximum, error=error)
+        value = json.loads(raw.decode("utf-8"))
+        if type(value) is not dict:
+            raise ValueError(error)
+        canonical = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+        if canonical != raw:
+            raise ValueError(error)
+        return raw, value
+    except (EvolutionError, OSError, TypeError, ValueError, UnicodeError,
+            RecursionError, OverflowError, json.JSONDecodeError):
+        raise ValueError(error) from None
+
+
+def _static_python_acceptance_pins(value: object) -> dict[str, dict[str, object]]:
+    """Validate the detached pin manifest shape before invoking DTO parsers."""
+    sections = ("installation", "build", "startup", "input_result", "handoff")
+    if type(value) is not dict or value.get("schema") != "lunar-static-python-provider-free-acceptance-pins-v1":
+        raise ValueError("static_python_acceptance_pins_invalid")
+    if set(value) != {"schema", *sections}:
+        raise ValueError("static_python_acceptance_pins_invalid")
+    pins: dict[str, dict[str, object]] = {}
+    for section in sections:
+        item = value.get(section)
+        if type(item) is not dict:
+            raise ValueError("static_python_acceptance_pins_invalid")
+        pins[section] = item
+    return pins
+
+
+def _static_python_acceptance(args: argparse.Namespace) -> tuple[dict[str, object], int]:
+    """Compose five detached static-Python DTOs without ledger or runtime effects.
+
+    The pin manifest is deliberately independent from all five DTO files.  Every
+    parser is called with caller-supplied pins; no digest is inferred from the
+    bytes read here.  A coherent provider-free summary is still blocked and
+    therefore has a fixed exit status of one.
+    """
+    from .static_python_acceptance import (
+        StaticPythonAcceptanceError,
+        compose_static_python_provider_free_acceptance,
+    )
+    from .static_python_build_closure import (
+        MAX_BUILD_CLOSURE_BYTES,
+        StaticPythonBuildClosureError,
+        parse_static_python_build_closure,
+    )
+    from .static_python_input_result import (
+        MAX_INPUT_RESULT_BYTES,
+        StaticPythonInputResultError,
+        parse_static_python_input_result,
+    )
+    from .static_python_rsi_installation import (
+        MAX_CONTRACT_BYTES,
+        StaticPythonRSIInstallationError,
+        parse_static_python_rsi_installation_descriptor,
+    )
+    from .static_python_runtime_handoff import (
+        MAX_RUNTIME_HANDOFF_BYTES,
+        StaticPythonRuntimeHandoffError,
+        parse_static_python_runtime_handoff,
+    )
+    from .static_python_runtime_startup import (
+        MAX_RUNTIME_STARTUP_BYTES,
+        StaticPythonRuntimeStartupError,
+        parse_static_python_runtime_startup,
+    )
+
+    try:
+        _pins_raw, pin_payload = _read_canonical_detached_json(
+            args.pins, maximum=64 * 1024, error="static_python_acceptance_pins_invalid",
+        )
+        pins = _static_python_acceptance_pins(pin_payload)
+        installation_raw, _ = _read_canonical_detached_json(
+            args.installation, maximum=MAX_CONTRACT_BYTES,
+            error="static_python_acceptance_installation_invalid",
+        )
+        build_raw, _ = _read_canonical_detached_json(
+            args.build, maximum=MAX_BUILD_CLOSURE_BYTES,
+            error="static_python_acceptance_build_invalid",
+        )
+        startup_raw, _ = _read_canonical_detached_json(
+            args.startup, maximum=MAX_RUNTIME_STARTUP_BYTES,
+            error="static_python_acceptance_startup_invalid",
+        )
+        input_raw, _ = _read_canonical_detached_json(
+            args.input_result, maximum=MAX_INPUT_RESULT_BYTES,
+            error="static_python_acceptance_input_result_invalid",
+        )
+        handoff_raw, _ = _read_canonical_detached_json(
+            args.handoff, maximum=MAX_RUNTIME_HANDOFF_BYTES,
+            error="static_python_acceptance_handoff_invalid",
+        )
+
+        install_pins = pins["installation"]
+        installation = parse_static_python_rsi_installation_descriptor(
+            installation_raw,
+            expected_contract_sha256=install_pins["contract_sha256"],
+            expected_descriptor_sha256=install_pins["descriptor_sha256"],
+            expected_installation_version=install_pins["installation_version"],
+            expected_artifact_sha256=install_pins["artifact_sha256"],
+            expected_frozen_inventory_sha256=install_pins["frozen_inventory_sha256"],
+            expected_main_header_sha256=install_pins["main_header_sha256"],
+        )
+
+        build_pins = pins["build"]
+        build = parse_static_python_build_closure(
+            build_raw,
+            expected_contract_sha256=build_pins["contract_sha256"],
+            expected_source_tree_sha256=build_pins["source_tree_sha256"],
+            expected_toolchain_manifest_sha256=build_pins["toolchain_manifest_sha256"],
+            expected_frozen_inventory_sha256=build_pins["frozen_inventory_sha256"],
+            expected_link_manifest_sha256=build_pins["link_manifest_sha256"],
+            expected_artifact_sha256=build_pins["artifact_sha256"],
+            expected_installation_version=build_pins["installation_version"],
+            installation_descriptor_raw=installation_raw,
+            expected_installation_contract_sha256=build_pins["installation_contract_sha256"],
+            expected_installation_descriptor_sha256=build_pins["installation_descriptor_sha256"],
+            expected_installation_frozen_inventory_sha256=build_pins["installation_frozen_inventory_sha256"],
+            expected_main_header_sha256=build_pins["main_header_sha256"],
+        )
+
+        startup_pins = pins["startup"]
+        startup = parse_static_python_runtime_startup(
+            startup_raw,
+            expected_build_closure_sha256=startup_pins["build_closure_sha256"],
+            expected_binding_sha256=startup_pins["binding_sha256"],
+            expected_launch_intent_sha256=startup_pins["launch_intent_sha256"],
+        )
+
+        input_pins = pins["input_result"]
+        input_result = parse_static_python_input_result(
+            input_raw,
+            expected_startup_sha256=input_pins["startup_sha256"],
+            expected_build_closure_sha256=input_pins["build_closure_sha256"],
+            expected_binding_sha256=input_pins["binding_sha256"],
+            expected_launch_intent_sha256=input_pins["launch_intent_sha256"],
+            expected_manifest_sha256=input_pins["manifest_sha256"],
+            expected_report_sha256=input_pins["report_sha256"],
+            expected_request_sha256=input_pins["request_sha256"],
+            expected_memory_sha256=input_pins["memory_sha256"],
+            expected_request_size=input_pins["request_size"],
+            expected_memory_size=input_pins["memory_size"],
+        )
+
+        handoff_pins = pins["handoff"]
+        handoff = parse_static_python_runtime_handoff(
+            handoff_raw,
+            expected_startup_sha256=handoff_pins["startup_sha256"],
+            expected_input_result_sha256=handoff_pins["input_result_sha256"],
+            expected_terminal_sha256=handoff_pins["terminal_sha256"],
+            expected_handoff_sha256=handoff_pins["handoff_sha256"],
+            expected_binding_sha256=handoff_pins["binding_sha256"],
+            expected_launch_intent_sha256=handoff_pins["launch_intent_sha256"],
+            expected_result_sha256=handoff_pins["result_sha256"],
+            expected_publication_intent_sha256=handoff_pins["publication_intent_sha256"],
+            expected_request_budget=handoff_pins["request_budget"],
+            expected_request_count=handoff_pins["request_count"],
+            expected_wall_timeout_seconds=handoff_pins["wall_timeout_seconds"],
+            expected_deadline_unix=handoff_pins["deadline_unix"],
+            expected_terminal_state=handoff_pins["terminal_state"],
+            expected_cleanup_status=handoff_pins["cleanup_status"],
+            expected_publication_state=handoff_pins["publication_state"],
+        )
+        result = compose_static_python_provider_free_acceptance(
+            installation=installation, build=build, startup=startup,
+            input_result=input_result, handoff=handoff,
+        )
+    except (StaticPythonAcceptanceError, StaticPythonRSIInstallationError,
+            StaticPythonBuildClosureError, StaticPythonRuntimeStartupError,
+            StaticPythonInputResultError, StaticPythonRuntimeHandoffError,
+            KeyError, TypeError, ValueError, UnicodeError, OverflowError,
+            RecursionError) as exc:
+        # Keep all malformed/missing/drifted pin paths fail-closed and free of
+        # caller-controlled parser details.  The CLI's ordinary error path maps
+        # this to exit 2; only a coherent detached summary returns fixed exit 1.
+        reason = getattr(exc, "reason", None)
+        if not isinstance(reason, str):
+            # Preserve only the fixed local gate reasons emitted by bounded
+            # detached-file reads; never expose parser text or path details.
+            candidate = str(exc)
+            if candidate in {
+                "static_python_acceptance_pins_invalid",
+                "static_python_acceptance_installation_invalid",
+                "static_python_acceptance_build_invalid",
+                "static_python_acceptance_startup_invalid",
+                "static_python_acceptance_input_result_invalid",
+                "static_python_acceptance_handoff_invalid",
+            }:
+                reason = candidate
+        if isinstance(reason, str) and reason.startswith("static_python_"):
+            raise ValueError(reason) from None
+        raise ValueError("static_python_acceptance_invalid") from None
+
+    payload = result.to_dict()
+    payload.update({
+        "status": "blocked",
+        "reason": "provider_free_only",
+        "summary_sha256": result.summary_sha256,
+        "read_only": True,
+        "live_acceptance_ready": False,
+        "production_admission": False,
+        "online_publication": False,
+        "evidence_scope": "detached_static_python_pins_only",
+    })
+    return payload, 1
+
+
 
 def _benchmark_task_validate(args: argparse.Namespace) -> dict[str, object]:
     from .benchmark_task import (
@@ -6843,6 +7080,13 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             # Acceptance-envelope composition is still detached evidence.  It must remain
             # before _config()/RSILedger creation and always returns blocked authority flags.
             payload, exit_code = _producer_acceptance_envelope(args)
+            _emit(payload, args.json)
+            return exit_code
+        if args.command == "rsi" and args.rsi_command == "static-python-acceptance":
+            # The five static-Python DTOs and their independent pins are a detached,
+            # provider-free composition gate.  Keep it before _config()/RSILedger so
+            # malformed evidence can never initialize local controller state.
+            payload, exit_code = _static_python_acceptance(args)
             _emit(payload, args.json)
             return exit_code
         config = _config(args)
