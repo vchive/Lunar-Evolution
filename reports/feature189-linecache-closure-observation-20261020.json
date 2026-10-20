@@ -1,0 +1,76 @@
+{
+  "schema": "lunar-static-python-linecache-closure-observation-v1",
+  "host": "worker01",
+  "source": {
+    "module": "Lib/linecache.py",
+    "sha256": "09dbf03f17d86d843027cb6465d058859591d18d6ee166149d26c00e7dc30e0c",
+    "size": 7488
+  },
+  "artifacts": {
+    "target": {
+      "path": "/run/user/2110/lunar-probe/linecache-closure/python-frozen-main-nodyn-linecache",
+      "sha256": "a645d2d71e62a8f36aa2cd9e851e111d570497fe23dbd9cfba4e4387c4544ccc",
+      "size": 24542136,
+      "elf_class": "ELF64",
+      "machine": "x86-64",
+      "pt_interp": false,
+      "dt_needed": false
+    },
+    "linecache_header": {
+      "sha256": "048a5c025818b1f845e0653244b65097f0e98c1c6366b67d955425a15c737d28",
+      "size": 27659
+    },
+    "main_header": {
+      "sha256": "8d5068c45d6cd8b041d239187f04bec3b50303f2403d269b2c5f2a922e21cb07",
+      "size": 34554
+    },
+    "frozen_source": {
+      "sha256": "494df5949db98241855d16bdb21ca13bd73db97c71a7ff283fff1e64cfcb13b6",
+      "size": 2174
+    },
+    "frozen_object": {
+      "sha256": "85f77204099168d626f6338991dd0c2f6387c370e184922d692da6d14c5d5b97",
+      "size": 204024
+    },
+    "archive": {
+      "sha256": "c9d3df885f5080ececcea86631d408a5fb264b62258762dbb69f5a89f375c51c",
+      "size": 48466214
+    }
+  },
+  "probes": {
+    "baseline": {
+      "command": "python3 /run/user/2110/lunar-probe/linecache-closure/run-broker-fixed.py",
+      "exit_code": 0,
+      "stdout_size": 2758,
+      "stdout_sha256": "7ca548026150911dcde011e131cf5a6fe1440941e0f67763b0f4057b6b2f1e05",
+      "stderr_size": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sys_path": [],
+      "computed": 285,
+      "broker_response_bytes": 86
+    },
+    "loader_negative": {
+      "command": "python3 /run/user/2110/lunar-probe/linecache-closure/run-broker-negative.py",
+      "exit_code": 0,
+      "stdout_size": 2861,
+      "stdout_sha256": "4b53d3fb31fae6e1b15c5cd3f2038e7736f8c4758bfba57b9411c1cfe6957b17",
+      "stderr_size": 0,
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "direct_refusals": "8/8",
+      "ordinary_refusals": "7/7"
+    }
+  },
+  "claims": {
+    "linecache_source_observed": true,
+    "linecache_frozen_header_generated": true,
+    "fixed_main_baseline_observed": true,
+    "fixed_main_loader_negative_observed": true,
+    "runtime_execution_performed": false,
+    "installation_accepted": false,
+    "input_consumption_verified": false,
+    "owner_verified": false,
+    "lifecycle_verified": false,
+    "production_admission": false,
+    "online_publication": false
+  }
+}
