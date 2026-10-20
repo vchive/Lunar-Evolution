@@ -1,4 +1,4 @@
-## 2026-10-20 当前执行清单（本地 main `bb3394a`；远端基线 `1bbfce9`）
+## 2026-10-20 当前执行清单（main `3009e11`，已推送）
 
 本轮 provider-free 收尾已完成：producer process 的启动时钟/parent deadline 统一固定拒绝，
 static-Python acceptance pins 对五个 DTO section 强制 exact key-set，runtime/tree binding
