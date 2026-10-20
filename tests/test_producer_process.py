@@ -1042,6 +1042,33 @@ def test_cancellation_callback_failure_is_fail_closed_before_spawn(
     assert exc.value.code == code
 
 
+def test_cancellation_callback_failure_after_registration_preserves_recovery_fence(tmp_path: Path):
+    """A parent-control failure after spawn cannot look like a terminal success or retry."""
+    producer_root, intent, attestation = _fixture(tmp_path, mode="timeout")
+    calls = 0
+
+    def cancelled() -> bool:
+        nonlocal calls
+        calls += 1
+        if calls >= 3:
+            raise RuntimeError("parent control unavailable")
+        return False
+
+    with pytest.raises(ProducerProcessError) as exc:
+        run_producer_process(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            cancelled=cancelled,
+        )
+    assert exc.value.code == "producer_process_cancellation_unknown"
+    assert calls >= 3
+    batch = tmp_path / "evolution/producer-batches/journal-001"
+    assert (batch / "process-registration.json").is_file()
+    assert not (batch / "execution-receipt.json").exists()
+    recovered = recover_producer_process(tmp_path, journal_id=intent.journal_id)
+    assert recovered["status"] == "recovery_required"
+    assert recovered["reason"] == "producer_process_terminal_receipt_missing"
+
+
 def test_symlink_envelope_is_rejected_with_terminal_receipt(tmp_path: Path):
     producer_root, intent, attestation = _fixture(tmp_path, mode="symlink-envelope")
     receipt = run_producer_process(tmp_path, intent=intent, attestation=attestation, producer_root=producer_root)
