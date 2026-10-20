@@ -10,12 +10,12 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 
 当前主线是单机可靠执行和 RSI（递归学习）控制闭环。RSI 改进候选程序与经验证的任务记忆；模型权重训练和修改 Lunar 自身代码不在当前主线内。RSI producer 路径保持 `production_admission=false`，真实 solver campaign 仍需独立验收。
 
-截至 2026-10-20，`main` 已包含 PR153/154/155/160/161/165/166/169/170：启动失败诊断与
+截至 2026-10-20，`main` 已包含 PR153/154/155/160/161/165/166/169/170/173：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance
-绑定、retained producer acceptance 的只读组合 CLI、5090gpu frozen bootstrap 失败观察，
-以及 detached replay schema 收紧。它们都只提供本地、只读或 provider-free plumbing；真实
+绑定、retained producer acceptance 的只读组合 CLI、5090gpu frozen bootstrap 与 linecache
+closure 观察，以及 detached replay schema 收紧。它们都只提供本地、只读或 provider-free plumbing；真实
 sealed runtime、producer campaign 和生产准入仍未开放。
 
 [本地试跑](#五分钟本地试跑) · [RSI 示例](#rsi-provider-free-回归) · [执行链路](#执行链路) · [架构说明](docs/architecture.md) · [剩余工作与验收条件](docs/current-release-backlog.md)
@@ -40,6 +40,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | static Python acceptance envelope provenance | ✅ provider-free 边界已合入 | [PR165](https://github.com/vchive/Lunar-Evolution/pull/165) 将 descriptor、source/toolchain/frozen/link/artifact 的 detached pins 绑定到 canonical wire；`detached-pins-only` 不代表真实构建或 sealed runtime。 |
 | retained producer acceptance envelope | 🧪 本地只读组合已接入 | [PR166](https://github.com/vchive/Lunar-Evolution/pull/166) 提供 `rsi producer-acceptance`，组合 project preflight、terminal 和可选 replay；始终 `blocked/runtime_acceptance_required`，不初始化 ledger、不启动 producer/evaluator。 |
 | frozen bootstrap closure observation | 🧪 5090gpu 诊断已记录 | [PR169](https://github.com/vchive/Lunar-Evolution/pull/169) 记录静态 ELF、`--version/--help` 成功，以及 command-body/codec 路径因 `linecache` 缺失失败；不构成 sealed runtime 或 production acceptance。 |
+| linecache closure observation | 🧪 受控诊断已记录 | [PR173](https://github.com/vchive/Lunar-Evolution/pull/173) 将 source-owned `linecache.py` 冻结进 no-dynamic fixed-main，验证 `sys_path=[]`、静态 ELF 与 loader-negative；完整 stdlib closure、owner/lifecycle 和 production admission 仍未验收。 |
 | detached replay schema gate | ✅ provider-free 边界已加固 | [PR170](https://github.com/vchive/Lunar-Evolution/pull/170) 对 acceptance envelope 的 replay report 强制四字段闭合 schema 和固定类型，拒绝未审计字段/path/authority。 |
 | Python producer task/timeout binding | ✅ 已合入 | PR154 将 `parent_task_id`、`task_id` 和 `request_timeout_seconds` 绑定到 terminal receipt；漂移返回 `receipt_binding_drift`，focused regression 保持 provider-free。 |
 | project lifecycle profile preflight | 🧪 只读门禁已合入 | PR155 校验 source/runtime/toolchain/request/result 摘要及固定 bootstrap、cancel、resume 模式；有效 profile 仍返回 `blocked/runtime_acceptance_required`，不启动项目、evaluator 或 RSI ledger。 |

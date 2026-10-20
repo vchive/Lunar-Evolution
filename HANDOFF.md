@@ -5,6 +5,9 @@
 - PR171 的 GitHub Actions run `39372475795` 已创建但仍处于 `queued`，包含 33 个
   Python 3.11/3.12/3.13 job；在它完成前不能把完整 CI 写成通过。此前 provider-free
   focused 回归、Ruff、compileall 和 `git diff --check` 已通过。
+- PR173 新增的 linecache closure 仅是受控诊断：source-owned `linecache.py` 已冻结进
+  no-dynamic fixed-main，`sys_path=[]`、静态 ELF 与 loader-negative 通过；完整 stdlib
+  closure、真实 runtime、owner/lifecycle 和 production admission 仍未验收。
 - 当前 P1 仍是完整 CPython/stdlib closure、真实 source/toolchain/static ELF、sealed
   startup、owner/lifecycle、authoritative input/result、OpenEvolve/Shinka project
   lifecycle 与生产 CLI/Linux 中断矩阵。5090gpu 目前只有 bounded bootstrap/linecache
