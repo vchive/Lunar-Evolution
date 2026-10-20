@@ -192,3 +192,20 @@ def test_adapter_prioritizes_sidecar_drift_over_native_failure(tmp_path: Path, m
             tmp_path, binding=binding, sidecar=sidecar, producer_root=tmp_path / "producer-root",
         )
     assert reads == 2
+
+
+@pytest.mark.parametrize("native_code", ["producer_process_cancelled", "producer_process_wall_timeout"])
+def test_adapter_prioritizes_cleanup_uncertainty_note_over_primary_failure(
+    tmp_path: Path, monkeypatch, native_code: str,
+) -> None:
+    binding, sidecar = _binding(tmp_path)
+    failure = ProducerProcessError(native_code)
+    failure.add_note("producer_process_cleanup_unknown")
+    monkeypatch.setattr(lifecycle, "read_python_producer_binding_sidecar", lambda *_a, **_k: sidecar)
+    monkeypatch.setattr(
+        lifecycle, "run_producer_process", lambda *_a, **_k: (_ for _ in ()).throw(failure),
+    )
+    with pytest.raises(lifecycle.PythonProducerLifecycleError, match="process_cleanup_unknown"):
+        lifecycle.run_python_producer_process(
+            tmp_path, binding=binding, sidecar=sidecar, producer_root=tmp_path / "producer-root",
+        )

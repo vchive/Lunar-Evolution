@@ -95,13 +95,13 @@ _PROCESS_FAILURE_CODES = {
 
 def _process_failure_code(error: ProducerProcessError) -> str:
     """Map native lifecycle failures to the adapter's fixed, bounded error vocabulary."""
+    # Cleanup uncertainty is stronger than the primary cancellation/deadline label: without
+    # verified reap/FD cleanup the adapter cannot expose a narrower lifecycle outcome.
+    if "producer_process_cleanup_unknown" in getattr(error, "__notes__", ()):
+        return "process_cleanup_unknown"
     mapped = _PROCESS_FAILURE_CODES.get(error.code)
     if mapped is not None:
         return mapped
-    # Native cleanup can be attached as a fixed note when a primary failure has already
-    # occurred. Preserve that uncertainty rather than returning a generic execution error.
-    if "producer_process_cleanup_unknown" in getattr(error, "__notes__", ()):
-        return "process_cleanup_unknown"
     return "process_execution_invalid"
 
 
