@@ -1,3 +1,26 @@
+# 当前交接（2026-10-20，PR165/166 合入 main 后）
+
+- 远端 `main` 当前为 `9e3ac87`。PR165 已合入 static Python acceptance envelope provenance：
+  descriptor 的 canonical digest、source/tree、toolchain、frozen、link 和 artifact detached
+  pins 必须与 DTO/wire 一致；输出明确 `provenance.status=detached-pins-only`，不代表真实
+  构建、ELF、sealed startup 或生产准入。
+- PR166 已合入只读 `rsi producer-acceptance PROFILE TERMINAL` CLI，可选读取 retained
+  replay summary。它在 config/ledger 初始化前校验 profile、terminal binding/deadline 和
+  replay scope，始终返回 `status=blocked`、`reason=runtime_acceptance_required`，保留
+  `terminal_reconcile`/`retained_replay_completed` 缺口，不启动 producer/evaluator，也不
+  修改 `production_admission` 或 `online_publication`。
+- PR160/161 的 terminal gate 与 no-dynamic recipe gate 仍保持原有边界；新增 envelope
+  focused tests、Ruff、compileall 和 `git diff --check` 已通过。此前 178 项主线 focused
+  集合仍是 provider-free 回归证据，GitHub Actions 的 queued 状态不写成完整 CI 通过。
+- 当前仍开放的 P1 是 Feature189/193 的真实 CPython/toolchain/static ELF/sealed
+  runtime/输入/lifecycle、Feature191/195 的真实 OpenEvolve/Shinka project lifecycle
+  与生产 RSI CLI/Linux 中断矩阵。P2（remote evaluator、外部 worker 认证、多机
+  ownership、分布式 scheduler/service API）继续后置。
+- 本轮仍只使用本地 inert/provider-free fixture；不运行 WebAgent、远程 evaluator、
+  真实模型/solver 或公司评测平台。`production_admission` 与 `online_publication`
+  保持关闭。主 checkout 的用户未提交
+  `specs/160-rsi-learning-mode/p1-cli-producer-gap-report.md` 必须保留。
+
 # 当前交接（2026-10-20，PR160/161 合入 main 后）
 
 - 远端 `main` 当前为 `39a8726`。PR160 已合入 retained Python producer terminal 的只读
