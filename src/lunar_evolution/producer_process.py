@@ -1158,6 +1158,19 @@ def _compose_parent_deadline(
     return min(own_deadline, float(parent_deadline))
 
 
+def _deadline_reached(
+    deadline: float, monotonic: Callable[[], float],
+) -> bool:
+    """Sample the launch clock with the same fixed refusal contract as setup."""
+    try:
+        current = monotonic()
+    except Exception as exc:
+        raise ProducerProcessError("producer_process_clock_invalid") from exc
+    if type(current) not in (int, float) or not math.isfinite(float(current)):
+        _fail("producer_process_clock_invalid")
+    return float(current) >= deadline
+
+
 def _run_producer_process(
     workspace: str | Path,
     *,
@@ -1185,7 +1198,7 @@ def _run_producer_process(
     # before attestation verification, producer-root inspection, or one-time claim
     # publication so parent loss cannot consume the child launch authority or leave
     # a partially prepared attempt that looks dispatchable after restart.
-    if parent_deadline is not None and monotonic() >= deadline:
+    if parent_deadline is not None and _deadline_reached(deadline, monotonic):
         _fail("producer_process_wall_timeout")
     try:
         verify_producer_launch_attestation(intent, attestation)

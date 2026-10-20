@@ -1023,6 +1023,27 @@ def test_expired_parent_deadline_refuses_startup_before_claim_or_spawn(tmp_path:
     assert not (tmp_path / "evolution/producer-nonces").exists()
 
 
+@pytest.mark.parametrize("second_sample", [float("nan"), "invalid"])
+def test_invalid_startup_clock_sample_refuses_before_claim_or_spawn(
+    tmp_path: Path, second_sample: object,
+):
+    producer_root, intent, attestation = _fixture(tmp_path)
+    samples = iter((100.0, second_sample))
+
+    def monotonic():
+        return next(samples)
+
+    with pytest.raises(ProducerProcessError, match="clock_invalid"):
+        run_producer_process(
+            tmp_path, intent=intent, attestation=attestation, producer_root=producer_root,
+            parent_deadline=200.0, monotonic=monotonic,
+            popen_factory=lambda *args, **kwargs: pytest.fail("invalid clock must not spawn"),
+        )
+    batch = tmp_path / "evolution/producer-batches/journal-001"
+    assert not (batch / "attestation-consumption.json").exists()
+    assert not (tmp_path / "evolution/producer-nonces").exists()
+
+
 @pytest.mark.parametrize(
     ("callback", "code"),
     [
