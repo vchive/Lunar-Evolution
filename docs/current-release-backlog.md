@@ -1,19 +1,21 @@
-## 2026-10-20 当前执行清单（PR153/154/155/160/161 已合入）
+## 2026-10-20 当前执行清单（PR153/154/155/160/161/165/166 已合入）
 
-远端 `main` 当前为 `39a8726`，已合入 PR153/154/155/160/161：启动失败诊断与
+远端 `main` 当前为 `9e3ac87`，已合入 PR153/154/155/160/161/165/166：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
-binding/deadline 检查，以及 static Python no-dynamic recipe gate。它们保留
+binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance
+绑定，以及 retained producer acceptance 的只读组合 CLI。它们保留
 `production_admission=false` 与 `online_publication=false`，不启动真实 producer、
 evaluator 或 campaign。
 
 PR160 的 terminal 命令只校验已保留的 canonical terminal；`unknown` 固定返回
 `reconcile_required`，不会初始化 ledger 或自动重启。PR161 的 recipe gate 只拒绝
-shared/PIE/dynamic-loader flags、共享 link inputs、重复或 shell-like 值；它不把描述符
-检查提升为实际 ELF、sealed runtime 或 Linux lifecycle 验收。PR155 的 preflight 仍只
-校验 source/runtime/toolchain/request/result 摘要，发现不满足条件时返回
-`blocked/runtime_acceptance_required`；PR154 发现 task 或 timeout 漂移时返回
-`receipt_binding_drift`。
+shared/PIE/dynamic-loader flags、共享 link inputs、重复或 shell-like 值。PR165 将
+静态 acceptance 的 detached pins 与 canonical wire 绑定，并明确 `detached-pins-only`；
+PR166 的 `rsi producer-acceptance` 组合 project preflight、terminal 和可选 replay，始终
+返回 `blocked/runtime_acceptance_required`。这些门禁都不把 DTO 或描述符检查提升为实际
+ELF、sealed runtime、Linux lifecycle 或生产准入；PR155 仍校验 source/runtime/toolchain/
+request/result 摘要，PR154 漂移时返回 `receipt_binding_drift`。
 
 PR138（`af1cc62`）已将 reserved BRS serial owner/ledger/terminal/finalization 链路合入
 `main`，PR139（`b51d50d`）同步了交接和发布边界。当前 P0 的本地 provider-free
