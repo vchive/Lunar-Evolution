@@ -10,7 +10,7 @@ Lunar Evolution 是一个**本地优先、可恢复、可审计**的 Agent 与�
 
 当前主线是单机可靠执行和 RSI（递归学习）控制闭环。RSI 改进候选程序与经验证的任务记忆；模型权重训练和修改 Lunar 自身代码不在当前主线内。RSI producer 路径保持 `production_admission=false`，真实 solver campaign 仍需独立验收。
 
-截至 2026-10-20，`main` 已包含 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179：启动失败诊断与
+截至 2026-10-20，`main` 已包含 PR153/154/155/160/161/165/166/169/170/173/176/177/178/179/182：启动失败诊断与
 retained producer-process 生命周期 CLI、Python producer receipt 的 task/timeout 绑定、
 OpenEvolve/Shinka 项目生命周期 profile preflight、retained Python terminal 的只读
 binding/deadline 检查、static Python no-dynamic recipe gate、acceptance envelope provenance
@@ -32,7 +32,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | 同 workspace 连续 DRS 发布 | ✅ P0 控制链已合入 | 三个不同 child、练习记忆晋级、目标重试与历史只读恢复已完成主线控制链；真实 producer/runtime 仍按 P1 独立验收。 |
 | DRS known rejection | ✅ P0 控制链已合入 | 原 owner、连续 reconcile、早期中断及三组混合链已纳入主线；真实运行时来源仍不因 fixture 通过而自动放行。 |
 | BRS partial-wave resume | ✅ provider-free 单机链路已合入 | Reserved projection/prefix、全域 ledger/reservation、fresh child preparation exchange、native provider/completion、serial owner、terminal lifecycle、exact root settlement、partial-wave resume 与 finalization replay 已在 PR138 合入；自然 inert 混合波按 ordinal 完成并保持 128 KiB reserved checkpoint 上限。真实 CPython/producer/runtime 仍需独立验收。 |
-| 多 child native BRS | 🧪 私有 provider-free 路径 | 已有 owner/mailbox、result CAS、delivery/settlement、serial successor 和显式 reconcile API。未消费的 BRS obligation 会阻止默认恢复、推进和终结；消费时核对原始记录的合法后继、持久化终态及 native claim/result。serial continuation 仍保持 private，public native BRS 与生产 admission 关闭。 |
+| 多 child native BRS | 🧪 私有 provider-free 路径 | 已有 owner/mailbox、result CAS、delivery/settlement、serial successor 和显式 reconcile API。未消费的 BRS obligation 会阻止默认恢复、推进和终结；消费时核对原始记录的合法后继、持久化终态及 native claim/result。serial continuation 仍保持 private；自然 inert serial integration 仍需修复并复跑，public native BRS 与生产 admission 关闭。 |
 | Feature189 static-Python build probe receipt | ✅ 已合入 | `lunar-static-python-build-probe-v1` 只保存真实构建、ELF 和启动观察；5090gpu 的原始 stock image 仍在 `encodings` 前失败，后续 no-dynamic fixed-main inert probe 已通过 broker/loader-negative 观察但仍不授予 sealed runtime 或生产准入。 |
 | static Python 启动失败诊断 | 🧪 诊断工具已接入 | [PR153](https://github.com/vchive/Lunar-Evolution/pull/153) 增加 bounded stderr 摘要与固定失败分类；只保留 digest/size，`runtime_execution_performed=false`、`production_admission=false`，不能替代 sealed startup 验收。 |
 | retained producer-process 生命周期 CLI | 🧪 本地 plumbing 已接入 | [PR153](https://github.com/vchive/Lunar-Evolution/pull/153) 提供只读 `producer-process inspect` 与显式确认的 `producer-process cleanup --confirm`；沿用 owner/recovery gate，仍保持 `production_admission=false`，不启动真实 producer 或 campaign。详见 [`docs/local-producer-process-cli.md`](docs/local-producer-process-cli.md)。 |
@@ -40,6 +40,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | static Python no-dynamic recipe gate | ✅ 描述符门禁已合入 | [PR161](https://github.com/vchive/Lunar-Evolution/pull/161) 拒绝 shared/PIE/dynamic-loader flags、共享 link inputs、重复或 shell-like 值；这是构建前策略检查，不等于实际 ELF/sealed runtime 验收。 |
 | static Python acceptance envelope provenance | ✅ provider-free 边界已合入 | [PR165](https://github.com/vchive/Lunar-Evolution/pull/165) 将 descriptor、source/toolchain/frozen/link/artifact 的 detached pins 绑定到 canonical wire；`detached-pins-only` 不代表真实构建或 sealed runtime。 |
 | retained producer acceptance envelope | 🧪 本地只读组合已接入 | [PR166](https://github.com/vchive/Lunar-Evolution/pull/166) 提供 `rsi producer-acceptance`，组合 project preflight、terminal 和可选 replay；始终 `blocked/runtime_acceptance_required`，不初始化 ledger、不启动 producer/evaluator。 |
+| detached static-Python acceptance CLI | 🧪 provider-free 组合已接入 | [PR182](https://github.com/vchive/Lunar-Evolution/pull/182) 提供 `rsi static-python-acceptance`，以独立 canonical pins 组合 installation/build/startup/input-result/handoff DTO；命令只读、始终 `status=blocked`，不启动 runtime/evaluator，`production_admission=false`。 |
 | producer cleanup lifecycle gate | ✅ provider-free 门禁已加固 | [PR176](https://github.com/vchive/Lunar-Evolution/pull/176) 要求已知 terminal 只能在 `cleaned` 或 `already_exited` 证据下进入组合 envelope；`unknown`/`missing` 和未审计标签 fail closed，不启动 producer/evaluator。 |
 | producer adapter failure fence | ✅ provider-free 门禁已加固 | [PR178](https://github.com/vchive/Lunar-Evolution/pull/178) 为取消、deadline、cleanup uncertainty 保留固定生命周期错误码，并在 native 失败后复核 binding sidecar；[PR179](https://github.com/vchive/Lunar-Evolution/pull/179) 让 cleanup uncertainty note 覆盖更窄的取消/deadline 标签。 |
 | frozen bootstrap closure observation | 🧪 5090gpu 诊断已记录 | [PR169](https://github.com/vchive/Lunar-Evolution/pull/169) 记录静态 ELF、`--version/--help` 成功，以及 command-body/codec 路径因 `linecache` 缺失失败；不构成 sealed runtime 或 production acceptance。 |

@@ -1,3 +1,25 @@
+# 当前交接（2026-10-20，PR182 合入 main 后）
+
+- 远端 `main` 当前为 `e20dcea`，PR182 已合入。新增只读
+  `rsi static-python-acceptance` CLI：在初始化 config/ledger 前校验五个 static-Python
+  DTO 与独立 canonical pins，组合结果固定为 `status=blocked`、
+  `live_acceptance_ready=false`、`production_admission=false` 和
+  `online_publication=false`。本地 focused CLI/composition 回归通过。
+- 本轮 provider-free 本地 case 已实跑：RSI resume/reconcile/预算/指纹 128 项，
+  producer/process/lifecycle 383 项（2 项平台跳过），OpenEvolve/Shinka/project handoff
+  160 项，acceptance/cleanup 81 项，static runtime contract 460 项，BRS recovery 85 项，
+  exact regression shard 204 项；均无失败。普通 DRS CLI、unknown reconcile、resume、usage、
+  producer acceptance 和 static acceptance refusal 也已实际执行。
+- 当前证据边界保持不变：5090gpu 仅有 frozen bootstrap/stdlib closure 诊断；
+  `linecache → traceback → collections → keyword` 后续 closure 仍缺完整来源、工具链、
+  sealed startup、owner/lifecycle、authoritative input/result 和 production admission。
+  不运行 WebAgent、远程 evaluator、真实模型/solver campaign 或公司评测平台。
+- 额外回归发现 `tests/test_rsi_brs_reserved_serial_integration.py` 的 4 个自然 inert
+  serial case 在 60 秒内未完成，栈停在 `rsi_python_admission.py:86`；该组不计入通过，
+  需要后续定位锁/ admission 接线后再复跑。纯 BRS parser/policy/reconcile 561 case 全部通过。
+- P2（remote evaluator、外部 worker 认证、多机 ownership、分布式 scheduler/service API）
+  继续后置；保持 `production_admission=false`、`online_publication=false`。
+
 # 当前交接（2026-10-20，PR179 合入 main 后）
 
 - 远端 `main` 当前为 `270878a9ce52d591a13b6c93a788fdef60d2af65`，PR177、178、179 已合入；
