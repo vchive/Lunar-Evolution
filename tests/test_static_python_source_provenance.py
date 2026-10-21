@@ -4,14 +4,28 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import io
 import json
+import lzma
+import os
+import socket
+import subprocess
+import tarfile
+import time
+from pathlib import Path
 
 import pytest
 
 from tests.test_static_python_source_tree_observation import _bundle, _entries, _observe
 from tests.test_static_python_verified_inputs import _receipt
+from tools.static_python_fixture import (
+    archive_observation,
+    source_patches,
+    source_staging,
+    verified_inputs,
+)
 from tools.static_python_fixture import source_provenance as provenance
-from tools.static_python_fixture import verified_inputs
+from tools.static_python_fixture import source_tree_observation as tree_observation
 from tools.static_python_fixture.archive_observation import ArchiveSourceIdentity
 from tools.static_python_fixture.source_tree_observation import (
     SOURCE_TREE_OBSERVATION_SCHEMA,
@@ -19,6 +33,104 @@ from tools.static_python_fixture.source_tree_observation import (
     StaticPythonSourceTreeFile,
     StaticPythonSourceTreeObservation,
 )
+
+FIXTURE = Path(__file__).parent / "fixtures/static_python_source"
+
+
+def _staging_inputs(tmp_path):
+    sources = {path: (FIXTURE / (path + ".source")).read_bytes()
+               for path in source_patches.SOURCE_PATHS}
+    root = "Python-3.13.12"
+    entries = []
+    root_entry = tarfile.TarInfo(root)
+    root_entry.type = tarfile.DIRTYPE
+    root_entry.mode = 0o755
+    entries.append((root_entry, None))
+    for path, raw in sources.items():
+        member = tarfile.TarInfo(root + "/" + path)
+        member.mode = 0o644
+        member.size = len(raw)
+        entries.append((member, raw))
+    empty_dir = tarfile.TarInfo(root + "/explicit-empty")
+    empty_dir.type = tarfile.DIRTYPE
+    empty_dir.mode = 0o777
+    entries.append((empty_dir, None))
+    extra = tarfile.TarInfo(root + "/extra/unchanged.bin")
+    extra.mode = 0o777
+    extra.size = len(b"unchanged\x00data")
+    entries.append((extra, b"unchanged\x00data"))
+    empty_file = tarfile.TarInfo(root + "/extra/empty")
+    empty_file.mode = 0o644
+    empty_file.size = 0
+    entries.append((empty_file, b""))
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        for member, raw in entries:
+            tar.addfile(member, None if raw is None else io.BytesIO(raw))
+    compressed = lzma.compress(stream.getvalue(), format=lzma.FORMAT_XZ)
+    members = sorted(({
+        "path": member.name.rstrip("/") if member.isdir() else member.name,
+        "kind": "directory" if member.isdir() else "file", "size": member.size,
+        "mode": member.mode,
+        "sha256": None if raw is None else hashlib.sha256(raw).hexdigest(),
+    } for member, raw in entries), key=lambda item: item["path"])
+    manifest = {"schema": "lunar-static-python-extraction-manifest-v1", "archive": "cpython",
+                "root": root, "archive_sha256": hashlib.sha256(compressed).hexdigest(),
+                "members": members}
+    manifest_raw = _canonical(manifest)
+    snapshot = archive_observation.snapshot_inert_archive_bytes(compressed, "cpython")
+    bundle = snapshot, hashlib.sha256(manifest_raw).hexdigest()
+    regular = sorted(({
+        "path": member.name, "mode": member.mode, "size": member.size,
+        "sha256": hashlib.sha256(raw).hexdigest(),
+    } for member, raw in entries if raw is not None), key=lambda item: item["path"])
+    tree = {"schema": tree_observation.SOURCE_TREE_SCHEMA, "archive": "cpython",
+            "root": root, "version": "3.13.12", "files": regular}
+    source_tree_sha256 = hashlib.sha256(_canonical(tree)).hexdigest()
+    observation = tree_observation.observe_snapshot_source_tree(
+        bundle[0], expected_manifest_sha256=bundle[1],
+        expected_source_tree_sha256=source_tree_sha256, require_profile=False,
+        deadline=time.monotonic() + 30.0,
+    )
+    destination = str(tmp_path.resolve() / "staged")
+    staging = source_staging.stage_archive_sources(
+        bundle[0], destination, expected_manifest_sha256=bundle[1],
+        require_profile=False, deadline=time.monotonic() + 30.0,
+    )
+    pins = {"expected_staging_sha256": staging.staging_sha256,
+            "expected_manifest_sha256": observation.manifest_sha256,
+            "expected_source_tree_sha256": observation.source_tree_sha256}
+    return observation, staging, pins, bundle[0].archive_size
+
+
+def _repin_staging(staging, *, mutation=None, **dto_changes):
+    payload = json.loads(staging.canonical_json)
+    if mutation is not None:
+        mutation(payload)
+    raw = _canonical(payload)
+    return dataclasses.replace(
+        staging, canonical_json=raw, staging_sha256=hashlib.sha256(raw).hexdigest(),
+        **dto_changes,
+    )
+
+
+def _profile_metadata(observation, staging, bundle_size):
+    identity = ArchiveSourceIdentity(1, 2, bundle_size, 0o644, 0, 0)
+    observation = dataclasses.replace(
+        observation, profile_pin_verified=True, metadata_validation="validated",
+        source_identity=identity,
+    )
+    record = json.loads(observation.canonical_json)
+    record.update(profile_pin_verified=True, metadata_validation="validated",
+                  source_identity=dataclasses.asdict(identity))
+    raw = _canonical(record)
+    observation = dataclasses.replace(observation, canonical_json=raw,
+                                      observation_sha256=hashlib.sha256(raw).hexdigest())
+    staging = _repin_staging(
+        staging, mutation=lambda payload: payload.update(
+            profile_pin_verified=True, metadata_validation="validated"),
+    )
+    return observation, staging
 
 
 def _canonical(value):
@@ -87,6 +199,18 @@ def _repin_observation(observation, **changes):
     for field, value in changes.items():
         if field in payload:
             payload[field] = value
+    if "archive_sha256" in changes and "snapshot_sha256" not in changes:
+        payload["snapshot_sha256"] = changes["archive_sha256"]
+        result = dataclasses.replace(result, snapshot_sha256=changes["archive_sha256"])
+    if any(field in changes for field in ("archive", "root", "version", "files")):
+        tree = json.loads(observation.tree_json)
+        for field in ("archive", "root", "version", "files"):
+            if field in changes:
+                tree[field] = changes[field]
+        tree_raw = _canonical(tree)
+        tree_sha = hashlib.sha256(tree_raw).hexdigest()
+        payload["source_tree_sha256"] = tree_sha
+        result = dataclasses.replace(result, tree_json=tree_raw, source_tree_sha256=tree_sha)
     canonical = _canonical(payload)
     return dataclasses.replace(result, canonical_json=canonical,
                                observation_sha256=hashlib.sha256(canonical).hexdigest())
@@ -250,3 +374,222 @@ def test_comparator_has_no_external_effects_even_on_inert_refusal(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", forbidden)
     _refused(lambda: provenance.compare_source_provenance(raw, observation, **pins),
              "observation_inert_or_unknown")
+
+
+def test_inert_source_tree_matches_complete_staging_and_fixed_postimages(tmp_path):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    assert provenance.validate_source_staging_consistency(observation, staging, **pins) is None
+    assert observation.profile_pin_verified is False
+    manifest = staging.to_manifest()
+    assert manifest["profile_pin_verified"] is False
+    assert manifest["metadata_validation"] == "skipped-inert-profile"
+    assert all(manifest[name] is False for name in (
+        "release_verified", "source_execution_performed", "build_performed",
+        "frozen_headers_generated", "runtime_execution_performed", "runtime_load_protection",
+        "production_admission", "general_code_origin_protection",
+    ))
+
+
+def test_validated_profile_metadata_shape_matches_without_claiming_acquisition(tmp_path):
+    observation, staging, pins, archive_size = _staging_inputs(tmp_path)
+    observation, staging = _profile_metadata(observation, staging, archive_size)
+    assert provenance.validate_source_staging_consistency(observation, staging, **{
+        **pins, "expected_staging_sha256": staging.staging_sha256,
+    }) is None
+    assert observation.profile_pin_verified is True
+    assert observation.metadata_validation == "validated"
+    assert observation.signature_verification == "not-performed"
+
+
+@pytest.mark.parametrize("pin,bad,reason", [
+    ("expected_staging_sha256", "0" * 64, "staging_pin_invalid"),
+    ("expected_staging_sha256", "a" * 64, "staging_pin_mismatch"),
+    ("expected_manifest_sha256", "0" * 64, "manifest_pin_invalid"),
+    ("expected_manifest_sha256", "a" * 64, "manifest_pin_mismatch"),
+    ("expected_source_tree_sha256", "0" * 64, "source_tree_pin_invalid"),
+    ("expected_source_tree_sha256", "a" * 64, "source_tree_pin_mismatch"),
+])
+def test_staging_consistency_requires_independent_pins(tmp_path, pin, bad, reason):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, staging, **{**pins, pin: bad}), reason)
+
+
+def test_staging_wire_self_digest_and_canonical_encoding_are_required(tmp_path):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    changed = dataclasses.replace(staging, canonical_json=staging.canonical_json + b" ")
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": staging.staging_sha256}),
+        "staging_digest_mismatch")
+    changed_raw = _canonical(staging.to_manifest()) + b" "
+    changed = dataclasses.replace(staging, canonical_json=changed_raw,
+                                  staging_sha256=hashlib.sha256(changed_raw).hexdigest())
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": changed.staging_sha256}),
+        "staging_canonical_invalid")
+
+
+def test_staging_json_bounds_support_realistic_entry_counts():
+    entries = [{
+        "path": f"Python-3.13.12/lib/module_{index}.py", "kind": "file",
+        "implicit": False, "source_sha256": "a" * 64, "staged_sha256": "b" * 64,
+        "archive_mode": 0o644, "device": 1, "inode": index + 1, "mode": 0o600,
+        "nlink": 1, "size": 64, "mtime_ns": 1, "ctime_ns": 1,
+    } for index in range(12_000)]
+    raw = _canonical({"entries": entries})
+    assert len(raw) < 32 * 1024 * 1024
+    parsed = provenance._canonical_wire(raw, "staging")
+    assert len(parsed["entries"]) == 12_000
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    (lambda p: p.update(archive_sha256="c" * 64), "archive_observation_mismatch"),
+    (lambda p: p.update(snapshot_sha256="c" * 64), "archive_observation_mismatch"),
+    (lambda p: p.update(manifest_sha256="c" * 64), "manifest_pin_mismatch"),
+    (lambda p: p.update(patch_set_sha256="c" * 64), "patch_set_mismatch"),
+    (lambda p: p.update(extraction_performed=False), "staging_claim_invalid"),
+    (lambda p: p.update(fixed_patches_staged=False), "staging_claim_invalid"),
+    (lambda p: p.update(release_verified=True), "staging_claim_invalid"),
+    (lambda p: p.update(source_execution_performed=True), "staging_claim_invalid"),
+    (lambda p: p.update(build_performed=True), "staging_claim_invalid"),
+    (lambda p: p.update(frozen_headers_generated=True), "staging_claim_invalid"),
+    (lambda p: p.update(runtime_execution_performed=True), "staging_claim_invalid"),
+    (lambda p: p.update(runtime_load_protection=True), "staging_claim_invalid"),
+    (lambda p: p.update(production_admission=True), "staging_claim_invalid"),
+    (lambda p: p.update(general_code_origin_protection=True), "staging_claim_invalid"),
+])
+def test_staging_archive_patch_and_claim_drift_refuse(tmp_path, mutation, reason):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    changed = _repin_staging(staging, mutation=mutation)
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": changed.staging_sha256}), reason)
+
+
+@pytest.mark.parametrize("field,value,reason", [
+    ("version", "3.13.13", "version_root_mismatch"),
+    ("archive_sha256", "c" * 64, "archive_observation_mismatch"),
+    ("snapshot_sha256", "d" * 64, "observation_snapshot_archive_mismatch"),
+    ("manifest_sha256", "c" * 64, "manifest_pin_mismatch"),
+])
+def test_observation_cross_record_drift_refuses(tmp_path, field, value, reason):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    changed = _repin_observation(observation, **{field: value})
+    if field in {"version", "archive_sha256"}:
+        pins["expected_source_tree_sha256"] = changed.source_tree_sha256
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        changed, staging, **pins), reason)
+
+
+def _mutate_entry(payload, path, field, value):
+    entry = next(item for item in payload["entries"] if item["path"] == path)
+    entry[field] = value
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    (lambda p: p["entries"].pop(next(i for i, e in enumerate(p["entries"])
+                                     if e["kind"] == "file")), "staging_file_inventory_mismatch"),
+    (lambda p: p["entries"].append(dict(p["entries"][0])), "staging_entry_order_invalid"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "archive_mode", 0o600),
+     "staging_source_file_mismatch"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "source_sha256", "c" * 64),
+     "staging_source_file_mismatch"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "kind", []),
+     "staging_entry_invalid"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "kind", {}),
+     "staging_entry_invalid"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "staged_sha256", "c" * 64),
+     "staging_postimage_mismatch"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "size", 1),
+     "staging_postimage_mismatch"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "mode", True),
+     "staging_stat_invalid"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "nlink", 2),
+     "staging_stat_invalid"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "implicit", True),
+     "staging_file_invalid"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "archive_mode", True),
+     "staging_archive_mode_invalid"),
+    (lambda p: _mutate_entry(p, "Python-3.13.12/extra/unchanged.bin", "path", "../escape"),
+     "staging_path_invalid"),
+])
+def test_staging_file_inventory_source_and_stat_mutations_refuse(tmp_path, mutation, reason):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    changed = _repin_staging(staging, mutation=mutation)
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": changed.staging_sha256}), reason)
+
+
+def test_missing_or_unexpected_regular_file_refuses(tmp_path):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    changed = _repin_staging(
+        staging, mutation=lambda payload: payload["entries"].remove(next(
+            item for item in payload["entries"] if item["path"].endswith("/extra/empty"))),
+    )
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": changed.staging_sha256}),
+        "staging_file_inventory_mismatch")
+
+
+def test_non_ancestor_implicit_directory_and_bad_directory_stat_refuse(tmp_path):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+
+    def add_non_ancestor(payload):
+        item = dict(payload["entries"][0])
+        item.update(path="Python-3.13.12/unrelated", implicit=True, archive_mode=None)
+        payload["entries"].append(item)
+        payload["entries"].sort(key=lambda entry: entry["path"])
+
+    changed = _repin_staging(staging, mutation=add_non_ancestor)
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": changed.staging_sha256}),
+        "staging_implicit_directory_invalid")
+
+    def bad_directory(payload):
+        entry = next(item for item in payload["entries"] if item["kind"] == "directory")
+        entry["mode"] = 0o755
+
+    changed = _repin_staging(staging, mutation=bad_directory)
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": changed.staging_sha256}),
+        "staging_stat_invalid")
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    (lambda payload: payload["tree_identity"].update(raw_mode=0o41700),
+     "staging_tree_identity_invalid"),
+    (lambda payload: payload["tree_identity"].update(raw_mode=0o40701),
+     "staging_tree_identity_invalid"),
+    (lambda payload: payload["ancestor_identities"].pop(),
+     "staging_ancestor_identity_invalid"),
+    (lambda payload: payload["ancestor_identities"].append(
+        dict(payload["ancestor_identities"][-1])), "staging_ancestor_identity_invalid"),
+])
+def test_staging_tree_identity_and_ancestor_chain_are_exact(tmp_path, mutation, reason):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    changed = _repin_staging(staging, mutation=mutation)
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, changed, **{**pins, "expected_staging_sha256": changed.staging_sha256}),
+        reason)
+
+
+def test_valid_explicit_empty_directory_remains_allowed(tmp_path):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+    assert any(item["path"].endswith("/explicit-empty") and item["kind"] == "directory"
+               and item["implicit"] is False for item in staging.to_manifest()["entries"])
+    assert provenance.validate_source_staging_consistency(observation, staging, **pins) is None
+
+
+def test_source_tree_staging_consistency_has_no_external_effects(tmp_path, monkeypatch):
+    observation, staging, pins, _archive_size = _staging_inputs(tmp_path)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("detached consistency check must not perform external effects")
+
+    import builtins
+    with monkeypatch.context() as patch:
+        for owner, name in ((builtins, "open"), (os, "open"), (os, "stat"), (os, "listdir"),
+                            (socket, "socket"), (subprocess, "run"),
+                            (subprocess, "Popen")):
+            patch.setattr(owner, name, forbidden)
+        result = provenance.validate_source_staging_consistency(observation, staging, **pins)
+    assert result is None

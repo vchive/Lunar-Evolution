@@ -243,3 +243,36 @@ PR37 acceptance or completes the remaining actual G1/G2/G3 gates.
 Local final check:34 comparator cases and234 receipt/source-tree/artifact cases
 passed with zero failures/errors/skips; full Ruff, compileall and diff checks
 passed. Final-source CI is pending and cannot be claimed from these fixtures.
+
+## Source-tree / staged-tree consistency check
+
+The provider-free `validate_source_staging_consistency` continuation compares
+the independently pinned source-tree observation with a canonical staging
+record. Its positive fixture may use the existing inert CPython source fixture;
+this verifies only that the records agree and must preserve the inert-profile
+state. Also cover coherent validated-profile metadata without treating it as
+real acquisition. Refuse wrong/missing staging, manifest or source-tree pins;
+stale/noncanonical/self-digest-mismatched wires; archive/root/version/snapshot
+drift; mismatched profile/inert states; changed source paths/modes/sizes/digests;
+missing, duplicate or extra regular files; implicit directories that are not
+required ancestors; valid explicit directories including empty-directory entries;
+wrong patch-set and fixed-patch pre/postimage pins; changed unchanged-file bytes;
+bad claim flags; and malformed entry/stat fields. Monkeypatch and prove the check
+does not call `open`, `os.open`, filesystem/network APIs or subprocess.
+
+The focused check must preserve the distinction between the original archive
+tree digest and staging digest. It does not restat the staging directory and
+cannot close candidate-build-source provenance, G1 acquisition/signature,
+configured toolchain/build closure or G2/G3 runtime acceptance.
+
+Local continuation result (2026-10-21): 83 provenance tests passed, including
+positive inert and validated-metadata fixtures, independent-pin and canonical
+wire refusal, archive/version/profile drift, patch pre/postimage agreement,
+directory inventory, malformed stat/entry bounds and no-external-effect checks.
+An explicit `tests/__init__.py` package marker keeps a separately installed
+top-level `tests` distribution from shadowing repository helper imports. The
+five-file focused run then passed through the normal `python -m pytest` entry
+point. Repository-wide Ruff, `compileall` and `git diff --check` passed. This
+result establishes only detached DTO consistency and leaves real source
+acquisition, candidate-build provenance, configured static build and runtime
+acceptance open.

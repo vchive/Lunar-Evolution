@@ -56,10 +56,30 @@ failure and cancelled preflight separately from later successful evidence.
   deadline coverage. Keep the source-tree digest separate from extraction,
   projection, staging and Git object digests; this remains provenance observation,
   not acquisition or release authentication.
-- [ ] Verify CPython v3.13.12/source identity and signature/acquisition result;
-  record archive/tree SHA-256 and exact patch set without invented values.
+- [x] Verify the CPython 3.13.12 release archive size/SHA-256 and detached
+  signature against the official Python signer metadata; retain the GPG status
+  and raw-file digest manifest in
+  `release-input-audit-20261021.md`. This closes the archive/signature portion
+  of G1 only.
+- [ ] Independently retain the complete acquired/extracted source-tree digest
+  and exact applied patch set for the candidate build. The archive signature,
+  source projection and source-tree DTOs do not themselves prove a staged,
+  patched tree was used for a configured build.
+- [x] Cross-check the declared Zig 0.16.0 archive digest and the byte-for-byte
+  archive and available Ubuntu musl package bytes on 5090gpu; preserve their
+  exact versions and hashes in `release-input-audit-20261021.md`. This cross-check
+  does not assert every package participated in the prior build; no system
+  packages were installed during this audit.
+- [x] Add the SDD-defined provider-free source-tree/staging consistency check.
+  Bind independently pinned canonical DTOs and their per-file source/patch
+  postimages; do not reopen the staging directory or grant build/runtime
+  acceptance. Keep the separate candidate-build-source/patch evidence task open
+  until an actual configured build consumes and records that tree. The current
+  check compares detached canonical DTOs only and does not itself prove either
+  DTO was honestly produced.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
-  resolve compiler/binutils/static-library sources, versions and artifact hashes.
+  resolve compiler/binutils/static-library sources, versions and artifact hashes,
+  including zlib/libffi/freezer inputs and the configured build environment.
 - [ ] Freeze configure/cache/module/compile/link/environment recipe and provenance.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
