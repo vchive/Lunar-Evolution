@@ -122,3 +122,11 @@ def test_persisted_receipt_rejects_missing_fields_and_true_claims() -> None:
         source_readiness.validate_static_python_source_readiness_receipt(
             forged_raw, expected_sha256=hashlib.sha256(forged_raw).hexdigest(),
         )
+    forged = json.loads(raw)
+    forged["expanded_frozen_main"] = {**forged["expanded_frozen_main"], "size": 2}
+    forged_raw = _canonical(forged)
+    with pytest.raises(source_readiness.StaticPythonSourceReadinessError,
+                       match="receipt_expanded_main_mismatch"):
+        source_readiness.validate_static_python_source_readiness_receipt(
+            forged_raw, expected_sha256=hashlib.sha256(forged_raw).hexdigest(),
+        )

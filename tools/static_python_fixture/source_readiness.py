@@ -334,6 +334,8 @@ def _validate_receipt_wire(raw: bytes, expected_sha256: str) -> dict[str, object
         _fail("receipt_expanded_main_invalid")
     _integer(main["size"], "receipt_expanded_main_invalid", maximum=16 * 1024)
     _sha(main["sha256"], "receipt_expanded_main_invalid")
+    if main != next(item for item in assets if item["path"] == "assets/frozen_main.py"):
+        _fail("receipt_expanded_main_mismatch")
     toolchain = value["toolchain"]
     if type(toolchain) is not dict or frozenset(toolchain) != _TOOLCHAIN_FIELDS:
         _fail("receipt_toolchain_invalid")
