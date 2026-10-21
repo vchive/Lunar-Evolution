@@ -87,11 +87,19 @@ module adds a second `from-import` edge; no unprovided member name is guessed to
 be a module.
 
 Simple literal calls to `__import__("absolute.name")` and
-`importlib.import_module("absolute.name")` produce `literal-import` edges.
-`importlib.import_module` also supports a literal relative name when its package
-argument is a literal string whose package initializer source was supplied.
+`importlib.import_module("absolute.name")` produce `literal-import` edges; the
+literal `name` may be passed positionally or by keyword. `importlib.import_module`
+also supports a literal relative name when its literal `package` argument names
+a supplied package initializer. Relative imports from an explicitly supplied
+package initializer are resolved from that package context even when an ancestor
+initializer is absent, which permits namespace-package parents. A nonliteral
+explicit package argument is retained as a `dynamic-import` unsupported site.
+The short function name `import_module` is recognized only when explicitly
+imported from `importlib`; unbound calls with that spelling are unsupported.
 Other call shapes or non-literal names are retained as `dynamic-import`
-unsupported sites. Invalid literal module names and relative imports without a
+unsupported sites. An aliased `importlib` submodule is not treated as the root
+`importlib` module; calls through that alias are marked unsupported. Invalid
+literal module names and relative imports without a
 resolved package context are retained in `unresolved_imports`. Star imports
 retain their base edge and an unsupported `star-import` site. Calls to `eval`,
 `exec` or `compile` are retained as `dynamic-code-execution` unsupported sites.
@@ -124,11 +132,13 @@ deliberately bounded subset avoids consulting process-global codec search hooks.
 
 Tests use only synthetic in-memory sources and independently computed source
 pins. Cover ordinary, from-, relative- and literal-import observations; explicit
-`pkg.__init__` package context; possible submodule edges only when pinned bytes
-are supplied; dynamic/star/code-execution unsupported records; unresolved
-relative and malformed literal names; digest/key/type/canonical-wire behavior;
-fixed refusal reasons; every size/depth/node/site/output bound; detached DTO
-results; and no execution, file, process or network activity.
+`pkg.__init__` package context, namespace-package parent resolution; possible
+submodule edges only when pinned bytes are supplied; dynamic/star/code-execution
+unsupported records; unresolved relative and malformed literal names;
+keyword-form literal calls, dynamic relative-package arguments and importlib
+submodule aliases; digest/key/type/canonical-wire behavior; fixed refusal
+reasons; every size/depth/node/site/output bound; detached DTO results; and no
+execution, file, process or network activity.
 
 The scanner's test oracle checks only the syntax observer contract. It must not
 label synthetic sources as CPython source, claim that import enumeration is

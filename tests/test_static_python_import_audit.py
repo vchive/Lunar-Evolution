@@ -90,6 +90,22 @@ def test_relative_import_resolves_with_explicit_package_chain() -> None:
     assert result.to_dict()["unresolved_imports"] == []
 
 
+def test_relative_import_allows_namespace_parent_without_parent_initializer() -> None:
+    result = _run({
+        "pkg.sub.__init__": (
+            b"from ..shared import item\n"
+            b"import importlib\n"
+            b"importlib.import_module(name='..sibling', package='pkg.sub')\n"
+        ),
+    })
+    assert _edge_set(result) == {
+        ("pkg.sub", "pkg.shared", "from-import"),
+        ("pkg.sub", "importlib", "import"),
+        ("pkg.sub", "pkg.sibling", "literal-import"),
+    }
+    assert result.to_dict()["unresolved_imports"] == []
+
+
 def test_relative_import_beyond_top_level_is_retained_as_unresolved() -> None:
     result = _run({"pkg.__init__": b"from ..outside import item\n"})
     assert result.to_dict()["imports"] == []
@@ -129,6 +145,83 @@ def test_unpinned_literal_relative_import_package_is_unresolved() -> None:
     result = _run({"scanner": b"importlib.import_module('.child', 'pkg')\n"})
     assert result.to_dict()["imports"] == []
     assert result.to_dict()["unresolved_imports"][0]["reason"] == "relative-import-unresolved"
+
+
+def test_literal_import_calls_accept_keyword_names_and_packages() -> None:
+    result = _run({
+        "pkg.__init__": b"",
+        "scanner": (
+            b"import importlib\n"
+            b"importlib.import_module(name='.child', package='pkg')\n"
+            b"__import__(name='literal_mod')\n"
+        ),
+    })
+    assert _edge_set(result) == {
+        ("scanner", "importlib", "import"),
+        ("scanner", "pkg.child", "literal-import"),
+        ("scanner", "literal_mod", "literal-import"),
+    }
+    assert result.to_dict()["unsupported_import_sites"] == []
+
+
+def test_nonliteral_relative_import_package_is_unsupported() -> None:
+    result = _run({
+        "pkg.__init__": b"",
+        "scanner": b"importlib.import_module('.child', package=choose_package())\n",
+    })
+    assert result.to_dict()["imports"] == []
+    assert result.to_dict()["unresolved_imports"] == []
+    assert result.to_dict()["unsupported_import_sites"] == [{
+        "source": "scanner",
+        "line": 1,
+        "column": 0,
+        "reason": "dynamic-import",
+    }]
+
+
+def test_importlib_submodule_alias_does_not_fake_import_module_observation() -> None:
+    result = _run({
+        "scanner": (
+            b"import importlib.util as iu\n"
+            b"iu.import_module('should_not_be_imported')\n"
+        ),
+        "shadowed": (
+            b"import importlib.util as importlib\n"
+            b"importlib.import_module('should_not_be_imported')\n"
+        ),
+    })
+    assert _edge_set(result) == {
+        ("scanner", "importlib.util", "import"),
+        ("shadowed", "importlib.util", "import"),
+    }
+    assert result.to_dict()["unsupported_import_sites"] == [{
+        "source": "scanner",
+        "line": 2,
+        "column": 0,
+        "reason": "dynamic-import",
+    }, {
+        "source": "shadowed",
+        "line": 2,
+        "column": 0,
+        "reason": "dynamic-import",
+    }]
+
+
+def test_unbound_import_module_function_does_not_fake_literal_import() -> None:
+    result = _run({
+        "scanner": (
+            b"def import_module(name):\n"
+            b"    return name\n"
+            b"import_module('not_a_module_import')\n"
+        ),
+    })
+    assert result.to_dict()["imports"] == []
+    assert result.to_dict()["unsupported_import_sites"] == [{
+        "source": "scanner",
+        "line": 3,
+        "column": 0,
+        "reason": "dynamic-import",
+    }]
 
 
 def test_star_import_keeps_base_edge_and_marks_unknown_members_unsupported() -> None:

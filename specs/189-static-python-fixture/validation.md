@@ -331,12 +331,32 @@ code execution. They also cover malformed pins/types, encoding/syntax failures,
 size/node/depth/site/output budgets, canonical detached results and refusal
 codes. No source file is read or executed.
 
+The suite also covers namespace-package parent resolution, literal `name=` and
+`package=` arguments, nonliteral relative package refusal, and the distinction
+between an `importlib` root alias and an `importlib` submodule alias.
+
 The result is an AST observation wire only. A static target may be named even
 when its source bytes were not supplied; there is no profile comparison or
 closure claim. The scanner does not establish source provenance and does not
 cover C-created imports, arbitrary import aliases, loader hooks, runtime-built
 code or every other dynamic mechanism. Therefore, an empty unsupported-site list
 does not complete the independent CPython 3.13.12 source audit in `tasks.md`.
-The synthetic gate is **30 cases**, with zero failures, errors or skips; focused
+The synthetic gate is **35 cases**, with zero failures, errors or skips on
+Python 3.11 and 3.12; focused
 Ruff, compileall and diff checks are run for these new files only. No build,
 startup, solver, remote evaluator or company platform was run for this slice.
+
+## Partial CPython release-source import review
+
+`authenticated-source-import-audit-20261021.md` records read-only AST
+observations for eight frozen-module Python files read directly from the pinned
+CPython 3.13.12 release archive on 5090gpu. It distinguishes those archive
+members from a separately patched staging tree, records the tree byte drift,
+and identifies two unresolved source-level paths: dynamic codec-name selection
+under `encodings` and the `_py_abc` fallback under `abc`. It also pins the
+Lunar-owned frozen-main template separately from the final expanded source.
+
+This partial audit is an input for the independent source review, not its
+completion. It does not cover all Python/C startup edges, establish runtime
+reachability or module origin, bind the emitted frozen main, or close the
+configured startup graph. No build, install, evaluator or campaign was run.

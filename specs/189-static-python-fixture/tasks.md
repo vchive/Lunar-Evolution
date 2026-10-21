@@ -102,10 +102,17 @@ failure and cancelled preflight separately from later successful evidence.
   sites under finite budgets. Keep output claims false and do not compare or extend
   the installation profile. Synthetic tests prove only observer behavior; they do
   not establish source provenance or complete import enumeration.
+- [x] Record a read-only AST review of eight frozen-module Python files directly
+  from the pinned CPython 3.13.12 release archive, including the archive identity,
+  changed staged-source paths and bounded import observations in
+  `authenticated-source-import-audit-20261021.md`. This is a partial source audit,
+  not a complete import closure or independent re-verification of the signature.
 - [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
-  refusal sites. Any dependency outside the pinned profile requires a versioned
-  profile decision; the DTO parser cannot certify this audit or infer new modules.
+  refusal sites across the complete configured source/startup scope. Resolve the
+  observed dynamic codec selection and `_py_abc` fallback, and any dependency
+  outside the pinned profile with a versioned profile decision. The DTO parser
+  cannot certify this audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do

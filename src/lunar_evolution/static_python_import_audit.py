@@ -139,7 +139,7 @@ def _relative_target(
         return None
     keep = len(parts) - level + 1
     root = parts[:keep]
-    if not root or ".".join(root) + ".__init__" not in package_sources:
+    if not root:
         return None
     if module:
         root.extend(module.split("."))
@@ -160,6 +160,30 @@ def _literal_string(node: ast.AST) -> str | None:
     if type(node) is ast.Constant and type(node.value) is str:
         return node.value
     return None
+
+
+def _literal_call_arguments(
+    node: ast.Call,
+    positional_names: tuple[str, ...],
+    keyword_names: frozenset[str],
+) -> tuple[dict[str, str | None], frozenset[str], bool]:
+    """Return supported literal string arguments and whether the call shape is exact."""
+    values: dict[str, str | None] = {name: None for name in positional_names}
+    provided = set(positional_names[:min(len(node.args), len(positional_names))])
+    if len(node.args) > len(positional_names):
+        return values, frozenset(provided), False
+    for index, argument in enumerate(node.args):
+        values[positional_names[index]] = _literal_string(argument)
+    seen_keywords: set[str] = set()
+    for keyword in node.keywords:
+        if keyword.arg not in keyword_names or keyword.arg in seen_keywords:
+            return values, frozenset(provided), False
+        if values.get(keyword.arg) is not None or keyword.arg in positional_names[:len(node.args)]:
+            return values, frozenset(provided), False
+        seen_keywords.add(keyword.arg)
+        provided.add(keyword.arg)
+        values[keyword.arg] = _literal_string(keyword.value)
+    return values, frozenset(provided), True
 
 
 def _canonical_bytes(value: dict) -> bytes:
@@ -265,7 +289,8 @@ def audit_static_python_imports(
                 _fail("budget")
 
             importlib_aliases: set[str] = {"importlib"}
-            import_module_aliases: set[str] = {"import_module"}
+            shadowed_importlib_names: set[str] = set()
+            import_module_aliases: set[str] = set()
             builtin_import_aliases: set[str] = {"__import__"}
             builtin_module_aliases: set[str] = {"builtins"}
             for node in nodes:
@@ -273,11 +298,13 @@ def audit_static_python_imports(
                     for item in node.names:
                         if item.name == "builtins":
                             builtin_module_aliases.add(item.asname or "builtins")
-                        if item.name == "importlib" or item.name.startswith("importlib."):
-                            importlib_aliases.add(
-                                item.asname or ("importlib" if item.name != "importlib" else item.name)
-                            )
+                        if item.name == "importlib":
+                            importlib_aliases.add(item.asname or item.name)
+                        elif item.asname == "importlib":
+                            shadowed_importlib_names.add("importlib")
                 elif isinstance(node, ast.ImportFrom):
+                    if any((item.asname or item.name) == "importlib" for item in node.names):
+                        shadowed_importlib_names.add("importlib")
                     if node.level == 0 and node.module == "importlib":
                         for item in node.names:
                             if item.name == "import_module":
@@ -338,14 +365,17 @@ def audit_static_python_imports(
                 )
                 is_import_module = (
                     isinstance(function, ast.Name)
-                    and function.id in import_module_aliases
+                    and (function.id in import_module_aliases or function.id == "import_module")
                 ) or (
                     isinstance(function, ast.Attribute)
                     and function.attr == "import_module"
                 )
                 if is_builtin_import:
-                    literal = _literal_string(node.args[0]) if node.args else None
-                    if literal is None or len(node.args) != 1 or node.keywords:
+                    arguments, _provided, call_shape_ok = _literal_call_arguments(
+                        node, ("name",), frozenset({"name"}),
+                    )
+                    literal = arguments["name"]
+                    if literal is None or not call_shape_ok:
                         unsupported.add((source_module, node.lineno, node.col_offset,
                                          "dynamic-import"))
                     elif _MODULE_NAME.fullmatch(literal) is None:
@@ -354,26 +384,28 @@ def audit_static_python_imports(
                     else:
                         edge_set.add((source_module, literal, "literal-import"))
                 elif is_import_module:
-                    recognized_receiver = isinstance(function, ast.Name) or (
+                    recognized_receiver = (
+                        isinstance(function, ast.Name)
+                        and function.id in import_module_aliases
+                    ) or (
                         isinstance(function, ast.Attribute)
                         and isinstance(function.value, ast.Name)
                         and function.value.id in importlib_aliases
+                        and function.value.id not in shadowed_importlib_names
                     )
-                    literal = _literal_string(node.args[0]) if node.args else None
-                    package_arg = None
-                    if len(node.args) >= 2:
-                        package_arg = _literal_string(node.args[1])
-                    keyword_shape_ok = True
-                    for keyword in node.keywords:
-                        if keyword.arg == "package" and len(node.args) < 2:
-                            package_arg = _literal_string(keyword.value)
-                        else:
-                            keyword_shape_ok = False
-                    if (not recognized_receiver or literal is None or len(node.args) > 2
-                            or not keyword_shape_ok):
+                    arguments, provided, call_shape_ok = _literal_call_arguments(
+                        node, ("name", "package"), frozenset({"name", "package"}),
+                    )
+                    literal = arguments["name"]
+                    package_arg = arguments["package"]
+                    if not recognized_receiver or literal is None or not call_shape_ok:
                         unsupported.add((source_module, node.lineno, node.col_offset,
                                          "dynamic-import"))
                     elif literal.startswith("."):
+                        if "package" in provided and package_arg is None:
+                            unsupported.add((source_module, node.lineno, node.col_offset,
+                                             "dynamic-import"))
+                            continue
                         target = _relative_target(
                             package_arg,
                             len(literal) - len(literal.lstrip(".")),

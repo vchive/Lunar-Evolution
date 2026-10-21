@@ -9,8 +9,9 @@
   根因是 CI runner 的 `PYTHONPATH` 只有
   `src`，而 `tests/__init__.py` 使 helper imports 需显式加入 `tests/`。本地分支已将 pytest `pythonpath`
   设为 `src, tests`，并在 CI 相同的 `PYTHONPATH=src`/禁插件环境下完整收集 **19,928 个测试**；此修复仍需由本分支 PR CI 验证。
-  当前本地分支 `codex/static-python-startup-closure` 从该 `origin/main`
-  开始，工作尚未提交或推送。
+- 当前分支 `codex/static-python-startup-closure` 的 HEAD 为 `46c7539`，PR #184 正在开放。
+  Actions run `39571947187` 的 `test (3.12, focused)` 失败不是测试失败：artifact XML 显示该组 **117 项全部通过**，
+  但 workflow 仍把预期数写成 116。已将门槛改为 117；该旧 run 尚不能作为通过证据，修复推送后要等新 CI。
 - 最近的功能代码提交是 `752b7bf`。本轮推送的三个提交是
   `96e3f8d`（输入/结果 provider-free replay 回归）、`cd0e4e6`（lifecycle 诊断状态一致性）和
   `752b7bf`（项目入口描述符与 retained lifecycle evidence 组合）；README 与交接文档已一并更新。
@@ -33,6 +34,10 @@
   [`release-input-audit-20261021.md`](specs/189-static-python-fixture/release-input-audit-20261021.md)。
   这只关闭源档案/签名与部分工具链输入核对。完整配置与静态链接闭包、sealed startup、
   stdlib/import loader closure、owner/lifecycle 和生产准入仍未通过。
+- 新增只读 partial source audit：[authenticated-source-import-audit-20261021.md](specs/189-static-python-fixture/authenticated-source-import-audit-20261021.md)。
+  它从 pinned release tar 读取 8 个 frozen Python 文件，确认 `encodings` 的 codec 名动态导入和 `abc` 的
+  `_py_abc` fallback 仍需明确 disposition；同时确认远端 patched staging 有 3 个 release 文件差异和 24 个额外 `.pyc`。
+  这是有限 AST 观察，不是全量 CPython/C 启动审计或 closure 证明。
 - 新的 G2 loader probe 发现现有 `build-fullfreeze/python` 没有 file/zip loader，
   `traceback`/`collections` 因缺少 `operator` 失败；有限诊断镜像仍在 `linecache` 前失败。
   原生成 `Python/frozen.c` 与 release archive 内容不同，当前 Makefile freezer 依赖 ambient
@@ -57,10 +62,12 @@
   installation/source/patch/inventory pins 校验固定 startup roots、frozen/builtin/alias routes、
   edge endpoints/order/reachability，并拒绝 profile 外的 `operator`、unresolved/dynamic routes 和 true
   claims。针对错误 alias 来源新增拒绝回归后为 60 项 synthetic tests。另新增 source-byte-pinned Python AST
-  import observer（30 项 synthetic tests）和 `source-import-review-20261021.md`；后者仅是 5090gpu 临时、已打补丁源码树上的部分人工审阅，缺 `_lunar_static_main.py` 且发现运行时 codec 动态 import，明确不接受为闭包证据。
-  两个 parser 都不证明真实 CPython import graph 完整。完整本地测试收集 19,928 项成功；focused tests、全仓 Ruff、
+  import observer；review 发现并修正 namespace-parent 相对导入过度拒绝、keyword literal 参数误分类、
+  `importlib.util` 子模块别名及未绑定 `import_module` 函数误认等情况，当前 synthetic suite 为 35 项。既有
+  `source-import-review-20261021.md` 仅覆盖 5090gpu 临时、已打补丁源码树，缺 `_lunar_static_main.py` 且发现运行时 codec 动态 import，明确不接受为闭包证据。
+  两个 parser 都不证明真实 CPython import graph 完整。当前完整本地测试收集为 19,934 项；focused tests、全仓 Ruff、
   `compileall`、diff checks 通过。真实 source-edge audit、same-source freezer、configured build/static ELF、
-  sealed startup 与 owner/lifecycle 仍未完成。本轮文档、实现和测试尚未提交/推送。
+  sealed startup 与 owner/lifecycle 仍未完成。本轮 scanner/CI-count 修复尚未提交/推送。
 - P2 的 remote evaluator、外部 worker 认证、多机 ownership 和分布式 service/scheduler 仍后置。
   不运行远程 evaluator、公司平台或真实 solver campaign。
 
