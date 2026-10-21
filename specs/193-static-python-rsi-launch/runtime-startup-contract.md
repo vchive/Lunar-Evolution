@@ -44,3 +44,15 @@ stderr is retained. Its claims explicitly keep
 diagnostic explains a failed build probe such as CPython's missing `encodings`
 bootstrap, but it does not convert that failure into startup, owner, lifecycle,
 or production evidence.
+
+## Retained diagnostic replay
+
+The `lunar-static-python-runtime-startup-diagnostic-v1` receipt can be persisted
+for a later resume or audit without retaining stderr. Call
+`parse_static_python_runtime_startup_diagnostic` with the independently retained
+stderr SHA-256 and byte count. The parser requires canonical JSON, the fixed
+`phase="startup"`, one of the reviewed failure codes, exact digest/size pins,
+and both capability claims set to `false`. It performs no filesystem or process
+operation and does not reclassify or upgrade a failure into startup, loader,
+ownership, lifecycle, or production evidence. A digest or size mismatch is a
+fixed refusal and the retained receipt remains diagnostic only.

@@ -25,6 +25,10 @@ _CASES = ("baseline", "loader-negative")
 _MARKER = "--lunar-rsi-input-v1"
 _CLAIMS = ("startup_performed", "loader_negative_verified", "owner_verified", "production_admission")
 _DIAGNOSTIC_CLAIMS = ("runtime_execution_performed", "production_admission")
+_DIAGNOSTIC_CODES = frozenset({
+    "missing_encodings", "missing_import_bootstrap", "getpath_configuration",
+    "unknown_startup_failure", "no_stderr",
+})
 _DIAGNOSTIC_PATTERNS = (
     (b"Failed to import encodings module", "missing_encodings"),
     (b"ModuleNotFoundError: No module named 'encodings'", "missing_encodings"),
@@ -259,6 +263,62 @@ class StaticPythonRuntimeStartupDiagnostic:
         return json.loads(self.canonical_bytes)
 
 
+def parse_static_python_runtime_startup_diagnostic(
+    raw: bytes, *, expected_stderr_sha256: str, expected_stderr_size: int,
+) -> StaticPythonRuntimeStartupDiagnostic:
+    """Revalidate one retained startup diagnostic receipt without I/O.
+
+    The receipt contains only stderr's independently pinned digest and size.
+    Parsing it on resume prevents a caller from changing the failure class,
+    phase, or capability claims after the original bounded diagnostic pass.
+    This is evidence replay only; it does not recover stderr or establish
+    process execution, loader state, or production admission.
+    """
+    try:
+        if type(raw) is not bytes or not 0 < len(raw) <= MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES:
+            _fail("diagnostic_raw")
+        expected = _diagnostic_sha(expected_stderr_sha256)
+        if type(expected_stderr_size) is not int or isinstance(expected_stderr_size, bool):
+            _fail("diagnostic_size")
+        if not 0 <= expected_stderr_size <= MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES:
+            _fail("diagnostic_size")
+        payload = json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_pairs,
+            parse_float=_constant, parse_constant=_constant,
+        )
+        _scan(payload)
+        _object(payload, frozenset({
+            "claims", "failure_code", "phase", "schema",
+            "stderr_sha256", "stderr_size",
+        }), "diagnostic_schema")
+        if _canonical(payload) != raw:
+            _fail("diagnostic_canonical")
+        if payload["schema"] != RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA or payload["phase"] != "startup":
+            _fail("diagnostic_phase")
+        observed = _diagnostic_sha(payload["stderr_sha256"])
+        if observed != expected:
+            _fail("stderr_pin")
+        size = payload["stderr_size"]
+        if type(size) is not int or isinstance(size, bool) or not 0 <= size <= MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES:
+            _fail("diagnostic_size")
+        if size != expected_stderr_size:
+            _fail("stderr_size_pin")
+        if payload["failure_code"] not in _DIAGNOSTIC_CODES:
+            _fail("diagnostic_code")
+        claims = _object(payload["claims"], frozenset(_DIAGNOSTIC_CLAIMS), "diagnostic_claims")
+        if any(value is not False for value in claims.values()):
+            _fail("diagnostic_claims")
+        return StaticPythonRuntimeStartupDiagnostic(
+            canonical_bytes=raw, stderr_sha256=observed,
+            stderr_size=size, failure_code=payload["failure_code"],
+        )
+    except _Refusal as exc:
+        reason = exc.reason
+    except (UnicodeError, TypeError, ValueError, OverflowError, RecursionError):
+        reason = "diagnostic_json"
+    raise StaticPythonRuntimeStartupError(reason) from None
+
+
 def diagnose_static_python_runtime_startup(
     stderr: bytes, *, expected_stderr_sha256: str,
 ) -> StaticPythonRuntimeStartupDiagnostic:
@@ -314,4 +374,5 @@ __all__ = [
     "StaticPythonRuntimeStartupError",
     "diagnose_static_python_runtime_startup",
     "parse_static_python_runtime_startup",
+    "parse_static_python_runtime_startup_diagnostic",
 ]

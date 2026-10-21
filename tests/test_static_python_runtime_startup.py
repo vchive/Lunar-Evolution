@@ -253,3 +253,76 @@ def test_startup_diagnostic_does_not_retain_stderr_content_or_execute(monkeypatc
         stderr, expected_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
     )
     assert "private marker" not in result.to_json().decode()
+
+
+def test_startup_diagnostic_receipt_replays_with_independent_digest_and_size():
+    stderr = b"Fatal Python error: Failed to import encodings module\n"
+    result = startup.diagnose_static_python_runtime_startup(
+        stderr, expected_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+    )
+    replay = startup.parse_static_python_runtime_startup_diagnostic(
+        result.to_json(), expected_stderr_sha256=result.stderr_sha256,
+        expected_stderr_size=result.stderr_size,
+    )
+    assert replay == result
+    assert replay.to_json() == result.to_json()
+
+
+@pytest.mark.parametrize("mutation,reason", [
+    (lambda p: p.update(phase="runtime"), "diagnostic_phase"),
+    (lambda p: p.update(failure_code="made_up"), "diagnostic_code"),
+    (lambda p: p["claims"].update(production_admission=True), "diagnostic_claims"),
+    (lambda p: p.update(stderr_size=999), "stderr_size_pin"),
+])
+def test_startup_diagnostic_receipt_rejects_schema_and_claim_drift(mutation, reason):
+    stderr = b"bootstrap failure"
+    result = startup.diagnose_static_python_runtime_startup(
+        stderr, expected_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+    )
+    payload = result.to_dict()
+    mutation(payload)
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    with pytest.raises(startup.StaticPythonRuntimeStartupError) as caught:
+        startup.parse_static_python_runtime_startup_diagnostic(
+            raw, expected_stderr_sha256=result.stderr_sha256,
+            expected_stderr_size=result.stderr_size,
+        )
+    assert caught.value.reason == "static_python_runtime_startup_" + reason
+
+
+@pytest.mark.parametrize("expected_size,reason", [
+    (result_size, "stderr_size_pin")
+    for result_size in (0, 1, startup.MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES + 1)
+])
+def test_startup_diagnostic_receipt_rejects_stale_size(expected_size, reason):
+    stderr = b"diagnostic bytes"
+    result = startup.diagnose_static_python_runtime_startup(
+        stderr, expected_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+    )
+    if expected_size == 0:
+        # zero is valid as a shape but stale for this receipt
+        expected_reason = reason
+    elif expected_size > startup.MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES:
+        expected_reason = "diagnostic_size"
+    else:
+        expected_reason = reason
+    with pytest.raises(startup.StaticPythonRuntimeStartupError) as caught:
+        startup.parse_static_python_runtime_startup_diagnostic(
+            result.to_json(), expected_stderr_sha256=result.stderr_sha256,
+            expected_stderr_size=expected_size,
+        )
+    assert caught.value.reason == "static_python_runtime_startup_" + expected_reason
+
+
+def test_startup_diagnostic_receipt_parser_has_no_filesystem_or_process_route(monkeypatch):
+    stderr = b"private startup marker"
+    result = startup.diagnose_static_python_runtime_startup(
+        stderr, expected_stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+    )
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr("subprocess.run", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    replay = startup.parse_static_python_runtime_startup_diagnostic(
+        result.to_json(), expected_stderr_sha256=result.stderr_sha256,
+        expected_stderr_size=result.stderr_size,
+    )
+    assert "private startup marker" not in replay.to_json().decode()
