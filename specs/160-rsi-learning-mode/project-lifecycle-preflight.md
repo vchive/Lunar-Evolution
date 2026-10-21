@@ -45,3 +45,23 @@ failure, cleanup uncertainty, restart/recovery, source drift and result drift. E
 blocked requirement rather than an observed runtime result, and keeps
 `execution_performed`, `evaluator_invoked`, `production_admission` and `online_publication`
 false.
+
+## Provider-free entrypoint composition
+
+`lunar_evolution.project_entrypoint_descriptor` adds a detached descriptor seam for that future
+launcher. `build_project_entrypoint_descriptor()` binds the canonical profile digest to its
+producer/project IDs, exact relative entrypoint, one-element no-shell `argv`, working/output
+directories, and distinct request/result filenames. Absolute paths, parent/dot path segments,
+nested request/result filenames, arbitrary command arguments and lifecycle-mode drift are
+rejected. The descriptor is content-addressed and reparsed before use.
+
+`compose_project_entrypoint_lifecycle()` then binds the descriptor back to the complete profile
+and a parsed retained lifecycle diagnostic. Its adapter report carries profile, descriptor, and
+lifecycle-report digests, while remaining `status=blocked` with
+`reason=runtime_acceptance_required`, `production_admission=false`, and
+`online_publication=false`. An `offline_verified` lifecycle diagnostic only removes the
+provider-free lifecycle-evidence gap; it does not prove accepted CPython, trusted entrypoint
+bytes, authoritative input/result mapping, Linux acceptance, or producer admission. This is an
+API contract and evidence-composition slice only: it does not load project code, launch/cancel a
+producer, inspect a workspace, or initialize controller state. Regression coverage is in
+`tests/test_project_entrypoint_descriptor.py`.

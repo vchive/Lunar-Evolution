@@ -21,9 +21,10 @@ evaluator、WebAgent、OpenEvolve/Shinka campaign 或公司评测平台。
 
 这两条边界都不能被描述为已经验收了真实 Python project lifecycle。当前没有被审阅和
 冻结的 CPython/source/toolchain/sealed runtime profile，也没有可接受的 OpenEvolve 或
-Shinka project entrypoint、依赖闭包和 input/result mapping。因此本轮没有可以安全实现的
-“直接启动真实项目”小改动；把一个 Python fixture 接到 `native-producer` 选项会制造
-错误的生产能力声明。
+Shinka project entrypoint、依赖闭包和 input/result mapping。provider-free 的入口描述符与
+lifecycle report 组合 API 已把 profile、相对入口、请求/结果文件名和保留 lifecycle
+诊断绑定起来，但它是 detached contract，不执行或检查项目。这是安全的契约进展，不是
+runtime acceptance；把一个 Python fixture 接到 `native-producer` 仍会制造错误的生产能力声明。
 
 ## 已存在的能力
 
@@ -48,10 +49,13 @@ toolchain/sysroot、sealed image、entrypoint、request/memory mapping、result 
 
 ### 2. OpenEvolve/Shinka project entrypoint
 
-需要至少一个接受 profile 的本地项目入口，并复用现有 native scheduler/claim/receipt
-mapper。入口必须实际读取原始 RSI request/memory grants，经 host broker 计费，并产出
-绑定原 launch/run 的 bounded result。不能接受任意 module、factory、shell、host
-interpreter 或 ambient package installation。
+provider-free contract seam 已由 `project_entrypoint_descriptor.py` 部分实现：它将一个
+profile digest 与相对入口、固定生命周期模式和 request/result 文件名绑定，组合函数再将
+声明绑定到 retained lifecycle diagnostics。它仍不满足 runtime 要求。后续仍须在独立验收
+的 runtime 上实现至少一个本地项目入口，并复用 native scheduler/claim/receipt mapper。入口
+必须实际读取原始 RSI request/memory grants，经 host broker 计费，并产出绑定原
+launch/run 的 bounded result。不能接受任意 module、factory、shell、host interpreter 或
+ambient package installation。
 
 ### 3. Runtime-gated cancellation and cleanup
 
