@@ -3,10 +3,10 @@
 ## 最新状态（2026-10-22）
 
 - 主线基线是 PR #183 合并提交 `fe8e61d474910911382677c61d0667ac75b26899`。当前分支
-  `codex/static-python-startup-closure` 的 HEAD 为 `2696445bb01cbabb070410440ea1ba93b262a7b6`，PR #184
-  仍开放；工作树包含本轮 source-readiness receipt 的两处 fail-closed 修正和对应测试，提交前不能把本地结果当作远端 CI 证据。
-- Actions run `39636155773` 针对 HEAD `2696445`，当前仍在运行（已有历史 job 完成，整体尚未结论）；旧 run
-  `39575463440` 和旧 SHA 的结果不归因于当前 HEAD。新改动提交后必须等待新 SHA 的完整 CI。
+  `codex/static-python-startup-closure` 的 HEAD 为 `3ed249f140e175e9b1a7c98890e08eef62487d6a`，PR #184
+  仍开放；source-readiness receipt 的 fail-closed 修正和对应测试已经提交，工作树当前干净。
+- Actions run `39638615170` 针对 HEAD `3ed249f`，当前仍在运行（已有少量 job 完成，整体尚未结论）；旧 run
+  `39636155773`、`39575463440` 和旧 SHA 的结果不归因于当前 HEAD。任何后续改动都必须等待新 SHA 的完整 CI。
 - 本轮 Feature 189 增加了 `Lib/abc.py` 与 `Lib/encodings/__init__.py` 的固定源码补丁，补齐五源投影、
   暂存和 provenance 清单，并扩展 source-preparation CI 门禁。`abc` 在 `_abc` 失败时重新抛出原始异常，
   不导入 `_py_abc`；`encodings` 只将 UTF-8 及六个固定别名绑定至 `encodings.utf_8`，其他编码经
