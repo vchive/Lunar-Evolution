@@ -276,3 +276,12 @@ point. Repository-wide Ruff, `compileall` and `git diff --check` passed. This
 result establishes only detached DTO consistency and leaves real source
 acquisition, candidate-build provenance, configured static build and runtime
 acceptance open.
+
+The same validator was then exercised on Linux against the pinned CPython
+3.13.12 archive using the previously retained manifest and source-tree pins.
+All 4,837 original regular files (108,687,660 bytes), 5,245 staged entries and
+the fixed patch pre/postimage set agreed. The staging digest was computed by
+that probe itself, so this is a real-input implementation regression rather
+than an independent retained staging pin or candidate-build provenance.
+Details and the exact claim limits are in
+[`source-staging-consistency-probe-20261021.md`](source-staging-consistency-probe-20261021.md).

@@ -36,7 +36,18 @@
   全仓 Ruff、`compileall` 和 `git diff --check` 通过。该校验只对比独立 pin 约束下的 detached
   source-tree/staging DTO、完整文件清单和固定 patch pre/postimage，不读取 staging 路径，也不证明
   candidate build 实际使用了它。新增 `tests/__init__.py` 修复本地已安装同名 `tests` 包造成的
-  focused pytest 导入冲突。SDD 与验证记录已同步；当前修改尚未提交。
+  focused pytest 导入冲突。SDD 与验证记录已同步，代码提交 `6edeec3` 已开 PR #183，36 项 CI
+  正在排队。
+- 随后在 5090gpu 对 pinned CPython 3.13.12 归档重放已有 manifest/source-tree pins，并完成
+  一次 create-only 全量 staging：4,837 个文件、108,687,660 字节、5,245 个 staging entries，
+  固定 patch pre/postimage 一致，校验通过。该次 staging pin 由同一 probe 当场产生，签名状态在
+  DTO 中仍是 `not-performed`，因此只是 real-input implementation regression，不是独立的
+  candidate-build-source provenance。结果和边界见
+  [`source-staging-consistency-probe-20261021.md`](specs/189-static-python-fixture/source-staging-consistency-probe-20261021.md)。
+  暂存树留在远端 `/tmp`，未运行 configure/make/freezer 或 CPython。
+- 纯校验切片已提交为 `6edeec3` 并开 PR #183；当前 36 项 Actions 矩阵仍 queued。后续
+  source-staging real-input probe 报告已在工作区，尚待随下一次 PR 更新提交；之后以最终 head CI
+  验证结果决定合入 main。
 - P2 的 remote evaluator、外部 worker 认证、多机 ownership 和分布式 service/scheduler 仍后置。
   不运行远程 evaluator、公司平台或真实 solver campaign。
 

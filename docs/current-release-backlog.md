@@ -26,7 +26,14 @@
   83 个 provenance tests 及 source-tree/staging/patch/projection focused 回归、全仓 Ruff、
   `compileall` 和 `git diff --check` 已通过。它不访问 staged path，也不证明实际候选构建消费了该树；
   G1 candidate-build-source/patch evidence 仍开放。新增 `tests/__init__.py` 也修复同名已安装
-  `tests` 包对 focused pytest helper imports 的遮蔽。此切片尚未提交，需对新 head 跑完整 CI。
+  `tests` 包对 focused pytest helper imports 的遮蔽。纯校验代码提交 `6edeec3` 已开 PR #183，
+  36 个 Actions jobs 均排队。
+- 在 `5090gpu` 对 pinned CPython 3.13.12 归档重放此前保留的 manifest/source-tree pins，并完成
+  create-only 全量 staging：4,837 个文件、108,687,660 字节、5,245 个 entries，固定 patch
+  pre/postimage 一致。此次 staging digest 当场生成，不是独立保留的 pre-run staging pin，且签名
+  状态没有绑定到 DTO；因此只算 real-input implementation regression。详细记录在
+  [source staging consistency probe](../specs/189-static-python-fixture/source-staging-consistency-probe-20261021.md)。
+  实际 candidate-build source evidence、build closure 和 runtime 验收仍开放。
 - 保持 `production_admission=false`、`online_publication=false`。P2 remote evaluator、外部 worker
   认证、多机 ownership 与分布式 scheduler/service API 继续后置。
 
