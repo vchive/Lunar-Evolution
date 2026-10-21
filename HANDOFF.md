@@ -1,4 +1,31 @@
-# 当前交接（2026-10-21，P1 admission 与 benchmark smoke 收尾）
+# 当前交接（2026-10-21，provider-free P1 收口）
+
+## 最新状态（2026-10-21）
+
+- `main` 与 `origin/main` 当前都在 `752b7bf`。本轮推送的三个提交是
+  `96e3f8d`（输入/结果 provider-free replay 回归）、`cd0e4e6`（lifecycle 诊断状态一致性）和
+  `752b7bf`（项目入口描述符与 retained lifecycle evidence 组合）。GitHub Actions run
+  `39552239958` 已创建，最后观察时仍为 `queued`。
+- 最新提交上的 native-e2e 为 **226/226 passed**；8 个 P1 composition/acceptance 文件的
+  focused 回归、Ruff、`compileall`、`git diff --check` 均通过。macOS 临时目录清理仍会产生已有的
+  pytest permission warnings，不影响测试退出结果。README 已按用户/贡献者上手路径重写；安装、CLI
+  示例、RSI fixture 流程和 15 个本地链接均已检查，仍待与本次 handoff/backlog 更新一并提交。
+- 这三个提交都不启动项目，也不代表真实运行时读取过权威输入。项目入口组合 API 仍固定
+  `blocked/runtime_acceptance_required`。生产版 P1 仍缺实际 CPython/toolchain/static ELF
+  构建审计、sealed startup 与 stdlib/import closure、owner/lifecycle 实测、真实权威
+  input/result 绑定、OpenEvolve/Shinka 项目启动/取消/清理/恢复接线，以及 Linux 中断矩阵。
+- `runtime_source_probe` 正在 5090gpu 的 disposable 目录获取 CPython 3.13.12。官方 release
+  页面 SHA-256 为
+  `2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593`；截至此记录，下载仍未完成，
+  GPG 签名尚未核实，尚未开始构建。只有 source/signature、toolchain 和实际构建闭包审计完成后，
+  才能继续 sealed runtime 验收；保持 `production_admission=false`、`online_publication=false`。
+- P2 的 remote evaluator、外部 worker 认证、多机 ownership 和分布式 service/scheduler 仍后置。
+  不运行远程 evaluator、公司平台或真实 solver campaign。
+
+以下为当天较早的批次记录；其中“领先 origin 7 个提交、待推送”已经由上面的 `752b7bf`
+推送完成，不能作为当前 Git 状态。
+
+## 较早批次记录（2026-10-21，P1 admission 与 benchmark smoke 收尾）
 
 ## 本轮并行收口（2026-10-21）
 

@@ -1,4 +1,17 @@
-## 2026-10-21 当前执行清单（main 本地领先 origin 7 个提交，待推送）
+## 2026-10-21 最新状态（`752b7bf` 已推送，Actions 待跑）
+
+- 当前 `main` 与 `origin/main` 均为 `752b7bf`。本轮三提交已推送；GitHub Actions run
+  `39552239958` 最后观察为 queued。相关 focused 回归、Ruff、`compileall`、
+  `git diff --check` 以及 226 项 native-e2e 均通过。全量 Linux 矩阵完成前不把该提交称为发布验收。
+- README 已重写为用户/贡献者入口文档；安装、CLI 示例和 15 个本地链接已检查，更新尚未提交。
+- 生产版 P1 仍阻塞于实际 CPython 源码与签名/toolchain 获取、完整静态构建与 ELF 审计、sealed
+  startup/import closure、实际 owner/lifecycle、authoritative input/result、OpenEvolve/Shinka
+  项目运行/取消/清理/恢复、生产 CLI 接入和 Linux 中断矩阵。5090gpu 的 CPython 3.13.12
+  disposable probe 下载未完成，签名及构建尚未验证。
+- 保持 `production_admission=false`、`online_publication=false`。P2 remote evaluator、外部 worker
+  认证、多机 ownership 与分布式 scheduler/service API 继续后置。
+
+## 较早的 2026-10-21 执行记录（当时本地领先 origin 7 个提交）
 
 本轮并行完成两个 provider-free P1 收口切片：`rsi project-preflight --diagnostics` 现在固定
 输出 11 个 project lifecycle 验收场景；`producer_lifecycle_diagnostics` 对 startup、取消、
