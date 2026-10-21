@@ -73,6 +73,16 @@ and patch-set digest. Every other file must preserve its source size and digest.
 Entry kinds, implicit-directory markers, entry counts, path bounds and stat-wire
 scalar types are checked before agreement.
 
+Source-observation wires retain the 32 MiB extraction-manifest bound. Staging has
+separate limits because it expands implicit ancestor directories: at most
+131,072 entries, 1,024 UTF-8 bytes per entry path, and 128 MiB total decoded
+entry-path text. Its canonical wire cap is derived from that entry count, a
+two-times JSON quote-escape allowance per path, a 512-byte fixed-field allowance
+per entry, and 64 KiB of top-level framing. The parser's decoded-string budget
+uses the path ceiling plus a 512-byte fixed-text allowance per entry. Producer
+and validator share these limits; they do not widen source-observation or receipt
+budgets.
+
 Only two matching metadata dispositions are accepted: validated fixed-profile
 claims on both records, or the explicit inert-fixture disposition on both.
 Signature verification, release verification, source execution, build,

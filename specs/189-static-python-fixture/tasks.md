@@ -77,6 +77,10 @@ failure and cancelled preflight separately from later successful evidence.
   until an actual configured build consumes and records that tree. The current
   check compares detached canonical DTOs only and does not itself prove either
   DTO was honestly produced.
+- [x] Give staging its own producer-consumer entry/path/string/wire budgets so
+  implicit ancestor-directory expansion and canonical JSON escaping cannot make
+  a legal staged DTO fail the pure consistency check. Keep the source-observation
+  and archive-receipt 32 MiB bounds unchanged.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
   resolve compiler/binutils/static-library sources, versions and artifact hashes,
   including zlib/libffi/freezer inputs and the configured build environment.

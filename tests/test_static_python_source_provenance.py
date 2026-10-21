@@ -431,15 +431,109 @@ def test_staging_wire_self_digest_and_canonical_encoding_are_required(tmp_path):
 
 def test_staging_json_bounds_support_realistic_entry_counts():
     entries = [{
-        "path": f"Python-3.13.12/lib/module_{index}.py", "kind": "file",
+        "path": (f"Python-3.13.12/{index:05d}" + "x" * (239 - len(f"Python-3.13.12/{index:05d}"))),
+        "kind": "file",
         "implicit": False, "source_sha256": "a" * 64, "staged_sha256": "b" * 64,
         "archive_mode": 0o644, "device": 1, "inode": index + 1, "mode": 0o600,
         "nlink": 1, "size": 64, "mtime_ns": 1, "ctime_ns": 1,
-    } for index in range(12_000)]
+    } for index in range(65_000)]
     raw = _canonical({"entries": entries})
-    assert len(raw) < 32 * 1024 * 1024
+    assert len(raw) > 32 * 1024 * 1024
+    assert len(raw) < provenance.MAX_SOURCE_STAGING_MANIFEST_BYTES
     parsed = provenance._canonical_wire(raw, "staging")
-    assert len(parsed["entries"]) == 12_000
+    assert len(parsed["entries"]) == 65_000
+
+
+def test_staging_wire_and_string_limits_are_independent(monkeypatch):
+    raw = _canonical({"schema": "staging", "value": "abc"})
+    monkeypatch.setattr(provenance, "MAX_SOURCE_STAGING_MANIFEST_BYTES", len(raw) - 1)
+    _refused(lambda: provenance._canonical_wire(raw, "staging"), "staging_wire_invalid")
+
+    monkeypatch.setattr(provenance, "MAX_SOURCE_STAGING_MANIFEST_BYTES", len(raw))
+    monkeypatch.setattr(provenance, "MAX_SOURCE_STAGING_JSON_TEXT_BYTES", 2)
+    _refused(lambda: provenance._canonical_wire(raw, "staging"), "staging_bounds_invalid")
+
+
+def test_staging_path_budget_covers_implicit_ancestor_expansion(tmp_path):
+    observation, staging, pins, _ = _staging_inputs(tmp_path)
+    root = observation.root
+    shared = root + "/" + "/".join(["s" + "x" * 15] * 50)
+    fake_sha256 = "a" * 64
+    added_files = []
+    added_directories = set()
+    for index in range(2_500):
+        path = (shared + f"/b{index:04d}" + "/" + "/".join(
+            ["d"] * 6 + ['"' * 16]))
+        path += f"/f{index:04d}"
+        added_files.append(StaticPythonSourceTreeFile(path, 0o644, 0, fake_sha256))
+        parent = path.rpartition("/")[0]
+        while parent:
+            added_directories.add(parent)
+            if parent == root:
+                break
+            parent = parent.rpartition("/")[0]
+
+    all_files = tuple(sorted((*observation.files, *added_files), key=lambda item: item.path))
+    tree_files = [{"path": item.path, "mode": item.mode, "size": item.size,
+                   "sha256": item.sha256} for item in all_files]
+    tree_raw = _canonical({
+        "schema": SOURCE_TREE_SCHEMA, "archive": observation.archive,
+        "root": root, "version": observation.version, "files": tree_files,
+    })
+    source_tree_sha256 = hashlib.sha256(tree_raw).hexdigest()
+    observation_record = observation.to_manifest()
+    observation_record.update(source_tree_sha256=source_tree_sha256, files=tree_files)
+    observation_raw = _canonical(observation_record)
+    observation = dataclasses.replace(
+        observation, files=all_files, tree_json=tree_raw,
+        source_tree_sha256=source_tree_sha256, canonical_json=observation_raw,
+        observation_sha256=hashlib.sha256(observation_raw).hexdigest(),
+    )
+
+    manifest = staging.to_manifest()
+    entries = manifest["entries"]
+    known_paths = {item["path"] for item in entries}
+    inode = 100_000
+    for path in sorted(added_directories - known_paths):
+        entries.append({
+            "path": path, "kind": "directory", "implicit": True,
+            "source_sha256": None, "staged_sha256": None, "archive_mode": None,
+            "device": 1, "inode": inode, "mode": 0o700, "nlink": 1,
+            "size": 0, "mtime_ns": 1, "ctime_ns": 1,
+        })
+        inode += 1
+    for item in added_files:
+        entries.append({
+            "path": item.path, "kind": "file", "implicit": False,
+            "source_sha256": fake_sha256, "staged_sha256": fake_sha256,
+            "archive_mode": item.mode, "device": 1, "inode": inode,
+            "mode": 0o600, "nlink": 1, "size": 0, "mtime_ns": 1,
+            "ctime_ns": 1,
+        })
+        inode += 1
+    entries.sort(key=lambda item: item["path"])
+    staging_raw = _canonical(manifest)
+    staging = dataclasses.replace(
+        staging, canonical_json=staging_raw,
+        staging_sha256=hashlib.sha256(staging_raw).hexdigest(),
+    )
+    pins["expected_staging_sha256"] = staging.staging_sha256
+    pins["expected_source_tree_sha256"] = source_tree_sha256
+    assert sum(len(item["path"].encode("utf-8")) for item in entries) > 16 * 1024 * 1024
+    assert len(staging_raw) < provenance.MAX_SOURCE_STAGING_MANIFEST_BYTES
+    assert provenance.validate_source_staging_consistency(
+        observation, staging,
+        expected_staging_sha256=pins["expected_staging_sha256"],
+        expected_manifest_sha256=pins["expected_manifest_sha256"],
+        expected_source_tree_sha256=pins["expected_source_tree_sha256"],
+    ) is None
+
+
+def test_source_observation_keeps_original_wire_limit(tmp_path, monkeypatch):
+    observation, staging, pins, _ = _staging_inputs(tmp_path)
+    monkeypatch.setattr(provenance, "MAX_EXTRACTION_MANIFEST_BYTES", len(observation.tree_json) - 1)
+    _refused(lambda: provenance.validate_source_staging_consistency(
+        observation, staging, **pins), "observation_wire_invalid")
 
 
 @pytest.mark.parametrize("mutation,reason", [

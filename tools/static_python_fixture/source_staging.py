@@ -19,10 +19,23 @@ from typing import NoReturn
 
 from .archive_observation import StaticPythonArchiveSnapshot
 from .source_projection import StaticPythonSourceProjectionError, _prepare_archive_sources
+from .verified_inputs import MAX_EXTRACTION_PATH_BYTES
 
 SOURCE_STAGING_SCHEMA = "lunar-static-python-source-staging-v1"
 MAX_STAGED_ENTRIES = 131_072
 MAX_STAGED_DEPTH = 64
+# Every staged entry has a 1,024-byte path ceiling. A path may double in
+# canonical JSON when every byte is a quote; the remaining fixed entry fields
+# (including max-width stat integers and both digests) fit in 512 bytes. Reserve
+# 64 KiB for the bounded top-level record and list framing. The decoded
+# text budget separately allows 512 fixed bytes per entry besides paths.
+MAX_SOURCE_STAGING_PATH_BYTES = MAX_STAGED_ENTRIES * MAX_EXTRACTION_PATH_BYTES
+MAX_SOURCE_STAGING_JSON_TEXT_BYTES = (
+    MAX_SOURCE_STAGING_PATH_BYTES + MAX_STAGED_ENTRIES * 512 + 64 * 1024
+)
+MAX_SOURCE_STAGING_MANIFEST_BYTES = (
+    MAX_STAGED_ENTRIES * (2 * MAX_EXTRACTION_PATH_BYTES + 512) + 64 * 1024
+)
 _CHUNK = 64 * 1024
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _FILE_FLAGS = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -437,6 +450,8 @@ def stage_archive_sources(
         }
         canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"),
                                ensure_ascii=False, allow_nan=False).encode("utf-8")
+        if len(canonical) > MAX_SOURCE_STAGING_MANIFEST_BYTES:
+            _fail("manifest_size_exceeded")
         result = StaticPythonSourceStaging(
             SOURCE_STAGING_SCHEMA, destination, destination + "/" + observed.root,
             canonical, digest(canonical),

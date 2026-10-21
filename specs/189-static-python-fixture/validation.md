@@ -285,3 +285,16 @@ that probe itself, so this is a real-input implementation regression rather
 than an independent retained staging pin or candidate-build provenance.
 Details and the exact claim limits are in
 [`source-staging-consistency-probe-20261021.md`](source-staging-consistency-probe-20261021.md).
+
+The staging budget regression tests exercise a 65,000-entry canonical staging
+wire larger than 32 MiB, enforce independent staging wire/string ceilings, and
+retain the existing source-observation wire ceiling. A complete consistency
+fixture with 2,500 synthetic regular files expands implicit ancestors until the
+staging-entry path total exceeds 16 MiB while the original source paths remain
+within their 16 MiB budget. The validator accepts this bounded matching pair.
+The combined provenance/source-tree/staging/projection/patch run passes all320
+collected cases with zero failures, errors or skips. Full Ruff and
+`git diff --check` pass; `compileall` passes on the three changed Python files.
+Do not run `compileall .` across ignored `.lunar` evidence trees: those retain
+inert payload files ending in `.py` and can contain read-only directories. No
+build, runtime or evaluator was run by this regression.

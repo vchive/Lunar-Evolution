@@ -16,7 +16,14 @@ from typing import NoReturn
 
 from . import source_patches
 from .archive_observation import ArchiveSourceIdentity
-from .source_staging import SOURCE_STAGING_SCHEMA, StaticPythonSourceStaging
+from .source_staging import (
+    MAX_SOURCE_STAGING_JSON_TEXT_BYTES,
+    MAX_SOURCE_STAGING_MANIFEST_BYTES,
+    MAX_SOURCE_STAGING_PATH_BYTES,
+    MAX_STAGED_ENTRIES,
+    SOURCE_STAGING_SCHEMA,
+    StaticPythonSourceStaging,
+)
 from .source_tree_observation import (
     SOURCE_TREE_OBSERVATION_SCHEMA,
     SOURCE_TREE_SCHEMA,
@@ -80,13 +87,13 @@ def _pin(value: object, name: str) -> str:
     return value
 
 
-def _canonical(value: object) -> bytes:
+def _canonical(value: object, *, maximum: int = MAX_EXTRACTION_MANIFEST_BYTES) -> bytes:
     try:
         raw = json.dumps(value, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=False, allow_nan=False).encode("utf-8")
     except (TypeError, ValueError, UnicodeError) as exc:
         raise SourceProvenanceComparisonError("canonical_invalid") from exc
-    if len(raw) > MAX_EXTRACTION_MANIFEST_BYTES:
+    if len(raw) > maximum:
         _fail("canonical_bounds")
     return raw
 
@@ -124,7 +131,7 @@ def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _scan_json(value: object) -> None:
+def _scan_json(value: object, *, max_string_bytes: int = MAX_EXTRACTION_MANIFEST_BYTES) -> None:
     nodes = text_bytes = 0
     pending = [(iter((value,)), 0)]
     while pending:
@@ -150,20 +157,20 @@ def _scan_json(value: object) -> None:
                 text_bytes += len(item.encode("utf-8"))
             except UnicodeError:
                 _fail("staging_json_invalid")
-            if text_bytes > MAX_EXTRACTION_MANIFEST_BYTES:
+            if text_bytes > max_string_bytes:
                 _fail("staging_bounds_invalid")
         elif type(item) not in (int, bool, type(None)):
             _fail("staging_json_invalid")
 
 
 def _canonical_wire(raw: bytes, reason: str) -> dict[str, object]:
-    if type(raw) is not bytes or not 0 < len(raw) <= MAX_EXTRACTION_MANIFEST_BYTES:
+    if type(raw) is not bytes or not 0 < len(raw) <= MAX_SOURCE_STAGING_MANIFEST_BYTES:
         _fail(reason + "_wire_invalid")
     try:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=_pairs,
                            parse_float=_json_constant, parse_constant=_json_constant)
-        _scan_json(value)
-        canonical = _canonical(value)
+        _scan_json(value, max_string_bytes=MAX_SOURCE_STAGING_JSON_TEXT_BYTES)
+        canonical = _canonical(value, maximum=MAX_SOURCE_STAGING_MANIFEST_BYTES)
     except SourceProvenanceComparisonError:
         raise
     except (UnicodeError, ValueError, TypeError, RecursionError, OverflowError) as exc:
@@ -345,7 +352,7 @@ def _validate_staging_manifest(
     if staging.staging_sha256 != expected_staging_sha256:
         _fail("staging_pin_mismatch")
     raw = staging.canonical_json
-    if type(raw) is not bytes or not 0 < len(raw) <= MAX_EXTRACTION_MANIFEST_BYTES:
+    if type(raw) is not bytes or not 0 < len(raw) <= MAX_SOURCE_STAGING_MANIFEST_BYTES:
         _fail("staging_wire_invalid")
     if hashlib.sha256(raw).hexdigest() != staging.staging_sha256:
         _fail("staging_digest_mismatch")
@@ -664,7 +671,7 @@ def validate_source_staging_consistency(
         patch_by_path[observation.root + "/" + relative] = patch
 
     entries = manifest["entries"]
-    if type(entries) is not list or not 1 <= len(entries) <= 131_072:
+    if type(entries) is not list or not 1 <= len(entries) <= MAX_STAGED_ENTRIES:
         _fail("staging_entries_invalid")
     paths: list[str] = []
     total_path_bytes = 0
@@ -682,7 +689,7 @@ def validate_source_staging_consistency(
         path = _archive_path(entry["path"], observation.root, directory=kind == "directory")
         paths.append(path)
         total_path_bytes += len(path.encode("utf-8"))
-        if total_path_bytes > MAX_EXTRACTION_TOTAL_PATH_BYTES:
+        if total_path_bytes > MAX_SOURCE_STAGING_PATH_BYTES:
             _fail("staging_path_bounds_invalid")
         if len(path.split("/")) > MAX_EXTRACTION_PATH_SEGMENTS:
             _fail("staging_path_invalid")
