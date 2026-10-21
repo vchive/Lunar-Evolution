@@ -50,6 +50,7 @@ sealed runtime、producer campaign 和生产准入仍未开放。
 | detached replay schema gate | ✅ provider-free 边界已加固 | [PR170](https://github.com/vchive/Lunar-Evolution/pull/170) 对 acceptance envelope 的 replay report 强制四字段闭合 schema 和固定类型，拒绝未审计字段/path/authority。 |
 | Python producer task/timeout binding | ✅ 已合入 | PR154 将 `parent_task_id`、`task_id` 和 `request_timeout_seconds` 绑定到 terminal receipt；漂移返回 `receipt_binding_drift`，focused regression 保持 provider-free。 |
 | project lifecycle profile preflight | 🧪 只读门禁已合入 | PR155 校验 source/runtime/toolchain/request/result 摘要及固定 bootstrap、cancel、resume 模式；有效 profile 仍返回 `blocked/runtime_acceptance_required`，不启动项目、evaluator 或 RSI ledger。`--diagnostics` 可输出 path-free capability matrix，明确生产 RSI CLI 的剩余门禁。 |
+| project/producer lifecycle diagnostics | 🧪 provider-free 验收投影 | `rsi project-preflight --diagnostics` 固定列出 startup、cancel、deadline、parent-loss、cleanup、restart 及漂移场景；`producer_lifecycle_diagnostics` 对 retained phase evidence 做只读 owner/lifecycle 检查。完整报告仍不授予 runtime、production admission 或 publication。详见 [`docs/producer-lifecycle-diagnostics.md`](docs/producer-lifecycle-diagnostics.md)。 |
 | native producer / OpenEvolve / ShinkaEvolve 真实 campaign | ⏳ 未验收 | 需要真实 source、toolchain、runtime、process lifecycle 和独立 acceptance evidence。 |
 | 远程 evaluator、多机 worker、分布式 scheduler | ⏸ 后置 | 不属于当前单机 RSI 正确性的前置条件。 |
 

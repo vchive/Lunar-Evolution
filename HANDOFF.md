@@ -1,5 +1,21 @@
 # 当前交接（2026-10-21，P1 admission 与 benchmark smoke 收尾）
 
+## 本轮并行收口（2026-10-21）
+
+- `e980993` 为 Feature191/195 的 `rsi project-preflight --diagnostics` 增加固定
+  lifecycle matrix，覆盖 startup、完成、取消、deadline、parent loss、终端缺失、回调失败、
+  cleanup uncertainty、restart/recovery 以及 source/result drift；每项仍是 blocked requirement，
+  不执行 producer/evaluator，也不打开生产准入。
+- `b5d7e8e` 与 `3c0067b` 增加并导出 `producer_lifecycle_diagnostics`：对 retained phase
+  evidence 做 startup、cancellation、timeout、parent loss、cleanup、restart/recovery 的严格
+  只读检查，并校验嵌套 schema、reason、missing phase、状态和 execution 汇总的一致性。完整
+  离线矩阵仍只标记 `offline_verified`，固定保持 `production_admission=false`、
+  `online_publication=false`。
+- 对应 focused tests、Ruff、compileall 和 `git diff --check` 已通过。当前 main 比
+  `origin/main` 多 3 个本地提交，待本轮统一验证后推送。
+- 这些切片收紧了 P1 验收边界，但没有伪造真实 CPython/stdlib closure、sealed startup、真实
+  project entrypoint、Linux lifecycle 或 authoritative input/result；这些仍是生产版 P1 必须项。
+
 - `main` 当前包含 `e568761`、`f0aa0ca`、`d65d433` 和 `23d628e`，工作树除本次文档更新外保持干净；四项变更均已完成 focused tests、Ruff、compileall 与 `git diff --check`。static-Python acceptance 现在要求 installation descriptor 与 build closure 的最终 artifact SHA 一致，并要求五个 closure provenance section 全部存在且与 DTO pins 匹配；reserved serial 异常路径先唤醒 worker，再按 retained absolute deadline 有界等待，超时固定进入 `rsi_brs_reserved_serial_worker_unknown`，不会继续 settlement；input/result DTO 拒绝全零和全 f 占位 digest。
 - 从用户提供的只读 benchmark checkout 复制的 `train_delay_rescheduling`、`city_delivery_routing`、`hospital_or_scheduling`、`irregular_packing`、`steel_coil_cutting`、`supply_chain_inventory` 和 `ore_reclaiming_scheduling` 已在 ignored validation 目录用原 evaluator 实跑；新增 irregular case 的合法 grid submission 为 `validity=1.0`、`overall=0.0590`，steel/supply-chain/ore 正向 case 分别为 `overall=0.971555`、`0.2254` 和 `0.1277`，对应负向 case 都正确拒绝。ore 的排程由一次性临时 CP-SAT helper 构造，未加入生产依赖或代码。原 checkout git status 已恢复干净，未写入源目录。完整数字与命令见 [benchmark-case-smoke-20261020.md](docs/benchmark-case-smoke-20261020.md)、[benchmark-case-smoke-20261021.md](docs/benchmark-case-smoke-20261021.md) 和 [benchmark-case-smoke-20261021-remaining.md](docs/benchmark-case-smoke-20261021-remaining.md)。
 - 5090gpu 上继续进行一次 disposable CPython 3.13.12 全冻结 closure probe；它只作为诊断材料，不能替代真实 fixed-main、sealed owner/lifecycle、authoritative input/result 或 production admission。当前仍保持 `production_admission=false`、`online_publication=false`。
