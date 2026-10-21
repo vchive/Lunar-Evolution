@@ -77,6 +77,10 @@ lunar-evolution rsi project-preflight PROFILE.json --diagnostics --json
 
 This adds a path-free `capability_matrix` to the blocked preflight report. It marks the profile
 contract as verified and keeps the accepted runtime, trusted entrypoint, lifecycle, Linux matrix
-and controller-admission gates blocked until their independent evidence exists. The command
-still does not initialize the RSI ledger, import a project, launch a process or invoke an
-evaluator; its authority flags remain false.
+and controller-admission gates blocked until their independent evidence exists. The report also
+contains a fixed `lifecycle_matrix` for startup, normal completion, cancellation, deadline,
+parent loss, missing terminal, callback failure, cleanup uncertainty, restart/recovery, source
+drift and result drift. Each row is an explicitly blocked requirement, rather than an observed
+runtime result, and keeps execution, evaluator, production-admission and online-publication
+flags false. The command still does not initialize the RSI ledger, import a project, launch a
+process or invoke an evaluator; its authority flags remain false.

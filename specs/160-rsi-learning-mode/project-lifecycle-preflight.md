@@ -39,4 +39,9 @@ refusal and the provider-free fixture remains the only executable CLI path.
 
 Focused coverage is in `tests/test_rsi_project_lifecycle.py`. It checks strict shape and path
 validation, digest drift, non-admission markers, and that the CLI preflight does not initialize a
-home or SQLite ledger.
+home or SQLite ledger. With `--diagnostics`, the report also contains a fixed `lifecycle_matrix`
+for startup, normal completion, cancellation, deadline, parent loss, missing terminal, callback
+failure, cleanup uncertainty, restart/recovery, source drift and result drift. Each row is a
+blocked requirement rather than an observed runtime result, and keeps
+`execution_performed`, `evaluator_invoked`, `production_admission` and `online_publication`
+false.

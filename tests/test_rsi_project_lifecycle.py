@@ -124,6 +124,18 @@ def test_project_diagnostic_matrix_is_read_only_and_explicitly_blocked(
     assert matrix["detached_profile"]["status"] == "verified"
     assert matrix["accepted_runtime_profile"]["status"] == "blocked"
     assert matrix["linux_acceptance_matrix"]["gate"] == "linux_acceptance_matrix"
+    lifecycle = payload["lifecycle_matrix"]
+    assert [item["scenario"] for item in lifecycle] == [
+        "startup", "completed", "cancel", "deadline", "parent_loss",
+        "missing_terminal", "callback_failure", "cleanup_uncertainty",
+        "restart_recovery", "source_drift", "result_drift",
+    ]
+    assert all(item["status"] == "blocked" for item in lifecycle)
+    assert all(item["execution_performed"] is False for item in lifecycle)
+    assert all(item["evaluator_invoked"] is False for item in lifecycle)
+    assert all(item["production_admission"] is False for item in lifecycle)
+    assert all(item["online_publication"] is False for item in lifecycle)
+    assert all(item["evidence_scope"] == "detached_profile_preflight" for item in lifecycle)
     assert not home.exists()
 
 

@@ -42,6 +42,25 @@ _DIAGNOSTIC_CAPABILITIES = (
     ("controller_admission", "blocked", "controller_admission"),
 )
 
+# A profile declaration alone cannot tell us whether a project survived the process
+# lifecycle.  Keep the required interruption/recovery cases explicit in the read-only
+# diagnostic so a future accepted runtime can fill the same evidence slots without
+# inventing a second project-launch protocol.  These are requirements, not observations:
+# every row is deliberately blocked and carries no process/evaluator authority.
+_LIFECYCLE_SCENARIOS = (
+    ("startup", "accepted_runtime_profile"),
+    ("completed", "runtime_lifecycle_acceptance"),
+    ("cancel", "runtime_lifecycle_acceptance"),
+    ("deadline", "runtime_lifecycle_acceptance"),
+    ("parent_loss", "runtime_lifecycle_acceptance"),
+    ("missing_terminal", "runtime_lifecycle_acceptance"),
+    ("callback_failure", "runtime_lifecycle_acceptance"),
+    ("cleanup_uncertainty", "runtime_lifecycle_acceptance"),
+    ("restart_recovery", "linux_acceptance_matrix"),
+    ("source_drift", "trusted_project_entrypoint"),
+    ("result_drift", "controller_admission"),
+)
+
 
 class ProjectLifecyclePreflightError(ValueError):
     """Fixed-code profile refusal without caller-controlled path or exception text."""
@@ -237,6 +256,19 @@ def diagnose_project_lifecycle(
     report["capability_matrix"] = [
         {"capability": capability, "status": status, "gate": gate}
         for capability, status, gate in _DIAGNOSTIC_CAPABILITIES
+    ]
+    report["lifecycle_matrix"] = [
+        {
+            "scenario": scenario,
+            "status": "blocked",
+            "gate": gate,
+            "execution_performed": False,
+            "evaluator_invoked": False,
+            "production_admission": False,
+            "online_publication": False,
+            "evidence_scope": "detached_profile_preflight",
+        }
+        for scenario, gate in _LIFECYCLE_SCENARIOS
     ]
     report["production_cli"] = {
         "status": "blocked",
