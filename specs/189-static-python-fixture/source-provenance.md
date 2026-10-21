@@ -38,3 +38,57 @@ inert archive observations and require refusal. They test stale DTO upgrades,
 canonical/hash/field drift, signature declarations, exact types, independent
 pins, deeply frozen output containers and absence of external effects. They do
 not fabricate a successful fixed-profile acquisition or claim real G1 success.
+
+## Source-tree / staged-tree consistency check
+
+Add `validate_source_staging_consistency` in this module as a separate pure
+check; keep `compare_source_provenance`'s receipt-to-observation contract and
+wire unchanged. The new check accepts one
+`StaticPythonSourceTreeObservation` and one `StaticPythonSourceStaging`, plus
+independent expected staging, manifest and source-tree SHA-256 pins. It validates
+the exact object types, canonical JSON, self-digests and fixed schemas before
+comparing their claims. It performs no path access, filesystem read, network,
+subprocess, source execution or build.
+
+The check binds archive, root, archive SHA-256, snapshot SHA-256 and manifest
+SHA-256 between the observation and staging manifest. The fixed candidate version
+is derived from `source_patch_manifest().source_version` and must agree with the
+observation version and root; the staging DTO does not add a separate version
+field. Reconstruct the canonical source-tree wire from the staging manifest root
+and complete regular-file entries (`path`, original `archive_mode`, `size`, and
+pre-patch `source_sha256`) using the fixed `SOURCE_TREE_SCHEMA`; its digest must
+match both the independent expected source-tree pin and the observation. Do not
+add a source-tree digest to the source-staging wire.
+
+For every regular file, the sorted path set, original archive mode, pre-patch
+size and pre-patch SHA-256 must match the observation. Staging entries must
+contain exactly those regular files plus unique required directory ancestors.
+An implicit directory is permitted only when it is a required ancestor; explicit
+source directory entries (including empty directories) are allowed because the
+source-tree observation intentionally records regular files only. Their paths,
+root containment, archive-mode shape and stat fields are validated, but their
+presence is covered only by the independent staging pin. Fixed patch paths must
+use the exact `source_patch_manifest()` preimage and postimage sizes and digests
+and patch-set digest. Every other file must preserve its source size and digest.
+Entry kinds, implicit-directory markers, entry counts, path bounds and stat-wire
+scalar types are checked before agreement.
+
+Source-observation wires retain the 32 MiB extraction-manifest bound. Staging has
+separate limits because it expands implicit ancestor directories: at most
+131,072 entries, 1,024 UTF-8 bytes per entry path, and 128 MiB total decoded
+entry-path text. Its canonical wire cap is derived from that entry count, a
+two-times JSON quote-escape allowance per path, a 512-byte fixed-field allowance
+per entry, and 64 KiB of top-level framing. The parser's decoded-string budget
+uses the path ceiling plus a 512-byte fixed-text allowance per entry. Producer
+and validator share these limits; they do not widen source-observation or receipt
+budgets.
+
+Only two matching metadata dispositions are accepted: validated fixed-profile
+claims on both records, or the explicit inert-fixture disposition on both.
+Signature verification, release verification, source execution, build,
+generated headers, runtime execution, load protection and production admission
+must remain unperformed/false. The check validates detached evidence consistency
+only: it does not establish that a staging directory still exists, that either
+record was honestly produced, or that a later build consumed it. It returns no
+admission authority and does not close the separate candidate-build source/patch
+evidence task.

@@ -243,3 +243,58 @@ PR37 acceptance or completes the remaining actual G1/G2/G3 gates.
 Local final check:34 comparator cases and234 receipt/source-tree/artifact cases
 passed with zero failures/errors/skips; full Ruff, compileall and diff checks
 passed. Final-source CI is pending and cannot be claimed from these fixtures.
+
+## Source-tree / staged-tree consistency check
+
+The provider-free `validate_source_staging_consistency` continuation compares
+the independently pinned source-tree observation with a canonical staging
+record. Its positive fixture may use the existing inert CPython source fixture;
+this verifies only that the records agree and must preserve the inert-profile
+state. Also cover coherent validated-profile metadata without treating it as
+real acquisition. Refuse wrong/missing staging, manifest or source-tree pins;
+stale/noncanonical/self-digest-mismatched wires; archive/root/version/snapshot
+drift; mismatched profile/inert states; changed source paths/modes/sizes/digests;
+missing, duplicate or extra regular files; implicit directories that are not
+required ancestors; valid explicit directories including empty-directory entries;
+wrong patch-set and fixed-patch pre/postimage pins; changed unchanged-file bytes;
+bad claim flags; and malformed entry/stat fields. Monkeypatch and prove the check
+does not call `open`, `os.open`, filesystem/network APIs or subprocess.
+
+The focused check must preserve the distinction between the original archive
+tree digest and staging digest. It does not restat the staging directory and
+cannot close candidate-build-source provenance, G1 acquisition/signature,
+configured toolchain/build closure or G2/G3 runtime acceptance.
+
+Local continuation result (2026-10-21): 83 provenance tests passed, including
+positive inert and validated-metadata fixtures, independent-pin and canonical
+wire refusal, archive/version/profile drift, patch pre/postimage agreement,
+directory inventory, malformed stat/entry bounds and no-external-effect checks.
+An explicit `tests/__init__.py` package marker keeps a separately installed
+top-level `tests` distribution from shadowing repository helper imports. The
+five-file focused run then passed through the normal `python -m pytest` entry
+point. Repository-wide Ruff, `compileall` and `git diff --check` passed. This
+result establishes only detached DTO consistency and leaves real source
+acquisition, candidate-build provenance, configured static build and runtime
+acceptance open.
+
+The same validator was then exercised on Linux against the pinned CPython
+3.13.12 archive using the previously retained manifest and source-tree pins.
+All 4,837 original regular files (108,687,660 bytes), 5,245 staged entries and
+the fixed patch pre/postimage set agreed. The staging digest was computed by
+that probe itself, so this is a real-input implementation regression rather
+than an independent retained staging pin or candidate-build provenance.
+Details and the exact claim limits are in
+[`source-staging-consistency-probe-20261021.md`](source-staging-consistency-probe-20261021.md).
+
+The staging budget regression tests exercise a 65,000-entry canonical staging
+wire larger than 32 MiB, enforce independent staging wire/string ceilings, and
+retain the existing source-observation wire ceiling. A complete consistency
+fixture with 2,500 synthetic regular files expands implicit ancestors until the
+staging-entry path total exceeds 16 MiB while the original source paths remain
+within their 16 MiB budget. The validator accepts this bounded matching pair.
+The combined provenance/source-tree/staging/projection/patch run passes all320
+collected cases with zero failures, errors or skips. Full Ruff and
+`git diff --check` pass; `compileall` passes on the three changed Python files.
+Do not run `compileall .` across ignored `.lunar` evidence trees: those retain
+inert payload files ending in `.py` and can contain read-only directories. No
+build, runtime or evaluator was run by this regression.

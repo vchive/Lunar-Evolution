@@ -1,13 +1,39 @@
-## 2026-10-21 最新状态（`752b7bf` 已推送，Actions 待跑）
+## 2026-10-21 最新状态（Feature189 G1 输入核验推进）
 
-- 当前 `main` 与 `origin/main` 均为 `752b7bf`。本轮三提交已推送；GitHub Actions run
-  `39552239958` 最后观察为 queued。相关 focused 回归、Ruff、`compileall`、
-  `git diff --check` 以及 226 项 native-e2e 均通过。全量 Linux 矩阵完成前不把该提交称为发布验收。
-- README 已重写为用户/贡献者入口文档；安装、CLI 示例和 15 个本地链接已检查，更新尚未提交。
-- 生产版 P1 仍阻塞于实际 CPython 源码与签名/toolchain 获取、完整静态构建与 ELF 审计、sealed
-  startup/import closure、实际 owner/lifecycle、authoritative input/result、OpenEvolve/Shinka
-  项目运行/取消/清理/恢复、生产 CLI 接入和 Linux 中断矩阵。5090gpu 的 CPython 3.13.12
-  disposable probe 下载未完成，签名及构建尚未验证。
+- 最近的功能代码提交 `752b7bf` 已推送；native-e2e 226 项、8 个 P1 composition/acceptance focused
+  tests、Ruff、`compileall` 与 `git diff --check` 均通过。README 已重写并推送；完整 Linux CI 矩阵仍是
+  该提交的发布验收门。
+- 2026-10-21 本地 train-delay fixture `effect-trial` 重跑 **3/3 ready**，validity 为1.0、分数0.6827；
+  只覆盖 Lunar CLI、workspace、fixture subject、本地 evaluator 和报告链路。模型证据不可观测、正式资格
+  `ineligible`，不作为算法/模型效果或生产端到端验收。报告保存在本机 ignored 路径
+  `.lunar-evolution/validation/effect-trial-rerun-20261021/`，其 SHA-256 为
+  `abe41a1198f3b12506f6b4dd03c0bbf13eed50d61d5248fafc8a4cd6aac2e4f1`。
+- 5090gpu 已核验 CPython 3.13.12 官方源包 SHA-256 与 detached GPG signature，并交叉检查 Zig
+  0.16.0 及 Ubuntu musl package digests。具体文件、指纹、命令和限制见
+  [release input audit](../specs/189-static-python-fixture/release-input-audit-20261021.md)。
+- 同机 G2 loader probe 显示 `build-fullfreeze` 没有 file/zip loader，`traceback` 与
+  `collections` 因缺少 `operator` 失败；有限诊断镜像仍在 `linecache` 失败。现有
+  `Python/frozen.c` 已偏离签名归档，而 freezer 依赖未 pin 的宿主 Python，所以没有生成新
+  header 或重链。下一切片应先固定有限模块传递依赖与 same-source freezer provenance，见
+  [loader closure probe](../specs/189-static-python-fixture/loader-closure-probe-20261021.md)。
+- 生产版 P1 已关闭 CPython archive SHA/signature 核验；仍阻塞于受审计的源码树/patch 集、完整
+  toolchain/static-link closure 与 ELF 审计、sealed startup/import closure、实际 owner/lifecycle、
+  authoritative input/result、OpenEvolve/Shinka 项目运行/取消/清理/恢复、生产 CLI 接入和 Linux
+  中断矩阵。源码验签不等于 sealed runtime：已有
+  static stock build 曾因缺少 `encodings` 而启动失败，本轮未重复构建或伪造其成功。
+- Feature189 新增 `validate_source_staging_consistency`，以固定 schema 和独立 digest pins 对比
+  detached source-tree/staging DTO、全量 regular-file inventory、patch pre/postimage 与状态声明；
+  83 个 provenance tests 及 source-tree/staging/patch/projection focused 回归、全仓 Ruff、
+  `compileall` 和 `git diff --check` 已通过。它不访问 staged path，也不证明实际候选构建消费了该树；
+  G1 candidate-build-source/patch evidence 仍开放。新增 `tests/__init__.py` 也修复同名已安装
+  `tests` 包对 focused pytest helper imports 的遮蔽。纯校验代码提交 `6edeec3` 已开 PR #183，
+  33 个 Actions jobs 均排队。
+- 在 `5090gpu` 对 pinned CPython 3.13.12 归档重放此前保留的 manifest/source-tree pins，并完成
+  create-only 全量 staging：4,837 个文件、108,687,660 字节、5,245 个 entries，固定 patch
+  pre/postimage 一致。此次 staging digest 当场生成，不是独立保留的 pre-run staging pin，且签名
+  状态没有绑定到 DTO；因此只算 real-input implementation regression。详细记录在
+  [source staging consistency probe](../specs/189-static-python-fixture/source-staging-consistency-probe-20261021.md)。
+  实际 candidate-build source evidence、build closure 和 runtime 验收仍开放。
 - 保持 `production_admission=false`、`online_publication=false`。P2 remote evaluator、外部 worker
   认证、多机 ownership 与分布式 scheduler/service API 继续后置。
 
