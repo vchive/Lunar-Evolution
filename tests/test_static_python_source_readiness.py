@@ -81,6 +81,23 @@ def test_toolchain_inventory_requires_unverified_explicit_file_manifest() -> Non
         source_readiness._toolchain_inventory(altered_raw, hashlib.sha256(altered_raw).hexdigest())
     assert caught.value.reason == "static_python_source_readiness_toolchain_inventory_path_invalid"
 
+    altered = json.loads(raw)
+    altered["files"][0]["path"] = altered["root"]
+    altered_raw = _canonical(altered)
+    with pytest.raises(source_readiness.StaticPythonSourceReadinessError) as caught:
+        source_readiness._toolchain_inventory(altered_raw, hashlib.sha256(altered_raw).hexdigest())
+    assert caught.value.reason == "static_python_source_readiness_toolchain_inventory_file_invalid"
+
+    altered = json.loads(raw)
+    altered["files"] = [
+        {**altered["files"][0], "path": "zig-x86_64-linux-0.16.0/bin"},
+        {**altered["files"][0], "path": "zig-x86_64-linux-0.16.0/bin/zig"},
+    ]
+    altered_raw = _canonical(altered)
+    with pytest.raises(source_readiness.StaticPythonSourceReadinessError) as caught:
+        source_readiness._toolchain_inventory(altered_raw, hashlib.sha256(altered_raw).hexdigest())
+    assert caught.value.reason == "static_python_source_readiness_toolchain_inventory_file_invalid"
+
 
 def test_persisted_receipt_rejects_missing_fields_and_true_claims() -> None:
     toolchain = _toolchain()
@@ -114,6 +131,13 @@ def test_persisted_receipt_rejects_missing_fields_and_true_claims() -> None:
     with pytest.raises(source_readiness.StaticPythonSourceReadinessError, match="receipt_schema_invalid"):
         source_readiness.validate_static_python_source_readiness_receipt(
             missing_raw, expected_sha256=hashlib.sha256(missing_raw).hexdigest(),
+        )
+    forged = json.loads(raw)
+    forged["source_assets"][0]["path"] = forged["source_assets"][0]["path"].removeprefix("assets/")
+    forged_raw = _canonical(forged)
+    with pytest.raises(source_readiness.StaticPythonSourceReadinessError, match="receipt_asset_path_invalid"):
+        source_readiness.validate_static_python_source_readiness_receipt(
+            forged_raw, expected_sha256=hashlib.sha256(forged_raw).hexdigest(),
         )
     forged = json.loads(raw)
     forged["claims"]["production_admission"] = True

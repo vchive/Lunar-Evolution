@@ -7,8 +7,9 @@ observation, patched staging manifest, the five-file patch/policy digests, and
 the six emitted RSI source assets. The expanded `assets/frozen_main.py` bytes
 are checked against the source plan record rather than inferred from a path.
 
-The receipt also carries an exact Zig archive-rooted file inventory. The
-inventory has an independent canonical SHA-256 and must say
+The receipt also carries a bounded, archive-rooted Zig file inventory. It is
+not a complete toolchain inventory; the retained projection has an independent
+canonical SHA-256 and must say
 `evidence_status="unverified"`; all archive/file/signature/build/admission
 claims in that inventory remain false. This is intentional while the complete
 Zig/sysroot/libc bytes and their independent audit are not retained in this

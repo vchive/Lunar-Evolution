@@ -1,18 +1,18 @@
-# 当前交接（2026-10-21，Feature 189 source/profile 收尾）
+# 当前交接（2026-10-22，Feature 189 source/profile 收尾）
 
-## 最新状态（2026-10-21）
+## 最新状态（2026-10-22）
 
-- 主线基线是 PR #183 合并提交 `fe8e61d474910911382677c61d0667ac75b26899`。本地分支
-  `codex/static-python-startup-closure` 的 HEAD 为 `55f76bd`，比 PR #184 远端分支多一个已提交的
-  scheduler-fixture 修复；工作树另有本轮 Feature 189/193 未提交改动，不能把这些本地测试当作 GitHub CI 证据。
-- PR #184 仍开放。Actions run `39575463440` 检查的是旧远端 SHA `02b8544`，仍未结束；Python 3.12/3.13
-  focused job 均因 `NativeRSISchedulerProvider` fixture 缺少 `_brs_native_binding` 属性而有 7/14 项失败。
-  `55f76bd` 已修正该 fixture，当前本地 scheduler 回归 24 项通过。等待旧 run 收尾后再推送完整修复批次，
-  随后必须看新 SHA 的 PR CI；旧 run 不能算通过或归因到后续提交。
+- 主线基线是 PR #183 合并提交 `fe8e61d474910911382677c61d0667ac75b26899`。当前分支
+  `codex/static-python-startup-closure` 的 HEAD 为 `2696445bb01cbabb070410440ea1ba93b262a7b6`，PR #184
+  仍开放；工作树包含本轮 source-readiness receipt 的两处 fail-closed 修正和对应测试，提交前不能把本地结果当作远端 CI 证据。
+- Actions run `39636155773` 针对 HEAD `2696445`，当前仍在运行（已有历史 job 完成，整体尚未结论）；旧 run
+  `39575463440` 和旧 SHA 的结果不归因于当前 HEAD。新改动提交后必须等待新 SHA 的完整 CI。
 - 本轮 Feature 189 增加了 `Lib/abc.py` 与 `Lib/encodings/__init__.py` 的固定源码补丁，补齐五源投影、
   暂存和 provenance 清单，并扩展 source-preparation CI 门禁。`abc` 在 `_abc` 失败时重新抛出原始异常，
   不导入 `_py_abc`；`encodings` 只将 UTF-8 及六个固定别名绑定至 `encodings.utf_8`，其他编码经
   `codecs.lookup` 正常拒绝。源码来源、postimage 和 patch-set pin 已同步进入 reviewed build inputs 与 RSI pin 链。
+- 本轮只读逻辑审查还修正了 persisted source-readiness receipt 的 fail-closed 边界：`source_assets` 必须使用
+  `assets/...` 路径，Zig inventory 的 `files` 不能把 archive root 目录或其文件祖先记录成 file；新增反例测试覆盖这些拒绝路径。
 - Feature 189/193 离线定向验证：source preparation **108 项全过**；source projection/staging/provenance/
   tree observation/import audits **310 项全过**；build-input 与 RSI profile/contract/mock-driver/backend
   **449 项全过**；独立 pin-chain 复核又运行 511 项 source/build/RSI 定向测试，全部通过且无 pin 漂移。

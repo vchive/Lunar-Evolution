@@ -266,7 +266,7 @@ def _toolchain_inventory(raw: bytes, expected_sha256: str) -> dict[str, object]:
         if type(item) is not dict or frozenset(item) != _TOOLCHAIN_FILE_FIELDS:
             _fail("toolchain_inventory_file_invalid")
         path = _path(item["path"], "toolchain_inventory_path_invalid", root=value["root"])
-        if item["kind"] != "file":
+        if item["kind"] != "file" or path == value["root"]:
             _fail("toolchain_inventory_file_invalid")
         _integer(item["size"], "toolchain_inventory_size_invalid", maximum=_MAX_TOOLCHAIN_FILE_BYTES)
         _integer(item["mode"], "toolchain_inventory_mode_invalid", maximum=0o777)
@@ -274,6 +274,13 @@ def _toolchain_inventory(raw: bytes, expected_sha256: str) -> dict[str, object]:
         paths.append(path)
     if paths != sorted(set(paths)):
         _fail("toolchain_inventory_order_invalid")
+    path_set = set(paths)
+    if any(
+        "/".join(path.split("/")[:index]) in path_set
+        for path in paths
+        for index in range(1, len(path.split("/")))
+    ):
+        _fail("toolchain_inventory_file_invalid")
     return value
 
 
@@ -323,7 +330,9 @@ def _validate_receipt_wire(raw: bytes, expected_sha256: str) -> dict[str, object
     for item in assets:
         if type(item) is not dict or frozenset(item) != _ASSET_RECORD_FIELDS:
             _fail("receipt_assets_invalid")
-        _path(item["path"], "receipt_asset_path_invalid")
+        path = _path(item["path"], "receipt_asset_path_invalid")
+        if not path.startswith("assets/"):
+            _fail("receipt_asset_path_invalid")
         _integer(item["size"], "receipt_asset_size_invalid", maximum=16 * 1024)
         _sha(item["sha256"], "receipt_asset_digest_invalid")
         paths.append(item["path"])
