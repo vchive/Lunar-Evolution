@@ -1150,6 +1150,7 @@ from .static_python_runtime_startup import (
     StaticPythonRuntimeStartupError,
     diagnose_static_python_runtime_startup,
     parse_static_python_runtime_startup,
+    parse_static_python_runtime_startup_diagnostic,
 )
 from .trusted_bootstrap_handoff import (
     TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL,
@@ -1936,6 +1937,7 @@ __all__ = [
     "parse_static_python_input_result",
     "parse_static_python_runtime_handoff",
     "parse_static_python_runtime_startup",
+    "parse_static_python_runtime_startup_diagnostic",
     "parse_trusted_bootstrap_evidence",
     "parse_trusted_bootstrap_process_registration_handoff",
     "parse_trusted_bootstrap_registration",
