@@ -1,4 +1,4 @@
-## 2026-10-21 当前执行清单（main 本地领先 origin 5 个提交，待推送）
+## 2026-10-21 当前执行清单（main 本地领先 origin 7 个提交，待推送）
 
 本轮并行完成两个 provider-free P1 收口切片：`rsi project-preflight --diagnostics` 现在固定
 输出 11 个 project lifecycle 验收场景；`producer_lifecycle_diagnostics` 对 startup、取消、
@@ -11,6 +11,10 @@ evaluator 或真实 campaign。新增 API、schema drift 回归、文档和 focu
 随后补齐 static-Python startup diagnostic replay gate：保留的失败摘要必须通过 canonical
 schema、固定 failure code、全 false capability claims 以及独立 stderr digest/size pin 的
 重放校验。该 gate 仍是 detached evidence replay，不执行 runtime，不打开 production admission。
+
+`rsi producer-lifecycle-diagnostics OBSERVATIONS.json --json` 现已将 owner/lifecycle
+projection 暴露为只读 CLI，在 config/SQLite 初始化前校验观察项；完整离线证据返回
+`offline_verified`，但 admission/publication 仍固定关闭，缺项仍返回 blocked。
 
 本轮新增四项 provider-free 收尾：static-Python acceptance 强制 installation/build 最终
 artifact pin 一致；build provenance 的五个 closure section 缺失或漂移时直接拒绝；reserved

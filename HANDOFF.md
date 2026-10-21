@@ -15,7 +15,7 @@
   failure code、全 false capability claims，以及独立 stderr digest/size pin 必须一致；它只
   重放 detached 失败摘要，不执行 runtime，也不授予 sealed startup 或生产准入。
 - 对应 focused tests、Ruff、compileall 和 `git diff --check` 已通过。当前 main 比
-  `origin/main` 多 5 个本地提交，待本轮统一验证后推送。
+  `origin/main` 多 7 个本地提交；CLI 入口也已通过 11 项 focused 回归和静态检查，待推送。
 - 这些切片收紧了 P1 验收边界，但没有伪造真实 CPython/stdlib closure、sealed startup、真实
   project entrypoint、Linux lifecycle 或 authoritative input/result；这些仍是生产版 P1 必须项。
 
