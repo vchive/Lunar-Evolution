@@ -2,9 +2,23 @@
 
 ## Current integration status — 2026-10-12 (updated)
 
-PR54–57, PR59, PR60, PR64–67 are represented in `origin/main` through merge `31ab43c`. The retained CI is provider-free and does not establish real CPython/toolchain acquisition, sealed startup, producer lifecycle, evaluator access or production admission. PR54 raw-log and PR56/57 artifact downloads were incomplete; those limits remain explicitly recorded below.
+PR54–57, PR59, PR60, PR64–67 are represented in `origin/main` through merge `31ab43c`. The retained CI is provider-free and does not establish real CPython/toolchain acquisition, sealed startup, producer lifecycle, evaluator access or production admission. The independent artifact/source/tree audit for PR54, PR55, PR56, PR57 and PR59 is now retained in [`f03-f05-raw-source-tree-audit-20261021.md`](f03-f05-raw-source-tree-audit-20261021.md). The PR54 raw job-log download still remains unavailable; the audit uses the retained immutable Git objects, API metadata and complete non-expired artifact archives instead.
 
-The PR54 raw-log audit was incomplete because GitHub API log download timed out. PR56/57 raw artifact downloads were also incomplete (their CI and source-only evidence remain valid). These limits are recorded explicitly rather than promoted to full raw-log acceptance.
+The PR54 raw-log audit was incomplete because GitHub API log download timed out. The PR54/55/56/57/59 artifact archives were independently downloaded and checked in the Feature 193 F03/F04/F05 audit. These limits are recorded explicitly rather than promoted to full raw-log acceptance.
+
+## F03/F04/F05 independent raw/source/tree audit — 2026-10-21
+
+The final-source raw artifacts and immutable Git trees for PR54, PR55, PR56,
+PR57 and PR59 were independently checked. The retained report is
+[`f03-f05-raw-source-tree-audit-20261021.md`](f03-f05-raw-source-tree-audit-20261021.md).
+It records all 15 non-expired artifacts for each run, `job-provenance.json`
+commit/tree/parent agreement, 159 XML files per run, zero XML failures/errors,
+known platform skips, source/synthetic tree equality, selected source blob
+IDs, and the PR59 correction lineage through PR54–57. The run artifacts are
+not copied into the repository; API run IDs, artifact-manifest SHA-256 values,
+and Git object IDs are the replay anchors. This closes the F03, F04c and F05c
+raw/source/tree audit obligations only. No build, startup, input consumption,
+owner lifecycle, producer publication or production admission is inferred.
 
 For local provider-free validation, use the focused commands and isolated basetemp described below. Real runtime and producer gates remain open.
 

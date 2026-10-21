@@ -210,6 +210,20 @@ def _setup(root, patch):
 
 @contextmanager
 def _waiting(tmp_path, monkeypatch):
+    # ``owner_fixture._waiting`` invokes this module's setup through a nested
+    # monkeypatch context.  Keep an explicit restore list as well: the owner
+    # evidence composition test reuses this helper from another module, and
+    # pytest finalizes the shared monkeypatch fixture only after its teardown
+    # hook.  The retained-reader policy must never leak its inert projection
+    # into the next test's original native-reader identity check.
+    from lunar_evolution import rsi_brs_native_process_evidence as process_evidence
+
+    restored = (
+        (attempt_module, "recover_native_trusted_attempt", attempt_module.recover_native_trusted_attempt),
+        (output_module, "recover_native_trusted_attempt", output_module.recover_native_trusted_attempt),
+        (process_evidence, "recover_native_trusted_attempt", process_evidence.recover_native_trusted_attempt),
+        (receipt_module, "recover_native_trusted_attempt", receipt_module.recover_native_trusted_attempt),
+    )
     original = owner_fixture._setup
 
     def setup(root, patch):
@@ -218,11 +232,15 @@ def _waiting(tmp_path, monkeypatch):
             return _setup(root, patch)
 
     monkeypatch.setattr(owner_fixture, "_setup", setup)
-    with owner_fixture._waiting(tmp_path, monkeypatch) as value:
-        value.request_message = _request_from_native_preparation(value.preparation, value.wave.selected_handoff,
-            native_plan=value.plan, expected_head_sha256=value.wave.selected_handoff.head_sha256,
-            expected_state_sha256=value.wave.selected_handoff.state_sha256)
-        yield value
+    try:
+        with owner_fixture._waiting(tmp_path, monkeypatch) as value:
+            value.request_message = _request_from_native_preparation(value.preparation, value.wave.selected_handoff,
+                native_plan=value.plan, expected_head_sha256=value.wave.selected_handoff.head_sha256,
+                expected_state_sha256=value.wave.selected_handoff.state_sha256)
+            yield value
+    finally:
+        for module, name, original_value in restored:
+            setattr(module, name, original_value)
 
 
 def _reader(value):
