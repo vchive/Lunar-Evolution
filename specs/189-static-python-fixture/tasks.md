@@ -107,12 +107,31 @@ failure and cancelled preflight separately from later successful evidence.
   changed staged-source paths and bounded import observations in
   `authenticated-source-import-audit-20261021.md`. This is a partial source audit,
   not a complete import closure or independent re-verification of the signature.
+- [x] Replay those eight exact release-archive member bytes through the Lunar AST
+  observer without extracting or executing them. Preserve the canonical result
+  digest, per-source observations and fixed unsupported sites; the call-time
+  source pins were computed from the bytes and are not independent release pins.
+- [x] Emit the exact expanded Lunar `_lunar_static_main` source from the reviewed
+  build plan, match its size/digest to the freeze-task pin, and run that byte
+  string through the Lunar AST observer. Keep the fixed loader-negative dynamic
+  import visible as unsupported; this is a source-plan check, not a freezer or
+  startup observation.
+- [x] Record a bounded, source-pinned CPython C-startup review for the fixed
+  import/lifecycle/configuration/table inputs, distinguishing stock archive
+  files from generated Lunar tables and fixture-owned path code in
+  `c-startup-source-audit-20261021.md`. This does not complete the configured
+  C/Python closure or runtime audit below.
+- [x] Define bounded source-preparation dispositions for the observed dynamic
+  codec-name selection and `_py_abc` fallback: direct fixed UTF-8 binding, a
+  six-alias allowlist, and preservation of the original `_abc` import error.
+  Provider-free tests cover the source transformations and normal `LookupError`
+  from host `codecs.lookup` when the synthetic callback declines an unknown
+  codec. This does not verify target startup registration or frozen-module use.
 - [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
-  refusal sites across the complete configured source/startup scope. Resolve the
-  observed dynamic codec selection and `_py_abc` fallback, and any dependency
-  outside the pinned profile with a versioned profile decision. The DTO parser
-  cannot certify this audit or infer new modules.
+  refusal sites across the complete configured source/startup scope, including
+  any dependency outside the pinned profile and a versioned profile decision.
+  The DTO parser cannot certify this audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do

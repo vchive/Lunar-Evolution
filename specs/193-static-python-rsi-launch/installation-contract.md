@@ -37,9 +37,9 @@ ensure_ascii=False and no trailing newline. Schema is
 `lunar-static-python-rsi-installation-contract-v1`; profile is
 `rsi-marker-launch-v1`. The three input records are exact `{size, sha256}`:
 
-- base79459 / ba5221310c10360b010d0b5a5b104586d3a1529f159c93a9c02a83319701a92b
-- overlay2456 / 37a9d7d986a5c77885e305d0aeeff244074462050523fc544c0dd7398f547d0f
-- source-plan6706 / f6e1ba1daa0a6916c9f8a8fc50932e6b8f8b0b816b522c0cc502e414e60df9d2
+- base80050 / c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31
+- overlay2456 / 31e8e064dc5317b3297140f55f07e81ca1aa9c831a4e4bbbf46cc76db0667b8f
+- source-plan6706 / 3399f2f7e8ef9b7c2d6c7ff60985992c0dff1444e463a971ad2560cdbda410ee
 
 Launch policy exactly matches the reviewed source plan: argc3, literal marker
 `--lunar-rsi-input-v1` at index1, digest at index2 with syntax `[0-9a-f]{64}`,

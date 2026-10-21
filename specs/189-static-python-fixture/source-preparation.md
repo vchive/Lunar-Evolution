@@ -1,30 +1,64 @@
 # Offline source preparation contract
 
-This slice continues G1/G2 of Feature189. It supplies the missing reviewed
-loader patches and finite C table generators. It does not build or run CPython,
-produce frozen bytecode with the host interpreter, or complete runtime admission.
-The Linux build driver remains plan-only and exits 78 before configure, make or
-freezer work, including when execution is explicitly requested. The configured
-build closure remains unadmitted.
+This source-preparation contract continues G1/G2 of Feature189. It specifies
+exact source transformations and finite C table generators. It does not build
+or run CPython, produce frozen bytecode with the host interpreter, or complete
+runtime admission. The Linux build driver remains plan-only and exits 78 before
+configure, make or freezer work, including when execution is explicitly
+requested. The configured build closure remains unadmitted.
 
-## Exact source transformations
+## Exact source inputs and transformations
 
-Accept an exact built-in mapping of three fixed relative paths to bounded bytes:
-`Lib/importlib/_bootstrap_external.py`, `Python/import.c` and
-`Lib/encodings/aliases.py`. Pin each complete preimage to the reviewed CPython
-3.13.12 commit `1cbe481834751b0125e006042ffbd8cd5eaec8a8`. Validate all inputs and
-unique replacement occurrences before producing any output. Unknown paths,
-missing inputs, callback-bearing collections, oversized bytes and digest or
-snippet drift refuse. The transformation itself performs no filesystem I/O,
-subprocess, source execution, download or caller-selected patch operation.
+The source policy covers exactly these five relative paths and no caller-selected
+patch operations:
 
-Keep external import bootstrap metadata initialization, but remove installation
-of FileFinder/PathFinder hooks and zip initialization. Refuse the fixed direct
-loader/finder entry points before they consult file or caller callbacks. Reduce
-codec aliases to the six reviewed UTF-8 aliases. Retain original and resulting
-file hashes in the preparation manifest. Reviewed Git source provenance remains
-distinct from verification of the pinned python.org release archive and its
-signature; file preimage matches do not attest the complete source distribution.
+| Path | Source policy |
+| --- | --- |
+| `Lib/importlib/_bootstrap_external.py` | Retain the existing loader-refusal and external-importer changes described below. |
+| `Python/import.c` | Retain the existing external-initialization change described below. |
+| `Lib/encodings/aliases.py` | Retain the existing finite alias table described below. |
+| `Lib/abc.py` | Require `_abc`; do not permit an `_py_abc` fallback. |
+| `Lib/encodings/__init__.py` | Constrain codec selection to the exact finite policy described below. |
+
+Accept one exact built-in mapping of these five fixed relative paths to bounded
+bytes. Pin each complete preimage to the reviewed CPython 3.13.12 commit
+`1cbe481834751b0125e006042ffbd8cd5eaec8a8`. Validate the complete input set,
+all preimage digests and every expected unique replacement occurrence before
+producing any output. Unknown or missing paths, extra keys, callback-bearing
+collections, oversized bytes and digest or snippet drift refuse. The
+transformation performs no filesystem I/O, subprocess, source execution,
+download or caller-defined patch operation.
+
+The original three-source transformation policy retains external import
+bootstrap metadata initialization while removing installation of
+FileFinder/PathFinder hooks and zip initialization. Fixed direct loader/finder
+entry points refuse before consulting file or caller callbacks. The aliases
+source is reduced to exactly these six normalized UTF-8 aliases, each mapped to
+`utf_8`: `u8`, `utf`, `utf8`, `utf8_ucs2`, `utf8_ucs4`, and `cp65001`. The
+external-init function retains metadata initialization but does not install
+file/path hooks or call zip initialization. Keep each source's original and
+resulting hashes in the preparation manifest.
+
+The `abc.py` policy must make `_abc` required: import its fixed required names
+without catching `ImportError` to substitute `_py_abc`. `_py_abc` is outside the
+finite profile and must not be imported by a fallback path. If `_abc` is absent
+or its required import fails, preserve ordinary import failure; do not emulate
+the implementation in Python. The fixed handler only re-raises the same
+`ImportError`; it must not replace its message, cause, or context.
+
+The `encodings/__init__.py` policy must not construct or import a module name
+from a requested codec. After the existing normalization step, codec selection
+may accept only the six alias keys listed above and must bind directly to the
+fixed `encodings.utf_8` module. No request value may choose a different module,
+trigger a top-level fallback, or invoke dynamic `__import__`. Every other
+normalized codec name remains unavailable and must produce the normal codec
+lookup miss (`LookupError` through the codec lookup API); it must not be
+silently mapped to UTF-8 or cause another codec module to be loaded. Keep
+unsupported names out of the alias table and any generated inventory.
+
+Reviewed Git source provenance remains distinct from verification of the pinned
+python.org release archive and its signature; matching source preimages do not
+attest the complete source distribution.
 
 ## Deterministic table assets
 

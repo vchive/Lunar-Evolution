@@ -352,11 +352,49 @@ startup, solver, remote evaluator or company platform was run for this slice.
 observations for eight frozen-module Python files read directly from the pinned
 CPython 3.13.12 release archive on 5090gpu. It distinguishes those archive
 members from a separately patched staging tree, records the tree byte drift,
-and identifies two unresolved source-level paths: dynamic codec-name selection
-under `encodings` and the `_py_abc` fallback under `abc`. It also pins the
+and identifies dynamic codec-name selection under `encodings` and the `_py_abc`
+fallback under `abc` as source-level policy issues. The finite source-preparation
+contract now defines dispositions for both, but target use remains unverified.
+It also pins the
 Lunar-owned frozen-main template separately from the final expanded source.
 
 This partial audit is an input for the independent source review, not its
 completion. It does not cover all Python/C startup edges, establish runtime
 reachability or module origin, bind the emitted frozen main, or close the
 configured startup graph. No build, install, evaluator or campaign was run.
+
+The same report now retains a direct Lunar-observer replay over the eight exact
+CPython archive members: 28 import edges, zero unresolved observations and four
+fixed unsupported sites, with a canonical result digest. Call-time member pins
+were derived from the supplied bytes, so the replay validates observer behavior
+on those bytes but is not independent per-file provenance or closure evidence.
+The separate three-case `test_static_python_source_import_profile.py` checks the
+6,794-byte expanded `_lunar_static_main` bytes against the reviewed freeze-task
+pin and audits those exact bytes; its fixed `__import__(name)` loader-negative
+site remains unsupported. Both source observations keep all capability claims
+false. They do not replace the still-open complete CPython/C startup audit,
+target-startup codec registration, generated-header checks, configured build or
+sealed runtime acceptance. The finite source patch now re-raises the original
+`_abc` `ImportError`; its focused test checks message and exception context.
+The codec test registers the synthetic patched lookup callback with host
+`codecs.lookup` and confirms an unsupported name raises `LookupError`. These
+checks remain source-level and host-API observations; they do not execute or
+start the patched target.
+
+## Bounded C-startup source review
+
+[`c-startup-source-audit-20261021.md`](c-startup-source-audit-20261021.md)
+records exact sizes and SHA-256 digests for 23 CPython 3.13.12 archive members,
+plus fixed Lunar generated-table source pins. The review distinguishes
+C-created `sys`/`builtins`, `_inittab` entries, `_imp` bootstrap initialization,
+frozen tables and aliases, and the separate embedded getpath array. It also
+records which path/table inputs are archive-owned, generated from the Lunar
+profile, or fixture-owned.
+
+This is a bounded source report, not a complete mechanized C import/configuration
+gate. It does not show that the planned tables were built, that a configured
+`Modules/Setup` or `pyconfig.h` matches the profile, or that the final image
+contains only those entries. The actual configure/link closure, same-source
+freezer outputs, C/header conditionals, startup behavior, module origins and
+runtime refusal paths remain open. All capability and production claims remain
+false; no build or evaluator was run.

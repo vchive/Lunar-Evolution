@@ -31,16 +31,16 @@ _FIELDS = frozenset({
 })
 _REVIEWED_INPUTS = {
     "base_reviewed_inputs": {
-        "size": 79459,
-        "sha256": "ba5221310c10360b010d0b5a5b104586d3a1529f159c93a9c02a83319701a92b",
+        "size": 80050,
+        "sha256": "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31",
     },
     "reviewed_overlay": {
         "size": 2456,
-        "sha256": "37a9d7d986a5c77885e305d0aeeff244074462050523fc544c0dd7398f547d0f",
+        "sha256": "31e8e064dc5317b3297140f55f07e81ca1aa9c831a4e4bbbf46cc76db0667b8f",
     },
     "source_plan": {
         "size": 6706,
-        "sha256": "f6e1ba1daa0a6916c9f8a8fc50932e6b8f8b0b816b522c0cc502e414e60df9d2",
+        "sha256": "3399f2f7e8ef9b7c2d6c7ff60985992c0dff1444e463a971ad2560cdbda410ee",
     },
 }
 _LAUNCH_POLICY = {
@@ -74,8 +74,8 @@ _FROZEN_SOURCES = {
         "generated-sources/Python/frozen_modules/_lunar_static_main.h",
     ),
     "abc": (
-        "Lib/abc.py", 6538,
-        "e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287",
+        "Lib/abc.py", 6468,
+        "a6684b1a49cfbc9c64caeeac7e55ef8f35052b8e8ca93a091941817cdc510b1c",
         "generated-sources/Python/frozen_modules/abc.h",
     ),
     "codecs": (
@@ -84,8 +84,8 @@ _FROZEN_SOURCES = {
         "generated-sources/Python/frozen_modules/codecs.h",
     ),
     "encodings": (
-        "Lib/encodings/__init__.py", 5884,
-        "78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8",
+        "Lib/encodings/__init__.py", 1101,
+        "47a11d930321492bca552eed29dad061ed6739bf84c919485453315d911b1c60",
         "generated-sources/Python/frozen_modules/encodings.h",
     ),
     "encodings.aliases": (

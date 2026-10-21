@@ -1,8 +1,9 @@
 """Pure, finite source preparation for the installation-owned CPython fixture.
 
 Old-byte snippets are CPython 3.13.12 source under the upstream PSF license;
-see tests/fixtures/static_python_source/LICENSE and provenance.json. Matching
-these reviewed Git file bytes does not verify the python.org release archive.
+see tests/fixtures/static_python_source/LICENSE and provenance.json. The fixed
+source inputs are reviewed Git file bytes; they do not verify the python.org
+release archive.
 No source file is executed, read or written by this module.
 The external-init call to stock init_zipimport is removed; its unused source
 helper remains. No linked image or removal of all zip-related bytes is proved.
@@ -49,6 +50,7 @@ class _SourceProfile:
     after_size: int
     after_sha256: str
     snippets: tuple[_Snippet, ...]
+    replacement: bytes | None = None
 
 
 # Whole-file pins and snippets come only from the reviewed fixed Git commit.
@@ -959,6 +961,75 @@ _PROFILES = (
             ),
         ),
     ),
+    _SourceProfile(
+        path='Lib/abc.py', before_size=6538,
+        before_sha256='e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287',
+        after_size=6468,
+        after_sha256='a6684b1a49cfbc9c64caeeac7e55ef8f35052b8e8ca93a091941817cdc510b1c',
+        snippets=(
+            _Snippet(
+                label='ABCMeta Python fallback',
+                old=(
+                    b'except ImportError:\n'
+                    b'    from _py_abc import ABCMeta, get_cache_token\n'
+                    b"    ABCMeta.__module__ = 'abc'\n"
+                ),
+                new=(
+                    b'except ImportError:\n'
+                b'    raise\n'
+                ),
+            ),
+        ),
+    ),
+    _SourceProfile(
+        path='Lib/encodings/__init__.py', before_size=5884,
+        before_sha256='78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8',
+        after_size=1101,
+        after_sha256='47a11d930321492bca552eed29dad061ed6739bf84c919485453315d911b1c60',
+        snippets=(),
+        replacement=(
+            b'"""Bounded codec registry for the static CPython source fixture."""\n'
+            b'import codecs\n'
+            b'\n'
+            b'_cache = {}\n'
+            b'_unknown = object()\n'
+            b'from . import aliases as _aliases\n'
+            b'from . import utf_8 as _utf_8\n'
+            b'\n'
+            b'class CodecRegistryError(LookupError, SystemError):\n'
+            b'    pass\n'
+            b'\n'
+            b'def normalize_encoding(encoding):\n'
+            b'    if isinstance(encoding, bytes):\n'
+            b'        encoding = str(encoding, "ascii")\n'
+            b'    chars = []\n'
+            b'    punct = False\n'
+            b'    for char in encoding:\n'
+            b"        if char.isalnum() or char == '.':\n"
+            b'            if punct and chars:\n'
+            b"                chars.append('_')\n"
+            b'            if char.isascii():\n'
+            b'                chars.append(char.lower())\n'
+            b'            punct = False\n'
+            b'        else:\n'
+            b'            punct = True\n'
+            b"    return ''.join(chars)\n"
+            b'\n'
+            b'def search_function(encoding):\n'
+            b'    entry = _cache.get(encoding, _unknown)\n'
+            b'    if entry is not _unknown:\n'
+            b'        return entry\n'
+            b'    normalized = normalize_encoding(encoding)\n'
+            b"    if normalized != 'utf_8' and _aliases.aliases.get(normalized) != 'utf_8':\n"
+            b'        _cache[encoding] = None\n'
+            b'        return None\n'
+            b'    entry = _utf_8.getregentry()\n'
+            b'    _cache[encoding] = entry\n'
+            b'    return entry\n'
+            b'\n'
+            b'codecs.register(search_function)\n'
+        ),
+    ),
 )
 SOURCE_PATHS = tuple(profile.path for profile in _PROFILES)
 
@@ -980,6 +1051,15 @@ def source_patch_manifest() -> dict[str, object]:
             "after_size": len(snippet.new),
             "required_occurrences": 1,
         } for snippet in profile.snippets]
+        if profile.replacement is not None:
+            operations.append({
+                "label": "whole-file fixed replacement",
+                "before_sha256": profile.before_sha256,
+                "before_size": profile.before_size,
+                "after_sha256": hashlib.sha256(profile.replacement).hexdigest(),
+                "after_size": len(profile.replacement),
+                "required_occurrences": 1,
+            })
         files.append({
             "path": profile.path, "before_sha256": profile.before_sha256,
             "before_size": profile.before_size, "after_sha256": profile.after_sha256,
@@ -991,8 +1071,10 @@ def source_patch_manifest() -> dict[str, object]:
         "provenance": "reviewed-git-source-files",
         "source_archive_verification": "not-performed",
         "source_signature_verification": "not-performed",
-        "policy": "finite-exact-preimage-and-snippet-replacement",
+        "policy": "finite-exact-preimage-and-fixed-replacement",
         "zipimport_policy": "omit-external-init-call-retain-stock-helper",
+        "abc_fallback_policy": "refuse-_py_abc-import-fallback",
+        "codec_lookup_policy": "six-retained-utf8-aliases-plus-canonical-utf8-direct-binding",
         "patch_set_sha256": hashlib.sha256(_canonical(files)).hexdigest(),
         "files": files,
         "source_execution_performed": False, "build_performed": False,
@@ -1005,7 +1087,7 @@ def source_patch_manifest() -> dict[str, object]:
 def prepare_static_python_sources(
     inputs: dict[str, bytes],
 ) -> tuple[dict[str, bytes], dict[str, object]]:
-    """Transform all three fixed source files only after every preflight gate.
+    """Transform all fixed source files only after every preflight gate.
 
     Caller inputs cannot choose a path, patch, callback or executable operation.
     Results are detached byte projections; no installation tree is mutated.
@@ -1035,11 +1117,16 @@ def prepare_static_python_sources(
         for snippet in profile.snippets:
             if not snippet.old or original.count(snippet.old) != 1:
                 _fail("snippet_drift")
+        if profile.replacement is not None and type(profile.replacement) is not bytes:
+            _fail("patch_asset_invalid")
     outputs = {}
     for profile in _PROFILES:
         value = inputs[profile.path]
-        for snippet in profile.snippets:
-            value = value.replace(snippet.old, snippet.new, 1)
+        if profile.replacement is not None:
+            value = profile.replacement
+        else:
+            for snippet in profile.snippets:
+                value = value.replace(snippet.old, snippet.new, 1)
         if (len(value) != profile.after_size
                 or hashlib.sha256(value).hexdigest() != profile.after_sha256):
             _fail("postimage_drift")

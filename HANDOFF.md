@@ -1,75 +1,30 @@
-# 当前交接（2026-10-21，Feature 189 startup closure DTO 开发）
+# 当前交接（2026-10-21，Feature 189 source/profile 收尾）
 
 ## 最新状态（2026-10-21）
 
-- PR #183 已合入 `main`，合并提交为 `fe8e61d474910911382677c61d0667ac75b26899`。合并后
-  workflow `39562969514`（仍基于该 main commit）尚未结束；检查时 33 个 jobs 中 31 个完成、28 个失败、
-  2 个运行。当前失败根因日志在该 run 结束前不可用；已确定早期 current/focused jobs 有 helper import
-  collection 问题，不能把这次 run 记为通过。
-  根因是 CI runner 的 `PYTHONPATH` 只有
-  `src`，而 `tests/__init__.py` 使 helper imports 需显式加入 `tests/`。本地分支已将 pytest `pythonpath`
-  设为 `src, tests`，并在 CI 相同的 `PYTHONPATH=src`/禁插件环境下完整收集 **19,928 个测试**；此修复仍需由本分支 PR CI 验证。
-- 当前分支 `codex/static-python-startup-closure` 的 HEAD 为 `46c7539`，PR #184 正在开放。
-  Actions run `39571947187` 的 `test (3.12, focused)` 失败不是测试失败：artifact XML 显示该组 **117 项全部通过**，
-  但 workflow 仍把预期数写成 116。已将门槛改为 117；该旧 run 尚不能作为通过证据，修复推送后要等新 CI。
-- 最近的功能代码提交是 `752b7bf`。本轮推送的三个提交是
-  `96e3f8d`（输入/结果 provider-free replay 回归）、`cd0e4e6`（lifecycle 诊断状态一致性）和
-  `752b7bf`（项目入口描述符与 retained lifecycle evidence 组合）；README 与交接文档已一并更新。
-  最新主线提交的完整 GitHub Actions 矩阵仍待通过后才算发布验收。
-- 最新提交上的 native-e2e 为 **226/226 passed**；8 个 P1 composition/acceptance 文件的
-  focused 回归、Ruff、`compileall`、`git diff --check` 均通过。macOS 临时目录清理仍会产生已有的
-  pytest permission warnings，不影响测试退出结果。README 已按用户/贡献者上手路径重写；安装、CLI
-  示例、RSI fixture 流程和 15 个本地链接均已检查并推送。
-- 另用已复制的 train-delay fixture 重新跑了 Lunar `effect-trial`：**3/3 ready**，每次
-  `validity=1.0`、分数 `0.6827`、目标值 `109620`。这是 fixture subject + 本地 evaluator 的 CLI/编排回归，
-  `model_evidence=not_provider_observed` 且正式结论资格为 `ineligible`，不能算 Lunar 求解器或模型端到端；
-  报告 SHA-256 为 `abe41a1198f3b12506f6b4dd03c0bbf13eed50d61d5248fafc8a4cd6aac2e4f1`，位于
-  `.lunar-evolution/validation/effect-trial-rerun-20261021/`。
-- 这三个提交都不启动项目，也不代表真实运行时读取过权威输入。项目入口组合 API 仍固定
-  `blocked/runtime_acceptance_required`。生产版 P1 仍缺实际 CPython/toolchain/static ELF
-  构建审计、sealed startup 与 stdlib/import closure、owner/lifecycle 实测、真实权威
-  input/result 绑定、OpenEvolve/Shinka 项目启动/取消/清理/恢复接线，以及 Linux 中断矩阵。
-- 5090gpu 已独立核验 CPython 3.13.12 源包 SHA-256 和 python.org detached signature，
-  并核对 Zig 0.16.0 与 musl 输入哈希；审计细节在
-  [`release-input-audit-20261021.md`](specs/189-static-python-fixture/release-input-audit-20261021.md)。
-  这只关闭源档案/签名与部分工具链输入核对。完整配置与静态链接闭包、sealed startup、
-  stdlib/import loader closure、owner/lifecycle 和生产准入仍未通过。
-- 新增只读 partial source audit：[authenticated-source-import-audit-20261021.md](specs/189-static-python-fixture/authenticated-source-import-audit-20261021.md)。
-  它从 pinned release tar 读取 8 个 frozen Python 文件，确认 `encodings` 的 codec 名动态导入和 `abc` 的
-  `_py_abc` fallback 仍需明确 disposition；同时确认远端 patched staging 有 3 个 release 文件差异和 24 个额外 `.pyc`。
-  这是有限 AST 观察，不是全量 CPython/C 启动审计或 closure 证明。
-- 新的 G2 loader probe 发现现有 `build-fullfreeze/python` 没有 file/zip loader，
-  `traceback`/`collections` 因缺少 `operator` 失败；有限诊断镜像仍在 `linecache` 前失败。
-  原生成 `Python/frozen.c` 与 release archive 内容不同，当前 Makefile freezer 依赖 ambient
-  host Python，因此没有安全地产生 `operator.h` 或重链。详见
-  [`loader-closure-probe-20261021.md`](specs/189-static-python-fixture/loader-closure-probe-20261021.md)。
-  下一步先固定有限传递依赖 inventory 与 same-source freezer provenance；不能把 stock CLI
-  成功说成 sealed runtime。
-- 本地继续完成 Feature189 的纯 provider-free `validate_source_staging_consistency`：83 个
-  provenance tests 通过，另有 source-tree observation/staging/patch/projection 相关回归通过；
-  全仓 Ruff、`compileall` 和 `git diff --check` 通过。该校验只对比独立 pin 约束下的 detached
-  source-tree/staging DTO、完整文件清单和固定 patch pre/postimage，不读取 staging 路径，也不证明
-  candidate build 实际使用了它。新增 `tests/__init__.py` 修复本地已安装同名 `tests` 包造成的
-  focused pytest 导入冲突。该切片及 staging-size 修复已由 PR #183 合入 main。
-- 随后在 5090gpu 对 pinned CPython 3.13.12 归档重放已有 manifest/source-tree pins，并完成
-  一次 create-only 全量 staging：4,837 个文件、108,687,660 字节、5,245 个 staging entries，
-  固定 patch pre/postimage 一致，校验通过。该次 staging pin 由同一 probe 当场产生，签名状态在
-  DTO 中仍是 `not-performed`，因此只是 real-input implementation regression，不是独立的
-  candidate-build-source provenance。结果和边界见
-  [`source-staging-consistency-probe-20261021.md`](specs/189-static-python-fixture/source-staging-consistency-probe-20261021.md)。
-  暂存树留在远端 `/tmp`，未运行 configure/make/freezer 或 CPython。
-- 新增 `startup-closure-contract.md` 与纯 DTO `parse_static_python_startup_closure`，用外部
-  installation/source/patch/inventory pins 校验固定 startup roots、frozen/builtin/alias routes、
-  edge endpoints/order/reachability，并拒绝 profile 外的 `operator`、unresolved/dynamic routes 和 true
-  claims。针对错误 alias 来源新增拒绝回归后为 60 项 synthetic tests。另新增 source-byte-pinned Python AST
-  import observer；review 发现并修正 namespace-parent 相对导入过度拒绝、keyword literal 参数误分类、
-  `importlib.util` 子模块别名及未绑定 `import_module` 函数误认等情况，当前 synthetic suite 为 35 项。既有
-  `source-import-review-20261021.md` 仅覆盖 5090gpu 临时、已打补丁源码树，缺 `_lunar_static_main.py` 且发现运行时 codec 动态 import，明确不接受为闭包证据。
-  两个 parser 都不证明真实 CPython import graph 完整。当前完整本地测试收集为 19,934 项；focused tests、全仓 Ruff、
-  `compileall`、diff checks 通过。真实 source-edge audit、same-source freezer、configured build/static ELF、
-  sealed startup 与 owner/lifecycle 仍未完成。本轮 scanner/CI-count 修复尚未提交/推送。
-- P2 的 remote evaluator、外部 worker 认证、多机 ownership 和分布式 service/scheduler 仍后置。
-  不运行远程 evaluator、公司平台或真实 solver campaign。
+- 主线基线是 PR #183 合并提交 `fe8e61d474910911382677c61d0667ac75b26899`。本地分支
+  `codex/static-python-startup-closure` 的 HEAD 为 `55f76bd`，比 PR #184 远端分支多一个已提交的
+  scheduler-fixture 修复；工作树另有本轮 Feature 189/193 未提交改动，不能把这些本地测试当作 GitHub CI 证据。
+- PR #184 仍开放。Actions run `39575463440` 检查的是旧远端 SHA `02b8544`，仍未结束；Python 3.12/3.13
+  focused job 均因 `NativeRSISchedulerProvider` fixture 缺少 `_brs_native_binding` 属性而有 7/14 项失败。
+  `55f76bd` 已修正该 fixture，当前本地 scheduler 回归 24 项通过。等待旧 run 收尾后再推送完整修复批次，
+  随后必须看新 SHA 的 PR CI；旧 run 不能算通过或归因到后续提交。
+- 本轮 Feature 189 增加了 `Lib/abc.py` 与 `Lib/encodings/__init__.py` 的固定源码补丁，补齐五源投影、
+  暂存和 provenance 清单，并扩展 source-preparation CI 门禁。`abc` 在 `_abc` 失败时重新抛出原始异常，
+  不导入 `_py_abc`；`encodings` 只将 UTF-8 及六个固定别名绑定至 `encodings.utf_8`，其他编码经
+  `codecs.lookup` 正常拒绝。源码来源、postimage 和 patch-set pin 已同步进入 reviewed build inputs 与 RSI pin 链。
+- Feature 189/193 离线定向验证：source preparation **108 项全过**；source projection/staging/provenance/
+  tree observation/import audits **310 项全过**；build-input 与 RSI profile/contract/mock-driver/backend
+  **449 项全过**；独立 pin-chain 复核又运行 511 项 source/build/RSI 定向测试，全部通过且无 pin 漂移。
+  这些套件有重叠，不作总数相加。全仓 Ruff、`compileall` 和 `git diff --check` 均通过。macOS pytest
+  临时目录在清理不可写 fixture 时仍会输出既有权限警告，但相关退出码及 JUnit 均通过。
+- 这轮的五源投影/暂存和 import observer 仍是 provider-free 的静态验证；source archive 的签名和远端
+  create-only staging 观察在之前已记录，但此轮没有 configure/make/freezer、CPython 构建或运行、ELF 检查、
+  evaluator 或 solver campaign。`production_admission=false`、`online_publication=false` 保持不变。
+- 生产版 P1 尚未完成：完整 CPython/C/Python startup/import closure、same-source freezer 和固定编译工具链、
+  configured static build/ELF、sealed runtime、authoritative input/result 绑定、目标 owner/lifecycle 实测、
+  OpenEvolve/Shinka 真实项目生命周期和 Linux 中断矩阵仍是开放门禁。P2 的 remote evaluator、外部 worker 认证、
+  多机 ownership 与分布式 scheduler/service 继续后置；不运行 WebAgent、公司评测平台或远程 evaluator。
 
 以下为当天较早的批次记录；其中“领先 origin 7 个提交、待推送”已经由上面的 `752b7bf`
 推送完成，不能作为当前 Git 状态。

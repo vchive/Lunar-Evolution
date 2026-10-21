@@ -47,6 +47,61 @@ AST parsing was performed on bytes read directly from the authenticated tar memb
 
 These observations identify source-level roots and candidate edges only. They do not prove branch reachability, C-startup behavior, import origin, generated frozen-module identity, or closure of runtime-selected imports.
 
+## Lunar observer replay over authenticated archive members
+
+The eight exact `.py` member byte strings above were passed to the bounded Lunar
+`audit_static_python_imports` observer after reading them directly from the
+verified archive. The archive remained at 22,926,488 bytes with SHA-256
+`2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593`. The
+observer input totaled 200,001 bytes; the largest source was
+`_frozen_importlib_external` at 73,219 bytes. No archive member was written to a
+filesystem path or executed.
+
+For this call only, each member's SHA-256 was calculated from the member bytes
+and supplied as the scanner's expected digest. Those call-time values verify
+that the scanner consumed the same byte strings; they are not independent
+per-file release pins. The canonical scanner result is 3,471 bytes with
+SHA-256 `9e3a0ad1fb808f703f20ed993247e732130f0ccff9b03328196153766bdd9d8f`.
+It records 28 deduplicated import edges, zero unresolved imports, and four
+unsupported sites:
+
+| Source | Line | Column | Observation |
+| --- | ---: | ---: | --- |
+| `_frozen_importlib` | 1176 | 8 | `dynamic-code-execution` (`exec`) |
+| `_frozen_importlib_external` | 1431 | 15 | `dynamic-code-execution` (`compile`) |
+| `codecs` | 16 | 4 | `star-import` |
+| `encodings` | 99 | 18 | `dynamic-import` (computed codec module name) |
+
+The two `exec`/`compile` observations are dynamic code execution sites, not
+computed module imports. Every scanner claim remains false, including complete
+source graph, configured closure, build, startup, installation acceptance and
+production admission. This replay demonstrates that the observer processes
+these exact archive bytes within its current bounds; it does not authenticate
+the call-time per-file pins, expand the configured source scope, or establish
+runtime import closure. The source-preparation contract now records explicit
+dispositions for the two observed source issues: `_abc` is required and the
+same `ImportError` is re-raised without `_py_abc` fallback; codec selection is
+fixed to UTF-8 and six retained aliases, with other names returning the normal
+lookup miss. Tests exercise these source transformations, including registering
+the synthetic lookup callback with the host `codecs.lookup` API. This does not
+prove the patched frozen modules are built or registered during target startup.
+
+## Expanded Lunar frozen-main source check
+
+The provider-free integration test
+`tests/test_static_python_source_import_profile.py` emits the fixed build plan,
+reads the exact expanded `_lunar_static_main` source referenced by its reviewed
+freeze task, and checks the emitted bytes against that task's 6,794-byte
+`6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d` pin before
+passing those same bytes to the AST observer. It observes `_imp`,
+`_lunar_fixture_pipe` and `sys`, with no unresolved imports. The loader-negative
+case's computed `__import__(name)` remains one unsupported site at line 68,
+column 47. The test confirms all observer capability claims remain false.
+
+The freeze-task pin and emitted-source comparison check the reviewed local plan
+and emitter together; they do not independently authenticate the task pin,
+generate frozen bytecode, or establish runtime reachability or loader refusal.
+
 ## Lunar-owned frozen main template
 
 The Lunar source is separate from the CPython archive. The repository template tools/static_python_fixture/assets/frozen_main.py was observed as 6,223 bytes, SHA-256 627bc8e6520c58859f5d5c33d06423a7588c6f6465f5b453605f6de7ab6a64a1. Its AST import roots are _imp, sys, and _lunar_fixture_pipe. It contains a computed __import__(name) call at line 68 in the loader-negative case; that case iterates a fixed literal tuple of refusal-probe names. This is a bounded probe in the template, but the final runtime behavior still depends on the selected case and emitted source.

@@ -1,7 +1,7 @@
 # Snapshot-bound fixed source preparation
 
 This Feature189 G1/G2 slice connects the existing archive-byte observer to the
-existing three-file source transformation. It performs only bounded in-memory
+existing five-file source transformation. It performs only bounded in-memory
 projection and preparation. It does not reopen the archive, extract an
 installation tree, write source files, run source code, generate bytecode,
 configure, compile, link, start a runtime, or publish an installation.
@@ -20,6 +20,8 @@ The projection accepts only the CPython profile and these installation-owned
 relative paths:
 
 - `Lib/encodings/aliases.py`
+- `Lib/encodings/__init__.py`
+- `Lib/abc.py`
 - `Lib/importlib/_bootstrap_external.py`
 - `Python/import.c`
 
@@ -34,7 +36,7 @@ not returned or represented as prepared source files.
 `prepare_archive_sources(snapshot, *, expected_manifest_sha256: str,
 require_profile: bool = True, deadline: float, monotonic = time.monotonic)`
 returns a frozen, detached result containing the original and prepared bytes
-for exactly the three fixed paths and canonical projection metadata.
+for exactly the five fixed paths and canonical projection metadata.
 The result is `StaticPythonArchiveSourcePreparation`; its `sources` is an
 immutable tuple of `StaticPythonPreparedArchiveSource` records carrying the
 relative path, archive path, and original/prepared bytes with their size/SHA
@@ -67,13 +69,13 @@ failed profile check to inert processing.
 1. Revalidate snapshot scalars, immutable compressed bytes, size and digest using
    the existing archive boundary. Consume those bytes only, never a pathname.
 2. Decode and inspect the complete archive under the existing bounded XZ/archive
-   grammar. Retain exact regular-file slices for the three fixed paths while
+   grammar. Retain exact regular-file slices for the five fixed paths while
    preserving all duplicate, ancestor, root, extension and end-marker refusals.
 3. Require the complete canonical manifest digest to equal the external pin.
    Each selected path must exist once as a regular file. Its actual slice size
    and SHA must equal the observer's member size and SHA.
 4. Check every selected actual preimage against the installation-owned size,
-   SHA and path policy in `source_patches.py`. Complete all three preimage and
+   SHA and path policy in `source_patches.py`. Complete all five preimage and
    aggregate checks before calling the existing source transformation.
 5. Call `prepare_static_python_sources` with a fresh exact mapping constructed
    by the projector. Preserve its exact preimage, unique-snippet and postimage
@@ -93,7 +95,7 @@ remain separate gates.
 Retain the existing compressed, XZ-memory, decompressed-stream, member-count,
 member-size and total-file budgets. The selected input vector additionally
 uses `source_patches.MAX_SOURCE_BYTES` (256 KiB per source) and
-`MAX_TOTAL_SOURCE_BYTES` (512 KiB for the three sources). Validate selected
+`MAX_TOTAL_SOURCE_BYTES` (512 KiB for the five sources). Validate selected
 sizes before retaining their bytes, and retain bounded original/prepared vectors
 only; do not return all decompressed member payloads.
 
@@ -112,11 +114,11 @@ because parsing or preparation started before it.
 The result owns immutable original/prepared bytes and their path, size and SHA
 projections. Its canonical metadata binds the snapshot/archive digest, actual
 complete inventory digest, fixed source-preparation policy/patch-set digest,
-source version/commit, and all three preimage/postimage records. Record the
+source version/commit, and all five preimage/postimage records. Record the
 actual profile/metadata verification status and signature status separately.
 The canonical record and its digest are detached from returned mutable views.
 
-Successful source-byte/preimage checks are real facts about these three bytes
+Successful source-byte/preimage checks are real facts about these five bytes
 vectors. They are not complete source-tree verification or filesystem patch
 application. The existing preparation manifest retains its reviewed-Git
 provenance and unperformed release/archive/signature status; a separate local
@@ -129,7 +131,7 @@ solver or build-driver execution route is introduced.
 
 ## Local acceptance and later gates
 
-Use a synthetic USTAR/XZ fixture containing the repository's three licensed
+Use a synthetic USTAR/XZ fixture containing the repository's five licensed
 `tests/fixtures/static_python_source` byte fixtures. Generate and retain its
 expected canonical inventory pin independently in the test harness. This is
 not a downloaded CPython distribution or a release signature test.

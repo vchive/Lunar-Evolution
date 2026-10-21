@@ -33,6 +33,13 @@ def sources():
             for path in preparation.SOURCE_PATHS}
 
 
+def test_fixed_source_policy_has_five_unique_paths():
+    assert len(preparation.SOURCE_PATHS) == 5
+    assert len(set(preparation.SOURCE_PATHS)) == 5
+    assert "Lib/abc.py" in preparation.SOURCE_PATHS
+    assert "Lib/encodings/__init__.py" in preparation.SOURCE_PATHS
+
+
 def _dir(path):
     member = tarfile.TarInfo(path)
     member.type = tarfile.DIRTYPE
@@ -124,7 +131,7 @@ def test_actual_preimage_to_postimage_chain_is_frozen_and_detached(sources):
     detached = result.to_manifest()
     detached["sources"].clear()
     sources.clear()
-    assert len(result.sources) == len(result.to_manifest()["sources"]) == 3
+    assert len(result.sources) == len(result.to_manifest()["sources"]) == 5
     with pytest.raises(dataclasses.FrozenInstanceError):
         result.sources = ()
     with pytest.raises(dataclasses.FrozenInstanceError):
@@ -147,7 +154,7 @@ def test_one_snapshot_one_decoder_and_no_reopen_or_effects(sources, monkeypatch)
                         (tarfile.TarFile, "extractall"), (subprocess, "Popen"),
                         (subprocess, "run"), (socket, "socket"), (urllib.request, "urlopen")):
         monkeypatch.setattr(owner, name, _forbid)
-    assert len(_prepare(bundle).sources) == 3
+    assert len(_prepare(bundle).sources) == 5
     assert calls == [bundle[0]]
 
 
@@ -192,7 +199,7 @@ def test_selected_sources_must_be_exact_fixed_members(sources, monkeypatch, muta
 
 
 @pytest.mark.parametrize("extra_kind", ["link", "traversal", "duplicate-other"])
-def test_full_archive_is_validated_after_all_three_sources(sources, monkeypatch, extra_kind):
+def test_full_archive_is_validated_after_all_five_sources(sources, monkeypatch, extra_kind):
     entries = _entries(sources)
     if extra_kind == "link":
         member = tarfile.TarInfo(ROOT + "/late-link")
