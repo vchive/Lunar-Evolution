@@ -1354,6 +1354,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_json(rsi_producer_acceptance_parser)
 
+    rsi_producer_lifecycle_parser = rsi_commands.add_parser(
+        "producer-lifecycle-diagnostics",
+        help="project retained producer lifecycle evidence into a read-only diagnostic",
+    )
+    rsi_producer_lifecycle_parser.add_argument(
+        "observations", type=Path,
+        help="canonical JSON mapping lifecycle phases to retained observations",
+    )
+    _add_home(rsi_producer_lifecycle_parser)
+    _add_json(rsi_producer_lifecycle_parser)
+
     rsi_static_python_acceptance_parser = rsi_commands.add_parser(
         "static-python-acceptance",
         help="compose five detached static-Python DTOs into a provider-free blocked summary",
@@ -6276,6 +6287,26 @@ def _producer_acceptance_envelope(args: argparse.Namespace) -> tuple[dict[str, o
     return envelope.to_dict(), 1
 
 
+def _producer_lifecycle_diagnostics(args: argparse.Namespace) -> tuple[dict[str, object], int]:
+    """Build a detached owner/lifecycle diagnostic without opening controller state."""
+    from .producer_lifecycle_diagnostics import (
+        MAX_PRODUCER_LIFECYCLE_DIAGNOSTIC_BYTES,
+        ProducerLifecycleDiagnosticError,
+        build_producer_lifecycle_diagnostic,
+    )
+
+    observations = _read_detached_json_object(
+        args.observations,
+        error="producer_lifecycle_diagnostic_input_invalid",
+        maximum=MAX_PRODUCER_LIFECYCLE_DIAGNOSTIC_BYTES,
+    )
+    try:
+        report = build_producer_lifecycle_diagnostic(observations)
+    except ProducerLifecycleDiagnosticError as exc:
+        raise ValueError(exc.code) from None
+    return report, 0 if report["status"] == "offline_verified" else 1
+
+
 def _read_canonical_detached_json(path: Path, *, maximum: int, error: str) -> tuple[bytes, dict[str, object]]:
     """Read one bounded canonical JSON object without touching controller state."""
     try:
@@ -7120,6 +7151,12 @@ def main(argv: list[str] | None = None, *, _automatic_owner=None,
             # Acceptance-envelope composition is still detached evidence.  It must remain
             # before _config()/RSILedger creation and always returns blocked authority flags.
             payload, exit_code = _producer_acceptance_envelope(args)
+            _emit(payload, args.json)
+            return exit_code
+        if args.command == "rsi" and args.rsi_command == "producer-lifecycle-diagnostics":
+            # Lifecycle diagnostics are a detached projection only.  Keep them before
+            # _config()/RSILedger creation so malformed observations cannot initialize state.
+            payload, exit_code = _producer_lifecycle_diagnostics(args)
             _emit(payload, args.json)
             return exit_code
         if args.command == "rsi" and args.rsi_command == "static-python-acceptance":
