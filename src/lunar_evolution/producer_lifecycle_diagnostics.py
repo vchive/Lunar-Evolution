@@ -39,6 +39,15 @@ _REPORT_FIELDS = frozenset({
     "status", "evidence_scope", "execution_performed", "production_admission",
     "online_publication", "diagnostic_sha256",
 })
+_PHASE_REASONS = frozenset({
+    "owner_and_terminal_bound", "owner_or_terminal_missing",
+    "cancelled_with_verified_cleanup", "cancel_or_cleanup_evidence_missing",
+    "deadline_with_verified_cleanup", "deadline_cleanup_uncertainty_preserved",
+    "deadline_or_terminal_evidence_missing", "parent_loss_requires_read_only_reconcile",
+    "parent_loss_recovery_evidence_missing", "owner_checked_cleanup",
+    "owner_or_cleanup_evidence_missing", "restart_is_read_only_without_relaunch",
+    "restart_recovery_boundary_missing", "evidence_missing",
+})
 
 
 class ProducerLifecycleDiagnosticError(ValueError):
@@ -197,15 +206,34 @@ def parse_producer_lifecycle_diagnostic(value: object) -> dict[str, object]:
         _fail("report_phase_invalid")
     for name, item in value["phase_observations"].items():
         _phase(item)
-        if value["phase_status"][name]["status"] not in {"verified", "blocked"}:
+        status = value["phase_status"][name]
+        if type(status) is not dict or set(status) != {"status", "reason"}:
             _fail("report_phase_invalid")
-    if type(value["missing_phases"]) is not list or any(
-        phase not in LIFECYCLE_PHASES for phase in value["missing_phases"]
-    ):
+        if status["status"] not in {"verified", "blocked"} or status["reason"] not in _PHASE_REASONS:
+            _fail("report_phase_invalid")
+    for name in set(LIFECYCLE_PHASES).difference(value["phase_observations"]):
+        status = value["phase_status"][name]
+        if type(status) is not dict or set(status) != {"status", "reason"}:
+            _fail("report_phase_invalid")
+        if status != {"status": "blocked", "reason": "evidence_missing"}:
+            _fail("report_phase_invalid")
+    missing = value["missing_phases"]
+    if (type(missing) is not list or len(missing) != len(set(missing))
+            or any(phase not in LIFECYCLE_PHASES for phase in missing)
+            or set(missing) != set(LIFECYCLE_PHASES).difference(value["phase_observations"])):
         _fail("report_phase_invalid")
     if value["status"] not in {"offline_verified", "blocked"}:
         _fail("report_status_invalid")
+    expected_status = "offline_verified" if not missing and all(
+        value["phase_status"][phase]["status"] == "verified" for phase in LIFECYCLE_PHASES
+    ) else "blocked"
+    if value["status"] != expected_status:
+        _fail("report_status_invalid")
     if type(value["execution_performed"]) is not bool:
+        _fail("report_execution_invalid")
+    if value["execution_performed"] != any(
+        item["execution_performed"] for item in value["phase_observations"].values()
+    ):
         _fail("report_execution_invalid")
     if value["production_admission"] is not False or value["online_publication"] is not False:
         _fail("report_authority_invalid")

@@ -8,6 +8,7 @@ import pytest
 from lunar_evolution.producer_lifecycle_diagnostics import (
     LIFECYCLE_PHASES,
     ProducerLifecycleDiagnosticError,
+    _digest_without,
     build_producer_lifecycle_diagnostic,
     parse_producer_lifecycle_diagnostic,
 )
@@ -97,6 +98,15 @@ def test_parser_rejects_digest_drift_and_extra_phase() -> None:
 
     with pytest.raises(ProducerLifecycleDiagnosticError, match="phase_unknown"):
         build_producer_lifecycle_diagnostic({**_complete(), "worker": _phase()})
+
+
+def test_parser_rejects_nested_phase_status_schema_drift() -> None:
+    report = build_producer_lifecycle_diagnostic(_complete())
+    tampered = deepcopy(report)
+    tampered["phase_status"]["startup"] = {"status": "verified", "reason": "caller_text"}
+    tampered["diagnostic_sha256"] = _digest_without(tampered, "diagnostic_sha256")
+    with pytest.raises(ProducerLifecycleDiagnosticError, match="report_phase_invalid"):
+        parse_producer_lifecycle_diagnostic(tampered)
 
 
 def test_execution_flag_is_observational_and_does_not_open_authority() -> None:
