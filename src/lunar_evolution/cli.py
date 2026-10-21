@@ -6295,12 +6295,12 @@ def _producer_lifecycle_diagnostics(args: argparse.Namespace) -> tuple[dict[str,
         build_producer_lifecycle_diagnostic,
     )
 
-    observations = _read_detached_json_object(
-        args.observations,
-        error="producer_lifecycle_diagnostic_input_invalid",
-        maximum=MAX_PRODUCER_LIFECYCLE_DIAGNOSTIC_BYTES,
-    )
     try:
+        _raw, observations = _read_canonical_detached_json(
+            args.observations,
+            error="producer_lifecycle_diagnostic_input_invalid",
+            maximum=MAX_PRODUCER_LIFECYCLE_DIAGNOSTIC_BYTES,
+        )
         report = build_producer_lifecycle_diagnostic(observations)
     except ProducerLifecycleDiagnosticError as exc:
         raise ValueError(exc.code) from None

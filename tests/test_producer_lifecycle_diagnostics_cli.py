@@ -68,3 +68,17 @@ def test_cli_returns_blocked_for_missing_phase_and_preserves_fixed_shape(
     assert payload["execution_performed"] is False
     assert payload["production_admission"] is False
 
+
+def test_cli_rejects_noncanonical_observations_before_home_initialization(
+    tmp_path: Path, capsys,
+) -> None:
+    observations_path = tmp_path / "observations.json"
+    observations_path.write_text(json.dumps(_observations(), indent=2), encoding="utf-8")
+    home = tmp_path / "must-not-exist"
+    assert main([
+        "rsi", "producer-lifecycle-diagnostics", str(observations_path),
+        "--home", str(home), "--json",
+    ]) == 2
+    assert "invalid" in capsys.readouterr().err
+    assert not home.exists()
+

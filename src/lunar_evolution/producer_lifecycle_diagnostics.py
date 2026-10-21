@@ -84,7 +84,7 @@ def _digest(value: object) -> str:
 def _phase(value: object) -> dict[str, Any]:
     if type(value) is not dict or set(value) != _PHASE_FIELDS:
         _fail("phase_schema_invalid")
-    if value["outcome"] not in _OUTCOMES:
+    if type(value["outcome"]) is not str or value["outcome"] not in _OUTCOMES:
         _fail("phase_outcome_invalid")
     for field in (
         "owner_verified", "terminal_persisted", "cleanup_verified", "recovery_read_only",
@@ -209,7 +209,12 @@ def parse_producer_lifecycle_diagnostic(value: object) -> dict[str, object]:
         status = value["phase_status"][name]
         if type(status) is not dict or set(status) != {"status", "reason"}:
             _fail("report_phase_invalid")
-        if status["status"] not in {"verified", "blocked"} or status["reason"] not in _PHASE_REASONS:
+        expected_accepted, expected_reason = _phase_acceptance(name, item)
+        expected = {
+            "status": "verified" if expected_accepted else "blocked",
+            "reason": expected_reason,
+        }
+        if status != expected or status["reason"] not in _PHASE_REASONS:
             _fail("report_phase_invalid")
     for name in set(LIFECYCLE_PHASES).difference(value["phase_observations"]):
         status = value["phase_status"][name]

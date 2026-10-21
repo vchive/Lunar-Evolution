@@ -100,6 +100,24 @@ def test_parser_rejects_digest_drift_and_extra_phase() -> None:
         build_producer_lifecycle_diagnostic({**_complete(), "worker": _phase()})
 
 
+def test_parser_rejects_rehashed_phase_status_forgery() -> None:
+    report = build_producer_lifecycle_diagnostic(_complete())
+    forged = deepcopy(report)
+    forged["phase_status"]["cancellation"] = {
+        "status": "verified", "reason": "owner_checked_cleanup",
+    }
+    forged["diagnostic_sha256"] = _digest_without(forged, "diagnostic_sha256")
+    with pytest.raises(ProducerLifecycleDiagnosticError, match="report_phase_invalid"):
+        parse_producer_lifecycle_diagnostic(forged)
+
+
+def test_phase_parser_rejects_unhashable_outcome_as_fixed_error() -> None:
+    malformed = _complete()
+    malformed["startup"]["outcome"] = []
+    with pytest.raises(ProducerLifecycleDiagnosticError, match="phase_outcome_invalid"):
+        build_producer_lifecycle_diagnostic(malformed)
+
+
 def test_parser_rejects_nested_phase_status_schema_drift() -> None:
     report = build_producer_lifecycle_diagnostic(_complete())
     tampered = deepcopy(report)
