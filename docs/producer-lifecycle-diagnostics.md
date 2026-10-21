@@ -17,6 +17,17 @@ relaunch, open a ledger, invoke an evaluator, or publish a result. A complete re
 Missing or unsafe phase evidence is `blocked`; an `unknown` timeout or parent-loss outcome is
 accepted only when the original uncertainty is durably preserved and no retry is claimed.
 
+The same projection is available as a detached CLI command:
+
+```bash
+lunar-evolution rsi producer-lifecycle-diagnostics OBSERVATIONS.json --json
+```
+
+`OBSERVATIONS.json` is a canonical object keyed by the six phase names. The command runs before
+home/configuration and SQLite initialization. It exits `0` only for an `offline_verified` matrix;
+missing or unsafe evidence returns the report with exit `1`, while malformed input is rejected
+without creating local state.
+
 The module is intended to sit between retained Feature 156/158 process receipts and the future
 Linux runtime acceptance matrix. It makes the required interruption cases explicit without
 turning provider-free fixtures into real producer acceptance.

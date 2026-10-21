@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from lunar_evolution.cli import main
 from lunar_evolution.candidate_evaluation_spec import canonical_json
+from lunar_evolution.cli import main
 from lunar_evolution.producer_lifecycle_diagnostics import LIFECYCLE_PHASES
 
 
