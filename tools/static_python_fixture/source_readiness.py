@@ -91,7 +91,12 @@ def _sha(value: object, reason: str = "digest_invalid") -> str:
 
 
 def _text(value: object, reason: str, *, maximum: int = 4096) -> str:
-    if type(value) is not str or not value or len(value.encode("utf-8")) > maximum:
+    if type(value) is not str or not value:
+        _fail(reason)
+    try:
+        if len(value.encode("utf-8")) > maximum:
+            _fail(reason)
+    except UnicodeError:
         _fail(reason)
     if any(ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F for char in value):
         _fail(reason)
