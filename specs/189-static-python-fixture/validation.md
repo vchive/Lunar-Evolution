@@ -286,6 +286,26 @@ than an independent retained staging pin or candidate-build provenance.
 Details and the exact claim limits are in
 [`source-staging-consistency-probe-20261021.md`](source-staging-consistency-probe-20261021.md).
 
+## Bounded startup/import graph DTO
+
+`startup-closure-contract.md` freezes a separate canonical graph wire that binds
+the current installation descriptor, source/patch/initialization/frozen/builtin/
+alias pins, fixed startup roots, route records, alias mappings and directed import
+edges. The parser validates only caller-supplied DTO consistency, canonical bytes,
+reachability and independent pins. It does not extract imports, prove the graph is
+complete, inspect a configured build, or start CPython. Existing module inventories
+remain unchanged; `operator` is not admitted from a separate diagnostic image.
+
+The synthetic focused regression is `tests/test_static_python_startup_closure.py`
+(60 passed, zero failures/errors/skips). It covers fixed roots and routes, alias
+edges, graph reachability, unknown/missing inventory, external pins, strict
+canonical/type/budget failures, detached results, false-only claims and the lack
+of filesystem/process/network/environment/build/runtime effects. Ruff passed for
+the changed Python files, `compileall` passed on those files, and
+`git diff --check` passed. Independent source-edge review, actual static build,
+sealed startup and owner/lifecycle acceptance remain open; no real build or
+runtime was run for this DTO slice.
+
 The staging budget regression tests exercise a 65,000-entry canonical staging
 wire larger than 32 MiB, enforce independent staging wire/string ceilings, and
 retain the existing source-observation wire ceiling. A complete consistency
@@ -298,3 +318,25 @@ collected cases with zero failures, errors or skips. Full Ruff and
 Do not run `compileall .` across ignored `.lunar` evidence trees: those retain
 inert payload files ending in `.py` and can contain read-only directories. No
 build, runtime or evaluator was run by this regression.
+
+## Source-byte-bound Python AST import observations
+
+`python-import-audit-contract.md` defines a separate in-memory observer over an
+exact caller-supplied module-to-source-bytes map and matching external per-source
+SHA-256 pins. Synthetic tests cover absolute/from imports, package-relative
+resolution using explicit `pkg.__init__` source keys, optional submodule edges
+only when those bytes are supplied, literal imports, and fixed unresolved or
+unsupported records for relative gaps, dynamic calls, star imports and dynamic
+code execution. They also cover malformed pins/types, encoding/syntax failures,
+size/node/depth/site/output budgets, canonical detached results and refusal
+codes. No source file is read or executed.
+
+The result is an AST observation wire only. A static target may be named even
+when its source bytes were not supplied; there is no profile comparison or
+closure claim. The scanner does not establish source provenance and does not
+cover C-created imports, arbitrary import aliases, loader hooks, runtime-built
+code or every other dynamic mechanism. Therefore, an empty unsupported-site list
+does not complete the independent CPython 3.13.12 source audit in `tasks.md`.
+The synthetic gate is **30 cases**, with zero failures, errors or skips; focused
+Ruff, compileall and diff checks are run for these new files only. No build,
+startup, solver, remote evaluator or company platform was run for this slice.

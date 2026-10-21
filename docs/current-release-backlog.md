@@ -1,5 +1,12 @@
 ## 2026-10-21 最新状态（Feature189 G1 输入核验推进）
 
+- PR #183 的 staging 边界修复已合入 `main`，合并提交为 `fe8e61d`。合并后 workflow
+  `39562969514` 基于该 main commit，检查时 33 个 jobs 中 31 个完成、28 个失败、2 个运行；run
+  结束前尚无法读取全部失败日志，因此不能把失败都归因于同一类问题或把该 CI 记为通过。
+  已定位的早期 current/focused failures 是缺少 sibling helper imports，不是 staging assertion failure。
+  原因为 runner 覆盖 `PYTHONPATH` 仅保留 `src`，而仓库 `tests/__init__.py` 让 helper imports 需要
+  `tests/` 在路径中。本地分支已将 pytest `pythonpath` 固定为 `src, tests`，并在 runner 同款
+  `PYTHONPATH=src`/禁插件环境中完整收集 19,928 个测试；修复仍需后续 PR/CI 验证。
 - 最近的功能代码提交 `752b7bf` 已推送；native-e2e 226 项、8 个 P1 composition/acceptance focused
   tests、Ruff、`compileall` 与 `git diff --check` 均通过。README 已重写并推送；完整 Linux CI 矩阵仍是
   该提交的发布验收门。
@@ -14,7 +21,7 @@
 - 同机 G2 loader probe 显示 `build-fullfreeze` 没有 file/zip loader，`traceback` 与
   `collections` 因缺少 `operator` 失败；有限诊断镜像仍在 `linecache` 失败。现有
   `Python/frozen.c` 已偏离签名归档，而 freezer 依赖未 pin 的宿主 Python，所以没有生成新
-  header 或重链。下一切片应先固定有限模块传递依赖与 same-source freezer provenance，见
+  header 或重链。下一切片应先独立审计有限模块传递依赖与 same-source freezer provenance，见
   [loader closure probe](../specs/189-static-python-fixture/loader-closure-probe-20261021.md)。
 - 生产版 P1 已关闭 CPython archive SHA/signature 核验；仍阻塞于受审计的源码树/patch 集、完整
   toolchain/static-link closure 与 ELF 审计、sealed startup/import closure、实际 owner/lifecycle、
@@ -26,14 +33,23 @@
   83 个 provenance tests 及 source-tree/staging/patch/projection focused 回归、全仓 Ruff、
   `compileall` 和 `git diff --check` 已通过。它不访问 staged path，也不证明实际候选构建消费了该树；
   G1 candidate-build-source/patch evidence 仍开放。新增 `tests/__init__.py` 也修复同名已安装
-  `tests` 包对 focused pytest helper imports 的遮蔽。纯校验代码提交 `6edeec3` 已开 PR #183，
-  33 个 Actions jobs 均排队。
+  `tests` 包对 focused pytest helper imports 的遮蔽。纯校验代码 `6edeec3` 及 staging 边界修复
+  `63d901a` 已由 PR #183 合入；本地分支在该主线后继续开发。
 - 在 `5090gpu` 对 pinned CPython 3.13.12 归档重放此前保留的 manifest/source-tree pins，并完成
   create-only 全量 staging：4,837 个文件、108,687,660 字节、5,245 个 entries，固定 patch
   pre/postimage 一致。此次 staging digest 当场生成，不是独立保留的 pre-run staging pin，且签名
   状态没有绑定到 DTO；因此只算 real-input implementation regression。详细记录在
   [source staging consistency probe](../specs/189-static-python-fixture/source-staging-consistency-probe-20261021.md)。
   实际 candidate-build source evidence、build closure 和 runtime 验收仍开放。
+- 新增 Feature189 startup/import-closure DTO parser：与固定安装描述符外部 pin 绑定，校验 startup
+  roots、frozen/builtin/alias route、import-edge 排序/去重/端点/可达性，拒绝未知模块与未解析/动态
+  import 声明；60 项纯合成回归。另新增 30 项 source-byte-pinned Python AST import-observation 回归，
+  独立记录静态边、unresolved/unsupported，不读取或执行文件，也不验证 source closure。5090gpu 临时
+  patched snapshot 的部分人工 source review 记录于
+  [source import review](../specs/189-static-python-fixture/source-import-review-20261021.md)：缺少
+  `_lunar_static_main.py`，且 `encodings` 的 codec import 在运行时拼接，因此不能接受为完整闭包证据。
+  两类 DTO 都不证明 import graph 完整。19,928 个测试全量收集、相关 focused tests、全仓 Ruff、
+  `compileall`、`git diff --check` 均通过；当前代码和文档仍在本地未提交分支。
 - 保持 `production_admission=false`、`online_publication=false`。P2 remote evaluator、外部 worker
   认证、多机 ownership 与分布式 scheduler/service API 继续后置。
 

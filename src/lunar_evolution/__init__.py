@@ -1138,6 +1138,12 @@ from .static_python_build_probe import (
     StaticPythonBuildProbeError,
     parse_static_python_build_probe,
 )
+from .static_python_import_audit import (
+    IMPORT_AUDIT_SCHEMA,
+    StaticPythonImportAudit,
+    StaticPythonImportAuditError,
+    audit_static_python_imports,
+)
 from .static_python_input_result import (
     INPUT_REPORT_SCHEMA,
     INPUT_RESULT_SCHEMA,
@@ -1164,6 +1170,13 @@ from .static_python_runtime_startup import (
     diagnose_static_python_runtime_startup,
     parse_static_python_runtime_startup,
     parse_static_python_runtime_startup_diagnostic,
+)
+from .static_python_startup_closure import (
+    MAX_STARTUP_CLOSURE_BYTES,
+    STARTUP_CLOSURE_SCHEMA,
+    StaticPythonStartupClosure,
+    StaticPythonStartupClosureError,
+    parse_static_python_startup_closure,
 )
 from .trusted_bootstrap_handoff import (
     TRUSTED_BOOTSTRAP_HANDOFF_PROTOCOL,
@@ -1228,6 +1241,7 @@ __all__ = [
     "HOLDOUT_AUDIT_SCHEMA_VERSION",
     "HOLDOUT_MAX_DURATION_MS",
     "HOLDOUT_MAX_SNAPSHOT_BYTES",
+    "IMPORT_AUDIT_SCHEMA",
     "INPUT_REPORT_SCHEMA",
     "INPUT_RESULT_SCHEMA",
     "INVENTORY_PROTOCOL",
@@ -1274,6 +1288,7 @@ __all__ = [
     "MAX_RUNTIME_HANDOFF_BYTES",
     "MAX_RUNTIME_STARTUP_BYTES",
     "MAX_RUNTIME_STARTUP_DIAGNOSTIC_BYTES",
+    "MAX_STARTUP_CLOSURE_BYTES",
     "MAX_STATIC_IMAGE_BYTES",
     "NATIVE_RSI_FAILURE_PROVENANCE_NAME",
     "NATIVE_RSI_INPUT_MARKER",
@@ -1319,6 +1334,7 @@ __all__ = [
     "RUNTIME_STARTUP_DIAGNOSTIC_SCHEMA",
     "RUNTIME_STARTUP_SCHEMA",
     "SHINKA_BINDING_MISMATCH",
+    "STARTUP_CLOSURE_SCHEMA",
     "STATIC_PYTHON_ACCEPTANCE_SCHEMA",
     "SUPPORTED_FIXTURE_SOLVERS",
     "SUPPORTED_PYTHON_PRODUCERS",
@@ -1731,6 +1747,8 @@ __all__ = [
     "StaticPythonBuildClosureError",
     "StaticPythonBuildProbe",
     "StaticPythonBuildProbeError",
+    "StaticPythonImportAudit",
+    "StaticPythonImportAuditError",
     "StaticPythonInputResult",
     "StaticPythonInputResultError",
     "StaticPythonProviderFreeAcceptance",
@@ -1739,6 +1757,8 @@ __all__ = [
     "StaticPythonRuntimeStartup",
     "StaticPythonRuntimeStartupDiagnostic",
     "StaticPythonRuntimeStartupError",
+    "StaticPythonStartupClosure",
+    "StaticPythonStartupClosureError",
     "StoredActorCleanRoomEvidence",
     "StrategyResult",
     "TargetJudge",
@@ -1807,6 +1827,7 @@ __all__ = [
     "audit_candidate_execution_cleanup",
     "audit_holdout_receipts",
     "audit_native_campaign",
+    "audit_static_python_imports",
     "benchmark_case_content_digest",
     "bind_acceptance_runtime",
     "bind_benchmark_comparison_result_evidence",
@@ -1962,6 +1983,7 @@ __all__ = [
     "parse_static_python_runtime_handoff",
     "parse_static_python_runtime_startup",
     "parse_static_python_runtime_startup_diagnostic",
+    "parse_static_python_startup_closure",
     "parse_trusted_bootstrap_evidence",
     "parse_trusted_bootstrap_process_registration_handoff",
     "parse_trusted_bootstrap_registration",

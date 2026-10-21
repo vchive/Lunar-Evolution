@@ -90,6 +90,22 @@ failure and cancelled preflight separately from later successful evidence.
   actual target-owner integration remains a G3 gate.
 - [x] Implement bounded pure descriptor/parser/external-pin validation with focused
   invalid shapes/collections/digest/count/unknown-field tests; no build/FS effects.
+- [x] Freeze `startup-closure-contract.md` and implement its separate bounded
+  canonical import-graph DTO parser. Compare supplied startup roots, module routes,
+  aliases and reachable edges with the unchanged installation descriptor and nine
+  independent SHA-256 pins; keep every capability claim false. The 60-case
+  in-memory synthetic suite proves DTO consistency only.
+- [x] Specify and implement the separate source-byte-bound Python AST import
+  observer in `python-import-audit-contract.md`. Require exact caller-supplied
+  module/source bytes and matching external per-source SHA-256 pins; record
+  ordinary/from/relative/literal observations plus fixed unresolved/unsupported
+  sites under finite budgets. Keep output claims false and do not compare or extend
+  the installation profile. Synthetic tests prove only observer behavior; they do
+  not establish source provenance or complete import enumeration.
+- [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
+  relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
+  refusal sites. Any dependency outside the pinned profile requires a versioned
+  profile decision; the DTO parser cannot certify this audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do
