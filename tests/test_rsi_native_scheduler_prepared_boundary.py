@@ -56,6 +56,7 @@ def _provider(value):
     )
     provider._inputs = lambda *, require_unexpired: input_descriptor
     provider._python_admission_controller = value.controller
+    provider._brs_native_binding = None
     return provider
 
 
