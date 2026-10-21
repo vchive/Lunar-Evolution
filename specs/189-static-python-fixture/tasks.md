@@ -81,6 +81,13 @@ failure and cancelled preflight separately from later successful evidence.
   implicit ancestor-directory expansion and canonical JSON escaping cannot make
   a legal staged DTO fail the pure consistency check. Keep the source-observation
   and archive-receipt 32 MiB bounds unchanged.
+- [x] Add the source-only readiness receipt in `source-readiness-receipt.md`.
+  Bind the archive receipt, complete original tree, patched staging tree, fixed
+  five-file patch/policy digests, all six RSI source assets (including expanded
+  `_lunar_static_main`) and an independently pinned Zig file inventory. Require
+  explicit `unverified` toolchain evidence and false build/runtime/admission
+  claims; this receipt does not close source acquisition, toolchain, build or
+  runtime acceptance.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
   resolve compiler/binutils/static-library sources, versions and artifact hashes,
   including zlib/libffi/freezer inputs and the configured build environment.
