@@ -67,6 +67,15 @@ record of snapshot identity, complete counts and honest observation limits.
 It neither traverses an extracted tree nor changes source-readiness/admission.
 Concrete extracted-tree custody and build tools still require separate evidence.
 
+The following [`toolchain-tree-observation.md`](toolchain-tree-observation.md)
+slice compares a concrete directory with the complete independently pinned
+manifest through held no-follow directory descriptors. It reuses the existing
+manifest wire and applicable FD helpers, checks full content/modes/inventories
+and late changes, and retains a separate small observation record. The walk is
+sequential; it closes its descriptors before returning and cannot prove immutable
+custody or future compiler consumption. Concrete wrapper/helper/build-Python and
+cache/environment bindings remain prerequisites to configure-only execution.
+
 Disable optional extension autodiscovery and supply an explicit static/disabled
 module manifest. Review generated pyconfig.h, Modules/Setup output, inittab,
 core sources, separate embedded startup arrays, object/archive link map and

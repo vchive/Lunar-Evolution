@@ -69,7 +69,12 @@ def _identity_wire(identity: ArchiveSourceIdentity | None) -> dict[str, int] | N
 
 @dataclass(frozen=True, slots=True)
 class StaticPythonToolchainObservation:
-    """Immutable archive record and its separately retained complete manifest."""
+    """Immutable archive or extracted-tree record plus its manifest-v1 bytes.
+
+    The record's schema and claims distinguish which observation ran. This
+    shared four-field container deliberately does not introduce a second
+    complete inventory DTO.
+    """
 
     canonical_json: bytes
     observation_sha256: str

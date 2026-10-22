@@ -1,5 +1,26 @@
 # Validation contract — preparation is not runtime evidence
 
+## Complete extracted toolchain tree observer
+
+The API in [`toolchain-tree-observation.md`](toolchain-tree-observation.md)
+reuses the original complete manifest wire and checks actual files, directories,
+modes, sizes and hashes through no-follow directory descriptors. Internal stat
+pins remain private to the sequential walk. It rechecks names, inventories and
+held ancestry and closes its descriptors before returning; immutable custody
+and future build-consumption claims remain false.
+
+The 58 implementation cases and 14 independent review fault cases pass. The
+related archive, manifest, staged-source and toolchain selection passes 353
+cases with zero failures/errors/skips. Independent review covers ancestor/root
+replacement, late same-length content changes with restored mtime, each partial
+acquisition boundary, primary-error retention and redacted clock failures.
+Whole-repository Ruff, src/tools/tests compileall and diff check pass. The
+204-case deterministic regression-runner suite passes as well, reporting the
+existing 27,483 macOS cleanup warnings from older read-only temporary trees.
+The dedicated CI gate requires all 72 new cases without skips. These selections
+overlap and are not additive; real tree replay and exact-source Linux CI remain
+separate open gates. No configure, build, freezer or runtime was executed.
+
 ## Original-budget BRS mixed serial performance follow-up
 
 The exact `cfd76f8` three-child mixed case passed locally in 468.41 seconds

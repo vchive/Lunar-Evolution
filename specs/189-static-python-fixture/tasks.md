@@ -149,6 +149,21 @@ failure and cancelled preflight separately from later successful evidence.
   deadline-bound record API's real-input replay passed on exact source
   b93787c in 3.84 seconds under one original 120-second deadline. This closes
   the archive record slice only, not extracted-tree or build custody.
+- [x] Specify the complete extracted Zig tree comparison in
+  `toolchain-tree-observation.md`, reusing extraction-manifest-v1 and the
+  existing bounded FD helpers without inventing another file inventory wire.
+- [x] Implement and independently review the read-only tree observer and
+  inert drift/late-mutation/deadline/descriptor-cleanup cases. Hold no-follow
+  directory ancestry during the sequential observation; do not claim atomic
+  snapshot custody or future compiler consumption.
+  The 58 implementation cases plus 14 independent fault-injection cases pass;
+  the related archive/manifest/staged-source selection passes 353 cases, with
+  zero failures, errors or skips. Whole-repository Ruff, src/tools/tests
+  compileall and diff checks pass. These suites overlap and are not additive.
+- [ ] Retain an independently checked real Linux tree replay against the
+  original complete manifest pin, then complete the exact-source three-version
+  CI before merging this slice. Keep concrete build-tool/helper/cache bindings,
+  configured build consumption, static build and runtime gates open.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
   actual target-owner integration remains a G3 gate.
