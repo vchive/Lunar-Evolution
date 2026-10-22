@@ -727,3 +727,21 @@ These checks establish only retained bytes and source/metadata consistency.
 They do not prove header closure, configured `Setup`/`pyconfig.h`, source
 consumption, compilation, linking, ELF contents, runtime startup or module
 origin. No build, remote evaluation or solver campaign was run.
+
+## Serial RSI regression follow-up — 2026-10-23
+
+`serial-regression-performance.md` records the retained failed unprofiled
+`31b8c2cd` Linux case, its separate live-receipt naming defect, and the new
+exact-type and globals-namespace changes. The 178 admission/type cases and
+64 policy cases passed. The independent new-boundaries selection passed all
+45 cases (33 admission types plus 12 builtin namespaces), which CI enforces
+without skips. All 204 runner cases passed with an external unique `/tmp`
+basetemp; the earlier combined run's two environment-induced nested-collection
+failures remain preserved separately. Ruff, src/tools/tests compileall and
+`git diff --check` passed.
+
+The pure `project()` benchmark is not end-to-end evidence. A separately retained
+main-thread CPU profile has invalid clock accounting and cannot support timing
+or hotspot conclusions. Exact final-source Linux original-600-second acceptance
+and all 33 final-head CI jobs remain required before main merge. Build/runtime,
+production admission and online publication are not enabled by these changes.

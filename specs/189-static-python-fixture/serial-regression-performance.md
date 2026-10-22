@@ -142,3 +142,60 @@ checks; then rerun the unmodified Linux three-child mixed case on the exact
 changed source under the original 600-second control. Retain all failures
 separately. Final-source three-version CI remains mandatory before main merge.
 This work does not close the static-image build or runtime gates in G1-G3.
+
+## Exact types and distinct builtin namespaces
+
+The single unprofiled Linux replay of exact `31b8c2cd` still failed at the
+original 600-second control: case 600.958 s, suite 602.662 s, observed budget
+600.320502001 s. The refusal occurs in the second mailbox observation at
+`transport_observed`, with an unknown worker attempt. Its wrapper separately
+missed the `tests.` prefix in the live test-module receipt; that receipt is
+incomplete. Post-run import/hash checks are retained separately and do not
+repair live provenance. All 2,315 source-file bytes/executable bits and nine
+transferred artifacts passed independent checks. Raw evidence remains under
+ignored `linux-mixed-final-31b8c2cd-65xd3bvk/`.
+
+Admission shape and wire-entry type allowlists now use identity comparisons.
+Set/tuple membership previously permitted unsupported metaclass hash/equality
+callbacks, including spoofed builtin equality. Exact string keys are checked
+before field-set comparisons. Full canonical serialization, strict parsing,
+digest verification and detachment remain unchanged. Thirty-three pure tests
+cover callback rejection and supported values.
+
+A pure five-call `_policy()` CPU diagnostic separately identified repeated
+builtin-domain scans: the builder appended the same globals namespace once
+per function. The builder now keeps one observation per captured globals
+identity on every projection. All function code/default/closure/global pins
+remain; each distinct namespace still checks its live builtin alias, domain,
+exact string keys, captured bindings and complete shadow vector. Different
+namespaces sharing one domain are never merged. This is not a cross-call
+validation cache or an atomic concurrent snapshot.
+
+Twelve focused tests cover full namespace coverage, shared domains, live alias
+replacement and binding/key drift, including four external namespaces whose
+new builtin shadows are absent from function `co_names`. Independent review
+passed the combined 45 new cases. An AST-isolated baseline from `31b8c2cd`
+retained the same 830 function pins, projections and module identities; only
+namespace observations changed from 830 to 62. Nine alternating rounds of
+50 unprofiled pure `project()` calls had median elapsed times 0.722442 s and
+0.507494 s (29.75% less). This measures that function only, not `_policy()` or
+the complete mixed case. Script and raw measurements are retained as
+`builtin-domains-independent-microbenchmark.{py,json}` in the ignored validation
+directory.
+
+The related admission/type selection passed 178 cases and policy selection
+passed 64 cases (242 total). A runner selection passed all 204 cases with a
+unique `/tmp` basetemp. Its first combined run retained 444 passes and two
+runner failures: placing basetemp below the repository made nested pytest find
+the parent configuration and emit prefixed node IDs. No product runner change
+was made for that test-environment mistake. The original failure remains in
+`final-type-policy.{log,xml}`, separately from the successful
+`final-runner-external-temp.{log,xml}`.
+
+A separately retained main-thread `cProfile` diagnostic of `31b8c2cd` used
+`time.thread_time` but produced impossible SQLite time and negative self-times.
+The timing data is INVALID and supplies no hotspot ranking or performance
+claim. Its raw data and failing original-budget outcome remain preserved;
+corrected live module receipts and source checks do not validate its timer.
+The new source still requires its own unprofiled original-budget Linux replay
+and all final-head CI jobs before merge.

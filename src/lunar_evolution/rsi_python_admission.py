@@ -60,7 +60,7 @@ def validate_rsi_python_admission_shapes(
     if _depth > 48:
         _fail("shape_invalid")
     kind = type(value)
-    if value is None or kind in {str, bool, int}:
+    if value is None or kind is str or kind is bool or kind is int:
         return
     if kind is float:
         if not math.isfinite(value):
@@ -70,9 +70,9 @@ def validate_rsi_python_admission_shapes(
         if any(type(key) is not str for key in value):
             _fail("shape_invalid")
         items = value.values()
-    elif kind in {list, tuple}:
+    elif kind is list or kind is tuple:
         items = value
-    elif kind in dto_types:
+    elif any(kind is dto_type for dto_type in dto_types):
         items = (getattr(value, field.name) for field in fields(value))
     else:
         _fail("shape_invalid")
@@ -92,7 +92,7 @@ def _canonical(value: object) -> bytes:
 
 
 def _strict_json(value: bytes | str) -> object:
-    if type(value) not in {bytes, str}:
+    if type(value) is not bytes and type(value) is not str:
         _fail("json_invalid")
     try:
         raw = value if type(value) is bytes else value.encode("utf-8")
@@ -187,7 +187,11 @@ class RSIPythonAdmissionRecord:
 
     @classmethod
     def from_dict(cls, value: object) -> RSIPythonAdmissionRecord:
-        if type(value) is not dict or set(value) != _FIELDS:
+        if type(value) is not dict:
+            _fail("schema_invalid")
+        if any(type(key) is not str for key in value):
+            _fail("shape_invalid")
+        if set(value) != _FIELDS:
             _fail("schema_invalid")
         validate_rsi_python_admission_shapes(value)
         _sha(value["record_sha256"])
@@ -216,7 +220,7 @@ def parse_rsi_python_admission_record(value: object) -> RSIPythonAdmissionRecord
         if value.record_sha256 is None:
             _fail("digest_invalid")
         return RSIPythonAdmissionRecord.from_dict(value.to_dict())
-    if type(value) in {bytes, str}:
+    if type(value) is bytes or type(value) is str:
         return RSIPythonAdmissionRecord.from_json(value)
     return RSIPythonAdmissionRecord.from_dict(value)
 
@@ -231,7 +235,11 @@ def parse_rsi_python_admission_reference(value: object) -> dict[str, Any]:
     from .producer_bundle_publication import parse_producer_bundle_publication_journal
     from .rsi_native_plan import NativeRSIExecutionPlan
 
-    if type(value) is not dict or set(value) != _REFERENCE_FIELDS:
+    if type(value) is not dict:
+        _fail("reference_invalid")
+    if any(type(key) is not str for key in value):
+        _fail("shape_invalid")
+    if set(value) != _REFERENCE_FIELDS:
         _fail("reference_invalid")
     validate_rsi_python_admission_shapes(value)
     for name in ("journal_id", "attempt_id"):

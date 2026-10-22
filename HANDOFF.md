@@ -1,5 +1,33 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## exact-type 边界与 builtin namespace 去重（2026-10-23）
+
+- 精确 `31b8c2cd35c40d89c3908d56ad08f8da5a440ae9` 的5090gpu单次无采样
+  mixed case仍失败：case600.958秒/suite602.662秒，原600秒control在
+  `transport_observed` 的第二次 `_mailbox_observe` 中于600.320502001秒拒绝，
+  附带worker attempt_unknown。wrapper另有测试模块名缺少`tests.`前缀的receipt错误，
+  provenance=false；事后import/path/hash补证不冒充live provenance。2,315个源码文件
+  的bytes/executable bits及9个回传文件SHA分别核对通过。首失败保留在ignored
+  `linux-mixed-final-31b8c2cd-65xd3bvk/`，不重复该版本验收。
+- admission类型白名单全部改用identity，拒绝会触发metaclass hash/equality的类型伪装，
+  并在字段集合比较前拒绝非exact-str keys。完整canonical解析、digest和detachment不变。
+  新33项测试覆盖零回调、unhashable metaclass、builtin subclass与wire入口。
+- reserved policy builder按捕获的globals namespace identity去重builtin observation，
+  保留全部830个function pins及每个不同namespace的alias、domain与shadow实时检查。
+  共享builtins domain的不同globals不会合并，没有跨调用validation cache。
+  12项针对性测试与独立review通过。独立9轮×50次pure `project()`基准中位
+  0.722442→0.507494秒，830→62条namespace observations；仅为局部测量。
+- admission/type相关178项、policy相关64项共242项通过。runner204项在唯一外部
+  `/tmp` basetemp下通过。首次446项组合中runner两项因仓库内basetemp导致nested
+  pytest node ID带上层路径而失败，原log/XML保留，不把它写成446全通过。
+  新CI专项gate固定45项，Ruff、src/tools/tests compileall及diff check通过。
+- 精确31b8另一次main-thread cProfile/thread_time诊断已结束，但出现不可能的
+  SQLite tottime和大量负值，计时数据INVALID，不用于hotspot排序或验收；该诊断仍在
+  原预算失败，修正后的live provenance与source前后核对通过。原始异常数据原样保留。
+- 新提交仍须唯一一次无采样Linux原600秒mixed case与精确head的33项CI全部通过后
+  合main。PR186未合并。G1配置绑定草案隔离在另一worktree，仅规格，未纳入本PR；
+  G1–G3仍开放，两个构建入口仍exit78，生产准入与在线发布保持false。
+
 ## 提取树观察与 admission row 去重（2026-10-23）
 
 - 新增 `toolchain_tree_observation.py`，复用原 extraction-manifest-v1 与适用的

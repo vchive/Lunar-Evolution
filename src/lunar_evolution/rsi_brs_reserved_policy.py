@@ -219,7 +219,16 @@ def _build_reserved_brs_policy():
         if kind(value) is function_type:
             pack_function(value)
     builtin_domains = []
+    builtin_namespaces = plain_set()
     for function, _code, namespace, *_tail in functions:
+        # Functions sharing globals have the same builtin alias and shadow
+        # vector. Observe every distinct namespace on each projection without
+        # repeating this identical scan once per function. The function pins
+        # below still retain every function and its original globals object.
+        namespace_identity = object_id(namespace)
+        if namespace_identity in builtin_namespaces:
+            continue
+        builtin_namespaces.add(namespace_identity)
         value = namespace.get("__builtins__")
         domain = namespace_of(value) if kind(value) is module_type else value
         if kind(domain) is not plain_dict:
