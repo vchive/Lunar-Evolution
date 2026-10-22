@@ -43,6 +43,8 @@
   也没有把合成 descriptor 的 source/object 元数据当成真实产物证据。
 - `_codecsmodule.c` test 还固定了五条直接 include 字面路径和 `windows.h` 的 `MS_WINDOWS` 宏围栏；目标
   预处理宏、这些头文件的目标字节/解析及完整 C API 依赖仍未验证。
+- 该 source-edge test 还交叉检查 Lunar 候选 emitter 对应的 `Modules/config.c` `_codecs` 初始化项和
+  `_codecsmodule.c/.o` 计划路径；这只是计划一致性，不代表 configured build 使用了这些内容。
 - 同一轮把固定 28 条 AST import edge 的 21 个目标名与合成 descriptor 的 frozen/builtin 名称作精确
   membership projection：16 个名称在清单中，5 个未按同名出现（包含 `tokenize`，而清单有的是
   `_tokenize`）。这不判定条件分支是否执行、目标是否拒绝、模块是否可达或闭包是否完成；细节见

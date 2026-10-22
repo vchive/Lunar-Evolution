@@ -7,6 +7,8 @@ import json
 import re
 from pathlib import Path
 
+from tools.static_python_fixture.tables import emit_static_python_tables
+
 _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURE = _ROOT / "tests/fixtures/static_python_source/Modules/_codecsmodule.c.source"
 _SETUP_FIXTURE = _ROOT / "tests/fixtures/static_python_source/Modules/Setup.bootstrap.in.source"
@@ -100,4 +102,13 @@ def test_synthetic_descriptor_is_only_a_separate_metadata_cross_check() -> None:
         "size": 40,
     }
     assert descriptor["production_admission"] is False
+
+    # Cross-check the separate candidate table plan; these emitted bytes are
+    # still synthetic and do not establish what any configured build used.
+    tables = emit_static_python_tables()
+    config = tables["Modules/config.c"].decode("utf-8")
+    static_sources = tables["Modules/lunar-static-sources.mk"].decode("utf-8")
+    assert config.count('{"_codecs", PyInit__codecs}') == 1
+    assert "Modules/_codecsmodule.c" in static_sources
+    assert "Modules/_codecsmodule.o" in static_sources
 

@@ -29,3 +29,8 @@ does not prove generated builtin tables, C headers or macros, object bytes,
 link inclusion, final ELF symbols, or runtime module origin. Build, startup,
 and production-admission claims remain false.
 
+The focused test also checks that Lunar's separately emitted candidate table
+plan names `PyInit__codecs` and lists `_codecsmodule.c` plus its object path.
+That is an internal plan-consistency check only; the generated table bytes are
+not evidence that a configured target build consumed them.
+

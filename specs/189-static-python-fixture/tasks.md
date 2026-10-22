@@ -154,10 +154,11 @@ failure and cancelled preflight separately from later successful evidence.
   the complete C implementation or prove builtin-table/link membership.
 - [x] Retain exact archive `_codecsmodule.c` and `Setup.bootstrap.in` members
   as inert fixtures and check their declared module/initializer and bootstrap
-  source line against the synthetic `_codecs` entry. The bootstrap file is a
-  template. Pin its direct include spellings and Windows guard while leaving
-  header resolution/bytes, generated tables, configured consumption,
-  compilation, linking and runtime origin open.
+  source line against the synthetic `_codecs` entry, including consistency
+  with Lunar's emitted candidate table/source/object plan. The bootstrap file
+  is a template. Pin its direct include spellings and Windows guard while
+  leaving header resolution/bytes, configured consumption, compilation,
+  linking and runtime origin open.
 - [x] Project the fixed 28 prepared-source AST edges onto the synthetic frozen
   and builtin name inventories with exact-name membership results. Preserve
   absent targets as inventory observations only; do not infer reachability,
