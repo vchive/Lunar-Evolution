@@ -101,3 +101,11 @@ def test_receipt_claim_or_patch_profile_drift_refuses() -> None:
     raw = _canonical(altered)
     with pytest.raises(candidate_build_source.CandidateBuildSourceError, match="receipt_claim_invalid"):
         candidate_build_source.validate_candidate_build_source_receipt(raw, expected_sha256=hashlib.sha256(raw).hexdigest())
+
+    altered = receipt.to_dict()
+    altered["patch_set"]["source_commit"] = "different-source"
+    raw = _canonical(altered)
+    with pytest.raises(candidate_build_source.CandidateBuildSourceError, match="receipt_patch_profile_mismatch"):
+        candidate_build_source.validate_candidate_build_source_receipt(
+            raw, expected_sha256=hashlib.sha256(raw).hexdigest(),
+        )

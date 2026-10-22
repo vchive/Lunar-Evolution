@@ -338,6 +338,11 @@ def validate_candidate_build_source_receipt(raw: bytes, *, expected_sha256: str)
         patch = value["patch_set"]
         if type(patch) is not dict or frozenset(patch) != frozenset({"schema", "source_version", "source_commit", "files"}):
             _fail("receipt_patch_set_invalid")
+        _text(patch["source_version"], "receipt_patch_set_invalid")
+        _text(patch["source_commit"], "receipt_patch_set_invalid")
+        if (patch["source_version"] != profile["source_version"]
+                or patch["source_commit"] != profile["source_commit"]):
+            _fail("receipt_patch_profile_mismatch")
         files_raw = _canonical(patch["files"], maximum=MAX_PATCH_SET_BYTES)
         _sha(value["patch_set_sha256"], "receipt_patch_set_invalid")
         if hashlib.sha256(files_raw).hexdigest() != value["patch_set_sha256"]:
