@@ -145,6 +145,16 @@ reported **624 passed**; Ruff, `compileall`, and `git diff --check` passed.
 Pytest emitted 27,483 existing macOS temporary-fixture cleanup warnings while
 removing deliberately read-only directories; the test process exited 0.
 
+The bounded `codecs → _codecs` source-edge continuation was checked by the
+prepared-source profile, import-audit, and startup-closure suites: **102 passed**
+with zero failures/errors/skips. Ruff, `compileall`, and `git diff --check`
+passed. The macOS runner emitted existing warnings while removing read-only
+temporary fixture trees; the test process exited 0. This check preserves the
+`star-import` unsupported site and compares against a synthetic descriptor; it
+does not audit `_codecsmodule.c`, prove target builtin-table membership, or
+complete configured import closure. See
+[`codecs-edge-audit-20261023.md`](codecs-edge-audit-20261023.md).
+
 ## Build and static evidence
 
 Retain verified source acquisition, exact source/patch/toolchain/musl/compiler/

@@ -65,10 +65,13 @@ The root vector does not close the graph. The prepared-source observer still
 reports four unsupported sites: dynamic `exec` in `_frozen_importlib`,
 dynamic `compile` in `_frozen_importlib_external`, the `from _codecs import *`
 site in `codecs`, and the computed `__import__(name)` in the frozen-main
-loader-negative probe. The first two are code-object operations; the `_codecs`
-star import needs an explicit reviewed builtin-edge disposition; the frozen
-main dynamic import is a bounded negative test, not an admitted source route.
-See [`prepared-source-import-observation-20261021.md`](prepared-source-import-observation-20261021.md).
+loader-negative probe. A bounded audit now cross-checks the pinned
+`codecs → _codecs` base edge against the descriptor's declared builtin entry;
+the wildcard exports remain unknown, and the descriptor is synthetic. The
+first two sites are code-object operations; the frozen-main dynamic import is a
+bounded negative test, not an admitted source route. See
+[`codecs-edge-audit-20261023.md`](codecs-edge-audit-20261023.md) and
+[`prepared-source-import-observation-20261021.md`](prepared-source-import-observation-20261021.md).
 
 The bounded importlib bootstrap/loader edge review is recorded in
 [`importlib-edge-audit-20261022.md`](importlib-edge-audit-20261022.md); its

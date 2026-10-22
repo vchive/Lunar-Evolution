@@ -148,6 +148,11 @@ failure and cancelled preflight separately from later successful evidence.
   files from generated Lunar tables and fixture-owned path code in
   `c-startup-source-audit-20261021.md`. This does not complete the configured
   C/Python closure or runtime audit below.
+- [x] Cross-check the single pinned `codecs → _codecs` source edge against the
+  synthetic candidate descriptor in `codecs-edge-audit-20261023.md`. Preserve
+  the generic observer's `star-import` unsupported result. This does not review
+  `_codecsmodule.c`, prove builtin-table/link membership, or close the complete
+  C/Python graph.
 - [x] Define bounded source-preparation dispositions for the observed dynamic
   codec-name selection and `_py_abc` fallback: direct fixed UTF-8 binding, a
   six-alias allowlist, and preservation of the original `_abc` import error.

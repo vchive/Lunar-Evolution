@@ -4,9 +4,10 @@
 
 - PR #185 已合入 `main`，合并提交 `a3532cfd21c8b624cf09d10473a8b2bc92b79016`。本地分支
   `codex/python-startup-closure-audit` 的 source-derived root-vector 证据与回归已推送到 PR #186；
-  本轮 recipe 拒绝与 importlib audit follow-up 也已推送，Actions 正在检查 PR 最新 head。PR185 的
-  run `39773589266` 最近查询为 22 个 job 成功、11 个
-  仍在运行、无失败，因此合并后 CI 尚未全部结束。
+  recipe 拒绝与 importlib audit follow-up 已推送。本次 continuation 开始时，PR186 的最近已发布 head
+  `8b0d210f0c41b873f476665ec02b7b52fc710d4d` 的 Actions run `39811939694` 正在运行：当前有 2 个
+  job 执行、其余仍排队，尚无失败结论。PR185 合并后的 run `39773589266` 仍在运行，已见 2 个
+  Python 3.11/3.13 `current-3` shard 失败；日志要等 run 结束后才能取到，本轮尚未确认失败原因。
 - PR185 修复 warning-registry policy drift 与四处过期 workflow 用例数。Python 3.13.12 本地 focused 回归、
   Ruff、compileall 和 `git diff --check` 已通过；对应跑数和分支详情应以 PR185 Actions 完成结果为准。
 - CPython 3.13.12 的 Python AST 与 C startup 静态审查已补充结论：固定源码计划与已有 9 frozen、19 builtin、
@@ -31,6 +32,10 @@
   测试退出码为 0。
 - `importlib-edge-audit-20261022.md` 已连入任务、验证和 startup-root 审计。它只完成 bounded source-level
   review；direct resource-reader/metadata 路径、完整 import closure、配置构建和 runtime binding 仍开放。
+- 本轮 continuation 增加 `codecs → _codecs` 的单边 source audit：固定 `codecs.py` pin 与 AST edge
+  对应，候选 descriptor 声明 `_codecs` builtin，通用 observer 仍保留 `star-import` unsupported。三个
+  focused 文件 102 项通过，Ruff、compileall 与 diff check 通过；该 descriptor 是合成 fixture，
+  `_codecsmodule.c`、真实 builtin table 和 runtime module origin 仍未审计，完整闭包没有关闭。
 - PR186 以最终 head 的 Ubuntu 三版本 CI 全绿为合并条件。此轮没有运行 CPython
   build/freezer、WebAgent、远程 evaluator、solver campaign 或公司评测平台；生产准入和在线发布保持关闭。
 - Feature189 P1 仍未完成：独立来源/补丁 custody、固定 musl/toolchain/sysroot 与构建 recipe、完整 Python/C
