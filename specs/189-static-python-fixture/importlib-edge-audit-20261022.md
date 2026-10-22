@@ -49,6 +49,8 @@ the finite profile or every deferred route is unreachable.
 This closes only a bounded source-level importlib review. It does not complete
 the full C/Python source graph, configuration gates, generated frozen tables,
 toolchain/link closure, ELF, sealed startup, owner, or lifecycle acceptance.
-No source was executed and no build, evaluator, solver, WebAgent, or company
-platform was run. `production_admission=false` and `online_publication=false`
-remain unchanged.
+No complete CPython source file, configured target, or build was executed.
+Isolated AST-extracted function behavior remains covered by the provider-free
+source-preparation tests. No evaluator, solver, WebAgent, or company platform
+was run. `production_admission=false` and `online_publication=false` remain
+unchanged.
