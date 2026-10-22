@@ -173,3 +173,25 @@ def test_observes_exact_prepared_nine_module_frozen_source_set(tmp_path: Path) -
     ] == _UNSUPPORTED
     assert wire["evidence_scope"] == "source-ast-import-observations-only"
     assert all(value is False for value in wire["claims"].values())
+
+    # This is an exact-name membership projection against synthetic descriptor
+    # inventories. It says nothing about branch execution or runtime reachability.
+    descriptor = json.loads(
+        (_ROOT / "specs/189-static-python-fixture/wire-v1-example.json").read_bytes()
+    )["descriptor"]
+    declared_names = {
+        item["name"]
+        for key in ("frozen_modules", "builtin_modules")
+        for item in descriptor[key]
+    }
+    observed_targets = {edge["target"] for edge in wire["imports"]}
+    assert len(observed_targets) == 21
+    assert observed_targets - declared_names == {
+        "importlib.metadata", "importlib.readers", "nt", "tokenize", "winreg",
+    }
+    assert observed_targets & declared_names == {
+        "_abc", "_codecs", "_frozen_importlib_external", "_imp", "_io",
+        "_lunar_fixture_pipe", "_warnings", "abc", "builtins", "codecs",
+        "encodings", "encodings.aliases", "encodings.utf_8", "marshal",
+        "posix", "sys",
+    }

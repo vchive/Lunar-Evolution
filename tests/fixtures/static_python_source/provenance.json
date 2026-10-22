@@ -43,7 +43,7 @@
     "archive_sha256": "2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593",
     "archive_size_bytes": 22926488,
     "archive_url": "https://www.python.org/ftp/python/3.13.12/Python-3.13.12.tar.xz",
-    "member_digest_note": "Each member size and SHA-256 below are fixed in tests/test_static_python_source_import_profile.py. They were observed from the archive identified by the archive size and digest above; they are not separate signatures or independently sourced release pins.",
+    "member_digest_note": "Each member and supporting-member size and SHA-256 below is fixed by focused tests. They were observed from the archive identified by the archive size and digest above; they are not separate signatures or independently sourced release pins.",
     "members": [
       {
         "archive_member": "Python-3.13.12/Lib/importlib/_bootstrap.py",
@@ -100,11 +100,27 @@
         "module": "io",
         "sha256": "7cec3cb8ac004058dd0a5af246e6d950fb59c7ddd0058fda48bcb3fcb98d8822",
         "size_bytes": 3582
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/_codecsmodule.c",
+        "fixture_path": "Modules/_codecsmodule.c.source",
+        "module": "_codecs",
+        "sha256": "149a20c2d7aee22281ddd8756ae7eae685ae0ef21764138d41f367443182041e",
+        "size_bytes": 33553
       }
     ],
     "release": "CPython 3.13.12",
-    "scope": "eight exact regular-file member byte copies; inert test data only",
-    "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md"
+    "scope": "nine exact regular-file member byte copies; inert test data only",
+    "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md",
+    "supporting_members": [
+      {
+        "archive_member": "Python-3.13.12/Modules/Setup.bootstrap.in",
+        "fixture_path": "Modules/Setup.bootstrap.in.source",
+        "purpose": "upstream-bootstrap-template-only",
+        "sha256": "bb401f9494c2f896aa40af6a8077ff9f22b99a9d4126ce38daef759427c8df88",
+        "size_bytes": 971
+      }
+    ]
   },
   "scope": "inert-source-byte-fixtures-only",
   "source": "https://github.com/python/cpython.git",

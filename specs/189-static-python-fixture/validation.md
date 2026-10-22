@@ -151,9 +151,28 @@ with zero failures/errors/skips. Ruff, `compileall`, and `git diff --check`
 passed. The macOS runner emitted existing warnings while removing read-only
 temporary fixture trees; the test process exited 0. This check preserves the
 `star-import` unsupported site and compares against a synthetic descriptor; it
-does not audit `_codecsmodule.c`, prove target builtin-table membership, or
-complete configured import closure. See
+does not audit the complete `_codecsmodule.c` implementation, prove target
+builtin-table membership, or complete configured import closure. See
 [`codecs-edge-audit-20261023.md`](codecs-edge-audit-20261023.md).
+
+The retained `_codecsmodule.c` source slice is checked by
+`tests/test_static_python_codecs_source_fixture.py`. It pins the archive
+member bytes, observes the `_codecs` initializer declaration, and keeps the
+synthetic descriptor's source/object metadata separate. It does not perform a
+compile, link, ELF, or runtime check; see
+[`codecs-c-source-audit-20261023.md`](codecs-c-source-audit-20261023.md).
+The same prepared-source profile test also classifies all 21 distinct AST
+targets against the synthetic frozen/builtin name sets; its five exact-name
+absences are recorded in
+[`prepared-import-inventory-membership-20261023.md`](prepared-import-inventory-membership-20261023.md).
+This classification does not establish branch execution, target refusal, or
+closure.
+
+The combined codec-source, prepared-source, import-audit, startup-closure,
+release-source, and static-table focused regression reported **155 passed**.
+Ruff, `compileall`, and `git diff --check` passed. Pytest emitted 27,483
+existing macOS temporary-fixture cleanup warnings for deliberately read-only
+fixture trees; the test process exited 0.
 
 ## Build and static evidence
 

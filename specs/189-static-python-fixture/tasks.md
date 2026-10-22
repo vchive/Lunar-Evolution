@@ -151,8 +151,16 @@ failure and cancelled preflight separately from later successful evidence.
 - [x] Cross-check the single pinned `codecs → _codecs` source edge against the
   synthetic candidate descriptor in `codecs-edge-audit-20261023.md`. Preserve
   the generic observer's `star-import` unsupported result. This does not review
-  `_codecsmodule.c`, prove builtin-table/link membership, or close the complete
-  C/Python graph.
+  the complete C implementation or prove builtin-table/link membership.
+- [x] Retain exact archive `_codecsmodule.c` and `Setup.bootstrap.in` members
+  as inert fixtures and check their declared module/initializer and bootstrap
+  source line against the synthetic `_codecs` entry. The bootstrap file is a
+  template; generated tables, configured consumption, compilation, linking
+  and runtime origin remain open.
+- [x] Project the fixed 28 prepared-source AST edges onto the synthetic frozen
+  and builtin name inventories with exact-name membership results. Preserve
+  absent targets as inventory observations only; do not infer reachability,
+  platform safety, refusal, or closure.
 - [x] Define bounded source-preparation dispositions for the observed dynamic
   codec-name selection and `_py_abc` fallback: direct fixed UTF-8 binding, a
   six-alias allowlist, and preservation of the original `_abc` import error.

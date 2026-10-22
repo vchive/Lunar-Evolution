@@ -30,11 +30,13 @@ rule or treat the base edge as a complete enumeration of imported names.
 
 ## Remaining limits
 
-The `_codecsmodule.c` initializer, its exported names, its transitive C/runtime
-dependencies, generated builtin table, compiled object and runtime module
-origin have not been audited or bound here. The descriptor's `_codecs` source
-and object records are synthetic metadata, not those inputs. The audit closes
-only the bounded source-to-candidate-inventory comparison for this one edge;
+The separate inert `_codecsmodule.c` source slice now records the module
+initializer declaration; it does not audit the source's exported names or
+transitive C/runtime dependencies. The generated builtin table, compiled
+object and runtime module origin have not been audited or bound here. The
+descriptor's `_codecs` source and object records are synthetic metadata, not
+those inputs. The audit closes only the bounded source-to-candidate-inventory
+comparison for this one edge;
 it does not close the Python/C startup graph, configured closure, build, ELF,
 runtime startup or production acceptance. All production and online-publication
 claims remain false.

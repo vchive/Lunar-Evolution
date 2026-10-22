@@ -35,7 +35,16 @@
 - 本轮 continuation 增加 `codecs → _codecs` 的单边 source audit：固定 `codecs.py` pin 与 AST edge
   对应，候选 descriptor 声明 `_codecs` builtin，通用 observer 仍保留 `star-import` unsupported。三个
   focused 文件 102 项通过，Ruff、compileall 与 diff check 通过；该 descriptor 是合成 fixture，
-  `_codecsmodule.c`、真实 builtin table 和 runtime module origin 仍未审计，完整闭包没有关闭。
+  完整 `_codecsmodule.c` 实现、真实 builtin table 和 runtime module origin 仍未审计，完整闭包没有关闭。
+- 随后增加了 CPython 归档中的 `_codecsmodule.c` 惰性源码 fixture（33,553 字节，SHA-256
+  `149a20c2…182041e`）及独立 focused test，核对 `_codecs` 模块定义和 `PyInit__codecs`。这仍只是
+  归档源码观察；同时保留 `Setup.bootstrap.in` 模板片段（971 字节，SHA-256 `bb401f94…427c8df88`）
+  交叉核对模块/source 名。该模板不等于生成的 Setup 文件；未编译、链接、检查最终 ELF 或运行时注册，
+  也没有把合成 descriptor 的 source/object 元数据当成真实产物证据。
+- 同一轮把固定 28 条 AST import edge 的 21 个目标名与合成 descriptor 的 frozen/builtin 名称作精确
+  membership projection：16 个名称在清单中，5 个未按同名出现（包含 `tokenize`，而清单有的是
+  `_tokenize`）。这不判定条件分支是否执行、目标是否拒绝、模块是否可达或闭包是否完成；细节见
+  `specs/189-static-python-fixture/prepared-import-inventory-membership-20261023.md`。
 - PR186 以最终 head 的 Ubuntu 三版本 CI 全绿为合并条件。此轮没有运行 CPython
   build/freezer、WebAgent、远程 evaluator、solver campaign 或公司评测平台；生产准入和在线发布保持关闭。
 - Feature189 P1 仍未完成：独立来源/补丁 custody、固定 musl/toolchain/sysroot 与构建 recipe、完整 Python/C
