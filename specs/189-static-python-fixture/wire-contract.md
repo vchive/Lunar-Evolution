@@ -9,7 +9,10 @@ Only canonical UTF-8 JSON bytes are accepted: sorted object keys, compact comma/
 colon separators, no duplicate keys, floats, null, custom objects or noncanonical
 encoding. Bytes must be exact built-in bytes, at most262144. Independent expected
 descriptor SHA256, installation version and artifact SHA256 are mandatory; no
-self-pinning default is available. Names/versions are bounded ASCII, paths are
+self-pinning default is available. There is no fourth `expected_target_profile`
+argument in v1: the external descriptor digest commits the fixed target fields;
+the external artifact digest and byte-level ELF inspection bind the actual image
+to its declared ELF profile. Names/versions are bounded ASCII, paths are
 canonical relative paths (no traversal, backslash or control characters).
 Aggregate nodes<=8192, depth<=12 and text<=196608 UTF-8 bytes are checked before
 manifest hashing. Artifact size is1..134217728 and installation mode is0555.
@@ -22,9 +25,12 @@ sorted file inventory. Signature verification is explicitly not-performed for
 this first preparation profile; descriptor parsing does not attest authenticity.
 
 All source/object/archive records have exact fields path, sha256 and size.
-Their sizes are bounded to1GiB. Vectors are unique and sorted by path/name;
-patches<=32, toolchain executables<=16/archives<=256, link inputs<=256,
-embedded startup arrays<=32, frozen/builtin/alias inventories<=128. Nonempty
+Their sizes are bounded to1GiB. File and module records, aliases and environment
+entries are unique and sorted by their respective path/name/key. This includes
+patch and link-input file records. Configure/compile/link flag vectors retain
+argv order and reject duplicate flags. Patches<=32, toolchain executables<=16/archives<=256, link inputs<=256,
+frozen/builtin/alias inventories<=128. Embedded startup arrays must be exactly
+empty; nonempty arrays require a revised contract. Nonempty
 input vectors are required. The first candidate has exactly9 frozen modules,
 19 builtin names and2 aliases from the source closure report. Module source and
 generated/object records are independent, mandatory, nonempty byte hashes.
@@ -44,8 +50,8 @@ Nested records have these exact fields:
   No runtime build or subprocess API is part of the parser.
 - generator: python_version, host_architecture, source_sha256, recipe_sha256,
   executable_sha256, marshal_version, generated_manifest_sha256.
-- embedded_startup_arrays: a list of name/source/generated/disposition records;
-  empty for the candidate that removes embedded getpath Python code.
+- embedded_startup_arrays: exactly an empty list for the candidate that removes
+  embedded getpath Python code; no record shape is admitted in v1.
 - frozen_modules: name, is_package, table, source, generated. Only encodings is
   a package; bootstrap/stdlib/custom table assignments are fixed.
 - builtin_modules: name, init_symbol, source, object. NULL is an explicit string

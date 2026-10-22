@@ -1,5 +1,28 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 最新 G0 收口（2026-10-23）
+
+- Feature189 v1 descriptor 的字段与 bounds 已完成并行交叉审查并冻结；记录见
+  `specs/189-static-python-fixture/descriptor-contract-review-20261023.md`。保留独立
+  descriptor/version/artifact 三个外部 pin，descriptor digest 固定 target profile，ELF byte
+  verifier 与原 launch binding 分别约束镜像和 sealed lifecycle；不新增第四个 pin 或 wire 字段。
+- `data-model.md`、`wire-contract.md` 与 `tasks.md` 已消除声明/观测边界和字段描述差异。
+  当前 profile 精确为 9 frozen、19 builtin、2 alias，embedded startup arrays 必须为空；
+  source/toolchain/recipe/module/ELF 声明不能替代实际来源、构建、启动或运行证据。G0 完成不代表
+  G1–G3 完成。安装、artifact、build closure、startup closure 四个 focused 文件共 568 项通过，
+  对应 Ruff、compileall 与 `git diff --check` 通过。
+- 保留了 5090gpu 独立 disposable configure 首次失败的原始 stdout/stderr 与 gzip config.log，
+  详见 `real-build-probe.md`。未识别的 `--with-system-ffi=no`、host Python 3.13.13、缺失
+  `ac_cv_file__dev_ptmx` cache answer 与无 Makefile 表明该 recipe 尚未冻结；不能把修改过的
+  source tree 当 clean staged input。该诊断不推进构建/验收门，本轮没有补 cache 或重跑 configure。
+- 本轮开始时 PR186 head 为 `e80446d486507d8eb4ad6c864d00f2afc413eb9c`；Actions run
+  `39836731433` 仍在运行，已完成项通过，尚非全绿。后续 push 会改变最终待验 head；必须以
+  最终精确 head 的 Ubuntu 三版本 required checks 为准，再按用户既有授权合 main。
+- 下一步集中 G1 的 source/toolchain custody 与固定 configure/cache/module/flags/environment
+  recipe，再推进 same-source freezer、configured build/ELF 与 sealed runtime。现有 plan emitter
+  仍须 exit 78，不授权执行。保持 `production_admission=false`、`online_publication=false`；
+  不运行 WebAgent、远程 evaluator、公司平台或 solver campaign。
+
 ## 最新续接状态（2026-10-23）
 
 - PR #185 已合入 `main`，合并提交 `a3532cfd21c8b624cf09d10473a8b2bc92b79016`。本地分支

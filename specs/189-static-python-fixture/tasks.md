@@ -8,8 +8,31 @@ failure and cancelled preflight separately from later successful evidence.
 
 - [x] Confirm Feature188 final exact source/head/tree, Linux dedicated no-skip
   acceptance, raw artifacts independent audit and main merge. Record references.
-- [ ] Review/freeze this bounded189 SDD and installation descriptor field/bound
-  contract. Confirm no new v2 FD, general solver adapter or production admission.
+- [x] Cross-review `spec.md`, `plan.md`, `data-model.md`, this task list and the
+  current pure descriptor parser/tests. The reviewed scope remains one bounded
+  installation-owned static/frozen fixture; no new native-v2 FD, general solver
+  adapter or production-admission behavior is introduced by the existing DTO.
+  This review is not a claim that the full source/toolchain/build/runtime gates
+  are closed.
+- [x] Resolve the G0 target-pin mismatch: `data-model.md` and `wire-contract.md`
+  state that the independently supplied descriptor digest commits the fixed
+  target profile and the independent artifact pin plus byte-level ELF inspection
+  verifies its declared image profile. Existing launch bindings continue to fix
+  sealed-target mode/lifecycle. No fourth pin or v1 wire expansion is added.
+- [x] Reconcile the G0 descriptor artifact contract in
+  `descriptor-contract-review-20261023.md`: v1 source/toolchain/recipe/module/ELF
+  fields are declarations; signature verification is `not-performed`, execution
+  and admission claims are false, and the runtime observation model is future
+  work. Keep actual byte and runtime observations in their separate verification
+  and acceptance gates.
+- [x] Cross-check the documented descriptor bounds against the parser: the
+  `wire-contract.md` text ceiling of196608 UTF-8 bytes equals the implementation's
+  192 KiB (`_MAX_TEXT_BYTES`); descriptor<=256 KiB, nodes<=8192, depth<=12,
+  per-file input<=1 GiB, and artifact<=128 MiB also match. This confirms stated
+  ceilings only; it does not prove source/input completeness or runtime behavior.
+- [x] Review/freeze this bounded189 SDD and v1 descriptor field/bound contract
+  in `descriptor-contract-review-20261023.md`. Scope remains the single bounded
+  fixture; no new v2 FD, general solver adapter or production admission is added.
 
 ## G1 installation inputs and pure admission
 

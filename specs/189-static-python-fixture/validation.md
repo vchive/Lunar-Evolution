@@ -1,5 +1,30 @@
 # Validation contract — preparation is not runtime evidence
 
+## G0 descriptor contract review — 2026-10-23
+
+[`descriptor-contract-review-20261023.md`](descriptor-contract-review-20261023.md)
+freezes the existing v1 field/bound contract after comparison with the parser.
+The external descriptor/version/artifact pins remain three distinct caller
+inputs; no fourth target-profile argument or new runtime API is introduced.
+Nested provenance, toolchain, recipe, generated-module and ELF fields remain
+declarations until separately observed. The profile accepts exactly 9 frozen
+modules, 19 builtins, 2 aliases and an empty embedded-startup array.
+
+The installation, artifact, build-closure and startup-closure suites passed all
+568 collected cases on local CPython 3.13.12 (process exit 0). Ruff on the four
+corresponding production modules, `compileall` for `src/lunar_evolution`, and
+`git diff --check` passed. This is G0 shape/consistency validation; G1 source/
+toolchain custody, the fixed configure recipe, full closure, G2 build/ELF and
+G3 runtime/lifecycle acceptance remain open.
+
+The separate failed configure diagnostic and original logs are retained in
+[`real-build-probe.md`](real-build-probe.md#failed-configure-diagnostic-2026-10-23).
+Its unrecognized `--with-system-ffi=no`, host build-Python version mismatch,
+missing cross-compilation device cache answer and absent Makefile do not
+establish a usable recipe, clean staging, build or runtime result. No cache
+answer or configure rerun was used for this contract review. Production and
+online-publication claims remain false.
+
 ## Snapshot-bound create-only source staging
 
 The `source-staging.md` continuation uses inert USTAR/XZ bytes containing the
