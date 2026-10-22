@@ -48,13 +48,14 @@ the implementation in Python. The fixed handler only re-raises the same
 
 The `encodings/__init__.py` policy must not construct or import a module name
 from a requested codec. After the existing normalization step, codec selection
-may accept only the six alias keys listed above and must bind directly to the
-fixed `encodings.utf_8` module. No request value may choose a different module,
-trigger a top-level fallback, or invoke dynamic `__import__`. Every other
-normalized codec name remains unavailable and must produce the normal codec
-lookup miss (`LookupError` through the codec lookup API); it must not be
-silently mapped to UTF-8 or cause another codec module to be loaded. Keep
-unsupported names out of the alias table and any generated inventory.
+may accept the canonical UTF-8 name `utf_8` and the six alias keys listed above;
+each accepted name must bind directly to the fixed `encodings.utf_8` module. No
+request value may choose a different module, trigger a top-level fallback, or
+invoke dynamic `__import__`. Every other normalized codec name remains
+unavailable and must produce the normal codec lookup miss (`LookupError`
+through the codec lookup API); it must not be silently mapped to UTF-8 or cause
+another codec module to be loaded. Keep unsupported names out of the alias
+table and any generated inventory.
 
 Reviewed Git source provenance remains distinct from verification of the pinned
 python.org release archive and its signature; matching source preimages do not

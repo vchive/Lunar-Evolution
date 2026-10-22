@@ -290,15 +290,18 @@ Details and the exact claim limits are in
 
 `startup-closure-contract.md` freezes a separate canonical graph wire that binds
 the current installation descriptor, source/patch/initialization/frozen/builtin/
-alias pins, fixed startup roots, route records, alias mappings and directed import
-edges. The parser validates only caller-supplied DTO consistency, canonical bytes,
-reachability and independent pins. It does not extract imports, prove the graph is
-complete, inspect a configured build, or start CPython. Existing module inventories
-remain unchanged; `operator` is not admitted from a separate diagnostic image.
+alias pins, the exact expected startup-module inventory, a separately hashed
+startup-root vector, route records, alias mappings and directed import edges.
+The parser validates only caller-supplied DTO consistency, canonical bytes,
+reachability and independent pins. Its synthetic roots are not the audited
+CPython roots. It does not extract imports, prove the graph is complete, inspect
+a configured build, or start CPython. Existing module inventories remain
+unchanged; `operator` is not admitted from a separate diagnostic image.
 
 The synthetic focused regression is `tests/test_static_python_startup_closure.py`
-(60 passed, zero failures/errors/skips). It covers fixed roots and routes, alias
-edges, graph reachability, unknown/missing inventory, external pins, strict
+(64 passed, zero failures/errors/skips). It covers separated inventory/roots,
+alias edges, reachable and missing-edge graphs, unknown/missing inventory,
+external pins, strict
 canonical/type/budget failures, detached results, false-only claims and the lack
 of filesystem/process/network/environment/build/runtime effects. Ruff passed for
 the changed Python files, `compileall` passed on those files, and

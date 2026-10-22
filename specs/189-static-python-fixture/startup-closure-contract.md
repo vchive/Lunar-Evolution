@@ -22,12 +22,14 @@ The current contracts cover adjacent but different facts:
   those wires.
 
 The remaining bounded comparison gap is a canonical representation of the
-reviewed startup roots, each root's transitive import edges, and the permitted
-static route for every reached module. A successful parse can say only that
-this supplied graph is bounded, internally consistent, matches its independent
-pins, and fits the already pinned installation inventory. It cannot prove the
-graph is complete or truthful; source review and later actual startup remain
-separate gates.
+expected startup-module inventory, separately source-audited graph roots, each
+root's transitive import edges, and the permitted static route for every
+reached module. Version 2 separates those concepts because treating every
+expected module as a root makes reachability vacuous. A successful parse can
+say only that this supplied graph is bounded, internally consistent, matches
+its independent pins, and fits the already pinned installation inventory. It
+cannot prove the graph or root list is complete or truthful; source review and
+later actual startup remain separate gates.
 
 Do not modify the current profile to make a graph pass. The frozen inventory
 remains exactly these nine names: `_frozen_importlib`,
@@ -56,6 +58,7 @@ parse_static_python_startup_closure(
     *,
     installation_descriptor_raw: bytes,
     expected_closure_sha256: str,
+    expected_startup_roots_sha256: str,
     expected_installation_descriptor_sha256: str,
     expected_installation_version: str,
     expected_artifact_sha256: str,
@@ -68,9 +71,10 @@ parse_static_python_startup_closure(
 ) -> StaticPythonStartupClosure
 ```
 
-The API requires nine independent SHA-256 pins: closure, installation
-descriptor, artifact, source tree, patch set, initialization profile, frozen
-inventory, builtin inventory, and alias inventory. Each is an exact built-in
+The API requires ten independent SHA-256 pins: closure, source-audited startup
+roots, installation descriptor, artifact, source tree, patch set,
+initialization profile, frozen inventory, builtin inventory, and alias
+inventory. Each is an exact built-in
 `str`, lowercase SHA-256, and rejects all-zero/all-`f` sentinels. The separate
 installation version is a bounded ASCII label. The parser
 reparses `installation_descriptor_raw` through the unchanged
@@ -81,6 +85,9 @@ in that validated descriptor. No expected value may be selected from the graph
 wire or derived from its self-digest.
 `expected_closure_sha256` is the independently supplied SHA-256 of the exact
 canonical `raw` bytes; it is not a field that the wire may use to self-pin.
+`expected_startup_roots_sha256` hashes the canonical JSON array of the separately
+reviewed graph-root names. The digest must come from the source-audit process;
+computing it from an unreviewed graph does not establish root correctness.
 
 The API performs no filesystem, process, network, environment, compiler,
 freezer, ELF, or runtime operation. It accepts no live owner or callback. A
@@ -89,7 +96,7 @@ metadata; `to_dict()` must return a detached mutable copy.
 
 ## Canonical wire
 
-Schema: `lunar-static-python-startup-closure-v1`. Accept only exact built-in
+Schema: `lunar-static-python-startup-closure-v2`. Accept only exact built-in
 UTF-8 `bytes` in canonical JSON form: sorted object keys, compact separators,
 no trailing newline, and no duplicate keys, floats, non-finite values, nulls,
 custom collections, or unknown fields. Enforce byte/type limits before JSON
@@ -102,7 +109,7 @@ schema, evidence_scope, installation_version,
 source_tree_sha256, patch_set_sha256,
 initialization_profile_sha256, frozen_inventory_sha256,
 builtin_inventory_sha256, alias_inventory_sha256,
-startup_roots, modules, import_edges, unresolved_imports,
+expected_startup_modules, startup_roots, modules, import_edges, unresolved_imports,
 unsupported_import_sites, claims
 ```
 
@@ -113,10 +120,15 @@ closure pin hashes the exact `raw` bytes; the descriptor pin hashes the exact
 descriptor bytes; and the artifact pin is checked by the unchanged descriptor
 parser. Those three pins are external arguments, not extra graph-wire fields.
 
-`startup_roots` is a sorted unique list exactly equal to the descriptor's
-`initialization_profile.expected_startup_modules`. This preserves the current
-fixed startup observation list; it is not an opportunity to choose or infer
-new roots. The list must be nonempty and contain at most 64 names.
+`expected_startup_modules` is a sorted list exactly equal to the descriptor's
+`initialization_profile.expected_startup_modules`. It preserves the fixed
+expected module inventory. `startup_roots` is a separate sorted, unique list
+of reviewed graph entry modules. Its canonical JSON SHA-256 must equal the
+independent `expected_startup_roots_sha256` argument. Every root must occur in
+the expected inventory, and roots must be a proper subset so the graph must
+demonstrate at least one dependency edge. The list must be nonempty and contain
+at most 64 names. This parser checks the supplied root digest; it does not audit
+how the roots were selected.
 
 `modules` is a sorted unique list of exact records `{name, route, target}`.
 Records are sorted by `name`. Names are bounded ASCII dotted module labels.
@@ -132,8 +144,9 @@ Records are sorted by `name`. Names are bounded ASCII dotted module labels.
 - Every non-alias route has `target=""`. File, zip, extension, host, ambient,
   or otherwise unrecognized routes are not representable and must refuse.
 
-The graph must contain every startup root. No module name may have more than
-one route. Module references must resolve to exactly one listed module record;
+`modules` must contain exactly every expected startup module and every fixed
+bootstrap alias from the descriptor. No module name may have more than one
+route. Module references must resolve to exactly one listed module record;
 unknown targets are refused even when they are familiar stdlib names. In
 particular, parser code must not infer an inventory addition from a missing
 target such as `operator`.
@@ -147,16 +160,17 @@ frozen module in its own `target` field. The edge's `source` must equal that
 canonical module name and resolve to a `frozen` module record. The source,
 alias edge target, and alias record target must all agree with the descriptor's
 fixed alias mapping. The edge target is not the canonical module name directly.
-Every non-root module must be reachable from one or more startup roots through
-the directed edge list. Edges from unreachable sources and unreferenced module
-records refuse. This is only a consistency check over caller-supplied edges;
-it does not extract imports from source or prove that no edge is missing.
+Every non-root module must be reachable from one or more separately pinned
+startup roots through the directed edge list. Edges from unreachable sources
+and unreferenced module records refuse. This is only a consistency check over
+caller-supplied edges; it does not extract imports from source or prove that
+the selected roots or edges are complete.
 
 `unresolved_imports` and `unsupported_import_sites` are required empty arrays.
 Their presence makes incompleteness explicit rather than silently treating an
 unknown import or runtime-selected module as absent. A source audit that finds
 an unresolved dependency, non-literal dynamic import, external loader route, or
-unreviewed module cannot produce an accepted v1 graph. A literal import is
+unreviewed module cannot produce an accepted v2 graph. A literal import is
 allowed only when the source-review process independently fixes its module
 name and represents it as a `literal-import` edge.
 
@@ -173,13 +187,14 @@ The parser reports comparison success, not any of these claims.
 
 ## Bounds and refusal behavior
 
-Freeze these v1 parser limits before implementation:
+Freeze these v2 parser limits:
 
 - raw DTO: at most 256 KiB; installation descriptor: its existing 256 KiB
   bound;
 - decoded object: at most 8,192 nodes, depth 12, and 192 KiB aggregate UTF-8
   text, including keys;
-- startup roots: 1–64; module records: 1–256; import edges: 0–2,048;
+- expected startup modules: the exact descriptor list; startup roots: 1–64 and
+  a proper subset of that list; module records: 1–256; import edges: 0–2,048;
 - unresolved/unsupported-site arrays: 0–256 entries each, and accepted only
   when empty;
 - module names: 1–128 ASCII bytes; route/kind labels use fixed enums;
@@ -197,13 +212,16 @@ credentials, or parser exception context are retained.
 ## Focused validation requirements
 
 Use only synthetic in-memory vectors. A positive vector must be labelled
-synthetic and demonstrate exact current-profile roots, routes, aliases, graph
-reachability, independent pins, detached immutable output, and false claims.
+synthetic and demonstrate the exact expected-module inventory, a separate
+proper-subset root vector with its independent hash, routes, aliases, graph
+reachability, detached immutable output, and false claims. It must not present
+the synthetic roots as the real CPython roots.
 Negative cases must cover:
 
 - every mandatory pin missing or mismatched, and installation descriptor
   canonical/profile/inventory mismatch;
-- changed, missing, extra, unsorted, or duplicate startup roots;
+- changed, missing, extra, unsorted, duplicate, all-module, or incorrectly
+  pinned startup roots;
 - a new module target such as `operator`, unknown builtin/frozen/alias routes,
   conflicting route assignments, alias-target drift, and external loader
   route attempts;

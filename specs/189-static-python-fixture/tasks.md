@@ -106,10 +106,15 @@ failure and cancelled preflight separately from later successful evidence.
 - [x] Implement bounded pure descriptor/parser/external-pin validation with focused
   invalid shapes/collections/digest/count/unknown-field tests; no build/FS effects.
 - [x] Freeze `startup-closure-contract.md` and implement its separate bounded
-  canonical import-graph DTO parser. Compare supplied startup roots, module routes,
-  aliases and reachable edges with the unchanged installation descriptor and nine
-  independent SHA-256 pins; keep every capability claim false. The 60-case
-  in-memory synthetic suite proves DTO consistency only.
+  canonical import-graph DTO parser. Version 2 separates the descriptor-pinned
+  expected startup-module inventory from a separately hashed root vector, requires
+  exact module/alias records, and checks graph reachability from those roots. Its
+  64-case in-memory synthetic suite proves DTO consistency only; the synthetic
+  root vector is not claimed to be the real CPython startup roots.
+- [ ] Complete the independent C/Python startup audit and derive the exact graph
+  root vector from those pinned sources. Then exercise the v2 comparator with
+  that independently retained root hash. Do not guess roots or claim source or
+  configured closure from synthetic DTO results.
 - [x] Specify and implement the separate source-byte-bound Python AST import
   observer in `python-import-audit-contract.md`. Require exact caller-supplied
   module/source bytes and matching external per-source SHA-256 pins; record
