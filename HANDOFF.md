@@ -3,9 +3,9 @@
 ## 最新续接状态（2026-10-22）
 
 - PR #185 已合入 `main`，合并提交 `a3532cfd21c8b624cf09d10473a8b2bc92b79016`。本地分支
-  `codex/python-startup-closure-audit` 位于 Feature189 startup-closure v2 提交 `e19d96e`；本轮
-  source-derived root-vector 证据和回归尚未提交。PR185 的 Actions run `39773589266` 仍有 job 在运行或排队，
-  最近查询没有已完成失败项，但整体结论尚未产生，不能记作 CI 全绿。
+  `codex/python-startup-closure-audit` 的 source-derived root-vector 证据与回归已推送到 PR #186；
+  当前 Actions 正在为最新提交重新排队。PR185 的 run `39773589266` 最近查询为 22 个 job 成功、11 个
+  仍在运行、无失败，因此合并后 CI 尚未全部结束。
 - PR185 修复 warning-registry policy drift 与四处过期 workflow 用例数。Python 3.13.12 本地 focused 回归、
   Ruff、compileall 和 `git diff --check` 已通过；对应跑数和分支详情应以 PR185 Actions 完成结果为准。
 - CPython 3.13.12 的 Python AST 与 C startup 静态审查已补充结论：固定源码计划与已有 9 frozen、19 builtin、
