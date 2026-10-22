@@ -188,8 +188,13 @@ def test_foreign_instance_mapping_keys_refuse_before_any_lookup(index):
     objects = _objects()
     capsule = _CAPTURE(*objects)
     key = _EvilKey(_LOCK_NAMES[index])
-    namespace = vars(objects[index])
-    del namespace[_LOCK_NAMES[index]]
+    # Avoid the deleted key retained by a split instance dict.  Its equality
+    # callback belongs at the guarded lookup boundary, never fixture setup.
+    namespace = {
+        name: value for name, value in vars(objects[index]).items()
+        if name != _LOCK_NAMES[index]
+    }
+    objects[index].__dict__ = namespace
     namespace[key] = object()
     _reject(objects)
     _reject(objects, capsule)

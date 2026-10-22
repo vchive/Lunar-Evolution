@@ -176,7 +176,12 @@ class _EvilKey:
 def test_instance_keys_are_validated_before_lookups_and_comparisons():
     condition = threading.Condition()
     key = _EvilKey()
-    del condition.__dict__["_lock"]
+    # A split instance dict can retain the deleted string in its shared key
+    # table.  Start with a new plain mapping so inserting the colliding key
+    # cannot execute equality before the guard under test is called.
+    condition.__dict__ = {
+        name: value for name, value in vars(condition).items() if name != "_lock"
+    }
     condition.__dict__[key] = object()
     _reject(condition)
     assert key.calls == 0

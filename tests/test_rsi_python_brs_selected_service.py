@@ -545,10 +545,20 @@ def test_selected_service_refuses_shared_handoff_mutation_after_actual_ack(
 
 
 def test_selected_service_rechecks_original_deadline_without_budget_refresh(tmp_path, monkeypatch):
+    from lunar_evolution import rsi_budget
+
     value = _fixture(tmp_path, monkeypatch)
     original_execute = value.controller._execute_intent
     clock = {"now": value.binding.deadline_unix - 1}
-    monkeypatch.setattr(rsi_controller.time, "time", lambda: clock["now"])
+    # Keep the process-wide ``time`` module unchanged.  The reserved BRS policy
+    # pins its clock edges by identity, so mutating ``time.time`` globally is a
+    # reader-binding drift.  Isolate the budget's wall-clock seam instead.
+    class _BudgetClock:
+        @staticmethod
+        def time():
+            return clock["now"]
+
+    monkeypatch.setattr(rsi_budget, "time", _BudgetClock)
 
     def expire_after_ack(state, episode_id):
         execution = original_execute(state, episode_id)
