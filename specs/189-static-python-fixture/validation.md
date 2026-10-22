@@ -1,5 +1,45 @@
 # Validation contract — preparation is not runtime evidence
 
+## Fixed configure candidate and RSI pin-chain integration — 2026-10-23
+
+The candidate assets in [`configure-candidate.md`](configure-candidate.md)
+now emit explicit GNU-build/musl-host argv, feature-disable cache policies,
+clean-environment planning data and the complete 103-name pinned-template
+disposition (9 static enabled, 94 disabled). The build plan records and reads
+back all three assets before publishing its manifest or either entry point.
+Both entry points still exit 78 even with execution opt-in.
+
+All 10 new focused cases passed; the combined existing build-input/recipe/
+source-plan and candidate gate passed 100 cases. The wider 13-file RSI
+source/profile/contract/mock-driver/backend/readiness chain passed 784 cases
+with no failures/errors/skips. The independently fixed source-plan, overlay
+and preparation hashes were refreshed after reviewing the two changed original
+source-file records. Reconstructing those two records with their old values
+reproduced the old canonical source-plan digest; restoring the corresponding
+two preparation pins reproduced its old digest. The 11 source inputs, 6 output
+assets, launch policy and initialization fields are unchanged. No wire or
+runtime authority was expanded. These suites overlap and are not additive.
+
+The first combined run retained 113 fixture errors caused by the old
+source-plan pin. It is not a passing result; the later complete 784-case run
+is the final passing evidence. Local logs, XML and the reconstruction receipt
+are retained under ignored `.lunar-evolution/validation/feature189-20261023/`.
+Ruff for the whole repository, `compileall` for src/tools/tests and
+`git diff --check` passed after the final changes.
+
+A collection audit checked all 50 fixed CI inventories. Two existing ceilings
+were stale: selected service/wait 39→43 and Python preparation 243→463. Both
+corrected selections passed locally (43 and 463 cases); their macOS runners
+reported the existing 27,483 read-only-temporary-tree cleanup warnings and
+exited 0. The build-input gate now includes the 10 candidate cases and requires
+100 with zero failures/errors/skips. Final-head Linux CI is still required.
+
+The separate [`toolchain-layout-audit-20261023.md`](toolchain-layout-audit-20261023.md)
+records actual Zig/musl/CRT/source layout and upstream cross defaults. It is
+not complete retained toolchain custody or observed compiler consumption.
+No configure, compiler, freezer, target, evaluator or solver was executed for
+this slice. G1 complete custody/recipe/closure and G2/G3 acceptance remain open.
+
 ## G0 descriptor contract review — 2026-10-23
 
 [`descriptor-contract-review-20261023.md`](descriptor-contract-review-20261023.md)

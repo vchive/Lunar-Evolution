@@ -36,11 +36,11 @@ _REVIEWED_INPUTS = {
     },
     "reviewed_overlay": {
         "size": 2456,
-        "sha256": "31e8e064dc5317b3297140f55f07e81ca1aa9c831a4e4bbbf46cc76db0667b8f",
+        "sha256": "93a33ee5b753f7d64705adcedb1938b0f887b177348b091ed037c318eef938f0",
     },
     "source_plan": {
         "size": 6706,
-        "sha256": "3399f2f7e8ef9b7c2d6c7ff60985992c0dff1444e463a971ad2560cdbda410ee",
+        "sha256": "2b95d9d77a875245361ff0aa20d6a98f29034f5d0b33a03b143f3d55786dbb6a",
     },
 }
 _LAUNCH_POLICY = {

@@ -47,6 +47,13 @@ headers stage adjacent to the finite table under
 compiler flags, optional discovery and static-library/CRT inputs remain open;
 the fixed candidate is not an observed configure or complete link closure.
 
+The later [`configure-candidate.md`](configure-candidate.md) slice retains
+concrete candidate cache/module/environment assets and corrects the proposed
+cross-build argv without changing the old reviewed input asset. It still
+enables no configuration or compiler entry point. The actual Zig bundled
+source layout and upstream cross defaults are recorded separately in
+[`toolchain-layout-audit-20261023.md`](toolchain-layout-audit-20261023.md).
+
 Disable optional extension autodiscovery and supply an explicit static/disabled
 module manifest. Review generated pyconfig.h, Modules/Setup output, inittab,
 core sources, separate embedded startup arrays, object/archive link map and

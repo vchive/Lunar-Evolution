@@ -38,8 +38,8 @@ ensure_ascii=False and no trailing newline. Schema is
 `rsi-marker-launch-v1`. The three input records are exact `{size, sha256}`:
 
 - base80050 / c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31
-- overlay2456 / 31e8e064dc5317b3297140f55f07e81ca1aa9c831a4e4bbbf46cc76db0667b8f
-- source-plan6706 / 3399f2f7e8ef9b7c2d6c7ff60985992c0dff1444e463a971ad2560cdbda410ee
+- overlay2456 / 93a33ee5b753f7d64705adcedb1938b0f887b177348b091ed037c318eef938f0
+- source-plan6706 / 2b95d9d77a875245361ff0aa20d6a98f29034f5d0b33a03b143f3d55786dbb6a
 
 Launch policy exactly matches the reviewed source plan: argc3, literal marker
 `--lunar-rsi-input-v1` at index1, digest at index2 with syntax `[0-9a-f]{64}`,

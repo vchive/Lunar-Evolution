@@ -1,5 +1,38 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 最新配置候选与集成收口（2026-10-23）
+
+- Feature189 新增 `configure_plan.py` 并接入 `emit_build_plan`：保留 GNU build/musl host
+  参数、三个 feature-disable cache 策略、清洁环境计划和 Setup 模板 103 个模块的精确去留
+  （9 static enabled、94 disabled）。三个实际输出资产逐项记录 size/SHA，并在 manifest/scripts
+  发布前读回比对。旧 reviewed-build-inputs JSON 不变；两个 shell 入口仍 exit 78。
+  详见 `specs/189-static-python-fixture/configure-candidate.md`。
+- 对被修改的 profile.py/recipe.py 做固定 source-pin 链同步，覆盖 RSI source plan、overlay、
+  preparation、mock build driver 和 installation contract。独立重建证明仅两条源文件记录及
+  对应派生 pin 改变；11 source inputs、6 emitted assets、launch/initialization 行为均未变。
+  当前 canonical source-plan6706B/`2b95d9d7…86dbb6a`，overlay2456B/`93a33ee5…ef938f0`，
+  preparation73802B/`f507b275…4d0c98e`。首次 combined 的旧 pin 造成 113 fixture errors，
+  已与最终通过记录分开保留，不把首失败作为验收结果。
+- 新增 candidate 10 项通过；combined build-input gate 100 项通过；完整 source/profile/
+  contract/mock-driver/backend/readiness 的 13 文件共 784 项通过，均无 failure/error/skip。
+  套件有重叠，不相加。全仓 Ruff、src/tools/tests compileall 和 diff check 通过。
+- CI 固定用例数已逐一核对 50 处：selected service/wait 39→43，Python preparation
+  243→463；两组实际回归均通过。build-input gate 纳入新增候选测试，90→100。
+  前两组 macOS 回归输出既有只读临时树清理警告（27,483），退出 0；其余使用本轮独立临时根。
+- 5090gpu 的 Zig 源码/layout 只读审查见 `toolchain-layout-audit-20261023.md`：19,546
+  regular files 与归档逐一匹配，但此次未保留 canonical complete inventory、未建立 held-snapshot
+  custody。归档没有预制 .o/.a，实际生成 CRT/libc/compiler-rt 后仍需独立记录；精确 LLVM
+  21.1.0 仍只是声明，没有因 README 的 21.x 要求而成为已验证事实。
+- PR185 main CI run39773589266 已结束失败：三版本 current-3 均在原 600 秒 control 下的
+  three-child-mixed 串行 fixture 失败，非整 job timeout。PR186 已有后续 selected-pin validation
+  优化；其最终 Linux CI 必须另行判断。本轮将上述候选/集成修复推送至原 PR186 分支，待最终
+  精确 head required checks 全通过后再按用户既有授权合 main。
+- 下一实际步骤：完整工具链及 wrapper/helper/build-Python 身份、独立受观察的 patched source
+  custody、具体 clean environment，随后单独审查 configure-only 观察路径及全部生成配置输出。
+  候选资产尚未安装到 staged CPython，不授权 configure/make/freezer。完整启动闭包、静态
+  build/ELF、sealed runtime、owner/lifecycle 与项目验收仍开放；`production_admission=false`、
+  `online_publication=false` 不变。不运行 WebAgent、远程 evaluator、公司平台或 solver campaign。
+
 ## 最新 G0 收口（2026-10-23）
 
 - Feature189 v1 descriptor 的字段与 bounds 已完成并行交叉审查并冻结；记录见

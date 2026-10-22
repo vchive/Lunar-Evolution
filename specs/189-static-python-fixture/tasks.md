@@ -123,6 +123,16 @@ failure and cancelled preflight separately from later successful evidence.
   resolve compiler/binutils/static-library sources, versions and artifact hashes,
   including zlib/libffi/freezer inputs and the configured build environment.
 - [ ] Freeze configure/cache/module/compile/link/environment recipe and provenance.
+- [x] Implement the fixed configure candidate assets and emitter integration in
+  `configure-candidate.md`, with complete finite template-module dispositions,
+  explicit cross-build/cache/environment policy and same-source C freezer
+  requirements. Retain all unresolved actual configuration/build gates and
+  both exit-78 execution refusals; this subtask does not complete recipe freezing.
+- [x] Record the selected archive's actual Zig/musl/CRT/header/compiler-support
+  source layout and CPython cross-cache source defaults in
+  `toolchain-layout-audit-20261023.md`. The transient regular-file comparison
+  did not retain a complete canonical inventory or establish held-snapshot
+  custody, generated library bytes, or actual compiler input consumption.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
   actual target-owner integration remains a G3 gate.

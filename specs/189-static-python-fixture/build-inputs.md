@@ -80,7 +80,11 @@ not an implicit provenance source. Planning these dispositions does not mean
 the candidate was compiled with them.
 The current plan lists the required getbuildinfo constant names; their exact
 values remain a future recipe-freezing gate. The proposed configure argv and
-Zig compiler/archive-tool commands are recorded without executing them.
+Zig compiler/archive-tool commands are recorded without executing them. The
+later [`configure-candidate.md`](configure-candidate.md) assets supersede that
+earlier argv only as a retained proposal: GNU build versus musl host, three
+explicit cache policies and finite template module dispositions. Their actual
+size/hash is recorded by the emitter; no configure or compiler is enabled.
 
 ## Separate freezer and target plans
 
