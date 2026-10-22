@@ -1,12 +1,22 @@
-# 当前交接（2026-10-22，Feature 189 source/profile 收尾）
+# 当前交接（2026-10-22，PR184 CI 回归修复）
 
 ## 最新状态（2026-10-22）
 
-- 主线基线是 PR #183 合并提交 `fe8e61d474910911382677c61d0667ac75b26899`。当前分支
-  `codex/static-python-startup-closure` 的 HEAD 为 `3ed249f140e175e9b1a7c98890e08eef62487d6a`，PR #184
-  仍开放；source-readiness receipt 的 fail-closed 修正和对应测试已经提交，工作树当前干净。
-- Actions run `39638615170` 针对 HEAD `3ed249f`，当前仍在运行（已有少量 job 完成，整体尚未结论）；旧 run
-  `39636155773`、`39575463440` 和旧 SHA 的结果不归因于当前 HEAD。任何后续改动都必须等待新 SHA 的完整 CI。
+- 主线基线是 PR #183 合并提交 `fe8e61d474910911382677c61d0667ac75b26899`。PR #184
+  `codex/static-python-startup-closure` 仍开放；Actions run `39724773808` 针对远端提交
+  `f110a79`，发现 source-staging 固定测试数过期（101，应为 105）及 BRS service/native terminal
+  fixture 回归。本轮修复基于该提交，推送后必须以新 SHA 的完整 CI 作为合并门槛。
+- Candidate source-only receipt 已加强交叉绑定：固定补丁的 staged pre/post image、文件大小和
+  source-tree digest 必须与实际 staging inventory 一致；retained receipt 也重新校验固定补丁向量。
+  CI source-staging 计数已更新至 105。相关 9 项 receipt 与 105 项 staging 测试通过。
+- BRS terminal recovery 的自然终态 fixture 会在 source-bound native reader projection 有效时完成
+  inspect/reconcile；生产观察器和 fail-closed 检查未放宽。rejection-ready service 只容忍 Python
+  `__warningregistry__` 这一解释器 bookkeeping 键，若出现必须是普通 `dict`，其他 namespace 名称与
+  executable bindings 仍严格固定。terminal/native process 40 项、ready-service 56 项测试通过。
+  reserved serial integration 的完整本机复跑较慢，推送后的 Linux CI 将再次验证该路径。
+- 本批全仓 Ruff、`compileall` 和 `git diff --check` 通过。source receipt 与 BRS 证据仍是
+  provider-free/detached metadata 或 fixture 级验证；没有 CPython build/runtime、evaluator、solver
+  campaign 或生产准入，`production_admission=false`、`online_publication=false` 保持不变。
 - 本轮 Feature 189 增加了 `Lib/abc.py` 与 `Lib/encodings/__init__.py` 的固定源码补丁，补齐五源投影、
   暂存和 provenance 清单，并扩展 source-preparation CI 门禁。`abc` 在 `_abc` 失败时重新抛出原始异常，
   不导入 `_py_abc`；`encodings` 只将 UTF-8 及六个固定别名绑定至 `encodings.utf_8`，其他编码经

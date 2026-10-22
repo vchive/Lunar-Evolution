@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass
 from typing import NoReturn
 
+from . import source_patches
+
 CANDIDATE_BUILD_SOURCE_SCHEMA = "lunar-static-python-candidate-build-source-v1"
 SOURCE_PROFILE_SCHEMA = "lunar-static-python-candidate-source-profile-v1"
 MAX_CANDIDATE_BUILD_SOURCE_BYTES = 512 * 1024
@@ -148,64 +150,8 @@ def _validate_claims(value: object, reason: str, fields: frozenset[str] = _CLAIM
         _fail(reason)
 
 
-def _validate_staging(raw: bytes, expected_sha256: str) -> tuple[dict[str, object], str]:
-    _sha(expected_sha256, "staging_pin_invalid")
-    if hashlib.sha256(raw).hexdigest() != expected_sha256:
-        _fail("staging_pin_mismatch")
-    staging = _load(raw, maximum=MAX_STAGING_BYTES, reason="staging")
-    if frozenset(staging) != _STAGING_FIELDS or staging["schema"] != "lunar-static-python-source-staging-v1":
-        _fail("staging_schema_invalid")
-    for name in ("archive_sha256", "snapshot_sha256", "manifest_sha256", "projection_sha256", "policy_sha256", "patch_set_sha256"):
-        _sha(staging[name], "staging_digest_invalid")
-    for name in ("destination", "root", "root_directory", "archive"):
-        _text(staging[name], "staging_text_invalid")
-    if not isinstance(staging["entries"], list) or not staging["entries"]:
-        _fail("staging_entries_invalid")
-    entries = staging["entries"]
-    paths: list[str] = []
-    for item in entries:
-        if type(item) is not dict or frozenset(item) != _STAGING_ENTRY_FIELDS:
-            _fail("staging_entry_invalid")
-        path = item["path"]
-        if type(path) is not str or _PATH.fullmatch(path) is None or "//" in path or path.startswith("/") or "/../" in "/" + path:
-            _fail("staging_path_invalid")
-        if item["kind"] not in {"file", "directory"} or type(item["implicit"]) is not bool:
-            _fail("staging_entry_invalid")
-        for name in ("source_sha256", "staged_sha256"):
-            if item[name] is not None:
-                _sha(item[name], "staging_entry_digest_invalid")
-        if item["kind"] == "file":
-            if item["source_sha256"] is None or item["staged_sha256"] is None:
-                _fail("staging_entry_digest_invalid")
-        elif item["source_sha256"] is not None or item["staged_sha256"] is not None:
-            _fail("staging_entry_digest_invalid")
-        if item["kind"] == "directory" and item["archive_mode"] is None:
-            pass
-        else:
-            _integer(item["archive_mode"], "staging_entry_stat_invalid", maximum=2**63 - 1)
-        for name in ("device", "inode", "mode", "nlink", "size", "mtime_ns", "ctime_ns"):
-            _integer(item[name], "staging_entry_stat_invalid", maximum=2**63 - 1)
-        paths.append(path)
-    if paths != sorted(set(paths)):
-        _fail("staging_entries_order_invalid")
-    _validate_claims({name: staging[name] for name in _CLAIMS}, "staging_claim_invalid")
-    # The tree digest excludes host identity/timestamps, while retaining every
-    # path and byte identity consumed by a candidate builder.
-    projection = [{name: item[name] for name in ("path", "kind", "implicit", "source_sha256", "staged_sha256", "archive_mode", "size")} for item in entries]
-    return staging, hashlib.sha256(_canonical(projection, maximum=MAX_STAGING_BYTES)).hexdigest()
-
-
-def _validate_patch_set(raw: bytes, expected_sha256: str) -> tuple[dict[str, object], list[dict[str, object]]]:
-    _sha(expected_sha256, "patch_set_pin_invalid")
-    policy = _load(raw, maximum=MAX_PATCH_SET_BYTES, reason="patch_set")
-    if frozenset(policy) != _PATCH_FIELDS or policy["schema"] != "lunar-static-python-source-preparation-v1":
-        _fail("patch_set_schema_invalid")
-    if policy["source_archive_verification"] not in {"not-performed", "verified", "unavailable", "failed"} or policy["source_signature_verification"] not in {"not-performed", "verified", "unavailable", "failed"}:
-        _fail("patch_set_verification_invalid")
-    for name in ("source_version", "source_commit", "provenance", "policy", "zipimport_policy", "abc_fallback_policy", "codec_lookup_policy"):
-        _text(policy[name], "patch_set_text_invalid")
-    _validate_claims({name: policy[name] for name in _PATCH_CLAIMS}, "patch_set_claim_invalid", fields=_PATCH_CLAIMS)
-    files = policy["files"]
+def _validate_patch_files(files: object) -> list[dict[str, object]]:
+    """Validate the exact bounded patch vector carried by policies/receipts."""
     if type(files) is not list or not files:
         _fail("patch_set_files_invalid")
     names: list[str] = []
@@ -213,7 +159,8 @@ def _validate_patch_set(raw: bytes, expected_sha256: str) -> tuple[dict[str, obj
         if type(item) is not dict or frozenset(item) != _PATCH_FILE_FIELDS:
             _fail("patch_set_file_invalid")
         path = item["path"]
-        if type(path) is not str or _PATH.fullmatch(path) is None or path.startswith("/") or ".." in path.split("/"):
+        if (type(path) is not str or _PATH.fullmatch(path) is None
+                or path.startswith("/") or ".." in path.split("/")):
             _fail("patch_set_path_invalid")
         names.append(path)
         for name in ("before_sha256", "after_sha256"):
@@ -230,13 +177,221 @@ def _validate_patch_set(raw: bytes, expected_sha256: str) -> tuple[dict[str, obj
             for name in ("before_sha256", "after_sha256"):
                 _sha(operation[name], "patch_set_operation_digest_invalid")
             for name in ("before_size", "after_size"):
-                _integer(operation[name], "patch_set_operation_size_invalid", maximum=2**31 - 1, minimum=1)
-            _integer(operation["required_occurrences"], "patch_set_occurrence_invalid", maximum=16, minimum=1)
+                _integer(operation[name], "patch_set_operation_size_invalid",
+                         maximum=2**31 - 1, minimum=1)
+            _integer(operation["required_occurrences"], "patch_set_occurrence_invalid",
+                     maximum=16, minimum=1)
     if names != sorted(set(names)):
         _fail("patch_set_files_order_invalid")
+    return files
+
+
+def _validate_fixed_patch_identity(policy: dict[str, object]) -> None:
+    """Require the installation-owned complete policy, not a self-consistent substitute."""
+    expected = source_patches.source_patch_manifest()
+    if _canonical(policy, maximum=MAX_PATCH_SET_BYTES) != _canonical(
+            expected, maximum=MAX_PATCH_SET_BYTES):
+        _fail("patch_set_not_fixed")
+
+
+def _validate_staging(raw: bytes, expected_sha256: str) -> tuple[dict[str, object], str]:
+    _sha(expected_sha256, "staging_pin_invalid")
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
+        _fail("staging_pin_mismatch")
+    staging = _load(raw, maximum=MAX_STAGING_BYTES, reason="staging")
+    if frozenset(staging) != _STAGING_FIELDS or staging["schema"] != "lunar-static-python-source-staging-v1":
+        _fail("staging_schema_invalid")
+    for name in ("archive_sha256", "snapshot_sha256", "manifest_sha256", "projection_sha256", "policy_sha256", "patch_set_sha256"):
+        _sha(staging[name], "staging_digest_invalid")
+    for name in ("destination", "root", "root_directory"):
+        _text(staging[name], "staging_text_invalid")
+    if (type(staging["destination"]) is not str
+            or not staging["destination"].startswith("/")
+            or "\\" in staging["destination"] or "\0" in staging["destination"]):
+        _fail("staging_destination_invalid")
+    destination_parts = staging["destination"][1:].split("/")
+    if (not destination_parts or len(destination_parts) > 64
+            or any(part in {"", ".", ".."} for part in destination_parts)):
+        _fail("staging_destination_invalid")
+    if (type(staging["archive"]) is not str or staging["archive"] != "cpython"
+            or staging["root_directory"] != staging["destination"] + "/" + staging["root"]
+            or staging["snapshot_sha256"] != staging["archive_sha256"]):
+        _fail("staging_identity_invalid")
+    if type(staging["entries"]) is not list or not 0 < len(staging["entries"]) <= 131_072:
+        _fail("staging_entries_invalid")
+    if (type(staging["profile_pin_verified"]) is not bool
+            or (staging["profile_pin_verified"], staging["metadata_validation"])
+            not in {(True, "validated"), (False, "skipped-inert-profile")}):
+        _fail("staging_profile_state_invalid")
+    if (type(staging["source_preimages_checked"]) is not bool
+            or staging["source_preimages_checked"] is not True
+            or staging["extraction_performed"] is not True
+            or staging["fixed_patches_staged"] is not True
+            or staging["release_verified"] is not False
+            or staging["signature_verification"] != "not-performed"):
+        _fail("staging_state_invalid")
+    _validate_claims({name: staging[name] for name in _CLAIMS}, "staging_claim_invalid")
+    tree_identity_fields = frozenset({"device", "inode", "raw_mode", "nlink", "size", "mtime_ns", "ctime_ns"})
+    tree_identity = staging["tree_identity"]
+    if type(tree_identity) is not dict or frozenset(tree_identity) != tree_identity_fields:
+        _fail("staging_tree_identity_invalid")
+    for name in ("device", "inode", "raw_mode", "nlink", "size"):
+        _integer(tree_identity[name], "staging_tree_identity_invalid")
+    for name in ("mtime_ns", "ctime_ns"):
+        if type(tree_identity[name]) is not int or not -(2**63) <= tree_identity[name] <= 2**63 - 1:
+            _fail("staging_tree_identity_invalid")
+    if tree_identity["raw_mode"] != 0o40700 or tree_identity["nlink"] < 1:
+        _fail("staging_tree_identity_invalid")
+    ancestors = staging["ancestor_identities"]
+    if type(ancestors) is not list or len(ancestors) != len(destination_parts):
+        _fail("staging_ancestor_identities_invalid")
+    for ancestor in ancestors:
+        if type(ancestor) is not dict or frozenset(ancestor) != frozenset({"device", "inode"}):
+            _fail("staging_ancestor_identities_invalid")
+        _integer(ancestor["device"], "staging_ancestor_identities_invalid")
+        _integer(ancestor["inode"], "staging_ancestor_identities_invalid")
+    entries = staging["entries"]
+    paths: list[str] = []
+    by_path: dict[str, dict[str, object]] = {}
+    for item in entries:
+        if type(item) is not dict or frozenset(item) != _STAGING_ENTRY_FIELDS:
+            _fail("staging_entry_invalid")
+        path = item["path"]
+        if (type(path) is not str or _PATH.fullmatch(path) is None
+                or len(path.encode("ascii")) > 1024 or "\\" in path or ":" in path
+                or path.startswith("/") or any(part in {"", ".", ".."} for part in path.split("/"))
+                or len(path.split("/")) > 64
+                or (path != staging["root"] and not path.startswith(staging["root"] + "/"))):
+            _fail("staging_path_invalid")
+        if type(item["kind"]) is not str or item["kind"] not in {"file", "directory"} or type(item["implicit"]) is not bool:
+            _fail("staging_entry_invalid")
+        for name in ("source_sha256", "staged_sha256"):
+            if item[name] is not None:
+                _sha(item[name], "staging_entry_digest_invalid")
+        if item["kind"] == "file":
+            if path == staging["root"]:
+                _fail("staging_path_root_invalid")
+            if item["implicit"] is not False:
+                _fail("staging_entry_invalid")
+            if item["source_sha256"] is None or item["staged_sha256"] is None:
+                _fail("staging_entry_digest_invalid")
+            if (type(item["archive_mode"]) is not int or not 0 <= item["archive_mode"] <= 0o777
+                    or item["mode"] != 0o600 or item["nlink"] != 1):
+                _fail("staging_entry_stat_invalid")
+        elif item["source_sha256"] is not None or item["staged_sha256"] is not None:
+            _fail("staging_entry_digest_invalid")
+        elif item["kind"] == "directory":
+            if item["mode"] != 0o700 or item["nlink"] < 1:
+                _fail("staging_entry_stat_invalid")
+            if item["implicit"] and item["archive_mode"] is not None:
+                _fail("staging_entry_invalid")
+            if not item["implicit"] and (type(item["archive_mode"]) is not int
+                                          or not 0 <= item["archive_mode"] <= 0o777):
+                _fail("staging_entry_invalid")
+        else:
+            _integer(item["archive_mode"], "staging_entry_stat_invalid", maximum=2**63 - 1)
+        for name in ("device", "inode", "mode", "nlink", "size", "mtime_ns", "ctime_ns"):
+            if name in {"mtime_ns", "ctime_ns"}:
+                if type(item[name]) is not int or not -(2**63) <= item[name] <= 2**63 - 1:
+                    _fail("staging_entry_stat_invalid")
+            else:
+                _integer(item[name], "staging_entry_stat_invalid", maximum=2**63 - 1)
+        if item["nlink"] < 1:
+            _fail("staging_entry_stat_invalid")
+        paths.append(path)
+        by_path[path] = item
+    if paths != sorted(set(paths)):
+        _fail("staging_entries_order_invalid")
+    directory_paths = {path for path, item in by_path.items() if item["kind"] == "directory"}
+    if staging["root"] not in directory_paths:
+        _fail("staging_root_directory_missing")
+    implicit_directories: set[str] = set()
+    for path, item in by_path.items():
+        if path == staging["root"]:
+            if item["kind"] != "directory":
+                _fail("staging_path_root_invalid")
+            if item["implicit"]:
+                implicit_directories.add(path)
+            continue
+        parent = path.rpartition("/")[0]
+        while parent and parent != staging["root"]:
+            if parent not in directory_paths:
+                _fail("staging_directory_inventory_invalid")
+            if by_path[parent]["implicit"]:
+                implicit_directories.add(parent)
+            parent = parent.rpartition("/")[0]
+        if parent != staging["root"]:
+            _fail("staging_path_root_invalid")
+    if any(by_path[path]["implicit"] and path not in implicit_directories for path in directory_paths):
+        _fail("staging_implicit_directory_invalid")
+    _validate_claims({name: staging[name] for name in _CLAIMS}, "staging_claim_invalid")
+    # The tree digest excludes host identity/timestamps, while retaining every
+    # path and byte identity consumed by a candidate builder.
+    projection = [{name: item[name] for name in ("path", "kind", "implicit", "source_sha256", "staged_sha256", "archive_mode", "size")} for item in entries]
+    return staging, hashlib.sha256(_canonical(projection, maximum=MAX_STAGING_BYTES)).hexdigest()
+
+
+def _validate_staged_source_binding(
+    staging: dict[str, object],
+    policy: dict[str, object],
+    expected_source_tree_sha256: str,
+) -> None:
+    """Join every staged file to the fixed patch vector and rebuild source tree."""
+    root = staging["root"]
+    source_version = policy["source_version"]
+    if root != "Python-" + source_version:
+        _fail("staging_source_version_mismatch")
+    patch_by_path = {
+        root + "/" + item["path"]: item for item in policy["files"]
+    }
+    staged_files = {
+        item["path"]: item for item in staging["entries"] if item["kind"] == "file"
+    }
+    if set(patch_by_path) - set(staged_files):
+        _fail("staging_patch_inventory_mismatch")
+
+    source_files = []
+    for path, entry in staged_files.items():
+        patch = patch_by_path.get(path)
+        if patch is None:
+            source_size = entry["size"]
+            if entry["source_sha256"] != entry["staged_sha256"]:
+                _fail("staging_unpatched_file_drift")
+        else:
+            source_size = patch["before_size"]
+            if (entry["source_sha256"] != patch["before_sha256"]
+                    or entry["staged_sha256"] != patch["after_sha256"]
+                    or entry["size"] != patch["after_size"]):
+                _fail("staging_patch_image_mismatch")
+        source_files.append({
+            "path": path, "mode": entry["archive_mode"],
+            "size": source_size, "sha256": entry["source_sha256"],
+        })
+    source_tree = {
+        "schema": "lunar-static-python-source-tree-v1",
+        "archive": staging["archive"], "root": root,
+        "version": source_version,
+        "files": sorted(source_files, key=lambda item: item["path"]),
+    }
+    if hashlib.sha256(_canonical(source_tree, maximum=MAX_STAGING_BYTES)).hexdigest() != expected_source_tree_sha256:
+        _fail("source_tree_staging_mismatch")
+
+
+def _validate_patch_set(raw: bytes, expected_sha256: str) -> tuple[dict[str, object], list[dict[str, object]]]:
+    _sha(expected_sha256, "patch_set_pin_invalid")
+    policy = _load(raw, maximum=MAX_PATCH_SET_BYTES, reason="patch_set")
+    if frozenset(policy) != _PATCH_FIELDS or policy["schema"] != "lunar-static-python-source-preparation-v1":
+        _fail("patch_set_schema_invalid")
+    if policy["source_archive_verification"] not in {"not-performed", "verified", "unavailable", "failed"} or policy["source_signature_verification"] not in {"not-performed", "verified", "unavailable", "failed"}:
+        _fail("patch_set_verification_invalid")
+    for name in ("source_version", "source_commit", "provenance", "policy", "zipimport_policy", "abc_fallback_policy", "codec_lookup_policy"):
+        _text(policy[name], "patch_set_text_invalid")
+    _validate_claims({name: policy[name] for name in _PATCH_CLAIMS}, "patch_set_claim_invalid", fields=_PATCH_CLAIMS)
+    files = _validate_patch_files(policy["files"])
     files_raw = _canonical(files, maximum=MAX_PATCH_SET_BYTES)
     if hashlib.sha256(files_raw).hexdigest() != policy["patch_set_sha256"] or policy["patch_set_sha256"] != expected_sha256:
         _fail("patch_set_digest_mismatch")
+    _validate_fixed_patch_identity(policy)
     return policy, files
 
 
@@ -292,6 +447,12 @@ def build_candidate_build_source_receipt(
         policy, files = _validate_patch_set(patch_set, expected_patch_set_sha256)
         if staging["patch_set_sha256"] != policy["patch_set_sha256"]:
             _fail("staging_patch_set_mismatch")
+        expected_policy_sha256 = hashlib.sha256(
+            _canonical(policy, maximum=MAX_PATCH_SET_BYTES)
+        ).hexdigest()
+        if staging["policy_sha256"] != expected_policy_sha256:
+            _fail("staging_policy_mismatch")
+        _validate_staged_source_binding(staging, policy, expected_source_tree_sha256)
         profile = _validate_profile(source_profile, expected_source_profile_sha256, expected_source_tree_sha256, policy["patch_set_sha256"])
         if profile["source_archive_sha256"] != staging["archive_sha256"]:
             _fail("archive_binding_mismatch")
@@ -343,6 +504,7 @@ def validate_candidate_build_source_receipt(raw: bytes, *, expected_sha256: str)
         if (patch["source_version"] != profile["source_version"]
                 or patch["source_commit"] != profile["source_commit"]):
             _fail("receipt_patch_profile_mismatch")
+        files = _validate_patch_files(patch["files"])
         files_raw = _canonical(patch["files"], maximum=MAX_PATCH_SET_BYTES)
         _sha(value["patch_set_sha256"], "receipt_patch_set_invalid")
         if hashlib.sha256(files_raw).hexdigest() != value["patch_set_sha256"]:
@@ -351,6 +513,13 @@ def validate_candidate_build_source_receipt(raw: bytes, *, expected_sha256: str)
             _fail("receipt_patch_set_invalid")
         if patch["source_version"] != profile["source_version"] or patch["source_commit"] != profile["source_commit"]:
             _fail("receipt_patch_profile_mismatch")
+        expected_policy = source_patches.source_patch_manifest()
+        if (patch["source_version"] != expected_policy["source_version"]
+                or patch["source_commit"] != expected_policy["source_commit"]
+                or _canonical(files, maximum=MAX_PATCH_SET_BYTES)
+                != _canonical(expected_policy["files"], maximum=MAX_PATCH_SET_BYTES)
+                or value["patch_set_sha256"] != expected_policy["patch_set_sha256"]):
+            _fail("receipt_patch_set_not_fixed")
         return CandidateBuildSourceReceipt(raw, expected_sha256)
     except _Refusal as exc:
         raise CandidateBuildSourceError(exc.reason) from None
