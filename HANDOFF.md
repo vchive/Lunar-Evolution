@@ -9089,3 +9089,13 @@ PR #186 still has no completed checks for head `81f9af0` (latest Actions run
 pending with no jobs reported), so its CI state remains unresolved. Runtime
 reachability, configured closure, actual build/ELF, and sealed-target evidence
 remain open; `production_admission=false` and `online_publication=false`.
+
+### GitHub README follow-up (2026-10-23)
+
+The landing README now shows a provider-free `solve --runtime mock` smoke
+command, explains that it only exercises planning/control flow (no model or
+algorithm outputs), documents `run_id`/workspace placement and verified-artifact
+delivery, and links its MIT badge and contribution note to a full root `LICENSE`
+file consistent with `pyproject.toml`. Local mock `run` and `solve` smoke calls
+both succeeded with workspaces under `<home>/runs/<run_id>`; local README links
+resolve. No real model/evaluator was used.
