@@ -127,8 +127,22 @@ _REQUIRED_LINK_FLAGS = frozenset(("-static", "-no-pie"))
 _DYNAMIC_FLAG_MARKERS = (
     "--enable-shared", "--with-shared", "--enable-dynamic", "--with-dynamic",
     "--enable-loadable", "--with-system-ffi", "-fpic", "-fpie", "-fPIC", "-fPIE",
-    "-shared", "-pie", "-static-pie", "-rdynamic", "-dynamic", "-ldl", "-l:ld-linux",
-    "-Wl,-bdynamic", "-Wl,-rpath", "-Wl,-dynamic-linker", "-Wl,-shared", "-Wl,-pie",
+    "-shared", "-shared-libsan", "-shared-libasan", "-shared-libubsan", "-shared-libtsan",
+    "-shared-libgcc", "-pie", "-static-pie", "-rdynamic", "-dynamic", "-ldl", "-l:ld-linux",
+    "-flinker-output", "-fopenmp", "-fsanitize",
+    "-frtlib-add-rpath",
+    "-rpath", "--rpath", "-rpath-link", "--rpath-link", "--dynamic-linker",
+    "-dynamic-linker", "-bdynamic", "-dy", "-bshareable", "-call_shared",
+    "-export-dynamic", "--export-dynamic", "--script",
+)
+_DRIVER_ESCAPE_PREFIXES = (
+    "-wl", "-xlinker", "-specs", "-wrapper", "-fuse-ld", "--ld-path", "--config",
+    "--gcc-toolchain", "-gcc-toolchain", "--gcc-install-dir", "-xclang",
+    "-xoffload-linker", "-xopenmp-target", "-xcuda", "-xsycl", "-xarch",
+    "-foffload", "-fopenmp-targets", "--offload", "--cuda-", "--rocm-", "--hip-",
+    "--target", "-target", "--sysroot", "-isysroot", "--resource-dir", "-resource-dir",
+    "--cuda-path", "--rocm-path", "--hip-path", "-fplugin", "-fpass-plugin", "-mllvm",
+    "-z", "@", "-b", "-l", "--library=", "--library-path=",
 )
 _FORBIDDEN_LINK_SUFFIXES = (".so", ".so.", ".dylib", ".dll", ".la")
 _SAFE_ENV_VALUE = re.compile(r"[A-Za-z0-9_./:+\-]*\Z")
@@ -341,15 +355,54 @@ def _recipe(value: object) -> None:
     for name, expected in required:
         if not expected.issubset(flags[name]):
             _fail("recipe")
-    for values in flags.values():
-        lowered = [flag.lower() for flag in values]
-        for flag in lowered:
-            for marker in _DYNAMIC_FLAG_MARKERS:
-                marker = marker.lower()
-                if flag == marker or flag.startswith(marker + "=") or (
-                    marker.startswith("--") and flag.startswith(marker + "-")
-                ):
-                    _fail("recipe")
+    def forbidden_linker_argument(argument: str) -> bool:
+        lowered_argument = argument.lower()
+        if argument == "-R" or (argument.startswith("-R") and len(argument) > 2):
+            return True
+        if argument in ("-G", "-E"):
+            # Linker aliases for shared output and export-dynamic. Keep these
+            # case-sensitive: lowercase `-g`/`-e` have different meanings.
+            return True
+        # GNU ld's -I option is an alias for --dynamic-linker and accepts an
+        # attached operand (`-I/path`) as well as a separate one (`-I path`).
+        if lowered_argument.startswith("-i"):
+            return True
+        for marker in _DYNAMIC_FLAG_MARKERS:
+            marker = marker.lower()
+            if lowered_argument == marker or lowered_argument.startswith(marker + "=") or (
+                marker.startswith("--") and lowered_argument.startswith(marker + "-")
+            ):
+                return True
+        return False
+
+    def forbidden_recipe_flag(argument: str, *, linker_context: bool) -> bool:
+        flag = argument.lower()
+        # GCC accepts upper-case -R as a runtime library search/rpath option;
+        # compile flags may also be reused on a later driver link invocation.
+        if argument == "-R" or (argument.startswith("-R") and len(argument) > 2):
+            return True
+        # These known escape channels can change tools/targets or inject linker
+        # options. This finite denylist is not a compiler-option allowlist;
+        # G1 must pin and positively admit the exact build recipe.
+        if (
+            flag.startswith(_DRIVER_ESCAPE_PREFIXES)
+            or flag in ("--library", "--library-path")
+            or argument == "-T"
+            or argument.startswith("-T")
+        ):
+            return True
+        for marker in _DYNAMIC_FLAG_MARKERS:
+            marker = marker.lower()
+            if flag == marker or flag.startswith(marker + "=") or (
+                marker.startswith("--") and flag.startswith(marker + "-")
+            ):
+                return True
+        return linker_context and forbidden_linker_argument(argument)
+
+    for name, values in flags.items():
+        for flag_value in values:
+            if forbidden_recipe_flag(flag_value, linker_context=name == "link_flags"):
+                _fail("recipe")
     for name in ("generated_config_sha256", "module_config_sha256", "link_map_sha256"):
         _sha(item[name])
     link_inputs = item["link_inputs"]
@@ -367,6 +420,10 @@ def _recipe(value: object) -> None:
         value = _text(env["value"], 4096)
         if _SAFE_ENV_VALUE.fullmatch(value) is None:
             _fail("environment")
+        if name in {"CFLAGS", "CPPFLAGS", "LDFLAGS"} and forbidden_recipe_flag(
+            value, linker_context=name == "LDFLAGS"
+        ):
+            _fail("recipe")
         names.append(name)
     _ordered(names)
     if item["reproducibility"] not in ("not-tested", "byte-identical"):

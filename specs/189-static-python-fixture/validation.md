@@ -130,6 +130,21 @@ external descriptor/version/artifact pin mismatch. Refuse before filesystem,
 serialization/hash callbacks or runtime work when cheap shape is invalid.
 A parser verifies spelling/consistency, not unseen bytes, static linking or seals.
 
+The bounded no-dynamic recipe refusal gate now covers known direct/forwarded
+loader options and linker aliases, response files, linker scripts, unpinned
+library search, compiler/toolchain/offload overrides, target/sysroot/resource
+overrides, linker `-z` controls, LTO output-mode overrides, OpenMP and sanitizer
+runtime flags, including their build-flag environment forms. Provider-free
+parser tests recompute both recipe and descriptor pins for these mutations.
+This remains a refusal denylist rather than a complete compiler-option parser
+or positive allowlist; no compiler, linker, build, or runtime is invoked. G1
+must pin/admit the exact driver, recipe, defaults and inputs and inspect the
+resulting ELF before build/runtime acceptance.
+On 2026-10-23, the eight focused installation/build-input/acceptance files
+reported **624 passed**; Ruff, `compileall`, and `git diff --check` passed.
+Pytest emitted 27,483 existing macOS temporary-fixture cleanup warnings while
+removing deliberately read-only directories; the test process exited 0.
+
 ## Build and static evidence
 
 Retain verified source acquisition, exact source/patch/toolchain/musl/compiler/
@@ -408,6 +423,10 @@ false; no build or evaluator was run.
 for the fixed CPython 3.13.12/Linux profile and their pinned C/launcher entry
 sites. The compact canonical root array is retained separately with SHA-256
 `d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313`.
+The bounded bootstrap and loader route review is documented in
+`importlib-edge-audit-20261022.md`; it classifies selected source edges and
+candidate dispositions, while deferred direct resource-reader/metadata routes
+and configured/runtime binding remain open.
 The focused startup-closure suite now has **65 passing cases**, including a
 check that this root pin is a proper subset of the descriptor's 22 expected
 startup modules and composes with the comparator. The associated graph edges in

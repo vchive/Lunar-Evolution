@@ -79,7 +79,7 @@ def test_profile_mutations_refuse_before_any_external_effect(vector, mutation, r
 
 def test_manifest_digest_is_bound_to_canonical_nested_bytes(vector):
     payload = copy.deepcopy(vector["descriptor"])
-    payload["recipe"]["link_flags"].append("-Wl,--as-needed")
+    payload["recipe"]["link_flags"].append("-fvisibility=hidden")
     refused(lambda: parse(vector, payload), "manifest_pin")
 
 
@@ -146,6 +146,122 @@ def test_descriptor_overflow_is_rejected_before_json_parse(monkeypatch):
 def test_no_dynamic_recipe_rejects_loader_or_position_independent_escape(vector, section, flag):
     payload = copy.deepcopy(vector["descriptor"])
     payload["recipe"][section].append(flag)
+    refused(lambda: parse(vector, payload), "recipe")
+
+
+@pytest.mark.parametrize("flags", [
+    ("-Wl,-rpath,/tmp",),
+    ("-Wl,--rpath,/tmp",),
+    ("-Wl,-rpath=/tmp",),
+    ("-Wl,--dynamic-linker,/lib/ld-linux-x86-64.so.2",),
+    ("-Wl,-dynamic-linker,/lib/ld-linux-x86-64.so.2",),
+    ("-Wl,-Bdynamic,-ldl",),
+    ("-Wl,--enable-new-dtags,-rpath,/tmp",),
+    ("-Wl,-rpath-link,/tmp",),
+    ("-Wl,-R,/tmp",),
+    ("-Wl,-R/tmp",),
+    ("-rpath", "/tmp"),
+    ("--dynamic-linker", "/lib/ld-linux-x86-64.so.2"),
+    ("-l:libdl.so.2",),
+    ("-llibc.so",),
+    ("-L/usr/lib",),
+    ("--library=dl",),
+    ("--library-path=/usr/lib",),
+    ("-Xlinker=-rpath",),
+    ("-Xlinker=--dynamic-linker",),
+    ("-Wl,-I,/lib/ld-linux-x86-64.so.2",),
+    ("-Wl,-I/lib/ld-linux-x86-64.so.2",),
+    ("-I", "/lib/ld-linux-x86-64.so.2"),
+    ("-I/lib/ld-linux-x86-64.so.2",),
+    ("-Irelative-loader",),
+    ("-Xlinker=-I", "-Xlinker=/lib/ld-linux-x86-64.so.2"),
+    ("-Xlinker", "-I"),
+    ("-dy",),
+    ("-Wl,-dy",),
+    ("-Xlinker=-dy",),
+    ("-Bshareable",),
+    ("-Wl,-Bshareable",),
+    ("-Xlinker=-Bshareable",),
+    ("-call_shared",),
+    ("-Wl,-call_shared",),
+    ("-Xlinker=-call_shared",),
+    ("-G",),
+    ("-Wl,-G",),
+    ("-Xlinker=-G",),
+    ("-E",),
+    ("-Wl,-E",),
+    ("-Xlinker=-E",),
+    ("-frtlib-add-rpath",),
+    ("-shared-libsan",),
+    ("-shared-libasan",),
+    ("-shared-libubsan",),
+    ("-shared-libtsan",),
+    ("-shared-libgcc",),
+    ("--script=/tmp/ld.script",),
+    ("--script", "/tmp/ld.script"),
+    ("-flinker-output=dyn",),
+    ("-fopenmp",),
+    ("-fsanitize=address",),
+    ("-z", "execstack"),
+    ("-R", "/tmp/rpath"),
+    ("-R/tmp/rpath",),
+])
+def test_no_dynamic_recipe_rejects_forwarded_linker_escape_forms(vector, flags):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"]["link_flags"].extend(flags)
+    payload["recipe_sha256"] = hashlib.sha256(encode(payload["recipe"])).hexdigest()
+    refused(lambda: parse(vector, payload), "recipe")
+
+
+@pytest.mark.parametrize("field", ("configure_flags", "compile_flags", "link_flags"))
+@pytest.mark.parametrize("flag", (
+    "-Wl,--gc-sections", "-Xlinker=--gc-sections", "@/tmp/link.rsp", "@response-file",
+    "-specs=/tmp/driver.specs", "-B/tmp/toolchain/", "-wrapper=/tmp/wrapper",
+    "-fuse-ld=lld", "--ld-path=/tmp/ld", "--config=/tmp/clang.cfg",
+    "--gcc-toolchain=/tmp/toolchain", "--gcc-install-dir=/tmp/toolchain", "-Xclang",
+    "-fplugin=/tmp/plugin.so", "-fpass-plugin=/tmp/plugin.so", "-mllvm=-load=/tmp/plugin.so",
+    "-Xoffload-linkerx86_64-linux-gnu", "-Xoffload-linker", "-T", "-T/tmp/linker.ld",
+    "-R", "-R/tmp/rpath",
+    "-foffload-options=nvptx-none=-Wl,-dynamic-linker,/lib/ld.so",
+    "-Xopenmp-target=x86_64-linux-gnu", "-Xopenmp-target", "-fopenmp-targets=x86_64-linux-gnu",
+    "--offload-arch=x86_64", "--offload-arch-tool=/tmp/tool", "--offload-link",
+    "--cuda-path=/tmp/cuda", "--rocm-path=/tmp/rocm", "--hip-path=/tmp/hip",
+    "--target=x86_64-unknown-linux-gnu", "-target=x86_64-unknown-linux-gnu",
+    "--sysroot=/tmp/sysroot", "-isysroot=/tmp/sysroot", "--resource-dir=/tmp/clang-resource",
+    "-resource-dir=/tmp/clang-resource",
+))
+def test_no_dynamic_recipe_rejects_driver_and_response_file_escape_in_every_flag_vector(
+    vector, field, flag
+):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"][field].append(flag)
+    payload["recipe_sha256"] = hashlib.sha256(encode(payload["recipe"])).hexdigest()
+    refused(lambda: parse(vector, payload), "recipe")
+
+
+@pytest.mark.parametrize("field", ("configure_flags", "compile_flags", "link_flags"))
+@pytest.mark.parametrize("flag", (
+    "-l:libdl.so.2", "-llibc.so", "-L/usr/lib", "--library=dl", "--library-path=/usr/lib",
+))
+def test_no_dynamic_recipe_rejects_unpinned_library_search_in_every_flag_vector(
+    vector, field, flag
+):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"][field].append(flag)
+    payload["recipe_sha256"] = hashlib.sha256(encode(payload["recipe"])).hexdigest()
+    refused(lambda: parse(vector, payload), "recipe")
+
+
+@pytest.mark.parametrize("name", ("CFLAGS", "CPPFLAGS", "LDFLAGS"))
+@pytest.mark.parametrize("value", (
+    "-shared", "-fPIC", "-L/usr/lib", "-l:libdl.so.2", "-Wl", "-B/tmp/toolchain",
+    "-zexecstack", "-fsanitize", "-fopenmp", "-flinker-output", "-R/tmp/rpath", "-R",
+))
+def test_no_dynamic_recipe_rejects_unsafe_flag_environment_values(vector, name, value):
+    payload = copy.deepcopy(vector["descriptor"])
+    payload["recipe"]["environment"].append({"name": name, "value": value})
+    payload["recipe"]["environment"].sort(key=lambda item: item["name"])
+    payload["recipe_sha256"] = hashlib.sha256(encode(payload["recipe"])).hexdigest()
     refused(lambda: parse(vector, payload), "recipe")
 
 

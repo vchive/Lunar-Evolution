@@ -21,6 +21,17 @@
   尚未进入经证明的配置构建。
 - `specs/189-static-python-fixture/source-preparation.md` 已更正编码范围：实现接受规范化后的 canonical
   `utf_8` 和六个固定别名，并全部直接绑定到 `encodings.utf_8`。
+- 本轮 PR186 后续修改收紧了 Feature189 的 no-dynamic recipe 拒绝门：覆盖动态链接别名、链接脚本、
+  offload/response-file/toolchain 透传、显式 target/sysroot/resource 覆盖、`-z`、LTO 输出模式、以及
+  保守拒绝 GNU/ELF driver/linker 搜索路径别名大写 `-R` 和已知 OpenMP/sanitizer runtime flags。独立
+  parser review 用于找出语法缺口；固定工具链行为并未由该审查或本地测试证实。这仍是 bounded denylist，不是正向
+  compiler-option allowlist，也不授权构建。2026-10-23 的八个 focused 文件 624 项通过，Ruff、
+  compileall 和 diff 检查通过；macOS pytest 在只读 fixture 清理时产生 27,483 个既有权限警告，
+  测试退出码为 0。
+- `importlib-edge-audit-20261022.md` 已连入任务、验证和 startup-root 审计。它只完成 bounded source-level
+  review；direct resource-reader/metadata 路径、完整 import closure、配置构建和 runtime binding 仍开放。
+- PR186 的下一次 push 会触发新 Actions；在 Ubuntu 三版本 CI 完成且无失败前不合并。此轮没有运行 CPython
+  build/freezer、WebAgent、远程 evaluator、solver campaign 或公司评测平台；生产准入和在线发布保持关闭。
 - Feature189 P1 仍未完成：独立来源/补丁 custody、固定 musl/toolchain/sysroot 与构建 recipe、完整 Python/C
   启动闭包、same-source freezer、实际 configured build/ELF、sealed startup、input/result、owner/lifecycle 及
   OpenEvolve/Shinka 真项目生命周期验收。5090gpu 旧诊断镜像不能替代这些证据。保持

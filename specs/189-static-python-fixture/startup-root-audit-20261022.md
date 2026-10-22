@@ -70,6 +70,10 @@ star import needs an explicit reviewed builtin-edge disposition; the frozen
 main dynamic import is a bounded negative test, not an admitted source route.
 See [`prepared-source-import-observation-20261021.md`](prepared-source-import-observation-20261021.md).
 
+The bounded importlib bootstrap/loader edge review is recorded in
+[`importlib-edge-audit-20261022.md`](importlib-edge-audit-20261022.md); its
+deferred direct resource-reader and metadata routes remain unresolved.
+
 Conditional `warnings`/`site` branches, Windows-only imports, frozen-importer
 overrides, the configured builtin table, optional-module discovery, generated
 headers, resolved objects/link inputs, and actual module origins remain open.

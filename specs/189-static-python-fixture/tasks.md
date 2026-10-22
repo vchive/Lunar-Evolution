@@ -158,7 +158,11 @@ failure and cancelled preflight separately from later successful evidence.
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
   refusal sites across the complete configured source/startup scope, including
   any dependency outside the pinned profile and a versioned profile decision.
-  The DTO parser cannot certify this audit or infer new modules.
+  The bounded importlib bootstrap/loader review in
+  `importlib-edge-audit-20261022.md` records the `_frozen_importlib` startup edge
+  and candidate loader dispositions, but leaves deferred direct resource-reader/
+  metadata routes and configured/runtime binding unresolved. The DTO parser
+  cannot certify the full audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do
@@ -173,8 +177,9 @@ safe-extraction or signature-verification result.
 - [x] Specify the fixed candidate build-input preparation in `build-inputs.md`:
   separate shared/core/builtin, freezer/target plans, nine adjacent header paths
   and unresolved configured/static-link inputs. This is not actual build closure.
-- [x] Implement and locally validate pure fixed build-input emission and recipe refusal
-  with inert fixtures; do not run configure/make/freezer under explicit opt-in.
+- [x] Implement and locally validate pure fixed build-input emission and bounded
+  known-escape recipe refusal with inert fixtures; the parser is not a compiler
+  allowlist and does not authorize configure/make/freezer execution.
 - [x] Complete final-source three-version Linux CI and independent raw audit
   for the build-input slice before main merge; require the dedicated90-case
   source-only gate and source-preparation100-case gate without failures/errors/skips.
