@@ -745,3 +745,17 @@ main-thread CPU profile has invalid clock accounting and cannot support timing
 or hotspot conclusions. Exact final-source Linux original-600-second acceptance
 and all 33 final-head CI jobs remain required before main merge. Build/runtime,
 production admission and online publication are not enabled by these changes.
+
+The subsequent unprofiled `88005a30` Linux replay still failed at the original
+control, with primary `rejection_control_expired` and teardown `worker_unknown`.
+Its live module/source checks and eleven transferred file hashes passed.
+Post-run ledger preservation was impossible because fixture teardown removed
+its private directory; the limitation is retained, and no replay was started
+to fill that evidence gap.
+
+The follow-up exact-dispatch/domain split passes 288 related focused cases.
+CI's exact-type/domain/freeze gate is now 91 cases (33 + 19 + 39), requiring
+zero failures, errors or skips. The independent freeze-only pure builder
+benchmark preserves projection/pins; local timing is not E2E evidence. The
+normalization memo experiment was rejected after a mutable-regex-cache
+counterexample. These changes enable no build, runtime or production claim.

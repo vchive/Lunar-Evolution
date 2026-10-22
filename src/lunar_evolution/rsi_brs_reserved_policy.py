@@ -67,16 +67,20 @@ def _build_reserved_brs_policy():
         scalar = kind(value)
         if value is None:
             return "none",
-        for expected, label in ((plain_str, "str"), (plain_bytes, "bytes"),
-                                (plain_int, "int"), (plain_bool, "bool")):
-            if scalar is expected:
-                return label, value
+        if scalar is plain_str:
+            return "str", value
+        if scalar is plain_bytes:
+            return "bytes", value
+        if scalar is plain_int:
+            return "int", value
+        if scalar is plain_bool:
+            return "bool", value
         if scalar is plain_float:
             if not math.isfinite(value):
                 fail()
             return "float", value
-        if some(scalar is expected for expected in
-                (plain_dict, proxy_type, plain_list, plain_tuple, plain_set, plain_frozenset)):
+        if (scalar is plain_dict or scalar is proxy_type or scalar is plain_list
+                or scalar is plain_tuple or scalar is plain_set or scalar is plain_frozenset):
             if length(value) > maximum:
                 fail()
             if scalar is plain_dict or scalar is proxy_type:
@@ -220,6 +224,8 @@ def _build_reserved_brs_policy():
             pack_function(value)
     builtin_domains = []
     builtin_namespaces = plain_set()
+    unique_builtin_domains = []
+    builtin_domain_ids = plain_set()
     for function, _code, namespace, *_tail in functions:
         # Functions sharing globals have the same builtin alias and shadow
         # vector. Observe every distinct namespace on each projection without
@@ -233,6 +239,10 @@ def _build_reserved_brs_policy():
         domain = namespace_of(value) if kind(value) is module_type else value
         if kind(domain) is not plain_dict:
             fail()
+        domain_identity = object_id(domain)
+        if domain_identity not in builtin_domain_ids:
+            builtin_domain_ids.add(domain_identity)
+            unique_builtin_domains.append(domain)
         builtin_domains.append((namespace, value, domain,
             plain_tuple((name, namespace.get(name, original)) for name, original in builtin_bindings)))
     registered_modules = plain_dict((module.__name__, module) for module in modules)
@@ -261,6 +271,7 @@ def _build_reserved_brs_policy():
     digest = hashlib.sha256(json.dumps(projection, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     protocol = projection["protocol"]
     functions, declarations, namespaces = plain_tuple(functions), plain_tuple(declarations), plain_tuple(namespaces)
+    unique_builtin_domains = plain_tuple(unique_builtin_domains)
     external_members = plain_tuple(external_members)
     # ``warnings`` may lazily add a module-level ``__warningregistry__`` after
     # this policy is first projected (for example when a worker emits a
@@ -341,13 +352,18 @@ def _build_reserved_brs_policy():
             for name, value in containers:
                 if freeze(members[name]) != value:
                     fail()
-        for namespace, original, domain, shadows in builtin_domains:
-            if (namespace.get("__builtins__", missing) is not original or length(domain) > maximum
-                    or some(kind(key) is not plain_str for key in domain)):
+        # Check each held domain once, while retaining the alias and complete
+        # shadow vector separately for every globals namespace below. These
+        # sequential live observations do not provide an atomic snapshot.
+        for domain in unique_builtin_domains:
+            if length(domain) > maximum or some(kind(key) is not plain_str for key in domain):
                 fail()
             for name, value in builtin_bindings:
                 if domain.get(name, missing) is not value:
                     fail()
+        for namespace, original, _domain, shadows in builtin_domains:
+            if namespace.get("__builtins__", missing) is not original:
+                fail()
             for (name, value), (_label, builtin) in pairs(shadows, builtin_bindings, strict=True):
                 if namespace.get(name, builtin) is not value:
                     fail()

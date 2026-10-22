@@ -199,3 +199,74 @@ claim. Its raw data and failing original-budget outcome remain preserved;
 corrected live module receipts and source checks do not validate its timer.
 The new source still requires its own unprofiled original-budget Linux replay
 and all final-head CI jobs before merge.
+
+## Follow-up after `88005a30`
+
+The single unprofiled Linux case on `88005a30` still failed: case 600.573 s,
+suite 602.050 s. The primary refusal is native dispatch
+`rejection_control_expired`; executor teardown reports `worker_unknown`.
+It is not a direct `SolveExecutionBudgetExceeded` result. Live module receipts
+and all 2,317 source-file byte/executable checks passed. Eleven remote evidence
+files passed transfer verification. Fixture teardown removed its private
+`/var/tmp/lrsi-*` directory before post-run collection, so the final ledger
+could not be retained; no final-history progress claim follows from this run.
+Evidence remains under ignored `linux-mixed-final-88005a30-yt5v_law/`.
+
+The next bounded change removes temporary tuples/generators from exact type
+dispatch inside reserved-policy `freeze()` and admission shape checks. Preserve
+all scalar labels, container identities, recursion/node budgets, traversal,
+finite-float refusal, DTO identity allowlists and callback refusal. It adds no
+memoization and changes no source/SQLite/history/reference observation. Require
+independent old/new projection/pin comparison and focused drift tests before
+using it in another exact-source acceptance. A standalone seven-round parser
+experiment observed only 3.81% lower record parsing cost and 2.33% lower copied
+history-loop cost; those are local measurements, not acceptance or an E2E
+speedup promise. Do not add a normalization cache without a separate backend
+mutation analysis; replacing `textwrap.dedent` must remain observable.
+
+The same projection may also observe each captured exact builtin dictionary
+once, separately from the existing per-globals alias and shadow vectors. Keep
+all namespace pins and every distinct domain, including equal-content private
+copies; deduplicate only by captured identity and retain the domain vector as
+an immutable tuple. Check all domain lengths, exact string keys and selected
+bindings on every projection before the namespace alias/shadow pass. No
+foreign alias is dereferenced and no cached validation result is introduced.
+This reorders sequential observations and removes duplicate opportunities to
+notice a concurrent mutation; it supplies no atomic snapshot. It does not
+repair the preexisting global-builtins key race or claim a stronger concurrent
+guarantee. Require copied-domain/key/binding drift and separate-shadow tests.
+
+Independent builder comparison of `88005a30` with the freeze-only change
+preserves the complete projection and all 830 function pins, 58 declarations,
+19 module namespaces, 32 external members, 22 runtime edges, two limit pins,
+35 registered modules, 39 builtin bindings and 62 globals domains. Nine
+alternating rounds of 50 pure projections have medians 0.511397 s and
+0.367023 s (28.23% less). Both builders use the same currently imported graph;
+this is not a comparison of complete historical and current runtime trees.
+Raw script and measurements are retained in
+`freeze-dispatch-independent-microbenchmark.{py,json}`.
+
+A second independent 9 x 50 three-way comparison includes the domain split:
+baseline 0.539380 s, freeze-only 0.380856 s, current 0.371127 s. The current
+graph shares one captured domain across the same 62 separately checked globals;
+all original pins and projection agree. The domain split alone saves 2.55% in
+this local function, both changes 31.19%. Source SHA and registered source
+vector remain unchanged during measurement. The separate raw report is
+`domain-split-independent-microbenchmark.json`; it is not E2E evidence.
+
+The final local selection passes all 288 admission/row/type/domain/freeze/
+policy/compaction cases. The new 39-case freeze suite covers scalar type labels,
+foreign values/metaclasses without callbacks, finite floats and depth/node/
+width limits; the domain suite has 19 cases, including both equal-content
+private dictionaries independently mutated by bindings, foreign keys or size.
+CI's combined exact-type/domain/freeze gate requires 91 cases without skips.
+Whole-repository Ruff, src/tools/tests compileall and diff check pass. Exact
+final-source unprofiled Linux acceptance and all 33 CI jobs remain separate.
+The external-`/tmp` runner selection also passes all 204 cases after the new
+test-file inventory is present.
+
+The normalization memo prototype is not adopted: an independent counterexample
+changes `re._cache2` while dedent/code/regex/re.sub/re._compile identities remain
+unchanged. The original operation observes a different value and callback,
+whereas a warm memo hides both. Pure local timing gains do not override that
+backend semantic difference. This experiment creates no production cache.

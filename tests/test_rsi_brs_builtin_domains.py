@@ -37,6 +37,59 @@ def test_shared_builtin_domain_keeps_each_separate_namespace_shadow_vector():
     assert any(len(namespaces) > 1 for namespaces in shared.values())
 
 
+def test_every_distinct_held_builtin_domain_is_observed_once():
+    captures = _captures(policy._PROJECT)
+    expected = {id(entry[2]) for entry in captures["builtin_domains"].cell_contents}
+    actual = captures["unique_builtin_domains"].cell_contents
+    assert type(actual) is tuple
+    assert all(type(domain) is dict for domain in actual)
+    assert len(actual) == len(expected)
+    assert {id(domain) for domain in actual} == expected
+
+
+@pytest.mark.parametrize("domain_index", [0, 1])
+@pytest.mark.parametrize("mutation", ["binding", "foreign_key", "overlength"])
+def test_equal_private_builtin_domains_remain_separate_live_observations(monkeypatch, domain_index, mutation):
+    copies = []
+    for name in ("rsi_controller", "rsi_store"):
+        namespace = vars(importlib.import_module("lunar_evolution." + name))
+        original = namespace["__builtins__"]
+        copied = dict(vars(original) if type(original) is not dict else original)
+        monkeypatch.setitem(namespace, "__builtins__", copied)
+        copies.append(copied)
+    assert copies[0] == copies[1] and copies[0] is not copies[1]
+    project = policy._build_reserved_brs_policy()
+    monkeypatch.setattr(policy, "_PROJECT", project)
+    project()
+    actual = _captures(project)["unique_builtin_domains"].cell_contents
+    assert all(any(domain is copied for domain in actual) for copied in copies)
+    calls = []
+
+    def forbidden(*_args, **_kwargs):
+        calls.append("called")
+        raise AssertionError("foreign builtin executed")
+
+    class Key(str):
+        __hash__ = str.__hash__
+
+        def __eq__(self, other):
+            calls.append("equality")
+            raise AssertionError("foreign domain key compared")
+
+    domain = copies[domain_index]
+    if mutation == "binding":
+        domain["len"] = forbidden
+    elif mutation == "foreign_key":
+        del domain["len"]
+        domain[Key("len")] = len
+    else:
+        domain.update(("extra_" + str(index), None) for index in range(32769))
+    calls.clear()
+    with pytest.raises(RSILearningError, match="rsi_brs_reserved_policy_drift"):
+        project()
+    assert calls == []
+
+
 @pytest.mark.parametrize("module_name", [
     "rsi_controller", "rsi_store", "rsi_native_scheduler", "rsi_producer_gateway",
 ])

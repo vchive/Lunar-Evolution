@@ -1,5 +1,31 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 原预算失败后的无缓存分派优化（2026-10-23）
+
+- 精确`88005a30`的唯一无采样Linux mixed仍失败：case600.573秒/suite602.050秒，
+  primary为`rsi_python_brs_native_dispatch_rejection_control_expired`，executor teardown
+  报`rsi_brs_reserved_serial_worker_unknown`，不是直接budget exception。live module
+  receipts与2,317个源码文件前后核对通过；11个证据文件传输SHA已分别核对。fixture
+  teardown自动删除实际`/var/tmp/lrsi-*`临时目录，无法补取最终账本；没有为补数据重跑。
+- 新改动仅把reserved-policy `freeze()`的scalar/container类型分派及admission shape中的
+  generator改成exact-identity直接分支/循环。保留全部类型标签、finite-float、field/container
+  identity、递归/节点/width预算和每个递归调用，无新增cache。独立builder局部比较全部
+  830个function pins、62个namespace等保持；9×50次pure project中位0.511397→0.367023秒，
+  局部减少28.23%，不能外推E2E。admission/history局部实验仅减少3.81%/2.33%。
+- 另把每个captured exact builtin domain的length/keys/bindings检查与每个globals的alias/
+  完整shadow向量分离：domain按identity每次检查一次，所有namespace与function pins仍保留，
+  等值private domains不能合并。unique domain vector为强引用tuple，不缓存跨调用validation。
+  这改变单次投影的顺序观察次数，不是并发原子snapshot，也未修复既有全局builtins key竞态。
+- 新增39项freeze边界测试，domain测试扩到19项；33+19+39=91项CI专项门固定零跳过。
+  admission/row/type/domain/freeze/policy/compaction共288项通过，Ruff、src/tools/tests
+  compileall与diff check通过；新文件加入后的runner204项以外部`/tmp` basetemp通过。
+  domain独立基准验证全部pins/projection不变；pure project两项累计局部减少31.19%，
+  其中domain单项2.55%。新head原600 Linux验收和完整CI仍须单独通过才能合main。
+- 源码normalization memo实验未采用：即使dedent/code/regex/re.sub/re._compile identities
+  都不变，修改`re._cache2`也能改变原函数输出与回调，warm memo会隐藏变化。反例与局部
+  测量仅保留ignored，不冒充实现。隔离configure-bindings草案已收窄为六类wrapper与环境计划，
+  尚未编码、未集成本PR；实际G1–G3及项目runtime/solver验收仍开放。
+
 ## exact-type 边界与 builtin namespace 去重（2026-10-23）
 
 - 精确 `31b8c2cd35c40d89c3908d56ad08f8da5a440ae9` 的5090gpu单次无采样

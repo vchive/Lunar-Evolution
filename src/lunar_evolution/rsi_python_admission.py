@@ -67,15 +67,19 @@ def validate_rsi_python_admission_shapes(
             _fail("shape_invalid")
         return
     if kind is dict:
-        if any(type(key) is not str for key in value):
-            _fail("shape_invalid")
+        for key in value:
+            if type(key) is not str:
+                _fail("shape_invalid")
         items = value.values()
     elif kind is list or kind is tuple:
         items = value
-    elif any(kind is dto_type for dto_type in dto_types):
-        items = (getattr(value, field.name) for field in fields(value))
     else:
-        _fail("shape_invalid")
+        for dto_type in dto_types:
+            if kind is dto_type:
+                items = (getattr(value, field.name) for field in fields(value))
+                break
+        else:
+            _fail("shape_invalid")
     for item in items:
         validate_rsi_python_admission_shapes(item, dto_types=dto_types, _depth=_depth + 1)
 
