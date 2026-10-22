@@ -401,3 +401,16 @@ contains only those entries. The actual configure/link closure, same-source
 freezer outputs, C/header conditionals, startup behavior, module origins and
 runtime refusal paths remain open. All capability and production claims remain
 false; no build or evaluator was run.
+
+## Source-derived CPython startup roots
+
+`startup-root-audit-20261022.md` records the eight source-level primary roots
+for the fixed CPython 3.13.12/Linux profile and their pinned C/launcher entry
+sites. The compact canonical root array is retained separately with SHA-256
+`d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313`.
+The focused startup-closure suite now has **65 passing cases**, including a
+check that this root pin is a proper subset of the descriptor's 22 expected
+startup modules and composes with the comparator. The associated graph edges in
+that test remain deliberately synthetic. This closes root derivation only;
+complete import-edge audit, configured closure, build, runtime, and admission
+remain open. Ruff, `compileall`, and `git diff --check` passed for this slice.

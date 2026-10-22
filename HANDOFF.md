@@ -2,19 +2,23 @@
 
 ## 最新续接状态（2026-10-22）
 
-- PR #185 已合入 `main`，合并提交 `a3532cfd21c8b624cf09d10473a8b2bc92b79016`。本轮开始时本地分支
-  `codex/python-startup-closure-audit` 与 `origin/main` 同步、没有未提交改动；本轮 Feature189 的 v2 修改尚未提交。PR185 的 Actions run
-  `39773589266` 仍有 job 在运行或排队，最近一次查询没有已完成失败项，但整体结论尚未产生，不能记作 CI 全绿。
+- PR #185 已合入 `main`，合并提交 `a3532cfd21c8b624cf09d10473a8b2bc92b79016`。本地分支
+  `codex/python-startup-closure-audit` 位于 Feature189 startup-closure v2 提交 `e19d96e`；本轮
+  source-derived root-vector 证据和回归尚未提交。PR185 的 Actions run `39773589266` 仍有 job 在运行或排队，
+  最近查询没有已完成失败项，但整体结论尚未产生，不能记作 CI 全绿。
 - PR185 修复 warning-registry policy drift 与四处过期 workflow 用例数。Python 3.13.12 本地 focused 回归、
   Ruff、compileall 和 `git diff --check` 已通过；对应跑数和分支详情应以 PR185 Actions 完成结果为准。
 - CPython 3.13.12 的 Python AST 与 C startup 静态审查已补充结论：固定源码计划与已有 9 frozen、19 builtin、
   2 alias 清单相容，但这些审查不是完整 startup closure，也没有证明实际配置或编译产物。Python 审查覆盖
   八个 CPython frozen-source 文件及单独固定的 Lunar main；C 审查仍缺实际 `pyconfig.h`、配置 Makefile、
   frozen headers/tables、对象/链接清单和目标 ELF 绑定。
-- 已修正 Feature189 startup-closure v1 的有效性缺口并升为 wire v2：预期启动模块清单与单独 SHA-256
-  固定的 graph roots 已分离，比较器要求恰好包含全部预期模块和 aliases，再从 roots 检查依赖可达性。
-  新增正向/缺边/断连测试后，64 项 focused suite 通过。测试 roots 是合成输入，不是实际 CPython roots；
-  仍需独立 C/Python 源码审计确定真实入口并重放比较器，不能自行猜测。
+- 已修正 Feature189 startup-closure v1 的有效性缺口并升为 wire v2：预期最终启动模块清单与单独
+  SHA-256 固定的 graph roots 已分离。另从固定 CPython 3.13.12 C 源和 Lunar launcher 推导八个
+  source-level primary roots，规范 JSON SHA-256 为 `d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313`；
+  新增证据记录及 comparator 组合测试后，65 项 focused suite 通过。图边测试仍是合成数据；完整 C/Python
+  graph audit、configured build 和 runtime 仍开放。根列表显式说明 `zipimport` 仅因候选
+  `Python/import.c` postimage（`58a5fac8…8226b1`）计划移除 `init_zipimport()` 请求而未列入；该 postimage
+  尚未进入经证明的配置构建。
 - `specs/189-static-python-fixture/source-preparation.md` 已更正编码范围：实现接受规范化后的 canonical
   `utf_8` 和六个固定别名，并全部直接绑定到 `encodings.utf_8`。
 - Feature189 P1 仍未完成：独立来源/补丁 custody、固定 musl/toolchain/sysroot 与构建 recipe、完整 Python/C

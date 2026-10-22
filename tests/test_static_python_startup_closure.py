@@ -19,6 +19,8 @@ from lunar_evolution import static_python_startup_closure as startup_closure
 
 _ROOT = Path(__file__).resolve().parents[1]
 _WIRE = _ROOT / "specs/189-static-python-fixture/wire-v1-example.json"
+_SOURCE_ROOTS = _ROOT / "specs/189-static-python-fixture/startup-roots-cpython-3.13.12.json"
+_SOURCE_ROOTS_SHA256 = "d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313"
 _SCHEMA = "lunar-static-python-startup-closure-v2"
 _CLAIMS = (
     "source_graph_verified",
@@ -258,6 +260,29 @@ def test_minimal_current_profile_graph_is_only_synthetic_dto_comparison(
     assert not hasattr(result, "__dict__")
     with pytest.raises(FrozenInstanceError):
         result.canonical_bytes = b"replacement"
+
+
+def test_source_reviewed_roots_match_external_pin_and_profile_inventory(
+    f01: dict, descriptor_raw: bytes,
+):
+    raw_roots = _SOURCE_ROOTS.read_bytes()
+    roots = json.loads(raw_roots)
+    assert _encode(roots) == raw_roots
+    assert _sha(raw_roots) == _SOURCE_ROOTS_SHA256
+    assert roots == sorted(set(roots))
+    assert set(roots) < set(f01["initialization_profile"]["expected_startup_modules"])
+
+    # Keep the edge graph intentionally synthetic. This confirms the source-root
+    # pin composes with the v2 parser without presenting synthetic edges as a
+    # source-complete or runtime-observed graph.
+    payload = _payload(f01)
+    payload["startup_roots"] = roots
+    result = _parse(
+        payload, f01, descriptor_raw,
+        expected_startup_roots_sha256=_SOURCE_ROOTS_SHA256,
+    )
+    assert result.startup_roots == tuple(roots)
+    assert result.to_dict()["evidence_scope"] == "synthetic-dto-comparison-only"
 
 
 @pytest.mark.parametrize("pin", _PIN_NAMES)

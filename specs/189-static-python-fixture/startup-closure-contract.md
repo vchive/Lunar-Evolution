@@ -1,7 +1,9 @@
 # Feature 189 — bounded startup import-closure comparison contract
 
-Status: provider-free DTO parser and synthetic focused tests implemented. The
-independent source audit that would establish a real import graph remains open.
+Status: provider-free DTO parser and synthetic focused tests implemented. A
+source-derived candidate root vector is retained in
+`startup-root-audit-20261022.md`; the complete source audit that would establish
+the real import graph remains open.
 This does not establish a complete CPython import closure, a build, startup,
 loader refusal, ownership, runtime acceptance, or production admission.
 

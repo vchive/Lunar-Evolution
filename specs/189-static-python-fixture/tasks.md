@@ -109,11 +109,18 @@ failure and cancelled preflight separately from later successful evidence.
   canonical import-graph DTO parser. Version 2 separates the descriptor-pinned
   expected startup-module inventory from a separately hashed root vector, requires
   exact module/alias records, and checks graph reachability from those roots. Its
-  64-case in-memory synthetic suite proves DTO consistency only; the synthetic
+  65-case focused suite (including the pinned-root composition check) proves
+  DTO consistency only; the synthetic graph edges remain synthetic and do not
+  establish source closure. The synthetic
   root vector is not claimed to be the real CPython startup roots.
-- [ ] Complete the independent C/Python startup audit and derive the exact graph
-  root vector from those pinned sources. Then exercise the v2 comparator with
-  that independently retained root hash. Do not guess roots or claim source or
+- [x] Derive and retain the source-level primary root vector from the pinned
+  CPython C startup sources and fixed Lunar launcher. Its independent canonical
+  hash is `d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313`;
+  the source sites and limitations are in `startup-root-audit-20261022.md`.
+  This closes root derivation only, not the graph audit or runtime evidence.
+- [ ] Independently complete the C/Python import-edge audit for the configured
+  source/startup scope, then exercise the v2 comparator with the source-derived
+  root hash and an independently retained graph. Do not claim source or
   configured closure from synthetic DTO results.
 - [x] Specify and implement the separate source-byte-bound Python AST import
   observer in `python-import-audit-contract.md`. Require exact caller-supplied
