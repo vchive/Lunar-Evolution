@@ -24,7 +24,10 @@ MAX_PATCH_SET_BYTES = 256 * 1024
 MAX_STAGING_BYTES = 128 * 1024 * 1024
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
-_PATH = re.compile(r"[A-Za-z0-9_./+-]{1,4096}\Z")
+# Extraction member names may contain ordinary spaces and UTF-8 text. Keep
+# control characters out here, then reject path normalization, backslashes,
+# colons and oversized encoded paths in the staging validator below.
+_PATH = re.compile(r"[^\x00-\x1f\x7f-\x9f]{1,4096}\Z")
 
 _CLAIMS = frozenset({
     "source_execution_performed", "build_performed", "frozen_headers_generated",
@@ -258,7 +261,7 @@ def _validate_staging(raw: bytes, expected_sha256: str) -> tuple[dict[str, objec
             _fail("staging_entry_invalid")
         path = item["path"]
         if (type(path) is not str or _PATH.fullmatch(path) is None
-                or len(path.encode("ascii")) > 1024 or "\\" in path or ":" in path
+                or len(path.encode("utf-8")) > 1024 or "\\" in path or ":" in path
                 or path.startswith("/") or any(part in {"", ".", ".."} for part in path.split("/"))
                 or len(path.split("/")) > 64
                 or (path != staging["root"] and not path.startswith(staging["root"] + "/"))):
