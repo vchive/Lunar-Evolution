@@ -114,10 +114,17 @@
         "module": "_io",
         "sha256": "9d04adc6fd2b493f3a7de3b519abbfd60476b209ccd3428eff4ed1cdf06cbaf2",
         "size_bytes": 24972
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/_abc.c",
+        "fixture_path": "Modules/_abc.c.source",
+        "module": "_abc",
+        "sha256": "a4abd74e245af77f5a8c40ac8d443153ff8636e4e10a8578e9dddecaa3d0b9e8",
+        "size_bytes": 27112
       }
     ],
     "release": "CPython 3.13.12",
-    "scope": "ten exact regular-file member byte copies; inert test data only",
+    "scope": "eleven exact regular-file member byte copies; inert test data only",
     "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md",
     "supporting_members": [
       {

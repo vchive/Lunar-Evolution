@@ -182,6 +182,17 @@ and consistency with the synthetic candidate tables and descriptor. Its
 evidence boundary is recorded in
 [`io-builtin-source-audit-20261023.md`](io-builtin-source-audit-20261023.md).
 
+The `_abc` source-only continuation is covered by
+`tests/test_static_python_abc_source_fixture.py`. It pins the exact archive
+member bytes and checks the `_abc`/`PyInit__abc` declaration, the Setup template
+row, Lunar's candidate table and source/object plan, and the separate synthetic
+descriptor metadata. The evidence boundary is recorded in
+[`abc-c-source-audit-20261023.md`](abc-c-source-audit-20261023.md); it provides
+no build, link, ELF, or runtime evidence. The combined focused regression over
+the new `_abc` fixture, existing `_codecs`/`_io` fixtures, candidate tables,
+build-input plan and relevant import profiles reported **142 passed**. Ruff,
+`compileall`, and `git diff --check` also passed.
+
 ## Build and static evidence
 
 Retain verified source acquisition, exact source/patch/toolchain/musl/compiler/

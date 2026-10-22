@@ -167,6 +167,12 @@ failure and cancelled preflight separately from later successful evidence.
   `_io`/`PyInit__io` declaration against the upstream Setup template, explicit
   candidate source/object plan, AST edge and source-derived `io` startup root.
   This is bounded source/metadata consistency, not compilation or runtime proof.
+- [x] Retain exact archive `Modules/_abc.c` bytes as an inert fixture and
+  cross-check its `_abc`/`PyInit__abc` declaration against the Setup template,
+  Lunar's candidate emitted table/source/object plan, and the synthetic
+  descriptor in `abc-c-source-audit-20261023.md`. This source-only check does not
+  establish configured consumption, compilation, linking, ELF contents, or
+  runtime module origin.
 - [x] Define bounded source-preparation dispositions for the observed dynamic
   codec-name selection and `_py_abc` fallback: direct fixed UTF-8 binding, a
   six-alias allowlist, and preservation of the original `_abc` import error.
