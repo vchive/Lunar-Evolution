@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import socket
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from copy import deepcopy
 from threading import Event, get_ident
 
@@ -56,6 +59,141 @@ def test_selected_wait_requires_actual_owner_before_any_source_hook(tmp_path, mo
         assert not wave.channel._completed_selected_episodes
         assert _rows(value) == rows and selected._evidence_files(value) == files
         assert value.gateway.calls == 0
+
+
+@pytest.mark.parametrize("path", ["fixed-default", "selected-full"])
+def test_fixed_and_selected_pins_run_producer_and_staging_validation_once(
+    tmp_path, monkeypatch, path,
+):
+    value = selected._fixture(tmp_path, monkeypatch)
+    counts = {"checkpoint": 0, "original": 0, "staging": 0}
+    original_checkpoint = value.controller._validate_producer_checkpoint
+    original_binding = value.controller._validate_original_producer_checkpoint
+    original_staging = value.controller._validate_producer_staging
+
+    def checkpoint(run_id, state):
+        counts["checkpoint"] += 1
+        return original_checkpoint(run_id, state)
+
+    def binding(run_id, state):
+        counts["original"] += 1
+        return original_binding(run_id, state)
+
+    def staging(record, state):
+        counts["staging"] += 1
+        return original_staging(record, state)
+
+    monkeypatch.setattr(value.controller, "_validate_producer_checkpoint", checkpoint)
+    monkeypatch.setattr(value.controller, "_validate_original_producer_checkpoint", binding)
+    monkeypatch.setattr(value.controller, "_validate_producer_staging", staging)
+
+    with selected._wave(value) as wave:
+        if path == "fixed-default":
+            context = value.controller._python_admission_brs_fixed_pins(wave)
+            expected_checkpoint_calls = 0
+        else:
+            context = value.controller._python_admission_brs_selected_pins_once(wave)
+            expected_checkpoint_calls = 1
+        assert context.head_sha256 == wave.checkpoint_sha256
+        assert context.state_sha256 == hashlib.sha256(wave.payload).hexdigest()
+
+    assert counts == {"checkpoint": expected_checkpoint_calls, "original": 1, "staging": 1}
+
+
+def test_selected_pins_allows_prewrite_transition_with_one_full_producer_gate(tmp_path, monkeypatch):
+    value = selected._fixture(tmp_path, monkeypatch)
+    counts = {"checkpoint": 0, "original": 0, "staging": 0}
+    original_checkpoint = value.controller._validate_producer_checkpoint
+    original_binding = value.controller._validate_original_producer_checkpoint
+    original_staging = value.controller._validate_producer_staging
+
+    def checkpoint(run_id, state):
+        counts["checkpoint"] += 1
+        return original_checkpoint(run_id, state)
+
+    def binding(run_id, state):
+        counts["original"] += 1
+        return original_binding(run_id, state)
+
+    def staging(record, state):
+        counts["staging"] += 1
+        return original_staging(record, state)
+
+    monkeypatch.setattr(value.controller, "_validate_producer_checkpoint", checkpoint)
+    monkeypatch.setattr(value.controller, "_validate_original_producer_checkpoint", binding)
+    monkeypatch.setattr(value.controller, "_validate_producer_staging", staging)
+    with (selected._wave(value) as wave,
+          value.controller._python_admission_brs_checkpoint_transition(wave)):
+        context = value.controller._python_admission_brs_selected_pins_once(wave)
+        assert context.head_sha256 == wave.checkpoint_sha256
+        assert context.state_sha256 == hashlib.sha256(wave.payload).hexdigest()
+    assert counts == {"checkpoint": 1, "original": 1, "staging": 1}
+
+
+def test_selected_pins_bind_full_validation_to_capture_and_reject_adopted_successor(
+    tmp_path, monkeypatch,
+):
+    value = selected._fixture(tmp_path, monkeypatch)
+    with selected._wave(value) as wave:
+        captured_payload = wave.payload
+        captured_state = json.loads(captured_payload)
+        captured_head = wave.checkpoint_sha256
+        original_checkpoint = value.controller._validate_producer_checkpoint
+        original_read_only = value.ledger.read_only_observations
+        full_states = []
+        read_only_depth = 0
+        successor_adopted = False
+
+        def transition_after_validation(run_id, state):
+            full_states.append(deepcopy(state))
+            return original_checkpoint(run_id, state)
+
+        def adopt_successor_after_read_only_gate():
+            nonlocal successor_adopted
+            successor = deepcopy(captured_state)
+            successor["transition_probe"] = True
+            successor_payload = value.controller._python_admission_flow_payload(successor)
+            with value.controller._python_admission_brs_checkpoint_transition(wave):
+                next_head = value.ledger.write_controller_checkpoint(
+                    value.binding.run_id, successor, expected_sha256=wave.checkpoint_sha256,
+                )
+                wave.state.clear()
+                wave.state.update(successor)
+                wave.payload = successor_payload
+                wave.checkpoint_sha256 = next_head
+            successor_adopted = True
+
+        @contextmanager
+        def read_only_observations():
+            nonlocal read_only_depth
+            read_only_depth += 1
+            try:
+                with original_read_only():
+                    yield
+            finally:
+                read_only_depth -= 1
+                if read_only_depth == 0 and full_states and not successor_adopted:
+                    # Model a concurrent checkpoint transition after the selected
+                    # full validator releases its read-only snapshot and before
+                    # the selected gate performs its final CAS.
+                    adopt_successor_after_read_only_gate()
+
+        monkeypatch.setattr(
+            value.controller, "_validate_producer_checkpoint", transition_after_validation,
+        )
+        monkeypatch.setattr(value.ledger, "read_only_observations", read_only_observations)
+        history_before = value.ledger.controller_checkpoint_history(value.binding.run_id)
+        with pytest.raises(RSILearningError, match="^rsi_python_brs_admission_stale$"):
+            value.controller._python_admission_brs_selected_pins_once(wave)
+
+        assert full_states == [captured_state]
+        assert captured_payload != wave.payload
+        assert captured_head != wave.checkpoint_sha256
+        assert successor_adopted is True
+        assert wave.checkpoint_transition is False
+        assert len(value.ledger.controller_checkpoint_history(value.binding.run_id)) == len(history_before) + 1
+        durable = value.ledger.controller_checkpoint(value.binding.run_id)
+        assert durable == (wave.checkpoint_sha256, wave.state)
 
 
 def test_selected_wait_allows_real_ack_worker_to_settle_during_fixed_source_observation(
