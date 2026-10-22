@@ -4,7 +4,8 @@
 
 - PR #185 已合入 `main`，合并提交 `a3532cfd21c8b624cf09d10473a8b2bc92b79016`。本地分支
   `codex/python-startup-closure-audit` 的 source-derived root-vector 证据与回归已推送到 PR #186；
-  当前 Actions 正在为最新提交重新排队。PR185 的 run `39773589266` 最近查询为 22 个 job 成功、11 个
+  本轮 recipe 拒绝与 importlib audit follow-up 也已推送，Actions 正在检查 PR 最新 head。PR185 的
+  run `39773589266` 最近查询为 22 个 job 成功、11 个
   仍在运行、无失败，因此合并后 CI 尚未全部结束。
 - PR185 修复 warning-registry policy drift 与四处过期 workflow 用例数。Python 3.13.12 本地 focused 回归、
   Ruff、compileall 和 `git diff --check` 已通过；对应跑数和分支详情应以 PR185 Actions 完成结果为准。
@@ -30,7 +31,7 @@
   测试退出码为 0。
 - `importlib-edge-audit-20261022.md` 已连入任务、验证和 startup-root 审计。它只完成 bounded source-level
   review；direct resource-reader/metadata 路径、完整 import closure、配置构建和 runtime binding 仍开放。
-- PR186 的下一次 push 会触发新 Actions；在 Ubuntu 三版本 CI 完成且无失败前不合并。此轮没有运行 CPython
+- PR186 以最终 head 的 Ubuntu 三版本 CI 全绿为合并条件。此轮没有运行 CPython
   build/freezer、WebAgent、远程 evaluator、solver campaign 或公司评测平台；生产准入和在线发布保持关闭。
 - Feature189 P1 仍未完成：独立来源/补丁 custody、固定 musl/toolchain/sysroot 与构建 recipe、完整 Python/C
   启动闭包、same-source freezer、实际 configured build/ELF、sealed startup、input/result、owner/lifecycle 及
