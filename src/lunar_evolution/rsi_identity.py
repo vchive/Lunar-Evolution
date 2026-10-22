@@ -47,9 +47,39 @@ MAX_CONFIG_DEPTH = 12
 MAX_CONFIG_KEYS = 256
 MAX_CONFIG_TEXT_BYTES = 16 * 1024
 _MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024
-_MAX_SOURCE_CACHE_ENTRIES = 256
-_SOURCE_CACHE: OrderedDict[tuple[Any, ...], tuple[str, object, object]] = OrderedDict()
+_MAX_SOURCE_CACHE_ENTRIES = 1024
+# More small components fit without exceeding the former 256 * MAX_CODE_BYTES
+# theoretical source-text limit. Final identities and live configuration are not cached.
+_MAX_SOURCE_CACHE_BYTES = 24 * 1024 * 1024
 _SOURCE_CACHE_LOCK = threading.RLock()
+
+
+class _SourceCache(OrderedDict[tuple[Any, ...], tuple[str, object, object]]):
+    """LRU source extraction storage; callers hold the source-cache lock."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.retained_bytes = 0
+
+    def clear(self) -> None:
+        with _SOURCE_CACHE_LOCK:
+            super().clear()
+            self.retained_bytes = 0
+
+    def retain(self, key: tuple[Any, ...], value: tuple[str, object, object], size: int) -> None:
+        previous = self.pop(key, None)
+        if previous is not None:
+            self.retained_bytes -= len(previous[0].encode("utf-8"))
+        if size <= _MAX_SOURCE_CACHE_BYTES:
+            self[key] = value
+            self.retained_bytes += size
+        while (len(self) > _MAX_SOURCE_CACHE_ENTRIES
+               or self.retained_bytes > _MAX_SOURCE_CACHE_BYTES):
+            _key, removed = self.popitem(last=False)
+            self.retained_bytes -= len(removed[0].encode("utf-8"))
+
+
+_SOURCE_CACHE = _SourceCache()
 _INSPECT_SOURCE_BACKEND = {
     name: (getattr(inspect, name), getattr(getattr(inspect, name), "__code__", None))
     for name in (
@@ -367,12 +397,10 @@ def _source_with_content_cache(target: object) -> str:
         _fail("code_unavailable")
     # The cache retains only successful bounded source extraction. Config/defaults/
     # captures and explicit code hooks are always evaluated by component_identity.
-    if len(source.encode("utf-8")) <= MAX_CODE_BYTES:
+    source_bytes = len(source.encode("utf-8"))
+    if source_bytes <= MAX_CODE_BYTES:
         with _SOURCE_CACHE_LOCK:
-            _SOURCE_CACHE[key] = (source, resolved, code)
-            _SOURCE_CACHE.move_to_end(key)
-            while len(_SOURCE_CACHE) > _MAX_SOURCE_CACHE_ENTRIES:
-                _SOURCE_CACHE.popitem(last=False)
+            _SOURCE_CACHE.retain(key, (source, resolved, code), source_bytes)
     return source
 
 

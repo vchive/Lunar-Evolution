@@ -59,6 +59,77 @@ def test_repeated_content_reuses_extraction_without_caching_final_identity(tmp_p
     assert len(calls) == 1 and len(identity._SOURCE_CACHE) == 1
 
 
+def test_hundreds_of_small_components_reuse_extraction_but_still_read_fresh_twice(
+    tmp_path, monkeypatch,
+):
+    count = 613
+    module, path = _module(tmp_path, monkeypatch, "".join(
+        f"def component_{index}():\n    return {index}\n" for index in range(count)
+    ))
+    targets = [getattr(module, f"component_{index}") for index in range(count)]
+    extractions = _count_extractions(monkeypatch)
+    original = identity._fresh_source_bytes
+    reads = 0
+
+    def fresh(filename):
+        nonlocal reads
+        assert filename == str(path)
+        reads += 1
+        return original(filename)
+
+    monkeypatch.setattr(identity, "_fresh_source_bytes", fresh)
+    baseline = [identity.component_fingerprint(target) for target in targets]
+    assert [identity.component_fingerprint(target) for target in targets] == baseline
+    assert len(extractions) == len(identity._SOURCE_CACHE) == count
+    assert reads == 4 * count
+
+
+def test_utf8_byte_budget_evicts_lru_without_changing_fingerprints(tmp_path, monkeypatch):
+    module, _path = _module(tmp_path, monkeypatch, "".join(
+        f"def {name}():\n    return '界'\n" for name in ("alpha", "bravo", "cello")
+    ))
+    targets = (module.alpha, module.bravo, module.cello)
+    expected = {target: identity.component_fingerprint(target) for target in targets}
+    source_bytes = len(inspect.getsource(module.alpha).encode("utf-8"))
+    budget = 2 * source_bytes
+    monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_BYTES", budget)
+    identity._SOURCE_CACHE.clear()
+    calls = _count_extractions(monkeypatch)
+
+    for target in (module.alpha, module.bravo, module.alpha, module.bravo, module.alpha):
+        assert identity.component_fingerprint(target) == expected[target]
+    assert len(calls) == 2
+    assert identity.component_fingerprint(module.cello) == expected[module.cello]
+    assert identity.component_fingerprint(module.alpha) == expected[module.alpha]
+    assert len(calls) == 3
+    assert identity.component_fingerprint(module.bravo) == expected[module.bravo]
+    assert len(calls) == 4
+    assert sum(len(value[0].encode("utf-8")) for value in identity._SOURCE_CACHE.values()) == (
+        identity._SOURCE_CACHE.retained_bytes
+    ) == budget
+
+    identity._SOURCE_CACHE.clear()
+    for target in (module.alpha, module.bravo, module.alpha, module.bravo):
+        assert identity.component_fingerprint(target) == expected[target]
+    assert len(calls) == 6 and identity._SOURCE_CACHE.retained_bytes == budget
+
+
+def test_source_larger_than_cache_byte_budget_is_valid_but_never_retained(tmp_path, monkeypatch):
+    module, _path = _module(tmp_path, monkeypatch, (
+        "def small():\n    return 1\n"
+        "def larger():\n    return 'this valid source exceeds the cache byte budget'\n"
+    ))
+    budget = len(inspect.getsource(module.small).encode("utf-8"))
+    monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_BYTES", budget)
+    calls = _count_extractions(monkeypatch)
+    small = identity.component_fingerprint(module.small)
+    baseline = identity.component_fingerprint(module.larger)
+    assert identity.component_fingerprint(module.larger) == baseline
+    assert identity.component_fingerprint(module.small) == small
+    assert len(calls) == 3 and len(identity._SOURCE_CACHE) == 1
+    assert identity._SOURCE_CACHE.retained_bytes == budget
+
+
 @pytest.mark.parametrize("change", ["same_metadata", "replace", "stale_linecache"])
 def test_file_content_is_fresh_despite_metadata_or_linecache(tmp_path, monkeypatch, change):
     module, path = _module(tmp_path, monkeypatch)
@@ -184,8 +255,13 @@ def test_inspector_monkeypatch_is_observed_even_with_a_warm_cache(tmp_path, monk
 
 
 @pytest.mark.parametrize("warm", [False, True])
-def test_source_change_during_observation_refuses_without_caching(tmp_path, monkeypatch, warm):
+@pytest.mark.parametrize("change", ["content", "ownership"])
+def test_source_or_ownership_change_during_observation_refuses_without_caching(
+    tmp_path, monkeypatch, warm, change,
+):
     module, path = _module(tmp_path, monkeypatch)
+    other = path.with_name("different.py")
+    other.write_bytes(path.read_bytes())
     if warm:
         _code(module.Component)
     original = identity._fresh_source_bytes
@@ -196,12 +272,18 @@ def test_source_change_during_observation_refuses_without_caching(tmp_path, monk
         raw = original(filename)
         calls += 1
         if calls == 1:
-            path.write_bytes(raw.replace(b"value = 1", b"value = 2"))
+            if change == "content":
+                path.write_bytes(raw.replace(b"value = 1", b"value = 2"))
+            else:
+                module.__file__ = str(other)
         return raw
 
     monkeypatch.setattr(identity, "_fresh_source_bytes", read)
     before = tuple(identity._SOURCE_CACHE)
-    with pytest.raises(identity.RSIIdentityError, match="code_unavailable"):
+    # Cold extraction can notice reassociation before the final cache-boundary
+    # check; both paths must refuse instead of reusing another source's result.
+    refusal = "code_hook_required" if change == "ownership" and not warm else "code_unavailable"
+    with pytest.raises(identity.RSIIdentityError, match=refusal):
         _code(module.Component)
     assert tuple(identity._SOURCE_CACHE) == before
 

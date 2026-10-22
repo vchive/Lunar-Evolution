@@ -15,6 +15,12 @@ final image. Build/compiler/startup failures remain evidence, not success.
 G3: Run the original native sealed-target fixture and independent final Linux audit.
 Do not promote a build or portable parser check to runtime acceptance.
 
+The independent Linux three-child serial regression remains open at the
+original 600-second control. The measured, narrowly bounded cache work in
+[`serial-regression-performance.md`](serial-regression-performance.md) preserves
+fresh source/SQLite reads and all identity/history checks. Do not widen the
+deadline or infer Linux acceptance from the local passing case.
+
 Proposed modules after G0: a pure `static_python_installation.py` for bounded
 installation descriptor parsing/external-pin checks; an installation-owned C
 launcher, frozen main and pipe builtin under `fixtures/static_python_runtime/`;

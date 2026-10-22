@@ -14,7 +14,9 @@ import json
 import os
 import sqlite3
 import stat
+import sys
 import threading
+from collections import OrderedDict
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -50,6 +52,12 @@ EPISODE_STATES = frozenset({
     "planned", "running", "completed", "failed", "timed_out", "abandoned", "cancelled", "unknown",
 })
 WORKER_STATES = frozenset({"running", "idle", "completed", "failed", "timed_out", "abandoned", "cancelled", "unknown"})
+
+# Pure digest reuse must not retain an unbounded copy of the checkpoint journal.
+# Units conservatively allow four bytes per character in every retained key string,
+# plus entry/key/value/container overhead and the revision integer's shallow size.
+_CHECKPOINT_DIGEST_CACHE_MAX_ENTRIES = 128
+_CHECKPOINT_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
 
 _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
     "created": frozenset({"created", "running", "cancelled", "failed", "unknown", "budget_exhausted"}),
@@ -176,10 +184,14 @@ class RSILedger:
         self._controller_guards_lock = threading.RLock()
         # History readers repeatedly verify the same immutable journal rows while
         # a reserved BRS child is being settled.  Keep a small process-local cache
-        # keyed by the exact persisted payload bytes and its parent.  The canonical
+        # keyed by the exact persisted payload text and its parent.  The canonical
         # digest algorithm remains unchanged; a changed row, parent, revision, or
         # run always misses this cache and is fully re-encoded.
-        self._checkpoint_digest_cache: dict[tuple[str, int, str | None, int, bytes], str] = {}
+        self._checkpoint_digest_cache: OrderedDict[
+            tuple[str, int, str | None, str], tuple[str, int]
+        ] = OrderedDict()
+        self._checkpoint_digest_cache_retained_units = 0
+        self._checkpoint_digest_cache_lock = threading.Lock()
         self._observation_scope = threading.local()
         self.initialize()
 
@@ -367,22 +379,43 @@ class RSILedger:
     ) -> str:
         """Verify an immutable checkpoint without re-encoding it on every read.
 
-        ``persisted_payload`` is the exact SQLite text.  It is included in the key
-        through a SHA-256 plus length so the cache cannot survive any byte-level
-        row replacement.  The digest is still produced by ``_checkpoint_digest``
-        on a miss, preserving the existing canonical JSON contract.
+        ``persisted_payload`` is the exact, freshly parsed SQLite text.  Dictionary
+        lookup compares the complete immutable text, including after a hash
+        collision, without another UTF-8 allocation and SHA-256 on every hit.
+        A miss still uses ``_checkpoint_digest`` and its canonical JSON contract.
+        This caches only that pure computation: callers still reread, parse and
+        validate every journal row, chain and admission reference.
         """
         if type(persisted_payload) is not str:
             return self._checkpoint_digest(run_id, revision, parent_sha256, payload)
-        raw = persisted_payload.encode("utf-8")
-        key = (run_id, revision, parent_sha256, len(raw), hashlib.sha256(raw).digest())
-        cached = self._checkpoint_digest_cache.get(key)
-        if cached is not None:
-            return cached
+        key = (run_id, revision, parent_sha256, persisted_payload)
+        with self._checkpoint_digest_cache_lock:
+            cached = self._checkpoint_digest_cache.get(key)
+            if cached is not None:
+                self._checkpoint_digest_cache.move_to_end(key)
+                return cached[0]
         digest = self._checkpoint_digest(run_id, revision, parent_sha256, payload)
-        if len(self._checkpoint_digest_cache) >= 128:
-            self._checkpoint_digest_cache.clear()
-        self._checkpoint_digest_cache[key] = digest
+        retained_units = (
+            4 * (len(run_id) + len(parent_sha256 or "") + len(persisted_payload))
+            + 1024 + sys.getsizeof(revision)
+        )
+        if retained_units > _CHECKPOINT_DIGEST_CACHE_MAX_RETAINED_UNITS:
+            return digest
+        with self._checkpoint_digest_cache_lock:
+            # Another history reader may have filled this exact key while the
+            # original canonical calculation ran outside the cache lock.
+            if key in self._checkpoint_digest_cache:
+                self._checkpoint_digest_cache.move_to_end(key)
+                return digest
+            while self._checkpoint_digest_cache and (
+                len(self._checkpoint_digest_cache) >= _CHECKPOINT_DIGEST_CACHE_MAX_ENTRIES
+                or self._checkpoint_digest_cache_retained_units + retained_units
+                > _CHECKPOINT_DIGEST_CACHE_MAX_RETAINED_UNITS
+            ):
+                _, (_, evicted_units) = self._checkpoint_digest_cache.popitem(last=False)
+                self._checkpoint_digest_cache_retained_units -= evicted_units
+            self._checkpoint_digest_cache[key] = (digest, retained_units)
+            self._checkpoint_digest_cache_retained_units += retained_units
         return digest
 
     @staticmethod

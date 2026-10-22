@@ -1,5 +1,28 @@
 # Validation contract — preparation is not runtime evidence
 
+## Original-budget BRS mixed serial performance follow-up
+
+The exact `cfd76f8` three-child mixed case passed locally in 468.41 seconds
+under the original 600-second control and failed on Linux in 602.75 seconds
+with `rejection_control_expired`. Raw first-failure evidence is retained under
+the ignored `linux-mixed-cfd76f8-k2sex269/` directory; a stack-only sampler was
+then run once against that exact source to identify repeat validation costs.
+
+The bounded fixes preserve each SQLite read, JSON parse, row/revision/parent
+chain and reference validation, while keying the pure checkpoint digest cache
+by exact persisted text (128 entries / 16 MiB conservative budget). They also
+allow the source extraction LRU to hold 1,024 entries within the prior 24 MiB
+source-text ceiling; all fresh byte reads, source ownership checks, hooks and
+live configurations remain. Separate tests cover content/history drift, exact
+keys, concurrent cache misses and bounded eviction. The combined cache,
+store, identity, drift and checkpoint selection passed 129 cases. The new
+checkpoint cache file separately passed 20 cases; the source-cache/identity/
+fingerprint/durable-flow selection passed 94 cases. These suites overlap and
+are not additive. Independent cross-review of both cache changes passed.
+Ruff, compileall and diff checks passed. The original-budget Linux case must
+still pass on the final implementation; no timeout, policy or admission check
+was weakened.
+
 ## Complete toolchain archive observation — 2026-10-23
 
 The bounded API in [`toolchain-observation.md`](toolchain-observation.md)
@@ -17,13 +40,26 @@ The earlier real archive replay using the existing public archive APIs retained
 3,926,082 canonical manifest bytes, independently matching the previously
 committed pin and all 20,832 member records. It is described in
 [`toolchain-layout-audit-20261023.md`](toolchain-layout-audit-20261023.md).
-That earlier replay does not validate the new deadline-bound record API; keep
-its separate replay result distinct. Neither operation establishes extracted
+That earlier replay does not validate the new deadline-bound record API. A
+separate real-input replay of exact b93787c did validate the new API: both
+snapshot acquisition and observation used one original 120-second deadline,
+finishing in 3.838545438 seconds, exit 0 and empty stderr. The complete manifest
+still matched the independent historical pin. Its canonical observation record
+is 1,011 bytes, SHA-256
+`a55c4bf8a3253a5f9cc318e207c94b6029d03f7f50f1b5c2a783f476f844a718`.
+All member counts, byte totals, source identity, validated metadata, unperformed
+signature and seven false claims were independently checked after transfer.
+Full raw artifacts are under ignored
+`.lunar-evolution/validation/feature189-20261023/toolchain-deadline/`.
+Neither operation establishes extracted
 toolchain custody, compiler consumption, configured build or runtime acceptance.
 
 The original final-source `cfd76f8` three-child mixed serial regression passed
 locally in 468.41 seconds with the unchanged 600-second execution control.
-The Linux replay and final-head three-version full CI remain separate gates.
+The Linux replay failed in 602.75 seconds with `rejection_control_expired`.
+The diagnosis and narrow remediation contract are in
+[`serial-regression-performance.md`](serial-regression-performance.md);
+Linux regression and final-head three-version full CI remain open gates.
 
 ## Fixed configure candidate and RSI pin-chain integration — 2026-10-23
 

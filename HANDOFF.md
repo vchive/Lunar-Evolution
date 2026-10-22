@@ -10,9 +10,18 @@
 - 5090gpu 的既有 archive API 实跑已保留完整 3,926,082 B Zig manifest，其 SHA
   `b988925a…93b90` 精确匹配先前独立 pin；20,832 members（19,546 files / 1,286 dirs）
   与 357,913,169 file bytes 一致。完整证据已复制本地 ignored validation 目录并独立复核。
-  此次旧 API 实跑未覆盖新 API 的统一 deadline，后者仍需独立真实输入 replay。
+  此次旧 API 实跑未覆盖新 API 的统一 deadline。随后精确 b93787c 的独立新 API replay
+  也通过：两次调用共用原 120 秒 deadline，3.838545438 秒、exit0/stderr空；canonical
+  record1011B/`a55c4bf8…44a718`。原始完整证据在 `toolchain-deadline/`，独立字段/SHA核对通过。
 - 精确 `cfd76f8` 的本机 three-child-mixed 在原 600 秒 control 下通过（468.41 秒）。
-  5090gpu 单次 Linux replay 仍运行，最终 head 的三版本全 CI 尚未完成，PR186 未合 main。
+  5090gpu 单次 Linux replay 失败（602.75 秒、rejection_control_expired），预算未改、首失败
+  已保留在 `linux-mixed-cfd76f8-k2sex269/`。另一次0.1秒栈采样已定位：账本历史每次对
+  persisted text 做额外SHA，及613-key策略图对256-entry源码缓存的反复驱逐已被观察。
+  两项有界pure-cache修复按 `serial-regression-performance.md` 完成并交叉review，不删实时源码/
+  SQLite读取或history/ref检查。checkpoint exact-text LRU128entry/16MiB；source cache1024entry/
+  24MiB，纯策略图warm提取613→0且两轮policy hash相同。最终69项cache gate和129项组合通过，
+  admission182项通过（有重叠不相加）；全仓Ruff/compileall/diffcheck通过。新提交的无profile
+  Linux原600秒case尚需复测；最终head三版本全CI尚未完成，PR186未合main。
 - 提取树 custody、具体 wrapper/helper/build-Python、配置观察、same-source freezer、静态
   build/ELF、sealed runtime 和真实项目验收仍开放；生产准入与在线发布继续关闭。
 
