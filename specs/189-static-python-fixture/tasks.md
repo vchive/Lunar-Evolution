@@ -297,3 +297,36 @@ these as explicit gates; do not turn expected behavior into observed evidence.
   disposable host rather than independently custodied here. This completes the
   observer exercise only; independent archive/signature custody and configured-
   build consumption remain open gates.
+
+## Core `_warnings` source audit continuation
+
+- [x] Retain the exact pinned CPython 3.13.12 `Python/_warnings.c` archive
+  member and `Modules/Setup.stdlib.in` template as inert fixtures with
+  provenance; confirm `_warnings` has no `Setup.bootstrap.in` or
+  `Setup.stdlib.in` declaration.
+- [x] Check `MODULE_NAME`, module definition and `_PyWarnings_Init`/`PyModuleDef_Init`
+  against the Lunar emitted initializer table, `LUNAR_CORE_BUILTIN_SOURCES`,
+  and the synthetic installation descriptor. Keep it in the core source list,
+  outside `LUNAR_STATIC_MODULE_SOURCES`.
+- [x] Record the conditional `get_warnings_attr()` import of Python-level
+  `warnings` as an unclosed profile edge; no profile expansion or build/runtime
+  claim follows from this bounded source observation.
+- [x] Run the focused fixture/profile/table/build-input regressions, Ruff,
+  compileall and diff checks. These source and metadata checks do not establish
+  header closure, configured source consumption, compilation, linking, ELF
+  contents or runtime behavior.
+
+## Core `_warnings` caller/source continuation
+
+- [x] Pin the exact CPython 3.13.12 `Lib/warnings.py` and
+  `Objects/genobject.c` archive members as supporting inert source, separate
+  from the finite module-profile member set.
+- [x] Trace the `_warnings.c` lazy-import call sites, C fallbacks, Python
+  `_warn_unawaited_coroutine()` hook, and the `FRAME_CREATED` coroutine
+  finalizer condition. Record `linecache`, `traceback`, and `tracemalloc` as
+  conditional source edges; do not expand the startup inventory from this
+  source-only result.
+- [ ] Resolve whether the approved fixed startup/workload can reach these
+  warning paths, then bind any required conditional modules to the configured
+  build and sealed-target evidence. The source fixtures do not establish
+  runtime reachability or make `warnings` production-safe by themselves.

@@ -9040,3 +9040,37 @@ WebAgent、远程 evaluator、公司评测平台或真实 solver campaign。
   当前两个 rejection/policy slices 仍是私有 provider-free composition，不是完整在线
   publication 或 production admission。P2 的 remote evaluator、外部
   worker authentication、多机 ownership、分布式 scheduler/service API 继续后置。
+
+## 2026-10-23 Feature189 source-closure and BRS continuation
+
+Current development continues on `codex/python-startup-closure-audit` and PR
+#186. This batch adds exact inert CPython 3.13.12 archive members for
+`Python/_warnings.c`, `Lib/warnings.py`, `Objects/genobject.c`, and
+`Modules/Setup.stdlib.in`, with provenance and source-only callsite tests. The
+finite profile still contains `_warnings` but excludes `warnings`; source review
+now records the conditional display/coroutine hooks and `linecache`,
+`traceback`, and `tracemalloc` edges. Runtime reachability remains unresolved,
+so these fixtures neither expand the startup inventory nor establish build,
+ELF, startup, or production evidence.
+
+The selected BRS authorization path now runs producer-binding/staging
+validation once per selected pin check: it captures the durable checkpoint,
+validates that same captured state, then checks the live and durable head/payload
+again before authorization. Ordinary fixed-pin and worker-wait checks retain
+their existing validation. The pre-write transition and stale-successor cases
+have focused regressions.
+
+Local results for this continuation: the warning source/profile/table set
+reported 19 passing cases; the selected BRS optimization subset reported 22
+passing cases; owner-pin drift/worker-wakeup checks passed; and the previously
+watchdog-interrupted `published-rejected` reserved-child integration case now
+completed successfully. Ruff, compileall, and `git diff --check` passed. The
+535-second interrupted attempt remains only an aborted diagnostic result; only
+the later completed run is a passing verdict.
+
+Still open in Feature189 are the complete configured C/Python startup/workload
+closure, fixed compiler/sysroot and build recipe, real static build/ELF audit,
+sealed target startup/lifecycle, and final Linux acceptance. Keep
+`production_admission=false` and `online_publication=false`; do not claim that
+source fixtures are target runtime evidence. No WebAgent, remote evaluator,
+company evaluator, or solver campaign was run.

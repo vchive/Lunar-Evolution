@@ -481,3 +481,39 @@ startup modules and composes with the comparator. The associated graph edges in
 that test remain deliberately synthetic. This closes root derivation only;
 complete import-edge audit, configured closure, build, runtime, and admission
 remain open. Ruff, `compileall`, and `git diff --check` passed for this slice.
+
+## Core `_warnings` source-only observation — 2026-10-23
+
+`tests/fixtures/static_python_source/Python/_warnings.c.source` is pinned to the
+43,088-byte `Python-3.13.12/Python/_warnings.c` member from the archive identified
+by SHA-256 `2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593`.
+The companion inert `Setup.stdlib.in` fixture is also member-pinned. Focused
+checks record `MODULE_NAME`, the module definition, `_PyWarnings_Init` and its
+`PyModuleDef_Init` return; they compare the initializer with Lunar's emitted
+`Modules/config.c`, core source recipe, exclusion from
+`LUNAR_STATIC_MODULE_SOURCES`, and the synthetic descriptor. Neither Setup
+template declares `_warnings`; this is the core builtin path.
+
+`get_warnings_attr()` conditionally imports the Python-level `warnings` module.
+That module is absent from the currently reviewed finite profile, leaving an
+unclosed source edge. This observation does not decide whether the path is
+reachable under target execution.
+
+The continuation test pins the two `try_import=1` call sites and their
+source-level guards/fallbacks: warning display is conditional on the warning
+action, an absent Python display hook uses the C display path, and unawaited
+coroutine finalization has a Python hook plus `_PyErr_WarnFormat` fallback.
+That fallback can re-enter the display path. The candidate's empty
+`warnoptions` and disabled `site_import` therefore do not establish that
+`warnings` is unnecessary for every fixed workload path. The current fixture
+set separately pins `Lib/warnings.py` and `Objects/genobject.c`: the Python hook
+is called for a coroutine with `FRAME_CREATED`, and it imports `linecache` and
+`traceback` only when `cr_origin` is present. The `warnings` module itself also
+has conditional `linecache` and `tracemalloc` paths. These sources are support
+evidence, not module-profile inputs; complete workload reachability and runtime
+disposition remain open.
+
+These checks establish only retained bytes and source/metadata consistency.
+They do not prove header closure, configured `Setup`/`pyconfig.h`, source
+consumption, compilation, linking, ELF contents, runtime startup or module
+origin. No build, remote evaluation or solver campaign was run.

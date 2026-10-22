@@ -74,7 +74,9 @@ def test_bootstrap_template_declares_codec_source_but_is_not_generated_setup() -
 
     provenance = json.loads(_PROVENANCE.read_bytes())
     members = provenance["release_archive_fixtures"]["supporting_members"]
-    assert members == [{
+    bootstrap = [item for item in members
+                 if item["archive_member"] == "Python-3.13.12/Modules/Setup.bootstrap.in"]
+    assert bootstrap == [{
         "archive_member": "Python-3.13.12/Modules/Setup.bootstrap.in",
         "fixture_path": "Modules/Setup.bootstrap.in.source",
         "purpose": "upstream-bootstrap-template-only",

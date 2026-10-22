@@ -118,12 +118,17 @@ def test_audits_pinned_cpython_31312_release_import_sources() -> None:
     }
     manifest_members = archive["members"]
     # The archive manifest also retains inert C sources used by the bounded
-    # `_codecs`, `_io`, and `_abc` audits; they remain outside this Python-AST
+    # `_codecs`, `_io`, `_abc`, and `_warnings` audits; they remain outside this Python-AST
     # observer's eight-module input set.
-    assert len(manifest_members) == len(pins) + 3
+    assert len(manifest_members) == len(pins) + 4
     assert {item["module"] for item in manifest_members} == set(pins) | {
-        "_codecs", "_io", "_abc",
+        "_codecs", "_io", "_abc", "_warnings",
     }
+    # The coroutine-warning callsite evidence is supporting source, not an
+    # additional Python import-AST profile target.
+    assert {"warnings", "genobject"}.isdisjoint(
+        {item["module"] for item in manifest_members}
+    )
     codec_member = next(item for item in manifest_members if item["module"] == "_codecs")
     assert (codec_member["fixture_path"], codec_member["size_bytes"], codec_member["sha256"]) == (
         "Modules/_codecsmodule.c.source", 33553,
@@ -138,6 +143,11 @@ def test_audits_pinned_cpython_31312_release_import_sources() -> None:
     assert (abc_member["fixture_path"], abc_member["size_bytes"], abc_member["sha256"]) == (
         "Modules/_abc.c.source", 27112,
         "a4abd74e245af77f5a8c40ac8d443153ff8636e4e10a8578e9dddecaa3d0b9e8",
+    )
+    warnings_member = next(item for item in manifest_members if item["module"] == "_warnings")
+    assert (warnings_member["fixture_path"], warnings_member["size_bytes"], warnings_member["sha256"]) == (
+        "Python/_warnings.c.source", 43088,
+        "bed91ba65456a2bc1ca278a4d320be978487563a566c79a9e57b0bf46c40352d",
     )
     sources = {}
     for name, (relative_path, expected_size, expected_sha256) in pins.items():

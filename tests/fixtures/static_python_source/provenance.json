@@ -121,18 +121,46 @@
         "module": "_abc",
         "sha256": "a4abd74e245af77f5a8c40ac8d443153ff8636e4e10a8578e9dddecaa3d0b9e8",
         "size_bytes": 27112
+      },
+      {
+        "archive_member": "Python-3.13.12/Python/_warnings.c",
+        "fixture_path": "Python/_warnings.c.source",
+        "module": "_warnings",
+        "sha256": "bed91ba65456a2bc1ca278a4d320be978487563a566c79a9e57b0bf46c40352d",
+        "size_bytes": 43088
       }
     ],
     "release": "CPython 3.13.12",
-    "scope": "eleven exact regular-file member byte copies; inert test data only",
+    "scope": "twelve exact regular-file module-source copies and four exact supporting-member copies; inert test data only",
     "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md",
     "supporting_members": [
+      {
+        "archive_member": "Python-3.13.12/Lib/warnings.py",
+        "fixture_path": "Lib/warnings.py.source",
+        "purpose": "upstream-warning-source-only",
+        "sha256": "e040f52be0199c69fa8c0d35428ba64e6f9b6412691a689ccbd7c23e07c6ed3f",
+        "size_bytes": 27071
+      },
+      {
+        "archive_member": "Python-3.13.12/Objects/genobject.c",
+        "fixture_path": "Objects/genobject.c.source",
+        "purpose": "upstream-coroutine-finalization-source-only",
+        "sha256": "f8acbdbdf76b13b68d36c741437a34e3b50e3f41d42770ba69b20d5455fb7e25",
+        "size_bytes": 80432
+      },
       {
         "archive_member": "Python-3.13.12/Modules/Setup.bootstrap.in",
         "fixture_path": "Modules/Setup.bootstrap.in.source",
         "purpose": "upstream-bootstrap-template-only",
         "sha256": "bb401f9494c2f896aa40af6a8077ff9f22b99a9d4126ce38daef759427c8df88",
         "size_bytes": 971
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/Setup.stdlib.in",
+        "fixture_path": "Modules/Setup.stdlib.in.source",
+        "purpose": "upstream-stdlib-template-only",
+        "sha256": "700424110da7f19053e02642da6853035490726b1cec9c9ed99b1261e447caa7",
+        "size_bytes": 8606
       }
     ]
   },
