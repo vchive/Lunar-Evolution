@@ -1315,11 +1315,27 @@ class RSILearningController:
 
         if self.ledger is not None:
             _validate_persisted_policy(self, run_id=record.logical_id, state=state)
+        original_plan = record.payload.get("plan")
+        # Pre-controller-checkpoint runs created by the original provider-free
+        # API have no plan at all.  Keep that legacy shape readable during
+        # resume, but do not let it silently become a planned run: every
+        # retained snapshot must keep the same None/missing shape.  A scalar
+        # is never a legacy shape and a dict-to-None (or None-to-dict) change
+        # remains a fail-closed mode drift.
+        if original_plan is not None and type(original_plan) is not dict:
+            raise RSILearningError("rsi_producer_reserved_original_mode_mismatch")
+        legacy_unbound_plan = original_plan is None
         serial = reserved_brs_staging_mode(record.payload)
         for snapshot in retained:
-            if (type(snapshot.get("plan")) is not dict
-                    or snapshot["plan"].get("reserved_native_serial")
-                    is not record.payload.get("plan", {}).get("reserved_native_serial")):
+            snapshot_plan = snapshot.get("plan")
+            if legacy_unbound_plan:
+                if snapshot_plan is not None:
+                    raise RSILearningError("rsi_producer_reserved_original_mode_mismatch")
+            elif type(snapshot_plan) is not dict:
+                raise RSILearningError("rsi_producer_reserved_original_mode_mismatch")
+            if (not legacy_unbound_plan
+                    and snapshot_plan.get("reserved_native_serial")
+                    is not original_plan.get("reserved_native_serial")):
                 raise RSILearningError("rsi_producer_reserved_original_mode_mismatch")
             if (reserved_brs_staging_mode(snapshot) is not serial
                     or serial and any(snapshot.get(key) != record.payload.get(key)

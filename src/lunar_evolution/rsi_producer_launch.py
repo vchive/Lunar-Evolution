@@ -14,6 +14,7 @@ from typing import Any, NoReturn
 
 from .candidate_evaluation_spec import canonical_json, strict_json
 from .native_bootstrap import NativeBootstrapArtifact
+from .producer_bootstrap import TrustedBootstrapDescriptor
 from .producer_bundle_lineage import MAX_LINEAGE_AGGREGATE_SNAPSHOT_BYTES
 from .producer_launcher import (
     ProducerLaunchAttestation,
@@ -206,9 +207,31 @@ class PythonProducerEpisodeStager:
     def _signature(self) -> tuple[object, ...]:
         """Cheap immutable-config identity used on hot admission checks."""
         config = self.config
+        artifact = config.artifact
+        if (type(artifact) is not NativeBootstrapArtifact
+                or type(artifact.path) is not type(Path())
+                or type(artifact.descriptor) is not TrustedBootstrapDescriptor):
+            _fail("configuration_drift")
+        # Object identity alone does not detect object.__setattr__ on a frozen
+        # DTO. Copy the exact scalar pins, including the nested descriptor,
+        # without repeatedly fingerprinting the supplier or parsing the tree.
+        artifact_pins = []
+        for item in fields(NativeBootstrapArtifact):
+            if item.name not in {"path", "descriptor"}:
+                value = object.__getattribute__(artifact, item.name)
+                if type(value) is not str:
+                    _fail("configuration_drift")
+                artifact_pins.append(value)
+        descriptor_pins = []
+        for item in fields(TrustedBootstrapDescriptor):
+            value = object.__getattribute__(artifact.descriptor, item.name)
+            if value is not None and type(value) not in {str, int}:
+                _fail("configuration_drift")
+            descriptor_pins.append((type(value), value))
         return (
             config.workspace, id(config.root_sidecar), id(config.artifact),
             id(config.attestation_supplier), config.max_episodes,
+            artifact.path, tuple(artifact_pins), tuple(descriptor_pins),
         )
 
     def rsi_fingerprint_config(self) -> dict[str, Any]:
