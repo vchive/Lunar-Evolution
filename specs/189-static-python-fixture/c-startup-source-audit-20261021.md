@@ -175,7 +175,7 @@ The reviewed upstream C sequence establishes these source-level edges:
 | `Python/pylifecycle.c:init_interp_main()` (1184–1232) | Unless `_install_importlib` is false, initializes import config, external importers, optional faulthandler, then Unicode encodings. | Candidate sets `_install_importlib=1`, `faulthandler=0`; actual configured field writes and call sequence are not built/runtime-verified. |
 | `Python/pylifecycle.c:init_sys_streams()` (2802–2828) | Imports `io` before creating standard streams. | `io` and its `_io`/`abc` dependencies are in the profile; startup origins remain unobserved. |
 | `Python/pylifecycle.c:init_set_builtins_open()` (2769–2799) | Imports `builtins` and obtains `io.open`, then assigns `builtins.open`. | `builtins` and `io` are listed; actual origin is unverified. |
-| `Python/pylifecycle.c` warning and site branches (1294–1319) | Imports `warnings` only if `warnoptions` is nonempty; imports `site` only if `site_import` is enabled. | Candidate pins `warnoptions=[]` and `site_import=0`. A future launcher/config mutation or altered argv must not activate these routes. |
+| `Python/pylifecycle.c` warning and site branches (1294–1319) | Imports `warnings` only if `warnoptions` is nonempty; imports `site` only if `site_import` is enabled. The exact 3.13.12 source member is now retained and tested as an inert supporting fixture in `pylifecycle-warning-source-audit-20261023.md`. | Candidate pins `warnoptions=[]` and `site_import=0`. A future launcher/config mutation or altered argv must not activate these routes; source pins do not establish effective runtime settings. |
 
 The Python startup inventory's direct C edges do not enumerate the Python
 bootstrap's conditional, fallback, deferred, or computed imports. In

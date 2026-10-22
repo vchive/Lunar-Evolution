@@ -524,6 +524,17 @@ expected startup inventory.
 The focused warning/source/profile/table set passed 57 cases; Ruff,
 `compileall`, and `git diff --check` passed.
 
+## `pylifecycle.c` conditional warning/site source observation — 2026-10-23
+
+The supporting 106,247-byte `Python/pylifecycle.c` archive member is pinned by
+size and SHA-256. A focused test checks that the source imports `warnings` only
+for a nonempty `warnoptions` list and imports `site` only behind
+`config->site_import`; candidate metadata still pins `warnoptions=[]` and
+`site_import=0`. This records a source/config relationship, not effective
+runtime configuration or reachability. Focused results for this addition are
+covered by the combined warning/lifecycle/source/profile/table run below: 59
+cases passed. Ruff, `compileall`, and `git diff --check` passed.
+
 These checks establish only retained bytes and source/metadata consistency.
 They do not prove header closure, configured `Setup`/`pyconfig.h`, source
 consumption, compilation, linking, ELF contents, runtime startup or module

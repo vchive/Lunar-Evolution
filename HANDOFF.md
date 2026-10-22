@@ -9084,9 +9084,8 @@ false; adjacent source checks retain
 the selected import guards and verify that `warn_explicit()` returns for
 `action == "ignore"` before its local `linecache` import. The support file
 remains outside the finite startup profile. The focused warning/source/profile
-suite passed 57 cases; Ruff, `compileall`, and `git diff --check` passed.
-PR #186 still has no completed checks for head `81f9af0` (latest Actions run
-pending with no jobs reported), so its CI state remains unresolved. Runtime
+suite passed 57 cases; Ruff, `compileall`, and `git diff --check` passed. At
+that point PR #186 head `81f9af0` had no completed checks. Runtime
 reachability, configured closure, actual build/ELF, and sealed-target evidence
 remain open; `production_admission=false` and `online_publication=false`.
 
@@ -9099,3 +9098,18 @@ delivery, and links its MIT badge and contribution note to a full root `LICENSE`
 file consistent with `pyproject.toml`. Local mock `run` and `solve` smoke calls
 both succeeded with workspaces under `<home>/runs/<run_id>`; local README links
 resolve. No real model/evaluator was used.
+
+### Feature 189 `pylifecycle.c` startup-branch fixture (2026-10-23)
+
+Read the exact `Python-3.13.12/Python/pylifecycle.c` member from the already
+SHA-pinned CPython 3.13.12 archive on 5090gpu and retained it as inert supporting
+fixture bytes (106,247 bytes; SHA-256
+`21296f86275077e4f19234a2c32691ee087fea961c28745770373a6c4ef70789`). The
+focused test confirms the source imports `warnings` only for nonempty
+`warnoptions` and imports `site` only behind `site_import`; candidate metadata
+remains `warnoptions=[]`, `site_import=0`, with neither in the finite expected
+startup inventory. The combined warning/lifecycle/source/profile/table suite
+passed 59 cases; Ruff, `compileall`, and `git diff --check` passed. These are
+source/config checks only, not observed runtime configuration or workload
+reachability; configured closure, static build/ELF and sealed-target acceptance
+remain open.

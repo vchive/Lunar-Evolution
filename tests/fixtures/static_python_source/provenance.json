@@ -131,7 +131,7 @@
       }
     ],
     "release": "CPython 3.13.12",
-    "scope": "twelve exact regular-file module-source copies and four exact supporting-member copies; inert test data only",
+    "scope": "twelve exact regular-file module-source copies and five exact supporting-member copies; inert test data only",
     "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md",
     "supporting_members": [
       {
@@ -147,6 +147,13 @@
         "purpose": "upstream-coroutine-finalization-source-only",
         "sha256": "f8acbdbdf76b13b68d36c741437a34e3b50e3f41d42770ba69b20d5455fb7e25",
         "size_bytes": 80432
+      },
+      {
+        "archive_member": "Python-3.13.12/Python/pylifecycle.c",
+        "fixture_path": "Python/pylifecycle.c.source",
+        "purpose": "upstream-startup-lifecycle-source-only",
+        "sha256": "21296f86275077e4f19234a2c32691ee087fea961c28745770373a6c4ef70789",
+        "size_bytes": 106247
       },
       {
         "archive_member": "Python-3.13.12/Modules/Setup.bootstrap.in",

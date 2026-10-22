@@ -331,6 +331,9 @@ these as explicit gates; do not turn expected behavior into observed evidence.
   dynamic import separately from the finite profile; pair the syntax-only edge
   set with source assertions for selected conditional imports and keep every
   closure/runtime claim false.
+- [x] Pin `Python/pylifecycle.c` as inert supporting source and test its
+  `warnoptions` and `site_import` startup guards against the candidate metadata;
+  do not promote these source/config pins to observed runtime settings.
 - [ ] Resolve whether the approved fixed startup/workload can reach these
   warning paths, then bind any required conditional modules to the configured
   build and sealed-target evidence. The source fixtures do not establish
