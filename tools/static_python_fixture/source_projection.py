@@ -98,7 +98,7 @@ def prepare_archive_sources(
     deadline: float,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> StaticPythonArchiveSourcePreparation:
-    """Prepare exactly three fixed members after observing the complete snapshot.
+    """Prepare exactly the five fixed members after observing the full snapshot.
 
     The manifest pin and absolute deadline are caller-retained inputs. This
     function has no filesystem, subprocess, network, extraction or build route.
@@ -131,7 +131,7 @@ def _prepare_archive_sources(
     """Share one validated decode and fixed-source preparation with local staging.
 
     Full capture adds unchanged regular-file payloads to the private return value;
-    only the three installation-owned paths are ever passed to source patches.
+    only the five installation-owned paths are ever passed to source patches.
     The bounded PAX option is forwarded without changing any source-size or
     source-preimage limits.
     """

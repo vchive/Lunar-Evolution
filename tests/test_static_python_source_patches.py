@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import builtins
+import codecs
 import copy
 import hashlib
 import json
@@ -31,6 +32,21 @@ PINS = {
         15713, "cac92d68c7ea5bc0f05b448b9144e3bdf236d0b7d27ab66112e96d43aad15b3f",
         802, "43aadac378861c1bbdaaf04be8e1bb7d878529a7641ec123b5df4eccdd4c6106",
     ),
+    "Lib/abc.py": (
+        6538, "e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287",
+        6468, "a6684b1a49cfbc9c64caeeac7e55ef8f35052b8e8ca93a091941817cdc510b1c",
+    ),
+    "Lib/encodings/__init__.py": (
+        5884, "78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8",
+        1101, "47a11d930321492bca552eed29dad061ed6739bf84c919485453315d911b1c60",
+    ),
+}
+PROVENANCE_PINS = {
+    "Lib/abc.py": PINS["Lib/abc.py"][:2],
+    "Lib/importlib/_bootstrap_external.py": PINS["Lib/importlib/_bootstrap_external.py"][:2],
+    "Python/import.c": PINS["Python/import.c"][:2],
+    "Lib/encodings/aliases.py": PINS["Lib/encodings/aliases.py"][:2],
+    "Lib/encodings/__init__.py": PINS["Lib/encodings/__init__.py"][:2],
 }
 DENIED_METHODS = (
     ("_LoaderBasics", "exec_module"), ("SourceLoader", "get_code"),
@@ -120,15 +136,19 @@ def test_fixture_bytes_and_license_retain_reviewed_git_provenance(sources):
                   "full_source_execution_performed", "build_performed"):
         assert provenance[claim] is False
     assert b"PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2" in (FIXTURE / "LICENSE").read_bytes()
-    assert sorted(item["source_path"] for item in provenance["files"]) == sorted(PINS)
+    assert sorted(item["source_path"] for item in provenance["files"]) == sorted(PROVENANCE_PINS)
     for item in provenance["files"]:
         data = sources[item["source_path"]]
         assert item["fixture_path"].endswith(".source")
-        assert len(data) == item["bytes"] == PINS[item["source_path"]][0]
-        assert hashlib.sha256(data).hexdigest() == item["sha256"] == PINS[item["source_path"]][1]
+        assert len(data) == item["bytes"] == PROVENANCE_PINS[item["source_path"]][0]
+        assert hashlib.sha256(data).hexdigest() == item["sha256"] == PROVENANCE_PINS[item["source_path"]][1]
+    for path, (size, digest, _after_size, _after_digest) in PINS.items():
+        data = sources[path]
+        assert len(data) == size
+        assert hashlib.sha256(data).hexdigest() == digest
 
 
-def test_all_three_outputs_are_deterministic_detached_and_fully_pinned(sources):
+def test_all_outputs_are_deterministic_detached_and_fully_pinned(sources):
     original = dict(sources)
     outputs, manifest = preparation.prepare_static_python_sources(sources)
     assert sources == original and outputs is not sources
@@ -142,8 +162,8 @@ def test_all_three_outputs_are_deterministic_detached_and_fully_pinned(sources):
     assert manifest == preparation.source_patch_manifest()
     outputs.clear()
     manifest["files"].clear()
-    assert len(preparation.source_patch_manifest()["files"]) == 3
-    assert len(preparation.prepare_static_python_sources(sources)[0]) == 3
+    assert len(preparation.source_patch_manifest()["files"]) == len(PINS)
+    assert len(preparation.prepare_static_python_sources(sources)[0]) == len(PINS)
 
 
 def test_manifest_records_true_source_policy_and_pending_build_without_effects(sources, monkeypatch):
@@ -159,14 +179,18 @@ def test_manifest_records_true_source_policy_and_pending_build_without_effects(s
     assert manifest["provenance"] == "reviewed-git-source-files"
     assert manifest["source_archive_verification"] == "not-performed"
     assert manifest["source_signature_verification"] == "not-performed"
+    assert manifest["abc_fallback_policy"] == "refuse-_py_abc-import-fallback"
+    assert manifest["codec_lookup_policy"] == (
+        "six-retained-utf8-aliases-plus-canonical-utf8-direct-binding"
+    )
     assert all(manifest[claim] is False for claim in CLAIMS)
-    assert len(outputs) == 3
+    assert len(outputs) == len(PINS)
     assert [item["path"] for item in manifest["files"]] == sorted(PINS)
     canonical = json.dumps(manifest["files"], sort_keys=True, separators=(",", ":"),
                            ensure_ascii=False, allow_nan=False).encode()
     assert manifest["patch_set_sha256"] == hashlib.sha256(canonical).hexdigest()
-    assert manifest["patch_set_sha256"] == "f3f740c644165d8c4d2e89840a1e75427806c12c13debf843d3b6fb2cc90f479"
-    assert sum(len(item["operations"]) for item in manifest["files"]) == 11
+    assert manifest["patch_set_sha256"] == "f3c6f45437b954bdb8bd59a3fd05ef98d0b1715066e570cb3c277dda16596b48"
+    assert sum(len(item["operations"]) for item in manifest["files"]) == 13
     assert all(operation["required_occurrences"] == 1
                for item in manifest["files"] for operation in item["operations"])
 
@@ -246,8 +270,9 @@ def test_unique_snippet_gate_checks_all_profiles_before_outputs(sources, old, mo
     # A maintainer accidentally changing a fixed patch asset must refuse too;
     # no public API exposes a caller-defined patch or snippet.
     profiles = list(preparation._PROFILES)
-    last = profiles[-1]
-    profiles[-1] = replace(last, snippets=(replace(last.snippets[0], old=old),))
+    index = next(i for i, profile in enumerate(profiles) if profile.snippets)
+    profile = profiles[index]
+    profiles[index] = replace(profile, snippets=(replace(profile.snippets[0], old=old),))
     monkeypatch.setattr(preparation, "_PROFILES", tuple(profiles))
     monkeypatch.setattr(preparation, "source_patch_manifest", forbidden)
     with pytest.raises(preparation.StaticPythonSourceError, match="snippet_drift"):
@@ -256,8 +281,9 @@ def test_unique_snippet_gate_checks_all_profiles_before_outputs(sources, old, mo
 
 def test_patch_asset_drift_cannot_return_unpinned_output(sources, monkeypatch):
     profiles = list(preparation._PROFILES)
-    last = profiles[-1]
-    profiles[-1] = replace(last, snippets=(replace(last.snippets[0], new=b"aliases = {}\n"),))
+    index = next(i for i, profile in enumerate(profiles) if profile.snippets)
+    profile = profiles[index]
+    profiles[index] = replace(profile, snippets=(replace(profile.snippets[0], new=b"aliases = {}\n"),))
     monkeypatch.setattr(preparation, "_PROFILES", tuple(profiles))
     with pytest.raises(preparation.StaticPythonSourceError, match="postimage_drift"):
         preparation.prepare_static_python_sources(sources)
@@ -337,3 +363,78 @@ def test_alias_source_has_exact_six_utf8_entries_and_no_other_assignment(sources
     assert aliases == {name: "utf_8" for name in
                        ("cp65001", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4")}
     assert list(aliases) == sorted(aliases)
+
+
+def test_abc_python_fallback_fails_closed_before_importing_py_abc(sources):
+    outputs, _manifest = preparation.prepare_static_python_sources(sources)
+    tree = ast.parse(outputs["Lib/abc.py"])
+    handler = next(node for node in ast.walk(tree)
+                   if isinstance(node, ast.ExceptHandler)
+                   and isinstance(node.type, ast.Name) and node.type.id == "ImportError"
+                   and any(isinstance(child, ast.Raise) and child.exc is None
+                           for child in ast.walk(node)))
+    assert len(handler.body) == 1 and isinstance(handler.body[0], ast.Raise)
+    assert handler.body[0].exc is None
+    assert not any(isinstance(node, ast.ImportFrom) and node.module == "_py_abc"
+                   for node in ast.walk(tree))
+    trigger = ast.Raise(exc=ast.Call(func=ast.Name(id="ImportError", ctx=ast.Load()),
+                                     args=[ast.Constant("original failure")], keywords=[]))
+    isolated = ast.Try(body=[trigger], handlers=[copy.deepcopy(handler)],
+                       orelse=[], finalbody=[])
+    module = ast.Module(body=[isolated], type_ignores=[])
+    with pytest.raises(ImportError, match="^original failure$") as raised:
+        exec(compile(ast.fix_missing_locations(module), "<fixed-abc-fallback>", "exec"), {})  # noqa: S102
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is False
+
+
+def test_codec_lookup_only_accepts_retained_utf8_aliases_and_direct_codec_binding(sources):
+    outputs, _manifest = preparation.prepare_static_python_sources(sources)
+    tree = ast.parse(outputs["Lib/encodings/__init__.py"])
+    imports = [node for node in tree.body if isinstance(node, ast.ImportFrom)]
+    assert [(node.level, node.module, node.names[0].name, node.names[0].asname)
+            for node in imports] == [
+                (1, None, "aliases", "_aliases"),
+                (1, None, "utf_8", "_utf_8"),
+            ]
+    assert not any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                   and node.func.id == "__import__" for node in ast.walk(tree))
+
+    function_nodes = [node for node in tree.body
+                      if isinstance(node, ast.FunctionDef)
+                      and node.name in {"normalize_encoding", "search_function"}]
+    namespace = {
+        "_cache": {},
+        "_unknown": object(),
+        "_aliases": type("Aliases", (), {"aliases": {
+            name: "utf_8" for name in
+            ("cp65001", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4")
+        }})(),
+    }
+
+    class Utf8Codec:
+        calls = 0
+        entry = object()
+
+        @classmethod
+        def getregentry(cls):
+            cls.calls += 1
+            return cls.entry
+
+    namespace["_utf_8"] = Utf8Codec
+    module = ast.Module(body=copy.deepcopy(function_nodes), type_ignores=[])
+    exec(compile(ast.fix_missing_locations(module), "<fixed-codec-functions>", "exec"), namespace)  # noqa: S102
+    lookup = namespace["search_function"]
+    supported = ("utf-8", "cp65001", "U8", "UTF", "utf8", "utf8-ucs2", "utf8_ucs4", b"utf-8")
+    assert all(lookup(name) is Utf8Codec.entry for name in supported)
+    calls_after_supported = Utf8Codec.calls
+    unsupported = ("ascii", "latin-1", "utf-16", "cp1252", "utf-8-sig", "unknown-lunar-codec")
+    assert all(lookup(name) is None for name in unsupported)
+    assert Utf8Codec.calls == calls_after_supported
+    codecs.register(lookup)
+    try:
+        with pytest.raises(LookupError, match="^unknown encoding:"):
+            codecs.lookup("lunar_only_unavailable_codec")
+    finally:
+        codecs.unregister(lookup)
+    assert Utf8Codec.calls == calls_after_supported

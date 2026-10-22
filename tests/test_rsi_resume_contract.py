@@ -133,6 +133,66 @@ def test_resume_rejects_fingerprint_drift(tmp_path: Path, field: str) -> None:
         controller.resume("resume-drift", observed_fingerprints=observed)
 
 
+@pytest.mark.parametrize("shape", [
+    "dict_to_none", "none_to_dict", "integer", "boolean", "string", "list",
+])
+def test_resume_rejects_plan_shape_drift_or_invalid_legacy_shape(
+    tmp_path: Path, shape: str,
+) -> None:
+    """Legacy unplanned runs stay unplanned; reserved-mode metadata stays typed."""
+
+    ledger = _ledger(tmp_path)
+    payload = _run_payload()
+    if shape == "dict_to_none":
+        payload["plan"] = {"mode": "drs"}
+        patch = {"plan": None}
+    elif shape == "none_to_dict":
+        patch = {"plan": {"mode": "drs"}}
+    else:
+        payload["plan"] = {"integer": 1, "boolean": True, "string": "drs", "list": []}[shape]
+        patch = {}
+    created = ledger.create_run("resume-plan-shape", HEX, payload)
+    ledger.transition(
+        "resume-plan-shape", state="running", expected_record_sha256=created.record_sha256,
+        payload_patch=patch,
+    )
+    controller = RSILearningController(lambda _request: None, ledger=ledger)
+
+    with pytest.raises(RSILearningError, match="rsi_producer_reserved_original_mode_mismatch"):
+        controller.resume("resume-plan-shape")
+
+
+@pytest.mark.parametrize("bad_plan", [{"mode": "drs"}, 1, True, "drs", []])
+def test_resume_rejects_intermediate_plan_drift_after_unplanned_head_is_restored(
+    tmp_path: Path, bad_plan: object,
+) -> None:
+    """Restoring the current legacy shape cannot hide a changed retained checkpoint."""
+
+    ledger = _ledger(tmp_path)
+    created = ledger.create_run("resume-plan-history", HEX, _run_payload())
+    ledger.transition(
+        "resume-plan-history", state="running", expected_record_sha256=created.record_sha256,
+    )
+    original = {"schema_version": "1", "mode": "drs"}
+    with ledger.controller_lock("resume-plan-history"):
+        first = ledger.write_controller_checkpoint(
+            "resume-plan-history", original, expected_sha256=None,
+        )
+        changed = ledger.write_controller_checkpoint(
+            "resume-plan-history", {**original, "plan": bad_plan}, expected_sha256=first,
+        )
+        ledger.write_controller_checkpoint(
+            "resume-plan-history", original, expected_sha256=changed,
+        )
+    history = ledger.controller_checkpoint_history("resume-plan-history")
+    controller = RSILearningController(lambda _request: None, ledger=ledger)
+
+    with pytest.raises(RSILearningError, match="rsi_producer_reserved_original_mode_mismatch"):
+        controller.resume("resume-plan-history")
+
+    assert ledger.controller_checkpoint_history("resume-plan-history") == history
+
+
 def test_resume_cannot_expand_budget_or_reset_deadline(tmp_path: Path) -> None:
     """Resume accepts only the persisted remaining budget and absolute deadline."""
 

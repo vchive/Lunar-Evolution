@@ -525,7 +525,7 @@ def test_optional_preimage_gate_matches_reviewed_three_metadata_claims_only():
     assert checked.source_preimages_checked is True
     assert checked.manifest_sha256 == unchecked.manifest_sha256
     assert checked.canonical_json == unchecked.canonical_json
-    assert checked.total_bytes == 235702
+    assert checked.total_bytes == 248124
 
 
 @pytest.mark.parametrize("drift", ["missing", "digest", "size", "directory"])

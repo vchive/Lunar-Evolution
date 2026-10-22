@@ -1,7 +1,7 @@
 # Snapshot-bound create-only source staging
 
 This G1 follow-up stages the complete CPython source inventory from one immutable
-archive snapshot, replacing exactly the three installation-owned patch inputs
+archive snapshot, replacing exactly the five installation-owned patch inputs
 with their already verified postimages. It closes filesystem staging only. It
 does not acquire or authenticate a release/toolchain, execute source, configure,
 freeze headers, compile, launch a runtime, or grant production admission.
@@ -19,11 +19,11 @@ mapping, tar reader, extraction callback or observed-inventory DTO is accepted.
 Use one decode and the existing strict bounded archive walker (POSIX USTAR plus
 the pinned archives' narrow pathname metadata forms). Its private staging
 projection retains all actual regular-file payloads under the existing stream,
-member/file/aggregate caps; public three-source preparation still returns only
-three files. The same walker observes the complete canonical inventory. Compare
+member/file/aggregate caps; public five-source preparation still returns only
+five files. The same walker observes the complete canonical inventory. Compare
 its actual digest with the external pin in profile and explicit inert modes.
-Run the existing three-source preimage/policy/postimage checks against those same
-payloads. Stage unchanged files with original bytes and the three fixed sources
+Run the existing five-source preimage/policy/postimage checks against those same
+payloads. Stage unchanged files with original bytes and the five fixed sources
 with verified postimages. Never reopen an archive pathname or use tar extraction.
 
 ## Filesystem contract

@@ -229,6 +229,10 @@ def _natural_owner_waiting(root, patch, *, native_records=False, callback_unknow
 
 @contextmanager
 def _natural_worker(tmp_path, monkeypatch, *, native_records=False, callback_unknown=False, future_unknown=False):
+    from lunar_evolution import native_trusted_attempt as attempt_module
+    from lunar_evolution import native_trusted_output as output_module
+    from lunar_evolution import native_trusted_receipt as receipt_module
+    from lunar_evolution import rsi_brs_native_process_evidence as process_evidence
     from lunar_evolution.rsi_python_brs_terminal_lifecycle import open_brs_terminal_lifecycle
 
     def waiting(root, patch):
@@ -241,7 +245,22 @@ def _natural_worker(tmp_path, monkeypatch, *, native_records=False, callback_unk
         value.session = open_brs_terminal_lifecycle(
             value.owner, value.mailbox, future=value.future, executor=value.pool,
         )
+        value.terminal_reader_projection = (
+            (attempt_module, "recover_native_trusted_attempt", attempt_module.recover_native_trusted_attempt),
+            (output_module, "recover_native_trusted_attempt", output_module.recover_native_trusted_attempt),
+            (process_evidence, "recover_native_trusted_attempt", process_evidence.recover_native_trusted_attempt),
+            (receipt_module, "recover_native_trusted_attempt", receipt_module.recover_native_trusted_attempt),
+        )
         yield value
+
+
+@contextmanager
+def _retained_terminal_projection(value, monkeypatch):
+    """Keep the source-bound fixture readers active after the owner has drained."""
+    with monkeypatch.context() as patch:
+        for module, name, projection in value.terminal_reader_projection:
+            patch.setattr(module, name, projection)
+        yield
 
 
 def _context(value):
@@ -293,20 +312,25 @@ def test_natural_terminal_exact_independent_evidence_only_explicitly_consumes(tm
         value.ready.set()
         value.session.serve(value.preparation, check=lambda: None, timeout=10)
         _assert_natural_terminal(value)
-    mailbox = inspect_brs_mailbox_evidence(value.ledger, value.binding.run_id, value.episode_id)
-    assert mailbox["binding"]["capture"]["native_process"]["status"] == "captured"
-    rebuilt = RSILedger(value.ledger.database)
-    before = _rows(value)
-    observed = inspect_brs_terminal_observation(rebuilt, value.binding.run_id, value.episode_id, **_context(value))
-    assert observed["status"] == "ready", observed
-    assert _rows(value) == before
-    assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id)
-    result = value.controller.reconcile_brs_terminal(value.binding.run_id, value.episode_id, **_context(value))
-    assert result["observation"]["status"] == "ready"
-    assert result["consumption"].consumed is True
-    assert result["consumption"].decision.outcome == "already_terminal"
-    assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id) == {}
-    assert value.gateway.calls == 1
+    with _retained_terminal_projection(value, monkeypatch):
+        mailbox = inspect_brs_mailbox_evidence(value.ledger, value.binding.run_id, value.episode_id)
+        assert mailbox["binding"]["capture"]["native_process"]["status"] == "captured"
+        rebuilt = RSILedger(value.ledger.database)
+        before = _rows(value)
+        observed = inspect_brs_terminal_observation(
+            rebuilt, value.binding.run_id, value.episode_id, **_context(value),
+        )
+        assert observed["status"] == "ready", observed
+        assert _rows(value) == before
+        assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id)
+        result = value.controller.reconcile_brs_terminal(
+            value.binding.run_id, value.episode_id, **_context(value),
+        )
+        assert result["observation"]["status"] == "ready"
+        assert result["consumption"].consumed is True
+        assert result["consumption"].decision.outcome == "already_terminal"
+        assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id) == {}
+        assert value.gateway.calls == 1
 
 
 def test_callback_unknown_never_retries_or_fabricates_terminal_result(tmp_path, monkeypatch):
@@ -331,27 +355,30 @@ def test_explicit_consume_rechecks_root_pins_after_fresh_composition(tmp_path, m
         value.ready.set()
         value.session.serve(value.preparation, check=lambda: None, timeout=10)
         _assert_natural_terminal(value)
-    original = value.ledger._consume_brs_reconcile_obligation
-    observed = []
+    with _retained_terminal_projection(value, monkeypatch):
+        original = value.ledger._consume_brs_reconcile_obligation
+        observed = []
 
-    def racing_consume(run_id, episode_id, evidence, *, expected_pins=None, settled_execution=None):
-        assert expected_pins is not None
-        head, state = value.ledger.controller_checkpoint(run_id)
-        assert expected_pins["root_checkpoint_sha256"] == head
-        observed.append(deepcopy(expected_pins))
-        # A legitimate adjacent root append between the independent read and
-        # consume must invalidate that read, even when its payload is equal.
-        value.ledger.write_controller_checkpoint(run_id, state, expected_sha256=head)
-        return original(run_id, episode_id, evidence, expected_pins=expected_pins,
-                        settled_execution=settled_execution)
+        def racing_consume(run_id, episode_id, evidence, *, expected_pins=None, settled_execution=None):
+            assert expected_pins is not None
+            head, state = value.ledger.controller_checkpoint(run_id)
+            assert expected_pins["root_checkpoint_sha256"] == head
+            observed.append(deepcopy(expected_pins))
+            # A legitimate adjacent root append between the independent read and
+            # consume must invalidate that read, even when its payload is equal.
+            value.ledger.write_controller_checkpoint(run_id, state, expected_sha256=head)
+            return original(run_id, episode_id, evidence, expected_pins=expected_pins,
+                            settled_execution=settled_execution)
 
-    monkeypatch.setattr(value.ledger, "_consume_brs_reconcile_obligation", racing_consume)
-    before = value.ledger.controller_brs_reconcile_obligations(value.binding.run_id)
-    with pytest.raises(RSILearningError, match="^rsi_brs_terminal_consume_drift$"):
-        value.controller.reconcile_brs_terminal(value.binding.run_id, value.episode_id, **_context(value))
-    assert len(observed) == 1
-    assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id) == before
-    assert value.gateway.calls == 1
+        monkeypatch.setattr(value.ledger, "_consume_brs_reconcile_obligation", racing_consume)
+        before = value.ledger.controller_brs_reconcile_obligations(value.binding.run_id)
+        with pytest.raises(RSILearningError, match="^rsi_brs_terminal_consume_drift$"):
+            value.controller.reconcile_brs_terminal(
+                value.binding.run_id, value.episode_id, **_context(value),
+            )
+        assert len(observed) == 1
+        assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id) == before
+        assert value.gateway.calls == 1
 
 
 def test_natural_terminal_native_file_replacement_cannot_refresh_original_capture(tmp_path, monkeypatch):
@@ -359,25 +386,26 @@ def test_natural_terminal_native_file_replacement_cannot_refresh_original_captur
         value.ready.set()
         value.session.serve(value.preparation, check=lambda: None, timeout=10)
         _assert_natural_terminal(value)
-    original = inspect_brs_mailbox_evidence(
-        value.ledger, value.binding.run_id, value.episode_id,
-    )["binding"]["capture"]["native_process"]
-    path = value.batch / "native-trusted-cleanup.json"
-    raw, inode = path.read_bytes(), path.stat().st_ino
-    path.rename(path.with_name(path.name + ".replacement-original"))
-    path.write_bytes(raw)
-    path.chmod(0o600)
-    assert path.stat().st_ino != inode
-    before = _rows(value)
-    with pytest.raises(RSILearningError, match="^rsi_brs_terminal_evidence_native_process_drift$"):
-        value.controller.reconcile_brs_terminal(
-            value.binding.run_id, value.episode_id, **_context(value),
-        )
-    assert _rows(value) == before
-    assert inspect_brs_mailbox_evidence(
-        value.ledger, value.binding.run_id, value.episode_id,
-    )["binding"]["capture"]["native_process"] == original
-    assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id)
+    with _retained_terminal_projection(value, monkeypatch):
+        original = inspect_brs_mailbox_evidence(
+            value.ledger, value.binding.run_id, value.episode_id,
+        )["binding"]["capture"]["native_process"]
+        path = value.batch / "native-trusted-cleanup.json"
+        raw, inode = path.read_bytes(), path.stat().st_ino
+        path.rename(path.with_name(path.name + ".replacement-original"))
+        path.write_bytes(raw)
+        path.chmod(0o600)
+        assert path.stat().st_ino != inode
+        before = _rows(value)
+        with pytest.raises(RSILearningError, match="^rsi_brs_terminal_evidence_native_process_drift$"):
+            value.controller.reconcile_brs_terminal(
+                value.binding.run_id, value.episode_id, **_context(value),
+            )
+        assert _rows(value) == before
+        assert inspect_brs_mailbox_evidence(
+            value.ledger, value.binding.run_id, value.episode_id,
+        )["binding"]["capture"]["native_process"] == original
+        assert value.ledger.controller_brs_reconcile_obligations(value.binding.run_id)
     assert value.gateway.calls == 1
 
 

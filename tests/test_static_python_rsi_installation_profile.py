@@ -28,9 +28,9 @@ from tools.static_python_rsi_fixture import installation_profile as profile
 from tools.static_python_rsi_fixture.recipe import emit_rsi_launch_source_plan
 
 _ROOT = Path(__file__).resolve().parents[1]
-_BASE_SHA = "ba5221310c10360b010d0b5a5b104586d3a1529f159c93a9c02a83319701a92b"
-_OVERLAY_SHA = "37a9d7d986a5c77885e305d0aeeff244074462050523fc544c0dd7398f547d0f"
-_PLAN_SHA = "f6e1ba1daa0a6916c9f8a8fc50932e6b8f8b0b816b522c0cc502e414e60df9d2"
+_BASE_SHA = "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31"
+_OVERLAY_SHA = "31e8e064dc5317b3297140f55f07e81ca1aa9c831a4e4bbbf46cc76db0667b8f"
+_PLAN_SHA = "3399f2f7e8ef9b7c2d6c7ff60985992c0dff1444e463a971ad2560cdbda410ee"
 _ASSETS = (
     "launcher.c", "pipe.c", "profile.c", "getpath.c", "lunar_fixture_profile.h", "frozen_main.py",
 )
@@ -48,7 +48,7 @@ def reviewed_inputs(tmp_path_factory: pytest.TempPathFactory) -> dict:
     base = (_ROOT / "tools/static_python_fixture/reviewed-build-inputs.json").read_bytes()
     overlay = (_ROOT / "tools/static_python_rsi_fixture/reviewed-profile-overlay.json").read_bytes()
     plan = manifest.read_bytes()
-    assert (len(base), hashlib.sha256(base).hexdigest()) == (79459, _BASE_SHA)
+    assert (len(base), hashlib.sha256(base).hexdigest()) == (80050, _BASE_SHA)
     assert (len(overlay), hashlib.sha256(overlay).hexdigest()) == (2456, _OVERLAY_SHA)
     assert (len(plan), hashlib.sha256(plan).hexdigest()) == (6706, _PLAN_SHA)
     return {
@@ -139,7 +139,7 @@ def test_exactly_two_complete_record_substitutions_preserve_every_other_field(in
     assert candidate["schema"] == "lunar-static-python-rsi-build-input-candidate-v1"
     assert output["profile"] == "rsi-marker-launch-v1"
     assert output["substitutions"] == overlay["substitutions"]
-    assert output["base_reviewed_inputs"] == {"size": 79459, "sha256": _BASE_SHA}
+    assert output["base_reviewed_inputs"] == {"size": 80050, "sha256": _BASE_SHA}
     assert output["reviewed_overlay"] == {"size": 2456, "sha256": _OVERLAY_SHA}
     assert output["source_plan"] == {"size": 6706, "sha256": _PLAN_SHA}
     restored = copy.deepcopy(candidate)

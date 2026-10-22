@@ -1,15 +1,9 @@
 # Inert CPython source fixtures
 
-These three `.source` files preserve exact bytes from CPython commit
-`1cbe481834751b0125e006042ffbd8cd5eaec8a8` (`v3.13.12`). They are data for
-whole-file digest and source-transformation tests. Tests read or parse these
-bytes; they never execute the complete upstream files or build CPython.
-The full upstream license is retained in `LICENSE`; byte provenance is in
-`provenance.json`. Copied snippets in the preparation module retain this same
-upstream license.
+This directory contains data-only CPython source fixtures. Eight files are exact regular-file members read from the CPython 3.13.12 release archive `Python-3.13.12.tar.xz`. The archive size, SHA-256, member paths, sizes, and member SHA-256 values are recorded in `provenance.json`; the test repeats the per-member size and digest checks before invoking the Lunar AST observer.
 
-This Git source review is distinct from acquiring or verifying the advertised
-python.org release archive. No archive signature, toolchain, generated frozen
-header, static ELF, startup or production admission is established here.
-Only individually extracted fixed refusal methods may be compiled and called
-with inert fake objects to verify that they raise before callbacks.
+The release archive identity recorded here is 22,926,488 bytes with SHA-256 `2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593`. The `official_python_org_archive_verified: false` field means this fixture manifest does not itself contain an archive-verification receipt; it is not a claim that no separate verification was performed. The separate Feature 189 release-input audit records a retained signature-verification transcript and its trust limits at `specs/189-static-python-fixture/release-input-audit-20261021.md`. The `.source` suffix keeps upstream Python bytes as inert fixture data; tests read and parse them but do not import or execute them.
+
+The top-level `files` list in `provenance.json` records five exact source fixtures from the previously reviewed Git checkout `1cbe481834751b0125e006042ffbd8cd5eaec8a8` (`v3.13.12`), including `Python/import.c.source`, which is outside the release archive-member list. The `release_archive_fixtures` section separately records eight archive-member fixtures. These origins are not interchangeable.
+
+The upstream PSF license is retained as `LICENSE`. Copied snippets in the preparation module retain the same license. No build, generated frozen header, static ELF, runtime startup, or production admission is established by these source fixtures.

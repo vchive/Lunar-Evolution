@@ -286,6 +286,26 @@ than an independent retained staging pin or candidate-build provenance.
 Details and the exact claim limits are in
 [`source-staging-consistency-probe-20261021.md`](source-staging-consistency-probe-20261021.md).
 
+## Bounded startup/import graph DTO
+
+`startup-closure-contract.md` freezes a separate canonical graph wire that binds
+the current installation descriptor, source/patch/initialization/frozen/builtin/
+alias pins, fixed startup roots, route records, alias mappings and directed import
+edges. The parser validates only caller-supplied DTO consistency, canonical bytes,
+reachability and independent pins. It does not extract imports, prove the graph is
+complete, inspect a configured build, or start CPython. Existing module inventories
+remain unchanged; `operator` is not admitted from a separate diagnostic image.
+
+The synthetic focused regression is `tests/test_static_python_startup_closure.py`
+(60 passed, zero failures/errors/skips). It covers fixed roots and routes, alias
+edges, graph reachability, unknown/missing inventory, external pins, strict
+canonical/type/budget failures, detached results, false-only claims and the lack
+of filesystem/process/network/environment/build/runtime effects. Ruff passed for
+the changed Python files, `compileall` passed on those files, and
+`git diff --check` passed. Independent source-edge review, actual static build,
+sealed startup and owner/lifecycle acceptance remain open; no real build or
+runtime was run for this DTO slice.
+
 The staging budget regression tests exercise a 65,000-entry canonical staging
 wire larger than 32 MiB, enforce independent staging wire/string ceilings, and
 retain the existing source-observation wire ceiling. A complete consistency
@@ -298,3 +318,83 @@ collected cases with zero failures, errors or skips. Full Ruff and
 Do not run `compileall .` across ignored `.lunar` evidence trees: those retain
 inert payload files ending in `.py` and can contain read-only directories. No
 build, runtime or evaluator was run by this regression.
+
+## Source-byte-bound Python AST import observations
+
+`python-import-audit-contract.md` defines a separate in-memory observer over an
+exact caller-supplied module-to-source-bytes map and matching external per-source
+SHA-256 pins. Synthetic tests cover absolute/from imports, package-relative
+resolution using explicit `pkg.__init__` source keys, optional submodule edges
+only when those bytes are supplied, literal imports, and fixed unresolved or
+unsupported records for relative gaps, dynamic calls, star imports and dynamic
+code execution. They also cover malformed pins/types, encoding/syntax failures,
+size/node/depth/site/output budgets, canonical detached results and refusal
+codes. No source file is read or executed.
+
+The suite also covers namespace-package parent resolution, literal `name=` and
+`package=` arguments, nonliteral relative package refusal, and the distinction
+between an `importlib` root alias and an `importlib` submodule alias.
+
+The result is an AST observation wire only. A static target may be named even
+when its source bytes were not supplied; there is no profile comparison or
+closure claim. The scanner does not establish source provenance and does not
+cover C-created imports, arbitrary import aliases, loader hooks, runtime-built
+code or every other dynamic mechanism. Therefore, an empty unsupported-site list
+does not complete the independent CPython 3.13.12 source audit in `tasks.md`.
+The synthetic gate is **35 cases**, with zero failures, errors or skips on
+Python 3.11 and 3.12; focused
+Ruff, compileall and diff checks are run for these new files only. No build,
+startup, solver, remote evaluator or company platform was run for this slice.
+
+## Partial CPython release-source import review
+
+`authenticated-source-import-audit-20261021.md` records read-only AST
+observations for eight frozen-module Python files read directly from the pinned
+CPython 3.13.12 release archive on 5090gpu. It distinguishes those archive
+members from a separately patched staging tree, records the tree byte drift,
+and identifies dynamic codec-name selection under `encodings` and the `_py_abc`
+fallback under `abc` as source-level policy issues. The finite source-preparation
+contract now defines dispositions for both, but target use remains unverified.
+It also pins the
+Lunar-owned frozen-main template separately from the final expanded source.
+
+This partial audit is an input for the independent source review, not its
+completion. It does not cover all Python/C startup edges, establish runtime
+reachability or module origin, bind the emitted frozen main, or close the
+configured startup graph. No build, install, evaluator or campaign was run.
+
+The same report now retains a direct Lunar-observer replay over the eight exact
+CPython archive members: 28 import edges, zero unresolved observations and four
+fixed unsupported sites, with a canonical result digest. Call-time member pins
+were derived from the supplied bytes, so the replay validates observer behavior
+on those bytes but is not independent per-file provenance or closure evidence.
+The separate three-case `test_static_python_source_import_profile.py` checks the
+6,794-byte expanded `_lunar_static_main` bytes against the reviewed freeze-task
+pin and audits those exact bytes; its fixed `__import__(name)` loader-negative
+site remains unsupported. Both source observations keep all capability claims
+false. They do not replace the still-open complete CPython/C startup audit,
+target-startup codec registration, generated-header checks, configured build or
+sealed runtime acceptance. The finite source patch now re-raises the original
+`_abc` `ImportError`; its focused test checks message and exception context.
+The codec test registers the synthetic patched lookup callback with host
+`codecs.lookup` and confirms an unsupported name raises `LookupError`. These
+checks remain source-level and host-API observations; they do not execute or
+start the patched target.
+
+## Bounded C-startup source review
+
+[`c-startup-source-audit-20261021.md`](c-startup-source-audit-20261021.md)
+records exact sizes and SHA-256 digests for 23 CPython 3.13.12 archive members,
+plus fixed Lunar generated-table source pins. The review distinguishes
+C-created `sys`/`builtins`, `_inittab` entries, `_imp` bootstrap initialization,
+frozen tables and aliases, and the separate embedded getpath array. It also
+records which path/table inputs are archive-owned, generated from the Lunar
+profile, or fixture-owned.
+
+This is a bounded source report, not a complete mechanized C import/configuration
+gate. It does not show that the planned tables were built, that a configured
+`Modules/Setup` or `pyconfig.h` matches the profile, or that the final image
+contains only those entries. The actual configure/link closure, same-source
+freezer outputs, C/header conditionals, startup behavior, module origins and
+runtime refusal paths remain open. All capability and production claims remain
+false; no build or evaluator was run.

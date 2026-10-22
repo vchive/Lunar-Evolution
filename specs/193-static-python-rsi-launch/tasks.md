@@ -110,7 +110,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   detached DTO parser. This does not execute a runtime or verify an owner.
 - [x] Verify PR55 startup-contract source `37aa8ab` against run `38199245419`,
   completed/success on all 15 checks; merged at `048a403`.
-- [ ] Verify and retain independent raw/source/tree audits for the final PR54,
+- [x] Verify and retain independent raw/source/tree audits for the final PR54,
   PR55 and PR59 contract/correction sources; CI success does not supply that audit.
 - [x] F04a Add a provider-free input/result cross-pin DTO that joins F03 startup
   and F04 report digests/sizes without raw inputs or solver/result authority.
@@ -118,7 +118,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   fixed computation and all-false claims with focused side-effect tests.
 - [x] F04c (CI) Verify PR56 final source `7665164` against run `38199255630`,
   completed/success on all 15 checks; merged at `ad4877c`.
-- [ ] F04c (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F04c (audit) Verify and retain the independent raw/source/tree audit for
   the final input/result cross-pin source.
 - [x] F05a Add a detached runtime/post-execution handoff projection joining
   startup, input/result, terminal, budget and publication-intent pins.
@@ -130,7 +130,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   and disjoint compatibility evidence; this does not close live F03/F04/F05.
 - [x] F05c (CI) Verify PR57 final source `7ca3816` against run `38199260479`,
   completed/success on all 15 checks; merged at `f296431`.
-- [ ] F05c (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F05c (audit) Verify and retain the independent raw/source/tree audit for
   the final runtime-handoff source and subsequent PR59 corrections.
 - [ ] F02c Acquire and independently audit the pinned CPython source/toolchain,
   configure the build, generate all frozen headers, retain object/archive/link

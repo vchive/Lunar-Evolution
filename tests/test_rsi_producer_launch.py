@@ -5,15 +5,31 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from test_producer_python_runtime import _inventory
-from test_rsi_producer_gateway import _fixture
+from test_rsi_producer_gateway import _fixture as _gateway_fixture
 from test_rsi_producer_staging_controller import ObservedAttestations, _controller, _run
 
 from lunar_evolution.rsi_gateway import SolverRequest
 from lunar_evolution.rsi_learning import MemorySnapshot, PracticeEpisode, RSILearningError
 from lunar_evolution.rsi_producer_launch import MAX_STAGING_CHECKPOINT_BYTES
+
+
+def _fixture(tmp_path, monkeypatch):
+    """Keep fixture workspace paths short enough for the retained binding wire.
+
+    The binding intentionally carries absolute inode/path pins under a strict
+    32 KiB cap. Pytest's nested temporary path can exceed that cap on macOS,
+    making the fixture test the host's temp naming scheme instead of staging.
+    The workspace remains unique per test while production limits stay fixed.
+    """
+    import tempfile
+
+    temp_root = Path("/private/tmp") if Path("/private/tmp").is_dir() else Path(tempfile.gettempdir())
+    short_root = Path(tempfile.mkdtemp(prefix="le-producer-", dir=temp_root))
+    return _gateway_fixture(short_root, monkeypatch)
 
 
 def _planned(value):
@@ -183,16 +199,23 @@ def test_direct_stage_requires_original_controller_and_durable_preparing(tmp_pat
     assert _inventory(value.root) == before
 
 
-def test_config_artifact_and_supplier_drift_refuse_before_effects(tmp_path, monkeypatch):
+@pytest.mark.parametrize("drift", ["supplier", "artifact", "compiler", "path", "descriptor", "descriptor_scalar"])
+def test_config_artifact_and_supplier_drift_refuse_before_effects(tmp_path, monkeypatch, drift):
     value = _fixture(tmp_path, monkeypatch)
     supplier = ObservedAttestations(value.ledger)
     stager = _controller(value, supplier).producer_stager
     before = _inventory(value.root)
-    object.__setattr__(stager.config, "attestation_supplier", ObservedAttestations(value.ledger))
-    with pytest.raises(RSILearningError, match="configuration_drift"):
-        stager.pure_preflight({}, _planned(value), value.request, value.memory)
-    object.__setattr__(stager.config, "attestation_supplier", supplier)
-    object.__setattr__(stager.config.artifact, "compiler", "drifted")
+    if drift == "supplier":
+        object.__setattr__(stager.config, "attestation_supplier", ObservedAttestations(value.ledger))
+    elif drift == "artifact":
+        object.__setattr__(stager.config, "artifact", replace(stager.config.artifact))
+    elif drift == "descriptor":
+        object.__setattr__(stager.config.artifact.descriptor, "allowlist_id", "drifted")
+    elif drift == "descriptor_scalar":
+        object.__setattr__(stager.config.artifact.descriptor, "size", True)
+    else:
+        object.__setattr__(stager.config.artifact, drift,
+                           value.root / "different-bootstrap" if drift == "path" else "drifted")
     with pytest.raises(RSILearningError, match="configuration_drift"):
         stager.pure_preflight({}, _planned(value), value.request, value.memory)
     assert _inventory(value.root) == before

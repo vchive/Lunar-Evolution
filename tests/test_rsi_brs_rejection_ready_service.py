@@ -283,6 +283,28 @@ def test_entry_independently_guards_bootstrap_and_its_refusal_code(monkeypatch, 
             service.service_rejection_ready(object(), timeout=1)
 
 
+def test_entry_tolerates_only_plain_warning_registry_bookkeeping(monkeypatch):
+    modules = (service, service.queued, service.ack_graph, service.raw_ledger, service.locks,
+               service.reference, service.state, service.sync, service.hashlib, service.math, service.time)
+    for module in modules:
+        with monkeypatch.context() as patch:
+            patch.delitem(vars(module), "__warningregistry__", raising=False)
+            # Simulate both the pre-warning and post-warning namespace shapes.
+            service._SERVICE_FUNCTIONS[2]()
+            patch.setitem(vars(module), "__warningregistry__", {})
+            # The registry is explicitly excluded from executable module
+            # identity; ordinary function bindings remain fully guarded.
+            service._SERVICE_FUNCTIONS[2]()
+
+    for module in modules:
+        with monkeypatch.context() as patch:
+            patch.setitem(vars(module), "__warningregistry__", [])
+            with pytest.raises(RSILearningError, match="service_graph_drift"):
+                service.service_rejection_ready(object(), timeout=1)
+
+    assert service.raw_ledger in modules
+
+
 def test_entry_refusal_avoids_a_changed_application_exception_initializer(monkeypatch):
     calls = []
 

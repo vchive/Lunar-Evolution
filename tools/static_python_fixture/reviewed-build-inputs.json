@@ -57,8 +57,8 @@
       "output": "generated-sources/Python/frozen_modules/abc.h",
       "package": false,
       "source": "Lib/abc.py",
-      "source_sha256": "e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287",
-      "source_size": 6538,
+      "source_sha256": "a6684b1a49cfbc9c64caeeac7e55ef8f35052b8e8ca93a091941817cdc510b1c",
+      "source_size": 6468,
       "symbol": "_Py_M__abc"
     },
     {
@@ -90,8 +90,8 @@
       "output": "generated-sources/Python/frozen_modules/encodings.h",
       "package": true,
       "source": "Lib/encodings/__init__.py",
-      "source_sha256": "78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8",
-      "source_size": 5884,
+      "source_sha256": "47a11d930321492bca552eed29dad061ed6739bf84c919485453315d911b1c60",
+      "source_size": 1101,
       "symbol": "_Py_M__encodings"
     },
     {
@@ -1848,6 +1848,20 @@
   "source_preparation": {
     "files": [
       {
+        "after_sha256": "a6684b1a49cfbc9c64caeeac7e55ef8f35052b8e8ca93a091941817cdc510b1c",
+        "after_size": 6468,
+        "before_sha256": "e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287",
+        "before_size": 6538,
+        "path": "Lib/abc.py"
+      },
+      {
+        "after_sha256": "47a11d930321492bca552eed29dad061ed6739bf84c919485453315d911b1c60",
+        "after_size": 1101,
+        "before_sha256": "78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8",
+        "before_size": 5884,
+        "path": "Lib/encodings/__init__.py"
+      },
+      {
         "after_sha256": "43aadac378861c1bbdaaf04be8e1bb7d878529a7641ec123b5df4eccdd4c6106",
         "after_size": 802,
         "before_sha256": "cac92d68c7ea5bc0f05b448b9144e3bdf236d0b7d27ab66112e96d43aad15b3f",
@@ -1869,7 +1883,7 @@
         "path": "Python/import.c"
       }
     ],
-    "patch_set_sha256": "f3f740c644165d8c4d2e89840a1e75427806c12c13debf843d3b6fb2cc90f479"
+    "patch_set_sha256": "f3c6f45437b954bdb8bd59a3fd05ef98d0b1715066e570cb3c277dda16596b48"
   },
   "source_version": "3.13.12",
   "states": {

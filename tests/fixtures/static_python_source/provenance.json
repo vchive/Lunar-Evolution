@@ -3,10 +3,22 @@
   "copy_method": "exact bytes from the previously reviewed Git source checkout",
   "files": [
     {
+      "bytes": 6538,
+      "fixture_path": "Lib/abc.py.source",
+      "sha256": "e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287",
+      "source_path": "Lib/abc.py"
+    },
+    {
       "bytes": 15713,
       "fixture_path": "Lib/encodings/aliases.py.source",
       "sha256": "cac92d68c7ea5bc0f05b448b9144e3bdf236d0b7d27ab66112e96d43aad15b3f",
       "source_path": "Lib/encodings/aliases.py"
+    },
+    {
+      "bytes": 5884,
+      "fixture_path": "Lib/encodings/__init__.py.source",
+      "sha256": "78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8",
+      "source_path": "Lib/encodings/__init__.py"
     },
     {
       "bytes": 73219,
@@ -24,6 +36,76 @@
   "full_source_execution_performed": false,
   "license": "CPython upstream LICENSE is retained as LICENSE in this directory",
   "official_python_org_archive_verified": false,
+  "official_python_org_archive_verification_note": "false means this fixture manifest does not itself contain an archive-verification receipt; see the separate release-input audit for its retained signature transcript and trust limits",
+  "release_archive_fixtures": {
+    "archive_bytes_read_from": "/tmp/lunar-toolchains/sources/Python-3.13.12.tar.xz on 5090gpu",
+    "archive_filename": "Python-3.13.12.tar.xz",
+    "archive_sha256": "2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593",
+    "archive_size_bytes": 22926488,
+    "archive_url": "https://www.python.org/ftp/python/3.13.12/Python-3.13.12.tar.xz",
+    "member_digest_note": "Each member size and SHA-256 below are fixed in tests/test_static_python_source_import_profile.py. They were observed from the archive identified by the archive size and digest above; they are not separate signatures or independently sourced release pins.",
+    "members": [
+      {
+        "archive_member": "Python-3.13.12/Lib/importlib/_bootstrap.py",
+        "fixture_path": "Lib/importlib/_bootstrap.py.source",
+        "module": "_frozen_importlib",
+        "sha256": "b84488f731914f6da30607e10f6f8d4c5c2ff7f4b0e913060aa66999c04f6252",
+        "size_bytes": 57082
+      },
+      {
+        "archive_member": "Python-3.13.12/Lib/importlib/_bootstrap_external.py",
+        "fixture_path": "Lib/importlib/_bootstrap_external.py.source",
+        "module": "_frozen_importlib_external",
+        "sha256": "a97a03ea9f9d38d90c8a50942183382ff5a479e7c4c5163c2ac5bae3561444ae",
+        "size_bytes": 73219
+      },
+      {
+        "archive_member": "Python-3.13.12/Lib/abc.py",
+        "fixture_path": "Lib/abc.py.source",
+        "module": "abc",
+        "sha256": "e558702a95cdce3febd289da021715d2b92bc43995b8a1bc58dfa1c3d8010287",
+        "size_bytes": 6538
+      },
+      {
+        "archive_member": "Python-3.13.12/Lib/codecs.py",
+        "fixture_path": "Lib/codecs.py.source",
+        "module": "codecs",
+        "sha256": "2f278497548b8313580b247a1097a0a304e5087a355ebb11a92ec685fa9e63ff",
+        "size_bytes": 36978
+      },
+      {
+        "archive_member": "Python-3.13.12/Lib/encodings/__init__.py",
+        "fixture_path": "Lib/encodings/__init__.py.source",
+        "module": "encodings.__init__",
+        "sha256": "78c4744d407690f321565488710b5aaf6486b5afa8d185637aa1e7633ab59cd8",
+        "size_bytes": 5884
+      },
+      {
+        "archive_member": "Python-3.13.12/Lib/encodings/aliases.py",
+        "fixture_path": "Lib/encodings/aliases.py.source",
+        "module": "encodings.aliases",
+        "sha256": "cac92d68c7ea5bc0f05b448b9144e3bdf236d0b7d27ab66112e96d43aad15b3f",
+        "size_bytes": 15713
+      },
+      {
+        "archive_member": "Python-3.13.12/Lib/encodings/utf_8.py",
+        "fixture_path": "Lib/encodings/utf_8.py.source",
+        "module": "encodings.utf_8",
+        "sha256": "ba0cac060269583523ca9506473a755203037c57d466a11aa89a30a5f6756f3d",
+        "size_bytes": 1005
+      },
+      {
+        "archive_member": "Python-3.13.12/Lib/io.py",
+        "fixture_path": "Lib/io.py.source",
+        "module": "io",
+        "sha256": "7cec3cb8ac004058dd0a5af246e6d950fb59c7ddd0058fda48bcb3fcb98d8822",
+        "size_bytes": 3582
+      }
+    ],
+    "release": "CPython 3.13.12",
+    "scope": "eight exact regular-file member byte copies; inert test data only",
+    "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md"
+  },
   "scope": "inert-source-byte-fixtures-only",
   "source": "https://github.com/python/cpython.git",
   "source_commit": "1cbe481834751b0125e006042ffbd8cd5eaec8a8",

@@ -24,6 +24,7 @@ from lunar_evolution import rsi_python_brs_owner_bridge as bridge
 from lunar_evolution import rsi_python_brs_publication_mailbox as mailbox_module
 from lunar_evolution import rsi_python_brs_result_delivery as delivery
 from lunar_evolution.producer_bundle_publication import ProducerBundlePublicationJournal
+from lunar_evolution.producer_bundle_rejection import ProducerBundleRejectionError
 from lunar_evolution.rsi_fingerprint import RSIFingerprintContract, RSIFingerprintError
 from lunar_evolution.rsi_python_brs_publication_mailbox import (
     BRSOwnerPublicationMailbox,
@@ -145,7 +146,11 @@ def test_real_all_rejected_kernel_still_refuses_response_and_retains_fence(tmp_p
     with _mailbox_worker(tmp_path, monkeypatch, validity=0,
                          on_response=lambda *_args: callbacks.append(True)) as (value, mailbox, responses):
         value.ready.set()
-        with pytest.raises(RSILearningError, match="all_rejected_unsupported"):
+        # The native kernel now supports the all-rejected C1/P/C2 path. This
+        # intentionally inert fixture omits the durable rejection evidence, so
+        # the owner must fail closed on the fixed evidence error instead of
+        # silently downgrading it to the former unsupported-mode sentinel.
+        with pytest.raises(ProducerBundleRejectionError, match="producer_bundle_rejection_evidence_invalid"):
             bridge.run_brs_owner_publication_mailbox(
                 value.owner, mailbox, value.preparation, check=lambda: None, timeout=10,
             )

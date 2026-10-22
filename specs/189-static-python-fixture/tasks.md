@@ -81,6 +81,13 @@ failure and cancelled preflight separately from later successful evidence.
   implicit ancestor-directory expansion and canonical JSON escaping cannot make
   a legal staged DTO fail the pure consistency check. Keep the source-observation
   and archive-receipt 32 MiB bounds unchanged.
+- [x] Add the source-only readiness receipt in `source-readiness-receipt.md`.
+  Bind the archive receipt, complete original tree, patched staging tree, fixed
+  five-file patch/policy digests, all six RSI source assets (including expanded
+  `_lunar_static_main`) and an independently pinned Zig file inventory. Require
+  explicit `unverified` toolchain evidence and false build/runtime/admission
+  claims; this receipt does not close source acquisition, toolchain, build or
+  runtime acceptance.
 - [ ] Select one exact separately pinned musl x86_64 compiler/sysroot/libc profile;
   resolve compiler/binutils/static-library sources, versions and artifact hashes,
   including zlib/libffi/freezer inputs and the configured build environment.
@@ -90,6 +97,48 @@ failure and cancelled preflight separately from later successful evidence.
   actual target-owner integration remains a G3 gate.
 - [x] Implement bounded pure descriptor/parser/external-pin validation with focused
   invalid shapes/collections/digest/count/unknown-field tests; no build/FS effects.
+- [x] Freeze `startup-closure-contract.md` and implement its separate bounded
+  canonical import-graph DTO parser. Compare supplied startup roots, module routes,
+  aliases and reachable edges with the unchanged installation descriptor and nine
+  independent SHA-256 pins; keep every capability claim false. The 60-case
+  in-memory synthetic suite proves DTO consistency only.
+- [x] Specify and implement the separate source-byte-bound Python AST import
+  observer in `python-import-audit-contract.md`. Require exact caller-supplied
+  module/source bytes and matching external per-source SHA-256 pins; record
+  ordinary/from/relative/literal observations plus fixed unresolved/unsupported
+  sites under finite budgets. Keep output claims false and do not compare or extend
+  the installation profile. Synthetic tests prove only observer behavior; they do
+  not establish source provenance or complete import enumeration.
+- [x] Record a read-only AST review of eight frozen-module Python files directly
+  from the pinned CPython 3.13.12 release archive, including the archive identity,
+  changed staged-source paths and bounded import observations in
+  `authenticated-source-import-audit-20261021.md`. This is a partial source audit,
+  not a complete import closure or independent re-verification of the signature.
+- [x] Replay those eight exact release-archive member bytes through the Lunar AST
+  observer without extracting or executing them. Preserve the canonical result
+  digest, per-source observations and fixed unsupported sites; the call-time
+  source pins were computed from the bytes and are not independent release pins.
+- [x] Emit the exact expanded Lunar `_lunar_static_main` source from the reviewed
+  build plan, match its size/digest to the freeze-task pin, and run that byte
+  string through the Lunar AST observer. Keep the fixed loader-negative dynamic
+  import visible as unsupported; this is a source-plan check, not a freezer or
+  startup observation.
+- [x] Record a bounded, source-pinned CPython C-startup review for the fixed
+  import/lifecycle/configuration/table inputs, distinguishing stock archive
+  files from generated Lunar tables and fixture-owned path code in
+  `c-startup-source-audit-20261021.md`. This does not complete the configured
+  C/Python closure or runtime audit below.
+- [x] Define bounded source-preparation dispositions for the observed dynamic
+  codec-name selection and `_py_abc` fallback: direct fixed UTF-8 binding, a
+  six-alias allowlist, and preservation of the original `_abc` import error.
+  Provider-free tests cover the source transformations and normal `LookupError`
+  from host `codecs.lookup` when the synthetic callback declines an unknown
+  codec. This does not verify target startup registration or frozen-module use.
+- [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
+  relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
+  refusal sites across the complete configured source/startup scope, including
+  any dependency outside the pinned profile and a versioned profile decision.
+  The DTO parser cannot certify this audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do

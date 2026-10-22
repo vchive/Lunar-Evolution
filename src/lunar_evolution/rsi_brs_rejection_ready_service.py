@@ -409,7 +409,12 @@ def _build_service_entry(implementation):
     dictionary_get, dictionary_set = GetSetDescriptorType.__get__, dict.__setitem__
     own = globals()
     dependencies = (queued, ack_graph, raw_ledger, locks, reference, state, sync, hashlib, math, time)
-    namespaces = plain_tuple((namespace_of(module), plain_tuple(namespace_of(module).items()))
+    # CPython may add this interpreter-owned mapping when a warning first fires.
+    # Keep every executable module binding pinned while treating only this
+    # exact bookkeeping key as late-bound (and only when it remains a plain dict).
+    namespaces = plain_tuple((namespace_of(module), plain_tuple(
+        (name, value) for name, value in namespace_of(module).items()
+        if name != "__warningregistry__"))
                              for module in dependencies)
     builtins_namespace = namespace_of(builtins)
     builtin_values = plain_tuple((name, builtins_namespace[name]) for name in (
@@ -435,8 +440,14 @@ def _build_service_entry(implementation):
 
     def guard():
         for namespace, entries in (*namespaces, (own, own_entries)):
-            if (kind(namespace) is not plain_dict or length(namespace) != length(entries)
+            if (kind(namespace) is not plain_dict
                     or some(kind(key) is not plain_str for key in namespace)):
+                refuse()
+            warning_registry = namespace.get("__warningregistry__", missing)
+            if warning_registry is not missing and kind(warning_registry) is not plain_dict:
+                refuse()
+            names = plain_tuple(name for name in namespace if name != "__warningregistry__")
+            if length(names) != length(entries):
                 refuse()
             for name, original in entries:
                 if namespace.get(name, missing) is not original:
@@ -508,8 +519,10 @@ def _build_service_entry(implementation):
         *(value for namespace, _entries in namespaces
           for _name, value in plain_tuple(namespace.items()) if kind(value) is function_type),
     ))
-    own_entries = plain_tuple((name, service_rejection_ready if name == "service_rejection_ready" else value)
-                              for name, value in own.items()) + (("_SERVICE_FUNCTIONS", functions),)
+    own_entries = plain_tuple(
+        (name, service_rejection_ready if name == "service_rejection_ready" else value)
+        for name, value in own.items() if name != "__warningregistry__"
+    ) + (("_SERVICE_FUNCTIONS", functions),)
     guard_captures = plain_tuple(cell.cell_contents for cell in (guard_closure or ()))
     return service_rejection_ready, functions
 
