@@ -160,10 +160,14 @@ failure and cancelled preflight separately from later successful evidence.
   the related archive/manifest/staged-source selection passes 353 cases, with
   zero failures, errors or skips. Whole-repository Ruff, src/tools/tests
   compileall and diff checks pass. These suites overlap and are not additive.
-- [ ] Retain an independently checked real Linux tree replay against the
-  original complete manifest pin, then complete the exact-source three-version
-  CI before merging this slice. Keep concrete build-tool/helper/cache bindings,
-  configured build consumption, static build and runtime gates open.
+- [x] Retain an independently checked real Linux tree replay against the
+  original complete manifest pin. Exact c00632fb (same Git tree as 5af81663)
+  observes all 20,832 members in 1.52 seconds under its original 120-second
+  deadline; the complete raw output, source archive, manifest and record are
+  transferred and independently checked. This closes the observer replay only.
+- [ ] Complete the exact-source three-version CI before merging this slice.
+  Keep concrete build-tool/helper/cache bindings, configured build consumption,
+  static build and runtime gates open.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
   actual target-owner integration remains a G3 gate.

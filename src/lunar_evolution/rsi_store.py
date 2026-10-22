@@ -1557,12 +1557,17 @@ class RSILedger:
     @staticmethod
     def _python_admission_row(row: sqlite3.Row) -> RSIPythonAdmissionRecord:
         try:
+            # SQLite TEXT affinity can still retain a BLOB.  The DTO parser
+            # accepts canonical bytes too, but this journal requires exact text.
+            # For that text the full parser already checks the canonical bytes;
+            # serializing its detached result again adds no independent check.
+            if type(row["payload"]) is not str:
+                raise RSIPythonAdmissionError("record_corrupt")
             record = parse_rsi_python_admission_record(row["payload"])
             if (record.run_id != row["run_id"] or record.episode_id != row["episode_id"]
                     or record.journal_id != row["journal_id"] or record.attempt_id != row["attempt_id"]
                     or record.record_sha256 != row["record_sha256"]
-                    or type(row["created_at"]) is not str or not row["created_at"].strip()
-                    or record.to_json().decode("utf-8") != row["payload"]):
+                    or type(row["created_at"]) is not str or not row["created_at"].strip()):
                 raise RSIPythonAdmissionError("record_corrupt")
             return record
         except (TypeError, ValueError) as exc:

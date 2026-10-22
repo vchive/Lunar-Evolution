@@ -70,6 +70,11 @@ jobs:
         run: |
           python -m pytest -q tests/test_rsi_checkpoint_digest_cache.py tests/test_rsi_source_cache.py tests/test_rsi_identity.py tests/test_rsi_identity_drift.py --junitxml=.lunar-evolution/test-results/rsi-bounded-caches.xml
           python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-bounded-caches.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '69' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Bounded checkpoint/source caches require 69 cases and zero failures, errors or skips; every source observation, history row, parent chain and reference must still be freshly read and validated')"
+      - name: Verify fresh RSI admission row parsing
+        if: ${{ matrix.role == 'focused' }}
+        run: |
+          python -m pytest -q tests/test_rsi_python_admission_row.py --junitxml=.lunar-evolution/test-results/rsi-admission-row.xml
+          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-admission-row.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '17' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Fresh admission row parsing requires 17 cases and zero failures, errors or skips; exact text, full canonical parsing and independent row bindings remain mandatory')"
       - name: Verify detached RSI marker installation description contract
         if: ${{ matrix.role == 'focused' }}
         run: |

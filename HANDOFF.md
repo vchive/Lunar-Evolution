@@ -1,5 +1,46 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 提取树观察与 admission row 去重（2026-10-23）
+
+- 新增 `toolchain_tree_observation.py`，复用原 extraction-manifest-v1 与适用的
+  FD helpers，对完整提取树核对路径、模式、nlink、字节hash和末轮身份/目录清单。
+  58主用例与14独立故障注入全部通过，相关组合353项通过；新CI专项门为72项。
+  顺序观察不等于immutable custody或后续compiler消费，十项相关声明继续为false。
+- 精确 `c00632fb`（与本分支cherry-pick `5af81663`的Git tree相同）在5090gpu只读
+  replay通过：20,832 members、19,546 files、1,286 directories、357,913,169 bytes，
+  原120秒deadline下1.515601秒、exit0/stderr空。完整历史manifest pin匹配；1012B
+  record SHA为 `85d77ae0768e0e7afd6f749a315b4b768f41c863afb53fed794bfe5e770e1571`。
+  完整源码tar、清单、脚本及raw记录已回传并两次独立核对，见ignored
+  `toolchain-tree-c00632fb-20261022T224051Z-1f3a33ca/`。未执行Zig/configure/build。
+- `_python_admission_row` 保留每次fresh SELECT与完整canonical parser，去掉同一DTO
+  已在parser执行过的第二次序列化比较。显式exact-str检查保持SQLite canonical BLOB
+  拒绝；17项新反例、260项相关组合与独立review通过。两行纯微基准to_json6→4、局部中位耗时约降24.9%，
+  不能外推E2E通过。新的原预算Linux mixed回归与最终head全CI仍须单独通过后合main。
+- 连接显式close问题已只读审查：当前依赖引用释放/GC，直接close可能触发WAL checkpoint
+  并改变只读观察的文件快照。本轮未修改，后续需独立事务/rollback/只读/WAL验证，不能当成
+  无语义影响的性能微改。G1–G3实际配置/构建/封闭runtime及项目验收仍开放。
+- 精确3222c9d的单次诊断采样结束：case602.533秒/suite603.198秒，报
+  `rsi_brs_rejection_ready_state_invalid` 与worker attempt_unknown；这次不能改写成直接
+  budget异常。22个远端证据传输SHA和源码前后2310文件核对通过。采样存在GIL/运行开销，
+  仅用于诊断，不作为E2E验收；未继续重复该诊断源码case。
+
+## 原预算 mixed 回归再次失败（2026-10-23）
+
+- 精确 `3222c9d78f96ce484ca31d88969ee759c675a798` 本机单次无采样回归通过，
+  456.82 秒、1 passed、原 `SolveExecutionControl(600)` 不变。
+- 同提交 5090gpu 无采样单次仍失败：case600.945 秒、suite602.633 秒，
+  `rsi_brs_before_evidence` 在600.311864 秒触发原预算。调用链为
+  `_BRSLineageCheckpointOwner._before_control_live` → `_mailbox_observe` →
+  `retain_mailbox_observation`，附带 `rsi_native_gateway_attempt_unknown`。
+  这不是成功验收；不放宽预算，不跳过 source/SQLite/history/reference 检查。
+- 完整源码 tar 的2,310 regular files内容及executable bits已逐一匹配；tar SHA
+  `f387086caa909a0e66b226172853a4e3986774770d95db67449103a714ca99e0`。
+  原始日志、XML、metadata、result及归档保留在本机 ignored
+  `.lunar-evolution/validation/feature189-20261023/linux-mixed-3222c9d-nzbqln_7/`，
+  传输SHA核对通过；远端目录原样保留，没有重复启动该失败源码。
+- PR186仍未合main；最终head全CI和Linux原预算case均是合并前门。
+  新的提取树观察器已合入本地开发分支，不能把未合main的代码算作已发布能力。
+
 ## 最新工具链完整清单与慢回归（2026-10-23）
 
 - 新增独立 `toolchain_observation.py`，复用既有 Zig immutable snapshot/archive

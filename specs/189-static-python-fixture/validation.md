@@ -1,5 +1,30 @@
 # Validation contract — preparation is not runtime evidence
 
+## Exact 3222c9d original-budget replay and row parsing follow-up
+
+The unprofiled local case passed in 456.82 seconds on exact
+`3222c9d78f96ce484ca31d88969ee759c675a798`. The independent Linux case still
+failed under the unchanged 600-second control: case 600.945 seconds, suite
+602.633 seconds, wrapper 602.921350 seconds. The error is
+`SolveExecutionBudgetExceeded` at `rsi_brs_before_evidence`, observed elapsed
+600.311864 seconds, through `_before_control_live` / `_mailbox_observe` /
+`retain_mailbox_observation`; the worker additionally reports an unknown attempt.
+All 2,310 regular source files and executable bits matched the exact Git archive
+`f387086caa909a0e66b226172853a4e3986774770d95db67449103a714ca99e0`.
+Complete raw evidence is retained in ignored `linux-mixed-3222c9d-nzbqln_7/`,
+with all transferred result hashes independently checked.
+
+The admission-row follow-up removes a second serialization already performed by
+the complete fresh parser. An exact-str guard retains canonical-BLOB rejection
+in SQLite's non-STRICT TEXT column. The 17 new cases and independent review
+pass, including same-length drift, noncanonical/duplicate JSON, digest drift
+and independent column bindings. The row/admission/BRS publication recovery,
+prepared-pin and evidence-composition selection passes 260 cases; the local
+run reports the existing 27,483 cleanup warnings and exits zero. A two-row
+microbenchmark invokes `to_json` six times before and four after; this is no
+end-to-end acceptance. Neither the Linux 600-second gate nor final-source CI
+is closed by these local checks.
+
 ## Complete extracted toolchain tree observer
 
 The API in [`toolchain-tree-observation.md`](toolchain-tree-observation.md)
@@ -18,8 +43,24 @@ Whole-repository Ruff, src/tools/tests compileall and diff check pass. The
 204-case deterministic regression-runner suite passes as well, reporting the
 existing 27,483 macOS cleanup warnings from older read-only temporary trees.
 The dedicated CI gate requires all 72 new cases without skips. These selections
-overlap and are not additive; real tree replay and exact-source Linux CI remain
-separate open gates. No configure, build, freezer or runtime was executed.
+overlap and are not additive. Exact-source three-version Linux CI remains an
+open gate. No configure, build, freezer or runtime was executed.
+
+A single real Linux replay of exact `c00632fb7270da7acea087a75f54b7d2feae233d`
+(the same Git tree as cherry-pick `5af81663`) passed in 1.515601 seconds under
+one original 120-second deadline, exit 0 and empty stderr. The historical
+independent manifest pin `b988925a…93b90` matches all 20,832 members, including
+19,546 files, 1,286 directories and 357,913,169 file bytes. The 1,012-byte
+canonical observation SHA-256 is
+`85d77ae0768e0e7afd6f749a315b4b768f41c863afb53fed794bfe5e770e1571`.
+Two independent reviews after transfer verified every retained artifact hash,
+tar commit, source module hashes, canonical manifest/record, counts, root stat
+and ten false claims. Complete raw evidence is retained under ignored
+`toolchain-tree-c00632fb-20261022T224051Z-1f3a33ca/`. The source archive SHA is
+`7255afff764321cd2d3b6652b7af3f4ca838302f43effbc8b26b5c7a8857e01b`.
+The original tree was not modified and no Zig/configure/build tool was run.
+This proves a sequential directory comparison only; immutable custody and
+future configured-build consumption remain open.
 
 ## Original-budget BRS mixed serial performance follow-up
 
