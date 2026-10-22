@@ -169,7 +169,7 @@ This classification does not establish branch execution, target refusal, or
 closure.
 
 The combined codec-source, prepared-source, import-audit, startup-closure,
-release-source, and static-table focused regression reported **155 passed**.
+release-source, and static-table focused regression reported **156 passed**.
 Ruff, `compileall`, and `git diff --check` passed. Pytest emitted 27,483
 existing macOS temporary-fixture cleanup warnings for deliberately read-only
 fixture trees; the test process exited 0.

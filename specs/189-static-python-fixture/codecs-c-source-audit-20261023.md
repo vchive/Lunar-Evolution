@@ -11,6 +11,9 @@ The source text identifies the `_codecs` module definition, its
 `_codecs_functions` table, and `PyInit__codecs`, which returns
 `PyModuleDef_Init(&codecsmodule)`. The focused test checks those byte-level
 observations without compiling, loading, or executing the source.
+It also pins the direct include spelling and the `MS_WINDOWS` guard surrounding
+`windows.h`; the target preprocessor configuration and bytes/resolution of
+`Python.h`, `pycore_*`, or the generated clinic header are not validated here.
 
 The supporting inert `Modules/Setup.bootstrap.in` archive member is 971 bytes
 with SHA-256

@@ -41,6 +41,8 @@
   归档源码观察；同时保留 `Setup.bootstrap.in` 模板片段（971 字节，SHA-256 `bb401f94…427c8df88`）
   交叉核对模块/source 名。该模板不等于生成的 Setup 文件；未编译、链接、检查最终 ELF 或运行时注册，
   也没有把合成 descriptor 的 source/object 元数据当成真实产物证据。
+- `_codecsmodule.c` test 还固定了五条直接 include 字面路径和 `windows.h` 的 `MS_WINDOWS` 宏围栏；目标
+  预处理宏、这些头文件的目标字节/解析及完整 C API 依赖仍未验证。
 - 同一轮把固定 28 条 AST import edge 的 21 个目标名与合成 descriptor 的 frozen/builtin 名称作精确
   membership projection：16 个名称在清单中，5 个未按同名出现（包含 `tokenize`，而清单有的是
   `_tokenize`）。这不判定条件分支是否执行、目标是否拒绝、模块是否可达或闭包是否完成；细节见

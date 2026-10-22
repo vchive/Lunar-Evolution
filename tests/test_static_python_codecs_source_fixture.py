@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,19 @@ def test_codec_source_declares_module_and_initializer_without_executing() -> Non
     assert 'PyModuleDef_HEAD_INIT,\n        "_codecs"' in source
     assert "PyInit__codecs(void)" in source
     assert "return PyModuleDef_Init(&codecsmodule);" in source
+
+
+def test_codec_source_has_a_fixed_direct_include_set() -> None:
+    source = _FIXTURE.read_text(encoding="utf-8")
+    includes = re.findall(r'^#include\s+["<]([^">]+)[">]', source, re.MULTILINE)
+    assert includes == [
+        "Python.h",
+        "pycore_codecs.h",
+        "windows.h",
+        "pycore_runtime.h",
+        "clinic/_codecsmodule.c.h",
+    ]
+    assert '#ifdef MS_WINDOWS\n#include <windows.h>\n#endif' in source
 
 
 def test_bootstrap_template_declares_codec_source_but_is_not_generated_setup() -> None:
