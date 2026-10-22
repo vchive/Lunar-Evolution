@@ -41,6 +41,30 @@ def test_projection_is_compact_stable_and_has_no_authority():
     assert len(json.dumps(first)) < 256
 
 
+def test_module_warning_registry_mutation_is_not_executable_policy_drift(monkeypatch):
+    module = importlib.import_module("lunar_evolution.rsi_brs_reserved_wave")
+    registry = {}
+    monkeypatch.setattr(module, "__warningregistry__", registry, raising=False)
+    # Rebuild the private projection so the test exercises a registry present
+    # at capture time, then a warning-cache insertion into that dictionary.
+    monkeypatch.setattr(policy, "_PROJECT", None)
+    monkeypatch.setattr(
+        policy, "reserved_brs_policy_projection", policy._build_reserved_brs_policy_entry(),
+    )
+
+    first = policy.reserved_brs_policy_projection()
+    registry[("routine warning", 17, Warning)] = True
+
+    assert policy.reserved_brs_policy_projection() == first
+
+
+def test_module_warning_registry_rejects_non_dict_replacement(monkeypatch):
+    module = importlib.import_module("lunar_evolution.rsi_brs_reserved_wave")
+    monkeypatch.setattr(module, "__warningregistry__", object(), raising=False)
+
+    _refuses()
+
+
 @pytest.mark.parametrize("module_name", policy._MODULE_NAMES)
 def test_finite_module_namespace_addition_is_rejected(module_name, monkeypatch):
     module = importlib.import_module("lunar_evolution." + module_name)

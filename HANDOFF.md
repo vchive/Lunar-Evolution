@@ -1,14 +1,25 @@
-# 当前交接（2026-10-22，PR184 CI 回归修复）
+# 当前交接（2026-10-22，PR184 合入后续开发）
 
 ## 最新状态（2026-10-22）
 
-- 主线基线是 PR #183 合并提交 `fe8e61d474910911382677c61d0667ac75b26899`。PR #184
-  `codex/static-python-startup-closure` 仍开放；Actions run `39724773808` 针对远端提交
-  `f110a79`，发现 source-staging 固定测试数过期（101，应为 105）及 BRS service/native terminal
-  fixture 回归。本轮修复基于该提交，推送后必须以新 SHA 的完整 CI 作为合并门槛。
+- PR #184 已于 2026-10-22 合入 `main`，合并提交为
+  `1e89b71a389509437e6fc5ed0455e90a15bb57eb`。Actions run `39751758144` 尚未结束；失败项目前有
+  `test (3.13, current-1)`（30 个 BRS 测试报 `rsi_brs_reserved_policy_drift`）和
+  `test (3.12, focused)`（测试本身零失败，但 workflow 仍要求 source-tree observer 22 项，实际已是
+  26 项）。本分支已增加 warning registry 缓存漂移修复及 22→26 的 CI 计数修正；本机 Python 3.13.12
+  对 BRS 三文件和 observer/source-staging focused 回归通过，仍需新提交 CI 验证。
 - Candidate source-only receipt 已加强交叉绑定：固定补丁的 staged pre/post image、文件大小和
   source-tree digest 必须与实际 staging inventory 一致；retained receipt 也重新校验固定补丁向量。
   CI source-staging 计数已更新至 105。相关 9 项 receipt 与 105 项 staging 测试通过。
+- Feature 189 新增只读 staged-source observer，已在 5090gpu 对重新 staging 的 CPython 3.13.12
+  执行真实输入重放：4,837 files、408 directories 全部匹配，原始 source-tree digest 为
+  `f7e8e480…e16f`，observation digest 为 `3848ccbb…9f0aa`。完整 DTO/记录仅保留于远端临时目录；
+  staging digest 由本次 staging 生成，不是事前独立 pin。archive signature 本次未重验，未执行 build/runtime，
+  因而只关闭 observer 实跑项，不关闭来源 custody、configured build 或生产准入。详见
+  `specs/189-static-python-fixture/candidate-build-source-receipt.md`。
+- observer 的空格/UTF-8 archive 路径和末轮目录扫描身份复查新增回归；最近 focused staging/observer
+  套件 29 项通过，Ruff、compileall、`git diff --check` 通过。pytest 在 macOS 清理只读 fixture 时仍有
+  临时目录权限警告，退出码为 0。
 - BRS terminal recovery 的自然终态 fixture 会在 source-bound native reader projection 有效时完成
   inspect/reconcile；生产观察器和 fail-closed 检查未放宽。rejection-ready service 只容忍 Python
   `__warningregistry__` 这一解释器 bookkeeping 键，若出现必须是普通 `dict`，其他 namespace 名称与

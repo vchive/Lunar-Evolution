@@ -149,7 +149,7 @@ def _build_reserved_brs_policy():
         namespaces.append((module, namespace, plain_tuple((name, value) for name, value in namespace.items()
                                                            if name != "__warningregistry__"),
             plain_tuple((name, freeze(value)) for name, value in namespace.items()
-                if some(kind(value) is expected for expected in
+                if name != "__warningregistry__" and some(kind(value) is expected for expected in
                     (plain_dict, plain_list, plain_tuple, plain_set, plain_frozenset)))))
         for value in namespace.values():
             if kind(value) is function_type:
@@ -304,6 +304,9 @@ def _build_reserved_brs_policy():
         for module, namespace, saved, containers in namespaces:
             if (kind(module) is not module_type or namespace_of(module) is not namespace
                     or some(kind(key) is not plain_str for key in namespace)):
+                fail()
+            warning_registry = namespace.get("__warningregistry__", missing)
+            if warning_registry is not missing and kind(warning_registry) is not plain_dict:
                 fail()
             names = plain_frozenset(name for name in namespace if name != "__warningregistry__")
             if len(names) != len(saved) or names != plain_frozenset(name for name, _value in saved):
