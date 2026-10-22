@@ -1,5 +1,21 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 最新工具链完整清单与慢回归（2026-10-23）
+
+- 新增独立 `toolchain_observation.py`，复用既有 Zig immutable snapshot/archive
+  observer 与 extraction-manifest-v1，强制独立完整 manifest pin 和同一绝对 deadline；
+  输出完整清单及单独 canonical record，不遍历提取树、不执行工具、不改 source-readiness
+  或 admission wire。52 项新测试与独立审查通过；组合 archive/toolchain 118 项通过，
+  全仓 Ruff、src/tools/tests compileall 和 diff check 通过。CI 增加独立 52 项零跳过门。
+- 5090gpu 的既有 archive API 实跑已保留完整 3,926,082 B Zig manifest，其 SHA
+  `b988925a…93b90` 精确匹配先前独立 pin；20,832 members（19,546 files / 1,286 dirs）
+  与 357,913,169 file bytes 一致。完整证据已复制本地 ignored validation 目录并独立复核。
+  此次旧 API 实跑未覆盖新 API 的统一 deadline，后者仍需独立真实输入 replay。
+- 精确 `cfd76f8` 的本机 three-child-mixed 在原 600 秒 control 下通过（468.41 秒）。
+  5090gpu 单次 Linux replay 仍运行，最终 head 的三版本全 CI 尚未完成，PR186 未合 main。
+- 提取树 custody、具体 wrapper/helper/build-Python、配置观察、same-source freezer、静态
+  build/ELF、sealed runtime 和真实项目验收仍开放；生产准入与在线发布继续关闭。
+
 ## 最新配置候选与集成收口（2026-10-23）
 
 - Feature189 新增 `configure_plan.py` 并接入 `emit_build_plan`：保留 GNU build/musl host

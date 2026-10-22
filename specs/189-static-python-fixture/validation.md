@@ -1,5 +1,30 @@
 # Validation contract — preparation is not runtime evidence
 
+## Complete toolchain archive observation — 2026-10-23
+
+The bounded API in [`toolchain-observation.md`](toolchain-observation.md)
+retains the existing complete extraction manifest with a separate canonical
+record. Its 52 inert cases pass, including exact pin and profile boundaries,
+clock errors and deadlines through final return, detached output and an exact
+archive-field type check before comparison. Independent review reproduced the
+hostile comparison failure before that check was added and confirmed the
+regression passes afterward. The combined existing archive and new toolchain
+selection passes 118 cases with zero failures/errors/skips. Whole-repository
+Ruff, src/tools/tests compileall and diff check pass. CI has a separate 52-case
+no-skip gate. No source-readiness or admission wire changes.
+
+The earlier real archive replay using the existing public archive APIs retained
+3,926,082 canonical manifest bytes, independently matching the previously
+committed pin and all 20,832 member records. It is described in
+[`toolchain-layout-audit-20261023.md`](toolchain-layout-audit-20261023.md).
+That earlier replay does not validate the new deadline-bound record API; keep
+its separate replay result distinct. Neither operation establishes extracted
+toolchain custody, compiler consumption, configured build or runtime acceptance.
+
+The original final-source `cfd76f8` three-child mixed serial regression passed
+locally in 468.41 seconds with the unchanged 600-second execution control.
+The Linux replay and final-head three-version full CI remain separate gates.
+
 ## Fixed configure candidate and RSI pin-chain integration — 2026-10-23
 
 The candidate assets in [`configure-candidate.md`](configure-candidate.md)

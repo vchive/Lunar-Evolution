@@ -133,6 +133,15 @@ failure and cancelled preflight separately from later successful evidence.
   `toolchain-layout-audit-20261023.md`. The transient regular-file comparison
   did not retain a complete canonical inventory or establish held-snapshot
   custody, generated library bytes, or actual compiler input consumption.
+- [ ] Retain the independently pinned complete Zig extraction manifest and
+  dedicated canonical archive observation record in `toolchain-observation.md`.
+  Reuse the existing bounded snapshot/archive observer and the original
+  absolute deadline. Keep the extracted-tree/tool execution/configure/build/
+  runtime/admission/publication claims false; this does not complete toolchain
+  custody or replace the bounded source-readiness inventory projection.
+  The 52-case inert suite and independent implementation review pass; the real
+  retained complete-manifest replay is recorded in the layout audit. The new
+  deadline-bound record API's real-input replay is still required.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
   actual target-owner integration remains a G3 gate.

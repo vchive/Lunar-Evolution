@@ -54,6 +54,13 @@ enables no configuration or compiler entry point. The actual Zig bundled
 source layout and upstream cross defaults are recorded separately in
 [`toolchain-layout-audit-20261023.md`](toolchain-layout-audit-20261023.md).
 
+The next bounded observation slice in
+[`toolchain-observation.md`](toolchain-observation.md) reuses the full existing
+Zig extraction manifest and its independent pin, retaining a separate canonical
+record of snapshot identity, complete counts and honest observation limits.
+It neither traverses an extracted tree nor changes source-readiness/admission.
+Concrete extracted-tree custody and build tools still require separate evidence.
+
 Disable optional extension autodiscovery and supply an explicit static/disabled
 module manifest. Review generated pyconfig.h, Modules/Setup output, inittab,
 core sources, separate embedded startup arrays, object/archive link map and

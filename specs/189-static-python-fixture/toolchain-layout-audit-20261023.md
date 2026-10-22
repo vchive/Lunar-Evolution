@@ -59,6 +59,34 @@ signature trust or an actual compiler's file consumption. This prose and its
 selected hashes are not a replayable toolchain custody receipt. Complete
 toolchain custody remains open.
 
+### Later independent complete archive replay
+
+A separate create-only replay on `worker01` retained the full canonical
+extraction manifest using the existing `snapshot_archive` and
+`observe_archive_snapshot` APIs from exact source
+`cfd76f8ed2fbe3e0a91c5f9240e852cc50a67c82`. Its expected manifest pin was
+taken from the previously committed `linux-input-observation-20261019.md`,
+not derived from the new output. The held immutable archive snapshot matched
+the fixed 55,478,392-byte archive pin. The full manifest is 3,926,082 bytes,
+SHA-256 `b988925aa63b672f26871f06b3e9585ced9f16154b41fcf22ca7fb3a9bc93b90`,
+with 20,832 members, 19,546 files, 1,286 directories and 357,913,169 regular-file
+bytes. The process exited 0 with empty stderr; metadata validation was
+`validated`, profile-pin validation was true, and signature verification was
+`not-performed`.
+
+The complete manifest, exact replay script, stdout/stderr, process status,
+source/API digests and transfer verification are retained locally under ignored
+`.lunar-evolution/validation/feature189-20261023/toolchain-complete/` and remotely
+under `/home/qinzhiqing/vchive/lunar-feature189-cfd76f8-validation/results/zig-complete-observation-20261022T215150Z-ccbc395a/`.
+An independent local read verified canonical bytes, manifest hash, all counts
+and the regular-file byte total after transfer. This closes the missing retained
+complete **archive** inventory from the earlier transient comparison. It does
+not establish an extracted-tree observation, a single acquisition/observation
+deadline (the existing public archive observer has no deadline parameter),
+compiler consumption, signature trust or measured LLVM version. The new
+deadline-bound record API in `toolchain-observation.md` has not been used by
+this earlier replay and must be validated separately.
+
 ## Actual bundled source layout
 
 The release README describes a Zig installation as the `zig` executable and
