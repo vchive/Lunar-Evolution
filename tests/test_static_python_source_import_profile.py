@@ -118,14 +118,19 @@ def test_audits_pinned_cpython_31312_release_import_sources() -> None:
     }
     manifest_members = archive["members"]
     # The archive manifest also retains the inert C source used by the
-    # bounded `_codecs` source audit; it is intentionally outside this
+    # bounded `_codecs` and `_io` source audits; it is intentionally outside this
     # Python-AST observer's eight-module input set.
-    assert len(manifest_members) == len(pins) + 1
-    assert {item["module"] for item in manifest_members} == set(pins) | {"_codecs"}
+    assert len(manifest_members) == len(pins) + 2
+    assert {item["module"] for item in manifest_members} == set(pins) | {"_codecs", "_io"}
     codec_member = next(item for item in manifest_members if item["module"] == "_codecs")
     assert (codec_member["fixture_path"], codec_member["size_bytes"], codec_member["sha256"]) == (
         "Modules/_codecsmodule.c.source", 33553,
         "149a20c2d7aee22281ddd8756ae7eae685ae0ef21764138d41f367443182041e",
+    )
+    io_member = next(item for item in manifest_members if item["module"] == "_io")
+    assert (io_member["fixture_path"], io_member["size_bytes"], io_member["sha256"]) == (
+        "Modules/_iomodule.c.source", 24972,
+        "9d04adc6fd2b493f3a7de3b519abbfd60476b209ccd3428eff4ed1cdf06cbaf2",
     )
     sources = {}
     for name, (relative_path, expected_size, expected_sha256) in pins.items():

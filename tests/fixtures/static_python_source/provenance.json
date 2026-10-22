@@ -107,10 +107,17 @@
         "module": "_codecs",
         "sha256": "149a20c2d7aee22281ddd8756ae7eae685ae0ef21764138d41f367443182041e",
         "size_bytes": 33553
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/_io/_iomodule.c",
+        "fixture_path": "Modules/_iomodule.c.source",
+        "module": "_io",
+        "sha256": "9d04adc6fd2b493f3a7de3b519abbfd60476b209ccd3428eff4ed1cdf06cbaf2",
+        "size_bytes": 24972
       }
     ],
     "release": "CPython 3.13.12",
-    "scope": "nine exact regular-file member byte copies; inert test data only",
+    "scope": "ten exact regular-file member byte copies; inert test data only",
     "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md",
     "supporting_members": [
       {

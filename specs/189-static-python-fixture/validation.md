@@ -169,10 +169,18 @@ This classification does not establish branch execution, target refusal, or
 closure.
 
 The combined codec-source, prepared-source, import-audit, startup-closure,
-release-source, and static-table focused regression reported **156 passed**.
+release-source, and static-table focused regression, including the `_io`
+source tests, reported **159 passed**.
 Ruff, `compileall`, and `git diff --check` passed. Pytest emitted 27,483
 existing macOS temporary-fixture cleanup warnings for deliberately read-only
 fixture trees; the test process exited 0.
+
+The `_io` source slice is covered by
+`tests/test_static_python_io_source_fixture.py`, which checks the retained
+archive bytes, module/initializer spelling, Setup template's seven-source row,
+and consistency with the synthetic candidate tables and descriptor. Its
+evidence boundary is recorded in
+[`io-builtin-source-audit-20261023.md`](io-builtin-source-audit-20261023.md).
 
 ## Build and static evidence
 

@@ -45,6 +45,10 @@
   预处理宏、这些头文件的目标字节/解析及完整 C API 依赖仍未验证。
 - 该 source-edge test 还交叉检查 Lunar 候选 emitter 对应的 `Modules/config.c` `_codecs` 初始化项和
   `_codecsmodule.c/.o` 计划路径；这只是计划一致性，不代表 configured build 使用了这些内容。
+- 下一条关键启动边已推进到 `io → _io`：固定归档 `_iomodule.c`（24,972 字节，SHA-256
+  `9d04adc6…06cbaf2`），核对其 `m_name="io"` / `PyInit__io`、Setup 模板七个源文件、候选计划和 descriptor。
+  此 slice 不证明另外六个源文件被构建，也不证明 configured tables/link/runtime 起效；见
+  `specs/189-static-python-fixture/io-builtin-source-audit-20261023.md`。
 - 同一轮把固定 28 条 AST import edge 的 21 个目标名与合成 descriptor 的 frozen/builtin 名称作精确
   membership projection：16 个名称在清单中，5 个未按同名出现（包含 `tokenize`，而清单有的是
   `_tokenize`）。这不判定条件分支是否执行、目标是否拒绝、模块是否可达或闭包是否完成；细节见
