@@ -375,19 +375,8 @@ def test_final_fixed_evidence_latency_exhausts_temporary_cap_before_cas(tmp_path
     import sys
     import time
 
-    from lunar_evolution import producer_request_transport
-
-    _control, now, _cancelled, _calls = _controlled(monkeypatch)
+    _controlled(monkeypatch)
     enabled, elapsed_injected = [], []
-    original_monotonic, frozen, elapsed = time.monotonic, [None], [0.0]
-    def monotonic():
-        return (original_monotonic() if frozen[0] is None else frozen[0]) + elapsed[0]
-    # Install one stable clock before policy capture, including the reader's
-    # canonical default binding. Freeze only this retention's elapsed time so
-    # a busy machine cannot consume its five-second allowance before injection.
-    monkeypatch.setattr(time, "monotonic", monotonic)
-    monkeypatch.setitem(producer_request_transport.read_host_request_journal.__kwdefaults__,
-                        "monotonic", monotonic)
     original_read = brs._files.read_regular_file
     def observe_read(*args, **kwargs):
         result = original_read(*args, **kwargs)
@@ -397,13 +386,14 @@ def test_final_fixed_evidence_latency_exhausts_temporary_cap_before_cas(tmp_path
                 while frame is not None:
                     if frame.f_code.co_name == "_success_entry" and frame.f_locals.get("fixed") is True:
                         elapsed_injected.append(True)
-                        elapsed[0] += 6.0
+                        time.sleep(0.05)
                         break
                     frame = frame.f_back
             finally:
                 del frame
         return result
-    # Stable inert I/O double, installed before the original owner/policy capture.
+    # Keep every original policy clock alias canonical. A real short delay in
+    # the final fixed read crosses only a fixture-local retention allowance.
     monkeypatch.setattr(brs._files, "read_regular_file", observe_read)
     with _waiting(tmp_path, monkeypatch) as value:
         staged, manifest = _stage(value, monkeypatch)
@@ -413,11 +403,21 @@ def test_final_fixed_evidence_latency_exhausts_temporary_cap_before_cas(tmp_path
         else:
             journal = staged
         before = owner_fixture._capture(value)
-        now[0] = 995.0  # Original fixed native deadline has five seconds remaining.
-        frozen[0] = original_monotonic()
-        enabled.append(True)
-        with pytest.raises(RSILearningError, match="success_allowance_exhausted"):
-            getattr(value.owner, "retain_" + phase)(journal, manifest)
+        def profile(frame, event, _arg):
+            if (event == "call" and frame.f_code is brs._BRSLineageCheckpointOwner._success_entry.__code__
+                    and frame.f_locals.get("self") is value.owner and frame.f_locals.get("fixed") is True
+                    and not enabled):
+                # Set before _success_entry captures the cap object. Mutating it
+                # inside a read would correctly trigger cap-identity drift first.
+                value.owner._success_deadline = time.monotonic() + 0.02
+                enabled.append(True)
+        previous = sys.getprofile()
+        try:
+            sys.setprofile(profile)
+            with pytest.raises(RSILearningError, match="success_allowance_exhausted"):
+                getattr(value.owner, "retain_" + phase)(journal, manifest)
+        finally:
+            sys.setprofile(previous)
         owner_fixture._unchanged(value, before)
         assert elapsed_injected == [True] and phase + ".json" in _lineage_files(value) and value.owner._poisoned
         assert value.ledger.controller_checkpoint(value.binding.run_id)[0] == before[0]
