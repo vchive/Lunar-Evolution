@@ -5,9 +5,10 @@
 - PR #184 已于 2026-10-22 合入 `main`，合并提交为
   `1e89b71a389509437e6fc5ed0455e90a15bb57eb`。Actions run `39751758144` 尚未结束；失败项目前有
   `test (3.13, current-1)`（30 个 BRS 测试报 `rsi_brs_reserved_policy_drift`）和
-  `test (3.12, focused)`（测试本身零失败，但 workflow 仍要求 source-tree observer 22 项，实际已是
-  26 项）。本分支已增加 warning registry 缓存漂移修复及 22→26 的 CI 计数修正；本机 Python 3.13.12
-  对 BRS 三文件和 observer/source-staging focused 回归通过，仍需新提交 CI 验证。
+  `test (3.12, focused)`（测试本身零失败，但 workflow 中多个 focused case 数已过期）。审计了 50
+  个硬编码用例数，确认需将 source-tree observation 22→26、source projection 50→55、archive
+  observation 64→66、Python preparation 227→243。本分支已修正这些计数及 warning-registry 缓存漂移；
+  本机 Python 3.13.12 对 BRS 三文件通过，observer/source-staging focused 回归也通过，仍需新提交 CI 验证。
 - Candidate source-only receipt 已加强交叉绑定：固定补丁的 staged pre/post image、文件大小和
   source-tree digest 必须与实际 staging inventory 一致；retained receipt 也重新校验固定补丁向量。
   CI source-staging 计数已更新至 105。相关 9 项 receipt 与 105 项 staging 测试通过。
