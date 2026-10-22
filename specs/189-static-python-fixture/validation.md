@@ -513,6 +513,17 @@ has conditional `linecache` and `tracemalloc` paths. These sources are support
 evidence, not module-profile inputs; complete workload reachability and runtime
 disposition remain open.
 
+The supporting `Lib/warnings.py` bytes also pass through the bounded AST import
+observer, which records ten supported static edges and one unsupported dynamic
+import at line 267; no imports are unresolved. All closure, runtime,
+installation, and admission claims remain false. Separate source assertions pin
+selected `linecache`, `tracemalloc`, and `traceback` conditions and confirm that
+`warn_explicit()` returns for `action == "ignore"` before its local `linecache`
+import. These observations do not track branch reachability or change the
+expected startup inventory.
+The focused warning/source/profile/table set passed 57 cases; Ruff,
+`compileall`, and `git diff --check` passed.
+
 These checks establish only retained bytes and source/metadata consistency.
 They do not prove header closure, configured `Setup`/`pyconfig.h`, source
 consumption, compilation, linking, ELF contents, runtime startup or module

@@ -6,6 +6,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from lunar_evolution.static_python_import_audit import audit_static_python_imports
+
 _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURE_ROOT = _ROOT / "tests/fixtures/static_python_source"
 _WARNINGS = _FIXTURE_ROOT / "Lib/warnings.py.source"
@@ -100,3 +102,50 @@ def test_python_warning_helper_and_core_c_hook_share_the_call_contract() -> None
     assert "GET_WARNINGS_ATTR(interp, _warn_unawaited_coroutine, 1)" in c_hook
     assert "PyObject_CallOneArg(fn, coro)" in c_hook
     assert "_PyErr_WarnFormat(coro, PyExc_RuntimeWarning" in c_hook
+
+    # warn_explicit returns for the ignore action before its local linecache
+    # import. This is source ordering evidence, not proof of runtime reachability.
+    explicit_start = warnings.index("def warn_explicit(")
+    ignore_action = 'if action == "ignore":\n        return'
+    ignore_return = warnings.index(ignore_action, explicit_start)
+    linecache_import = warnings.index(
+        "\n    import linecache\n    linecache.getlines(filename, module_globals)",
+        explicit_start,
+    )
+    assert ignore_return < linecache_import
+
+
+def test_warning_python_source_ast_imports_remain_supporting_observations() -> None:
+    raw = _WARNINGS.read_bytes()
+    expected_sha256 = _PINS["Python-3.13.12/Lib/warnings.py"][3]
+    observation = audit_static_python_imports(
+        {"warnings": raw},
+        expected_source_sha256={"warnings": expected_sha256},
+    )
+    wire = observation.to_dict()
+
+    assert wire["sources"] == [{"name": "warnings", "source_sha256": expected_sha256}]
+    assert {
+        (edge["target"], edge["kind"])
+        for edge in wire["imports"]
+    } == {
+        ("_warnings", "from-import"),
+        ("builtins", "import"),
+        ("functools", "import"),
+        ("inspect", "import"),
+        ("linecache", "import"),
+        ("re", "import"),
+        ("sys", "import"),
+        ("traceback", "import"),
+        ("tracemalloc", "import"),
+        ("types", "from-import"),
+    }
+    assert wire["unresolved_imports"] == []
+    assert wire["unsupported_import_sites"] == [{
+        "source": "warnings",
+        "line": 267,
+        "column": 16,
+        "reason": "dynamic-import",
+    }]
+    assert wire["evidence_scope"] == "source-ast-import-observations-only"
+    assert all(value is False for value in wire["claims"].values())

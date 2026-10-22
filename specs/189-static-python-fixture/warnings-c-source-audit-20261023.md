@@ -57,6 +57,14 @@ If `warnings` is admitted or imported by a future profile, its source also has
 conditional `linecache` and `tracemalloc` paths; coroutine-origin formatting
 adds `traceback`. The source-only fixture deliberately does not expand the
 finite module inventory or assert those dependencies are safe for the target.
+The supporting `Lib/warnings.py` fixture is also passed through Lunar's bounded
+Python AST import observer. It records ten supported static import edges to
+`_warnings`, `builtins`, `functools`, `inspect`, `linecache`, `re`, `sys`,
+`traceback`, `tracemalloc`, and `types`, plus the unsupported dynamic import at
+line 267 (`__import__(module, ...)`); no imports are unresolved. The result keeps
+all closure/runtime claims false. Static edges do not encode their branch
+conditions, while adjacent source assertions pin selected local guards and
+ordering. This observation remains separate from the finite startup profile.
 
 The checks establish source-member identity and consistency with retained
 candidate metadata only. They do not verify headers, configured Setup or

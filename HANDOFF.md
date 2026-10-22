@@ -9074,3 +9074,18 @@ sealed target startup/lifecycle, and final Linux acceptance. Keep
 `production_admission=false` and `online_publication=false`; do not claim that
 source fixtures are target runtime evidence. No WebAgent, remote evaluator,
 company evaluator, or solver campaign was run.
+
+### Feature 189 warning-source AST follow-up (2026-10-23)
+
+The pinned supporting `Lib/warnings.py` fixture now also passes through the
+bounded Python AST import observer. It records ten supported static edges and
+one unsupported dynamic-import site with all closure/runtime/admission claims
+false; adjacent source checks retain
+the selected import guards and verify that `warn_explicit()` returns for
+`action == "ignore"` before its local `linecache` import. The support file
+remains outside the finite startup profile. The focused warning/source/profile
+suite passed 57 cases; Ruff, `compileall`, and `git diff --check` passed.
+PR #186 still has no completed checks for head `81f9af0` (latest Actions run
+pending with no jobs reported), so its CI state remains unresolved. Runtime
+reachability, configured closure, actual build/ELF, and sealed-target evidence
+remain open; `production_admission=false` and `online_publication=false`.

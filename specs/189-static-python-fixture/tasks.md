@@ -326,6 +326,11 @@ these as explicit gates; do not turn expected behavior into observed evidence.
   finalizer condition. Record `linecache`, `traceback`, and `tracemalloc` as
   conditional source edges; do not expand the startup inventory from this
   source-only result.
+- [x] Run the bounded Python AST observer over the pinned supporting
+  `Lib/warnings.py` bytes and record its ten supported edges and one unsupported
+  dynamic import separately from the finite profile; pair the syntax-only edge
+  set with source assertions for selected conditional imports and keep every
+  closure/runtime claim false.
 - [ ] Resolve whether the approved fixed startup/workload can reach these
   warning paths, then bind any required conditional modules to the configured
   build and sealed-target evidence. The source fixtures do not establish
