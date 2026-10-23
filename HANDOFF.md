@@ -1,5 +1,24 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 新源码原预算 Linux 验收通过与 P1 本地集成（2026-10-24）
+
+- PR186精确 `49b4929c2d964658206ac5435b341ec44bfd70b7` 的唯一5090gpu
+  Python3.11.15 mixed通过：case553.889秒/suite555.219秒，runner monotonic555.322秒，
+  原600秒内部预算不变、1test零fail/error/skip、O_EXCL launch_count为1。2319个源码
+  文件bytes/exec bits、12个loaded modules、7个result files与13个root extras的SHA/
+  类型/权限全部核对通过。证据在主工作区ignored
+  `feature189-20261023/linux-mixed-py311-49b4929c-04to3nji/`。
+- 远端wall clock独立采样比本机慢约333秒，原始receipt未改写。预算与runner elapsed
+  使用monotonic，不按跨主机wall时间判断先后或时长；不是profile/重试/外部timeout。
+  当前完整CI run40036954373仍运行，PR186尚未合并，不能仅因独立验收通过就合main。
+- 后续P1仅本地整合：`e8cfeea995ff4b04cc91cb845a815814e5c59f73` 普通merge
+  parents为4752dcd2与49b4929c，无冲突。107项source审计专项全过（零fail/error/skip），
+  runner204项在独立仓库外`/tmp` basetemp全过（零fail/error/skip）；全仓Ruff、
+  src/tools/tests compileall与diffcheck通过。尚未创建后续PR，待PR186完整CI通过。
+  实际构建custody、configured完整closure、freeze/compile/link/ELF、sealed-target及
+  solver生产接入仍未完成；下一步复用现observer/backend/FD owner推进真实消费接点，
+  不能新增描述DTO来替代实际复制、只读封存、消费与后代清理验证。
+
 ## Python 3.11 独立失败与有效局部诊断（2026-10-24）
 
 - 精确 `3728e2724f23936fe4c830c4fd3acb0f820819de` 的唯一5090gpu Python3.11.15
