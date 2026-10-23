@@ -192,10 +192,22 @@ failure and cancelled preflight separately from later successful evidence.
   hash is `d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313`;
   the source sites and limitations are in `startup-root-audit-20261022.md`.
   This closes root derivation only, not the graph audit or runtime evidence.
-- [ ] Independently complete the C/Python import-edge audit for the configured
-  source/startup scope, then exercise the v2 comparator with the source-derived
-  root hash and an independently retained graph. Do not claim source or
-  configured closure from synthetic DTO results.
+- [x] Retain the versioned, source-pinned baseline startup graph for the fixed
+  CPython 3.13.12 Linux candidate in `startup-scope-audit-20261023.md` and its
+  JSON record. The focused test replays the exact 9-source AST observation,
+  compares all 28 normalized Python edges and all four unsupported sites with
+  the retained review, and preserves the separately source-derived root hash.
+  The review also records the fixed C bootstrap literal edges and explicit
+  conditional, deferred, platform-excluded, and negative-fixture routes. The
+  profile remains unchanged; this bounded baseline review does not establish
+  configured closure.
+- [ ] Complete the configured C/Python import-edge audit and exercise the v2
+  comparator against an independently reviewed graph after binding effective
+  `PyConfig`, configured builtin/frozen tables, generated freezer outputs,
+  headers, and the candidate build. Resolve the optional/deferred routes within
+  the selected workload scope. The current source graph is candidate-review
+  evidence only; comparator DTO results must not be presented as source or
+  configured closure evidence.
 - [x] Specify and implement the separate source-byte-bound Python AST import
   observer in `python-import-audit-contract.md`. Require exact caller-supplied
   module/source bytes and matching external per-source SHA-256 pins; record

@@ -728,6 +728,28 @@ They do not prove header closure, configured `Setup`/`pyconfig.h`, source
 consumption, compilation, linking, ELF contents, runtime startup or module
 origin. No build, remote evaluation or solver campaign was run.
 
+## Versioned baseline startup-scope review — 2026-10-23
+
+`startup-scope-audit-20261023.md` and its versioned JSON retain the fixed
+CPython 3.13.12 Linux candidate's baseline source graph. The observer replay
+uses `encodings.__init__` as its package key, reproduces the retained canonical
+AST digest, and now compares all 28 normalized source edges and all four
+unsupported source sites directly against the JSON. The review keeps the
+source-derived eight-root vector separate and documents the C bootstrap
+literal-import edges plus conditional, deferred, platform-excluded, and
+loader-negative routes. The expected 22-module candidate inventory is
+unchanged.
+
+The focused source-scope and startup-closure suites passed 69 cases with no
+failures, errors, or skips. Comparator regressions confirm that the exact four
+unsupported sites and the deferred out-of-profile `tokenize` edge are refused;
+the comparator remains a synthetic comparison DTO. Ruff, `compileall` for
+`src`, `tools`, and `tests`, and `git diff --check` passed. Effective
+configuration, complete configured closure, generated freezer/header
+consumption, build, target runtime origins, and loader-negative behavior remain
+open. No configure, build, solver, evaluator, network, or remote assessment was
+run for this source-only slice.
+
 ## Serial RSI regression follow-up — 2026-10-23
 
 `serial-regression-performance.md` records the retained failed unprofiled
