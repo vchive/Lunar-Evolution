@@ -19,11 +19,22 @@ final image. Build/compiler/startup failures remain evidence, not success.
 G3: Run the original native sealed-target fixture and independent final Linux audit.
 Do not promote a build or portable parser check to runtime acceptance.
 
-The independent Linux three-child serial regression remains open at the
-original 600-second control. The measured, narrowly bounded cache work in
+The independent Linux three-child serial regression passed once on exact
+`49b4929c` at the original 600-second control; exact-head complete CI remains
+required before PR186 merges. The measured, narrowly bounded cache work in
 [`serial-regression-performance.md`](serial-regression-performance.md) preserves
 fresh source/SQLite reads and all identity/history checks. Do not widen the
-deadline or infer Linux acceptance from the local passing case.
+deadline or infer complete CI acceptance from that independent passing case.
+
+The next setup component is specified in
+[`toolchain-private-custody.md`](toolchain-private-custody.md). Its private
+materializer creates every member from the same checked archive snapshot,
+preserves exact modes and runs the existing complete observer at the actual
+new root. It supplies neither immutable custody nor compiler consumption.
+The tested single-layer remount and nested-bwrap routes are unsupported under
+5090gpu's current AppArmor policy; ordinary host copying is not a fallback for
+that enforcement gate. Keep configured closure, helper/cache bindings, actual
+read-only enforcement, source relocation, build and runtime acceptance open.
 
 The bounded descriptor parser/external-pin checks already live in
 `src/lunar_evolution/static_python_installation.py`. Candidate installation-owned

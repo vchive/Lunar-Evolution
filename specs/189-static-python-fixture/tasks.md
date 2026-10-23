@@ -174,6 +174,24 @@ failure and cancelled preflight separately from later successful evidence.
 - [ ] Complete the exact-source three-version CI before merging this slice.
   Keep concrete build-tool/helper/cache bindings, configured build consumption,
   static build and runtime gates open.
+- [x] Freeze the internal complete-tree copy boundary in
+  `toolchain-private-custody.md`: one acquired snapshot, independently pinned
+  complete manifest, create-only private parent, exact modes, bounded writes,
+  original deadline, retained partial trees and existing full observer.
+- [x] Complete implementation, independent fault-injection review and final
+  focused validation of `toolchain_private_copy.py`. A plain setup artifact
+  retains all ten false observer claims and grants no future build authority.
+  The final 433-case combined suite passes with zero failures, errors or skips,
+  including 39 implementation and 15 independent counterexamples. CI requires
+  those 54 cases explicitly; whole-repository Ruff and compileall pass.
+- [ ] Retain one independently checked complete real-Zig data-only copy replay
+  after the inert implementation review. This validates copying/observation
+  only; never execute an archive member or promote it to custody evidence.
+- [ ] Resolve a supported complete-tree immutable-custody mechanism. The
+  existing bwrap 9000-argument limit excludes per-file full-Zig setup; tested
+  command remount and nested-userns paths are refused by current AppArmor.
+  Do not trim the inventory, change security policy, substitute a writable host
+  copy, or infer all Linux mechanisms are impossible from these two failures.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
   actual target-owner integration remains a G3 gate.

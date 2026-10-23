@@ -1,5 +1,30 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 完整工具链实际复制原语与环境边界（2026-10-24）
+
+- 隔离分支`codex/feature189-toolchain-custody`基于已push的P1整合头e160d46b，
+  未修改PR186的49b4929c。新`toolchain_private_copy.py`使用同一个held snapshot和
+  独立完整manifest，真实create-only复制全部目录/文件、保留0644/0755精确模式，
+  关闭writer后调用原full-tree observer。失败保留partial，统一deadline和FD清理，
+  不执行archive成员，不新增inventory DTO或构建授权。
+- 最终组合433项全过（零fail/error/skip），其中39项独立fixture主测试、15项
+  独立review反例；review15与组合重叠不相加。真实16385文件fixture超过旧recipe
+  16384文件/1MiB上限，旧限制不变。全仓Ruff、src/tools/tests compileall通过。
+  独立审查推动修复claims缺键/非False以及末尾clock修改nested inventory漏检。
+  最终证据在本worktree ignored `feature189-20261024/toolchain-copy-final-9v82auq0/`
+  和`toolchain-copy-independent-review/`；CI新增固定54项、零跳过门。
+- 不可变custody仍未实现。bwrap0.11.1的`--args`同样受9000总参数限制，19546
+  files的逐项`--file`至少需58638参数。5090上单层setup持SYS_ADMIN/SETPCAP仍被
+  AppArmor拒绝remount-ro；双层copier exec inner bwrap被拒绝nested userns。
+  三次小型probe（含最初RO root新目录拒绝）原样留存，脚本/result传输SHA均匹配，
+  host mountinfo均未变；未改AppArmor或提高权限。证据在主worktree ignored
+  `feature189-20261024/cap-remount-feasibility-qdnh3oc1/`。两条路线不支持不代表
+  所有Linux机制不可能；不能用普通hostcopy替代只读custody或后代drain证据。
+- 新返回值仍为既有tree observation，十项claims全部false；G1实际只读托管、完整
+  configured closure/recipe/helper/cache、源码重定位、G2静态构建/ELF、G3 sealed
+  runtime及生产solver验收仍open。下一步先对精确提交保留一次完整real-Zig数据复制
+  replay，仅验证复制/观察。PR186完整CI仍运行，尚未合main，不能重跑49b验收或扩预算。
+
 ## 新源码原预算 Linux 验收通过与 P1 本地集成（2026-10-24）
 
 - PR186精确 `49b4929c2d964658206ac5435b341ec44bfd70b7` 的唯一5090gpu
