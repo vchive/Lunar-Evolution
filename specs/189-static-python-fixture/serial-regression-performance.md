@@ -4,6 +4,84 @@ This continuation addresses the existing three-child mixed serial regression
 gate. It changes no solve budget, policy/admission wire, evaluator behavior,
 checkpoint digest algorithm or source-fingerprint output.
 
+## Full-byte source-extraction keys after the Python 3.11 failure
+
+The independent, unprofiled `3728e272` Python 3.11 Linux mixed case still
+refuses under its original 600-second control (601.444 s case, 603.974 s
+suite), at the third child's parent terminal settlement. Its retained source,
+module and transfer checks pass; this is still a failed acceptance. A
+separate single-thread profile of that exact source has coherent, nonnegative
+timing accounts. Three warm full policy observations spend 99.18 ms of own
+time in SHA-256 calls, including cache-key and final identity hashes. This
+is a local diagnostic, not an E2E percentage or speedup prediction.
+
+The next bounded experiment may replace only the source-extraction cache's
+`sha256(fresh_raw).digest()` key member with the entire exact immutable
+`fresh_raw` bytes. A dictionary hash collision must still compare the full
+bytes; the path and complete function/class locator remain in the key.
+Cryptographic final component identities and all wire digests are unchanged.
+The incidental cache-key SHA calls disappear; arbitrary monkeypatched SHA
+callbacks therefore do not retain their former invocation count. Existing
+policy SHA/backend drift gates and each final fingerprint computation remain.
+Do not reuse a source observation, skip either fresh file read, weaken either
+backend/ownership/code request check, cache normalization or final identities,
+or defer live configuration/default/closure/explicit-code hooks.
+
+To avoid retaining a separate whole source file for every component, the
+private cache must share equal raw bytes, with strong references and exact
+reference accounting. Charge each distinct retained raw byte string once,
+and each retained extraction's UTF-8 source bytes, against the existing
+24 MiB budget; keep the existing 1,024 extraction-entry limit. This tightens
+the prior text-only budget rather than introducing an unbounded content
+cache. Release the raw allocation after its last extraction is removed;
+replacement, LRU eviction, oversized inputs and `clear()` must preserve exact
+accounting. Concurrent lookups/retention/clear use the existing cache lock.
+Transient local file-read buffers are not retained cache state.
+
+Before adoption, require a representative exact-source Python 3.11 key
+experiment, full-byte/equal-byte-sharing/budget/replacement/eviction/clear
+tests, existing same-metadata and mid-read drift refusals, and independent
+review. Then compare complete policy projections and fresh read/request
+counts against the old implementation. No arbitrary digest-only equality or
+stat-only identity is allowed. A new exact source needs its own single
+original-budget Linux acceptance and complete final-head CI before merge;
+the failed old source is not rerun to obtain a pass.
+
+The exact-`3728e272` Python 3.11 key-only experiment uses all 613 real
+extraction keys, allocates fresh bytes on every lookup, and alternates order
+over nine rounds of ten passes. Median seconds per 613-key pass are
+0.024894 (SHA key), 0.009958 (direct full-byte key), and 0.010518
+(shared-byte pool plus full-byte key). The 73 distinct source contents occupy
+3,273,579 B; all extracted texts occupy 1,114,828 B. Their combined
+4,388,407 B fits the unchanged budget. Retaining one file allocation per
+extraction would occupy 44,216,713 B and is not permitted. These are key
+primitives without production locking/LRU/refcount overhead; actual full
+policy timings and the original-budget acceptance remain separate checks.
+
+The implementation now uses the flat LRU and a reference-counted canonical
+raw-byte pool. An independent LRU oracle passes 15,400 operations over seven
+seeds, and a seven-thread retain/clear check passes 14,000 operations, checking
+byte/entry bounds, ordering, canonical-object sharing and reference counts.
+The source suite adds six boundary cases and now contains 37 tests; CI's
+combined cache/identity gate requires 75 cases with no skips.
+
+An independent Python 3.11 comparison switches only the old/new cache class
+and source-cache helper against the same exact-`3728e272` policy graph.
+All 60 full projections agree. Nine alternating rounds of three warm calls
+have medians 0.135061 s (old) and 0.123614 s (new), an 8.475% local reduction.
+Each single-call observation retains the same 1,455 source requests/backend
+checks, 1,434 fresh reads, 738 source-material/fingerprint calls and zero warm
+extractions. The actual cache has 613 entries sharing 73 raw allocations,
+and the measured 4,388,407 B agrees with independent accounting. The raw
+source/archive/candidate hashes remain unchanged. This is a same-graph helper
+comparison, not a complete historical/new runtime comparison or E2E result.
+
+The final local focused selection passes all 661 cases with no failures,
+errors or skips, including the 37-case source suite and the unchanged runner,
+admission, history, identity and reserved-policy boundaries. Whole-repository
+Ruff, `compileall` over src/tools/tests and current `git diff --check` pass.
+These checks do not close the original-budget Linux or final-head CI gates.
+
 ## Retained failure and diagnosis
 
 Exact source `cfd76f8ed2fbe3e0a91c5f9240e852cc50a67c82` passed the local
@@ -307,3 +385,134 @@ Nine alternating 200-iteration trials have local medians 0.184795 s and
 0.117151 s (36.61% less parser time). The script, exact source hashes and raw
 measurements remain ignored in `admission-json-reuse-microbenchmark.{py,json}`.
 This is a pure local parser measurement, not an E2E speed or acceptance claim.
+
+## Single-history-walk reference context reuse
+
+The single unprofiled Linux replay of exact `92a57408` still fails under the
+original 600-second control. The next bounded slice may reuse a detached
+reference/plan/journal context only inside one
+`_controller_checkpoint_history_tx` invocation, selected by the same episode ID
+and equality of the complete canonical reference bytes. No ledger field,
+cross-call cache, shared returned payload, or durable validation result is
+introduced. The public parser defaults continue performing complete parsing.
+
+Each freshly decoded checkpoint still passes the exact reference-map and key
+types, recursive shape/depth and finite-number checks, each reference's
+512 KiB canonical limit, and the whole map's 8 MiB canonical limit. First,
+added, or changed references still pass the complete plan/journal parser and
+canonical round-trip checks before the existing monotonic comparison. Exact
+canonical byte equality must retain the distinctions between integers,
+floats, booleans, and signed floating zero; Python dictionary equality or only
+a digest is insufficient. Every fresh row JSON parse, revision/parent/digest
+check, and missing/changed-reference check remains. Final retained admission
+SELECTs, exact-text full row parsing, independent columns, and context/record
+binding also remain fresh and complete.
+
+The current walk may retain contexts for its preceding validated row rather
+than only the final row. These detached contexts must not be inserted into
+the returned checkpoint payloads, exposed through public parser results, or
+reused by a later invocation. Invalid changed values retain the complete
+parser path before history-drift comparison; reuse is not a repair route.
+
+This deliberately reduces repeated nested-parser observations during one
+walk. It does not preserve the old observation count for arbitrary concurrent
+parser/backend rebinding inside that same invocation and does not claim an
+atomic interpreter snapshot. Source/policy observations around the walk are
+not removed. Later calls must parse references afresh and observe changed
+parsers or input bytes. Require focused reuse, mutation, exact-type/numeric,
+size/depth, fresh-row, and hash-valid-history-drift regressions, followed by
+Ruff, compileall, and diff checks. No E2E or speedup result follows from this
+contract; exact-source Linux acceptance and final-head CI remain separate.
+
+An independent comparison loads the exact `92a57408` admission/store modules
+and the changed modules against a retained, independently hash-verified
+read-only snapshot copy. All four namespaces' 29 returned journal rows agree;
+five separate in-memory database mutations retain the same refusals for
+admission payload/independent-column and checkpoint payload/parent/digest
+drift. All 13 reference visits remain, while complete fresh DTO contexts fall
+from 13 to two. Nine alternating 25-iteration history trials have local median
+times of 0.2935065 and 0.1505321 seconds (48.71% less). The exact source hashes,
+snapshot identity, script, and raw comparison are retained in ignored
+`history-context-reuse-microbenchmark.{py,json}`. This measures the copied
+history parser only; it is not an E2E speedup or acceptance result.
+
+The final local selection passes all 649 admission/history/type/cache/identity/
+policy/runner cases, with zero failures, errors, or skips. It includes 27 new
+history-reuse cases, the existing 24-case row gate, and 204 regression-runner
+cases with an external `/tmp` basetemp. The independent 51-case selection
+overlaps these results and is not additive. Whole-repository Ruff,
+src/tools/tests compileall, and current diff checks pass. CI now requires the
+27-case history-reuse gate explicitly; the exact-source Linux replay and final
+three-version CI still have to pass before merge.
+
+## Reuse freshly verified reference bytes for comparison and map bounds
+
+Exact `1946b463` passed the independent Linux replay in 552.58 seconds under
+the original 600-second control, but its Python3.11 current-shard3 CI replay
+still failed with `rejection_provenance_allowance_exhausted`. A passing replay
+does not replace that failed final-source CI gate. The next bounded slice
+removes only redundant serialization of references already validated within
+one history walk or one reference-map parser call.
+
+The history monotonic comparison may compare the preceding and current private
+contexts' complete `canonical_bytes`. On these freshly validated references,
+`rsi_python_admission._canonical` and
+`candidate_evaluation_spec.canonical_json(..., maximum=512 * 1024)` use the
+same `json.dumps` arguments (`ensure_ascii=False`, `sort_keys=True`, compact
+separators, `allow_nan=False`) and UTF-8 encoding. The fresh admission parser
+already checks exact types, recursive shape/depth, finite values, IDs, digests
+and the 512 KiB limit before context reuse. Complete bytes preserve integer,
+float, boolean and signed floating-zero distinctions. Missing references still
+refuse before checkpoint-chain checks; changed references still complete the
+full nested parser path before any history-drift comparison. No digest-only or
+dictionary-equality comparison is introduced.
+
+The reference-map parser may calculate its exact compact canonical byte length
+without encoding all references again. Every map key already passes exact
+string shape and the ASCII-only `_ID` full match, which permits neither quotes
+nor backslashes. With `n` entries the byte length is two braces, each key's
+`len(key) + 2` quoted bytes, one colon per entry, each fresh context's complete
+canonical byte length, and `n - 1` commas when nonempty. Sorting keys does not
+change this length; Unicode and escaped bytes inside each reference are
+already counted by its fresh canonical encoding. Keep the 8 MiB limit and
+perform its refusal only after the full map traversal, so a later malformed
+reference still takes precedence over aggregate overflow.
+
+Retain every fresh input/row JSON decode, admission canonicalization, nested
+parser miss, map/reference shape gate, checkpoint revision/parent/digest check,
+final admission SELECT/full row parse and independent-column binding. No
+cross-call cache, public DTO or returned-payload reference is added. Public
+parser calls still validate fresh input without a previous-call context.
+
+This removes the former redundant history `canonical_json` calls and final
+whole-map `json.dumps` call. It does not preserve their observation counts or
+exception behavior under arbitrary dynamic serializer/backend rebinding, or
+concurrent mutation of private contexts within the same walk. A serializer
+that is no longer called is not promised to be observed by the next walk;
+fresh admission parsing is not an atomic interpreter snapshot. Existing outer
+source/policy observations remain unchanged. Require focused canonical-byte
+equivalence, exact map-bound/escaping and error-priority regressions, followed
+by Ruff, compileall and diff checks. Pure comparisons or local timing do not
+close exact-source Linux or final three-version CI acceptance.
+
+An independent pure comparison loads the exact `1946b463` admission/store
+modules and the changed modules against the same read-only snapshot copy.
+All four namespaces' 29 returned rows and five separate in-memory invalid
+database variants retain identical outcomes. Both versions still make all 13
+reference visits and construct two fresh complete contexts. Nine alternating
+25-iteration history trials have local median times of 0.139632875 and
+0.127032625 seconds (9.02% less). Source hashes, the unchanged snapshot hash,
+script and raw results are retained in ignored
+`feature189-20261024/history-canonical-projections-microbenchmark.{py,json}`.
+This measures the copied history parser only; it is not E2E acceptance or an
+end-to-end speedup guarantee.
+## Canonical projection verification results
+
+The final local selection passes 655 admission/history/type/cache/identity/
+policy/runner cases with zero failures, errors, or skips. Six added boundary
+cases expand the explicit history gate from 27 to 33; the independent 57-case
+selection overlaps the combined run and is not additive. Whole-repository
+Ruff, src/tools/tests compileall, and the current diff check pass. Independent
+implementation and test review found no blocker. Exact new-source Linux
+Python 3.11 original-budget acceptance and all final-head CI jobs remain
+separate merge requirements.

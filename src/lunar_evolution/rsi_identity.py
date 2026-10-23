@@ -48,8 +48,9 @@ MAX_CONFIG_KEYS = 256
 MAX_CONFIG_TEXT_BYTES = 16 * 1024
 _MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024
 _MAX_SOURCE_CACHE_ENTRIES = 1024
-# More small components fit without exceeding the former 256 * MAX_CODE_BYTES
-# theoretical source-text limit. Final identities and live configuration are not cached.
+# Exact raw keys are shared across entries. Raw bytes plus extracted UTF-8 text
+# stay within the former 256 * MAX_CODE_BYTES theoretical source-text limit.
+# Final identities, normalization and live configuration are not cached.
 _MAX_SOURCE_CACHE_BYTES = 24 * 1024 * 1024
 _SOURCE_CACHE_LOCK = threading.RLock()
 
@@ -60,23 +61,43 @@ class _SourceCache(OrderedDict[tuple[Any, ...], tuple[str, object, object]]):
     def __init__(self) -> None:
         super().__init__()
         self.retained_bytes = 0
+        self._raw_sources: dict[bytes, tuple[bytes, int]] = {}
 
     def clear(self) -> None:
         with _SOURCE_CACHE_LOCK:
             super().clear()
+            self._raw_sources.clear()
             self.retained_bytes = 0
+
+    def _release(self, key: tuple[Any, ...], value: tuple[str, object, object]) -> None:
+        self.retained_bytes -= len(value[0].encode("utf-8"))
+        raw, count = self._raw_sources[key[1]]
+        if count == 1:
+            del self._raw_sources[raw]
+            self.retained_bytes -= len(raw)
+        else:
+            self._raw_sources[raw] = (raw, count - 1)
 
     def retain(self, key: tuple[Any, ...], value: tuple[str, object, object], size: int) -> None:
         previous = self.pop(key, None)
         if previous is not None:
-            self.retained_bytes -= len(previous[0].encode("utf-8"))
-        if size <= _MAX_SOURCE_CACHE_BYTES:
+            self._release(key, previous)
+        raw = key[1]
+        if len(raw) + size <= _MAX_SOURCE_CACHE_BYTES:
+            content = self._raw_sources.get(raw)
+            if content is None:
+                self._raw_sources[raw] = (raw, 1)
+                self.retained_bytes += len(raw)
+            else:
+                raw, count = content
+                self._raw_sources[raw] = (raw, count + 1)
+                key = (key[0], raw, *key[2:])
             self[key] = value
             self.retained_bytes += size
         while (len(self) > _MAX_SOURCE_CACHE_ENTRIES
                or self.retained_bytes > _MAX_SOURCE_CACHE_BYTES):
-            _key, removed = self.popitem(last=False)
-            self.retained_bytes -= len(removed[0].encode("utf-8"))
+            removed_key, removed = self.popitem(last=False)
+            self._release(removed_key, removed)
 
 
 _SOURCE_CACHE = _SourceCache()
@@ -387,7 +408,9 @@ def _source_with_content_cache(target: object) -> str:
     raw = _fresh_source_bytes(path)
     if raw is None:
         return inspect.getsource(target)
-    key = (path, hashlib.sha256(raw).digest(), *locator)
+    # bytes dictionary keys compare the entire fresh content even on a hash
+    # collision. Only pure extraction is reused; both source reads stay live.
+    key = (path, raw, *locator)
     with _SOURCE_CACHE_LOCK:
         retained = _SOURCE_CACHE.get(key)
     source = retained[0] if retained is not None else _extract_fresh_source(resolved, path, raw)

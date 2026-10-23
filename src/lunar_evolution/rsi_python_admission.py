@@ -38,14 +38,15 @@ _FIELDS = frozenset({
 class _ParsedRSIPythonAdmissionReference:
     """One freshly validated checkpoint reference and its parsed evidence DTOs.
 
-    This context is private to the SQLite history walk.  It is never serialized,
-    cached, or returned from public parser APIs; carrying it avoids reparsing the
-    same trusted-within-this-call wire at the final row-binding seam.
+    This context is private to one SQLite history walk. Identical canonical
+    bytes may reuse it within that call; it is never persisted, shared between
+    calls, or returned from public parser APIs or checkpoint payloads.
     """
 
     reference: dict[str, Any]
     plan: NativeRSIExecutionPlan
     journal: ProducerBundlePublicationJournal
+    canonical_bytes: bytes
 
 
 class RSIPythonAdmissionError(ValueError):
@@ -263,7 +264,11 @@ _REFERENCE_FIELDS = frozenset({
 })
 
 
-def _parse_rsi_python_admission_reference_context(value: object) -> _ParsedRSIPythonAdmissionReference:
+def _parse_rsi_python_admission_reference_context(
+    value: object,
+    *,
+    previous_context: _ParsedRSIPythonAdmissionReference | None = None,
+) -> _ParsedRSIPythonAdmissionReference:
     """Parse one bounded complete recovery context and retain its DTOs privately."""
     from .producer_bundle_publication import parse_producer_bundle_publication_journal
     from .rsi_native_plan import NativeRSIExecutionPlan
@@ -280,7 +285,17 @@ def _parse_rsi_python_admission_reference_context(value: object) -> _ParsedRSIPy
             _fail("reference_invalid")
     _sha(value["record_sha256"])
     try:
-        detached = json.loads(_canonical(value))
+        canonical = _canonical(value)
+        if previous_context is not None:
+            if (type(previous_context) is not _ParsedRSIPythonAdmissionReference
+                    or type(previous_context.canonical_bytes) is not bytes):
+                _fail("reference_invalid")
+            # Only the preceding validated row of this history walk supplies
+            # this private context. Fresh shape/depth/finite/size checks above
+            # remain necessary even when its complete canonical bytes match.
+            if canonical == previous_context.canonical_bytes:
+                return previous_context
+        detached = json.loads(canonical)
         plan = NativeRSIExecutionPlan.from_dict(detached["native_plan"])
         journal = parse_producer_bundle_publication_journal(detached["prepared_journal"])
         if (journal.state != "prepared" or journal.publication_phase != "preflight"
@@ -296,7 +311,7 @@ def _parse_rsi_python_admission_reference_context(value: object) -> _ParsedRSIPy
         for field, item in detached["native_plan"].items():
             if field.endswith("sha256"):
                 _sha(item)
-        return _ParsedRSIPythonAdmissionReference(detached, plan, journal)
+        return _ParsedRSIPythonAdmissionReference(detached, plan, journal, canonical)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise RSIPythonAdmissionError("reference_invalid") from exc
 
@@ -351,28 +366,42 @@ def _parse_rsi_python_admission_references_with_context(
     value: object,
     *,
     retain_context: bool = False,
+    reuse_contexts: dict[str, _ParsedRSIPythonAdmissionReference] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, _ParsedRSIPythonAdmissionReference]]:
-    """Parse every reference once, optionally retaining DTOs for the final history row."""
+    """Parse references, optionally reusing the preceding row's call-local DTOs.
+
+    The history walker alone supplies ``reuse_contexts``. Public parser calls
+    use the default and always reparse. Reuse does not preserve repeated
+    observations of arbitrary parser/backend rebinding within the same walk.
+    """
     if type(value) is not dict:
+        _fail("reference_invalid")
+    if reuse_contexts is not None and type(reuse_contexts) is not dict:
         _fail("reference_invalid")
     validate_rsi_python_admission_shapes(value)
     result: dict[str, dict[str, Any]] = {}
     contexts: dict[str, _ParsedRSIPythonAdmissionReference] = {}
+    canonical_size = 2  # The enclosing map's braces, including an empty map.
     for episode_id, reference in value.items():
         if _ID.fullmatch(episode_id) is None:
             _fail("reference_invalid")
-        context = _parse_rsi_python_admission_reference_context(reference)
+        previous_context = reuse_contexts.get(episode_id) if reuse_contexts is not None else None
+        context = _parse_rsi_python_admission_reference_context(
+            reference, previous_context=previous_context,
+        )
         result[episode_id] = context.reference
+        # The exact-string ID gate permits only unescaped ASCII. Each fresh
+        # reference already has its complete bounded canonical UTF-8 bytes.
+        canonical_size += len(episode_id) + 3 + len(context.canonical_bytes)
         if retain_context:
             contexts[episode_id] = context
         else:
             del context
-    # Bound the whole map to the controller's established journal limit.
-    try:
-        raw = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError) as exc:
-        raise RSIPythonAdmissionError("reference_invalid") from exc
-    if len(raw) > 8 * 1024 * 1024:
+    # Sorted key order does not change encoded length. Keep this check after
+    # the full traversal so later invalid references still refuse first.
+    if result:
+        canonical_size += len(result) - 1  # Commas between complete entries.
+    if canonical_size > 8 * 1024 * 1024:
         _fail("reference_too_large")
     return result, contexts
 

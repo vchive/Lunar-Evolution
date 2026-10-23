@@ -226,8 +226,10 @@ def test_history_admission_seam_reuses_only_call_local_parsed_reference_context(
         counts["row"] += 1
         return original_row(row)
 
-    def observe_history_parser(wire, *, retain_context=False):
-        references, contexts = original_history_parser(wire, retain_context=retain_context)
+    def observe_history_parser(wire, *, retain_context=False, reuse_contexts=None):
+        references, contexts = original_history_parser(
+            wire, retain_context=retain_context, reuse_contexts=reuse_contexts,
+        )
         history_contexts.append((retain_context, len(contexts)))
         return references, contexts
 
@@ -255,5 +257,5 @@ def test_history_admission_seam_reuses_only_call_local_parsed_reference_context(
 
     assert history[-1][1]["followup_marker"] == "final-reference-head"
     assert history[-1][1]["python_admission_refs"]
-    assert history_contexts == [(False, 0), (True, 1)]
-    assert counts == {"plan": 2, "journal": 2, "record_json": 1, "row": 1}
+    assert history_contexts == [(True, 1), (True, 1)]
+    assert counts == {"plan": 1, "journal": 1, "record_json": 1, "row": 1}

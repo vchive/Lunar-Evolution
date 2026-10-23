@@ -1,5 +1,86 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## Python 3.11 独立失败与有效局部诊断（2026-10-24）
+
+- 精确 `3728e2724f23936fe4c830c4fd3acb0f820819de` 的唯一5090gpu Python3.11.15
+  无采样mixed仍失败：case601.444秒/suite603.974秒，原600秒control在第三child的
+  父级终态结算检查报 `rsi_python_brs_native_dispatch_rejection_control_expired`，本次
+  没有附worker_unknown。12个loaded modules、2319个源码文件bytes/exec bits前后匹配，
+  230个result files及8个extras传输SHA一致。O_EXCL launch marker为1；未重跑或扩预算。
+  原始证据在ignored `feature189-20261023/linux-mixed-py311-3728e272-dmutcbpu/`。
+  Python3.11.15/Clang与CI3.11.17/GCC有差异，不能说环境完全相同；PR186仍不能合main。
+- teardown前342-entry捕获的consistency仍为unknown。仅在独立副本检查SQLite/WAL并
+  导出新的standalone backup：56rows/8namespaces、root30rows/39references，integrity=ok，
+  SHA `b084c03c257e5f48b8231b626c1a52622b449f0f40ad3688e461eadf747fd54a`。
+  原捕获DB/WAL/SHM与诊断副本三件的SHA均保持；backup只供诊断，不升级验收结论。
+- exact3728独立单线程Python3.11局部profile的own/cumulative均非负且账目与wall一致。
+  无profiler中位：旧19行history9.87ms、新30行20.51ms、reserved project12.63ms、
+  full warm policy133.37ms。warm3次的整文件/最终SHA own共99.18ms，source/backend与
+  normalization路径也显著；这些局部结果不能解释E2E占比或保证提速。完整raw/profile/
+  SHA清单在ignored `feature189-20261024/py311-single-thread-profile/`。
+- 下一切片先验证以完整fresh bytes替代extraction-cache专用SHA键的收益与内存上限，
+  保留原双fresh读取、backend/locator复查、normalization、live hooks及最终identity SHA。
+  不采用已有 `re._cache2` 反例的normalization memo，不再重复运行失败的3728验收。
+- 此切片现已实现：完整bytes key与共享raw pool按引用释放，原1024entry/24MiB上限
+  不变；所有raw及提取文本均计费。实际613entry/73raw共4,388,407B。六项新边界测试
+  使source专项37、cache/identity CI门75；本地联合661项全部通过，零fail/error/skip，
+  全仓Ruff、src/tools/tests compileall及diffcheck通过。独立review无阻塞，15,400次
+  LRU oracle及14,000次并发retain/clear账目检查通过；独立37项与661项重叠不相加。
+- exact3728同一策略图仅替换old/new两个cache helper的独立Python3.11对照中，60次
+  完整projection相同；每call的request1455/freshread1434/fingerprint738均保留。
+  9轮×3warmcall中位135.061→123.614ms（局部少8.475%），不是E2E通过结论。
+  原始脚本、结果和SHA清单在上述profile证据目录；新源码仍需唯一原预算Linux验收与
+  精确HEAD完整CI全部通过后才合PR186。后续P1本地分支最新为0ad30cb9，未push。
+
+## 最新Linux通过与三版本CI剩余失败（2026-10-24）
+
+- 精确 `1946b46324363a35787059aebb9137d6aadba993` 唯一5090gpu无采样
+  mixed通过：case552.580秒/suite554.156秒，原600秒control未变。2319个源码
+  bytes/exec bits及12个loaded modules前后匹配，7个result files+8个额外文件
+  传输SHA全部一致，launch marker为1。完整ignored证据在
+  `linux-mixed-current-1946b463-c8cqhzl9/`，未live DB读取、未重跑或扩预算。
+- 同head完整CI run39974814988为32/33通过；唯一Python3.11 current-3中的
+  three-child-mixed在601.359秒失败：`rsi_brs_rejection_provenance_allowance_exhausted`
+  附worker_unknown。不是直接SolveExecutionBudgetExceeded；不能因其余版本或独立
+  Linux通过而合入。merge tree与head tree均为dca2bb29f6c35e7f6a37c9e97ef3c4c36190c11b。
+  原始XML/log/provenance/summary已下载到ignored
+  `feature189-20261024/ci-39974814988-py311-current3/`。
+- 下一最小切片复用每行已fresh核对的canonical bytes做history continuity及wholemap
+  精确编码长度判断，省去相同nested reference的额外编码。保留每条shape/depth/finite/
+  512KiB、整map8MiB、完整遍历后才map拒绝、history/row/source/policy全部检查。
+  不再保证同walk任意私有context/backend突变的重复观察次数，不新增跨调用缓存。
+- 本切片最终655项联合回归全部通过，零failure/error/skip；新增6项使history专项门
+  为33项，独立57项与其重叠不相加。全仓Ruff、src/tools/tests compileall及当前
+  diffcheck通过，独立代码/测试审查无阻塞。精确1946基线4namespace/29rows和5类破坏
+  输入对比相同，13 reference visits/2 contexts保留；9×25纯history中位
+  0.139632875→0.127032625秒（局部减少9.02%），不代表新head的E2E通过。
+- 后续P1分支已本地至7c5c78d3，含source audit graph/规格与107项固定专项CI门、
+  陈旧plan/tasks修正；未push/建PR，待PR186通过合入后集成。实际CPython recipe、
+  构建输入custody、静态ELF和sealed runtime仍未完成，不能新增观察DTO冒充实际消费。
+
+## 当前原预算失败与单次历史遍历修复（2026-10-23）
+
+- 精确 `92a574088207ef2eb3e9c37b968b61bc577e5d7f` 的唯一无采样5090gpu
+  mixed验收仍失败：suite602.556秒、原600秒control在`rsi_brs_before_evidence`
+  于600.09414770687秒耗尽，附worker_unknown；不是成功验收，PR186不能合main。
+  12个loaded modules及2318个源码文件bytes/exec bits前后匹配；229个result files和
+  8个额外文件传输SHA核对通过。341-entry失败fixture在teardown前捕获，consistency
+  仍为unknown。完整证据在ignored `linux-mixed-current-92a57408-7oqaz_xy/`，
+  未查询live DB、未重跑或调整预算。
+- 下一最小修复只在一次history walk内按episode ID及完整canonical bytes复用已验证
+  reference/plan/journal DTO。每行fresh JSON、shape/depth/finite/512KiB、wholemap8MiB、
+  monotonic及revision/parent/digest检查、最终fresh SELECT/full row parser均保留；
+  context不写入返回payload或跨调用状态。它减少同次walk内任意parser/backend重绑定的
+  重复观察次数，不提供原子snapshot；后续调用仍重新解析。
+- 独立精确baseline对比的4个namespace/29行结果一致，5类内存副本破坏输入的拒绝一致；
+  13次reference访问保留，fresh contexts13→2。9×25次无instrumentation纯history读取
+  中位0.2935065→0.1505321秒（局部减少48.71%），不是E2E性能或验收结论。
+  原预算Linux与最终head CI通过前，构建/runtime/生产准入门继续关闭。
+- 最终本地联合回归649项全部通过（27项新history reuse、24项row、204项runner等，
+  零failure/error/skip）；独立51项与其重叠不相加。全仓Ruff、src/tools/tests
+  compileall、当前diffcheck通过；独立实现/测试review无阻塞。CI新增27项固定零跳过门。
+  首次旧wrapper签名失败和测试选择路径错误的日志分别保留，不混入最终通过证据。
+
 ## 当前阻断与单次解析复用（2026-10-23）
 
 - PR186 的 `72232018` CI run39879919064 首轮30/33通过；三个版本的 current-3
