@@ -11,10 +11,14 @@ import json
 import math
 import re
 from dataclasses import dataclass, fields, replace
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from .python_producer_admission_anchor import parse_python_producer_admission_attempt_anchor
 from .python_producer_admission_handoff import parse_python_producer_admission_handoff_file_pin
+
+if TYPE_CHECKING:
+    from .producer_bundle_publication import ProducerBundlePublicationJournal
+    from .rsi_native_plan import NativeRSIExecutionPlan
 
 RSI_PYTHON_ADMISSION_PROTOCOL = "lunar-rsi-python-admission-v1"
 MAX_RSI_PYTHON_ADMISSION_BYTES = 512 * 1024
@@ -28,6 +32,20 @@ _FIELDS = frozenset({
     "schema_version", "protocol", "run_id", "episode_id", "journal_id", "attempt_id",
     *_DIGEST_FIELDS, "admission_anchor", "handoff_file_pin", "record_sha256", "production_admission",
 })
+
+
+@dataclass(frozen=True, slots=True)
+class _ParsedRSIPythonAdmissionReference:
+    """One freshly validated checkpoint reference and its parsed evidence DTOs.
+
+    This context is private to the SQLite history walk.  It is never serialized,
+    cached, or returned from public parser APIs; carrying it avoids reparsing the
+    same trusted-within-this-call wire at the final row-binding seam.
+    """
+
+    reference: dict[str, Any]
+    plan: NativeRSIExecutionPlan
+    journal: ProducerBundlePublicationJournal
 
 
 class RSIPythonAdmissionError(ValueError):
@@ -234,8 +252,8 @@ _REFERENCE_FIELDS = frozenset({
 })
 
 
-def parse_rsi_python_admission_reference(value: object) -> dict[str, Any]:
-    """Reparse a bounded complete recovery context without invoking caller methods."""
+def _parse_rsi_python_admission_reference_context(value: object) -> _ParsedRSIPythonAdmissionReference:
+    """Parse one bounded complete recovery context and retain its DTOs privately."""
     from .producer_bundle_publication import parse_producer_bundle_publication_journal
     from .rsi_native_plan import NativeRSIExecutionPlan
 
@@ -267,9 +285,14 @@ def parse_rsi_python_admission_reference(value: object) -> dict[str, Any]:
         for field, item in detached["native_plan"].items():
             if field.endswith("sha256"):
                 _sha(item)
-        return detached
+        return _ParsedRSIPythonAdmissionReference(detached, plan, journal)
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise RSIPythonAdmissionError("reference_invalid") from exc
+
+
+def parse_rsi_python_admission_reference(value: object) -> dict[str, Any]:
+    """Reparse a bounded complete recovery context without invoking caller methods."""
+    return _parse_rsi_python_admission_reference_context(value).reference
 
 
 def validate_rsi_python_admission_reference_record(
@@ -310,14 +333,29 @@ def build_rsi_python_admission_reference(
 
 def parse_rsi_python_admission_references(value: object) -> dict[str, dict[str, Any]]:
     """Validate the optional episode map before serialization or any evidence I/O."""
+    return _parse_rsi_python_admission_references_with_context(value)[0]
+
+
+def _parse_rsi_python_admission_references_with_context(
+    value: object,
+    *,
+    retain_context: bool = False,
+) -> tuple[dict[str, dict[str, Any]], dict[str, _ParsedRSIPythonAdmissionReference]]:
+    """Parse every reference once, optionally retaining DTOs for the final history row."""
     if type(value) is not dict:
         _fail("reference_invalid")
     validate_rsi_python_admission_shapes(value)
     result: dict[str, dict[str, Any]] = {}
+    contexts: dict[str, _ParsedRSIPythonAdmissionReference] = {}
     for episode_id, reference in value.items():
         if _ID.fullmatch(episode_id) is None:
             _fail("reference_invalid")
-        result[episode_id] = parse_rsi_python_admission_reference(reference)
+        context = _parse_rsi_python_admission_reference_context(reference)
+        result[episode_id] = context.reference
+        if retain_context:
+            contexts[episode_id] = context
+        else:
+            del context
     # Bound the whole map to the controller's established journal limit.
     try:
         raw = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
@@ -325,7 +363,7 @@ def parse_rsi_python_admission_references(value: object) -> dict[str, dict[str, 
         raise RSIPythonAdmissionError("reference_invalid") from exc
     if len(raw) > 8 * 1024 * 1024:
         _fail("reference_too_large")
-    return result
+    return result, contexts
 
 
 __all__ = [

@@ -35,6 +35,8 @@ from .rsi_learning import (
 from .rsi_python_admission import (
     RSIPythonAdmissionError,
     RSIPythonAdmissionRecord,
+    _parse_rsi_python_admission_references_with_context,
+    _ParsedRSIPythonAdmissionReference,
     parse_rsi_python_admission_record,
     parse_rsi_python_admission_references,
     validate_rsi_python_admission_reference_record,
@@ -427,8 +429,67 @@ class RSILedger:
         except (TypeError, ValueError) as exc:
             raise RSILearningError("rsi_python_admission_reference_invalid") from exc
 
+    @staticmethod
+    def _checkpoint_python_references_with_context(
+        state: Mapping[str, Any],
+        *,
+        retain_context: bool = False,
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, _ParsedRSIPythonAdmissionReference]]:
+        """Parse references, retaining DTO context only when explicitly requested."""
+        try:
+            if "python_admission_refs" not in state:
+                return {}, {}
+            return _parse_rsi_python_admission_references_with_context(
+                state["python_admission_refs"], retain_context=retain_context,
+            )
+        except (TypeError, ValueError) as exc:
+            raise RSILearningError("rsi_python_admission_reference_invalid") from exc
+
+    @staticmethod
+    def _validate_history_admission_reference(
+        reference: dict[str, Any],
+        context: _ParsedRSIPythonAdmissionReference,
+        record: RSIPythonAdmissionRecord,
+        *,
+        run_id: str,
+        episode_id: str,
+    ) -> None:
+        """Bind parsed checkpoint DTOs to the freshly parsed retained row."""
+        from .producer_bundle_publication import ProducerBundlePublicationJournal
+        from .rsi_native_plan import NativeRSIExecutionPlan
+
+        if (type(context) is not _ParsedRSIPythonAdmissionReference
+                or context.reference is not reference
+                or type(context.plan) is not NativeRSIExecutionPlan
+                or type(context.journal) is not ProducerBundlePublicationJournal
+                or type(record) is not RSIPythonAdmissionRecord):
+            raise ValueError("history admission context type mismatch")
+        plan, journal = context.plan, context.journal
+        if ((record.run_id, record.episode_id) != (run_id, episode_id)
+                or (reference["journal_id"], reference["attempt_id"], reference["record_sha256"])
+                != (record.journal_id, record.attempt_id, record.record_sha256)
+                or (plan.run_id, plan.request.episode_id) != (run_id, episode_id)
+                or plan.plan_sha256 != record.native_plan_sha256
+                or plan.request_sha256 != record.episode_request_sha256
+                or (plan.run_id, plan.journal_id, plan.parent_task_id, plan.task_id)
+                != (journal.run_id, journal.journal_id, journal.parent_task_id, journal.task_id)
+                or plan.journal_id != reference["journal_id"]
+                or journal.journal_id != record.journal_id
+                or journal.state != "prepared" or journal.publication_phase != "preflight"
+                or journal.native_execution_receipt_sha256 is None
+                or journal.journal_sha256 != record.prepared_journal_sha256
+                or journal.python_handoff_file_pin is None
+                or canonical_json(journal.python_handoff_file_pin.to_dict(), maximum=512 * 1024)
+                != canonical_json(record.handoff_file_pin, maximum=512 * 1024)):
+            raise ValueError("history admission reference does not match retained row")
+
     def _checkpoint_reference_rows_tx(
-        self, connection: sqlite3.Connection, run_id: str, references: dict[str, dict[str, Any]],
+        self,
+        connection: sqlite3.Connection,
+        run_id: str,
+        references: dict[str, dict[str, Any]],
+        *,
+        parsed_contexts: dict[str, _ParsedRSIPythonAdmissionReference] | None = None,
     ) -> None:
         for episode_id, reference in references.items():
             row = connection.execute(
@@ -438,9 +499,19 @@ class RSILedger:
             if row is None:
                 raise RSILearningError("rsi_python_admission_record_missing")
             try:
-                validate_rsi_python_admission_reference_record(
-                    reference, self._python_admission_row(row), run_id=run_id, episode_id=episode_id,
-                )
+                # Keep this SELECT and exact-text row parse fresh on every history
+                # read. Only the reference/plan/journal parse is reused from the
+                # just-validated final checkpoint in this same transaction.
+                record = self._python_admission_row(row)
+                context = parsed_contexts.get(episode_id) if parsed_contexts is not None else None
+                if context is None:
+                    validate_rsi_python_admission_reference_record(
+                        reference, record, run_id=run_id, episode_id=episode_id,
+                    )
+                else:
+                    self._validate_history_admission_reference(
+                        reference, context, record, run_id=run_id, episode_id=episode_id,
+                    )
             except (TypeError, ValueError) as exc:
                 raise RSILearningError("rsi_python_admission_reference_record_drift") from exc
 
@@ -453,6 +524,7 @@ class RSILedger:
         ).fetchall()
         parent: str | None = None
         references: dict[str, dict[str, Any]] = {}
+        parsed_contexts: dict[str, _ParsedRSIPythonAdmissionReference] = {}
         history: list[tuple[str, dict[str, Any]]] = []
         for ordinal, row in enumerate(rows):
             try:
@@ -461,7 +533,9 @@ class RSILedger:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt") from exc
             if type(payload) is not dict:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
-            current_refs = self._checkpoint_python_references(payload)
+            current_refs, current_contexts = self._checkpoint_python_references_with_context(
+                payload, retain_context=ordinal == len(rows) - 1,
+            )
             if any(key not in current_refs or canonical_json(current_refs[key], maximum=512 * 1024)
                    != canonical_json(value, maximum=512 * 1024) for key, value in references.items()):
                 raise RSILearningError("rsi_python_admission_reference_history_drift")
@@ -471,9 +545,12 @@ class RSILedger:
             if row["revision"] != ordinal or row["parent_sha256"] != parent or row["checkpoint_sha256"] != digest:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
             references = current_refs
+            parsed_contexts = current_contexts
             parent = digest
             history.append((digest, payload))
-        self._checkpoint_reference_rows_tx(connection, run_id, references)
+        self._checkpoint_reference_rows_tx(
+            connection, run_id, references, parsed_contexts=parsed_contexts,
+        )
         return history
 
     @staticmethod
