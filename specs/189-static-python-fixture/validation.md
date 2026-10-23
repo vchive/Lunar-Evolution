@@ -781,3 +781,23 @@ zero failures, errors or skips. The independent freeze-only pure builder
 benchmark preserves projection/pins; local timing is not E2E evidence. The
 normalization memo experiment was rejected after a mutable-regex-cache
 counterexample. These changes enable no build, runtime or production claim.
+
+## Source/startup audit CI and candidate-plan alignment — 2026-10-24
+
+The dedicated source-import audit gate now selects the existing import audit,
+source import profile, baseline startup-scope audit and startup-closure suites.
+Local collection confirms 107 cases (35 + 3 + 2 + 67). Execution with CPython
+3.13.12 passes all 107 with zero failures, errors or skips; the exact workflow
+XML guard also passes against
+`/tmp/lunar189-p1-source-audits-ci-gate-20261023.xml`. Full-tree Ruff,
+`compileall` for `src`, `tools` and `tests`, and `git diff --check` pass.
+
+The plan and unchecked G2 tasks now name the existing candidate assets and
+their remaining configured/static-target and runtime bindings, including the
+fixed `_main` computation of 285 and existing baseline/loader-negative cases.
+Feature190's completed private original-owner implementation is distinguished
+from Feature189's still-open target integration. No acceptance checkbox is
+changed. These are local source observations and synthetic comparator checks;
+exact-source three-version Linux CI, immutable build custody, configured
+closure, freezing/compilation/linking and G3 runtime acceptance remain open.
+No build, E2E, solver or evaluator was run for this change.

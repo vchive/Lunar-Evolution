@@ -7,9 +7,9 @@ original executable-owner final-source run37802795693/main merge3a7782c are
 complete. Their evidence does not complete Feature189 target acceptance.
 G1: Freeze the installation source, patches, exact toolchain/musl profile, complete
 recipe and generator provenance. No ambient compiler/libc or placeholder hash.
-Freeze the private original target-owner binding/recovery proof before claiming
-safe descriptor cleanup; the old public numeric-FD sealing helper has not proved
-foreign-FD reuse safety.
+Use the frozen Feature190 private original target-owner binding/recovery proof
+and complete its Feature189 target integration before claiming safe descriptor
+cleanup; public numeric-FD observations alone do not prove foreign-FD reuse safety.
 The separate candidate source/patch evidence package and its later build-consumer
 boundary are specified in [`candidate-build-provenance.md`](candidate-build-provenance.md).
 That design does not provide an immutable tree or prove build consumption; those
@@ -25,12 +25,17 @@ original 600-second control. The measured, narrowly bounded cache work in
 fresh source/SQLite reads and all identity/history checks. Do not widen the
 deadline or infer Linux acceptance from the local passing case.
 
-Proposed modules after G0: a pure `static_python_installation.py` for bounded
-installation descriptor parsing/external-pin checks; an installation-owned C
-launcher, frozen main and pipe builtin under `fixtures/static_python_runtime/`;
-a reviewed explicit build recipe under `tools/static_python_runtime/`; and
-`tests/test_native_static_python_fixture.py` for actual Linux ownership/lifecycle.
-These are proposed files, not implemented APIs. Avoid unrelated native-v2 changes.
+The bounded descriptor parser/external-pin checks already live in
+`src/lunar_evolution/static_python_installation.py`. Candidate installation-owned
+launcher, initialization profile, fixed getpath, pipe builtin and frozen-main
+sources live under `tools/static_python_fixture/assets/`; the recipe emitter is
+`tools/static_python_fixture/recipe.py`. These are source-only candidate assets:
+its emitted build scripts still exit78 before actual configure/freezer/compiler/
+linker work.
+Bind and validate these existing assets in one reviewed build recipe, then add
+the actual Linux sealed-target ownership/lifecycle harness. Neither the real
+static build nor that target fixture is implemented by the candidate emission
+or portable parser tests. Avoid unrelated native-v2 changes.
 
 ## Fixed build recipe
 
@@ -143,26 +148,28 @@ image. Retain the failed candidate and freeze/review a new candidate explicitly.
 
 ## Frozen main and existing target delivery
 
-Call the fixed C frozen-module import API for `_lunar_static_main` and require
-actual successful import/execution. Its source computes a predetermined result
-(e.g. sum(range(17)) == 136), collects real CPython observations, and exchanges
-bounded constant pipe bytes via `_lunar_fixture_pipe`. The builtin only accesses
-the two original parent-owned broker pipe endpoints; it is not a generic FD,
-filesystem, HTTP or arbitrary execution API. Predefined negative case IDs may
-exercise fixed unsupported module/codec attempts in this same pinned main.
-No caller data names a module, file or code operand.
+The existing candidate `assets/launcher.c` calls
+`PyImport_ImportModule("_lunar_static_main")` and its fixed `_main` callable.
+`assets/frozen_main.py` computes `sum(n * n for n in range(1, 10)) == 285`,
+collects CPython observations, and exchanges bounded constant pipe bytes via
+`_lunar_fixture_pipe`. Its fixed case IDs are `baseline` and `loader-negative`.
+These sources still require matching freezing, compilation and actual target
+startup; source inspection is not a successful import or runtime observation.
+The existing pipe builtin only accesses the two original parent-owned broker
+pipe endpoints; it is not a generic FD, filesystem, HTTP or arbitrary execution
+API. Complete the required unknown module/codec and loader-negative matrix
+within the reviewed finite workload. No caller data names a module, file or
+code operand.
 
 Validate independent installation/artifact pins and source bytes, seal the exact
 executable with all original required seals, then use the existing target FD,
 control v2, guardian, attestation, grants, absolute deadline and FD keep-list.
-At implementation time select a privately retained original target owner and
-prove its binding/recovery with independent fixtures, or complete a separately
-reviewed owned-target recovery implementation before this fixture is accepted.
-The current public `sealed_linux_executable` returns a numeric FD and closes it
-by number; it cannot be cited as proof that foreign number reuse is never closed.
-Do not assume a private owner API already exists. Test closed/reused original
-numbers, same-byte foreign objects, forced public observation mutation and every
-interrupted acquisition/release boundary against the actually selected owner.
+Feature190 already implements and independently validates the private `_Owner`
+and retained context identity in `linux_executable_binding.py`. Reuse that
+implementation; Feature189's actual static-target binding, cleanup and recovery
+integration remains an open G3 gate. Test closed/reused original numbers,
+same-byte foreign objects, forced public observation mutation and every
+interrupted acquisition/release boundary against this fixture's retained owner.
 Preserve primary errors with fixed cleanup-unknown evidence and never close a
 known foreign reused object. No native v2 FD extension follows from this gate.
 Do not re-exec the CI-installed Python or inherit any188 bundle FD. The first

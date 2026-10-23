@@ -183,7 +183,7 @@ failure and cancelled preflight separately from later successful evidence.
   canonical import-graph DTO parser. Version 2 separates the descriptor-pinned
   expected startup-module inventory from a separately hashed root vector, requires
   exact module/alias records, and checks graph reachability from those roots. Its
-  65-case focused suite (including the pinned-root composition check) proves
+  67-case focused suite (including the pinned-root composition check) proves
   DTO consistency only; the synthetic graph edges remain synthetic and do not
   establish source closure. The synthetic
   root vector is not claimed to be the real CPython startup roots.
@@ -295,16 +295,20 @@ safe-extraction or signature-verification result.
   for the build-input slice before main merge; require the dedicated90-case
   source-only gate and source-preparation100-case gate without failures/errors/skips.
   Accepted PR29 run37894037150/maincce8e892, sourcece606690/tree6812af8f.
-- [ ] Audit actual3.13.12 C headers, all path outputs and frozen-use flags/API;
-  freeze fixed isolated preconfig/config including UTF-8 and locale dispositions.
+- [ ] Validate the existing candidate `assets/profile.c` and `assets/getpath.c`
+  against actual3.13.12 C headers, all path outputs and frozen-use flags/API;
+  bind and verify effective isolated preconfig/config, UTF-8 and locale dispositions.
 - [ ] Close all encodings/importlib/stdio/startup dependencies and stock frozen,
   alias, separate embedded startup arrays and static inittab dispositions. Replace
   the seed with an exact finite
   reviewed inventory; no automatic acceptance of discovered extra modules.
-- [ ] Implement the tiny static pipe builtin and one fixed inert frozen main with
-  real computation/runtime observations and predefined bounded negative cases.
-- [ ] Implement/refuse installed file/zip/dynamic-extension fallback routes; audit
-  needed bootstrap_external code and unsupported codec behavior.
+- [ ] Review and complete the existing candidate launcher/profile/pipe/frozen-main
+  sources under `tools/static_python_fixture/assets/`; bind them to generated
+  tables and the static image, then observe actual computation, pipe exchange
+  and the required predefined bounded negative cases.
+- [ ] Complete configured/static-target binding and actual negative validation of
+  the existing file/zip/dynamic-extension refusal patches; resolve remaining
+  bootstrap_external and unsupported codec routes.
 - [ ] Build matching pinned freezing tools and static target; retain first compiler,
   linker and startup failures. Record every input/generated table/digest/link map.
 - [ ] Independently inspect final ELF/source/table/configuration/provenance and
