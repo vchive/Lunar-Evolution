@@ -270,3 +270,40 @@ changes `re._cache2` while dedent/code/regex/re.sub/re._compile identities remai
 unchanged. The original operation observes a different value and callback,
 whereas a warm memo hides both. Pure local timing gains do not override that
 backend semantic difference. This experiment creates no production cache.
+
+## Call-local admission canonical verification
+
+Exact head `72232018` still exhausts the unchanged 600-second execution control
+in the Linux three-child mixed case. Its independent 5090gpu replay and all
+three `current-3` CI shards fail; the earlier passing replay on source-equivalent
+`5c37f4c5` does not establish reliable completion. Preserve those first failures.
+
+The next bounded change shares the canonical bytes already verified by the
+admission dictionary parser with its enclosing JSON parser. Currently the
+outer parser repeats `to_json()` after the dictionary parser has just checked
+that complete serialization against the detached input. A private same-call
+result can carry both the parsed record and those verified bytes. Each call
+must still read and parse fresh input, reject duplicate/noncanonical JSON,
+validate all shapes, digests and nested evidence, and detach the returned
+record. Public digest/serialization methods must continue revalidating mutable
+nested evidence. No stored validation cache or record field is introduced.
+
+Require focused refusal/detachment/fresh-parser regressions and a pure parser
+comparison before another exact-source Linux original-budget replay. A parser
+microbenchmark is not end-to-end acceptance; configured build/runtime and all
+production/publication gates remain open.
+
+The implementation retains that private result only on the current stack.
+Six additional row cases cover bytes/string/dictionary entry points, two
+independent fresh parses, detached anchor/pin data, post-return mutation and
+a changed nested parser on a later call. The row gate is now 24 cases. The
+overlapping admission/type/flow/policy/checkpoint selection passes 308 cases;
+an independent admission/type/flow selection passes 239 cases. Ruff,
+src/tools/tests compileall and the current diff check pass.
+
+An exact baseline-source comparison (`72232018`) against the new parser uses
+two retained read-only snapshot rows and 16 differential valid/invalid inputs.
+Nine alternating 200-iteration trials have local medians 0.184795 s and
+0.117151 s (36.61% less parser time). The script, exact source hashes and raw
+measurements remain ignored in `admission-json-reuse-microbenchmark.{py,json}`.
+This is a pure local parser measurement, not an E2E speed or acceptance claim.

@@ -1,5 +1,26 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 当前阻断与单次解析复用（2026-10-23）
+
+- PR186 的 `72232018` CI run39879919064 首轮30/33通过；三个版本的 current-3
+  均在 three-child-mixed 的原600秒执行控制耗尽。仅失败项重跑后，三版本仍在同一
+  case耗尽（约603–605秒），不是测试清单计数或业务断言错误，不能合入main。
+- `5c37f4c5` 的先前Linux单次mixed通过（suite684.8秒）仍保留；它与72232018只差
+  CI计数一行，但当前HEAD的独立5090gpu复测仍失败（pytest602.927秒），不能从一次
+  通过推断稳定完成。新失败证据在ignored `linux-mixed-current-72232018-jy43g46z/`；
+  12个live modules与2318源码文件/exec bits核对通过，341个fixture条目在teardown前
+  捕获，consistency=unknown，229个回传文件SHA核对通过，未查询DB/放宽预算/重跑。
+- 新改动只在admission JSON解析这一次调用内复用已经核对的canonical bytes，消除
+  外层再次to_json；仍执行fresh strict JSON、类型/字段/digest、嵌套证据和detachment
+  校验，后续公开序列化也重新验证，不新增跨调用cache。六项新反例使row gate为24；
+  308项相关组合、独立239项（重叠不相加）、Ruff/compileall/当前diffcheck通过。
+- 精确baseline parser局部对比九轮×200×两行：0.184795→0.117151秒，中位减少36.61%；
+  16项valid/invalid differential输入结果相同。它不是E2E证据，新提交仍需原预算Linux
+  mixed与最终head三版本CI全部通过；PR186保持未合入，构建/runtime/生产准入门仍关闭。
+- 两个已完成的P1分支仍独立保留：candidate-build-provenance（220b0364/000907fa）
+  仅规格；source-import-edge-audit（ed5abadb）含28条AST边/4处unsupported与69项测试。
+  两者基于72232018、可干净组合；PR186合入后再整理后续PR，未冒充configured closure。
+
 ## 原预算失败后的无缓存分派优化（2026-10-23）
 
 - 精确`88005a30`的唯一无采样Linux mixed仍失败：case600.573秒/suite602.050秒，

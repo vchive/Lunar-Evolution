@@ -14,6 +14,7 @@ from lunar_evolution.producer_bundle_publication import ProducerBundlePublicatio
 from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
 from lunar_evolution.rsi_python_admission import (
+    RSIPythonAdmissionError,
     RSIPythonAdmissionRecord,
     parse_rsi_python_admission_record,
 )
@@ -68,6 +69,57 @@ def test_fresh_sqlite_text_runs_full_parser_without_extra_dto_serialization(reta
     assert retained.ledger._python_admission_row(_row(retained)) == expected
     assert parsed_inputs == [row["payload"]]
     assert len(serializations) == parser_serializations
+
+
+@pytest.mark.parametrize("entry", ["dict", "bytes", "str"])
+def test_parser_checks_one_canonical_projection_per_fresh_call(retained, monkeypatch, entry):
+    raw = _row(retained)["payload"]
+    source = {"dict": json.loads(raw), "bytes": raw.encode("utf-8"), "str": raw}[entry]
+    original = RSIPythonAdmissionRecord.to_json
+    calls = []
+
+    def counted(record):
+        calls.append(record)
+        return original(record)
+
+    monkeypatch.setattr(RSIPythonAdmissionRecord, "to_json", counted)
+    first = parse_rsi_python_admission_record(source)
+    second = parse_rsi_python_admission_record(source)
+    assert calls == [first, second]
+    assert first == second and first is not second
+    assert first.admission_anchor is not second.admission_anchor
+    assert first.handoff_file_pin is not second.handoff_file_pin
+
+
+@pytest.mark.parametrize("field", ["admission_anchor", "handoff_file_pin"])
+def test_call_local_canonical_bytes_do_not_hide_later_nested_evidence_drift(retained, field):
+    wire = json.loads(_row(retained)["payload"])
+    parsed = RSIPythonAdmissionRecord.from_dict(wire)
+    original = deepcopy(getattr(parsed, field))
+    wire[field]["run_id"] = "changed-input"
+    assert getattr(parsed, field) == original
+    getattr(parsed, field)["run_id"] = "changed-returned-record"
+    for validate in (lambda: parsed.to_json(), lambda: parse_rsi_python_admission_record(parsed)):
+        with pytest.raises(RSIPythonAdmissionError):
+            validate()
+
+
+def test_json_parser_revalidates_nested_evidence_on_each_call(retained, monkeypatch):
+    raw = _row(retained)["payload"]
+    assert RSIPythonAdmissionRecord.from_json(raw)
+    original = admission_module.parse_python_producer_admission_attempt_anchor
+    calls = []
+
+    def refuse(value):
+        calls.append(value)
+        raise ValueError("nested parser changed")
+
+    monkeypatch.setattr(admission_module, "parse_python_producer_admission_attempt_anchor", refuse)
+    with pytest.raises(RSIPythonAdmissionError, match="evidence_invalid"):
+        RSIPythonAdmissionRecord.from_json(raw)
+    assert len(calls) == 1
+    monkeypatch.setattr(admission_module, "parse_python_producer_admission_attempt_anchor", original)
+    assert RSIPythonAdmissionRecord.from_json(raw)
 
 
 def test_canonical_blob_remains_invalid_for_sqlite_text_column(retained):

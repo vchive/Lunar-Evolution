@@ -208,7 +208,12 @@ class RSIPythonAdmissionRecord:
         return _canonical(self.to_dict())
 
     @classmethod
-    def from_dict(cls, value: object) -> RSIPythonAdmissionRecord:
+    def _from_dict_and_json(cls, value: object) -> tuple[RSIPythonAdmissionRecord, bytes]:
+        """Return fresh detached evidence and the canonical bytes checked here.
+
+        The bytes live only in this parser invocation. They are not retained on
+        the record or reused by subsequent validation/serialization calls.
+        """
         if type(value) is not dict:
             _fail("schema_invalid")
         if any(type(key) is not str for key in value):
@@ -217,17 +222,23 @@ class RSIPythonAdmissionRecord:
             _fail("schema_invalid")
         validate_rsi_python_admission_shapes(value)
         _sha(value["record_sha256"])
-        detached = json.loads(_canonical(value))
+        canonical = _canonical(value)
+        detached = json.loads(canonical)
         result = cls(**detached)
-        if result.to_json() != _canonical(value):
+        if result.to_json() != canonical:
             _fail("digest_mismatch")
+        return result, canonical
+
+    @classmethod
+    def from_dict(cls, value: object) -> RSIPythonAdmissionRecord:
+        result, _canonical_raw = cls._from_dict_and_json(value)
         return result
 
     @classmethod
     def from_json(cls, value: bytes | str) -> RSIPythonAdmissionRecord:
-        result = cls.from_dict(_strict_json(value))
+        result, canonical = cls._from_dict_and_json(_strict_json(value))
         raw = value if type(value) is bytes else value.encode("utf-8")
-        if result.to_json() != raw:
+        if canonical != raw:
             _fail("noncanonical_json")
         return result
 
