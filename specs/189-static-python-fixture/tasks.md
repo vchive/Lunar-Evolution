@@ -89,10 +89,16 @@ failure and cancelled preflight separately from later successful evidence.
   and raw-file digest manifest in
   `release-input-audit-20261021.md`. This closes the archive/signature portion
   of G1 only.
-- [ ] Independently retain the complete acquired/extracted source-tree digest
-  and exact applied patch set for the candidate build. The archive signature,
-  source projection and source-tree DTOs do not themselves prove a staged,
-  patched tree was used for a configured build.
+- [x] Specify the separate candidate-build source/patch provenance boundary in
+  `candidate-build-provenance.md`: retain the full source, staging, observer and
+  exact fixed-policy records under external pins; distinguish a staged-source
+  observation from actual configured-build consumption. This design-only task
+  adds no build-consumption wire or claim.
+- [ ] Independently retain and audit the complete acquired/extracted source-tree
+  digest and exact applied patch set for a clean candidate build, following the
+  evidence obligations in `candidate-build-provenance.md`. The archive
+  signature, source projection, source/staging DTOs and source-only candidate
+  receipt do not themselves prove a configured build consumed that tree.
 - [x] Cross-check the declared Zig 0.16.0 archive digest and the byte-for-byte
   archive and available Ubuntu musl package bytes on 5090gpu; preserve their
   exact versions and hashes in `release-input-audit-20261021.md`. This cross-check

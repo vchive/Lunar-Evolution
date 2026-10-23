@@ -98,3 +98,9 @@ consumption remain open. A separate configured build is still required. The
 recorded `staged_tree_sha256` is the staging manifest's tree-projection digest
 after the observer matched on-disk inventory, metadata and file bytes; it is
 not an independently streamed filesystem Merkle digest.
+
+The remaining candidate-build source/patch custody and later consumption
+boundary are specified separately in
+[`candidate-build-provenance.md`](candidate-build-provenance.md). That document
+is design only; this observer exercise and the `source-only` receipt do not
+complete its independent-retention or configured-build obligations.

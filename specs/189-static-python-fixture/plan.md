@@ -10,6 +10,10 @@ recipe and generator provenance. No ambient compiler/libc or placeholder hash.
 Freeze the private original target-owner binding/recovery proof before claiming
 safe descriptor cleanup; the old public numeric-FD sealing helper has not proved
 foreign-FD reuse safety.
+The separate candidate source/patch evidence package and its later build-consumer
+boundary are specified in [`candidate-build-provenance.md`](candidate-build-provenance.md).
+That design does not provide an immutable tree or prove build consumption; those
+remain open G1 evidence/implementation obligations.
 G2: Resolve the finite initialization/module inventory, build and inspect the exact
 final image. Build/compiler/startup failures remain evidence, not success.
 G3: Run the original native sealed-target fixture and independent final Linux audit.
