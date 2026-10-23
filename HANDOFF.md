@@ -1,5 +1,37 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## Python 3.11 独立失败与有效局部诊断（2026-10-24）
+
+- 精确 `3728e2724f23936fe4c830c4fd3acb0f820819de` 的唯一5090gpu Python3.11.15
+  无采样mixed仍失败：case601.444秒/suite603.974秒，原600秒control在第三child的
+  父级终态结算检查报 `rsi_python_brs_native_dispatch_rejection_control_expired`，本次
+  没有附worker_unknown。12个loaded modules、2319个源码文件bytes/exec bits前后匹配，
+  230个result files及8个extras传输SHA一致。O_EXCL launch marker为1；未重跑或扩预算。
+  原始证据在ignored `feature189-20261023/linux-mixed-py311-3728e272-dmutcbpu/`。
+  Python3.11.15/Clang与CI3.11.17/GCC有差异，不能说环境完全相同；PR186仍不能合main。
+- teardown前342-entry捕获的consistency仍为unknown。仅在独立副本检查SQLite/WAL并
+  导出新的standalone backup：56rows/8namespaces、root30rows/39references，integrity=ok，
+  SHA `b084c03c257e5f48b8231b626c1a52622b449f0f40ad3688e461eadf747fd54a`。
+  原捕获DB/WAL/SHM与诊断副本三件的SHA均保持；backup只供诊断，不升级验收结论。
+- exact3728独立单线程Python3.11局部profile的own/cumulative均非负且账目与wall一致。
+  无profiler中位：旧19行history9.87ms、新30行20.51ms、reserved project12.63ms、
+  full warm policy133.37ms。warm3次的整文件/最终SHA own共99.18ms，source/backend与
+  normalization路径也显著；这些局部结果不能解释E2E占比或保证提速。完整raw/profile/
+  SHA清单在ignored `feature189-20261024/py311-single-thread-profile/`。
+- 下一切片先验证以完整fresh bytes替代extraction-cache专用SHA键的收益与内存上限，
+  保留原双fresh读取、backend/locator复查、normalization、live hooks及最终identity SHA。
+  不采用已有 `re._cache2` 反例的normalization memo，不再重复运行失败的3728验收。
+- 此切片现已实现：完整bytes key与共享raw pool按引用释放，原1024entry/24MiB上限
+  不变；所有raw及提取文本均计费。实际613entry/73raw共4,388,407B。六项新边界测试
+  使source专项37、cache/identity CI门75；本地联合661项全部通过，零fail/error/skip，
+  全仓Ruff、src/tools/tests compileall及diffcheck通过。独立review无阻塞，15,400次
+  LRU oracle及14,000次并发retain/clear账目检查通过；独立37项与661项重叠不相加。
+- exact3728同一策略图仅替换old/new两个cache helper的独立Python3.11对照中，60次
+  完整projection相同；每call的request1455/freshread1434/fingerprint738均保留。
+  9轮×3warmcall中位135.061→123.614ms（局部少8.475%），不是E2E通过结论。
+  原始脚本、结果和SHA清单在上述profile证据目录；新源码仍需唯一原预算Linux验收与
+  精确HEAD完整CI全部通过后才合PR186。后续P1本地分支最新为0ad30cb9，未push。
+
 ## 最新Linux通过与三版本CI剩余失败（2026-10-24）
 
 - 精确 `1946b46324363a35787059aebb9137d6aadba993` 唯一5090gpu无采样

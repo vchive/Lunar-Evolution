@@ -8,6 +8,8 @@ import linecache
 import os
 import sys
 import textwrap
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from types import ModuleType
 
 import pytest
@@ -50,6 +52,26 @@ def _code(value):
     return identity.component_identity(value, config={}).code
 
 
+def _assert_cache_accounting():
+    with identity._SOURCE_CACHE_LOCK:
+        cache = identity._SOURCE_CACHE
+        references = {}
+        for key in cache:
+            raw = key[1]
+            assert type(raw) is bytes
+            canonical, count = cache._raw_sources[raw]
+            assert raw is canonical
+            assert count > 0
+            references[raw] = references.get(raw, 0) + 1
+        assert {raw: value[1] for raw, value in cache._raw_sources.items()} == references
+        assert cache.retained_bytes == (
+            sum(len(raw) for raw in references)
+            + sum(len(value[0].encode("utf-8")) for value in cache.values())
+        )
+        assert cache.retained_bytes <= identity._MAX_SOURCE_CACHE_BYTES
+        assert len(cache) <= identity._MAX_SOURCE_CACHE_ENTRIES
+
+
 def test_repeated_content_reuses_extraction_without_caching_final_identity(tmp_path, monkeypatch):
     module, _path = _module(tmp_path, monkeypatch)
     calls = _count_extractions(monkeypatch)
@@ -85,13 +107,14 @@ def test_hundreds_of_small_components_reuse_extraction_but_still_read_fresh_twic
 
 
 def test_utf8_byte_budget_evicts_lru_without_changing_fingerprints(tmp_path, monkeypatch):
-    module, _path = _module(tmp_path, monkeypatch, "".join(
+    module, path = _module(tmp_path, monkeypatch, "".join(
         f"def {name}():\n    return '界'\n" for name in ("alpha", "bravo", "cello")
     ))
     targets = (module.alpha, module.bravo, module.cello)
     expected = {target: identity.component_fingerprint(target) for target in targets}
     source_bytes = len(inspect.getsource(module.alpha).encode("utf-8"))
-    budget = 2 * source_bytes
+    raw_bytes = len(path.read_bytes())
+    budget = raw_bytes + 2 * source_bytes
     monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_BYTES", budget)
     identity._SOURCE_CACHE.clear()
     calls = _count_extractions(monkeypatch)
@@ -104,22 +127,24 @@ def test_utf8_byte_budget_evicts_lru_without_changing_fingerprints(tmp_path, mon
     assert len(calls) == 3
     assert identity.component_fingerprint(module.bravo) == expected[module.bravo]
     assert len(calls) == 4
-    assert sum(len(value[0].encode("utf-8")) for value in identity._SOURCE_CACHE.values()) == (
+    assert raw_bytes + sum(len(value[0].encode("utf-8")) for value in identity._SOURCE_CACHE.values()) == (
         identity._SOURCE_CACHE.retained_bytes
     ) == budget
+    _assert_cache_accounting()
 
     identity._SOURCE_CACHE.clear()
     for target in (module.alpha, module.bravo, module.alpha, module.bravo):
         assert identity.component_fingerprint(target) == expected[target]
     assert len(calls) == 6 and identity._SOURCE_CACHE.retained_bytes == budget
+    _assert_cache_accounting()
 
 
 def test_source_larger_than_cache_byte_budget_is_valid_but_never_retained(tmp_path, monkeypatch):
-    module, _path = _module(tmp_path, monkeypatch, (
+    module, path = _module(tmp_path, monkeypatch, (
         "def small():\n    return 1\n"
         "def larger():\n    return 'this valid source exceeds the cache byte budget'\n"
     ))
-    budget = len(inspect.getsource(module.small).encode("utf-8"))
+    budget = len(path.read_bytes()) + len(inspect.getsource(module.small).encode("utf-8"))
     monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_BYTES", budget)
     calls = _count_extractions(monkeypatch)
     small = identity.component_fingerprint(module.small)
@@ -128,6 +153,134 @@ def test_source_larger_than_cache_byte_budget_is_valid_but_never_retained(tmp_pa
     assert identity.component_fingerprint(module.small) == small
     assert len(calls) == 3 and len(identity._SOURCE_CACHE) == 1
     assert identity._SOURCE_CACHE.retained_bytes == budget
+    _assert_cache_accounting()
+
+
+def test_source_cache_key_retains_complete_fresh_file_bytes(tmp_path, monkeypatch):
+    module, path = _module(tmp_path, monkeypatch, (
+        "# bytes outside the extracted range also belong to the key: \u754c\n"
+        "class Component:\n    value = 1\n"
+    ))
+    expected = path.read_bytes()
+    _code(module.Component)
+    key = next(iter(identity._SOURCE_CACHE))
+    assert key[0] == str(path)
+    assert type(key[1]) is bytes and key[1] == expected
+    assert len(key[1]) == len(expected)
+    _assert_cache_accounting()
+
+
+def test_equal_file_bytes_share_one_retained_object_across_locators_and_paths(tmp_path, monkeypatch):
+    source = "def alpha():\n    return 1\ndef bravo():\n    return 2\n"
+    modules = []
+    for name in ("first", "second"):
+        directory = tmp_path / name
+        directory.mkdir()
+        module, _path = _module(directory, monkeypatch, source)
+        modules.append(module)
+    for module in modules:
+        for target in (module.alpha, module.bravo):
+            _code(target)
+    cache = identity._SOURCE_CACHE
+    assert len(cache) == 4
+    assert len(cache._raw_sources) == 1
+    canonical, references = next(iter(cache._raw_sources.values()))
+    assert canonical == source.encode("utf-8") and references == 4
+    assert all(key[1] is canonical for key in cache)
+    _assert_cache_accounting()
+
+
+def test_lru_releases_raw_source_only_after_its_last_reference(tmp_path, monkeypatch):
+    module, path = _module(tmp_path, monkeypatch, (
+        "def alpha():\n    return 1\ndef bravo():\n    return 2\n"
+    ))
+    raw = path.read_bytes()
+    monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_ENTRIES", 2)
+    _code(module.alpha)
+    _code(module.bravo)
+    replacement = tmp_path / "different"
+    replacement.mkdir()
+    other, other_path = _module(replacement, monkeypatch, "class Component:\n    value = 2\n")
+    _code(other.Component)
+    cache = identity._SOURCE_CACHE
+    assert cache._raw_sources[raw][1] == 1
+    _assert_cache_accounting()
+
+    # A second locator for the other file evicts the last entry retaining the original bytes.
+    with identity._SOURCE_CACHE_LOCK:
+        other_key = next(key for key in cache if key[0] == str(other_path))
+        cache.retain((*other_key, "another-locator"), cache[other_key], len(cache[other_key][0].encode("utf-8")))
+    assert raw not in cache._raw_sources
+    assert cache._raw_sources[other_path.read_bytes()][1] == 2
+    _assert_cache_accounting()
+    cache.clear()
+    assert not cache and not cache._raw_sources and cache.retained_bytes == 0
+
+
+def test_replacing_entry_balances_source_cost_and_shared_raw_references():
+    cache = identity._SOURCE_CACHE
+    raw = b"a shared complete source file\n"
+    first, second = ("first.py", raw, "alpha"), ("second.py", bytes(bytearray(raw)), "bravo")
+    owner = object()
+    with identity._SOURCE_CACHE_LOCK:
+        for key in (first, second):
+            cache.retain(key, ("small", owner, None), len(b"small"))
+        for source in ("\u754c", "replacement source", "small"):
+            # Each hit/replacement releases the old entry before retaining one new reference.
+            cache.retain(first, (source, owner, None), len(source.encode("utf-8")))
+            assert cache[first][0] == source
+            assert cache._raw_sources[raw][1] == 2
+            _assert_cache_accounting()
+    cache.clear()
+    assert not cache._raw_sources and cache.retained_bytes == 0
+
+
+def test_large_raw_file_with_small_extracted_source_is_not_retained(tmp_path, monkeypatch):
+    module, path = _module(tmp_path, monkeypatch, (
+        "# " + "large unrelated source content " * 200 + "\n"
+        "class Component:\n    value = 1\n"
+    ))
+    source_bytes = len(inspect.getsource(module.Component).encode("utf-8"))
+    monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_BYTES", len(path.read_bytes()) + source_bytes - 1)
+    calls = _count_extractions(monkeypatch)
+    baseline = _code(module.Component)
+    assert _code(module.Component) == baseline
+    assert len(calls) == 2
+    assert not identity._SOURCE_CACHE and not identity._SOURCE_CACHE._raw_sources
+    assert identity._SOURCE_CACHE.retained_bytes == 0
+
+
+def test_concurrent_clear_and_insert_keep_shared_raw_accounting_consistent(tmp_path, monkeypatch):
+    module, _path = _module(tmp_path, monkeypatch, (
+        "def alpha():\n    return 1\ndef bravo():\n    return 2\n"
+    ))
+    targets = (module.alpha, module.bravo)
+    expected = [_code(target) for target in targets]
+    barrier = Barrier(4)
+
+    def insert():
+        barrier.wait()
+        for _ in range(24):
+            assert [_code(target) for target in targets] == expected
+            _assert_cache_accounting()
+
+    def clear():
+        barrier.wait()
+        for _ in range(24):
+            identity._SOURCE_CACHE.clear()
+            _assert_cache_accounting()
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(insert) for _ in range(3)] + [pool.submit(clear)]
+        for future in futures:
+            future.result()
+    _assert_cache_accounting()
+    for target in targets:
+        _code(target)
+    assert len(identity._SOURCE_CACHE) == 2
+    assert len(identity._SOURCE_CACHE._raw_sources) == 1
+    assert next(iter(identity._SOURCE_CACHE._raw_sources.values()))[1] == 2
+    _assert_cache_accounting()
 
 
 @pytest.mark.parametrize("change", ["same_metadata", "replace", "stale_linecache"])
