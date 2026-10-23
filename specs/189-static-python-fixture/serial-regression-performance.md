@@ -307,3 +307,62 @@ Nine alternating 200-iteration trials have local medians 0.184795 s and
 0.117151 s (36.61% less parser time). The script, exact source hashes and raw
 measurements remain ignored in `admission-json-reuse-microbenchmark.{py,json}`.
 This is a pure local parser measurement, not an E2E speed or acceptance claim.
+
+## Single-history-walk reference context reuse
+
+The single unprofiled Linux replay of exact `92a57408` still fails under the
+original 600-second control. The next bounded slice may reuse a detached
+reference/plan/journal context only inside one
+`_controller_checkpoint_history_tx` invocation, selected by the same episode ID
+and equality of the complete canonical reference bytes. No ledger field,
+cross-call cache, shared returned payload, or durable validation result is
+introduced. The public parser defaults continue performing complete parsing.
+
+Each freshly decoded checkpoint still passes the exact reference-map and key
+types, recursive shape/depth and finite-number checks, each reference's
+512 KiB canonical limit, and the whole map's 8 MiB canonical limit. First,
+added, or changed references still pass the complete plan/journal parser and
+canonical round-trip checks before the existing monotonic comparison. Exact
+canonical byte equality must retain the distinctions between integers,
+floats, booleans, and signed floating zero; Python dictionary equality or only
+a digest is insufficient. Every fresh row JSON parse, revision/parent/digest
+check, and missing/changed-reference check remains. Final retained admission
+SELECTs, exact-text full row parsing, independent columns, and context/record
+binding also remain fresh and complete.
+
+The current walk may retain contexts for its preceding validated row rather
+than only the final row. These detached contexts must not be inserted into
+the returned checkpoint payloads, exposed through public parser results, or
+reused by a later invocation. Invalid changed values retain the complete
+parser path before history-drift comparison; reuse is not a repair route.
+
+This deliberately reduces repeated nested-parser observations during one
+walk. It does not preserve the old observation count for arbitrary concurrent
+parser/backend rebinding inside that same invocation and does not claim an
+atomic interpreter snapshot. Source/policy observations around the walk are
+not removed. Later calls must parse references afresh and observe changed
+parsers or input bytes. Require focused reuse, mutation, exact-type/numeric,
+size/depth, fresh-row, and hash-valid-history-drift regressions, followed by
+Ruff, compileall, and diff checks. No E2E or speedup result follows from this
+contract; exact-source Linux acceptance and final-head CI remain separate.
+
+An independent comparison loads the exact `92a57408` admission/store modules
+and the changed modules against a retained, independently hash-verified
+read-only snapshot copy. All four namespaces' 29 returned journal rows agree;
+five separate in-memory database mutations retain the same refusals for
+admission payload/independent-column and checkpoint payload/parent/digest
+drift. All 13 reference visits remain, while complete fresh DTO contexts fall
+from 13 to two. Nine alternating 25-iteration history trials have local median
+times of 0.2935065 and 0.1505321 seconds (48.71% less). The exact source hashes,
+snapshot identity, script, and raw comparison are retained in ignored
+`history-context-reuse-microbenchmark.{py,json}`. This measures the copied
+history parser only; it is not an E2E speedup or acceptance result.
+
+The final local selection passes all 649 admission/history/type/cache/identity/
+policy/runner cases, with zero failures, errors, or skips. It includes 27 new
+history-reuse cases, the existing 24-case row gate, and 204 regression-runner
+cases with an external `/tmp` basetemp. The independent 51-case selection
+overlaps these results and is not additive. Whole-repository Ruff,
+src/tools/tests compileall, and current diff checks pass. CI now requires the
+27-case history-reuse gate explicitly; the exact-source Linux replay and final
+three-version CI still have to pass before merge.

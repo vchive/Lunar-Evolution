@@ -434,6 +434,7 @@ class RSILedger:
         state: Mapping[str, Any],
         *,
         retain_context: bool = False,
+        reuse_contexts: dict[str, _ParsedRSIPythonAdmissionReference] | None = None,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, _ParsedRSIPythonAdmissionReference]]:
         """Parse references, retaining DTO context only when explicitly requested."""
         try:
@@ -441,6 +442,7 @@ class RSILedger:
                 return {}, {}
             return _parse_rsi_python_admission_references_with_context(
                 state["python_admission_refs"], retain_context=retain_context,
+                reuse_contexts=reuse_contexts,
             )
         except (TypeError, ValueError) as exc:
             raise RSILearningError("rsi_python_admission_reference_invalid") from exc
@@ -501,7 +503,7 @@ class RSILedger:
             try:
                 # Keep this SELECT and exact-text row parse fresh on every history
                 # read. Only the reference/plan/journal parse is reused from the
-                # just-validated final checkpoint in this same transaction.
+                # just-validated history walk in this same transaction.
                 record = self._python_admission_row(row)
                 context = parsed_contexts.get(episode_id) if parsed_contexts is not None else None
                 if context is None:
@@ -534,7 +536,7 @@ class RSILedger:
             if type(payload) is not dict:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
             current_refs, current_contexts = self._checkpoint_python_references_with_context(
-                payload, retain_context=ordinal == len(rows) - 1,
+                payload, retain_context=True, reuse_contexts=parsed_contexts,
             )
             if any(key not in current_refs or canonical_json(current_refs[key], maximum=512 * 1024)
                    != canonical_json(value, maximum=512 * 1024) for key, value in references.items()):

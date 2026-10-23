@@ -1,5 +1,28 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 当前原预算失败与单次历史遍历修复（2026-10-23）
+
+- 精确 `92a574088207ef2eb3e9c37b968b61bc577e5d7f` 的唯一无采样5090gpu
+  mixed验收仍失败：suite602.556秒、原600秒control在`rsi_brs_before_evidence`
+  于600.09414770687秒耗尽，附worker_unknown；不是成功验收，PR186不能合main。
+  12个loaded modules及2318个源码文件bytes/exec bits前后匹配；229个result files和
+  8个额外文件传输SHA核对通过。341-entry失败fixture在teardown前捕获，consistency
+  仍为unknown。完整证据在ignored `linux-mixed-current-92a57408-7oqaz_xy/`，
+  未查询live DB、未重跑或调整预算。
+- 下一最小修复只在一次history walk内按episode ID及完整canonical bytes复用已验证
+  reference/plan/journal DTO。每行fresh JSON、shape/depth/finite/512KiB、wholemap8MiB、
+  monotonic及revision/parent/digest检查、最终fresh SELECT/full row parser均保留；
+  context不写入返回payload或跨调用状态。它减少同次walk内任意parser/backend重绑定的
+  重复观察次数，不提供原子snapshot；后续调用仍重新解析。
+- 独立精确baseline对比的4个namespace/29行结果一致，5类内存副本破坏输入的拒绝一致；
+  13次reference访问保留，fresh contexts13→2。9×25次无instrumentation纯history读取
+  中位0.2935065→0.1505321秒（局部减少48.71%），不是E2E性能或验收结论。
+  原预算Linux与最终head CI通过前，构建/runtime/生产准入门继续关闭。
+- 最终本地联合回归649项全部通过（27项新history reuse、24项row、204项runner等，
+  零failure/error/skip）；独立51项与其重叠不相加。全仓Ruff、src/tools/tests
+  compileall、当前diffcheck通过；独立实现/测试review无阻塞。CI新增27项固定零跳过门。
+  首次旧wrapper签名失败和测试选择路径错误的日志分别保留，不混入最终通过证据。
+
 ## 当前阻断与单次解析复用（2026-10-23）
 
 - PR186 的 `72232018` CI run39879919064 首轮30/33通过；三个版本的 current-3
