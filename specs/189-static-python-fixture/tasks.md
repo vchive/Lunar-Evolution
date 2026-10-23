@@ -327,10 +327,11 @@ safe-extraction or signature-verification result.
   source/image pin drift, post-seal source replacement and exact inherited FD census.
 - [ ] Verify ready/release/start/terminal, inherited pipe ownership, deadline,
   cancellation, guardian interruption, process reap and FD cleanup on every path.
-- [ ] Independently validate the selected private target owner's original binding
-  and cleanup/recovery against closed/reused numbers, same-byte foreign objects,
-  forced observation mutation and interrupted acquisition/release. No private
-  API is assumed and no public numeric FD may authorize foreign-object close.
+- [ ] Independently validate Feature190's implemented private `_Owner` and retained
+  context binding in this fixture's target integration and cleanup/recovery against
+  closed/reused numbers, same-byte foreign objects, forced observation mutation
+  and interrupted acquisition/release. Reuse that existing owner implementation;
+  no public numeric FD may authorize foreign-object close.
 - [ ] Run focused/static/current/archive/frozen regressions and exact final Linux
   dedicated gate with zero skips. Preserve raw ZIP/log/XML/source/toolchain/image
   evidence; require independent final audit before main merge or any completed claim.

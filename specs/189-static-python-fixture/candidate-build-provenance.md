@@ -33,7 +33,8 @@ build provenance.
 
 The configured-build prerequisite is also open. The retained configure attempt
 failed before producing a Makefile, and its source directory was modified. The
-current driver refuses configure/build/freezer execution. The observed stock
+Feature189 recipe emitter's generated build scripts refuse configure/build/freezer
+execution. The observed stock
 static build and startup failure are distinct historical probes; neither
 consumed the reviewed finite candidate under a frozen recipe. Therefore this
 slice must not mint a build-consumption receipt or describe any prior build as
