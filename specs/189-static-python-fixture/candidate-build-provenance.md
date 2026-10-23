@@ -80,9 +80,13 @@ package can be called a retained staged-source record:
   externally retained digest matches the exact canonical bytes;
 - every unpatched file has equal original and staged size/hash, and every fixed
   patch file has the exact pinned source preimage and staged postimage;
-- the policy digest and patch-set digest match the reviewed fixed policy, with
-  source version and commit bound consistently across archive, source tree,
-  staging, policy, profile, observer result, and source-only receipt;
+- the policy digest and patch-set digest match the reviewed fixed policy. The
+  archive receipt and original source-tree DTO carry the source version, while
+  the patch policy, source profile, and source-only receipt directly carry both
+  source version and commit. Staging and observer DTOs do not all repeat those
+  identifiers; verify their transitive binding through the independently pinned
+  archive, root, source-tree, staging, policy, and patch digests instead of
+  claiming every DTO directly contains version and commit;
 - the staged filesystem was read through the existing no-follow observer and
   matched the complete staging inventory during that observation; and
 - all raw records and verifier notes are copied to durable independent custody,
