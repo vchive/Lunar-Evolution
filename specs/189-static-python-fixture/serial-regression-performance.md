@@ -366,3 +366,75 @@ overlaps these results and is not additive. Whole-repository Ruff,
 src/tools/tests compileall, and current diff checks pass. CI now requires the
 27-case history-reuse gate explicitly; the exact-source Linux replay and final
 three-version CI still have to pass before merge.
+
+## Reuse freshly verified reference bytes for comparison and map bounds
+
+Exact `1946b463` passed the independent Linux replay in 552.58 seconds under
+the original 600-second control, but its Python3.11 current-shard3 CI replay
+still failed with `rejection_provenance_allowance_exhausted`. A passing replay
+does not replace that failed final-source CI gate. The next bounded slice
+removes only redundant serialization of references already validated within
+one history walk or one reference-map parser call.
+
+The history monotonic comparison may compare the preceding and current private
+contexts' complete `canonical_bytes`. On these freshly validated references,
+`rsi_python_admission._canonical` and
+`candidate_evaluation_spec.canonical_json(..., maximum=512 * 1024)` use the
+same `json.dumps` arguments (`ensure_ascii=False`, `sort_keys=True`, compact
+separators, `allow_nan=False`) and UTF-8 encoding. The fresh admission parser
+already checks exact types, recursive shape/depth, finite values, IDs, digests
+and the 512 KiB limit before context reuse. Complete bytes preserve integer,
+float, boolean and signed floating-zero distinctions. Missing references still
+refuse before checkpoint-chain checks; changed references still complete the
+full nested parser path before any history-drift comparison. No digest-only or
+dictionary-equality comparison is introduced.
+
+The reference-map parser may calculate its exact compact canonical byte length
+without encoding all references again. Every map key already passes exact
+string shape and the ASCII-only `_ID` full match, which permits neither quotes
+nor backslashes. With `n` entries the byte length is two braces, each key's
+`len(key) + 2` quoted bytes, one colon per entry, each fresh context's complete
+canonical byte length, and `n - 1` commas when nonempty. Sorting keys does not
+change this length; Unicode and escaped bytes inside each reference are
+already counted by its fresh canonical encoding. Keep the 8 MiB limit and
+perform its refusal only after the full map traversal, so a later malformed
+reference still takes precedence over aggregate overflow.
+
+Retain every fresh input/row JSON decode, admission canonicalization, nested
+parser miss, map/reference shape gate, checkpoint revision/parent/digest check,
+final admission SELECT/full row parse and independent-column binding. No
+cross-call cache, public DTO or returned-payload reference is added. Public
+parser calls still validate fresh input without a previous-call context.
+
+This removes the former redundant history `canonical_json` calls and final
+whole-map `json.dumps` call. It does not preserve their observation counts or
+exception behavior under arbitrary dynamic serializer/backend rebinding, or
+concurrent mutation of private contexts within the same walk. A serializer
+that is no longer called is not promised to be observed by the next walk;
+fresh admission parsing is not an atomic interpreter snapshot. Existing outer
+source/policy observations remain unchanged. Require focused canonical-byte
+equivalence, exact map-bound/escaping and error-priority regressions, followed
+by Ruff, compileall and diff checks. Pure comparisons or local timing do not
+close exact-source Linux or final three-version CI acceptance.
+
+An independent pure comparison loads the exact `1946b463` admission/store
+modules and the changed modules against the same read-only snapshot copy.
+All four namespaces' 29 returned rows and five separate in-memory invalid
+database variants retain identical outcomes. Both versions still make all 13
+reference visits and construct two fresh complete contexts. Nine alternating
+25-iteration history trials have local median times of 0.139632875 and
+0.127032625 seconds (9.02% less). Source hashes, the unchanged snapshot hash,
+script and raw results are retained in ignored
+`feature189-20261024/history-canonical-projections-microbenchmark.{py,json}`.
+This measures the copied history parser only; it is not E2E acceptance or an
+end-to-end speedup guarantee.
+## Canonical projection verification results
+
+The final local selection passes 655 admission/history/type/cache/identity/
+policy/runner cases with zero failures, errors, or skips. Six added boundary
+cases expand the explicit history gate from 27 to 33; the independent 57-case
+selection overlaps the combined run and is not additive. Whole-repository
+Ruff, src/tools/tests compileall, and the current diff check pass. Independent
+implementation and test review found no blocker. Exact new-source Linux
+Python 3.11 original-budget acceptance and all final-head CI jobs remain
+separate merge requirements.

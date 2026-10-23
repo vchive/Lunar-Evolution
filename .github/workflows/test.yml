@@ -79,7 +79,7 @@ jobs:
         if: ${{ matrix.role == 'focused' }}
         run: |
           python -m pytest -q tests/test_rsi_history_reference_reuse.py --junitxml=.lunar-evolution/test-results/rsi-history-reference-reuse.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-history-reference-reuse.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '27' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Single-history reference reuse requires 27 cases and zero failures, errors or skips; fresh wire, chain, final row parsing and cross-call revalidation remain mandatory')"
+          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-history-reference-reuse.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '33' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Single-history reference reuse requires 33 cases and zero failures, errors or skips; fresh wire, chain, final row parsing and cross-call revalidation remain mandatory')"
       - name: Verify exact admission types and distinct builtin namespaces
         if: ${{ matrix.role == 'focused' }}
         run: |

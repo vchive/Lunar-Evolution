@@ -538,8 +538,10 @@ class RSILedger:
             current_refs, current_contexts = self._checkpoint_python_references_with_context(
                 payload, retain_context=True, reuse_contexts=parsed_contexts,
             )
-            if any(key not in current_refs or canonical_json(current_refs[key], maximum=512 * 1024)
-                   != canonical_json(value, maximum=512 * 1024) for key, value in references.items()):
+            # Both contexts carry complete bytes from fresh shape/size-checked
+            # admission canonicalization in this walk; do not encode them again.
+            if any(key not in current_refs or current_contexts[key].canonical_bytes
+                   != parsed_contexts[key].canonical_bytes for key in references):
                 raise RSILearningError("rsi_python_admission_reference_history_drift")
             digest = self._checkpoint_digest_cached(
                 run_id, ordinal, parent, payload, persisted_payload=row["payload"],

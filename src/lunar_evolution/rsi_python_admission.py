@@ -381,6 +381,7 @@ def _parse_rsi_python_admission_references_with_context(
     validate_rsi_python_admission_shapes(value)
     result: dict[str, dict[str, Any]] = {}
     contexts: dict[str, _ParsedRSIPythonAdmissionReference] = {}
+    canonical_size = 2  # The enclosing map's braces, including an empty map.
     for episode_id, reference in value.items():
         if _ID.fullmatch(episode_id) is None:
             _fail("reference_invalid")
@@ -389,16 +390,18 @@ def _parse_rsi_python_admission_references_with_context(
             reference, previous_context=previous_context,
         )
         result[episode_id] = context.reference
+        # The exact-string ID gate permits only unescaped ASCII. Each fresh
+        # reference already has its complete bounded canonical UTF-8 bytes.
+        canonical_size += len(episode_id) + 3 + len(context.canonical_bytes)
         if retain_context:
             contexts[episode_id] = context
         else:
             del context
-    # Bound the whole map to the controller's established journal limit.
-    try:
-        raw = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    except (TypeError, ValueError, UnicodeError, OverflowError, RecursionError) as exc:
-        raise RSIPythonAdmissionError("reference_invalid") from exc
-    if len(raw) > 8 * 1024 * 1024:
+    # Sorted key order does not change encoded length. Keep this check after
+    # the full traversal so later invalid references still refuse first.
+    if result:
+        canonical_size += len(result) - 1  # Commas between complete entries.
+    if canonical_size > 8 * 1024 * 1024:
         _fail("reference_too_large")
     return result, contexts
 
