@@ -161,3 +161,67 @@ existing source receipts, `candidate_build_consumption_observed` remains false
 in staged-source observer records, and G1 candidate-build provenance plus G2
 configured-build closure remain open. This P1 design does not enable configure,
 build, freezing, solver execution, or evaluator/network activity.
+
+## Environment feasibility probe — 2026-10-24
+
+A lightweight probe on the authorized `5090gpu` development host found Ubuntu
+26.04.1, kernel `7.0.0-38-generic`, bubblewrap `0.11.1` and util-linux `2.41.3`.
+The caller is uid 2110 without sudo permission. Ordinary
+`unshare --user --map-root-user true` refuses at `uid_map` with `EPERM`;
+bubblewrap succeeds under `bwrap//&unpriv_bwrap (enforce)` and creates separate
+user/mount/PID/network namespaces. The tested plain `unshare` entry points
+refuse on this host, while a bubblewrap-based custody mechanism is feasible.
+
+The probe copied only two tiny inert input files into a fresh private tmpfs,
+then remounted that mount read-only before starting its observation child.
+Changing the original input memfds afterwards did not change the copied bytes.
+Write/create/rename/chmod attempts and a `/proc/self/root` write alias returned
+`EROFS`; renaming the mounted custody root returned `EBUSY`. A direct
+`mount(..., MS_REMOUNT | MS_BIND, ...)` attempt to restore writes returned
+`EPERM`. The child had zero permitted/effective/bounding capabilities and
+`no_new_privs=1`; `--disable-userns --assert-userns-disabled` also refused a
+nested user-namespace attempt. A separate tmpfs output directory remained
+writable. The parent host namespace identities and mountinfo digest were
+unchanged. The first private-tmpfs attempt refused because
+`--disable-userns` requires an explicit `--unshare-user`; that failure is
+retained alongside the corrected successful probes.
+
+Raw inventory, argv, child programs, stdout/stderr, namespace/mount observations
+and probe scripts are retained locally under ignored
+`.lunar-evolution/validation/feature189-20261024/custody-environment/`:
+
+| File | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `inventory.json` | 3333 | `90d90b8991d9426f32515888e37fade6f42303eba1d58352d0223654fa2e19fb` |
+| `namespace-probes.json` | 8022 | `a318045b22a4e655c5609bcd962b03caaa4bccb13d5234c21904ee7c8195fdaf` |
+| `private-tmpfs-probe.json` (first refusal) | 4739 | `b1097f63908257e61194fae126b0270c46e269cb64cbec18ee480db16991f4f2` |
+| `private-tmpfs-probe-v2.py` | 7049 | `78bb8ba28f2da345fd88e1ceec54806d92753ce74e896498def3d44b5f3f4492` |
+| `private-tmpfs-probe-v2.json` | 10186 | `fa65bcd5a021fac6fbf110c87492d06314ab66339c16b1906a3ded1bb1204e02` |
+| `private-tmpfs-probe-v3.py` | 8098 | `ee13a01d89d74e915ed963b79387151505e755441bc1e45bdad78367343a1c45` |
+| `private-tmpfs-probe-v3.json` | 11819 | `17a1fc94878f72b050a3a1a10fe3c760747c2221d0cd95feaa9d964e12eb7969` |
+
+This is environment feasibility, not a new receipt or G1 acceptance. Neither
+complete CPython/Zig inventory was copied or verified, and no configure,
+freezer, compiler, linker, solver or target runtime was started. The probe used
+an ambient read-only root solely for host Python/helper execution; that root
+is not an immutable input snapshot or a reviewed build-helper closure. Its raw
+`inherited_fds` field is an end-of-probe census, not an original-owner proof:
+v2 observes only stdio, while v3's host `ctypes` helper also opens a libffi FD.
+The mechanism still needs independent bypass, interruption and descendant
+cleanup validation; it does not protect against a privileged host administrator
+or an untrusted custodian.
+
+The minimum implementation must make the roots actually consumed by every
+configure/freezer/compiler/linker command the same verified private copies,
+close all writable handles/aliases, enforce their read-only mounts for the
+whole interval, and keep outputs, logs, home, temporary files and Zig caches
+separate. Do not wrap the existing roots and then call the current
+`execution_backend.run_pinned_build` unchanged: it recopies inputs into ordinary
+workspace snapshots and applies chmod, so its commands would consume those
+copies instead. Its direct-child wait also does not establish that every
+descendant has exited before custody is released. Preserve the existing
+complete manifests and modes when selecting that integration. The current
+per-role limit of 16,384 files and recipe limit of 1 MiB cannot represent the
+complete Zig tree's 19,546 files; review that real inventory mapping and its
+bounds independently rather than dropping members or silently widening them.
+These remain implementation/design obligations; G1, G2 and G3 stay open.
