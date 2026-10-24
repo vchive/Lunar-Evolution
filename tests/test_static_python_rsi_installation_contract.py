@@ -77,7 +77,7 @@ def reviewed_vector() -> dict:
         80050, "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31",
     )
     assert (len(overlay_raw), hashlib.sha256(overlay_raw).hexdigest()) == (
-        2456, "31e8e064dc5317b3297140f55f07e81ca1aa9c831a4e4bbbf46cc76db0667b8f",
+        2456, "93a33ee5b753f7d64705adcedb1938b0f887b177348b091ed037c318eef938f0",
     )
     base, overlay = json.loads(base_raw), json.loads(overlay_raw)
     descriptor = json.loads(

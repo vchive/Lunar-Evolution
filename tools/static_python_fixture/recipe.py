@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .build_inputs import emit_static_python_build_inputs
+from .configure_plan import CONFIGURE_CANDIDATE_STATE, emit_configure_plan_assets
 from .profile import (
     BUILTINS,
     CPYTHON_ARCHIVE,
@@ -254,6 +255,26 @@ def emit_build_plan(destination: Path, *, source_archive: Path | None = None,
             "size": len(content),
         })
     _verify_emitted_source_assets(destination, build_inputs)
+    configure_assets = emit_configure_plan_assets()
+    candidate_records = []
+    for relative, content in sorted(configure_assets.items()):
+        path = destination / "configure-plan" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        os.chmod(path, 0o444)
+        candidate_records.append({
+            "path": "configure-plan/" + relative, "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+        })
+    # Read back every asset before publishing the manifest or either entry
+    # point. These comparisons prove only emitted plan-byte consistency.
+    for relative, expected in configure_assets.items():
+        if (destination / "configure-plan" / relative).read_bytes() != expected:
+            raise RecipeError("emitted configuration candidate asset drift")
+    facts["configuration_candidate"] = {
+        "state": CONFIGURE_CANDIDATE_STATE, "execution_enabled": False,
+        "assets": candidate_records,
+    }
     facts["source_preparation_applied"] = False
     facts["frozen_header_state"] = "requires-pinned-freezer"
     facts["link_state"] = "not-executed"

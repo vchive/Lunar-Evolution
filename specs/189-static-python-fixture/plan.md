@@ -15,6 +15,12 @@ final image. Build/compiler/startup failures remain evidence, not success.
 G3: Run the original native sealed-target fixture and independent final Linux audit.
 Do not promote a build or portable parser check to runtime acceptance.
 
+The independent Linux three-child serial regression remains open at the
+original 600-second control. The measured, narrowly bounded cache work in
+[`serial-regression-performance.md`](serial-regression-performance.md) preserves
+fresh source/SQLite reads and all identity/history checks. Do not widen the
+deadline or infer Linux acceptance from the local passing case.
+
 Proposed modules after G0: a pure `static_python_installation.py` for bounded
 installation descriptor parsing/external-pin checks; an installation-owned C
 launcher, frozen main and pipe builtin under `fixtures/static_python_runtime/`;
@@ -46,6 +52,29 @@ headers stage adjacent to the finite table under
 `generated-sources/Python/frozen_modules/`. Configured object substitutions,
 compiler flags, optional discovery and static-library/CRT inputs remain open;
 the fixed candidate is not an observed configure or complete link closure.
+
+The later [`configure-candidate.md`](configure-candidate.md) slice retains
+concrete candidate cache/module/environment assets and corrects the proposed
+cross-build argv without changing the old reviewed input asset. It still
+enables no configuration or compiler entry point. The actual Zig bundled
+source layout and upstream cross defaults are recorded separately in
+[`toolchain-layout-audit-20261023.md`](toolchain-layout-audit-20261023.md).
+
+The next bounded observation slice in
+[`toolchain-observation.md`](toolchain-observation.md) reuses the full existing
+Zig extraction manifest and its independent pin, retaining a separate canonical
+record of snapshot identity, complete counts and honest observation limits.
+It neither traverses an extracted tree nor changes source-readiness/admission.
+Concrete extracted-tree custody and build tools still require separate evidence.
+
+The following [`toolchain-tree-observation.md`](toolchain-tree-observation.md)
+slice compares a concrete directory with the complete independently pinned
+manifest through held no-follow directory descriptors. It reuses the existing
+manifest wire and applicable FD helpers, checks full content/modes/inventories
+and late changes, and retains a separate small observation record. The walk is
+sequential; it closes its descriptors before returning and cannot prove immutable
+custody or future compiler consumption. Concrete wrapper/helper/build-Python and
+cache/environment bindings remain prerequisites to configure-only execution.
 
 Disable optional extension autodiscovery and supply an explicit static/disabled
 module manifest. Review generated pyconfig.h, Modules/Setup output, inittab,

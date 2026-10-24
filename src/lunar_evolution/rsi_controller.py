@@ -2075,10 +2075,20 @@ class RSILearningController:
                 # Wake all blocked workers before the caller shuts its executor down.
                 wave.channel.close()
 
-    def _python_admission_brs_fixed_pins(self, wave: _PythonAdmissionBRSWave):
+    def _python_admission_brs_fixed_pins(
+        self, wave: _PythonAdmissionBRSWave, *, defer_producer_validation: bool = False,
+        expected_capture: tuple[str, bytes] | None = None,
+    ):
         """Project retained invocation pins without comparing a moving episode head."""
         from .rsi_python_brs_handoff import BRSChildHandoffContext
 
+        if type(defer_producer_validation) is not bool:
+            raise RSILearningError("rsi_python_brs_admission_identity_invalid")
+        if (defer_producer_validation is not (expected_capture is not None)
+                or expected_capture is not None
+                and (type(expected_capture) is not tuple or len(expected_capture) != 2
+                     or type(expected_capture[0]) is not str or type(expected_capture[1]) is not bytes)):
+            raise RSILearningError("rsi_python_brs_admission_identity_invalid")
         with self._python_admission_brs_observations():
             owner_call = get_ident() == wave.owner_thread
             if owner_call:
@@ -2091,7 +2101,15 @@ class RSILearningController:
                 self._python_admission_assert_brs_wave(wave, owner=False)
             transitioning = wave.checkpoint_transition
             payload, head = wave.payload, wave.checkpoint_sha256
+            if defer_producer_validation and expected_capture != (head, payload):
+                raise RSILearningError("rsi_python_brs_admission_stale")
             detached = json.loads(payload)
+        if defer_producer_validation:
+            with wave.ledger.read_only_observations():
+                checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
+            if (checkpoint is None or checkpoint[0] != head
+                    or self._python_admission_flow_payload(checkpoint[1]) != payload):
+                raise RSILearningError("rsi_python_brs_admission_stale")
         # Configuration/source hooks may wait on another observer. They run outside
         # the short observation mutex, while the original run ownership remains held.
         with wave.ledger.read_only_observations():
@@ -2117,10 +2135,11 @@ class RSILearningController:
             # The worker may settle its own episode while the owner observes fixed
             # invocation pins. Keep immutable producer/staging checks here; complete
             # admission evidence remains at ready/ACK and terminal boundaries.
-            self._validate_original_producer_checkpoint(wave.run_id, detached)
-            record = wave.ledger.get_run(wave.run_id)
-            if record is not None:
-                self._validate_producer_staging(record, detached)
+            if not defer_producer_validation:
+                self._validate_original_producer_checkpoint(wave.run_id, detached)
+                record = wave.ledger.get_run(wave.run_id)
+                if record is not None:
+                    self._validate_producer_staging(record, detached)
         budget.check()
         policy = {
             "plan": detached["plan"], "pins": detached["pins"],
@@ -2150,9 +2169,14 @@ class RSILearningController:
             # owner write path validates and adopts every successor atomically.
             with wave.ledger.read_only_observations():
                 checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
-            if (not transitioning and (checkpoint is None
+            if defer_producer_validation:
+                if (wave.checkpoint_sha256 != head or wave.payload != payload
+                        or checkpoint is None or checkpoint[0] != head
+                        or self._python_admission_flow_payload(checkpoint[1]) != payload):
+                    raise RSILearningError("rsi_python_brs_admission_stale")
+            elif not transitioning and (checkpoint is None
                     or checkpoint[0] != wave.checkpoint_sha256
-                    or self._python_admission_flow_payload(checkpoint[1]) != wave.payload)):
+                    or self._python_admission_flow_payload(checkpoint[1]) != wave.payload):
                 raise RSILearningError("rsi_python_brs_admission_stale")
             if wave.checkpoint_sha256 != head or wave.payload != payload:
                 context = replace(
@@ -2164,19 +2188,36 @@ class RSILearningController:
 
     def _python_admission_brs_selected_pins_once(self, wave: _PythonAdmissionBRSWave):
         """Require complete admission evidence at a selected authorization boundary."""
-        context = self._python_admission_brs_fixed_pins(wave)
+        with self._python_admission_brs_observations():
+            self._python_admission_assert_brs_wave(wave, owner=get_ident() == wave.owner_thread)
+            captured_head, captured_payload = wave.checkpoint_sha256, wave.payload
+        captured_state = json.loads(captured_payload)
         with wave.ledger.read_only_observations():
-            self._validate_producer_checkpoint(wave.run_id, json.loads(wave.payload))
+            checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
+        if (checkpoint is None or checkpoint[0] != captured_head
+                or self._python_admission_flow_payload(checkpoint[1]) != captured_payload):
+            raise RSILearningError("rsi_python_brs_admission_stale")
+        # The full checkpoint validator immediately below checks the same
+        # captured producer binding and staging state. Defer only those two
+        # checks here; fixed budget/fingerprint pins and the final CAS remain.
+        context = self._python_admission_brs_fixed_pins(
+            wave, defer_producer_validation=True,
+            expected_capture=(captured_head, captured_payload),
+        )
+        captured_state_sha256 = hashlib.sha256(captured_payload).hexdigest()
+        if (context.head_sha256 != captured_head or context.state_sha256 != captured_state_sha256):
+            raise RSILearningError("rsi_python_brs_admission_stale")
+        with wave.ledger.read_only_observations():
+            self._validate_producer_checkpoint(wave.run_id, captured_state)
         with self._python_admission_brs_observations():
             owner_call = get_ident() == wave.owner_thread
             self._python_admission_assert_brs_wave(wave, owner=owner_call)
-            transitioning = wave.checkpoint_transition
             with wave.ledger.read_only_observations():
                 checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
-            if (wave.checkpoint_sha256 != context.head_sha256
-                    or hashlib.sha256(wave.payload).hexdigest() != context.state_sha256
-                    or not transitioning and (checkpoint is None or checkpoint[0] != wave.checkpoint_sha256
-                    or self._python_admission_flow_payload(checkpoint[1]) != wave.payload)):
+            if (wave.checkpoint_sha256 != captured_head or wave.payload != captured_payload
+                    or checkpoint is None
+                    or checkpoint[0] != captured_head
+                    or self._python_admission_flow_payload(checkpoint[1]) != captured_payload):
                 raise RSILearningError("rsi_python_brs_admission_stale")
         return context
 

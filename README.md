@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/vchive/Lunar-Evolution/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-2ea44f)](pyproject.toml)
+[![License](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
 
 **Lunar Evolution 是一个本地优先的 Agent 任务与算法演化控制器。** 它负责规划和调度任务、记录评测与产物，并保存检查或恢复运行所需的证据。运行时仅依赖 Python 标准库；mock 工作流可以离线使用，不需要模型密钥。
 
@@ -63,6 +63,23 @@ lunar-evolution status RUN_ID --home .lunar-evolution --json
 lunar-evolution events RUN_ID --home .lunar-evolution --json
 lunar-evolution resume RUN_ID --runtime mock --home .lunar-evolution --json
 ```
+
+每个 run 的 workspace 位于 `<home>/runs/<run_id>/`；成功的 JSON 会包含
+`status`、`run_id` 和 `workspace`。可用 `status` 与 `events` 检查记录，使用
+`deliver RUN_ID --home .lunar-evolution` 获取已验证的产物。
+
+### 离线试跑求解控制流
+
+`solve` 的 mock 模式不需要模型服务，可用于确认本地计划和控制链路：
+
+```bash
+lunar-evolution solve '展示本地算法求解控制链路' \
+  --runtime mock --home .lunar-evolution --json
+```
+
+该示例的成功 JSON 会带有 `run_id`、`workspace` 和 `run_status: "succeeded"`。
+mock compiler 不会调用模型，也不会优化目标或生成算法输出；这只是运行链路
+smoke check，不是求解质量证据。
 
 ### 使用 OpenAI-compatible 模型
 
@@ -149,4 +166,4 @@ provider-free DRS/BRS 控制与恢复路径已实现，并有本地回归覆盖�
 
 ## 贡献与许可
 
-行为变更请同步更新相应规格和 focused tests，并运行上面的检查。不要提交 provider 凭据，也不要把 fixture 结果描述为独立生产验收证据。本项目使用 MIT License，详见 [`pyproject.toml`](pyproject.toml)。
+行为变更请同步更新相应规格和 focused tests，并运行上面的检查。不要提交 provider 凭据，也不要把 fixture 结果描述为独立生产验收证据。本项目使用 MIT License，完整条款见 [`LICENSE`](LICENSE)。

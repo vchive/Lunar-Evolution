@@ -23,12 +23,13 @@ MAX_IMAGE_BYTES = 134217728
 IMAGE_MODE = 0o555
 TARGET = "x86_64-linux-musl"
 PROFILE_TRIPLE = "x86_64-unknown-linux-musl"
+CONFIG_SITE_PATH = "configure-plan/config.site"
 BUILD_ENVIRONMENT = {
     "PATH": "/usr/bin:/bin",
     "LC_ALL": "C",
     "TZ": "UTC",
     "SOURCE_DATE_EPOCH": "0",
-    "CONFIG_SITE": "/dev/null",
+    "CONFIG_SITE": CONFIG_SITE_PATH,
     "ac_cv_func_dlopen": "no",
     "LUNAR_STATIC_CLEAN_ENV": "1",
 }

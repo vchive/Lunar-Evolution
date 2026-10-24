@@ -43,7 +43,7 @@
     "archive_sha256": "2a84cd31dd8d8ea8aaff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593",
     "archive_size_bytes": 22926488,
     "archive_url": "https://www.python.org/ftp/python/3.13.12/Python-3.13.12.tar.xz",
-    "member_digest_note": "Each member size and SHA-256 below are fixed in tests/test_static_python_source_import_profile.py. They were observed from the archive identified by the archive size and digest above; they are not separate signatures or independently sourced release pins.",
+    "member_digest_note": "Each member and supporting-member size and SHA-256 below is fixed by focused tests. They were observed from the archive identified by the archive size and digest above; they are not separate signatures or independently sourced release pins.",
     "members": [
       {
         "archive_member": "Python-3.13.12/Lib/importlib/_bootstrap.py",
@@ -100,11 +100,76 @@
         "module": "io",
         "sha256": "7cec3cb8ac004058dd0a5af246e6d950fb59c7ddd0058fda48bcb3fcb98d8822",
         "size_bytes": 3582
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/_codecsmodule.c",
+        "fixture_path": "Modules/_codecsmodule.c.source",
+        "module": "_codecs",
+        "sha256": "149a20c2d7aee22281ddd8756ae7eae685ae0ef21764138d41f367443182041e",
+        "size_bytes": 33553
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/_io/_iomodule.c",
+        "fixture_path": "Modules/_iomodule.c.source",
+        "module": "_io",
+        "sha256": "9d04adc6fd2b493f3a7de3b519abbfd60476b209ccd3428eff4ed1cdf06cbaf2",
+        "size_bytes": 24972
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/_abc.c",
+        "fixture_path": "Modules/_abc.c.source",
+        "module": "_abc",
+        "sha256": "a4abd74e245af77f5a8c40ac8d443153ff8636e4e10a8578e9dddecaa3d0b9e8",
+        "size_bytes": 27112
+      },
+      {
+        "archive_member": "Python-3.13.12/Python/_warnings.c",
+        "fixture_path": "Python/_warnings.c.source",
+        "module": "_warnings",
+        "sha256": "bed91ba65456a2bc1ca278a4d320be978487563a566c79a9e57b0bf46c40352d",
+        "size_bytes": 43088
       }
     ],
     "release": "CPython 3.13.12",
-    "scope": "eight exact regular-file member byte copies; inert test data only",
-    "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md"
+    "scope": "twelve exact regular-file module-source copies and five exact supporting-member copies; inert test data only",
+    "signature_audit_reference": "specs/189-static-python-fixture/release-input-audit-20261021.md",
+    "supporting_members": [
+      {
+        "archive_member": "Python-3.13.12/Lib/warnings.py",
+        "fixture_path": "Lib/warnings.py.source",
+        "purpose": "upstream-warning-source-only",
+        "sha256": "e040f52be0199c69fa8c0d35428ba64e6f9b6412691a689ccbd7c23e07c6ed3f",
+        "size_bytes": 27071
+      },
+      {
+        "archive_member": "Python-3.13.12/Objects/genobject.c",
+        "fixture_path": "Objects/genobject.c.source",
+        "purpose": "upstream-coroutine-finalization-source-only",
+        "sha256": "f8acbdbdf76b13b68d36c741437a34e3b50e3f41d42770ba69b20d5455fb7e25",
+        "size_bytes": 80432
+      },
+      {
+        "archive_member": "Python-3.13.12/Python/pylifecycle.c",
+        "fixture_path": "Python/pylifecycle.c.source",
+        "purpose": "upstream-startup-lifecycle-source-only",
+        "sha256": "21296f86275077e4f19234a2c32691ee087fea961c28745770373a6c4ef70789",
+        "size_bytes": 106247
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/Setup.bootstrap.in",
+        "fixture_path": "Modules/Setup.bootstrap.in.source",
+        "purpose": "upstream-bootstrap-template-only",
+        "sha256": "bb401f9494c2f896aa40af6a8077ff9f22b99a9d4126ce38daef759427c8df88",
+        "size_bytes": 971
+      },
+      {
+        "archive_member": "Python-3.13.12/Modules/Setup.stdlib.in",
+        "fixture_path": "Modules/Setup.stdlib.in.source",
+        "purpose": "upstream-stdlib-template-only",
+        "sha256": "700424110da7f19053e02642da6853035490726b1cec9c9ed99b1261e447caa7",
+        "size_bytes": 8606
+      }
+    ]
   },
   "scope": "inert-source-byte-fixtures-only",
   "source": "https://github.com/python/cpython.git",

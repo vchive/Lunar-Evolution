@@ -21,7 +21,7 @@ from lunar_evolution.static_python_installation import (
     parse_static_python_installation_descriptor,
 )
 
-STARTUP_CLOSURE_SCHEMA = "lunar-static-python-startup-closure-v1"
+STARTUP_CLOSURE_SCHEMA = "lunar-static-python-startup-closure-v2"
 MAX_STARTUP_CLOSURE_BYTES = 256 * 1024
 _MAX_NODES = 8192
 _MAX_DEPTH = 12
@@ -32,7 +32,8 @@ _MODULE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\
 _TOP_FIELDS = frozenset({
     "schema", "evidence_scope", "installation_version", "source_tree_sha256",
     "patch_set_sha256", "initialization_profile_sha256", "frozen_inventory_sha256",
-    "builtin_inventory_sha256", "alias_inventory_sha256", "startup_roots", "modules",
+    "builtin_inventory_sha256", "alias_inventory_sha256", "expected_startup_modules",
+    "startup_roots", "modules",
     "import_edges", "unresolved_imports", "unsupported_import_sites", "claims",
 })
 _MODULE_FIELDS = frozenset({"name", "route", "target"})
@@ -149,15 +150,25 @@ def _same_typed(value: object, expected: object) -> bool:
     return value == expected
 
 
-def _validate_graph(value: dict, descriptor: dict) -> tuple[tuple[str, ...], tuple[str, ...], int]:
+def _validate_graph(
+    value: dict, descriptor: dict, *, expected_startup_roots_sha256: str,
+) -> tuple[tuple[str, ...], tuple[str, ...], int]:
     if value["evidence_scope"] != "synthetic-dto-comparison-only":
         _fail("schema")
-    expected_roots = descriptor["initialization_profile"]["expected_startup_modules"]
+    expected_modules = descriptor["initialization_profile"]["expected_startup_modules"]
+    declared_modules = value["expected_startup_modules"]
+    if not _same_typed(declared_modules, expected_modules):
+        _fail("module")
     roots = value["startup_roots"]
     if (type(roots) is not list or not 1 <= len(roots) <= 64
             or any(_module_name(name) != name for name in roots)
             or roots != sorted(set(roots))
-            or not _same_typed(roots, expected_roots)):
+            or not set(roots) < set(expected_modules)):
+        _fail("roots")
+    roots_raw = json.dumps(
+        roots, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    if hashlib.sha256(roots_raw).hexdigest() != expected_startup_roots_sha256:
         _fail("roots")
 
     frozen = {item["name"] for item in descriptor["frozen_modules"]}
@@ -193,12 +204,13 @@ def _validate_graph(value: dict, descriptor: dict) -> tuple[tuple[str, ...], tup
         ordered_names.append(name)
     if ordered_names != sorted(ordered_names):
         _fail("module")
+    expected_records = set(expected_modules) | set(aliases)
+    if set(by_name) != expected_records:
+        _fail("module")
     for name in roots:
         if name not in by_name:
             _fail("roots")
-    for alias, target in aliases.items():
-        if alias not in by_name:
-            continue
+    for target in aliases.values():
         target_record = by_name.get(target)
         if target_record is None or target_record["route"] != "frozen":
             _fail("alias")
@@ -285,6 +297,7 @@ class StaticPythonStartupClosure:
 
 def parse_static_python_startup_closure(
     raw: bytes, *, installation_descriptor_raw: bytes, expected_closure_sha256: str,
+    expected_startup_roots_sha256: str,
     expected_installation_descriptor_sha256: str, expected_installation_version: str,
     expected_artifact_sha256: str, expected_source_tree_sha256: str,
     expected_patch_set_sha256: str, expected_initialization_profile_sha256: str,
@@ -293,7 +306,8 @@ def parse_static_python_startup_closure(
 ) -> StaticPythonStartupClosure:
     """Check one canonical pinned graph and its existing installation contract.
 
-    The caller supplies every digest independently. This function reads no path,
+    The caller supplies every digest independently, including the hash of the
+    separately source-audited startup-root vector. This function reads no path,
     environment, network, process, compiler, freezer, ELF image or Python runtime.
     """
     reason = "invalid"
@@ -305,6 +319,7 @@ def parse_static_python_startup_closure(
             _fail("descriptor")
         pins = {
             "expected_closure_sha256": expected_closure_sha256,
+            "expected_startup_roots_sha256": expected_startup_roots_sha256,
             "expected_installation_descriptor_sha256": expected_installation_descriptor_sha256,
             "expected_artifact_sha256": expected_artifact_sha256,
             "expected_source_tree_sha256": expected_source_tree_sha256,
@@ -353,7 +368,9 @@ def parse_static_python_startup_closure(
         for name, expected in descriptor_fields.items():
             if not _same_typed(value.get(name), expected):
                 _fail("profile")
-        roots, modules, edge_count = _validate_graph(value, descriptor)
+        roots, modules, edge_count = _validate_graph(
+            value, descriptor, expected_startup_roots_sha256=expected_startup_roots_sha256,
+        )
         return StaticPythonStartupClosure(
             canonical, closure_sha, expected_installation_descriptor_sha256, version,
             expected_source_tree_sha256, expected_frozen_inventory_sha256,

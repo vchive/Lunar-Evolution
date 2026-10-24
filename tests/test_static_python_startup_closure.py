@@ -19,7 +19,9 @@ from lunar_evolution import static_python_startup_closure as startup_closure
 
 _ROOT = Path(__file__).resolve().parents[1]
 _WIRE = _ROOT / "specs/189-static-python-fixture/wire-v1-example.json"
-_SCHEMA = "lunar-static-python-startup-closure-v1"
+_SOURCE_ROOTS = _ROOT / "specs/189-static-python-fixture/startup-roots-cpython-3.13.12.json"
+_SOURCE_ROOTS_SHA256 = "d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313"
+_SCHEMA = "lunar-static-python-startup-closure-v2"
 _CLAIMS = (
     "source_graph_verified",
     "configured_closure_verified",
@@ -34,6 +36,7 @@ _CLAIMS = (
 )
 _PIN_NAMES = (
     "expected_closure_sha256",
+    "expected_startup_roots_sha256",
     "expected_installation_descriptor_sha256",
     "expected_installation_version",
     "expected_artifact_sha256",
@@ -78,13 +81,16 @@ def descriptor_raw(f01: dict) -> bytes:
 
 def _payload(f01: dict) -> dict:
     descriptor = f01
-    roots = list(descriptor["initialization_profile"]["expected_startup_modules"])
+    expected_modules = list(descriptor["initialization_profile"]["expected_startup_modules"])
+    # Synthetic entry roots are deliberately separate from the expected module
+    # inventory. The real roots remain an independent source-audit input.
+    roots = ["_lunar_static_main"]
     frozen_names = {record["name"] for record in descriptor["frozen_modules"]}
     builtin_names = {record["name"] for record in descriptor["builtin_modules"]}
     aliases = descriptor["aliases"]
 
     modules = []
-    for name in roots:
+    for name in expected_modules:
         if name == "__main__":
             modules.append({"name": name, "route": "interpreter-created", "target": ""})
         elif name in frozen_names:
@@ -105,14 +111,12 @@ def _payload(f01: dict) -> dict:
         {"source": alias["name"], "target": alias["alias"], "kind": "bootstrap-alias"}
         for alias in aliases
     ]
-    # Include every ordinary edge-kind in this minimal graph. All edge sources
-    # and targets are already fixed startup roots from the F01 descriptor.
+    # This is an artificial connected graph for parser tests, not the observed
+    # CPython startup graph. A star from the one synthetic root makes missing
+    # edge and disconnected-node refusals independently testable.
     edges.extend(
-        [
-            {"source": "_lunar_static_main", "target": "abc", "kind": "import"},
-            {"source": "_lunar_static_main", "target": "codecs", "kind": "from-import"},
-            {"source": "_lunar_static_main", "target": "io", "kind": "literal-import"},
-        ]
+        {"source": roots[0], "target": name, "kind": "import"}
+        for name in expected_modules if name != roots[0]
     )
     edges.sort(key=lambda item: (item["source"], item["target"], item["kind"]))
 
@@ -126,6 +130,7 @@ def _payload(f01: dict) -> dict:
         "frozen_inventory_sha256": descriptor["frozen_inventory_sha256"],
         "builtin_inventory_sha256": descriptor["builtin_inventory_sha256"],
         "alias_inventory_sha256": descriptor["alias_inventory_sha256"],
+        "expected_startup_modules": expected_modules,
         "startup_roots": roots,
         "modules": modules,
         "import_edges": edges,
@@ -145,6 +150,7 @@ def vector(f01: dict) -> dict:
 def _pins(payload: dict, f01: dict, descriptor_raw: bytes, raw: bytes | None = None) -> dict:
     return {
         "expected_closure_sha256": _sha(_encode(payload) if raw is None else raw),
+        "expected_startup_roots_sha256": _sha(_encode(payload.get("startup_roots", []))),
         "expected_installation_descriptor_sha256": _sha(descriptor_raw),
         "expected_installation_version": f01["installation_version"],
         "expected_artifact_sha256": f01["artifact_sha256"],
@@ -240,7 +246,8 @@ def test_minimal_current_profile_graph_is_only_synthetic_dto_comparison(
     assert type(result.canonical_bytes) is bytes
     assert result.to_dict() == vector
     assert result.to_dict()["evidence_scope"] == "synthetic-dto-comparison-only"
-    assert result.to_dict()["startup_roots"] == f01["initialization_profile"]["expected_startup_modules"]
+    assert result.to_dict()["expected_startup_modules"] == f01["initialization_profile"]["expected_startup_modules"]
+    assert result.to_dict()["startup_roots"] == ["_lunar_static_main"]
     assert {item["route"] for item in vector["modules"]} == {
         "frozen", "builtin", "alias", "interpreter-created",
     }
@@ -253,6 +260,29 @@ def test_minimal_current_profile_graph_is_only_synthetic_dto_comparison(
     assert not hasattr(result, "__dict__")
     with pytest.raises(FrozenInstanceError):
         result.canonical_bytes = b"replacement"
+
+
+def test_source_reviewed_roots_match_external_pin_and_profile_inventory(
+    f01: dict, descriptor_raw: bytes,
+):
+    raw_roots = _SOURCE_ROOTS.read_bytes()
+    roots = json.loads(raw_roots)
+    assert _encode(roots) == raw_roots
+    assert _sha(raw_roots) == _SOURCE_ROOTS_SHA256
+    assert roots == sorted(set(roots))
+    assert set(roots) < set(f01["initialization_profile"]["expected_startup_modules"])
+
+    # Keep the edge graph intentionally synthetic. This confirms the source-root
+    # pin composes with the v2 parser without presenting synthetic edges as a
+    # source-complete or runtime-observed graph.
+    payload = _payload(f01)
+    payload["startup_roots"] = roots
+    result = _parse(
+        payload, f01, descriptor_raw,
+        expected_startup_roots_sha256=_SOURCE_ROOTS_SHA256,
+    )
+    assert result.startup_roots == tuple(roots)
+    assert result.to_dict()["evidence_scope"] == "synthetic-dto-comparison-only"
 
 
 @pytest.mark.parametrize("pin", _PIN_NAMES)
@@ -282,21 +312,50 @@ def test_canonical_wire_hash_is_an_independent_required_pin(vector, f01, descrip
     _refuse(lambda: _parse(changed, f01, descriptor_raw, expected_closure_sha256="b" * 64))
 
 
-@pytest.mark.parametrize("mutation", ["missing", "extra", "unsorted", "duplicate"])
-def test_startup_roots_must_equal_the_fixed_sorted_unique_initialization_list(
+@pytest.mark.parametrize("mutation", ["missing", "extra", "unsorted", "duplicate", "all-modules"])
+def test_startup_roots_are_a_pinned_proper_subset_of_the_expected_inventory(
     vector, f01, descriptor_raw, mutation,
 ):
     changed = copy.deepcopy(vector)
     if mutation == "missing":
-        changed["startup_roots"].pop()
+        changed["startup_roots"] = []
     elif mutation == "extra":
         changed["startup_roots"].append("operator")
         changed["startup_roots"].sort()
     elif mutation == "unsorted":
-        changed["startup_roots"].reverse()
+        changed["startup_roots"] = ["_lunar_static_main", "_frozen_importlib"]
     else:
-        changed["startup_roots"].append(changed["startup_roots"][0])
-        changed["startup_roots"].sort()
+        if mutation == "duplicate":
+            changed["startup_roots"].append(changed["startup_roots"][0])
+            changed["startup_roots"].sort()
+        else:
+            changed["startup_roots"] = list(changed["expected_startup_modules"])
+    _refuse(lambda: _parse(changed, f01, descriptor_raw))
+
+
+def test_expected_startup_inventory_remains_exactly_descriptor_pinned(vector, f01, descriptor_raw):
+    changed = copy.deepcopy(vector)
+    changed["expected_startup_modules"].remove("io")
+    _refuse(lambda: _parse(changed, f01, descriptor_raw))
+
+    changed = copy.deepcopy(vector)
+    changed["expected_startup_modules"].append("operator")
+    changed["expected_startup_modules"].sort()
+    _refuse(lambda: _parse(changed, f01, descriptor_raw))
+
+
+def test_unreachable_expected_module_requires_a_real_edge_chain(vector, f01, descriptor_raw):
+    changed = copy.deepcopy(vector)
+    changed["import_edges"] = [
+        edge for edge in changed["import_edges"] if edge["target"] != "io"
+    ]
+    _refuse(lambda: _parse(changed, f01, descriptor_raw))
+
+    changed = copy.deepcopy(vector)
+    changed["import_edges"] = [
+        edge for edge in changed["import_edges"]
+        if edge["target"] != "io" and edge["source"] != "io"
+    ]
     _refuse(lambda: _parse(changed, f01, descriptor_raw))
 
 
@@ -351,8 +410,7 @@ def test_non_alias_targets_must_be_empty_and_unlisted_targets_refuse(vector, f01
 
 def test_unreachable_inventory_member_and_missing_edge_endpoint_refuse(vector, f01, descriptor_raw):
     changed = copy.deepcopy(vector)
-    changed["modules"].append({"name": "gc", "route": "builtin", "target": ""})
-    changed["modules"].sort(key=lambda item: item["name"])
+    changed["modules"] = [item for item in changed["modules"] if item["name"] != "io"]
     _refuse(lambda: _parse(changed, f01, descriptor_raw))
 
     changed = copy.deepcopy(vector)
@@ -445,7 +503,7 @@ def test_duplicate_keys_unknown_fields_noncanonical_and_invalid_utf8_refuse(
     vector, f01, descriptor_raw,
 ):
     canonical = _encode(vector)
-    duplicate = canonical[:-1] + b',"schema":"lunar-static-python-startup-closure-v1"}'
+    duplicate = canonical[:-1] + b',"schema":"lunar-static-python-startup-closure-v2"}'
     _refuse(lambda: _parse(vector, f01, descriptor_raw, raw=duplicate))
     _refuse(lambda: _parse(vector, f01, descriptor_raw, raw=canonical + b" "))
     _refuse(lambda: _parse(vector, f01, descriptor_raw, raw=b"\xff"))

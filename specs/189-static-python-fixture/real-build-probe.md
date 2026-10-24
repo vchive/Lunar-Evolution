@@ -146,3 +146,28 @@ Therefore this probe closes the PIC dependency and static-link observations but
 does not close sealed startup, finite frozen-module closure, `PyConfig`/getpath,
 owner/lifecycle, or production admission. The failure is retained as runtime
 evidence; no evaluator or producer campaign was run.
+
+## Failed configure diagnostic (2026-10-23)
+
+A separate disposable configure attempt was made on `5090gpu` using the
+signature-verified CPython source archive and pinned Zig 0.16.0 compiler.
+It was not a frozen recipe and is retained only to preserve its first failure.
+The exact stdout/stderr transcript is
+[`configure-probe-20261023.log`](configure-probe-20261023.log); its SHA-256 is
+`813c19e9bc67c4b59a024961d6fcde4c1bf6ae03e415d01906139ca24919f555`. The raw
+Autoconf `config.log` is retained gzip-compressed in
+[`configure-config-20261023.log.gz`](configure-config-20261023.log.gz); the
+uncompressed SHA-256 is
+`33ff49b3c548852d810b26dcab09d6afade3d5c7b52b364e14edff8236d3fe0c`.
+
+The invocation used `--build=x86_64-linux-gnu`,
+`--host=x86_64-linux-musl`, Zig wrapper scripts, a host Python 3.13.13 as
+`--with-build-python`, and an ad-hoc flag `--with-system-ffi=no`. Configure
+warned that `--with-system-ffi` is unrecognized. It then failed with status 1
+at the first cross-compilation device-file question:
+`/dev/ptmx ... not set`; configure requested an explicit
+`ac_cv_file__dev_ptmx` answer in `CONFIG_SITE`. No Makefile was produced. The
+disposable source tree was modified by configure, so it is not clean staged
+input. No cache answer was supplied and no make/freezer/build was run from this
+attempt. This diagnostic identifies an unfrozen configure/cache recipe; it
+does not validate a recipe or advance any build/acceptance gate.

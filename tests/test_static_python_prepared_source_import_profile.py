@@ -31,6 +31,7 @@ _FROZEN_SOURCE_PINS = {
     "io": (3582, "7cec3cb8ac004058dd0a5af246e6d950fb59c7ddd0058fda48bcb3fcb98d8822"),
 }
 _PREPARED_C_PIN = (146559, "58a5fac8fac5916511f890f3fdd095d817e6f32ab709ebf0ed0becf9328226b1")
+_CODECS_PIN = (36978, "2f278497548b8313580b247a1097a0a304e5087a355ebb11a92ec685fa9e63ff")
 _IMPORTS = [
     ("_frozen_importlib", "_frozen_importlib_external", "import"),
     ("_frozen_importlib_external", "_imp", "import"),
@@ -71,6 +72,41 @@ _UNSUPPORTED = [
 
 def _sha256(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
+
+
+def test_codecs_star_import_edge_matches_candidate_builtin_profile() -> None:
+    """Cross-check one pinned edge without claiming star-import closure."""
+    codecs_source = (_FIXTURE_ROOT / "Lib/codecs.py.source").read_bytes()
+    assert (len(codecs_source), _sha256(codecs_source)) == _CODECS_PIN
+
+    result = audit_static_python_imports(
+        {"codecs": codecs_source},
+        expected_source_sha256={"codecs": _CODECS_PIN[1]},
+    )
+    wire = result.to_dict()
+    assert {
+        (edge["source"], edge["target"], edge["kind"])
+        for edge in wire["imports"]
+    } >= {("codecs", "_codecs", "from-import")}
+    assert wire["unsupported_import_sites"] == [{
+        "source": "codecs",
+        "line": 16,
+        "column": 4,
+        "reason": "star-import",
+    }]
+
+    example = json.loads(
+        (_ROOT / "specs/189-static-python-fixture/wire-v1-example.json").read_bytes()
+    )
+    assert example["kind"] == "synthetic-parser-and-ELF-format-only-never-executed"
+    builtins = example["descriptor"]["builtin_modules"]
+    codecs_builtin = next(item for item in builtins if item["name"] == "_codecs")
+    assert codecs_builtin["init_symbol"] == "PyInit__codecs"
+    frozen = example["descriptor"]["frozen_modules"]
+    assert any(item["name"] == "codecs" for item in frozen)
+    assert all(item["name"] != "codecs" for item in builtins)
+    assert all(item["name"] != "_codecs" for item in frozen)
+    assert all(value is False for value in wire["claims"].values())
 
 
 def test_observes_exact_prepared_nine_module_frozen_source_set(tmp_path: Path) -> None:
@@ -137,3 +173,25 @@ def test_observes_exact_prepared_nine_module_frozen_source_set(tmp_path: Path) -
     ] == _UNSUPPORTED
     assert wire["evidence_scope"] == "source-ast-import-observations-only"
     assert all(value is False for value in wire["claims"].values())
+
+    # This is an exact-name membership projection against synthetic descriptor
+    # inventories. It says nothing about branch execution or runtime reachability.
+    descriptor = json.loads(
+        (_ROOT / "specs/189-static-python-fixture/wire-v1-example.json").read_bytes()
+    )["descriptor"]
+    declared_names = {
+        item["name"]
+        for key in ("frozen_modules", "builtin_modules")
+        for item in descriptor[key]
+    }
+    observed_targets = {edge["target"] for edge in wire["imports"]}
+    assert len(observed_targets) == 21
+    assert observed_targets - declared_names == {
+        "importlib.metadata", "importlib.readers", "nt", "tokenize", "winreg",
+    }
+    assert observed_targets & declared_names == {
+        "_abc", "_codecs", "_frozen_importlib_external", "_imp", "_io",
+        "_lunar_fixture_pipe", "_warnings", "abc", "builtins", "codecs",
+        "encodings", "encodings.aliases", "encodings.utf_8", "marshal",
+        "posix", "sys",
+    }

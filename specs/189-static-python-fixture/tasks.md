@@ -8,10 +8,42 @@ failure and cancelled preflight separately from later successful evidence.
 
 - [x] Confirm Feature188 final exact source/head/tree, Linux dedicated no-skip
   acceptance, raw artifacts independent audit and main merge. Record references.
-- [ ] Review/freeze this bounded189 SDD and installation descriptor field/bound
-  contract. Confirm no new v2 FD, general solver adapter or production admission.
+- [x] Cross-review `spec.md`, `plan.md`, `data-model.md`, this task list and the
+  current pure descriptor parser/tests. The reviewed scope remains one bounded
+  installation-owned static/frozen fixture; no new native-v2 FD, general solver
+  adapter or production-admission behavior is introduced by the existing DTO.
+  This review is not a claim that the full source/toolchain/build/runtime gates
+  are closed.
+- [x] Resolve the G0 target-pin mismatch: `data-model.md` and `wire-contract.md`
+  state that the independently supplied descriptor digest commits the fixed
+  target profile and the independent artifact pin plus byte-level ELF inspection
+  verifies its declared image profile. Existing launch bindings continue to fix
+  sealed-target mode/lifecycle. No fourth pin or v1 wire expansion is added.
+- [x] Reconcile the G0 descriptor artifact contract in
+  `descriptor-contract-review-20261023.md`: v1 source/toolchain/recipe/module/ELF
+  fields are declarations; signature verification is `not-performed`, execution
+  and admission claims are false, and the runtime observation model is future
+  work. Keep actual byte and runtime observations in their separate verification
+  and acceptance gates.
+- [x] Cross-check the documented descriptor bounds against the parser: the
+  `wire-contract.md` text ceiling of196608 UTF-8 bytes equals the implementation's
+  192 KiB (`_MAX_TEXT_BYTES`); descriptor<=256 KiB, nodes<=8192, depth<=12,
+  per-file input<=1 GiB, and artifact<=128 MiB also match. This confirms stated
+  ceilings only; it does not prove source/input completeness or runtime behavior.
+- [x] Review/freeze this bounded189 SDD and v1 descriptor field/bound contract
+  in `descriptor-contract-review-20261023.md`. Scope remains the single bounded
+  fixture; no new v2 FD, general solver adapter or production admission is added.
 
 ## G1 installation inputs and pure admission
+
+- [ ] Close the original-budget serial mixed regression identified in
+  `serial-regression-performance.md`. Preserve fresh source/SQLite observations
+  and all history/policy checks; validate bounded pure-cache improvements with
+  focused drift/eviction tests, the exact Linux case and final-source CI.
+- [x] Implement optional full-byte-checked resident hints and identity-only warm
+  retention. Add 14 multi-version/fallback/limit/inflight-eviction cases; pass
+  the 675-case focused union, Ruff, compileall, diff checks and independent
+  source/test review. This does not close the preceding Linux/CI merge gate.
 
 - [x] Specify the bounded archive-receipt and extraction-manifest preparation
   contract in `verified-inputs.md`; keep advertised pins and caller-supplied
@@ -100,16 +132,68 @@ failure and cancelled preflight separately from later successful evidence.
   resolve compiler/binutils/static-library sources, versions and artifact hashes,
   including zlib/libffi/freezer inputs and the configured build environment.
 - [ ] Freeze configure/cache/module/compile/link/environment recipe and provenance.
+- [x] Implement the fixed configure candidate assets and emitter integration in
+  `configure-candidate.md`, with complete finite template-module dispositions,
+  explicit cross-build/cache/environment policy and same-source C freezer
+  requirements. Retain all unresolved actual configuration/build gates and
+  both exit-78 execution refusals; this subtask does not complete recipe freezing.
+- [x] Record the selected archive's actual Zig/musl/CRT/header/compiler-support
+  source layout and CPython cross-cache source defaults in
+  `toolchain-layout-audit-20261023.md`. The transient regular-file comparison
+  did not retain a complete canonical inventory or establish held-snapshot
+  custody, generated library bytes, or actual compiler input consumption.
+- [x] Retain the independently pinned complete Zig extraction manifest and
+  dedicated canonical archive observation record in `toolchain-observation.md`.
+  Reuse the existing bounded snapshot/archive observer and the original
+  absolute deadline. Keep the extracted-tree/tool execution/configure/build/
+  runtime/admission/publication claims false; this does not complete toolchain
+  custody or replace the bounded source-readiness inventory projection.
+  The 52-case inert suite and independent implementation review pass; the real
+  retained complete-manifest replay is recorded in the layout audit. The new
+  deadline-bound record API's real-input replay passed on exact source
+  b93787c in 3.84 seconds under one original 120-second deadline. This closes
+  the archive record slice only, not extracted-tree or build custody.
+- [x] Specify the complete extracted Zig tree comparison in
+  `toolchain-tree-observation.md`, reusing extraction-manifest-v1 and the
+  existing bounded FD helpers without inventing another file inventory wire.
+- [x] Implement and independently review the read-only tree observer and
+  inert drift/late-mutation/deadline/descriptor-cleanup cases. Hold no-follow
+  directory ancestry during the sequential observation; do not claim atomic
+  snapshot custody or future compiler consumption.
+  The 58 implementation cases plus 14 independent fault-injection cases pass;
+  the related archive/manifest/staged-source selection passes 353 cases, with
+  zero failures, errors or skips. Whole-repository Ruff, src/tools/tests
+  compileall and diff checks pass. These suites overlap and are not additive.
+- [x] Retain an independently checked real Linux tree replay against the
+  original complete manifest pin. Exact c00632fb (same Git tree as 5af81663)
+  observes all 20,832 members in 1.52 seconds under its original 120-second
+  deadline; the complete raw output, source archive, manifest and record are
+  transferred and independently checked. This closes the observer replay only.
+- [ ] Complete the exact-source three-version CI before merging this slice.
+  Keep concrete build-tool/helper/cache bindings, configured build consumption,
+  static build and runtime gates open.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
   actual target-owner integration remains a G3 gate.
 - [x] Implement bounded pure descriptor/parser/external-pin validation with focused
   invalid shapes/collections/digest/count/unknown-field tests; no build/FS effects.
 - [x] Freeze `startup-closure-contract.md` and implement its separate bounded
-  canonical import-graph DTO parser. Compare supplied startup roots, module routes,
-  aliases and reachable edges with the unchanged installation descriptor and nine
-  independent SHA-256 pins; keep every capability claim false. The 60-case
-  in-memory synthetic suite proves DTO consistency only.
+  canonical import-graph DTO parser. Version 2 separates the descriptor-pinned
+  expected startup-module inventory from a separately hashed root vector, requires
+  exact module/alias records, and checks graph reachability from those roots. Its
+  65-case focused suite (including the pinned-root composition check) proves
+  DTO consistency only; the synthetic graph edges remain synthetic and do not
+  establish source closure. The synthetic
+  root vector is not claimed to be the real CPython startup roots.
+- [x] Derive and retain the source-level primary root vector from the pinned
+  CPython C startup sources and fixed Lunar launcher. Its independent canonical
+  hash is `d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313`;
+  the source sites and limitations are in `startup-root-audit-20261022.md`.
+  This closes root derivation only, not the graph audit or runtime evidence.
+- [ ] Independently complete the C/Python import-edge audit for the configured
+  source/startup scope, then exercise the v2 comparator with the source-derived
+  root hash and an independently retained graph. Do not claim source or
+  configured closure from synthetic DTO results.
 - [x] Specify and implement the separate source-byte-bound Python AST import
   observer in `python-import-audit-contract.md`. Require exact caller-supplied
   module/source bytes and matching external per-source SHA-256 pins; record
@@ -136,6 +220,31 @@ failure and cancelled preflight separately from later successful evidence.
   files from generated Lunar tables and fixture-owned path code in
   `c-startup-source-audit-20261021.md`. This does not complete the configured
   C/Python closure or runtime audit below.
+- [x] Cross-check the single pinned `codecs → _codecs` source edge against the
+  synthetic candidate descriptor in `codecs-edge-audit-20261023.md`. Preserve
+  the generic observer's `star-import` unsupported result. This does not review
+  the complete C implementation or prove builtin-table/link membership.
+- [x] Retain exact archive `_codecsmodule.c` and `Setup.bootstrap.in` members
+  as inert fixtures and check their declared module/initializer and bootstrap
+  source line against the synthetic `_codecs` entry, including consistency
+  with Lunar's emitted candidate table/source/object plan. The bootstrap file
+  is a template. Pin its direct include spellings and Windows guard while
+  leaving header resolution/bytes, configured consumption, compilation,
+  linking and runtime origin open.
+- [x] Project the fixed 28 prepared-source AST edges onto the synthetic frozen
+  and builtin name inventories with exact-name membership results. Preserve
+  absent targets as inventory observations only; do not infer reachability,
+  platform safety, refusal, or closure.
+- [x] Pin the `Modules/_io/_iomodule.c` archive member and cross-check its
+  `_io`/`PyInit__io` declaration against the upstream Setup template, explicit
+  candidate source/object plan, AST edge and source-derived `io` startup root.
+  This is bounded source/metadata consistency, not compilation or runtime proof.
+- [x] Retain exact archive `Modules/_abc.c` bytes as an inert fixture and
+  cross-check its `_abc`/`PyInit__abc` declaration against the Setup template,
+  Lunar's candidate emitted table/source/object plan, and the synthetic
+  descriptor in `abc-c-source-audit-20261023.md`. This source-only check does not
+  establish configured consumption, compilation, linking, ELF contents, or
+  runtime module origin.
 - [x] Define bounded source-preparation dispositions for the observed dynamic
   codec-name selection and `_py_abc` fallback: direct fixed UTF-8 binding, a
   six-alias allowlist, and preservation of the original `_abc` import error.
@@ -146,7 +255,11 @@ failure and cancelled preflight separately from later successful evidence.
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
   refusal sites across the complete configured source/startup scope, including
   any dependency outside the pinned profile and a versioned profile decision.
-  The DTO parser cannot certify this audit or infer new modules.
+  The bounded importlib bootstrap/loader review in
+  `importlib-edge-audit-20261022.md` records the `_frozen_importlib` startup edge
+  and candidate loader dispositions, but leaves deferred direct resource-reader/
+  metadata routes and configured/runtime binding unresolved. The DTO parser
+  cannot certify the full audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do
@@ -161,8 +274,9 @@ safe-extraction or signature-verification result.
 - [x] Specify the fixed candidate build-input preparation in `build-inputs.md`:
   separate shared/core/builtin, freezer/target plans, nine adjacent header paths
   and unresolved configured/static-link inputs. This is not actual build closure.
-- [x] Implement and locally validate pure fixed build-input emission and recipe refusal
-  with inert fixtures; do not run configure/make/freezer under explicit opt-in.
+- [x] Implement and locally validate pure fixed build-input emission and bounded
+  known-escape recipe refusal with inert fixtures; the parser is not a compiler
+  allowlist and does not authorize configure/make/freezer execution.
 - [x] Complete final-source three-version Linux CI and independent raw audit
   for the build-input slice before main merge; require the dedicated90-case
   source-only gate and source-preparation100-case gate without failures/errors/skips.
@@ -255,3 +369,44 @@ these as explicit gates; do not turn expected behavior into observed evidence.
   disposable host rather than independently custodied here. This completes the
   observer exercise only; independent archive/signature custody and configured-
   build consumption remain open gates.
+
+## Core `_warnings` source audit continuation
+
+- [x] Retain the exact pinned CPython 3.13.12 `Python/_warnings.c` archive
+  member and `Modules/Setup.stdlib.in` template as inert fixtures with
+  provenance; confirm `_warnings` has no `Setup.bootstrap.in` or
+  `Setup.stdlib.in` declaration.
+- [x] Check `MODULE_NAME`, module definition and `_PyWarnings_Init`/`PyModuleDef_Init`
+  against the Lunar emitted initializer table, `LUNAR_CORE_BUILTIN_SOURCES`,
+  and the synthetic installation descriptor. Keep it in the core source list,
+  outside `LUNAR_STATIC_MODULE_SOURCES`.
+- [x] Record the conditional `get_warnings_attr()` import of Python-level
+  `warnings` as an unclosed profile edge; no profile expansion or build/runtime
+  claim follows from this bounded source observation.
+- [x] Run the focused fixture/profile/table/build-input regressions, Ruff,
+  compileall and diff checks. These source and metadata checks do not establish
+  header closure, configured source consumption, compilation, linking, ELF
+  contents or runtime behavior.
+
+## Core `_warnings` caller/source continuation
+
+- [x] Pin the exact CPython 3.13.12 `Lib/warnings.py` and
+  `Objects/genobject.c` archive members as supporting inert source, separate
+  from the finite module-profile member set.
+- [x] Trace the `_warnings.c` lazy-import call sites, C fallbacks, Python
+  `_warn_unawaited_coroutine()` hook, and the `FRAME_CREATED` coroutine
+  finalizer condition. Record `linecache`, `traceback`, and `tracemalloc` as
+  conditional source edges; do not expand the startup inventory from this
+  source-only result.
+- [x] Run the bounded Python AST observer over the pinned supporting
+  `Lib/warnings.py` bytes and record its ten supported edges and one unsupported
+  dynamic import separately from the finite profile; pair the syntax-only edge
+  set with source assertions for selected conditional imports and keep every
+  closure/runtime claim false.
+- [x] Pin `Python/pylifecycle.c` as inert supporting source and test its
+  `warnoptions` and `site_import` startup guards against the candidate metadata;
+  do not promote these source/config pins to observed runtime settings.
+- [ ] Resolve whether the approved fixed startup/workload can reach these
+  warning paths, then bind any required conditional modules to the configured
+  build and sealed-target evidence. The source fixtures do not establish
+  runtime reachability or make `warnings` production-safe by themselves.
