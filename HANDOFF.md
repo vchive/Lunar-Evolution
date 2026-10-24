@@ -1,12 +1,14 @@
-# 当前交接（2026-10-24，PR186 仍待验收合并）
+# 当前交接（2026-10-24，PR186 已合入 main）
 
 ## 当前分支发布状态
 
-- `codex/feature189-followup-integration-v3` 的文档后继 `3ca9f432` 已推送到
+- `codex/feature189-followup-integration-v3` 的文档后继 `a3bac9c8` 已推送到
   GitHub；下文“本地准备/未push”描述的是当时状态。1906项实际测试源码仍为
   `7d873753`，后继只改文档，src/tools/tests/CI未变，不重新分配验收身份。
-- 后续分支尚未建PR，P0 PR186的精确 `4da38027` 完整33job CI继续运行，
-  main仍为 `a3532cfd`，未合入。独立分支push不触发当前仅main/PR的workflow。
+- P0 PR186 的精确 `4da38027` 已完成 33/33 CI 并合入 main，合并提交为
+  `9f20f995`，合并树为 `b3e6c6fb`。5090gpu 单次 Linux mixed 也在原600秒
+  预算内通过。下一步是为 P1 整合分支创建独立 PR；它必须用自己的完整 CI 验收，
+  不把 P0 或本地1906项结果转移为 P1 的验收结论。
 - 对当前P1未完项再次只读核查：完整工具链复制已实现，但immutable custody、
   配置构建、freezer/ELF与sealed runtime仍开放。现有bwrap FD阻塞选项没有
   “完整复制后、remount-ro前”的setup回调点，不能据此绕过已保留的环境失败。
@@ -420,7 +422,7 @@
   308项相关组合、独立239项（重叠不相加）、Ruff/compileall/当前diffcheck通过。
 - 精确baseline parser局部对比九轮×200×两行：0.184795→0.117151秒，中位减少36.61%；
   16项valid/invalid differential输入结果相同。它不是E2E证据，新提交仍需原预算Linux
-  mixed与最终head三版本CI全部通过；PR186保持未合入，构建/runtime/生产准入门仍关闭。
+  mixed与最终head三版本CI全部通过；PR186现已合入，构建/runtime/生产准入门仍关闭。
 - 两个已完成的P1分支仍独立保留：candidate-build-provenance（220b0364/000907fa）
   仅规格；source-import-edge-audit（ed5abadb）含28条AST边/4处unsupported与69项测试。
   两者基于72232018、可干净组合；PR186合入后再整理后续PR，未冒充configured closure。

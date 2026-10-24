@@ -36,7 +36,7 @@ failure and cancelled preflight separately from later successful evidence.
 
 ## G1 installation inputs and pure admission
 
-- [ ] Close the original-budget serial mixed regression identified in
+- [x] Close the original-budget serial mixed regression identified in
   `serial-regression-performance.md`. Preserve fresh source/SQLite observations
   and all history/policy checks; validate bounded pure-cache improvements with
   focused drift/eviction tests, the exact Linux case and final-source CI.
@@ -48,7 +48,9 @@ failure and cancelled preflight separately from later successful evidence.
   intermediate snapshots; cancellation is not a pass. Preserve the original
   budget; do not restart old jobs or rerun49b acceptance. Exact4da's single
   original600-second Linux mixed passes in574.367 s and root's retained-evidence
-  audit passes; final exact-head CI remains open, so this combined gate stays unchecked.
+  audit passes; the exact4da head's final three-version CI completed 33/33
+  successfully and PR186 was merged to main as `9f20f995`. Immutable custody,
+  configured build and G2/G3 remain independent/open.
 - [x] Implement optional full-byte-checked resident hints and identity-only warm
   retention. Add 14 multi-version/fallback/limit/inflight-eviction cases; pass
   the 675-case focused union, Ruff, compileall, diff checks and independent
