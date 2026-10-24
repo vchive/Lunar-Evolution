@@ -1,4 +1,57 @@
-# 当前交接（2026-10-23，PR185 合入后续开发）
+# 当前交接（2026-10-24，PR186 仍待验收合并）
+
+## 当前 P0：保留原 CI 失败，减少纯源码缓存重复工作
+
+- 原 `49b4929c2d964658206ac5435b341ec44bfd70b7` 的唯一独立 Linux mixed
+  通过（case553.889秒），但 CI run40036954373 的 Python3.13 current-3 失败：
+  case601.169秒，`rsi_brs_rejection_provenance_allowance_exhausted`，附
+  `rsi_native_gateway_attempt_unknown`。3541项中3538通过、1失败、2平台条件跳过；
+  原600秒control未变，不能合main。栈只表明deadline到期，不证明全局耗时热点。
+  完整原始artifact、XML与13,467,489B job log留在ignored
+  `feature189-20261023/ci-watch-49b4929c-rm0afyfq/`；log SHA为
+  `294683a0738438ff3e98792159de2a62dfd725d3fe453dccaf25172d3708d1fb`。
+  2026-10-24 01:14:10.547203UTC终态为completed/cancelled，30成功/1失败/2取消；
+  两取消均由新push的workflow concurrency触发，取消不等于通过。未人为cancel，
+  不重启旧job、不重跑49b或扩大预算。
+- 当前修复只在完整content-key LRU外增加bounded locator hint。每次仍对新鲜完整raw
+  比较相等，并确认同一resident entry；fallback保持原完整key lookup。同source/target/
+  code对象的warm retain只改LRU与执行原限额，不再release/reinsert同一payload。
+  clear/替换/淘汰清理对应hint；多版本原key保留，hint不承诺总指最近命中版本。
+  双fresh read、双backend/locator/code检查、normalization、hooks与最终identity SHA
+  均保留。1024entry/24MiB raw+text数据上限未变，新增的有界索引元数据不等于总heap不变。
+- 两轮独立完整fixed-policy helper对照均约减少16.4%局部耗时；guarded轮15×3次
+  original median0.080469秒→combined0.067284秒。完整projection及每call
+  1455request/1434fresh/930normalize/738fingerprint相同，613entries/73raw/
+  4,376,722B相同。这不是E2E结果。实际落地cache另通过15,400步独立oracle与
+  7线程14,000步retain/clear账目核对，code/tests/SDD独审无阻断。
+- 新增14项针对性反例，使source专项37→51、CI cache/identity门75→89，零跳过。
+  本地最终联合675项全部通过、零fail/error/skip（68.007秒），全仓Ruff、
+  src/tools/tests compileall和diff-check通过。原有测试函数与600秒预算未改。
+  ignored证据为 `feature189-20261024/source-hint-final-0sbnlwxd/`。
+  新源码仍须自己的唯一原预算Linux mixed及精确head完整CI通过，PR186保持未合并。
+  精确4da的run40048350911在01:14:08.767227UTC观察到三版本×11roles的33jobs
+  （20运行/13排队，run自身queued、conclusion空）；这不是通过结论。
+- 后续P1源码 `966c5cf9` 已独立通过唯一Linux focused1231项、零fail/error/skip；
+  2338files/292dirs完整bytes/modes不变，238模块来源与17required匹配。
+  文档后继 `9f5bad28` 已push，source/tools/tests/CI仍与966相同。原始证据已保全，
+  root独审PASS；该后续分支尚未建PR，不替代本P0 CI。实际custody/build/runtime和
+  OpenEvolve/Shinka生产接线仍开放，P2继续后置。
+
+## P0/P1 本地整合准备（2026-10-24）
+
+- 另建`codex/feature189-followup-integration-v3`，保留原P1分支`9f5bad28`不动，
+  将精确P0源码`4da380272b56f9ef6fc42ef37c50655aabfa6724`合入该本地准备分支。
+  冲突仅在workflow和tasks；HANDOFF/validation自动合并后核对，未手改src/tools/tests。
+  cache门取89，完整copy54/deferred31/codec22门及各XML failure annotation全部保留。
+- 原P0的675和原P1的Linux1231分别保留各自源码身份；它们不能相加当作整合head
+  已通过。新整合head仍需自己的focused union和最终CI；本地准备不push、不建PR，
+  不移动main/P0/原P1引用，不运行mixed或真实campaign。G1/G2/G3与生产边界不变。
+- old49b原始终态响应为主工作区ignored
+  `feature189-20261023/ci-watch-49b4929c-rm0afyfq/snapshot-087.json`，SHA
+  `49e1a86074832bf590d35d29e7239dff3231a6b8a68baa50afb824f2c657347f`；
+  `status-087.json`记录01:14:10.547203UTC的30成功/1失败/2取消终态。
+  原086的30/1/1取消/1运行中间快照完整保留，不改写。3.11取消产物没有JUnit/
+  summary，3.12取消产物当时尚未列出；不能称33-job通过或全部33份产物收齐。
 
 ## 精确966c5cf9 Linux1231与完整源码不变性通过（2026-10-24）
 
@@ -31,11 +84,13 @@
 ## PR186 完整 CI 新失败，暂停合并（2026-10-24）
 
 - 固定head49b4929c的run40036954373中，Python3.13 current-3 job120700344838
-  于00:46UTC失败，Python3.11 current-0成功；当前30成功/1失败/2运行。
+  于00:46UTC失败，Python3.11 current-0成功；01:14:10.547203UTC最终为
+  completed/cancelled，30成功/1失败/2取消。
   原始XML/log确认mixed case601.169秒，报
   `rsi_brs_rejection_provenance_allowance_exhausted`并附`worker_unknown`。
-  当前栈不能证明性能热点；其余两版原CI仍等待。不称33项通过或合main，不重跑
-  原49b Linux验收、不扩大原预算、不取消剩余两项。
+  当前栈不能证明性能热点；3.11/3.12 current-3均随新workflow concurrency取消。
+  取消不等于通过，不称33项通过或合main，不重跑原49b Linux验收、不扩大原预算、
+  不重启旧job；原始失败、取消材料和中间未完成快照继续保留。
 - 接下来依据已留存原始失败确定必要修复与新源码自己的验收。原49b唯一
   Linux mixed PASS与这次CI FAIL并存，不能互相替代。源码后续切片单独保留。
 

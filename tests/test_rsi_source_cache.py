@@ -70,6 +70,11 @@ def _assert_cache_accounting():
         )
         assert cache.retained_bytes <= identity._MAX_SOURCE_CACHE_BYTES
         assert len(cache) <= identity._MAX_SOURCE_CACHE_ENTRIES
+        assert len(cache._locator_hints) <= len(cache)
+        for locator, (key, value) in cache._locator_hints.items():
+            assert locator == (key[0], *key[2:])
+            assert key in cache and cache[key] is value
+            assert key[1] is cache._raw_sources[key[1]][0]
 
 
 def test_repeated_content_reuses_extraction_without_caching_final_identity(tmp_path, monkeypatch):
@@ -534,3 +539,215 @@ def test_large_source_extraction_is_not_retained(tmp_path, monkeypatch):
     with pytest.raises(identity.RSIIdentityError, match="too_large"):
         _code(module.Component)
     assert not identity._SOURCE_CACHE
+
+
+def test_same_locator_keeps_distinct_raw_versions_and_falls_back_to_resident_old_bytes(
+    tmp_path, monkeypatch,
+):
+    module, path = _module(tmp_path, monkeypatch)
+    calls = _count_extractions(monkeypatch)
+    original = path.read_bytes()
+    changed = original.replace(b"value = 1", b"value = 2")
+    first = identity.component_fingerprint(module.Component, config={})
+    path.write_bytes(changed)
+    second = identity.component_fingerprint(module.Component, config={})
+    assert first != second
+    cache = identity._SOURCE_CACHE
+    assert len(cache) == 2 and len(cache._locator_hints) == 1
+    assert {key[1] for key in cache} == {original, changed}
+    _assert_cache_accounting()
+
+    original_read = identity._fresh_source_bytes
+    reads = []
+
+    def fresh(filename):
+        raw = original_read(filename)
+        reads.append(raw)
+        return raw
+
+    monkeypatch.setattr(identity, "_fresh_source_bytes", fresh)
+    for raw, expected in ((original, first), (changed, second), (original, first)):
+        path.write_bytes(raw)
+        assert identity.component_fingerprint(module.Component, config={}) == expected
+        assert reads[-2:] == [raw, raw]
+        _assert_cache_accounting()
+    assert len(reads) == 6 and len(calls) == 2
+
+
+@pytest.mark.parametrize("corruption", ["path", "locator", "value", "evicted", "cleared"])
+def test_optional_locator_hint_cannot_replace_full_key_or_resident_value(
+    tmp_path, monkeypatch, corruption,
+):
+    module, path = _module(tmp_path, monkeypatch)
+    calls = _count_extractions(monkeypatch)
+    expected = identity.component_fingerprint(module.Component, config={})
+    cache = identity._SOURCE_CACHE
+    with identity._SOURCE_CACHE_LOCK:
+        key, value = next(iter(cache.items()))
+        locator = (key[0], *key[2:])
+        if corruption in {"path", "locator"}:
+            # A real resident entry with different source ownership or the same
+            # path but a different final locator field must not authorize a hit.
+            wrong_key = ((str(path.with_name("foreign.py")), *key[1:])
+                         if corruption == "path" else (*key[:-1], "foreign-last-field"))
+            wrong_value = ("foreign-source-must-not-be-used", object(), None)
+            cache.retain(wrong_key, wrong_value, len(wrong_value[0].encode("utf-8")))
+            hint = (wrong_key, wrong_value)
+        elif corruption == "value":
+            hint = (key, ("foreign-source-must-not-be-used", value[1], value[2]))
+        else:
+            if corruption == "cleared":
+                cache.clear()
+            else:
+                removed_key, removed = cache.popitem(last=False)
+                cache._release(removed_key, removed)
+            hint = (key, value)
+        if corruption in {"path", "locator", "value"}:
+            _assert_cache_accounting()
+        natural_hint = cache._locator_hints.get(locator)
+        cache._locator_hints[locator] = hint
+
+    original_read = identity._fresh_source_bytes
+    reads = []
+
+    def fresh(filename):
+        reads.append(filename)
+        return original_read(filename)
+
+    monkeypatch.setattr(identity, "_fresh_source_bytes", fresh)
+    assert identity.component_fingerprint(module.Component, config={}) == expected
+    assert reads == [str(path), str(path)]
+    assert len(calls) == (2 if corruption in {"evicted", "cleared"} else 1)
+    with identity._SOURCE_CACHE_LOCK:
+        assert cache[key][0] == value[0] and cache[key][1] is value[1]
+        if corruption in {"path", "locator", "value"}:
+            # Deliberately corrupting a private optional index does not require
+            # repairing it on a warm hit. Restore only our injected state before
+            # checking invariants created through normal retain/clear/eviction.
+            cache._locator_hints[locator] = natural_hint
+        _assert_cache_accounting()
+
+
+@pytest.mark.parametrize("limit", ["entries", "bytes", "single-entry-too-large"])
+def test_warm_promotion_enforces_limits_tightened_between_fresh_reads(
+    tmp_path, monkeypatch, limit,
+):
+    module, path = _module(tmp_path, monkeypatch, "".join(
+        f"def {name}():\n    return {index}\n"
+        for index, name in enumerate(("alpha", "bravo", "cello"))
+    ))
+    targets = (module.alpha, module.bravo, module.cello)
+    calls = _count_extractions(monkeypatch)
+    expected = [identity.component_fingerprint(target, config={}) for target in targets]
+    cache = identity._SOURCE_CACHE
+    with identity._SOURCE_CACHE_LOCK:
+        keys = tuple(cache)
+        resident = cache[keys[0]]
+        text_bytes = len(resident[0].encode("utf-8"))
+        assert all(len(value[0].encode("utf-8")) == text_bytes for value in cache.values())
+    original_read = identity._fresh_source_bytes
+    reads = 0
+
+    def fresh(filename):
+        nonlocal reads
+        raw = original_read(filename)
+        reads += 1
+        if reads == 2:
+            if limit == "entries":
+                monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_ENTRIES", 2)
+            else:
+                budget = len(path.read_bytes()) + (2 * text_bytes if limit == "bytes" else text_bytes - 1)
+                monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_BYTES", budget)
+        return raw
+
+    monkeypatch.setattr(identity, "_fresh_source_bytes", fresh)
+    assert identity.component_fingerprint(module.alpha, config={}) == expected[0]
+    assert reads == 2 and len(calls) == 3
+    with identity._SOURCE_CACHE_LOCK:
+        if limit == "single-entry-too-large":
+            assert not cache and not cache._raw_sources and not cache._locator_hints
+        else:
+            assert tuple(cache) == (keys[2], keys[0])
+            assert cache[keys[0]] is resident
+        _assert_cache_accounting()
+
+
+@pytest.mark.parametrize("warm", [False, True])
+@pytest.mark.parametrize("change", ["clear", "evict"])
+def test_inflight_success_retains_correct_raw_references_after_cache_clear_or_eviction(
+    tmp_path, monkeypatch, warm, change,
+):
+    module, path = _module(tmp_path, monkeypatch)
+    expected = identity.component_fingerprint(module.Component, config={})
+    cache = identity._SOURCE_CACHE
+    if not warm:
+        cache.clear()
+    monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_ENTRIES", 1)
+    calls = _count_extractions(monkeypatch)
+    original_read = identity._fresh_source_bytes
+    reads = 0
+
+    def fresh(filename):
+        nonlocal reads
+        raw = original_read(filename)
+        reads += 1
+        if reads == 2:
+            # Lookup/extraction has finished, but the caller's second live read
+            # has not returned. No stale warm reference may bypass re-retention.
+            with identity._SOURCE_CACHE_LOCK:
+                if change == "clear":
+                    cache.clear()
+                else:
+                    competitor = ("different.py", b"independent raw source", "competitor")
+                    value = ("independent extracted source", object(), None)
+                    cache.retain(competitor, value, len(value[0].encode("utf-8")))
+                _assert_cache_accounting()
+        return raw
+
+    monkeypatch.setattr(identity, "_fresh_source_bytes", fresh)
+    assert identity.component_fingerprint(module.Component, config={}) == expected
+    assert reads == 2 and len(calls) == (0 if warm else 1)
+    with identity._SOURCE_CACHE_LOCK:
+        assert len(cache) == 1
+        key, value = next(iter(cache.items()))
+        assert key[0] == str(path) and key[1] == path.read_bytes()
+        assert value[1] is module.Component
+        _assert_cache_accounting()
+
+
+def test_evicting_older_raw_version_preserves_newer_same_locator_hint_until_its_own_eviction(
+    tmp_path, monkeypatch,
+):
+    module, path = _module(tmp_path, monkeypatch)
+    monkeypatch.setattr(identity, "_MAX_SOURCE_CACHE_ENTRIES", 2)
+    original = path.read_bytes()
+    _code(module.Component)
+    changed = original.replace(b"value = 1", b"value = 2")
+    path.write_bytes(changed)
+    _code(module.Component)
+    cache = identity._SOURCE_CACHE
+    with identity._SOURCE_CACHE_LOCK:
+        locator, hint = next(iter(cache._locator_hints.items()))
+        assert hint[0][1] == changed and len(cache._raw_sources) == 2
+        _assert_cache_accounting()
+
+    others = []
+    for index in (3, 4):
+        directory = tmp_path / f"other-{index}"
+        directory.mkdir()
+        other, _ = _module(directory, monkeypatch, f"class Component:\n    value = {index}\n")
+        others.append(other)
+
+    _code(others[0].Component)
+    with identity._SOURCE_CACHE_LOCK:
+        assert original not in cache._raw_sources and changed in cache._raw_sources
+        assert cache._locator_hints[locator] is hint
+        assert cache[hint[0]] is hint[1]
+        _assert_cache_accounting()
+
+    _code(others[1].Component)
+    with identity._SOURCE_CACHE_LOCK:
+        assert locator not in cache._locator_hints
+        assert changed not in cache._raw_sources
+        assert all(key[0] != str(path) for key in cache)
+        _assert_cache_accounting()

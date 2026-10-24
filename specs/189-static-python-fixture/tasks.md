@@ -40,10 +40,17 @@ failure and cancelled preflight separately from later successful evidence.
   `serial-regression-performance.md`. Preserve fresh source/SQLite observations
   and all history/policy checks; validate bounded pure-cache improvements with
   focused drift/eviction tests, the exact Linux case and final-source CI.
-  PR186 exact49b's Python3.13 current-3 CI still fails: mixed 601.169s with
+  PR186 exact49b's Python3.13 current-3 CI fails: mixed 601.169s with
   `rsi_brs_rejection_provenance_allowance_exhausted` plus `worker_unknown`.
-  Its stack does not establish a hotspot; the other two original CI versions
-  remain pending. Preserve the original budget and do not rerun49b acceptance.
+  Its stack does not establish a hotspot. At 2026-10-24 01:14:10.547203 UTC
+  the original run finishes completed/cancelled: 30 successes, one failure
+  and two cancellations after the new push's workflow concurrency. Retain the
+  intermediate snapshots; cancellation is not a pass. Preserve the original
+  budget; do not restart old jobs or rerun49b acceptance.
+- [x] Implement optional full-byte-checked resident hints and identity-only warm
+  retention. Add 14 multi-version/fallback/limit/inflight-eviction cases; pass
+  the 675-case focused union, Ruff, compileall, diff checks and independent
+  source/test review. This does not close the preceding Linux/CI merge gate.
 
 - [x] Specify the bounded archive-receipt and extraction-manifest preparation
   contract in `verified-inputs.md`; keep advertised pins and caller-supplied

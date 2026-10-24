@@ -1,15 +1,20 @@
 ## 2026-10-24 当前状态与剩余优先级
 
-`main` 当前为 PR #185 合并后的 `a3532cfd`。PR #186 的源码固定为
-`49b4929c`；完整 Ubuntu 三版本 CI 最近检查为 30 成功、1 失败、2 个运行，
-Python3.13 current-3 的原始XML/log已确认mixed case601.169秒，错误为
-`rsi_brs_rejection_provenance_allowance_exhausted`，附`worker_unknown`；当前栈
-不能证明性能热点，其余两版原CI仍等待，尚未合并。下面所有分支验收都不能替代
-该 PR 自己的完整 CI，也不能因先前独立 Linux 通过而忽略新失败。
+PR #186 的新P0源码为`4da38027`，仍待自身原预算Linux mixed与完整精确head
+CI验收；其14项新增反例、675项本地focused与89项cache/identity门已保留。
+原`49b4929c`完整Ubuntu CI在2026-10-24 01:14:10.547203UTC最终为
+completed/cancelled：30成功/1失败/2取消。Python3.13 current-3的原始XML/log
+确认mixed case601.169秒，错误为`rsi_brs_rejection_provenance_allowance_exhausted`，
+附`worker_unknown`；3.11/3.12 current-3均随新workflow concurrency取消。
+取消不等于通过，当前栈不能证明热点；不重启旧job、不重跑49b或扩大原预算。
+下面所有分支验收都不能替代该PR自己的完整CI，也不能用先前独立Linux通过
+忽略原始失败。原086中间快照与087终态分别保留；精确pins见HANDOFF及validation。
+新4da CI run40048350911在01:14:08.767227UTC已有33jobs（20运行/13排队），
+尚无通过结论。
 
 | 优先级 | 当前工作 | 完成条件 |
 | --- | --- | --- |
-| P0 | 定位并修复 PR #186 的新 CI 失败，再完成回归与合并 | 精确 head/base/tree、33 项完整 CI 和独立原始 artifact 审计全部通过；已有唯一原 600 秒 Linux mixed 验收通过，不再重跑该源码或扩大预算。 |
+| P0 | 验收 PR #186 的新源码，再完成回归与合并 | 新精确 head/base/tree、唯一原 600 秒 Linux mixed、33 项完整 CI 和独立原始 artifact 审计全部通过；保留旧49b通过/失败/取消，不重跑旧源码或扩大预算。 |
 | P1 | 合入完整工具链复制、候选源码审计与固定负例 | 后续分支已 push；必须完成自己的 CI 和独立审查。完整复制是实际文件复制与观察，仍不具备不可变托管能力。 |
 | P1 | 补齐静态 Python 的真实构建和运行链路 | 不可变输入托管、完整 configured source/helper/cache closure、同源 freezer、静态编译链接和 ELF、sealed startup、owner/lifecycle 与 Linux 中断验收全部仍有未完成项。 |
 | P1 | 接入真实 OpenEvolve/Shinka producer | 在上述 runtime 门完成后，验证权威输入/结果、项目启动/取消/清理/恢复和生产 CLI。现有 preflight 与 detached evidence reader 不启动项目。 |
@@ -36,7 +41,9 @@ Python3.13 current-3 的原始XML/log已确认mixed case601.169秒，错误为
 为1231项零fail/error/skip、rawrc0，2338个文件和292个目录的bytes/full modes/
 exec bits前后完全一致，238个Lunar/tools模块来源匹配。17份raw artifacts回传SHA
 验证通过，30文件保全包已create-only复制至主工作区ignored证据目录。
-该1231只对应966源码，后续文档head不继承测试身份；完整branch CI仍待完成。
+该1231只对应966源码，后续文档或整合head不继承测试身份。新本地v3准备分支
+将4da合入9f5，保留cache89/copy54/deferred31/codec22及其零skip门；尚未push
+或建立PR，仍须新head自己的focused union与完整branch CI，不能相加旧结果冒称通过。
 它不扩大模块库存，也不关闭真实构建和 runtime 门。5090gpu 的两种已测试 tmpfs
 只读封存路径受到 bwrap 参数数量和 AppArmor/userns 限制，尚无受支持的不可变托管
 实现；普通可写目录复制不能替代这个条件。

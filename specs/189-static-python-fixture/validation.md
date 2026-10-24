@@ -1,5 +1,58 @@
 # Validation contract — preparation is not runtime evidence
 
+## Full-byte resident hints: local implementation validation
+
+The original `49b4929c` Linux mixed PASS and Python 3.13 CI mixed FAIL are
+both retained. CI case601.169 s refuses with
+`rsi_brs_rejection_provenance_allowance_exhausted`, plus worker attempt unknown;
+no budget or test is changed to obtain a pass. Raw CI evidence is in ignored
+`feature189-20261023/ci-watch-49b4929c-rm0afyfq/`.
+At 2026-10-24 01:14:10.547203 UTC this original run finishes
+completed/cancelled: 30 successes, one failure and two cancellations. Both
+Python3.11/3.12 current-3 jobs are cancelled by the newer push's workflow
+concurrency, without a manual cancellation or rerun. The 3.11 artifacts contain
+provenance/log but no JUnit/summary; the 3.12 cancelled artifact is not yet listed
+at that snapshot. Do not claim completed acceptance or all 33 artifact packages.
+Retain intermediate `snapshot-086.json` (30 successes, one failure, one cancelled
+and one running) unchanged. Do not restart old jobs or count cancellation as a pass.
+The final raw `snapshot-087.json` SHA-256 is
+`49e1a86074832bf590d35d29e7239dff3231a6b8a68baa50afb824f2c657347f`;
+`status-087.json` SHA-256 is
+`93adadc6fd592adcef786c15c09c0153e12ba6de8e1c654b121b0852b2b6a83c`.
+
+The next implementation follows `serial-regression-performance.md`: optional
+resident hints still require full fresh-byte equality and exact resident-value
+identity; same-object warm retention still enforces byte/entry limits. The
+independent fixed-graph helper comparison is a local 16.38% reduction, with all
+fresh-read/request/normalization/fingerprint counts and projections unchanged.
+The actual cache passes a separate 15,400-step oracle and 14,000 concurrent
+retain/clear operations; normal hints reference only resident allocations.
+
+Fourteen new checked-in cases bring the source suite to51 and the fixed CI
+cache/identity selection to89. The final local14-file union passes675 cases
+with zero failures/errors/skips, XML68.007 s and actual child rc0. The selections
+overlap and are not additive. Evidence is retained in ignored
+`feature189-20261024/source-hint-final-0sbnlwxd/`. Whole-repository Ruff,
+src/tools/tests compileall, diff checks and independent source/test/SDD review
+pass. No timer assertion, original test body, deadline or 600-second allowance
+was relaxed. New exact-source Linux mixed and final-head CI remain required;
+this is not a passed E2E gate or a merge claim. New exact4da CI run40048350911
+has all 33 expected three-version/11-role jobs at 01:14:08.767227 UTC, with
+20 running and 13 queued (run status queued, empty conclusion); no pass is claimed.
+
+## Local P0/P1 integration preparation
+
+The local `codex/feature189-followup-integration-v3` branch merges exact P0
+`4da380272b56f9ef6fc42ef37c50655aabfa6724` into P1 documentation head
+`9f5bad28dbeab10e3fae536bd533580e20cce1f3`, leaving the original branches and
+evidence untouched. Only workflow/tasks conflict; preserve the P0 cache gate89
+and P1 complete-copy54, deferred-refusal31 and codec22 gates, their zero-skip
+checks and all XML failure annotations. Do not manually change src/tools/tests.
+The old P0 local675 and exact966 Linux1231 remain separate source results;
+neither is acceptance for this integration head, and their sum is not a new pass.
+A new exact-head focused union and final CI are still required. Local preparation
+is not a push, PR, mixed replay, campaign, runtime acceptance or admission change.
+
 ## Exact 3222c9d original-budget replay and row parsing follow-up
 
 The unprofiled local case passed in 456.82 seconds on exact
@@ -972,6 +1025,9 @@ runtime/admission remain open.
 PR186's distinct exact49b original CI has a Python3.13 current-3 mixed failure
 at 601.169 seconds with primary
 `rsi_brs_rejection_provenance_allowance_exhausted` and attached `worker_unknown`.
-The observed stack is not hotspot proof; the other two original CI versions
-remain pending. Preserve that raw failure and the original budget. Do not rerun
-49b, infer 33 passing jobs, or merge main using the independent 966 focused result.
+The observed stack is not hotspot proof. At 2026-10-24 01:14:10.547203 UTC,
+the original CI finishes completed/cancelled with 30 successes, one failure and
+two cancellations after the new push's workflow concurrency. Cancellation is
+not a pass. Preserve raw failure/cancellation, intermediate status and original
+budget. Do not restart old jobs, rerun49b, infer 33 passing jobs, or merge main
+using the independent 966 focused result.
