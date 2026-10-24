@@ -28,7 +28,8 @@
   本地最终联合675项全部通过、零fail/error/skip（68.007秒），全仓Ruff、
   src/tools/tests compileall和diff-check通过。原有测试函数与600秒预算未改。
   ignored证据为 `feature189-20261024/source-hint-final-0sbnlwxd/`。
-  新源码仍须自己的唯一原预算Linux mixed及精确head完整CI通过，PR186保持未合并。
+  精确4da的唯一原600秒Linux mixed已通过（case574.367秒）且root独审PASS，
+  精确head完整CI仍待完成，PR186保持未合并；不重跑或将单次通过当整体提速证明。
   精确4da的run40048350911在01:14:08.767227UTC观察到三版本×11roles的33jobs
   （20运行/13排队，run自身queued、conclusion空）；这不是通过结论。
 - 后续P1源码 `966c5cf9` 已独立通过唯一Linux focused1231项、零fail/error/skip；
@@ -37,6 +38,47 @@
   root独审PASS；该后续分支尚未建PR，不替代本P0 CI。实际custody/build/runtime和
   OpenEvolve/Shinka生产接线仍开放，P2继续后置。
 
+## 精确4da Linux与7d873整合证据独审通过（2026-10-24）
+
+- 精确P0`4da380272b56f9ef6fc42ef37c50655aabfa6724`唯一原600秒Linux mixed
+  通过：case574.367秒/suite575.732秒，raw child与wrapper rc0、launch1。
+  root只读独审fresh git archive字节、2319源码files、12模块来源、21个bundle entries的
+  bytes/type/mode及JUnit1pass/0fail/error/skip，全部PASS，没有重跑case或打开SQLite。
+  ignored证据在`feature189-20261024/linux-mixed-py311-4da38027-l9q8q5ml/`；
+  `root-independent-evidence-review.json` SHA为
+  `0cd0a826560bb505b9f45b2fb54ae5ff2bc565566be46e19cc1ea21814ebe00a`。
+  完整33job CI仍pending，原49b失败/取消原样保留，不能升级为merge-ready或整体发布完成。
+- 下述精确7d873的1906原始证据也经root独审PASS；没有重跑测试。独审receipt是
+  主工作区ignored`feature189-20261024/integration-1906-root-independent-audit.json`，
+  SHA为`b298211e5d5766d7c12a0e9cc838c298a6171e1f4d51774275cdab22cf763d8c`。
+
+## 精确7d873753本地整合focused通过；原3.12取消job的测试失败补证（2026-10-24）
+
+- 本地准备分支的精确merge源码`7d873753b8c8660a4f51c477ea64c03c7e296e93`
+  （parents9f5bad28+4da38027）真正执行一次41文件focused union：1906个唯一case，
+  零fail/error/skip、raw child rc0，XML100.812秒、subprocess101.060秒。
+  这是新head实测结果，不是旧675+1231相加。全仓Ruff、src/tools/tests compileall和
+  diffcheck均rc0；测试前后HEAD与tracked状态不变。compileall使用仓库外独立cache。
+- 原始13文件/340,470B包在本worktree ignored
+  `.lunar-evolution/feature189-integration-evidence/7d873753b8c8-4mgfo84c/`；
+  已create-only复制至主工作区ignored
+  `feature189-20261024/integration-7d873-retention-e5llcn7n/7d873753b8c8-4mgfo84c/`。
+  两包mode/size/SHA相等且原包不变；XML SHA为
+  `09d73cf6bc36736a2ef02d88ad34765556a63d8936868d07aaa2124f76c2afdc`，
+  retention-manifest SHA为
+  `72b415255f7f48a87f2cba5f7aac762a6b988914ee2c4e20452999264882f59b`。
+  后续文档提交不继承测试head身份。此本地focused不是Linux mixed、完整CI或runtime验收；
+  未push新分支、建PR、改main引用或运行mixed/真实campaign。
+- 旧49b的Python3.12 current-3 job120700344970最终虽cancelled，其完整原log在取消前
+  已输出真实pytest失败：1failed/3538passed/2skipped，分片summary5263.21秒；
+  mixed报`rsi_brs_reserved_serial_worker_unknown`，附primary
+  `rsi_brs_reserved_serial_deadline_expired`，与3.13的allowance错误不同。
+  13,481,074B原log SHA为
+  `da890ea641fd3b9827b1fb3abb28a5de4d789065fb05c223621adbf49d08dfab`，
+  保留在原ci-watch目录`job-120700344970-original-allow-escape-sequences.log`。
+  未发布该job的JUnit，不能把rawlog摘要说成独立XML核验，也不能用总分片时间替代case
+  时长。job终态30成功/1失败/2取消仍准确，但两项cancel不能解释为没有pytest失败。
+
 ## P0/P1 本地整合准备（2026-10-24）
 
 - 另建`codex/feature189-followup-integration-v3`，保留原P1分支`9f5bad28`不动，
@@ -44,7 +86,7 @@
   冲突仅在workflow和tasks；HANDOFF/validation自动合并后核对，未手改src/tools/tests。
   cache门取89，完整copy54/deferred31/codec22门及各XML failure annotation全部保留。
 - 原P0的675和原P1的Linux1231分别保留各自源码身份；它们不能相加当作整合head
-  已通过。新整合head仍需自己的focused union和最终CI；本地准备不push、不建PR，
+  已通过。精确7d873后续实测1906通过（见上），最终CI仍需独立完成；本地准备不push、不建PR，
   不移动main/P0/原P1引用，不运行mixed或真实campaign。G1/G2/G3与生产边界不变。
 - old49b原始终态响应为主工作区ignored
   `feature189-20261023/ci-watch-49b4929c-rm0afyfq/snapshot-087.json`，SHA

@@ -1,7 +1,8 @@
 ## 2026-10-24 当前状态与剩余优先级
 
-PR #186 的新P0源码为`4da38027`，仍待自身原预算Linux mixed与完整精确head
-CI验收；其14项新增反例、675项本地focused与89项cache/identity门已保留。
+PR #186 的新P0源码为`4da38027`，唯一原600秒Linux mixed已通过且root独审PASS
+（case574.367秒/suite575.732秒、rawrc0、launch1）；完整精确head CI仍待验收。
+其14项新增反例、675项本地focused与89项cache/identity门已保留。
 原`49b4929c`完整Ubuntu CI在2026-10-24 01:14:10.547203UTC最终为
 completed/cancelled：30成功/1失败/2取消。Python3.13 current-3的原始XML/log
 确认mixed case601.169秒，错误为`rsi_brs_rejection_provenance_allowance_exhausted`，
@@ -10,7 +11,15 @@ completed/cancelled：30成功/1失败/2取消。Python3.13 current-3的原始XM
 下面所有分支验收都不能替代该PR自己的完整CI，也不能用先前独立Linux通过
 忽略原始失败。原086中间快照与087终态分别保留；精确pins见HANDOFF及validation。
 新4da CI run40048350911在01:14:08.767227UTC已有33jobs（20运行/13排队），
-尚无通过结论。
+尚无通过结论。旧3.12取消job的完整rawlog另显示取消前已有pytest失败：
+`rsi_brs_reserved_serial_worker_unknown`附primary`rsi_brs_reserved_serial_deadline_expired`，
+1failed/3538passed/2skipped；该job未发布JUnit。job终态与raw测试失败分别保留。
+
+本地整合merge`7d873753`已实际通过一次41文件/1906唯一case的focused union，
+零fail/error/skip、rawrc0（XML100.812秒），Ruff/compileall/diffcheck通过。
+它不是旧结果相加，也不替代Linux mixed、最终CI或G1/G2/G3。证据已create-only保全，
+root只读独审1906原始证据PASS；该本地分支未push/建PR，后续文档head不继承测试身份。
+4da Linux和7d873 focused两个通过分别绑定各自源码；CI完成前不称merge-ready或发布完成。
 
 | 优先级 | 当前工作 | 完成条件 |
 | --- | --- | --- |
@@ -43,7 +52,8 @@ exec bits前后完全一致，238个Lunar/tools模块来源匹配。17份raw art
 验证通过，30文件保全包已create-only复制至主工作区ignored证据目录。
 该1231只对应966源码，后续文档或整合head不继承测试身份。新本地v3准备分支
 将4da合入9f5，保留cache89/copy54/deferred31/codec22及其零skip门；尚未push
-或建立PR，仍须新head自己的focused union与完整branch CI，不能相加旧结果冒称通过。
+或建立PR；精确7d873已完成自己的1906focused，完整branch CI仍待完成。旧675/1231
+各自源码身份保留，不能将它们相加冒称新通过。
 它不扩大模块库存，也不关闭真实构建和 runtime 门。5090gpu 的两种已测试 tmpfs
 只读封存路径受到 bwrap 参数数量和 AppArmor/userns 限制，尚无受支持的不可变托管
 实现；普通可写目录复制不能替代这个条件。

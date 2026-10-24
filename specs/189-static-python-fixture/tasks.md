@@ -46,11 +46,26 @@ failure and cancelled preflight separately from later successful evidence.
   the original run finishes completed/cancelled: 30 successes, one failure
   and two cancellations after the new push's workflow concurrency. Retain the
   intermediate snapshots; cancellation is not a pass. Preserve the original
-  budget; do not restart old jobs or rerun49b acceptance.
+  budget; do not restart old jobs or rerun49b acceptance. Exact4da's single
+  original600-second Linux mixed passes in574.367 s and root's retained-evidence
+  audit passes; final exact-head CI remains open, so this combined gate stays unchecked.
 - [x] Implement optional full-byte-checked resident hints and identity-only warm
   retention. Add 14 multi-version/fallback/limit/inflight-eviction cases; pass
   the 675-case focused union, Ruff, compileall, diff checks and independent
   source/test review. This does not close the preceding Linux/CI merge gate.
+
+- [x] Prepare local P0/P1 merge7d873753 from9f5bad28 and4da38027 without
+  hand-editing src/tools/tests or moving the original branch refs. Preserve
+  cache89/copy54/deferred31/codec22 and failure annotations. The exact new merge
+  passes one actual41-file/1906-case local focused union with no failures/errors/
+  skips, plus Ruff, compileall and diff-check; retain original receipts and a
+  create-only evidence copy. Later docs heads are not tested heads. Full CI,
+  immutable custody and G2/G3 remain independent/open. Exact4da's original-budget
+  mixed and the7d873 focused receipts both pass root's read-only independent audit;
+  neither substitutes for final-head CI.
+  Old3.12 cancelled-job rawlog also contains a pre-cancellation mixed pytest
+  failure (worker unknown with primary reserved-serial deadline expired); no
+  JUnit was published. Preserve it separately from the final job-state counts.
 
 - [x] Specify the bounded archive-receipt and extraction-manifest preparation
   contract in `verified-inputs.md`; keep advertised pins and caller-supplied

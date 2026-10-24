@@ -1,5 +1,72 @@
 # Validation contract — preparation is not runtime evidence
 
+## Exact7d873753 local integration focused acceptance
+
+The exact merge commit `7d873753b8c8660a4f51c477ea64c03c7e296e93` has
+parents9f5bad28 and4da38027. A single actual local Python3.13 invocation of the
+41-file combined selector passes1906 unique cases, zero failures/errors/skips,
+and raw child rc0 persisted with flush/fsync before XML validation. XML time is
+100.812 s; subprocess monotonic time101.060 s. This is a new measured result,
+not an inference from the previous675 and1231 results. Whole-repository Ruff,
+src/tools/tests compileall (external private cache) and diff-check each return0;
+HEAD and tracked status remain unchanged. This is not a complete bytes/modes
+source-tree comparison or a Linux mixed/full-CI/runtime acceptance.
+
+The original13-file/340,470-byte package is retained under this worktree's ignored
+`.lunar-evolution/feature189-integration-evidence/7d873753b8c8-4mgfo84c/`.
+A create-only copy is in the main workspace's ignored
+`feature189-20261024/integration-7d873-retention-e5llcn7n/7d873753b8c8-4mgfo84c/`.
+All source/copy modes, sizes and SHA-256 values match, and the original package
+is unchanged. Original receipts, exact selector, commands and metadata remain
+available; no cleanup or repeated test invocation occurs.
+
+| Retained receipt | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Raw artifact manifest | 1546 | `e329e9705cdf052b3c79982a5e2320be615f6f9758bdaba4122b84c11e1bfa95` |
+| Test XML | 326186 | `09d73cf6bc36736a2ef02d88ad34765556a63d8936868d07aaa2124f76c2afdc` |
+| Raw focused process result | 2533 | `3efdde84b484c579c96fac11c61ac36e8af344f353113b9f8b605fcb52d3ccb6` |
+| Retention manifest (parent of package) | 2747 | `72b415255f7f48a87f2cba5f7aac762a6b988914ee2c4e20452999264882f59b` |
+
+This result belongs only to7d873753; a later documentation commit is not a tested
+head. Root independently checks the original manifest and1906 unique XML cases
+without rerunning tests; the read-only audit passes. Its783-byte receipt in the
+main workspace is `feature189-20261024/integration-1906-root-independent-audit.json`,
+SHA-256 `b298211e5d5766d7c12a0e9cc838c298a6171e1f4d51774275cdab22cf763d8c`.
+The new branch remains local without a PR. Exact4da mixed subsequently passes
+and is independently audited as below; its full CI and this integration's final
+CI remain independent open gates. G1/G2/G3 and production claims remain open/false.
+
+## Exact4da single original-budget Linux mixed acceptance
+
+Exact P0 `4da380272b56f9ef6fc42ef37c50655aabfa6724` passes its single
+original600-second Linux mixed launch: case574.367 s, suite575.732 s,
+runner575.8265714850277 s, JUnit one pass/zero failures/errors/skips, raw child
+and wrapper rc0. Root's read-only independent review compares archive bytes
+against a fresh git archive, verifies2319 source files,12 loaded modules and21
+bundle entries' bytes/type/mode. The retained receipt passes without rerunning
+the case or opening SQLite. Evidence is in the main workspace's ignored
+`feature189-20261024/linux-mixed-py311-4da38027-l9q8q5ml/`;
+`root-independent-evidence-review.json` is537 bytes, SHA-256
+`0cd0a826560bb505b9f45b2fb54ae5ff2bc565566be46e19cc1ea21814ebe00a`.
+Full exact-head CI remains pending; keep the old49b PASS/FAIL/cancellation
+material unchanged. A single local/Linux pass is not proof of overall speedup,
+merge readiness, complete runtime acceptance or publication readiness.
+
+## Cancelled Python3.12 job contains a raw pytest failure
+
+Old49b current-3 job120700344970 is a cancelled job, but its complete original
+raw log already contains a pytest failure before cancellation: one failed,
+3538 passed and two skipped, with a total shard summary of5263.21 s. The same
+three-child mixed case reports `rsi_brs_reserved_serial_worker_unknown`, attached
+primary `rsi_brs_reserved_serial_deadline_expired`; this differs from the3.13
+allowance-exhaustion error. No JUnit artifact is published for this job, so these
+are raw-log observations, not an independently checked XML or measured case time.
+The13,481,074-byte original log in the old watch directory is
+`job-120700344970-original-allow-escape-sequences.log`, SHA-256
+`da890ea641fd3b9827b1fb3abb28a5de4d789065fb05c223621adbf49d08dfab`.
+The final job count stays30 success/one failure/two cancelled. Cancellation does
+not imply the job had no pytest failures; preserve both layers of evidence.
+
 ## Full-byte resident hints: local implementation validation
 
 The original `49b4929c` Linux mixed PASS and Python 3.13 CI mixed FAIL are
@@ -35,8 +102,9 @@ overlap and are not additive. Evidence is retained in ignored
 `feature189-20261024/source-hint-final-0sbnlwxd/`. Whole-repository Ruff,
 src/tools/tests compileall, diff checks and independent source/test/SDD review
 pass. No timer assertion, original test body, deadline or 600-second allowance
-was relaxed. New exact-source Linux mixed and final-head CI remain required;
-this is not a passed E2E gate or a merge claim. New exact4da CI run40048350911
+was relaxed. Exact4da's single original-budget Linux mixed later passes with
+independent audit as above; final-head CI remains required. This focused result
+is not a passed E2E gate or a merge claim. New exact4da CI run40048350911
 has all 33 expected three-version/11-role jobs at 01:14:08.767227 UTC, with
 20 running and 13 queued (run status queued, empty conclusion); no pass is claimed.
 
@@ -50,8 +118,9 @@ and P1 complete-copy54, deferred-refusal31 and codec22 gates, their zero-skip
 checks and all XML failure annotations. Do not manually change src/tools/tests.
 The old P0 local675 and exact966 Linux1231 remain separate source results;
 neither is acceptance for this integration head, and their sum is not a new pass.
-A new exact-head focused union and final CI are still required. Local preparation
-is not a push, PR, mixed replay, campaign, runtime acceptance or admission change.
+The exact7d873753 focused union subsequently passes as recorded above; final
+CI is still required. Local preparation is not a push, PR, mixed replay,
+campaign, runtime acceptance or admission change.
 
 ## Exact 3222c9d original-budget replay and row parsing follow-up
 
