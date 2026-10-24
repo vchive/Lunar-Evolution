@@ -1,5 +1,34 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## PR186 完整 CI 新失败，暂停合并（2026-10-24）
+
+- 固定head49b4929c的run40036954373中，Python3.13 current-3 job120700344838
+  于00:46UTC失败，Python3.11 current-0成功；当前30成功/1失败/2运行。
+  原始artifact/log正在独立取回，失败原因尚待核对。不得称33项通过或合main，
+  不重跑原49b Linux验收、不扩大原预算、不取消剩余两项。
+- 接下来先按原始XML/log定位该失败，完成必要修复与新源码自己的验收。原49b唯一
+  Linux mixed PASS与这次CI FAIL并存，不能互相替代。源码后续切片单独保留。
+
+## 五个候选 deferred-import 入口 source 修复（2026-10-24）
+
+- 先独立审查，再按`deferred-import-refusal.md`实现五个整函数拒绝：两个resource
+  reader、两个metadata方法及decode_source。FileLoader的`_check_name`一并移除，
+  PathFinder的staticmethod保留；拒绝前不访问caller属性、导入、修改cache或调用finder。
+  SourceLoader.get_source的前置get_filename/get_data仍明确open，未声称通用sandbox。
+- external新postimage63208B/SHA3269c011…与独立投影一致；原raw pin不变，18operation
+  SHA8ccdc054…。完整base/RSI/preparation/detached比较pins刷新，JSON原projection
+  shape不变。旧64722B external留inert fixture；旧codec observation、v1graph及原始
+  fixtures不变，历史replay使用旧字节。新九源audit为25edges/4unsupported/0unresolved，
+  只移除readers/metadata/tokenize三目标，不扩inventory，所有claims仍false。
+- 最终pin组502项、独立主/审查专项31项零fail/error/skip（31与502重叠不相加）；
+  另source/history的736项早轮在修正最终JSON projection前通过，不能冒称最终同源码
+  736验收。独立22项包含在31内，八个内存AST破坏反例拒绝。全仓Ruff、compileall及
+  diffcheck通过，finalchain/history/policy shape独审无阻塞，final Linux focused待执行。
+- 实现位于复用worktree`feature189-source-import-audit/lunar_agent`的新分支
+  `codex/feature189-deferred-import-refusal`，基于已push5a6f4180。未执行archive成员、
+  CPython构建、target或solver。immutable custody、configured closure、ELF、G2/G3
+  runtime及生产producer仍open；不能在PR186失败时提前合这个后续切片。
+
 ## 新提交 Linux774 与完整源码不变性通过（2026-10-24）
 
 - 精确`de9bd3873ccc56bfa124e87db0dc495a084de7b7`唯一5090gpu Python3.11.15

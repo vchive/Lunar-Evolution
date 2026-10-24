@@ -61,7 +61,7 @@ def _refusal(reason):
 def test_fixed_tracked_input_pin_and_detached_candidate_emission():
     raw = _raw()
     assert len(raw) == 80050
-    assert _sha(raw) == "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"
+    assert _sha(raw) == "7d1660a9166208c412626fcd8f60cb60124060595643064b353926381565171d"
     result = policy.emit_static_python_build_inputs(raw)
     assert result["schema"] == "lunar-static-python-build-inputs-v1"
     assert result["reviewed_inputs_size"] == len(raw)

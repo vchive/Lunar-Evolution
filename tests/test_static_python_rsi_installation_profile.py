@@ -28,9 +28,9 @@ from tools.static_python_rsi_fixture import installation_profile as profile
 from tools.static_python_rsi_fixture.recipe import emit_rsi_launch_source_plan
 
 _ROOT = Path(__file__).resolve().parents[1]
-_BASE_SHA = "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"
-_OVERLAY_SHA = "91d808742d567a79b2deca48e977fd696771904e0c6c059a94ffa4274ea599e8"
-_PLAN_SHA = "bd95a2c120821d5ff4b72cae740e3abc85ee747881c13aa43ffddd9bd4197175"
+_BASE_SHA = "7d1660a9166208c412626fcd8f60cb60124060595643064b353926381565171d"
+_OVERLAY_SHA = "831d9e4625f5e9f6d7b662505bbd811d9ce23b6804a7e9c4172ddbafb77888e6"
+_PLAN_SHA = "6018846ffcfdaf1d578516043e690cdd01da413d5b885d16d18d537219d79058"
 _ASSETS = (
     "launcher.c", "pipe.c", "profile.c", "getpath.c", "lunar_fixture_profile.h", "frozen_main.py",
 )

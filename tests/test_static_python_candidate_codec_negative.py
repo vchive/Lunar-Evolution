@@ -157,7 +157,7 @@ def test_existing_loader_negative_routes_to_codec_check_before_any_loader():
                    and node.func.id == "_codec_negative" for node in ast.walk(main))
 
 
-def test_current_candidate_has_a_separate_pinned_bounded_ast_observation(tmp_path):
+def test_historical_codec_candidate_replays_its_pinned_bounded_ast_observation(tmp_path):
     fixtures = _ROOT / "tests/fixtures/static_python_source"
     prepared, _ = prepare_static_python_sources({
         path: (fixtures / (path + ".source")).read_bytes() for path in SOURCE_PATHS
@@ -169,7 +169,9 @@ def test_current_candidate_has_a_separate_pinned_bounded_ast_observation(tmp_pat
     )
     sources = {
         "_frozen_importlib": (fixtures / "Lib/importlib/_bootstrap.py.source").read_bytes(),
-        "_frozen_importlib_external": prepared["Lib/importlib/_bootstrap_external.py"],
+        "_frozen_importlib_external": (
+            fixtures / "Lunar/bootstrap_external-before-deferred-refusal.py.source"
+        ).read_bytes(),
         "abc": prepared["Lib/abc.py"],
         "codecs": (fixtures / "Lib/codecs.py.source").read_bytes(),
         "encodings.__init__": prepared["Lib/encodings/__init__.py"],

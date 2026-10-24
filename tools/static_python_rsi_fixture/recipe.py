@@ -25,7 +25,7 @@ _SOURCE_PINS = (
     ("tools/static_python_fixture/assets/profile.c", 3452,
      "3a4b2cbdb57322820aef04aaf55b92a9e085db52818f7cee4e48c33bb5ae98db"),
     ("tools/static_python_fixture/reviewed-build-inputs.json", 80050,
-     "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"),
+     "7d1660a9166208c412626fcd8f60cb60124060595643064b353926381565171d"),
     ("tools/static_python_fixture/profile.py", 6432,
      "6af684014adb22b2619e51bfcae68a5ffb87e56006f965fca3f0fd1f5f1695b4"),
     ("tools/static_python_fixture/recipe.py", 12853,

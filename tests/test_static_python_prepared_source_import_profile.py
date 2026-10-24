@@ -16,9 +16,9 @@ _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURE_ROOT = _ROOT / "tests/fixtures/static_python_source"
 
 # The four upstream Python inputs are retained as inert .source fixture bytes;
-# the five Lunar-prepared postimages come from the fixed patch policy. The
-# custom main is retained verbatim from the historical expanded candidate.
-# The current codec-negative candidate has a separate source graph and audit.
+# other prepared sources come from the fixed patch policy. The external source
+# and custom main are retained verbatim from the historical expanded candidate.
+# Later candidate revisions have separate source graphs and audits.
 _FROZEN_SOURCE_PINS = {
     "_frozen_importlib": (57082, "b84488f731914f6da30607e10f6f8d4c5c2ff7f4b0e913060aa66999c04f6252"),
     "_frozen_importlib_external": (64722, "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab"),
@@ -126,7 +126,9 @@ def test_observes_exact_prepared_nine_module_frozen_source_set() -> None:
 
     sources = {
         "_frozen_importlib": (_FIXTURE_ROOT / "Lib/importlib/_bootstrap.py.source").read_bytes(),
-        "_frozen_importlib_external": prepared["Lib/importlib/_bootstrap_external.py"],
+        "_frozen_importlib_external": (
+            _FIXTURE_ROOT / "Lunar/bootstrap_external-before-deferred-refusal.py.source"
+        ).read_bytes(),
         "abc": prepared["Lib/abc.py"],
         "codecs": (_FIXTURE_ROOT / "Lib/codecs.py.source").read_bytes(),
         "encodings.__init__": prepared["Lib/encodings/__init__.py"],

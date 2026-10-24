@@ -102,13 +102,15 @@ def test_versioned_candidate_graph_pins_source_roots_and_profile() -> None:
     }
     prepared, _ = prepare_static_python_sources(raw_sources)
     # Replay the v1 graph against its retained historical candidate bytes.
-    # The current codec-negative source AST is reviewed separately.
+    # Later codec and deferred-refusal candidates are reviewed separately.
     historical_main = (
         _FIXTURES / "Lunar/frozen_main-before-codec-negative.py.source"
     ).read_bytes()
     python_sources = {
         "_frozen_importlib": (_FIXTURES / "Lib/importlib/_bootstrap.py.source").read_bytes(),
-        "_frozen_importlib_external": prepared["Lib/importlib/_bootstrap_external.py"],
+        "_frozen_importlib_external": (
+            _FIXTURES / "Lunar/bootstrap_external-before-deferred-refusal.py.source"
+        ).read_bytes(),
         "abc": prepared["Lib/abc.py"],
         "codecs": (_FIXTURES / "Lib/codecs.py.source").read_bytes(),
         "encodings": prepared["Lib/encodings/__init__.py"],

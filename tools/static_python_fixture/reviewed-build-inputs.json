@@ -46,8 +46,8 @@
       "output": "generated-sources/Python/frozen_modules/importlib._bootstrap_external.h",
       "package": false,
       "source": "Lib/importlib/_bootstrap_external.py",
-      "source_sha256": "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab",
-      "source_size": 64722,
+      "source_sha256": "3269c01134c03bf8196306ce6aa89e24da41430ccf3bef7eb43afe362ec1bf1e",
+      "source_size": 63208,
       "symbol": "_Py_M__importlib__bootstrap_external"
     },
     {
@@ -1869,8 +1869,8 @@
         "path": "Lib/encodings/aliases.py"
       },
       {
-        "after_sha256": "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab",
-        "after_size": 64722,
+        "after_sha256": "3269c01134c03bf8196306ce6aa89e24da41430ccf3bef7eb43afe362ec1bf1e",
+        "after_size": 63208,
         "before_sha256": "a97a03ea9f9d38d90c8a50942183382ff5a479e7c4c5163c2ac5bae3561444ae",
         "before_size": 73219,
         "path": "Lib/importlib/_bootstrap_external.py"
@@ -1883,7 +1883,7 @@
         "path": "Python/import.c"
       }
     ],
-    "patch_set_sha256": "f3c6f45437b954bdb8bd59a3fd05ef98d0b1715066e570cb3c277dda16596b48"
+    "patch_set_sha256": "8ccdc0541b2e0c6e9c2bf251d9dd502d51bdaf27543ceaccccf59df41e10348e"
   },
   "source_version": "3.13.12",
   "states": {

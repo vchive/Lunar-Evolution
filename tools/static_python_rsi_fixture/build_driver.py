@@ -23,7 +23,7 @@ from tools.static_python_rsi_fixture.installation_profile import RSIProfilePrepa
 STAGES = ("configure", "freeze", "compile", "link")
 PREPARATION_SCHEMA = "lunar-static-python-rsi-installation-profile-preparation-v1"
 PREPARATION_SIZE = 73802
-PREPARATION_SHA256 = "8c37a447238682e05b43ba5fd2463e3c136805161794eec2570b146e1d791389"
+PREPARATION_SHA256 = "cb82e14008c30b3f95c7769f52b7a4005f46d897d93397fc2ae4320fab30a62d"
 _REAL_OPT_INS = frozenset({"LUNAR_STATIC_EXECUTE", "LUNAR_STATIC_REAL_BUILD"})
 _STOCK_FORBIDDEN = frozenset(
     {"Python/frozen.o", "Modules/getpath.o", "Programs/python.o", "Programs/_bootstrap_python.o"}
@@ -61,9 +61,9 @@ _STATE_FIELDS = frozenset(
     }
 )
 _REVIEWED_PINS = {
-    "base_reviewed_inputs": {"size": 80050, "sha256": "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"},
-    "reviewed_overlay": {"size": 2456, "sha256": "91d808742d567a79b2deca48e977fd696771904e0c6c059a94ffa4274ea599e8"},
-    "source_plan": {"size": 6706, "sha256": "bd95a2c120821d5ff4b72cae740e3abc85ee747881c13aa43ffddd9bd4197175"},
+    "base_reviewed_inputs": {"size": 80050, "sha256": "7d1660a9166208c412626fcd8f60cb60124060595643064b353926381565171d"},
+    "reviewed_overlay": {"size": 2456, "sha256": "831d9e4625f5e9f6d7b662505bbd811d9ce23b6804a7e9c4172ddbafb77888e6"},
+    "source_plan": {"size": 6706, "sha256": "6018846ffcfdaf1d578516043e690cdd01da413d5b885d16d18d537219d79058"},
 }
 
 

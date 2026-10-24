@@ -294,6 +294,13 @@ failure and cancelled preflight separately from later successful evidence.
   Provider-free tests cover the source transformations and normal `LookupError`
   from host `codecs.lookup` when the synthetic callback declines an unknown
   codec. This does not verify target startup registration or frozen-module use.
+- [x] Replace five fixed deferred-import entry points with immediate source
+  refusal: file/namespace readers, PathFinder cache invalidation/distributions
+  and source decoding. Preserve the actual decorators/argument domains, finite
+  profile and wire; refresh active pins while retaining historical prepared
+  source/codec/v1 graph observations. See `deferred-import-refusal.md` for the
+  31-case dedicated gate, final 502-case pin validation and open pre-read/runtime
+  limits. Complete branch CI and actual target consumption remain pending.
 - [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
   refusal sites across the complete configured source/startup scope, including

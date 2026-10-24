@@ -886,3 +886,28 @@ actual pinned CPython C/header members, ten PreConfig fields, 66 PyConfig fields
 and28 source anchors. No source/API mismatch was found. Generated configuration,
 role flags, actual compilation/consumption, link and effective runtime settings
 remain unverified; the original G2/G3 tasks stay open.
+
+## Five fixed deferred-import source refusals (2026-10-24)
+
+`deferred-import-refusal.md` records the five whole-function replacements and
+their independently projected 63,208-byte external source identity. The fixed
+reader name decorator is removed and actual PathFinder staticmethods retained.
+The current source audit has25 edges/4unsupported/0unresolved; no modules are
+added, old codec/v1 graph records stay byte-identical, and old prepared bytes
+are separately retained for historical replay.
+
+The final shape-preserving base/RSI pin group passes502 tests, and its31-case
+new dedicated subset passes with zero failures/errors/skips. The independent
+review's22 cases are included in31, not additive. Eight in-memory AST negative
+variants are rejected. The earlier736-case source/history group ran before the
+final JSON projection correction; its unchanged source/history tests passed,
+but it is not a736-case final-revision acceptance. Whole-repository Ruff,
+compileall and diff-check pass. Final-chain, literal-consumer, historical-byte
+and JSON-shape independent review reports no blocker. Linux final-revision
+focused verification and branch CI are still required.
+
+No archived source module, real configure/freezer/compiler/linker, target,
+solver or evaluator executes. SourceLoader.get_source still reads before
+decode_source; general callback/file refusal, full closure, immutable custody
+and G2/G3 runtime/admission remain open. PR186's separate49b CI now has a
+Python3.13 current-3 failure under investigation; main merge remains blocked.
