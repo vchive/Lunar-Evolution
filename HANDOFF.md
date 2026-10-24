@@ -1,5 +1,17 @@
 # 当前交接（2026-10-24，PR186 仍待验收合并）
 
+## 当前分支发布状态
+
+- `codex/feature189-followup-integration-v3` 的文档后继 `3ca9f432` 已推送到
+  GitHub；下文“本地准备/未push”描述的是当时状态。1906项实际测试源码仍为
+  `7d873753`，后继只改文档，src/tools/tests/CI未变，不重新分配验收身份。
+- 后续分支尚未建PR，P0 PR186的精确 `4da38027` 完整33job CI继续运行，
+  main仍为 `a3532cfd`，未合入。独立分支push不触发当前仅main/PR的workflow。
+- 对当前P1未完项再次只读核查：完整工具链复制已实现，但immutable custody、
+  配置构建、freezer/ELF与sealed runtime仍开放。现有bwrap FD阻塞选项没有
+  “完整复制后、remount-ro前”的setup回调点，不能据此绕过已保留的环境失败。
+  头文件/API源码审查此前已完成，本轮没有重复增加fixture或文本测试。
+
 ## 当前 P0：保留原 CI 失败，减少纯源码缓存重复工作
 
 - 原 `49b4929c2d964658206ac5435b341ec44bfd70b7` 的唯一独立 Linux mixed
