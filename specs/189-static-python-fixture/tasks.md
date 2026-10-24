@@ -99,6 +99,12 @@ failure and cancelled preflight separately from later successful evidence.
   evidence obligations in `candidate-build-provenance.md`. The archive
   signature, source projection, source/staging DTOs and source-only candidate
   receipt do not themselves prove a configured build consumed that tree.
+- [x] Independently retain the existing release/source raw records and five
+  actual fixed postimages locally, then check complete archive/source/patch/
+  staged-projection bindings offline. See `candidate-source-retention-20261024.md`.
+  This closes raw-record retention only: no local full staged filesystem or
+  historical runner live provenance is established, and the configured-build
+  consumption task above remains open.
 - [x] Cross-check the declared Zig 0.16.0 archive digest and the byte-for-byte
   archive and available Ubuntu musl package bytes on 5090gpu; preserve their
   exact versions and hashes in `release-input-audit-20261021.md`. This cross-check

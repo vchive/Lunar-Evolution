@@ -134,6 +134,13 @@ actual configure/build interface, source-custody mechanism, and source-input
 closure do not yet exist as trusted evidence. Freezing a new wire before these
 choices are resolved would encode assumptions as facts.
 
+The later independent retention described in
+[`candidate-source-retention-20261024.md`](candidate-source-retention-20261024.md)
+copies and checks the existing complete records, archive and actual fixed
+postimages locally. It closes the raw-record retention subtask only. The
+earlier remote-only limitation is historical; immutable custody, historical
+live runner provenance and configured consumption remain unproved.
+
 ## Evidence obligations before implementation or acceptance
 
 Keep the following items open until their evidence exists:

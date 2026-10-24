@@ -821,3 +821,16 @@ for a second local walk. See `toolchain-private-custody.md` for evidence pins
 and receipt limitations. No archive member, compiler, build, runtime or solver
 runs; all ten claims remain false and G1/G2/G3 remain open. The rejected
 remount/nested-userns custody probes remain failures, not copy acceptance.
+
+## Independent retention of source records — 2026-10-24
+
+Eighteen existing release/source records and five actual patched files are
+retained locally with checked transfer type/mode/size/hash and original patch
+file identities. An independent offline standard-library review reads all
+5,245 archive members and reconstructs the complete 4,837-file source and
+staged-projection pins. The five actual postimages equal the in-memory fixed
+patch results byte-for-byte. Saved signature metadata/transcripts are retained
+and compared; no new cryptographic verification or old runner replay occurs.
+See `candidate-source-retention-20261024.md` for pins and the historical record's
+LF/live-provenance limitation. This closes raw-record retention, not current
+full staged-filesystem observation, immutable custody or configured consumption.

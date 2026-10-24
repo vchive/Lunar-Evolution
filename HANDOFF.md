@@ -1,5 +1,22 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 既有源码完整记录与五个实际补丁文件独立留存（2026-10-24）
+
+- 旧release/source目录中的18个原始文件及5个实际patched postimages已取回本地，
+  type/mode/size/SHA与远端前后inventory匹配；五个patch文件还匹配旧staging manifest
+  的dev/inode/mode/nlink/size/mtime/ctime。未重跑旧observer、签名命令或case。
+- 独立标准库离线审计不extract/exec归档源码、不import仓库observer：完整5245members
+  /4837files/408dirs/108687660原始bytes匹配原extraction与source-tree pins；从AST
+  读取固定patch常量、逐字比较五个实际postimages，并重建108659188 staged bytes
+  与原staged-tree projection。签名只核既有public-key/metadata/transcript关联，未新增
+  cryptographic验证；历史staging的not-performed不变。
+- 本地ignored包`feature189-20261024/retained-source-provenance-v2-1arwy08x/`；独立
+  review SHA为`98be8a5440e3ddbb545928ff211ca6903c8e651982a03798978f0d7c494d8882`。
+  原observation是839canonical bytes+LF，840byte历史pin原样保留，不能追认旧runner的
+  live provenance。详细pins/边界见`candidate-source-retention-20261024.md`。
+- 仅关闭原始记录独立本地留存子任务；整远端stage当前状态、immutable custody、实际
+  configured build消费和G2/G3仍open。不是新的DTO、构建授权或生产验收。
+
 ## 完整 Zig 数据复制单次验收通过（2026-10-24）
 
 - 精确源码`a9b75116c3de6475785153eeb787d80985b94447`（tree
