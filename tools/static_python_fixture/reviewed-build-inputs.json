@@ -123,8 +123,8 @@
       "output": "generated-sources/Python/frozen_modules/_lunar_static_main.h",
       "package": false,
       "source": "assets/frozen_main.py",
-      "source_sha256": "6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d",
-      "source_size": 6794,
+      "source_sha256": "8f93ce3c74a2fac6d04d9f18da714101801b8d37931a99d0aa395eb3c24c82e5",
+      "source_size": 7900,
       "symbol": "_Py_M___lunar_static_main"
     }
   ],

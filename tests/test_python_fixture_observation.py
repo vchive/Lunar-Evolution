@@ -7,6 +7,7 @@ It is not a static-runtime startup or loader-enforcement acceptance claim.
 from __future__ import annotations
 
 import builtins
+import codecs
 import hashlib
 import io
 import json
@@ -60,6 +61,16 @@ def asset_observation(tmp_path):
             origin=None if name == "__main__" else "built-in" if name in BUILTINS else "frozen",
         )) for name in EXPECTED_STARTUP_MODULES
     }
+    # Host UTF-8 primitives are supplied through a synthetic finite lookup map;
+    # this is not the candidate codec registry or runtime acceptance.
+    utf8 = codecs.lookup("utf-8")
+
+    def finite_codec_lookup(name):
+        if name in ("utf-8", "cp65001", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4"):
+            return utf8
+        raise LookupError("synthetic finite codec miss")
+
+    modules["codecs"].lookup = finite_codec_lookup
     loader = SimpleNamespace(get_code=_refused, exec_module=_refused, create_module=_refused)
     modules["_frozen_importlib_external"].SourceFileLoader = lambda *_args: loader
     modules["_frozen_importlib_external"].SourcelessFileLoader = lambda *_args: loader

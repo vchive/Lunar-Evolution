@@ -10,11 +10,11 @@ from tools.static_python_fixture.build_inputs import emit_static_python_build_in
 
 PROFILE = "rsi-marker-launch-v1"
 _BASE_SIZE = 80050
-_BASE_SHA256 = "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31"
+_BASE_SHA256 = "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"
 _OVERLAY_SIZE = 2456
-_OVERLAY_SHA256 = "93a33ee5b753f7d64705adcedb1938b0f887b177348b091ed037c318eef938f0"
+_OVERLAY_SHA256 = "91d808742d567a79b2deca48e977fd696771904e0c6c059a94ffa4274ea599e8"
 _SOURCE_PLAN_SIZE = 6706
-_SOURCE_PLAN_SHA256 = "2b95d9d77a875245361ff0aa20d6a98f29034f5d0b33a03b143f3d55786dbb6a"
+_SOURCE_PLAN_SHA256 = "bd95a2c120821d5ff4b72cae740e3abc85ee747881c13aa43ffddd9bd4197175"
 _ASSETS = frozenset({
     "launcher.c", "pipe.c", "profile.c", "getpath.c", "lunar_fixture_profile.h", "frozen_main.py",
 })

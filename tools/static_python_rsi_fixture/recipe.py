@@ -12,8 +12,8 @@ PROFILE = "rsi-marker-launch-v1"
 _ROOT = Path(__file__).resolve().parents[2]
 # Reviewed constants, not digests derived from whichever source happens to exist.
 _SOURCE_PINS = (
-    ("tools/static_python_fixture/assets/frozen_main.py", 6223,
-     "627bc8e6520c58859f5d5c33d06423a7588c6f6465f5b453605f6de7ab6a64a1"),
+    ("tools/static_python_fixture/assets/frozen_main.py", 7329,
+     "6d1f3aaf075b62c7d5c36128e6cfff8dce6f449a9086fc12dcd65b83b6ce8825"),
     ("tools/static_python_fixture/assets/getpath.c", 1288,
      "a067fe6dc9a2bd63d5847e29b14c9b7c30d42432dcf1f505bb461feae6b2d722"),
     ("tools/static_python_fixture/assets/launcher.c", 1546,
@@ -25,7 +25,7 @@ _SOURCE_PINS = (
     ("tools/static_python_fixture/assets/profile.c", 3452,
      "3a4b2cbdb57322820aef04aaf55b92a9e085db52818f7cee4e48c33bb5ae98db"),
     ("tools/static_python_fixture/reviewed-build-inputs.json", 80050,
-     "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31"),
+     "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"),
     ("tools/static_python_fixture/profile.py", 6432,
      "6af684014adb22b2619e51bfcae68a5ffb87e56006f965fca3f0fd1f5f1695b4"),
     ("tools/static_python_fixture/recipe.py", 12853,

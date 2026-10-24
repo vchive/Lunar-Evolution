@@ -13,7 +13,6 @@ from tools.static_python_fixture.profile import (
     CONFIG,
     EXPECTED_STARTUP_MODULES,
 )
-from tools.static_python_fixture.recipe import emit_build_plan
 from tools.static_python_fixture.source_patches import (
     SOURCE_PATHS,
     prepare_static_python_sources,
@@ -23,7 +22,6 @@ _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURES = _ROOT / "tests/fixtures/static_python_source"
 _GRAPH = _ROOT / "specs/189-static-python-fixture/startup-scope-graph-cpython-3.13.12-v1.json"
 _ROOTS = _ROOT / "specs/189-static-python-fixture/startup-roots-cpython-3.13.12.json"
-_REVIEWED_INPUTS = _ROOT / "tools/static_python_fixture/reviewed-build-inputs.json"
 _ARCHIVE_SHA256 = "2a84cd31dd8d8ea8a8aff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593"
 _ROOT_SHA256 = "d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313"
 
@@ -32,7 +30,7 @@ def _sha256(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def test_versioned_candidate_graph_pins_source_roots_and_profile(tmp_path: Path) -> None:
+def test_versioned_candidate_graph_pins_source_roots_and_profile() -> None:
     graph_raw = _GRAPH.read_bytes()
     graph = json.loads(graph_raw)
     roots_raw = _ROOTS.read_bytes()
@@ -103,13 +101,11 @@ def test_versioned_candidate_graph_pins_source_roots_and_profile(tmp_path: Path)
         for path in SOURCE_PATHS
     }
     prepared, _ = prepare_static_python_sources(raw_sources)
-    plan_dir = tmp_path / "plan"
-    emit_build_plan(plan_dir)
-    reviewed = json.loads(_REVIEWED_INPUTS.read_bytes())
-    task = next(
-        task for task in reviewed["freeze_tasks"]
-        if task["generator_id"] == "_lunar_static_main"
-    )
+    # Replay the v1 graph against its retained historical candidate bytes.
+    # The current codec-negative source AST is reviewed separately.
+    historical_main = (
+        _FIXTURES / "Lunar/frozen_main-before-codec-negative.py.source"
+    ).read_bytes()
     python_sources = {
         "_frozen_importlib": (_FIXTURES / "Lib/importlib/_bootstrap.py.source").read_bytes(),
         "_frozen_importlib_external": prepared["Lib/importlib/_bootstrap_external.py"],
@@ -119,7 +115,7 @@ def test_versioned_candidate_graph_pins_source_roots_and_profile(tmp_path: Path)
         "encodings.aliases": prepared["Lib/encodings/aliases.py"],
         "encodings.utf_8": (_FIXTURES / "Lib/encodings/utf_8.py.source").read_bytes(),
         "io": (_FIXTURES / "Lib/io.py.source").read_bytes(),
-        "_lunar_static_main": (plan_dir / task["source"]).read_bytes(),
+        "_lunar_static_main": historical_main,
         "Python/import.c": (_FIXTURES / "Python/import.c.source").read_bytes(),
         "Python/import.c.postimage": prepared["Python/import.c"],
         "Python/pylifecycle.c": (_FIXTURES / "Python/pylifecycle.c.source").read_bytes(),

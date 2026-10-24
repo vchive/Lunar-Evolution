@@ -834,3 +834,21 @@ and compared; no new cryptographic verification or old runner replay occurs.
 See `candidate-source-retention-20261024.md` for pins and the historical record's
 LF/live-provenance limitation. This closes raw-record retention, not current
 full staged-filesystem observation, immutable custody or configured consumption.
+
+## Candidate codec workload and identity transition — 2026-10-24
+
+The existing candidate negative case now checks the finite UTF-8 name/aliases,
+fixed unknown-codec rejection and surrounding module/path profile. All candidate
+and RSI input/overlay/profile pins are refreshed as one source-only change.
+The historical expanded main and source graph remain unchanged; a separate
+current nine-source AST observation binds the new main to the same 28 import
+edges and four unsupported sites, with the dynamic-import site's new line.
+
+The final combined selection passes 1,032 distinct cases with zero failures,
+errors or skips, including the 54 copy and 204 runner cases. The dedicated
+22-case codec selection and exact workflow XML guard pass separately;
+independent review's 69 cases overlap and are not additive. Whole-repository
+Ruff, src/tools/tests compileall and diff checks pass. See
+`candidate-codec-negative.md` for precise candidate pins and earlier grouped
+focused results. No archive member, build tool, static image or solver runs;
+configured closure, immutable custody and G2/G3 target acceptance stay open.

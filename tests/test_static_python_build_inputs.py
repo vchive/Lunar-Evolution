@@ -61,7 +61,7 @@ def _refusal(reason):
 def test_fixed_tracked_input_pin_and_detached_candidate_emission():
     raw = _raw()
     assert len(raw) == 80050
-    assert _sha(raw) == "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31"
+    assert _sha(raw) == "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"
     result = policy.emit_static_python_build_inputs(raw)
     assert result["schema"] == "lunar-static-python-build-inputs-v1"
     assert result["reviewed_inputs_size"] == len(raw)
@@ -181,7 +181,7 @@ def test_nine_frozen_tasks_have_matching_header_layout_symbols_and_no_header_dig
     custom = next(task for task in tasks if task["name"] == "_lunar_static_main")
     assert custom["source"] == "assets/frozen_main.py"
     assert custom["origin"] == "expanded-fixture-asset"
-    assert custom["source_size"] == 6794
+    assert custom["source_size"] == 7900
 
 
 def test_compile_requirements_keep_aliasing_proposed_configuration_and_open_substitutions():

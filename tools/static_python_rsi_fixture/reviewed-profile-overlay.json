@@ -1,12 +1,12 @@
 {
   "base": {
-    "sha256": "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31",
+    "sha256": "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c",
     "size": 80050
   },
   "profile": "rsi-marker-launch-v1",
   "schema": "lunar-static-python-rsi-profile-overlay-v1",
   "source_plan": {
-    "sha256": "2b95d9d77a875245361ff0aa20d6a98f29034f5d0b33a03b143f3d55786dbb6a",
+    "sha256": "bd95a2c120821d5ff4b72cae740e3abc85ee747881c13aa43ffddd9bd4197175",
     "size": 6706
   },
   "substitutions": [
@@ -43,8 +43,8 @@
         "output": "generated-sources/Python/frozen_modules/_lunar_static_main.h",
         "package": false,
         "source": "assets/frozen_main.py",
-        "source_sha256": "2b30f4463db471419df601a0c7640a560d2be95aed08d69cdf0e8e10d6871d28",
-        "source_size": 7227,
+        "source_sha256": "e1285d5a8308209067630e9135d828737019b30533701ea86efe859b6461b7f6",
+        "source_size": 8333,
         "symbol": "_Py_M___lunar_static_main"
       },
       "before": {
@@ -54,8 +54,8 @@
         "output": "generated-sources/Python/frozen_modules/_lunar_static_main.h",
         "package": false,
         "source": "assets/frozen_main.py",
-        "source_sha256": "6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d",
-        "source_size": 6794,
+        "source_sha256": "8f93ce3c74a2fac6d04d9f18da714101801b8d37931a99d0aa395eb3c24c82e5",
+        "source_size": 7900,
         "symbol": "_Py_M___lunar_static_main"
       },
       "key": "name",

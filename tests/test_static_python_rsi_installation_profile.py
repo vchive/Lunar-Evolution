@@ -28,9 +28,9 @@ from tools.static_python_rsi_fixture import installation_profile as profile
 from tools.static_python_rsi_fixture.recipe import emit_rsi_launch_source_plan
 
 _ROOT = Path(__file__).resolve().parents[1]
-_BASE_SHA = "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31"
-_OVERLAY_SHA = "93a33ee5b753f7d64705adcedb1938b0f887b177348b091ed037c318eef938f0"
-_PLAN_SHA = "2b95d9d77a875245361ff0aa20d6a98f29034f5d0b33a03b143f3d55786dbb6a"
+_BASE_SHA = "6e2d35188aadc5e00f2d6eb98e90b2f9e34f3a425c8f3575b759f52c3e38ba5c"
+_OVERLAY_SHA = "91d808742d567a79b2deca48e977fd696771904e0c6c059a94ffa4274ea599e8"
+_PLAN_SHA = "bd95a2c120821d5ff4b72cae740e3abc85ee747881c13aa43ffddd9bd4197175"
 _ASSETS = (
     "launcher.c", "pipe.c", "profile.c", "getpath.c", "lunar_fixture_profile.h", "frozen_main.py",
 )
@@ -203,7 +203,7 @@ def test_pending_headers_have_no_generated_digest_or_build_runtime_admission_cla
     main_header = next(item for item in output["pending_frozen_headers"]
                        if item["name"] == "_lunar_static_main")
     assert main_header["source_sha256"] == (
-        "2b30f4463db471419df601a0c7640a560d2be95aed08d69cdf0e8e10d6871d28"
+        "e1285d5a8308209067630e9135d828737019b30533701ea86efe859b6461b7f6"
     )
     assert set(output["claims"]) == _CLAIMS
     assert all(value is False for value in output["claims"].values())

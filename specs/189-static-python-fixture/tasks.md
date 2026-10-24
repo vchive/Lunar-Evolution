@@ -335,6 +335,12 @@ safe-extraction or signature-verification result.
   sources under `tools/static_python_fixture/assets/`; bind them to generated
   tables and the static image, then observe actual computation, pipe exchange
   and the required predefined bounded negative cases.
+- [x] Add the fixed candidate UTF-8/unknown-codec workload to the existing
+  `loader-negative` source, preserve the finite inventory and output wire,
+  refresh the full candidate/RSI pin chain, and retain a separate current-source
+  AST audit without rewriting historical evidence. The 22 synthetic/source
+  cases and the final 1,032-case combined regression pass without skips; this
+  does not complete freezing, image binding or target negative acceptance.
 - [ ] Complete configured/static-target binding and actual negative validation of
   the existing file/zip/dynamic-extension refusal patches; resolve remaining
   bootstrap_external and unsupported codec routes.

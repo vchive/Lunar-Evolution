@@ -1,5 +1,22 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 候选 codec 负例与新源码审计（2026-10-24）
+
+- 现有`loader-negative`增加固定UTF-8名称/六别名的encode/decode与consumed-count检查，
+  固定未知codec必须LookupError，前后核对module names/object identity及path/hooks。
+  只使用已在有限清单内的`codecs`，不改case、module inventory或observation wire。
+- base/RSI候选资产、source-plan、reviewed inputs/overlay、profile preparation与detached
+  installation完整pin链已同步刷新。旧6794B展开main另留inert fixture；旧v1 graph、
+  wire和pins不变。当前7900B main及完整九源另跑bounded AST：28imports、4unsupported、
+  0unresolved，固定dynamic-import site由68行移至94行。详见
+  `candidate-codec-negative.md`与单独新source-imports JSON。都是候选源码，未构建image。
+- 最终去重组合1032项全过（0fail/error/skip），包含copy54与runner204；单独22项新CI
+  门及其workflow XML guard通过。独立69项与组合重叠不相加；全仓Ruff、src/tools/tests
+  compileall、diffcheck通过。证据在本worktree ignored`feature189-20261024/codec-final-*/`。
+  新增固定22项CI门，旧专项门计数不减。未执行归档成员、compiler/freezer/target/solver。
+- PR186仍保持49b4929c，完整CI待完成，尚未合main；后续分支不替换它的Linux验收。
+  本切片不关闭configured closure、immutable custody或G2/G3 target验收。
+
 ## 既有源码完整记录与五个实际补丁文件独立留存（2026-10-24）
 
 - 旧release/source目录中的18个原始文件及5个实际patched postimages已取回本地，

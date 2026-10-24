@@ -170,6 +170,12 @@ collects CPython observations, and exchanges bounded constant pipe bytes via
 `_lunar_fixture_pipe`. Its fixed case IDs are `baseline` and `loader-negative`.
 These sources still require matching freezing, compilation and actual target
 startup; source inspection is not a successful import or runtime observation.
+The current `loader-negative` candidate also requires the fixed UTF-8 name and
+six aliases to round-trip, one fixed unsupported codec to raise `LookupError`,
+and the surrounding module/path profile to remain unchanged. Candidate and RSI
+pins are refreshed explicitly in `candidate-codec-negative.md`; the old expanded
+main and its historical graph remain retained separately. The new nine-source
+AST observation is a source audit, not target registry or loader acceptance.
 The existing pipe builtin only accesses the two original parent-owned broker
 pipe endpoints; it is not a generic FD, filesystem, HTTP or arbitrary execution
 API. Complete the required unknown module/codec and loader-negative matrix
