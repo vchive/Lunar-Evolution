@@ -40,6 +40,10 @@ failure and cancelled preflight separately from later successful evidence.
   `serial-regression-performance.md`. Preserve fresh source/SQLite observations
   and all history/policy checks; validate bounded pure-cache improvements with
   focused drift/eviction tests, the exact Linux case and final-source CI.
+- [x] Implement optional full-byte-checked resident hints and identity-only warm
+  retention. Add 14 multi-version/fallback/limit/inflight-eviction cases; pass
+  the 675-case focused union, Ruff, compileall, diff checks and independent
+  source/test review. This does not close the preceding Linux/CI merge gate.
 
 - [x] Specify the bounded archive-receipt and extraction-manifest preparation
   contract in `verified-inputs.md`; keep advertised pins and caller-supplied

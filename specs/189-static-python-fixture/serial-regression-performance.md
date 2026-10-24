@@ -4,6 +4,62 @@ This continuation addresses the existing three-child mixed serial regression
 gate. It changes no solve budget, policy/admission wire, evaluator behavior,
 checkpoint digest algorithm or source-fingerprint output.
 
+## Resident source hints after the Python 3.13 CI failure
+
+Exact `49b4929c` passed its single independent Linux mixed case in 553.889 s,
+but its original Python 3.13 current-3 CI case failed in 601.169 s with
+`rsi_brs_rejection_provenance_allowance_exhausted` and an unknown worker
+attempt. The stack is where the deadline was observed, not proof of a CPU
+hotspot. Preserve both outcomes; do not rerun that source or enlarge the
+600-second control. PR186 remains unmerged.
+
+This continuation changes only extraction-cache lookup and warm retention:
+
+- Keep the complete existing `(path, raw, *locator)` LRU keys and all retained
+  source versions. Add at most one locator hint per resident entry, keyed by
+  `(path, *locator)`, holding only references to its resident key and value.
+- A hint is usable only when its path and entire locator agree, the newly
+  read raw bytes compare equal in full, and the original content-key lookup
+  returns the identical resident value. Otherwise use the original full-key
+  lookup. This avoids hashing a newly allocated whole-file bytes object on a
+  warm hit; it does not replace content comparison with a locator or digest.
+- A warm retain with identical source, resolved target and code references
+  changes only LRU order. It still enforces current entry and byte limits.
+  Replacement or a no-longer-cacheable entry follows the original release /
+  insertion path. No resolved object id may outlive its strong reference.
+- Clear, replacement and eviction remove the corresponding hint when it
+  points to the released entry. Removing an older version must not remove a
+  different resident version's hint. Hints cannot retain evicted source data.
+- Use the existing source-cache lock. A clear or eviction between the initial
+  lookup and final retain must permit a normal bounded reinsertion. Preserve
+  both full fresh file reads, both backend/locator/code observations, extraction
+  timing, normalization, live hooks and every final identity SHA computation.
+
+The 1,024-entry and 24 MiB raw-plus-extracted-UTF-8 payload limits remain.
+The hint table adds bounded reference metadata; 24 MiB is not a claim about
+the Python process's total heap. Source changes, changed defaults/config/code,
+and mid-observation drift keep their existing outcomes. No row, owner, policy,
+deadline, publication or runtime gate is skipped or memoized.
+
+Before implementation, two independent four-state local comparisons of the
+same fixed `49b4929c` graph compare original, warm-retain-only, hint-only and
+combined helpers. The guarded second comparison rotates/reverses order across
+15 rounds of three calls per state: original median 0.080469 s, combined
+0.067284 s (16.38% less locally). Complete policy projections agree, as do
+1,455 source requests, 1,434 fresh reads, 930 normalization calls and 738
+fingerprints per call. All variants retain 613 entries / 73 raw allocations /
+4,376,722 payload bytes. A 15,400-operation LRU/accounting model and the 37
+existing source-cache fixture cases pass. The original diagnostic scope text
+was too narrow; a separately retained correction describes all four variants
+without rewriting the original result. This is helper-only local evidence,
+not acceptance or an E2E speedup claim.
+
+Implementation acceptance additionally requires checked-in multi-version,
+stale/wrong-hint fallback, clear/eviction race, concurrency and tightened-limit
+tests, unchanged drift/refusal tests, focused CI count, Ruff, compileall and
+diff checks. The new exact source then needs its own single original-budget
+Linux mixed run and full final-head CI before PR186 can merge.
+
 ## Full-byte source-extraction keys after the Python 3.11 failure
 
 The independent, unprofiled `3728e272` Python 3.11 Linux mixed case still

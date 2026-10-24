@@ -1,4 +1,37 @@
-# 当前交接（2026-10-23，PR185 合入后续开发）
+# 当前交接（2026-10-24，PR186 仍待验收合并）
+
+## 当前 P0：保留原 CI 失败，减少纯源码缓存重复工作
+
+- 原 `49b4929c2d964658206ac5435b341ec44bfd70b7` 的唯一独立 Linux mixed
+  通过（case553.889秒），但 CI run40036954373 的 Python3.13 current-3 失败：
+  case601.169秒，`rsi_brs_rejection_provenance_allowance_exhausted`，附
+  `rsi_native_gateway_attempt_unknown`。3541项中3538通过、1失败、2平台条件跳过；
+  原600秒control未变，不能合main。栈只表明deadline到期，不证明全局耗时热点。
+  完整原始artifact、XML与13,467,489B job log留在ignored
+  `feature189-20261023/ci-watch-49b4929c-rm0afyfq/`；log SHA为
+  `294683a0738438ff3e98792159de2a62dfd725d3fe453dccaf25172d3708d1fb`。
+  其余原CI结果继续收齐；不重跑49b或扩大预算。
+- 当前修复只在完整content-key LRU外增加bounded locator hint。每次仍对新鲜完整raw
+  比较相等，并确认同一resident entry；fallback保持原完整key lookup。同source/target/
+  code对象的warm retain只改LRU与执行原限额，不再release/reinsert同一payload。
+  clear/替换/淘汰清理对应hint；多版本原key保留，hint不承诺总指最近命中版本。
+  双fresh read、双backend/locator/code检查、normalization、hooks与最终identity SHA
+  均保留。1024entry/24MiB raw+text数据上限未变，新增的有界索引元数据不等于总heap不变。
+- 两轮独立完整fixed-policy helper对照均约减少16.4%局部耗时；guarded轮15×3次
+  original median0.080469秒→combined0.067284秒。完整projection及每call
+  1455request/1434fresh/930normalize/738fingerprint相同，613entries/73raw/
+  4,376,722B相同。这不是E2E结果。实际落地cache另通过15,400步独立oracle与
+  7线程14,000步retain/clear账目核对，code/tests/SDD独审无阻断。
+- 新增14项针对性反例，使source专项37→51、CI cache/identity门75→89，零跳过。
+  本地最终联合675项全部通过、零fail/error/skip（68.007秒），全仓Ruff、
+  src/tools/tests compileall和diff-check通过。原有测试函数与600秒预算未改。
+  ignored证据为 `feature189-20261024/source-hint-final-0sbnlwxd/`。
+  新源码仍须自己的唯一原预算Linux mixed及精确head完整CI通过，PR186保持未合并。
+- 后续P1源码 `966c5cf9` 已独立通过唯一Linux focused1231项、零fail/error/skip；
+  2338files/292dirs完整bytes/modes不变，238模块来源与17required匹配。
+  文档后继 `9f5bad28` 已push，source/tools/tests/CI仍与966相同。原始证据已保全，
+  root独审PASS；该后续分支尚未建PR，不替代本P0 CI。实际custody/build/runtime和
+  OpenEvolve/Shinka生产接线仍开放，P2继续后置。
 
 ## Python 3.11 独立失败与有效局部诊断（2026-10-24）
 
