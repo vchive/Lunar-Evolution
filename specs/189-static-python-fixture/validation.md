@@ -850,5 +850,31 @@ errors or skips, including the 54 copy and 204 runner cases. The dedicated
 independent review's 69 cases overlap and are not additive. Whole-repository
 Ruff, src/tools/tests compileall and diff checks pass. See
 `candidate-codec-negative.md` for precise candidate pins and earlier grouped
-focused results. No archive member, build tool, static image or solver runs;
-configured closure, immutable custody and G2/G3 target acceptance stay open.
+focused results. The existing launcher suite builds an inert argv probe against
+a fake C header/runtime; it does not build CPython. No archive member, CPython
+build/freezer, candidate static image or solver runs; configured closure,
+immutable custody and G2/G3 target acceptance stay open.
+
+## Linux focused source-invariance refusal and candidate C API review (2026-10-24)
+
+The first and only Linux focused run of exact83c1d88d has 774 passing tests,
+zero failures/errors/skips, 236 verified module origins and unchanged bytes/full
+modes/exec bits for all 2,332 original tracked files. Full source invariance
+fails on three added pyc files and one cache directory. The overall result is
+FAIL, with the original source and additions retained. The old collector exits1
+without recording its child Popen returncode before the failing assertion;
+the plugin's session exitstatus0 and passing XML are distinct receipts, not a
+reconstruction of that missing raw process status. See
+`candidate-codec-negative.md` for the retained artifact pins and location.
+
+Three source-only CLI argv lists now explicitly include `-B`; all original
+assertions, the minimal environment and full source-invariance gate remain.
+The local launch51+codec22 set passes73 with no skips. New-source Linux focused
+verification must persist child returncode and complete before/after inventories
+before any overall assertion, including on refusal. It is not a retry of83c.
+
+The separate independent `profile-getpath-source-review-20261024.md` checks ten
+actual pinned CPython C/header members, ten PreConfig fields, 66 PyConfig fields
+and28 source anchors. No source/API mismatch was found. Generated configuration,
+role flags, actual compilation/consumption, link and effective runtime settings
+remain unverified; the original G2/G3 tasks stay open.

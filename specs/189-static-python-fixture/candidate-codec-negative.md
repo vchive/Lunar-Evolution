@@ -130,6 +130,40 @@ line assertions; those expectations were corrected to the new source. Historical
 assertions and the old-main rejection vector were retained. Repository Ruff,
 `compileall` over `src tools tests`, and `git diff --check` pass.
 
-No configure, compiler, freezer, linker, archived member, solver, remote evaluator
-or target runtime was executed. Actual immutable custody and G2/G3 acceptance
-remain open.
+The existing RSI launcher tests compile a bounded repository-owned argv probe
+against a fake `Python.h` and fake runtime. That fixture is not CPython or the
+candidate target. No CPython configure/freezer/compiler/link, archived member,
+solver, remote evaluator or target runtime was executed. Actual immutable
+custody and G2/G3 acceptance remain open.
+
+## First Linux focused attempt and source-invariance refusal
+
+The one provider-free Linux run of exact commit
+`83c1d88dd86cdf98138646abea6d3ed56fa2581b` reports 774 tests, zero
+failures/errors/skips and 21.697 XML seconds. All 236 loaded Lunar/tools modules
+match their source records. All 2,332 original tracked source files retain their
+bytes, full modes and executable bits. The overall gate nevertheless **fails**:
+three `.pyc` files and one `__pycache__` directory were added to the source tree.
+Both the original tree and additions are retained; this source was not rerun.
+
+The CLI test with a replaced minimal environment drops inherited
+`PYTHONDONTWRITEBYTECODE`, consistent with those additions. The three CLI argv
+lists now pass `-B` explicitly, keeping the minimal environment, original
+assertions and full-tree invariance requirement. Local launch51 plus codec22
+passes all 73 cases without skips. A new-commit Linux run is still required.
+
+The original collector asserted source invariance before persisting the child
+`Popen.returncode`. That raw child status is unknown. The recorded pytest plugin
+session status is 0 and collector status is 1; neither is substituted for the
+missing child receipt. The replacement collector must persist raw process
+status and complete before/after inventories before evaluating any gate.
+
+All 17 returned artifacts match their manifest SHA-256. The ignored local
+package is
+`.lunar-evolution/feature189-codec-linux-evidence/83c1d88dd86c-l2c_8b69/`.
+Its artifact manifest SHA-256 is
+`a970b3601c3accc4e4addab9ded3d8f0829e8d74056a3a0bff93e84775111491`;
+summary SHA-256 is
+`363554763e87f209f5b7361cff0cbc506526a8d649a570648156943afa458c23`;
+XML SHA-256 is
+`679d1fb5c4b41c842be5c16d0403d9c2afb0254e717f1a74eed6462dac59b0ff`.

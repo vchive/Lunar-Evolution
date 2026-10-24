@@ -327,6 +327,12 @@ safe-extraction or signature-verification result.
 - [ ] Validate the existing candidate `assets/profile.c` and `assets/getpath.c`
   against actual3.13.12 C headers, all path outputs and frozen-use flags/API;
   bind and verify effective isolated preconfig/config, UTF-8 and locale dispositions.
+- [x] Independently review actual 3.13.12 header/API source compatibility for
+  those candidate files: ten PreConfig fields, 66 PyConfig fields and 28 source
+  anchors, including isolated kind3, NULL string clears and wide-list copying.
+  See `profile-getpath-source-review-20261024.md`. Generated `pyconfig.h`, actual
+  role flags, compilation, consumption and effective runtime settings in the
+  preceding task remain open; no source incompatibility was found to fix.
 - [ ] Close all encodings/importlib/stdio/startup dependencies and stock frozen,
   alias, separate embedded startup arrays and static inittab dispositions. Replace
   the seed with an exact finite

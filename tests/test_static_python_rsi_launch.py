@@ -319,13 +319,13 @@ def test_source_preparation_is_create_only(tmp_path: Path):
 def test_source_only_cli_requires_explicit_destination_and_retains_plan(tmp_path: Path):
     module = "tools.static_python_rsi_fixture"
     missing = subprocess.run(
-        [sys.executable, "-m", module], cwd=_ROOT, capture_output=True,
+        [sys.executable, "-B", "-m", module], cwd=_ROOT, capture_output=True,
         timeout=10, check=False,
     )
     assert missing.returncode != 0
     destination = tmp_path / "source plan with spaces"
     completed = subprocess.run(
-        [sys.executable, "-m", module, "--destination", str(destination)],
+        [sys.executable, "-B", "-m", module, "--destination", str(destination)],
         cwd=_ROOT, capture_output=True, timeout=10, check=False,
         env={"PATH": os.defpath, "LUNAR_STATIC_EXECUTE": "1",
              "LUNAR_STATIC_FIXTURE_CASE": "loader-negative"},
@@ -344,7 +344,7 @@ def test_source_only_cli_refuses_execution_or_profile_options_before_output(
 ):
     destination = tmp_path / "must-not-exist"
     completed = subprocess.run(
-        [sys.executable, "-m", "tools.static_python_rsi_fixture", "--destination",
+        [sys.executable, "-B", "-m", "tools.static_python_rsi_fixture", "--destination",
          str(destination), option], cwd=_ROOT, capture_output=True, timeout=10, check=False,
     )
     assert completed.returncode != 0

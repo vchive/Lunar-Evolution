@@ -1,5 +1,34 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## Linux focused 首轮拒绝与 CLI 缓存修复（2026-10-24）
+
+- 精确`83c1d88dd86cdf98138646abea6d3ed56fa2581b`在5090gpu唯一一次774项
+  provider-free focused测试全部通过（零fail/error/skip，XML21.697秒），236个
+  loaded modules来源核对通过，2332个原tracked文件bytes/full modes/exec bits不变。
+  但完整源码树不变性门FAIL：新增一个`__pycache__`目录和三个pyc，不能把该轮
+  记为整体验收通过。原目录及新增文件保留，没有重跑或清理。
+- source-only CLI测试替换环境时丢弃继承的`PYTHONDONTWRITEBYTECODE`，与新增缓存
+  相符；没有追踪后重跑来改写首轮结论。三个CLI argv现显式加`-B`，保留原最小环境、
+  测试断言和完整源码不变性门。修复后本地launch51+codec22共73项零跳过通过，
+  Ruff、compileall和diffcheck通过；新源码的Linux774验收待提交后单次执行。
+- 旧collector在source-after断言前未持久化Popen退出码，原child rc未知，不能从
+  XML推作已记录rc；plugin session exitstatus0与collector rc1分别留存。17个回传
+  artifact的SHA均核对。证据在本worktree ignored
+  `.lunar-evolution/feature189-codec-linux-evidence/83c1d88dd86c-l2c_8b69/`；
+  manifest SHA为`a970b3601c3accc4e4addab9ded3d8f0829e8d74056a3a0bff93e84775111491`。
+  新collector必须先落盘真实child rc及完整before/after，再判整体门，失败同样留证。
+
+## 候选 PyConfig/getpath 实际源码兼容审查（2026-10-24）
+
+- 独立读取官方3.13.12 archive的十个C/header成员并逐项匹配原manifest SHA；
+  Linux GIL/nondebug/nonstats候选的十个PreConfig、66个PyConfig字段及28处源码
+  依据一致，未发现字段/API不兼容，不改C资产。包括isolated kind3、NULL string
+  clear、wide-list复制/清空及两阶段path hook。详见
+  `specs/189-static-python-fixture/profile-getpath-source-review-20261024.md`。
+- 只关闭源级兼容子任务；实际`pyconfig.h`、role flags、`WITH_PYMALLOC`/
+  `Py_BUILD_CORE`、compiler warning策略、configured消费、link及有效runtime设置
+  仍open。未执行archive成员或CPython构建；不能把header审查当G2/G3通过。
+
 ## 候选 codec 负例与新源码审计（2026-10-24）
 
 - 现有`loader-negative`增加固定UTF-8名称/六别名的encode/decode与consumed-count检查，
@@ -13,7 +42,8 @@
 - 最终去重组合1032项全过（0fail/error/skip），包含copy54与runner204；单独22项新CI
   门及其workflow XML guard通过。独立69项与组合重叠不相加；全仓Ruff、src/tools/tests
   compileall、diffcheck通过。证据在本worktree ignored`feature189-20261024/codec-final-*/`。
-  新增固定22项CI门，旧专项门计数不减。未执行归档成员、compiler/freezer/target/solver。
+  新增固定22项CI门，旧专项门计数不减。RSI launch既有测试会用cc与fake Python.h/
+  fake runtime构建inert argv probe；未构建CPython、执行归档成员、freezer/target/solver。
 - PR186仍保持49b4929c，完整CI待完成，尚未合main；后续分支不替换它的Linux验收。
   本切片不关闭configured closure、immutable custody或G2/G3 target验收。
 
