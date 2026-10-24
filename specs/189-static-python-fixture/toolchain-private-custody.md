@@ -200,3 +200,50 @@ the original budget with an internal elapsed-time anchor and no further caller
 clock callback. This remains a sequential observation, not concurrent atomic
 custody. Complete real-Zig copying and the unsupported custody interval have
 separate acceptance status.
+
+## Complete real-Zig data-only replay (2026-10-24)
+
+One replay on 5090gpu uses exact source commit
+`a9b75116c3de6475785153eeb787d80985b94447`, tree
+`7c72cd8b122308a77bc6f5a66494035f287b0530`, and CPython 3.11.15 with `-I -S`
+and no optimization. It creates and observes all 19,546 files and 1,286
+directories (20,832 members; 357,913,169 file bytes). Snapshot acquisition plus
+materialization takes 11.002850472927094 seconds. The original 120-second
+deadline also covers the independent remote complete walk/hash, loaded-module
+checks and source-after comparison: 11.696064406074584 seconds. Runner elapsed
+is 11.891156604979187 seconds, exit code is zero, stderr is empty, and the
+exclusive launch marker records exactly one launch. No archive member runs.
+
+The independent review compares all 2,327 source files to the exact Git commit
+and source archive, checks all eleven loaded modules, and verifies transferred
+types, modes, sizes and hashes for thirteen indexed root files plus the index
+itself. The copied Zig tree is not transferred for a second local walk; local
+review verifies the remote complete-walk receipts bound to the independently
+reviewed runner and input pins. All ten observation claims remain false. This
+closes the data-copy replay only, with no immutable interval, build-consumption,
+compiler, runtime, solver or production acceptance.
+
+Evidence is retained under this worktree's ignored
+`.lunar-evolution/validation/feature189-20261024/real-zig-copy-a9b75116-u3wmfaf9/`;
+the remote disposable directory is
+`5090gpu:/home/qinzhiqing/vchive/lunar-feature189-data-copy-a9b75116-p4ys47mv`.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| Original Zig archive | `70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00` |
+| Complete extraction manifest (3,926,082 bytes) | `b988925aa63b672f26871f06b3e9585ced9f16154b41fcf22ca7fb3a9bc93b90` |
+| Exact source archive | `d403c6dbf2b70da836e7819908f36150054643ded3850eab9f4a40d1bd2889bf` |
+| Source-file index | `48dde5ed4e916bdd03381fc962ce91329f47bc89e34c1035def6069670ca9ed5` |
+| Fixed replay runner | `94929af6a15d23ae7ccc9a20e28235be96655a8e6e3cf220aeec0bef23fb5857` |
+| Tree observation | `5bfeda0e4ad59e5078fd5d2e1de7acc955d4306fb1cf300f5608e10abd0b381a` |
+| Transferred bundle | `787c11242486fc7cf1302a16a7b9195e8770fcdba801c9b25e411cdca04cd69a` |
+| Root evidence index | `3abd7f53f31c3030fd17bf55b20a8993d9da7238b9e95815abc87e95df80ac73` |
+| Independent review JSON | `7c0f997f4fb32b0d81864452178cfd99379652bcb2be41887666f9206931a68a` |
+
+The same source's Linux focused selection separately passes all 54 cases with
+zero failures, errors or skips (pytest 4.09 seconds). Its command, log, XML and
+summary transfers match their four pins under ignored
+`feature189-20261024/lunar-feature189-focused54-a9b75116-lop0bqmg/`.
+JUnit XML SHA-256 is
+`8cabd0f6554fb4c2fbdfd9750bc186ad17b11bfedc2a732f153fcad4fd12b398`.
+This is focused coverage, not complete three-version CI or G1/G2/G3 acceptance.

@@ -31,6 +31,10 @@ The next setup component is specified in
 materializer creates every member from the same checked archive snapshot,
 preserves exact modes and runs the existing complete observer at the actual
 new root. It supplies neither immutable custody nor compiler consumption.
+The unique exact-a9b75116 real-Zig data-only replay passes in 11.70 seconds
+including the remote independent walk and source-after validation under the
+original 120-second budget; all source/module/transfer pins are independently
+audited. The copied tree is not locally re-walked. Linux focused54 also passes.
 The tested single-layer remount and nested-bwrap routes are unsupported under
 5090gpu's current AppArmor policy; ordinary host copying is not a fallback for
 that enforcement gate. Keep configured closure, helper/cache bindings, actual

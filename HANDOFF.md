@@ -1,5 +1,28 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 完整 Zig 数据复制单次验收通过（2026-10-24）
+
+- 精确源码`a9b75116c3de6475785153eeb787d80985b94447`（tree
+  `7c72cd8b122308a77bc6f5a66494035f287b0530`）在5090gpu Python3.11.15完成唯一
+  real-Zig数据复制/观察：19546files、1286dirs、20832members、357913169bytes。
+  snapshot+materialize为11.002850秒，原120秒预算包含独立完整walk/hash与source-after
+  共11.696064秒，runner11.891157秒、exit0、stderr空、O_EXCL launch_count1。
+  未执行Zig或任何archive成员，未重跑。十项observer claims仍全部false。
+- 2327源码文件前后inventory/bytes/exec bits、11个loaded modules、13个root证据文件
+  加self-index的传输type/mode/size/SHA匹配。独立review还把全部源码对应精确Git
+  commit核对。拷贝后的Zig树未回传；本地审查的是绑定固定runner及输入pin的远端完整
+  walk receipts，不冒称本地第二次hash全部复制树。详细pins见
+  `specs/189-static-python-fixture/toolchain-private-custody.md`。
+- 证据在本worktree ignored
+  `feature189-20261024/real-zig-copy-a9b75116-u3wmfaf9/`；独立审查
+  `independent-review.json` SHA为
+  `7c0f997f4fb32b0d81864452178cfd99379652bcb2be41887666f9206931a68a`。
+  同源码Linux focused54项零fail/error/skip（pytest4.09秒），四文件传输SHA匹配，见
+  `feature189-20261024/lunar-feature189-focused54-a9b75116-lop0bqmg/`。
+- 分支`codex/feature189-toolchain-custody`已push，含P1整合，尚未建后续PR。
+  PR186仍保持49b4929c不变，完整CI未完成、尚未合main。复制验收不关闭G1
+  immutable custody、configured recipe/closure/helpers/cache、G2构建或G3运行门。
+
 ## 完整工具链实际复制原语与环境边界（2026-10-24）
 
 - 隔离分支`codex/feature189-toolchain-custody`基于已push的P1整合头e160d46b，
@@ -22,8 +45,8 @@
   所有Linux机制不可能；不能用普通hostcopy替代只读custody或后代drain证据。
 - 新返回值仍为既有tree observation，十项claims全部false；G1实际只读托管、完整
   configured closure/recipe/helper/cache、源码重定位、G2静态构建/ELF、G3 sealed
-  runtime及生产solver验收仍open。下一步先对精确提交保留一次完整real-Zig数据复制
-  replay，仅验证复制/观察。PR186完整CI仍运行，尚未合main，不能重跑49b验收或扩预算。
+  runtime及生产solver验收仍open。精确a9b75116的完整real-Zig数据复制replay已单次
+  通过（见上），仅验证复制/观察。PR186完整CI仍运行，尚未合main，不能重跑49b验收或扩预算。
 
 ## 新源码原预算 Linux 验收通过与 P1 本地集成（2026-10-24）
 

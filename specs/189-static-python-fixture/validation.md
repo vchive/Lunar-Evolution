@@ -801,3 +801,23 @@ changed. These are local source observations and synthetic comparator checks;
 exact-source three-version Linux CI, immutable build custody, configured
 closure, freezing/compilation/linking and G3 runtime acceptance remain open.
 No build, E2E, solver or evaluator was run for this change.
+
+## Complete toolchain copy validation — 2026-10-24
+
+The private materializer and independent fault-injection selection pass all
+54 cases; the broader 433-case combined selection passes with zero failures,
+errors or skips. Those selections overlap and are not additive. Ruff for the
+whole repository, compileall for src/tools/tests and diff checks pass. Linux
+CPython 3.11.15 independently passes the same focused54, with the command,
+log, XML and summary transfer hashes verified.
+
+The unique real-Zig data-only replay on exact a9b75116 creates all 20,832
+members (19,546 files, 1,286 directories, 357,913,169 bytes), then performs a
+separate complete remote walk. Its original 120-second budget includes that
+walk and source-after checks; total budgeted time is 11.696064 seconds.
+Independent local audit checks exact source commit, loaded modules, runner,
+inputs and transferred receipts. The copied tree itself is not transferred
+for a second local walk. See `toolchain-private-custody.md` for evidence pins
+and receipt limitations. No archive member, compiler, build, runtime or solver
+runs; all ten claims remain false and G1/G2/G3 remain open. The rejected
+remount/nested-userns custody probes remain failures, not copy acceptance.
