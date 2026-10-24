@@ -59,8 +59,8 @@ _PROFILES = (
     _SourceProfile(
         path='Lib/importlib/_bootstrap_external.py', before_size=73219,
         before_sha256='a97a03ea9f9d38d90c8a50942183382ff5a479e7c4c5163c2ac5bae3561444ae',
-        after_size=64722,
-        after_sha256='2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab',
+        after_size=63208,
+        after_sha256='3269c01134c03bf8196306ce6aa89e24da41430ccf3bef7eb43afe362ec1bf1e',
         snippets=(
             _Snippet(
                 label='_LoaderBasics.exec_module',
@@ -353,6 +353,95 @@ _PROFILES = (
                 new=(
                 b'def _install(_bootstrap_module):\n'
                 b'    _set_bootstrap_module(_bootstrap_module)\n'
+            ),
+            ),
+            _Snippet(
+                label='FileLoader.get_resource_reader',
+                old=(
+                b'    @_check_name\n'
+                b'    def get_resource_reader(self, module):\n'
+                b'        from importlib.readers import FileReader\n'
+                b'        return FileReader(self)\n'
+            ),
+                new=(
+                b'    def get_resource_reader(self, module):\n'
+                b"        raise ImportError('lunar_static_external_loader_refused')\n"
+            ),
+            ),
+            _Snippet(
+                label='NamespaceLoader.get_resource_reader',
+                old=(
+                b'    def get_resource_reader(self, module):\n'
+                b'        from importlib.readers import NamespaceReader\n'
+                b'        return NamespaceReader(self._path)\n'
+            ),
+                new=(
+                b'    def get_resource_reader(self, module):\n'
+                b"        raise ImportError('lunar_static_external_loader_refused')\n"
+            ),
+            ),
+            _Snippet(
+                label='PathFinder.invalidate_caches',
+                old=(
+                b'    def invalidate_caches():\n'
+                b'        """Call the invalidate_caches() method on all path entry finders\n'
+                b'        stored in sys.path_importer_cache (where implemented)."""\n'
+                b'        for name, finder in list(sys.path_importer_cache.items()):\n'
+                b'            # Drop entry if finder name is a relative path. The current\n'
+                b'            # working directory may have changed.\n'
+                b'            if finder is None or not _path_isabs(name):\n'
+                b'                del sys.path_importer_cache[name]\n'
+                b"            elif hasattr(finder, 'invalidate_caches'):\n"
+                b'                finder.invalidate_caches()\n'
+                b'        # Also invalidate the caches of _NamespacePaths\n'
+                b'        # https://bugs.python.org/issue45703\n'
+                b'        _NamespacePath._epoch += 1\n'
+                b'\n'
+                b'        from importlib.metadata import MetadataPathFinder\n'
+                b'        MetadataPathFinder.invalidate_caches()\n'
+            ),
+                new=(
+                b'    def invalidate_caches():\n'
+                b"        raise ImportError('lunar_static_external_loader_refused')\n"
+            ),
+            ),
+            _Snippet(
+                label='PathFinder.find_distributions',
+                old=(
+                b'    def find_distributions(*args, **kwargs):\n'
+                b'        """\n'
+                b'        Find distributions.\n'
+                b'\n'
+                b'        Return an iterable of all Distribution instances capable of\n'
+                b'        loading the metadata for packages matching ``context.name``\n'
+                b'        (or all names if ``None`` indicated) along the paths in the list\n'
+                b'        of directories ``context.path``.\n'
+                b'        """\n'
+                b'        from importlib.metadata import MetadataPathFinder\n'
+                b'        return MetadataPathFinder.find_distributions(*args, **kwargs)\n'
+            ),
+                new=(
+                b'    def find_distributions(*args, **kwargs):\n'
+                b"        raise ImportError('lunar_static_external_loader_refused')\n"
+            ),
+            ),
+            _Snippet(
+                label='decode_source',
+                old=(
+                b'def decode_source(source_bytes):\n'
+                b'    """Decode bytes representing source code and return the string.\n'
+                b'\n'
+                b'    Universal newline support is used in the decoding.\n'
+                b'    """\n'
+                b'    import tokenize  # To avoid bootstrap issues.\n'
+                b'    source_bytes_readline = _io.BytesIO(source_bytes).readline\n'
+                b'    encoding = tokenize.detect_encoding(source_bytes_readline)\n'
+                b'    newline_decoder = _io.IncrementalNewlineDecoder(None, True)\n'
+                b'    return newline_decoder.decode(source_bytes.decode(encoding[0]))\n'
+            ),
+                new=(
+                b'def decode_source(source_bytes):\n'
+                b"    raise ImportError('lunar_static_external_loader_refused')\n"
             ),
             ),
         ),

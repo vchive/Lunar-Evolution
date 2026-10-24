@@ -1,4 +1,68 @@
-## 2026-10-21 最新状态（Feature189 G1 输入核验推进）
+## 2026-10-24 当前状态与剩余优先级
+
+PR #186 的新P0源码为`4da38027`，唯一原600秒Linux mixed已通过且root独审PASS
+（case574.367秒/suite575.732秒、rawrc0、launch1）；完整精确head CI仍待验收。
+其14项新增反例、675项本地focused与89项cache/identity门已保留。
+原`49b4929c`完整Ubuntu CI在2026-10-24 01:14:10.547203UTC最终为
+completed/cancelled：30成功/1失败/2取消。Python3.13 current-3的原始XML/log
+确认mixed case601.169秒，错误为`rsi_brs_rejection_provenance_allowance_exhausted`，
+附`worker_unknown`；3.11/3.12 current-3均随新workflow concurrency取消。
+取消不等于通过，当前栈不能证明热点；不重启旧job、不重跑49b或扩大原预算。
+下面所有分支验收都不能替代该PR自己的完整CI，也不能用先前独立Linux通过
+忽略原始失败。原086中间快照与087终态分别保留；精确pins见HANDOFF及validation。
+新4da CI run40048350911在01:14:08.767227UTC已有33jobs（20运行/13排队），
+尚无通过结论。旧3.12取消job的完整rawlog另显示取消前已有pytest失败：
+`rsi_brs_reserved_serial_worker_unknown`附primary`rsi_brs_reserved_serial_deadline_expired`，
+1failed/3538passed/2skipped；该job未发布JUnit。job终态与raw测试失败分别保留。
+
+本地整合merge`7d873753`已实际通过一次41文件/1906唯一case的focused union，
+零fail/error/skip、rawrc0（XML100.812秒），Ruff/compileall/diffcheck通过。
+它不是旧结果相加，也不替代Linux mixed、最终CI或G1/G2/G3。证据已create-only保全，
+root只读独审1906原始证据PASS；该本地分支未push/建PR，后续文档head不继承测试身份。
+4da Linux和7d873 focused两个通过分别绑定各自源码；CI完成前不称merge-ready或发布完成。
+
+| 优先级 | 当前工作 | 完成条件 |
+| --- | --- | --- |
+| P0 | 验收 PR #186 的新源码，再完成回归与合并 | 新精确 head/base/tree、唯一原 600 秒 Linux mixed、33 项完整 CI 和独立原始 artifact 审计全部通过；保留旧49b通过/失败/取消，不重跑旧源码或扩大预算。 |
+| P1 | 合入完整工具链复制、候选源码审计与固定负例 | 后续分支已 push；必须完成自己的 CI 和独立审查。完整复制是实际文件复制与观察，仍不具备不可变托管能力。 |
+| P1 | 补齐静态 Python 的真实构建和运行链路 | 不可变输入托管、完整 configured source/helper/cache closure、同源 freezer、静态编译链接和 ELF、sealed startup、owner/lifecycle 与 Linux 中断验收全部仍有未完成项。 |
+| P1 | 接入真实 OpenEvolve/Shinka producer | 在上述 runtime 门完成后，验证权威输入/结果、项目启动/取消/清理/恢复和生产 CLI。现有 preflight 与 detached evidence reader 不启动项目。 |
+| P2 | 远程与分布式扩展 | 远程 evaluator、外部 worker 认证、多机 ownership 和 scheduler/service API 继续后置，不作为当前本地 CLI 的发布条件。 |
+
+最近已完成的分支验证：
+
+- `a9b75116` 完整复制真实 Zig 数据：19,546 个文件、1,286 个目录、357,913,169
+  字节；原 120 秒含完整独立 walk/hash 的单次验收用时 11.696 秒。未执行 Zig，
+  观察项不授予不可变托管或构建权限。
+- CPython 原始来源材料与五个实际 patched postimages 已独立本地留存；候选
+  PyConfig/getpath 的十个 PreConfig、66 个 PyConfig 字段和 28 处源码依据匹配。
+  这仍未验证生成的配置、实际编译消费或有效运行时设置。
+- 候选 `loader-negative` 已加入固定 UTF-8 别名与未知 codec 检查，完整候选 pin 链
+  已刷新，历史审计保持原样。`de9bd387` 的唯一 Linux focused 为 774 项全部通过、
+  零跳过；2333 个源码文件及目录前后完全一致，236 条最终 session 模块来源匹配。
+  更早 `83c` 因新增缓存而整体失败，原证据保留，不能改写成通过。
+
+当前 source-preparation 已实现
+[五个固定延迟导入入口拒绝](../specs/189-static-python-fixture/deferred-import-refusal.md)：
+资源 reader、metadata 和 source decoder 入口在任何 callback/import 前拒绝；
+最终 pin 组502项与31项新专项通过；精确源码
+`966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`的唯一Linux provider-free focused
+为1231项零fail/error/skip、rawrc0，2338个文件和292个目录的bytes/full modes/
+exec bits前后完全一致，238个Lunar/tools模块来源匹配。17份raw artifacts回传SHA
+验证通过，30文件保全包已create-only复制至主工作区ignored证据目录。
+该1231只对应966源码，后续文档或整合head不继承测试身份。新本地v3准备分支
+将4da合入9f5，保留cache89/copy54/deferred31/codec22及其零skip门；尚未push
+或建立PR；精确7d873已完成自己的1906focused，完整branch CI仍待完成。旧675/1231
+各自源码身份保留，不能将它们相加冒称新通过。
+它不扩大模块库存，也不关闭真实构建和 runtime 门。5090gpu 的两种已测试 tmpfs
+只读封存路径受到 bwrap 参数数量和 AppArmor/userns 限制，尚无受支持的不可变托管
+实现；普通可写目录复制不能替代这个条件。
+
+`production_admission=false`、`online_publication=false` 保持不变。精确源码、证据
+pins、失败记录和下一轮执行上下文见 [HANDOFF](../HANDOFF.md) 与
+[Feature189 验证台账](../specs/189-static-python-fixture/validation.md)。
+
+## 2026-10-21 历史状态（Feature189 G1 输入核验推进）
 
 - PR #183 的 staging 边界修复已合入 `main`，合并提交为 `fe8e61d`。合并后 workflow
   `39562969514` 基于该 main commit，检查时 33 个 jobs 中 31 个完成、28 个失败、2 个运行；run
