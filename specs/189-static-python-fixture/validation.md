@@ -903,11 +903,75 @@ variants are rejected. The earlier736-case source/history group ran before the
 final JSON projection correction; its unchanged source/history tests passed,
 but it is not a736-case final-revision acceptance. Whole-repository Ruff,
 compileall and diff-check pass. Final-chain, literal-consumer, historical-byte
-and JSON-shape independent review reports no blocker. Linux final-revision
-focused verification and branch CI are still required.
+and JSON-shape independent review reports no blocker. The unique exact966
+Linux focused/source-invariance run below now passes; full branch CI is still
+required. Neither the earlier736 group nor later documentation heads inherit
+that exact source's acceptance identity.
 
 No archived source module, real configure/freezer/compiler/linker, target,
 solver or evaluator executes. SourceLoader.get_source still reads before
 decode_source; general callback/file refusal, full closure, immutable custody
 and G2/G3 runtime/admission remain open. PR186's separate49b CI now has a
 Python3.13 current-3 failure under investigation; main merge remains blocked.
+
+## Exact966 Linux provider-free source acceptance and retention (2026-10-24)
+
+The tested source is exactly
+`966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`. Its 26,961,920-byte Git archive has
+SHA-256 `2f6c909fbbaaf36a51f9c618b4305deb335111035deaadb61f19cca103bb7cac`.
+The fixed selector contains 27 distinct test files: the earlier 736 selection
+plus RSI launch, source staging/tree/provenance, candidate-build source and
+observation, projection, verified-input and source-readiness suites. Local and
+remote collect-only results agree on all 1231 nodeids. Only the remote host
+starts actual tests, once, under Python 3.11.15 with one unique repository-external
+`/var/tmp` basetemp, unchanged budget, no rerun and no source cleanup.
+
+The XML records 1231 tests, zero failures/errors/skips and 25.853 seconds. The
+raw Popen returncode 0 is flushed and fsynced before evaluating any post-run
+inventory, XML, module or success gate; subprocess monotonic time is 26.159305
+seconds. Complete before/after inventories match all 2338 files and 292 directories
+against the new archive index, including bytes, complete modes and executable
+bits. Added, removed and changed files/directories are all zero; caches are
+included, not ignored. All 238 final-session Lunar/tools modules have matching
+exported source origins and bytes. The original seven required modules and ten
+additional actually used source modules are all loaded. No receipt is missing
+and the collector records no error.
+
+All 17 raw artifact hashes match after transfer. The source worktree retains its
+original ignored package at
+`.lunar-evolution/feature189-deferred-linux-evidence/966c5cf91ec6-v78xqg7u/`;
+the remote run remains at
+`/home/qinzhiqing/vchive/lunar-feature189-deferred-966c5cf9-BPZ0UT`.
+A create-only copy is retained in the main workspace under
+`.lunar-evolution/validation/feature189-20261024/deferred-966c5cf9-retention-bn4qrqdb/966c5cf91ec6-v78xqg7u/`.
+All 30 files, two directories and 29,727,449 file bytes match the original package's
+modes, sizes and hashes; read-only before/after comparison confirms the original
+package did not change. Previous 49b/83c/de9 packages are untouched.
+Root independently audits the complete archive against exact Git966, all index/
+source/receipt hashes and modes, 1231 unique passing cases and both collections,
+rawrc0, all 237 file origins plus one tools namespace, and all 17 required modules.
+The read-only review passes without executing tests or artifact code. Its receipt
+is `root-independent-review.json` in the retained package's parent directory.
+
+| Retained receipt | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Raw artifact manifest | 2563 | `b705ff6c714e4eac65afb2c430fe459ae2f1bd1072229636804a6dbda98a2172` |
+| Test XML | 219868 | `be5465b4a9b34af8b2985fc428e372fe8c30373aee553a8fac8a7467dac35751` |
+| Raw process result | 133 | `3c474747d39c5ba520e0db0056fea96b4d4b78ba52b8fb0f69bf7203c84af5d0` |
+| Source-before and source-after (each) | 554908 | `58288e8b354893c7ba4ba1d8911ee0ca538f2eef67bbc3c8fcff90970bd95f0e` |
+| Retention manifest (parent of package) | 6033 | `ad85fb54a1f5508202507ea00031c2a7f76014ad2b8ac37d7cec3cfcab31af19` |
+| Root independent review (parent of package) | 595 | `45f8902aa3a2855aff1afbaffefd2c086569c630ce97a58140ebf8d8d9878392` |
+
+The selector includes existing inert host-C launcher probes against fake
+Python.h/runtime stubs and source-only CLIs. No mixed replay, archived CPython
+source execution, actual configure/freezer/static build/target, solver or remote
+evaluator runs. This acceptance belongs only to 966, not the later documentation
+commit. Full branch CI, configured closure, immutable custody, ELF and G2/G3
+runtime/admission remain open.
+
+PR186's distinct exact49b original CI has a Python3.13 current-3 mixed failure
+at 601.169 seconds with primary
+`rsi_brs_rejection_provenance_allowance_exhausted` and attached `worker_unknown`.
+The observed stack is not hotspot proof; the other two original CI versions
+remain pending. Preserve that raw failure and the original budget. Do not rerun
+49b, infer 33 passing jobs, or merge main using the independent 966 focused result.

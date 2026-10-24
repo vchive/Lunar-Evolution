@@ -1,12 +1,42 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 精确966c5cf9 Linux1231与完整源码不变性通过（2026-10-24）
+
+- 精确源码`966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`在5090gpu Python3.11.15
+  完成唯一provider-free focused：27个去重测试文件，本地/远端仅collect均为1231且
+  完整nodeids相同；真正pytest仅远端一次，1231项零fail/error/skip、raw Popen rc0，
+  XML25.853秒、subprocess monotonic26.159305秒。rawrc先flush+fsync，再判断after/
+  XML/module门；无重跑、无源码清理、未扩大原预算。
+- 完整Git导出2338个文件及292个目录的bytes/full modes/exec bits前后相同；与
+  archive index逐项匹配，新增/删除/修改files及dirs均0，未忽略cache。238个最终
+  Lunar/tools模块来自精确导出源码，原7个及新增10个required modules全部loaded。
+  17个raw artifacts回传SHA全过，无missing receipt/collector error。root另用标准库
+  独审完整archive/index、before/after、1231唯一case及双collect、237file origins+
+  1tools namespace和rawrc0，全部PASS；独审receipt在保全父目录，SHA为
+  `45f8902aa3a2855aff1afbaffefd2c086569c630ce97a58140ebf8d8d9878392`。
+- 原包仍在本worktree ignored
+  `.lunar-evolution/feature189-deferred-linux-evidence/966c5cf91ec6-v78xqg7u/`。
+  主工作区create-only保全包在ignored
+  `feature189-20261024/deferred-966c5cf9-retention-bn4qrqdb/966c5cf91ec6-v78xqg7u/`，
+  共30files/2dirs/29,727,449B；源包与副本type/mode/size/SHA逐项相等且源包不变。
+  retention-manifest SHA为
+  `ad85fb54a1f5508202507ea00031c2a7f76014ad2b8ac37d7cec3cfcab31af19`；
+  raw artifact manifest SHA为
+  `b705ff6c714e4eac65afb2c430fe459ae2f1bd1072229636804a6dbda98a2172`。
+- 本段及后续文档提交仅记录该源码结果，不能称文档新head也已跑1231。测试包含
+  既有host cc/fake Python.h/runtime的inert launcher probe，不是CPython构建；
+  未跑mixed、archive源码、真实configure/freezer/target/solver/evaluator。完整branch
+  CI、immutable custody、configured closure、ELF与G2/G3仍open；PR186仍不得合main。
+
 ## PR186 完整 CI 新失败，暂停合并（2026-10-24）
 
 - 固定head49b4929c的run40036954373中，Python3.13 current-3 job120700344838
   于00:46UTC失败，Python3.11 current-0成功；当前30成功/1失败/2运行。
-  原始artifact/log正在独立取回，失败原因尚待核对。不得称33项通过或合main，
-  不重跑原49b Linux验收、不扩大原预算、不取消剩余两项。
-- 接下来先按原始XML/log定位该失败，完成必要修复与新源码自己的验收。原49b唯一
+  原始XML/log确认mixed case601.169秒，报
+  `rsi_brs_rejection_provenance_allowance_exhausted`并附`worker_unknown`。
+  当前栈不能证明性能热点；其余两版原CI仍等待。不称33项通过或合main，不重跑
+  原49b Linux验收、不扩大原预算、不取消剩余两项。
+- 接下来依据已留存原始失败确定必要修复与新源码自己的验收。原49b唯一
   Linux mixed PASS与这次CI FAIL并存，不能互相替代。源码后续切片单独保留。
 
 ## 五个候选 deferred-import 入口 source 修复（2026-10-24）
@@ -23,7 +53,8 @@
 - 最终pin组502项、独立主/审查专项31项零fail/error/skip（31与502重叠不相加）；
   另source/history的736项早轮在修正最终JSON projection前通过，不能冒称最终同源码
   736验收。独立22项包含在31内，八个内存AST破坏反例拒绝。全仓Ruff、compileall及
-  diffcheck通过，finalchain/history/policy shape独审无阻塞，final Linux focused待执行。
+  diffcheck通过，finalchain/history/policy shape独审无阻塞。精确966c5cf9的唯一
+  Linux1231 focused与源码不变性已通过（见上），完整branch CI仍待完成。
 - 实现位于复用worktree`feature189-source-import-audit/lunar_agent`的新分支
   `codex/feature189-deferred-import-refusal`，基于已push5a6f4180。未执行archive成员、
   CPython构建、target或solver。immutable custody、configured closure、ELF、G2/G3

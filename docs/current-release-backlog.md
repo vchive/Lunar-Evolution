@@ -2,8 +2,10 @@
 
 `main` 当前为 PR #185 合并后的 `a3532cfd`。PR #186 的源码固定为
 `49b4929c`；完整 Ubuntu 三版本 CI 最近检查为 30 成功、1 失败、2 个运行，
-Python3.13 current-3 的原始产物正在核对，尚未合并。下面所有分支验收都不能
-替代该 PR 自己的完整 CI，也不能因先前独立 Linux 通过而忽略新失败。
+Python3.13 current-3 的原始XML/log已确认mixed case601.169秒，错误为
+`rsi_brs_rejection_provenance_allowance_exhausted`，附`worker_unknown`；当前栈
+不能证明性能热点，其余两版原CI仍等待，尚未合并。下面所有分支验收都不能替代
+该 PR 自己的完整 CI，也不能因先前独立 Linux 通过而忽略新失败。
 
 | 优先级 | 当前工作 | 完成条件 |
 | --- | --- | --- |
@@ -29,7 +31,12 @@ Python3.13 current-3 的原始产物正在核对，尚未合并。下面所有�
 当前 source-preparation 已实现
 [五个固定延迟导入入口拒绝](../specs/189-static-python-fixture/deferred-import-refusal.md)：
 资源 reader、metadata 和 source decoder 入口在任何 callback/import 前拒绝；
-最终 pin 组502项与31项新专项通过，后续源码仍待完整CI。
+最终 pin 组502项与31项新专项通过；精确源码
+`966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`的唯一Linux provider-free focused
+为1231项零fail/error/skip、rawrc0，2338个文件和292个目录的bytes/full modes/
+exec bits前后完全一致，238个Lunar/tools模块来源匹配。17份raw artifacts回传SHA
+验证通过，30文件保全包已create-only复制至主工作区ignored证据目录。
+该1231只对应966源码，后续文档head不继承测试身份；完整branch CI仍待完成。
 它不扩大模块库存，也不关闭真实构建和 runtime 门。5090gpu 的两种已测试 tmpfs
 只读封存路径受到 bwrap 参数数量和 AppArmor/userns 限制，尚无受支持的不可变托管
 实现；普通可写目录复制不能替代这个条件。

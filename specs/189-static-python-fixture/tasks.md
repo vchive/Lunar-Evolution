@@ -40,6 +40,10 @@ failure and cancelled preflight separately from later successful evidence.
   `serial-regression-performance.md`. Preserve fresh source/SQLite observations
   and all history/policy checks; validate bounded pure-cache improvements with
   focused drift/eviction tests, the exact Linux case and final-source CI.
+  PR186 exact49b's Python3.13 current-3 CI still fails: mixed 601.169s with
+  `rsi_brs_rejection_provenance_allowance_exhausted` plus `worker_unknown`.
+  Its stack does not establish a hotspot; the other two original CI versions
+  remain pending. Preserve the original budget and do not rerun49b acceptance.
 
 - [x] Specify the bounded archive-receipt and extraction-manifest preparation
   contract in `verified-inputs.md`; keep advertised pins and caller-supplied
@@ -301,15 +305,25 @@ failure and cancelled preflight separately from later successful evidence.
   source/codec/v1 graph observations. See `deferred-import-refusal.md` for the
   31-case dedicated gate, final 502-case pin validation and open pre-read/runtime
   limits. Complete branch CI and actual target consumption remain pending.
+- [x] Run one provider-free Linux focused acceptance on exact
+  `966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`: 27 deduplicated files, 1231
+  cases with zero failures/errors/skips and raw child rc0. Local/remote collection
+  nodeids agree; 2338-file/292-directory bytes, full modes and exec bits match
+  the archive index and remain unchanged. All 238 loaded Lunar/tools modules
+  pass origin checks, including all 17 required modules; 17 raw artifacts pass
+  transfer hashes and the 30-file package is retained create-only in the main
+  workspace. Root independently audits the original receipts with no blocker. This is provider-free source acceptance only; subsequent docs
+  commits are not tested source heads and branch CI/G2/G3 remain open.
 - [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
   refusal sites across the complete configured source/startup scope, including
   any dependency outside the pinned profile and a versioned profile decision.
   The bounded importlib bootstrap/loader review in
   `importlib-edge-audit-20261022.md` records the `_frozen_importlib` startup edge
-  and candidate loader dispositions, but leaves deferred direct resource-reader/
-  metadata routes and configured/runtime binding unresolved. The DTO parser
-  cannot certify the full audit or infer new modules.
+  and candidate loader dispositions. The five deferred reader/metadata/decoder
+  entry points now have source-only refusals; preliminary SourceLoader reads,
+  complete configured source scope and actual runtime binding remain unresolved.
+  The DTO parser cannot certify the full audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do
