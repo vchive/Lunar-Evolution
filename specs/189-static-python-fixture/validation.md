@@ -873,6 +873,14 @@ The local launch51+codec22 set passes73 with no skips. New-source Linux focused
 verification must persist child returncode and complete before/after inventories
 before any overall assertion, including on refusal. It is not a retry of83c.
 
+That single run of exactde9bd387 subsequently passes:774/0/0/0, rawrc0 durably
+recorded before post-run gates, 2333 complete source files and directory
+inventories identical with no additions, and236 final-session module origins
+verified. XML22.331s and subprocess22.664091s are separate measurements. All17
+transferred artifacts, the exact Git archive/index, source inventories and raw
+receipts pass the independent root review. See `candidate-codec-negative.md`
+for each pin. The previous83c overallFAIL is retained, not reclassified.
+
 The separate independent `profile-getpath-source-review-20261024.md` checks ten
 actual pinned CPython C/header members, ten PreConfig fields, 66 PyConfig fields
 and28 source anchors. No source/API mismatch was found. Generated configuration,

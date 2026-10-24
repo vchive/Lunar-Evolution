@@ -150,7 +150,8 @@ The CLI test with a replaced minimal environment drops inherited
 `PYTHONDONTWRITEBYTECODE`, consistent with those additions. The three CLI argv
 lists now pass `-B` explicitly, keeping the minimal environment, original
 assertions and full-tree invariance requirement. Local launch51 plus codec22
-passes all 73 cases without skips. A new-commit Linux run is still required.
+passes all 73 cases without skips. The new-commit Linux run below subsequently
+passes the complete source-invariance gate.
 
 The original collector asserted source invariance before persisting the child
 `Popen.returncode`. That raw child status is unknown. The recorded pytest plugin
@@ -167,3 +168,37 @@ summary SHA-256 is
 `363554763e87f209f5b7361cff0cbc506526a8d649a570648156943afa458c23`;
 XML SHA-256 is
 `679d1fb5c4b41c842be5c16d0403d9c2afb0254e717f1a74eed6462dac59b0ff`.
+
+## New-commit Linux focused acceptance
+
+Exact `de9bd3873ccc56bfa124e87db0dc495a084de7b7` ran the same 774 tests
+once on Linux Python3.11.15. All pass, with zero errors/skips, 22.331 XML seconds
+and 22.664091 monotonic subprocess seconds. The raw process returncode0 was
+persisted with flush/fsync before the source-after, XML and module gates.
+All 2,333 source files retain bytes, full modes and executable bits; complete
+directory/file inventories are identical, with no additions. All 236 final
+session Lunar/tools module origins match the exact source index. This establishes
+the focused provider-free gate, not static target or production acceptance.
+
+The 17 transferred artifacts match their indexed sizes/SHA-256. An independent
+root review also compares `source.tar` byte-for-byte with exact `git archive`,
+every archived/indexed source file, both inventories, 235 file-module records
+plus one namespace, 774 unique testcases, and the separate raw process receipt.
+No collector error or missing receipt is recorded. The previous83c FAIL and
+its retained source additions remain unchanged.
+
+The ignored package is
+`.lunar-evolution/feature189-codec-linux-evidence/de9bd3873ccc-yuz1s8yp/`.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| Git archive (26,849,280 bytes) | `60d58eaa1d7847aa5a7629c2999c565516d24cf3f6b9c01b92b9e064add4ba67` |
+| Artifact manifest | `eacdec73b4b2bf77d9a8697e24d6f9e646e07eed2256c4cc85845c492d2b0361` |
+| Summary | `8a353953479b75128740ac40899ba60570531171688b7d3ce3a9bc4485e210ab` |
+| Raw process result | `212b056a03f86cc149ec9fff118296a4883bb4dd0bef3e5e2900256c52c2f519` |
+| Results XML | `f6b7180b95c6a4b5464e8eecdf4c56a69307bc780c2fc8d2c8f65d1098bcf0e8` |
+| Source before and after (identical) | `3325ceea85db17dd294047aa314e113ae2730e602b651e0dbfa3e147423307ac` |
+| Root independent review | `2ea2efea0e526611214f0e7ea306b6aee459d15c1502a54193bda2a641473ccc` |
+
+No real CPython configure/build/freezer, target, solver or evaluator runs.
+Immutable custody, configured consumption, ELF and G2/G3 remain open.

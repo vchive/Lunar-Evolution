@@ -1,5 +1,28 @@
 # 当前交接（2026-10-23，PR185 合入后续开发）
 
+## 新提交 Linux774 与完整源码不变性通过（2026-10-24）
+
+- 精确`de9bd3873ccc56bfa124e87db0dc495a084de7b7`唯一5090gpu Python3.11.15
+  provider-free focused通过：774项零fail/error/skip（XML22.331秒，subprocess
+  monotonic22.664091秒），raw Popen rc0在任何after/XML/module门前flush+fsync。
+  2333个原源码文件bytes/full modes/exec bits及目录前后完全一致，无新增文件；
+  236个最终session的Lunar/tools模块来源匹配（235file+1namespace）。
+- 17个artifact回传SHA核对通过；root独立比较完整`git archive`、2333-file index、
+  before/after、模块记录、774唯一testcases和raw rc，无缺失receipt/collector错误。
+  证据在本worktree ignored
+  `.lunar-evolution/feature189-codec-linux-evidence/de9bd3873ccc-yuz1s8yp/`；
+  manifest SHA`eacdec73b4b2bf77d9a8697e24d6f9e646e07eed2256c4cc85845c492d2b0361`，
+  独立review SHA`2ea2efea0e526611214f0e7ea306b6aee459d15c1502a54193bda2a641473ccc`。
+  旧83c整体FAIL、原child rc未知及原缓存完整保留，不被本次结果改写。
+- 已有82,070,436B/122份本地证据另复制到主工作区ignored
+  `feature189-20261024/followup-retention-de9bd387-bz8qglnx/`，逐份核type/mode/size/
+  SHA，retention-manifest SHA为
+  `2f555101cc612c5826a1dbbcf6e14c31ebd2bfc5cfb787c9479ddfe57fc27250`；
+  新de9包单独保全。未归档worktree、未执行真实CPython构建/target/solver。
+- PR186仍保持49b；完整CI最新29/33通过、4运行、无失败，尚未合main。
+  后续分支code已push，待186合入后整理main ancestry并建立后续PR；G1 immutable
+  custody、configured build、ELF及G3 runtime仍open。
+
 ## Linux focused 首轮拒绝与 CLI 缓存修复（2026-10-24）
 
 - 精确`83c1d88dd86cdf98138646abea6d3ed56fa2581b`在5090gpu唯一一次774项
@@ -10,7 +33,7 @@
 - source-only CLI测试替换环境时丢弃继承的`PYTHONDONTWRITEBYTECODE`，与新增缓存
   相符；没有追踪后重跑来改写首轮结论。三个CLI argv现显式加`-B`，保留原最小环境、
   测试断言和完整源码不变性门。修复后本地launch51+codec22共73项零跳过通过，
-  Ruff、compileall和diffcheck通过；新源码的Linux774验收待提交后单次执行。
+  Ruff、compileall和diffcheck通过；新de9源码的唯一Linux774已通过（见上）。
 - 旧collector在source-after断言前未持久化Popen退出码，原child rc未知，不能从
   XML推作已记录rc；plugin session exitstatus0与collector rc1分别留存。17个回传
   artifact的SHA均核对。证据在本worktree ignored
