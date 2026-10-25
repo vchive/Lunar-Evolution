@@ -1,8 +1,9 @@
 # Feature 193 tasks
 
 Stage 1 and the listed detached continuations are implemented and merged. Their
-verified final-source CI is recorded separately below; independent raw/source/tree
-audit obligations remain open where the retained evidence has not been checked.
+verified final-source CI is recorded separately below. The seven-source historical
+raw/source/tree closeout is retained in
+`historical-evidence-audit-20261025.md`; actual build/runtime gates stay open.
 See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
@@ -33,7 +34,7 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] T11a Add the bounded 82-case CI gate with retained XML and annotations.
 - [x] T11b (CI) Verify PR50 final source `861e068` against run `38198840702`,
   completed/success on the original three-version 3-job matrix; merged at `3d0df9f`.
-- [ ] T11b (audit) Verify and retain the independent raw/source/tree audit for
+- [x] T11b (audit) Verify and retain the independent raw/source/tree audit for
   that final source. Merge status alone does not complete this obligation.
 - [x] T12 Update validation and handoff with implemented stage 1 scope, exact
   evidence and remaining stage boundaries only after the corresponding checks.
@@ -52,7 +53,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   296 unique cases total; add the bounded 113-case retained CI gate.
 - [x] F01f (CI) Verify PR51 final source `517593c` against run `38198846690`,
   completed/success on the original three-version 3-job matrix; merged at `d46624e`.
-- [ ] F01f (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F01f (audit) Verify and retain the independent raw/source/tree audit for
   the final preparation source and its dependency links.
 
 ## F04 bounded two-input report continuation
@@ -68,7 +69,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   compatibility cases,414 unique passes; retain the219-case CI gate.
 - [x] F04e (CI) Verify PR52 final source `ac763f0` against run `38199122019`,
   completed/success on all 15 checks; merged at `e0bd7b8`.
-- [ ] F04e (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F04e (audit) Verify and retain the independent raw/source/tree audit for
   that source. Live F04 below remains incomplete.
 
 ## F01 bounded installation contract continuation
@@ -83,7 +84,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   the final source and add a retained focused CI gate.
 - [x] F01k (CI) Verify PR53 final source `4f4d880` against run `38199235337`,
   completed/success on all 15 checks; merged at `5adbdb8`.
-- [ ] F01k (audit) Verify and retain the independent raw/source/tree audit for
+- [x] F01k (audit) Verify and retain the independent raw/source/tree audit for
   the final installation-contract source. No DTO comparison establishes installation.
 
 ## Later stages — installation and runtime remain unaccepted
@@ -163,7 +164,7 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
   exception tests; retain local focused evidence separately from live acceptance.
 - [x] Verify integrated PR66 final source `3551b9e` against run `38270514933`,
   completed/success on all 15 checks; merged at `147dbc1`.
-- [ ] Verify and retain the independent raw/source/tree audit for that final
+- [x] Verify and retain the independent raw/source/tree audit for that final
   controlled mock build-driver source. This is separate from real F02c acceptance.
 
 ## Pinned process-execution mechanism continuation
@@ -179,5 +180,8 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
 - [x] Complete final combined regression: 195 distinct cases, including 26 new
   execution cases and 139 unchanged compatibility cases shared with the 30-case
   producer continuation; no failures/errors/skips and unchanged product/source pins.
-- [ ] Complete this final source's full CI and independent
+- [x] Complete this final source's full CI and independent
   raw/source/tree audit before merge. Actual F02c/G1/G2 acceptance remains open.
+  PR88 final source `5bb90c9` is bound to original run `38358940938`; see the
+  retained historical audit for original archive failure/retry and the present
+  extraction's extra cache-file qualification.

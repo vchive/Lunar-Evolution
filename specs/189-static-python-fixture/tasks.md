@@ -205,7 +205,9 @@ failure and cancelled preflight separately from later successful evidence.
   observes all 20,832 members in 1.52 seconds under its original 120-second
   deadline; the complete raw output, source archive, manifest and record are
   transferred and independently checked. This closes the observer replay only.
-- [ ] Complete the exact-source three-version CI before merging this slice.
+- [x] Complete the exact-source three-version CI before merging this slice.
+  PR187 final `8ca8e1f5` passed all33 original jobs in run40104751661; the
+  independently audited tree is the actual main merge tree `0b65a7b2`.
   Keep concrete build-tool/helper/cache bindings, configured build consumption,
   static build and runtime gates open.
 - [x] Freeze the internal complete-tree copy boundary in
@@ -328,7 +330,8 @@ failure and cancelled preflight separately from later successful evidence.
   profile and wire; refresh active pins while retaining historical prepared
   source/codec/v1 graph observations. See `deferred-import-refusal.md` for the
   31-case dedicated gate, final 502-case pin validation and open pre-read/runtime
-  limits. Complete branch CI and actual target consumption remain pending.
+  limits. PR187 final-source branch CI is complete; actual target consumption
+  remains pending.
 - [x] Run one provider-free Linux focused acceptance on exact
   `966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`: 27 deduplicated files, 1231
   cases with zero failures/errors/skips and raw child rc0. Local/remote collection
@@ -337,7 +340,8 @@ failure and cancelled preflight separately from later successful evidence.
   pass origin checks, including all 17 required modules; 17 raw artifacts pass
   transfer hashes and the 30-file package is retained create-only in the main
   workspace. Root independently audits the original receipts with no blocker. This is provider-free source acceptance only; subsequent docs
-  commits are not tested source heads and branch CI/G2/G3 remain open.
+  commits are not tested source heads. The later PR187 final source has its own
+  complete CI and independent audit; G2/G3 remain open.
 - [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
   refusal sites across the complete configured source/startup scope, including

@@ -1,4 +1,39 @@
-## 2026-10-24 当前状态与剩余优先级
+## 2026-10-25 当前状态与剩余优先级
+
+PR186、PR187均已合入main，当前合并点为
+`0bff6b92b9b05f7b780bf4c2ee6f38bdab4b3833`。PR187的
+[CI40104751661](https://github.com/vchive/Lunar-Evolution/actions/runs/40104751661)
+33/33通过，原始33份artifacts经独立source/tree/import/XML审计；三版Python
+各自20,689项current/heavy精确覆盖，零缺失/重复。main合并树与CI受审树相同。
+因此PR186回归修复、PR187完整复制/源码审查/固定负例及其合并义务已经完成。
+下方“2026-10-24历史”保留当时状态，不代表今天仍在等待这两个PR。
+
+| 优先级 | 剩余工作 | 完成条件与依赖 |
+| --- | --- | --- |
+| P0 | 普通模型的本地端到端验收仍未通过 | 当前main单次真实case已执行：第三模型请求在原600秒内等待响应头超时，未生成schedule。保留失败、usage unknown和本地evaluator缺文件结果；先调查模型服务/请求行为，不能以fixture的3/3替代或重试抹掉此失败。 |
+| P1 | 完整不可变构建输入托管 | 实际保证完整source/toolchain/helper/cache输入在整个构建期间不可改写；现有完整复制已经实现，但当前5090gpu的bwrap方案尚未满足此条件。不得截短库存、改预算或用chmod/前后hash冒充。 |
+| P1 | 真实静态Python构建与运行 | 在custody可用后冻结完整configured closure与recipe，实际configure/freezer/compile/link、核验ELF与sealed startup，再接原owner/lifecycle、权威输入/结果和Linux中断矩阵。 |
+| P1 | 真实OpenEvolve/Shinka与生产RSI CLI | 源码版本/依赖/资源/入口事实冻结可先并行；运行必须依赖accepted runtime，完成启动、取消、清理、结果归属、恢复与本地CLI验收。现有preflight/exporter不启动真实项目。 |
+| P2 | 远程与分布式扩展 | 远程evaluator、外部worker认证、多机ownership/scheduler/service API继续后置，不作为当前本地CLI的发布条件。 |
+
+`production_admission=false`、`online_publication=false`。真实构建与项目运行仍有
+阻断，当前不能称“所有功能已完成”。精确合并证据与后续执行上下文见
+[HANDOFF](../HANDOFF.md)顶部。
+
+本轮已补齐七组历史raw/source/tree义务，共69份原始ZIP；root独立重核通过，
+相应tasks已关闭。PR52/88原archive失败/retry及PR88缓存额外文件仍明确保留，
+详见[历史审计](../specs/193-static-python-rsi-launch/historical-evidence-audit-20261025.md)。
+[OpenEvolve源码审查](../specs/191-python-worker-adapter/openevolve-source-profile-review-20261025.md)
+已冻结v0.4.0完整source/tree和实际依赖声明/入口/资源事实；真实dependency bytes、
+完整profile与运行仍未完成。
+
+普通模型这次失败的原始receipt、精确来源和解释边界见
+[2026-10-25实跑报告](normal-model-smoke-20261025.md)。当前账号也无法访问5090gpu的
+KVM；已记录[一次性构建VM设计](../specs/189-static-python-fixture/build-vm-custody.md)
+作为未选择/未验收的环境候选。管理员提供accelerator访问只能移除一个前提，仍须
+证明完整闭包、封存和生命周期；不能靠TCG、只读视图或新元数据直接关闭custody。
+
+## 2026-10-24 历史：PR186、PR187 合并前状态
 
 PR #186 的新P0源码为`4da38027`，唯一原600秒Linux mixed已通过且root独审PASS
 （case574.367秒/suite575.732秒、rawrc0、launch1）；完整精确head CI仍待验收。

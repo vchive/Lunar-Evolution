@@ -346,7 +346,9 @@
   parsing; six cases verify the fixed refusal across helper/gate/build/verify.
 - [x] Verify PR49 final source `87e579a` against completed/success run
   `38198657810` on the original three-version 3-job matrix; merged at `e2537f1`.
-- [ ] Verify and retain the independent raw/source/tree audit for that final
+- [x] Verify and retain the independent raw/source/tree audit for that final
   observation-policy source. CI/merge alone do not establish runtime acceptance.
+  PR49 original source/run/artifacts are independently audited in
+  `../193-static-python-rsi-launch/historical-evidence-audit-20261025.md`.
 - [ ] Separately define and accept an RSI-capable static installation asset/profile;
   the current argc-one/fixed-main fixture cannot consume native RSI marker inputs.

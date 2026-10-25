@@ -1,6 +1,51 @@
-# 当前交接（2026-10-24，PR186 已合入 main）
+# 当前交接（2026-10-25，PR186、PR187 已合入 main）
 
-## 当前分支发布状态
+## 当前事实与执行顺序
+
+本节取代下文历史批次中的“待 CI”“待创建 PR”和“不可合并”当前时态；原始失败、
+取消和后续通过仍各自绑定原源码，不改写旧记录。
+
+- PR186 的精确 head `4da380272b56f9ef6fc42ef37c50655aabfa6724` 已通过
+  [run40048350911](https://github.com/vchive/Lunar-Evolution/actions/runs/40048350911)
+  的33/33 jobs，合入为 `9f20f995a69658e63b0819cc251b27f4bcbfcf62`。
+  其唯一原600秒5090gpu mixed 为574.367秒；这不是整体性能保证。
+- PR187 的精确 head `8ca8e1f572a70ceb61c21aa88c44ca27dc6d2f0a` 已通过
+  [run40104751661](https://github.com/vchive/Lunar-Evolution/actions/runs/40104751661)
+  的33/33 jobs，并于2026-10-25 00:13:30UTC合入
+  `0bff6b92b9b05f7b780bf4c2ee6f38bdab4b3833`。合并树
+  `0b65a7b283a8b2f30ff25308e24b4131e34d920d` 与独审的CI树完全相同；
+  base/head都是合并提交的实际parents。
+- PR187 的33份原始artifacts已经独立核对。Python3.11/3.12/3.13各自的
+  current/heavy九分片精确覆盖20,689项，零缺失/重复；54项完整复制、31项
+  deferred-import和22项codec专项零跳过。三版本共九个V2 mixed实际执行通过。
+  证据在主工作区ignored `feature187-20261024/ci-watch-8ca8e1f5/`。
+- 当前可独立推进的是历史原始验收材料复核、真实项目源码/依赖事实冻结，以及普通
+  模型的本地case验收。普通模型路径已存在；此前3/3列车fixture是固定脚本答案，
+  不能充当真实模型端到端结果。新实跑独立保留预算、任务、结果和失败。
+- 历史材料复核现已完成七组、69份原始ZIP，root再次独立核对全部ZIP/XML、API
+  digest、Git源码tar与commit identity通过，关闭Feature193六项和Feature191的
+  PR49审计项。PR52/88原archive失败与retry、PR88额外2167个cache均明列保留；
+  不把通过的审计升级为真实构建或runtime验收。见
+  [历史审计报告](specs/193-static-python-rsi-launch/historical-evidence-audit-20261025.md)。
+- OpenEvolve v0.4.0的真实commit、完整501-file源包/API tree、31个Python文件及14个
+  prompt资源已独审冻结；依赖声明、入口、直接SDK/进程池/evaluator路径已实际审查。
+  它完成项目step1的源码/声明子项，尚无完整dependency bytes或可执行profile。
+  见[源码审查](specs/191-python-worker-adapter/openevolve-source-profile-review-20261025.md)。
+- 普通模型列车case已单次实跑失败：第三turn等待HTTP响应头超时，subject在原600秒
+  内部deadline下于600.245秒rc2退出，未产生schedule或completed receipt。独立本地
+  evaluator因缺文件给validity/overall0，不是完成的端到端通过；model_turns3/tools4，
+  中断请求用量未知，未重试/补答案/改预算。1008个source文件及11个case-copy文件
+  前后相同，218个loaded module的source origin/hash匹配。详细限制和原始材料位置见
+  [普通模型实跑](docs/normal-model-smoke-20261025.md)。
+- 静态RSI仍缺完整不可变构建输入托管、configured closure、同源freezer、静态ELF、
+  sealed startup、原owner/lifecycle和权威输入/结果，再到真实OpenEvolve/Shinka
+  生命周期与生产CLI。当前5090gpu支持的bwrap路径尚未满足custody，不能用可写复制、
+  新DTO、只读视图或事后hash替代。P2远程/多机服务继续后置。
+
+`production_admission=false`、`online_publication=false`。完整剩余范围以
+[当前发布待办](docs/current-release-backlog.md)开头为准。
+
+## 历史：PR187 创建前的分支状态（2026-10-24）
 
 - `codex/feature189-followup-integration-v3` 的文档后继 `a3bac9c8` 已推送到
   GitHub；下文“本地准备/未push”描述的是当时状态。1906项实际测试源码仍为
