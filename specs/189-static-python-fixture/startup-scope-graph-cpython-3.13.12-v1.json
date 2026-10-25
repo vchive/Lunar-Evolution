@@ -1,0 +1,661 @@
+{
+  "aliases": [
+    {
+      "alias": "importlib._bootstrap",
+      "name": "_frozen_importlib"
+    },
+    {
+      "alias": "importlib._bootstrap_external",
+      "name": "_frozen_importlib_external"
+    }
+  ],
+  "baseline_startup_edges": [
+    {
+      "basis": "_install_external_importers imports this module; pinned C startup calls that helper",
+      "kind": "import",
+      "source": "_frozen_importlib",
+      "target": "_frozen_importlib_external"
+    },
+    {
+      "basis": "_setup iterates the exact builtin-name tuple and calls _builtin_from_name",
+      "kind": "literal-import",
+      "source": "_frozen_importlib",
+      "target": "_thread"
+    },
+    {
+      "basis": "_setup iterates the exact builtin-name tuple and calls _builtin_from_name",
+      "kind": "literal-import",
+      "source": "_frozen_importlib",
+      "target": "_warnings"
+    },
+    {
+      "basis": "_setup iterates the exact builtin-name tuple and calls _builtin_from_name",
+      "kind": "literal-import",
+      "source": "_frozen_importlib",
+      "target": "_weakref"
+    },
+    {
+      "basis": "fixed Lunar alias inventory",
+      "kind": "bootstrap-alias",
+      "source": "_frozen_importlib",
+      "target": "importlib._bootstrap"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "_imp"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "_io"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "_warnings"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "marshal"
+    },
+    {
+      "basis": "selected by the pinned non-Windows branch for the candidate Linux target",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "posix"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "sys"
+    },
+    {
+      "basis": "fixed Lunar alias inventory",
+      "kind": "bootstrap-alias",
+      "source": "_frozen_importlib_external",
+      "target": "importlib._bootstrap_external"
+    },
+    {
+      "basis": "reviewed expanded Lunar main top-level import",
+      "kind": "import",
+      "source": "_lunar_static_main",
+      "target": "_imp"
+    },
+    {
+      "basis": "reviewed expanded Lunar main top-level import",
+      "kind": "import",
+      "source": "_lunar_static_main",
+      "target": "_lunar_fixture_pipe"
+    },
+    {
+      "basis": "reviewed expanded Lunar main top-level import",
+      "kind": "import",
+      "source": "_lunar_static_main",
+      "target": "sys"
+    },
+    {
+      "basis": "fixed abc postimage requires _abc and removes _py_abc fallback",
+      "kind": "from-import",
+      "source": "abc",
+      "target": "_abc"
+    },
+    {
+      "basis": "pinned codecs wildcard base edge; target builtin source is separately pinned",
+      "kind": "from-import",
+      "source": "codecs",
+      "target": "_codecs"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "codecs",
+      "target": "builtins"
+    },
+    {
+      "basis": "deferred lookup import; encodings is already a C startup root",
+      "kind": "import",
+      "source": "codecs",
+      "target": "encodings"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "codecs",
+      "target": "sys"
+    },
+    {
+      "basis": "pinned prepared module-level import",
+      "kind": "import",
+      "source": "encodings",
+      "target": "codecs"
+    },
+    {
+      "basis": "relative package import base; self-edge does not introduce a module",
+      "kind": "from-import",
+      "source": "encodings",
+      "target": "encodings"
+    },
+    {
+      "basis": "fixed prepared relative import and supplied aliases source",
+      "kind": "from-import",
+      "source": "encodings",
+      "target": "encodings.aliases"
+    },
+    {
+      "basis": "fixed UTF-8 module binding in source preparation",
+      "kind": "from-import",
+      "source": "encodings",
+      "target": "encodings.utf_8"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "encodings.utf_8",
+      "target": "codecs"
+    },
+    {
+      "basis": "pinned module-level import and pinned _io C initializer audit",
+      "kind": "from-import",
+      "source": "io",
+      "target": "_io"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "io",
+      "target": "_io"
+    },
+    {
+      "basis": "pinned module-level import",
+      "kind": "import",
+      "source": "io",
+      "target": "abc"
+    }
+  ],
+  "claims": {
+    "build_performed": false,
+    "configured_closure_verified": false,
+    "installation_accepted": false,
+    "loader_policy_verified": false,
+    "online_publication": false,
+    "owner_verified": false,
+    "production_admission": false,
+    "runtime_startup_performed": false,
+    "source_graph_verified": false
+  },
+  "evidence_scope": "pinned-source-candidate-review-only",
+  "expected_startup_modules": [
+    "__main__",
+    "_abc",
+    "_codecs",
+    "_frozen_importlib",
+    "_frozen_importlib_external",
+    "_imp",
+    "_io",
+    "_lunar_fixture_pipe",
+    "_lunar_static_main",
+    "_thread",
+    "_warnings",
+    "_weakref",
+    "abc",
+    "builtins",
+    "codecs",
+    "encodings",
+    "encodings.aliases",
+    "encodings.utf_8",
+    "io",
+    "marshal",
+    "posix",
+    "sys"
+  ],
+  "open_gates": [
+    "Bind every candidate PyPreConfig/PyConfig field to the actual launcher and initialized target values.",
+    "Bind the patched source tree, Setup/config.c/frozen.c tables, freezer output and complete generated headers to one configured build.",
+    "Audit unresolved deferred resource-reader/metadata routes and fixed workload paths beyond baseline startup.",
+    "Observe actual startup imports/origins and the loader-negative refusal case on the sealed target."
+  ],
+  "profile_decision": {
+    "decision": "no-module-inventory-expansion-from-source-observations",
+    "expected_startup_modules_sha256": "0cd871642195bf3079ef225b5085ac03f98fb044f0abc5159b3e4c4d573a22d7",
+    "python_ast_import_count": 28,
+    "python_ast_observation_sha256": "d7802d7ac60202b720c30bacfb124fe8ee155298ac88ddd8facdbbc7f07dc9f5",
+    "python_ast_unsupported_count": 4,
+    "reason": "The fixed baseline candidate has a source-supported reachability map, but optional and deferred routes, generated frozen bytes, effective configuration, configured tables, and runtime origins are not bound. The v2 comparison DTO remains comparison-only and cannot be used as source-closure evidence.",
+    "source_derived_roots_sha256": "d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313",
+    "status": "retain-candidate-inventory-do-not-accept-closure"
+  },
+  "python_source_edge_audit": [
+    {
+      "basis": "fixed bootstrap call path",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_frozen_importlib",
+      "target": "_frozen_importlib_external"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "_imp"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "_io"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "_warnings"
+    },
+    {
+      "basis": "PathFinder methods; direct calls and post-startup use are not proven unreachable",
+      "disposition": "deferred-unresolved",
+      "kind": "from-import",
+      "source": "_frozen_importlib_external",
+      "target": "importlib.metadata"
+    },
+    {
+      "basis": "resource-reader methods; direct calls and post-startup use are not proven unreachable",
+      "disposition": "deferred-unresolved",
+      "kind": "from-import",
+      "source": "_frozen_importlib_external",
+      "target": "importlib.readers"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "marshal"
+    },
+    {
+      "basis": "Windows-only import branch",
+      "disposition": "platform-excluded",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "nt"
+    },
+    {
+      "basis": "non-Windows module-level branch for declared Linux candidate",
+      "disposition": "baseline-linux-branch",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "posix"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "sys"
+    },
+    {
+      "basis": "decode_source method; ordinary SourceLoader route is patched to refuse, but direct callers are not proven unreachable or refused",
+      "disposition": "deferred-unresolved",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "tokenize"
+    },
+    {
+      "basis": "Windows-only import branch",
+      "disposition": "platform-excluded",
+      "kind": "import",
+      "source": "_frozen_importlib_external",
+      "target": "winreg"
+    },
+    {
+      "basis": "fixed expanded-main top-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_lunar_static_main",
+      "target": "_imp"
+    },
+    {
+      "basis": "fixed expanded-main top-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_lunar_static_main",
+      "target": "_lunar_fixture_pipe"
+    },
+    {
+      "basis": "fixed expanded-main top-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "_lunar_static_main",
+      "target": "sys"
+    },
+    {
+      "basis": "fixed source-preparation requires _abc and removes _py_abc fallback",
+      "disposition": "baseline-prepared-source",
+      "kind": "from-import",
+      "source": "abc",
+      "target": "_abc"
+    },
+    {
+      "basis": "known builtin base edge; wildcard export names are not expanded",
+      "disposition": "baseline-with-unsupported-star",
+      "kind": "from-import",
+      "source": "codecs",
+      "target": "_codecs"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "codecs",
+      "target": "builtins"
+    },
+    {
+      "basis": "deferred lookup import; encodings is already a direct C startup root",
+      "disposition": "baseline-existing-root-deferred-call",
+      "kind": "import",
+      "source": "codecs",
+      "target": "encodings"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "codecs",
+      "target": "sys"
+    },
+    {
+      "basis": "prepared module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "encodings",
+      "target": "codecs"
+    },
+    {
+      "basis": "relative package import base; does not add a module",
+      "disposition": "baseline-relative-self-edge",
+      "kind": "from-import",
+      "source": "encodings",
+      "target": "encodings"
+    },
+    {
+      "basis": "fixed relative import and exact supplied alias source",
+      "disposition": "baseline-prepared-source",
+      "kind": "from-import",
+      "source": "encodings",
+      "target": "encodings.aliases"
+    },
+    {
+      "basis": "candidate UTF-8 selection binds directly to fixed module",
+      "disposition": "baseline-prepared-source",
+      "kind": "from-import",
+      "source": "encodings",
+      "target": "encodings.utf_8"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "encodings.utf_8",
+      "target": "codecs"
+    },
+    {
+      "basis": "module-level import; C initializer is separately source-pinned",
+      "disposition": "baseline",
+      "kind": "from-import",
+      "source": "io",
+      "target": "_io"
+    },
+    {
+      "basis": "module-level import; duplicate target with separate import syntax",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "io",
+      "target": "_io"
+    },
+    {
+      "basis": "module-level import",
+      "disposition": "baseline",
+      "kind": "import",
+      "source": "io",
+      "target": "abc"
+    }
+  ],
+  "reachability_decisions": [
+    {
+      "condition": "source-level lifecycle callsites",
+      "decision": "c-created startup roots",
+      "limit": "the target binary and effective configuration are unobserved",
+      "route": "__main__, builtins, sys"
+    },
+    {
+      "condition": "_install_importlib is enabled",
+      "decision": "direct C bootstrap roots",
+      "limit": "the source-derived roots are candidate evidence, not runtime observations",
+      "route": "_imp, _frozen_importlib"
+    },
+    {
+      "condition": "normal main-interpreter initialization",
+      "decision": "direct C startup roots",
+      "limit": "effective PyConfig and module origins are unobserved",
+      "route": "encodings, io"
+    },
+    {
+      "condition": "_frozen_importlib._setup",
+      "decision": "literal builtin bootstrap imports",
+      "limit": "builtins table consumption is not configured-build evidence",
+      "route": "_thread, _warnings, _weakref"
+    },
+    {
+      "condition": "target is Linux x86_64",
+      "decision": "selected Linux source branch",
+      "limit": "target platform/build identity is not observed",
+      "route": "posix"
+    },
+    {
+      "condition": "_warnings C hook only requests it with try_import and before finalization; lifecycle warnoptions import is guarded by nonempty list",
+      "decision": "not a required baseline module; optional C import is caught on ImportError and falls back to C display",
+      "limit": "startup-closure-v2 has no optional-import disposition and the fixed workload warning path is outside this baseline graph",
+      "route": "warnings"
+    },
+    {
+      "condition": "candidate config declares site_import=0",
+      "decision": "excluded from candidate baseline",
+      "limit": "effective runtime configuration and user code are unobserved",
+      "route": "site"
+    },
+    {
+      "condition": "candidate postimage removes init_zipimport call",
+      "decision": "excluded by planned Python/import.c postimage",
+      "limit": "postimage consumption is not configured-build evidence",
+      "route": "zipimport"
+    },
+    {
+      "condition": "pinned source platform branch",
+      "decision": "Windows-only and outside target profile",
+      "limit": "target platform/build identity is unobserved",
+      "route": "nt, winreg"
+    },
+    {
+      "condition": "not called by the audited bootstrap path",
+      "decision": "deferred non-baseline-startup functions",
+      "limit": "direct invocation and post-startup APIs are not proven unreachable or refused",
+      "route": "tokenize, importlib.readers, importlib.metadata"
+    },
+    {
+      "condition": "only selected for fixture_case=loader-negative; expected ImportError",
+      "decision": "negative fixture path, not an admitted dependency",
+      "limit": "the refusal behavior has not been observed in the target runtime",
+      "route": "loader-negative computed imports"
+    },
+    {
+      "condition": "frozen code execution uses C frozen-table bytes; compile occurs in a deferred namespace-loader method; star import resolves its named _codecs base",
+      "decision": "source-audit limitations accounted separately from module edges",
+      "limit": "generated frozen bytes and exact configured builtin table are not bound",
+      "route": "dynamic exec/compile and codecs star-import"
+    }
+  ],
+  "schema": "lunar-static-python-startup-scope-graph-review-v1",
+  "source_pins": [
+    {
+      "name": "_frozen_importlib",
+      "origin": "release-archive-python-source",
+      "path": "tests/fixtures/static_python_source/Lib/importlib/_bootstrap.py.source",
+      "sha256": "b84488f731914f6da30607e10f6f8d4c5c2ff7f4b0e913060aa66999c04f6252",
+      "size_bytes": 57082
+    },
+    {
+      "name": "_frozen_importlib_external",
+      "origin": "fixed-source-preparation-postimage",
+      "path": "Lib/importlib/_bootstrap_external.py",
+      "sha256": "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab",
+      "size_bytes": 64722
+    },
+    {
+      "name": "abc",
+      "origin": "fixed-source-preparation-postimage",
+      "path": "Lib/abc.py",
+      "sha256": "a6684b1a49cfbc9c64caeeac7e55ef8f35052b8e8ca93a091941817cdc510b1c",
+      "size_bytes": 6468
+    },
+    {
+      "name": "codecs",
+      "origin": "release-archive-python-source",
+      "path": "tests/fixtures/static_python_source/Lib/codecs.py.source",
+      "sha256": "2f278497548b8313580b247a1097a0a304e5087a355ebb11a92ec685fa9e63ff",
+      "size_bytes": 36978
+    },
+    {
+      "name": "encodings",
+      "origin": "fixed-source-preparation-postimage",
+      "path": "Lib/encodings/__init__.py",
+      "sha256": "47a11d930321492bca552eed29dad061ed6739bf84c919485453315d911b1c60",
+      "size_bytes": 1101
+    },
+    {
+      "name": "encodings.aliases",
+      "origin": "fixed-source-preparation-postimage",
+      "path": "Lib/encodings/aliases.py",
+      "sha256": "43aadac378861c1bbdaaf04be8e1bb7d878529a7641ec123b5df4eccdd4c6106",
+      "size_bytes": 802
+    },
+    {
+      "name": "encodings.utf_8",
+      "origin": "release-archive-python-source",
+      "path": "tests/fixtures/static_python_source/Lib/encodings/utf_8.py.source",
+      "sha256": "ba0cac060269583523ca9506473a755203037c57d466a11aa89a30a5f6756f3d",
+      "size_bytes": 1005
+    },
+    {
+      "name": "io",
+      "origin": "release-archive-python-source",
+      "path": "tests/fixtures/static_python_source/Lib/io.py.source",
+      "sha256": "7cec3cb8ac004058dd0a5af246e6d950fb59c7ddd0058fda48bcb3fcb98d8822",
+      "size_bytes": 3582
+    },
+    {
+      "name": "_lunar_static_main",
+      "origin": "reviewed-expanded-freeze-source",
+      "path": "build-plan-output/assets/frozen_main.py",
+      "sha256": "6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d",
+      "size_bytes": 6794
+    },
+    {
+      "candidate_postimage_sha256": "58a5fac8fac5916511f890f3fdd095d817e6f32ab709ebf0ed0becf9328226b1",
+      "candidate_postimage_size_bytes": 146559,
+      "name": "Python/import.c",
+      "origin": "release-archive-source-and-fixed-postimage",
+      "path": "tests/fixtures/static_python_source/Python/import.c.source",
+      "sha256": "4e18922dc31001c24fd9875746881ab407252bddc6bca544f22403d50e493a61",
+      "size_bytes": 146770
+    },
+    {
+      "name": "Python/pylifecycle.c",
+      "origin": "release-archive-supporting-source",
+      "path": "tests/fixtures/static_python_source/Python/pylifecycle.c.source",
+      "sha256": "21296f86275077e4f19234a2c32691ee087fea961c28745770373a6c4ef70789",
+      "size_bytes": 106247
+    },
+    {
+      "name": "Python/_warnings.c",
+      "origin": "release-archive-source",
+      "path": "tests/fixtures/static_python_source/Python/_warnings.c.source",
+      "sha256": "bed91ba65456a2bc1ca278a4d320be978487563a566c79a9e57b0bf46c40352d",
+      "size_bytes": 43088
+    },
+    {
+      "name": "Objects/genobject.c",
+      "origin": "release-archive-supporting-source",
+      "path": "tests/fixtures/static_python_source/Objects/genobject.c.source",
+      "sha256": "f8acbdbdf76b13b68d36c741437a34e3b50e3f41d42770ba69b20d5455fb7e25",
+      "size_bytes": 80432
+    },
+    {
+      "name": "warnings",
+      "origin": "release-archive-supporting-source",
+      "path": "tests/fixtures/static_python_source/Lib/warnings.py.source",
+      "sha256": "e040f52be0199c69fa8c0d35428ba64e6f9b6412691a689ccbd7c23e07c6ed3f",
+      "size_bytes": 27071
+    }
+  ],
+  "startup_roots": [
+    "__main__",
+    "_frozen_importlib",
+    "_imp",
+    "_lunar_static_main",
+    "builtins",
+    "encodings",
+    "io",
+    "sys"
+  ],
+  "target": {
+    "cpython_version": "3.13.12",
+    "gil_enabled": true,
+    "platform": "linux-x86_64-musl",
+    "release_archive_sha256": "2a84cd31dd8d8ea8a8aff75de66fc1b4b0127dd5799aa50a64ae9a313885b4593",
+    "source_commit": "1cbe481834751b0125e006042ffbd8cd5eaec8a8"
+  },
+  "target_profile_version": "cpython-3.13.12-linux-x86_64-musl-gil-static-startup-v1-candidate",
+  "unsupported_site_decisions": [
+    {
+      "column": 8,
+      "disposition": "C frozen-table code execution path; not a dynamic module-name import",
+      "limit": "frozen code bytes are not bound to a configured freezer output",
+      "line": 1176,
+      "reason": "dynamic-code-execution",
+      "source": "_frozen_importlib"
+    },
+    {
+      "column": 15,
+      "disposition": "compile call in deferred namespace-loader method",
+      "limit": "direct method reachability/refusal is not proven on a target runtime",
+      "line": 1323,
+      "reason": "dynamic-code-execution",
+      "source": "_frozen_importlib_external"
+    },
+    {
+      "column": 47,
+      "disposition": "fixed loader-negative case computes names from a local tuple and expects ImportError",
+      "limit": "the target runtime refusal result is not observed",
+      "line": 68,
+      "reason": "dynamic-import",
+      "source": "_lunar_static_main"
+    },
+    {
+      "column": 4,
+      "disposition": "base edge to pinned _codecs builtin is known and retained",
+      "limit": "wildcard exported names are not expanded and configured inittab is not bound",
+      "line": 16,
+      "reason": "star-import",
+      "source": "codecs"
+    }
+  ]
+}

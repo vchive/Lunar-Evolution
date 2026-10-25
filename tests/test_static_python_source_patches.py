@@ -22,7 +22,7 @@ FIXTURE = Path(__file__).parent / "fixtures/static_python_source"
 PINS = {
     "Lib/importlib/_bootstrap_external.py": (
         73219, "a97a03ea9f9d38d90c8a50942183382ff5a479e7c4c5163c2ac5bae3561444ae",
-        64722, "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab",
+        63208, "3269c01134c03bf8196306ce6aa89e24da41430ccf3bef7eb43afe362ec1bf1e",
     ),
     "Python/import.c": (
         146770, "4e18922dc31001c24fd9875746881ab407252bddc6bca544f22403d50e493a61",
@@ -189,8 +189,8 @@ def test_manifest_records_true_source_policy_and_pending_build_without_effects(s
     canonical = json.dumps(manifest["files"], sort_keys=True, separators=(",", ":"),
                            ensure_ascii=False, allow_nan=False).encode()
     assert manifest["patch_set_sha256"] == hashlib.sha256(canonical).hexdigest()
-    assert manifest["patch_set_sha256"] == "f3c6f45437b954bdb8bd59a3fd05ef98d0b1715066e570cb3c277dda16596b48"
-    assert sum(len(item["operations"]) for item in manifest["files"]) == 13
+    assert manifest["patch_set_sha256"] == "8ccdc0541b2e0c6e9c2bf251d9dd502d51bdaf27543ceaccccf59df41e10348e"
+    assert sum(len(item["operations"]) for item in manifest["files"]) == 18
     assert all(operation["required_occurrences"] == 1
                for item in manifest["files"] for operation in item["operations"])
 

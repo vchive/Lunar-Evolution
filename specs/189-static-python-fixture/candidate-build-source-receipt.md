@@ -98,3 +98,24 @@ consumption remain open. A separate configured build is still required. The
 recorded `staged_tree_sha256` is the staging manifest's tree-projection digest
 after the observer matched on-disk inventory, metadata and file bytes; it is
 not an independently streamed filesystem Merkle digest.
+
+The remaining candidate-build source/patch custody and later consumption
+boundary are specified separately in
+[`candidate-build-provenance.md`](candidate-build-provenance.md). That document
+is design only; this observer exercise and the `source-only` receipt do not
+complete its independent-retention or configured-build obligations.
+
+### Later independent retention (2026-10-24)
+
+The historical raw archive, release/signature metadata, complete staging
+manifest, observation, scripts and five actual patched postimages are now
+retained locally and independently checked. The archive's complete source
+inventory and reconstructed fixed postimages match the existing source and
+staged-projection pins. See
+[`candidate-source-retention-20261024.md`](candidate-source-retention-20261024.md)
+for exact evidence and limitations. The earlier remote-only statements describe
+the original exercise; this later retention closes that raw-record custody gap.
+It does not prove historical runner live provenance, the complete remote stage's
+current state, immutable custody or configured-build consumption. In particular,
+the saved 840-byte observation includes a final LF; its historical bytes and
+pin are preserved rather than normalized into a different artifact.

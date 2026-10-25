@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 from lunar_evolution.static_python_import_audit import audit_static_python_imports
-from tools.static_python_fixture.recipe import emit_build_plan
 from tools.static_python_fixture.source_patches import (
     SOURCE_PATHS,
     prepare_static_python_sources,
@@ -15,11 +14,11 @@ from tools.static_python_fixture.source_patches import (
 
 _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURE_ROOT = _ROOT / "tests/fixtures/static_python_source"
-_REVIEWED_INPUTS = _ROOT / "tools/static_python_fixture/reviewed-build-inputs.json"
 
 # The four upstream Python inputs are retained as inert .source fixture bytes;
-# the five Lunar-prepared postimages come from the fixed patch policy. The
-# custom main pin belongs to its expanded freeze task in reviewed-build-inputs.
+# other prepared sources come from the fixed patch policy. The external source
+# and custom main are retained verbatim from the historical expanded candidate.
+# Later candidate revisions have separate source graphs and audits.
 _FROZEN_SOURCE_PINS = {
     "_frozen_importlib": (57082, "b84488f731914f6da30607e10f6f8d4c5c2ff7f4b0e913060aa66999c04f6252"),
     "_frozen_importlib_external": (64722, "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab"),
@@ -109,7 +108,7 @@ def test_codecs_star_import_edge_matches_candidate_builtin_profile() -> None:
     assert all(value is False for value in wire["claims"].values())
 
 
-def test_observes_exact_prepared_nine_module_frozen_source_set(tmp_path: Path) -> None:
+def test_observes_exact_prepared_nine_module_frozen_source_set() -> None:
     raw = {
         path: (_FIXTURE_ROOT / (path + ".source")).read_bytes()
         for path in SOURCE_PATHS
@@ -117,25 +116,19 @@ def test_observes_exact_prepared_nine_module_frozen_source_set(tmp_path: Path) -
     prepared, _manifest = prepare_static_python_sources(raw)
     assert (len(prepared["Python/import.c"]), _sha256(prepared["Python/import.c"])) == _PREPARED_C_PIN
 
-    reviewed = json.loads(_REVIEWED_INPUTS.read_bytes())
-    freeze_tasks = [
-        task for task in reviewed["freeze_tasks"]
-        if task["generator_id"] == "_lunar_static_main"
-    ]
-    assert len(freeze_tasks) == 1
-    task = freeze_tasks[0]
-    assert task["name"] == "_lunar_static_main"
-    assert task["origin"] == "expanded-fixture-asset"
-    plan = emit_build_plan(tmp_path / "plan")
-    main_source = (plan / task["source"]).read_bytes()
-    assert len(main_source) == task["source_size"] == 6794
-    assert _sha256(main_source) == task["source_sha256"] == (
-        "6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d"
+    main_source = (
+        _FIXTURE_ROOT / "Lunar/frozen_main-before-codec-negative.py.source"
+    ).read_bytes()
+    historical_main_pin = (
+        6794, "6e6a9e661f50dc1baf5b1e6e1f2a717468f1351d7fc6d534ecae125717e0695d",
     )
+    assert (len(main_source), _sha256(main_source)) == historical_main_pin
 
     sources = {
         "_frozen_importlib": (_FIXTURE_ROOT / "Lib/importlib/_bootstrap.py.source").read_bytes(),
-        "_frozen_importlib_external": prepared["Lib/importlib/_bootstrap_external.py"],
+        "_frozen_importlib_external": (
+            _FIXTURE_ROOT / "Lunar/bootstrap_external-before-deferred-refusal.py.source"
+        ).read_bytes(),
         "abc": prepared["Lib/abc.py"],
         "codecs": (_FIXTURE_ROOT / "Lib/codecs.py.source").read_bytes(),
         "encodings.__init__": prepared["Lib/encodings/__init__.py"],
@@ -145,7 +138,7 @@ def test_observes_exact_prepared_nine_module_frozen_source_set(tmp_path: Path) -
         "_lunar_static_main": main_source,
     }
     expected_pins = dict(_FROZEN_SOURCE_PINS)
-    expected_pins["_lunar_static_main"] = (task["source_size"], task["source_sha256"])
+    expected_pins["_lunar_static_main"] = historical_main_pin
     for name, expected in _FROZEN_SOURCE_PINS.items():
         assert (len(sources[name]), _sha256(sources[name])) == expected
     assert set(sources) == set(expected_pins)

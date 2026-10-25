@@ -45,7 +45,7 @@ def test_audits_exact_emitted_expanded_static_main_bytes(tmp_path: Path) -> None
     assert wire["unresolved_imports"] == []
     assert wire["unsupported_import_sites"] == [{
         "source": "_lunar_static_main",
-        "line": 68,
+        "line": 94,
         "column": 47,
         "reason": "dynamic-import",
     }]

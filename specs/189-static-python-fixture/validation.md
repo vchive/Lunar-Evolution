@@ -1,5 +1,72 @@
 # Validation contract — preparation is not runtime evidence
 
+## Exact7d873753 local integration focused acceptance
+
+The exact merge commit `7d873753b8c8660a4f51c477ea64c03c7e296e93` has
+parents9f5bad28 and4da38027. A single actual local Python3.13 invocation of the
+41-file combined selector passes1906 unique cases, zero failures/errors/skips,
+and raw child rc0 persisted with flush/fsync before XML validation. XML time is
+100.812 s; subprocess monotonic time101.060 s. This is a new measured result,
+not an inference from the previous675 and1231 results. Whole-repository Ruff,
+src/tools/tests compileall (external private cache) and diff-check each return0;
+HEAD and tracked status remain unchanged. This is not a complete bytes/modes
+source-tree comparison or a Linux mixed/full-CI/runtime acceptance.
+
+The original13-file/340,470-byte package is retained under this worktree's ignored
+`.lunar-evolution/feature189-integration-evidence/7d873753b8c8-4mgfo84c/`.
+A create-only copy is in the main workspace's ignored
+`feature189-20261024/integration-7d873-retention-e5llcn7n/7d873753b8c8-4mgfo84c/`.
+All source/copy modes, sizes and SHA-256 values match, and the original package
+is unchanged. Original receipts, exact selector, commands and metadata remain
+available; no cleanup or repeated test invocation occurs.
+
+| Retained receipt | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Raw artifact manifest | 1546 | `e329e9705cdf052b3c79982a5e2320be615f6f9758bdaba4122b84c11e1bfa95` |
+| Test XML | 326186 | `09d73cf6bc36736a2ef02d88ad34765556a63d8936868d07aaa2124f76c2afdc` |
+| Raw focused process result | 2533 | `3efdde84b484c579c96fac11c61ac36e8af344f353113b9f8b605fcb52d3ccb6` |
+| Retention manifest (parent of package) | 2747 | `72b415255f7f48a87f2cba5f7aac762a6b988914ee2c4e20452999264882f59b` |
+
+This result belongs only to7d873753; a later documentation commit is not a tested
+head. Root independently checks the original manifest and1906 unique XML cases
+without rerunning tests; the read-only audit passes. Its783-byte receipt in the
+main workspace is `feature189-20261024/integration-1906-root-independent-audit.json`,
+SHA-256 `b298211e5d5766d7c12a0e9cc838c298a6171e1f4d51774275cdab22cf763d8c`.
+The new branch remains local without a PR. Exact4da mixed subsequently passes
+and is independently audited as below; its full CI and this integration's final
+CI remain independent open gates. G1/G2/G3 and production claims remain open/false.
+
+## Exact4da single original-budget Linux mixed acceptance
+
+Exact P0 `4da380272b56f9ef6fc42ef37c50655aabfa6724` passes its single
+original600-second Linux mixed launch: case574.367 s, suite575.732 s,
+runner575.8265714850277 s, JUnit one pass/zero failures/errors/skips, raw child
+and wrapper rc0. Root's read-only independent review compares archive bytes
+against a fresh git archive, verifies2319 source files,12 loaded modules and21
+bundle entries' bytes/type/mode. The retained receipt passes without rerunning
+the case or opening SQLite. Evidence is in the main workspace's ignored
+`feature189-20261024/linux-mixed-py311-4da38027-l9q8q5ml/`;
+`root-independent-evidence-review.json` is537 bytes, SHA-256
+`0cd0a826560bb505b9f45b2fb54ae5ff2bc565566be46e19cc1ea21814ebe00a`.
+Full exact-head CI remains pending; keep the old49b PASS/FAIL/cancellation
+material unchanged. A single local/Linux pass is not proof of overall speedup,
+merge readiness, complete runtime acceptance or publication readiness.
+
+## Cancelled Python3.12 job contains a raw pytest failure
+
+Old49b current-3 job120700344970 is a cancelled job, but its complete original
+raw log already contains a pytest failure before cancellation: one failed,
+3538 passed and two skipped, with a total shard summary of5263.21 s. The same
+three-child mixed case reports `rsi_brs_reserved_serial_worker_unknown`, attached
+primary `rsi_brs_reserved_serial_deadline_expired`; this differs from the3.13
+allowance-exhaustion error. No JUnit artifact is published for this job, so these
+are raw-log observations, not an independently checked XML or measured case time.
+The13,481,074-byte original log in the old watch directory is
+`job-120700344970-original-allow-escape-sequences.log`, SHA-256
+`da890ea641fd3b9827b1fb3abb28a5de4d789065fb05c223621adbf49d08dfab`.
+The final job count stays30 success/one failure/two cancelled. Cancellation does
+not imply the job had no pytest failures; preserve both layers of evidence.
+
 ## Full-byte resident hints: local implementation validation
 
 The original `49b4929c` Linux mixed PASS and Python 3.13 CI mixed FAIL are
@@ -7,6 +74,18 @@ both retained. CI case601.169 s refuses with
 `rsi_brs_rejection_provenance_allowance_exhausted`, plus worker attempt unknown;
 no budget or test is changed to obtain a pass. Raw CI evidence is in ignored
 `feature189-20261023/ci-watch-49b4929c-rm0afyfq/`.
+At 2026-10-24 01:14:10.547203 UTC this original run finishes
+completed/cancelled: 30 successes, one failure and two cancellations. Both
+Python3.11/3.12 current-3 jobs are cancelled by the newer push's workflow
+concurrency, without a manual cancellation or rerun. The 3.11 artifacts contain
+provenance/log but no JUnit/summary; the 3.12 cancelled artifact is not yet listed
+at that snapshot. Do not claim completed acceptance or all 33 artifact packages.
+Retain intermediate `snapshot-086.json` (30 successes, one failure, one cancelled
+and one running) unchanged. Do not restart old jobs or count cancellation as a pass.
+The final raw `snapshot-087.json` SHA-256 is
+`49e1a86074832bf590d35d29e7239dff3231a6b8a68baa50afb824f2c657347f`;
+`status-087.json` SHA-256 is
+`93adadc6fd592adcef786c15c09c0153e12ba6de8e1c654b121b0852b2b6a83c`.
 
 The next implementation follows `serial-regression-performance.md`: optional
 resident hints still require full fresh-byte equality and exact resident-value
@@ -23,8 +102,25 @@ overlap and are not additive. Evidence is retained in ignored
 `feature189-20261024/source-hint-final-0sbnlwxd/`. Whole-repository Ruff,
 src/tools/tests compileall, diff checks and independent source/test/SDD review
 pass. No timer assertion, original test body, deadline or 600-second allowance
-was relaxed. New exact-source Linux mixed and final-head CI remain required;
-this is not a passed E2E gate or a merge claim.
+was relaxed. Exact4da's single original-budget Linux mixed later passes with
+independent audit as above; final-head CI remains required. This focused result
+is not a passed E2E gate or a merge claim. New exact4da CI run40048350911
+has all 33 expected three-version/11-role jobs at 01:14:08.767227 UTC, with
+20 running and 13 queued (run status queued, empty conclusion); no pass is claimed.
+
+## Local P0/P1 integration preparation
+
+The local `codex/feature189-followup-integration-v3` branch merges exact P0
+`4da380272b56f9ef6fc42ef37c50655aabfa6724` into P1 documentation head
+`9f5bad28dbeab10e3fae536bd533580e20cce1f3`, leaving the original branches and
+evidence untouched. Only workflow/tasks conflict; preserve the P0 cache gate89
+and P1 complete-copy54, deferred-refusal31 and codec22 gates, their zero-skip
+checks and all XML failure annotations. Do not manually change src/tools/tests.
+The old P0 local675 and exact966 Linux1231 remain separate source results;
+neither is acceptance for this integration head, and their sum is not a new pass.
+The exact7d873753 focused union subsequently passes as recorded above; final
+CI is still required. Local preparation is not a push, PR, mixed replay,
+campaign, runtime acceptance or admission change.
 
 ## Exact 3222c9d original-budget replay and row parsing follow-up
 
@@ -754,6 +850,28 @@ They do not prove header closure, configured `Setup`/`pyconfig.h`, source
 consumption, compilation, linking, ELF contents, runtime startup or module
 origin. No build, remote evaluation or solver campaign was run.
 
+## Versioned baseline startup-scope review — 2026-10-23
+
+`startup-scope-audit-20261023.md` and its versioned JSON retain the fixed
+CPython 3.13.12 Linux candidate's baseline source graph. The observer replay
+uses `encodings.__init__` as its package key, reproduces the retained canonical
+AST digest, and now compares all 28 normalized source edges and all four
+unsupported source sites directly against the JSON. The review keeps the
+source-derived eight-root vector separate and documents the C bootstrap
+literal-import edges plus conditional, deferred, platform-excluded, and
+loader-negative routes. The expected 22-module candidate inventory is
+unchanged.
+
+The focused source-scope and startup-closure suites passed 69 cases with no
+failures, errors, or skips. Comparator regressions confirm that the exact four
+unsupported sites and the deferred out-of-profile `tokenize` edge are refused;
+the comparator remains a synthetic comparison DTO. Ruff, `compileall` for
+`src`, `tools`, and `tests`, and `git diff --check` passed. Effective
+configuration, complete configured closure, generated freezer/header
+consumption, build, target runtime origins, and loader-negative behavior remain
+open. No configure, build, solver, evaluator, network, or remote assessment was
+run for this source-only slice.
+
 ## Serial RSI regression follow-up — 2026-10-23
 
 `serial-regression-performance.md` records the retained failed unprofiled
@@ -785,3 +903,200 @@ zero failures, errors or skips. The independent freeze-only pure builder
 benchmark preserves projection/pins; local timing is not E2E evidence. The
 normalization memo experiment was rejected after a mutable-regex-cache
 counterexample. These changes enable no build, runtime or production claim.
+
+## Source/startup audit CI and candidate-plan alignment — 2026-10-24
+
+The dedicated source-import audit gate now selects the existing import audit,
+source import profile, baseline startup-scope audit and startup-closure suites.
+Local collection confirms 107 cases (35 + 3 + 2 + 67). Execution with CPython
+3.13.12 passes all 107 with zero failures, errors or skips; the exact workflow
+XML guard also passes against
+`/tmp/lunar189-p1-source-audits-ci-gate-20261023.xml`. Full-tree Ruff,
+`compileall` for `src`, `tools` and `tests`, and `git diff --check` pass.
+
+The plan and unchecked G2 tasks now name the existing candidate assets and
+their remaining configured/static-target and runtime bindings, including the
+fixed `_main` computation of 285 and existing baseline/loader-negative cases.
+Feature190's completed private original-owner implementation is distinguished
+from Feature189's still-open target integration. No acceptance checkbox is
+changed. These are local source observations and synthetic comparator checks;
+exact-source three-version Linux CI, immutable build custody, configured
+closure, freezing/compilation/linking and G3 runtime acceptance remain open.
+No build, E2E, solver or evaluator was run for this change.
+
+## Complete toolchain copy validation — 2026-10-24
+
+The private materializer and independent fault-injection selection pass all
+54 cases; the broader 433-case combined selection passes with zero failures,
+errors or skips. Those selections overlap and are not additive. Ruff for the
+whole repository, compileall for src/tools/tests and diff checks pass. Linux
+CPython 3.11.15 independently passes the same focused54, with the command,
+log, XML and summary transfer hashes verified.
+
+The unique real-Zig data-only replay on exact a9b75116 creates all 20,832
+members (19,546 files, 1,286 directories, 357,913,169 bytes), then performs a
+separate complete remote walk. Its original 120-second budget includes that
+walk and source-after checks; total budgeted time is 11.696064 seconds.
+Independent local audit checks exact source commit, loaded modules, runner,
+inputs and transferred receipts. The copied tree itself is not transferred
+for a second local walk. See `toolchain-private-custody.md` for evidence pins
+and receipt limitations. No archive member, compiler, build, runtime or solver
+runs; all ten claims remain false and G1/G2/G3 remain open. The rejected
+remount/nested-userns custody probes remain failures, not copy acceptance.
+
+## Independent retention of source records — 2026-10-24
+
+Eighteen existing release/source records and five actual patched files are
+retained locally with checked transfer type/mode/size/hash and original patch
+file identities. An independent offline standard-library review reads all
+5,245 archive members and reconstructs the complete 4,837-file source and
+staged-projection pins. The five actual postimages equal the in-memory fixed
+patch results byte-for-byte. Saved signature metadata/transcripts are retained
+and compared; no new cryptographic verification or old runner replay occurs.
+See `candidate-source-retention-20261024.md` for pins and the historical record's
+LF/live-provenance limitation. This closes raw-record retention, not current
+full staged-filesystem observation, immutable custody or configured consumption.
+
+## Candidate codec workload and identity transition — 2026-10-24
+
+The existing candidate negative case now checks the finite UTF-8 name/aliases,
+fixed unknown-codec rejection and surrounding module/path profile. All candidate
+and RSI input/overlay/profile pins are refreshed as one source-only change.
+The historical expanded main and source graph remain unchanged; a separate
+current nine-source AST observation binds the new main to the same 28 import
+edges and four unsupported sites, with the dynamic-import site's new line.
+
+The final combined selection passes 1,032 distinct cases with zero failures,
+errors or skips, including the 54 copy and 204 runner cases. The dedicated
+22-case codec selection and exact workflow XML guard pass separately;
+independent review's 69 cases overlap and are not additive. Whole-repository
+Ruff, src/tools/tests compileall and diff checks pass. See
+`candidate-codec-negative.md` for precise candidate pins and earlier grouped
+focused results. The existing launcher suite builds an inert argv probe against
+a fake C header/runtime; it does not build CPython. No archive member, CPython
+build/freezer, candidate static image or solver runs; configured closure,
+immutable custody and G2/G3 target acceptance stay open.
+
+## Linux focused source-invariance refusal and candidate C API review (2026-10-24)
+
+The first and only Linux focused run of exact83c1d88d has 774 passing tests,
+zero failures/errors/skips, 236 verified module origins and unchanged bytes/full
+modes/exec bits for all 2,332 original tracked files. Full source invariance
+fails on three added pyc files and one cache directory. The overall result is
+FAIL, with the original source and additions retained. The old collector exits1
+without recording its child Popen returncode before the failing assertion;
+the plugin's session exitstatus0 and passing XML are distinct receipts, not a
+reconstruction of that missing raw process status. See
+`candidate-codec-negative.md` for the retained artifact pins and location.
+
+Three source-only CLI argv lists now explicitly include `-B`; all original
+assertions, the minimal environment and full source-invariance gate remain.
+The local launch51+codec22 set passes73 with no skips. New-source Linux focused
+verification must persist child returncode and complete before/after inventories
+before any overall assertion, including on refusal. It is not a retry of83c.
+
+That single run of exactde9bd387 subsequently passes:774/0/0/0, rawrc0 durably
+recorded before post-run gates, 2333 complete source files and directory
+inventories identical with no additions, and236 final-session module origins
+verified. XML22.331s and subprocess22.664091s are separate measurements. All17
+transferred artifacts, the exact Git archive/index, source inventories and raw
+receipts pass the independent root review. See `candidate-codec-negative.md`
+for each pin. The previous83c overallFAIL is retained, not reclassified.
+
+The separate independent `profile-getpath-source-review-20261024.md` checks ten
+actual pinned CPython C/header members, ten PreConfig fields, 66 PyConfig fields
+and28 source anchors. No source/API mismatch was found. Generated configuration,
+role flags, actual compilation/consumption, link and effective runtime settings
+remain unverified; the original G2/G3 tasks stay open.
+
+## Five fixed deferred-import source refusals (2026-10-24)
+
+`deferred-import-refusal.md` records the five whole-function replacements and
+their independently projected 63,208-byte external source identity. The fixed
+reader name decorator is removed and actual PathFinder staticmethods retained.
+The current source audit has25 edges/4unsupported/0unresolved; no modules are
+added, old codec/v1 graph records stay byte-identical, and old prepared bytes
+are separately retained for historical replay.
+
+The final shape-preserving base/RSI pin group passes502 tests, and its31-case
+new dedicated subset passes with zero failures/errors/skips. The independent
+review's22 cases are included in31, not additive. Eight in-memory AST negative
+variants are rejected. The earlier736-case source/history group ran before the
+final JSON projection correction; its unchanged source/history tests passed,
+but it is not a736-case final-revision acceptance. Whole-repository Ruff,
+compileall and diff-check pass. Final-chain, literal-consumer, historical-byte
+and JSON-shape independent review reports no blocker. The unique exact966
+Linux focused/source-invariance run below now passes; full branch CI is still
+required. Neither the earlier736 group nor later documentation heads inherit
+that exact source's acceptance identity.
+
+No archived source module, real configure/freezer/compiler/linker, target,
+solver or evaluator executes. SourceLoader.get_source still reads before
+decode_source; general callback/file refusal, full closure, immutable custody
+and G2/G3 runtime/admission remain open. PR186's separate49b CI now has a
+Python3.13 current-3 failure under investigation; main merge remains blocked.
+
+## Exact966 Linux provider-free source acceptance and retention (2026-10-24)
+
+The tested source is exactly
+`966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`. Its 26,961,920-byte Git archive has
+SHA-256 `2f6c909fbbaaf36a51f9c618b4305deb335111035deaadb61f19cca103bb7cac`.
+The fixed selector contains 27 distinct test files: the earlier 736 selection
+plus RSI launch, source staging/tree/provenance, candidate-build source and
+observation, projection, verified-input and source-readiness suites. Local and
+remote collect-only results agree on all 1231 nodeids. Only the remote host
+starts actual tests, once, under Python 3.11.15 with one unique repository-external
+`/var/tmp` basetemp, unchanged budget, no rerun and no source cleanup.
+
+The XML records 1231 tests, zero failures/errors/skips and 25.853 seconds. The
+raw Popen returncode 0 is flushed and fsynced before evaluating any post-run
+inventory, XML, module or success gate; subprocess monotonic time is 26.159305
+seconds. Complete before/after inventories match all 2338 files and 292 directories
+against the new archive index, including bytes, complete modes and executable
+bits. Added, removed and changed files/directories are all zero; caches are
+included, not ignored. All 238 final-session Lunar/tools modules have matching
+exported source origins and bytes. The original seven required modules and ten
+additional actually used source modules are all loaded. No receipt is missing
+and the collector records no error.
+
+All 17 raw artifact hashes match after transfer. The source worktree retains its
+original ignored package at
+`.lunar-evolution/feature189-deferred-linux-evidence/966c5cf91ec6-v78xqg7u/`;
+the remote run remains at
+`/home/qinzhiqing/vchive/lunar-feature189-deferred-966c5cf9-BPZ0UT`.
+A create-only copy is retained in the main workspace under
+`.lunar-evolution/validation/feature189-20261024/deferred-966c5cf9-retention-bn4qrqdb/966c5cf91ec6-v78xqg7u/`.
+All 30 files, two directories and 29,727,449 file bytes match the original package's
+modes, sizes and hashes; read-only before/after comparison confirms the original
+package did not change. Previous 49b/83c/de9 packages are untouched.
+Root independently audits the complete archive against exact Git966, all index/
+source/receipt hashes and modes, 1231 unique passing cases and both collections,
+rawrc0, all 237 file origins plus one tools namespace, and all 17 required modules.
+The read-only review passes without executing tests or artifact code. Its receipt
+is `root-independent-review.json` in the retained package's parent directory.
+
+| Retained receipt | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Raw artifact manifest | 2563 | `b705ff6c714e4eac65afb2c430fe459ae2f1bd1072229636804a6dbda98a2172` |
+| Test XML | 219868 | `be5465b4a9b34af8b2985fc428e372fe8c30373aee553a8fac8a7467dac35751` |
+| Raw process result | 133 | `3c474747d39c5ba520e0db0056fea96b4d4b78ba52b8fb0f69bf7203c84af5d0` |
+| Source-before and source-after (each) | 554908 | `58288e8b354893c7ba4ba1d8911ee0ca538f2eef67bbc3c8fcff90970bd95f0e` |
+| Retention manifest (parent of package) | 6033 | `ad85fb54a1f5508202507ea00031c2a7f76014ad2b8ac37d7cec3cfcab31af19` |
+| Root independent review (parent of package) | 595 | `45f8902aa3a2855aff1afbaffefd2c086569c630ce97a58140ebf8d8d9878392` |
+
+The selector includes existing inert host-C launcher probes against fake
+Python.h/runtime stubs and source-only CLIs. No mixed replay, archived CPython
+source execution, actual configure/freezer/static build/target, solver or remote
+evaluator runs. This acceptance belongs only to 966, not the later documentation
+commit. Full branch CI, configured closure, immutable custody, ELF and G2/G3
+runtime/admission remain open.
+
+PR186's distinct exact49b original CI has a Python3.13 current-3 mixed failure
+at 601.169 seconds with primary
+`rsi_brs_rejection_provenance_allowance_exhausted` and attached `worker_unknown`.
+The observed stack is not hotspot proof. At 2026-10-24 01:14:10.547203 UTC,
+the original CI finishes completed/cancelled with 30 successes, one failure and
+two cancellations after the new push's workflow concurrency. Cancellation is
+not a pass. Preserve raw failure/cancellation, intermediate status and original
+budget. Do not restart old jobs, rerun49b, infer 33 passing jobs, or merge main
+using the independent 966 focused result.

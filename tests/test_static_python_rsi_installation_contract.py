@@ -74,10 +74,10 @@ def reviewed_vector() -> dict:
     base_raw = (_ROOT / "tools/static_python_fixture/reviewed-build-inputs.json").read_bytes()
     overlay_raw = (_ROOT / "tools/static_python_rsi_fixture/reviewed-profile-overlay.json").read_bytes()
     assert (len(base_raw), hashlib.sha256(base_raw).hexdigest()) == (
-        80050, "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31",
+        80050, "7d1660a9166208c412626fcd8f60cb60124060595643064b353926381565171d",
     )
     assert (len(overlay_raw), hashlib.sha256(overlay_raw).hexdigest()) == (
-        2456, "93a33ee5b753f7d64705adcedb1938b0f887b177348b091ed037c318eef938f0",
+        2456, "831d9e4625f5e9f6d7b662505bbd811d9ce23b6804a7e9c4172ddbafb77888e6",
     )
     base, overlay = json.loads(base_raw), json.loads(overlay_raw)
     descriptor = json.loads(

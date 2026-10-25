@@ -20,6 +20,9 @@ from lunar_evolution import static_python_startup_closure as startup_closure
 _ROOT = Path(__file__).resolve().parents[1]
 _WIRE = _ROOT / "specs/189-static-python-fixture/wire-v1-example.json"
 _SOURCE_ROOTS = _ROOT / "specs/189-static-python-fixture/startup-roots-cpython-3.13.12.json"
+_STARTUP_SCOPE_GRAPH = _ROOT / (
+    "specs/189-static-python-fixture/startup-scope-graph-cpython-3.13.12-v1.json"
+)
 _SOURCE_ROOTS_SHA256 = "d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313"
 _SCHEMA = "lunar-static-python-startup-closure-v2"
 _CLAIMS = (
@@ -471,6 +474,43 @@ def test_unresolved_and_unsupported_import_arrays_are_required_and_empty(
     changed = copy.deepcopy(vector)
     changed.pop(field)
     _refuse(lambda: _parse(changed, f01, descriptor_raw))
+
+
+def test_reviewed_source_audit_unsupported_sites_remain_refused(
+    vector, f01, descriptor_raw,
+):
+    source_graph = json.loads(_STARTUP_SCOPE_GRAPH.read_bytes())
+    changed = copy.deepcopy(vector)
+    changed["unsupported_import_sites"] = [
+        {
+            key: item[key]
+            for key in ("source", "line", "column", "reason")
+        }
+        for item in source_graph["unsupported_site_decisions"]
+    ]
+    error = _refuse(lambda: _parse(changed, f01, descriptor_raw))
+    assert error.reason == "static_python_startup_closure_unsupported"
+
+
+def test_deferred_out_of_profile_source_edge_remains_refused(
+    vector, f01, descriptor_raw,
+):
+    source_graph = json.loads(_STARTUP_SCOPE_GRAPH.read_bytes())
+    deferred = next(
+        item for item in source_graph["python_source_edge_audit"]
+        if item["target"] == "tokenize"
+    )
+    changed = copy.deepcopy(vector)
+    changed["import_edges"].append({
+        "source": deferred["source"],
+        "target": deferred["target"],
+        "kind": deferred["kind"],
+    })
+    changed["import_edges"].sort(
+        key=lambda item: (item["source"], item["target"], item["kind"]),
+    )
+    error = _refuse(lambda: _parse(changed, f01, descriptor_raw))
+    assert error.reason == "static_python_startup_closure_edge"
 
 
 @pytest.mark.parametrize("claim", _CLAIMS)

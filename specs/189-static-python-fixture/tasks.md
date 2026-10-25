@@ -36,14 +36,38 @@ failure and cancelled preflight separately from later successful evidence.
 
 ## G1 installation inputs and pure admission
 
-- [ ] Close the original-budget serial mixed regression identified in
+- [x] Close the original-budget serial mixed regression identified in
   `serial-regression-performance.md`. Preserve fresh source/SQLite observations
   and all history/policy checks; validate bounded pure-cache improvements with
   focused drift/eviction tests, the exact Linux case and final-source CI.
+  PR186 exact49b's Python3.13 current-3 CI fails: mixed 601.169s with
+  `rsi_brs_rejection_provenance_allowance_exhausted` plus `worker_unknown`.
+  Its stack does not establish a hotspot. At 2026-10-24 01:14:10.547203 UTC
+  the original run finishes completed/cancelled: 30 successes, one failure
+  and two cancellations after the new push's workflow concurrency. Retain the
+  intermediate snapshots; cancellation is not a pass. Preserve the original
+  budget; do not restart old jobs or rerun49b acceptance. Exact4da's single
+  original600-second Linux mixed passes in574.367 s and root's retained-evidence
+  audit passes; the exact4da head's final three-version CI completed 33/33
+  successfully and PR186 was merged to main as `9f20f995`. Immutable custody,
+  configured build and G2/G3 remain independent/open.
 - [x] Implement optional full-byte-checked resident hints and identity-only warm
   retention. Add 14 multi-version/fallback/limit/inflight-eviction cases; pass
   the 675-case focused union, Ruff, compileall, diff checks and independent
   source/test review. This does not close the preceding Linux/CI merge gate.
+
+- [x] Prepare local P0/P1 merge7d873753 from9f5bad28 and4da38027 without
+  hand-editing src/tools/tests or moving the original branch refs. Preserve
+  cache89/copy54/deferred31/codec22 and failure annotations. The exact new merge
+  passes one actual41-file/1906-case local focused union with no failures/errors/
+  skips, plus Ruff, compileall and diff-check; retain original receipts and a
+  create-only evidence copy. Later docs heads are not tested heads. Full CI,
+  immutable custody and G2/G3 remain independent/open. Exact4da's original-budget
+  mixed and the7d873 focused receipts both pass root's read-only independent audit;
+  neither substitutes for final-head CI.
+  Old3.12 cancelled-job rawlog also contains a pre-cancellation mixed pytest
+  failure (worker unknown with primary reserved-serial deadline expired); no
+  JUnit was published. Preserve it separately from the final job-state counts.
 
 - [x] Specify the bounded archive-receipt and extraction-manifest preparation
   contract in `verified-inputs.md`; keep advertised pins and caller-supplied
@@ -93,10 +117,22 @@ failure and cancelled preflight separately from later successful evidence.
   and raw-file digest manifest in
   `release-input-audit-20261021.md`. This closes the archive/signature portion
   of G1 only.
-- [ ] Independently retain the complete acquired/extracted source-tree digest
-  and exact applied patch set for the candidate build. The archive signature,
-  source projection and source-tree DTOs do not themselves prove a staged,
-  patched tree was used for a configured build.
+- [x] Specify the separate candidate-build source/patch provenance boundary in
+  `candidate-build-provenance.md`: retain the full source, staging, observer and
+  exact fixed-policy records under external pins; distinguish a staged-source
+  observation from actual configured-build consumption. This design-only task
+  adds no build-consumption wire or claim.
+- [ ] Independently retain and audit the complete acquired/extracted source-tree
+  digest and exact applied patch set for a clean candidate build, following the
+  evidence obligations in `candidate-build-provenance.md`. The archive
+  signature, source projection, source/staging DTOs and source-only candidate
+  receipt do not themselves prove a configured build consumed that tree.
+- [x] Independently retain the existing release/source raw records and five
+  actual fixed postimages locally, then check complete archive/source/patch/
+  staged-projection bindings offline. See `candidate-source-retention-20261024.md`.
+  This closes raw-record retention only: no local full staged filesystem or
+  historical runner live provenance is established, and the configured-build
+  consumption task above remains open.
 - [x] Cross-check the declared Zig 0.16.0 archive digest and the byte-for-byte
   archive and available Ubuntu musl package bytes on 5090gpu; preserve their
   exact versions and hashes in `release-input-audit-20261021.md`. This cross-check
@@ -172,6 +208,29 @@ failure and cancelled preflight separately from later successful evidence.
 - [ ] Complete the exact-source three-version CI before merging this slice.
   Keep concrete build-tool/helper/cache bindings, configured build consumption,
   static build and runtime gates open.
+- [x] Freeze the internal complete-tree copy boundary in
+  `toolchain-private-custody.md`: one acquired snapshot, independently pinned
+  complete manifest, create-only private parent, exact modes, bounded writes,
+  original deadline, retained partial trees and existing full observer.
+- [x] Complete implementation, independent fault-injection review and final
+  focused validation of `toolchain_private_copy.py`. A plain setup artifact
+  retains all ten false observer claims and grants no future build authority.
+  The final 433-case combined suite passes with zero failures, errors or skips,
+  including 39 implementation and 15 independent counterexamples. CI requires
+  those 54 cases explicitly; whole-repository Ruff and compileall pass.
+- [x] Retain one independently checked complete real-Zig data-only copy replay
+  after the inert implementation review. Exact a9b75116 copies/observes all
+  20,832 members in 11.70 seconds including the independent remote full walk
+  and source-after checks under the original 120-second deadline. Source,
+  runner, module and transferred receipt pins are independently audited; the
+  copied tree itself was not transferred for a second local walk. This
+  validates copying/observation only; no archive member is executed and no
+  custody claim follows. Same-source Linux focused54 also passes without skips.
+- [ ] Resolve a supported complete-tree immutable-custody mechanism. The
+  existing bwrap 9000-argument limit excludes per-file full-Zig setup; tested
+  command remount and nested-userns paths are refused by current AppArmor.
+  Do not trim the inventory, change security policy, substitute a writable host
+  copy, or infer all Linux mechanisms are impossible from these two failures.
 - [x] Freeze the prerequisite private original target-owner binding and independent
   Feature190 fixture proof: final run37802795693/main merge3a7782c. Feature189's
   actual target-owner integration remains a G3 gate.
@@ -181,7 +240,7 @@ failure and cancelled preflight separately from later successful evidence.
   canonical import-graph DTO parser. Version 2 separates the descriptor-pinned
   expected startup-module inventory from a separately hashed root vector, requires
   exact module/alias records, and checks graph reachability from those roots. Its
-  65-case focused suite (including the pinned-root composition check) proves
+  67-case focused suite (including the pinned-root composition check) proves
   DTO consistency only; the synthetic graph edges remain synthetic and do not
   establish source closure. The synthetic
   root vector is not claimed to be the real CPython startup roots.
@@ -190,10 +249,22 @@ failure and cancelled preflight separately from later successful evidence.
   hash is `d1743e729bac34c5110a1d1373cc48c74a52b585034825227ed37d0178e39313`;
   the source sites and limitations are in `startup-root-audit-20261022.md`.
   This closes root derivation only, not the graph audit or runtime evidence.
-- [ ] Independently complete the C/Python import-edge audit for the configured
-  source/startup scope, then exercise the v2 comparator with the source-derived
-  root hash and an independently retained graph. Do not claim source or
-  configured closure from synthetic DTO results.
+- [x] Retain the versioned, source-pinned baseline startup graph for the fixed
+  CPython 3.13.12 Linux candidate in `startup-scope-audit-20261023.md` and its
+  JSON record. The focused test replays the exact 9-source AST observation,
+  compares all 28 normalized Python edges and all four unsupported sites with
+  the retained review, and preserves the separately source-derived root hash.
+  The review also records the fixed C bootstrap literal edges and explicit
+  conditional, deferred, platform-excluded, and negative-fixture routes. The
+  profile remains unchanged; this bounded baseline review does not establish
+  configured closure.
+- [ ] Complete the configured C/Python import-edge audit and exercise the v2
+  comparator against an independently reviewed graph after binding effective
+  `PyConfig`, configured builtin/frozen tables, generated freezer outputs,
+  headers, and the candidate build. Resolve the optional/deferred routes within
+  the selected workload scope. The current source graph is candidate-review
+  evidence only; comparator DTO results must not be presented as source or
+  configured closure evidence.
 - [x] Specify and implement the separate source-byte-bound Python AST import
   observer in `python-import-audit-contract.md`. Require exact caller-supplied
   module/source bytes and matching external per-source SHA-256 pins; record
@@ -251,15 +322,32 @@ failure and cancelled preflight separately from later successful evidence.
   Provider-free tests cover the source transformations and normal `LookupError`
   from host `codecs.lookup` when the synthetic callback declines an unknown
   codec. This does not verify target startup registration or frozen-module use.
+- [x] Replace five fixed deferred-import entry points with immediate source
+  refusal: file/namespace readers, PathFinder cache invalidation/distributions
+  and source decoding. Preserve the actual decorators/argument domains, finite
+  profile and wire; refresh active pins while retaining historical prepared
+  source/codec/v1 graph observations. See `deferred-import-refusal.md` for the
+  31-case dedicated gate, final 502-case pin validation and open pre-read/runtime
+  limits. Complete branch CI and actual target consumption remain pending.
+- [x] Run one provider-free Linux focused acceptance on exact
+  `966c5cf91ec63265b9d6d0cadaf91945d38aaa9a`: 27 deduplicated files, 1231
+  cases with zero failures/errors/skips and raw child rc0. Local/remote collection
+  nodeids agree; 2338-file/292-directory bytes, full modes and exec bits match
+  the archive index and remain unchanged. All 238 loaded Lunar/tools modules
+  pass origin checks, including all 17 required modules; 17 raw artifacts pass
+  transfer hashes and the 30-file package is retained create-only in the main
+  workspace. Root independently audits the original receipts with no blocker. This is provider-free source acceptance only; subsequent docs
+  commits are not tested source heads and branch CI/G2/G3 remain open.
 - [ ] Independently audit CPython 3.13.12 source imports and startup edges, including
   relative/literal imports, bootstrap aliases, C-created builtins and dynamic-import
   refusal sites across the complete configured source/startup scope, including
   any dependency outside the pinned profile and a versioned profile decision.
   The bounded importlib bootstrap/loader review in
   `importlib-edge-audit-20261022.md` records the `_frozen_importlib` startup edge
-  and candidate loader dispositions, but leaves deferred direct resource-reader/
-  metadata routes and configured/runtime binding unresolved. The DTO parser
-  cannot certify the full audit or infer new modules.
+  and candidate loader dispositions. The five deferred reader/metadata/decoder
+  entry points now have source-only refusals; preliminary SourceLoader reads,
+  complete configured source scope and actual runtime binding remain unresolved.
+  The DTO parser cannot certify the full audit or infer new modules.
 
 The offline source-preparation contract in `source-preparation.md` covers pure
 exact preimage/snippet/postimage gates and finite table-source assets. These do
@@ -281,16 +369,32 @@ safe-extraction or signature-verification result.
   for the build-input slice before main merge; require the dedicated90-case
   source-only gate and source-preparation100-case gate without failures/errors/skips.
   Accepted PR29 run37894037150/maincce8e892, sourcece606690/tree6812af8f.
-- [ ] Audit actual3.13.12 C headers, all path outputs and frozen-use flags/API;
-  freeze fixed isolated preconfig/config including UTF-8 and locale dispositions.
+- [ ] Validate the existing candidate `assets/profile.c` and `assets/getpath.c`
+  against actual3.13.12 C headers, all path outputs and frozen-use flags/API;
+  bind and verify effective isolated preconfig/config, UTF-8 and locale dispositions.
+- [x] Independently review actual 3.13.12 header/API source compatibility for
+  those candidate files: ten PreConfig fields, 66 PyConfig fields and 28 source
+  anchors, including isolated kind3, NULL string clears and wide-list copying.
+  See `profile-getpath-source-review-20261024.md`. Generated `pyconfig.h`, actual
+  role flags, compilation, consumption and effective runtime settings in the
+  preceding task remain open; no source incompatibility was found to fix.
 - [ ] Close all encodings/importlib/stdio/startup dependencies and stock frozen,
   alias, separate embedded startup arrays and static inittab dispositions. Replace
   the seed with an exact finite
   reviewed inventory; no automatic acceptance of discovered extra modules.
-- [ ] Implement the tiny static pipe builtin and one fixed inert frozen main with
-  real computation/runtime observations and predefined bounded negative cases.
-- [ ] Implement/refuse installed file/zip/dynamic-extension fallback routes; audit
-  needed bootstrap_external code and unsupported codec behavior.
+- [ ] Review and complete the existing candidate launcher/profile/pipe/frozen-main
+  sources under `tools/static_python_fixture/assets/`; bind them to generated
+  tables and the static image, then observe actual computation, pipe exchange
+  and the required predefined bounded negative cases.
+- [x] Add the fixed candidate UTF-8/unknown-codec workload to the existing
+  `loader-negative` source, preserve the finite inventory and output wire,
+  refresh the full candidate/RSI pin chain, and retain a separate current-source
+  AST audit without rewriting historical evidence. The 22 synthetic/source
+  cases and the final 1,032-case combined regression pass without skips; this
+  does not complete freezing, image binding or target negative acceptance.
+- [ ] Complete configured/static-target binding and actual negative validation of
+  the existing file/zip/dynamic-extension refusal patches; resolve remaining
+  bootstrap_external and unsupported codec routes.
 - [ ] Build matching pinned freezing tools and static target; retain first compiler,
   linker and startup failures. Record every input/generated table/digest/link map.
 - [ ] Independently inspect final ELF/source/table/configuration/provenance and
@@ -309,10 +413,11 @@ safe-extraction or signature-verification result.
   source/image pin drift, post-seal source replacement and exact inherited FD census.
 - [ ] Verify ready/release/start/terminal, inherited pipe ownership, deadline,
   cancellation, guardian interruption, process reap and FD cleanup on every path.
-- [ ] Independently validate the selected private target owner's original binding
-  and cleanup/recovery against closed/reused numbers, same-byte foreign objects,
-  forced observation mutation and interrupted acquisition/release. No private
-  API is assumed and no public numeric FD may authorize foreign-object close.
+- [ ] Independently validate Feature190's implemented private `_Owner` and retained
+  context binding in this fixture's target integration and cleanup/recovery against
+  closed/reused numbers, same-byte foreign objects, forced observation mutation
+  and interrupted acquisition/release. Reuse that existing owner implementation;
+  no public numeric FD may authorize foreign-object close.
 - [ ] Run focused/static/current/archive/frozen regressions and exact final Linux
   dedicated gate with zero skips. Preserve raw ZIP/log/XML/source/toolchain/image
   evidence; require independent final audit before main merge or any completed claim.

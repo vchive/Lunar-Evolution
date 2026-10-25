@@ -45,7 +45,33 @@ def _refused(operation):
     raise RuntimeError("non-inventory loader was admitted")
 
 
+def _codec_negative():
+    modules = tuple((name, sys.modules[name]) for name in sorted(sys.modules))
+    path = list(sys.path)
+    hooks = list(sys.path_hooks)
+    lookup = sys.modules["codecs"].lookup
+    text = "Lunar \u6708"
+    encoded = b"Lunar \xe6\x9c\x88"
+    for name in ("utf-8", "cp65001", "u8", "utf", "utf8", "utf8_ucs2", "utf8_ucs4"):
+        codec = lookup(name)
+        if (codec.name != "utf-8"
+                or codec.encode(text, "strict") != (encoded, len(text))
+                or codec.decode(encoded, "strict") != (text, len(encoded))):
+            raise RuntimeError("fixed UTF-8 codec profile mismatch")
+    try:
+        lookup("lunar_only_unavailable_codec")
+    except LookupError:
+        pass
+    else:
+        raise RuntimeError("unsupported codec was admitted")
+    if (tuple(sorted(sys.modules)) != tuple(name for name, _module in modules)
+            or any(sys.modules[name] is not module for name, module in modules)
+            or sys.path != path or sys.path_hooks != hooks):
+        raise RuntimeError("codec lookup changed startup profile")
+
+
 def _loader_negative():
+    _codec_negative()
     external = sys.modules["_frozen_importlib_external"]
     bootstrap = sys.modules["_frozen_importlib"]
     source = external.SourceFileLoader("lunar_decoy_source", "./readable-decoys/decoy.py")

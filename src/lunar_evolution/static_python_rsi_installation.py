@@ -32,15 +32,15 @@ _FIELDS = frozenset({
 _REVIEWED_INPUTS = {
     "base_reviewed_inputs": {
         "size": 80050,
-        "sha256": "c305d56956b75eda286b0e630ceeeaa0f37db2e9f669879eb30a563f8dd2bb31",
+        "sha256": "7d1660a9166208c412626fcd8f60cb60124060595643064b353926381565171d",
     },
     "reviewed_overlay": {
         "size": 2456,
-        "sha256": "93a33ee5b753f7d64705adcedb1938b0f887b177348b091ed037c318eef938f0",
+        "sha256": "831d9e4625f5e9f6d7b662505bbd811d9ce23b6804a7e9c4172ddbafb77888e6",
     },
     "source_plan": {
         "size": 6706,
-        "sha256": "2b95d9d77a875245361ff0aa20d6a98f29034f5d0b33a03b143f3d55786dbb6a",
+        "sha256": "6018846ffcfdaf1d578516043e690cdd01da413d5b885d16d18d537219d79058",
     },
 }
 _LAUNCH_POLICY = {
@@ -64,13 +64,13 @@ _FROZEN_SOURCES = {
         "generated-sources/Python/frozen_modules/importlib._bootstrap.h",
     ),
     "_frozen_importlib_external": (
-        "Lib/importlib/_bootstrap_external.py", 64722,
-        "2928843477aef234477ac1968447370798e933c6dad39b9e5131e581b8c84eab",
+        "Lib/importlib/_bootstrap_external.py", 63208,
+        "3269c01134c03bf8196306ce6aa89e24da41430ccf3bef7eb43afe362ec1bf1e",
         "generated-sources/Python/frozen_modules/importlib._bootstrap_external.h",
     ),
     "_lunar_static_main": (
-        "assets/frozen_main.py", 7227,
-        "2b30f4463db471419df601a0c7640a560d2be95aed08d69cdf0e8e10d6871d28",
+        "assets/frozen_main.py", 8333,
+        "e1285d5a8308209067630e9135d828737019b30533701ea86efe859b6461b7f6",
         "generated-sources/Python/frozen_modules/_lunar_static_main.h",
     ),
     "abc": (
