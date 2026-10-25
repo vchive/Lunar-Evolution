@@ -24,7 +24,7 @@ from .agents import (
 )
 from .automatic_solve_lifecycle import SolveExecutionCancelled
 from .memory import MemoryStore
-from .model_profile import BudgetFailureEvidence, ProfileBudgetExceeded, UsageLedger
+from .model_profile import BudgetFailureEvidence, ProfileBudgetExceeded, UsageLedger, UsageSnapshot
 from .profiles import ModelProfile
 from .runtime import ModelTurn, OpenAICompatibleRuntime, RuntimeExecutionError, RuntimeResult
 from .tools import LocalToolRegistry
@@ -108,6 +108,7 @@ class InvocationDiagnostics:
     tool_steps: int = 0
     elapsed_seconds: float = 0.0
     boundary: bool = False
+    accepted_usage: UsageSnapshot | None = None
 
 
 @dataclass(frozen=True)
@@ -310,6 +311,7 @@ class AgentLoopRuntime:
         self._last_invocation = InvocationDiagnostics(
             tool_steps=tool_steps_offset,
             usage_complete=ledger.usage_complete if ledger is not None else False,
+            accepted_usage=ledger.snapshot if ledger is not None and ledger.snapshot.rounds else None,
         )
         messages = self._initial_messages(prompt)
         if response_protocol == BUNDLE_RESPONSE_PROTOCOL:
@@ -393,6 +395,9 @@ class AgentLoopRuntime:
                 self._update_invocation(
                     started,
                     usage_complete=ledger.usage_complete if ledger is not None else False,
+                    accepted_usage=(
+                        ledger.snapshot if ledger is not None and ledger.snapshot.rounds else None
+                    ),
                 )
             self._emit(
                 "agent_model_turn",

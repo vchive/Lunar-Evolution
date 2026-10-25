@@ -1,5 +1,17 @@
 # Tasks
 
+## Real project source baselines (2026-10-25)
+
+- [x] Retain and independently review OpenEvolve v0.4.0 source/tree, dependency
+  declarations, resources and entrypoint/request/lifecycle routes; see
+  [source review](openevolve-source-profile-review-20261025.md).
+- [x] Retain and independently review Shinka v0.0.7 source/tree, dependency
+  declarations, resources, entrypoint/request/lifecycle routes and the existing
+  exporter's required schema; distinguish raw tar modes from Git executable-bit
+  projection. See [source review](shinka-source-profile-review-20261025.md).
+- [ ] Freeze full dependency/build bytes and accept a finite executable project
+  profile. These source-only reviews do not close runtime or production CLI gates.
+
 ## Sequential DRS append lineage continuation
 
 - [x] Specify `ready-capsule.md` after actual checkpoint capacity refusal; keep
@@ -8,22 +20,28 @@
   original ready CAS acknowledgement and callback-free read-only materialization.
 - [x] Bind immutable original mode/history and shared capsule/lineage 64 MiB
   accounting before evidence I/O; preserve preparing/unknown orphan semantics.
-- [ ] Accept the full three-child flow and default/staging/recovery compatibility
-  on the corrected 772-file frozen source; pure/core and compatibility development
-  success alone cannot close this acceptance.
+- Historical: the corrected 772-file source did not finish its original acceptance;
+  its failures and source pins remain retained. The separately accepted successor
+  source below supersedes that unfinished slice without relabeling its result.
 - [x] Specify the same-workspace opt-in in `multi-episode-publication.md`; keep
   default initial-only publication and legacy terminal recovery unchanged.
 - [x] Add exact fresh dispatch leases, original owner/CAS scopes, bounded
   before/staged/terminal pins and a separate read-only historical inspection.
 - [x] Join explicit lineage to original transaction/precommit gates and retained
   native replay; recheck original cancellation/deadlines after chain observation.
-- [ ] Accept the integrated three-child DRS flow and read-only historical replay
-  from one frozen product/test source, with original receipt-threshold judging,
-  distinct child identities and M0 → practice commit M1 → target M1.
-- [ ] Complete the interruption/drift matrix and this slice's own full
-  CI/raw-source/tree audit and merge; preserve earlier failed/interrupted evidence.
-- [ ] Support the independently verified `all_rejected` opt-in outcome without
-  advancing lineage or repeating evaluation; currently explicitly refused.
+- [x] Accept the current provider-free three-child DRS flow and read-only historical
+  replay, with original receipt-threshold judging, distinct child identities and
+  M0 → practice commit M1 → target M1. PR187 exact source `8ca8e1f5`,
+  run `40104751661`, passed on Python3.11/3.12/3.13; native process/evaluator
+  boundaries remain inert and do not accept a real project runtime.
+- [x] Complete the successor provider-free interruption/drift matrix and its own
+  final-source CI/raw-source/tree audit and merge in PR187. Original 772-file,
+  earlier failed and interrupted evidence retain their original outcomes.
+- [x] Support independently verified `all_rejected` under fresh explicit
+  known-rejection v2 DRS. Record the original rejected attempt and C1/P/C2 evidence;
+  keep its published head/archive/state unchanged and do not repeat evaluation on
+  replay/reconcile. Attempted lineage advances; legacy/v1 still refuses. PR187's
+  three-version RPP/PRP/RRR cases passed, including null published head for RRR.
 - [ ] Accept BRS and actual runtime/production CLI separately; neither is covered
   by this sequential inert DRS slice.
 
@@ -46,8 +64,9 @@
   whole-source Ruff/compileall/diff checks and ten README CLI commands pass.
 - [x] Complete this slice's own full CI/raw-source audit and merge: PR99 head
   `80d3f3af`, run `38517739592`, merge `0cb49abb`; tested/merged trees agree.
-- [ ] Accept multiple DRS episodes with distinct child IDs, practice learning and
-  changed approved memory; accept BRS separately before any production CLI claim.
+- [x] Accept provider-free multiple DRS episodes with distinct child IDs, practice
+  learning and changed approved memory on PR187's final source and three-version CI.
+- [ ] Accept actual project BRS/runtime and the production CLI separately.
 
 ## Atomic child claim and fresh preclaim continuation
 
@@ -87,9 +106,11 @@
 - [x] Complete the integrated staging baseline's regression/static checks and
   full CI/raw-source audit at `main 82191cf`, run `38428650836`. The new child
   claim continuation has its separate final-source obligation above.
-- [ ] Implement the remaining episode-scoped DRS gateway/admission/store/scheduler
-  authority and exercise target failure → practice success → target retry with
-  distinct child IDs and changed approved memory. Staging ready is not execution.
+- [x] Complete the current provider-free episode-scoped DRS gateway/admission/store/
+  scheduler composition and target failure → practice success → target retry with
+  distinct child IDs and changed approved memory. PR187's three-child publication
+  and RPP cases exercise the original controller/CAS/claim/receipt/publication;
+  native execution/evaluation remain inert. Staging ready alone is not execution.
 - [ ] Freeze and accept the separate real project runtime profile described in
   `project-runtime-profile.md`; the current candidate startup/codec module set
   does not establish an OpenEvolve/Shinka runtime closure.
@@ -108,8 +129,10 @@
   checks pass. Repeated focused runs are not additional unique cases.
 - [x] Complete the integrated single-episode baseline's full CI and independent
   raw/source/tree audit at `main 82191cf`, run `38428650836`.
-- [ ] Specify and implement per-episode staging/launch and durable original proof
-  association before claiming a complete multi-episode DRS/BRS production CLI.
+- [x] Specify and implement per-episode staging/launch and durable original-proof
+  association for the accepted provider-free DRS composition. PR187's capsule,
+  gateway, child-flow and consumer cases passed on all three Python versions.
+- [ ] Accept the complete real multi-episode DRS/BRS project runtime and production CLI.
 
 ## P0 — contract and failure semantics
 

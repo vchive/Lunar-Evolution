@@ -8,9 +8,13 @@ PR186、PR187均已合入main，当前合并点为
 因此PR186回归修复、PR187完整复制/源码审查/固定负例及其合并义务已经完成。
 下方“2026-10-24历史”保留当时状态，不代表今天仍在等待这两个PR。
 
+PR188后继已补齐失败后的已知用量小计诊断（405项focused通过，最终head CI仍待验收）、
+Shinka源码/声明独审及过期DRS待办收口。新诊断不能恢复旧实跑遗失用量，也不能让失败
+case通过。用户已选择先完成不受环境阻塞的部分；静态构建权限不作自行变更。
+
 | 优先级 | 剩余工作 | 完成条件与依赖 |
 | --- | --- | --- |
-| P0 | 普通模型的本地端到端验收仍未通过 | 当前main单次真实case已执行：第三模型请求在原600秒内等待响应头超时，未生成schedule。保留失败、usage unknown和本地evaluator缺文件结果；先调查模型服务/请求行为，不能以fixture的3/3替代或重试抹掉此失败。 |
+| P0 | 普通模型的本地端到端验收仍未通过 | 当前main单次真实case已执行：完成三个model turns和四个tool results后，第四次模型请求在原600秒内等待响应头超时，未生成schedule。保留失败、usage unknown和本地evaluator缺文件结果；先调查模型服务/请求行为，不能以fixture的3/3替代或重试抹掉此失败。 |
 | P1 | 完整不可变构建输入托管 | 实际保证完整source/toolchain/helper/cache输入在整个构建期间不可改写；现有完整复制已经实现，但当前5090gpu的bwrap方案尚未满足此条件。不得截短库存、改预算或用chmod/前后hash冒充。 |
 | P1 | 真实静态Python构建与运行 | 在custody可用后冻结完整configured closure与recipe，实际configure/freezer/compile/link、核验ELF与sealed startup，再接原owner/lifecycle、权威输入/结果和Linux中断矩阵。 |
 | P1 | 真实OpenEvolve/Shinka与生产RSI CLI | 源码版本/依赖/资源/入口事实冻结可先并行；运行必须依赖accepted runtime，完成启动、取消、清理、结果归属、恢复与本地CLI验收。现有preflight/exporter不启动真实项目。 |
@@ -26,6 +30,9 @@ PR186、PR187均已合入main，当前合并点为
 [OpenEvolve源码审查](../specs/191-python-worker-adapter/openevolve-source-profile-review-20261025.md)
 已冻结v0.4.0完整source/tree和实际依赖声明/入口/资源事实；真实dependency bytes、
 完整profile与运行仍未完成。
+[Shinka源码审查](../specs/191-python-worker-adapter/shinka-source-profile-review-20261025.md)
+也已冻结v0.0.7的source/tree和声明/入口/schema事实，并独审区分tar完整权限与Git执行位；
+同样不代表其依赖闭包或真实运行完成。
 
 普通模型这次失败的原始receipt、精确来源和解释边界见
 [2026-10-25实跑报告](normal-model-smoke-20261025.md)。当前账号也无法访问5090gpu的

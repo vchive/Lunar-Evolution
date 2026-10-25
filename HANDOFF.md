@@ -1,5 +1,28 @@
 # 当前交接（2026-10-25，PR186、PR187 已合入 main）
 
+## 本轮后继：不受环境阻塞的收口
+
+用户已明确选择先完成不受5090gpu隔离环境阻塞的部分，不修改机器权限。
+PR188继续承载当前收口，最终head的CI尚待独立验收，不能称已合入main。
+
+- 已修复普通subject在后续模型请求失败时丢失先前已知用量的缺口：既有私有ledger的
+  accepted snapshot进入严格v6失败诊断，明确仅为部分小计；失败请求消费仍unknown，
+  未配置价格时cost仍null。v1–v5、成功receipt、请求、预算、重试和调度行为保持不变。
+  405项focused通过，包含normal/deep收集、staged跨phase和checkpoint/resume、旧诊断/
+  transport。独立review通过，全仓Ruff、compileall及diff-check通过。405证据为同次
+  工具stdout/退出码，无JUnit或测试时source-SHA绑定；root另有10项收集测试XML。
+  见[窄SDD](specs/061-subject-failure-diagnostics/accepted-usage-continuation.md)。
+- 原普通case是完成三个model turns和四个tool results后，第四次请求超时；旧失败和
+  遗失用量不能由新代码补回，未重发模型请求。公开服务文档的最小请求形状与现实现
+  相容，不能据此认定历史服务端根因或通过端到端验收。
+- Shinka v0.0.7真实source/declaration基线已完成独审：287个文件、103个package
+  Python AST、26项依赖声明，以及现有exporter所需七列匹配。归档完整权限与Git执行
+  位投影明确区分；未冻结完整依赖bytes或接受真实执行。见
+  [Shinka审查](specs/191-python-worker-adapter/shinka-source-profile-review-20261025.md)。
+- Feature191旧DRS待办经当前代码及PR187原始三版XML核对，已关闭真正完成的本地
+  多child/记忆更新/历史replay/v2拒绝与中断项。旧772-file失败保持原结论；v2拒绝
+  记录attempted lineage而不推进published head。真实runtime/生产CLI仍开放。
+
 ## 当前事实与执行顺序
 
 本节取代下文历史批次中的“待 CI”“待创建 PR”和“不可合并”当前时态；原始失败、
@@ -31,7 +54,8 @@
   prompt资源已独审冻结；依赖声明、入口、直接SDK/进程池/evaluator路径已实际审查。
   它完成项目step1的源码/声明子项，尚无完整dependency bytes或可执行profile。
   见[源码审查](specs/191-python-worker-adapter/openevolve-source-profile-review-20261025.md)。
-- 普通模型列车case已单次实跑失败：第三turn等待HTTP响应头超时，subject在原600秒
+- 普通模型列车case已单次实跑失败：完成三个model turns和四个tool results后，第四次
+  模型请求等待HTTP响应头超时，subject在原600秒
   内部deadline下于600.245秒rc2退出，未产生schedule或completed receipt。独立本地
   evaluator因缺文件给validity/overall0，不是完成的端到端通过；model_turns3/tools4，
   中断请求用量未知，未重试/补答案/改预算。1008个source文件及11个case-copy文件

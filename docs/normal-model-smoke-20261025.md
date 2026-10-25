@@ -1,8 +1,9 @@
 # Ordinary model/local evaluator smoke (2026-10-25)
 
-The single ordinary model attempt **failed**. The third model turn timed out
-waiting for response headers; no completed subject receipt or `schedule.json`
-was produced. This does not establish model solve quality, completed end-to-end
+The single ordinary model attempt **failed**. After three completed model turns
+and four completed tool results, the fourth model request timed out waiting for
+response headers; no completed subject receipt or `schedule.json` was produced.
+This does not establish model solve quality, completed end-to-end
 acceptance, static RSI runtime support or production admission.
 
 ## Frozen attempt and observed result
@@ -34,7 +35,7 @@ the deterministic fixture trials; none of their attempts was reopened.
 | --- | --- |
 | Subject process | rc2 after600.245336833 seconds; internal deadline, no outer watchdog timeout |
 | Failure | schema5 `stage=model`, `code=timeout`, `reason=transport_timeout` |
-| Recorded progress | 3 model turns,4 tool steps; no complete usage/subject receipt |
+| Recorded progress | 3 completed model turns,4 tool results; fourth request failed; no complete usage/subject receipt |
 | Last request | `phase=open_response`,593,719ms elapsed,593,715ms request timeout |
 | Last transport milestone | `wait_response_headers`; HTTP status absent |
 | Submission | Missing; no fixed-script or repaired answer was substituted |
@@ -71,3 +72,24 @@ No baseline improvement or WebAgent comparison is reported. Earlier fixture
 scores stay fixture evidence. The next model investigation must preserve this
 failure and determine service/request behavior before registering further
 acceptance work. `production_admission=false`, `online_publication=false`.
+
+## Follow-up diagnosis and accounting fix
+
+`model_turns=3` counts successfully parsed and accepted responses; the next,
+fourth request failed. With the configured token ceiling, those first three
+responses necessarily had valid usage in the in-memory ledger. The old failure
+sidecar did not persist that subtotal, so its exact value is no longer available
+from the retained evidence. No subtotal is reconstructed or added to that run.
+
+The successor implementation retains accepted snapshots in bounded v6 failure
+diagnostics, labeled partial; the failed request's consumption stays unknown and
+missing prices remain null. Normal/deep collectors do not promote the subtotal
+to completed usage, a success receipt or a score. See the
+[continuation contract](../specs/061-subject-failure-diagnostics/accepted-usage-continuation.md).
+Its local regressions do not change this failed model attempt's status.
+
+A separate read-only inspection of the user-provided gateway's public `/docs/`
+page and its script confirmed the documented Chat Completions fields used here:
+model, messages, optional tools and non-streaming requests. It sent no inference
+or credential-bearing request. This supports basic request-shape compatibility;
+it does not establish why the historical request failed to return headers.

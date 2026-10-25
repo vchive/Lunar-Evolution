@@ -2,8 +2,9 @@
 
 Status: executable-profile design only. No dependency closure, image or runtime
 is accepted by this document. The source/declaration portion of step1 now has
-an independently reviewed OpenEvolve v0.4.0 baseline in
-`openevolve-source-profile-review-20261025.md`; the complete step remains open.
+independently reviewed OpenEvolve v0.4.0 and Shinka v0.0.7 baselines in
+`openevolve-source-profile-review-20261025.md` and
+`shinka-source-profile-review-20261025.md`; the complete step remains open.
 `production_admission=false`.
 
 ## Current executable boundary

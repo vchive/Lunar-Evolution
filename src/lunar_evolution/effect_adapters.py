@@ -532,6 +532,7 @@ def run_subject_adapter(
 
     diagnostic_context = SubjectDiagnosticContext.from_request(workspace, request, request_digest)
     diagnostic_observer = SubjectDiagnosticObserver()
+    agent = None
     try:
         runtime = model_runtime
         if runtime is None:
@@ -718,7 +719,15 @@ Case key: {case['key']}
         return receipt
     except Exception as exc:
         code = exc.diagnostic_code if isinstance(exc, EffectAdapterError) else None
-        diagnostic_observer.emit_failure(diagnostic_context, exc, code=code)
+        accepted_usage = None
+        try:
+            if agent is not None:
+                accepted_usage = agent.last_invocation.accepted_usage
+        except Exception:  # noqa: BLE001 - optional diagnostics cannot mask the execution failure
+            accepted_usage = None
+        diagnostic_observer.emit_failure(
+            diagnostic_context, exc, code=code, accepted_usage=accepted_usage,
+        )
         raise
 
 
