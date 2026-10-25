@@ -25,11 +25,15 @@
 - 普通模型静态调查独立复现同批tool-call最终ID重复（含fallback碰撞）及空函数名
   被接受的协议缺口。窄SDD及修复见Feature061的
   `tool-call-validation-continuation.md`；非法批次在工具执行前整体拒绝，保留原ID
-  fallback、未知非空名称和空白名称恢复。内部去重key使用base str，保留原ID对象且
-  不新增foreign hash/eq/str回调。37项新focused和373项相关union均零fail/error/skip，
-  Ruff、compileall、diff-check通过；373包含37，不相加。最终XML SHA为
-  `6016bc0c7530855e4f366cd64271d637dda5f54f6d90366b5fabf81a9abe8d95`。
+  fallback、未知非空名称和空白名称恢复。内部去重key使用base str，名称以真实字符
+  长度判空，保留原对象且不新增foreign hash/eq/str/bool/len回调。43项新focused和
+  379项相关union均零fail/error/skip，Ruff、compileall、diff-check通过；379包含43，
+  不相加。最终XML SHA为
+  `cff8d1cf31ea779dd4d5b9a4996df18e7f2f00d6f647510ab9747ae261d19a73`。
   整合后提交自己的联合、Linux与CI验收仍开放；旧模型第四请求超时无已证实因果联系。
+- 中间提交`7b5889bb`的49文件联合实际1,594项零fail/error/skip，92.087秒；
+  2,362文件pre/post与Git/archive一致并已独审。后继只修复上述name子类bool/len
+  兼容回归，不能把1,594旧结果改绑到它；其最终整合验证待执行。
 
 当前仍不可合main；普通模型case失败、静态构建权限阻塞和真实producer/runtime缺项
 均保持原状态。以下旧批次记录绑定各自源码，不由新focused通过覆盖。

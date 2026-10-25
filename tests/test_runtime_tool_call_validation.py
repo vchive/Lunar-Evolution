@@ -223,3 +223,28 @@ def test_direct_helper_preserves_empty_subclass_fallback_without_callbacks():
     parsed = rt.OpenAICompatibleRuntime._parse_tool_calls([call(empty)])
     assert type(parsed[0].id) is str
     assert parsed[0].id == "call-1"
+
+
+class ForeignBooleanName(str):
+    def __bool__(self):
+        raise AssertionError("name emptiness must not call foreign boolean conversion")
+
+
+class ForeignLengthName(str):
+    def __len__(self):
+        raise AssertionError("name emptiness must not call foreign length")
+
+
+@pytest.mark.parametrize("name_type", [ForeignBooleanName, ForeignLengthName])
+@pytest.mark.parametrize("text", ["read_file", " ", ""])
+def test_direct_helper_checks_intrinsic_name_length_without_callbacks(name_type, text):
+    name = name_type(text)
+    batch = [call(name=name)]
+    if text:
+        parsed = rt.OpenAICompatibleRuntime._parse_tool_calls(batch)
+        assert parsed[0].name is name
+    else:
+        with pytest.raises(rt.ModelRequestFailure) as caught:
+            rt.OpenAICompatibleRuntime._parse_tool_calls(batch, response_status=200)
+        assert caught.value.evidence.reason == "invalid_tool_calls"
+        assert caught.value.evidence.response_status == 200

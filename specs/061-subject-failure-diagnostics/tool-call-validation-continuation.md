@@ -29,6 +29,12 @@ test. It does not claim that all historical response acceptance is unchanged.
 3. Reject an exactly empty `function.name` string through the same typed failure.
    Preserve the existing string-type check. Do not strip names, reject nonempty
    whitespace names, add a name regex, or change nonempty unknown-tool recovery.
+   Determine emptiness with `str.__len__` after that string-type check. Direct
+   helper callers may supply a `str` subclass: do not dispatch its custom
+   `__bool__` or `__len__`, and preserve the original nonempty name object in
+   `ToolCall.name`. A subclass cannot hide nonempty characters or make an empty
+   name pass by overriding truthiness. This is another direct-helper boundary;
+   standard JSON wire parsing produces ordinary strings.
 4. Compare IDs exactly and only within the current response batch. Preserve
    valid explicit IDs, fallback numbering, argument parsing/defaults, tool-call
    ordering, response text/model/usage, request construction and all budgets.
@@ -57,6 +63,9 @@ Direct-helper tests additionally cover unique and duplicate subclass IDs,
 both ordinary-string/subclass duplicate orders and fallback collisions, with
 foreign hash/equality/string-conversion traps that must never run. Check original
 ID object retention and unchanged empty-subclass fallback.
+For name subclasses, test custom boolean and length traps with nonempty,
+whitespace-only and empty text. Preserve nonempty original objects and reject
+intrinsically empty names through the existing typed error without callbacks.
 
 Run the new focused tests and related runtime, loop, failure, timing, transport
 and subject-history tests, then Ruff, compileall and `git diff --check`. Retain
@@ -91,3 +100,14 @@ The preceding iteration passed tests but failed Ruff because it did not infer
 `pytest.fail` as a non-returning hash/string trap; the final tests use explicit
 `raise AssertionError`. Both raw results remain retained. This final result
 paragraph was added after verification; product and test bytes stayed equal.
+
+A later direct-helper check also reproduced custom name truthiness callbacks:
+nonempty names could be rejected, a foreign exception could escape, and an
+empty name could be accepted. The `str.__len__` follow-up requires fresh local
+verification; the resulting 43-test focused run and 379-test related union both
+passed with zero failures, errors or skips. The union includes all 43 focused
+tests. Ruff, compileall and `git diff --check` also returned zero. Product/test
+bytes stayed equal throughout verification; only this result paragraph followed.
+Raw commands, outputs, return codes, source hashes and JUnit are retained in
+`.lunar-evolution/validation/release-closeout-20261025/tool-call-name-verified-8hmfoaqy/`.
+This does not change the unavailable historical timeout evidence.

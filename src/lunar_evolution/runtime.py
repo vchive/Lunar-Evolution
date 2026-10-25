@@ -922,7 +922,7 @@ class OpenAICompatibleRuntime:
             if (
                 not isinstance(function, dict)
                 or not isinstance(function.get("name"), str)
-                or not function["name"]
+                or str.__len__(function["name"]) == 0
             ):
                 raise ModelRequestFailure(
                     "model returned a tool call without a function name", "invalid_tool_calls",
