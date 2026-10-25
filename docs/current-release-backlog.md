@@ -1,5 +1,13 @@
 ## 2026-10-25 当前状态与剩余优先级
 
+最新后继仍未合并：PR188旧head完整CI为30成功/3失败，PR189旧head为25成功/8失败。
+过期命令路径/schema断言已修正（51项通过），mixed超时另有不改变预算、fresh检查或
+fingerprint的零margin源码格式化优化；新head汇总到PR189统一验收，旧run不重试。
+`fb9f5bd7`的独立私有安装Linux focused564项通过；原archive成员未变但新增pyc，
+完整库存前后不等的原记录保留。新源码的Linux mixed与完整CI仍是开放的P0合并门。
+当前整合37文件联合focused925项零fail/error/skip，完整源文件前后相同；独立策略图
+对照结果和检查计数一致。局部耗时改善不替代新head的原预算mixed与CI。
+
 PR186、PR187均已合入main，当前合并点为
 `0bff6b92b9b05f7b780bf4c2ee6f38bdab4b3833`。PR187的
 [CI40104751661](https://github.com/vchive/Lunar-Evolution/actions/runs/40104751661)

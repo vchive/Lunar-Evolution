@@ -1,5 +1,35 @@
 # 当前交接（2026-10-25，PR186、PR187 已合入 main）
 
+## 当前后继：保留失败，统一在 PR189 验收
+
+- PR188 的 `30b2df2f` / run40148277039 最终30成功、3失败：三版current-3的
+  `three-child-mixed` 均未在原600秒control内完成。PR189 的 `fb9f5bd7` /
+  run40151699898 最终25成功、8失败：三版current-1仍断言旧unbounded路径，三版
+  current-4冻结旧工具描述，另3.12/3.13的mixed超时；3.11 mixed通过不覆盖其他失败。
+  两个原run均不重试，不把此前focused通过写成完整CI通过。
+- PR189已修正两组过期测试契约：无observer也经过真实bounded runner并保留可选
+  callbacks；冻结schema只更新command输出限额描述的digest。两个完整模块51项通过。
+- 新性能切片只在首行已确定零indent margin时省去多余indent扫描，保留空白行清理、
+  全部fresh reads/association/backend检查、live hooks、code限额和最终fingerprint。
+  无新缓存，原600秒control不变；21个oracle/边界专项、258项相关focused和52项policy
+  测试通过，独立静态审查无阻断。CI cache/identity门包含新专项后89→110，零skip要求
+  保留。见[窄规格](specs/189-static-python-fixture/zero-margin-source-normalization.md)。
+- `fb9f5bd7`的唯一5090gpu Linux23文件回归564项零fail/error/skip、rawrc0，41.41秒；
+  私有venv真正安装该archive，launcher与normal/minimal子进程预探测import origin匹配。
+  原archive文件无changed/removed；部分CLI子环境新增pyc，因此完整前后库存并不相等，
+  保留原`source_unchanged=false`。218个origin记录仅覆盖主pytest，不能扩大到所有child。
+- 后继改动汇总在PR189，减少重复矩阵。PR188原失败保留；需新精确head唯一原预算
+  Linux mixed、完整33job CI与独审通过后，才能合main并关闭被替代的PR188。
+  普通模型失败、静态构建环境阻塞与生产runtime缺项没有因此关闭。
+- 整合后的37文件联合focused为925项，零fail/error/skip、rawrc0、53.58秒；2,354个
+  完整源码文件prelaunch/post-test相同，原始XML SHA为
+  `3d7de5d1081b5398c3ddd02d58d321d58ae1d7dc97f24af93cea1e380ae53be0`，
+  保留于主工作区ignored `release-closeout-20261025/subject-tools-final-union-u6nsy3g6/`。
+  本机部分installed CLI子测试仍受原launcher指向旧checkout的限制，不扩大为全部
+  子进程来源证明；独立Linux564的安装检查另记。全仓Ruff、compileall及diff-check通过。
+  全策略图独审两轮局部改善3.53%/6.86%，projection及完整检查计数相同；没有E2E承诺。
+  普通loop改写对照无额外收益，未采用。
+
 ## 新增未合入切片：本地诊断和有界捕获
 
 - 基于PR188最终head另行开发，未改动或取消它正在执行的CI。新增默认关闭的
