@@ -27,3 +27,10 @@ refusals, whole-policy projection and observation-count comparison, focused
 tests and static checks. Local primitive timing is not a mixed-case result.
 Only a new exact source may receive its own original-budget Linux acceptance
 and full CI; none of these checks imply runtime or production admission.
+
+The subsequent exact `c5366cee` independent Linux mixed run did not pass: its
+outer runner terminated the test at 600.034 seconds (raw return code -15),
+before JUnit or final runtime-origin reporting. Pre/post archive members agree.
+This does not locate the internal controller phase. Preserve the failure;
+the helper comparisons above do not close this gate, and this source must not
+be rerun or given a larger budget to obtain a pass.

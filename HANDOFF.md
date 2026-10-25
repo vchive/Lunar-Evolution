@@ -2,6 +2,18 @@
 
 ## 当前后继：保留失败，统一在 PR189 验收
 
+- 后继窄实现减少admission scalar leaf递归，仍逐项检查原depth/type/current
+  isfinite；DTO读取保持lazy，fresh SQL/parse/canonical/digest门不变。52项新边界
+  测试和独立静态审查通过，type/builtin CI门91→143、零skip。新26-row诊断副本
+  尚无可见性能收益，旧30-row有局部改善；不能据此关闭600秒mixed门。
+  见[窄SDD](specs/191-python-worker-adapter/admission-scalar-validation.md)。
+- 更新：`c5366cee` 的唯一5090gpu mixed运行被外层600秒driver终止，elapsed600.034秒、
+  rawrc=-15、timed_out=true；没有JUnit或最终运行期origins，不能记作通过或断言内部
+  controller在哪个阶段超时。完整原archive成员前后bytes/type/modes相同，217 origins
+  仅为独立preflight。证据在主工作区ignored
+  `release-closeout-20261025/brs-mixed-c5366cee-bmb3utss/`。不重跑该source、不扩大预算，
+  PR189不能合main。新CI run40206239803继续保留原结论，不用它覆盖这次失败。
+  后续先做当前source的纯函数profile和失败工作区副本诊断，不盲目叠加小优化。
 - PR188 的 `30b2df2f` / run40148277039 最终30成功、3失败：三版current-3的
   `three-child-mixed` 均未在原600秒control内完成。PR189 的 `fb9f5bd7` /
   run40151699898 最终25成功、8失败：三版current-1仍断言旧unbounded路径，三版

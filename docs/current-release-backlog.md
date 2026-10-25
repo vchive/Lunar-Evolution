@@ -1,5 +1,9 @@
 ## 2026-10-25 当前状态与剩余优先级
 
+后续精确`c5366cee`的唯一Linux mixed也未通过：外层600秒driver终止，rawrc=-15，
+无JUnit；源码前后相同但不能推出内部超时阶段。保留失败，不重跑该source或扩大预算。
+先定位当前纯计算成本与已停止工作区副本，再决定实际修改；PR189仍不可合并。
+
 最新后继仍未合并：PR188旧head完整CI为30成功/3失败，PR189旧head为25成功/8失败。
 过期命令路径/schema断言已修正（51项通过），mixed超时另有不改变预算、fresh检查或
 fingerprint的零margin源码格式化优化；新head汇总到PR189统一验收，旧run不重试。
@@ -27,6 +31,7 @@ case通过。用户已选择先完成不受环境阻塞的部分；静态构建�
 
 | 优先级 | 剩余工作 | 完成条件与依赖 |
 | --- | --- | --- |
+| P0 | PR189合并验收 | c536独立600秒mixed失败仍开放。后继scalar leaf减少递归的52项边界与独审已通过，但新26-row副本未测到可见收益。必须由新精确head完成自己的原预算Linux mixed、完整33job CI及独审；旧失败不可由helper测试覆盖。 |
 | P0 | 普通模型的本地端到端验收仍未通过 | 当前main单次真实case已执行：完成三个model turns和四个tool results后，第四次模型请求在原600秒内等待响应头超时，未生成schedule。保留失败、usage unknown和本地evaluator缺文件结果；先调查模型服务/请求行为，不能以fixture的3/3替代或重试抹掉此失败。 |
 | P1 | 完整不可变构建输入托管 | 实际保证完整source/toolchain/helper/cache输入在整个构建期间不可改写；现有完整复制已经实现，但当前5090gpu的bwrap方案尚未满足此条件。不得截短库存、改预算或用chmod/前后hash冒充。 |
 | P1 | 真实静态Python构建与运行 | 在custody可用后冻结完整configured closure与recipe，实际configure/freezer/compile/link、核验ELF与sealed startup，再接原owner/lifecycle、权威输入/结果和Linux中断矩阵。 |

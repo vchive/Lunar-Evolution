@@ -98,8 +98,8 @@ jobs:
       - name: Verify exact admission types and distinct builtin namespaces
         if: ${{ matrix.role == 'focused' }}
         run: |
-          python -m pytest -q tests/test_rsi_admission_exact_types.py tests/test_rsi_brs_builtin_domains.py tests/test_rsi_brs_freeze_boundaries.py --junitxml=.lunar-evolution/test-results/rsi-type-builtin-boundaries.xml
-          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-type-builtin-boundaries.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '91' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Exact admission types, distinct builtin namespaces and freeze boundaries require 91 cases and zero failures, errors or skips; every namespace, function pin, source and history gate remains mandatory')"
+          python -m pytest -q tests/test_rsi_admission_exact_types.py tests/test_rsi_admission_scalar_validation.py tests/test_rsi_brs_builtin_domains.py tests/test_rsi_brs_freeze_boundaries.py --junitxml=.lunar-evolution/test-results/rsi-type-builtin-boundaries.xml
+          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-type-builtin-boundaries.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '143' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Exact admission types, scalar validation, distinct builtin namespaces and freeze boundaries require 143 cases and zero failures, errors or skips; every namespace, function pin, source and history gate remains mandatory')"
       - name: Verify detached RSI marker installation description contract
         if: ${{ matrix.role == 'focused' }}
         run: |
