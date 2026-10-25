@@ -134,6 +134,10 @@ _LINECACHE_SOURCE_BACKEND = {
     name: (getattr(linecache, name), getattr(getattr(linecache, name), "__code__", None))
     for name in ("getlines", "checkcache")
 }
+_DEDENT_BACKEND = (
+    textwrap.dedent, textwrap.dedent.__code__,
+    textwrap._whitespace_only_re, textwrap._leading_whitespace_re,
+)
 
 
 class RSIIdentityError(ValueError):
@@ -456,6 +460,17 @@ def _source_with_content_cache(target: object) -> str:
     return source
 
 
+def _dedent_source(source: str) -> str:
+    """Avoid scanning indentation when the first line already has zero margin."""
+    dedent, code, whitespace, leading = _DEDENT_BACKEND
+    if (type(source) is str and source and source[0] not in " \t\n"
+            and textwrap.dedent is dedent and dedent.__code__ is code
+            and textwrap._whitespace_only_re is whitespace
+            and textwrap._leading_whitespace_re is leading):
+        return whitespace.sub("", source)
+    return textwrap.dedent(source)
+
+
 def _source_material(value: object, explicit: object | None) -> str:
     if explicit is not None:
         if isinstance(explicit, bytes):
@@ -493,7 +508,7 @@ def _source_material(value: object, explicit: object | None) -> str:
                 if not members:
                     _fail("code_hook_required")
                 source = "\n".join(members)
-    source = textwrap.dedent(source).replace("\r\n", "\n").replace("\r", "\n").strip()
+    source = _dedent_source(source).replace("\r\n", "\n").replace("\r", "\n").strip()
     try:
         if len(source.encode("utf-8")) > MAX_CODE_BYTES:
             _fail("too_large")
