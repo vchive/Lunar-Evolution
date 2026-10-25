@@ -1,4 +1,38 @@
-# 当前交接（2026-10-25，PR186、PR187 已合入 main）
+# 当前交接（2026-10-26，PR186、PR187 已合入 main）
+
+## 最新收口：17d 联合通过，Linux 异常退出，工具调用窄修待整合验收
+
+- 精确 `17d23117` 的48文件联合回归实际通过1,556个唯一节点，零fail/error/skip、
+  rawrc0、88.965秒；2,360文件pre/post与Git blobs/archive一致，原始JUnit SHA为
+  `ab83dad59be42d7fc83ff9253b38d4ae8f6f2b51eb8d1e0f16bf665b54633097`。
+  独审确认新96项、旧143项及完整节点集合；不扩大为逐个CLI child来源证明。
+  主区ignored证据为 `release-closeout-20261025/directory-binding-final-union-0xawq1c_/`。
+  此提交已备份push至 `codex/subject-session-diagnostics-17d23117`；PR189原head未推进，
+  避免取消仍运行的旧CI40206239803。初次仅collection输出解析失败，无测试执行，
+  单独保留于同级 `directory-binding-final-union-_qohz0b_/`。
+- `17d23117`唯一5090gpu mixed未通过：直接pytest wrapper在123.294秒以SIGSEGV
+  （rawrc=-11）退出，外层600秒未超时；stdout为空，无JUnit或terminal origins。
+  217条来源记录仅为preflight。403字节stderr以一次120秒faulthandler timeout开头，
+  在json.dumps / `_canonical` / 部分`File`条目处截断，不能据此确定根因。
+  2,360源码文件及完整2,651归档成员的bytes/modes前后匹配；完整证据保留于
+  `release-closeout-20261025/brs-mixed-17d23117-rm_hdywb/`，不重跑该source。
+  短临时目录只具时间窗口相关性；系统日志不可见受账号权限限制，不作无core断言。
+- 同一解释器独立纯stdlib对照各执行一次：无dump control及1秒单次dump probe均rc0，
+  约3秒，后者完整输出一次栈；未导入Lunar/pytest。它只说明该合成JSON输入未复现。
+  CPython上游issue158200/116008/140815有相关转储竞争报告，仍不是本次因果证明。
+  下一轮runner草案显式`faulthandler_timeout=0`，保持selector/600秒/0retry及来源/
+  原始结果检查；不再把主动异步转储假定为无干扰观察，也不改写17d失败。
+- 普通模型静态调查独立复现同批tool-call最终ID重复（含fallback碰撞）及空函数名
+  被接受的协议缺口。窄SDD及修复见Feature061的
+  `tool-call-validation-continuation.md`；非法批次在工具执行前整体拒绝，保留原ID
+  fallback、未知非空名称和空白名称恢复。内部去重key使用base str，保留原ID对象且
+  不新增foreign hash/eq/str回调。37项新focused和373项相关union均零fail/error/skip，
+  Ruff、compileall、diff-check通过；373包含37，不相加。最终XML SHA为
+  `6016bc0c7530855e4f366cd64271d637dda5f54f6d90366b5fabf81a9abe8d95`。
+  整合后提交自己的联合、Linux与CI验收仍开放；旧模型第四请求超时无已证实因果联系。
+
+当前仍不可合main；普通模型case失败、静态构建权限阻塞和真实producer/runtime缺项
+均保持原状态。以下旧批次记录绑定各自源码，不由新focused通过覆盖。
 
 ## 当前后继：保留失败，统一在 PR189 验收
 

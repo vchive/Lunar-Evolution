@@ -90,6 +90,8 @@ def chat(content="done", **extra):
     (200, chat("", tool_calls=[{}]), "invalid_tool_calls"),
     (200, chat("", tool_calls=[{"function": {"name": "read_file", "arguments": "{"}}]),
      "invalid_tool_calls"),
+    (200, chat(None, tool_calls=[{"id": "", "function": {"name": "", "arguments": "{}"}}]),
+     "invalid_tool_calls"),
     (200, {**chat(), "model": 42}, "invalid_model_identity"),
     (200, {**chat(), "usage": []}, "invalid_usage"),
     (200, {**chat(), "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 4}},
@@ -128,8 +130,8 @@ def test_real_http_failure_has_typed_projection(tmp_path, status, body, reason):
      rt.ModelTurn("done", usage={"input_tokens": 2, "output_tokens": 1, "total_tokens": 3})),
     (chat(None, tool_calls=[{"function": {"name": "read_file"}}]),
      rt.ModelTurn("", (rt.ToolCall("call-1", "read_file", {}),))),
-    (chat(None, tool_calls=[{"id": "", "function": {"name": "", "arguments": "{}"}}]),
-     rt.ModelTurn("", (rt.ToolCall("call-1", "", {}),))),
+    (chat(None, tool_calls=[{"id": "", "function": {"name": "read_file", "arguments": "{}"}}]),
+     rt.ModelTurn("", (rt.ToolCall("call-1", "read_file", {}),))),
     ({**chat(), "model": " fixture "}, rt.ModelTurn("done", response_model="fixture")),
 ])
 def test_real_http_preserves_success_acceptance_and_defaults(body, expected):

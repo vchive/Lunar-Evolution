@@ -912,13 +912,18 @@ class OpenAICompatibleRuntime:
                 "model returned malformed tool calls", "invalid_tool_calls", response_status,
             )
         calls: list[ToolCall] = []
+        seen_ids: set[str] = set()
         for index, item in enumerate(raw):
             if not isinstance(item, dict):
                 raise ModelRequestFailure(
                     "model returned malformed tool call", "invalid_tool_calls", response_status,
                 )
             function = item.get("function")
-            if not isinstance(function, dict) or not isinstance(function.get("name"), str):
+            if (
+                not isinstance(function, dict)
+                or not isinstance(function.get("name"), str)
+                or not function["name"]
+            ):
                 raise ModelRequestFailure(
                     "model returned a tool call without a function name", "invalid_tool_calls",
                     response_status,
@@ -936,9 +941,16 @@ class OpenAICompatibleRuntime:
                     "model tool arguments must be a JSON object", "invalid_tool_calls", response_status,
                 )
             call_id = item.get("id")
+            call_id = call_id if isinstance(call_id, str) and call_id else f"call-{index + 1}"
+            id_key = call_id if type(call_id) is str else str.__str__(call_id)
+            if id_key in seen_ids:
+                raise ModelRequestFailure(
+                    "model returned duplicate tool call IDs", "invalid_tool_calls", response_status,
+                )
+            seen_ids.add(id_key)
             calls.append(
                 ToolCall(
-                    id=call_id if isinstance(call_id, str) and call_id else f"call-{index + 1}",
+                    id=call_id,
                     name=function["name"],
                     arguments=raw_arguments,
                 )

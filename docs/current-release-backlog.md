@@ -1,4 +1,16 @@
-## 2026-10-25 当前状态与剩余优先级
+## 2026-10-26 当前状态与剩余优先级
+
+精确`17d23117`的48文件联合1,556项零fail/error/skip、rawrc0、88.965秒，完整
+2,360文件与Git/archive前后相同并已独审。但其唯一Linux mixed在123.294秒发生
+SIGSEGV（rawrc=-11，未触发外层600秒），没有JUnit或terminal origins，因此仍失败。
+stderr在主动120秒faulthandler转储期间截断；上游类似竞争报告及独立纯JSON对照
+均不能证明本次根因。下一轮只移除主动异步转储，保留原selector/预算/0retry和校验门；
+不重跑17d或改写旧失败。代码已push独立备份ref，PR189旧head的CI继续运行。
+
+普通模型路径另有独立窄修：拒绝同批最终tool-call ID重复/fallback碰撞及空函数名，
+在任何工具执行前拒绝整个非法批次；原fallback和非空未知工具恢复保持。37项新增
+专项及373项相关联合通过（373包含37），整合提交最终验收仍开放；它不是历史
+第四请求超时的已证实解释。后续最小合成模型诊断正在准备，尚未发送新模型请求。
 
 后续精确`c5366cee`的唯一Linux mixed也未通过：外层600秒driver终止，rawrc=-15，
 无JUnit；源码前后相同但不能推出内部超时阶段。保留失败，不重跑该source或扩大预算。
@@ -36,7 +48,7 @@ case通过。用户已选择先完成不受环境阻塞的部分；静态构建�
 
 | 优先级 | 剩余工作 | 完成条件与依赖 |
 | --- | --- | --- |
-| P0 | PR189合并验收 | c536与08fc的独立600秒mixed均失败。scalar focused977通过不能替代此门；后继directory/token修复必须由新精确head完成自己的原预算Linux mixed、完整33job CI及独审，旧失败保留。 |
+| P0 | PR189合并验收 | c536与08fc的独立600秒mixed失败；17d联合1,556通过但mixed SIGSEGV失败。后继工具调用窄修及移除主动异步转储后，必须完成整合提交自己的联合、原预算Linux mixed、完整33job CI及独审，旧失败保留。 |
 | P0 | 普通模型的本地端到端验收仍未通过 | 当前main单次真实case已执行：完成三个model turns和四个tool results后，第四次模型请求在原600秒内等待响应头超时，未生成schedule。保留失败、usage unknown和本地evaluator缺文件结果；先调查模型服务/请求行为，不能以fixture的3/3替代或重试抹掉此失败。 |
 | P1 | 完整不可变构建输入托管 | 实际保证完整source/toolchain/helper/cache输入在整个构建期间不可改写；现有完整复制已经实现，但当前5090gpu的bwrap方案尚未满足此条件。不得截短库存、改预算或用chmod/前后hash冒充。 |
 | P1 | 真实静态Python构建与运行 | 在custody可用后冻结完整configured closure与recipe，实际configure/freezer/compile/link、核验ELF与sealed startup，再接原owner/lifecycle、权威输入/结果和Linux中断矩阵。 |
