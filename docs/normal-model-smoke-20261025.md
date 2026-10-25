@@ -93,3 +93,19 @@ page and its script confirmed the documented Chat Completions fields used here:
 model, messages, optional tools and non-streaming requests. It sent no inference
 or credential-bearing request. This supports basic request-shape compatibility;
 it does not establish why the historical request failed to return headers.
+
+For a separately registered fresh subject, `effect-subject --session-history`
+now retains the existing bounded, API-key-redacted conversation and tool records
+at `sessions/subject.jsonl` (deep mode: `sessions/subject-<round:03d>.jsonl`).
+The default remains off. Existing files and staged-workflow combinations are
+refused before model calls; this option does not replay a previous attempt.
+Records may be truncated, compacted or modified by same-UID code; they are
+debugging material, not an immutable access audit. Transcript loads now read
+only a bounded tail even if the underlying file is oversized or grows.
+
+The ordinary command tool also now uses the existing bounded process reader
+without requiring an observer. Exceeding either output-stream limit returns a
+failed tool result instead of buffering all output before truncating it. These
+changes passed 564 combined local tests and independent static review. They do
+not identify the old timeout's cause, restore its missing transcript/usage or
+complete a model E2E acceptance. No additional model attempt was made.

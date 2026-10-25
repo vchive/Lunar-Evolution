@@ -831,6 +831,10 @@ def build_parser() -> argparse.ArgumentParser:
     subject_parser.add_argument("--max-steps", type=int, default=100)
     subject_parser.add_argument("--timeout", type=float)
     subject_parser.add_argument(
+        "--session-history", action="store_true",
+        help="retain a bounded local transcript for this fresh subject (no history replay)",
+    )
+    subject_parser.add_argument(
         "--workflow-config", type=Path,
         help="opt-in frozen staged manifest and reservations JSON (normal mode only)",
     )
@@ -5167,6 +5171,7 @@ def _effect_subject(args: argparse.Namespace) -> dict[str, object]:
         timeout=args.timeout,
         model_profile=profile,
         workflow_config=StagedWorkflowConfig.load(workflow_path) if workflow_path else None,
+        session_history=getattr(args, "session_history", False),
     )
 
 

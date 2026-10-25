@@ -9,6 +9,10 @@
   declarations, resources, entrypoint/request/lifecycle routes and the existing
   exporter's required schema; distinguish raw tar modes from Git executable-bit
   projection. See [source review](shinka-source-profile-review-20261025.md).
+- [x] Retain and independently review the two upstream equality-pinned Shinka
+  dependencies' complete published sdist/universal-wheel artifacts, metadata,
+  licenses and RECORD consistency. This is only an artifact-identity subitem;
+  see [dependency artifacts](shinka-equality-dependency-artifact-review-20261025.md).
 - [ ] Freeze full dependency/build bytes and accept a finite executable project
   profile. These source-only reviews do not close runtime or production CLI gates.
 

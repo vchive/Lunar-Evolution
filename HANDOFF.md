@@ -1,5 +1,22 @@
 # 当前交接（2026-10-25，PR186、PR187 已合入 main）
 
+## 新增未合入切片：本地诊断和有界捕获
+
+- 基于PR188最终head另行开发，未改动或取消它正在执行的CI。新增默认关闭的
+  `effect-subject --session-history`，复用现有confined transcript，独占创建固定路径，
+  不重放旧记录；staged组合前置拒绝。读取改为有界tail，避免先整文件读入内存。
+- 普通命令工具统一复用现有bounded runner。超过任一stream的字节限额返回失败；
+  stdin关闭、非零退出附固定error、无效UTF-8 replacement解码，规格已列行为变化。
+  这不是OS sandbox，也未解释或重跑原第四次模型请求超时。
+- 两个切片独立静态审查无阻断，联合564项零fail/error/skip；2,352个完整源码文件
+  前后相同，JUnit和prelaunch manifest保留于主工作区ignored
+  `release-closeout-20261025/subject-tools-union-vzxpq71m/`。Ruff和compileall通过，
+  最终分支CI/合并仍待完成。专属22项是564的子集，不能相加。
+- Shinka原声明固定的hydra-core1.3.2/httpx0.27.0共四份wheel/sdist已保留并独审，
+  完整RECORD、成员bytes/full modes和build声明一致。这里只关闭两个artifact身份子项，
+  24个浮动直接依赖、transitive/build/native闭包及实际runtime仍开放；见
+  [依赖材料审查](specs/191-python-worker-adapter/shinka-equality-dependency-artifact-review-20261025.md)。
+
 ## 本轮后继：不受环境阻塞的收口
 
 用户已明确选择先完成不受5090gpu隔离环境阻塞的部分，不修改机器权限。
