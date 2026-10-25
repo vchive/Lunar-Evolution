@@ -492,8 +492,13 @@ def _directory_paths(
         directories.extend(root / item.relative_path for item in imports if item.root_label == label)
         for path in directories:
             _path(path.as_posix(), absolute=True)
-            for ancestor in (path, *path.parents):
+            # Every collected directory already has its complete ancestor
+            # chain. Keep each path check above, but avoid rebuilding that
+            # same chain after reaching the first collected ancestor.
+            ancestor = path
+            while ancestor not in wanted:
                 add(ancestor)
+                ancestor = ancestor.parent
         result[label] = tuple(sorted(wanted, key=lambda item: item.as_posix()))
     return result
 

@@ -2,6 +2,18 @@
 
 ## 当前后继：保留失败，统一在 PR189 验收
 
+- `08fc60ce`的38文件联合focused977项零fail/error/skip、rawrc0，52.61秒；
+  2,356文件pre/post与精确Git blobs相同，独审通过。但其唯一5090gpu mixed仍在
+  原600秒outer control下失败（600.038秒、rc=-15），无JUnit或终态origins；217
+  preflight origins不作运行期证明。一次120秒线程栈位于manifest/binding校验与
+  producer staging路径，不能当热点profile。完整失败留主区ignored
+  `release-closeout-20261025/brs-mixed-08fc60ce-uml1g8qf/`，不重跑该source。
+  后继只处理已独立对照的重复祖先遍历，及公开binding入口可达的token foreign
+  metaclass/cycle缺口，规格在Feature191相应窄SDD；新的验收仍开放。
+- 目录祖先和binding token后继已实现：96项新focused零fail/error/skip，静态独审
+  无阻断。合法token=None仍fresh解析且wire/digest相同；token深度48/100000节点
+  超限只禁用缓存，原shape/schema继续决定拒绝。新增独立96项CI门保留零skip与
+  failure annotation。完整整合focused、新精确Linux mixed和最终CI尚待完成。
 - 后继窄实现减少admission scalar leaf递归，仍逐项检查原depth/type/current
   isfinite；DTO读取保持lazy，fresh SQL/parse/canonical/digest门不变。52项新边界
   测试和独立静态审查通过，type/builtin CI门91→143、零skip。新26-row诊断副本

@@ -84,7 +84,7 @@ def _canonical(value: object) -> bytes:
 
 
 def _strict_json(value: bytes | str) -> object:
-    if type(value) not in {bytes, str}:
+    if type(value) is not bytes and type(value) is not str:
         _fail("json_invalid")
     try:
         raw = value if type(value) is bytes else value.encode("utf-8")
@@ -128,7 +128,7 @@ def _positive_int(value: object, code: str) -> int:
 
 
 def _deadline(value: object) -> float:
-    if type(value) not in {int, float} or isinstance(value, bool):
+    if type(value) is not int and type(value) is not float:
         _fail("deadline_invalid")
     try:
         result = float(value)
@@ -170,25 +170,31 @@ def _safe_validation_token(value: object) -> tuple[object, ...] | None:
     their exact refusal order and callback protection.
     """
 
-    runtime_types = {
+    dto_types = (
         PythonRuntimeTarget, PythonRuntimeFileDeclaration, PythonRuntimeImportRoot,
         PythonRuntimeDirectory, PythonRuntimeRoot, PythonRuntimeFile, PythonRuntimeManifest,
-    }
-    tree_types = {PythonRuntimeTreeDirectory, PythonRuntimeTreeManifest}
+        PythonRuntimeTreeDirectory, PythonRuntimeTreeManifest,
+    )
+    remaining = 100_000
 
-    def walk(item: object) -> tuple[object, ...] | None:
+    def walk(item: object, depth: int = 0) -> tuple[object, ...] | None:
+        nonlocal remaining
+        remaining -= 1
+        if depth > 48 or remaining < 0:
+            return None
         item_type = type(item)
-        if item is None or item_type in {str, int, float, bool, bytes}:
+        if (item is None or item_type is str or item_type is int or item_type is float
+                or item_type is bool or item_type is bytes):
             return (item_type, item)
         if item_type is tuple:
             parts: list[tuple[object, ...]] = []
             for child in item:
-                token = walk(child)
+                token = walk(child, depth + 1)
                 if token is None:
                     return None
                 parts.append(token)
             return (tuple, tuple(parts))
-        if item_type not in runtime_types and item_type not in tree_types:
+        if not any(item_type is approved for approved in dto_types):
             return None
         parts = []
         try:
@@ -196,7 +202,7 @@ def _safe_validation_token(value: object) -> tuple[object, ...] | None:
                 # All tokenizable classes are exact frozen DTOs.  Bypass an
                 # instance-level ``__getattribute__`` replacement so the fast
                 # path itself never invokes caller code.
-                token = walk(object.__getattribute__(item, field.name))
+                token = walk(object.__getattribute__(item, field.name), depth + 1)
                 if token is None:
                     return None
                 parts.append((field.name, token))
@@ -398,7 +404,8 @@ def _budget_shape(value: object, *, depth: int = 0) -> None:
             _fail("budget_shape_invalid")
         if type(item) is dict:
             _budget_shape(item, depth=depth + 1)
-        elif item is not None and type(item) not in {int, float} or type(item) is int and item.bit_length() > 4096:
+        elif (item is not None and type(item) is not int and type(item) is not float
+                or type(item) is int and item.bit_length() > 4096):
             _fail("budget_shape_invalid")
 
 
