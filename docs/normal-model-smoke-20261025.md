@@ -108,4 +108,39 @@ without requiring an observer. Exceeding either output-stream limit returns a
 failed tool result instead of buffering all output before truncating it. These
 changes passed 564 combined local tests and independent static review. They do
 not identify the old timeout's cause, restore its missing transcript/usage or
-complete a model E2E acceptance. No additional model attempt was made.
+complete a model E2E acceptance. No additional model attempt was made in that
+implementation slice.
+
+## Independent synthetic protocol diagnostic (2026-10-26)
+
+A separately registered diagnostic used the exact `3799f509` archive. It made
+two model calls with a 30-second limit each, a 75-second outer limit, zero
+retries and zero tool executions. A sent a short message without tools; after
+its success, B sent a fixed assistant batch with two distinct tool IDs and the
+corresponding synthetic `list_dir` / `read_file` results plus the ordinary tool
+schemas. It did not run AgentLoop, the original benchmark or an evaluator.
+
+Both calls returned HTTP 200, passed the real runtime parser and matched their
+expected short marker. A took 13.200 seconds and B 2.132 seconds; the launcher
+returned rc0 in 16.410 seconds. Reported and runtime-accepted usage agreed:
+
+| Request | Input tokens | Output tokens | Total | Consumption unknown |
+| --- | ---: | ---: | ---: | --- |
+| A | 17 | 83 | 100 | false |
+| B | 801 | 35 | 836 | false |
+| Combined | 818 | 118 | 936 | false |
+
+The actual request-body sizes/SHA, source inventories, 217 loaded origins,
+one-time claim and registration snapshot were checked. All 2,362 archived source
+files had matching bytes/modes before and after. Configuration values, endpoint,
+keys and headers are absent from the retained diagnostic projections.
+Evidence is retained in the primary workspace's ignored
+`.lunar-evolution/validation/release-closeout-20261025/model-g0-synthetic-3799-registration-7ehduf4o/`;
+its single-invocation audit SHA256 is
+`9dd1d5bddf978655ae5cbd79c4595e1437a9fc3a245c3612e10f4e15e7c19d77`.
+
+This establishes that this small two-tool history is currently accepted by the
+service and runtime. It does not reconstruct the old conversation, diagnose its
+fourth-request timeout or turn the original case into a passing E2E result.
+The transport child reopens pinned source paths; pre/post hashes do not prove
+immutable consumed bytes. No further model request is part of this diagnostic.

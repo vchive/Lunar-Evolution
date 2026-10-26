@@ -3,6 +3,12 @@
 Status: specified before implementation; implemented and locally verified,
 2026-10-26. Final branch CI and merge remain pending.
 
+The final `3799f509` source passed the combined 49-file, 1,600-node local
+regression with zero failures, errors or skips, including all 43 tool-call
+validation cases. This does not close the separate Linux mixed timeout or the
+historical model case failure. Raw JUnit and source inventory remain under the
+primary workspace's ignored `release-closeout-20261025/provider-final-union-5jroxt52/`.
+
 ## Problem and boundary
 
 The ordinary OpenAI-compatible parser accepts duplicate tool-call IDs in one

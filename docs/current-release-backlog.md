@@ -1,5 +1,15 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+最新精确`3799f509`的49文件联合1,600项零fail/error/skip、rawrc0、87.976秒，
+2,362源文件与Git/archive前后相同，独审通过。但其唯一5090gpu mixed仍在原600秒
+outer control下超时（600.024975775秒、rawrc=-15），stdout/stderr为空，无JUnit
+或终态origins。禁用异步dump后未出现SIGSEGV不代表根因已确认。完整失败材料留于
+主区ignored `release-closeout-20261025/brs-mixed-3799f509-kzs7gqmf/`，不重跑该source。
+因此P0合并门仍开放：先定位执行链路的实际耗时，再做有证据的后继修改；本地联合绿
+不能替代mixed和最终完整CI。后继已push备份ref；PR189旧c536 CI40206239803
+已自然终态32success/1failure，3.11的mixed报rejected_allowance_exhausted，
+3.12/3.13对应分片通过。原始材料继续保全，不重试旧运行。
+
 精确`17d23117`的48文件联合1,556项零fail/error/skip、rawrc0、88.965秒，完整
 2,360文件与Git/archive前后相同并已独审。但其唯一Linux mixed在123.294秒发生
 SIGSEGV（rawrc=-11，未触发外层600秒），没有JUnit或terminal origins，因此仍失败。
@@ -10,7 +20,10 @@ stderr在主动120秒faulthandler转储期间截断；上游类似竞争报告�
 普通模型路径另有独立窄修：拒绝同批最终tool-call ID重复/fallback碰撞及空函数名，
 在任何工具执行前拒绝整个非法批次；原fallback和非空未知工具恢复保持。43项新增
 专项及379项相关联合通过（379包含43），整合提交最终验收仍开放；它不是历史
-第四请求超时的已证实解释。后续最小合成模型诊断正在准备，尚未发送新模型请求。
+第四请求超时的已证实解释。后续独立合成A/B诊断已在精确3799归档完成：两次请求
+均HTTP200/runtime成功，30秒/次、75秒outer，零retry/tools，总launcher 16.410秒；
+reported=accepted usage为818输入+118输出=936，unknown0。它只证明当前固定小请求
+及双tool历史可用，不替代原case或Linux mixed验收；见普通模型实跑文档的新诊断节。
 
 后续精确`c5366cee`的唯一Linux mixed也未通过：外层600秒driver终止，rawrc=-15，
 无JUnit；源码前后相同但不能推出内部超时阶段。保留失败，不重跑该source或扩大预算。

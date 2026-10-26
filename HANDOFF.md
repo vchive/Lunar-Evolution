@@ -1,5 +1,38 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 最新事实：3799 联合通过，Linux mixed 仍超时
+
+- 精确 `3799f509ecfddee378b89497fd9616f0f8a3fdd1` 的49文件联合实际通过
+  1,600个唯一节点，零fail/error/skip、rawrc0、87.976秒。2,362个源文件
+  pre/post与Git blobs/archive相同；collection与JUnit节点集合、顺序一致，
+  旧96/143项门和新43项全部包含在1,600项内。原JUnit SHA为
+  `bccb425e37125d8a3f57b1f781b644499b3febfd41e16ca04487c405b4e267c6`。
+  独审23/23通过；不扩大为全部CLI child来源证明。材料位于主区ignored
+  `release-closeout-20261025/provider-final-union-5jroxt52/`。
+- 同一head的唯一5090gpu `three-child-mixed` 仍未通过：显式禁用异步
+  faulthandler后，在原600秒outer control下被终止，rawrc=-15、
+  timed_out=true、monotonic 600.024975775秒。stdout/stderr均为空，无JUnit
+  或terminal origins；217条preflight来源不代表运行期终态。
+  2,362源文件和2,653归档成员bytes/modes匹配，完整原始材料留于
+  `release-closeout-20261025/brs-mixed-3799f509-kzs7gqmf/`，不重跑此source。
+  本次未发生SIGSEGV，仍不能证明先前SIGSEGV的成因或关闭mixed门。
+- `3799f509` 已push备份ref `codex/subject-session-diagnostics-next`。
+  PR189旧head `c5366cee` 的CI40206239803已自然终态32success/1failure：
+  Python3.11的current-3仅报three-child-mixed的
+  `rsi_brs_publication_lineage_rejected_allowance_exhausted`；3.12/3.13对应分片成功。
+  原始材料正在保全；旧CI不替代3799的Linux失败或后继最终head验收。
+  当前继续做失败链路诊断，均不替代原case验收。
+- 独立合成模型诊断现已完成：同一3799归档，仅A/B两次调用，30秒/次、
+  75秒outer、零retry/tools。普通短请求及含两个逐ID配对工具结果的固定history
+  均HTTP200/runtime成功，总launcher 16.410秒；reported=accepted usage为
+  818输入+118输出=936，unknown0。登记快照、一次性claim、实际wire body、
+  2,362源文件与217已加载origins均核验。主区ignored证据为
+  `release-closeout-20261025/model-g0-synthetic-3799-registration-7ehduf4o/`。
+  这只证明当前合成请求可用，原第四轮超时、原case失败及Linux mixed门仍开放。
+
+当前仍不可合main；不能把本地1,600项通过写成Linux mixed或模型端到端通过。
+下方各批次结果保留其原source归属，不由本节覆盖。
+
 ## 最新收口：17d 联合通过，Linux 异常退出，工具调用窄修待整合验收
 
 - 精确 `17d23117` 的48文件联合回归实际通过1,556个唯一节点，零fail/error/skip、
