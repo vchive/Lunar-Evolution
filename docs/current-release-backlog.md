@@ -1,5 +1,14 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+当前后继的flow payload标量直接校验保留原depth/type、live迭代、canonical和8MiB
+门：旧产品41项边界及候选205项相关联合全过，独立4,219项actual-AST差分一致。
+局部2,402 occurrences保持，递归入口降至642，full-payload median快46.07%；
+这不是mixed性能或合并验收。新source的完整联合/Linux/CI仍开放，下面717失败保留。
+file-pin快捷构造因不完整guard原型已慢28.5%而停止，产品保持原两次校验。
+P1新增[PyYAML6.0.3制品审查](../specs/191-python-worker-adapter/shinka-pyyaml-dependency-artifact-review-20261026.md)，
+两件制品全部成员/RECORD/metadata/ELF经独审；目标musl、LibYAML和完整build closure
+尚未验收，production/online保持false。
+
 PR189精确`717049b7`的唯一5090gpu mixed仍失败：原600秒outer control终止，
 rawrc=-15、600.032836秒、stdout/stderr为空，无JUnit/terminal origins。2,370源文件
 及完整归档entries前后相同，独立收证复核通过，不改变失败。原source不重跑，预算

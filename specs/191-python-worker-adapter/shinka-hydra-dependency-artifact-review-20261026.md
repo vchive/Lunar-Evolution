@@ -97,13 +97,14 @@ it does not close the license-material limitation or admit a runtime.
 
 ## Scope and remaining edges
 
-PyYAML still needs its own exact candidate and artifact review. The dataclasses
+PyYAML now has a separate [6.0.3 candidate artifact review](shinka-pyyaml-dependency-artifact-review-20261026.md);
+its native/build closure and target compatibility remain unaccepted. The dataclasses
 (Python 3.6), typing (Python <3.5), and Hydra importlib-resources (Python <3.9)
 markers are false for the candidate 3.13 target. Packaging, anyio, certifi,
 httpcore, idna, sniffio, the other 24 floating direct project requirements, and
 all applicable build/native dependencies remain unresolved. These local version
 constraints do not establish a globally consistent graph. No third package was
-selected here.
+selected within this Hydra slice.
 
 No pip, package import, backend, Java, model or evaluator was executed. No `.env`
 was read. Finite imports/resources, generated grammar policy, toolchain/image

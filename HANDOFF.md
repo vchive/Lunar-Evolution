@@ -1,5 +1,24 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 当前后继：flow 标量校验与 PyYAML 候选
+
+- `_python_admission_flow_payload`在现有容器遍历中直接校验scalar的depth/type，
+  消除逐叶递归和scalar generator；全部key检查仍先于values，最终canonical和8MiB
+  门、逐次fresh state walk保持。41项旧产品边界全过，候选205项相关联合全过；
+  后者出现历史pytest临时目录清理warning且输出截断，不称warning-free。
+- 独立actual-function AST差分4,219项完全一致。纯内存2,402 occurrences不变，
+  nested validator入口2,402→642；九组交替计时的full-payload median约快46.07%，
+  仅局部诊断，不外推mixed。详见
+  [窄规格](specs/191-python-worker-adapter/flow-payload-scalar-validation.md)。
+  最终集成source的联合、Linux mixed及CI仍须完成；下面717失败保持。
+- file-pin parser快捷构造候选已停止：不完整的双guard+clone中位20.62µs，比原
+  parse16.05µs慢28.5%；完整漂移边界尚未证明，保留原两次校验。只留下
+  [deferred记录](specs/191-python-worker-adapter/file-pin-parser-local-reuse.md)。
+- PyYAML6.0.3的明确cp313 musllinux wheel与sdist已各单次静态读取，成员、RECORD、
+  license、metadata/build/native声明经第二独审通过；仅关闭制品观察。musl>=1.2
+  目标兼容、LibYAML来源、setuptools/Cython及完整build/SDK closure仍开放，见
+  [候选审查](specs/191-python-worker-adapter/shinka-pyyaml-dependency-artifact-review-20261026.md)。
+
 ## 最新结果：717 Linux mixed 仍失败，CI 自然运行中
 
 - PR189 head `717049b7d825d69928baacc7f86863292e58f24c` 的唯一5090gpu mixed
