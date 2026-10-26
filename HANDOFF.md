@@ -22,6 +22,48 @@
   后继source-whitespace窄修改的177项相关测试及独审已通过；仍不能宣称修复mixed。
   本节与下方历史结果分别绑定各自source；当前仍不可合main，不放宽原600秒预算。
 
+## 本轮 P1：Hydra 两个传递依赖候选已静态复核
+
+- OmegaConf2.3.0和ANTLR runtime4.9.3满足已审Hydra1.3.2的版本约束；
+  3个官方artifact各只下载一次，原JSON/HTTP size与SHA、全成员bytes/modes
+  均经独审，Omega wheel的RECORD完整匹配。没有执行包、backend、Java或项目。
+- ANTLR4.9.3该发行只列sdist，缺独立LICENSE成员，PKG-INFO/setup仅声明BSD。原helper
+  因自身LICENSE存在性假设以rc1停止，原失败保留；后续纯本地读取补齐成员与
+  build/dependency声明，不把原进程改成成功。其typing的`python_version<'3.5'`条件边对3.13为false。
+  Omega的PyYAML>=5.1.0仍未选；完整graph、build/native和运行兼容性未验收。
+- 该独立P1切片只包含依赖/状态文档；PR189的1e6f10f8 CI现已终态，见顶部。
+  详细事实、原始证据位置、独审pins和剩余边见
+  [候选依赖审查](specs/191-python-worker-adapter/shinka-hydra-dependency-artifact-review-20261026.md)。
+
+## 历史：1e6f10f8 联合与 CI 终态前诊断
+
+- PR189 当前 head 为 `1e6f10f804495a3c1e8f41fc3f04968f01c11d02`，
+  已推送主开发分支及 `codex/subject-session-diagnostics-next` 备份。
+  精确 head 的51文件联合通过1,675个唯一节点，零fail/error/skip、rawrc0，
+  88.414秒；2,364个源文件pre/post与Git blobs、size、exec bit匹配，
+  collection/JUnit节点集合及顺序一致，独审通过。原XML SHA为
+  `01dbd7c64f9a24fcfd9f2e4375d22c847d5018fce00d52258bbc353b901e5dec`。
+  证据位于主区ignored `release-closeout-20261025/prefix-final-union-_m2foz0v/`。
+- 同一head的[CI40257278143](https://github.com/vchive/Lunar-Evolution/actions/runs/40257278143)
+  尚未终态；不要为了文档状态push并取消它。当前head的独立5090gpu mixed
+  尚未启动；旧3799/17d/c536/08fc失败保留。CI终态、当前head自己的原预算Linux
+  mixed和独审全部通过前不可合main。main仍为`0bff6b92`。
+- 现有标准inert staging测试的一次cProfile已成功：自然count=2路径，110秒
+  outer、零retry，rc0、1项通过、7.234秒，2,364源文件前后匹配Git。reader在
+  staging中调用1次、累计0.153秒；这是整个setup/staging测试的profile，不能
+  当计划中的count=3 post-stage单reader或mixed验收。完整caller/callee图及
+  root复核留于主区ignored
+  `release-closeout-20261025/stock-reserved-input-profile-5mzy79b3/`。
+- profile显示binding parser内fresh runtime manifest的重复验证边92次累计
+  0.575秒；尚未修改或测得可节省时间。reservation `_raw`640次仅0.005秒，
+  无据继续优化。累计时间有嵌套，不能相加或外推Linux超时原因；所有fresh
+  source/FS/SQL/control与原预算门保留。
+- 定制reader诊断三次均未进入显式post-stage reader，前两次是guard与正常
+  dir_fd/fd操作不相容，最后一次staging保留unknown/staging_failed且原异常被
+  产品包装抑制，未保留setup profile，不能确定根因或总reader/selector次数。
+  staging本身会调用reader/selector，不能说全程调用零次。停止扩展该脚本；
+  最终权威为`reserved-whole-reader-fd-final-7t__k2vj/failed-stage-audit-v2.json`。
+
 ## 当前后继：单次 prefix 解析复用已验证，mixed 门仍开放
 
 - C1/C2 transition 只在本次调用栈内复用新解析的 prefix facts，由两次/三次解析

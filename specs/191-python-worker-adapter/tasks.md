@@ -13,6 +13,11 @@
   dependencies' complete published sdist/universal-wheel artifacts, metadata,
   licenses and RECORD consistency. This is only an artifact-identity subitem;
   see [dependency artifacts](shinka-equality-dependency-artifact-review-20261025.md).
+- [x] Retain and independently review candidate OmegaConf 2.3.0 and ANTLR runtime
+  4.9.3 artifact identities and actual dependency/build declarations. Preserve
+  the original helper rc1 and unresolved ANTLR standalone license material;
+  this does not close dependency/profile/runtime acceptance. See
+  [Hydra dependency candidates](shinka-hydra-dependency-artifact-review-20261026.md).
 - [ ] Freeze full dependency/build bytes and accept a finite executable project
   profile. These source-only reviews do not close runtime or production CLI gates.
 

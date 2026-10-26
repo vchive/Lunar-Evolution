@@ -14,6 +14,17 @@ SHA为`f646ef901f1600f47502d587882e183be039c369a892cc699a3ba579ecf17789`。
 source-whitespace窄修改的177项相关测试及独审已通过，均不替代新source的mixed/CI
 验收，不宣称已修复mixed。P0合并门仍开放，原600秒预算不变；下方历史按原source保留。
 
+此前 CI 终态前的记录（当前结果以上段为准）：
+
+最新head `1e6f10f8`的51文件联合已通过1,675个唯一节点，零fail/error/skip、
+rawrc0、88.414秒，完整2,364源文件pre/post与Git一致并经独审。
+[CI40257278143](https://github.com/vchive/Lunar-Evolution/actions/runs/40257278143)
+仍在运行；本head独立5090gpu mixed尚未启动，不能合main或关闭历史失败。
+不为纯文档push取消当前矩阵。现有inert标准staging测试一次cProfile通过，
+7.234秒、1项、零retry；自然count=2且包含setup，不是post-stage单reader或mixed。
+它只支持继续审查binding parser内的纯重复校验，尚无新优化或混合链路性能结论。
+定制reader方案已停止扩展，其最后一次staging unknown原因仍未确定。
+
 后继C1/C2操作内prefix解析复用已通过75项focused、381项相关联合和552项
 原3799差分oracle，独立审查无slice阻断；新helper的9项policy drift探针全部拒绝。
 每次transition解析由2/3次降为1次，跨调用仍fresh，不改原SQL/FS/policy/预算门。
@@ -77,6 +88,11 @@ PR186、PR187均已合入main，当前合并点为
 PR188后继已补齐失败后的已知用量小计诊断（405项focused通过，最终head CI仍待验收）、
 Shinka源码/声明独审及过期DRS待办收口。新诊断不能恢复旧实跑遗失用量，也不能让失败
 case通过。用户已选择先完成不受环境阻塞的部分；静态构建权限不作自行变更。
+
+P1传递依赖候选新增了OmegaConf2.3.0与ANTLR runtime4.9.3的三份artifact
+字节/全成员及实际依赖/build声明独审；ANTLR缺独立license文本，原helper rc1
+和后续纯本地复核分开保留。它们满足局部Hydra约束，完整依赖、兼容性与runtime
+仍未验收，详见[候选依赖审查](../specs/191-python-worker-adapter/shinka-hydra-dependency-artifact-review-20261026.md)。
 
 另一个未合入后继已完成普通subject的显式fresh transcript接线、有界tail读取和
 无observer命令的有界捕获：564项本地联合测试零失败/跳过，独立静态审查及全仓检查
