@@ -1,5 +1,38 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 最新结果：717 Linux mixed 仍失败，CI 自然运行中
+
+- PR189 head `717049b7d825d69928baacc7f86863292e58f24c` 的唯一5090gpu mixed
+  在原600秒outer control终止：rawrc=-15、timed_out=true、600.0328363918234秒，
+  stdout/stderr各0字节，无JUnit或terminal origins。完整2,370源文件、2,661归档
+  entries前后与精确archive一致；217条preflight origins不能当终态证明。0retry，
+  不重跑该source、不放宽预算，当前不可合main。
+- 原始收证在主区ignored
+  `release-closeout-20261025/brs-mixed-717049b7-hd63l22p/`；root独立十项复核全部
+  通过，见同级`mixed-717-result-independent-_s3rm1g5/review.json`。收证成功不改变
+  测试失败结论。外层orchestrator rc0仅代表收证完成，不是pytest通过。
+- 精确head的[CI40271759811](https://github.com/vchive/Lunar-Evolution/actions/runs/40271759811)
+  尚在运行/排队，不能为了文档push取消；main/base初始观察仍为`0bff6b92`。
+  终态collector及失败job原始log脚本已静态准备，位于主区ignored
+  `pr189-head717049b7-ci-monitor-5yl29051/`；仅在确认该run completed后执行。
+- 受测`76aa277e`的2,055项联合已完成独立离线恢复：三种mapper逐项一致，30项
+  checks全部通过，原错误runner仍保留。复核位于
+  `capsule-final-union-offline-recovery-chqplrxb/review.json`，SHA为
+  `8198e34f0f1f5e0995c9a61885deed01d7dbcd122e6cfdfe05e1231fde26d2dd`。
+- 停止后的只读调查发现serial测试覆盖了pytest的`tmp_path`：其实际父目录选择是
+  `(/private/tmp, /var/tmp, /tmp)`，不是runner的`--basetemp`。因此后者目录不存在
+  不能推出fixture没开始或不存在。一个本UID的`/var/tmp/lrsi-bzcfj2h8`与同一远端
+  时钟窗口相容，归属尚未严格证明；仅检查副本，不登记、resume或重跑候选run。
+  该环境`/tmp`为tmpfs而`/var/tmp`为磁盘；改父目录不能当产品性能修复或覆盖旧失败。
+- 候选DB/WAL/SHM原件在复制前后及副本查询后完整pins保持相同；SQLite只查询独立
+  副本。候选保留3个claim/admission、2个episode result，child2仍running且没有结果；
+  其55模块source聚合与717静态Git计算一致，包含新capsule模块，只证明版本相容，
+  不证明execution归属或超时位置。原runner未留numeric PID/PGID，加上部分同UID
+  `/proc`不可读，不能事后证明原进程组全部退出。紧凑报告为该证据目录下
+  `stopped-fixture-inspection-arbzo0au/completed-review.md`；不据此登记、恢复或重跑。
+- 本节后的文档状态更新暂只push备份ref，等待当前CI自然终态；下方各批次验证仍
+  绑定其原source。历史模型case失败、静态custody阻塞及真实producer缺项保持开放。
+
 ## 最新事实：1e6 CI 已终态，mixed 合并门仍开放
 
 - PR189 精确 head `1e6f10f804495a3c1e8f41fc3f04968f01c11d02` 的

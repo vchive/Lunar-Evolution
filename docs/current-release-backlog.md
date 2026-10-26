@@ -1,5 +1,16 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+PR189精确`717049b7`的唯一5090gpu mixed仍失败：原600秒outer control终止，
+rawrc=-15、600.032836秒、stdout/stderr为空，无JUnit/terminal origins。2,370源文件
+及完整归档entries前后相同，独立收证复核通过，不改变失败。原source不重跑，预算
+不扩大。[CI40271759811](https://github.com/vchive/Lunar-Evolution/actions/runs/40271759811)
+继续自然运行；当前不可合main。文档后继仅推备份，避免取消这轮CI。
+serial测试自定义临时目录，`--basetemp`不代表实际fixture位置；停止后的候选目录
+只作有归属限制的只读调查。切换tmpfs不能覆盖原磁盘环境失败。
+候选DB副本保留child2 running/无结果，55模块source聚合与717相容；这不构成原执行
+归属或卡点证据。原DB/WAL/SHM完整pins未变，未对原件运行SQLite。缺原numeric
+PID/PGID及部分进程可见性，不能事后证明完整进程组已退出；不登记、恢复或重跑。
+
 后继`76aa277e`的56文件联合pytest实际2,055项全过（rawrc0、67.869秒），完整
 2,370源文件bytes/size/exec bit前后与Git相同。外层runner在测试结束后因三个参数含
 `::`的JUnit映射错误以rc1退出，原失败保留；独立离线复核确认映射问题，不重跑。
