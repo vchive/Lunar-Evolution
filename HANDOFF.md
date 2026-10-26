@@ -19,8 +19,19 @@
   现有whole-case profile中flow wrapper仅历史累计14.303秒，不能据其局部46%
   改善推定能救回600秒预算。下一步先核主要JSON/runtime-tree/owner-history重复边，
   不继续逐个小热点盲改后重复mixed；所有fresh SQL/FS/source/control门保持。
-- PR189仍为717head，不为了文档取消其自然CI。最新一次33-job快照为22success/
-  11in_progress/0failure；不是终态。fa37已推独立备份ref，当前不可合main或关PR188。
+- PR189仍为717head，不为了文档取消其自然CI。最新一次33-job快照为28success/
+  5in_progress/0failure；不是终态。fa37已推独立备份ref，当前不可合main或关PR188。
+- 一次只读资源观察未发现明确属于7个已证明mixed目录的本UID进程；13个本UID
+  cmdline可见，cwd/maps各有4个权限拒绝，不能排除无可见root标记的worker。
+  host loadavg为199.8/395.06/419.1、128逻辑CPU，可见祖先quota最小64CPU、另
+  一层不可见。单次快照不能量化当前CPU使用率或证明超时因果；不杀进程、不改权限。
+  材料`linux-task-proc-readonly-3bkp16bm/`。远端wallclock落后约330秒，预算仍只看
+  driver monotonic。下一轮诊断须区分实际CPU成本、调度/IO等待与fresh观察成本。
+- bulk序列化候选仍未实施：相邻两次`binding.to_json()`复用会删除第二次公共
+  serializer重验；hash hook期间DTO漂移可构成源码层面的语义反例，未实际运行该反例。
+  直接共享外层/内层runtime manifest也会改变detached graph别名关系，尚无等价证明。
+  保留原实现、不新增guard架构；现成profile和否决理由在
+  `flow-profile-readonly-review-kfjwfqbo/`及`bulk-serialization-feasibility-_6se6onk/`。
 - P1已补[packaging25.0候选制品审查](specs/191-python-worker-adapter/shinka-packaging-dependency-artifact-review-20261026.md)：
   两件制品、全部成员/modes/RECORD/metadata/许可证经独审；保留原stdout索引不匹配
   及更正后的独立终态索引，不重下载或重跑helper。flit_core>=3.3未选，动态loader/

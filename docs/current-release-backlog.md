@@ -6,7 +6,11 @@
 stderr/JUnit/terminal origins。2,667entries清单前后相同、独审39项通过只确认失败
 收证，不改变测试结论。原source不重跑、预算不扩大，当前不可合main。EOF修复不能
 称解决mixed；下一步核主要JSON/runtime-tree/owner-history重复成本，保留fresh门。
-PR189的717 CI最近快照22success/11in_progress，尚无终态；fa37已推备份ref。
+PR189的717 CI最近快照28success/5in_progress，尚无终态；fa37已推备份ref。
+5090gpu一次资源快照host loadavg199.8/395.06/419.1、128逻辑CPU、可见quota最小
+64CPU，未发现带已知mixed-root标记的残留worker；权限/无标记归属仍有限，不能推定
+超时因果。下轮需区分CPU与调度/IO等待；不重跑旧source争取通过。相邻to_json复用及
+共享manifest DTO候选因公共重验/别名语义未证明而保留原实现，不新增guard架构。
 P1补齐[packaging25.0制品观察](../specs/191-python-worker-adapter/shinka-packaging-dependency-artifact-review-20261026.md)，
 仅关闭这条候选身份观察。flit_core构建边、动态loader及完整SDK/runtime闭包仍开放。
 
