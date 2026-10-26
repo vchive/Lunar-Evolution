@@ -203,7 +203,11 @@ def _predecessors(before, previous, published):
 
 
 def _entry(entry, prefix, plan, with_provenance):
-    domain, projection, journals, candidates, _index = _prefix(prefix)
+    return _entry_from_prefix(entry, _prefix(prefix), plan, with_provenance)
+
+
+def _entry_from_prefix(entry, parsed_prefix, plan, with_provenance):
+    domain, projection, journals, candidates, _index = parsed_prefix
     ordinal = len(projection["batches"])
     _sha(plan)
     _raw(entry)
@@ -306,7 +310,11 @@ def _wire(value, domain, count):
 
 
 def _transition_scope(previous, current, prefix, original_lineage_bytes):
-    domain, facts, _journals, _candidates, index = _prefix(prefix)
+    return _transition_scope_from_prefix(previous, current, _prefix(prefix), original_lineage_bytes)
+
+
+def _transition_scope_from_prefix(previous, current, parsed_prefix, original_lineage_bytes):
+    domain, facts, _journals, _candidates, index = parsed_prefix
     count = len(facts["batches"])
     previous, current = _wire(previous, domain, count + 1), _wire(current, domain, count + 1)
     published = facts["published_predecessor"]
@@ -354,14 +362,29 @@ def _transition_scope(previous, current, prefix, original_lineage_bytes):
     return previous["batches"][count], current["batches"][count], index
 
 
+def _validated_entry_from_prefix(entry, parsed_prefix, plan, with_provenance):
+    # Keep the standalone entry validator's error boundary when sharing parsed
+    # facts inside a transition; parser errors must not become C1/C2 errors.
+    try:
+        return _entry_from_prefix(entry, parsed_prefix, plan, with_provenance)
+    except RSILearningError:
+        raise
+    except (TypeError, ValueError, KeyError, OverflowError, RecursionError) as exc:
+        raise RSILearningError("rsi_brs_reserved_rejection_entry_invalid") from exc
+
+
 def _transition(previous, current, *, prefix, original_lineage_bytes, native_plan_sha256, c2):
-    before, after, index = _transition_scope(previous, current, prefix, original_lineage_bytes)
-    rejected = validate_reserved_brs_rejected_entry(after, prefix=prefix, native_plan_sha256=native_plan_sha256,
-                                                   with_provenance=c2)
+    # All facts are detached by this operation's fresh bounded parser. Reuse
+    # only on this stack: standalone entry/scope calls still parse for themselves.
+    parsed_prefix = _prefix(prefix)
+    before, after, index = _transition_scope_from_prefix(
+        previous, current, parsed_prefix, original_lineage_bytes,
+    )
+    rejected = _validated_entry_from_prefix(after, parsed_prefix, native_plan_sha256, c2)
     expected_index = [*index, {"ordinal": rejected.ordinal, "journal_id": rejected.journal_id,
                              "rejected_sha256": rejected.digest()}]
     if c2:
-        validate_reserved_brs_rejected_entry(before, prefix=prefix, native_plan_sha256=native_plan_sha256)
+        _validated_entry_from_prefix(before, parsed_prefix, native_plan_sha256, False)
         if previous["rejections"] != expected_index or current["rejections"] != expected_index:
             _fail("rejection_index_drift")
         if any(after[key] != value for key, value in before.items() if key != "rejection_provenance"):

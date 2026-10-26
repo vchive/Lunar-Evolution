@@ -1,5 +1,31 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 当前后继：单次 prefix 解析复用已验证，mixed 门仍开放
+
+- C1/C2 transition 只在本次调用栈内复用新解析的 prefix facts，由两次/三次解析
+  降为一次；独立 entry/scope 和下次顶层调用仍 fresh parse。公开签名、异常包装、
+  拒绝顺序、SQL/FS/source/policy 检查及原预算不变，没有跨调用缓存。
+- 原3799产品先通过17项新语义测试；候选75项focused、九文件相关联合381个
+  唯一JUnit节点均通过，后者rawrc0、零fail/error/skip、565.05秒。552项合成
+  差分oracle结果/异常类型/拒绝码一致；三个新helper的9项policy drift独审均拒绝，
+  foreign hook执行0次。全仓Ruff、compileall和diff-check通过。
+- 381项包含本地inert original-owner retention和checkpoint fixture，不是纯DTO集；
+  终端另报27,483 warnings，截断样本显示历史pytest garbage清理错误，无法穷尽
+  分类或确定全部发生阶段，不能称warning-free。原JUnit SHA为
+  `095264d8efe3dae354228617656c4e9eff36460aa92c4de7e839d5c58baed668`。
+  材料在主区ignored `release-closeout-20261025/reserved-rejection-prefix-reuse-kxzhrqdf/`。
+  两历史child的局部C1/C2中位耗时减少28.43%/39.04%，七历史child减少34.21%/
+  49.96%；与union并发的局部计时不证明mixed改善，空prefix C1样本反而慢3.31%。
+- 旧CI40206239803保全已完成：33/33原始ZIP的server SHA/size/CRC和源码
+  provenance均匹配，完整失败job log已保存。唯一失败在checkpoint CAS后的
+  rejection readback复核；原SDD明确要求full observation前取system monotonic
+  sample并只收窄allowance，18场景fake-clock探针符合该设计，不据此放宽cap。
+  完整报告在主区ignored `release-closeout-20261025/old-ci-40206239803-closeout-e6pojfav/`。
+
+该slice可提交，但不关闭3799的600秒mixed失败或整个PR合并门。下一项是独立
+source snapshot上stage0/ready fixture的一次完整reader profile；不能当留存stage2
+工作区复现，不运行driver、producer、模型或evaluator。
+
 ## 最新事实：3799 联合通过，Linux mixed 仍超时
 
 - 精确 `3799f509ecfddee378b89497fd9616f0f8a3fdd1` 的49文件联合实际通过
@@ -20,7 +46,7 @@
   PR189旧head `c5366cee` 的CI40206239803已自然终态32success/1failure：
   Python3.11的current-3仅报three-child-mixed的
   `rsi_brs_publication_lineage_rejected_allowance_exhausted`；3.12/3.13对应分片成功。
-  原始材料正在保全；旧CI不替代3799的Linux失败或后继最终head验收。
+  原始材料已完整保全；旧CI不替代3799的Linux失败或后继最终head验收。
   当前继续做失败链路诊断，均不替代原case验收。
 - 独立合成模型诊断现已完成：同一3799归档，仅A/B两次调用，30秒/次、
   75秒outer、零retry/tools。普通短请求及含两个逐ID配对工具结果的固定history

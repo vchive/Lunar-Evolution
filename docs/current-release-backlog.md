@@ -1,5 +1,15 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+后继C1/C2操作内prefix解析复用已通过75项focused、381项相关联合和552项
+原3799差分oracle，独立审查无slice阻断；新helper的9项policy drift探针全部拒绝。
+每次transition解析由2/3次降为1次，跨调用仍fresh，不改原SQL/FS/policy/预算门。
+381项零fail/error/skip、rc0，但终端有27,483 warnings且输出截断，不能称
+warning-free；局部28%–50%计时改善不代表mixed通过。详见
+[窄SDD](../specs/189-static-python-fixture/reserved-rejection-prefix-reuse.md)。
+旧CI33份原始ZIP及完整失败日志均已保全；失败在post-CAS rejection readback，
+保守allowance符合既有SDD，不能靠放宽timeout解决。下一步先做独立stage0
+完整reader的一次profile，确认整段重复成本；最终source的Linux/CI门仍开放。
+
 最新精确`3799f509`的49文件联合1,600项零fail/error/skip、rawrc0、87.976秒，
 2,362源文件与Git/archive前后相同，独审通过。但其唯一5090gpu mixed仍在原600秒
 outer control下超时（600.024975775秒、rawrc=-15），stdout/stderr为空，无JUnit
@@ -8,7 +18,7 @@ outer control下超时（600.024975775秒、rawrc=-15），stdout/stderr为空�
 因此P0合并门仍开放：先定位执行链路的实际耗时，再做有证据的后继修改；本地联合绿
 不能替代mixed和最终完整CI。后继已push备份ref；PR189旧c536 CI40206239803
 已自然终态32success/1failure，3.11的mixed报rejected_allowance_exhausted，
-3.12/3.13对应分片通过。原始材料继续保全，不重试旧运行。
+3.12/3.13对应分片通过。原始材料已完整保全，不重试旧运行。
 
 精确`17d23117`的48文件联合1,556项零fail/error/skip、rawrc0、88.965秒，完整
 2,360文件与Git/archive前后相同并已独审。但其唯一Linux mixed在123.294秒发生
