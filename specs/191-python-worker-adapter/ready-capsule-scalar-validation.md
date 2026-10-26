@@ -52,21 +52,3 @@ Ignored primary-workspace evidence under `release-closeout-20261025/`:
 - `ready-capsule-scalar-independent-wyg8dkzr/review.json`.
 
 The integrated source's own Linux mixed and final CI gates remain open.
-
-Local validation: the first 70 semantic cases pass against the unchanged product
-before implementation. The final 77-case suite also passes against the exact
-`4acaf58b` `_shape` source loaded in a separate process; 162 candidate cases
-(those 77 plus existing capsule, consumer and staging suites) pass with zero
-failures/errors/skips. Focused Ruff, compileall and diff-check pass. Both original
-and candidate preserve live-hook backend replacement, interruption and dictionary
-iterator failures as well as accepted/rejected results and node consumption.
-
-An independent AST extraction of the original function and the candidate each
-consume 2,885 nodes and observe the same 16 floats on one inert memory graph.
-Recursive `_shape` entries decrease from 2,885 to 354. Nine alternating blocks
-of 60 local calls have medians 374.23 to 348.69 microseconds (6.82%); this small
-primitive result is not an end-to-end prediction. Retained evidence lives under
-ignored `release-closeout-20261025/capsule-scalar-complete-baseline-jv9gty3i/`,
-`capsule-scalar-complete-focused-tq222t_9/` and
-`capsule-scalar-primitive-comparison-i6n5700n/`. Independent review and the new
-integrated revision's own CI/mixed acceptance remain pending.

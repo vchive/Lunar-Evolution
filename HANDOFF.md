@@ -29,6 +29,15 @@
 
 ## 当前后继：ready-capsule标量遍历
 
+- 精确`76aa277e02cb525cbaa99e982d98a1383a4287b2`的56文件联合pytest实际通过
+  2,055个唯一节点，rawrc0、零fail/error/skip、67.869秒；完整2,370源文件前后与
+  Git archive的bytes/size/exec bit相同。外层runner随后因JUnit映射assert以rc1退出：
+  三个测试参数含`::`，其简单split误将参数当类名；原失败保留，离线独审确认是映射
+  问题，不重跑测试。原XML SHA为
+  `7a9634b93336a34dc9cd084810c6e8f4bcfe51394191518a5ad1a9516392275b`，材料在
+  主区ignored `release-closeout-20261025/capsule-final-union-sfeyg73w/`。
+  后继仅更正本段状态及删除SDD重复旧状态，产品/测试/CI没有变化；Linux/CI必须绑定
+  后继自己的精确source，不把旧联合改绑为新source测试。
 - 仅在当前container walk内校验exact scalar，保留每次节点/深度/文本/整数和实时
   finiteness检查，dict仍逐key/value、list仍live迭代；没有跨调用缓存，所有fresh
   SQL/FS/source/control门保持。

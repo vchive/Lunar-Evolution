@@ -1,5 +1,10 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+后继`76aa277e`的56文件联合pytest实际2,055项全过（rawrc0、67.869秒），完整
+2,370源文件bytes/size/exec bit前后与Git相同。外层runner在测试结束后因三个参数含
+`::`的JUnit映射错误以rc1退出，原失败保留；独立离线复核确认映射问题，不重跑。
+其后仅修正文档状态，产品/测试/CI不变；新精确source仍需自己的Linux/CI验收。
+
 PR189 精确head `1e6f10f804495a3c1e8f41fc3f04968f01c11d02` 的
 [CI40257278143](https://github.com/vchive/Lunar-Evolution/actions/runs/40257278143)
 已最终30success/3failure；三版current-3仅同一个`three-child-mixed`失败。
