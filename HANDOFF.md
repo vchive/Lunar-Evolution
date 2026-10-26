@@ -18,9 +18,25 @@
   `pr189-run40257278143-offline-review-sryp3kpz/summary.json`，SHA为
   `f646ef901f1600f47502d587882e183be039c369a892cc699a3ba579ecf17789`。
   这不扩大为不可变消费来源证明，也不改变该CI失败结论。
-- 独立archive的whole-case标准profile诊断正在进行，不替代CI或mixed验收。
+- 独立archive的whole-case标准profile诊断已完成：原样inert mixed一次通过，
+  pytest554.44秒、launcher554.705871秒、rawrc0，仍在原600秒内，零retry；
+  2,364源文件bytes/size/exec bit前后与Git一致。它只作诊断，不替代CI或Linux验收。
+  主要热点为重复JSON编解码、ready-capsule结构遍历和完整历史校验；fingerprint并非
+  首要热点。累计计时有嵌套及线程归属限制，不能相加或换算wall占比。详见
+  [完整诊断](specs/189-static-python-fixture/whole-case-profile-20261026.md)。
   后继source-whitespace窄修改的177项相关测试及独审已通过；仍不能宣称修复mixed。
   本节与下方历史结果分别绑定各自source；当前仍不可合main，不放宽原600秒预算。
+
+## 当前后继：ready-capsule标量遍历
+
+- 仅在当前container walk内校验exact scalar，保留每次节点/深度/文本/整数和实时
+  finiteness检查，dict仍逐key/value、list仍live迭代；没有跨调用缓存，所有fresh
+  SQL/FS/source/control门保持。
+- 新77项语义测试在原产品全过；候选与原capsule/consumer/staging联合162项全过，
+  rawrc0、零fail/error/skip。独立纯内存计数的2,885节点与16次isfinite相同，
+  递归入口由2,885减至354；局部median约快6.82%，不外推mixed性能。
+- 新source的整合联合、独立Linux mixed及最终CI仍须分别完成；当前不可合main。
+  窄规格和证据见[标量遍历](specs/191-python-worker-adapter/ready-capsule-scalar-validation.md)。
 
 ## 本轮 P1：Hydra 两个传递依赖候选已静态复核
 

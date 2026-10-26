@@ -65,6 +65,11 @@ jobs:
         run: |
           python -m pytest -q tests/test_regression_runner_shards.py --junitxml=.lunar-evolution/test-results/regression-shards.xml
           python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/regression-shards.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '204' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Parallel regression runner requires 204 cases and zero failures, errors or skips')"
+      - name: Verify fresh ready-capsule scalar validation
+        if: ${{ matrix.role == 'focused' }}
+        run: |
+          python -m pytest -q tests/test_rsi_ready_capsule_scalar_validation.py tests/test_rsi_producer_staging_capsule.py tests/test_rsi_ready_capsule_consumers.py tests/test_rsi_ready_capsule_staging_flow.py --junitxml=.lunar-evolution/test-results/rsi-ready-capsule-scalars.xml
+          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-ready-capsule-scalars.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '162' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Fresh ready-capsule scalar validation requires 162 cases and zero failures, errors or skips; every node, depth and live observation remains independent')"
       - name: Verify bounded checkpoint and source caches
         if: ${{ matrix.role == 'focused' }}
         run: |

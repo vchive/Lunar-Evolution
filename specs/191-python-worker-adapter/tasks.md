@@ -1,5 +1,15 @@
 # Tasks
 
+## Ready-capsule scalar validation continuation
+
+- [x] Specify the exact ordered scalar walk and preserve node/depth/type bounds,
+  live iteration/finiteness, refusal order and all independent observation gates.
+- [x] Pass all 77 new semantic cases against the original implementation, then
+  pass the candidate's 162-case capsule/consumer/staging selection; local timing
+  and occurrence counts do not establish mixed acceptance. See
+  [scalar validation](ready-capsule-scalar-validation.md).
+- [ ] Complete the integrated source's own Linux mixed and final CI acceptance.
+
 ## Real project source baselines (2026-10-25)
 
 - [x] Retain and independently review OpenEvolve v0.4.0 source/tree, dependency

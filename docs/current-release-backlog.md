@@ -10,8 +10,13 @@ PR189 精确head `1e6f10f804495a3c1e8f41fc3f04968f01c11d02` 的
 33份原始ZIP及三份完整失败log已保全；root离线独审12/12通过，汇总位于主区ignored
 `release-closeout-20261025/pr189-run40257278143-offline-review-sryp3kpz/summary.json`，
 SHA为`f646ef901f1600f47502d587882e183be039c369a892cc699a3ba579ecf17789`。
-保全通过不改变CI失败结论。独立archive的whole-case标准profile诊断正在进行；
-source-whitespace窄修改的177项相关测试及独审已通过，均不替代新source的mixed/CI
+保全通过不改变CI失败结论。独立archive的whole-case标准profile诊断已完成：
+原样inert mixed一次通过（pytest554.44秒、launcher554.705871秒、rawrc0），完整
+2,364源文件前后匹配；仍只是诊断，不是Linux验收。主要热点为JSON编解码、结构遍历
+和历史校验，不能将嵌套累计时间换算wall占比，见[诊断](../specs/189-static-python-fixture/whole-case-profile-20261026.md)。
+后继ready-capsule标量遍历在原产品77项新语义全过，候选162项相关联合全过；保留
+逐节点预算、live迭代/finiteness及所有fresh观察门，无跨调用缓存。局部约6.82%的
+改善不代表mixed通过。source-whitespace窄修改的177项相关测试及独审也已通过，均不替代新source的mixed/CI
 验收，不宣称已修复mixed。P0合并门仍开放，原600秒预算不变；下方历史按原source保留。
 
 此前 CI 终态前的记录（当前结果以上段为准）：
