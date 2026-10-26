@@ -1,6 +1,16 @@
 ## 2026-10-26 当前状态与剩余优先级
 
-当前P0是新source验收：`c27e2c97`的2,150项联合有1项5ms超时断言失败，
+最新`fa37b159`的64文件联合通过2,245项，rawrc0、零fail/error/skip、84.195969秒，
+旧2,150项全部保留；完整2,376源文件pre/post与Git/archive一致、精确节点覆盖经独审。
+其唯一5090gpu mixed仍在600秒原预算超时：rawrc=-15、600.023166秒、无stdout/
+stderr/JUnit/terminal origins。2,667entries清单前后相同、独审39项通过只确认失败
+收证，不改变测试结论。原source不重跑、预算不扩大，当前不可合main。EOF修复不能
+称解决mixed；下一步核主要JSON/runtime-tree/owner-history重复成本，保留fresh门。
+PR189的717 CI最近快照22success/11in_progress，尚无终态；fa37已推备份ref。
+P1补齐[packaging25.0制品观察](../specs/191-python-worker-adapter/shinka-packaging-dependency-artifact-review-20261026.md)，
+仅关闭这条候选身份观察。flit_core构建边、动态loader及完整SDK/runtime闭包仍开放。
+
+此前集成验收：`c27e2c97`的2,150项联合有1项5ms超时断言失败，
 原error/exit_code未捕获，原因未知；2,374源文件前后相同，离线覆盖独审通过不改变失败。
 旧联合不重跑、c27 Linux准备保持HOLD。另行fake确认cleanup截止前未消费ready EOF
 的误判缺口，后继仅一次`select(0.0)` EOF观察，不延长等待、追加capture或放宽group

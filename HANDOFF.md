@@ -1,5 +1,31 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 最新验收：fa37 联合通过，Linux mixed 仍超时
+
+- 精确 `fa37b159d59d75f56f8845ba49a26412d9802e71` 的64文件联合通过2,245个
+  唯一节点，零fail/error/skip、rawrc0、84.1959685832262秒；旧2,150项全部包含。
+  2,376源文件pre/post与Git/archive的bytes/size/exec bit一致，collection/JUnit
+  精确覆盖经独审。原XML SHA为
+  `77b729c5c1a2e90faeabe9ac882d6205c04c7a51b759e9fa41bb4d725a2e2178`。
+  材料在主区ignored `release-closeout-20261025/cleanup-final-union-xnbjix5z/`，
+  独审在`cleanup-union-independent-a6g2b3f0/`；不改绑为后继文档提交的执行。
+- 同一head唯一5090gpu mixed仍失败：原600秒outer control终止，rawrc=-15、
+  timed_out=true、600.0231660259888秒，stdout/stderr各0字节，无JUnit或terminal
+  origins。2,376文件/2,667entries前后与archive一致。39项独立收证复核通过，
+  仅确认失败材料完整；SSH rc0只代表收证完成。0retry，不重跑该source，不放宽预算。
+  原始材料`brs-mixed-fa37b159-yp_w9q0x/`，独审`fa37-mixed-independent-qrzd2z55/`。
+  无原numeric PID/PGID观察，不能证明整个进程组退出或具体child/卡点。
+- 清理EOF修复仍是已通过focused/联合的独立逻辑修复，不能称已解决mixed。
+  现有whole-case profile中flow wrapper仅历史累计14.303秒，不能据其局部46%
+  改善推定能救回600秒预算。下一步先核主要JSON/runtime-tree/owner-history重复边，
+  不继续逐个小热点盲改后重复mixed；所有fresh SQL/FS/source/control门保持。
+- PR189仍为717head，不为了文档取消其自然CI。最新一次33-job快照为22success/
+  11in_progress/0failure；不是终态。fa37已推独立备份ref，当前不可合main或关PR188。
+- P1已补[packaging25.0候选制品审查](specs/191-python-worker-adapter/shinka-packaging-dependency-artifact-review-20261026.md)：
+  两件制品、全部成员/modes/RECORD/metadata/许可证经独审；保留原stdout索引不匹配
+  及更正后的独立终态索引，不重下载或重跑helper。flit_core>=3.3未选，动态loader/
+  ctypes探测路径未执行；不关闭完整依赖/runtime/真实Shinka接入，production/online仍false。
+
 ## 当前修复：清理截止时刻的一次 EOF 观察
 
 - 精确 `c27e2c97` 的58文件联合实际2,150项：2,149通过、1失败，rawrc1，
@@ -18,7 +44,7 @@
   ignored证据：`cleanup-deadline-old-product-reap-fake-8g44nww4/`、
   `cleanup-deadline-candidate-fake-e5t2lik4/`、`cleanup-focused-5vyd3lni/`、
   `cleanup-eof-independent-opxccas5/review.json`，均在主区
-  `release-closeout-20261025/`。新精确head仍需联合/Linux/完整CI，不可合main。
+  `release-closeout-20261025/`。该slice的后继fa37验收结果见顶部，当前仍不可合main。
 
 ## 当前后继：flow 标量校验与 PyYAML 候选
 
@@ -30,7 +56,7 @@
   nested validator入口2,402→642；九组交替计时的full-payload median约快46.07%，
   仅局部诊断，不外推mixed。详见
   [窄规格](specs/191-python-worker-adapter/flow-payload-scalar-validation.md)。
-  最终集成source的联合、Linux mixed及CI仍须完成；下面717失败保持。
+  后继集成联合已完成，fa37 Linux与CI边界见顶部；下面717失败保持。
 - file-pin parser快捷构造候选已停止：不完整的双guard+clone中位20.62µs，比原
   parse16.05µs慢28.5%；完整漂移边界尚未证明，保留原两次校验。只留下
   [deferred记录](specs/191-python-worker-adapter/file-pin-parser-local-reuse.md)。

@@ -338,6 +338,12 @@
 - [ ] Independently audit runtime inventory, source/resource/native-library
   closure, interpreter identity, ELF/static profile, broker journal and final
   descriptor. Preserve first failure evidence.
+- [x] Observe the explicitly selected packaging25.0 wheel/sdist candidate under
+  [its bounded artifact review](shinka-packaging-dependency-artifact-review-20261026.md).
+  Retain complete member/mode/RECORD/metadata/license/source evidence and the
+  original pre-final-stdout index mismatch plus a separate terminal index.
+  This does not close the parent full-closure task: flit_core>=3.3 is unselected,
+  dynamic loader/ctypes paths are unexecuted, and the runtime remains unaccepted.
 
 ## Explicitly P2 / out of scope
 
@@ -422,5 +428,8 @@
   release; it was not part of the 16-case old-product baseline.
 - [x] Include the original 5 ms result tuple in diagnostics and add the 17-case
   CI gate; do not alter its budget or expected status.
-- [ ] Accept the new integrated source's union, Linux mixed and complete CI;
-  fake reproduction does not identify the original c27 failure's cause.
+- [x] Accept fa37's integrated union: 2,245 unique cases, zero fail/error/skip;
+  original c27 failed evidence and unknown actual cause remain preserved.
+- [ ] Accept Linux mixed and complete CI. The sole fa37 Linux invocation still
+  timed out at600.023166 seconds with rawrc-15 and no JUnit/terminal origins;
+  do not rerun that source or enlarge its original600-second budget.
