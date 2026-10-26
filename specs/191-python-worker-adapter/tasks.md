@@ -1,5 +1,19 @@
 # Tasks
 
+## Bounded Linux process accounting diagnostic (2026-10-26)
+
+- [x] Specify and implement the standalone single-PID numeric observer without
+  changing product execution, original acceptance runners or budgets. Preserve
+  baseline-only identity and leader/thread-group accounting limits; see
+  [diagnostic contract](linux-process-accounting-diagnostic.md).
+- [x] Pass 162 synthetic cases, focused Ruff/compileall/diff checks and independent
+  static review, including short reads, PID-path replacement and CLI privacy.
+- [ ] Bind a future explicitly separate diagnostic launcher to its own known PID
+  and starttime and observe the remaining mixed cost. Do not retry failed-source
+  acceptance merely to seek a pass or infer causality from the host load snapshot.
+- [ ] Fix the actual mixed bottleneck with preserved fresh observation gates and
+  complete the resulting source's own Linux/CI merge acceptance.
+
 ## Ready-capsule scalar validation continuation
 
 - [x] Specify the exact ordered scalar walk and preserve node/depth/type bounds,

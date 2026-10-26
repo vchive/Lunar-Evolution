@@ -1,12 +1,29 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+本轮补齐独立[Linux单PID诊断工具](../specs/191-python-worker-adapter/linux-process-accounting-diagnostic.md)：
+白名单计数、身份前后核验、有界采样和私密create-only输出，162项synthetic测试与
+静态独审通过。它不运行任务，也不能据leader计数推定整个worker树；未观察活proc，
+未修改验收runner或预算，尚未形成真实mixed因果结论。
+
+717的[CI40271759811](https://github.com/vchive/Lunar-Evolution/actions/runs/40271759811)
+已最终30success/3failure，均为`three-child-mixed`。3.11/3.12在约601秒报rejection
+provenance allowance耗尽，3.13在604.258秒报ready-service queue超时；均附worker
+attempt unknown。33ZIP/264XML完整并经双重离线复核；三个原始job-log下载均传输
+超时，只保留partial，不称完整。最后错误栈不能确定child序号或原始成因。
+
+剩余P0是定位并修复真实mixed瓶颈、完成修复source自己的Linux/CI验收后合main；
+P1仍是未验收的静态runtime custody/build、完整依赖及真实solver/生产CLI。隔离
+权限阻塞部分按用户选择保留，P2继续后置。当前开发只推备份ref，不用相同产品
+source再跑失败case寻求通过。ASCII编码分块原型更慢且语义未完整证明，fresh SQL
+只读复核也未找到安全新优化，均保留原产品，不扩大声明。
+
 最新`fa37b159`的64文件联合通过2,245项，rawrc0、零fail/error/skip、84.195969秒，
 旧2,150项全部保留；完整2,376源文件pre/post与Git/archive一致、精确节点覆盖经独审。
 其唯一5090gpu mixed仍在600秒原预算超时：rawrc=-15、600.023166秒、无stdout/
 stderr/JUnit/terminal origins。2,667entries清单前后相同、独审39项通过只确认失败
 收证，不改变测试结论。原source不重跑、预算不扩大，当前不可合main。EOF修复不能
 称解决mixed；下一步核主要JSON/runtime-tree/owner-history重复成本，保留fresh门。
-PR189的717 CI最近快照28success/5in_progress，尚无终态；fa37已推备份ref。
+PR189的717 CI旧快照已由顶部终态取代；fa37已推备份ref，仍不可合main。
 5090gpu一次资源快照host loadavg199.8/395.06/419.1、128逻辑CPU、可见quota最小
 64CPU，未发现带已知mixed-root标记的残留worker；权限/无标记归属仍有限，不能推定
 超时因果。下轮需区分CPU与调度/IO等待；不重跑旧source争取通过。相邻to_json复用及
@@ -35,7 +52,7 @@ PR189精确`717049b7`的唯一5090gpu mixed仍失败：原600秒outer control终
 rawrc=-15、600.032836秒、stdout/stderr为空，无JUnit/terminal origins。2,370源文件
 及完整归档entries前后相同，独立收证复核通过，不改变失败。原source不重跑，预算
 不扩大。[CI40271759811](https://github.com/vchive/Lunar-Evolution/actions/runs/40271759811)
-继续自然运行；当前不可合main。文档后继仅推备份，避免取消这轮CI。
+已终态失败（见顶部）；当前不可合main。后继仅推备份，不因纯诊断工具触发同产品重跑。
 serial测试自定义临时目录，`--basetemp`不代表实际fixture位置；停止后的候选目录
 只作有归属限制的只读调查。切换tmpfs不能覆盖原磁盘环境失败。
 候选DB副本保留child2 running/无结果，55模块source聚合与717相容；这不构成原执行

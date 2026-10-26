@@ -1,5 +1,43 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 最新开发：有界 Linux 诊断工具，717 CI 已终态失败
+
+- 新增独立开发工具`tools/linux_process_accounting.py`，只观察调用者指定的同UID
+  单PID；held no-follow proc目录、前后PID/starttime/owner检查，四类文件逐一有界。
+  仅输出白名单数值与固定状态，缺失值为null；不读取argv/env、不发现子进程、不
+  启动或终止任务。线程组CPU与leader调度/切换计数明确分开，不能据后者推定全部
+  worker等待。单次采样截止是cooperative，不是强制中断系统调用。
+- 162项synthetic测试全部通过、零fail/error/skip；Ruff、compileall、diff check
+  和独立静态审查通过。short-read累计limit+1、PID路径替换、身份漂移、私密错误
+  输出和create-only0600均有覆盖。原工具SHA为
+  `71d51f9eccbcca1eb8bbca24926f7cc895f35aa78cd87d05110e5f65a2e3ace9`，
+  详见[窄规格](specs/191-python-worker-adapter/linux-process-accounting-diagnostic.md)。
+  主区ignored证据`linux-accounting-synthetic-final-pfvqgymh/`，root离线复核
+  `linux-accounting-root-review-tjq93gol/`。未用活proc、SSH或重跑mixed验证该工具。
+- 精确717 head的[CI40271759811](https://github.com/vchive/Lunar-Evolution/actions/runs/40271759811)
+  已最终30success/3failure，三版均仅`three-child-mixed`失败。3.11/3.12分别
+  600.993/601.462秒报`rsi_brs_rejection_provenance_allowance_exhausted`；3.13
+  604.258秒报`rsi_brs_rejection_ready_service_queue_timeout`。三者均附
+  `rsi_native_gateway_attempt_unknown`；最后栈不能证明child序号或最初成因。
+- 33份原ZIP/264份XML及ZIP内pytest日志完整保全，独审17项通过，root另九项
+  ZIP/server digest/CRC/tree/XML复核通过；三版current+heavy各21,090节点精确
+  覆盖，不将重复focused/history数量相加。原始job-log三个请求均300秒传输超时
+  rc124，只保留partial和request receipt，0/3完整，不重试或冒称完整。
+  证据`pr189-run40271759811-terminal-d9jw54rc/`，独审
+  `pr189-run40271759811-independent-zv8kdr1q/closure-summary.json`的SHA为
+  `3bf4f7982025b1b5ae86d3e1e4104a03529a4d595903890528796ac8d1378256`；
+  root复核`pr189-717-root-offline-mszh83yt/`。均在主区ignored
+  `release-closeout-20261025/`；保全通过不改变CI失败。
+- ASCII分块编码纯内存候选已停止：五个threshold的九组交替局部计时均慢约
+  6.36%–9.45%；14项结果相同并非完整等价证明，不修改产品。fresh SQL历史遍历
+  的只读复核也未发现可安全减少的decode；第二次SELECT后的decode仍保留。
+  原型在`ascii-canonical-prototype-euk9olrf/`，只读报告在
+  `fresh-row-walk-static-review-sfpgohsq/`，无新whole-case或性能改善声明。
+- P0仍需定位并修复真实mixed成本，保留所有fresh观察门，再完成新产品source的
+  Linux/CI验收；不重复失败source争取通过、不放宽600秒预算。当前只推备份ref，
+  PR189仍不可合main，PR188不能提前关闭。真实static custody/build和solver runtime
+  仍开放；用户已选择先做不受隔离权限阻塞的部分。production/online继续false。
+
 ## 最新验收：fa37 联合通过，Linux mixed 仍超时
 
 - 精确 `fa37b159d59d75f56f8845ba49a26412d9802e71` 的64文件联合通过2,245个
@@ -19,8 +57,8 @@
   现有whole-case profile中flow wrapper仅历史累计14.303秒，不能据其局部46%
   改善推定能救回600秒预算。下一步先核主要JSON/runtime-tree/owner-history重复边，
   不继续逐个小热点盲改后重复mixed；所有fresh SQL/FS/source/control门保持。
-- PR189仍为717head，不为了文档取消其自然CI。最新一次33-job快照为28success/
-  5in_progress/0failure；不是终态。fa37已推独立备份ref，当前不可合main或关PR188。
+- PR189仍为717head，原28success/5in_progress快照已被顶部自然终态取代；没有
+  为文档取消CI。fa37已推独立备份ref，当前不可合main或关PR188。
 - 一次只读资源观察未发现明确属于7个已证明mixed目录的本UID进程；13个本UID
   cmdline可见，cwd/maps各有4个权限拒绝，不能排除无可见root标记的worker。
   host loadavg为199.8/395.06/419.1、128逻辑CPU，可见祖先quota最小64CPU、另
@@ -76,7 +114,7 @@
   目标兼容、LibYAML来源、setuptools/Cython及完整build/SDK closure仍开放，见
   [候选审查](specs/191-python-worker-adapter/shinka-pyyaml-dependency-artifact-review-20261026.md)。
 
-## 最新结果：717 Linux mixed 仍失败，CI 自然运行中
+## 原717 Linux mixed失败与当时的CI快照（终态见顶部）
 
 - PR189 head `717049b7d825d69928baacc7f86863292e58f24c` 的唯一5090gpu mixed
   在原600秒outer control终止：rawrc=-15、timed_out=true、600.0328363918234秒，
