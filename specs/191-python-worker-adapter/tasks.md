@@ -394,3 +394,16 @@
   `../193-static-python-rsi-launch/historical-evidence-audit-20261025.md`.
 - [ ] Separately define and accept an RSI-capable static installation asset/profile;
   the current argc-one/fixed-main fixture cannot consume native RSI marker inputs.
+
+## Flow payload validation performance
+
+- [x] Preserve the existing exact scalar, depth, live container iteration and
+  canonical JSON boundary while removing recursive calls for scalar children;
+  see [narrow contract](flow-payload-scalar-validation.md).
+- [x] Run original-product boundary cases, candidate focused cases and an
+  independent actual-function differential review; retain local timing limits.
+- [ ] Accept the final integrated source's own Linux mixed and complete CI before
+  merging; the earlier 717 Linux timeout remains a failure.
+- [x] Defer [file-pin constructor reuse](file-pin-parser-local-reuse.md): the
+  incomplete guard prototype is slower than the original parser, so retain
+  both existing validations without adding a new guard architecture.

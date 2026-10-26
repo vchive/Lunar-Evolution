@@ -1681,7 +1681,7 @@ class RSILearningController:
             kind = type(value)
             if depth > 48:
                 raise RSILearningError("rsi_python_admission_flow_state_invalid")
-            if value is None or any(kind is scalar for scalar in (str, bool, int, float)):
+            if value is None or kind is str or kind is bool or kind is int or kind is float:
                 return
             if kind is dict:
                 if any(type(key) is not str for key in value):
@@ -1692,7 +1692,14 @@ class RSILearningController:
             else:
                 raise RSILearningError("rsi_python_admission_flow_state_invalid")
             for child in children:
-                validate(child, depth + 1)
+                child_kind = type(child)
+                child_depth = depth + 1
+                if child_depth > 48:
+                    raise RSILearningError("rsi_python_admission_flow_state_invalid")
+                if (child is None or child_kind is str or child_kind is bool
+                        or child_kind is int or child_kind is float):
+                    continue
+                validate(child, child_depth)
 
         if type(state) is not dict:
             raise RSILearningError("rsi_python_admission_flow_state_invalid")
