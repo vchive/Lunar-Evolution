@@ -1,5 +1,27 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 最新事实：1e6 CI 已终态，mixed 合并门仍开放
+
+- PR189 精确 head `1e6f10f804495a3c1e8f41fc3f04968f01c11d02` 的
+  [CI40257278143](https://github.com/vchive/Lunar-Evolution/actions/runs/40257278143)
+  最终30success/3failure；失败仅三版Python的current-3，同为
+  `test_natural_reserved_children_complete_in_original_order[three-child-mixed]`。
+- 三份完整原始log与XML显示不同mailbox观察位置：3.11在`response_generated`的
+  第二次observe、3.12在`transport_observed`的第二次observe进入
+  `_before_control_live`，分别报600.590/600.141秒的`solve_wall_timeout`；3.13在
+  `response_generated`的第一次observe、末尾`_rejection_committed`报
+  `rejection_control_expired`，不能区分monotonic control或wall plan deadline。
+  三者均附`rsi_native_gateway_attempt_unknown`；不能推定具体child序号或同一栈。
+- 33/33原始ZIP全部保全，root离线独审12/12通过：身份、server SHA/size、CRC、
+  provenance/Git merge/tree/parents及XML实际/声明数量一致。主区ignored材料为
+  `release-closeout-20261025/pr189-run40257278143-terminal-bo0inltm/`；独审汇总为
+  `pr189-run40257278143-offline-review-sryp3kpz/summary.json`，SHA为
+  `f646ef901f1600f47502d587882e183be039c369a892cc699a3ba579ecf17789`。
+  这不扩大为不可变消费来源证明，也不改变该CI失败结论。
+- 独立archive的whole-case标准profile诊断正在进行，不替代CI或mixed验收。
+  后继source-whitespace窄修改的177项相关测试及独审已通过；仍不能宣称修复mixed。
+  本节与下方历史结果分别绑定各自source；当前仍不可合main，不放宽原600秒预算。
+
 ## 当前后继：单次 prefix 解析复用已验证，mixed 门仍开放
 
 - C1/C2 transition 只在本次调用栈内复用新解析的 prefix facts，由两次/三次解析

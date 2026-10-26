@@ -1,5 +1,19 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+PR189 精确head `1e6f10f804495a3c1e8f41fc3f04968f01c11d02` 的
+[CI40257278143](https://github.com/vchive/Lunar-Evolution/actions/runs/40257278143)
+已最终30success/3failure；三版current-3仅同一个`three-child-mixed`失败。
+3.11在`response_generated`第二次mailbox observe、3.12在`transport_observed`
+第二次observe的`_before_control_live`报`solve_wall_timeout`；3.13在
+`response_generated`第一次observe末尾的`_rejection_committed`报control过期，
+无法区分monotonic control或wall plan deadline，也不能推定child序号或同一栈。
+33份原始ZIP及三份完整失败log已保全；root离线独审12/12通过，汇总位于主区ignored
+`release-closeout-20261025/pr189-run40257278143-offline-review-sryp3kpz/summary.json`，
+SHA为`f646ef901f1600f47502d587882e183be039c369a892cc699a3ba579ecf17789`。
+保全通过不改变CI失败结论。独立archive的whole-case标准profile诊断正在进行；
+source-whitespace窄修改的177项相关测试及独审已通过，均不替代新source的mixed/CI
+验收，不宣称已修复mixed。P0合并门仍开放，原600秒预算不变；下方历史按原source保留。
+
 后继C1/C2操作内prefix解析复用已通过75项focused、381项相关联合和552项
 原3799差分oracle，独立审查无slice阻断；新helper的9项policy drift探针全部拒绝。
 每次transition解析由2/3次降为1次，跨调用仍fresh，不改原SQL/FS/policy/预算门。

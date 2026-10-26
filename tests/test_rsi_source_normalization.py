@@ -18,6 +18,9 @@ from lunar_evolution import rsi_identity as identity
     "\n    def f():\n        pass\n", "\tdef f():\n\t\tpass\n",
     "# comment\n    block\n \t\n", "\r\n    value\r\n \t\r\n",
     "\ufeffdef f():\n    pass\n", "\u2003value\n\tline\n", "x\n \t",
+    "x\n \n", "x\n\t\n", "x\n \t\n", "x\n\t \n", "x\n ", "x\n\t",
+    "x \nbody\n", "x\t\nbody\n", "x\n \r\n", "x\n\t\r\n",
+    "x\n\v\n", "x\n\f\n", "x\n\u0085\n", "x\n\u2028\n",
 ])
 def test_normalization_matches_standard_library_for_line_boundaries(source):
     assert identity._dedent_source(source) == textwrap.dedent(source)

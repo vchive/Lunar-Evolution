@@ -467,6 +467,11 @@ def _dedent_source(source: str) -> str:
             and textwrap.dedent is dedent and dedent.__code__ is code
             and textwrap._whitespace_only_re is whitespace
             and textwrap._leading_whitespace_re is leading):
+        # A space/tab-only line must end at LF or at the end of the string.
+        # Most extracted source has neither trailing whitespace nor such a
+        # line, so two native substring scans can avoid the regex walk.
+        if source[-1] not in " \t" and " \n" not in source and "\t\n" not in source:
+            return source
         return whitespace.sub("", source)
     return textwrap.dedent(source)
 
