@@ -1,5 +1,13 @@
 ## 2026-10-26 当前状态与剩余优先级
 
+当前P0是新source验收：`c27e2c97`的2,150项联合有1项5ms超时断言失败，
+原error/exit_code未捕获，原因未知；2,374源文件前后相同，离线覆盖独审通过不改变失败。
+旧联合不重跑、c27 Linux准备保持HOLD。另行fake确认cleanup截止前未消费ready EOF
+的误判缺口，后继仅一次`select(0.0)` EOF观察，不延长等待、追加capture或放宽group
+证明；最终17项fake及110项disjoint focused全过并经独审。原5ms预算/期望保持，
+诊断增加结果tuple。新精确source的union/Linux/CI仍须分别完成，当前不可合main。
+见[窄规格](../specs/191-python-worker-adapter/cleanup-deadline-eof-observation.md)。
+
 当前后继的flow payload标量直接校验保留原depth/type、live迭代、canonical和8MiB
 门：旧产品41项边界及候选205项相关联合全过，独立4,219项actual-AST差分一致。
 局部2,402 occurrences保持，递归入口降至642，full-payload median快46.07%；

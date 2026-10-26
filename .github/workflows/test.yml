@@ -70,6 +70,11 @@ jobs:
         run: |
           python -m pytest -q tests/test_rsi_ready_capsule_scalar_validation.py tests/test_rsi_producer_staging_capsule.py tests/test_rsi_ready_capsule_consumers.py tests/test_rsi_ready_capsule_staging_flow.py tests/test_rsi_flow_payload_scalar_validation.py --junitxml=.lunar-evolution/test-results/rsi-ready-capsule-scalars.xml
           python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/rsi-ready-capsule-scalars.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '203' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Fresh ready-capsule and flow scalar validation requires 203 cases and zero failures, errors or skips; every node, depth and live observation remains independent')"
+      - name: Verify bounded cleanup deadline EOF observation
+        if: ${{ matrix.role == 'focused' }}
+        run: |
+          python -m pytest -q tests/test_candidate_execution_cleanup_deadline.py --junitxml=.lunar-evolution/test-results/candidate-cleanup-deadline.xml
+          python -c "import sys, xml.etree.ElementTree as E; s = E.parse('.lunar-evolution/test-results/candidate-cleanup-deadline.xml').getroot().find('testsuite'); sys.exit(0 if s is not None and s.get('tests') == '17' and all(s.get(k) == '0' for k in ('failures', 'errors', 'skipped')) else 'Cleanup deadline EOF observation requires 17 cases and zero failures, errors or skips; no additional wait, capture or ownership relaxation')"
       - name: Verify bounded checkpoint and source caches
         if: ${{ matrix.role == 'focused' }}
         run: |

@@ -407,3 +407,20 @@
 - [x] Defer [file-pin constructor reuse](file-pin-parser-local-reuse.md): the
   incomplete guard prototype is slower than the original parser, so retain
   both existing validations without adding a new guard architecture.
+
+## Cleanup deadline EOF observation
+
+- [x] Retain the c27 integrated union failure (2,149/2,150 passed); its original
+  error and exit code were not captured, so the actual cause remains unknown.
+- [x] Demonstrate the separate EOF observation gap with fake process/clock/selector
+  tests against the old product (14 failed, two positive controls passed).
+- [x] Permit only one zero-wait EOF observation batch at an expired cleanup
+  deadline; preserve nonempty-pipe refusal, prior overflow, failed-kill and
+  tracked-group proof, release rules and existing cleanup/reap budgets.
+- [x] Pass final 17 fake cases, independent review and 110 disjoint focused
+  runner/evaluator/ownership cases. The added 17th case checks confirmed tracked
+  release; it was not part of the 16-case old-product baseline.
+- [x] Include the original 5 ms result tuple in diagnostics and add the 17-case
+  CI gate; do not alter its budget or expected status.
+- [ ] Accept the new integrated source's union, Linux mixed and complete CI;
+  fake reproduction does not identify the original c27 failure's cause.

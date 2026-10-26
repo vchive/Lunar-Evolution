@@ -1,5 +1,25 @@
 # 当前交接（2026-10-26，PR186、PR187 已合入 main）
 
+## 当前修复：清理截止时刻的一次 EOF 观察
+
+- 精确 `c27e2c97` 的58文件联合实际2,150项：2,149通过、1失败，rawrc1，
+  82.183143秒。唯一失败是原5ms候选超时断言返回`failed`，原输出未保留具体
+  error/exit_code，原因仍未知。2,374源文件前后相同；独立离线核对33项全部通过，
+  只确认覆盖和失败收证，不改变失败。旧联合不重跑，c27 Linux准备保持HOLD。
+- 另行fake确认现有进程reader在cleanup到期、尚未消费已就绪EOF时会误判；后继
+  只给一次`select(0.0)` batch，每个ready pipe至多原bounded read一次。仅EOF
+  可取消注册；非空data不capture、不增totals、不设新overflow，剩余map仍拒绝。
+  原kill失败、group退出证明、release及finally/reap规则和预算保持。
+- 旧产品16项fake基线14失败/2正对照通过；最终新增tracked-clean正对照共17项
+  在候选及独立进程全过。另有110项runner/evaluator/ownership focused全过，
+  包含原5ms预算与期望保持、补充(status,error,exit_code)诊断。窄diff独审通过；
+  这不证明原c27失败原因，也不关闭原Linux600秒mixed失败。
+- 详见[窄规格](specs/191-python-worker-adapter/cleanup-deadline-eof-observation.md)。
+  ignored证据：`cleanup-deadline-old-product-reap-fake-8g44nww4/`、
+  `cleanup-deadline-candidate-fake-e5t2lik4/`、`cleanup-focused-5vyd3lni/`、
+  `cleanup-eof-independent-opxccas5/review.json`，均在主区
+  `release-closeout-20261025/`。新精确head仍需联合/Linux/完整CI，不可合main。
+
 ## 当前后继：flow 标量校验与 PyYAML 候选
 
 - `_python_admission_flow_payload`在现有容器遍历中直接校验scalar的depth/type，

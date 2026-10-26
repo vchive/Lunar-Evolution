@@ -187,13 +187,10 @@ def _bounded_process_bytes(
                 elif process.poll() is not None:
                     exit_code = process.returncode
                     terminate()
-            if cleanup_deadline is not None and now >= cleanup_deadline:
-                if selector.get_map():
-                    cleanup_ok = False
-                break
+            cleanup_expired = cleanup_deadline is not None and now >= cleanup_deadline
             if not selector.get_map() and process.poll() is not None:
                 break
-            wait_for = 0.05
+            wait_for = 0.0 if cleanup_expired else 0.05
             if reason is None:
                 wait_for = min(wait_for, max(0.0, deadline - now))
             if cleanup_deadline is not None:
@@ -210,6 +207,9 @@ def _bounded_process_bytes(
                     except (KeyError, ValueError):
                         pass
                     continue
+                if cleanup_expired:
+                    # The final zero-wait batch can prove EOF, not capture more output.
+                    continue
                 totals[stream_name] += len(chunk)
                 if len(output[stream_name]) < capture_limit:
                     remaining = capture_limit - len(output[stream_name])
@@ -218,6 +218,10 @@ def _bounded_process_bytes(
                     overflow = True
                     reason = "overflow"
                     terminate()
+            if cleanup_expired:
+                if selector.get_map():
+                    cleanup_ok = False
+                break
     finally:
         if selector is not None:
             selector.close()

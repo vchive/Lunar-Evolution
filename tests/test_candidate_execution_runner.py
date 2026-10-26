@@ -133,4 +133,6 @@ def test_small_timeout_is_not_increased_above_admission(tmp_path: Path, monkeypa
     monkeypatch.setattr(runner, "_bounded_process", observe)
     result = run_candidate_execution(short_admission, plan=short_plan, workspace_path=workspace, input_path=inputs)
     assert timeouts == [short_admission.budget.timeout_seconds]
-    assert result.execution.status == "timed_out"
+    assert result.execution.status == "timed_out", (
+        result.execution.status, result.execution.error, result.execution.exit_code,
+    )
