@@ -54,3 +54,18 @@ See [original context and lifecycle inspection](native-lifecycle-followup.md).
 - [ ] Verify hard disconnect/account isolation on an accepted isolated target.
 
 The existing sealed-response-loss acceptance does not close these tasks.
+
+## Installed bridge and independent anchor custody continuation
+
+See [installed native anchor custody](installed-native-anchor-custody.md).
+
+- [x] Specify the original installed vault reference, independent custody and pre-gate ordering.
+- [x] Implement create-only durable independent anchor retention and fixed trusted read-only restart lookup.
+- [x] Connect an explicit original-authorized installed bridge to actual wrapper/native execution, preserving channel-v1 defaults and unknown.
+- [x] Author actual inert pre-gate custody/fresh-process recovery and failure/drift fixtures; AST/source review only.
+- [ ] Root: concentrated local/Linux focused tests, Ruff, compileall and diff checks after authors freeze.
+- [ ] Provision/accept the production runtime/account transition and independently exercise hard disconnect/guardian abnormal evidence.
+
+The explicit trusted installation API refuses missing setup and creates no new
+attestation. Software integration is not accepted production installation,
+account isolation, real solver acceptance or whole-group cleanup authority.

@@ -44,6 +44,7 @@ from . import rsi_brs_rejection_ready_service as ready_service
 from . import rsi_brs_reserved_owner as reserved_owner
 from . import rsi_brs_reserved_policy as reserved_policy
 from . import rsi_publication_lineage as lineage
+from . import rsi_store as admission_store
 from .algorithm import ALGORITHM_FAMILY_REPERTOIRES as _ORIGINAL_FAMILY_REPERTOIRES
 from .candidate_evaluation_spec import canonical_json
 from .producer_bundle_admission import parse_producer_bundle_admission_plan
@@ -98,11 +99,13 @@ _ORIGINAL_PROVENANCE_CODES = tuple(
         (reserved_policy, ("_build_reserved_brs_policy", "_build_reserved_brs_policy_entry",
                            "reserved_brs_policy_projection")),
         (runtime_tree, ("_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current")),
+        (admission_store, ("_staging_identity_helpers_current",)),
     ) for name in names
 )
 _ORIGINAL_RUNTIME_TREE_JSON_LIMITS = tuple((name, getattr(runtime_tree, name)) for name in (
     "_JSON_FAST_MAX_DEPTH", "_JSON_FAST_MAX_NODES", "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES",
 ))
+_ORIGINAL_STAGING_IDENTITY_HELPERS = admission_store._STAGING_IDENTITY_HELPERS
 _ORIGINAL_READY_POLICY_CLOSURE = (
     ready_policy.rejection_ready_capture_policy.__closure__,
     tuple(cell.cell_contents for cell in ready_policy.rejection_ready_capture_policy.__closure__),
@@ -463,6 +466,8 @@ def _policy() -> dict[str, Any]:
            or getattr(runtime_tree, name) != original
            for name, original in _ORIGINAL_RUNTIME_TREE_JSON_LIMITS):
         _fail("runtime_tree_json_policy_drift")
+    if admission_store._STAGING_IDENTITY_HELPERS is not _ORIGINAL_STAGING_IDENTITY_HELPERS:
+        _fail("staging_identity_policy_drift")
     ready_closure, ready_captures = _ORIGINAL_READY_POLICY_CLOSURE
     try:
         if (ready_policy.rejection_ready_capture_policy.__closure__ is not ready_closure
@@ -742,6 +747,7 @@ def _policy() -> dict[str, Any]:
         (rsi_store.os, os), (rsi_store.stat, stat), (rsi_store.threading, threading),
         (rsi_store.threading.get_ident, get_ident), (rsi_controller.get_ident, get_ident),
         (rsi_store.canonical_json, candidate_evaluation_spec.canonical_json),
+        (admission_store, rsi_store),
         (rsi_controller.canonical_json, candidate_evaluation_spec.canonical_json),
         (lineage.canonical_json, candidate_evaluation_spec.canonical_json),
         (rejection_owner.LineageSnapshotPin, producer_bundle_lineage.LineageSnapshotPin),
@@ -925,11 +931,13 @@ def _policy() -> dict[str, Any]:
         (producer_bundle_staging.verify_native_publication_intent, producer_bundle_staging),
         *((getattr(_ORIGINAL_CONTEXT_MANAGER, name), contextlib) for name in ("__init__", "__enter__", "__exit__")),
         (rsi_store._id, rsi_store),
+        (rsi_store._staging_identity_helpers_current, rsi_store),
         (rsi_store.RSILedger.read_only_observations, contextlib),
         (rsi_store.RSILedger.read_only_observations.__wrapped__, rsi_store),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "_connect", "_checkpoint_python_references", "_checkpoint_digest", "_checkpoint_reference_rows_tx",
-            "_python_admission_row", "controller_lock_held", "_assert_controller_lock")),
+            "_python_admission_row", "controller_lock_held", "_assert_controller_lock",
+            "_validate_python_producer_staging_history_tx")),
         (rsi_controller.RSILearningController._python_admission_brs_observations, contextlib),
         (rsi_controller.RSILearningController._python_admission_brs_observations.__wrapped__, rsi_controller),
         (rsi_controller.RSILearningController._python_admission_flow_payload, rsi_controller),

@@ -13,6 +13,11 @@ import json
 import re
 from dataclasses import dataclass
 
+from lunar_evolution.static_python_fixed_live_modules import (
+    FIXED_LIVE_MODULES_PROFILE,
+    FIXED_LIVE_PRIVATE_SINK_PROFILE,
+    FIXED_LIVE_SINK_LAUNCHER_PATH,
+)
 from tools.static_python_fixture.profile import (
     ALIASES,
     CONFIG,
@@ -21,7 +26,10 @@ from tools.static_python_fixture.profile import (
     STATIC_ADDITIONS,
 )
 from tools.static_python_fixture.tables import _CORE_INITIALIZERS
-from tools.static_python_rsi_fixture.live_module_source import prepare_fixed_live_main
+from tools.static_python_rsi_fixture.live_module_source import (
+    prepare_fixed_live_main,
+    prepare_fixed_live_sink_launcher,
+)
 
 MAX_MODULES = 256
 MAX_SOURCE_FILES = 16384
@@ -722,11 +730,13 @@ def prepare_fixed_runtime_closure(
     The independently pinned CPython map must be the reviewed, patched source
     tree. SQLite is an explicit extra source input, never host libsqlite3. The
     returned new profile is not accepted by legacy nine-header DTOs implicitly.
-    The optional live-module profile embeds a callable only; it does not add a
-    sink, invoke that callable or change the solver/marker reply protocol.
+    The v1 live-module profile embeds a callable only. The separate private
+    sink profile additionally selects its pinned C launcher; no default changes.
     """
     if (live_modules_profile is not None
-            and (type(live_modules_profile) is not str or live_modules_profile != "fixed-live-modules-v1")):
+            and (type(live_modules_profile) is not str or live_modules_profile not in {
+                FIXED_LIVE_MODULES_PROFILE, FIXED_LIVE_PRIVATE_SINK_PROFILE,
+            })):
         _fail("live_module_profile_invalid")
     cpython = _pinned_sources(cpython_sources, expected_cpython_inventory_sha256)
     modules = _producer(solver, producer_files, producer_manifest)
@@ -863,6 +873,8 @@ def prepare_fixed_runtime_closure(
         )
         generated["runtime/frozen_main.py"] = launcher
         selected["_lunar_static_main"] = ("runtime/frozen_main.py", launcher)
+        if live_modules_profile == FIXED_LIVE_PRIVATE_SINK_PROFILE:
+            generated[FIXED_LIVE_SINK_LAUNCHER_PATH] = prepare_fixed_live_sink_launcher()
     frozen = []
     symbols = set()
     for name, (path, raw) in sorted(selected.items()):

@@ -17,6 +17,7 @@ from types import MappingProxyType
 from typing import Any, NoReturn
 
 from . import producer_python_runtime_tree as runtime_tree
+from . import rsi_store as admission_store
 from .algorithm import (
     AlgorithmProblemContract,
     ConstraintSpec,
@@ -64,6 +65,7 @@ from .rsi_native_plan import NativeRSIExecutionPlan
 from .rsi_native_scheduler import NativeRSISchedulerContext, _assert_plan_binding
 
 PYTHON_RSI_SCHEDULER_INPUT_PROTOCOL = "lunar-python-rsi-scheduler-inputs-v1"
+_ORIGINAL_STAGING_IDENTITY_HELPERS = admission_store._STAGING_IDENTITY_HELPERS
 _DTO_TYPES = (
     AlgorithmProblemContract, ConstraintSpec, EvolutionSpec, InputSpec, MetricSpec,
     ObjectiveSpec, OutputSpec, SourceCheckSpec, BundleGroup, ProducerLaunchIntent,
@@ -537,6 +539,8 @@ def _code_dependencies() -> dict[str, str]:
     seam's helpers plus the native plan/input and Python runtime/binding boundaries it uses;
     it is a local code-drift identity, not package or interpreter authentication.
     """
+    if admission_store._STAGING_IDENTITY_HELPERS is not _ORIGINAL_STAGING_IDENTITY_HELPERS:
+        _fail("staging_identity_policy_drift")
     components = {
         "dependency_projection": _code_dependencies,
         "error": PythonRSISchedulerInputError,
@@ -563,6 +567,8 @@ def _code_dependencies() -> dict[str, str]:
         "python_sidecar_pin_validator": _validated_sidecar_pin,
         "python_checkpoint_binding": PythonProducerCheckpointBinding,
         "candidate_selector": select_native_candidate,
+        "staging_identity_guard": admission_store._staging_identity_helpers_current,
+        "staging_history_validator": admission_store.RSILedger._validate_python_producer_staging_history_tx,
         "canonical_json": canonical_json, "strict_json": strict_json,
     }
     limits = {

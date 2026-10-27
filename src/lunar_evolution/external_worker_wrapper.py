@@ -317,8 +317,15 @@ def _publish(
             os.close(fd)
 
 
-def handle_worker_request(raw: bytes, config: WorkerWrapperConfig) -> bytes:
+def handle_worker_request(
+    raw: bytes, config: WorkerWrapperConfig, *, native_bridge: object | None = None,
+) -> bytes:
     """Run once or read an existing result; no channel supplies commands or keys."""
+    if native_bridge is not None:
+        from .external_worker_native_bridge import WorkerInstalledNativeBridge
+        if type(native_bridge) is not WorkerInstalledNativeBridge:
+            raise WorkerWrapperError("worker_wrapper_installed_bridge_invalid")
+        native_bridge.check_wrapper(config)
     value = validate_worker_request(raw)
     if any(value[name] != getattr(config.key, name) for name in _IDENTITY) or value["profile_sha256"] != config.profile_sha256:
         raise WorkerWrapperError("worker_wrapper_identity_mismatch")
@@ -328,12 +335,25 @@ def handle_worker_request(raw: bytes, config: WorkerWrapperConfig) -> bytes:
     name = hashlib.sha256(value["context"]["episode_id"].encode()).hexdigest()
     with _private_directory(config.state_directory) as chain:
         try:
-            return _handle_in_state(raw, value, intent, name, config, chain)
+            return _handle_in_state(raw, value, intent, name, config, chain, native_bridge)
         except OSError:
             raise WorkerWrapperError("worker_wrapper_state_io_failed") from None
 
 
-def _handle_in_state(raw, value, intent, name, config, chain):
+def handle_installed_native_worker_request(
+    raw: bytes, config: WorkerWrapperConfig, *, native_bridge: object | None = None,
+) -> bytes:
+    """Explicit trusted installed seam; absent setup never falls back to producer argv.
+
+    The public CLI has no native/factory selector. Installation code supplies the
+    original authorized bridge; channel-v1 does not carry launch authorization.
+    """
+    if native_bridge is None:
+        raise WorkerWrapperError("worker_wrapper_installed_bridge_unconfigured")
+    return handle_worker_request(raw, config, native_bridge=native_bridge)
+
+
+def _handle_in_state(raw, value, intent, name, config, chain, native_bridge=None):
     state = chain.fd
     job = None
     try:
@@ -379,12 +399,37 @@ def _handle_in_state(raw, value, intent, name, config, chain):
             parse_worker_response(response)
             check()
             return response
-        _publish(job, "intent.json", intent)
+        if native_bridge is None:
+            _publish(job, "intent.json", intent)
+            intent_pin = None
+        else:
+            intent_pin = _publish(job, "intent.json", intent, capture_identity=True)
         check()
+        native_started_at = time.monotonic() if native_bridge is not None else None
         remaining = min(value["timeout_seconds"], value["deadline_unix"] - time.time(),
                         config.maximum_runtime_seconds)
         if remaining <= 0:
             return worker_response("unknown")
+        if native_bridge is not None:
+            episode = config.state_directory / name
+            episode_chain = DirectoryChain(episode, "worker_wrapper_state_directory_changed")
+            try:
+                held = os.fstat(episode_chain.fd)
+                if (held.st_dev, held.st_ino) != (original.st_dev, original.st_ino):
+                    raise WorkerWrapperError("worker_wrapper_state_directory_changed")
+                check()
+                native_bridge.run_original(
+                    raw, original_episode_chain=episode_chain, original_worker_intent=intent,
+                    original_worker_intent_identity=intent_pin, episode_directory=episode,
+                    control=SolveExecutionControl(remaining, started_at=native_started_at),
+                )
+                episode_chain.check()
+                check()
+                # Native process-only evidence is not a solver receipt. Recovery
+                # uses the independently retained installed anchor, not this wire.
+                return worker_response("unknown")
+            finally:
+                episode_chain.close()
         # The configured command is a trusted native producer launcher, never a wire argv.
         result = run_worker_channel(
             config.producer_argv, raw, control=SolveExecutionControl(remaining),

@@ -29,8 +29,10 @@ from .native_bootstrap import (
     LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
     NativeBootstrapArtifact,
     NativeBootstrapError,
+    NativeBootstrapPrivateSink,
     encode_native_bootstrap_control,
     encode_native_bootstrap_control_v2,
+    encode_native_bootstrap_control_v3,
     load_native_bootstrap_artifact,
     native_bootstrap_command,
 )
@@ -39,6 +41,11 @@ from .native_deadline_binding import (
     deadline_binding_digest,
     persist_native_deadline_binding,
     verify_native_deadline_binding,
+)
+from .native_fixed_live_sink import (
+    FixedPythonLiveSinkRequest,
+    NativeFixedLiveSinkCapture,
+    NativeFixedLiveSinkError,
 )
 from .native_grant_inputs import NativeGrantInputError, original_native_grant_inputs
 from .native_guardian import NativeGuardianError, NativeGuardianOwner, start_native_guardian
@@ -108,6 +115,7 @@ from .rsi_native_inputs import (
     NativeRSIInputError,
     validate_native_rsi_launch_inputs,
 )
+from .static_python_fixed_live_modules import FixedPythonBoundLiveModules
 from .trusted_bootstrap_binding import (
     TrustedBootstrapBindingError,
     _validate_original_linux_executable_pair,
@@ -205,6 +213,7 @@ class NativeTrustedAttemptObservation:
     stream_capture_sha256: str | None = None
     stream_observation: NativeTrustedStreamObservation | None = None
     broker_observation: ProducerBrokerObservation | None = None
+    live_modules_observation: FixedPythonBoundLiveModules | None = None
 
 
 def _terminal_receipt(
@@ -754,6 +763,7 @@ def run_native_trusted_attempt(
     cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
     registered_observer: Callable[[NativeTrustedRegisteredContext], None] | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
 
@@ -764,6 +774,15 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_admission_invalid")
     if not isinstance(artifact, NativeBootstrapArtifact):
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
+    if live_modules_sink is not None:
+        if (type(live_modules_sink) is not FixedPythonLiveSinkRequest
+                or artifact.descriptor.platform_execution_mode != "linux-fd-bound"
+                or len(intent.argv) != 3 or intent.argv[1] != NATIVE_RSI_INPUT_MARKER):
+            raise NativeTrustedAttemptError("native_fixed_live_sink_request_invalid")
+        try:
+            live_modules_sink.validate(target_sha256=intent.executable_sha256)
+        except NativeFixedLiveSinkError as exc:
+            raise NativeTrustedAttemptError(exc.code) from exc
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
@@ -880,6 +899,8 @@ def run_native_trusted_attempt(
         stream_observation: NativeTrustedStreamObservation | None = None
         stream_capture: NativeTrustedStreamCapture | None = None
         stream_capture_failed = False
+        live_sink_capture: NativeFixedLiveSinkCapture | None = None
+        live_modules_observation: FixedPythonBoundLiveModules | None = None
         handoff_sha256: str | None = None
         claimed = False
         cancellation_requested = False
@@ -944,6 +965,19 @@ def run_native_trusted_attempt(
                     guardian_fds = (guardian_finish_write, guardian_ack_read)
                     fds.update((guardian_finish_read, guardian_finish_write, guardian_ack_read, guardian_ack_write))
                 broker_child_fds: tuple[int, int] = ()
+                sink_child_fds: tuple[int, ...] = ()
+                private_sink: NativeBootstrapPrivateSink | None = None
+                sink_image_identity: tuple[int, int] | None = None
+                if live_modules_sink is not None:
+                    sink_read, sink_write = os.pipe()
+                    fds.update((sink_read, sink_write))
+                    sink_child_fds = (sink_write,)
+                    pipe_identity = os.fstat(sink_write)
+                    target_identity = os.fstat(pair.target.pass_fd)
+                    sink_image_identity = (target_identity.st_dev, target_identity.st_ino)
+                    private_sink = NativeBootstrapPrivateSink(
+                        sink_write, pipe_identity.st_dev, pipe_identity.st_ino, native_deadline_ns,
+                    )
                 broker_env = {"PATH": os.defpath, "LANG": "C"}
                 if broker_config is not None:
                     request_read, request_write = os.pipe()
@@ -979,12 +1013,17 @@ def run_native_trusted_attempt(
                     _validate_original_linux_executable_pair(pair)
                 if grant_owner is not None:
                     _check_original_attempt_grants(grant_owner, inputs)
-                    control = encode_native_bootstrap_control_v2(
+                    encoder = (encode_native_bootstrap_control_v3 if private_sink is not None
+                               else encode_native_bootstrap_control_v2)
+                    sink_kwargs = {"private_sink": private_sink} if private_sink is not None else {}
+                    control = encoder(
                         launch, target_path=pair.target.executable,
                         target_argv=(pair.target.executable, *intent.argv[1:]),
                         target_cwd=working, target_fd=pair.target.pass_fd,
                         bootstrap_fd=pair.bootstrap.pass_fd, held_grants=grant_owner,
-                        reserved_fds=tuple(sorted(fds)) + pair.pass_fds + (controller_lifeline_writer,),
+                        reserved_fds=tuple(sorted(fds - set(sink_child_fds)))
+                        + pair.pass_fds + (controller_lifeline_writer,),
+                        **sink_kwargs,
                     )
                 else:
                     policy = build_producer_isolation_policy(read_paths=read_paths, write_dirs=[working, output])
@@ -1021,10 +1060,19 @@ def run_native_trusted_attempt(
                     shell=False, start_new_session=True, close_fds=True,
                     pass_fds=(control_read, gate_read, frame_write, *pair.pass_fds,
                               *broker_child_fds, *guardian_fds, lifeline_read,
+                              *sink_child_fds,
                               *(grant_owner.pass_fds if grant_owner is not None else ())),
                     cwd="/" if grant_owner is not None else str(working), env=broker_env,
                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 )
+                if private_sink is not None:
+                    os.close(sink_write)
+                    fds.remove(sink_write)
+                    live_sink_capture = NativeFixedLiveSinkCapture(
+                        sink_read, deadline=deadline, monotonic=monotonic,
+                        cancelled=lambda: _observe_cancellation(cancelled),
+                    ).start()
+                    fds.remove(sink_read)
                 check_deadline()
                 if grant_owner is not None:
                     try:
@@ -1224,6 +1272,17 @@ def run_native_trusted_attempt(
                 ):
                     raise NativeTrustedAttemptError("native_trusted_attempt_target_start_unknown")
                 target_started = True
+                if live_sink_capture is not None:
+                    raw_live_modules = live_sink_capture.finish()
+                    _remaining(deadline, monotonic, cancelled)
+                    check_deadline()
+                    assert live_modules_sink is not None and sink_image_identity is not None
+                    live_modules_observation = live_modules_sink.compare(
+                        raw_live_modules, image_device=sink_image_identity[0],
+                        image_inode=sink_image_identity[1], target_pid=started.observed_pid,
+                        manifest_sha256=intent.argv[2],
+                    )
+                    _remaining(deadline, monotonic, cancelled)
                 # Keep a small slice of the attempt budget available for the owner-checked
                 # cleanup path. This remains inside the caller deadline; it only makes a
                 # late terminal frame timeout conservative instead of entering cleanup with
@@ -1254,7 +1313,8 @@ def run_native_trusted_attempt(
                     check_deadline()
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
                 TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError, ProducerIsolationError,
-                ProducerGrantError, ProducerProcessError, OSError, subprocess.SubprocessError) as exc:
+                ProducerGrantError, ProducerProcessError, NativeFixedLiveSinkError,
+                OSError, subprocess.SubprocessError) as exc:
             if not claimed:
                 if isinstance(exc, NativeTrustedAttemptError) and exc.code in {
                     "native_trusted_attempt_deadline_write_unknown",
@@ -1337,6 +1397,13 @@ def run_native_trusted_attempt(
                         stream_capture_failed = True
                 except NativeTrustedStreamError:
                     stream_capture_failed = True
+            if live_sink_capture is not None and live_modules_observation is None:
+                live_sink_capture.cancel()
+                try:
+                    live_sink_capture.finish()
+                except NativeFixedLiveSinkError as exc:
+                    if reason == "native_trusted_attempt_terminal_receipt_missing":
+                        reason = exc.code
             if broker_thread is not None:
                 if broker_stop is not None and reason != "native_trusted_attempt_terminal_receipt_missing":
                     broker_stop.set()
@@ -1567,6 +1634,7 @@ def run_native_trusted_attempt(
             broker_observation=(broker_observation if isinstance(
                 broker_observation, ProducerBrokerObservation,
             ) else None),
+            live_modules_observation=live_modules_observation,
         )
 
 

@@ -22,6 +22,11 @@ from pathlib import Path
 from .producer_bootstrap import TrustedBootstrapDescriptor, TrustedBootstrapLaunch
 from .producer_grant_anchors import HeldProducerGrantPlan, ProducerGrantError
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 _SOURCE = Path(__file__).with_name("native_bootstrap.c")
 _MAX_BYTES = 8 * 1024 * 1024
 _MAX_PATH_BYTES = 4096
@@ -37,6 +42,37 @@ LINUX_IPC_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-ipc-control-v1"
 LINUX_INDEPENDENT_GUARDIAN_IMPLEMENTATION = "native-bootstrap-linux-independent-guardian-v1"
 LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-posix-mq-control-v1"
 LINUX_KEYRING_CONTROL_IMPLEMENTATION = "native-bootstrap-linux-keyring-control-v1"
+FIXED_LIVE_MODULES_SINK_FD = 198
+
+
+@dataclass(frozen=True, slots=True)
+class NativeBootstrapPrivateSink:
+    """Original host pipe identity, never a candidate-selected descriptor."""
+
+    fd: int
+    device: int
+    inode: int
+    deadline_monotonic_ns: int
+
+    def validate(self, *, reserved_fds: tuple[int, ...] = ()) -> None:
+        if fcntl is None:
+            _fail("native_bootstrap_private_sink_unsupported")
+        if (type(self.fd) is not int or not 2 < self.fd <= 0x7fffffff
+                or type(self.device) is not int or not 0 <= self.device < 2**64
+                or type(self.inode) is not int or not 0 < self.inode < 2**64
+                or type(self.deadline_monotonic_ns) is not int
+                or not 0 < self.deadline_monotonic_ns < 2**64
+                or self.fd in reserved_fds or FIXED_LIVE_MODULES_SINK_FD in reserved_fds):
+            _fail("native_bootstrap_private_sink_invalid")
+        try:
+            info = os.fstat(self.fd)
+            flags = fcntl.fcntl(self.fd, fcntl.F_GETFL)
+        except OSError as exc:
+            raise NativeBootstrapError("native_bootstrap_private_sink_invalid") from exc
+        if (not stat.S_ISFIFO(info.st_mode) or flags & os.O_ACCMODE != os.O_WRONLY
+                or flags & (getattr(os, "O_PATH", 0) | os.O_ASYNC)
+                or (info.st_dev, info.st_ino) != (self.device, self.inode)):
+            _fail("native_bootstrap_private_sink_invalid")
 
 
 class NativeBootstrapError(ValueError):
@@ -397,6 +433,33 @@ def encode_native_bootstrap_control_v2(
         return bytes(result)
     except ProducerGrantError as exc:
         raise NativeBootstrapError("native_bootstrap_grant_binding_invalid") from exc
+
+
+def encode_native_bootstrap_control_v3(
+    launch: TrustedBootstrapLaunch, *, target_path: str,
+    target_argv: tuple[str, ...], target_cwd: str | Path,
+    target_fd: int, bootstrap_fd: int, held_grants: HeldProducerGrantPlan,
+    private_sink: NativeBootstrapPrivateSink, reserved_fds: tuple[int, ...] = (),
+) -> bytes:
+    """Opt-in original pipe extension; omitted callers retain exact v2 bytes."""
+    if type(private_sink) is not NativeBootstrapPrivateSink or type(held_grants) is not HeldProducerGrantPlan:
+        _fail("native_bootstrap_private_sink_invalid")
+    if type(reserved_fds) is not tuple:
+        _fail("native_bootstrap_fd_invalid")
+    reserved = (*reserved_fds, target_fd, bootstrap_fd, *held_grants.pass_fds)
+    private_sink.validate(reserved_fds=reserved)
+    base = encode_native_bootstrap_control_v2(
+        launch, target_path=target_path, target_argv=target_argv, target_cwd=target_cwd,
+        target_fd=target_fd, bootstrap_fd=bootstrap_fd, held_grants=held_grants,
+        reserved_fds=(*reserved_fds, private_sink.fd, FIXED_LIVE_MODULES_SINK_FD),
+    )
+    extension = (_put_u32(private_sink.fd) + private_sink.device.to_bytes(8, "big")
+                 + private_sink.inode.to_bytes(8, "big")
+                 + private_sink.deadline_monotonic_ns.to_bytes(8, "big"))
+    if len(base) + len(extension) > 64 * 1024:
+        _fail("native_bootstrap_control_too_large")
+    private_sink.validate(reserved_fds=reserved)
+    return base[:5] + b"\x03" + base[6:] + extension
 
 
 def native_bootstrap_command(

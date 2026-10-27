@@ -1,8 +1,10 @@
 # Account isolation preflight and abnormal guardian evidence
 
-Status: minimal proposal and gap list only. No account-switch implementation,
-preflight execution, native C protocol change, durable guardian evidence writer or
-production acceptance is supplied. Review this boundary before implementation.
+Status: the installed-account read-only preflight is implemented and locally
+tested; it is not an actual account switch or active isolation acceptance. The
+installed native bridge and independent restart vault are implemented in the
+companion custody continuation. Account transition and abnormal durable guardian
+evidence remain design/software gaps; no production acceptance is supplied.
 Continue `native-lifecycle-followup.md`; do not replace the single-controller
 local CLI model or add a service/scheduler/evaluator/lease protocol.
 
@@ -109,10 +111,51 @@ Do not use a previously sealed receipt with dropped response as a substitute.
 
 ## Work split and honest completion criteria
 
-Software still open: local account-preflight implementation/tests; reviewed
-installed account transition; accepted native runtime bridge; restart resolver
-restoration protocol; independently reviewed guardian evidence protocol and
-implementation/tests. Environment still open: distinct-account provisioning,
+Software still open: reviewed installed account transition and actual access /
+runtime evidence consumers; accepted build/input custody and production CLI
+composition; independently reviewed guardian evidence protocol, surviving trusted
+persistence boundary and implementation/tests. Read-only account preflight and
+installed native bridge / independent same-boot restart-anchor restoration are
+implemented; their actual production acceptance remains separate. Environment still open: distinct-account provisioning,
 required profile privileges/kernel support, accepted isolated runtime and active
 hard-disconnect/account-access acceptance. These are separate items. None is
 closed by static pins, syntax checks or inert SSH/HMAC success.
+
+### Deadline and durability constraint
+
+A regular file is not a bounded diagnostic channel merely because the host
+preopens, preallocates or pins it. Regular-file `write`/`pwrite` and `fsync` can
+block; `O_NONBLOCK` does not establish a hard completion bound for those calls.
+Checking the original deadline before and after a call detects an overrun but
+cannot prevent it. The guardian must stop the original group before optional
+diagnostics, and an attempted write, exit status or successful signal must never
+stand in for a durable acknowledgement. At expiry there is no additional budget
+for a file flush or handshake.
+
+A single bounded nonblocking pipe write can limit submitted bytes and retries,
+but it does not provide restart-readable evidence after controller death. If the
+only reader belongs to that controller, its death also removes the receiving
+path. Even an accepted pipe frame is not a durable acknowledgement. Adding an
+observation-only pipe protocol would therefore leave the durable-evidence gap
+open while adding another descriptor ABI and validation surface; it is not part
+of this continuation.
+
+Distinguish the remaining work as follows:
+
+- **Unimplemented software:** original-context/deadline-bound sink delivery,
+  abnormal trigger and signal result/errno capture, crash/partial-write handling,
+  conservative read-only inspection and corresponding negative tests. A DTO or
+  parser alone does not implement that execution path.
+- **An unresolved design prerequisite:** a separately trusted durable receiving
+  boundary that survives controller death and can acknowledge persistence without
+  making the original guardian wait beyond its deadline or delay its group stop.
+  Its original identity, custody, lifetime and acknowledgement semantics require
+  review before choosing a protocol. No new account, privileged helper or
+  background service is introduced or authorized by this document. If persistence
+  cannot be acknowledged inside the applicable original budget, evidence remains
+  unknown; group-signal success still does not prove whole-group cleanup.
+- **Subsequent acceptance:** once that design and its software exist, real
+  disconnect, account-access, sink-failure and original-deadline cases still need
+  execution under the selected installed profile. Missing machines or privileges
+  are not the sole present blocker: the durable receiving design and its software
+  are also unfinished.

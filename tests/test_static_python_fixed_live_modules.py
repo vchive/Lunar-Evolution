@@ -430,3 +430,20 @@ def test_default_source_is_unchanged_and_opt_in_embeds_callable_without_protocol
 def test_invalid_live_source_profile_refuses_before_source_preparation(closure_inputs, value):
     with pytest.raises(closure.RuntimeClosureError, match="live_module_profile_invalid"):
         closure.prepare_fixed_runtime_closure(**closure_inputs, live_modules_profile=value)
+
+
+def test_private_sink_profile_selects_new_pinned_c_without_changing_legacy_profile(closure_inputs):
+    baseline = closure.prepare_fixed_runtime_closure(**closure_inputs)
+    collector_only = closure.prepare_fixed_runtime_closure(
+        **closure_inputs, live_modules_profile=live.FIXED_LIVE_MODULES_PROFILE,
+    )
+    selected = closure.prepare_fixed_runtime_closure(
+        **closure_inputs, live_modules_profile=live.FIXED_LIVE_PRIVATE_SINK_PROFILE,
+    )
+    assert live.FIXED_LIVE_SINK_LAUNCHER_PATH not in dict(baseline.sources)
+    assert live.FIXED_LIVE_SINK_LAUNCHER_PATH not in dict(collector_only.sources)
+    assert dict(selected.sources)["runtime/frozen_main.py"] == dict(collector_only.sources)["runtime/frozen_main.py"]
+    asset = dict(selected.sources)[live.FIXED_LIVE_SINK_LAUNCHER_PATH]
+    assert len(asset) == live.FIXED_LIVE_SINK_LAUNCHER_SOURCE_BYTES
+    assert _sha(asset) == live.FIXED_LIVE_SINK_LAUNCHER_SOURCE_SHA256
+    assert closure.prepare_fixed_runtime_closure(**closure_inputs) == baseline

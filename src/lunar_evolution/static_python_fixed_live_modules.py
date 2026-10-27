@@ -18,6 +18,10 @@ from .static_python_runtime_startup import (
 )
 
 FIXED_LIVE_MODULES_PROFILE = "fixed-live-modules-v1"
+FIXED_LIVE_PRIVATE_SINK_PROFILE = "fixed-live-modules-private-sink-v1"
+FIXED_LIVE_SINK_LAUNCHER_PATH = "runtime/launcher_live_sink.c"
+FIXED_LIVE_SINK_LAUNCHER_SOURCE_BYTES = 4552
+FIXED_LIVE_SINK_LAUNCHER_SOURCE_SHA256 = "b48a93c5f862cf9621f70ec124a012060ba8944c33ea5745be56829a51e0fb53"
 FIXED_LIVE_MODULES_SCHEMA = "lunar-static-python-fixed-live-modules-v1"
 FIXED_LIVE_COLLECTOR_SOURCE_BYTES = 11551
 FIXED_LIVE_COLLECTOR_SOURCE_SHA256 = "c209366db5706c95e749f7c112ea5d8a547b2512e61629bce049196508c1bd38"
@@ -132,6 +136,95 @@ class FixedPythonLiveModuleComparison:
     production_admission: bool = False
 
 
+def _compare_live_payload(
+    installation: profile.FixedPythonInstallation, raw: bytes, *, image: bytes,
+    runtime_main_source: bytes, expected_installation_sha256: str,
+    expected_observation_sha256: str,
+) -> tuple[profile.FixedPythonInstallation, dict, tuple[str, ...]]:
+    installed = profile._reparse(installation, expected_installation_sha256)
+    profile.verify_fixed_python_image(installed, image, expected_installation_sha256=expected_installation_sha256)
+    if (type(runtime_main_source) is not bytes
+            or not FIXED_LIVE_COLLECTOR_SOURCE_BYTES < len(runtime_main_source) <= 64 * 1024):
+        _fail("source")
+    source = next(record for record in installed.to_dict()["frozen_modules"]
+                  if record["name"] == "_lunar_static_main")["source"]
+    if source != {"path": "runtime/frozen_main.py", "size": len(runtime_main_source),
+                  "sha256": _sha(runtime_main_source)}:
+        _fail("source")
+    solver = installed.profile_version.removeprefix("fixed-").removesuffix("-v1")
+    if runtime_main_source != _compose(
+        solver, tuple(sorted(installed.frozen_names)), installed.builtin_names,
+        installed.aliases,
+        tuple(sorted(record["name"] for record in installed.to_dict()["frozen_modules"] if record["package"])),
+        runtime_main_source[-FIXED_LIVE_COLLECTOR_SOURCE_BYTES:],
+    ):
+        _fail("source")
+    if (type(raw) is not bytes or not 0 < len(raw) <= MAX_FIXED_LIVE_MODULES_BYTES
+            or not raw.endswith(b"\n") or _sha(raw) != expected_observation_sha256):
+        _fail("pin")
+    payload = profile._object(profile._json(raw[:-1], MAX_FIXED_LIVE_MODULES_BYTES), _FIELDS)
+    if (payload["schema"] != FIXED_LIVE_MODULES_SCHEMA
+            or payload["collector_profile"] != FIXED_LIVE_MODULES_PROFILE
+            or payload["profile_version"] != installed.profile_version
+            or payload["collector_source_sha256"] != FIXED_LIVE_COLLECTOR_SOURCE_SHA256
+            or payload["phase"] != "explicit-in-image-call"):
+        _fail("profile")
+    claims = profile._object(payload["claims"], {"immutable_custody_verified", "production_admission",
+                                                 "general_code_origin_protection"})
+    if any(value is not False for value in claims.values()):
+        _fail("claims")
+    if (profile._canonical(payload["flags"]) != profile._canonical(_FLAGS)
+            or payload["sys_path"] != []):
+        _fail("runtime")
+    if (payload["builtin_names"] != list(installed.builtin_names)
+            or payload["frozen_names"] != sorted(installed.frozen_names)):
+        _fail("inventory")
+    observed_image = profile._object(payload["image"], {"device", "inode", "mode", "size", "sha256"})
+    for field, minimum in (("device", 0), ("inode", 1), ("pid", 1)):
+        value = payload[field] if field == "pid" else observed_image[field]
+        if type(value) is not int or not minimum <= value < 2**63:
+            _fail("owner")
+    declared = installed.to_dict()["image"]
+    if any(observed_image[field] != declared[field] or type(observed_image[field]) is not type(declared[field])
+           for field in ("mode", "size", "sha256")):
+        _fail("image")
+    origins = {name: ("frozen", name, "FrozenImporter") for name in installed.frozen_names}
+    origins.update({name: ("built-in", name, "BuiltinImporter") for name in installed.builtin_names})
+    origins["__main__"] = ("interpreter", "__main__", "interpreter")
+    for alias, target in installed.aliases:
+        origins[alias] = origins[target]
+    packages = {record["name"] for record in installed.to_dict()["frozen_modules"] if record["package"]}
+    raw_modules = profile._vector(payload["modules"], 512)
+    bootstrap_alias = any(type(item) is dict and item.get("name") == "importlib._bootstrap" for item in raw_modules)
+    names = []
+    for module in raw_modules:
+        profile._object(module, {"name", "origin", "canonical_name", "file", "loader", "loader_state", "package_paths"})
+        name = profile._label(module["name"])
+        if name not in origins or (module["origin"], module["canonical_name"], module["loader"]) != origins[name]:
+            _fail("module")
+        origin, canonical, _loader = origins[name]
+        filename = state_record = package_paths = None
+        if origin == "frozen":
+            original = {"_frozen_importlib": "importlib._bootstrap",
+                        "_frozen_importlib_external": "importlib._bootstrap_external"}.get(canonical, canonical)
+            stem = "/lunar-static-fixture/" + original.replace(".", "/")
+            package_paths = [stem] if canonical in packages else None
+            filename = stem + ("/__init__.py" if canonical in packages else ".py")
+            state_record = {"filename": filename, "origname": original}
+            if canonical == "_frozen_importlib":
+                state_record["filename"] = None
+                if not bootstrap_alias:
+                    filename = None
+        if (module["file"] != filename or module["loader_state"] != state_record
+                or module["package_paths"] != package_paths):
+            _fail("module")
+        names.append(name)
+    if (names != sorted(set(names))
+            or not set(STATIC_PYTHON_STARTUP_MODULES) | {"_imp", "_sha2", "posix", "sys"} <= set(names)):
+        _fail("inventory")
+    return installed, payload, tuple(names)
+
+
 def compare_fixed_python_live_modules(
     installation: profile.FixedPythonInstallation, raw: bytes, *, image: bytes,
     runtime_main_source: bytes, startup_raw: bytes, expected_installation_sha256: str,
@@ -150,53 +243,13 @@ def compare_fixed_python_live_modules(
                     expected_build_closure_sha256, expected_binding_sha256,
                     expected_launch_intent_sha256, expected_sealed_material_sha256):
             profile._digest(pin)
-        installed = profile._reparse(installation, expected_installation_sha256)
-        profile.verify_fixed_python_image(installed, image, expected_installation_sha256=expected_installation_sha256)
-        if (type(runtime_main_source) is not bytes
-                or not FIXED_LIVE_COLLECTOR_SOURCE_BYTES < len(runtime_main_source) <= 64 * 1024):
-            _fail("source")
-        source = next(record for record in installed.to_dict()["frozen_modules"]
-                      if record["name"] == "_lunar_static_main")["source"]
-        if source != {"path": "runtime/frozen_main.py", "size": len(runtime_main_source),
-                      "sha256": _sha(runtime_main_source)}:
-            _fail("source")
-        solver = installed.profile_version.removeprefix("fixed-").removesuffix("-v1")
-        if runtime_main_source != _compose(
-            solver, tuple(sorted(installed.frozen_names)), installed.builtin_names,
-            installed.aliases,
-            tuple(sorted(record["name"] for record in installed.to_dict()["frozen_modules"] if record["package"])),
-            runtime_main_source[-FIXED_LIVE_COLLECTOR_SOURCE_BYTES:],
-        ):
-            _fail("source")
-        if (type(raw) is not bytes or not 0 < len(raw) <= MAX_FIXED_LIVE_MODULES_BYTES
-                or not raw.endswith(b"\n") or _sha(raw) != expected_observation_sha256):
-            _fail("pin")
-        payload = profile._object(profile._json(raw[:-1], MAX_FIXED_LIVE_MODULES_BYTES), _FIELDS)
-        if (payload["schema"] != FIXED_LIVE_MODULES_SCHEMA
-                or payload["collector_profile"] != FIXED_LIVE_MODULES_PROFILE
-                or payload["profile_version"] != installed.profile_version
-                or payload["collector_source_sha256"] != FIXED_LIVE_COLLECTOR_SOURCE_SHA256
-                or payload["phase"] != "explicit-in-image-call"):
-            _fail("profile")
-        claims = profile._object(payload["claims"], {"immutable_custody_verified", "production_admission",
-                                                     "general_code_origin_protection"})
-        if any(value is not False for value in claims.values()):
-            _fail("claims")
-        if (profile._canonical(payload["flags"]) != profile._canonical(_FLAGS)
-                or payload["sys_path"] != []):
-            _fail("runtime")
-        if (payload["builtin_names"] != list(installed.builtin_names)
-                or payload["frozen_names"] != sorted(installed.frozen_names)):
-            _fail("inventory")
-        observed_image = profile._object(payload["image"], {"device", "inode", "mode", "size", "sha256"})
-        for field, minimum in (("device", 0), ("inode", 1), ("pid", 1)):
-            value = payload[field] if field == "pid" else observed_image[field]
-            if type(value) is not int or not minimum <= value < 2**63:
-                _fail("owner")
+        installed, payload, names = _compare_live_payload(
+            installation, raw, image=image, runtime_main_source=runtime_main_source,
+            expected_installation_sha256=expected_installation_sha256,
+            expected_observation_sha256=expected_observation_sha256,
+        )
+        observed_image = payload["image"]
         declared = installed.to_dict()["image"]
-        if any(observed_image[field] != declared[field] or type(observed_image[field]) is not type(declared[field])
-               for field in ("mode", "size", "sha256")):
-            _fail("image")
         if type(startup_raw) is not bytes or len(startup_raw) > 256 * 1024 or _sha(startup_raw) != expected_startup_sha256:
             _fail("pin")
         startup = parse_static_python_runtime_startup(
@@ -214,40 +267,6 @@ def compare_fixed_python_live_modules(
                 or startup["marker"]["value"] != payload["manifest_sha256"]
                 or startup["loader"]["sealed_material_sha256"] != expected_sealed_material_sha256):
             _fail("startup")
-        origins = {name: ("frozen", name, "FrozenImporter") for name in installed.frozen_names}
-        origins.update({name: ("built-in", name, "BuiltinImporter") for name in installed.builtin_names})
-        origins["__main__"] = ("interpreter", "__main__", "interpreter")
-        for alias, target in installed.aliases:
-            origins[alias] = origins[target]
-        packages = {record["name"] for record in installed.to_dict()["frozen_modules"] if record["package"]}
-        raw_modules = profile._vector(payload["modules"], 512)
-        bootstrap_alias = any(type(item) is dict and item.get("name") == "importlib._bootstrap" for item in raw_modules)
-        names = []
-        for module in raw_modules:
-            profile._object(module, {"name", "origin", "canonical_name", "file", "loader", "loader_state", "package_paths"})
-            name = profile._label(module["name"])
-            if name not in origins or (module["origin"], module["canonical_name"], module["loader"]) != origins[name]:
-                _fail("module")
-            origin, canonical, _loader = origins[name]
-            filename = state_record = package_paths = None
-            if origin == "frozen":
-                original = {"_frozen_importlib": "importlib._bootstrap",
-                            "_frozen_importlib_external": "importlib._bootstrap_external"}.get(canonical, canonical)
-                stem = "/lunar-static-fixture/" + original.replace(".", "/")
-                package_paths = [stem] if canonical in packages else None
-                filename = stem + ("/__init__.py" if canonical in packages else ".py")
-                state_record = {"filename": filename, "origname": original}
-                if canonical == "_frozen_importlib":
-                    state_record["filename"] = None
-                    if not bootstrap_alias:
-                        filename = None
-            if (module["file"] != filename or module["loader_state"] != state_record
-                    or module["package_paths"] != package_paths):
-                _fail("module")
-            names.append(name)
-        if (names != sorted(set(names))
-                or not set(STATIC_PYTHON_STARTUP_MODULES) | {"_imp", "_sha2", "posix", "sys"} <= set(names)):
-            _fail("inventory")
         return FixedPythonLiveModuleComparison(
             raw, expected_observation_sha256, expected_installation_sha256,
             expected_startup_sha256, tuple(names),
@@ -260,6 +279,69 @@ def compare_fixed_python_live_modules(
         reason = "image"
     except StaticPythonRuntimeStartupError:
         reason = "startup"
+    except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, RecursionError, StopIteration):
+        reason = "json"
+    raise FixedPythonLiveModulesError(reason) from None
+
+
+@dataclass(frozen=True, slots=True)
+class FixedPythonBoundLiveModules:
+    """Original private-pipe comparison, without custody/admission authority."""
+
+    canonical_bytes: bytes
+    observation_sha256: str
+    installation_sha256: str
+    image_device: int
+    image_inode: int
+    target_pid: int
+    manifest_sha256: str
+    module_names: tuple[str, ...]
+    live_runtime_authenticated: bool = False
+    immutable_custody_verified: bool = False
+    production_admission: bool = False
+
+
+def compare_fixed_python_bound_live_modules(
+    installation: profile.FixedPythonInstallation, raw: bytes, *, image: bytes,
+    runtime_main_source: bytes, expected_installation_sha256: str,
+    expected_image_device: int, expected_image_inode: int, expected_target_pid: int,
+    expected_manifest_sha256: str,
+) -> FixedPythonBoundLiveModules:
+    """Compare an original native sink against its original sealed target/argv.
+
+    This does not fabricate startup observations or inherit startup authority.
+    Callers retain process ownership and must supply the original held image
+    identity and native target PID, rather than values parsed from this wire.
+    """
+    try:
+        profile._digest(expected_manifest_sha256)
+        for value, minimum in ((expected_image_device, 0), (expected_image_inode, 1),
+                               (expected_target_pid, 1)):
+            if type(value) is not int or not minimum <= value < 2**63:
+                _fail("owner")
+        observed_sha256 = _sha(raw)
+        _installed, payload, names = _compare_live_payload(
+            installation, raw, image=image, runtime_main_source=runtime_main_source,
+            expected_installation_sha256=expected_installation_sha256,
+            expected_observation_sha256=observed_sha256,
+        )
+        if (payload["image"]["device"] != expected_image_device
+                or payload["image"]["inode"] != expected_image_inode
+                or payload["pid"] != expected_target_pid):
+            _fail("owner")
+        if payload["manifest_sha256"] != expected_manifest_sha256:
+            _fail("startup")
+        return FixedPythonBoundLiveModules(
+            raw, observed_sha256, expected_installation_sha256,
+            expected_image_device, expected_image_inode, expected_target_pid,
+            expected_manifest_sha256, names,
+        )
+    except _Refusal as exc:
+        reason = str(exc)
+    except profile._Refusal:
+        reason = "schema"
+    except profile.FixedPythonProfileError:
+        reason = "image"
     except (ValueError, TypeError, KeyError, UnicodeError, OverflowError, RecursionError, StopIteration):
         reason = "json"
     raise FixedPythonLiveModulesError(reason) from None

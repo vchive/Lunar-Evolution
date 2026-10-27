@@ -1,3 +1,16 @@
+## 当前集成（2026-10-28）：三块软件集中回归，mixed 仍待验收
+
+本批已实现操作内 staging 纯解析复用、原 native 私有 collector sink，以及 installed
+wrapper/native bridge、独立原始 anchor vault 和新进程只读恢复。首轮发现并修正新
+recipe 未匹配真实 launcher 路径的接线缺陷，其余为 fixture 构造；原失败全部保留。
+本机最新去重 2,547 节点：2,230 pass / 317 平台 skip；8 个原 fail 均已实际 pass。
+Linux 首轮 2,035 节点：1,970 pass / 2 个原 recipe fail / 63 skip，原归档前后一致，
+231 Lunar 模块来源匹配。修正源码的 Linux 受影响复验和新 clean source 的原 600 秒、
+零 retry mixed 尚待执行；不能合 main。最终 Ruff/compileall/diff 已过。
+实际 build/custody consumer、完整隐式 link、生产 CLI、账户 transition 与独立异常
+持久 guardian 仍有软件/设计缺口；真实隔离环境与验收另列。production/online=false。
+详见 [本批结果](p0-p2-integration-20261028.md)。下方保留历史原件。
+
 ## 最新终态（2026-10-28）
 
 新产品 source `12f987fb` 的唯一 Linux mixed 仍失败：600.015900308 秒、rc=-15，

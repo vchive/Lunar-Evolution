@@ -63,6 +63,27 @@ _CHECKPOINT_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
 _RECORD_DIGEST_CACHE_MAX_ENTRIES = 128
 _RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
 
+# Only these direct pure parser/digest methods can supply a reusable staging
+# identity result. A replaced method keeps the original per-checkpoint path.
+_STAGING_IDENTITY_HELPERS = tuple(
+    (owner, name, vars(owner)[name], function.__code__, function.__defaults__, function.__kwdefaults__)
+    for owner in (SolverRequest, MemorySnapshot)
+    for name in ("from_dict", "digest")
+    for function in (vars(owner)[name].__func__ if name == "from_dict" else vars(owner)[name],)
+)
+
+
+def _staging_identity_helpers_current() -> bool:
+    for owner, name, descriptor, code, defaults, kwdefaults in _STAGING_IDENTITY_HELPERS:
+        if vars(owner).get(name) is not descriptor:
+            return False
+        function = descriptor.__func__ if name == "from_dict" else descriptor
+        if (function.__code__ is not code or function.__defaults__ is not defaults
+                or function.__kwdefaults__ is not kwdefaults):
+            return False
+    return True
+
+
 _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
     "created": frozenset({"created", "running", "cancelled", "failed", "unknown", "budget_exhausted"}),
     "running": frozenset({"running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"}),
@@ -793,6 +814,7 @@ class RSILedger:
         if expected_policy is not None and policy != expected_policy:
             raise RSILearningError("rsi_python_admission_child_proof_history_drift")
         previous_entries: dict[str, dict[str, Any]] = {}
+        previous_validated_entries: dict[str, bytes] = {}
         previous_digest: str | None = None
         capsule_mode = history[0][1].get("producer_multi_episode_publication")
         if capsule_mode is not None and type(capsule_mode) is not bool:
@@ -817,6 +839,7 @@ class RSILedger:
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             retained_publication_evidence_bytes(state)
             entries = state["producer_episode_staging"]
+            validated_entries: dict[str, bytes] = {}
             if not set(previous_entries).issubset(entries):
                 raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             for episode_id, entry in entries.items():
@@ -836,18 +859,43 @@ class RSILedger:
                 if identity.get("policy") != policy:
                     raise RSILearningError("rsi_python_admission_child_proof_history_drift")
                 try:
-                    request = SolverRequest.from_dict(identity["intent"]["request"])
-                    memory = MemorySnapshot.from_dict(identity["memory"])
-                    token = hashlib.sha256(canonical_json({
-                        "run_id": run_id, "episode_id": episode_id, "request": request.digest(),
-                    })).hexdigest()[:32]
-                    if (request.episode_id != episode_id
-                            or request.digest() != identity["request_sha256"]
-                            or memory.digest() != identity["memory_snapshot_sha256"]
-                            or request.memory_snapshot_sha256 != memory.digest()
-                            or identity["journal_id"] != "rsi-stage-" + token
-                            or identity["launch_id"] != "rsi-launch-" + token):
-                        raise ValueError("staging identity changed")
+                    entry_bytes = None
+                    if _staging_identity_helpers_current():
+                        # Exact plain shapes precede comparison/serialization. Keep
+                        # only immutable bytes, never the mutable entry or a DTO.
+                        validate_rsi_python_admission_shapes(entry)
+                        try:
+                            entry_bytes = canonical_json(entry, maximum=128 * 1024)
+                        except ValueError:
+                            # A projection bound is not an additional admission
+                            # rejection. Preserve the original validation path.
+                            pass
+                    reused = entry_bytes is not None and previous_validated_entries.get(episode_id) == entry_bytes
+                    if not reused:
+                        request = SolverRequest.from_dict(identity["intent"]["request"])
+                        memory = MemorySnapshot.from_dict(identity["memory"])
+                        token = hashlib.sha256(canonical_json({
+                            "run_id": run_id, "episode_id": episode_id, "request": request.digest(),
+                        })).hexdigest()[:32]
+                        if (request.episode_id != episode_id
+                                or request.digest() != identity["request_sha256"]
+                                or memory.digest() != identity["memory_snapshot_sha256"]
+                                or request.memory_snapshot_sha256 != memory.digest()
+                                or identity["journal_id"] != "rsi-stage-" + token
+                                or identity["launch_id"] != "rsi-launch-" + token):
+                            raise ValueError("staging identity changed")
+                    if entry_bytes is not None and _staging_identity_helpers_current():
+                        if reused:
+                            validated_entries[episode_id] = entry_bytes
+                        else:
+                            try:
+                                validate_rsi_python_admission_shapes(entry)
+                                if canonical_json(entry, maximum=128 * 1024) == entry_bytes:
+                                    validated_entries[episode_id] = entry_bytes
+                            except ValueError:
+                                # A helper may have changed its input. Do not
+                                # retain that projection or add a new refusal.
+                                pass
                 except (KeyError, TypeError, ValueError, RSILearningError) as exc:
                     raise RSILearningError("rsi_python_admission_child_proof_history_drift") from exc
                 prior = previous_entries.get(episode_id)
@@ -878,6 +926,7 @@ class RSILedger:
                 if entry["state"] == "ready" and entry["failure_code"] is not None:
                     raise RSILearningError("rsi_python_admission_child_proof_history_drift")
             previous_entries = entries
+            previous_validated_entries = validated_entries
             previous_digest = digest
 
     def resolve_python_producer_checkpoint(

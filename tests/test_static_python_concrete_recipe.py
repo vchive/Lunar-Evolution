@@ -139,7 +139,11 @@ def test_configured_header_is_explicit_input_and_configure_probe_is_not_acceptan
     assert json.loads(result.manifest_bytes)["configured_closure_verified"] is False
 
 
-def test_runtime_closure_is_explicit_new_solver_main_and_tables(concrete_inputs):
+@pytest.mark.parametrize("private_sink", [False, True])
+def test_runtime_closure_is_explicit_new_solver_main_and_tables(concrete_inputs, private_sink):
+    from lunar_evolution.static_python_fixed_live_modules import FIXED_LIVE_SINK_LAUNCHER_PATH
+    from tools.static_python_rsi_fixture.live_module_source import prepare_fixed_live_sink_launcher
+
     prep, args = concrete_inputs
     plan = _preparation_wire(prep)["candidate_build_inputs"]
     generated = {
@@ -148,6 +152,8 @@ def test_runtime_closure_is_explicit_new_solver_main_and_tables(concrete_inputs)
         "runtime/Python/stdlib_module_names.h": b"/* synthetic names */\n",
         "runtime/frozen_main.py": b"def _rsi_launch(x): pass\n",
     }
+    if private_sink:
+        generated[FIXED_LIVE_SINK_LAUNCHER_PATH] = prepare_fixed_live_sink_launcher()
     tasks = [dict(t) for t in plan["freeze_tasks"]]
     tasks[-1].update(source="runtime/frozen_main.py", source_size=len(generated["runtime/frozen_main.py"]),
                      source_sha256=sha(generated["runtime/frozen_main.py"]))
@@ -162,6 +168,11 @@ def test_runtime_closure_is_explicit_new_solver_main_and_tables(concrete_inputs)
     assert wire["stages"][-1]["commands"][-1]["outputs"][0]["path"] == "bin/lunar-openevolve"
     assert dict(result.sources)["Python/stdlib_module_names.h"] == generated["runtime/Python/stdlib_module_names.h"]
     assert json.loads(result.manifest_bytes)["runtime_closure_sha256"] == closure.sha256
+    compile_commands = next(stage["commands"] for stage in wire["stages"] if stage["stage"] == "compile")
+    selected = "@source/" + FIXED_LIVE_SINK_LAUNCHER_PATH
+    assert any(selected in command["argv"] for command in compile_commands) is private_sink
+    original_launcher = "@source/tools/static_python_rsi_fixture/assets/launcher.c"
+    assert any(original_launcher in command["argv"] for command in compile_commands) is not private_sink
 
 
 @pytest.fixture

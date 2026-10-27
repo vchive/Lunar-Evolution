@@ -12,6 +12,11 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from lunar_evolution.static_python_fixed_live_modules import (
+    FIXED_LIVE_SINK_LAUNCHER_PATH,
+    FIXED_LIVE_SINK_LAUNCHER_SOURCE_BYTES,
+    FIXED_LIVE_SINK_LAUNCHER_SOURCE_SHA256,
+)
 from tools.static_python_fixture.tables import emit_static_python_tables
 from tools.static_python_rsi_fixture.build_driver import _preparation_wire
 from tools.static_python_rsi_fixture.execution_backend import RECIPE_V3_SCHEMA, _recipe
@@ -231,6 +236,13 @@ def prepare_cpython_build_recipe(
                         or entry["executable"] is not False):
                     _fail("socket_input_pin_mismatch")
         for unit in units + target:
+            if (unit["source"] == "tools/static_python_rsi_fixture/assets/launcher.c"
+                    and FIXED_LIVE_SINK_LAUNCHER_PATH in sources):
+                selected_launcher = sources[FIXED_LIVE_SINK_LAUNCHER_PATH]
+                if (len(selected_launcher) != FIXED_LIVE_SINK_LAUNCHER_SOURCE_BYTES
+                        or _sha(selected_launcher) != FIXED_LIVE_SINK_LAUNCHER_SOURCE_SHA256):
+                    _fail("live_sink_launcher_source_drift")
+                unit["source"] = FIXED_LIVE_SINK_LAUNCHER_PATH
             if unit["source"] == "generated-sources/Modules/config.c":
                 unit["source"] = "runtime/Modules/config.c"
             elif unit["source"] == "generated-sources/Python/frozen.c":
