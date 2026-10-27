@@ -117,6 +117,16 @@ def _validate_original_linux_executable_pair(pair: TrustedExecutablePair) -> Non
         raise _binding_error(exc) from exc
 
 
+def _original_linux_bootstrap_owner(pair: TrustedExecutablePair) -> LinuxSealedExecutable:
+    """Borrow the exact live factory owner for an explicit native guardian.
+
+    A copied pair or matching numeric FD does not create this capability. Its
+    creating context retains ownership and must stay open through guardian exec.
+    """
+    _validate_original_linux_executable_pair(pair)
+    return _LINUX_PAIRS[id(pair)][1].bootstrap
+
+
 def _identity_from_descriptor(descriptor: TrustedBootstrapDescriptor) -> dict[str, int | str]:
     return {
         "sha256": descriptor.bootstrap_sha256, "size": descriptor.size,

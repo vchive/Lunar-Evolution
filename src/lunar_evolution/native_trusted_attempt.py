@@ -49,6 +49,10 @@ from .native_fixed_live_sink import (
 )
 from .native_grant_inputs import NativeGrantInputError, original_native_grant_inputs
 from .native_guardian import NativeGuardianError, NativeGuardianOwner, start_native_guardian
+from .native_guardian_registration import (
+    NativeGuardianCustodyRequest,
+    NativeGuardianRegistrationError,
+)
 from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
 from .native_trusted_cleanup import (
     NativeTrustedCleanupError,
@@ -118,6 +122,7 @@ from .rsi_native_inputs import (
 from .static_python_fixed_live_modules import FixedPythonBoundLiveModules
 from .trusted_bootstrap_binding import (
     TrustedBootstrapBindingError,
+    _original_linux_bootstrap_owner,
     _validate_original_linux_executable_pair,
     prepare_trusted_executable_pair,
 )
@@ -764,6 +769,7 @@ def run_native_trusted_attempt(
     parent_deadline: float | None = None,
     registered_observer: Callable[[NativeTrustedRegisteredContext], None] | None = None,
     live_modules_sink: FixedPythonLiveSinkRequest | None = None,
+    guardian_custody: NativeGuardianCustodyRequest | None = None,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
 
@@ -839,6 +845,15 @@ def run_native_trusted_attempt(
             raise NativeTrustedAttemptError("native_trusted_attempt_broker_endpoint_invalid") from exc
     if registered_observer is not None and not callable(registered_observer):
         raise NativeTrustedAttemptError("native_trusted_attempt_registered_observer_invalid")
+    if guardian_custody is not None and (
+        type(guardian_custody) is not NativeGuardianCustodyRequest
+        or artifact.descriptor.platform_execution_mode != "linux-fd-bound"
+    ):
+        raise NativeTrustedAttemptError("native_trusted_attempt_guardian_custody_invalid")
+    if guardian_custody is not None and registered_observer is None:
+        # The original trusted observer is the delivery seam for independent
+        # retention. Never silently treat current receiver files as that owner.
+        raise NativeTrustedAttemptError("native_trusted_attempt_guardian_custody_observer_required")
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
     if _observe_cancellation(cancelled):
@@ -864,6 +879,11 @@ def run_native_trusted_attempt(
             artifact.path, descriptor=artifact.descriptor, allowlist_id=artifact.allowlist_id,
         )
         launch = build_trusted_bootstrap_launch(intent, attestation, installed.descriptor)
+        if guardian_custody is not None:
+            try:
+                guardian_custody.check_launch(str(launch.launch_sha256))
+            except Exception as exc:  # Explicit installed-original preflight.
+                raise NativeTrustedAttemptError("native_trusted_attempt_guardian_custody_invalid") from exc
         root = _safe_root(workspace)
         target_root = _safe_root(producer_root)
         batch = root / "evolution" / "producer-batches" / intent.journal_id
@@ -1077,13 +1097,22 @@ def run_native_trusted_attempt(
                 if grant_owner is not None:
                     try:
                         _validate_original_linux_executable_pair(pair)
-                        guardian = start_native_guardian(
-                            process=process, executable=pair.bootstrap.executable,
-                            bootstrap_fd=pair.bootstrap.pass_fd, lifeline_fd=lifeline_read,
-                            finish_fd=guardian_finish_read, ack_fd=guardian_ack_write,
-                            ack_read_fd=guardian_ack_read, deadline=deadline,
-                            deadline_ns=native_deadline_ns, monotonic=monotonic,
-                        )
+                        if guardian_custody is None:
+                            guardian = start_native_guardian(
+                                process=process, executable=pair.bootstrap.executable,
+                                bootstrap_fd=pair.bootstrap.pass_fd, lifeline_fd=lifeline_read,
+                                finish_fd=guardian_finish_read, ack_fd=guardian_ack_write,
+                                ack_read_fd=guardian_ack_read, deadline=deadline,
+                                deadline_ns=native_deadline_ns, monotonic=monotonic,
+                            )
+                        else:
+                            guardian = guardian_custody.start_original(
+                                process=process, bootstrap=_original_linux_bootstrap_owner(pair),
+                                launch_sha256=str(launch.launch_sha256), lifeline_fd=lifeline_read,
+                                finish_fd=guardian_finish_read, ack_fd=guardian_ack_write,
+                                ack_read_fd=guardian_ack_read, deadline=deadline,
+                                deadline_ns=native_deadline_ns, monotonic=monotonic,
+                            )
                     except NativeGuardianError as exc:
                         # Preserve a live original owner if bounded startup cleanup could
                         # not complete before the caller closes the original writer.
@@ -1243,6 +1272,10 @@ def run_native_trusted_attempt(
                         )
 
                     original_context = registered_context()
+                    if guardian_custody is not None:
+                        guardian_custody.bind_original_registration(original_context, guardian)
+                        if registered_context() != original_context:
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
                     observer_context = replace(original_context)
                     try:
                         if registered_observer(observer_context) is not None:
@@ -1254,6 +1287,8 @@ def run_native_trusted_attempt(
                     if (observer_context != original_context
                             or registered_context() != original_context):
                         raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                    if guardian_custody is not None:
+                        guardian_custody.check_registered(original_context, guardian)
                     _remaining(deadline, monotonic, cancelled)
                 os.write(gate_write, b"1")
                 os.close(gate_write)
@@ -1312,7 +1347,8 @@ def run_native_trusted_attempt(
                     guardian_finished = True
                     check_deadline()
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
-                TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError, ProducerIsolationError,
+                TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError,
+                NativeGuardianRegistrationError, ProducerIsolationError,
                 ProducerGrantError, ProducerProcessError, NativeFixedLiveSinkError,
                 OSError, subprocess.SubprocessError) as exc:
             if not claimed:

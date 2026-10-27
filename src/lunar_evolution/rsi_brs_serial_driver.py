@@ -741,7 +741,7 @@ def _drive_reserved_brs_native_serial(controller, record, state):
                 if remaining <= 0:
                     _fail("deadline_expired")
                 try:
-                    session.serve(offer.preparation, check=owner_check,
+                    session.serve(offer.preparation, check=owner_check, hot_check=owner_hot_check,
                                   timeout=min(60.0, remaining))
                 except BaseException as error:
                     # The owner/lifecycle failure is authoritative. Preserve it while

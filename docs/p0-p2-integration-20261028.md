@@ -1,5 +1,43 @@
 # P0–P2 integration, 2026-10-28
 
+## Current continuation: idle join, command inputs and durable guardian
+
+The frozen index tree `2482e84d1e94ed4ac5d277194732205d52fe878a`, based on
+`be7776bf`, adds operation-local reservation baseline encoding reuse, the private
+reserved terminal idle-join hot checks, the explicit build command/input graph,
+and an independent native guardian receiver with pre-gate registration pairing.
+Actual events and Future completion retain full owner validation. The default
+terminal join and default direct guardian paths remain unchanged.
+
+| Concentrated execution | Result | Integrity |
+| --- | --- | --- |
+| Linux 24 selections, one pytest invocation | 496 pass / 7 Darwin-only skips, 410.777396921s | All 2,563 Git files / 2,871 manifest entries unchanged; 275 loaded Lunar module origins match |
+| Local Darwin platform supplement, one file | 9 pass / 1 Linux-only skip, 0.780477958s | All 2,563 source files unchanged |
+
+The seven Linux skips are the actual Darwin immutable-snapshot cases, all passed
+by the local supplement. The latest cross-platform union is 503 unique passing
+nodes; the two common nodes are not counted twice. The natural two-child
+published/rejected composition passed in 264.952s. This is not the three-child
+mixed acceptance or actual producer/model/evaluator execution. Final project
+Ruff, compileall and staged/unstaged diff checks passed.
+
+Evidence is under the same primary-checkout ignored root documented below:
+`idle-command-guardian-linux-c6kjwovm/remote-records` and
+`idle-guardian-darwin-platform-5_7eh93y`. The Linux result raw SHA256 is
+`7d3ab693f69c9490fadb25cc232ede72c6ae3bf64dc3b6ab289970fb4bd8bf34`. Original companion bytes are retained. The archive
+SHA256 is `777026b597135b9b759bfd6e9aa8108c994c7048a180cc1649e2e7288427ca5f`.
+The frozen tree is not described as a later commit.
+
+Still open: the new clean source's original 600-second, zero-retry three-child
+mixed and full CI; complete driver/input custody, accepted isolated runtime and
+production CLI; installed vault guardian pairing, actual account deployment and
+hard-disconnect/cleanup acceptance. The prior `be7776bf` Linux timeout remains
+preserved. The ordinary local platform supplement cannot replace Linux x86
+isolation. Production admission and online publication remain false.
+
+The following sections retain earlier batches and their original results; they
+do not supersede this current continuation.
+
 The batch implements three software continuations before concentrated regression:
 operation-local staging identity parsing, the opt-in native private collector
 sink, and installed wrapper/native bridging with independently retained original

@@ -17,6 +17,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from tools.static_python_rsi_fixture.command_input_graph import validate_dependency_command_graph
 from tools.static_python_rsi_fixture.dependency_capture import (
     CompilerDependencyError,
     compare_compiler_dependencies,
@@ -207,6 +208,7 @@ def run_dependency_checked_build(
         recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
     )
+    validate_dependency_command_graph(recipe)
     if (not _finite(deadline) or deadline <= 0
             or not callable(monotonic) or (interrupted is not None and not callable(interrupted))):
         raise BuildDependencyError("control")

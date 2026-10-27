@@ -683,9 +683,8 @@ class BRSOwnerTerminalLifecycle:
     def worker_endpoint(self) -> _BRSWorkerTerminalEndpoint:
         return self._endpoint
 
-    def _fixed(self) -> None:
+    def _scope_identity(self) -> None:
         from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
-        from .rsi_python_brs_native_dispatch import _original_control
 
         if type(self) is not BRSOwnerTerminalLifecycle or self._poisoned:
             _fail("session_unavailable")
@@ -701,8 +700,8 @@ class BRSOwnerTerminalLifecycle:
                     self._scope, (self._owner, self._mailbox, self._future, self._executor,
                                   self._thread, self._endpoint, self._exchange, self._exchange.condition), strict=True))):
             _fail("session_drift")
-        _original_control(self._owner)
-        _BRSLineageCheckpointOwner._identity(self._owner)
+
+    def _transport_identity(self) -> None:
         if (self._mailbox._owner_thread != self._owner._thread
                 or self._mailbox._worker_thread != self._thread.ident
                 or self._thread not in self._executor._threads
@@ -714,6 +713,68 @@ class BRSOwnerTerminalLifecycle:
                 or self._mailbox._terminal_lifecycle_opened is not True
                 or self._executor._max_workers != 1):
             _fail("session_drift")
+
+    def _fixed(self) -> None:
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_python_brs_native_dispatch import _original_control
+
+        self._scope_identity()
+        _original_control(self._owner)
+        _BRSLineageCheckpointOwner._identity(self._owner)
+        self._transport_identity()
+
+    def _idle(self) -> None:
+        """Check original live handles/control, without granting an event ACK."""
+        from .rsi_brs_publication_lineage import _BRSLineageCheckpointOwner
+        from .rsi_python_brs_native_dispatch import _original_control
+
+        self._scope_identity()
+        owner = _original_control(self._owner)
+        self._transport_identity()
+        if (owner._poisoned or threading.get_ident() != owner._thread
+                or self._exchange.deadline != owner._before_control.deadline):
+            _fail("session_drift")
+        _BRSLineageCheckpointOwner._before_control_live(owner)
+        if owner._plan.deadline_unix is not None and time.time() >= owner._plan.deadline_unix:
+            _fail("session_expired")
+
+    def _join_worker(self, check, *, hot_check=None) -> None:
+        """Reserve full observation for pending events and the final join gate."""
+        if hot_check is not None and not callable(hot_check):
+            _fail("check_invalid")
+        if hot_check is None:
+            while not Future.done(self._future):
+                check()
+                if not self._drain():
+                    with self._exchange.condition:
+                        self._exchange.condition.wait(.05)
+        else:
+            while True:
+                self._idle()
+                hot_check()
+                # The live cancellation callback may have changed a session
+                # handle. Refuse it before touching a Condition or Future.
+                self._scope_identity()
+                self._transport_identity()
+                with self._exchange.condition:
+                    index, events = self._exchange.acked, self._exchange.events
+                    if (type(index) is not int or type(events) is not list
+                            or not 0 <= index <= len(events) <= 3
+                            or type(self._exchange.failed) is not bool or self._exchange.failed):
+                        _fail("observation_drift")
+                    pending = index < len(events)
+                    done = Future.done(self._future)
+                    if not pending and not done:
+                        self._exchange.condition.wait(.05)
+                if pending:
+                    check()
+                    self._drain()
+                elif done:
+                    break
+            # A done Future is not validation of its result or retained scope.
+            # Rebuild the full gates even when it finishes without another event.
+            check()
+            self._fixed()
 
     def _append(self, stage: str, facts: dict) -> None:
         self._fixed()
@@ -912,11 +973,13 @@ class BRSOwnerTerminalLifecycle:
             _PrimitiveExchange.fail(exchange)
             raise
 
-    def serve(self, original_preparation, *, check, timeout: float = .05):
+    def serve(self, original_preparation, *, check, timeout: float = .05, hot_check=None):
         """Run the old bridge, drain real worker events, and join the original executor."""
         from .rsi_python_brs_owner_bridge import run_brs_owner_publication_mailbox
 
         self._fixed()
+        if hot_check is not None and not callable(hot_check):
+            _fail("check_invalid")
         if self._started:
             _fail("session_unavailable")
         self._started = True
@@ -943,11 +1006,7 @@ class BRSOwnerTerminalLifecycle:
             from .rsi_brs_publication_lineage import _policy_observation_scope
 
             with _policy_observation_scope():
-                while not Future.done(self._future):
-                    check()
-                    if not self._drain():
-                        with self._exchange.condition:
-                            self._exchange.condition.wait(.05)
+                self._join_worker(check, hot_check=hot_check)
             while self._drain():
                 pass
             BRSOwnerPublicationMailbox.close(self._mailbox)

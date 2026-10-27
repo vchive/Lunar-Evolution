@@ -969,7 +969,8 @@ def _policy() -> dict[str, Any]:
           for name in ("__init__", "_identity", "_wait_check", "receive_and_settle")),
         (terminal._BRSWorkerTerminalEndpoint.status.fget, terminal),
         *((getattr(terminal.BRSOwnerTerminalLifecycle, name), terminal)
-          for name in ("_fixed", "_append", "_drain", "_service_rejection_admission", "serve")),
+          for name in ("_scope_identity", "_transport_identity", "_fixed", "_idle", "_join_worker",
+                       "_append", "_drain", "_service_rejection_admission", "serve")),
         (terminal.BRSOwnerTerminalLifecycle.worker_endpoint.fget, terminal),
         *((getattr(composer, name), composer) for name in (
             "_fail", "_plain", "_clean", "_digest", "_sha", "_text", "_pins",

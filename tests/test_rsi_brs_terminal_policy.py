@@ -48,6 +48,10 @@ def _replacement(*_args, **_kwargs):
     (threading.Condition, "__exit__"),
     (threading, "get_ident"),
     (RSILearningController, "_reconcile_brs_terminal_locked"),
+    (terminal.BRSOwnerTerminalLifecycle, "_scope_identity"),
+    (terminal.BRSOwnerTerminalLifecycle, "_transport_identity"),
+    (terminal.BRSOwnerTerminalLifecycle, "_idle"),
+    (terminal.BRSOwnerTerminalLifecycle, "_join_worker"),
 ])
 def test_terminal_runtime_method_replacement_invalidates_policy(monkeypatch, original_policy, target, name):
     monkeypatch.setattr(target, name, _replacement)

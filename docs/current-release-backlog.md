@@ -1,3 +1,25 @@
+## 当前批次（2026-10-28）：先并行开发、再集中回归
+
+`be7776bf` 的唯一 Linux mixed 为 600.015565725 秒超时（rc=-15，无 JUnit/终态
+module origins），原失败保留，不重跑该产品 source。当前后继集中处理以下三块：
+
+| 优先级 | 本批软件变化 | 验收与剩余边界 |
+| --- | --- | --- |
+| P0 | reservation 同次 walk 基准编码复用；reserved terminal join 空闲热检查，真实事件与 Future 完成仍完整 gate | 新联合 focused、两 child 正向链路、新 clean HEAD 原 600 秒/零 retry mixed，然后完整 CI |
+| P1 | actual dependency consumer 执行前拒绝未知 command/argv 输入和无效 output graph | 未证明 driver 全部隐式输入、immutable custody、accepted build/runtime 或生产 CLI |
+| P2 | 独立原生 guardian receiver 的持久注册/退出记录，原 native registration 的显式 pre-gate 配对接线 | installed bridge/vault 的配对 reference 部署、实际独立账户、硬断线/blocked-storage 和 cleanup 验收仍开放 |
+
+三块冻结tree `2482e84d`的联合测试已完成：Linux496 pass / 7 Darwin专属skip，
+410.777396921秒；本机平台文件9 pass / 1 Linux专属skip，实际补齐上述7项。最新
+并集503 unique通过，不能把重复节点累加。2563文件/2871项前后一致，275个Lunar
+加载来源匹配；Ruff、compileall和staged/unstaged diff通过。唯一三child mixed及
+完整CI仍待执行，不能以两child通过宣布P0关闭。
+普通测试优先5090gpu，不支持时转本机；macOS通过
+不覆盖Linux历史失败，也不提供既定Linux x86隔离runtime验收。sudo/KVM/userns限制
+只解释对应环境门，不能将软件缺口全部算作环境阻塞。production/online=false。
+
+以下保留此前批次与历史证据，最新终态以本节及 HANDOFF 为准。
+
 ## 当前执行点（2026-10-28）：本批软件集中回归完成，mixed 待验收
 
 本批完成三块后继软件并统一回归：P0 的紧凑 checkpoint 存储、完整 SQL 行容量门和

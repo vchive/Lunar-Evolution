@@ -1,3 +1,33 @@
+## 当前执行点（2026-10-28）：P0 等待调度、P1 命令图、P2 独立接收边界
+
+`be7776bf` 的唯一 Linux mixed 已在原 600 秒预算内超时（600.015565725 秒，
+rc=-15），无 JUnit/终态 module origins；2548 个 Git 文件与归档前后相同。它在推进
+第三 child completion，不能称死锁，也不能把缺报告的 loaded_module_count=0 当未加载。
+约595秒观测区间累计596.87 thread-group CPU秒、leader runtime525.832秒、runqueue
+0.0908秒，以及26.486GB逻辑读取；支持调查重复校验，不是函数耗时占比或模型耗时。
+原失败保留，不重跑该产品源求通过。
+
+后继分三块并行开发，冻结后一次联合 focused：P0 保留每次实际观察的fresh SQL/FS，
+仅在一次reservation walk内复用基准字段编码，并为private reserved serial的空terminal
+join使用原hot/live门；真实event与Future完成仍完整校验，原tail drain在policy scope外。
+P1 在actual dependency consumer执行前验证有限显式command/input/output图，未知命令/
+选项拒绝；不冒充完整driver隐式输入或immutable custody。P2 使用实际独立原生receiver
+持久R/exit证据，并显式接原registration的pre-gate配对；default native路径保持。
+冻结 tree `2482e84d1e94ed4ac5d277194732205d52fe878a` 的24项选择联合回归已完成：
+Linux 503节点中496 pass / 7 Darwin专属skip，410.777396921秒；原两child正向链路
+264.952秒通过。本机仅补平台文件9 pass / 1 Linux专属skip，其中7项覆盖上述Darwin
+缺口；跨平台最新503 unique均通过，不将重复的2项累加。2563 Git文件/2871归档项
+前后一致，275个加载Lunar模块来源匹配。Ruff、compileall和两类diff检查通过。
+原始证据在主区ignored `parallel-batch-20261027/idle-command-guardian-linux-c6kjwovm`
+及 `idle-guardian-darwin-platform-5_7eh93y`。后继clean source的唯一600秒mixed和
+完整CI仍待执行；focused通过不关闭P0超时。
+
+普通Linux测试优先5090gpu，平台不支持时转本机；本机通过不能覆盖历史Linux失败。
+accepted隔离build/runtime/完整生产CLI、实际安装账户与独立vault部署/硬断线验收仍是
+开放项。既有sudo/KVM/userns限制不变，macOS ARM或host Python不能替代既定隔离
+Linux x86验收。production_admission=false、online_publication=false；无模型、
+WebAgent、远程或公司evaluator。本分支尚未合main。下方保留各批历史原件。
+
 ## 当前执行点（2026-10-28）：本批软件集中回归完成，mixed 待验收
 
 本批完成三块后继软件并统一回归：P0 的紧凑 checkpoint 存储、完整 SQL 行容量门和
