@@ -1,5 +1,13 @@
 ## 2026-10-27 当前状态与剩余优先级
 
+本轮后继已实现两项：[CI去重复汇总](../specs/194-parallel-release-ci/focused-aggregation.md)
+保留三版完整执行和78组原门槛，新增58项synthetic通过；
+[runtime-tree规范路径计算](../specs/191-python-worker-adapter/tree-canonical-component-scans.md)
+四文件212项唯一focused通过，最终新17项子集在测试风格修正后重验通过。
+两项均经独立源码审查，全仓Ruff/compileall/diff通过。最终新source仍需一次完整CI和
+原600秒、0retry Linux mixed；不再为此次局部修改重复旧67文件联合。旧298 CI自然
+运行，04:31 UTC为30success/3running，下面298 Linux失败保持。当前仍不可合main。
+
 最新精确`298fe05a`的67文件联合已通过2,610项，零fail/error/skip、rawrc0；完整
 2,384源文件前后与Git/archive一致，精确覆盖经独审。其唯一5090gpu mixed仍在原
 600秒outer control超时（600.015935秒、rawrc=-15），无JUnit/执行origins。known-PID

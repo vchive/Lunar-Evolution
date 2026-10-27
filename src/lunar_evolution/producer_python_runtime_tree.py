@@ -104,14 +104,14 @@ def _declaration_text(label: object, path: object, role: object) -> None:
 def _relative(value: object, *, root: bool = False) -> str:
     _text(value, declared._MAX_PATH_BYTES)
     checked = declared._path(value, absolute=False, dot=root)
-    if len(Path(checked).parts) > MAX_PYTHON_RUNTIME_TREE_DEPTH:
+    if (0 if checked == "." else checked.count("/") + 1) > MAX_PYTHON_RUNTIME_TREE_DEPTH:
         _fail("depth_exceeded")
     return checked
 
 
 def _name(value: object) -> str:
     checked = _relative(value)
-    if len(Path(checked).parts) != 1:
+    if "/" in checked:
         _fail("name_invalid")
     return checked
 
@@ -329,10 +329,11 @@ def _validate_tree_graph(
         _relative(path, root=path == ".")
         if path == ".":
             continue
-        parent = (label, Path(path).parent.as_posix())
+        parent_path, separator, name = path.rpartition("/")
+        parent = (label, parent_path if separator else ".")
         if parent not in observed:
             _fail("graph_invalid")
-        children[parent].add(Path(path).name)
+        children[parent].add(name)
     for key, directory in observed.items():
         if directory.children != tuple(sorted(children[key])):
             _fail("membership_invalid")

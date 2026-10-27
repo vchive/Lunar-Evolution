@@ -1,5 +1,22 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 当前后继：CI 去重复与 runtime-tree 路径计算
+
+- 按用户最新要求减少重复回归，Feature194 续篇保留三版共30个完整执行job，
+  将原重复focused进程改成三个只读汇总gate。78组选择、62个精确数量/零skip门及
+  16组原skip语义保持；核对原始九份JUnit、source/run/parent/import和完整节点并集，
+  只输出派生JSON。新增58项synthetic全过，独审无剩余blocker；新形状自身CI待执行。
+  旧298 collector和历史失败不改，详见[续篇](specs/194-parallel-release-ci/focused-aggregation.md)。
+- runtime-tree只替换_relative、_name及graph parent/name的三处规范POSIX纯计算，
+  保留原验证顺序、fresh观察、DTO和预算。四文件212项唯一focused全过；测试辅助
+  风格修正后仅新17项子集重验通过，不能另加到212。全仓Ruff、compileall、diff
+  及独立源码审查通过，详见[规格](specs/191-python-worker-adapter/tree-canonical-component-scans.md)。
+- 不再重复旧67文件联合；最终新source的完整CI承担集成覆盖，并另做一次原600秒、
+  0retry Linux mixed。旧298 CI自然运行中，04:31 UTC快照为30success/3running。
+  本后继尚未Linux/CI验收，仍不可合main；P1隔离构建和真实solver/生产CLI仍开放。
+- private decoded JSON one-shot候选因ambient callback/thread可获得mutable graph而
+  在执行前否决，未修改产品、未计时或重跑case。production/online仍false，P2后置。
+
 ## 最新验收：298 联合通过，Linux mixed 仍超时
 
 - 精确 `298fe05aee62da0af1c7d92b2341c091150ef8f6` 的67文件联合通过2,610个
