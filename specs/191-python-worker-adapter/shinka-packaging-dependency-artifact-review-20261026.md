@@ -1,5 +1,10 @@
 # Shinka packaging dependency candidate artifact review
 
+Follow-up (2026-10-27): the previously unselected `flit_core>=3.3` build edge
+now has a separately observed [3.12.0 candidate](shinka-flit-core-build-dependency-artifact-review-20261027.md).
+The original packaging observation below retains its own scope and outcome;
+this follow-up does not establish a consistent lock, build or runtime.
+
 Status: candidate bytes and declarations independently reviewed on 2026-10-26. This closes only a candidate-artifact observation under
 step 1 of [the existing runtime profile](project-runtime-profile.md), after the
 [Hydra candidates](shinka-hydra-dependency-artifact-review-20261026.md) and

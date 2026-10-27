@@ -8,6 +8,9 @@
   [diagnostic contract](linux-process-accounting-diagnostic.md).
 - [x] Pass 162 synthetic cases, focused Ruff/compileall/diff checks and independent
   static review, including short reads, PID-path replacement and CLI privacy.
+- [x] Check the same helper bytes on 5090gpu by observing only the helper's own
+  known PID/UID/starttime for three samples; independently audit the retained
+  output. This is host compatibility evidence, not product-case observation.
 - [ ] Bind a future explicitly separate diagnostic launcher to its own known PID
   and starttime and observe the remaining mixed cost. Do not retry failed-source
   acceptance merely to seek a pass or infer causality from the host load snapshot.
@@ -356,8 +359,15 @@
   [its bounded artifact review](shinka-packaging-dependency-artifact-review-20261026.md).
   Retain complete member/mode/RECORD/metadata/license/source evidence and the
   original pre-final-stdout index mismatch plus a separate terminal index.
-  This does not close the parent full-closure task: flit_core>=3.3 is unselected,
-  dynamic loader/ctypes paths are unexecuted, and the runtime remains unaccepted.
+  This does not close the parent full-closure task: dynamic loader/ctypes paths
+  are unexecuted and the runtime remains unaccepted. The originally unselected
+  build edge has a separate candidate observation below.
+- [x] Observe the explicitly selected flit_core3.12.0 wheel/sdist build candidate
+  under [its artifact review](shinka-flit-core-build-dependency-artifact-review-20261027.md).
+  Independently verify all members/modes/RECORD/metadata/licenses/build declarations
+  and 50 terminal evidence files; retain the original reader rc1 separately from
+  the local successor rc0. Self-hosted requires=[] and vendored tomli material
+  do not establish reproducible build, full dependency closure or runtime acceptance.
 
 ## Explicitly P2 / out of scope
 

@@ -1,4 +1,14 @@
-## 2026-10-26 当前状态与剩余优先级
+## 2026-10-27 当前状态与剩余优先级
+
+当前必须完成的顺序仍是：**P0 mixed瓶颈修复→新source的Linux回归与完整CI→合main**。
+P1的静态runtime custody/build、完整依赖及真实solver/生产CLI未验收；隔离权限阻塞
+部分按用户选择保留。P2的多机ownership/认证等不混入本轮必交项。
+
+本轮只推进两个不改变产品执行的子项：诊断工具在5090gpu观察自身PID三次成功并
+经离线独审，验证目标机基本兼容性；新增
+[flit_core3.12.0候选制品观察](../specs/191-python-worker-adapter/shinka-flit-core-build-dependency-artifact-review-20261027.md)，
+补packaging的一条build依赖身份准备。两者均不能关闭mixed或真实solver验收。
+owner/JSON优化审查未找到收益明确且等价的候选，原产品保留，不放宽检查或预算。
 
 本轮补齐独立[Linux单PID诊断工具](../specs/191-python-worker-adapter/linux-process-accounting-diagnostic.md)：
 白名单计数、身份前后核验、有界采样和私密create-only输出，162项synthetic测试与

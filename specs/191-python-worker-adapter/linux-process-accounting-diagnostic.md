@@ -80,6 +80,30 @@ The earlier 160-case result remains its own result. An initial default-temp run
 caused pytest's automatic old-garbage cleanup warnings; final runs used fresh
 temporary roots and did not report warnings. No manual cleanup was performed.
 
-No real proc sampling, child launch, SSH, mixed case, provider or model request
-was executed to validate this tool. These tests establish its synthetic contract,
-not compatibility with every target kernel or evidence about the failed runs.
+The 162-case synthetic validation did not use real proc sampling, child launch,
+SSH, mixed cases, providers or model requests. It establishes the synthetic
+contract, not compatibility with every target kernel or evidence about failed runs.
+
+## Linux self-observation (2026-10-27)
+
+One separate self-check on 5090gpu loaded the same exact helper bytes in a fresh
+development directory and observed only its own PID. The caller supplied its
+numeric PID, UID and independently read starttime. Three samples at a configured
+0.05-second interval completed in a 100,932,978 ns sample window; required stat,
+leader schedstat/context switches and process IO were all observed. The tool
+returned zero and closed with `sample_limit`; transport stderr was empty.
+
+The wrapper reports create-only mode-0600 output and unchanged helper bytes.
+An offline independent review reconstructed the exact 2,865-byte JSONL (SHA256
+`b27b6847f0d6089a9508ec4787517d55126ed8c32b98404e7f08f20df2b66cf8`)
+and verified the saved identity, counters, timestamps and original evidence pins.
+It did not re-stat the remote file: mode and runtime origin rely on the retained
+wrapper and emitted checks. The report is in primary ignored
+`release-closeout-20261025/linux-accounting-selfcheck-review-ao3g571h/review.json`,
+SHA256 `76952e84614895b77fcf8d0b468ad9e731f34e4d7df18353853403155b7d19f2`.
+Original material is in `linux-accounting-target-selfcheck-c74g880t/`.
+
+No product module, mixed case, solver or evaluator ran. This confirms only the
+observer's basic compatibility with this host; it does not cover descendants,
+worker workloads or the earlier timeout's cause. The failed-source acceptance
+has not been repeated and its budget remains unchanged.

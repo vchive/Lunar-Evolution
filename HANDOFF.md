@@ -1,4 +1,31 @@
-# 当前交接（2026-10-26，PR186、PR187 已合入 main）
+# 当前交接（2026-10-27，PR186、PR187 已合入 main）
+
+## 本轮后续：Linux工具自检与一项构建依赖准备
+
+- P0仍是同一个mixed超时和PR189合并门，没有新的产品修复或通过声明。owner/
+  persisted-policy只读复核未找到可安全合并的重复观察；JSON缓冲/循环纯内存候选
+  均未提速，保留原产品。strict_json的dict+len快捷路径还会改变替换decoder的
+  duplicate/error顺序，已否决，没有新增guard架构或重跑mixed。
+- 同一SHA的Linux诊断工具在5090gpu单次自检通过：只观察helper自己的已知PID/
+  UID/starttime，三次采样、窗口100,932,978ns、四类source全observed、rc0和
+  stderr0。独审复核原JSONL/identity/source pins；0600由保存的远端wrapper与
+  检查支持，没有独审重新stat远端文件。材料
+  `release-closeout-20261025/linux-accounting-target-selfcheck-c74g880t/`，独审
+  `linux-accounting-selfcheck-review-ao3g571h/review.json`的SHA为
+  `76952e84614895b77fcf8d0b468ad9e731f34e4d7df18353853403155b7d19f2`。
+  这只补目标机工具兼容性，不是worker/case/进程树观察或旧超时因果证据；不关闭
+  未来诊断launcher绑定或mixed验收项。详见[诊断规格](specs/191-python-worker-adapter/linux-process-accounting-diagnostic.md)。
+- P1新增[flit_core3.12.0构建候选制品观察](specs/191-python-worker-adapter/shinka-flit-core-build-dependency-artifact-review-20261027.md)，
+  只处理packaging25.0声明的flit_core>=3.3边。JSON/wheel/sdist各单次获取，保留
+  原静态reader rc1与后继本地reader rc0；没有重取或执行backend。候选自托管
+  build-system声明requires=[]，vendored tomli1.2.3和许可证仍是保留字节，并非
+  独立tomli来源证明。33项独审通过，50文件终态索引精确匹配；报告在
+  `feature191-20261027/shinka-flit-core-independent-review-6s4glqul/review.json`，
+  SHA为`e909a53fae73f32f92610188f2bc092dd9868acc476c92ac5c41e00329ac1ca2`。
+  stdlib/动态metadata fallback及完整build/runtime仍开放。
+- 余下顺序：P0实际瓶颈修复→新source的Linux/完整CI→合main；P1静态runtime
+  custody/build、完整依赖、真实solver/生产CLI仍未验收。用户选择的权限阻塞部分
+  继续保留，P2后置。当前仍只push备份开发ref，production/online保持false。
 
 ## 最新开发：有界 Linux 诊断工具，717 CI 已终态失败
 
