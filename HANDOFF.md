@@ -1,4 +1,27 @@
-## 最新延续：P1/P2 四项软件补齐并集中验证
+## 最新延续：P0 操作内解析/JSON 优化，778 项集中回归通过
+
+- `720c787d` 的唯一 Linux mixed 已在600.031874664秒超时，rc=-15，未生成JUnit或
+  terminal origins。2519 Git文件与归档前后一致；失败保留，不重跑该source。
+- v3栈采样持续至596.308秒，主线程仍在owner/history/terminal-read链中推进。
+  400–595秒PID区间累计195.88 thread-group CPU秒；worker多数采样等待mailbox。
+  这支持重复验证计算成本调查，不证明死锁、具体函数耗时占比或全部child已完成。
+- 后继仅在同一纯操作内共享fresh prefix解析，并为有界exact JSON图增加独立副本/C编码
+  路径；大图、未知类型、漂移backend仍走原stream。新helper与limits进入原代码漂移门。
+  不缓存验证结果，不减少fresh SQL/FS、inode、归属、预算或deadline检查。
+- 16文件集中回归778项全过，157.992478167秒，2523源文件前后相同；Ruff、compileall
+  通过。首轮因超大整数的pytest自动参数名而collection失败，0实际用例执行；仅补显式
+  参数id，原错误保留。此前377/828等不作为本轮重新覆盖累计。
+- 局部实际DTO wire旧AST/新路径输出一致，10文件和266文件样本median CPU分别
+  340.176→198.431µs、1753.208→1110.836µs；仅证明局部改善，不推算mixed通过。
+  原件在主区ignored `parallel-batch-20261027/p0-json-prefix-collected-61rztvo_`、
+  `p0-json-prefix-static-s82at34j`、`runtime-tree-canonical-micro-x43pjjun`。
+- 当前仍待新clean HEAD的唯一600秒/零retry Linux mixed及完整CI；未合main。
+  P1/P2四项已有软件维持下节边界。accepted build/custody、collector trusted sink、
+  installed bridge/独立anchor custody和guardian持久证据需要实际可信runtime/账户/
+  launcher与私有sink，不能用新parser或fixture关闭；既有隔离环境阻塞保留。
+  production_admission=false、online_publication=false；无模型或远程/公司evaluator。
+
+## 前批延续：P1/P2 四项软件补齐并集中验证
 
 - 本轮新增编译器 `-MD` depfile 捕获/有界解析及 pinned 输入比较、显式 in-image
   完整模块 collector、本机 installed-account 只读预检、同 boot 原始 native 上下文的

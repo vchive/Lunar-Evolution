@@ -1,4 +1,33 @@
-## Final parallel continuation: develop first, regress once
+## P0 successor: frozen implementation, concentrated regression
+
+The720c source's sole mixed run exceeded its original600-second gate at
+600.031874664s, rawrc-15, without terminal JUnit/module origins. Retain it;
+do not rerun that source. Sparse v3 samples continued to596.308s. Later samples
+show owner/history/terminal reads and worker mailbox waits;400–595s accumulated
+195.88 thread-group CPU seconds. No function-time share or deadlock is proven.
+
+This successor combines operation-local fresh prefix parsing, bounded detached
+exact-JSON C encoding, and explicit helper/limit code-drift projections. Authors
+froze implementation before one16-file regression:778 pass, no fail/error/skip,
+157.992478167s, all2523 source records unchanged. A preceding collection-only
+failure came from pytest generating an ID for a20001-bit integer; only its
+explicit parameter ID changed before the actual run. Keep both raw records.
+Ruff/compileall pass. No earlier377/828-node batch is claimed as rerun coverage.
+
+One retained-AST local comparison used actual builder-produced DTO wire shapes:
+small10-file and medium266-file output bytes agree, median CPU340.176→198.431µs
+and1753.208→1110.836µs. This is local non-regression evidence, not whole-case
+acceptance. Next freeze a clean commit and execute its single original600s,
+zero-retry mixed with unchanged v3 runner bytes; full CI/merge follow only if it
+passes. No budget, deadline, retry, SQL/FS observation or authority is relaxed.
+
+P1/P2 existing software remains in the following batch. Production custody,
+trusted collector sink, installed bridge/independent anchor storage and durable
+guardian evidence require actual trusted runtime/account/launcher/sink. They
+cannot be closed by another synthetic parser; keep software and environment
+gates explicit and production/online false.
+
+## Previous parallel continuation: develop first, regress once
 
 The final source adds compiler dependency capture/comparison, an explicitly
 selected in-image whole-module collector, local installed-account preflight and

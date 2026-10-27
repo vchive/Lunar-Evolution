@@ -1,4 +1,32 @@
-## 后继集中回归：377 unique 全过，Linux mixed 待执行
+## P0 后继：778 unique 全过，唯一 Linux mixed 待执行
+
+720c唯一mixed原结果为600.031874664秒、rc=-15、timed_out=true，未生成JUnit/
+terminal origins；2519 Git源文件和archive前后匹配。主区ignored
+`parallel-batch-20261027/final-mixed-720c787d-prepared/execution`保留原件。
+120栈样本延续至596.308162秒，最后进入settled-terminal/history读取；worker多次
+等待mailbox。PID在400.000393–595.000346秒观察端点间累计195.88 thread-group
+CPU秒、leader runtime161.691587秒、runqueue0.187999秒。这些不能归因到函数，
+不能证明全部child完成；无completion record，最后约3.7秒仍未知。原source不重跑。
+
+后继共享同次fresh prefix解析，新增小型exact JSON独立副本/C编码和明确code/limit
+漂移门；不缓存验证/SQL/FS结果。集中16文件结果在`p0-json-prefix-collected-61rztvo_`：
+778节点全过，rc0，157.992478167秒，零fail/error/skip，2523源码记录前后相同。
+首个`p0-json-prefix-focused-x5_5mzts`在collection时因超大整数自动参数id而rc2，
+0实际用例执行；仅补显式id后运行本次完整选择。原失败保留，不伪造union/成功JUnit。
+`p0-json-prefix-static-s82at34j`保留实际Ruff/compileall命令及rc0。此前377/828不累计。
+
+`runtime-tree-canonical-micro-x43pjjun`保留旧AST、产品builder生成wire与局部计时：
+10文件/15,752B与266文件/93,086B样本bytes一致，median CPU分别
+340.176→198.431µs、1753.208→1110.836µs，single-call调用数22,805→1,895、
+123,669→11,111。产品source前后SHA一致；系统Python3.9在计时前import失败原日志
+另存，实际采用既有miniforge3.13。不能据局部数据推算整例时长或解除P0。
+
+新clean source仍需唯一600秒/零retry Linux mixed及完整CI后才可合main。
+P1/P2已有四项软件维持原provider-free边界；accepted build/custody、trusted collector
+sink、installed bridge/独立anchor跨重启保管、账户transition和guardian异常durable
+证据/真实断线仍未验收。production/online=false，无WebAgent、模型或远程/公司evaluator。
+
+## 前批集中回归：377 unique 全过，Linux mixed 待执行
 
 本轮在同一集成source收齐四项功能后回归：compiler depfile捕获与输入比较、显式
 in-image模块collector、installed账户只读预检、独立原anchor认证的native restart inspection。

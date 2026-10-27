@@ -16,6 +16,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, NoReturn
 
+from . import producer_python_runtime_tree as runtime_tree
 from .algorithm import (
     AlgorithmProblemContract,
     ConstraintSpec,
@@ -553,6 +554,9 @@ def _code_dependencies() -> dict[str, str]:
         "native_plan_from_inputs": NativeRSIExecutionPlan.from_native_inputs.__func__,
         "native_plan_binding": _assert_plan_binding,
         "runtime_tree_verifier": verify_python_runtime_tree_manifest,
+        "runtime_tree_canonical": runtime_tree._canonical,
+        "runtime_tree_json_snapshot": runtime_tree._bounded_exact_json_snapshot,
+        "runtime_tree_json_encoder_guard": runtime_tree._json_fast_encoder_current,
         "python_binding": PythonProducerBinding,
         "python_binding_parser": parse_python_producer_binding,
         "python_sidecar_reader": read_python_producer_binding_sidecar,
@@ -561,7 +565,13 @@ def _code_dependencies() -> dict[str, str]:
         "candidate_selector": select_native_candidate,
         "canonical_json": canonical_json, "strict_json": strict_json,
     }
-    return {name: component_fingerprint(component) for name, component in components.items()}
+    limits = {
+        "max_depth": runtime_tree._JSON_FAST_MAX_DEPTH,
+        "max_nodes": runtime_tree._JSON_FAST_MAX_NODES,
+        "manifest_bytes": runtime_tree.MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES,
+    }
+    return {name: component_fingerprint(component, config=limits if name == "runtime_tree_json_snapshot" else None)
+            for name, component in components.items()}
 
 
 @dataclass(frozen=True, slots=True)

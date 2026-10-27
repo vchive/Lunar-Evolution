@@ -36,6 +36,24 @@ _FIELDS = {"schema_version", "protocol", "scope", "declared_manifest", "director
 _DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _TARGET_TEXT_LIMITS = {"platform": 6, "architecture": 7, "python_version": 4, "abi_tag": 5, "layout": 13}
 _MAX_ROLE_TEXT = max(map(len, declared._ROLE_SLOTS))
+_JSON_FAST_MAX_DEPTH = 32
+_JSON_FAST_MAX_NODES = 131072
+_JSON_FAST_UNAVAILABLE = object()
+_JSON_FAST_ENCODER = json.JSONEncoder
+_JSON_FAST_METHODS = tuple(
+    (name, method, method.__code__)
+    for name in ("__init__", "encode", "iterencode")
+    for method in (getattr(json.JSONEncoder, name),)
+)
+_JSON_FAST_C_ENCODER = json.encoder.c_make_encoder
+_JSON_FAST_BASESTRING = json.encoder.encode_basestring
+_JSON_FAST_ITERENCODE = json.encoder._make_iterencode
+_JSON_FAST_ITERENCODE_CODE = _JSON_FAST_ITERENCODE.__code__
+_JSON_FAST_DEFAULT_PINS = tuple(
+    (method, method.__defaults__, method.__kwdefaults__,
+     None if method.__kwdefaults__ is None else tuple(method.__kwdefaults__.items()))
+    for method in (*tuple(item[1] for item in _JSON_FAST_METHODS), _JSON_FAST_ITERENCODE)
+)
 
 
 class PythonRuntimeTreeError(ValueError):
@@ -50,9 +68,121 @@ def _fail(code: str) -> NoReturn:
     raise PythonRuntimeTreeError(code)
 
 
+def _bounded_exact_json_snapshot(value: object, maximum: int) -> object:
+    """Copy a small exact JSON graph only after conservatively bounding its bytes.
+
+    Unknown or expensive input falls back to the original streaming encoder; this
+    probe never refuses it. The C encoder receives only this call-local copy, so a
+    caller's mutable containers cannot outgrow the checked bound during encoding.
+    """
+    if type(maximum) is not int or maximum < 0:
+        return _JSON_FAST_UNAVAILABLE
+    remaining, nodes = maximum, 0
+
+    def copy(item: object, depth: int) -> object:
+        nonlocal remaining, nodes
+        nodes += 1
+        if depth > _JSON_FAST_MAX_DEPTH or nodes > _JSON_FAST_MAX_NODES:
+            return _JSON_FAST_UNAVAILABLE
+        kind = type(item)
+        if kind is str:
+            # Six bytes covers every escaped control character and UTF-8 code point.
+            remaining -= 2 + 6 * len(item)
+        elif item is None:
+            remaining -= 4
+        elif kind is bool:
+            remaining -= 5
+        elif kind is int:
+            if item.bit_length() > 64:
+                return _JSON_FAST_UNAVAILABLE
+            remaining -= 21
+        elif kind is dict:
+            remaining -= 2
+            if remaining < 0:
+                return _JSON_FAST_UNAVAILABLE
+            result = {}
+            for key, child in item.items():
+                if type(key) is not str:
+                    return _JSON_FAST_UNAVAILABLE
+                nodes += 1
+                # Count punctuation for each copied entry, rather than relying on
+                # a length observed before another thread may mutate the source.
+                remaining -= 1 + (1 if result else 0) + 2 + 6 * len(key)
+                if remaining < 0 or nodes > _JSON_FAST_MAX_NODES:
+                    return _JSON_FAST_UNAVAILABLE
+                detached = copy(child, depth + 1)
+                if detached is _JSON_FAST_UNAVAILABLE:
+                    return _JSON_FAST_UNAVAILABLE
+                result[key] = detached
+            return result
+        elif kind is list or kind is tuple:
+            remaining -= 2
+            if remaining < 0:
+                return _JSON_FAST_UNAVAILABLE
+            result = []
+            for child in item:
+                if result:
+                    remaining -= 1
+                    if remaining < 0:
+                        return _JSON_FAST_UNAVAILABLE
+                detached = copy(child, depth + 1)
+                if detached is _JSON_FAST_UNAVAILABLE:
+                    return _JSON_FAST_UNAVAILABLE
+                result.append(detached)
+            return result
+        else:
+            # Floats, subclasses and callback-bearing values retain the old path.
+            return _JSON_FAST_UNAVAILABLE
+        return item if remaining >= 0 else _JSON_FAST_UNAVAILABLE
+
+    try:
+        return copy(value, 0)
+    except (RuntimeError, RecursionError):
+        # Concurrent container mutation or unusually low recursion limits must not
+        # introduce a new refusal ahead of the original streaming traversal.
+        return _JSON_FAST_UNAVAILABLE
+
+
+def _json_fast_encoder_current(encoder: object) -> bool:
+    """Keep custom or rebound JSON backends on their original streaming path."""
+    if (json.JSONEncoder is not _JSON_FAST_ENCODER
+            or type(encoder) is not _JSON_FAST_ENCODER
+            or _JSON_FAST_C_ENCODER is None
+            or json.encoder.c_make_encoder is not _JSON_FAST_C_ENCODER
+            or json.encoder.encode_basestring is not _JSON_FAST_BASESTRING
+            or json.encoder._make_iterencode is not _JSON_FAST_ITERENCODE
+            or _JSON_FAST_ITERENCODE.__code__ is not _JSON_FAST_ITERENCODE_CODE):
+        return False
+    for name, method, code in _JSON_FAST_METHODS:
+        if getattr(_JSON_FAST_ENCODER, name) is not method or method.__code__ is not code:
+            return False
+    for method, defaults, keyword_defaults, keyword_items in _JSON_FAST_DEFAULT_PINS:
+        if method.__defaults__ is not defaults or method.__kwdefaults__ is not keyword_defaults:
+            return False
+        if keyword_defaults is not None:
+            if type(keyword_defaults) is not dict or len(keyword_defaults) != len(keyword_items):
+                return False
+            for (key, value), (original_key, original_value) in zip(keyword_defaults.items(), keyword_items):
+                if key is not original_key or value is not original_value:
+                    return False
+    settings = object.__getattribute__(encoder, "__dict__")
+    if any(name in settings for name in ("encode", "iterencode", "__init__")):
+        return False
+    return (settings.get("ensure_ascii") is False and settings.get("sort_keys") is True
+            and settings.get("allow_nan") is False and settings.get("indent") is None
+            and settings.get("item_separator") == "," and settings.get("key_separator") == ":")
+
+
 def _canonical(value: object) -> bytes:
     try:
         encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        if _json_fast_encoder_current(encoder):
+            detached = _bounded_exact_json_snapshot(value, MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES)
+            if detached is not _JSON_FAST_UNAVAILABLE:
+                raw = encoder.encode(detached).encode("utf-8")
+                if len(raw) > MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES:
+                    _fail("manifest_too_large")
+                return raw
         chunks, size = [], 0
         for chunk in encoder.iterencode(value):
             encoded = chunk.encode("utf-8")

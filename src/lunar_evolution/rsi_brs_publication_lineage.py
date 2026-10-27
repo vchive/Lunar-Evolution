@@ -34,6 +34,7 @@ from typing import Any
 
 from . import _benchmark_files as _files
 from . import producer_bundle_recovery as recovery
+from . import producer_python_runtime_tree as runtime_tree
 from . import rsi_brs_rejection_owner as rejection
 from . import rsi_brs_rejection_provenance as provenance
 from . import rsi_brs_rejection_provenance_policy as _provenance_policy
@@ -96,8 +97,12 @@ _ORIGINAL_PROVENANCE_CODES = tuple(
         (ready_policy, ("rejection_ready_capture_policy",)),
         (reserved_policy, ("_build_reserved_brs_policy", "_build_reserved_brs_policy_entry",
                            "reserved_brs_policy_projection")),
+        (runtime_tree, ("_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current")),
     ) for name in names
 )
+_ORIGINAL_RUNTIME_TREE_JSON_LIMITS = tuple((name, getattr(runtime_tree, name)) for name in (
+    "_JSON_FAST_MAX_DEPTH", "_JSON_FAST_MAX_NODES", "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES",
+))
 _ORIGINAL_READY_POLICY_CLOSURE = (
     ready_policy.rejection_ready_capture_policy.__closure__,
     tuple(cell.cell_contents for cell in ready_policy.rejection_ready_capture_policy.__closure__),
@@ -452,6 +457,12 @@ def _policy() -> dict[str, Any]:
            for module, name, function, code, attributes, defaults, kwdefaults, kwitems, labels
            in _ORIGINAL_PROVENANCE_CODES):
         _fail("rejection_policy_drift")
+    # These checks precede the scoped pure-policy cache. A retained owner must
+    # not keep the old calculation limits after an in-process replacement.
+    if any(type(getattr(runtime_tree, name, None)) is not int
+           or getattr(runtime_tree, name) != original
+           for name, original in _ORIGINAL_RUNTIME_TREE_JSON_LIMITS):
+        _fail("runtime_tree_json_policy_drift")
     ready_closure, ready_captures = _ORIGINAL_READY_POLICY_CLOSURE
     try:
         if (ready_policy.rejection_ready_capture_policy.__closure__ is not ready_closure
@@ -689,6 +700,8 @@ def _policy() -> dict[str, Any]:
             or closure[0].cell_contents is not control_implementation):
         _fail("native_dispatch_control_binding_drift")
     aliases = (
+        (runtime_tree, sys.modules["lunar_evolution.producer_python_runtime_tree"]),
+        (scheduler_inputs.runtime_tree, runtime_tree),
         (reserved_policy, rsi_brs_reserved_policy),
         (ready_owner, sys.modules["lunar_evolution.rsi_brs_rejection_ready_owner"]),
         (ready_policy, sys.modules["lunar_evolution.rsi_brs_rejection_ready_policy"]),
@@ -1477,6 +1490,12 @@ def _policy() -> dict[str, Any]:
             "native_context_helpers": {name: component_fingerprint(getattr(scheduler_inputs, name)) for name in (
                 "_checkpoint", "_sidecar", "_native", "_projection", "_shape", "_broker", "_request_memory", "_path",
             )},
+            "runtime_tree_json": {
+                "helpers": {name: component_fingerprint(getattr(runtime_tree, name)) for name in (
+                    "_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current",
+                )},
+                "limits": {name: getattr(runtime_tree, name) for name, _original in _ORIGINAL_RUNTIME_TREE_JSON_LIMITS},
+            },
             "population_projection": {name: component_fingerprint(getattr(PopulationStrategy, name)) for name in (
                 "_reconstruct_population_projection", "_producer_admission_events", "_apply_producer_admissions",
                 "_trim", "_capacity", "_candidates", "_rank", "_family_elites", "_candidate_family",

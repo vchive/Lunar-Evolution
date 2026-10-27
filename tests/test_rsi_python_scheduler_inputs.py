@@ -558,6 +558,40 @@ def test_fingerprint_rejects_changed_validator_dependency(tmp_path, monkeypatch)
     assert observed != fingerprint
 
 
+@pytest.mark.parametrize("name,key", [
+    ("_canonical", "runtime_tree_canonical"),
+    ("_bounded_exact_json_snapshot", "runtime_tree_json_snapshot"),
+    ("_json_fast_encoder_current", "runtime_tree_json_encoder_guard"),
+])
+def test_runtime_tree_json_helper_is_an_explicit_code_dependency(monkeypatch, name, key):
+    original = scheduler._code_dependencies()
+
+    def changed(*_args, **_kwargs):
+        pytest.fail("dependency fingerprint executed a changed JSON helper")
+
+    monkeypatch.setattr(scheduler.runtime_tree, name, changed)
+    observed = scheduler._code_dependencies()
+    assert observed.keys() == original.keys()
+    assert observed[key] != original[key]
+    assert {entry: value for entry, value in observed.items() if entry != key} == {
+        entry: value for entry, value in original.items() if entry != key
+    }
+
+
+@pytest.mark.parametrize("name", [
+    "_JSON_FAST_MAX_DEPTH", "_JSON_FAST_MAX_NODES", "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES",
+])
+def test_runtime_tree_json_limit_changes_only_snapshot_dependency_fingerprint(monkeypatch, name):
+    original = scheduler._code_dependencies()
+    monkeypatch.setattr(scheduler.runtime_tree, name, getattr(scheduler.runtime_tree, name) + 1)
+    observed = scheduler._code_dependencies()
+    key = "runtime_tree_json_snapshot"
+    assert observed[key] != original[key]
+    assert {entry: value for entry, value in observed.items() if entry != key} == {
+        entry: value for entry, value in original.items() if entry != key
+    }
+
+
 @pytest.mark.parametrize("domain", ["request", "memory_item", "contract"])
 def test_exact_dto_instance_cannot_shadow_serializer_with_callback(tmp_path, domain):
     value = _setup(tmp_path)

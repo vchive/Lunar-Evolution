@@ -222,8 +222,9 @@ def _retained_reserved_brs_materials(
     whole-wire prefix; it never slices a multi-batch wire into a single batch.
     """
     from .rsi_brs_reserved_rejection import (
-        _transition_scope,
-        validate_reserved_brs_rejected_entry,
+        _prefix,
+        _transition_scope_from_prefix,
+        _validated_entry_from_prefix,
     )
 
     _shape(state)
@@ -237,9 +238,15 @@ def _retained_reserved_brs_materials(
             or provenance_reserve not in {0, MAX_NATIVE_RSI_REJECTION_PROVENANCE_BYTES}):
         _fail("shape_invalid")
     retained_ready_capsule_bytes(state)
-    _before, active, old_index = _transition_scope(wire, wire, prefix, original_lineage_bytes)
-    rejected = validate_reserved_brs_rejected_entry(active, prefix=prefix,
-        native_plan_sha256=native_plan_sha256, with_provenance=with_provenance)
+    # Keep fresh parsing on each invocation and share detached facts only on
+    # this pure stack. Scope errors still precede the entry error wrapper.
+    parsed_prefix = _prefix(prefix)
+    _before, active, old_index = _transition_scope_from_prefix(
+        wire, wire, parsed_prefix, original_lineage_bytes,
+    )
+    rejected = _validated_entry_from_prefix(
+        active, parsed_prefix, native_plan_sha256, with_provenance,
+    )
     if wire["rejections"] != [*old_index, {"ordinal": rejected.ordinal,
             "journal_id": rejected.journal_id, "rejected_sha256": rejected.digest()}]:
         _fail("rejection_index_invalid")

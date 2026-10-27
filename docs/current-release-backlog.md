@@ -1,4 +1,26 @@
-## 当前执行点：四项后继软件已开发，集中回归377项通过
+## 当前执行点：P0 后继集中回归通过，等待原预算 Linux 验证
+
+`720c787d`的唯一mixed在600.031874664秒超时（rc=-15，无JUnit/terminal origins）；
+2519 Git源文件与归档前后匹配。原失败保留，不重跑。全预算稀疏栈在596.308秒仍见
+主线程进入terminal/history读取，400–595秒累计195.88 thread-group CPU秒。
+不能把栈频次当函数耗时比例或据此认定死锁/所有child完成。
+
+后继P0已实现同次fresh reserved prefix单次解析、有界独立JSON副本的C编码路径与
+helper/limit漂移门。16文件778项全过；Ruff/compileall通过。局部真实DTO wire输出
+与旧AST一致、两样本CPU改善1.71x/1.58x，不代替整例验收。首个collection超大整数
+自动id错误与原结果保留，修显式id后才实际运行全部测试。
+
+| 优先级 | 当前剩余工作 |
+| --- | --- |
+| P0 | 新clean source唯一600秒/零retry Linux mixed，通过后完整CI与main合并 |
+| P1 | accepted实际build/custody、完整link inputs、trusted collector调用/接收通道、隔离image/startup/solver/lifecycle及native生产CLI |
+| P2 | installed native bridge、独立anchor跨重启保管、实际账户transition/隔离、guardian异常durable证据与真实断线验收 |
+
+既有depfile/collector/preflight/restart软件已完成对应provider-free回归；生产接线所需
+可信runtime/账户/launcher/私有sink缺失，不能再加fixture就算完成。5090gpu无sudo/KVM、
+bwrap/userns失败只解释相应隔离环境门，不能覆盖其余未接软件。production/online=false。
+
+## 前批执行点：四项后继软件已开发，集中回归377项通过
 
 | 优先级 | 本轮完成的软件 | 尚未关闭的门槛 |
 | --- | --- | --- |
