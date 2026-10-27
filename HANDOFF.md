@@ -37,6 +37,11 @@ Podman snapshot case 7 命令通过，base import 一次，210 原件匹配；�
 `final-podman-snapshots-once-7a6ahzip`、`final-real-zig-tmp-profile-once-qz0n9xfh`。
 已有认证、ownership、installed bridge/vault/guardian 不再列为整块未开发。
 
+`b3040b4c` 的唯一 mixed 在 setup 阶段因 `/var/tmp` 的 `EDQUOT` 失败，
+尚未进入 P0 执行链路，非超时；源码前后匹配、244 模块来源匹配，原错误保留。
+fixture 的固定短路径优先级改为 macOS `/private/tmp`、Linux `/tmp`，再 `/var/tmp`，
+从而使用已核验的独立 tmpfs，不改生产路径、断言、预算或重试门。
+
 当前未合 main，production_admission=false、online_publication=false。无模型、
 WebAgent、远程或公司 evaluator；普通平台回归允许本机补齐，本机结果不能替代
 指定 Linux 隔离验收。以下为此前各批历史，不覆盖本节当前结论。

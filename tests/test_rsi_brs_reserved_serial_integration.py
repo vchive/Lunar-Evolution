@@ -84,7 +84,7 @@ def tmp_path():
     # checks intentionally reject.  Use its real short parent there while
     # retaining /tmp on Linux.
     temporary_parent = next(
-        str(candidate) for candidate in (Path("/private/tmp"), Path("/var/tmp"), Path("/tmp"))
+        str(candidate) for candidate in (Path("/private/tmp"), Path("/tmp"), Path("/var/tmp"))
         if candidate.is_dir() and not candidate.is_symlink()
     )
     with tempfile.TemporaryDirectory(prefix="lrsi-", dir=temporary_parent) as directory:
