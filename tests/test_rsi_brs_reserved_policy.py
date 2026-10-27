@@ -207,3 +207,16 @@ def test_reserved_delegates_remain_executable_pins(module_name, name, monkeypatc
         function = vars(module)[name]
     monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
     _refuses()
+
+
+@pytest.mark.parametrize("name", [
+    "_memory_item", "_decision_from_dict", "_deserialize_execution", "_serialize_execution",
+])
+def test_capacity_prediction_static_controller_helpers_reject_code_drift(monkeypatch, name):
+    from lunar_evolution.rsi_controller import RSILearningController
+
+    descriptor = vars(RSILearningController)[name]
+    assert isinstance(descriptor, staticmethod)
+    function = descriptor.__func__
+    monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
+    _refuses()

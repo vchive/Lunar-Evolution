@@ -69,3 +69,13 @@ See [installed native anchor custody](installed-native-anchor-custody.md).
 The explicit trusted installation API refuses missing setup and creates no new
 attestation. Software integration is not accepted production installation,
 account isolation, real solver acceptance or whole-group cleanup authority.
+
+## Fixed account access probe continuation (2026-10-28)
+
+- [x] Add fixed static-helper FD execution under an already installed root wrapper with credential drop, empty environment/groups and original deadline.
+- [x] Consume bounded numeric identity and denied-access observations without reading key/config/state bodies or granting isolation/runtime authority.
+- [x] Complete concentrated local/Linux software regression and Linux C negative smoke.
+- [ ] Exercise a real installed distinct-account runtime and accepted access contract.
+- [ ] Resolve and implement an independently surviving durable guardian receiving boundary with reviewed ACK/deadline semantics, then execute abnormal-disconnect acceptance.
+
+See `installed-account-probe.md`. Mocked root facts and native negative smoke are not actual account acceptance.

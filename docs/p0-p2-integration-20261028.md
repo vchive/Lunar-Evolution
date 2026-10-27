@@ -63,6 +63,81 @@ base HEAD `72c2f973`, archive SHA256
 `ce91f6adeaeabfeab48e647a19eb3c6cc511043e55aa0a270c3214670c5551ba`.
 It is not described as the later corrected commit.
 
+## Subsequent terminal results and active repair
+
+The corrected-source Linux affected run passed all 235 nodes in 13.244750s,
+with no failures, errors or skips. Its 2,536 files and 221 loaded Lunar origins
+matched. The latest Linux deduplicated union is 2,035 nodes: 1,972 passed and
+63 platform skips. It is not a complete rerun of all nodes at the final commit.
+
+The clean `5bdf6b30` macOS mixed run naturally failed after 253.692564s, inside
+the unchanged 600-second, zero-retry budget. The error is
+`rsi_brs_reserved_ledger_capacity_exceeded` while finalization reads controller
+journal revision 32. All 2,536 files and 271 loaded origins matched. The original
+failure is retained and that product source is not rerun to seek a pass.
+
+Inspection found an actual contract mismatch: checkpoint budgets measure compact
+UTF-8 JSON, while SQL writers serialize spaced ASCII-escaped JSON; the reserved
+reader additionally bounds the full row including metadata. The original short
+temporary database no longer exists, so the exact failed payload length is not
+known. The continuation fixes encoding and row-capacity prediction without
+raising the reader's 128 KiB cap, in parallel with build-dependency consumption
+and a fixed distinct-account access probe. Integrated regression follows author
+freeze, with unsupported ordinary Linux checks moved to the local machine where
+applicable. Actual isolated-runtime requirements remain separate.
+
+Evidence: `linux-native-affected-j2wrukm2/remote-records`,
+`linux-latest-unique-independent-audit-5qwt32av`,
+`p0-p2-local-batch-preparation-135az0kk`, and
+`darwin-mixed-failure-independent-audit-jpsr6pna` in the same ignored evidence root.
+The independent mixed audit SHA256 is
+`8d0a20a7dd3eeea7e537633209cfb75b2f3d5d9c895b1510b28ca6c1a65a1460`.
+
+## Capacity/build/account continuation: concentrated terminal results
+
+The continuation implements compact UTF-8 checkpoint storage with the unchanged
+full-row meter before INSERT, metadata-aware staging reservations and deterministic
+non-governed finalization growth prediction. Existing spaced/escaped history stays
+readable without rewriting. Scheduler and BRS executable identities include all
+new helpers, limits and static controller methods. Unknown governed admission
+outcomes still use actual-write guards; whole-flow side-effect atomicity is not
+claimed.
+
+P1 adds an explicit successor recipe with bounded linker depfiles and an actual
+consumer over the original v3 execution report, persisted report bytes, inputs,
+snapshots and outputs. It refuses ambient/unpinned/cache inputs. This is byte
+comparison after execution, not immutable build-input custody or complete compiler
+driver input proof. P2 adds a root-installed fixed C access probe over the held
+helper FD, credential drop, empty environment/groups and original deadline. Its
+fixture passes are not genuine root installation/account/runtime acceptance.
+
+| Execution | Result | Integrity |
+| --- | --- | --- |
+| macOS 23-file union | 692 pass / 1 Linux-native smoke skip; 52.462048s | 2,548 files unchanged |
+| Linux first preparation | Refused before pytest, 0 invocations; tar modes differed | Original bytes/types equal; failure retained |
+| Linux 23-file union | 691 pass / 2 old fixture failures / 0 skip; 115.013894s | Archive files unchanged; terminal origins match |
+| macOS affected fixture file | 2 pass; 1.480895s | Files unchanged |
+| Linux affected fixture file | 2 pass; 5.176850s | 2,548 files unchanged; 262 origins match |
+
+The latest unique result is **693 Linux passes**, and **692 macOS passes plus one
+platform skip**. The two affected nodes are replacements within those totals,
+not two extra cases. Their synthetic absolute paths exceeded the unchanged 32 KiB
+binding limit under the long evidence directory; a fixed short private test root
+now makes that fixture independent of the runner location. No product cap or
+assertion changed. Original results remain retained. The initial Linux installation
+refusal was resolved with explicit Git tar.umask=0022; it executed no tests and
+was not a failed-case retry.
+
+Final project Ruff, compileall and staged/unstaged diff checks passed. Evidence:
+`capacity-build-account-local-z9apm48p`,
+`capacity-build-account-linux-5g4e_ctd` (preparation refusal),
+`capacity-build-account-linux-install-egvarryv`,
+`capacity-batch-affected-local-ps67ebey`,
+`capacity-batch-affected-linux-tswy13tx`, and
+`capacity-build-account-batch-zc85cyv_` under the same ignored evidence root.
+The final clean product source still requires its own original-budget mixed and
+complete CI. No current source is reported as merged or production accepted.
+
 ## Still open
 
 1. P0: the corrected clean source's original 600-second, zero-retry mixed run,

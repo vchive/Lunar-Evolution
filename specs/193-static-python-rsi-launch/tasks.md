@@ -222,3 +222,12 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
 - [ ] Accept real configured static build, ELF, expanded installation/startup,
   actual solver/lifecycle and native production CLI. Existing environment and
   unresolved dependency gates remain binding.
+
+## Actual build dependency consumption continuation (2026-10-28)
+
+- [x] Add opt-in linker-depfile successor recipe and bind captures to original command/output manifests.
+- [x] Execute through the original v3 runner, read back its persisted report and pinned inputs/outputs, and consume actual C/link depfiles.
+- [x] Complete the concentrated local/Linux batch and static checks; retain initial fixture/preparation failures.
+- [ ] Independently prove complete driver inputs and immutable build-input custody; accept real isolated build/runtime and production CLI.
+
+See `actual-build-dependency-consumer.md` and the batch report. Byte readback does not close F02c.

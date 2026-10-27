@@ -1620,9 +1620,18 @@ class RSILedger:
         self._assert_controller_lock(run_id)
         revision = row["revision"] + 1 if row else 0
         digest = self._checkpoint_digest(run_id, revision, parent, clean)
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+        from .rsi_checkpoint_storage import (
+            canonical_checkpoint_text,
+            validate_reserved_checkpoint_row,
+        )
+
+        stored_payload = canonical_checkpoint_text(clean)
+        if reserved_brs_staging_mode(clean):
+            validate_reserved_checkpoint_row(run_id, revision, parent, stored_payload, digest)
         connection.execute(
             "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
-            (run_id, revision, parent, json.dumps(clean, sort_keys=True), digest),
+            (run_id, revision, parent, stored_payload, digest),
         )
         return digest
 
@@ -1842,9 +1851,21 @@ class RSILedger:
                 logical_id=logical_id, revision=0, kind=kind, state=state,
                 request_sha256=request_sha256, parent_record_sha256=None, payload=clean_payload,
             )
+            stored_payload = json.dumps(clean_payload, sort_keys=True)
+            if kind == "run":
+                from .rsi_brs_serial_driver import reserved_brs_staging_mode
+                from .rsi_checkpoint_storage import (
+                    canonical_checkpoint_text,
+                    validate_reserved_record_row,
+                )
+
+                if reserved_brs_staging_mode(clean_payload):
+                    stored_payload = canonical_checkpoint_text(clean_payload)
+                    validate_reserved_record_row(logical_id, 0, kind, state, request_sha256, None,
+                                                 stored_payload, record_sha256, created_at)
             connection.execute(
                 "INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (logical_id, 0, kind, state, request_sha256, None, json.dumps(clean_payload, sort_keys=True), record_sha256, created_at),
+                (logical_id, 0, kind, state, request_sha256, None, stored_payload, record_sha256, created_at),
             )
             return RSIRecord(logical_id, 0, kind, state, request_sha256, None, clean_payload, record_sha256, created_at)
 
@@ -2287,9 +2308,18 @@ class RSILedger:
             raise RSILearningError("rsi_controller_checkpoint_conflict")
         revision = row["revision"] + 1
         digest = self._checkpoint_digest(run_id, revision, expected_sha256, clean)
+        from .rsi_brs_serial_driver import reserved_brs_staging_mode
+        from .rsi_checkpoint_storage import (
+            canonical_checkpoint_text,
+            validate_reserved_checkpoint_row,
+        )
+
+        stored_payload = canonical_checkpoint_text(clean)
+        if reserved_brs_staging_mode(clean):
+            validate_reserved_checkpoint_row(run_id, revision, expected_sha256, stored_payload, digest)
         connection.execute(
             "INSERT INTO rsi_controller_journal VALUES (?, ?, ?, ?, ?)",
-            (run_id, revision, expected_sha256, json.dumps(clean, sort_keys=True), digest),
+            (run_id, revision, expected_sha256, stored_payload, digest),
         )
         return digest
 
@@ -3035,10 +3065,22 @@ class RSILedger:
                 logical_id=logical_id, revision=revision, kind=head.kind, state=state,
                 request_sha256=head.request_sha256, parent_record_sha256=head.record_sha256, payload=merged,
             )
+            stored_payload = json.dumps(merged, sort_keys=True)
+            if head.kind == "run":
+                from .rsi_brs_serial_driver import reserved_brs_staging_mode
+                from .rsi_checkpoint_storage import (
+                    canonical_checkpoint_text,
+                    validate_reserved_record_row,
+                )
+
+                if reserved_brs_staging_mode(merged):
+                    stored_payload = canonical_checkpoint_text(merged)
+                    validate_reserved_record_row(logical_id, revision, head.kind, state, head.request_sha256,
+                                                 head.record_sha256, stored_payload, record_sha256, created_at)
             connection.execute(
                 "INSERT INTO rsi_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (logical_id, revision, head.kind, state, head.request_sha256, head.record_sha256,
-                 json.dumps(merged, sort_keys=True), record_sha256, created_at),
+                 stored_payload, record_sha256, created_at),
             )
             return RSIRecord(logical_id, revision, head.kind, state, head.request_sha256, head.record_sha256, merged, record_sha256, created_at)
 

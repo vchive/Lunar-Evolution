@@ -29,7 +29,7 @@ _MODULE_NAMES = (
     "rsi_brs_reserved_owner", "rsi_brs_rejection_owner", "rsi_brs_rejection_provenance",
     "rsi_brs_rejection_capacity", "rsi_brs_rejection_ready_owner", "rsi_brs_rejection_ready_final",
     "rsi_brs_serial_driver", "rsi_brs_native_provider", "rsi_brs_native_completion",
-    "rsi_brs_serial_finalization", "rsi_brs_serial_budget",
+    "rsi_brs_serial_finalization", "rsi_brs_serial_budget", "rsi_checkpoint_storage",
     "rsi_python_brs_terminal_lifecycle", "rsi_brs_terminal_evidence",
 )
 _PROJECT = None
@@ -168,10 +168,13 @@ def _build_reserved_brs_policy():
         ("rsi_controller", "RSILearningController", (
             "_python_admission_assert_reserved_brs_child", "_drive_reserved_brs_native_serial",
             "_python_admission_active_brs_owner", "_python_admission_bind_selected_brs_handoff",
-            "_stage_producer_episode", "_commit_flow", "_resume_reserved_brs_native_serial")),
+            "_stage_producer_episode", "_commit_flow", "_resume_reserved_brs_native_serial",
+            "_memory_item", "_decision_from_dict", "_deserialize_execution", "_flow_result",
+            "_serialize_execution")),
         ("rsi_producer_gateway", "PythonProducerRSISolverGateway", (
             "run", "bind_reserved_brs_child_controller")),
-        ("rsi_producer_launch", "PythonProducerEpisodeStager", ("stage", "validate_state", "assert_unattempted")),
+        ("rsi_producer_launch", "PythonProducerEpisodeStager", (
+            "stage", "validate_state", "assert_unattempted", "pure_preflight")),
         ("rsi_python_brs_admission", "BRSAdmissionChannel", (
             "service", "assert_selected_handoff_acknowledged")),
         ("rsi_native_scheduler", "NativeRSISchedulerProvider", (
@@ -180,7 +183,9 @@ def _build_reserved_brs_policy():
             "provenance_batch")),
         ("rsi_store", "RSILedger", ("_select_python_producer_checkpoint_tx",
             "_validate_python_producer_staging_history_tx", "resolve_python_producer_checkpoint",
-            "_python_admission_state_tx", "append_brs_terminal_observation")),
+            "_python_admission_state_tx", "append_brs_terminal_observation",
+            "_append_controller_checkpoint_tx", "_append_transfer_checkpoint_tx", "_checkpoint_digest",
+            "_create", "transition")),
     )
     external_members = []
     for module_name, class_name, names in external:
@@ -191,10 +196,13 @@ def _build_reserved_brs_policy():
             if kind(function) is property_type:
                 for accessor in (function.fget, function.fset, function.fdel):
                     pack_function(accessor)
+            elif kind(function) is static_type or kind(function) is class_type:
+                pack_function(function.__func__)
             else:
                 pack_function(function)
             external_members.append((declaration, name, function))
     for module_name, names in (
+        ("rsi_controller", ("_record_digest",)),
         ("rsi_python_episode_inputs", ("_resolve_python_rsi_episode_input_context",
             "resolve_reserved_python_rsi_episode_input_context", "resolve_python_rsi_episode_input_context")),
         ("rsi_producer_gateway", ("resolve_reserved_python_producer_episode_gateway",)),

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 from test_producer_python_runtime import _inventory
@@ -16,6 +18,15 @@ from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.rsi_producer_launch import MAX_STAGING_CHECKPOINT_BYTES
 
 
+@pytest.fixture
+def capsule_root():
+    # This synthetic binding repeats its absolute root in its finite manifest.
+    # Keep fixture path overhead fixed rather than consuming the product's
+    # unchanged 32 KiB binding cap with the evidence runner's directory name.
+    with TemporaryDirectory(prefix="lrc-", dir="/tmp") as directory:
+        yield Path(directory).resolve()
+
+
 @pytest.fixture(autouse=True)
 def _no_process(monkeypatch):
     def forbidden(*_args, **_kwargs):
@@ -25,8 +36,8 @@ def _no_process(monkeypatch):
     monkeypatch.setattr(subprocess, "run", forbidden)
 
 
-def test_capsule_preflight_reserves_reference_without_raising_original_ceiling(tmp_path, monkeypatch):
-    value = _fixture(tmp_path, monkeypatch)
+def test_capsule_preflight_reserves_reference_without_raising_original_ceiling(capsule_root, monkeypatch):
+    value = _fixture(capsule_root, monkeypatch)
     controller, supplier = _controller(value, publication=True)
     stager = controller.producer_stager
     state = {"producer_multi_episode_publication": True, "producer_episode_staging": {},
@@ -50,8 +61,8 @@ class _InterruptedReadyCAS(BaseException):
     pass
 
 
-def test_capsule_written_without_ready_cas_remains_an_unadoptable_obligation(tmp_path, monkeypatch):
-    value = _fixture(tmp_path, monkeypatch)
+def test_capsule_written_without_ready_cas_remains_an_unadoptable_obligation(capsule_root, monkeypatch):
+    value = _fixture(capsule_root, monkeypatch)
     controller, supplier = _controller(value, publication=True)
     original_write = value.ledger.write_controller_checkpoint
 

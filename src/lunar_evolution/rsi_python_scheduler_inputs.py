@@ -17,6 +17,8 @@ from types import MappingProxyType
 from typing import Any, NoReturn
 
 from . import producer_python_runtime_tree as runtime_tree
+from . import rsi_brs_rejection_ready_ledger as checkpoint_row_reader
+from . import rsi_checkpoint_storage as checkpoint_storage
 from . import rsi_store as admission_store
 from .algorithm import (
     AlgorithmProblemContract,
@@ -569,6 +571,17 @@ def _code_dependencies() -> dict[str, str]:
         "candidate_selector": select_native_candidate,
         "staging_identity_guard": admission_store._staging_identity_helpers_current,
         "staging_history_validator": admission_store.RSILedger._validate_python_producer_staging_history_tx,
+        "checkpoint_encoder": checkpoint_storage.canonical_checkpoint_text,
+        "checkpoint_row_validator": checkpoint_storage.validate_reserved_checkpoint_row,
+        "checkpoint_payload_limit": checkpoint_storage.reserved_checkpoint_payload_limit,
+        "run_row_validator": checkpoint_storage.validate_reserved_record_row,
+        "run_payload_limit": checkpoint_storage.reserved_run_payload_limit,
+        "checkpoint_row_meter": checkpoint_storage._row_size,
+        "checkpoint_storage_validator": checkpoint_storage._validate_row,
+        "checkpoint_append": admission_store.RSILedger._append_controller_checkpoint_tx,
+        "transfer_checkpoint_append": admission_store.RSILedger._append_transfer_checkpoint_tx,
+        "record_create": admission_store.RSILedger._create,
+        "record_transition": admission_store.RSILedger.transition,
         "canonical_json": canonical_json, "strict_json": strict_json,
     }
     limits = {
@@ -576,7 +589,19 @@ def _code_dependencies() -> dict[str, str]:
         "max_nodes": runtime_tree._JSON_FAST_MAX_NODES,
         "manifest_bytes": runtime_tree.MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES,
     }
-    return {name: component_fingerprint(component, config=limits if name == "runtime_tree_json_snapshot" else None)
+    storage_limits = {
+        "reserved_row_bytes": checkpoint_storage.MAX_RESERVED_CHECKPOINT_ROW_BYTES,
+        "reader_row_bytes": checkpoint_row_reader._MAX_ROW_BYTES,
+        "payload_bytes": checkpoint_storage._MAX_CHECKPOINT_PAYLOAD_BYTES,
+        "checkpoint_metadata_bytes": checkpoint_storage._CHECKPOINT_FIXED_TAIL_BYTES,
+        "run_metadata_bytes": checkpoint_storage._RUN_FIXED_TAIL_BYTES,
+        "tables": checkpoint_storage._TABLES,
+    }
+    return {name: component_fingerprint(component, config=(
+                limits if name == "runtime_tree_json_snapshot" else storage_limits
+                if name in {"checkpoint_encoder", "checkpoint_row_validator", "checkpoint_payload_limit",
+                            "run_row_validator", "run_payload_limit", "checkpoint_row_meter",
+                            "checkpoint_storage_validator"} else None))
             for name, component in components.items()}
 
 

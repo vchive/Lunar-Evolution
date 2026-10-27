@@ -1,3 +1,29 @@
+## 当前执行点（2026-10-28）：本批软件集中回归完成，mixed 待验收
+
+本批完成三块后继软件并统一回归：P0 的紧凑 checkpoint 存储、完整 SQL 行容量门和
+可知 finalization 增长预检；P1 的实际 build runner 输出与 C/link depfile 消费；P2 的
+固定原生 distinct-account 转换/拒绝访问探针。scheduler/BRS 指纹覆盖新函数、限额及
+静态方法；128 KiB 行上限、32 KiB binding 上限、原 deadline 和 unknown 门保持。
+
+23 文件集中回归的最新去重结果：本机 693 节点（692 pass / 1 Linux 原生 smoke skip），
+Linux 693 pass / 0 skip。Linux 初次 691 pass / 2 fail 是两个旧 fixture 的临时路径过长，
+尚未进入本批修改路径；仅固定测试短私有路径并补测该文件 2 pass，原失败保留。
+Linux 第一次安装权限不匹配的准备拒绝执行了 0 个测试；显式 tar.umask=0022 后才
+首次执行上述 693 项。各轮 2,548 源文件前后匹配；Linux 终态模块来源均匹配归档。
+Ruff、compileall、staged/unstaged diff 检查均已通过。
+
+旧 `5bdf6b30` 本机 mixed 的 253.692564 秒容量失败保持；旧 Linux 600 秒超时保持。
+新 clean source 仍须原 600 秒、零 retry Linux mixed 和完整 CI；当前尚未合 main。
+本轮不重复旧 58/55 文件联合，也不将受影响补测重复累计为新增用例。
+
+尚未完成：完整 driver/immutable build-input custody、accepted 隔离 runtime 与生产
+CLI composition；真实安装账号验收、独立持久 guardian 接收边界和异常断线验收。
+当前 build 消费者证明实际执行后的字节比较，不证明不可变消费；账号探针尚无真实
+root 安装环境。governed admission 未知后效仍在实际写入时检查，不承诺全流程原子性。
+5090gpu 的普通 Linux 环境可用，但 sudo/KVM/userns 限制仍阻塞相应隔离验收；
+macOS ARM 不能替代既定 Linux x86 隔离运行。production/online=false。
+下方保留历史快照，不能据本批 focused 通过宣称 P0–P2 生产全部完成。
+
 ## 当前集成（2026-10-28）：三块软件集中回归，mixed 仍待验收
 
 本批已实现操作内 staging 纯解析复用、原 native 私有 collector sink，以及 installed
