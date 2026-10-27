@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import tarfile
 
@@ -50,16 +51,35 @@ def test_prior_view_copies_only_original_verified_outputs(tmp_path):
     assert (target / "old.h").stat().st_mode & 0o777 == 0o444
 
 
-@pytest.mark.parametrize("change", ["wrong-bytes", "symlink"])
+@pytest.mark.parametrize("change", ["wrong-bytes", "symlink", "missing", "parent-symlink", "parent-file"])
 def test_prior_drift_is_refused_before_a_container_can_start(tmp_path, change):
     work = tmp_path / "work"
     work.mkdir()
+    name = "old.h"
     if change == "symlink":
         (work / "old.h").symlink_to("/etc/passwd")
-    else:
+    elif change == "parent-symlink":
+        (work / "parent").symlink_to(tmp_path, target_is_directory=True)
+        name = "parent/old.h"
+    elif change == "parent-file":
+        (work / "parent").write_bytes(b"not a directory")
+        name = "parent/old.h"
+    elif change == "wrong-bytes":
         (work / "old.h").write_bytes(b"wrong")
-    with pytest.raises(execution.BuildExecutionError):
-        custody._prior_snapshot(work, tmp_path / "prior", [record("old.h", b"old")], lambda: None)
+    with pytest.raises(execution.BuildExecutionError, match="^static_python_build_execution_custody_prior_pin$"):
+        custody._prior_snapshot(work, tmp_path / "prior", [record(name, b"old")], lambda: None)
+
+
+def test_prior_storage_failure_retains_its_original_io_reason(tmp_path, monkeypatch):
+    error = OSError(errno.ENOSPC, "no space")
+
+    def observe(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(custody, "_observe", observe)
+    with pytest.raises(OSError) as caught:
+        custody._prior_snapshot(tmp_path, tmp_path / "prior", [record("old.h", b"old")], lambda: None)
+    assert caught.value is error
 
 
 def snapshot_vector(tmp_path, monkeypatch):

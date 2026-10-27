@@ -43,3 +43,11 @@ copy/command limits, base archive drift, actual OCI mount mutation and the origi
 runner's selection boundary. An actual Linux original-consumer inert smoke must
 also confirm this layout before claiming daemon-backed execution. Configuration,
 real Zig support, complete CPython build and solver lifecycle are separate gates.
+
+The first complete integrated regression found that a no-follow open correctly
+refused a prior-output symlink but leaked its raw `ELOOP` through the custody
+interface. Prior-output `ELOOP`, `ENOTDIR`, and `ENOENT` now produce the same
+`custody_prior_pin` build refusal as changed bytes, before container creation.
+Storage exhaustion and other I/O errors retain their original reason. Coverage
+includes missing files and replaced parent components; no link is followed and
+no output is promoted after this refusal.

@@ -1,42 +1,45 @@
 <!-- current-p0-p2-batch:start -->
-## 当前执行点（2026-10-28）：并行软件收尾，集中回归尚未通过
+## 当前执行点（2026-10-28）：真实配置与 Podman 已实跑，集中修复后验收
 
-本轮 P0 增加同次 checkpoint 双观察的纯投影复用，以及保留所有现场扫描的
-reserved policy 轻量 matcher。P1 增加原 scheduler 的 live sink 透传、expanded
-runtime 真实事实采集/独立比较入口、原 consumer 的显式 Podman custody，以及
-Zig 支持产物实际生成后显式链接的软件路径。所有新入口默认关闭；P2 guardian
-sidecar 已提交并推送。以上实现不等于生产能力全部验收。
+| 优先级 | 当前实现与实证 | 尚未关闭 |
+| --- | --- | --- |
+| P0 | checkpoint 操作内投影、reserved matcher 和 ordered prefix 单次 walk 已实现；tree `0f400305` 集中回归中的 P0 用例通过 | 新 clean source 原 600 秒、零 retry mixed，随后完整 CI/main；此前超时保留 |
+| P1 | scheduler live sink、expanded runtime 事实比较、原 consumer 的 Podman snapshot 与配置生成入口已实现；7 命令 Podman 和真实 CPython configure 实跑通过 | 固定 Zig 0.16 的 actual-link-input 捕获不兼容；完整静态构建、配置/链接闭包、accepted runtime/solver 生命周期与生产 CLI 仍开放 |
+| P2 | installed guardian sidecar、原始 reference 独立保管及只读恢复已实现；既有 154 项 Linux 回归通过 | 实际独立账号/vault、硬断线、blocked-storage 与 whole-group cleanup 部署验收 |
 
-本批目前的实际证据：
+5090gpu 的 `/home` 达到账号硬配额：该环境下的集中回归缺终态，Zig
+结果未知，configure 尚未进入命令；所有原件保留。后继独立 `/tmp` storage profile
+先核不同 device、容量和写入/fsync/readback，不覆盖原失败。
 
-- tree `8ea05360` 的 32 文件串行 focused 在 1200.016991 秒超时，rc=-9，缺少
-  JUnit/终态 origins；2882 项源码清单前后一致。9 件顶层 regular 原件及所有引用
-  已核验。不能把中途的点号当作完整通过。此后又有实质产品修改，尚未最终回归。
-- 同 tree 的原 Podman consumer inert case 首次在 helper 的 errno 断言失败；原
-  57 件保留。修正后的不同 fixture 单次完成 4 阶段/7 命令/12 输出，6.803820 秒、
-  零 retry；写打开实际 EACCES，其余修改操作 EROFS。188 件原件、238 个模块
-  来源与源码前后清单均匹配。这不是完整 CPython、Zig 或 solver 验收。
-- 真实 pinned Zig 0.16 seed 单次首编译失败：`Unknown Clang option:
-  '--zig-lib-dir'`。2576 文件的明确 subset 快照与 240 模块来源前后匹配；未执行
-  seed ELF、未进入支持库链接，不能称通过。正在修正固定 driver 调用与两种执行
-  backend 的受控 `ZIG_LIB_DIR`；不重派原失败 source。
-- P2 既有 154 项 Linux sidecar 通过结果保持，不重复累计。旧 `44cdd73e` 的
-  唯一 600 秒 mixed 失败保持。后继统一回归计划使用 16 个独立 worker、零重启/
-  retry，并核全 worker collection、终态报告、JUnit 节点数与源码来源。
+`/tmp` 的 46 文件集中回归完整结束：1837 unique nodes，1836 pass / 1 fail，
+803.272609 秒、零 retry。2899 条源码清单前后一致，291 模块来源、16 worker /
+collection / exit 和全部原件均核验。唯一失败是 prior-output symlink 的底层
+`ELOOP` 未转换为构建层错误；现已修正，并补 missing/parent 替换和原始 ENOSPC
+保留覆盖。真实 configure 输出静态对照另发现 mimalloc include 路径及三个固定
+编译 flags 缺失，已补 recipe 与有限命令白名单。上述修正已完成 11 个 affected 文件的集中回归：441 pass、0 fail/error/skip，
+11.682524180 秒、零 retry；27 原件、16 worker/collection/exit、238 模块来源和
+2593 源文件前后指纹均独立核验。未重复未变的昂贵 P0 用例；完整 CI 仍独立运行
+全部要求的测试。结果在 `tools-compat-final-focused-2veg1o8x/remote-records/`。
 
-原件均在主区 ignored `parallel-batch-20261027/`：
-`p0-custody-joint-focused-k1ofjiys`、`podman-original-once-prepared-odtgb7z1`、
-`podman-errno-once-8tkejc4_`、`real-zig-support-once-6nigajy1`。
+真实 configure 在 900 秒预算内 75.302 秒完成，44 原件、8 输出和读回匹配；
+2591 产品/4837 CPython 文件前后一致，241 实际模块来源匹配。真实 `pyconfig.h`
+SHA256 `c300e7c60168ea35f2761aa4b1876bd0d9f306f1236297dc5a6e767126d862f3`。
+Podman snapshot case 7 命令通过，base import 一次，210 原件匹配；它是 inert smoke，
+不是完整 CPython 或 solver 验收。
 
-仍需完成：本轮统一回归、新 clean source 原 600 秒 mixed/完整 CI；完整独立审阅
-musl 配置、真实支持产物/完整 CPython 的隔离生成与规模承载；实际 expanded runtime
-到 late supplier/安全 CLI 的生产 composition 与完整 solver 生命周期；真实独立账号/
-私有 vault 部署及断线/blocked-storage/whole-group cleanup。已有认证、ownership、
-installed bridge、vault、guardian receiver/sidecar 不再列为整块未开发。
+真实 Zig seed 三次编译通过，但带 linker depfile 参数的链接 SIGSEGV；独立最小
+控制矩阵中不带该参数链接成功，三种替代拼写仍崩溃，trace/reproduce 被明确拒绝。
+没有生成或执行 seed；不删除捕获、不用 verbose 输出伪造 depfile、不自动 fallback。
+需要独立 pinned compiler/linker capture profile，不能再把固定 driver 记为“待重试”。
 
-普通回归在 5090gpu，不支持的平台测试转本机；本机不能替代指定 Linux 隔离验收。
+原件在主区 ignored `parallel-batch-20261027/`，主要目录：
+`p0-p2-tmpfs-focused-wcjs05hi`、`real-configure-tmpfs-once-5mqc1pnw`、
+`final-podman-snapshots-once-7a6ahzip`、`final-real-zig-tmp-profile-once-qz0n9xfh`。
+已有认证、ownership、installed bridge/vault/guardian 不再列为整块未开发。
+
 当前未合 main，production_admission=false、online_publication=false。无模型、
-WebAgent、远程或公司 evaluator。以下为此前各批历史，不覆盖本节当前结论。
+WebAgent、远程或公司 evaluator；普通平台回归允许本机补齐，本机结果不能替代
+指定 Linux 隔离验收。以下为此前各批历史，不覆盖本节当前结论。
 <!-- current-p0-p2-batch:end -->
 
 # P0–P2 integration, 2026-10-28

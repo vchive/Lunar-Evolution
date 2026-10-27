@@ -11,6 +11,7 @@ never enter that bind. No caller image, helper, command callback or retry exists
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import io
 import json
@@ -138,13 +139,20 @@ def _prior_snapshot(work: Path, root: Path, prior: list[dict],
     root.mkdir(mode=0o700)
     for record in prior:
         checkpoint()
-        observed = _observe(work, record["path"], MAX_OUTPUT_BYTES,
-                            destination=root / record["path"],
-                            executable=record["executable"], checkpoint=checkpoint)
-        if observed != record:
-            _fail("custody_prior_pin")
-        (root / record["path"]).chmod(0o555 if record["executable"] else 0o444)
-        if _observe(root, record["path"], MAX_OUTPUT_BYTES, checkpoint=checkpoint) != record:
+        try:
+            observed = _observe(work, record["path"], MAX_OUTPUT_BYTES,
+                                destination=root / record["path"],
+                                executable=record["executable"], checkpoint=checkpoint)
+            if observed != record:
+                _fail("custody_prior_pin")
+            (root / record["path"]).chmod(0o555 if record["executable"] else 0o444)
+            if _observe(root, record["path"], MAX_OUTPUT_BYTES, checkpoint=checkpoint) != record:
+                _fail("custody_prior_pin")
+        except OSError as error:
+            # Missing/replaced path components are the same pin refusal as
+            # changed bytes. Keep resource and other I/O failures distinct.
+            if error.errno not in {errno.ELOOP, errno.ENOTDIR, errno.ENOENT}:
+                raise
             _fail("custody_prior_pin")
 
 

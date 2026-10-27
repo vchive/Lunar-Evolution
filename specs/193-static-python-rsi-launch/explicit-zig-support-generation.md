@@ -1,7 +1,10 @@
 # Actual Zig support preparation and explicit subsequent links
 
-Status: implemented software draft; focused execution and real pinned-Zig
-validation are pending. This is not a complete configured CPython build.
+Status: software path implemented; real pinned-Zig support acceptance is
+**blocked**. The fixed Zig 0.16 driver crashes on the tested linker-depfile
+spellings and explicitly rejects the tested trace/reproduce options. See
+[the original outcomes and bounded diagnostics](zig016-link-capture-observation.md).
+This is not a complete configured CPython build or an accepted support bundle.
 
 ## Problem
 
@@ -19,7 +22,8 @@ fixed C sources and four commands under its original absolute deadline. The
 first three stages compile a target assertion, a main which references musl
 pthread/math APIs, and signed 128-bit division to require compiler runtime
 support. The last stage links them statically using the pinned Linux x86-64
-musl Zig and writes the actual LLD depfile. It never executes that ELF. It
+musl Zig and requests the actual LLD depfile. The real fixed-driver validation
+currently fails before an accepted depfile is produced. It never executes that ELF. It
 retains the original attempt, process report and errors and does not retry.
 
 After successful original report/FD readback, the function bounds and observes
@@ -29,7 +33,9 @@ original LLD-reported `crt1.o`, `crti.o`, `crtn.o`, `libc.a` and
 the original three objects must also be reported, and an external input,
 unknown support name, link/special cache entry or changed cache refuses. Cache
 inspection is limited to 32,768 entries, 512 MiB total and 128 MiB per file.
-These are explicit supported Zig 0.16 shapes, not discovered allowlists.
+These are narrow software acceptance shapes, not discovered allowlists or a
+claim that the real pinned Zig 0.16 driver has demonstrated this support layout.
+The five-name set remains unchanged while real acceptance is blocked.
 
 The exact support bytes are read back and copied create-only into a separate
 `sealed/lunar-support/` root, mode 0400. The canonical observation binds the
@@ -92,9 +98,27 @@ consumer. They do not execute Zig, CPython, a solver, a model or an evaluator.
 They cover missing/external/symlink support refusal, pre-dispatch cancellation,
 bundle drift/authority rejection and exact downstream linker-set refusal.
 The initial real Zig case failed at the first compile because of the illegal
-`cc --zig-lib-dir` vector. Its original failure is preserved. The corrected
-source still needs one new single-attempt software validation before its
-particular support-cache names are claimed observed.
+`cc --zig-lib-dir` vector. Its original failure is preserved. A corrected
+`/home` attempt later lost terminal evidence to `EDQUOT`; its first product
+failure remains unknown. A separate fresh `/tmp` original support attempt
+compiled the three objects but returned SIGSEGV at the link. Three independent
+diagnostic groups then showed original and alternate depfile spellings crashing,
+and trace/reproduce options explicitly unsupported. Those later observations
+cannot determine the first failure of the `/home` attempt.
+
+The successful no-capture minimal libc diagnostic's verbose dispatch references
+`libzigc.a` and `libubsan_rt.a` and omits `crti.o`/`crtn.o`. This is a separately
+scoped layout clue, not actual-read evidence or an accepted closure for the
+original full seed. It does not change this draft's five required support names.
+
+Further real acceptance needs a separately specified, explicitly selected and
+independently pinned compiler/linker capture profile. Its genuine capture must
+validate the exact target, objects and complete CRT/runtime/archive closure,
+followed by independent original full-seed and downstream-consumption acceptance.
+Do not delete capture, substitute verbose intended inputs for actual reads,
+fabricate depfiles, retry automatically or fall back to another toolchain/profile
+after failure. No further diagnostic execution or new profile implementation is
+part of this observation update.
 
 All immutable-generation, driver-input, configured-closure, image/runtime,
 production-admission and online-publication claims remain false. This code

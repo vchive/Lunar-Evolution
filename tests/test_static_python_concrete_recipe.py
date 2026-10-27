@@ -10,7 +10,11 @@ import pytest
 from tools.static_python_rsi_fixture import concrete_recipe as concrete
 from tools.static_python_rsi_fixture import recipe
 from tools.static_python_rsi_fixture.build_driver import _preparation_wire
-from tools.static_python_rsi_fixture.execution_backend import RECIPE_V3_SCHEMA, _recipe
+from tools.static_python_rsi_fixture.execution_backend import (
+    RECIPE_V3_SCHEMA,
+    BuildExecutionError,
+    _recipe,
+)
 from tools.static_python_rsi_fixture.installation_profile import prepare_rsi_installation_profile
 from tools.static_python_rsi_fixture.runtime_closure import FixedRuntimeClosure, canonical
 
@@ -33,7 +37,8 @@ def concrete_inputs(tmp_path, monkeypatch):
     for item in plan["shared_units"] + plan["freezer_units"] + plan["target_units"] + plan["freeze_tasks"]:
         records[item["source"]] = {"path": item["source"], "size": item["source_size"],
                                    "sha256": item["source_sha256"], "executable": False}
-    for name in ("Include/Python.h", "Include/internal/pycore_import.h", "assets/lunar_fixture_profile.h"):
+    for name in ("Include/Python.h", "Include/internal/pycore_import.h",
+                 "Include/internal/mimalloc/mimalloc.h", "assets/lunar_fixture_profile.h"):
         records[name] = {"path": name, "size": 1, "sha256": sha(b"x"), "executable": False}
     inventory = canonical([records[n] for n in sorted(records)])
     # The command generator is tested with an explicit synthetic tool identity;
@@ -137,6 +142,39 @@ def test_configured_header_is_explicit_input_and_configure_probe_is_not_acceptan
     assert probe["argv"][0] == "@toolchain/zig" and "-c" in probe["argv"]
     assert "@source/configuration/probe.c" in probe["argv"]
     assert json.loads(result.manifest_bytes)["configured_closure_verified"] is False
+
+
+def test_reviewed_mimalloc_and_semantic_flags_cover_every_compilation_role(concrete_inputs):
+    prep, args = concrete_inputs
+    result = concrete.prepare_cpython_build_recipe(prep, **args)
+    wire = json.loads(result.recipe_bytes)
+    compilations = [command["argv"] for stage in wire["stages"] for command in stage["commands"]
+                    if "-c" in command["argv"]]
+    assert {stage["stage"] for stage in wire["stages"]
+            if any("-c" in command["argv"] for command in stage["commands"])} == {
+                "configure", "freeze", "compile",
+            }
+    assert any("-DPy_BUILD_CORE_BUILTIN" in argv for argv in compilations)
+    for argv in compilations:
+        assert {"-fno-strict-overflow", "-fvisibility=hidden",
+                "-Werror=implicit-function-declaration"}.issubset(argv)
+        assert any(argv[index:index + 2] == ["-I", "@source-dir/Include/internal/mimalloc"]
+                   for index in range(len(argv) - 1))
+    sources = [argv[argv.index("-c") + 1] for argv in compilations]
+    assert sources.count("@source/Objects/obmalloc.c") == 1
+    assert not any(source.startswith("@source/Objects/mimalloc/") for source in sources)
+    assert dict(result.sources)["configuration/pyconfig.h"] == args["configuration_header"]
+    assert json.loads(result.manifest_bytes)["configured_closure_verified"] is False
+
+
+def test_missing_declared_mimalloc_header_subtree_refuses_before_execution(concrete_inputs):
+    prep, args = concrete_inputs
+    records = [record for record in json.loads(args["source_inventory_bytes"])
+               if not record["path"].startswith("Include/internal/mimalloc/")]
+    args["source_inventory_bytes"] = canonical(records)
+    args["expected_source_inventory_sha256"] = sha(args["source_inventory_bytes"])
+    with pytest.raises(BuildExecutionError, match="directory_reference_not_available"):
+        concrete.prepare_cpython_build_recipe(prep, **args)
 
 
 @pytest.mark.parametrize("private_sink", [False, True])

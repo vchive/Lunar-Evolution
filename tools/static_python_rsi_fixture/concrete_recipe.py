@@ -301,9 +301,12 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
             _fail("freezer_source_pin_mismatch")
     compiler = ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl",
                 "-std=c11", "-O2", "-g0",
-                "-fno-strict-aliasing", "-fno-common", "-D_GNU_SOURCE", "-DNDEBUG",
+                "-fno-strict-overflow", "-fno-strict-aliasing", "-fno-common",
+                "-fvisibility=hidden", "-Werror=implicit-function-declaration",
+                "-D_GNU_SOURCE", "-DNDEBUG",
                 "-DPy_BUILD_CORE", "-I", "@source-dir/configuration",
-                "-I", "@source-dir/Include", "-I", "@source-dir/Include/internal"]
+                "-I", "@source-dir/Include", "-I", "@source-dir/Include/internal",
+                "-I", "@source-dir/Include/internal/mimalloc"]
     if native:
         compiler += ["-I", "@source-dir/Modules/_hacl/include", "-I", "@source-dir/Modules/_hacl"]
     if solver == "shinka":

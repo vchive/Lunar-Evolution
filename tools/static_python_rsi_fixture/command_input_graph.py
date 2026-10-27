@@ -19,6 +19,7 @@ _ENVIRONMENT = {"LANG": "C", "LC_ALL": "C", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0
 # from a caller's recipe, a successful driver invocation or a dependency report.
 _COMPILE_FLAGS = frozenset({
     "-std=c11", "-O2", "-g0", "-fno-strict-aliasing", "-fno-common",
+    "-fno-strict-overflow", "-fvisibility=hidden", "-Werror=implicit-function-declaration",
     "-D_GNU_SOURCE", "-DNDEBUG", "-DPy_BUILD_CORE", "-DPy_BUILD_CORE_BUILTIN",
     '-DDATE="Jan 01 1970"', '-DTIME="00:00:00"', '-DGITVERSION=""',
     '-DGITTAG=""', '-DGITBRANCH=""', "-DPY_SQLITE_HAVE_SERIALIZE=1",
