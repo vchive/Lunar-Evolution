@@ -1,5 +1,23 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 当前开发：路径扫描与调度输入标量校验
+
+- 新产品候选只改两个纯计算热点：runtime path 直接检查规范组件，避免拆分/重建；
+  scheduler shape 在原 live loop 内校验 exact scalar，容器/DTO/foreign 继续递归。
+  所有 fresh SQL/FS/source/control、DTO重验、节点/深度和600秒预算保持。
+- path旧实际AST的78,264项差分全同，局部典型路径候选/原耗时median0.6252；
+  scheduler初步480差分全同，1,737 occurrences不变、递归入口1,737→88，
+  九组局部median0.772826。它们都不是mixed wall改善或验收通过声明。
+- path四文件focused退出0、collect-only482项；原执行未留JUnit且被历史tmp清理
+  warnings截断，数量将以整合union核验。scheduler新59项在原实现/候选均全过，
+  最后float条件lint合并也将由整合union覆盖。全仓Ruff、compileall、diff通过。
+- 接下来提交候选，运行最终source的整合union与原600秒Linux mixed/完整CI；
+  新Linux runner将绑定其Popen已知PID/starttime，只输出白名单计数，采样准备
+  开销计入600秒。runner仍在fake验证，不能当已启动或已经有因果证据。
+- P1核对确认CLI仍是fixture gateway；受控custody→真实静态镜像→sealed startup/
+  权威输入→真实solver/broker→生产CLI仍是开放主链，没有新增空接口任务。P2后置。
+  PR189仍不可合main，普通模型真实case的历史超时也尚未关闭。
+
 ## 本轮后续：Linux工具自检与一项构建依赖准备
 
 - P0仍是同一个mixed超时和PR189合并门，没有新的产品修复或通过声明。owner/

@@ -121,13 +121,11 @@ def _path_reference(value: object, *, absolute: bool, dot: bool = False) -> str:
 
 
 def _path(value: object, *, absolute: bool, dot: bool = False) -> str:
-    """Validate a canonical POSIX path without constructing a pathlib object.
+    """Validate canonical POSIX spelling without reconstructing its components.
 
-    The lexical normalization mirrors ``Path(value).as_posix()`` on the supported
-    POSIX runtime: one or more leading slashes collapse to ``/`` except exactly
-    two, which pathlib preserves as ``//``; empty and ``.`` components disappear;
-    ``..`` components remain visible and are then rejected.  The canonical string
-    comparison keeps every existing strictness check intact.
+    Empty, ``.`` and ``..`` components cannot occur in accepted non-root text.
+    Reject their spellings directly; only ``.`` and ``/`` need special part counts.
+    Every call still validates the original exact string and its UTF-8 byte bound.
     """
     if type(value) is not str or not value or any(char in value for char in "\x00\r\n\\"):
         _fail("path_invalid")
@@ -137,20 +135,20 @@ def _path(value: object, *, absolute: bool, dot: bool = False) -> str:
         is_absolute = value.startswith("/")
         if is_absolute is not absolute:
             _fail("path_invalid")
-        if is_absolute:
-            if value.startswith("//") and not value.startswith("///"):
-                root, remainder = "//", value[2:]
-            else:
-                root, remainder = "/", value.lstrip("/")
+        if value == ".":
+            if 0 > _MAX_PATH_PARTS or not dot:
+                _fail("path_invalid")
+        elif value == "/":
+            if 1 > _MAX_PATH_PARTS:
+                _fail("path_invalid")
         else:
-            root, remainder = "", value
-        parts = tuple(part for part in remainder.split("/") if part and part != ".")
-        if (len(parts) + (1 if is_absolute else 0) > _MAX_PATH_PARTS
-                or ".." in parts or (value == "." and not dot)):
-            _fail("path_invalid")
-        canonical = (root + "/".join(parts)) if is_absolute else ("/".join(parts) or ".")
-        if canonical != value or (absolute and value.startswith("//")):
-            _fail("path_invalid")
+            if value.endswith("/") or "//" in value:
+                _fail("path_invalid")
+            if (value == ".." or value.startswith(("./", "../"))
+                    or value.endswith(("/.", "/..")) or "/./" in value or "/../" in value):
+                _fail("path_invalid")
+            if value.count("/") + 1 > _MAX_PATH_PARTS:
+                _fail("path_invalid")
     except (TypeError, ValueError, UnicodeError):
         _fail("path_invalid")
     return value

@@ -114,7 +114,13 @@ def _shape(value: object, *, depth: int = 0, remaining: list[int] | None = None)
         # Keys are untrusted input too.  Visit them before serializers so their size contributes
         # to the same bounded shape walk and custom string-like objects cannot be substituted.
         for key in value:
-            _shape(key, depth=depth + 1, remaining=remaining)
+            # Keep live key iteration and the same occurrence/depth budget.
+            if type(key) is str:
+                remaining[0] -= 1
+                if depth + 1 > 48 or remaining[0] < 0 or len(key) > 128 * 1024:
+                    _fail("shape_invalid")
+            else:
+                _shape(key, depth=depth + 1, remaining=remaining)
         items = value.values()
     elif kind in {list, tuple, frozenset}:
         if len(value) > 10_000:
@@ -140,7 +146,24 @@ def _shape(value: object, *, depth: int = 0, remaining: list[int] | None = None)
     else:
         _fail("shape_invalid")
     for item in items:
-        _shape(item, depth=depth + 1, remaining=remaining)
+        # Exact scalar leaves need no recursive frame; DTOs, containers and
+        # foreign values retain the original path and all of its checks.
+        child_kind = type(item)
+        if (item is None or child_kind is bool or child_kind is str
+                or child_kind is int or child_kind is float):
+            remaining[0] -= 1
+            if depth + 1 > 48 or remaining[0] < 0:
+                _fail("shape_invalid")
+            if child_kind is str:
+                if len(item) > 128 * 1024:
+                    _fail("shape_invalid")
+            elif child_kind is int:
+                if item.bit_length() > 4096:
+                    _fail("shape_invalid")
+            elif child_kind is float and not math.isfinite(item):
+                _fail("shape_invalid")
+        else:
+            _shape(item, depth=depth + 1, remaining=remaining)
 
 
 def _path(value: object) -> Path:

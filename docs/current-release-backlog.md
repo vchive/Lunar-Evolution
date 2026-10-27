@@ -4,7 +4,14 @@
 P1的静态runtime custody/build、完整依赖及真实solver/生产CLI未验收；隔离权限阻塞
 部分按用户选择保留。P2的多机ownership/认证等不混入本轮必交项。
 
-本轮只推进两个不改变产品执行的子项：诊断工具在5090gpu观察自身PID三次成功并
+当前新增两项纯计算候选：path规范组件扫描和scheduler exact scalar循环校验，
+保留所有fresh门和预算。局部差分/计时及focused通过；最终source的整合union、
+Linux mixed和完整CI仍待执行，不能据局部收益关闭超时。详见
+[path规格](../specs/191-python-worker-adapter/path-component-scan-performance.md)和
+[scheduler规格](../specs/191-python-worker-adapter/scheduler-shape-scalar-validation.md)。
+P1代码复核确认实际production CLI仍未接入，后续依赖accepted runtime。
+
+前一批推进两个不改变产品执行的子项：诊断工具在5090gpu观察自身PID三次成功并
 经离线独审，验证目标机基本兼容性；新增
 [flit_core3.12.0候选制品观察](../specs/191-python-worker-adapter/shinka-flit-core-build-dependency-artifact-review-20261027.md)，
 补packaging的一条build依赖身份准备。两者均不能关闭mixed或真实solver验收。
