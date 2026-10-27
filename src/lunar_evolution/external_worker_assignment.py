@@ -1,9 +1,9 @@
 """Opt-in local assignment journal for authenticated external-worker receipts.
 
 Only one host owns this ledger. Registration records a trusted controller's
-assignment; it neither launches work nor publishes a native result. An uncertain
-assignment or settlement is a permanent recovery gate in this API, never a lease
-expiry or permission to retry remote work.
+assignment; it neither launches work nor publishes a native result. Uncertainty
+never permits retry. Explicit origin reconciliation can append an authenticated
+receipt observation after unknown, without replacing the original unknown state.
 """
 
 from __future__ import annotations
@@ -182,6 +182,29 @@ class ExternalWorkerAssignments:
                 snapshot.update(
                     status=settled_state["result"]["outcome"], settlement=settled_state["result"],
                 )
+        reconciliation = self.journal.inspect(
+            _SCOPE, "origin-reconcile:" + assignment_id.removeprefix("assignment:"),
+        )
+        if reconciliation is not None:
+            if snapshot["status"] != "unknown":
+                raise WorkerAssignmentError("worker_assignment_reconciliation_parent_invalid")
+            reconcile_digest, reconcile_state = reconciliation
+            expected = {
+                "assignment_checkpoint_sha256": digest,
+                "unknown_checkpoint_sha256": snapshot["settlement_checkpoint_sha256"],
+            }
+            if (set(reconcile_state["binding"]) != {*expected, "controller_checkpoint_sha256"}
+                    or any(reconcile_state["binding"][name] != item for name, item in expected.items())):
+                raise WorkerAssignmentError("worker_assignment_reconciliation_drift")
+            _sha(reconcile_state["binding"]["controller_checkpoint_sha256"])
+            snapshot.update(status="origin_reconciliation_recovery_required",
+                            reconciliation_checkpoint_sha256=reconcile_digest)
+            if reconcile_state["status"] == "completed":
+                _validate_settlement_result(snapshot, reconcile_state["result"])
+                if reconcile_state["result"]["outcome"] != "receipt_authenticated":
+                    raise WorkerAssignmentError("worker_assignment_reconciliation_invalid")
+                snapshot.update(status="receipt_authenticated_after_unknown",
+                                reconciliation=reconcile_state["result"])
         return snapshot
 
     def reserve_assignment(
@@ -312,4 +335,48 @@ class ExternalWorkerAssignments:
                     "reason_code": reason_code,
                 }, request=request, plan_sha256=plan_sha256,
                 expected_controller_checkpoint_sha256=expected_controller_checkpoint_sha256,
+            )
+
+    def reconcile_origin_receipt(
+        self, request: SolverRequest, *, plan_sha256: str,
+        expected_controller_checkpoint_sha256: str, raw: bytes, receipt: bytes,
+    ) -> dict[str, Any]:
+        """Append one origin observation after unknown; never retry or settle native work."""
+        self._guard(expected_controller_checkpoint_sha256, request, plan_sha256)
+        assignment_id, _settlement_id, guard_id = self._ids(request.episode_id)
+
+        def original_unknown() -> dict[str, Any]:
+            claim = self._guard(expected_controller_checkpoint_sha256, request, plan_sha256)
+            snapshot = self.inspect(request.episode_id)
+            if snapshot is None or snapshot["status"] != "unknown":
+                raise WorkerAssignmentError("worker_assignment_original_unknown_required")
+            binding = snapshot["binding"]
+            if (binding["request_sha256"] != request.digest() or binding["plan_sha256"] != plan_sha256
+                    or binding["claim_sha256"] != claim.claim_sha256):
+                raise WorkerAssignmentError("worker_assignment_native_claim_drift")
+            return snapshot
+
+        with self.ledger.controller_lock(guard_id):
+            assignment = original_unknown()
+            verified = verify_worker_origin(
+                raw, registry=self.registry,
+                expected_context=WorkerOriginContext.from_dict(assignment["context"]),
+                expected_profile_sha256=assignment["binding"]["profile_sha256"], receipt=receipt,
+            )
+            if any(getattr(verified, name) != assignment["binding"][name] for name in _IDENTITY):
+                raise WorkerAssignmentError("worker_assignment_worker_drift")
+            result = {
+                "outcome": "receipt_authenticated",
+                "assignment_checkpoint_sha256": assignment["assignment_checkpoint_sha256"],
+                "verified_origin": verified.to_dict(),
+            }
+            return self.journal.invoke(
+                _SCOPE, "origin-reconcile:" + assignment_id.removeprefix("assignment:"),
+                binding={
+                    "assignment_checkpoint_sha256": assignment["assignment_checkpoint_sha256"],
+                    "unknown_checkpoint_sha256": assignment["settlement_checkpoint_sha256"],
+                    "controller_checkpoint_sha256": expected_controller_checkpoint_sha256,
+                }, call=lambda: result,
+                validate=lambda value: _validate_settlement_result(assignment, value),
+                before_call=original_unknown,
             )

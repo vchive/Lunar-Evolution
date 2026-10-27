@@ -1,5 +1,14 @@
 ## 2026-10-27 当前状态与剩余优先级
 
+最新后继已完成P0 ancestry/v2诊断、P1实际编译/freezer/link配方与toolchain-v3、
+P2固定SSH/wrapper/恢复/CLI的同批实现。一次30文件回归1050unique，3项新增fixture
+构造失败修正后仅受影响选择重验；最新1050项全过，静态检查通过。详见
+[本批验收](parallel-batch-validation-20261027.md)。
+仍未关闭：新源码600秒Linux mixed/完整CI；真实solver闭包的readline静态依赖；受审
+配置、隔离build/ELF/image/installation/startup/lifecycle及native生产CLI。
+固定inert producer跨机SSH的准备完成，实跑待执行；它不能替代隔离/cleanup或native
+发布验收。以上优先于下方历史记录；production/online保持false。
+
 **当前批次更新**：用户要求P0–P2分块并行、冻结后集中回归，见
 [执行计划](development-batch-plan.md)。历史“P2后置”已由本批次要求取代。
 CI40457518133已自然终态：29执行成功/1执行失败（3.11 mixed原600秒预算超时），

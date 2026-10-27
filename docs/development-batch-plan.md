@@ -1,5 +1,39 @@
 # 2026-10-27 parallel development batch
 
+## Current integration slice
+
+The second parallel slice implements the remaining source-side work together.
+Authors run syntax checks only; the root freezes it before one combined focused
+regression. An actual configured static build still depends on the previously
+blocked isolated environment. No source helper or inert transport fixture closes
+that environment or production acceptance gate.
+
+| Priority | Implemented source | Remaining acceptance |
+| --- | --- | --- |
+| P0 | Runtime ancestry projection and bounded own-stack v2 with truthful terminal states | New clean source's original 600-second mixed run, then full CI |
+| P1 | Concrete CPython/Zig compiler, same-source freezer, deterministic archive/link recipe; explicit full-toolchain v3; fixed-solver frozen/native source closure | Reviewed target configuration, isolated real build, ELF/image, expanded installation/startup, solver/lifecycle and native production CLI |
+| P2 | Fixed opt-in SSH transport, private installed wrapper/key, original request budget, create-only intent/result, append-only unknown reconciliation, explicit CLI and existing-only ledger opens | Unified local regression, actual inert cross-host SSH; untrusted-candidate isolation and remote cleanup stay separate |
+
+P0's observed failure is a 600-second mixed-case deadline with an unknown attempt
+receipt. Historical CPU and stack observations support investigating repeated
+JSON/history/runtime validation cost; they do not establish deadlock or one
+specific current-head hot function. The ancestry change is a candidate and does
+not count as resolving the timeout before the new mixed case finishes. The old
+failed source, limits and results are retained without retry or reinterpretation.
+
+Source closure preparation is checked against retained official CPython and real
+prepared solver bytes, without importing or executing them. Missing aliases and
+interpreter-provided modules are resolved from actual source behavior. A missing
+required import remains a refusal; synthetic tests cannot fill that gap. SQLite
+has its own source provenance requirement, independent of the host library.
+
+The optional SSH topology remains one local authoritative controller/SQLite
+ledger with explicit worker commands. It adds no remote evaluator, HTTP service,
+multiple-controller takeover or NFS database. HMAC authenticates the installed
+worker's receipt; it does not grant native result or publication authority.
+
+The first completed slice is retained below as history.
+
 The user's current direction is to implement P0–P2 in separate slices, freeze one
 integration source, and run full regression once. Historical notes saying all P2
 work is deferred do not describe this batch. Local development remains the

@@ -1,5 +1,25 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 最新集成：P0–P2 同批开发与统一回归
+
+- 在 `codex/openevolve-fixed-profile` 的869后继收齐：P0 ancestry计算/v2诊断；
+  P1具体CPython/Zig freezer/编译/静态链接配方、完整toolchain-v3及solver源码闭包；
+  P2固定SSH transport/wrapper、unknown只读reconcile、CLI与existing-only SQLite。
+  原始request的wall/deadline同时约束远端，FIFO叶子/替换窗口使用nonblocking拒绝。
+- 统一30文件1050 unique，初次1047pass/3个synthetic Zig清单未排序失败；修fixture
+  后只重验8个受影响文件217pass，另对fixture导入格式修正只重验v3文件16项。
+  最新节点并集仍1050全过。原失败与所有XML保留，不相加、不改原rc1。
+  Ruff/compileall通过，详见[本批验收](docs/parallel-batch-validation-20261027.md)。
+- 官方SQLite3.50.4 c/header已用独立release SHA3/sourceid/版本核实。实际OE/Shinka
+  source-only闭包均仍在readline拒绝（保守扫描触达cmd.complete等），不能称真实solver
+  完成。受审pyconfig、隔离build、ELF/image、新installation/startup、owner/lifecycle
+  和native生产CLI仍开放。按既有用户选择，不绕过5090gpu隔离权限阻塞。
+- P0新clean源码的600秒/0retry Linux mixed，以及真实SSH固定inert producer验收准备
+  完成，尚未执行；不能合main或声称timeout已解决。旧2486的CI失败保持。此次SSH仅
+  证明通道/HMAC/receipt，不授予native成功、publication或远端cleanup权威。
+
+以下保留本批前序和历史失败；当前范围以本节及本批验收为准。
+
 ## 当前批次：分块并行开发、冻结后集中回归
 
 - 按用户最新要求推进 P0–P2，执行策略见

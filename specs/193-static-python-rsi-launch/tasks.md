@@ -206,3 +206,19 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
 - [ ] Complete final-source CI and independent review before merge. Real
   configured CPython/freezer/toolchain/static-image and F02c/G1/G2 acceptance
   remain separate open tasks; this continuation cannot close them.
+
+## Concrete recipe and fixed-solver source closure continuation
+
+- [x] Specify actual compiler/freezer/archive/link commands and a separately
+  versioned full-toolchain executor; preserve v1/v2 limits and mock behavior.
+- [x] Require an independent complete source inventory and reviewed target
+  configuration; emit a compiled configuration probe without claiming Autoconf.
+- [x] Generate a same-source native freezer, finite frozen jobs, builtin/native
+  table and real selected-solver dispatch entrypoint rather than baseline output.
+- [x] Author direct capacity, dependency, strict pin, finite import/native unit,
+  budget, original API and false-admission regression cases.
+- [x] Complete centralized focused/static regression and record real-source
+  closure refusals separately from synthetic fixture success.
+- [ ] Accept real configured static build, ELF, expanded installation/startup,
+  actual solver/lifecycle and native production CLI. Existing environment and
+  unresolved dependency gates remain binding.

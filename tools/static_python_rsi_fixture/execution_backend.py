@@ -32,6 +32,9 @@ from tools.static_python_rsi_fixture.installation_profile import RSIProfilePrepa
 
 RECIPE_SCHEMA = "lunar-static-python-pinned-execution-recipe-v1"
 RECIPE_V2_SCHEMA = "lunar-static-python-pinned-execution-recipe-v2"
+RECIPE_V3_SCHEMA = "lunar-static-python-pinned-execution-recipe-v3"
+MAX_V3_RECIPE_BYTES = 8 * 1024 * 1024
+MAX_V3_INPUT_RECORDS = 32768
 MAX_RECIPE_BYTES = 1024 * 1024
 MAX_LOG_BYTES = 1024 * 1024
 MAX_OUTPUT_BYTES = 128 * 1024 * 1024
@@ -116,7 +119,19 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str]) -> None:
+def _directory_reference(arg: str, known: dict[str, set[str]], available: set[str]) -> bool:
+    if not arg.startswith(("@source-dir/", "@toolchain-dir/", "@work-dir/")):
+        return False
+    role, relative = arg[1:].split("/", 1)
+    path = _path(relative)
+    records = available if role == "work-dir" else known[role.removesuffix("-dir")]
+    if not any(record.startswith(path + "/") for record in records):
+        _fail("directory_reference_not_available")
+    return True
+
+
+def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str],
+               *, version3: bool = False) -> None:
     """Check the whole ordered graph before any workspace mutation or process.
 
     These sets describe only prospective dependencies. Runtime dispatch grants a
@@ -125,6 +140,9 @@ def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str]) 
     """
     if type(value) is not list or len(value) != len(STAGES):
         _fail("stages_invalid")
+    command_bound = 512 if version3 else 256
+    output_bound = 1024 if version3 else 256
+    argv_bound = 512 if version3 else 256
     available: set[str] = set()
     total_commands = 0
     for stage, name in zip(value, STAGES, strict=True):
@@ -132,7 +150,7 @@ def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str]) 
                 or stage["stage"] != name):
             _fail("stage_invalid")
         commands = stage["commands"]
-        if type(commands) is not list or not 0 < len(commands) <= 256:
+        if type(commands) is not list or not 0 < len(commands) <= command_bound:
             _fail("commands_invalid")
         total_commands += len(commands)
         output_count = 0
@@ -140,10 +158,10 @@ def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str]) 
             if type(command) is not dict or set(command) != {"argv", "outputs"}:
                 _fail("command_invalid")
             outputs = command["outputs"]
-            if type(outputs) is not list or not 0 < len(outputs) <= 256:
+            if type(outputs) is not list or not 0 < len(outputs) <= output_bound:
                 _fail("outputs_invalid")
             output_count += len(outputs)
-            if output_count > 256:
+            if output_count > output_bound:
                 _fail("output_budget_exceeded")
             current: set[str] = set()
             for record in outputs:
@@ -161,7 +179,7 @@ def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str]) 
                     _fail("output_path_overlap")
                 current.add(path)
             argv = command["argv"]
-            if (type(argv) is not list or not 0 < len(argv) <= 256
+            if (type(argv) is not list or not 0 < len(argv) <= argv_bound
                     or any(type(arg) is not str or not 0 < len(arg) <= 4096 or "\x00" in arg
                            for arg in argv)):
                 _fail("argv_invalid")
@@ -169,6 +187,8 @@ def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str]) 
                 _fail("executable_not_pinned")
             for arg in argv:
                 if not arg.startswith("@"):
+                    continue
+                if version3 and _directory_reference(arg, known, available | current):
                     continue
                 parts = arg[1:].split("/", 1)
                 if len(parts) != 2 or parts[0] not in {"source", "toolchain", "work"}:
@@ -181,13 +201,13 @@ def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str]) 
                     _fail("reference_not_pinned")
             available.update(current)
             executable.update("@work/" + record["path"] for record in outputs if record["executable"])
-    if total_commands > 512:
+    if total_commands > (1024 if version3 else 512):
         _fail("command_budget_exceeded")
 
 
-def _recipe(raw: bytes, expected_sha256: str) -> dict[str, Any]:
+def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False) -> dict[str, Any]:
     _pin(expected_sha256)
-    if (type(raw) is not bytes or not 0 < len(raw) <= MAX_RECIPE_BYTES
+    if (type(raw) is not bytes or not 0 < len(raw) <= (MAX_V3_RECIPE_BYTES if version3 else MAX_RECIPE_BYTES)
             or hashlib.sha256(raw).hexdigest() != expected_sha256):
         _fail("recipe_pin_mismatch")
     try:
@@ -203,9 +223,9 @@ def _recipe(raw: bytes, expected_sha256: str) -> dict[str, Any]:
     if (type(value) is not dict
             or set(value) != {"schema", "preparation_sha256", "inputs", "environment", "stages"}
             or type(value["schema"]) is not str
-            or value["schema"] not in {RECIPE_SCHEMA, RECIPE_V2_SCHEMA}):
+            or value["schema"] not in ({RECIPE_V3_SCHEMA} if version3 else {RECIPE_SCHEMA, RECIPE_V2_SCHEMA})):
         _fail("recipe_shape_invalid")
-    command_outputs = value["schema"] == RECIPE_V2_SCHEMA
+    command_outputs = value["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA}
     _pin(value["preparation_sha256"])
     inputs = value["inputs"]
     if type(inputs) is not dict or set(inputs) != {"source", "toolchain"}:
@@ -215,7 +235,7 @@ def _recipe(raw: bytes, expected_sha256: str) -> dict[str, Any]:
     total = 0
     for role in ("source", "toolchain"):
         records = inputs[role]
-        if type(records) is not list or not 0 < len(records) <= 16384:
+        if type(records) is not list or not 0 < len(records) <= (MAX_V3_INPUT_RECORDS if version3 else 16384):
             _fail("input_inventory_invalid")
         known[role] = set()
         for record in records:
@@ -244,6 +264,8 @@ def _recipe(raw: bytes, expected_sha256: str) -> dict[str, Any]:
         _fail("environment_invalid")
     for item in env.values():
         if item.startswith("@"):
+            if version3 and _directory_reference(item, known, set()):
+                continue
             parts = item[1:].split("/", 1)
             if len(parts) != 2 or parts[0] not in {"source", "toolchain", "work"}:
                 _fail("reference_invalid")
@@ -254,7 +276,7 @@ def _recipe(raw: bytes, expected_sha256: str) -> dict[str, Any]:
             if role != "work" and path not in known[role]:
                 _fail("reference_not_pinned")
     if command_outputs:
-        _v2_stages(value["stages"], known, executable)
+        _v2_stages(value["stages"], known, executable, version3=version3)
         return value
     stages = value["stages"]
     if type(stages) is not list or len(stages) != 4:
@@ -487,7 +509,7 @@ def _command(argv: list[str], *, work: Path, environment: dict[str, str], logs: 
         _fail(failure)
 
 
-def run_pinned_build(
+def _run_pinned_build(
     preparation: RSIProfilePreparation,
     *,
     recipe_bytes: bytes,
@@ -498,6 +520,7 @@ def run_pinned_build(
     deadline: float,
     interrupted: Callable[[], bool] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    version3: bool = False,
 ) -> BuildExecutionReport:
     """Execute pinned tools with no ambient environment or installation promotion.
 
@@ -513,8 +536,8 @@ def run_pinned_build(
         preparation_invalid = True
     if preparation_invalid:
         _fail("preparation_invalid")
-    recipe = _recipe(recipe_bytes, expected_recipe_sha256)
-    command_outputs = recipe["schema"] == RECIPE_V2_SCHEMA
+    recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=version3)
+    command_outputs = recipe["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA}
     if recipe["preparation_sha256"] != hashlib.sha256(preparation.wire_bytes).hexdigest():
         _fail("preparation_pin_mismatch")
     if (not _finite(deadline) or deadline <= 0
@@ -589,11 +612,15 @@ def run_pinned_build(
             if not arg.startswith("@"):
                 return arg
             role, relative = arg[1:].split("/", 1)
-            return str(locations[role] / relative)
+            return str(locations[role.removesuffix("-dir") if version3 else role] / relative)
 
         environment = {key: expand(value) for key, value in recipe["environment"].items()}
         environment.update({"PATH": str(snapshots["toolchain"] / "bin"),
                             "HOME": str(work / ".home"), "TMPDIR": str(work)})
+        if version3:
+            # Zig can create only attempt-local caches; never use ambient caches.
+            environment.update({"ZIG_GLOBAL_CACHE_DIR": str(work / ".zig-global-cache"),
+                                "ZIG_LOCAL_CACHE_DIR": str(work / ".zig-local-cache")})
         retained_outputs: list[dict[str, Any]] = []
         observed_executables = {
             "@" + role + "/" + record["path"]
@@ -673,7 +700,8 @@ def run_pinned_build(
     except Exception:  # noqa: BLE001 - preserve partial workspace without leaking paths
         reason = "attempt_io_failure"
     payload = {
-        "schema": "lunar-static-python-build-execution-report-v2" if command_outputs else
+        "schema": "lunar-static-python-build-execution-report-v3" if version3 else
+                  "lunar-static-python-build-execution-report-v2" if command_outputs else
                   "lunar-static-python-build-execution-report-v1",
         "recipe_sha256": expected_recipe_sha256, "completed_stages": completed,
         "stage_evidence": stages, "status": "complete" if reason is None else "partial",
@@ -697,6 +725,35 @@ def run_pinned_build(
     return report
 
 
+def run_pinned_build(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> BuildExecutionReport:
+    """Original v1/v2 mechanism with its original bounds and reference grammar."""
+    return _run_pinned_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
+        deadline=deadline, interrupted=interrupted, monotonic=monotonic,
+    )
+
+
+def run_pinned_build_v3(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> BuildExecutionReport:
+    """Explicit full-toolchain mechanism; no runtime or installation admission."""
+    return _run_pinned_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
+        deadline=deadline, interrupted=interrupted, monotonic=monotonic, version3=True,
+    )
+
+
 __all__ = [
-    "RECIPE_SCHEMA", "RECIPE_V2_SCHEMA", "BuildExecutionError", "BuildExecutionReport", "run_pinned_build",
+    "RECIPE_SCHEMA", "RECIPE_V2_SCHEMA", "RECIPE_V3_SCHEMA", "BuildExecutionError",
+    "BuildExecutionReport", "run_pinned_build", "run_pinned_build_v3",
 ]

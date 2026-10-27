@@ -344,8 +344,20 @@ def _validate_tree_graph(
         path = Path(root.path)
         for original_directory in root.directories:
             pinned = Path(original_directory.path)
-            if pinned.is_relative_to(path):
-                relative = pinned.relative_to(path).as_posix()
+            # Read both texts after this pin's PathLike callback. Never retain
+            # an ancestor decision across pins or remove the original Path gates.
+            path_text, pinned_text = str(path), str(pinned)
+            if all(text.startswith("/") and not text.startswith("//")
+                   and "/../" not in text and not text.endswith("/..")
+                   for text in (path_text, pinned_text)):
+                prefix = path_text if path_text == "/" else path_text + "/"
+                relative = ("." if pinned_text == path_text else
+                            pinned_text[len(prefix):] if pinned_text.startswith(prefix) else None)
+            else:
+                # Relative, double-anchor and parent-component paths can appear
+                # after a caller callback. Preserve pathlib's original behavior.
+                relative = pinned.relative_to(path).as_posix() if pinned.is_relative_to(path) else None
+            if relative is not None:
                 found = observed.get((label, relative))
                 if found is None or (found.device, found.inode, found.mode) != (
                     original_directory.device, original_directory.inode, original_directory.mode,

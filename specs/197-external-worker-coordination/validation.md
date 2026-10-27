@@ -1,5 +1,27 @@
 # Local batch validation — 2026-10-27
 
+## Second integration slice: transport, wrapper and CLI
+
+The fixed SSH transport, create-only installed wrapper, original budget checks,
+append-only unknown reconciliation and explicit CLI are now covered by the
+centralized 30-file regression. Its 1,050 unique cases initially had three failures
+in a separate P1 synthetic tool inventory; no worker case failed. After correcting
+that test input and style issues, eight directly affected files passed 217 cases,
+with v3-only import-style rechecks. Latest-node coverage remains 1,050 passing
+unique cases; original failures and raw results remain retained. See
+`../../docs/parallel-batch-validation-20261027.md` for source and XML evidence.
+
+Tests exercise actual local subprocesses through a fake SSH executable into the
+real wrapper, real HMAC and original SQLite journals. They cover producer
+concurrency, lost sealed response, unknown reconciliation, original budget and
+deadline, no native publication, FIFO admission, private-file replacement and
+existing-only database behavior. Final Ruff/compileall pass; root's staged diff
+check includes new files. Real cross-host inert SSH is prepared but not executed
+at this source snapshot. Candidate isolation, remote cleanup and production
+authority remain unaccepted.
+
+## First source/origin/assignment slice (historical)
+
 The root ran twelve new/directly affected test files together: the three Shinka
 source-profile files and existing handoff, both build-executor files, origin and
 assignment, existing worker evidence/process evidence, native claims and callback

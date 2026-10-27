@@ -180,8 +180,11 @@ _TRANSFER_STATES = frozenset({"passed", "failed", "unknown"})
 class RSILedger:
     """Durable append-only run/episode state with compare-and-swap transitions."""
 
-    def __init__(self, database: str | Path) -> None:
+    def __init__(self, database: str | Path, *, create: bool = True) -> None:
+        if type(create) is not bool:
+            raise RSILearningError("rsi_ledger_create_option_invalid")
         self.database = Path(database).expanduser().resolve()
+        self._create_database = create
         self._controller_guards: dict[str, tuple[int, int, Path, str, int]] = {}
         self._controller_guards_lock = threading.RLock()
         # History readers repeatedly verify the same immutable journal rows while
@@ -219,8 +222,13 @@ class RSILedger:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA query_only = ON")
             return connection
-        self.database.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database, timeout=30)
+        if self._create_database:
+            self.database.parent.mkdir(parents=True, exist_ok=True)
+            connection = sqlite3.connect(self.database, timeout=30)
+        else:
+            # Explicit recovery commands may reopen only an existing database.
+            # mode=rw applies on every connection, including after a path removal.
+            connection = sqlite3.connect(self.database.as_uri() + "?mode=rw", uri=True, timeout=30)
         connection.row_factory = sqlite3.Row
         # Switching to WAL is an initialization concern.  Re-issuing the mode-changing
         # pragma on every read connection can dirty the database header on some SQLite/Python
