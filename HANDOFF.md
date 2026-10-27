@@ -1,4 +1,26 @@
-## 当前执行点（2026-10-28）：P0 等待调度、P1 命令图、P2 独立接收边界
+## 当前终态（2026-10-28）：44cdd73e mixed 仍超时，P2 sidecar 回归通过
+
+`44cdd73ee7ec7e7fb823848c648d91553ebf55e0` 的唯一 Linux mixed 已终态失败：
+原 600 秒预算在 600.032415813 秒终止进程，rc=-15、timed_out=true，无 JUnit 或
+终态 module origins；源码前后仍匹配归档。原失败保留，不重跑该产品 source 求通过，
+不能合 main。focused 通过不关闭此 P0 门，也不把 loaded_module_count=0 解释为未加载。
+
+晚于该 mixed 归档的 P2 installed guardian sidecar 已完成 7 文件 Linux 集中回归：
+154 pass、0 fail/error/skip，176.654491586 秒；新增 13 项与冻结源码的参数化用例逐一
+对应且全部通过。tree `e6aa50a6238237c0a4374f679ad93be8c9c64c6d` 的 2,566 文件 /
+2,874 manifest 条目前后一致，232 个 Lunar 产品模块 origins 逐条匹配。执行目录全部
+11 个顶层普通原件已只读收证，result 的 10 个 file_ref SHA/size 均核验通过；未递归
+临时 fixture。该回归不覆盖旧 mixed，也不关闭真实账户部署、硬断线、whole-group
+cleanup、隔离 build/runtime 或生产 CLI 验收；production/online 仍为 false。
+
+原件根目录为主区 ignored
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/validation/parallel-batch-20261027/`：
+mixed 在 `final-mixed-44cdd73e-prepared/execution/remote-records/`（原始结果见
+`raw-process-result.json`、`validation-result.json`，汇总见上层 `mixed-outcome.json`）；
+P2 在 `installed-guardian-sidecar-linux-c5efv6z6/remote-records/`，完整核验见同级上层
+`evidence-verification.json`。两次执行各一次、零 retry，不互相替代。下方保留历史批次。
+
+## 前批实现：P0 等待调度、P1 命令图、P2 独立接收边界
 
 `be7776bf` 的唯一 Linux mixed 已在原 600 秒预算内超时（600.015565725 秒，
 rc=-15），无 JUnit/终态 module origins；2548 个 Git 文件与归档前后相同。它在推进
@@ -16,11 +38,12 @@ P1 在actual dependency consumer执行前验证有限显式command/input/output�
 冻结 tree `2482e84d1e94ed4ac5d277194732205d52fe878a` 的24项选择联合回归已完成：
 Linux 503节点中496 pass / 7 Darwin专属skip，410.777396921秒；原两child正向链路
 264.952秒通过。本机仅补平台文件9 pass / 1 Linux专属skip，其中7项覆盖上述Darwin
-缺口；跨平台最新503 unique均通过，不将重复的2项累加。2563 Git文件/2871归档项
+缺口；两次执行共有10个节点，只有2项在两边共同pass，其余由对应平台补齐；跨平台
+最新503 unique均通过，不重复累加共同节点。2563 Git文件/2871归档项
 前后一致，275个加载Lunar模块来源匹配。Ruff、compileall和两类diff检查通过。
 原始证据在主区ignored `parallel-batch-20261027/idle-command-guardian-linux-c6kjwovm`
-及 `idle-guardian-darwin-platform-5_7eh93y`。后继clean source的唯一600秒mixed和
-完整CI仍待执行；focused通过不关闭P0超时。
+及 `idle-guardian-darwin-platform-5_7eh93y`。该后继 `44cdd73e` 的唯一600秒mixed
+现已超时失败，见顶部原件；完整CI和合并门尚未通过，focused不关闭P0超时。
 
 普通Linux测试优先5090gpu，平台不支持时转本机；本机通过不能覆盖历史Linux失败。
 accepted隔离build/runtime/完整生产CLI、实际安装账户与独立vault部署/硬断线验收仍是

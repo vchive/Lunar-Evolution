@@ -58,8 +58,11 @@ security guarantees**. Accordingly TCG is not an accepted isolation or G1
 custody fallback. A separately scoped, trusted inert TCG diagnostic could
 observe image transport and timing only; it could not close these gates.
 
-The current environment must refuse production-custody selection before image
-construction or a consumer launch. Installed QEMU alone is insufficient. Do
+This QEMU design must refuse production-custody selection in the current
+environment before image construction or a consumer launch. This is a QEMU/
+accelerator conclusion, not a denial of the separately observed rootless Podman
+inert worker/transfer mechanism in
+`podman-inert-custody-observation-20261028.md`. Installed QEMU alone is insufficient. Do
 not increase privileges, change host policy or group membership on the agent's
 own authority, silently switch accelerators or increase an existing deadline
 to make this draft pass. Ordinary dependency preparation may proceed under the

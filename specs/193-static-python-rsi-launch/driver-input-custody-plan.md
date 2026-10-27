@@ -18,10 +18,16 @@ actual F03–F06 remain open. Another configuration DTO would not close them.
 
 ## Selected implementation order and custody requirements
 
-This document selects no new environment. The existing enforced Linux input-view
-boundary must become available and be independently accepted first. The
-unselected VM alternative in `../189-static-python-fixture/build-vm-custody.md`
-remains design only; installed QEMU or TCG availability is insufficient.
+This document selects no production environment. The complete Linux input-view
+boundary is not independently accepted. Narrow setup-time bubblewrap read-only
+consumption and a later rootless Podman two-phase input/generated-output transfer
+were actually observed; see
+`../189-static-python-fixture/podman-inert-custody-observation-20261028.md`.
+They establish mechanism feasibility, not complete archive/driver closure or an
+integrated backend. The original-path software work is drafted in
+`podman-custody-integration-draft.md`. The unselected VM alternative in
+`../189-static-python-fixture/build-vm-custody.md` remains design only; installed
+QEMU or TCG availability is insufficient.
 
 The required custody mechanism must bind the complete original archive bytes to
 one protected input view before the first consumer starts, and preserve both
@@ -81,11 +87,14 @@ controller and gateway. Unknown recovery must remain read-only and cannot
 relaunch a replacement attempt. Complete observational inventory, immutable
 consumption, startup, solver correctness and publication are separate gates.
 
-Retained 5090gpu observations deny the selected read-only mount/user-namespace
-operations and supported KVM access. This work changes no host privileges,
-policy, groups or accelerator. Those environment prerequisites do not erase the
-software work above: complete configured input closure, enforced custody,
-observer/executor integration and accepted runtime construction are still open.
+Retained 5090gpu observations deny the exec'ed-child remount, nested
+installed-bubblewrap user-namespace operation and current supported KVM access.
+They do not deny the earlier setup-time bubblewrap read-only result or the later
+successful rootless Podman inert transfer. This work changes no host privileges,
+policy, groups or accelerator. Complete configured input closure, full immutable
+custody, original observer/executor integration and accepted runtime construction
+remain software work; the host is not described as generally unable to provide
+a read-only worker view.
 
 `driver_inputs_verified`, `immutable_custody_verified`,
 `implicit_link_inputs_verified`, `installation_accepted`,

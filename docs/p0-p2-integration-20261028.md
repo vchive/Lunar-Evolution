@@ -1,6 +1,34 @@
 # P0–P2 integration, 2026-10-28
 
-## Current continuation: idle join, command inputs and durable guardian
+## Latest terminal results: mixed failed, installed guardian sidecar passed
+
+The single Linux mixed run of `44cdd73ee7ec7e7fb823848c648d91553ebf55e0`
+failed at its unchanged 600-second deadline: 600.032415813 seconds, rc=-15,
+timed_out=true, no JUnit or terminal module origins. Its source matched the
+archive before and after. Preserve the failure and do not rerun that product
+source to obtain a pass; this branch cannot merge into main.
+
+The later installed guardian sidecar slice passed its seven-file Linux affected
+selection: 154 passing nodes, zero failures/errors/skips, 176.654491586 seconds.
+All 13 new sidecar nodes match the frozen test's parameter expansion and passed.
+Frozen index tree `e6aa50a6238237c0a4374f679ad93be8c9c64c6d` has 2,566 files /
+2,874 manifest entries unchanged before/after and 232 matching loaded Lunar
+product-module origins. All 11 top-level regular execution originals were
+collected without recursing into fixtures; all 10 result file references match.
+This later run does not test or close the earlier mixed failure. Real account
+deployment, hard disconnect, blocked storage, whole-group cleanup and accepted
+production runtime/CLI remain unaccepted; production/online stay false.
+
+Original records are under the primary checkout's ignored root
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/validation/parallel-batch-20261027/`:
+`final-mixed-44cdd73e-prepared/execution/remote-records/` retains the failed mixed
+records, with `mixed-outcome.json` in its parent;
+`installed-guardian-sidecar-linux-c5efv6z6/remote-records/` retains the passing
+sidecar records, with `evidence-verification.json` in its parent. Each execution
+ran once with zero retries. Source-path/byte origin checks do not establish
+immutable consumed-bytecode custody.
+
+## Prior concentrated batch: idle join, command inputs and durable guardian
 
 The frozen index tree `2482e84d1e94ed4ac5d277194732205d52fe878a`, based on
 `be7776bf`, adds operation-local reservation baseline encoding reuse, the private
@@ -15,8 +43,10 @@ terminal join and default direct guardian paths remain unchanged.
 | Local Darwin platform supplement, one file | 9 pass / 1 Linux-only skip, 0.780477958s | All 2,563 source files unchanged |
 
 The seven Linux skips are the actual Darwin immutable-snapshot cases, all passed
-by the local supplement. The latest cross-platform union is 503 unique passing
-nodes; the two common nodes are not counted twice. The natural two-child
+by the local supplement. The executions share ten nodes, only two of which
+passed on both platforms; the other platform gaps are covered by their respective
+execution. The latest cross-platform union is 503 unique passing nodes, with
+shared nodes counted once. The natural two-child
 published/rejected composition passed in 264.952s. This is not the three-child
 mixed acceptance or actual producer/model/evaluator execution. Final project
 Ruff, compileall and staged/unstaged diff checks passed.
@@ -28,15 +58,17 @@ Evidence is under the same primary-checkout ignored root documented below:
 SHA256 is `777026b597135b9b759bfd6e9aa8108c994c7048a180cc1649e2e7288427ca5f`.
 The frozen tree is not described as a later commit.
 
-Still open: the new clean source's original 600-second, zero-retry three-child
-mixed and full CI; complete driver/input custody, accepted isolated runtime and
-production CLI; installed vault guardian pairing, actual account deployment and
-hard-disconnect/cleanup acceptance. The prior `be7776bf` Linux timeout remains
-preserved. The ordinary local platform supplement cannot replace Linux x86
-isolation. Production admission and online publication remain false.
+The subsequent `44cdd73e` original 600-second, zero-retry three-child mixed is
+now failed as recorded above; full CI and the merge gate remain open. The later
+sidecar slice closes the installed vault guardian-reference composition gap.
+Complete driver/input custody, accepted isolated runtime and production CLI,
+actual account deployment and hard-disconnect/cleanup acceptance remain open.
+The prior `be7776bf` Linux timeout remains preserved. The ordinary local platform
+supplement cannot replace Linux x86 isolation. Production admission and online
+publication remain false.
 
 The following sections retain earlier batches and their original results; they
-do not supersede this current continuation.
+do not supersede the latest terminal results above.
 
 The batch implements three software continuations before concentrated regression:
 operation-local staging identity parsing, the opt-in native private collector

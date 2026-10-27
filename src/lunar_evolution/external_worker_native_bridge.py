@@ -6,6 +6,7 @@ Default/public worker execution and production readiness remain unchanged.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import time
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from ._candidate_workspace_io import DirectoryChain
 from .automatic_solve_lifecycle import SolveExecutionControl
+from .external_worker_guardian_vault import retain_installed_guardian_reference
 from .external_worker_native_lifecycle import (
     WorkerNativeLifecycleResolver,
     WorkerNativeTaskMapping,
@@ -27,7 +29,9 @@ from .external_worker_native_vault import (
 from .external_worker_origin import WorkerOriginContext, WorkerOriginKey
 from .external_worker_wrapper import WorkerWrapperConfig, validate_worker_request, worker_json
 from .native_bootstrap import NativeBootstrapArtifact
+from .native_guardian_registration import NativeGuardianCustodyRequest
 from .native_trusted_attempt import run_native_trusted_attempt
+from .producer_bootstrap import build_trusted_bootstrap_launch
 from .producer_launcher import (
     ProducerLaunchAttestation,
     ProducerLaunchIntent,
@@ -85,20 +89,24 @@ class WorkerInstalledNativeBridge:
     """
 
     def __init__(self, launch: InstalledWorkerNativeLaunch, *, installation: InstalledWorkerNativeVault,
-                 key: WorkerOriginKey, profile_sha256: str) -> None:
+                 key: WorkerOriginKey, profile_sha256: str,
+                 guardian_custody: NativeGuardianCustodyRequest | None = None) -> None:
         types = (("context", WorkerOriginContext), ("request", SolverRequest),
                  ("mapping", WorkerNativeTaskMapping), ("intent", ProducerLaunchIntent),
                  ("attestation", ProducerLaunchAttestation), ("artifact", NativeBootstrapArtifact))
         if (type(launch) is not InstalledWorkerNativeLaunch
                 or any(type(getattr(launch, name)) is not expected for name, expected in types)
                 or type(installation) is not InstalledWorkerNativeVault or type(key) is not WorkerOriginKey
-                or not all(isinstance(path, Path) for path in (launch.workspace, launch.producer_root))):
+                or not all(isinstance(path, Path) for path in (launch.workspace, launch.producer_root))
+                or (guardian_custody is not None
+                    and type(guardian_custody) is not NativeGuardianCustodyRequest)):
             raise WorkerNativeBridgeError("worker_native_bridge_originals_required")
         verify_producer_launch_attestation(launch.intent, launch.attestation)
         self._launch = launch
         self._installation = installation
         self._key = key
         self._profile = profile_sha256
+        self._guardian_custody = guardian_custody
         self._baseline = launch.snapshot()
         self._installation_baseline = installation.canonical_bytes
         self._attempted = False
@@ -114,6 +122,19 @@ class WorkerInstalledNativeBridge:
             self._installation, key=self._key, profile_sha256=self._profile,
             private_roots=(launch.workspace, launch.producer_root, launch.artifact.path.parent),
         )
+        if self._guardian_custody is not None:
+            native_launch = build_trusted_bootstrap_launch(
+                launch.intent, launch.attestation, launch.artifact.descriptor,
+            )
+            directory = self._guardian_custody.check_installed_assignment(
+                original_context_sha256=hashlib.sha256(worker_json(launch.context.to_dict())).hexdigest(),
+                original_launch_sha256=native_launch.launch_sha256,
+                original_profile_sha256=self._profile,
+            )
+            check_installed_vault_separation(
+                self._installation, key=self._key, profile_sha256=self._profile,
+                private_roots=(directory,),
+            )
 
     def check_wrapper(self, config: WorkerWrapperConfig) -> None:
         self._check()
@@ -169,6 +190,16 @@ class WorkerInstalledNativeBridge:
                     expected_context=launch.context, expected_mapping=launch.mapping,
                     expected_profile_sha256=self._profile,
                 )
+                if self._guardian_custody is not None:
+                    retain_installed_guardian_reference(
+                        self._installation, self._guardian_custody.reference,
+                        writer.anchor, lookup, native_context=context, key=self._key,
+                        expected_context=launch.context, expected_mapping=launch.mapping,
+                        expected_profile_sha256=self._profile,
+                        check=lambda: _check_deadline(
+                            control, value, "installed_worker_guardian_custody",
+                        ),
+                    )
                 self._check()
                 _check_deadline(control, value, "installed_worker_native_after_custody")
 
@@ -178,6 +209,8 @@ class WorkerInstalledNativeBridge:
                 attestation=launch.attestation, artifact=launch.artifact,
                 parent_deadline=control.deadline, cancelled=control.is_cancelled,
                 registered_observer=durable_registered,
+                **({"guardian_custody": self._guardian_custody}
+                   if self._guardian_custody is not None else {}),
             )
         finally:
             resolver.close()

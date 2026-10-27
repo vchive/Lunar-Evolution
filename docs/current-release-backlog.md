@@ -1,19 +1,37 @@
-## 当前批次（2026-10-28）：先并行开发、再集中回归
+## 当前终态（2026-10-28）：P0 mixed 失败，P2 sidecar 已完成集中回归
+
+`44cdd73e` 的唯一 Linux mixed 已在原600秒预算超时：600.032415813秒、rc=-15、
+timed_out=true，无JUnit/终态module origins，源码前后匹配原archive。原失败保留，
+不重跑该产品source求通过；当前不能合main。
+
+后继 P2 installed guardian sidecar 的7文件集中Linux回归为154 pass、0 fail/error/skip，
+176.654491586秒，含实际通过的13项新增用例；tree `e6aa50a6` 的2566文件/2874条目
+前后一致，232个产品模块origins匹配。它补齐installed bridge/vault原始guardian
+reference的持久接线，不关闭P0 mixed或真实部署/断线/cleanup/生产验收。
+
+原件在主区ignored
+`/Users/liminghan/Documents/lunar_agent/.lunar-evolution/validation/parallel-batch-20261027/`：
+`final-mixed-44cdd73e-prepared/execution/remote-records/`和
+`installed-guardian-sidecar-linux-c5efv6z6/remote-records/`；P2完整核验见后者上层的
+`evidence-verification.json`。各一次执行、零retry；production/online=false。
+
+## 前批集中回归及其后继状态
 
 `be7776bf` 的唯一 Linux mixed 为 600.015565725 秒超时（rc=-15，无 JUnit/终态
 module origins），原失败保留，不重跑该产品 source。当前后继集中处理以下三块：
 
 | 优先级 | 本批软件变化 | 验收与剩余边界 |
 | --- | --- | --- |
-| P0 | reservation 同次 walk 基准编码复用；reserved terminal join 空闲热检查，真实事件与 Future 完成仍完整 gate | 新联合 focused、两 child 正向链路、新 clean HEAD 原 600 秒/零 retry mixed，然后完整 CI |
+| P0 | reservation 同次 walk 基准编码复用；reserved terminal join 空闲热检查，真实事件与 Future 完成仍完整 gate | 联合 focused、两 child 正向链路已通过；44cdd73e 唯一原600秒/零retry mixed仍超时，需后继修复后再验收及完整CI |
 | P1 | actual dependency consumer 执行前拒绝未知 command/argv 输入和无效 output graph | 未证明 driver 全部隐式输入、immutable custody、accepted build/runtime 或生产 CLI |
-| P2 | 独立原生 guardian receiver 的持久注册/退出记录，原 native registration 的显式 pre-gate 配对接线 | installed bridge/vault 的配对 reference 部署、实际独立账户、硬断线/blocked-storage 和 cleanup 验收仍开放 |
+| P2 | 独立原生 guardian receiver 的持久注册/退出记录，原 native registration 的显式 pre-gate 配对接线；后继已补installed bridge/vault原始reference持久保管及只读恢复 | 后继154项Linux回归已通过；实际独立账户、硬断线/blocked-storage 和whole-group cleanup验收仍开放 |
 
 三块冻结tree `2482e84d`的联合测试已完成：Linux496 pass / 7 Darwin专属skip，
-410.777396921秒；本机平台文件9 pass / 1 Linux专属skip，实际补齐上述7项。最新
-并集503 unique通过，不能把重复节点累加。2563文件/2871项前后一致，275个Lunar
-加载来源匹配；Ruff、compileall和staged/unstaged diff通过。唯一三child mixed及
-完整CI仍待执行，不能以两child通过宣布P0关闭。
+410.777396921秒；本机平台文件9 pass / 1 Linux专属skip，实际补齐上述7项。
+两次执行共有10个节点，仅2项在两边共同pass，其余平台缺口由对应执行补齐；并集
+503 unique通过，不能把共同节点重复累加。2563文件/2871项前后一致，275个Lunar
+加载来源匹配；Ruff、compileall和staged/unstaged diff通过。其后44cdd73e唯一三child
+mixed已超时失败，完整CI/合并门仍未通过，不能以两child通过宣布P0关闭。
 普通测试优先5090gpu，不支持时转本机；macOS通过
 不覆盖Linux历史失败，也不提供既定Linux x86隔离runtime验收。sudo/KVM/userns限制
 只解释对应环境门，不能将软件缺口全部算作环境阻塞。production/online=false。

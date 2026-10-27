@@ -224,6 +224,30 @@ class NativeGuardianCustodyRequest:
     def reference(self) -> GuardianNativeRegistrationReference | None:
         return self._reference
 
+    def check_installed_assignment(
+        self, *, original_context_sha256: str, original_launch_sha256: str,
+        original_profile_sha256: str,
+    ) -> Path:
+        """Trusted bridge only: compare originals without creating/replaying a launch.
+
+        The returned original private directory is for installation-separation
+        checks, never a path selected by a public worker packet.
+        """
+        try:
+            expected = tuple(_digest(value) for value in (
+                original_context_sha256, original_launch_sha256, original_profile_sha256,
+            ))
+            if expected != self._digests or _private_chain(self._chain) != self._pins:
+                _fail()
+            _elf(self._receiver)
+            return self._directory
+        except NativeGuardianRegistrationError:
+            raise
+        except Exception as exc:
+            raise NativeGuardianRegistrationError(
+                "native_guardian_registration_binding_invalid",
+            ) from exc
+
     def check_launch(self, launch_sha256: str) -> None:
         try:
             if (self._attempted or _digest(launch_sha256) != self._digests[1]
