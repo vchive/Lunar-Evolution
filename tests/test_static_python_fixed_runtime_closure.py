@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -34,6 +35,13 @@ def closure_inputs(request, monkeypatch):
     for sources in native.values():
         for path in sources:
             cpython["Modules/" + path] = b"/* inert C source, never compiled */\n"
+    # Exact upstream native inputs are inert data; no C/Python fixture is executed.
+    native_fixture = Path(__file__).parent / "fixtures/static_python_subprocess_source"
+    cpython.update({path: (native_fixture / (path + ".source")).read_bytes()
+                    for path in closure._POSIXSUBPROCESS_INPUTS})
+    socket_fixture = Path(__file__).parent / "fixtures/static_python_socket_source"
+    cpython.update({path: (socket_fixture / (path + ".source")).read_bytes()
+                    for path in closure._SOCKET_INPUTS})
     source_modules = {solver: b"pass\n", solver + ".lunar_fixed": b"from . import helper\nimport json\n",
                       solver + ".helper": b"from __future__ import annotations\n"}
     files = {}
@@ -347,7 +355,7 @@ def test_no_unknown_import_or_host_fallback(closure_inputs):
 
 
 def test_unguarded_missing_native_dependency_refuses(closure_inputs):
-    closure_inputs["cpython_sources"]["Lib/json/decoder.py"] = b"import _socket\n"
+    closure_inputs["cpython_sources"]["Lib/json/decoder.py"] = b"import _ssl\n"
     refresh_cpython_pin(closure_inputs)
     with pytest.raises(closure.RuntimeClosureError, match="unguarded_absent_import"):
         closure.prepare_fixed_runtime_closure(**closure_inputs)
@@ -480,7 +488,7 @@ def test_imported_selftest_evidence_reaches_closure_wire_without_a_doctest_modul
 
 
 def inspect_cli_source():
-    return (b"import hashlib\ndef functional():\n    import bz2\n"
+    return (b"import hashlib\ndef functional():\n    import required_dependency\n"
             b"def _main():\n    import argparse\n    import importlib\n"
             b"if __name__ == '__main__':\n    _main()\n")
 
@@ -489,8 +497,8 @@ def test_exact_imported_inspect_cli_excludes_only_its_private_main(monkeypatch):
     raw = inspect_cli_source()
     monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
     evidence = []
-    # bz2 in a functional body is still required; only the CLI imports disappear.
-    assert imported_selftest_edges(raw, "inspect", evidence) == {"hashlib", "bz2"}
+    # Functional imports remain required; only the CLI imports disappear.
+    assert imported_selftest_edges(raw, "inspect", evidence) == {"hashlib", "required_dependency"}
     assert evidence == [{
         "module": "inspect", "module_source_sha256": sha(raw),
         "guard": "canonical-imported-module-not-main", "guard_lineno": 7,
@@ -538,7 +546,7 @@ def test_selected_external_literal_inspect_cli_references_refuse(raw):
 def test_unreviewed_module_private_main_and_functional_bodies_are_still_scanned():
     evidence = []
     assert imported_selftest_edges(inspect_cli_source(), "another_module", evidence) == {
-        "hashlib", "bz2", "argparse", "importlib",
+        "hashlib", "required_dependency", "argparse", "importlib",
     }
     assert evidence == []
 
@@ -569,7 +577,7 @@ def test_inspect_cli_evidence_retains_raw_frozen_source_and_false_runtime_claims
     closure_inputs, monkeypatch,
 ):
     args = closure_inputs
-    raw = inspect_cli_source().replace(b"def functional():\n    import bz2\n", b"")
+    raw = inspect_cli_source().replace(b"def functional():\n    import required_dependency\n", b"")
     args["cpython_sources"].update({
         "Lib/json/decoder.py": b"import inspect\n", "Lib/inspect.py": raw,
         "Lib/hashlib.py": b"pass\n",
@@ -585,7 +593,7 @@ def test_inspect_cli_evidence_retains_raw_frozen_source_and_false_runtime_claims
     assert frozen["inspect"]["source_sha256"] == sha(raw)
     assert {record["module"]: record["function"]
             for record in facts["excluded_imported_selftests"]} == {"inspect": "_main"}
-    assert not {"argparse", "bz2"} & set(frozen)
+    assert not {"argparse", "required_dependency"} & set(frozen)
     assert "_bz2" not in {record["module"] for record in facts["native_units"]}
     assert facts["dynamic_import_closure_verified"] is False
     assert facts["runtime_execution_performed"] is False
@@ -596,12 +604,194 @@ def test_inspect_cli_exclusion_never_hides_a_required_compression_import(
     closure_inputs, monkeypatch,
 ):
     args = closure_inputs
-    raw = inspect_cli_source()
+    raw = inspect_cli_source().replace(b"import required_dependency", b"import _bz2")
     args["cpython_sources"].update({
         "Lib/json/decoder.py": b"import inspect\n", "Lib/inspect.py": raw,
-        "Lib/hashlib.py": b"pass\n", "Lib/bz2.py": b"import _bz2\n",
+        "Lib/hashlib.py": b"pass\n",
     })
     monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    refresh_cpython_pin(args)
+    with pytest.raises(closure.RuntimeClosureError, match="unresolved_import"):
+        closure.prepare_fixed_runtime_closure(**args)
+
+
+def calendar_cli_source():
+    return (b"import hashlib\ndef functional():\n    import required_dependency\n"
+            b"def main(args=None):\n    import argparse\n"
+            b"if __name__ == '__main__':\n    main()\n")
+
+
+def calendar_public_caller_source():
+    return (b"import calendar\ndef public_values():\n"
+            b"    return calendar.day_abbr, calendar.day_name, calendar.month_abbr, "
+            b"calendar.month_name, calendar.isleap\n")
+
+
+def test_exact_calendar_cli_prunes_only_its_pinned_optional_argv_main(monkeypatch):
+    raw = calendar_cli_source()
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "calendar", sha(raw))
+    evidence = []
+    assert imported_selftest_edges(raw, "calendar", evidence) == {"hashlib", "required_dependency"}
+    assert evidence == [{
+        "module": "calendar", "module_source_sha256": sha(raw),
+        "guard": "canonical-imported-module-not-main", "guard_lineno": 6,
+        "function": "main", "literal_call_count": 1, "call_lineno": 7,
+        "dynamic_reflection_verified": False, "signature": "args=None",
+    }]
+
+
+def test_calendar_cli_requires_complete_independent_official_source_pin():
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_source_drift"):
+        imported_selftest_edges(calendar_cli_source(), "calendar", [])
+
+
+@pytest.mark.parametrize("signature", [
+    b"def main():\n", b"def main(args):\n", b"def main(args=()):\n",
+    b"def main(argv=None):\n", b"def main(*, args=None):\n",
+    b"def main(args=None, **kwargs):\n", b"def main(args: object=None):\n",
+    b"@decorator\ndef main(args=None):\n",
+])
+def test_calendar_cli_signature_is_exact_and_never_generalized(signature, monkeypatch):
+    raw = calendar_cli_source().replace(b"def main(args=None):\n", signature)
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "calendar", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "calendar", [])
+
+
+@pytest.mark.parametrize("change", [
+    b"main()\n", b"alias = main\n", b"main = lambda: None\n", b"del main\n",
+])
+def test_calendar_cli_call_reference_cannot_escape_main_guard(change, monkeypatch):
+    raw = calendar_cli_source() + change
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "calendar", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "calendar", [])
+
+
+def test_calendar_cli_main_guard_call_cannot_gain_argv(monkeypatch):
+    raw = calendar_cli_source().replace(b"    main()\n", b"    main([])\n")
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "calendar", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "calendar", [])
+
+
+def test_calendar_cli_guard_else_is_retained_as_a_refusal(monkeypatch):
+    raw = calendar_cli_source() + b"else:\n    import required_dependency\n"
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "calendar", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_main_guard_invalid"):
+        imported_selftest_edges(raw, "calendar", [])
+
+
+def test_other_imported_helpers_cannot_gain_calendar_optional_argv_signature(monkeypatch):
+    raw = inspect_cli_source().replace(b"def _main():\n", b"def _main(args=None):\n")
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "inspect", [])
+
+
+def test_unrelated_public_main_attributes_strings_and_functions_are_not_globally_rejected():
+    raw = (b"def main(args=None):\n    import required_dependency\n"
+           b"name = 'main'\nother.main()\nif __name__ == '__main__':\n    main()\n")
+    evidence = []
+    assert imported_selftest_edges(raw, "another_module", evidence) == {"required_dependency"}
+    assert evidence == []
+
+
+@pytest.mark.parametrize("raw", [
+    b"import calendar\ncalendar.main()\n", b"import calendar as c\nc.main()\n",
+    b"from calendar import main as run_cli\n", b"from calendar import *\n",
+    b"from calendar import timegm\n", b"getattr(__import__('calendar'), 'main')()\n",
+    b"import _strptime\n_strptime.calendar.main()\n", b"from _strptime import calendar as c\n",
+])
+def test_unreviewed_external_calendar_literal_access_refuses(raw):
+    with pytest.raises(closure.RuntimeClosureError, match="calendar_cli_caller_unreviewed"):
+        imported_selftest_edges(raw, "another_module", [])
+
+
+def test_calendar_external_public_caller_requires_independent_complete_source_pin():
+    with pytest.raises(closure.RuntimeClosureError, match="calendar_cli_caller_unreviewed"):
+        imported_selftest_edges(calendar_public_caller_source(), "_strptime", [])
+
+
+def test_exact_reviewed_calendar_caller_retains_public_attributes_and_wire_evidence(monkeypatch):
+    raw = calendar_public_caller_source()
+    monkeypatch.setattr(closure, "_CALENDAR_CLI_CALLER_SOURCE_SHA256", sha(raw))
+    evidence = []
+    assert closure._imports(raw, "_strptime", False, set(), set(), evidence, []) == {"calendar"}
+    assert evidence == [{
+        "module": "_strptime", "module_source_sha256": sha(raw), "function": "calendar.main",
+        "guard": "exact-source-public-calendar-attributes-only", "import": "calendar",
+        "import_lineno": 1, "public_attributes": list(closure._CALENDAR_CLI_PUBLIC_ATTRIBUTES),
+        "dynamic_reflection_verified": False,
+    }]
+
+
+@pytest.mark.parametrize("change", [
+    b"alias = calendar\n", b"calendar = None\n", b"del calendar\n",
+    b"calendar.main()\n", b"getattr(calendar, 'main')()\n",
+    b"calendar.__dict__['main']()\n", b"module_name = 'calendar'\n",
+])
+def test_calendar_reviewed_caller_rejects_reference_drift_even_with_synthetic_pin(change, monkeypatch):
+    raw = calendar_public_caller_source() + change
+    monkeypatch.setattr(closure, "_CALENDAR_CLI_CALLER_SOURCE_SHA256", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="calendar_cli_caller_invalid"):
+        imported_selftest_edges(raw, "_strptime", [])
+
+
+def test_calendar_caller_approval_is_not_an_alias_or_another_module_whitelist(monkeypatch):
+    raw = calendar_public_caller_source()
+    monkeypatch.setattr(closure, "_CALENDAR_CLI_CALLER_SOURCE_SHA256", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="calendar_cli_caller_unreviewed"):
+        imported_selftest_edges(raw, "another_module", [])
+    aliased = raw.replace(b"import calendar\n", b"import calendar as c\n")
+    monkeypatch.setattr(closure, "_CALENDAR_CLI_CALLER_SOURCE_SHA256", sha(aliased))
+    with pytest.raises(closure.RuntimeClosureError, match="calendar_cli_caller_invalid"):
+        imported_selftest_edges(aliased, "_strptime", [])
+
+
+def test_calendar_cli_and_caller_original_sources_and_false_claims_reach_closure_wire(
+    closure_inputs, monkeypatch,
+):
+    args = closure_inputs
+    raw = calendar_cli_source()
+    caller = calendar_public_caller_source()
+    args["cpython_sources"].update({
+        "Lib/json/decoder.py": b"import _strptime\n", "Lib/_strptime.py": caller,
+        "Lib/calendar.py": raw, "Lib/hashlib.py": b"pass\n", "Lib/required_dependency.py": b"pass\n",
+    })
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "calendar", sha(raw))
+    monkeypatch.setattr(closure, "_CALENDAR_CLI_CALLER_SOURCE_SHA256", sha(caller))
+    refresh_cpython_pin(args)
+    original_sources = dict(args["cpython_sources"])
+    facts = json.loads(closure.prepare_fixed_runtime_closure(**args).wire_bytes)
+    frozen = {row["name"]: row for row in facts["frozen"]}
+    assert args["cpython_sources"] == original_sources
+    for name, source in (("calendar", raw), ("_strptime", caller)):
+        assert frozen[name]["source"] == "Lib/" + name + ".py"
+        assert frozen[name]["source_size"] == len(source)
+        assert frozen[name]["source_sha256"] == sha(source)
+    assert "argparse" not in frozen and "required_dependency" in frozen
+    assert {row["module"]: row["function"] for row in facts["excluded_imported_selftests"]} == {
+        "calendar": "main",
+    }
+    assert any(row["module"] == "_strptime" and row["function"] == "calendar.main"
+               for row in facts["guarded_call_imports"])
+    assert "_bz2" not in {row["module"] for row in facts["native_units"]}
+    assert facts["dynamic_import_closure_verified"] is False
+    assert facts["runtime_execution_performed"] is False
+    assert facts["production_admission"] is False
+
+
+def test_calendar_cli_refinement_does_not_hide_required_native_imports(closure_inputs, monkeypatch):
+    args = closure_inputs
+    raw = calendar_cli_source().replace(b"import required_dependency", b"import _bz2")
+    caller = calendar_public_caller_source()
+    args["cpython_sources"].update({
+        "Lib/json/decoder.py": b"import _strptime\n", "Lib/_strptime.py": caller,
+        "Lib/calendar.py": raw, "Lib/hashlib.py": b"pass\n",
+    })
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "calendar", sha(raw))
+    monkeypatch.setattr(closure, "_CALENDAR_CLI_CALLER_SOURCE_SHA256", sha(caller))
     refresh_cpython_pin(args)
     with pytest.raises(closure.RuntimeClosureError, match="unresolved_import"):
         closure.prepare_fixed_runtime_closure(**args)

@@ -246,3 +246,34 @@ refuses if its real native dependency is absent. Other possible routes remain
 conservatively scanned, and no real-source closure success is claimed for this
 extension before independent source-only verification. Build/runtime/production
 acceptance and dynamic reflection remain unverified.
+
+
+## Exact imported calendar CLI refinement
+
+The finite imported-only mapping also includes official CPython 3.13.12
+`calendar.main`, complete `Lib/calendar.py` (26077 bytes), SHA-256
+`519c59b7a52e45f9c8056ed8cc8cede5be4bfa16d2179c1db1b01688ac1935b3`.
+Its sole helper definition at line 699 is exactly `main(args=None)`, with no
+other arguments, annotations or decorators. Its sole Name reference is the
+zero-argument direct call at line 813 inside the canonical false imported-main
+guard at line 812. Only this exact helper/source may use that optional argv
+signature. Original source bytes and functional bodies remain retained/scanned;
+its CLI-only `argparse` import at line 700 is excluded with `args=None` evidence.
+
+The common name `main` is never added to the global private-helper literal gate.
+A separate finite calendar reference rule permits only the actually selected
+full-source-pinned `_strptime` caller (34734 bytes, SHA-256
+`42ace512e928d00bf6642f322d6ecae9112412f9b4d2d73ab89f8db3a79d0598`).
+Its one unaliased `import calendar` at line 16 has exactly five module Name
+loads, solely the public `day_abbr`, `day_name`, `month_abbr`, `month_name` and
+`isleap` attributes. Its caller source/import/public-member proof is retained
+under `guarded_call_imports`. Other literal calendar imports, aliases, module
+exports or module-name reflection refuse as unreviewed; there is no generic
+alias analysis or automatic approval of other official callers. Unrelated
+`main` functions/attributes/strings remain scanned normally.
+
+This refines only the observed `_strptime -> calendar.main -> argparse` source
+route. It adds no native/absent module, transitive optional exception or runtime
+capability. Other required import edges continue to refuse; source-graph success
+needs a fresh independent source-only check. Dynamic reflection, build/runtime,
+production admission and CLI acceptance remain unverified.

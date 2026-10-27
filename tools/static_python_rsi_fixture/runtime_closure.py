@@ -45,6 +45,8 @@ _NATIVE = {
     "_opcode": ("_opcode.c",),
     "_suggestions": ("_suggestions.c",),
     "_tracemalloc": ("_tracemalloc.c",),
+    "_posixsubprocess": ("_posixsubprocess.c",),
+    "_socket": ("socketmodule.c",),
     "_bisect": ("_bisectmodule.c",),
     "_heapq": ("_heapqmodule.c",),
     "_pickle": ("_pickle.c",),
@@ -71,10 +73,14 @@ _SQLITE = tuple("_sqlite/" + n + ".c" for n in (
 ))
 # These may occur in guarded platform/accelerator imports. They are deliberately
 # absent, never granted a host loader. Their callers must retain fallback paths.
+# The fixed JSON/source solver profiles do not provide compressed archives:
+# omit their public modules as well as their unavailable native providers. An
+# unguarded import still refuses, even if upstream source exists in the inventory.
 _ABSENT = frozenset({
     "nt", "_winapi", "winreg", "msvcrt", "_overlapped", "_scproxy", "_wmi",
     "_hashlib", "_md5", "_sha1", "_sha3", "_blake2", "_decimal",
-    "_posixsubprocess", "_socket", "_ssl",
+    "_ssl",
+    "bz2", "gzip", "lzma", "zlib",
     "java.lang",
 })
 # CPython 3.13's parent initializers publish these sys.modules aliases. There
@@ -93,12 +99,17 @@ _IMPORTED_SELFTEST_SOURCE_SHA256 = {
     "pickletools": "bf882fd005a822076a08c1cd3415b96a74d0caab7d69610f31dbe35346917233",
     "heapq": "6d43277e5c76fc0f073cd388fcff852d14d068f6bb6d4886c340f8b75a1229a9",
     "inspect": "ea27c96e5b29fe29de8e3ee8840a50d6ff4b05f47cf911f4ee17cb0d4f953ca8",
+    "calendar": "519c59b7a52e45f9c8056ed8cc8cede5be4bfa16d2179c1db1b01688ac1935b3",
 }
 # Finite reviewed helpers only; no arbitrary function or main-block pruning.
 _IMPORTED_SELFTEST_FUNCTIONS = {
     "pickle": "_test", "difflib": "_test", "pickletools": "_test",
-    "heapq": None, "inspect": "_main",
+    "heapq": None, "inspect": "_main", "calendar": "main",
 }
+_CALENDAR_CLI_CALLER_SOURCE_SHA256 = "42ace512e928d00bf6642f322d6ecae9112412f9b4d2d73ab89f8db3a79d0598"
+
+_CALENDAR_CLI_PUBLIC_ATTRIBUTES = ("day_abbr", "day_name", "isleap", "month_abbr", "month_name")
+
 _INTERPRETER_PROVIDED = {
     "__main__": ("Python/pylifecycle.c", (
         b"status = add_main_module(interp);",
@@ -106,6 +117,63 @@ _INTERPRETER_PROVIDED = {
         b"m = PyImport_AddModuleObject(&_Py_ID(__main__));",
     )),
 }
+# Only the complete official subprocess source and its actual msvcrt probe may
+# establish the fixed Linux branch; the variable spelling is never sufficient.
+_SUBPROCESS_SOURCE_SHA256 = "e4049ed91ed101b09b0dc96bbf234f646c1728090d643a474b024276cc2a028c"
+# Actual finite C/quoted-header inputs, not host config or transitive include proof.
+_POSIXSUBPROCESS_INPUTS = {
+    "Include/Python.h": (4038,
+        "0660af70363eeea689133b9ee0dc3b0cf3e4afc62eed177354d8f9b725fbc86a"),
+    "Include/internal/pycore_fileutils.h": (9468,
+        "f83a582d670fb5adef4359981263338ec91dd9c22a8480f371fe58d93f7d2145"),
+    "Include/internal/pycore_modsupport.h": (3351,
+        "aa6659915dc031b909216135e687daebe48698c25a1e51e25473f577168ca73a"),
+    "Include/internal/pycore_pystate.h": (9964,
+        "10ca4c722ea98e0e97a8518cdd03017240595f9b6dc7660970e6f8f79a037794"),
+    "Include/internal/pycore_signal.h": (2931,
+        "041dcd91514f60d35e085f2748512e3d0260eea0518d8e3c833fe6a08608f33b"),
+    "Modules/_posixsubprocess.c": (45034,
+        "07951458dda4fc10f4c0a298de9db6ef28ca1d5ac4880ff4512a317f22584a74"),
+    "Modules/clinic/_posixsubprocess.c.h": (5358,
+        "5da263285675867b19a64c9f84fa237ebceb6c0070157d8b2e9031ed60252943"),
+    "Modules/posixmodule.h": (874,
+        "089c58df65194724e960af9946ae01307e216adbe1a6d77381a217380d3c8df4"),
+}
+
+# The real CapsuleType provider remains a finite static builtin. Pin its
+# direct quoted/clinic inputs, including conditionally embedded C fallbacks.
+# These source pins grant no socket syscall, DNS, host library or SSL access.
+_SOCKET_INPUTS = {
+    'Include/Python.h': (4038,
+        '0660af70363eeea689133b9ee0dc3b0cf3e4afc62eed177354d8f9b725fbc86a'),
+    'Include/internal/pycore_capsule.h': (397,
+        '38e5994687ba663929ccd79d10ad79d3cd58a742220fedcf1508a4d8453d8aed'),
+    'Include/internal/pycore_fileutils.h': (9468,
+        'f83a582d670fb5adef4359981263338ec91dd9c22a8480f371fe58d93f7d2145'),
+    'Include/internal/pycore_gc.h': (12967,
+        'ef970112a2bd7837a9fbc9c41a98bd9ea8865f041e6f97a066f5ceed0910dcce'),
+    'Include/internal/pycore_modsupport.h': (3351,
+        'aa6659915dc031b909216135e687daebe48698c25a1e51e25473f577168ca73a'),
+    'Include/internal/pycore_moduleobject.h': (1572,
+        'e9a89401dfe07a9d557068e1ecb1d7dddd6b8d61f4067538c22a5870cba28b12'),
+    'Include/internal/pycore_runtime.h': (13165,
+        '57d14e298552196af799dbc40b2ae7cbafae1401376ad92f951e8b88ae37cd43'),
+    'Include/internal/pycore_time.h': (11794,
+        'fb3be916a92c3055ea346e599a63c3e81bc1e46a1fddd4736b06f09b3567862d'),
+    'Modules/addrinfo.h': (6048,
+        'c531375ca773de8693d31b45ccb8d72a8582c94bd6161e8a9ddf2b38c06ad6be'),
+    'Modules/clinic/socketmodule.c.h': (7402,
+        'e09fc83b68fb59dad1321eabe954152d1ca10238bb1d411eb3154eee06fa8e05'),
+    'Modules/getaddrinfo.c': (19052,
+        '4b7bfe1f3f4d552c1917884f9f57d8452151d836a2c3b39c942c7ecdcf1346e6'),
+    'Modules/getnameinfo.c': (6398,
+        '204b485fea6870a250428e9f6b76395d1526fa17a596d4e7ceab8c686544048e'),
+    'Modules/socketmodule.c': (260844,
+        '6d53c2d6d4d05d84132c8f14f007a05c4ae2765cd561ac3e47b5c47e07761996'),
+    'Modules/socketmodule.h': (9903,
+        '559a4cfcbad928d20444f4cf4b19f8aebc3cb054a60324414dc2d23c7104a51c'),
+}
+
 _NAME = re.compile(r"[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*\Z")
 
 
@@ -236,16 +304,54 @@ def _platform_java_guard(tree: ast.Module, module: str, raw: bytes) -> dict | No
             "literal_call_count": calls, "dynamic_reflection_verified": False}
 
 
+def _calendar_cli_caller_guard(tree: ast.Module, module: str, raw: bytes) -> dict | None:
+    """Permit calendar's sole reviewed public-attribute caller, never global main pruning."""
+    if module == "calendar":
+        return None
+    nodes = list(ast.walk(tree))
+    references = [node for node in nodes if isinstance(node, ast.Name) and node.id == "calendar"]
+    imports = [node for node in nodes
+               if isinstance(node, ast.Import) and any(a.name == "calendar" for a in node.names)
+               or isinstance(node, ast.ImportFrom) and (node.module == "calendar"
+                   or any(a.name == "calendar" for a in node.names))]
+    indirect = any(isinstance(node, ast.Attribute) and node.attr == "calendar"
+                   or isinstance(node, ast.Constant) and node.value == "calendar" for node in nodes)
+    if not references and not imports and not indirect:
+        return None
+    if module != "_strptime" or _sha(raw) != _CALENDAR_CLI_CALLER_SOURCE_SHA256:
+        _fail("calendar_cli_caller_unreviewed")
+    if (indirect or len(imports) != 1 or not isinstance(imports[0], ast.Import)
+            or [(a.name, a.asname) for a in imports[0].names] != [("calendar", None)]):
+        _fail("calendar_cli_caller_invalid")
+    parents = {id(child): node for node in nodes for child in ast.iter_child_nodes(node)}
+    attributes = []
+    for node in references:
+        parent = parents[id(node)]
+        if (not isinstance(node.ctx, ast.Load) or not isinstance(parent, ast.Attribute)
+                or parent.value is not node or not isinstance(parent.ctx, ast.Load)):
+            _fail("calendar_cli_caller_invalid")
+        attributes.append(parent.attr)
+    if tuple(sorted(attributes)) != _CALENDAR_CLI_PUBLIC_ATTRIBUTES:
+        _fail("calendar_cli_caller_invalid")
+    return {"module": module, "module_source_sha256": _sha(raw), "function": "calendar.main",
+            "guard": "exact-source-public-calendar-attributes-only", "import": "calendar",
+            "import_lineno": imports[0].lineno, "public_attributes": sorted(attributes),
+            "dynamic_reflection_verified": False}
+
+
+
 def _imported_selftest_guard(
     tree: ast.Module, module: str, raw: bytes,
 ) -> tuple[set[int], dict | None]:
-    """Exclude five exact imported-only demos/CLI, not arbitrary functions.
+    """Exclude six exact imported-only demos/CLI, not arbitrary functions.
 
     Source identity binds the finite call/reference inventory. Every selected
     module is also checked for literal external private-helper references.
     Dynamic reflection and complete runtime reachability remain unverified.
     """
-    private_helpers = {name for name in _IMPORTED_SELFTEST_FUNCTIONS.values() if name is not None}
+    # Public calendar.main uses a separate exact-caller proof; main is common.
+    private_helpers = {name for name in _IMPORTED_SELFTEST_FUNCTIONS.values()
+                       if name is not None and name.startswith("_")}
     for node in ast.walk(tree):
         if (isinstance(node, ast.Attribute) and node.attr in private_helpers
                 or isinstance(node, ast.Constant) and type(node.value) is str
@@ -283,10 +389,20 @@ def _imported_selftest_guard(
                       if isinstance(node, ast.Name) and node.id == function]
         calls = [node for node in ast.walk(guard) if isinstance(node, ast.Call)
                  and isinstance(node.func, ast.Name) and node.func.id == function]
+        signature = helper.args
+        no_arguments = not (signature.args or signature.posonlyargs or signature.kwonlyargs
+                            or signature.vararg or signature.kwarg)
+        calendar_argv = (module == "calendar" and function == "main"
+                         and len(signature.args) == len(signature.defaults) == 1
+                         and signature.args[0].arg == "args" and signature.args[0].annotation is None
+                         and isinstance(signature.defaults[0], ast.Constant)
+                         and signature.defaults[0].value is None and not signature.posonlyargs
+                         and not signature.kwonlyargs and not signature.vararg and not signature.kwarg
+                         and helper.returns is None and not getattr(helper, "type_params", ()))
         if (len(references) != 1 or len(calls) != 1 or references[0] is not calls[0].func
-                or not isinstance(references[0].ctx, ast.Load)
-                or helper.decorator_list or helper.args.args or helper.args.posonlyargs
-                or helper.args.kwonlyargs or helper.args.vararg or helper.args.kwarg):
+                or not isinstance(references[0].ctx, ast.Load) or helper.decorator_list
+                or not (calendar_argv if module == "calendar" else no_arguments)
+                or module == "calendar" and (calls[0].args or calls[0].keywords)):
             _fail("selftest_helper_reference_invalid")
         excluded.add(id(helper))
         call_line = calls[0].lineno
@@ -296,16 +412,111 @@ def _imported_selftest_guard(
                       "guard": "canonical-imported-module-not-main", "guard_lineno": guard.lineno,
                       "function": function,
                       "literal_call_count": 1 if call_line is not None else 0,
-                      "call_lineno": call_line, "dynamic_reflection_verified": False}
+                      "call_lineno": call_line, "dynamic_reflection_verified": False,
+                      **({"signature": "args=None"} if module == "calendar" else {})}
+
+
+def _posixsubprocess_inputs(cpython: dict[str, bytes]) -> None:
+    for path, (size, digest) in _POSIXSUBPROCESS_INPUTS.items():
+        raw = cpython.get(path)
+        if type(raw) is not bytes or len(raw) != size or _sha(raw) != digest:
+            _fail("posixsubprocess_input_pin_mismatch")
+    raw = cpython["Modules/_posixsubprocess.c"]
+    clinic = cpython["Modules/clinic/_posixsubprocess.c.h"]
+    if any(anchor not in raw for anchor in (
+        b'#include "clinic/_posixsubprocess.c.h"',
+        b'.m_name = "_posixsubprocess",', b"PyInit__posixsubprocess(void)",
+        b"return PyModuleDef_Init(&_posixsubprocessmodule);", b"SUBPROCESS_FORK_EXEC_METHODDEF",
+    )) or any(anchor not in clinic for anchor in (
+        b"#define SUBPROCESS_FORK_EXEC_METHODDEF", b'{"fork_exec",',
+    )):
+        _fail("posixsubprocess_initializer_invalid")
+
+
+def _socket_inputs(cpython: dict[str, bytes]) -> None:
+    for path, (size, digest) in _SOCKET_INPUTS.items():
+        raw = cpython.get(path)
+        if type(raw) is not bytes or len(raw) != size or _sha(raw) != digest:
+            _fail("socket_input_pin_mismatch")
+    raw = cpython["Modules/socketmodule.c"]
+    header = cpython["Modules/socketmodule.h"]
+    clinic = cpython["Modules/clinic/socketmodule.c.h"]
+    if any(anchor not in raw for anchor in (
+        b'#include "clinic/socketmodule.c.h"', b'#include "socketmodule.h"',
+        b'.m_name = PySocket_MODULE_NAME,', b"PyInit__socket(void)",
+        b"return PyModuleDef_Init(&socketmodule);", b"{Py_mod_exec, socket_exec}",
+        b"PyObject *capsule = PyCapsule_New(capi,", b"PySocket_CAPSULE_NAME,",
+        b"PyModule_Add(m, PySocket_CAPI_NAME, capsule)",
+    )) or any(anchor not in header for anchor in (
+        b'#define PySocket_MODULE_NAME    "_socket"', b'#define PySocket_CAPI_NAME      "CAPI"',
+    )) or any(anchor not in clinic for anchor in (
+        b"sock_initobj_impl(PySocketSockObject *self, int family, int type, int proto,",
+        b"return_value = sock_initobj_impl((PySocketSockObject *)self, family, type, proto, fdobj);",
+    )):
+        _fail("socket_initializer_invalid")
+
+
+def _subprocess_platform_guard(
+    tree: ast.Module, module: str, raw: bytes, available: set[str], builtin: set[str],
+) -> dict | None:
+    flag = "_mswindows"
+    if module != "subprocess" or not any(
+        isinstance(node, ast.Name) and node.id == flag for node in ast.walk(tree)
+    ):
+        return None
+    if _sha(raw) != _SUBPROCESS_SOURCE_SHA256:
+        _fail("subprocess_platform_source_drift")
+    if "msvcrt" not in _ABSENT or "msvcrt" in available or "msvcrt" in builtin:
+        _fail("subprocess_platform_module_conflict")
+
+    def assignment(body, value):
+        return (len(body) == 1 and isinstance(body[0], ast.Assign)
+                and len(body[0].targets) == 1 and isinstance(body[0].targets[0], ast.Name)
+                and body[0].targets[0].id == flag and isinstance(body[0].value, ast.Constant)
+                and body[0].value.value is value)
+
+    guards = [node for node in tree.body if isinstance(node, ast.Try)
+              and len(node.body) == len(node.handlers) == 1 and not node.finalbody
+              and isinstance(node.body[0], ast.Import)
+              and [(alias.name, alias.asname) for alias in node.body[0].names] == [("msvcrt", None)]
+              and isinstance(node.handlers[0].type, ast.Name)
+              and node.handlers[0].type.id == "ModuleNotFoundError"
+              and node.handlers[0].name is None and assignment(node.handlers[0].body, False)
+              and assignment(node.orelse, True)]
+    stores = {id(node) for node in ast.walk(tree) if isinstance(node, ast.Name)
+              and node.id == flag and isinstance(node.ctx, (ast.Store, ast.Del))}
+    other_binding = any(
+        isinstance(node, ast.arg) and node.arg == flag
+        or isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == flag
+        or isinstance(node, ast.alias) and (node.asname or node.name.split(".")[0]) == flag
+        or isinstance(node, ast.ExceptHandler) and node.name == flag
+        for node in ast.walk(tree)
+    )
+    if (len(guards) != 1 or other_binding or stores != {
+        id(guards[0].handlers[0].body[0].targets[0]), id(guards[0].orelse[0].targets[0]),
+    }):
+        _fail("subprocess_platform_guard_invalid")
+    return {"module": module, "module_source_sha256": _sha(raw), "flag": flag,
+            "value": False, "import": "msvcrt",
+            "guard": "top-level-try-import-except-ModuleNotFoundError-false-else-true",
+            "guard_lineno": guards[0].lineno, "binding_end_lineno": guards[0].end_lineno,
+            "dynamic_reflection_verified": False}
 
 
 def _imports(raw: bytes, module: str, package: bool, available: set[str],
-             builtin: set[str], guarded_calls: list[dict], excluded_selftests: list[dict]) -> set[str]:
+             builtin: set[str], guarded_calls: list[dict], excluded_selftests: list[dict],
+             *, platform_guards: list[dict] | None = None) -> set[str]:
     try:
         tree = ast.parse(raw)
     except (ValueError, SyntaxError, UnicodeError, RecursionError):
         _fail("source_syntax_invalid")
     result = set()
+    calendar_caller = _calendar_cli_caller_guard(tree, module, raw)
+    if calendar_caller is not None:
+        guarded_calls.append(calendar_caller)
+    subprocess_guard = _subprocess_platform_guard(tree, module, raw, available, builtin)
+    if subprocess_guard is not None and platform_guards is not None:
+        platform_guards.append(subprocess_guard)
     excluded_nodes, selftest_guard = _imported_selftest_guard(tree, module, raw)
     if selftest_guard is not None:
         excluded_selftests.append(selftest_guard)
@@ -366,6 +577,10 @@ def _imports(raw: bytes, module: str, package: bool, available: set[str],
     top_level_tests = {id(node.test) for node in tree.body if isinstance(node, ast.If)}
 
     def platform_test(node):
+        if (subprocess_guard is not None and isinstance(node, ast.Name)
+                and node.id == subprocess_guard["flag"]
+                and node.lineno > subprocess_guard["binding_end_lineno"]):
+            return False
         if isinstance(node, ast.Name) and node.id in {"_MS_WINDOWS", "_WINDOWS"}:
             return False
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
@@ -528,6 +743,8 @@ def prepare_fixed_runtime_closure(
         if paths[name].endswith("/__init__.py"):
             packages.add(name)
     native = dict(_NATIVE)
+    _posixsubprocess_inputs(cpython)
+    _socket_inputs(cpython)
     extra = {}
     sqlite_pin = None
     if solver == "shinka":
@@ -560,6 +777,7 @@ def prepare_fixed_runtime_closure(
     interpreter_modules = {}
     guarded_calls = []
     excluded_selftests = []
+    platform_guards = []
     while pending:
         pending_name = min(pending)
         pending.remove(pending_name)
@@ -598,7 +816,8 @@ def prepare_fixed_runtime_closure(
         if len(selected) > MAX_MODULES:
             _fail("module_budget_exceeded")
         pending.update(_imports(raw, name, name in packages, set(paths) | set(_RUNTIME_ALIASES),
-                                builtin, guarded_calls, excluded_selftests))
+                                builtin, guarded_calls, excluded_selftests,
+                                platform_guards=platform_guards))
         parent = name.rpartition(".")[0]
         if parent:
             pending.add(parent)
@@ -670,6 +889,14 @@ def prepare_fixed_runtime_closure(
                       "interpreter_provided_modules": [interpreter_modules[name]
                                                        for name in sorted(interpreter_modules)],
                       "guarded_call_imports": sorted(guarded_calls, key=lambda record: record["module"]),
+                      "fixed_platform_guards": sorted(platform_guards, key=lambda record: record["module"]),
+                      "native_header_inputs": [
+                          {"module": module, "source": path,
+                           "source_size": size, "source_sha256": digest}
+                          for module, inputs in (("_posixsubprocess", _POSIXSUBPROCESS_INPUTS),
+                                                 ("_socket", _SOCKET_INPUTS))
+                          for path, (size, digest) in sorted(inputs.items()) if path.endswith(".h")
+                      ],
                       "excluded_imported_selftests": sorted(excluded_selftests,
                                                            key=lambda record: record["module"]),
                       "guarded_absent_imports": sorted(absent), "dynamic_import_closure_verified": False,

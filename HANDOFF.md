@@ -1,37 +1,36 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
-## 最新续作：连接生命周期修复与 imported inspect CLI 依赖
+## 当前批次：P0–P2 集成后集中回归
 
-- `d152ecb9` 的实际 Linux mixed 已终态失败：600.033323802秒、rawrc=-15、
-  timed_out=true，无JUnit/终态module origins。2452文件前后一致；353个样本覆盖
-  前180秒，不能换算耗时占比。76项独审只确认失败材料，不重跑同HEAD或为它启动
-  完整CI，仍不可合main。独审SHA：
-  `131ba014e0204aab0480dd7677ef826eab2877b80b834ce3437f362e957ae56f`。
-- 上述真实case之前的另一目录在上传300秒超时，prepare/driver未调用；原失败保留。
-  后续fresh目录用完整SHA校验的只读基底/变化块重建精确archive，然后首次执行case。
-  不能把上传失败与实际600秒执行失败混为一谈，也不能把准备成功当用例通过。
-- 后继P0修复明确的连接资源缺口：SQLite Connection上下文不会close，31个内部
-  scope现都在原事务退出后关闭，setup失败也关闭并保留原异常；raw `_connect`
-  仍返回真实Connection。fresh SQL、JSON/lineage、CAS和预算不变。见
-  [窄规格](specs/160-rsi-learning-mode/ledger-connection-lifetime.md)。不宣称超时已解决。
-- 后继P1复用完整官方source pin/sole-call/main-guard规则排除`inspect._main` CLI，
-  保留原source及所有功能体依赖。见
-  [窄规格](specs/193-static-python-rsi-launch/imported-inspect-cli-closure.md)。一次真实
-  archive双profile源码检查仍拒绝：OE已精确观察到subprocess:81 `_winapi`；Shinka
-  仍是`_bz2`，另一路由calendar:700→argparse→shutil→bz2。没有伪造缺失模块，
-  没有运行上游Python、模型、编译或solver。
-- 集中14文件379项全过；原Ruff仅新测试SIM117失败。仅合并等价with后，重验受影响
-  10项并补充disjoint只读/替换竞态28项，38项全过；最新唯一节点共407，零fail/
-  error/skip，不算成417。最终Ruff/compileall/diff全过，源文件各次前后一致；
-  独审SHA `4615ba6b9916526621c1e74b57c85430d40a05d77253e4d9c1bfb7f783bc0ee6`。
-- P2已核明当前缺口并落规格：真正installed native launcher须在target gate前绑定
-  原始context，复用worker本机只读native lifecycle audit；guardian异常退出不产生
-  durable cleanup证明，仍须unknown。见
-  [待实现边界](specs/197-external-worker-coordination/native-lifecycle-followup.md)。
-  这份规格未实现，不能把既有HMAC/封存响应丢包验收当作真实断线/cleanup通过。
-- 后续：先补齐其余不受隔离环境阻塞的开发，冻结后集中验收。新source仍须自己的
-  原600秒/0retry mixed和完整CI；P1完整source/config/build/runtime/生产CLI、P2
-  原始context接线与异常cleanup均未关闭。5090gpu权限阻塞按既有选择保留，不绕过。
+- 实际工作树为 `codex/openevolve-fixed-profile`；此前已提交并 push `f8a812d5`。
+  本批代码正在集成，尚未完成新 source 的 mixed/完整 CI，不能合 main。
+- P0 旧 `d152ecb9` mixed 在600.033323802秒被原600秒outer deadline终止，rc=-15，
+  无JUnit/终态origins。约595秒窗口累计596.9 thread-group CPU秒，前180秒353个栈
+  支持调查owner的history/reference/digest重复计算；频次不是时间占比，具体瓶颈仍未知。
+  f8修复31处SQLite连接事务退出后未关闭的明确资源缺口，不宣称已解决整体超时。
+  不重跑旧失败source，不改预算或retry；独审诊断SHA
+  `da7230afa3369b7b835d6521c7096e50803d323bd10248dc31a5e185f19c6d83`。
+- P1 已实现完整官方source pin下的subprocess Linux分支证明、真实_posixsubprocess和
+  _socket C/直接header输入、精确calendar.main CLI裁剪，以及四个可选压缩模块明确
+  absent/原ImportError回退。无条件导入仍拒绝，原网络syscall限制不变。
+  一次真实归档双profile检查 `socket-real-source-1owpkr8z` 已均生成source closure；
+  未执行上游Python/solver、编译、模型或evaluator。有限direct-input检查不能代替完整
+  transitive header/config/link/runtime验收，详见Feature189/193窄规格。
+- P2 已增加默认禁用的pre-gate trusted registered observer；仅传不可变摘要/原文件
+  身份，不交出nonce/key/完整launch/活FD。publisher保留原创建FD穿过发布和目录fsync，
+  observer只能比较原pin；同字节换inode、异常/非None返回及drift均在原deadline内拒绝。
+  旧默认原行为保持。外部worker生产接线、独立异常cleanup证明仍未完成，不能把seam
+  或已有inert HMAC/SSH验收算作生产隔离、真实断线或cleanup通过。
+- 本批15文件初次750节点：738pass/10fail/2原Linux平台skip；两个新增synthetic
+  native recipe漏include目录，八个新observer断言误把cleanup attempted当clean。
+  修测试构造/断言、保留原保守cleanup，并加强POSIX exactunit6负例。最终仅4个受影响
+  文件242项通过；原始失败和中间风格修正前242项均保留，不重算次数。最新756不同节点
+  为754pass/2原平台skip，零fail/error，所有原初fail均真实pass；源码前后相同。
+  项目Ruff/compileall/staged diff均通过。新clean source之后只运行一次原600秒/零retry
+  Linux mixed；通过后才完整CI。历史407/1050/382不冒充本批重跑。
+- 5090gpu无sudo/KVM、bwrap/userns失败仍按用户选择保留阻塞；受审目标pyconfig、
+  隔离build/ELF/image/expanded startup、真实solver/lifecycle/native生产CLI及P2账户
+  隔离/异常cleanup验收仍开放。production/online=false，不用host Python替代隔离runtime。
 
 下面保留旧source的原始结果，当前状态以上节为准。
 

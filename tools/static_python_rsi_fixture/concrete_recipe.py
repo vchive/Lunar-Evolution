@@ -17,6 +17,8 @@ from tools.static_python_rsi_fixture.build_driver import _preparation_wire
 from tools.static_python_rsi_fixture.execution_backend import RECIPE_V3_SCHEMA, _recipe
 from tools.static_python_rsi_fixture.installation_profile import RSIProfilePreparation
 from tools.static_python_rsi_fixture.runtime_closure import (
+    _POSIXSUBPROCESS_INPUTS,
+    _SOCKET_INPUTS,
     FixedRuntimeClosure,
     canonical,
 )
@@ -202,6 +204,32 @@ def prepare_cpython_build_recipe(
                 _fail("runtime_source_drift")
         tasks = facts["frozen"]
         native = facts["native_units"]
+        posix_units = [unit for unit in native if unit["module"] == "_posixsubprocess"]
+        if posix_units:
+            size, digest = _POSIXSUBPROCESS_INPUTS["Modules/_posixsubprocess.c"]
+            if (len(posix_units) != 1
+                    or posix_units[0] != {"module": "_posixsubprocess", "source": "Modules/_posixsubprocess.c",
+                                          "object": "Modules/_posixsubprocess.o", "source_size": size,
+                                          "source_sha256": digest, "extra_flags": []}):
+                _fail("posixsubprocess_input_pin_mismatch")
+            for path, (size, digest) in _POSIXSUBPROCESS_INPUTS.items():
+                entry = inventory.get(path)
+                if (entry is None or entry["size"] != size or entry["sha256"] != digest
+                        or entry["executable"] is not False):
+                    _fail("posixsubprocess_input_pin_mismatch")
+        socket_units = [unit for unit in native if unit["module"] == "_socket"]
+        if socket_units:
+            size, digest = _SOCKET_INPUTS["Modules/socketmodule.c"]
+            if (len(socket_units) != 1
+                    or socket_units[0] != {"module": "_socket", "source": "Modules/socketmodule.c",
+                                           "object": "Modules/socketmodule.o", "source_size": size,
+                                           "source_sha256": digest, "extra_flags": []}):
+                _fail("socket_input_pin_mismatch")
+            for path, (size, digest) in _SOCKET_INPUTS.items():
+                entry = inventory.get(path)
+                if (entry is None or entry["size"] != size or entry["sha256"] != digest
+                        or entry["executable"] is not False):
+                    _fail("socket_input_pin_mismatch")
         for unit in units + target:
             if unit["source"] == "generated-sources/Modules/config.c":
                 unit["source"] = "runtime/Modules/config.c"

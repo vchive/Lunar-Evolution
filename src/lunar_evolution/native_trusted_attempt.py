@@ -93,6 +93,7 @@ from .producer_process import (
     _current_process_owned,
     _current_recovery_lock_identity,
     _digest_without,
+    _file_identity,
     _process_owner_identity,
     _read_durable_json,
     _recovery_lock,
@@ -153,6 +154,39 @@ _DEADLINE_FIELDS = frozenset({
     "intent_sha256", "attestation_sha256",
     "started_monotonic", "deadline_monotonic", "boot_id", "deadline_sha256",
 })
+
+
+@dataclass(frozen=True, slots=True)
+class NativeTrustedRegisteredContext:
+    """Detached original pre-gate identities for a trusted installed observer.
+
+    No attestation/gate nonce, key, live descriptor, Popen or mutable graph is
+    exposed. These values cannot reconstruct runtime authority; the installed
+    launcher separately retains the original intent/attestation/artifact.
+    """
+
+    workspace: str
+    producer_root: str
+    artifact_path: str
+    launch_id: str
+    journal_id: str
+    run_id: str
+    parent_task_id: str
+    task_id: str
+    launch_sha256: str
+    intent_sha256: str
+    attestation_sha256: str
+    bootstrap_descriptor_sha256: str
+    bootstrap_artifact_sha256: str
+    bootstrap_allowlist_id: str
+    registration_json: bytes
+    handoff_json: bytes
+    deadline_json: bytes
+    deadline_binding_json: bytes
+    recovery_lock_identity: tuple[int, int]
+    registration_file_identity: tuple[str | int, ...]
+    handoff_file_identity: tuple[str | int, ...]
+    publication_eligible: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -719,6 +753,7 @@ def run_native_trusted_attempt(
     monotonic: Callable[[], float] = time.monotonic,
     cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
+    registered_observer: Callable[[NativeTrustedRegisteredContext], None] | None = None,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
 
@@ -783,6 +818,8 @@ def run_native_trusted_attempt(
             _validate_fixed_destination_endpoint(broker_config.endpoint)
         except ValueError as exc:
             raise NativeTrustedAttemptError("native_trusted_attempt_broker_endpoint_invalid") from exc
+    if registered_observer is not None and not callable(registered_observer):
+        raise NativeTrustedAttemptError("native_trusted_attempt_registered_observer_invalid")
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancellation_invalid")
     if _observe_cancellation(cancelled):
@@ -1037,6 +1074,7 @@ def run_native_trusted_attempt(
                     attestation=attestation, pair=pair, process=process, ready_frame=ready,
                     recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
                     expected_deadline_binding=deadline_binding,
+                    **({"retain_creation_identity": True} if registered_observer is not None else {}),
                 )
                 registration = published.registration
                 handoff_sha256 = str(published.handoff["handoff_sha256"])
@@ -1093,6 +1131,82 @@ def run_native_trusted_attempt(
                     raise NativeTrustedAttemptError("native_trusted_attempt_registration_unknown")
                 _check_original_attempt_grants(grant_owner, inputs)
                 _remaining(deadline, monotonic, cancelled)
+                if registered_observer is not None:
+                    def registered_context() -> NativeTrustedRegisteredContext:
+                        # Only the trusted original attempt supplies this seam. Check
+                        # every original leg both before and after the observer;
+                        # its return cannot renew the deadline or authorize release.
+                        _remaining(deadline, monotonic, cancelled)
+                        check_deadline()
+                        _revalidate_native_launch_inputs(
+                            inputs, root, intent=intent, attestation=attestation,
+                            artifact=installed, require_unexpired=True,
+                        )
+                        _check_original_attempt_grants(grant_owner, inputs)
+                        load_native_bootstrap_artifact(
+                            installed.path, descriptor=installed.descriptor,
+                            allowlist_id=installed.allowlist_id,
+                        )
+                        # Origin pins come from the actual publication write FDs,
+                        # before publisher return. Current path reads only compare;
+                        # they must never establish a replacement as the original.
+                        registration_pin = published.registration_file_identity
+                        handoff_pin = published.handoff_file_identity
+                        if registration_pin is None or handoff_pin is None:
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                        current_registration = _read_durable_json(
+                            batch / "process-registration.json",
+                            code="native_trusted_attempt_registered_context_drift",
+                        )
+                        current_handoff = _read_durable_json(
+                            batch / "trusted-bootstrap-handoff.json",
+                            code="native_trusted_attempt_registered_context_drift",
+                        )
+                        if (current_registration != registration
+                                or current_handoff != published.handoff
+                                or _current_recovery_lock_identity(batch) != lock_identity
+                                or tuple(_file_identity(
+                                    batch / "process-registration.json",
+                                ).values()) != registration_pin
+                                or tuple(_file_identity(
+                                    batch / "trusted-bootstrap-handoff.json",
+                                ).values()) != handoff_pin):
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                        check_deadline()
+                        _remaining(deadline, monotonic, cancelled)
+                        return NativeTrustedRegisteredContext(
+                            workspace=str(root), producer_root=str(target_root),
+                            artifact_path=str(installed.path),
+                            launch_id=launch.launch_id, journal_id=launch.journal_id,
+                            run_id=launch.run_id, parent_task_id=launch.parent_task_id,
+                            task_id=launch.task_id, launch_sha256=str(launch.launch_sha256),
+                            intent_sha256=launch.intent_sha256,
+                            attestation_sha256=launch.attestation_sha256,
+                            bootstrap_descriptor_sha256=launch.bootstrap_descriptor_sha256,
+                            bootstrap_artifact_sha256=installed.artifact_sha256,
+                            bootstrap_allowlist_id=installed.allowlist_id,
+                            registration_json=_canonical(current_registration),
+                            handoff_json=_canonical(current_handoff),
+                            deadline_json=_canonical(deadline_record),
+                            deadline_binding_json=_canonical(deadline_binding),
+                            recovery_lock_identity=lock_identity,
+                            registration_file_identity=registration_pin,
+                            handoff_file_identity=handoff_pin,
+                        )
+
+                    original_context = registered_context()
+                    observer_context = replace(original_context)
+                    try:
+                        if registered_observer(observer_context) is not None:
+                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_observer_failed")
+                    except Exception as exc:  # Fixed trusted observer boundary.
+                        raise NativeTrustedAttemptError(
+                            "native_trusted_attempt_registered_observer_failed",
+                        ) from exc
+                    if (observer_context != original_context
+                            or registered_context() != original_context):
+                        raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
+                    _remaining(deadline, monotonic, cancelled)
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
@@ -1902,6 +2016,7 @@ def recover_native_trusted_lifecycle_audit(
 __all__ = [
     "NativeTrustedAttemptError",
     "NativeTrustedAttemptObservation",
+    "NativeTrustedRegisteredContext",
     "audit_native_trusted_lifecycle",
     "persist_native_trusted_lifecycle_audit",
     "recover_native_trusted_attempt",

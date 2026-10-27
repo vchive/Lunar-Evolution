@@ -2,6 +2,18 @@
 
 ## Current integration slice
 
+The latest slice combines deterministic ledger connection closure, pinned Linux
+subprocess/calendar source analysis, explicit optional compression absence, real
+POSIX/socket native inputs and a default-disabled pre-gate trusted observer with
+original write-FD publication identities. Both real solver source-only closures
+now prepare successfully. The 15-file focused run and affected repairs cover
+756 distinct nodes: 754 pass and two original macOS/Linux platform skips. All
+initial failures are retained and their nodes passed in the final four-file
+repair. Project static checks pass. A fresh 600-second/zero-retry mixed run is
+still required before complete CI and merging.
+No source preparation closes reviewed configuration, isolated build or production
+runtime gates. Old failing sources and their original results remain retained.
+
 The second parallel slice implements the remaining source-side work together.
 Authors run syntax checks only; the root freezes it before one combined focused
 regression. An actual configured static build still depends on the previously

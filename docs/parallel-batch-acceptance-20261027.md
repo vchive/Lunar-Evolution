@@ -1,5 +1,58 @@
 # P0–P2 actual acceptance — 2026-10-27
 
+## Latest integrated source / native-origin batch
+
+This successor retains the f8 ledger connection repair and adds exact official
+Linux subprocess/calendar import proofs, explicit optional compression absence,
+real POSIX/socket C/direct-header source pins, independent concrete-recipe input
+checks and a default-disabled registered observer with original creation-FD pins.
+The original syscall policy is unchanged. Both real source-only solver profiles
+prepare: OpenEvolve has 93 frozen modules/33 native units and Shinka has 103/43.
+The independent source review is
+`p1-source-profile-independent-review-4fsq9qqd/review.json`, SHA-256
+`7e4a67ae42af167088d9ee35fb03a218f451529dcc1e8ba72175b710825ddd31`.
+Its final recipe follow-up SHA-256 is
+`ab9e1b982b8fa775499032dcae52958341ea63c2965da6602548782cdfc9b9cd`.
+No upstream Python, compiler, solver, model or evaluator ran in this source check.
+
+The original 15-file run has 750 real cases: 738 passed, ten failed, two platform
+skips, process return code 1, 52.639910583 seconds. Two synthetic native recipe
+fixtures omitted an existing include directory. Eight new observer assertions
+incorrectly required successful group cleanup from an exited child. Product
+cleanup correctly retained unknown. Repairs observe the real cleanup primitive,
+check every durable field and retain callback/closed-gate witnesses. A separate
+POSIX exact-unit strengthening adds six negative cases.
+
+The final four affected files have 242 passed, zero failures/errors/skips, return
+code 0, 6.868898417 seconds. An intermediate 242-pass run before fixture-import
+style repair is retained but does not add distinct cases or replace final bytes.
+The latest union is **756 distinct nodes: 754 passed, two original platform skips,
+zero failure/error**. Original XML/return codes are never rewritten. Both skips
+are existing Linux-only producer tests on macOS, retained by exact node/reason;
+Linux acceptance remains necessary. All runs have unchanged source inventories.
+Final project Ruff, compileall and staged diff checks pass.
+
+Evidence in primary-workspace `parallel-batch-20261027/`:
+
+- `socket-real-source-1owpkr8z/`: actual dual-profile source-only preparation;
+- `source-native-concentrated-ms3slqz5/`: original failing raw run;
+- `source-native-affected-gqwy8ky2/`: retained intermediate passing run;
+- `source-native-final-affected-sivm6ne2/`: final actual 242-node repair;
+- `source-native-latest-union-sagnl2nu/focused-union.json`: pointer-only descriptor,
+  SHA-256 `1afba59f973309d5186915944ca8887e4cc9c3e3a5d63f8617f4f76bda6452c5`;
+- `source-native-final-static-zbpskxxq/`: original final static commands/results;
+- `p2-creation-pin-independent-review-5sctjgp2/review.json`: P2 source review,
+  SHA-256 `028b036459ec54df87823803ddf0159e1d0cd29f8a1d49133f739824bcc299d1`.
+
+The clean successor still requires its own original 600-second/zero-retry mixed
+run and complete CI. The source-only preparation does not establish transitive
+C/header/config/link closure or isolated build/runtime acceptance. The observer
+does not wire an installed external worker or prove crash cleanup, isolation or
+real hard-disconnect behavior. It is synchronous trusted code; deadline checks
+cannot preempt a callback that never returns. Existing 5090gpu KVM/privilege
+blockers remain, with no host-Python fallback. Production/online remain false.
+The older actual runs below retain their own original conclusions.
+
 The tested source is clean commit `df81a46c3f394818d7675d7090f8d8db47ca01c5`.
 The preceding local regression covers 1,050 distinct cases with all latest
 outcomes passing; its original fixture failures remain retained. See

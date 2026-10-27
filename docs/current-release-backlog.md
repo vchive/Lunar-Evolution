@@ -1,17 +1,17 @@
-## 最新续作（2026-10-27）：P0连接资源、P1入口分析、P2原始上下文
+## 当前批次（2026-10-27）：P0–P2 集成、一次集中回归
 
-`d152ecb9` 的实际mixed已失败：600.033323802秒、rc=-15，缺JUnit/终态origins；
-原失败不重跑、不为已知失败HEAD启动完整CI。新后继为全部31个RSILedger内部scope
-补齐事务后close及setup异常close；同时排除完整官方source匹配的inspect CLI依赖。
-集中回归最新407不同节点全过，项目Ruff/compileall/diff通过；尚未证明新source的
-mixed性能或Linux/完整CI通过。详见[实际验收](parallel-batch-acceptance-20261027.md)。
+| 优先级 | 已开发/实际证据 | 剩余门槛 |
+| --- | --- | --- |
+| P0 | f8已修31处SQLite连接确定性close；旧d152确实在原600秒预算超时，约595秒内596.9 CPU秒，尚无唯一瓶颈结论 | 新clean source一次600秒/0retry mixed，再完整CI；旧失败不重跑 |
+| P1 | subprocess Linux精确source证明、calendar CLI裁剪、可选压缩能力明确、真实posixsubprocess/socket输入与recipe校验；两个真实solver source-only闭包均成功 | 受审目标配置、完整transitive headers/link、隔离build/ELF/image/startup、solver/lifecycle、native生产CLI |
+| P2 | 来源认证/durable assignment/固定inert SSH已有验收；本批新增pre-gate observer和原创建FD身份绑定 | installed worker接线、独立异常cleanup证据、账户隔离、真实硬断线验收 |
 
-仍须开发：P1源码profile闭包（OE真实_winapi、Shinka另一路calendar/argparse→_bz2）、
-完整受审pyconfig、expanded installation/startup与native生产CLI；P2原始native context
-在release gate前的可信接线及launcher异常退出后的持久cleanup证据。隔离build/ELF/
-受信账户与真实partition验收另外受环境条件约束。P2后续规格不是已实现能力，见
-[明确边界](../specs/197-external-worker-coordination/native-lifecycle-followup.md)。
-用户要求继续分块开发、集中回归，不能据局部通过宣称P0–P2全部完成或合main。
+15文件集中回归的最新节点并集为756：754pass、2原macOS/Linux平台skip、零fail/error。
+原10个新增测试构造/cleanup期望失败已修并只重验4个受影响文件；原失败及中间结果保留。
+Ruff/compileall/staged diff已通过；新clean source的mixed与完整CI仍待执行。
+历史407/1050/382不是本批重跑；局部源码准备与HMAC不能关闭生产runtime或cleanup。
+5090gpu隔离权限阻塞按用户选择保留，不借host Python绕过。production/online=false。
+详见[本批实际验收](parallel-batch-acceptance-20261027.md)。
 
 以下保留历史快照；它们不得覆盖本节。
 
