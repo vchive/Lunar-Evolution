@@ -29,14 +29,12 @@ def base_recipe(preparation_sha256, source_records, tool_records):
 
     def compile_command(target):
         dep = "dependencies/" + target + ".d"
-        return {"argv": ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "--zig-lib-dir",
-                         "@toolchain-dir/lib", "-c", "@source/unit.c", "-o", "@work/" + target,
+        return {"argv": ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-c", "@source/unit.c", "-o", "@work/" + target,
                          "-MD", "-MF", "@work/" + dep, "-MQ", "@work/" + target],
                 "outputs": [output(target), output(dep)]}
 
     def link_command(target, inputs):
-        return {"argv": ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "--zig-lib-dir",
-                         "@toolchain-dir/lib", "-static", "-o", "@work/" + target,
+        return {"argv": ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-static", "-o", "@work/" + target,
                          *("@work/" + item for item in inputs), "-lm", "-lpthread", "-lc"],
                 "outputs": [output(target, True)]}
 

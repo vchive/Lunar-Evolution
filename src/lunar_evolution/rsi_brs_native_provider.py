@@ -164,6 +164,7 @@ class _BRSNativeProviderBinding:
                 or self._child.exchange._deadline != self._child.deadline
                 or self._child.exchange._plan_sha256 != plan.plan_sha256):
             _fail("original_scope_drift")
+        NativeRSISchedulerContext._assert_live_modules_sink(self._context)
         _BRSNativePreparationExchange._fixed(self._child.exchange)
         if self._endpoint is not None:
             if (type(self._endpoint) is not _BRSWorkerTerminalEndpoint
@@ -333,6 +334,8 @@ class _BRSNativeProviderBinding:
                 python_handoff_after_execution=context.python_handoff_after_execution,
                 evidence_revalidator=prepublication_check, execution_control=context.execution_control,
                 cancelled=context.cancelled, parent_deadline=self._child.deadline,
+                **({"live_modules_sink": NativeRSISchedulerContext._assert_live_modules_sink(context)}
+                   if context.live_modules_sink is not None else {}),
             )
             check()
             endpoint = _BRSNativePreparationExchange.offer_and_wait(

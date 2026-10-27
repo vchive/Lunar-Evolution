@@ -45,12 +45,11 @@ static int starts(const char *path, const char *text) {
 }
 int main(int argc, char **argv) {
     if (argc >= 4 && !strcmp(argv[1], "ar")) return emit(argv[3], "inert-archive\n", 0);
-    const char *target = NULL, *dep = NULL, *source = NULL, *libdir = NULL;
+    const char *target = NULL, *dep = NULL, *source = NULL, *libdir = getenv("ZIG_LIB_DIR");
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-o") && i + 1 < argc) target = argv[++i];
         else if (!strcmp(argv[i], "-c") && i + 1 < argc) source = argv[++i];
         else if (!strcmp(argv[i], "-MF") && i + 1 < argc) dep = argv[++i];
-        else if (!strcmp(argv[i], "--zig-lib-dir") && i + 1 < argc) libdir = argv[++i];
         else if (!strcmp(argv[i], "--dependency-file") && i + 2 < argc) dep = argv[i + 2];
     }
     if (!target || !dep) return 23;

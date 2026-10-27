@@ -99,13 +99,20 @@ _ORIGINAL_PROVENANCE_CODES = tuple(
         (reserved_policy, ("_build_reserved_brs_policy", "_build_reserved_brs_policy_entry",
                            "reserved_brs_policy_projection")),
         (runtime_tree, ("_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current")),
-        (admission_store, ("_staging_identity_helpers_current",)),
+        (admission_store, ("_staging_identity_helpers_current", "_admission_checkpoint_helpers_current",
+                           "_admission_checkpoint_projection")),
     ) for name in names
 )
 _ORIGINAL_RUNTIME_TREE_JSON_LIMITS = tuple((name, getattr(runtime_tree, name)) for name in (
     "_JSON_FAST_MAX_DEPTH", "_JSON_FAST_MAX_NODES", "MAX_PYTHON_RUNTIME_TREE_MANIFEST_BYTES",
 ))
 _ORIGINAL_STAGING_IDENTITY_HELPERS = admission_store._STAGING_IDENTITY_HELPERS
+_ORIGINAL_ADMISSION_CHECKPOINT_ALIASES = tuple(
+    (name, getattr(admission_store, name)) for name in (
+        "_ADMISSION_CHECKPOINT_METHOD_PINS", "_ADMISSION_CHECKPOINT_PROJECTION",
+        "_ADMISSION_CHECKPOINT_PROJECTION_CODE", "_ADMISSION_CHECKPOINT_FUNCTION_PINS",
+        "_ADMISSION_CHECKPOINT_SHA256", "_ADMISSION_CHECKPOINT_ENCODER_TYPE",
+        "_ADMISSION_CHECKPOINT_ENCODER_MODULE", "_ADMISSION_CHECKPOINT_ENCODER_PINS"))
 _ORIGINAL_READY_POLICY_CLOSURE = (
     ready_policy.rejection_ready_capture_policy.__closure__,
     tuple(cell.cell_contents for cell in ready_policy.rejection_ready_capture_policy.__closure__),
@@ -468,6 +475,9 @@ def _policy() -> dict[str, Any]:
         _fail("runtime_tree_json_policy_drift")
     if admission_store._STAGING_IDENTITY_HELPERS is not _ORIGINAL_STAGING_IDENTITY_HELPERS:
         _fail("staging_identity_policy_drift")
+    if any(getattr(admission_store, name, None) is not original
+           for name, original in _ORIGINAL_ADMISSION_CHECKPOINT_ALIASES):
+        _fail("admission_history_policy_drift")
     ready_closure, ready_captures = _ORIGINAL_READY_POLICY_CLOSURE
     try:
         if (ready_policy.rejection_ready_capture_policy.__closure__ is not ready_closure
@@ -932,6 +942,8 @@ def _policy() -> dict[str, Any]:
         *((getattr(_ORIGINAL_CONTEXT_MANAGER, name), contextlib) for name in ("__init__", "__enter__", "__exit__")),
         (rsi_store._id, rsi_store),
         (rsi_store._staging_identity_helpers_current, rsi_store),
+        (rsi_store._admission_checkpoint_helpers_current, rsi_store),
+        (rsi_store._admission_checkpoint_projection, rsi_store),
         (rsi_store.RSILedger.read_only_observations, contextlib),
         (rsi_store.RSILedger.read_only_observations.__wrapped__, rsi_store),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
@@ -1021,7 +1033,8 @@ def _policy() -> dict[str, Any]:
             "register_brs_selected_obligation", "put_brs_reconcile_obligation", "validate_brs_reconcile_obligations")),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
-            "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
+            "controller_checkpoint_history", "_controller_checkpoint_history_tx",
+            "_controller_checkpoint_history_observation_tx", "_native_result_status",
             "_native_claim_row", "append_brs_mailbox_observation", "append_brs_terminal_observation",
             "read_brs_terminal_evidence_snapshot", "_brs_terminal_evidence_snapshot_tx",
             "_consume_brs_reconcile_obligation", "_settle_brs_terminal_execution_tx")),
@@ -1462,7 +1475,8 @@ def _policy() -> dict[str, Any]:
                     "validate_brs_reconcile_obligations")},
                 "store": {name: component_fingerprint(getattr(rsi_store.RSILedger, name)) for name in (
                     "write_brs_reconcile_obligation", "_append_controller_checkpoint_tx",
-                    "controller_checkpoint_history", "_controller_checkpoint_history_tx", "_native_result_status",
+                    "controller_checkpoint_history", "_controller_checkpoint_history_tx",
+                    "_controller_checkpoint_history_observation_tx", "_native_result_status",
                     "_native_claim_row")},
                 "bridge": {name: component_fingerprint(getattr(rsi_python_brs_owner_bridge, name)) for name in (
                     "run_brs_owner_publication_mailbox", "_require_original_mailbox", "_require_disabled_policy",

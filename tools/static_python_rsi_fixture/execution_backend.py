@@ -521,6 +521,7 @@ def _run_pinned_build(
     interrupted: Callable[[], bool] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     version3: bool = False,
+    custody_backend: str | None = None,
 ) -> BuildExecutionReport:
     """Execute pinned tools with no ambient environment or installation promotion.
 
@@ -538,6 +539,24 @@ def _run_pinned_build(
         _fail("preparation_invalid")
     recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=version3)
     command_outputs = recipe["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA}
+    custody_prefix = None
+    if custody_backend is not None:
+        if type(custody_backend) is not str or custody_backend not in {"podman", "podman-snapshots-v1"} or not version3:
+            _fail("custody_backend")
+        from tools.static_python_rsi_fixture.command_input_graph import (
+            validate_dependency_command_graph,
+        )
+        from tools.static_python_rsi_fixture.podman_custody import (
+            preflight_podman_custody,
+            validate_custody_image_budget,
+            validate_snapshot_budget,
+        )
+        validate_dependency_command_graph(recipe)
+        if custody_backend == "podman-snapshots-v1":
+            validate_snapshot_budget(recipe)
+        else:
+            validate_custody_image_budget(recipe)
+        custody_prefix = preflight_podman_custody()
     if recipe["preparation_sha256"] != hashlib.sha256(preparation.wire_bytes).hexdigest():
         _fail("preparation_pin_mismatch")
     if (not _finite(deadline) or deadline <= 0
@@ -620,7 +639,14 @@ def _run_pinned_build(
         if version3:
             # Zig can create only attempt-local caches; never use ambient caches.
             environment.update({"ZIG_GLOBAL_CACHE_DIR": str(work / ".zig-global-cache"),
-                                "ZIG_LOCAL_CACHE_DIR": str(work / ".zig-local-cache")})
+                                "ZIG_LOCAL_CACHE_DIR": str(work / ".zig-local-cache"),
+                                "ZIG_LIB_DIR": str(snapshots["toolchain"] / "lib")})
+        custody = None
+        if custody_prefix is not None:
+            from tools.static_python_rsi_fixture.podman_custody import PodmanCustody
+            custody = PodmanCustody(destination=destination, prefix=custody_prefix,
+                                     recipe_sha256=expected_recipe_sha256, checkpoint=checkpoint,
+                                     snapshot_mounts=custody_backend == "podman-snapshots-v1")
         retained_outputs: list[dict[str, Any]] = []
         observed_executables = {
             "@" + role + "/" + record["path"]
@@ -658,8 +684,13 @@ def _run_pinned_build(
                 log_dir.mkdir(parents=True)
                 command_evidence: dict[str, Any] = {"index": index}
                 evidence["commands"].append(command_evidence)
-                _command([expand(arg) for arg in argv], work=work, environment=environment,
-                         logs=log_dir, checkpoint=checkpoint, evidence=command_evidence)
+                if custody is None:
+                    _command([expand(arg) for arg in argv], work=work, environment=environment,
+                             logs=log_dir, checkpoint=checkpoint, evidence=command_evidence)
+                else:
+                    custody.run(argv, inputs=recipe["inputs"], snapshots=snapshots, prior=retained_outputs,
+                                outputs=command["outputs"], work=work, environment=recipe["environment"],
+                                logs=log_dir, evidence=command_evidence, stage=stage["stage"], index=index)
                 if command_outputs:
                     # A zero process status is insufficient to grant generated tools.
                     command_evidence["status"] = "partial"
@@ -744,12 +775,19 @@ def run_pinned_build_v3(
     source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
     interrupted: Callable[[], bool] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str | None = None,
 ) -> BuildExecutionReport:
-    """Explicit full-toolchain mechanism; no runtime or installation admission."""
+    """Explicit full-toolchain mechanism; optional custody grants no admission.
+
+    ``custody_backend="podman"`` selects the same loop's fixed Linux custody
+    dispatch. ``podman-snapshots-v1`` uses the same checks with fixed read-only
+    snapshot mounts. The default and v1/v2 retain ordinary-copy behavior.
+    """
     return _run_pinned_build(
         preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
         source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
         deadline=deadline, interrupted=interrupted, monotonic=monotonic, version3=True,
+        custody_backend=custody_backend,
     )
 
 

@@ -29,6 +29,7 @@ from .automatic_solve_lifecycle import (
     SolveExecutionControl,
 )
 from .native_bootstrap import NativeBootstrapArtifact
+from .native_fixed_live_sink import FixedPythonLiveSinkRequest
 from .native_trusted_attempt import (
     NativeTrustedAttemptError,
     NativeTrustedAttemptObservation,
@@ -294,6 +295,7 @@ def _run_native_trusted_producer(
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
     _python_prepublication: bool = False,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure | _NativeTrustedPythonProducerPreparation:
     """Run one pinned native producer through the formal local boundaries.
 
@@ -381,6 +383,7 @@ def _run_native_trusted_producer(
             cancelled=control.is_cancelled if control is not None else cancelled,
             parent_deadline=control.deadline if control is not None else None,
             monotonic=control._clock if control is not None else time.monotonic,
+            **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
         )
     except NativeTrustedAttemptError as exc:
         if exc.code == "native_trusted_attempt_cancelled":
@@ -580,6 +583,7 @@ def _prepare_native_trusted_python_producer(
     evidence_revalidator: Callable[[str], None],
     execution_control: SolveExecutionControl | None = None, cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> _NativeTrustedPythonProducerPreparation:
     """Stop after original receipt/output/handoff; never evaluate or publish.
 
@@ -596,6 +600,7 @@ def _prepare_native_trusted_python_producer(
         cancelled=cancelled, parent_deadline=parent_deadline,
         python_handoff_after_execution=python_handoff_after_execution,
         evidence_revalidator=evidence_revalidator, _python_prepublication=True,
+        **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
     )
 
 
@@ -614,6 +619,7 @@ def run_native_trusted_producer(
     evidence_revalidator: Callable[[str], None] | None = None,
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> NativeTrustedProducerRun:
     """Run the historical success-only receipt/output/publication entry point once."""
     return _run_native_trusted_producer(
@@ -627,6 +633,7 @@ def run_native_trusted_producer(
         prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
         producer_multi_episode_publication=producer_multi_episode_publication,
         lineage_owner=lineage_owner,
+        **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
     )
 
 
@@ -645,6 +652,7 @@ def run_native_trusted_producer_outcome(
     evidence_revalidator: Callable[[str], None] | None = None,
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run once, returning verified process failure or the unchanged success result.
 
@@ -662,6 +670,7 @@ def run_native_trusted_producer_outcome(
         prepared_observer=prepared_observer, evidence_revalidator=evidence_revalidator,
         producer_multi_episode_publication=producer_multi_episode_publication,
         lineage_owner=lineage_owner,
+        **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
     )
 
 

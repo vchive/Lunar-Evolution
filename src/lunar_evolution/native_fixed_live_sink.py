@@ -9,12 +9,15 @@ import os
 import selectors
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 from . import static_python_fixed_profile as profile
 from .static_python_fixed_live_modules import (
     FIXED_LIVE_COLLECTOR_SOURCE_BYTES,
     FIXED_LIVE_PRIVATE_SINK_PROFILE,
+    FIXED_LIVE_RUNTIME_SINK_PROFILE,
+    FIXED_LIVE_RUNTIME_SOURCE_BYTES,
+    FIXED_LIVE_RUNTIME_SOURCE_SHA256,
     FIXED_LIVE_SINK_LAUNCHER_PATH,
     FIXED_LIVE_SINK_LAUNCHER_SOURCE_BYTES,
     FIXED_LIVE_SINK_LAUNCHER_SOURCE_SHA256,
@@ -24,6 +27,7 @@ from .static_python_fixed_live_modules import (
     _compose,
     compare_fixed_python_bound_live_modules,
 )
+from .static_python_fixed_runtime_observation import map_fixed_python_runtime_observation
 
 
 class NativeFixedLiveSinkError(ValueError):
@@ -47,7 +51,8 @@ class FixedPythonLiveSinkRequest:
     def validate(self, *, target_sha256: str) -> None:
         try:
             if (type(self) is not FixedPythonLiveSinkRequest
-                    or self.source_profile != FIXED_LIVE_PRIVATE_SINK_PROFILE):
+                    or type(self.source_profile) is not str
+                    or self.source_profile not in {FIXED_LIVE_PRIVATE_SINK_PROFILE, FIXED_LIVE_RUNTIME_SINK_PROFILE}):
                 raise ValueError
             installed = profile._reparse(self.installation, self.expected_installation_sha256)
             sources = json.loads(installed.closure_bytes)["sources"]
@@ -67,11 +72,18 @@ class FixedPythonLiveSinkRequest:
             if main != {"path": "runtime/frozen_main.py", "size": len(source),
                         "sha256": hashlib.sha256(source).hexdigest()}:
                 raise ValueError
+            runtime = self.source_profile == FIXED_LIVE_RUNTIME_SINK_PROFILE
+            offset = FIXED_LIVE_COLLECTOR_SOURCE_BYTES
+            supplement = None
+            if runtime:
+                supplement = source[-FIXED_LIVE_RUNTIME_SOURCE_BYTES:]
+                separator = f'\n_LUNAR_LIVE_RUNTIME_SHA256 = {FIXED_LIVE_RUNTIME_SOURCE_SHA256!r}\n\n'.encode("ascii")
+                offset += len(separator) + FIXED_LIVE_RUNTIME_SOURCE_BYTES
             solver = installed.profile_version.removeprefix("fixed-").removesuffix("-v1")
             if source != _compose(
                 solver, tuple(sorted(installed.frozen_names)), installed.builtin_names,
                 installed.aliases, tuple(sorted(record["name"] for record in records if record["package"])),
-                source[-FIXED_LIVE_COLLECTOR_SOURCE_BYTES:],
+                source[-offset:][:FIXED_LIVE_COLLECTOR_SOURCE_BYTES], supplement,
             ):
                 raise ValueError
         except (ValueError, TypeError, KeyError, StopIteration):
@@ -80,14 +92,98 @@ class FixedPythonLiveSinkRequest:
     def compare(self, raw: bytes, *, image_device: int, image_inode: int,
                 target_pid: int, manifest_sha256: str) -> FixedPythonBoundLiveModules:
         try:
+            if type(self) is not FixedPythonLiveSinkRequest or type(self.source_profile) is not str:
+                raise ValueError
+            if self.source_profile == FIXED_LIVE_RUNTIME_SINK_PROFILE:
+                return map_fixed_python_runtime_observation(
+                    self.installation, raw, image=self.image, runtime_main_source=self.runtime_main_source,
+                    expected_installation_sha256=self.expected_installation_sha256,
+                    expected_image_device=image_device, expected_image_inode=image_inode,
+                    expected_target_pid=target_pid, expected_manifest_sha256=manifest_sha256,
+                ).live_modules_observation
+            if self.source_profile != FIXED_LIVE_PRIVATE_SINK_PROFILE:
+                raise ValueError
             return compare_fixed_python_bound_live_modules(
                 self.installation, raw, image=self.image, runtime_main_source=self.runtime_main_source,
                 expected_installation_sha256=self.expected_installation_sha256,
                 expected_image_device=image_device, expected_image_inode=image_inode,
                 expected_target_pid=target_pid, expected_manifest_sha256=manifest_sha256,
             )
-        except FixedPythonLiveModulesError:
+        except (FixedPythonLiveModulesError, ValueError):
             raise NativeFixedLiveSinkError("native_fixed_live_sink_comparison_refused") from None
+
+
+@dataclass(frozen=True, slots=True)
+class _FixedPythonLiveSinkPin:
+    """Original immutable request fields, with no process or admission authority.
+
+    Validation hashes the image once per retained context. A newly copied context
+    revalidates the material. Later polling compares identities of exact immutable
+    fields, so owner/worker wakeups do not rehash a large image. Replacing even
+    equivalent material in an existing context is drift.
+    """
+
+    request: FixedPythonLiveSinkRequest
+    request_fields: tuple[object, ...]
+    installation_fields: tuple[object, ...]
+    target_sha256: str
+    projection_json: bytes
+
+    def assert_current(self, request: object, *, target_sha256: str) -> None:
+        if (type(self) is not _FixedPythonLiveSinkPin
+                or type(request) is not FixedPythonLiveSinkRequest or request is not self.request
+                or target_sha256 != self.target_sha256
+                or type(request.installation) is not profile.FixedPythonInstallation
+                or any(getattr(request, field.name) is not value
+                       for field, value in zip(fields(FixedPythonLiveSinkRequest), self.request_fields, strict=True))
+                or any(getattr(request.installation, field.name) is not value
+                       for field, value in zip(fields(profile.FixedPythonInstallation),
+                                               self.installation_fields, strict=True))):
+            raise NativeFixedLiveSinkError("native_fixed_live_sink_request_changed")
+
+    def to_dict(self) -> dict:
+        return json.loads(self.projection_json)
+
+
+def _pin_fixed_python_live_sink_request(
+    request: FixedPythonLiveSinkRequest, *, target_sha256: str,
+) -> _FixedPythonLiveSinkPin:
+    if type(request) is not FixedPythonLiveSinkRequest:
+        raise NativeFixedLiveSinkError("native_fixed_live_sink_request_invalid")
+    installation = request.installation
+    if (type(installation) is not profile.FixedPythonInstallation
+            or any(type(value) is not bytes for value in (
+                request.image, request.runtime_main_source, installation.canonical_bytes,
+                installation.closure_bytes,
+            ))
+            or any(type(value) is not str for value in (
+                request.expected_installation_sha256, request.source_profile, target_sha256,
+                installation.installation_sha256, installation.profile_version,
+                installation.installation_version, installation.source_inventory_sha256,
+                installation.configuration_sha256, installation.artifact_sha256,
+                installation.frozen_inventory_sha256, installation.native_inventory_sha256,
+            ))
+            or any(type(vector) is not tuple or any(type(item) is not str for item in vector)
+                   for vector in (installation.frozen_names, installation.builtin_names))
+            or type(installation.aliases) is not tuple
+            or any(type(pair) is not tuple or len(pair) != 2
+                   or any(type(item) is not str for item in pair) for pair in installation.aliases)):
+        raise NativeFixedLiveSinkError("native_fixed_live_sink_request_invalid")
+    FixedPythonLiveSinkRequest.validate(request, target_sha256=target_sha256)
+    projection = {
+        "protocol": "lunar-fixed-python-live-sink-input-v1",
+        "source_profile": request.source_profile,
+        "installation_sha256": request.expected_installation_sha256,
+        "runtime_closure_sha256": hashlib.sha256(request.installation.closure_bytes).hexdigest(),
+        "image_sha256": target_sha256,
+        "runtime_main_source_sha256": hashlib.sha256(request.runtime_main_source).hexdigest(),
+        "production_admission": False,
+    }
+    return _FixedPythonLiveSinkPin(
+        request, tuple(getattr(request, field.name) for field in fields(FixedPythonLiveSinkRequest)),
+        tuple(getattr(request.installation, field.name) for field in fields(profile.FixedPythonInstallation)),
+        target_sha256, json.dumps(projection, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+    )
 
 
 class NativeFixedLiveSinkCapture:

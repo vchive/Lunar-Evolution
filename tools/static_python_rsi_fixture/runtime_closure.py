@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from lunar_evolution.static_python_fixed_live_modules import (
     FIXED_LIVE_MODULES_PROFILE,
     FIXED_LIVE_PRIVATE_SINK_PROFILE,
+    FIXED_LIVE_RUNTIME_SINK_PROFILE,
     FIXED_LIVE_SINK_LAUNCHER_PATH,
 )
 from tools.static_python_fixture.profile import (
@@ -735,7 +736,7 @@ def prepare_fixed_runtime_closure(
     """
     if (live_modules_profile is not None
             and (type(live_modules_profile) is not str or live_modules_profile not in {
-                FIXED_LIVE_MODULES_PROFILE, FIXED_LIVE_PRIVATE_SINK_PROFILE,
+                FIXED_LIVE_MODULES_PROFILE, FIXED_LIVE_PRIVATE_SINK_PROFILE, FIXED_LIVE_RUNTIME_SINK_PROFILE,
             })):
         _fail("live_module_profile_invalid")
     cpython = _pinned_sources(cpython_sources, expected_cpython_inventory_sha256)
@@ -870,10 +871,11 @@ def prepare_fixed_runtime_closure(
             solver, frozen_names=tuple(sorted(aliases.get(name, name) for name in selected)),
             builtin_names=tuple(sorted(builtin)), aliases=live_aliases,
             frozen_packages=tuple(sorted(aliases.get(name, name) for name in selected if name in packages)),
+            **({"runtime_observation": True} if live_modules_profile == FIXED_LIVE_RUNTIME_SINK_PROFILE else {}),
         )
         generated["runtime/frozen_main.py"] = launcher
         selected["_lunar_static_main"] = ("runtime/frozen_main.py", launcher)
-        if live_modules_profile == FIXED_LIVE_PRIVATE_SINK_PROFILE:
+        if live_modules_profile in {FIXED_LIVE_PRIVATE_SINK_PROFILE, FIXED_LIVE_RUNTIME_SINK_PROFILE}:
             generated[FIXED_LIVE_SINK_LAUNCHER_PATH] = prepare_fixed_live_sink_launcher()
     frozen = []
     symbols = set()

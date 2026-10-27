@@ -300,7 +300,7 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
                 or inventory[path]["sha256"] != task["source_sha256"]):
             _fail("freezer_source_pin_mismatch")
     compiler = ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl",
-                "--zig-lib-dir", "@toolchain-dir/lib", "-std=c11", "-O2", "-g0",
+                "-std=c11", "-O2", "-g0",
                 "-fno-strict-aliasing", "-fno-common", "-D_GNU_SOURCE", "-DNDEBUG",
                 "-DPy_BUILD_CORE", "-I", "@source-dir/configuration",
                 "-I", "@source-dir/Include", "-I", "@source-dir/Include/internal"]
@@ -325,8 +325,7 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
     shared_objects = ["@work/objects/" + u["object"] for u in units + native]
     freezer_objects = shared_objects + ["@work/objects/" + u["object"] for u in freezer]
     freeze_commands.append(_command(
-        ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "--zig-lib-dir",
-         "@toolchain-dir/lib", "-static", "-o", "@work/bin/lunar-freeze-module",
+        ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-static", "-o", "@work/bin/lunar-freeze-module",
          *freezer_objects, "-lm", "-lpthread", "-lc"], "bin/lunar-freeze-module", executable=True))
     for task in tasks:
         freeze_commands.append(_command(
@@ -342,8 +341,7 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
     executable = "bin/lunar-" + solver
     link_commands = [
         _command(["@toolchain/zig", "ar", "rcsD", "@work/" + library, *shared_objects], library),
-        _command(["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "--zig-lib-dir",
-                  "@toolchain-dir/lib", "-static", "-o", "@work/" + executable,
+        _command(["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-static", "-o", "@work/" + executable,
                   *("@work/objects/" + u["object"] for u in target), "@work/" + library,
                   "-lm", "-lpthread", "-lc"], executable, executable=True),
     ]

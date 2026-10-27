@@ -1,3 +1,44 @@
+<!-- current-p0-p2-batch:start -->
+## 当前执行点（2026-10-28）：并行软件收尾，集中回归尚未通过
+
+本轮 P0 增加同次 checkpoint 双观察的纯投影复用，以及保留所有现场扫描的
+reserved policy 轻量 matcher。P1 增加原 scheduler 的 live sink 透传、expanded
+runtime 真实事实采集/独立比较入口、原 consumer 的显式 Podman custody，以及
+Zig 支持产物实际生成后显式链接的软件路径。所有新入口默认关闭；P2 guardian
+sidecar 已提交并推送。以上实现不等于生产能力全部验收。
+
+本批目前的实际证据：
+
+- tree `8ea05360` 的 32 文件串行 focused 在 1200.016991 秒超时，rc=-9，缺少
+  JUnit/终态 origins；2882 项源码清单前后一致。9 件顶层 regular 原件及所有引用
+  已核验。不能把中途的点号当作完整通过。此后又有实质产品修改，尚未最终回归。
+- 同 tree 的原 Podman consumer inert case 首次在 helper 的 errno 断言失败；原
+  57 件保留。修正后的不同 fixture 单次完成 4 阶段/7 命令/12 输出，6.803820 秒、
+  零 retry；写打开实际 EACCES，其余修改操作 EROFS。188 件原件、238 个模块
+  来源与源码前后清单均匹配。这不是完整 CPython、Zig 或 solver 验收。
+- 真实 pinned Zig 0.16 seed 单次首编译失败：`Unknown Clang option:
+  '--zig-lib-dir'`。2576 文件的明确 subset 快照与 240 模块来源前后匹配；未执行
+  seed ELF、未进入支持库链接，不能称通过。正在修正固定 driver 调用与两种执行
+  backend 的受控 `ZIG_LIB_DIR`；不重派原失败 source。
+- P2 既有 154 项 Linux sidecar 通过结果保持，不重复累计。旧 `44cdd73e` 的
+  唯一 600 秒 mixed 失败保持。后继统一回归计划使用 16 个独立 worker、零重启/
+  retry，并核全 worker collection、终态报告、JUnit 节点数与源码来源。
+
+原件均在主区 ignored `parallel-batch-20261027/`：
+`p0-custody-joint-focused-k1ofjiys`、`podman-original-once-prepared-odtgb7z1`、
+`podman-errno-once-8tkejc4_`、`real-zig-support-once-6nigajy1`。
+
+仍需完成：本轮统一回归、新 clean source 原 600 秒 mixed/完整 CI；完整独立审阅
+musl 配置、真实支持产物/完整 CPython 的隔离生成与规模承载；实际 expanded runtime
+到 late supplier/安全 CLI 的生产 composition 与完整 solver 生命周期；真实独立账号/
+私有 vault 部署及断线/blocked-storage/whole-group cleanup。已有认证、ownership、
+installed bridge、vault、guardian receiver/sidecar 不再列为整块未开发。
+
+普通回归在 5090gpu，不支持的平台测试转本机；本机不能替代指定 Linux 隔离验收。
+当前未合 main，production_admission=false、online_publication=false。无模型、
+WebAgent、远程或公司 evaluator。以下为此前各批历史，不覆盖本节当前结论。
+<!-- current-p0-p2-batch:end -->
+
 # P0–P2 integration, 2026-10-28
 
 ## Latest terminal results: mixed failed, installed guardian sidecar passed

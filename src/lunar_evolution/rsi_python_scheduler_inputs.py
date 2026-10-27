@@ -274,6 +274,10 @@ def _broker(value: object) -> ProducerBrokerConfig:
 def _native(value: object, binding: PythonProducerBinding) -> NativeRSISchedulerContext:
     if type(value) is not NativeRSISchedulerContext:
         _fail("native_context_invalid")
+    try:
+        NativeRSISchedulerContext._assert_live_modules_sink(value)
+    except Exception as exc:
+        raise PythonRSISchedulerInputError("native_context_drift") from exc
     for item in (value.intent, value.attestation, value.contract, value.groups):
         _shape(item)
     broker = _broker(value.broker_config)
@@ -342,7 +346,7 @@ def _projection(
     proof: PythonProducerCheckpointBinding,
 ) -> dict[str, Any]:
     artifact = native.artifact
-    return {
+    projection = {
         "protocol": PYTHON_RSI_SCHEDULER_INPUT_PROTOCOL,
         "production_admission": False,
         "workspace": str(native.workspace), "producer_root": str(native.producer_root),
@@ -374,6 +378,10 @@ def _projection(
         "candidate_selector_id": "native-selector-v1",
         "candidate_selector_sha256": component_fingerprint(select_native_candidate),
     }
+    sink = NativeRSISchedulerContext._live_modules_sink_projection(native)
+    if sink is not None:
+        projection["live_modules_sink"] = sink
+    return projection
 
 
 @dataclass(frozen=True, slots=True)

@@ -181,6 +181,7 @@ def test_selected_original_file_drift_refuses_without_replacing_it(tmp_path, mon
     ("controller", "_validate_python_admission_references"),
     ("ledger", "python_admission_record"), ("ledger", "controller_checkpoint"),
     ("ledger", "_connect"), ("ledger", "_python_admission_state_tx"),
+    ("ledger", "_controller_checkpoint_history_observation_tx"),
 ])
 def test_reader_instance_shadows_refuse_before_invoking_replacement(tmp_path, monkeypatch, target, name):
     with _rejected(tmp_path, monkeypatch) as value:

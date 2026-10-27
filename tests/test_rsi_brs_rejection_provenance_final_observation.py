@@ -195,3 +195,21 @@ def test_post_c2_source_installed_reader_shadow_fails_final_canonical_gate(tmp_p
         path = provenance_fixture._path(value)
         assert (path.read_bytes(), path.stat().st_ino) == injected[0]
         c1._quiet(value)
+
+
+def test_final_provenance_readback_refuses_history_observer_shadow_before_invocation(tmp_path, monkeypatch):
+    with c1._waiting(tmp_path, monkeypatch) as value:
+        before = c1.owner_fixture._capture(value)
+        calls = []
+
+        def replacement(*_args, **_kwargs):
+            calls.append("unexpected-instance-reader")
+            raise AssertionError("final provenance readback invoked a shadow")
+
+        with monkeypatch.context() as changed:
+            changed.setattr(value.ledger, "_controller_checkpoint_history_observation_tx", replacement)
+            with pytest.raises(RSILearningError, match="_final_reader_drift$"):
+                provenance._readback(value.owner, "a" * 64, {}, b"{}", final=True)
+        assert calls == []
+        c1.owner_fixture._unchanged(value, before)
+        c1._quiet(value)

@@ -185,6 +185,17 @@ def _roots(source_root: str, toolchain_root: str, work_root: str) -> dict[str, s
     return roots
 
 
+def _current_output_root(value: str | None, roots: dict[str, str]) -> str:
+    """A target-only root never adds current files to the prior-input universe."""
+    if value is None:
+        return roots["work"]
+    checked = _roots(roots["source"], roots["toolchain"], value)["work"]
+    prior = roots["work"]
+    if checked == prior or checked.startswith(prior + "/") or prior.startswith(checked + "/"):
+        _fail("current_output_root")
+    return checked
+
+
 @dataclass(frozen=True, slots=True)
 class CompilerDependencyComparison:
     canonical_bytes: bytes
@@ -197,6 +208,7 @@ def compare_compiler_dependencies(
     recipe_bytes: bytes, *, expected_recipe_sha256: str,
     output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
     dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
 ) -> CompilerDependencyComparison:
     """Compare retained compiler bytes against independently pinned inventories.
 
@@ -207,6 +219,7 @@ def compare_compiler_dependencies(
     recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=True)
     outputs = _inventory(output_inventory_bytes, expected_output_inventory_sha256)
     roots = _roots(source_root, toolchain_root, work_root)
+    target_root = _current_output_root(current_output_root, roots)
     if (type(dependency_artifacts) is not dict or len(dependency_artifacts) > 1024
             or any(type(key) is not str or type(raw) is not bytes
                    or not 0 < len(raw) <= MAX_DEPFILE_BYTES
@@ -251,7 +264,7 @@ def compare_compiler_dependencies(
                         or len(raw) != record["size"] or _sha(raw) != record["sha256"]):
                     _fail("artifact_pin")
                 actual_target, dependencies = parse_compiler_depfile(raw)
-                expected_target = roots["work"] + "/" + target.removeprefix("@work/")
+                expected_target = target_root + "/" + target.removeprefix("@work/")
                 if actual_target != expected_target:
                     _fail("target")
                 refs = [reference(path) for path in dependencies]

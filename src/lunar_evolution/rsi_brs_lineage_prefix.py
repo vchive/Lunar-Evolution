@@ -242,6 +242,48 @@ def validate_brs_reserved_prefix(
     bytes. Only their computed digests enter the compact historical projection.
     The caller must independently observe and authenticate every original source.
     """
+    return _validate_brs_reserved_prefix_walk(
+        run_id=run_id, wave=wave, episode_ids=episode_ids, request_sha256s=request_sha256s,
+        root_snapshot_sha256=root_snapshot_sha256, base_checkpoint_sha256=base_checkpoint_sha256,
+        batches=batches, collect_prefixes=False,
+    )[-1]
+
+
+def _validate_brs_reserved_prefixes(
+    *, run_id: str, wave: int, episode_ids: tuple[str, ...], request_sha256s: tuple[str, ...],
+    root_snapshot_sha256: str, base_checkpoint_sha256: str, batches: tuple[dict, ...],
+) -> tuple[BRSLineagePrefix, ...]:
+    """Derive every prefix in one pure walk of the same fresh observations.
+
+    This replaces repeated normalization of slices, not any physical reading or
+    owner validation. Each prefix is independently encoded and bounded in its
+    original order, including the empty prefix before the first batch.
+    """
+    return _validate_brs_reserved_prefix_walk(
+        run_id=run_id, wave=wave, episode_ids=episode_ids, request_sha256s=request_sha256s,
+        root_snapshot_sha256=root_snapshot_sha256, base_checkpoint_sha256=base_checkpoint_sha256,
+        batches=batches, collect_prefixes=True,
+    )
+
+
+def _project_brs_reserved_prefix(
+    domain, normalized, tail, previous, published, poststate, candidates, total,
+) -> BRSLineagePrefix:
+    """Encode one complete bounded immutable result, with no retained context."""
+    projection = {"domain": domain, "batches": normalized, "tail_checkpoint_sha256": tail,
+                  "previous_attempt": list(previous) if previous else None,
+                  "published_predecessor": list(published) if published else None,
+                  "historical_poststate": [list(item) for item in poststate] if poststate else None,
+                  "candidate_count": len(candidates), "retained_material_bytes": total}
+    return BRSLineagePrefix(_canonical(domain), tuple(_canonical(item) for item in normalized), _canonical(projection))
+
+
+def _validate_brs_reserved_prefix_walk(
+    *, run_id: str, wave: int, episode_ids: tuple[str, ...], request_sha256s: tuple[str, ...],
+    root_snapshot_sha256: str, base_checkpoint_sha256: str, batches: tuple[dict, ...],
+    collect_prefixes: bool,
+) -> tuple[BRSLineagePrefix, ...]:
+    """Normalize the finite observed batch domain once, preserving check order."""
     _id(run_id)
     if type(wave) is not int or not 0 <= wave < 2**64:
         _fail("wave_invalid")
@@ -259,6 +301,11 @@ def validate_brs_reserved_prefix(
     normalized, journals, candidates, materials, inodes = [], set(), set(), {}, {}
     previous = published = poststate = None
     tail, total, heads = base_checkpoint_sha256, 0, {base_checkpoint_sha256}
+    prefixes = []
+    if collect_prefixes:
+        prefixes.append(_project_brs_reserved_prefix(
+            domain, normalized, tail, previous, published, poststate, candidates, total,
+        ))
     for ordinal, raw in enumerate(batches):
         if type(raw) is not dict or set(raw) != _BATCH_FIELDS:
             _fail("batch_invalid")
@@ -403,12 +450,18 @@ def validate_brs_reserved_prefix(
                            "root_payload_sha256": root_digest, "claim": claim, "before": before_wire,
                            "staged": staged_wire, "terminal": terminal_wire, "snapshots": snapshots,
                            "materials": [{"relative_path": path, "file_pin": pin} for path, pin in observed.items()]})
-    projection = {"domain": domain, "batches": normalized, "tail_checkpoint_sha256": tail,
-                  "previous_attempt": list(previous) if previous else None,
-                  "published_predecessor": list(published) if published else None,
-                  "historical_poststate": [list(item) for item in poststate] if poststate else None,
-                  "candidate_count": len(candidates), "retained_material_bytes": total}
-    return BRSLineagePrefix(_canonical(domain), tuple(_canonical(item) for item in normalized), _canonical(projection))
+        if collect_prefixes:
+            # Emit and bound this exact prefix before looking at the next batch.
+            # Only expensive normalization of the same prior observations is
+            # shared; every prefix still has its original complete encoding.
+            prefixes.append(_project_brs_reserved_prefix(
+                domain, normalized, tail, previous, published, poststate, candidates, total,
+            ))
+    if collect_prefixes:
+        return tuple(prefixes)
+    return (_project_brs_reserved_prefix(
+        domain, normalized, tail, previous, published, poststate, candidates, total,
+    ),)
 
 
 def validate_brs_reserved_append(prefix: BRSLineagePrefix, *, batches: tuple[dict, ...]) -> BRSLineagePrefix:

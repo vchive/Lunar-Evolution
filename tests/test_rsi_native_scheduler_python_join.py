@@ -41,6 +41,7 @@ def _configured_provider(value, supplier=None):
         producer_root=value.workspace, broker_config=ProducerBrokerConfig("http://127.0.0.1:1", {}),
         groups=(), strategy=_strategy_fixture, execution_control=None, cancelled=None,
         failure_ledger=None, python_handoff_after_execution=supplier,
+        live_modules_sink=None, _live_modules_sink_pin=None,
     )
     provider._failure_ledger_identity = None
     return provider

@@ -1,13 +1,46 @@
 # Podman custody on the original build path: integration draft
 
-Status: **design draft only, not an implemented backend or permission to execute
-a real build**. The tiny two-stage trusted-custodian mechanism is observed in
+Status: **the default-off Podman backend is implemented on the original build
+chain; focused tests and the original-consumer inert smoke remain pending
+acceptance**. This is not permission to run a real build or a claim that complete
+configured input closure is available. The earlier tiny two-stage environment
+observation is recorded in
 `../189-static-python-fixture/podman-inert-custody-observation-20261028.md`.
-That closes a narrow environment feasibility investigation. The actual build
-integration and complete configured input closure remain real software work.
-Do not add a parser, DTO, alternate executor or public CLI flag and call those
-requirements implemented. No existing report field or acceptance meaning is
-changed by this draft.
+
+## Implemented contract and validation status
+
+`run_dependency_checked_build(..., custody_backend="podman")` passes the explicit
+selection through `run_pinned_build_v3` to the same `_run_pinned_build` loop. It
+preserves the original finite command graph, absolute deadline, output readback
+and report consumer; the default route and v1/v2 semantics are unchanged.
+Every original command receives a separately copied image containing the complete
+pinned `/source` and `/toolchain` inventories and all verified prior outputs at
+read-only `/work`. Only that command's fresh current-output bind is writable at
+`/out`; a target-only comparator root does not admit current files as inputs.
+
+The first implementation refuses attempts above **32 commands** or **8 GiB of
+cumulative imported image bytes**. It deliberately does not claim an aggregate
+output-storage hard quota: the fresh host current-output bind has a per-file
+`RLIMIT_FSIZE` and bounded post-exit validation. The host, existing rootless
+Podman/crun/image custodian and pinned tools remain trusted. Effective OCI policy
+is checked before start, including fixed resolver data and separated scratch;
+original-container exit observations do not prove complete namespace cleanup.
+
+The focused execution/consumer/comparator tests and a **four-stage, seven-command
+static inert smoke through the original consumer** still require acceptance on
+the frozen implementation. The smoke covers configure probe, actual generated
+freezer/header, compile and archive/link without running real CPython, Zig, a
+solver or a model. No result is claimed here before those checks complete.
+All G1/custody, driver/configured closure, installation, production admission and
+online-publication authority remains **false**. Complete reviewed configuration
+and explicit support generation remain separate unfinished work.
+
+## Historical design draft
+
+The remainder preserves the initial design discussion verbatim as historical
+context. Its future-tense and unimplemented-status statements describe that
+earlier draft; the implemented contract and pending validation above supersede
+them. They do not grant broader execution or acceptance authority.
 
 ## Existing APIs and exact integration surface
 

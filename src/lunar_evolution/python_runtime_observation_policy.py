@@ -15,6 +15,15 @@ from .python_producer_lifecycle import (
     PythonProducerRuntimeObservation,
     parse_python_producer_runtime_observation,
 )
+
+# The expanded fixed-solver policy deliberately has a separate entry point.
+# Its startup facts cannot supply the old lifecycle's transcript/computation or
+# pycache claims, and the legacy exact-type gate below remains unchanged.
+from .static_python_fixed_runtime_observation import (
+    FixedPythonRuntimeFacts,
+    FixedPythonRuntimeObservationError,
+    validate_fixed_python_runtime_observation_policy,
+)
 from .static_python_installation import (
     StaticPythonInstallationDescriptor,
     StaticPythonInstallationError,
@@ -132,4 +141,10 @@ def validate_python_runtime_observation_policy(
         _fail("observation_target_mismatch")
 
 
-__all__ = ["PythonRuntimeObservationPolicyError", "validate_python_runtime_observation_policy"]
+__all__ = [
+    "FixedPythonRuntimeFacts",
+    "FixedPythonRuntimeObservationError",
+    "PythonRuntimeObservationPolicyError",
+    "validate_fixed_python_runtime_observation_policy",
+    "validate_python_runtime_observation_policy",
+]

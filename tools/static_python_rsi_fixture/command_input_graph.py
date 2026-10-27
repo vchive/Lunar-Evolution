@@ -75,6 +75,7 @@ def _compile(command: dict, available: dict[str, bool]) -> None:
     _outputs(command, [(target, False), (depfile, False)])
     if command["outputs"][1]["max_size"] != MAX_DEPFILE_BYTES:
         _fail("compile_capture")
+    _directory("@toolchain-dir/lib", available)
     seen = set()
     index = 2
     while index < len(argv) - 5:
@@ -82,7 +83,7 @@ def _compile(command: dict, available: dict[str, bool]) -> None:
         if arg in _COMPILE_FLAGS:
             index += 1
             continue
-        if arg not in {"-target", "--zig-lib-dir", "-I", "-c", "-o"}:
+        if arg not in {"-target", "-I", "-c", "-o"}:
             _fail("compile_option")
         if index + 1 >= len(argv) - 5:
             _fail("compile_option")
@@ -93,14 +94,10 @@ def _compile(command: dict, available: dict[str, bool]) -> None:
             seen.add(arg)
         if arg == "-target" and value != "x86_64-linux-musl":
             _fail("target")
-        if arg == "--zig-lib-dir":
-            if value != "@toolchain-dir/lib":
-                _fail("toolchain_directory")
-            _directory(value, available)
         if arg == "-I":
             _directory(value, available)
         index += 2
-    if seen != {"-target", "--zig-lib-dir", "-c", "-o"}:
+    if seen != {"-target", "-c", "-o"}:
         _fail("compile_required_options")
 
 
@@ -157,6 +154,7 @@ def validate_dependency_command_graph(recipe: dict) -> None:
                     if link is None or stage["stage"] not in {"freeze", "link"}:
                         _fail("link")
                     target, references = link
+                    _directory("@toolchain-dir/lib", available)
                     for reference in references:
                         _prior(reference, available)
                     depfile = "@work/link-dependencies/" + target.removeprefix("@work/") + ".d"

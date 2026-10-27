@@ -8,6 +8,7 @@ opens a ledger, selects a child or grants execution/publication authority.
 from __future__ import annotations
 
 import builtins
+import dataclasses
 import hashlib
 import importlib
 import json
@@ -31,6 +32,7 @@ _MODULE_NAMES = (
     "rsi_brs_serial_driver", "rsi_brs_native_provider", "rsi_brs_native_completion",
     "rsi_brs_serial_finalization", "rsi_brs_serial_budget", "rsi_checkpoint_storage",
     "rsi_python_brs_terminal_lifecycle", "rsi_brs_terminal_evidence",
+    "static_python_fixed_runtime_observation",
 )
 _PROJECT = None
 
@@ -98,6 +100,87 @@ def _build_reserved_brs_policy():
                     "name", "type", "default", "default_factory", "init", "repr", "hash", "compare",
                     "metadata", "kw_only", "_field_type"))
         return "opaque", object_id(scalar), object_id(value)
+
+    def matches_frozen(value, held, depth=0, remaining=None):
+        # The baseline is the original immutable freeze shape, not a result
+        # cache. Every call still reads the live value at its original scan.
+        scalar = kind(value)
+        if scalar is proxy_type or scalar is plain_set or scalar is plain_frozenset:
+            return freeze(value, depth, remaining) == held
+        if scalar is plain_dict:
+            if length(value) > maximum:
+                fail()
+            if (held[0] != "mapping" or held[1] != object_id(scalar)
+                    or held[2] != object_id(value)):
+                return False
+            entries = held[3]
+            if length(value) != length(entries):
+                return False
+            # Only exact str keys permit hook-free direct dictionary lookups.
+            # Heterogeneous keys retain the original unordered freeze path.
+            if some(key[0] != "str" for key, _item in entries):
+                return freeze(value, depth, remaining) == held
+        if remaining is None:
+            remaining = [100_000]
+        remaining[0] -= 1
+        if depth > 48 or remaining[0] < 0:
+            fail()
+        if value is None:
+            return held == ("none",)
+        if scalar is plain_str:
+            return held[0] == "str" and value == held[1]
+        if scalar is plain_bytes:
+            return held[0] == "bytes" and value == held[1]
+        if scalar is plain_int:
+            return held[0] == "int" and value == held[1]
+        if scalar is plain_bool:
+            return held[0] == "bool" and value == held[1]
+        if scalar is plain_float:
+            if not math.isfinite(value):
+                fail()
+            return held[0] == "float" and value == held[1]
+        if scalar is plain_dict:
+            if not entries:
+                return length(value) == 0
+            # This temporary index contains only held exact str keys. It is
+            # rebuilt on every observation and stores no validation result.
+            # Never key-lookup in the live dict: a concurrent foreign insertion
+            # could otherwise make a lookup execute the inserted key's __eq__.
+            expected_items = plain_dict((key[1], expected) for key, expected in entries)
+            seen = 0
+            for key, item in value.items():
+                if kind(key) is not plain_str:
+                    return False
+                remaining[0] -= 1
+                if depth + 1 > 48 or remaining[0] < 0:
+                    fail()
+                expected = expected_items.get(key, missing)
+                if expected is missing:
+                    return False
+                if not matches_frozen(item, expected, depth + 1, remaining):
+                    return False
+                seen += 1
+            return seen == length(entries)
+        if scalar is plain_list or scalar is plain_tuple:
+            if length(value) > maximum:
+                fail()
+            if (held[0] != "sequence" or held[1] != object_id(scalar)
+                    or held[2] != object_id(value) or length(value) != length(held[3])):
+                return False
+            for item, expected in pairs(value, held[3], strict=True):
+                if not matches_frozen(item, expected, depth + 1, remaining):
+                    return False
+            return True
+        if scalar is field_type:
+            if held[0] != "field" or held[1] != object_id(value):
+                return False
+            # freeze's immutable tuple supplies exactly its original fixed names.
+            for name, expected in held[2]:
+                if not matches_frozen(object_get(value, name), expected, depth + 1, remaining):
+                    return False
+            return True
+        return (held[0] == "opaque" and held[1] == object_id(scalar)
+                and held[2] == object_id(value))
 
     def pack_function(function):
         if kind(function) is not function_type or object_id(function) in queued:
@@ -181,9 +264,15 @@ def _build_reserved_brs_policy():
             "__call__", "recover_live_rejection", "assert_rejection_ledger", "_inputs",
             "rsi_fingerprint_config", "_failure_claim", "validate_preclaim", "_native_rejection_snapshot",
             "provenance_batch")),
+        ("rsi_native_scheduler", "NativeRSISchedulerContext", (
+            "__post_init__", "_assert_live_modules_sink", "_live_modules_sink_projection")),
+        ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", ("validate", "compare")),
+        ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", ("__init__", "assert_current", "to_dict")),
+        ("static_python_fixed_profile", "FixedPythonInstallation", ("to_dict",)),
         ("rsi_store", "RSILedger", ("_select_python_producer_checkpoint_tx",
             "_validate_python_producer_staging_history_tx", "resolve_python_producer_checkpoint",
-            "_python_admission_state_tx", "append_brs_terminal_observation",
+            "_python_admission_state_tx", "_controller_checkpoint_history_tx",
+            "_controller_checkpoint_history_observation_tx", "append_brs_terminal_observation",
             "_append_controller_checkpoint_tx", "_append_transfer_checkpoint_tx", "_checkpoint_digest",
             "_create", "transition")),
     )
@@ -203,6 +292,14 @@ def _build_reserved_brs_policy():
             external_members.append((declaration, name, function))
     for module_name, names in (
         ("rsi_controller", ("_record_digest",)),
+        ("rsi_store", ("_admission_checkpoint_helpers_current", "_admission_checkpoint_projection")),
+        ("native_fixed_live_sink", ("_pin_fixed_python_live_sink_request",)),
+        ("static_python_fixed_profile", ("_reparse", "_parse_installation", "verify_fixed_python_image")),
+        ("static_python_fixed_live_modules", (
+            "_compose", "compare_fixed_python_bound_live_modules", "_compare_live_payload")),
+        ("native_trusted_scheduler", ("_run_native_trusted_producer",
+            "_prepare_native_trusted_python_producer", "run_native_trusted_producer",
+            "run_native_trusted_producer_outcome")),
         ("rsi_python_episode_inputs", ("_resolve_python_rsi_episode_input_context",
             "resolve_reserved_python_rsi_episode_input_context", "resolve_python_rsi_episode_input_context")),
         ("rsi_producer_gateway", ("resolve_reserved_python_producer_episode_gateway",)),
@@ -220,6 +317,7 @@ def _build_reserved_brs_policy():
     builtin_bindings = plain_tuple((name, builtin_namespace[name]) for name in builtin_names)
     runtime_edges = plain_tuple((module, namespace_of(module), name, namespace_of(module)[name])
         for module, names in (
+            (dataclasses, ("fields",)),
             (hashlib, ("sha256",)), (json, ("loads", "dumps")),
             (math, ("isfinite",)), (time, ("time", "monotonic")),
             (os, ("fstat", "lstat", "listdir", "stat", "open", "read", "close")),
@@ -293,11 +391,12 @@ def _build_reserved_brs_policy():
     helper_pins = plain_tuple((function, function.__code__, function.__globals__,
         function.__defaults__, function.__kwdefaults__, function.__closure__,
         plain_tuple(cell.cell_contents for cell in (function.__closure__ or ())))
-        for function in (fail, freeze))
+        for function in (fail, freeze, matches_frozen))
 
     def project():
-        for function, code, namespace, defaults, kwdefaults, closure, captures in helper_pins:
-            if (kind(function) is not function_type or function.__code__ is not code
+        for expected, pin in pairs((fail, freeze, matches_frozen), helper_pins, strict=True):
+            function, code, namespace, defaults, kwdefaults, closure, captures = pin
+            if (function is not expected or kind(function) is not function_type or function.__code__ is not code
                     or function.__globals__ is not namespace or function.__defaults__ is not defaults
                     or function.__kwdefaults__ is not kwdefaults or function.__closure__ is not closure):
                 raise error_type(fail_message)
@@ -343,7 +442,7 @@ def _build_reserved_brs_policy():
                 if namespace.get(name, missing) is not value:
                     fail()
             for name, value in containers:
-                if freeze(namespace[name]) != value:
+                if not matches_frozen(namespace[name], value):
                     fail()
         for declaration, name, original in external_members:
             namespace = namespace_of(declaration) if kind(declaration) is module_type else type_get(declaration, "__dict__")
@@ -358,7 +457,7 @@ def _build_reserved_brs_policy():
                 if members.get(name, missing) is not value:
                     fail()
             for name, value in containers:
-                if freeze(members[name]) != value:
+                if not matches_frozen(members[name], value):
                     fail()
         # Check each held domain once, while retaining the alias and complete
         # shadow vector separately for every globals namespace below. These
@@ -382,13 +481,15 @@ def _build_reserved_brs_policy():
                     or function.__globals__ is not namespace or function.__defaults__ is not defaults
                     or function.__kwdefaults__ is not kwdefaults or function.__closure__ is not closure):
                 fail()
-            if (freeze(function.__defaults__) != default_value or freeze(function.__kwdefaults__) != kw_value
-                    or freeze(function.__dict__) != attrs or freeze(function.__annotations__) != annotations):
+            if (not matches_frozen(function.__defaults__, default_value)
+                    or not matches_frozen(function.__kwdefaults__, kw_value)
+                    or not matches_frozen(function.__dict__, attrs)
+                    or not matches_frozen(function.__annotations__, annotations)):
                 fail()
             for name, value, container in globals_used:
                 if namespace.get(name, missing) is not value:
                     fail()
-                if container is not None and freeze(namespace[name]) != container:
+                if container is not None and not matches_frozen(namespace[name], container):
                     fail()
             for cell, value in pairs(closure or (), captures, strict=True):
                 try:

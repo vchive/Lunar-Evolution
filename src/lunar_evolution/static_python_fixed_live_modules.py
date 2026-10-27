@@ -19,6 +19,11 @@ from .static_python_runtime_startup import (
 
 FIXED_LIVE_MODULES_PROFILE = "fixed-live-modules-v1"
 FIXED_LIVE_PRIVATE_SINK_PROFILE = "fixed-live-modules-private-sink-v1"
+FIXED_LIVE_RUNTIME_SINK_PROFILE = "fixed-live-runtime-private-sink-v1"
+FIXED_LIVE_RUNTIME_PROFILE = "fixed-live-runtime-v1"
+FIXED_LIVE_RUNTIME_SCHEMA = "lunar-static-python-fixed-live-runtime-v1"
+FIXED_LIVE_RUNTIME_SOURCE_BYTES = 3776
+FIXED_LIVE_RUNTIME_SOURCE_SHA256 = "0fbe050a70987bf78fe61e2d8d3ebf67c3d830c5502916e1b8192cc055f01a9d"
 FIXED_LIVE_SINK_LAUNCHER_PATH = "runtime/launcher_live_sink.c"
 FIXED_LIVE_SINK_LAUNCHER_SOURCE_BYTES = 4552
 FIXED_LIVE_SINK_LAUNCHER_SOURCE_SHA256 = "b48a93c5f862cf9621f70ec124a012060ba8944c33ea5745be56829a51e0fb53"
@@ -59,11 +64,17 @@ def _sha(raw: bytes) -> str:
 
 def _compose(solver: str, frozen_names: tuple[str, ...], builtin_names: tuple[str, ...],
              aliases: tuple[tuple[str, str], ...], frozen_packages: tuple[str, ...],
-             collector_source: bytes) -> bytes:
+             collector_source: bytes, runtime_observation_source: bytes | None = None) -> bytes:
     if type(solver) is not str or solver not in {"openevolve", "shinka"}:
         _fail("profile")
     if (type(collector_source) is not bytes or len(collector_source) != FIXED_LIVE_COLLECTOR_SOURCE_BYTES
             or _sha(collector_source) != FIXED_LIVE_COLLECTOR_SOURCE_SHA256):
+        _fail("source")
+    if runtime_observation_source is not None and (
+        type(runtime_observation_source) is not bytes
+        or len(runtime_observation_source) != FIXED_LIVE_RUNTIME_SOURCE_BYTES
+        or _sha(runtime_observation_source) != FIXED_LIVE_RUNTIME_SOURCE_SHA256
+    ):
         _fail("source")
     for names, maximum in ((frozen_names, 256), (builtin_names, 128)):
         if type(names) is not tuple or not 0 < len(names) <= maximum:
@@ -103,16 +114,22 @@ def _compose(solver: str, frozen_names: tuple[str, ...], builtin_names: tuple[st
         f'_LUNAR_LIVE_COLLECTOR_SHA256 = {FIXED_LIVE_COLLECTOR_SOURCE_SHA256!r}\n'
         '\n'
     ).encode("ascii")
-    return prefix + collector_source
+    if runtime_observation_source is None:
+        return prefix + collector_source
+    return (prefix + collector_source
+            + f'\n_LUNAR_LIVE_RUNTIME_SHA256 = {FIXED_LIVE_RUNTIME_SOURCE_SHA256!r}\n\n'.encode("ascii")
+            + runtime_observation_source)
 
 
 def compose_fixed_python_live_main(
     solver: str, *, frozen_names: tuple[str, ...], builtin_names: tuple[str, ...],
     aliases: tuple[tuple[str, str], ...], frozen_packages: tuple[str, ...], collector_source: bytes,
+    runtime_observation_source: bytes | None = None,
 ) -> bytes:
     """Compose a separately selected frozen source; never import or execute it."""
     try:
-        return _compose(solver, frozen_names, builtin_names, aliases, frozen_packages, collector_source)
+        return _compose(solver, frozen_names, builtin_names, aliases, frozen_packages,
+                        collector_source, runtime_observation_source)
     except _Refusal as exc:
         reason = str(exc)
     except profile._Refusal:
@@ -139,7 +156,7 @@ class FixedPythonLiveModuleComparison:
 def _compare_live_payload(
     installation: profile.FixedPythonInstallation, raw: bytes, *, image: bytes,
     runtime_main_source: bytes, expected_installation_sha256: str,
-    expected_observation_sha256: str,
+    expected_observation_sha256: str, runtime_observation: bool = False,
 ) -> tuple[profile.FixedPythonInstallation, dict, tuple[str, ...]]:
     installed = profile._reparse(installation, expected_installation_sha256)
     profile.verify_fixed_python_image(installed, image, expected_installation_sha256=expected_installation_sha256)
@@ -151,20 +168,33 @@ def _compare_live_payload(
     if source != {"path": "runtime/frozen_main.py", "size": len(runtime_main_source),
                   "sha256": _sha(runtime_main_source)}:
         _fail("source")
+    if type(runtime_observation) is not bool:
+        _fail("profile")
+    collector_offset = FIXED_LIVE_COLLECTOR_SOURCE_BYTES
+    supplement = None
+    if runtime_observation:
+        supplement = runtime_main_source[-FIXED_LIVE_RUNTIME_SOURCE_BYTES:]
+        separator = f'\n_LUNAR_LIVE_RUNTIME_SHA256 = {FIXED_LIVE_RUNTIME_SOURCE_SHA256!r}\n\n'.encode("ascii")
+        collector_offset += len(separator) + FIXED_LIVE_RUNTIME_SOURCE_BYTES
     solver = installed.profile_version.removeprefix("fixed-").removesuffix("-v1")
     if runtime_main_source != _compose(
         solver, tuple(sorted(installed.frozen_names)), installed.builtin_names,
         installed.aliases,
         tuple(sorted(record["name"] for record in installed.to_dict()["frozen_modules"] if record["package"])),
-        runtime_main_source[-FIXED_LIVE_COLLECTOR_SOURCE_BYTES:],
+        runtime_main_source[-collector_offset:][:FIXED_LIVE_COLLECTOR_SOURCE_BYTES], supplement,
     ):
         _fail("source")
     if (type(raw) is not bytes or not 0 < len(raw) <= MAX_FIXED_LIVE_MODULES_BYTES
             or not raw.endswith(b"\n") or _sha(raw) != expected_observation_sha256):
         _fail("pin")
-    payload = profile._object(profile._json(raw[:-1], MAX_FIXED_LIVE_MODULES_BYTES), _FIELDS)
-    if (payload["schema"] != FIXED_LIVE_MODULES_SCHEMA
-            or payload["collector_profile"] != FIXED_LIVE_MODULES_PROFILE
+    fields = _FIELDS | {"runtime", "runtime_source_sha256"} if runtime_observation else _FIELDS
+    payload = profile._object(profile._json(raw[:-1], MAX_FIXED_LIVE_MODULES_BYTES), fields)
+    if runtime_observation and payload["runtime_source_sha256"] != FIXED_LIVE_RUNTIME_SOURCE_SHA256:
+        _fail("source")
+    schema = FIXED_LIVE_RUNTIME_SCHEMA if runtime_observation else FIXED_LIVE_MODULES_SCHEMA
+    collector_profile = FIXED_LIVE_RUNTIME_PROFILE if runtime_observation else FIXED_LIVE_MODULES_PROFILE
+    if (payload["schema"] != schema
+            or payload["collector_profile"] != collector_profile
             or payload["profile_version"] != installed.profile_version
             or payload["collector_source_sha256"] != FIXED_LIVE_COLLECTOR_SOURCE_SHA256
             or payload["phase"] != "explicit-in-image-call"):
@@ -305,7 +335,7 @@ def compare_fixed_python_bound_live_modules(
     installation: profile.FixedPythonInstallation, raw: bytes, *, image: bytes,
     runtime_main_source: bytes, expected_installation_sha256: str,
     expected_image_device: int, expected_image_inode: int, expected_target_pid: int,
-    expected_manifest_sha256: str,
+    expected_manifest_sha256: str, runtime_observation: bool = False,
 ) -> FixedPythonBoundLiveModules:
     """Compare an original native sink against its original sealed target/argv.
 
@@ -323,7 +353,7 @@ def compare_fixed_python_bound_live_modules(
         _installed, payload, names = _compare_live_payload(
             installation, raw, image=image, runtime_main_source=runtime_main_source,
             expected_installation_sha256=expected_installation_sha256,
-            expected_observation_sha256=observed_sha256,
+            expected_observation_sha256=observed_sha256, runtime_observation=runtime_observation,
         )
         if (payload["image"]["device"] != expected_image_device
                 or payload["image"]["inode"] != expected_image_inode

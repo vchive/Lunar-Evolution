@@ -17,6 +17,7 @@ from tools.static_python_rsi_fixture.dependency_capture import (
     MAX_DEPFILE_BYTES,
     CompilerDependencyError,
     _compilation,
+    _current_output_root,
     _roots,
     parse_compiler_depfile,
     prepare_cpython_dependency_recipe,
@@ -46,25 +47,50 @@ def _sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _explicit_support_link(command: dict) -> bool:
+    return command["argv"][:6] == [
+        "@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-static", "-nostdlib",
+    ]
+
+
 def _link(command: dict) -> tuple[str, list[str]] | None:
     argv = command["argv"]
     if argv[:2] != ["@toolchain/zig", "cc"] or "-c" in argv:
         return None
-    prefix = ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "--zig-lib-dir",
-              "@toolchain-dir/lib", "-static", "-o"]
-    if argv[:8] != prefix or argv.count("-o") != 1 or len(argv) < 13:
+    prefix = ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-static", "-o"]
+    explicit = _explicit_support_link(command)
+    if explicit:
+        prefix = prefix[:-1] + ["-nostdlib", "-o"]
+    if argv[:len(prefix)] != prefix or argv.count("-o") != 1 or len(argv) < len(prefix) + 5:
         _fail("link_shape")
-    target = argv[8]
+    target = argv[len(prefix)]
     if not target.startswith("@work/bin/lunar-"):
         _fail("link_target")
-    end = argv.index("-lm") if "-lm" in argv else -1
-    if end < 10 or argv[end:end + 3] != ["-lm", "-lpthread", "-lc"]:
-        _fail("link_shape")
-    inputs = argv[9:end]
-    if (len(inputs) != len(set(inputs))
+    if explicit:
+        head = ["@toolchain/lunar-support/crt1.o", "@toolchain/lunar-support/crti.o"]
+        tail = ["-Xlinker", "--start-group", "@toolchain/lunar-support/libc.a",
+                "@toolchain/lunar-support/libcompiler_rt.a", "-Xlinker", "--end-group",
+                "@toolchain/lunar-support/crtn.o"]
+        body = argv[len(prefix) + 1:]
+        suffix = ["-Xlinker", "--dependency-file", "-Xlinker",
+                  "@work/link-dependencies/" + target.removeprefix("@work/") + ".d"]
+        if body[-4:] == suffix:
+            body = body[:-4]
+        if body[:2] != head or body[-7:] != tail:
+            _fail("explicit_support_shape")
+        inputs = body[2:-7]
+    else:
+        end = argv.index("-lm") if "-lm" in argv else -1
+        if end < len(prefix) + 2 or argv[end:end + 3] != ["-lm", "-lpthread", "-lc"]:
+            _fail("link_shape")
+        inputs = argv[len(prefix) + 1:end]
+    if (not inputs or len(inputs) != len(set(inputs))
             or any(not path.startswith("@work/") or not path.endswith((".o", ".a"))
                    for path in inputs)):
         _fail("link_inputs")
+    if explicit:
+        inputs = [*head, *inputs, "@toolchain/lunar-support/libc.a",
+                  "@toolchain/lunar-support/libcompiler_rt.a", "@toolchain/lunar-support/crtn.o"]
     return target, inputs
 
 
@@ -92,9 +118,9 @@ def _capture_plan(recipe: dict, *, instrumented: bool) -> tuple[list[dict], list
             if instrumented:
                 if command["argv"][-4:] != suffix or expected not in command["outputs"]:
                     _fail("link_capture_missing")
-                tail = command["argv"][command["argv"].index("-lm") + 3:-4]
+                tail = [] if _explicit_support_link(command) else command["argv"][command["argv"].index("-lm") + 3:-4]
             else:
-                tail = command["argv"][command["argv"].index("-lm") + 3:]
+                tail = [] if _explicit_support_link(command) else command["argv"][command["argv"].index("-lm") + 3:]
             if tail:
                 _fail("link_shape")
             links.append({"stage": stage["stage"], "command_index": index, "target": target,
@@ -154,17 +180,26 @@ def validate_dependency_capture_plan(
     invalid = False
     try:
         manifest = json.loads(manifest_bytes)
+        explicit_schema = "lunar-cpython-explicit-support-link-recipe-v1"
+        explicit = type(manifest) is dict and manifest.get("schema") == explicit_schema
         expected_keys = {"schema", "recipe_sha256", "base_recipe_sha256", "base_manifest_sha256",
                          "compilations", "links", *_FALSE_CLAIMS}
+        if explicit:
+            expected_keys.add("support_bundle_sha256")
+        actual_modes = [_explicit_support_link(command) for stage in recipe["stages"]
+                        for command in stage["commands"] if _link(command) is not None]
         invalid = (type(manifest) is not dict or set(manifest) != expected_keys
-                   or canonical(manifest) != manifest_bytes or manifest["schema"] != _SCHEMA
+                   or canonical(manifest) != manifest_bytes
+                   or manifest["schema"] not in {_SCHEMA, explicit_schema}
+                   or actual_modes != [explicit, explicit]
                    or manifest["recipe_sha256"] != expected_recipe_sha256
                    or canonical(manifest["compilations"]) != canonical(compilations)
                    or canonical(manifest["links"]) != canonical(links)
                    or any(manifest[key] is not value for key, value in _FALSE_CLAIMS.items())
                    or any(type(manifest[key]) is not str or len(manifest[key]) != 64
                           or any(c not in "0123456789abcdef" for c in manifest[key])
-                          for key in ("base_recipe_sha256", "base_manifest_sha256")))
+                          for key in ("base_recipe_sha256", "base_manifest_sha256",
+                                      *(["support_bundle_sha256"] if explicit else []))))
     except (ValueError, TypeError, UnicodeError, RecursionError):
         invalid = True
     if invalid:
@@ -232,6 +267,7 @@ def compare_linker_dependencies(
     manifest_bytes: bytes, expected_manifest_sha256: str,
     output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
     dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
 ) -> LinkerDependencyComparison:
     """Compare retained linker reports; unresolved driver/cache inputs refuse."""
     recipe, _, depfiles = validate_dependency_capture_plan(
@@ -240,6 +276,7 @@ def compare_linker_dependencies(
     )
     outputs = _inventory(output_inventory_bytes, expected_output_inventory_sha256)
     roots = _roots(source_root, toolchain_root, work_root)
+    target_root = _current_output_root(current_output_root, roots)
     if (type(dependency_artifacts) is not dict or set(dependency_artifacts) != set(depfiles)
             or any(type(raw) is not bytes or not 0 < len(raw) <= MAX_DEPFILE_BYTES
                    for raw in dependency_artifacts.values())):
@@ -260,7 +297,7 @@ def compare_linker_dependencies(
                         or _sha(raw) != record["sha256"]):
                     _fail("artifact_pin")
                 actual_target, dependencies = parse_linker_depfile(raw)
-                if actual_target != roots["work"] + "/" + target.removeprefix("@work/"):
+                if actual_target != target_root + "/" + target.removeprefix("@work/"):
                     _fail("target")
                 refs = []
                 for path in dependencies:
@@ -279,6 +316,8 @@ def compare_linker_dependencies(
                     refs.append("@" + role + "/" + relative)
                 if not set(explicit).issubset(refs):
                     _fail("explicit_input_missing")
+                if _explicit_support_link(command) and set(explicit) != set(refs):
+                    _fail("explicit_support_input_set")
                 compared.append({"stage": stage["stage"], "command_index": index,
                                  "target": target, "depfile_sha256": _sha(raw),
                                  "dependencies": sorted(refs)})

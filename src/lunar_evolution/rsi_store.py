@@ -84,6 +84,60 @@ def _staging_identity_helpers_current() -> bool:
     return True
 
 
+def _admission_checkpoint_projection(value: Any) -> Any:
+    """Detach only the small historical fields consumed by admission checks."""
+    if type(value) is dict:
+        return {key: _admission_checkpoint_projection(item) for key, item in value.items()}
+    if type(value) is list:
+        return [_admission_checkpoint_projection(item) for item in value]
+    if value is None or type(value) in (str, int, float, bool):
+        return value
+    raise ValueError("admission checkpoint projection is not plain JSON")
+
+
+def _admission_checkpoint_helpers_current(ledger: object) -> bool:
+    """A replaced decoder/digest/history seam keeps the original parse path."""
+    if (type(ledger) is not RSILedger or json.loads is not _RECORD_JSON_LOADS
+            or json.loads.__code__ is not _RECORD_JSON_LOADS_CODE
+            or canonical_json is not _RECORD_CANONICAL_JSON
+            or hashlib.sha256 is not _ADMISSION_CHECKPOINT_SHA256
+            or json.JSONEncoder is not _ADMISSION_CHECKPOINT_ENCODER_TYPE
+            or json.encoder is not _ADMISSION_CHECKPOINT_ENCODER_MODULE):
+        return False
+    for name, original, code, defaults, kwdefaults, kwitems in _ADMISSION_CHECKPOINT_METHOD_PINS:
+        method = getattr(ledger, name)
+        function = getattr(method, "__func__", method)
+        if (function is not original or function.__code__ is not code
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or (kwdefaults is not None and (
+                    len(kwdefaults) != len(kwitems)
+                    or any(key not in kwdefaults or kwdefaults[key] is not value for key, value in kwitems)))):
+            return False
+    if (_admission_checkpoint_projection is not _ADMISSION_CHECKPOINT_PROJECTION
+            or _admission_checkpoint_projection.__code__ is not _ADMISSION_CHECKPOINT_PROJECTION_CODE):
+        return False
+    decoder = json._default_decoder
+    if decoder is not _RECORD_JSON_DECODER or type(decoder) is not _RECORD_JSON_DECODER_TYPE:
+        return False
+    namespace = object.__getattribute__(decoder, "__dict__")
+    if ("decode" in namespace or "raw_decode" in namespace
+            or namespace.get("scan_once") is not _RECORD_JSON_SCAN_ONCE):
+        return False
+    functions = (json.loads, canonical_json, canonical_json.__globals__.get("_json_bytes"), json.dumps,
+                 type(decoder).decode, type(decoder).raw_decode, json.JSONEncoder.__init__,
+                 json.JSONEncoder.encode, json.JSONEncoder.iterencode, json.encoder._make_iterencode)
+    for function, (original, code, defaults, kwdefaults, kwitems) in zip(
+            functions, _ADMISSION_CHECKPOINT_FUNCTION_PINS, strict=True):
+        if (function is not original or function.__code__ is not code
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or (kwdefaults is not None and (
+                    len(kwdefaults) != len(kwitems)
+                    or any(key not in kwdefaults or kwdefaults[key] is not value for key, value in kwitems)))):
+            return False
+    return all(getattr(json.encoder, name, None) is original
+               for name, original in _ADMISSION_CHECKPOINT_ENCODER_PINS)
+
+
 _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
     "created": frozenset({"created", "running", "cancelled", "failed", "unknown", "budget_exhausted"}),
     "running": frozenset({"running", "paused", "completed", "failed", "cancelled", "unknown", "budget_exhausted"}),
@@ -566,6 +620,12 @@ class RSILedger:
     def _controller_checkpoint_history_tx(
         self, connection: sqlite3.Connection, run_id: str,
     ) -> list[tuple[str, dict[str, Any]]]:
+        return self._controller_checkpoint_history_observation_tx(connection, run_id)[1]
+
+    def _controller_checkpoint_history_observation_tx(
+        self, connection: sqlite3.Connection, run_id: str,
+    ) -> tuple[tuple[tuple[Any, ...], ...], list[tuple[str, dict[str, Any]]]]:
+        """Validate one fresh history and retain its exact four-column input."""
         rows = connection.execute(
             "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
             "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (run_id,),
@@ -601,7 +661,8 @@ class RSILedger:
         self._checkpoint_reference_rows_tx(
             connection, run_id, references, parsed_contexts=parsed_contexts,
         )
-        return history
+        return tuple(tuple(row[name] for name in (
+            "revision", "parent_sha256", "payload", "checkpoint_sha256")) for row in rows), history
 
     @staticmethod
     def _checkpoint_binding(value: object, *, code: str):
@@ -1949,7 +2010,29 @@ class RSILedger:
             raise RSILearningError("rsi_python_admission_original_proof_drift")
         if expected_run_record_sha256 is not None and current.record_sha256 != expected_run_record_sha256:
             raise RSILearningError("rsi_python_admission_run_conflict")
-        staging_history = self._controller_checkpoint_history_tx(connection, admission.run_id)
+        history_input = None
+        history_projection = None
+        if _admission_checkpoint_helpers_current(self):
+            history_input, staging_history = self._controller_checkpoint_history_observation_tx(
+                connection, admission.run_id,
+            )
+            # Do not duplicate the large lineage, admission plans or staging trees
+            # in every historical state. Only these fields enter the later loop.
+            # The complete latest state is freshly decoded below for attribution.
+            keys = ("budget_state", "producer_checkpoint_binding", "run_id",
+                    "root_snapshot", "memory_snapshot", "generations")
+            try:
+                history_projection = tuple((digest, _admission_checkpoint_projection(
+                    {key: body[key] for key in keys if key in body},
+                )) for digest, body in staging_history)
+            except (TypeError, ValueError, RecursionError):
+                # A projection is optional pure work, not an earlier refusal
+                # boundary for a deeply nested or otherwise unusual JSON graph.
+                # Preserve this fresh validated history and the old second pass.
+                history_input = None
+                history_projection = None
+        else:
+            staging_history = self._controller_checkpoint_history_tx(connection, admission.run_id)
         from .rsi_brs_serial_driver import reserved_brs_staging_mode
 
         original_serial = reserved_brs_staging_mode(original.payload)
@@ -1976,17 +2059,33 @@ class RSILedger:
         ).fetchall()
         if not checkpoint_rows:
             raise RSILearningError("rsi_python_admission_checkpoint_missing")
+        # This is still the original second fresh SQL read. Reuse only pure
+        # decoded projections and calculated digests tied to its complete input;
+        # changed rows or executable helpers take the unchanged full parse path.
+        try:
+            reuse_history = (history_input is not None and history_projection is not None
+                and _admission_checkpoint_helpers_current(self)
+                and tuple(tuple(row[name] for name in (
+                    "revision", "parent_sha256", "payload", "checkpoint_sha256"))
+                    for row in checkpoint_rows) == history_input)
+        except (KeyError, IndexError, TypeError):
+            # A malformed second row must retain the original per-row refusal
+            # and error wrapping below; raw observation is only an optimization.
+            reuse_history = False
         parent = None
         state: dict[str, Any] = {}
         snapshots = [run.payload.get("memory_snapshot") for run in runs]
         for ordinal, row in enumerate(checkpoint_rows):
             try:
-                state = json.loads(row["payload"])
-                if type(state) is not dict:
-                    raise ValueError("checkpoint is not an object")
-                digest = self._checkpoint_digest_cached(
-                    admission.run_id, ordinal, parent, state, persisted_payload=row["payload"],
-                )
+                if reuse_history:
+                    digest, state = history_projection[ordinal]
+                else:
+                    state = json.loads(row["payload"])
+                    if type(state) is not dict:
+                        raise ValueError("checkpoint is not an object")
+                    digest = self._checkpoint_digest_cached(
+                        admission.run_id, ordinal, parent, state, persisted_payload=row["payload"],
+                    )
                 budget = RSIRunBudget.load(state["budget_state"])
                 budget.assert_matches(original.payload["budget"])
                 if canonical_json(budget.to_dict()["planned"]) != canonical_json(planned_budget):
@@ -2007,6 +2106,17 @@ class RSILedger:
                 if type(generation) is not dict:
                     raise RSILearningError("rsi_python_admission_checkpoint_drift")
                 snapshots.extend((generation.get("parent_memory"), generation.get("candidate_memory")))
+        if reuse_history:
+            # Keep the returned/full attribution state independent of both the
+            # staging validator's mutable history and the private projections.
+            try:
+                if not _admission_checkpoint_helpers_current(self):
+                    raise ValueError("admission checkpoint decoder changed")
+                state = json.loads(checkpoint_rows[-1]["payload"])
+                if type(state) is not dict or not _admission_checkpoint_helpers_current(self):
+                    raise ValueError("admission checkpoint decoder changed")
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise RSILearningError("rsi_python_admission_checkpoint_drift") from exc
         if expected_checkpoint_sha256 is not None and parent != expected_checkpoint_sha256:
             raise RSILearningError("rsi_python_admission_checkpoint_conflict")
         selected_proof = self._select_python_producer_checkpoint_tx(
@@ -3343,6 +3453,34 @@ _RECORD_DIGEST_FUNCTION_PINS = tuple(
         _RECORD_JSON_DECODER_TYPE.decode, _RECORD_JSON_DECODER_TYPE.raw_decode,
     )
 )
+
+
+# Admission reuse exists only within one _python_admission_state_tx call. These
+# pins preserve callback/monkeypatch behavior by selecting the old parse path.
+_ADMISSION_CHECKPOINT_METHOD_PINS = tuple(
+    (name, function, function.__code__, function.__defaults__, function.__kwdefaults__,
+     tuple((function.__kwdefaults__ or {}).items()))
+    for name in ("_controller_checkpoint_history_tx", "_controller_checkpoint_history_observation_tx",
+                 "_checkpoint_digest_cached", "_checkpoint_digest")
+    for descriptor in (vars(RSILedger)[name],)
+    for function in (descriptor.__func__ if type(descriptor) is staticmethod else descriptor,)
+)
+_ADMISSION_CHECKPOINT_PROJECTION = _admission_checkpoint_projection
+_ADMISSION_CHECKPOINT_PROJECTION_CODE = _ADMISSION_CHECKPOINT_PROJECTION.__code__
+_ADMISSION_CHECKPOINT_SHA256 = hashlib.sha256
+_ADMISSION_CHECKPOINT_ENCODER_TYPE = json.JSONEncoder
+_ADMISSION_CHECKPOINT_ENCODER_MODULE = json.encoder
+_ADMISSION_CHECKPOINT_FUNCTION_PINS = tuple(
+    (function, function.__code__, function.__defaults__, function.__kwdefaults__,
+     tuple((function.__kwdefaults__ or {}).items()))
+    for function in (json.loads, canonical_json, canonical_json.__globals__["_json_bytes"], json.dumps,
+                     _RECORD_JSON_DECODER_TYPE.decode, _RECORD_JSON_DECODER_TYPE.raw_decode,
+                     json.JSONEncoder.__init__, json.JSONEncoder.encode, json.JSONEncoder.iterencode,
+                     json.encoder._make_iterencode)
+)
+_ADMISSION_CHECKPOINT_ENCODER_PINS = tuple(
+    (name, getattr(json.encoder, name)) for name in (
+        "c_make_encoder", "encode_basestring", "encode_basestring_ascii"))
 
 
 __all__ = [

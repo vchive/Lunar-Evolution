@@ -28,7 +28,11 @@ from .producer_bundle_lineage_v2 import (
     ProducerLineageBeforeIntentV2,
     read_lineage_v2_descriptor_pinned,
 )
-from .rsi_brs_lineage_prefix import BRSLineagePrefix, validate_brs_reserved_prefix
+from .rsi_brs_lineage_prefix import (
+    BRSLineagePrefix,
+    _validate_brs_reserved_prefixes,
+    validate_brs_reserved_prefix,
+)
 from .rsi_brs_reserved_ledger import read_reserved_brs_completion_ledger
 from .rsi_gateway import SolverRequest
 from .rsi_learning import MemorySnapshot, RSILearningError
@@ -399,8 +403,7 @@ def reserved_history(owner, state=None):
         _fail("prefix_observation_drift")
     domain = strict_json(observed.domain_bytes, maximum=112 * 1024)
     domain["episode_ids"], domain["request_sha256s"] = tuple(domain["episode_ids"]), tuple(domain["request_sha256s"])
-    prefixes = [validate_brs_reserved_prefix(**domain, batches=batches[:ordinal])
-                for ordinal in range(owner._ordinal + 1)]
+    prefixes = _validate_brs_reserved_prefixes(**domain, batches=batches)
     previous, prior_settled = None, None
     for _head, snapshot in history:
         wire = snapshot.get(_FIELD)

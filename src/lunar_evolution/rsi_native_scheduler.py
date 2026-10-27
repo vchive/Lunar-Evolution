@@ -15,6 +15,7 @@ import stat
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -29,6 +30,12 @@ from .automatic_solve_lifecycle import (
 from .bundle_evolution import derive_native_draft_run_id
 from .candidate_evaluation_spec import canonical_json
 from .native_bootstrap import NativeBootstrapArtifact
+from .native_fixed_live_sink import (
+    FixedPythonLiveSinkRequest,
+    NativeFixedLiveSinkError,
+    _FixedPythonLiveSinkPin,
+    _pin_fixed_python_live_sink_request,
+)
 from .native_trusted_failure import NativeTrustedProducerFailure, recover_native_trusted_failure
 from .native_trusted_output import NativeTrustedOutputPreparation
 from .native_trusted_scheduler import (
@@ -178,6 +185,8 @@ class NativeRSISchedulerContext:
     python_handoff_after_execution: Callable[
         [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
     ] | None = None
+    live_modules_sink: FixedPythonLiveSinkRequest | None = None
+    _live_modules_sink_pin: _FixedPythonLiveSinkPin | None = dataclass_field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.python_handoff_after_execution is not None and (
@@ -219,6 +228,44 @@ class NativeRSISchedulerContext:
             _fail("cancellation_invalid")
         if self.failure_ledger is not None and not isinstance(self.failure_ledger, RSILedger):
             _fail("failure_ledger_invalid")
+        # A repeated validation must never refresh the original request pin.
+        if hasattr(self, "_live_modules_sink_pin"):
+            NativeRSISchedulerContext._assert_live_modules_sink(self)
+        else:
+            try:
+                pin = (None if self.live_modules_sink is None else _pin_fixed_python_live_sink_request(
+                    self.live_modules_sink, target_sha256=self.intent.executable_sha256,
+                ))
+            except NativeFixedLiveSinkError as exc:
+                raise NativeRSISchedulerProviderError("rsi_native_scheduler_live_modules_sink_invalid") from exc
+            object.__setattr__(self, "_live_modules_sink_pin", pin)
+
+    def _assert_live_modules_sink(self) -> FixedPythonLiveSinkRequest | None:
+        pin = self._live_modules_sink_pin
+        if pin is None:
+            if self.live_modules_sink is not None:
+                _fail("live_modules_sink_changed")
+        else:
+            try:
+                _FixedPythonLiveSinkPin.assert_current(
+                    pin, self.live_modules_sink, target_sha256=self.intent.executable_sha256,
+                )
+            except (NativeFixedLiveSinkError, AttributeError, TypeError, ValueError) as exc:
+                raise NativeRSISchedulerProviderError("rsi_native_scheduler_live_modules_sink_changed") from exc
+        return self.live_modules_sink
+
+    def _live_modules_sink_projection(self) -> dict[str, Any] | None:
+        if NativeRSISchedulerContext._assert_live_modules_sink(self) is None:
+            return None
+        projection = _FixedPythonLiveSinkPin.to_dict(self._live_modules_sink_pin)
+        projection["code_dependencies"] = {
+            "request": component_fingerprint(FixedPythonLiveSinkRequest),
+            "pin": component_fingerprint(_FixedPythonLiveSinkPin),
+            "pin_request": component_fingerprint(_pin_fixed_python_live_sink_request),
+            "assert_context": component_fingerprint(NativeRSISchedulerContext._assert_live_modules_sink),
+            "context_projection": component_fingerprint(NativeRSISchedulerContext._live_modules_sink_projection),
+        }
+        return projection
 
 
 def _assert_plan_binding(
@@ -1095,6 +1142,7 @@ class NativeRSISchedulerProvider:
 
     def _inputs(self, *, require_unexpired: bool) -> NativeRSIInputDescriptor:
         context = self.context
+        NativeRSISchedulerContext._assert_live_modules_sink(context)
         try:
             inputs = validate_native_rsi_launch_inputs(
                 context.workspace, intent=context.intent, attestation=context.attestation,
@@ -1635,6 +1683,7 @@ class NativeRSISchedulerProvider:
         cannot silently switch publication or request destinations.
         """
         context = self.context
+        sink_projection = NativeRSISchedulerContext._live_modules_sink_projection(context)
         strategy_fingerprint = _strategy_fingerprint(context.strategy)
         try:
             broker_headers_sha256 = hashlib.sha256(
@@ -1669,6 +1718,8 @@ class NativeRSISchedulerProvider:
             },
             "cancelled_sha256": None if context.cancelled is None else component_fingerprint(context.cancelled),
         }
+        if sink_projection is not None:
+            projection["live_modules_sink"] = sink_projection
         if context.failure_ledger is not None:
             self.assert_failure_ledger(context.failure_ledger)
             projection["failure_ledger"] = dict(self._failure_ledger_identity)
@@ -1749,6 +1800,8 @@ class NativeRSISchedulerProvider:
                 parent_deadline=parent_deadline,
                 execution_control=context.execution_control,
                 cancelled=context.cancelled,
+                **({"live_modules_sink": NativeRSISchedulerContext._assert_live_modules_sink(context)}
+                   if getattr(context, "live_modules_sink", None) is not None else {}),
                 **python_join,
             )
         except NativeRSISchedulerProviderError:

@@ -150,8 +150,31 @@ def test_v3_command_bound_accommodates_real_freezer_graph(v2_fixture):
         checked(payload, version3=False)
 
 
-def test_no_new_caller_selected_zig_or_model_environment(v2_fixture):
+@pytest.mark.parametrize("key", ["ZIG_GLOBAL_CACHE_DIR", "ZIG_LOCAL_CACHE_DIR", "ZIG_LIB_DIR"])
+def test_no_new_caller_selected_zig_or_model_environment(v2_fixture, key):
     payload = v3_payload(v2_fixture)
-    payload["environment"]["ZIG_GLOBAL_CACHE_DIR"] = "/ambient/cache"
+    payload["environment"][key] = "/ambient/cache"
     with pytest.raises(BuildExecutionError, match="environment_invalid"):
         checked(payload)
+
+
+def test_original_v3_dispatch_owns_resource_root_and_ignores_ambient_override(v2_fixture, monkeypatch):
+    from tools.static_python_rsi_fixture import execution_backend
+
+    prep, source, tools, workspace, _ = v2_fixture
+    monkeypatch.setenv("ZIG_LIB_DIR", "/ambient/unapproved-resource-root")
+    original = execution_backend._command
+    dispatched = []
+
+    def observe(argv, **kwargs):
+        dispatched.append(dict(kwargs["environment"]))
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(execution_backend, "_command", observe)
+    raw = canonical(v3_payload(v2_fixture))
+    report = run_pinned_build_v3(
+        prep, recipe_bytes=raw, expected_recipe_sha256=hashlib.sha256(raw).hexdigest(),
+        source_root=source, toolchain_root=tools, workspace=workspace, deadline=time.monotonic() + 10,
+    )
+    assert report.status == "complete" and dispatched
+    assert all(row["ZIG_LIB_DIR"] == str(workspace / "toolchain/lib") for row in dispatched)

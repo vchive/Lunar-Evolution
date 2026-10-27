@@ -164,13 +164,12 @@ def test_reviewed_sqlite_and_hash_module_defines_remain_valid(build):
     assert result.driver_inputs_verified is result.implicit_link_inputs_verified is False
 
 
-@pytest.mark.parametrize("option", ["-target", "--zig-lib-dir"])
-def test_required_compiler_target_and_resource_directory_cannot_be_implicit(build, monkeypatch, option):
+def test_required_compiler_target_cannot_be_implicit(build, monkeypatch):
     preparation, options = build()
 
     def mutate(wire):
         argv = wire["stages"][0]["commands"][0]["argv"]
-        index = argv.index(option)
+        index = argv.index("-target")
         del argv[index:index + 2]
 
     _change(options, mutate)
@@ -252,5 +251,27 @@ def test_generated_freezer_cannot_gain_extra_argv_routes(build, monkeypatch):
     _change(options, mutate)
     _forbid_runner(monkeypatch)
     with pytest.raises(BuildCommandInputError, match="freezer"):
+        consumer.run_dependency_checked_build(preparation, **options)
+    assert not options["workspace"].exists()
+
+
+def test_pinned_resource_directory_required_without_an_unsupported_compiler_option(build, monkeypatch):
+    preparation, options = build()
+    _change(options, lambda wire: wire["inputs"]["toolchain"].__setitem__(
+        slice(None), [row for row in wire["inputs"]["toolchain"] if not row["path"].startswith("lib/")],
+    ))
+    _forbid_runner(monkeypatch)
+    with pytest.raises(BuildCommandInputError, match="prior_input"):
+        consumer.run_dependency_checked_build(preparation, **options)
+    assert not options["workspace"].exists()
+
+
+def test_rejected_real_driver_option_is_refused_before_dispatch(build, monkeypatch):
+    preparation, options = build()
+    _change(options, lambda wire: wire["stages"][0]["commands"][0]["argv"].__setitem__(
+        slice(2, 2), ["--zig-lib-dir", "@toolchain-dir/lib"],
+    ))
+    _forbid_runner(monkeypatch)
+    with pytest.raises(BuildCommandInputError, match="compile_option"):
         consumer.run_dependency_checked_build(preparation, **options)
     assert not options["workspace"].exists()

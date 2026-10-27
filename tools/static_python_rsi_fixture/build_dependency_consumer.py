@@ -116,7 +116,8 @@ def _read_pin(root: Path, record: dict, checkpoint: Callable[[], None], *, retai
         os.close(fd)
 
 
-def _report_outputs(report: BuildExecutionReport, recipe: dict) -> tuple[bytes, list[dict]]:
+def _report_outputs(report: BuildExecutionReport, recipe: dict,
+                    custody_backend: str | None = None) -> tuple[bytes, list[dict]]:
     if (type(report) is not BuildExecutionReport or report.status != "complete"
             or report.reason is not None or report.completed_stages != ("configure", "freeze", "compile", "link")
             or report.recipe_sha256 != hashlib.sha256(canonical(recipe)).hexdigest()
@@ -138,6 +139,14 @@ def _report_outputs(report: BuildExecutionReport, recipe: dict) -> tuple[bytes, 
                     or command.get("returncode") != 0 or command.get("direct_child_reaped") is not True
                     or len(command.get("outputs", [])) != len(expected["outputs"])):
                 raise BuildDependencyError("execution_report")
+            if custody_backend is not None:
+                from tools.static_python_rsi_fixture.podman_custody import (
+                    validate_custody_observation,
+                )
+                validate_custody_observation(command, expected, planned["stage"], index,
+                                             report.recipe_sha256, recipe["environment"], custody_backend)
+            elif "custody" in command:
+                raise BuildDependencyError("unexpected_custody")
             for record, declared in zip(command["outputs"], expected["outputs"], strict=True):
                 if (set(record) != {"path", "size", "sha256", "executable"}
                         or record["path"] != declared["path"] or type(record["size"]) is not int
@@ -195,6 +204,7 @@ def run_dependency_checked_build(
     source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
     interrupted: Callable[[], bool] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str | None = None,
 ) -> DependencyCheckedBuild:
     """Execute once and consume actual outputs under the original absolute budget.
 
@@ -209,6 +219,9 @@ def run_dependency_checked_build(
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
     )
     validate_dependency_command_graph(recipe)
+    if custody_backend is not None and (type(custody_backend) is not str
+            or custody_backend not in {"podman", "podman-snapshots-v1"}):
+        raise BuildDependencyError("custody_backend")
     if (not _finite(deadline) or deadline <= 0
             or not callable(monotonic) or (interrupted is not None and not callable(interrupted))):
         raise BuildDependencyError("control")
@@ -236,9 +249,10 @@ def run_dependency_checked_build(
             preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
             deadline=deadline, interrupted=interrupted, monotonic=monotonic,
+            **({} if custody_backend is None else {"custody_backend": custody_backend}),
         )
         checkpoint()
-        report_bytes, outputs = _report_outputs(report, recipe)
+        report_bytes, outputs = _report_outputs(report, recipe, custody_backend)
         workspace = workspace.absolute()
         report_pin = {"path": "report.json", "size": len(report_bytes),
                       "sha256": hashlib.sha256(report_bytes).hexdigest(), "executable": False}
@@ -263,6 +277,15 @@ def run_dependency_checked_build(
         inventory = canonical(outputs)
         inventory_sha = hashlib.sha256(inventory).hexdigest()
         roots = {role + "_root": str(path) for role, path in locations.items()}
+        if custody_backend is not None:
+            from tools.static_python_rsi_fixture.podman_custody import (
+                GUEST_CURRENT_ROOT,
+                GUEST_PRIOR_ROOT,
+                GUEST_SOURCE_ROOT,
+                GUEST_TOOLCHAIN_ROOT,
+            )
+            roots = {"source_root": GUEST_SOURCE_ROOT, "toolchain_root": GUEST_TOOLCHAIN_ROOT,
+                     "work_root": GUEST_PRIOR_ROOT, "current_output_root": GUEST_CURRENT_ROOT}
         compiler = compare_compiler_dependencies(
             recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             output_inventory_bytes=inventory, expected_output_inventory_sha256=inventory_sha,

@@ -447,7 +447,8 @@ def _rejection_final_readback(self, head: str, expected: dict[str, Any], payload
     for instance, expected_type, names in (
         (self._ledger, RSILedger, (
             "read_only_observations", "controller_checkpoint", "controller_checkpoint_history", "_connect",
-            "_controller_checkpoint_history_tx", "_checkpoint_python_references", "_checkpoint_digest",
+            "_controller_checkpoint_history_tx", "_controller_checkpoint_history_observation_tx",
+            "_checkpoint_python_references", "_checkpoint_digest",
             "_checkpoint_reference_rows_tx", "_python_admission_row", "controller_lock_held", "_assert_controller_lock",
         )),
         (self._controller, RSILearningController, (
