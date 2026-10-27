@@ -1,6 +1,35 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 最新验收：298 联合通过，Linux mixed 仍超时
+
+- 精确 `298fe05aee62da0af1c7d92b2341c091150ef8f6` 的67文件联合通过2,610个
+  唯一测试，零fail/error/skip、rawrc0、103.655210秒；旧2,245项全部保留。
+  2,384源文件前后与Git/archive的bytes/size/exec bit相同，collection/JUnit覆盖
+  经24项独审。原XML SHA为
+  `65d45068d6291293d15ead82a1e109d1f649ac0055ef36884cab41dfda15db56`；
+  主区ignored材料`release-closeout-20261025/path-scheduler-final-union-6kfca_fe/`，
+  独审`path-scheduler-union-independent-zgoverzb/review.json`的SHA为
+  `a3588b80af41dcb401ba51426981af987ebe1966fd543229b1c1766058549366`。
+- 同一head唯一5090gpu mixed仍失败：600秒outer control终止，rawrc=-15、
+  timed_out=true、600.015935秒，stdout/stderr各0字节，无JUnit或execution
+  origins；217条preflight记录不能替代终态来源。完整2,675entries/2,384文件
+  前后相同，25项保全核验及独审通过只证明失败材料一致。0retry，不放宽预算。
+- 本次known-Popen-PID诊断保留120个身份一致样本；同一采样窗594.998627秒内
+  thread-group CPU增加596.79秒，leader runtime511.773793秒、runqueue0.112289秒。
+  观察器线程CPU总0.055160秒，不代表全部干扰。最后样本约595秒，没有终止时
+  计数或整个进程组退出证明；不能从leader指标归因整个worker树。它支持继续检查
+  计算成本，不确定具体热点。最终失败及边界见
+  [298验收记录](specs/191-python-worker-adapter/path-scheduler-acceptance-20261027.md)。
+- 原未压缩传输在prepare/driver前超时，已知远端目录为空、case启动0次；后继仅用
+  gzip传输相同源/六个runner字节并启动上述唯一case。两个目录和原传输错误均保留，
+  不把传输超时计为case失败或case重试。
+- 精确head的[CI40441736505](https://github.com/vchive/Lunar-Evolution/actions/runs/40441736505)
+  仍在运行。不要为文档push取消矩阵；终态collector v2已准备并经独审，尚未执行。
+  当前仍不可合main或关闭PR188；后继文档不得冒称受测298源码。
+
 ## 当前开发：路径扫描与调度输入标量校验
+
+本节保留候选开发阶段；union、runner和Linux的最终状态以上方“298最新验收”为准。
 
 - 新产品候选只改两个纯计算热点：runtime path 直接检查规范组件，避免拆分/重建；
   scheduler shape 在原 live loop 内校验 exact scalar，容器/DTO/foreign 继续递归。

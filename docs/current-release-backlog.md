@@ -1,5 +1,14 @@
 ## 2026-10-27 当前状态与剩余优先级
 
+最新精确`298fe05a`的67文件联合已通过2,610项，零fail/error/skip、rawrc0；完整
+2,384源文件前后与Git/archive一致，精确覆盖经独审。其唯一5090gpu mixed仍在原
+600秒outer control超时（600.015935秒、rawrc=-15），无JUnit/执行origins。known-PID
+120样本在594.998627秒内累计thread-group CPU596.79秒，leader runqueue0.112289秒；
+这支持检查计算成本，尚未定位具体函数，且最后约5秒/整个进程组退出未被证明。
+25项保全核验和独审不改变case失败。[CI40441736505](https://github.com/vchive/Lunar-Evolution/actions/runs/40441736505)
+仍在运行；当前不可合main。详见[验收记录](../specs/191-python-worker-adapter/path-scheduler-acceptance-20261027.md)。
+下方候选阶段“union待执行”是历史状态，已由本段结果取代；失败source不重跑争取通过。
+
 当前必须完成的顺序仍是：**P0 mixed瓶颈修复→新source的Linux回归与完整CI→合main**。
 P1的静态runtime custody/build、完整依赖及真实solver/生产CLI未验收；隔离权限阻塞
 部分按用户选择保留。P2的多机ownership/认证等不混入本轮必交项。
