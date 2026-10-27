@@ -1,5 +1,31 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 最新验收：4e Linux mixed 仍超时，避免启动已知失败的完整 CI
+
+- 精确 `4e1847dda1bb0a1fc3d37037b23b6be2863a61fb` 的唯一 5090gpu mixed
+  在原 600 秒预算下失败：600.016232 秒、rawrc=-15、timed_out=true，
+  stdout/stderr 为空，无 JUnit 或执行终态 origins。2,682 entries / 2,391
+  源文件前后相同。SSH/收证 rc0 不代表 case 通过，旧失败不重跑。
+- 材料保留于主区 ignored `release-closeout-20261025/brs-mixed-4e1847dd-transfer300-ifiyjjwh/`；
+  原 120 秒上传失败发生于准备/driver 前，case 启动 0 次；300 秒传输后继只改变
+  上传截止，源码、六个 runner、用例 600 秒预算及零 retry 不变。备用 delta 未启用。
+- 独审核实 25 份收证和六个 runner；`independent-local-review.json` SHA 为
+  `3a596c866ea36dca8e093d541b46d0aedfcf76f217a70bd133e607fda5205f56`。
+  同一已知 PID 的 120 样本窗口 594.997957 秒内 thread-group CPU 增 594.34 秒；
+  仍只支持检查计算成本，不证明具体函数、全部后代或最后约五秒的退出状态。
+- 该 head 的 CI 去重复 / tree 计算切片本地 270 个不同 focused 已通过，但本次
+  Linux 失败保持，故不为已知失败的 4e 启动完整 CI。旧 298 CI 自然运行，已确认
+  3.12 current-3 的同一 mixed 在约 603 秒触发 600 秒预算。旧 CI 已自然终态
+  32 success / 1 failure，原始终态材料正在收集，不把收证成功当 CI 成功。
+- 并行完成 runtime root overlap 与 file basename 两个纯计算切口，保留全部
+  fresh 校验、输入回调与原拒绝顺序。实际旧 AST 的 4,644 差分零不一致，独审通过；
+  一次七文件 focused 为 572 passed / 79 skipped / 零失败错误，原 pytest rc0，
+  新 85 项全过。79 skip 全是原 macOS 不支持 Linux memfd seals；临时 wrapper
+  误加 zero-skip 门而 rc1，保留该结果、不重跑。Ruff/compileall/diff 通过。
+  详见 [窄规格](specs/191-python-worker-adapter/runtime-root-basename-scans.md)。
+- 不重复旧 67 文件联合；最终新 source 仍须自身 Linux / 完整 CI 后才能合 main。
+  P1 隔离环境及真实 solver / 生产 CLI 阻塞继续保留，P2 后置。
+
 ## 当前后继：CI 去重复与 runtime-tree 路径计算
 
 - 按用户最新要求减少重复回归，Feature194 续篇保留三版共30个完整执行job，

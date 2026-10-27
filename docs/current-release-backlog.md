@@ -1,5 +1,16 @@
 ## 2026-10-27 当前状态与剩余优先级
 
+最新精确 `4e1847dd` 的唯一 5090gpu mixed 仍在原 600 秒预算超时
+（600.016232 秒，rawrc=-15，无 JUnit / 执行终态 origins）；2,682 entries /
+2,391 源文件前后一致。原失败不重跑，不为这份已知失败源码启动完整 CI。
+旧 298 CI 自然终态 32 success / 1 failure，同一 mixed 约 603 秒预算失败，终态收证中。
+已并行完成 [runtime root overlap / basename](../specs/191-python-worker-adapter/runtime-root-basename-scans.md)
+两处纯计算：4,644 差分一致、独审通过；一次相关 focused 的原 pytest rc0，
+572 passed / 79 原 macOS memfd 平台 skips，新 85 项全过。临时 wrapper 错加零 skip
+门而 rc1，原结果保留、不重跑。Ruff/compileall/diff 通过，不重复旧大联合。
+新 source 的 Linux / 完整 CI 通过之前仍不能合 main。
+P1 隔离权限及真实 solver / 生产 CLI 继续开放，P2 后置。
+
 本轮后继已实现两项：[CI去重复汇总](../specs/194-parallel-release-ci/focused-aggregation.md)
 保留三版完整执行和78组原门槛，新增58项synthetic通过；
 [runtime-tree规范路径计算](../specs/191-python-worker-adapter/tree-canonical-component-scans.md)

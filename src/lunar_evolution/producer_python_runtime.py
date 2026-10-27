@@ -207,7 +207,11 @@ class PythonRuntimeFileDeclaration(_DTO):
         _path(self.relative_path, absolute=False)
         if type(self.role) is not str or self.role not in _ROLE_SLOTS:
             _fail("role_invalid")
-        basename = Path(self.relative_path).name.casefold()
+        value = self.relative_path
+        if type(value) is str and value != "." and not value.endswith(("/", "/.")):
+            basename = value.rpartition("/")[2].casefold()
+        else:
+            basename = Path(value).name.casefold()
         if basename.endswith(".pth") or basename in {"sitecustomize.py", "usercustomize.py"}:
             _fail("listed_import_hook")
 
@@ -412,10 +416,11 @@ def _root_paths(value: object) -> dict[str, Path]:
         if label in result:
             _fail("root_duplicate")
         result[label] = path
-    values = list(result.values())
+    values = [str(path) for path in result.values()]
     for index, path in enumerate(values):
         for other in values[index + 1:]:
-            if path == other or path in other.parents or other in path.parents:
+            if (path == other or other.startswith(path if path == "/" else path + "/")
+                    or path.startswith(other if other == "/" else other + "/")):
                 _fail("roots_overlap")
     return dict(sorted(result.items()))
 
