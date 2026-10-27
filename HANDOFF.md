@@ -1,5 +1,30 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 实际验收更新：P2 固定 SSH 通过，P0 原预算仍超时
+
+- 干净 `df81a46c` 已 push；唯一新 Linux mixed 仍在600.01626674秒超时，rawrc=-15，
+  无JUnit/终态module origins，2449源文件前后一致。v2记录完整180秒354样本和正常
+  duration_limit stop，但pytest finalizer/completion缺失。原失败不重跑，也不触发
+  已知失败的完整CI；当前不能合main。独审69项只确认失败保全，详见
+  [实际验收](docs/parallel-batch-acceptance-20261027.md)。
+- P2真实5090gpu固定inert SSH已通过并经独审：两episode各1次producer、实际HMAC、
+  丢失已封存响应后的只读inspect和重复派发拒绝。unknown settlement保持unknown，
+  仅追加来源证据；native claim仍started、无native result/admission。首个未压缩
+  安装rc1保留，独立gzip安装在原120秒内成功。账户隔离、真实partition、远端cleanup
+  和多controller仍未验收，不把inert通道成功当生产solver成功。
+- 新后继并行开发：P0仅缓存exact persisted event row的纯digest计算，仍fresh SQL/
+  JSON解析/链与当前digest比较；P1四份官方stdlib imported-selftest的精确source剪枝。
+  集中14文件382项初验380pass/2个新增测试清理失败；修复decoder实例属性的
+  monkeypatch清理后，仅重验受影响55项全过，最新节点并集仍382项全过。原XML/rc1
+  保留，不把55另加。项目原Ruff/compileall/diff通过；新clean HEAD的原预算mixed
+  及完整CI仍待执行，不称解决P0或完整solver闭包。
+- P1仍缺真实solver完整source闭包（proposal后OpenEvolve在subprocess拒绝；
+  静态复核首个未识别Windows guard为_winapi，Linux后继为_posixsubprocess；
+  Shinka触达_bz2）、受审pyconfig、隔离build/ELF/image/startup/lifecycle及native
+  production CLI。源码未完成与既有隔离环境阻塞分别保留；production/online=false。
+
+以下为此前开发与验收快照，最新状态以上节为准。
+
 ## 最新集成：P0–P2 同批开发与统一回归
 
 - 在 `codex/openevolve-fixed-profile` 的869后继收齐：P0 ancestry计算/v2诊断；

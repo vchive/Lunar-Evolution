@@ -84,6 +84,15 @@ _RUNTIME_ALIASES = {"collections.abc": "_collections_abc", "os.path": "posixpath
 # Complete official Lib/platform.py from the independently pinned 3.13.12
 # release above. This reviewed one-source exception is not a general callgraph.
 _PLATFORM_JAVA_SOURCE_SHA256 = "75fe9b94662e55b91e19602bb75e6ca6132f7a53fb22844fc44a507a639127e1"
+# Exact official imported-module demonstration/self-test sources only. These
+# modules are imported by their canonical frozen names, never executed as main.
+# A full source pin binds each sole private helper call to its false main guard.
+_IMPORTED_SELFTEST_SOURCE_SHA256 = {
+    "pickle": "8140370a0f3f23769cfb5e99546abf7a35bc0e286f2f81acb6e43a3544162302",
+    "difflib": "0fc85357cdf45c242079be40245466b7b014b6f5f35064eec3d1b951e00d31ca",
+    "pickletools": "bf882fd005a822076a08c1cd3415b96a74d0caab7d69610f31dbe35346917233",
+    "heapq": "6d43277e5c76fc0f073cd388fcff852d14d068f6bb6d4886c340f8b75a1229a9",
+}
 _INTERPRETER_PROVIDED = {
     "__main__": ("Python/pylifecycle.c", (
         b"status = add_main_module(interp);",
@@ -221,13 +230,75 @@ def _platform_java_guard(tree: ast.Module, module: str, raw: bytes) -> dict | No
             "literal_call_count": calls, "dynamic_reflection_verified": False}
 
 
+def _imported_selftest_guard(
+    tree: ast.Module, module: str, raw: bytes,
+) -> tuple[set[int], dict | None]:
+    """Exclude four exact imported-only demos, not arbitrary function bodies.
+
+    Source identity binds the finite call/reference inventory. Every selected
+    module is also checked for literal external private-helper references.
+    Dynamic reflection and complete runtime reachability remain unverified.
+    """
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Attribute) and node.attr == "_test"
+                or isinstance(node, ast.Constant) and node.value == "_test"
+                or isinstance(node, ast.ImportFrom) and node.module in _IMPORTED_SELFTEST_SOURCE_SHA256
+                and any(alias.name in {"_test", "*"} for alias in node.names)):
+            _fail("selftest_helper_reference_invalid")
+    if module not in _IMPORTED_SELFTEST_SOURCE_SHA256:
+        return set(), None
+    helpers = [node for node in tree.body
+               if isinstance(node, ast.FunctionDef) and node.name == "_test"]
+    guards = [node for node in tree.body if isinstance(node, ast.If)
+              and isinstance(node.test, ast.Compare)
+              and len(node.test.ops) == len(node.test.comparators) == 1
+              and isinstance(node.test.ops[0], ast.Eq)
+              and isinstance(node.test.left, ast.Name) and node.test.left.id == "__name__"
+              and isinstance(node.test.comparators[0], ast.Constant)
+              and node.test.comparators[0].value == "__main__"]
+    if not helpers and not guards:
+        return set(), None
+    if _sha(raw) != _IMPORTED_SELFTEST_SOURCE_SHA256[module]:
+        _fail("selftest_source_drift")
+    if len(guards) != 1 or guards[0].orelse:
+        _fail("selftest_main_guard_invalid")
+    guard = guards[0]
+    excluded = {id(guard)}
+    call_line = None
+    if module != "heapq":
+        if len(helpers) != 1:
+            _fail("selftest_helper_invalid")
+        helper = helpers[0]
+        references = [node for node in ast.walk(tree)
+                      if isinstance(node, ast.Name) and node.id == "_test"]
+        calls = [node for node in ast.walk(guard) if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Name) and node.func.id == "_test"]
+        if (len(references) != 1 or len(calls) != 1 or references[0] is not calls[0].func
+                or not isinstance(references[0].ctx, ast.Load)
+                or helper.decorator_list or helper.args.args or helper.args.posonlyargs
+                or helper.args.kwonlyargs or helper.args.vararg or helper.args.kwarg):
+            _fail("selftest_helper_reference_invalid")
+        excluded.add(id(helper))
+        call_line = calls[0].lineno
+    elif helpers:
+        _fail("selftest_helper_invalid")
+    return excluded, {"module": module, "module_source_sha256": _sha(raw),
+                      "guard": "canonical-imported-module-not-main", "guard_lineno": guard.lineno,
+                      "function": "_test" if module != "heapq" else None,
+                      "literal_call_count": 1 if call_line is not None else 0,
+                      "call_lineno": call_line, "dynamic_reflection_verified": False}
+
+
 def _imports(raw: bytes, module: str, package: bool, available: set[str],
-             builtin: set[str], guarded_calls: list[dict]) -> set[str]:
+             builtin: set[str], guarded_calls: list[dict], excluded_selftests: list[dict]) -> set[str]:
     try:
         tree = ast.parse(raw)
     except (ValueError, SyntaxError, UnicodeError, RecursionError):
         _fail("source_syntax_invalid")
     result = set()
+    excluded_nodes, selftest_guard = _imported_selftest_guard(tree, module, raw)
+    if selftest_guard is not None:
+        excluded_selftests.append(selftest_guard)
     java_guard = _platform_java_guard(tree, module, raw)
     if java_guard is not None:
         guarded_calls.append({**java_guard, "module_source_sha256": _sha(raw)})
@@ -321,6 +392,8 @@ def _imports(raw: bytes, module: str, package: bool, available: set[str],
         return None
 
     def visit(node, guarded=False):
+        if id(node) in excluded_nodes:
+            return
         if (java_guard is not None and isinstance(node, ast.FunctionDef)
                 and node.name == java_guard["function"]):
             for child in node.body:
@@ -476,6 +549,7 @@ def prepare_fixed_runtime_closure(
     runtime_aliases = set()
     interpreter_modules = {}
     guarded_calls = []
+    excluded_selftests = []
     while pending:
         pending_name = min(pending)
         pending.remove(pending_name)
@@ -514,7 +588,7 @@ def prepare_fixed_runtime_closure(
         if len(selected) > MAX_MODULES:
             _fail("module_budget_exceeded")
         pending.update(_imports(raw, name, name in packages, set(paths) | set(_RUNTIME_ALIASES),
-                                builtin, guarded_calls))
+                                builtin, guarded_calls, excluded_selftests))
         parent = name.rpartition(".")[0]
         if parent:
             pending.add(parent)
@@ -586,6 +660,8 @@ def prepare_fixed_runtime_closure(
                       "interpreter_provided_modules": [interpreter_modules[name]
                                                        for name in sorted(interpreter_modules)],
                       "guarded_call_imports": sorted(guarded_calls, key=lambda record: record["module"]),
+                      "excluded_imported_selftests": sorted(excluded_selftests,
+                                                           key=lambda record: record["module"]),
                       "guarded_absent_imports": sorted(absent), "dynamic_import_closure_verified": False,
                       "runtime_execution_performed": False, "production_admission": False})
     return FixedRuntimeClosure(wire, tuple(sorted(generated.items())))

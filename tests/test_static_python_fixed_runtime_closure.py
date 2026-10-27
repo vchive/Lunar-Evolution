@@ -386,3 +386,94 @@ def test_sqlite_host_library_is_not_a_source_substitute(closure_inputs):
     closure_inputs["expected_sqlite_inventory_sha256"] = sha(closure.source_inventory(closure_inputs["sqlite_sources"]))
     with pytest.raises(closure.RuntimeClosureError, match="sqlite_inventory_invalid"):
         closure.prepare_fixed_runtime_closure(**closure_inputs)
+
+
+def selftest_source(module):
+    head = b"import hashlib\ndef functional():\n    import readline\n"
+    if module == "heapq":
+        return head + b"if __name__ == '__main__':\n    import doctest\n    doctest.testmod()\n"
+    return (head + b"def _test():\n    import doctest\n    return doctest.testmod()\n"
+            b"if __name__ == '__main__':\n    _test()\n")
+
+
+def imported_selftest_edges(raw, module, evidence):
+    return closure._imports(raw, module, False, set(), set(), [], evidence)
+
+
+@pytest.mark.parametrize("module", ["pickle", "difflib", "pickletools", "heapq"])
+def test_exact_imported_selftests_do_not_require_interactive_demo_closure(module, monkeypatch):
+    raw = selftest_source(module)
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, module, sha(raw))
+    evidence = []
+    assert imported_selftest_edges(raw, module, evidence) == {"hashlib", "readline"}
+    assert len(evidence) == 1
+    record = evidence[0]
+    assert record["module"] == module
+    assert record["module_source_sha256"] == sha(raw)
+    assert record["guard"] == "canonical-imported-module-not-main"
+    assert record["function"] == (None if module == "heapq" else "_test")
+    assert record["literal_call_count"] == (0 if module == "heapq" else 1)
+    assert record["dynamic_reflection_verified"] is False
+
+
+@pytest.mark.parametrize("module", ["pickle", "difflib", "pickletools", "heapq"])
+def test_selftest_exclusion_needs_complete_official_source_pin(module):
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_source_drift"):
+        imported_selftest_edges(selftest_source(module), module, [])
+
+
+@pytest.mark.parametrize("change", [
+    b"_test()\n", b"alias = _test\n", b"_test = lambda: None\n", b"del _test\n",
+])
+def test_private_helper_only_reference_must_be_the_main_guard_call(change, monkeypatch):
+    raw = selftest_source("pickle") + change
+    # A synthetic reviewed pin lets this test exercise the reference proof itself.
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "pickle", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "pickle", [])
+
+
+@pytest.mark.parametrize("raw", [
+    b"import pickle as serializer\nserializer._test()\n",
+    b"from difflib import _test as run_demo\nrun_demo()\n",
+    b"from pickletools import *\n",
+    b"getattr(imported_module, '_test')()\n",
+])
+def test_selected_external_literal_private_helper_references_refuse(raw):
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "selected_other_module", [])
+
+
+def test_other_module_main_and_helper_bodies_are_still_conservatively_scanned():
+    evidence = []
+    assert imported_selftest_edges(selftest_source("pickle"), "another_module", evidence) == {
+        "hashlib", "readline", "doctest",
+    }
+    assert evidence == []
+
+
+def test_main_guard_else_is_not_discarded_even_with_a_synthetic_pin(monkeypatch):
+    raw = selftest_source("pickle") + b"else:\n    import required_dependency\n"
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "pickle", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_main_guard_invalid"):
+        imported_selftest_edges(raw, "pickle", [])
+
+
+def test_imported_selftest_evidence_reaches_closure_wire_without_a_doctest_module(
+    closure_inputs, monkeypatch,
+):
+    args = closure_inputs
+    raw = selftest_source("pickle").replace(b"def functional():\n    import readline\n", b"")
+    args["cpython_sources"].update({
+        "Lib/json/decoder.py": b"import pickle\n", "Lib/pickle.py": raw,
+        "Lib/hashlib.py": b"pass\n",
+    })
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "pickle", sha(raw))
+    refresh_cpython_pin(args)
+    result = closure.prepare_fixed_runtime_closure(**args)
+    facts = json.loads(result.wire_bytes)
+    assert {record["module"] for record in facts["excluded_imported_selftests"]} == {"pickle"}
+    assert "doctest" not in {record["name"] for record in facts["frozen"]}
+    assert facts["dynamic_import_closure_verified"] is False
+    assert facts["runtime_execution_performed"] is False
+    assert facts["production_admission"] is False

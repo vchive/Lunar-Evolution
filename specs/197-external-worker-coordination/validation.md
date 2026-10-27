@@ -1,5 +1,24 @@
 # Local batch validation — 2026-10-27
 
+## Actual fixed inert cross-host acceptance
+
+The clean `df81a46c` source passed a real `5090gpu` SSH acceptance with one
+authoritative local SQLite ledger: two episodes each ran the fixed harmless
+producer once, authenticated their receipts, refused duplicate dispatch, and
+recovered a deliberately discarded sealed response by inspection. The original
+unknown settlement remains unknown; the recovered origin is appended separately.
+Both native claims remain started without native results or admissions.
+
+The initial uncompressed installation failed and remains separate. The gzip
+installation successor preserved the 120-second installation limit and product
+budgets, verified all 293 source files, and completed with rc0. No candidate,
+solver, provider, model or evaluator ran. Account isolation, real partition
+handling, remote cleanup and production/native publication remain unaccepted.
+See [actual acceptance](../../docs/parallel-batch-acceptance-20261027.md) for
+original results, exact hashes and the independent read-only review.
+
+The sections below describe the earlier local-regression source snapshot.
+
 ## Second integration slice: transport, wrapper and CLI
 
 The fixed SSH transport, create-only installed wrapper, original budget checks,

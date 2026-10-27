@@ -60,6 +60,8 @@ WORKER_STATES = frozenset({"running", "idle", "completed", "failed", "timed_out"
 # plus entry/key/value/container overhead and the revision integer's shallow size.
 _CHECKPOINT_DIGEST_CACHE_MAX_ENTRIES = 128
 _CHECKPOINT_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
+_RECORD_DIGEST_CACHE_MAX_ENTRIES = 128
+_RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
 
 _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
     "created": frozenset({"created", "running", "cancelled", "failed", "unknown", "budget_exhausted"}),
@@ -197,6 +199,11 @@ class RSILedger:
         ] = OrderedDict()
         self._checkpoint_digest_cache_retained_units = 0
         self._checkpoint_digest_cache_lock = threading.Lock()
+        self._record_digest_cache: OrderedDict[
+            tuple[str, int, str, str, str, str | None, str], tuple[str, int]
+        ] = OrderedDict()
+        self._record_digest_cache_retained_units = 0
+        self._record_digest_cache_lock = threading.Lock()
         self._observation_scope = threading.local()
         self.initialize()
 
@@ -887,7 +894,7 @@ class RSILedger:
             ).fetchall()
             if not rows:
                 raise RSILearningError("rsi_python_admission_run_missing")
-            records = tuple(self._row_to_record(row) for row in rows)
+            records = tuple(self._row_to_record_cached(row) for row in rows)
             if any(record.kind != "run" or record.revision != ordinal for ordinal, record in enumerate(records)):
                 raise RSILearningError("rsi_python_admission_run_drift")
             root = self._checkpoint_binding(
@@ -1221,7 +1228,7 @@ class RSILedger:
         rows = connection.execute(
             "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
         ).fetchall()
-        episodes = tuple(self._row_to_record(row) for row in rows)
+        episodes = tuple(self._row_to_record_cached(row) for row in rows)
         run = self._head(connection, run_id)
         status = self._native_result_status(connection, episode_id, obligation.request_sha256)
         claim_row = connection.execute(
@@ -1298,7 +1305,7 @@ class RSILedger:
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (episode_id,),
             ).fetchall()
-            episode_history = tuple(self._row_to_record(row) for row in rows)
+            episode_history = tuple(self._row_to_record_cached(row) for row in rows)
             episode = _validate_brs_episode_history(obligation, episode_history)
             decision = reconcile_brs_selected(obligation, evidence)
             if decision.outcome == "already_terminal":
@@ -1604,11 +1611,125 @@ class RSILedger:
             raise RSILearningError("rsi_record_digest_mismatch")
         return record
 
+    def _row_to_record_cached(self, row: sqlite3.Row) -> RSIRecord:
+        """Decode every fresh row; reuse only its exact expected digest calculation."""
+        converter = self._row_to_record
+        if (type(self) is not RSILedger or type(row) is not sqlite3.Row
+                or converter is not _RECORD_ROW_CONVERTER
+                or converter.__code__ is not _RECORD_ROW_CONVERTER_CODE
+                or json.loads is not _RECORD_JSON_LOADS
+                or json.loads.__code__ is not _RECORD_JSON_LOADS_CODE
+                or RSIRecord is not _RECORD_TYPE
+                or RSIRecord.__init__ is not _RECORD_CONSTRUCTOR
+                or RSIRecord.__init__.__code__ is not _RECORD_CONSTRUCTOR_CODE):
+            return converter(row)
+
+        def helpers_current() -> bool:
+            # json.loads' fast path dispatches through this mutable decoder.
+            # A replacement may return a different graph for the same SQLite
+            # text; it must never use a memo established by the normal decoder.
+            decoder = json._default_decoder
+            if (canonical_json is not _RECORD_CANONICAL_JSON
+                    or decoder is not _RECORD_JSON_DECODER
+                    or type(decoder) is not _RECORD_JSON_DECODER_TYPE
+                    or self._record_digest is not _RECORD_DIGEST):
+                return False
+            namespace = object.__getattribute__(decoder, "__dict__")
+            if ("decode" in namespace or "raw_decode" in namespace
+                    or namespace.get("scan_once") is not _RECORD_JSON_SCAN_ONCE):
+                return False
+            functions = (
+                RSILedger._record_digest, json.loads, canonical_json,
+                canonical_json.__globals__.get("_json_bytes"), json.dumps,
+                type(decoder).decode, type(decoder).raw_decode,
+            )
+            for function, (original, code, defaults, keyword_defaults) in zip(
+                functions, _RECORD_DIGEST_FUNCTION_PINS, strict=True,
+            ):
+                if (function is not original or function.__code__ is not code
+                        or function.__defaults__ is not defaults):
+                    return False
+                current = function.__kwdefaults__
+                if keyword_defaults is None:
+                    if current is not None:
+                        return False
+                elif (type(current) is not dict or len(current) != len(keyword_defaults)
+                      or any(type(key) is not str for key in current)
+                      or any(key not in current or current[key] is not value
+                             for key, value in keyword_defaults)):
+                    return False
+            return True
+
+        if not helpers_current():
+            return converter(row)
+        # Keep the static converter's field reads and decoder order.  The memo
+        # never contains this newly allocated record or its mutable payload.
+        record = RSIRecord(
+            logical_id=row["logical_id"],
+            revision=row["revision"],
+            kind=row["kind"],
+            state=row["state"],
+            request_sha256=row["request_sha256"],
+            parent_record_sha256=row["parent_record_sha256"],
+            payload=json.loads(row["payload"]),
+            record_sha256=row["record_sha256"],
+            created_at=row["created_at"],
+        )
+        persisted_payload = row["payload"]
+        key = None
+        if (helpers_current()
+                and type(record.payload) is dict and type(record.revision) is int
+                and all(type(value) is str for value in (
+                    record.logical_id, record.kind, record.state, record.request_sha256, persisted_payload,
+                ))
+                and (record.parent_record_sha256 is None or type(record.parent_record_sha256) is str)):
+            key = (
+                record.logical_id, record.revision, record.kind, record.state,
+                record.request_sha256, record.parent_record_sha256, persisted_payload,
+            )
+        expected = None
+        if key is not None:
+            with self._record_digest_cache_lock:
+                cached = self._record_digest_cache.get(key)
+                if cached is not None:
+                    self._record_digest_cache.move_to_end(key)
+                    expected = cached[0]
+        if expected is None:
+            expected = RSILedger._record_digest(
+                logical_id=record.logical_id, revision=record.revision, kind=record.kind,
+                state=record.state, request_sha256=record.request_sha256,
+                parent_record_sha256=record.parent_record_sha256, payload=record.payload,
+            )
+            if key is not None:
+                retained_units = (
+                    4 * sum(len(value) for value in key if type(value) is str)
+                    + 1024 + sys.getsizeof(record.revision)
+                )
+                if (0 < _RECORD_DIGEST_CACHE_MAX_ENTRIES
+                        and retained_units <= _RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS):
+                    with self._record_digest_cache_lock:
+                        if key in self._record_digest_cache:
+                            self._record_digest_cache.move_to_end(key)
+                        else:
+                            while self._record_digest_cache and (
+                                len(self._record_digest_cache) >= _RECORD_DIGEST_CACHE_MAX_ENTRIES
+                                or self._record_digest_cache_retained_units + retained_units
+                                > _RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS
+                            ):
+                                _, (_, evicted_units) = self._record_digest_cache.popitem(last=False)
+                                self._record_digest_cache_retained_units -= evicted_units
+                            self._record_digest_cache[key] = (expected, retained_units)
+                            self._record_digest_cache_retained_units += retained_units
+        # A stored digest is a claim to check, never a cache key or authority.
+        if expected != record.record_sha256:
+            raise RSILearningError("rsi_record_digest_mismatch")
+        return record
+
     def _head(self, connection: sqlite3.Connection, logical_id: str) -> RSIRecord | None:
         row = connection.execute(
             "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision DESC LIMIT 1", (logical_id,)
         ).fetchone()
-        return self._row_to_record(row) if row is not None else None
+        return self._row_to_record_cached(row) if row is not None else None
 
     def _create(
         self, *, logical_id: str, kind: Literal["run", "episode", "memory", "transfer"], state: str,
@@ -1677,7 +1798,7 @@ class RSILedger:
         if not rows:
             raise RSILearningError("rsi_python_admission_run_missing")
         try:
-            runs = tuple(self._row_to_record(row) for row in rows)
+            runs = tuple(self._row_to_record_cached(row) for row in rows)
             if any(type(run.payload) is not dict for run in runs):
                 raise ValueError("run payload is not an object")
         except (TypeError, ValueError, RSILearningError) as exc:
@@ -2729,7 +2850,7 @@ class RSILedger:
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (logical_id,)
             ).fetchall()
-        records = tuple(self._row_to_record(row) for row in rows)
+        records = tuple(self._row_to_record_cached(row) for row in rows)
         parent: str | None = None
         for ordinal, record in enumerate(records):
             if record.revision != ordinal or record.parent_record_sha256 != parent:
@@ -3068,6 +3189,31 @@ class RSILedger:
                 connection, settled, expected_record_sha256=expected_record_sha256,
                 allow_unknown_settlement=True,
             )
+
+
+# Keep replaced compatibility helpers and decoders on their original execution
+# path.  Code identities also detect an in-place function implementation change.
+_RECORD_ROW_CONVERTER = RSILedger._row_to_record
+_RECORD_ROW_CONVERTER_CODE = _RECORD_ROW_CONVERTER.__code__
+_RECORD_DIGEST = RSILedger._record_digest
+_RECORD_JSON_LOADS = json.loads
+_RECORD_JSON_LOADS_CODE = _RECORD_JSON_LOADS.__code__
+_RECORD_CANONICAL_JSON = canonical_json
+_RECORD_TYPE = RSIRecord
+_RECORD_CONSTRUCTOR = RSIRecord.__init__
+_RECORD_CONSTRUCTOR_CODE = _RECORD_CONSTRUCTOR.__code__
+_RECORD_JSON_DECODER = json._default_decoder
+_RECORD_JSON_DECODER_TYPE = type(_RECORD_JSON_DECODER)
+_RECORD_JSON_SCAN_ONCE = _RECORD_JSON_DECODER.scan_once
+_RECORD_DIGEST_FUNCTION_PINS = tuple(
+    (function, function.__code__, function.__defaults__,
+     None if function.__kwdefaults__ is None else tuple(function.__kwdefaults__.items()))
+    for function in (
+        _RECORD_DIGEST, _RECORD_JSON_LOADS, _RECORD_CANONICAL_JSON,
+        _RECORD_CANONICAL_JSON.__globals__["_json_bytes"], json.dumps,
+        _RECORD_JSON_DECODER_TYPE.decode, _RECORD_JSON_DECODER_TYPE.raw_decode,
+    )
+)
 
 
 __all__ = [

@@ -1,5 +1,15 @@
 ## 2026-10-27 当前状态与剩余优先级
 
+最新实际结果：[同批真实验收](parallel-batch-acceptance-20261027.md)。P2固定inert
+跨host SSH/回执认证/丢响应只读恢复已通过并经独审，两个episode各执行一次；native
+生产与隔离/cleanup不因此通过。P0干净df81仍在600.01626674秒超时，原rc=-15、
+无JUnit，不能合main或关闭性能缺口。新后继集中开发event-row纯digest有界复用和
+精确stdlib selftest source剪枝，集中14文件382项初验2个测试清理失败；只修清理并
+重验受影响55项全过，最新节点仍382全过，原失败保留；项目原静态检查通过。
+新clean HEAD的原预算mixed/完整CI仍待执行，不重复1050项旧基线。
+P1完整solver闭包、受审目标配置、隔离build/ELF/startup/lifecycle和production CLI
+仍开放。下方此前“实跑待执行”只描述其当时快照。
+
 最新后继已完成P0 ancestry/v2诊断、P1实际编译/freezer/link配方与toolchain-v3、
 P2固定SSH/wrapper/恢复/CLI的同批实现。一次30文件回归1050unique，3项新增fixture
 构造失败修正后仅受影响选择重验；最新1050项全过，静态检查通过。详见

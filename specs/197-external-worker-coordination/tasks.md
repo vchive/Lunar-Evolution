@@ -15,11 +15,12 @@
 - [x] Specify and implement original claim/assignment/challenge binding and atomic consumption.
 - [x] Fix generation at 1; reject duplicate reservation and late receipts without changing native claim ownership.
 - [x] Preserve started/unknown gates through interruption and ledger reopen.
-- [ ] Independently verify simultaneous competing owners and interruption behavior.
+- [x] Independently verify local competing dispatch/wrapper processes and interruption/reopen behavior from the retained actual focused XML.
 
 ## Separate acceptance, not established by this feature's first slice
 
-- [ ] Real cross-host secret provisioning, trusted-wrapper isolation and authenticated receipts.
+- [x] Verify real cross-host private secret provisioning and authenticated receipts with a fixed inert producer; retain the original failed installation separately.
+- [ ] Verify untrusted-candidate account isolation for the deployed trusted wrapper.
 - [ ] Actual remote lifecycle/cleanup observations and partition behavior.
 - [ ] Any future multiple-controller ownership design and acceptance.
 
@@ -38,4 +39,5 @@ merely producing or verifying a detached signature.
 - [x] Author actual local subprocess/concurrency, lost-response, interruption, output-limit and drift fixtures.
 - [x] AST-parse external-worker sources and tests without executing a worker or provider.
 - [x] Root: run combined focused tests, Ruff, compileall and `git diff --check` after parallel slices freeze.
-- [ ] Separate deployment acceptance: actual preinstalled cross-host key/account/isolation and SSH interruption observations.
+- [x] Verify an actual private cross-host installation, two authenticated inert episodes, sealed-response loss inspection and duplicate-dispatch refusal.
+- [ ] Verify separate account isolation, genuine SSH/network partition behavior and original remote lifecycle/cleanup evidence.

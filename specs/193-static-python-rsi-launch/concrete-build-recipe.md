@@ -201,3 +201,32 @@ required. KVM/isolated-host availability can block those executions, but it does
 not substitute for the concrete command/source generation implemented here.
 All source and process reports keep production admission and online publication
 false until their own real acceptance succeeds.
+
+
+## Finite imported-selftest refinement
+
+The literal closure scan excludes the imported-only demonstration main block
+in exactly the official 3.13.12 `pickle`, `difflib`, `pickletools` and `heapq`
+sources. Full independent source SHA-256 pins bind this finite exception. The
+first three also contain a private `_test` helper: its only local Name reference
+must be the sole call inside that false main block, with no alias, rebinding,
+other caller, decorator or arguments. Literal external helper attribute/string
+references or `from` helper/star imports in any selected module refuse. `heapq`
+has only the main block and no private helper. Canonical imported module names
+come from the existing frozen records; these sources are not selectable main
+entrypoints. Their original source bytes are retained, with the specific excluded
+source/call/guard evidence recorded under `excluded_imported_selftests`.
+
+This is not arbitrary dead-code elimination or a complete callgraph proof.
+Other module main blocks and all functional function bodies remain scanned;
+dynamic reflection and runtime import closure remain unverified. No `readline`
+absence exception, fabricated source or readline/ncurses dependency is added.
+
+A retained source-only trial of this refinement removes the diagnostic
+`pickle._test`/`difflib._test -> doctest -> pdb/cmd -> readline` route but does
+**not** close either real solver source graph. OpenEvolve next refuses an
+unguarded absent import while scanning `subprocess` reached from `os.popen`;
+Shinka next refuses `_bz2` required by `bz2`. The trial executes no supplied
+upstream Python, build, model or evaluator; runtime execution and production
+admission remain false. The extra source pins do not supply the still-missing
+reviewed target `pyconfig.h`, isolated build, sealed runtime or production CLI.
