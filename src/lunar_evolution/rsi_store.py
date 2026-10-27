@@ -18,7 +18,7 @@ import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -226,8 +226,13 @@ class RSILedger:
             # mode=ro closes the lstat/open race: a removed database cannot be recreated.
             # Do not change journal mode or create parent directories during observations.
             connection = sqlite3.connect(self.database.as_uri() + "?mode=ro", uri=True, timeout=30)
-            connection.row_factory = sqlite3.Row
-            connection.execute("PRAGMA query_only = ON")
+            try:
+                connection.row_factory = sqlite3.Row
+                connection.execute("PRAGMA query_only = ON")
+            except BaseException:
+                with suppress(BaseException):
+                    connection.close()
+                raise
             return connection
         if self._create_database:
             self.database.parent.mkdir(parents=True, exist_ok=True)
@@ -236,19 +241,24 @@ class RSILedger:
             # Explicit recovery commands may reopen only an existing database.
             # mode=rw applies on every connection, including after a path removal.
             connection = sqlite3.connect(self.database.as_uri() + "?mode=rw", uri=True, timeout=30)
-        connection.row_factory = sqlite3.Row
-        # Switching to WAL is an initialization concern.  Re-issuing the mode-changing
-        # pragma on every read connection can dirty the database header on some SQLite/Python
-        # combinations, which makes read-only replay appear to have appended ledger state.
-        # Inspect the current mode first and only change it for a new/non-WAL database.
-        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
-        if journal_mode.lower() != "wal":
-            connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = FULL")
+        try:
+            connection.row_factory = sqlite3.Row
+            # Switching to WAL is an initialization concern. Re-issuing the mode-changing
+            # pragma on every read connection can dirty the database header on some SQLite/Python
+            # combinations, which makes read-only replay appear to have appended ledger state.
+            # Inspect the current mode first and only change it for a new/non-WAL database.
+            journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+            if journal_mode.lower() != "wal":
+                connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = FULL")
+        except BaseException:
+            with suppress(BaseException):
+                connection.close()
+            raise
         return connection
 
     def initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS rsi_records (
                     logical_id TEXT NOT NULL,
@@ -887,7 +897,7 @@ class RSILedger:
         _id(episode_id, name="episode_id")
         if expected_checkpoint_sha256 is not None:
             _digest(expected_checkpoint_sha256, name="python_admission_expected_head")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (run_id,),
@@ -938,7 +948,7 @@ class RSILedger:
     def controller_checkpoint_history(self, run_id: str) -> list[tuple[str, dict[str, Any]]]:
         """Read the verified hash chain and its monotonic independently retained obligations."""
         _id(run_id, name="run_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             return self._controller_checkpoint_history_tx(connection, run_id)
 
@@ -1034,7 +1044,7 @@ class RSILedger:
         )
         if expected_episode_record_sha256 is not None:
             _digest(expected_episode_record_sha256, name="brs_reconcile_episode")
-            with self._connect() as connection:
+            with closing(self._connect()) as connection, connection:
                 connection.execute("BEGIN IMMEDIATE")
                 run = self._head(connection, run_id)
                 episode = self._head(connection, obligation.episode_id)
@@ -1101,7 +1111,7 @@ class RSILedger:
             raise RSILearningError("rsi_brs_mailbox_evidence_owner_required")
         if expected_sha256 is not None:
             _digest(expected_sha256, name="brs_mailbox_evidence_checkpoint")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             roots = self._controller_checkpoint_history_tx(connection, run_id)
             if not roots or roots[-1][0] != record["root_checkpoint_sha256"]:
@@ -1166,7 +1176,7 @@ class RSILedger:
             raise RSILearningError("rsi_brs_terminal_owner_required")
         if expected_sha256 is not None:
             _digest(expected_sha256, name="brs_terminal_checkpoint")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             snapshot = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
             roots = snapshot["roots"]
@@ -1263,7 +1273,7 @@ class RSILedger:
         """Observe existing evidence without initializing or writing any ledger files."""
         _id(run_id, name="run_id")
         _id(episode_id, name="episode_id")
-        with self.read_only_observations(), self._connect() as connection:
+        with self.read_only_observations(), closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             return self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)
 
@@ -1284,7 +1294,7 @@ class RSILedger:
         self._assert_controller_lock(run_id)
         if settled_execution is not None and expected_pins is None:
             raise RSILearningError("rsi_brs_terminal_settlement_pins_required")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             if expected_pins is not None:
                 actual = self._brs_terminal_evidence_snapshot_tx(connection, run_id, episode_id)["pins"]
@@ -1542,7 +1552,7 @@ class RSILedger:
             raise RSILearningError("rsi_controller_checkpoint_invalid") from exc
         if not isinstance(clean, dict):
             raise RSILearningError("rsi_controller_checkpoint_invalid")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             return self._append_controller_checkpoint_tx(connection, run_id, clean, expected_sha256=expected_sha256)
 
@@ -1746,7 +1756,7 @@ class RSILedger:
         if state not in states:
             raise RSILearningError("rsi_state_invalid")
         clean_payload = _payload(payload)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             if self._head(connection, logical_id) is not None:
                 raise RSILearningError("rsi_record_exists")
@@ -1988,7 +1998,7 @@ class RSILedger:
         for value in (expected_run_record_sha256, expected_checkpoint_sha256, expected_episode_record_sha256):
             if value is not None:
                 _digest(value, name="python_admission_expected_head")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN")
             row = connection.execute(
                 "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
@@ -2021,7 +2031,7 @@ class RSILedger:
             _digest(value, name="python_admission_expected_head")
         self._assert_controller_lock(retained.run_id)
         wire = retained.to_json().decode("utf-8")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             current, state, episode_status, claim_status = self._python_admission_state_tx(
                 connection, retained, expected_run_record_sha256=expected_run_record_sha256,
@@ -2069,7 +2079,7 @@ class RSILedger:
         for value in (expected_run_record_sha256, expected_checkpoint_sha256, expected_episode_record_sha256):
             _digest(value, name="python_admission_expected_head")
         self._assert_controller_lock(retained.run_id)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             current, state, episode_status, claim_status = self._python_admission_state_tx(
                 connection, retained, expected_run_record_sha256=expected_run_record_sha256,
@@ -2123,7 +2133,7 @@ class RSILedger:
         logical_id = f"memory:{snapshot.snapshot_id}"
         request_sha256 = snapshot.digest()
         payload = snapshot.to_dict()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = self._head(connection, logical_id)
             if existing is not None:
@@ -2157,7 +2167,7 @@ class RSILedger:
             raise RSILearningError("rsi_transfer_receipt_invalid")
         logical_id = f"transfer:{receipt.run_id}:{receipt.target_id}"
         payload = receipt.to_dict()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = self._head(connection, logical_id)
             if existing is not None:
@@ -2212,7 +2222,7 @@ class RSILedger:
     ) -> str:
         """Atomically bind a callback reconciliation to both current checkpoint and episode."""
         self._assert_controller_lock(run_id)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             episode = self._head(connection, episode_id)
             if episode is None or episode.record_sha256 != expected_episode_sha256:
@@ -2296,7 +2306,7 @@ class RSILedger:
         if episode.payload["run_id"] != internal_run_id or state.get("receipt") != payload:
             raise RSILearningError("rsi_transfer_reconciliation_corrupt")
         logical_id = f"transfer:{receipt.run_id}:{receipt.target_id}"
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             head = self._head(connection, logical_id)
             if head is None or head.record_sha256 != expected_record_sha256:
@@ -2397,7 +2407,7 @@ class RSILedger:
             raise RSILearningError("rsi_native_episode_request_invalid")
         plan_sha256 = self._native_claim_plan(plan_sha256)
         request_sha256 = request.digest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
                 (request.episode_id,),
@@ -2443,7 +2453,7 @@ class RSILedger:
         request_sha256 = request.digest()
         claim_sha256 = self._native_claim_digest(request.episode_id, request_sha256, plan_sha256)
         created_at = utc_now()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             if guarded:
                 self._assert_controller_lock(controller_run_id)
@@ -2491,7 +2501,7 @@ class RSILedger:
             raise RSILearningError("rsi_native_episode_claim_identity_invalid")
         plan_sha256 = self._native_claim_plan(plan_sha256)
         request_sha256 = request.digest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT * FROM rsi_native_episode_claims WHERE episode_id = ?",
@@ -2564,7 +2574,7 @@ class RSILedger:
         request_wire = canonical_json(request.to_dict(), maximum=128 * 1024).decode("utf-8")
         result_wire = canonical_json(result.to_dict(), maximum=128 * 1024).decode("utf-8")
         result_digest = hashlib.sha256(result_wire.encode("utf-8")).hexdigest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             self._assert_controller_lock(controller_run_id)
             history = self._controller_checkpoint_history_tx(connection, controller_run_id)
@@ -2648,7 +2658,7 @@ class RSILedger:
         request_wire = canonical_json(request_payload, maximum=128 * 1024)
         result_wire = canonical_json(result_payload, maximum=128 * 1024)
         result_sha256 = hashlib.sha256(result_wire).hexdigest()
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT request_sha256, request_payload, result_payload, result_sha256 "
@@ -2677,7 +2687,7 @@ class RSILedger:
 
     def episode_result(self, episode_id: str) -> tuple[SolverRequest, SolverResult] | None:
         _id(episode_id, name="episode_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT episode_id, request_sha256, request_payload, result_payload, result_sha256 FROM rsi_episode_results "
                 "WHERE episode_id = ?", (episode_id,)
@@ -2809,14 +2819,14 @@ class RSILedger:
         expected_record_sha256: str | None = None,
     ) -> RSIRecord:
         """Append a canonical episode revision with identity and lineage checks."""
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             return self._append_episode_record_tx(
                 connection, episode, expected_record_sha256=expected_record_sha256,
             )
 
     def get(self, logical_id: str) -> RSIRecord | None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             return self._head(connection, logical_id)
 
     def get_run(self, run_id: str) -> RSIRecord | None:
@@ -2846,7 +2856,7 @@ class RSILedger:
         return record
 
     def history(self, logical_id: str) -> tuple[RSIRecord, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT * FROM rsi_records WHERE logical_id = ? ORDER BY revision", (logical_id,)
             ).fetchall()
@@ -2860,7 +2870,7 @@ class RSILedger:
 
     def episode_ids_for_run(self, run_id: str) -> tuple[str, ...]:
         _id(run_id, name="run_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT DISTINCT logical_id FROM rsi_records "
                 "WHERE kind = 'episode' ORDER BY logical_id"
@@ -2875,7 +2885,7 @@ class RSILedger:
     def episode_reconciliation(self, episode_id: str) -> tuple[dict[str, Any], ...]:
         """Read and verify the complete append-only reconciliation journal."""
         _id(episode_id, name="episode_id")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 "SELECT revision, parent_record_sha256, worker_state, evidence, "
                 "result_sha256, journal_sha256 FROM rsi_episode_reconciliations "
@@ -2926,7 +2936,7 @@ class RSILedger:
         payload_patch: Mapping[str, Any] | None = None,
     ) -> RSIRecord:
         _digest(expected_record_sha256, name="expected_record_sha256")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             head = self._head(connection, logical_id)
             if head is None:
@@ -3002,7 +3012,7 @@ class RSILedger:
             })
         if not has_reconciliation:
             raise RSILearningError("rsi_unknown_reconcile_evidence_required")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             self._assert_controller_lock(run_id)
             head = self._head(connection, run_id)
@@ -3153,7 +3163,7 @@ class RSILedger:
                 if worker_state not in {"failed", "timed_out", "abandoned", "cancelled"}:
                     raise RSILearningError("rsi_unknown_reconcile_state_invalid")
                 settled = episode.transition(state, terminal_reason=f"reconciled_worker_{worker_state}")
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             head = self._head(connection, episode_id)
             if head is None:

@@ -1,3 +1,20 @@
+## 最新续作（2026-10-27）：P0连接资源、P1入口分析、P2原始上下文
+
+`d152ecb9` 的实际mixed已失败：600.033323802秒、rc=-15，缺JUnit/终态origins；
+原失败不重跑、不为已知失败HEAD启动完整CI。新后继为全部31个RSILedger内部scope
+补齐事务后close及setup异常close；同时排除完整官方source匹配的inspect CLI依赖。
+集中回归最新407不同节点全过，项目Ruff/compileall/diff通过；尚未证明新source的
+mixed性能或Linux/完整CI通过。详见[实际验收](parallel-batch-acceptance-20261027.md)。
+
+仍须开发：P1源码profile闭包（OE真实_winapi、Shinka另一路calendar/argparse→_bz2）、
+完整受审pyconfig、expanded installation/startup与native生产CLI；P2原始native context
+在release gate前的可信接线及launcher异常退出后的持久cleanup证据。隔离build/ELF/
+受信账户与真实partition验收另外受环境条件约束。P2后续规格不是已实现能力，见
+[明确边界](../specs/197-external-worker-coordination/native-lifecycle-followup.md)。
+用户要求继续分块开发、集中回归，不能据局部通过宣称P0–P2全部完成或合main。
+
+以下保留历史快照；它们不得覆盖本节。
+
 ## 2026-10-27 当前状态与剩余优先级
 
 最新实际结果：[同批真实验收](parallel-batch-acceptance-20261027.md)。P2固定inert

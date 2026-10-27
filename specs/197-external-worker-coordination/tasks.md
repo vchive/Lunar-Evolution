@@ -41,3 +41,14 @@ merely producing or verifying a detached signature.
 - [x] Root: run combined focused tests, Ruff, compileall and `git diff --check` after parallel slices freeze.
 - [x] Verify an actual private cross-host installation, two authenticated inert episodes, sealed-response loss inspection and duplicate-dispatch refusal.
 - [ ] Verify separate account isolation, genuine SSH/network partition behavior and original remote lifecycle/cleanup evidence.
+
+## Native lifecycle continuation (not implemented)
+
+See [original context and lifecycle inspection](native-lifecycle-followup.md).
+
+- [ ] Bind the original installed native context before target gate release.
+- [ ] Reuse worker-local read-only native lifecycle recovery/audit for that context.
+- [ ] Persist independently trustworthy terminal/cleanup evidence across launcher death.
+- [ ] Verify hard disconnect/account isolation on an accepted isolated target.
+
+The existing sealed-response-loss acceptance does not close these tasks.

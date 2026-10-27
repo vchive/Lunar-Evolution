@@ -477,3 +477,131 @@ def test_imported_selftest_evidence_reaches_closure_wire_without_a_doctest_modul
     assert facts["dynamic_import_closure_verified"] is False
     assert facts["runtime_execution_performed"] is False
     assert facts["production_admission"] is False
+
+
+def inspect_cli_source():
+    return (b"import hashlib\ndef functional():\n    import bz2\n"
+            b"def _main():\n    import argparse\n    import importlib\n"
+            b"if __name__ == '__main__':\n    _main()\n")
+
+
+def test_exact_imported_inspect_cli_excludes_only_its_private_main(monkeypatch):
+    raw = inspect_cli_source()
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    evidence = []
+    # bz2 in a functional body is still required; only the CLI imports disappear.
+    assert imported_selftest_edges(raw, "inspect", evidence) == {"hashlib", "bz2"}
+    assert evidence == [{
+        "module": "inspect", "module_source_sha256": sha(raw),
+        "guard": "canonical-imported-module-not-main", "guard_lineno": 7,
+        "function": "_main", "literal_call_count": 1, "call_lineno": 8,
+        "dynamic_reflection_verified": False,
+    }]
+
+
+def test_inspect_cli_exclusion_requires_independent_complete_official_source_pin():
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_source_drift"):
+        imported_selftest_edges(inspect_cli_source(), "inspect", [])
+
+
+@pytest.mark.parametrize("change", [
+    b"_main()\n", b"alias = _main\n", b"_main = lambda: None\n", b"del _main\n",
+])
+def test_inspect_cli_rejects_any_additional_private_helper_reference(change, monkeypatch):
+    raw = inspect_cli_source() + change
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "inspect", [])
+
+
+@pytest.mark.parametrize("signature", [
+    b"@decorator\ndef _main():\n", b"def _main(argument):\n",
+    b"def _main(*args):\n", b"def _main(*, option=None):\n",
+])
+def test_inspect_cli_helper_cannot_gain_decorators_or_parameters(signature, monkeypatch):
+    raw = inspect_cli_source().replace(b"def _main():\n", signature)
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "inspect", [])
+
+
+@pytest.mark.parametrize("raw", [
+    b"import inspect as introspection\nintrospection._main()\n",
+    b"from inspect import _main as run_cli\nrun_cli()\n",
+    b"from inspect import *\n", b"getattr(imported_module, '_main')()\n",
+])
+def test_selected_external_literal_inspect_cli_references_refuse(raw):
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_reference_invalid"):
+        imported_selftest_edges(raw, "selected_other_module", [])
+
+
+def test_unreviewed_module_private_main_and_functional_bodies_are_still_scanned():
+    evidence = []
+    assert imported_selftest_edges(inspect_cli_source(), "another_module", evidence) == {
+        "hashlib", "bz2", "argparse", "importlib",
+    }
+    assert evidence == []
+
+
+def test_public_inspect_import_does_not_count_as_private_cli_access():
+    evidence = []
+    assert imported_selftest_edges(b"from inspect import getsource\n", "another_module", evidence) == {
+        "inspect",
+    }
+    assert evidence == []
+
+
+def test_inspect_cli_guard_else_is_never_discarded(monkeypatch):
+    raw = inspect_cli_source() + b"else:\n    import required_dependency\n"
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_main_guard_invalid"):
+        imported_selftest_edges(raw, "inspect", [])
+
+
+def test_heapq_cannot_gain_a_private_demo_helper_even_with_synthetic_pin(monkeypatch):
+    raw = selftest_source("heapq") + b"def _test():\n    import required_dependency\n"
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "heapq", sha(raw))
+    with pytest.raises(closure.RuntimeClosureError, match="selftest_helper_invalid"):
+        imported_selftest_edges(raw, "heapq", [])
+
+
+def test_inspect_cli_evidence_retains_raw_frozen_source_and_false_runtime_claims(
+    closure_inputs, monkeypatch,
+):
+    args = closure_inputs
+    raw = inspect_cli_source().replace(b"def functional():\n    import bz2\n", b"")
+    args["cpython_sources"].update({
+        "Lib/json/decoder.py": b"import inspect\n", "Lib/inspect.py": raw,
+        "Lib/hashlib.py": b"pass\n",
+    })
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    refresh_cpython_pin(args)
+    original_sources = dict(args["cpython_sources"])
+    facts = json.loads(closure.prepare_fixed_runtime_closure(**args).wire_bytes)
+    frozen = {record["name"]: record for record in facts["frozen"]}
+    assert args["cpython_sources"] == original_sources
+    assert frozen["inspect"]["source"] == "Lib/inspect.py"
+    assert frozen["inspect"]["source_size"] == len(raw)
+    assert frozen["inspect"]["source_sha256"] == sha(raw)
+    assert {record["module"]: record["function"]
+            for record in facts["excluded_imported_selftests"]} == {"inspect": "_main"}
+    assert not {"argparse", "bz2"} & set(frozen)
+    assert "_bz2" not in {record["module"] for record in facts["native_units"]}
+    assert facts["dynamic_import_closure_verified"] is False
+    assert facts["runtime_execution_performed"] is False
+    assert facts["production_admission"] is False
+
+
+def test_inspect_cli_exclusion_never_hides_a_required_compression_import(
+    closure_inputs, monkeypatch,
+):
+    args = closure_inputs
+    raw = inspect_cli_source()
+    args["cpython_sources"].update({
+        "Lib/json/decoder.py": b"import inspect\n", "Lib/inspect.py": raw,
+        "Lib/hashlib.py": b"pass\n", "Lib/bz2.py": b"import _bz2\n",
+    })
+    monkeypatch.setitem(closure._IMPORTED_SELFTEST_SOURCE_SHA256, "inspect", sha(raw))
+    refresh_cpython_pin(args)
+    with pytest.raises(closure.RuntimeClosureError, match="unresolved_import"):
+        closure.prepare_fixed_runtime_closure(**args)

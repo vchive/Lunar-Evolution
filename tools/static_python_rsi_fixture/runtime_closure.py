@@ -84,7 +84,7 @@ _RUNTIME_ALIASES = {"collections.abc": "_collections_abc", "os.path": "posixpath
 # Complete official Lib/platform.py from the independently pinned 3.13.12
 # release above. This reviewed one-source exception is not a general callgraph.
 _PLATFORM_JAVA_SOURCE_SHA256 = "75fe9b94662e55b91e19602bb75e6ca6132f7a53fb22844fc44a507a639127e1"
-# Exact official imported-module demonstration/self-test sources only. These
+# Exact official imported-module demonstration/self-test/CLI sources only. These
 # modules are imported by their canonical frozen names, never executed as main.
 # A full source pin binds each sole private helper call to its false main guard.
 _IMPORTED_SELFTEST_SOURCE_SHA256 = {
@@ -92,6 +92,12 @@ _IMPORTED_SELFTEST_SOURCE_SHA256 = {
     "difflib": "0fc85357cdf45c242079be40245466b7b014b6f5f35064eec3d1b951e00d31ca",
     "pickletools": "bf882fd005a822076a08c1cd3415b96a74d0caab7d69610f31dbe35346917233",
     "heapq": "6d43277e5c76fc0f073cd388fcff852d14d068f6bb6d4886c340f8b75a1229a9",
+    "inspect": "ea27c96e5b29fe29de8e3ee8840a50d6ff4b05f47cf911f4ee17cb0d4f953ca8",
+}
+# Finite reviewed helpers only; no arbitrary function or main-block pruning.
+_IMPORTED_SELFTEST_FUNCTIONS = {
+    "pickle": "_test", "difflib": "_test", "pickletools": "_test",
+    "heapq": None, "inspect": "_main",
 }
 _INTERPRETER_PROVIDED = {
     "__main__": ("Python/pylifecycle.c", (
@@ -233,22 +239,26 @@ def _platform_java_guard(tree: ast.Module, module: str, raw: bytes) -> dict | No
 def _imported_selftest_guard(
     tree: ast.Module, module: str, raw: bytes,
 ) -> tuple[set[int], dict | None]:
-    """Exclude four exact imported-only demos, not arbitrary function bodies.
+    """Exclude five exact imported-only demos/CLI, not arbitrary functions.
 
     Source identity binds the finite call/reference inventory. Every selected
     module is also checked for literal external private-helper references.
     Dynamic reflection and complete runtime reachability remain unverified.
     """
+    private_helpers = {name for name in _IMPORTED_SELFTEST_FUNCTIONS.values() if name is not None}
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Attribute) and node.attr == "_test"
-                or isinstance(node, ast.Constant) and node.value == "_test"
+        if (isinstance(node, ast.Attribute) and node.attr in private_helpers
+                or isinstance(node, ast.Constant) and type(node.value) is str
+                and node.value in private_helpers
                 or isinstance(node, ast.ImportFrom) and node.module in _IMPORTED_SELFTEST_SOURCE_SHA256
-                and any(alias.name in {"_test", "*"} for alias in node.names)):
+                and any(alias.name in private_helpers | {"*"} for alias in node.names)):
             _fail("selftest_helper_reference_invalid")
     if module not in _IMPORTED_SELFTEST_SOURCE_SHA256:
         return set(), None
+    function = _IMPORTED_SELFTEST_FUNCTIONS[module]
     helpers = [node for node in tree.body
-               if isinstance(node, ast.FunctionDef) and node.name == "_test"]
+               if isinstance(node, ast.FunctionDef)
+               and (node.name == function if function is not None else node.name in private_helpers)]
     guards = [node for node in tree.body if isinstance(node, ast.If)
               and isinstance(node.test, ast.Compare)
               and len(node.test.ops) == len(node.test.comparators) == 1
@@ -265,14 +275,14 @@ def _imported_selftest_guard(
     guard = guards[0]
     excluded = {id(guard)}
     call_line = None
-    if module != "heapq":
+    if function is not None:
         if len(helpers) != 1:
             _fail("selftest_helper_invalid")
         helper = helpers[0]
         references = [node for node in ast.walk(tree)
-                      if isinstance(node, ast.Name) and node.id == "_test"]
+                      if isinstance(node, ast.Name) and node.id == function]
         calls = [node for node in ast.walk(guard) if isinstance(node, ast.Call)
-                 and isinstance(node.func, ast.Name) and node.func.id == "_test"]
+                 and isinstance(node.func, ast.Name) and node.func.id == function]
         if (len(references) != 1 or len(calls) != 1 or references[0] is not calls[0].func
                 or not isinstance(references[0].ctx, ast.Load)
                 or helper.decorator_list or helper.args.args or helper.args.posonlyargs
@@ -284,7 +294,7 @@ def _imported_selftest_guard(
         _fail("selftest_helper_invalid")
     return excluded, {"module": module, "module_source_sha256": _sha(raw),
                       "guard": "canonical-imported-module-not-main", "guard_lineno": guard.lineno,
-                      "function": "_test" if module != "heapq" else None,
+                      "function": function,
                       "literal_call_count": 1 if call_line is not None else 0,
                       "call_lineno": call_line, "dynamic_reflection_verified": False}
 

@@ -127,3 +127,68 @@ the caller, but the current scan does not prove that transitive initialization
 failure. Neither gap is turned into a successful module or blanket exemption.
 Reviewed target configuration, isolated real build, expanded installation and
 startup, solver lifecycle and native production CLI remain open.
+
+
+## d152 actual mixed and resource-lifetime continuation
+
+The clean d152 source ran the actual mixed case once after transport preparation.
+An earlier fresh directory hit a 300.00648133-second upload timeout before prepare
+or driver invocation; that failure is retained. A separate fresh directory then
+used an exact-byte, SHA-checked block delta against the read-only retained df81
+archive. Its rebuilt complete archive has SHA-256
+`eb484771b819a5369e79f074be4a2a820d8eb4897adfdde7f0416996190ecc71`.
+Preparation/upload success is not a case result.
+
+The actual case failed: original return code -15, timed_out=true,
+600.0333238020539 seconds, no JUnit or terminal module origins/finalizer record.
+All 2,452 Git files/executable bits match preparation and before/after inventories.
+The 353 own-stack samples truthfully stop at 180.407642 seconds; 120 known-PID
+samples span 594.998289 seconds with 596.9 thread-group CPU seconds. Neither
+observation establishes children, termination cleanup, timing shares or a complete
+root cause. No same-head retry or full CI is launched for this known failure.
+Independent terminal review SHA-256 is
+`131ba014e0204aab0480dd7677ef826eab2877b80b834ce3437f362e957ae56f`.
+
+The following source fixes a separately established resource-lifetime defect:
+all 31 internally owned RSILedger connections now close after their original
+transaction commits/rolls back; setup failures close before the original error
+propagates. The raw private API still returns a real Connection. No transaction,
+fresh read, authority comparison, budget or canonical representation is removed.
+This is not yet a demonstrated fix for mixed performance.
+
+The same batch extends the exact pinned imported-only CLI analysis to inspect.
+A new real-archive source-only check still refuses both profiles: OpenEvolve now
+records the exact observed subprocess.py:81 `_winapi` import, and Shinka records
+`_bz2` from bz2.py:17 with another route through calendar.py:700 -> argparse ->
+shutil. Original upstream sources are data only; no upstream Python/build,
+model, solver or evaluator is executed. This closes one analysis defect, not
+complete source/runtime closure.
+
+Concentrated regression: 14 files, 379 unique cases passed, zero failure/error/skip,
+pytest return code 0, 11.723235 seconds, unchanged source inventories. Original
+Ruff failed only SIM117 in the new resource test. After combining equivalent test
+contexts, only its ten affected cases were repeated; 28 distinct existing read-only
+and replacement-race cases were added for deterministic-close concerns. That run
+passed all 38, zero failure/error/skip, return code 0, 10.896873 seconds, unchanged
+source. The latest distinct-node union is **407 = 379 + 38 - 10**; the other 369
+passed cases were not reexecuted. Original failure/output/exit codes are retained.
+Final project Ruff, compileall and diff checks pass.
+
+Primary-workspace evidence under `parallel-batch-20261027/`:
+
+- `mixed-block-delta-prepared-m8cwpuyc/execution/`: actual original result;
+- `d152-mixed-independent-terminal-review-8x4eg2n0/review.json`: independent
+  terminal review (SHA above);
+- `ledger-inspect-concentrated-k9szduqp/`: original 379-case result and SIM117;
+- `ledger-inspect-affected-v_o96wlm/`: actual 38-case result and final static checks;
+- `ledger-inspect-independent-gate-15exen56/focused-review.json`: independent
+  407-node inventory/XML/style-equivalence review, SHA-256
+  `4615ba6b9916526621c1e74b57c85430d40a05d77253e4d9c1bfb7f783bc0ee6`;
+- `inspect-cli-real-source-uc63w6v_/`: both retained real-source refusals.
+
+The P2 native-lifecycle follow-up is specification only. Original installed-native
+context binding, durable exceptional cleanup, candidate/account isolation and real
+hard-disconnect acceptance remain open. No external HMAC/response or numeric PID
+raises cleanup/publication authority. Develop the remaining unblocked parts before
+freezing the next mixed/full-CI acceptance batch. This continuation has not merged
+into main and does not claim P0-P2 completion.

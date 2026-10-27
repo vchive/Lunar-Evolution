@@ -1,5 +1,40 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 最新续作：连接生命周期修复与 imported inspect CLI 依赖
+
+- `d152ecb9` 的实际 Linux mixed 已终态失败：600.033323802秒、rawrc=-15、
+  timed_out=true，无JUnit/终态module origins。2452文件前后一致；353个样本覆盖
+  前180秒，不能换算耗时占比。76项独审只确认失败材料，不重跑同HEAD或为它启动
+  完整CI，仍不可合main。独审SHA：
+  `131ba014e0204aab0480dd7677ef826eab2877b80b834ce3437f362e957ae56f`。
+- 上述真实case之前的另一目录在上传300秒超时，prepare/driver未调用；原失败保留。
+  后续fresh目录用完整SHA校验的只读基底/变化块重建精确archive，然后首次执行case。
+  不能把上传失败与实际600秒执行失败混为一谈，也不能把准备成功当用例通过。
+- 后继P0修复明确的连接资源缺口：SQLite Connection上下文不会close，31个内部
+  scope现都在原事务退出后关闭，setup失败也关闭并保留原异常；raw `_connect`
+  仍返回真实Connection。fresh SQL、JSON/lineage、CAS和预算不变。见
+  [窄规格](specs/160-rsi-learning-mode/ledger-connection-lifetime.md)。不宣称超时已解决。
+- 后继P1复用完整官方source pin/sole-call/main-guard规则排除`inspect._main` CLI，
+  保留原source及所有功能体依赖。见
+  [窄规格](specs/193-static-python-rsi-launch/imported-inspect-cli-closure.md)。一次真实
+  archive双profile源码检查仍拒绝：OE已精确观察到subprocess:81 `_winapi`；Shinka
+  仍是`_bz2`，另一路由calendar:700→argparse→shutil→bz2。没有伪造缺失模块，
+  没有运行上游Python、模型、编译或solver。
+- 集中14文件379项全过；原Ruff仅新测试SIM117失败。仅合并等价with后，重验受影响
+  10项并补充disjoint只读/替换竞态28项，38项全过；最新唯一节点共407，零fail/
+  error/skip，不算成417。最终Ruff/compileall/diff全过，源文件各次前后一致；
+  独审SHA `4615ba6b9916526621c1e74b57c85430d40a05d77253e4d9c1bfb7f783bc0ee6`。
+- P2已核明当前缺口并落规格：真正installed native launcher须在target gate前绑定
+  原始context，复用worker本机只读native lifecycle audit；guardian异常退出不产生
+  durable cleanup证明，仍须unknown。见
+  [待实现边界](specs/197-external-worker-coordination/native-lifecycle-followup.md)。
+  这份规格未实现，不能把既有HMAC/封存响应丢包验收当作真实断线/cleanup通过。
+- 后续：先补齐其余不受隔离环境阻塞的开发，冻结后集中验收。新source仍须自己的
+  原600秒/0retry mixed和完整CI；P1完整source/config/build/runtime/生产CLI、P2
+  原始context接线与异常cleanup均未关闭。5090gpu权限阻塞按既有选择保留，不绕过。
+
+下面保留旧source的原始结果，当前状态以上节为准。
+
 ## 实际验收更新：P2 固定 SSH 通过，P0 原预算仍超时
 
 - 干净 `df81a46c` 已 push；唯一新 Linux mixed 仍在600.01626674秒超时，rawrc=-15，
