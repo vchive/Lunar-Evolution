@@ -1,3 +1,19 @@
+## 最新优先级（2026-10-27 后继软件批次）
+
+| 优先级 | 本批已开发并 focused 验证 | 仍未关闭 |
+| --- | --- | --- |
+| P0 | reserved 原始 plain-row 的纯 digest memo；显式600秒稀疏栈诊断，旧预算不变 | 1bb唯一mixed仍600.01581秒超时；后继原600秒/零retry Linux mixed与完整CI |
+| P1 | 扩展93/103模块安装描述、真实ELF字节与原startup比较，旧九模块API不变 | 真实配置/完整C与link inputs、accepted build/custody consumer、live module collector、隔离build/runtime、solver/lifecycle/native CLI |
+| P2 | 原始任务六ID映射、creator-FD/目录关联、pre-gate pin与本机只读inspection | installed生产bridge、重启原始上下文resolver、账户隔离preflight/部署、guardian异常持久证据与真实断线验收 |
+
+本批集中15文件828项全过；风格修正只复验3文件147原节点全过，latest并集仍828，
+零fail/error/skip。原静态失败保留，最终Ruff/compileall通过；不能据此关闭Linux/CI。
+1bb同次known-PID约595秒累计597.09 CPU秒，但栈只覆盖前180秒；没有唯一瓶颈结论。
+5090gpu隔离权限限制仅阻塞相应实际验收，未开发软件仍按上表列明。当前不可合main，
+production/online=false。详见[本批验收](parallel-batch-acceptance-20261027.md)。
+
+以下保留原source历史快照。
+
 ## 当前批次（2026-10-27）：P0–P2 集成、一次集中回归
 
 | 优先级 | 已开发/实际证据 | 剩余门槛 |

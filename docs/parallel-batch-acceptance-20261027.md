@@ -1,3 +1,46 @@
+## Latest source successor: 828 distinct focused nodes
+
+The only head1bb mixed run has naturally failed at600.0158098859247 seconds,
+raw returncode-15, timed_out=true, without `focused.xml` or terminal actual
+module origins. All2,494 Git files and full archive inventories match before and
+after. Evidence is retained under ignored
+`parallel-batch-20261027/final-mixed-1bb66721-prepared-w704hnlr/execution`;
+independent review is `final-mixed-1bb66721-independent-review-k3k95qlm`, review
+SHA`de0ef0617dafac5d6cec8d3029c9937ae96f46bde16316149c209834e3995fe8`.
+
+The120 original PID samples span approximately595 seconds with597.09 thread-group
+CPU seconds. The later180–595s interval still records416.69 CPU seconds. Large
+rchar/syscall counts do not mean physical disk reads or identify a function.
+The354 own-stack samples stop honestly at180.094s; last420-second stacks and
+execution stages remain unknown. No unique root cause or deadlock is established.
+
+The successor software batch adds the reserved class-static event digest memo,
+explicit whole-deadline-v3 sparse collector, expanded fixed installation/startup
+descriptions and worker-local original-context inspection. The concentrated
+15-file run `final-software-batch-focused-5riuwhm5` passed828 nodes, rc0, no
+fail/error/skip,38.82826054s. Its original Ruff rc1 with7 style issues is retained;
+compileall rc0. Five style-only files changed, then only three affected test
+files were run in `final-software-batch-affected-p5eqxn5e`:147 passed, rc0,
+19.18351688s, zero fail/error/skip. These are the same147 initial nodes; the
+latest distinct union remains828, not975. Both runs retain actual raw XML,
+launch/selection/result and identical2,504-record before/after source snapshots.
+Final project Ruff and compileall return0. Staged diff is checked before commit.
+The independent latest-node review is
+`final-software-batch-independent-review-yz32l733/review.json`, SHA
+`db05f96bd7a952820f0cf5a560e1aaf59d79dd92cc7ea86503bc0fbf736a6a74`; its
+pointer-only union SHA is
+`8489bb4530cd8fb0489fd9284d57420c85d8493f437209e3dd1fa00ff2becb0a`.
+No synthetic JUnit or replacement successful process result is generated.
+
+Source preparation, synthetic descriptions and native fixtures grant no actual
+solver/runtime/production acceptance. No model, WebAgent or remote/company
+evaluator ran. The final clean source's original-budget Linux mixed/full CI,
+accepted build/custody/live collector/native CLI, installed worker bridge and
+restart resolver, account isolation and independent guardian crash evidence
+remain open. Environment limitations do not close the remaining software tasks.
+
+Earlier results below are retained for their original sources.
+
 # P0–P2 actual acceptance — 2026-10-27
 
 ## Latest integrated source / native-origin batch

@@ -265,22 +265,56 @@ def _read_at(directory: int, name: str, maximum: int) -> bytes:
         os.close(fd)
 
 
-def _publish(directory: int, name: str, raw: bytes) -> None:
+def _publish(
+    directory: int, name: str, raw: bytes, *, capture_identity: bool = False,
+) -> tuple[str | int, ...] | None:
+    """Publish exact worker bytes, optionally pinning the original creation FD.
+
+    The default preserves the historical close-before-publication ordering.
+    Only a trusted installed caller may retain a pin for native context binding.
+    """
+    if type(capture_identity) is not bool:
+        raise WorkerWrapperError("worker_wrapper_state_write_failed")
     temp = name + ".pending"
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
     try:
-        offset = 0
-        while offset < len(raw):
-            written = os.write(fd, raw[offset:])
-            if written <= 0:
+        try:
+            offset = 0
+            while offset < len(raw):
+                written = os.write(fd, raw[offset:])
+                if written <= 0:
+                    raise WorkerWrapperError("worker_wrapper_state_write_failed")
+                offset += written
+            os.fsync(fd)
+            if capture_identity:
+                written_identity = os.fstat(fd)
+        finally:
+            if not capture_identity:
+                closing_fd, fd = fd, -1
+                os.close(closing_fd)
+        os.link(temp, name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+        os.unlink(temp, dir_fd=directory)
+        os.fsync(directory)
+        if capture_identity:
+            published = os.fstat(fd)
+            named = os.stat(name, dir_fd=directory, follow_symlinks=False)
+
+            def stable(info: os.stat_result) -> tuple[int, ...]:
+                return (info.st_dev, info.st_ino, info.st_mode, info.st_uid,
+                        info.st_nlink, info.st_size, info.st_mtime_ns)
+
+            if (not stat.S_ISREG(published.st_mode) or published.st_nlink != 1
+                    or published.st_size != len(raw)
+                    or stable(published) != stable(written_identity)
+                    or stable(named) != stable(published)
+                    or named.st_ctime_ns != published.st_ctime_ns):
                 raise WorkerWrapperError("worker_wrapper_state_write_failed")
-            offset += written
-        os.fsync(fd)
+            return (hashlib.sha256(raw).hexdigest(), published.st_size,
+                    published.st_dev, published.st_ino,
+                    published.st_mtime_ns, published.st_ctime_ns)
     finally:
-        os.close(fd)
-    os.link(temp, name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
-    os.unlink(temp, dir_fd=directory)
-    os.fsync(directory)
+        if fd >= 0:
+            os.close(fd)
 
 
 def handle_worker_request(raw: bytes, config: WorkerWrapperConfig) -> bytes:

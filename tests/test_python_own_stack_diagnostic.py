@@ -134,6 +134,41 @@ def test_sample_limit_is_only_recorded_after_actual_full_exhaustion(world):
     assert _records(world.output)[-1]["samples_written"] == 3
 
 
+def test_explicit_whole_deadline_profile_observes_late_window_without_more_samples(world):
+    sampler = diagnostic.StackSampler(
+        "/source", ["allowed.py"], world.output, stdlib_root="/stdlib",
+        seconds=600, interval=5, profile="whole-deadline-v3",
+    )
+    outcome = _finish_run(sampler)
+    records = _records(world.output)
+    assert records[0]["protocol"] == "lunar-own-python-stack-diagnostic-v3"
+    assert records[0]["max_seconds"] == 600
+    assert records[0]["interval_seconds"] == 5 and records[0]["max_samples"] == 121
+    samples = [item for item in records if item["event"] == "sample"]
+    assert [item["monotonic_seconds"] for item in samples] == list(range(0, 600, 5))
+    assert outcome["reason"] == "duration_limit" and outcome["samples_written"] == 120
+    assert records[-1]["monotonic_seconds"] == 600
+    # Only the fake clock advances; this neither runs a case nor waits 600 seconds.
+    assert sampler.thread.joins == [0.5]
+
+
+@pytest.mark.parametrize("options,code", [
+    ({"profile": "whole-deadline-v3"}, "duration_invalid"),
+    ({"profile": "whole-deadline-v3", "seconds": 600}, "interval_invalid"),
+    ({"profile": "whole-deadline-v3", "seconds": 601, "interval": 5}, "duration_invalid"),
+    ({"profile": "whole-deadline-v3", "seconds": 600, "interval": 0.5}, "interval_invalid"),
+    ({"profile": "whole-deadline-v3", "seconds": True, "interval": 5}, "duration_invalid"),
+    ({"profile": "whole-deadline-v3", "seconds": 600, "interval": True}, "interval_invalid"),
+    ({"seconds": 600, "interval": 5}, "duration_invalid"),
+    ({"profile": "unknown"}, "profile_invalid"),
+    ({"profile": True}, "profile_invalid"),
+])
+def test_full_window_is_opt_in_exact_and_does_not_relax_early_profile(world, options, code):
+    with pytest.raises(diagnostic.DiagnosticError, match="^" + code + "$"):
+        diagnostic.StackSampler("/source", ["allowed.py"], world.output, stdlib_root="/stdlib", **options)
+    assert not world.output.exists()
+
+
 @pytest.mark.parametrize("waits,count", [(0, 0), (1, 1)])
 def test_main_completion_is_distinct_from_bounds(world, waits, count):
     sampler = world.create()

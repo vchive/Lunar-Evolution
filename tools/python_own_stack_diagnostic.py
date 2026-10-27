@@ -94,17 +94,22 @@ class StackSampler:
     """One owner and one daemon writer; use start(), then bounded finish()."""
 
     def __init__(self, source_root, allowed, output, *, stdlib_root,
-                 seconds=180.0, interval=0.5):
+                 seconds=180.0, interval=0.5, profile="early-v2"):
         self.prefix = _checked_root(source_root)
         self.stdlib_prefix = _checked_root(stdlib_root)
         self.allowed = checked_allowlist(allowed)
-        if type(seconds) not in (int, float) or not 0 < seconds <= _MAX_SECONDS:
+        if type(profile) is not str or profile not in {"early-v2", "whole-deadline-v3"}:
+            raise DiagnosticError("profile_invalid")
+        full_window = profile == "whole-deadline-v3"
+        if (type(seconds) not in (int, float)
+                or (seconds != 600 if full_window else not 0 < seconds <= _MAX_SECONDS)):
             raise DiagnosticError("duration_invalid")
-        if type(interval) not in (int, float) or interval not in (0.25, 0.5):
+        if (type(interval) not in (int, float)
+                or (interval != 5 if full_window else interval not in (0.25, 0.5))):
             raise DiagnosticError("interval_invalid")
         self.seconds = seconds
         self.interval = interval
-        self.max_samples = min(_MAX_SAMPLES, math.ceil(seconds / interval) + 1)
+        self.max_samples = min(121 if full_window else _MAX_SAMPLES, math.ceil(seconds / interval) + 1)
         self.main_ident = threading.get_ident()
         self.slots = {self.main_ident: 0}
         self.origin = time.monotonic()
@@ -127,7 +132,8 @@ class StackSampler:
             self.thread = threading.Thread(target=self._run, daemon=True)
             if not self._write({
                 "event": "start", "monotonic_seconds": 0.0, "diagnostic_only": True,
-                "protocol": "lunar-own-python-stack-diagnostic-v2",
+                "protocol": ("lunar-own-python-stack-diagnostic-v3" if full_window
+                             else "lunar-own-python-stack-diagnostic-v2"),
                 "interval_seconds": interval, "max_seconds": seconds,
                 "max_samples": self.max_samples, "max_threads_per_sample": _MAX_THREADS,
                 "max_depth_per_thread": _MAX_DEPTH, "max_frames_per_sample": _MAX_FRAMES,

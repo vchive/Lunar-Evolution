@@ -1,3 +1,25 @@
+## Latest software successor
+
+The next source integrates the reserved class-static pure event-digest memo,
+explicit sparse whole-deadline stack profile, separately versioned expanded
+installation/startup descriptions and original worker/native context inspection.
+One 15-file focused execution passed828 nodes. Style-only repair repeated only
+three affected files/147 existing nodes, all passing; latest union remains828,
+not975. Final Ruff/compileall pass. The original static failure is retained.
+
+Head1bb's unique mixed attempt timed out at600.015809886 seconds, rc-15, with
+no terminal JUnit/module-origin record. Known-PID accounting confirms sustained
+CPU/read work, not the later functions or stage. Do not rerun that failed source.
+The new source must retain the original600-second/zero-retry test control; an
+explicit v3 sparse stack runner must be separately pinned and validated as v3.
+No complete CI or merge is allowed on the strength of focused checks alone.
+
+The remaining software and environment gates are separately enumerated in the
+current backlog. Description parsing and an in-memory trusted resolver do not
+complete accepted build/custody, live collection, production CLI/worker wiring,
+restart resolver, account isolation or guardian crash evidence. Authors freeze
+this batch and corrections repeat affected checks only.
+
 # 2026-10-27 parallel development batch
 
 ## Current integration slice

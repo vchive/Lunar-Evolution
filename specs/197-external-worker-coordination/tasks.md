@@ -42,12 +42,14 @@ merely producing or verifying a detached signature.
 - [x] Verify an actual private cross-host installation, two authenticated inert episodes, sealed-response loss inspection and duplicate-dispatch refusal.
 - [ ] Verify separate account isolation, genuine SSH/network partition behavior and original remote lifecycle/cleanup evidence.
 
-## Native lifecycle continuation (not implemented)
+## Native lifecycle continuation (trusted local API implemented; deployment pending)
 
 See [original context and lifecycle inspection](native-lifecycle-followup.md).
 
-- [ ] Bind the original installed native context before target gate release.
-- [ ] Reuse worker-local read-only native lifecycle recovery/audit for that context.
+- [x] Implement the trusted pre-gate observer binding for original worker/native context and exact creation identities.
+- [ ] Connect that observer to an accepted installed production launcher; do not infer it from channel-v1.
+- [x] Reuse worker-local read-only native lifecycle recovery/audit for the retained original context.
+- [ ] Provision a restart-capable original-context resolver; current in-memory resolver refuses after restart.
 - [ ] Persist independently trustworthy terminal/cleanup evidence across launcher death.
 - [ ] Verify hard disconnect/account isolation on an accepted isolated target.
 

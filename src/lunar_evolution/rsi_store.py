@@ -1621,10 +1621,35 @@ class RSILedger:
             raise RSILearningError("rsi_record_digest_mismatch")
         return record
 
-    def _row_to_record_cached(self, row: sqlite3.Row) -> RSIRecord:
-        """Decode every fresh row; reuse only its exact expected digest calculation."""
-        converter = self._row_to_record
-        if (type(self) is not RSILedger or type(row) is not sqlite3.Row
+    def _row_to_record_cached(
+        self, row: sqlite3.Row | dict, *, class_static: bool = False,
+    ) -> RSIRecord:
+        """Decode each fresh row; memoize only its exact pure expected digest.
+
+        The reserved snapshot reader previously called the class static converter
+        directly on newly materialized plain dictionaries. Its explicit mode
+        preserves that class dispatch, including fallback and exception behavior;
+        ordinary callers retain the original instance/SQLite-only semantics.
+        """
+        converter = RSILedger._row_to_record if class_static is True else self._row_to_record
+        primitive_dict = False
+        if class_static is True and type(row) is dict:
+            columns = {
+                "logical_id", "revision", "kind", "state", "request_sha256",
+                "parent_record_sha256", "payload", "record_sha256", "created_at",
+            }
+            primitive_dict = (
+                len(row) == len(columns) and all(type(key) is str for key in row)
+                and row.keys() == columns and type(row["revision"]) is int
+                and all(type(row[name]) is str for name in (
+                    "logical_id", "kind", "state", "request_sha256", "payload",
+                    "record_sha256", "created_at",
+                ))
+                and (row["parent_record_sha256"] is None
+                     or type(row["parent_record_sha256"]) is str)
+            )
+        eligible_row = ((class_static is False and type(row) is sqlite3.Row) or primitive_dict)
+        if (type(self) is not RSILedger or not eligible_row
                 or converter is not _RECORD_ROW_CONVERTER
                 or converter.__code__ is not _RECORD_ROW_CONVERTER_CODE
                 or json.loads is not _RECORD_JSON_LOADS
@@ -1642,7 +1667,8 @@ class RSILedger:
             if (canonical_json is not _RECORD_CANONICAL_JSON
                     or decoder is not _RECORD_JSON_DECODER
                     or type(decoder) is not _RECORD_JSON_DECODER_TYPE
-                    or self._record_digest is not _RECORD_DIGEST):
+                    or (RSILedger._record_digest if class_static is True else self._record_digest)
+                    is not _RECORD_DIGEST):
                 return False
             namespace = object.__getattribute__(decoder, "__dict__")
             if ("decode" in namespace or "raw_decode" in namespace
@@ -1681,18 +1707,20 @@ class RSILedger:
             state=row["state"],
             request_sha256=row["request_sha256"],
             parent_record_sha256=row["parent_record_sha256"],
-            payload=json.loads(row["payload"]),
+            payload=json.loads(persisted_payload := row["payload"]),
             record_sha256=row["record_sha256"],
             created_at=row["created_at"],
         )
-        persisted_payload = row["payload"]
         key = None
         if (helpers_current()
                 and type(record.payload) is dict and type(record.revision) is int
                 and all(type(value) is str for value in (
                     record.logical_id, record.kind, record.state, record.request_sha256, persisted_payload,
                 ))
-                and (record.parent_record_sha256 is None or type(record.parent_record_sha256) is str)):
+                and (record.parent_record_sha256 is None or type(record.parent_record_sha256) is str)
+                and (not primitive_dict or all(type(value) is str for value in (
+                    record.record_sha256, record.created_at,
+                )))):
             key = (
                 record.logical_id, record.revision, record.kind, record.state,
                 record.request_sha256, record.parent_record_sha256, persisted_payload,

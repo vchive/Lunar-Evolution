@@ -1,5 +1,36 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 最新后继批次：P0–P2 软件集中回归完成，P0 仍待 Linux 验收
+
+- `1bb66721` 的唯一 mixed 已自然超时：600.015809886 秒、rc=-15，缺少 JUnit
+  和终态 module origins；2494 Git 源文件前后匹配。原失败保留，不重跑该 source。
+  同次约595秒窗口累计597.09 CPU秒；180–595秒仍累计416.69 CPU秒。它支持持续
+  计算/读取工作，不能定位后420秒的函数或阶段。终态独审SHA
+  `de0ef0617dafac5d6cec8d3029c9937ae96f46bde16316149c209834e3995fe8`。
+- P0 后继已把 reserved whole-ledger 原 class-static plain-row 路径接入现有有界纯
+  expected-digest memo。完整原始双快照、fresh SQL/JSON/链和当前stored digest比较
+  均保留；不缓存DTO或验证结果，不执行instance shadow。新增显式whole-deadline-v3
+  工具选项固定600秒/5秒、最多121样本；旧v2默认仍180秒，未扩大测试预算。
+- P1 新增独立版本的 expanded installation/startup description parser，适配真实
+  93/103 frozen与33/43 native来源清单；复用原static ELF/startup比较。旧九模块API
+  保持原样；实际配置/构建/custody、live完整module collector和生产接线仍未完成。
+- P2 新增可信原始assignment→native六项显式映射、pre-gate create-only上下文pin和
+  worker本机只读recover(cleanup=False)/audit。writer原FD身份与named path/held
+  directory/dir_fd相对entry关联，拒绝同字节不同inode或目录错配。resolver只保留
+  原对象；重启或关闭后context_unavailable，不从诊断pin补造原始对象。
+- 一次15文件集中回归828项全过。静态检查7项风格问题修正后只复验3个受影响文件
+  147项全过；它们均属于原828，最新并集仍828pass/0skip/0fail，不累计为975。
+  每轮2504源码记录前后相同，轮间只有指定5文件风格变化。最终Ruff/compileall通过。
+  原始证据：主区ignored `parallel-batch-20261027/final-software-batch-focused-5riuwhm5`
+  与 `final-software-batch-affected-p5eqxn5e`；原Ruff rc1保留。
+- 新clean source自己的600秒/零retry Linux mixed与完整CI尚未通过，当前不可合main。
+  accepted build/custody consumer、live collector、native生产CLI、installed worker
+  bridge、重启原始上下文resolver、账户隔离与guardian异常持久证据/真实断线验收仍
+  开放；不能把未开发软件都归为KVM阻塞。5090gpu既有隔离权限阻塞按用户选择保留。
+  本批无模型、远程/公司evaluator或WebAgent执行；production/online=false。
+
+以下为前序批次和历史原件，不覆盖本节当前结论。
+
 ## 当前批次：P0–P2 集成后集中回归
 
 - 实际工作树为 `codex/openevolve-fixed-profile`；此前已提交并 push `f8a812d5`。
