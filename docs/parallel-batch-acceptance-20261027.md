@@ -1,3 +1,23 @@
+## 12f987fb 唯一 Linux mixed 终态（2026-10-28）
+
+- 原返回码 -15、timed_out=true、600.015900308 秒；缺 focused.xml 和 terminal
+  loaded-lunar-modules.json。2523 源文件与归档 pre/post 匹配；28 个收取原件的
+  哈希和大小经独审匹配。独审只证明保全，不改变失败结论。
+- 后段 400–600 秒各有 40 个 main/worker 样本。main 全部在 owner publication
+  service/handle，其中 28 次包含 rejection history；worker 全部在 mailbox request
+  等待。末样 596.316 秒为 retain/acknowledge provenance → reserved history →
+  rejection receipts 文件重读，没有进入 driver settled-terminal。不能推定 child
+  序号、栈频次的耗时比例或死锁；无 stack completion，最后约 3.68 秒未知。
+- PID 端点 400.000442–595.000365 秒累计 195.04 thread-group CPU 秒，leader
+  runtime 187.793701 秒、runqueue 0.149491 秒。这不是函数级耗时。
+- 原件：主区 ignored `parallel-batch-20261027/final-mixed-12f987fb-prepared/execution`；
+  `independent-terminal-review.json` SHA 为
+  `b90050a2ae5892911bcdb749c5faff81f909e021b93743639f252f9b9290445b`，
+  `diagnostic-window-summary.json` SHA 为
+  `5b64ed9660efb345d52cc6f74cee92eb0e76e69ec483c715b3ffaac33840a65a`。
+- 778 项 focused/静态和局部 micro 通过仍不关闭 P0；本产品 source 不重跑，不启动
+  已知失败的完整 CI，未合 main。P1/P2 真实可信生产接线与隔离验收仍开放。
+
 ## P0 后继：778 unique 全过，唯一 Linux mixed 待执行
 
 720c唯一mixed原结果为600.031874664秒、rc=-15、timed_out=true，未生成JUnit/

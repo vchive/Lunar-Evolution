@@ -1,3 +1,15 @@
+## Terminal result for the frozen P0 successor
+
+The sole mixed execution for `12f987fb` timed out at 600.015900308 seconds,
+raw return code -15, without terminal JUnit/module origins. All 2,523 source
+files match the archive before and after. Later main samples stay in owner
+publication/history checks; all 40 later worker samples wait in the mailbox.
+The final sample at 596.316 seconds is historical rejection receipt readback.
+No child ordinal, deadlock or function-time share is established. The 778-case
+focused pass and local encoding speedup do not resolve P0. Keep this original
+failure; do not rerun the product source or begin full CI/merge as if it passed.
+Production P1/P2 prerequisites below remain open.
+
 ## P0 successor: frozen implementation, concentrated regression
 
 The720c source's sole mixed run exceeded its original600-second gate at

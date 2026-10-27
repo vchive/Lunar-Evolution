@@ -1,3 +1,11 @@
+## 最新终态（2026-10-28）
+
+新产品 source `12f987fb` 的唯一 Linux mixed 仍失败：600.015900308 秒、rc=-15，
+缺 JUnit/terminal origins，2523 文件前后与 archive 一致。778 项集中回归和局部计时
+通过没有关闭 P0。后段 main 在 owner publication/history 校验中推进，worker 等待
+mailbox；没有证据证明死锁或具体 child 序号。保留失败、不重跑该产品 source，完整
+CI 与 main 合并暂不启动。当前 P1/P2 仍依赖下述可信生产 runtime/账户/launcher/sink。
+
 ## 当前执行点：P0 后继集中回归通过，等待原预算 Linux 验证
 
 `720c787d`的唯一mixed在600.031874664秒超时（rc=-15，无JUnit/terminal origins）；

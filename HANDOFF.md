@@ -1,3 +1,15 @@
+## 终态补充：12f987fb mixed 仍超时（2026-10-28）
+
+`12f987fb` 已完成并推送本批代码，778 项集中回归及静态检查通过；其唯一 Linux mixed
+仍在 600.015900308 秒超时，rc=-15，无 JUnit/terminal origins。2523 文件与原 archive
+前后相同。后段 40 个 main 样本均在 owner publication 服务中，worker 40/40 在 mailbox
+等待；末次 596.316 秒仍在 rejection provenance 的历史 receipt 文件重读。400–595 秒
+观察端点间累计 195.04 thread-group CPU 秒，不能分配到函数或推定 child 序号。
+原失败保留，不重跑该产品 source，不启动已知失败的完整 CI；当前未合 main。
+原件在主区 ignored `parallel-batch-20261027/final-mixed-12f987fb-prepared/execution`，
+独审 SHA `b90050a2ae5892911bcdb749c5faff81f909e021b93743639f252f9b9290445b`。
+本批两项纯计算优化不能据局部收益宣称解决 P0；P1/P2 的生产前提与开放项继续有效。
+
 ## 最新延续：P0 操作内解析/JSON 优化，778 项集中回归通过
 
 - `720c787d` 的唯一 Linux mixed 已在600.031874664秒超时，rc=-15，未生成JUnit或
