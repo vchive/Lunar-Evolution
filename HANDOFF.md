@@ -1,3 +1,24 @@
+## 最新延续：P1/P2 四项软件补齐并集中验证
+
+- 本轮新增编译器 `-MD` depfile 捕获/有界解析及 pinned 输入比较、显式 in-image
+  完整模块 collector、本机 installed-account 只读预检、同 boot 原始 native 上下文的
+  HMAC 认证重启只读恢复。均为显式 opt-in；默认 solver/worker/native 行为保留。
+- restart 只重建受独立原始 anchor 绑定的上下文，实际调用 recover(cleanup=False)/audit；
+  不复活原 Popen/FD、放行 gate、重派任务、刷新 deadline 或写终态。返回前再次校验
+  key identity/secret 和全部五条目录链。旧 diagnostic pin 不构成恢复 authority。
+- 六文件集中回归377节点，初次347pass/30fail，全部失败来自新 collector 测试修改
+  synthetic closure 后漏刷新摘要。产品正确拒绝旧 pin；只修测试 helper，仅复验该文件
+  72项全过。最新377 unique 全过，零skip/error/fail；不能把72重复累加。每轮2519
+  源文件前后相同。主区 ignored `parallel-batch-20261027/final-six-focused-g92m9_i4`
+  和 `final-six-affected-_mmxat4t` 保留原结果。旧828不是本轮重跑。
+- P0 的前版1bb仍是600秒超时，不能宣称已解决。当前集成 source 待 clean HEAD 的
+  唯一600秒/零retry Linux mixed；v3稀疏栈覆盖请求扩至全预算，默认v2不改。通过后
+  才完整CI/合main。fixture/source comparison不等于真实solver或生产验收。
+- 仍开放：accepted build/custody及隐式link输入、真实隔离image/startup/solver/lifecycle、
+  collector trusted sink、生产 worker bridge/独立 anchor 持久保管、账户实际transition、
+  guardian异常持久证据与真实硬断线验收。5090gpu无sudo/KVM且bwrap/userns失败的
+  环境门按用户选择保留，不能把未接软件全部算环境阻塞；production/online=false。
+
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
 ## 最新后继批次：P0–P2 软件集中回归完成，P0 仍待 Linux 验收

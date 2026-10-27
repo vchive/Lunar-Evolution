@@ -21,6 +21,7 @@ from tools.static_python_fixture.profile import (
     STATIC_ADDITIONS,
 )
 from tools.static_python_fixture.tables import _CORE_INITIALIZERS
+from tools.static_python_rsi_fixture.live_module_source import prepare_fixed_live_main
 
 MAX_MODULES = 256
 MAX_SOURCE_FILES = 16384
@@ -714,13 +715,19 @@ def prepare_fixed_runtime_closure(
     producer_files: dict[str, bytes], producer_manifest: bytes,
     sqlite_sources: dict[str, bytes] | None = None,
     expected_sqlite_inventory_sha256: str | None = None,
+    live_modules_profile: str | None = None,
 ) -> FixedRuntimeClosure:
     """Resolve supplied source imports and emit real C tables/pending freezer jobs.
 
     The independently pinned CPython map must be the reviewed, patched source
     tree. SQLite is an explicit extra source input, never host libsqlite3. The
     returned new profile is not accepted by legacy nine-header DTOs implicitly.
+    The optional live-module profile embeds a callable only; it does not add a
+    sink, invoke that callable or change the solver/marker reply protocol.
     """
+    if (live_modules_profile is not None
+            and (type(live_modules_profile) is not str or live_modules_profile != "fixed-live-modules-v1")):
+        _fail("live_module_profile_invalid")
     cpython = _pinned_sources(cpython_sources, expected_cpython_inventory_sha256)
     modules = _producer(solver, producer_files, producer_manifest)
     paths = {}
@@ -845,6 +852,17 @@ def prepare_fixed_runtime_closure(
         selected[canonical_name] = (path, cpython[path])
         if package:
             packages.add(canonical_name)
+    if live_modules_profile is not None:
+        live_aliases = tuple(sorted((
+            *aliases.items(), *((name, _RUNTIME_ALIASES[name]) for name in runtime_aliases),
+        )))
+        launcher = prepare_fixed_live_main(
+            solver, frozen_names=tuple(sorted(aliases.get(name, name) for name in selected)),
+            builtin_names=tuple(sorted(builtin)), aliases=live_aliases,
+            frozen_packages=tuple(sorted(aliases.get(name, name) for name in selected if name in packages)),
+        )
+        generated["runtime/frozen_main.py"] = launcher
+        selected["_lunar_static_main"] = ("runtime/frozen_main.py", launcher)
     frozen = []
     symbols = set()
     for name, (path, raw) in sorted(selected.items()):

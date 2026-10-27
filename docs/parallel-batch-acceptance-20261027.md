@@ -1,3 +1,23 @@
+## 后继集中回归：377 unique 全过，Linux mixed 待执行
+
+本轮在同一集成source收齐四项功能后回归：compiler depfile捕获与输入比较、显式
+in-image模块collector、installed账户只读预检、独立原anchor认证的native restart inspection。
+默认入口不变；restart保留原deadline，仅recover(cleanup=False)/audit，不返回执行权威。
+
+原始六文件结果：377节点、347pass/30fail、零skip/error、rc1、57.978726959秒；2519
+源文件前后相同。所有30fail均由新collector测试helper在改变synthetic closure后没有刷新
+描述中的closure SHA触发，原生产parser正确拒绝。仅修该测试文件；一次受影响回归72节点
+全过、rc0、1.075133583秒、同2519源文件前后匹配。最新不同节点仍377，全过；两份XML、
+原返回码和源码inventory保留，不累加为449，也不重复上批828。
+
+原件均在主区ignored `.lunar-evolution/validation/parallel-batch-20261027/`：
+`final-six-focused-g92m9_i4`、`final-six-affected-_mmxat4t`。原静态style失败同样保留；
+最终Ruff/compileall、staged diff及独审单独绑定真实命令和当前source。
+
+当前仅关闭上述provider-free软件检查；不声称真实CPython/solver执行、immutable custody、
+trusted live sink、生产worker部署、账户transition、远端cleanup或发布验收。新clean HEAD
+仍需原600秒/零retry Linux mixed，成功后才启动完整CI。5090gpu隔离权限门按原选择保留。
+
 ## Latest source successor: 828 distinct focused nodes
 
 The only head1bb mixed run has naturally failed at600.0158098859247 seconds,

@@ -1,3 +1,19 @@
+## 当前执行点：四项后继软件已开发，集中回归377项通过
+
+| 优先级 | 本轮完成的软件 | 尚未关闭的门槛 |
+| --- | --- | --- |
+| P0 | 既有 reserved 纯digest复用及显式全预算v3稀疏栈诊断保留 | 新clean source原600秒/零retry Linux mixed、据后段栈定位剩余瓶颈，再完整CI/合main |
+| P1 | C编译depfile捕获/系统头与先前generated output比较；显式in-image完整module collector与host描述比较 | accepted build/custody、implicit link closure、trusted collector sink、实际隔离build/image/startup/solver/lifecycle与native生产CLI |
+| P2 | 固定root-installed anchor账户预检；独立原始anchor/HMAC绑定的同boot重启只读recover/audit | installed bridge及anchor跨重启保管、实际账户transition/隔离、guardian异常durable证据及真实partition验收 |
+
+六文件377 unique最新全过。初始30fail均为同一新测试helper漏刷新synthetic closure
+摘要，产品拒绝正确；修helper后仅受影响文件72项通过。原失败保留，不能累计为449。
+两轮各2519源文件前后一致；既有828没有重复执行。最终静态/独审及新Linux mixed结果
+随原始证据登记。仍不能宣称P0–P2生产全部完成或合main。
+5090gpu权限阻塞只解释实际隔离构建门；trusted sink/bridge/guardian等软件接线仍明确开放。
+
+以下均为历史快照，不覆盖本节。
+
 ## 最新优先级（2026-10-27 后继软件批次）
 
 | 优先级 | 本批已开发并 focused 验证 | 仍未关闭 |

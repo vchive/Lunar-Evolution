@@ -256,6 +256,7 @@ class WorkerNativeLifecycleResolver:
         episode_directory: Path,
         original_episode_chain: DirectoryChain, original_worker_intent: bytes,
         original_worker_intent_identity: tuple[str | int, ...],
+        restart_writer: object | None = None,
     ) -> Callable[[NativeTrustedRegisteredContext], None]:
         """Retain originals; only the actual pre-gate observer publishes a pin."""
         if self._closed or type(original_episode_chain) is not DirectoryChain:
@@ -270,6 +271,10 @@ class WorkerNativeLifecycleResolver:
                 or any(not isinstance(path, Path) or not path.is_absolute() or ".." in path.parts
                        for path in (workspace, producer_root))):
             _fail("context_invalid")
+        if restart_writer is not None:
+            from .external_worker_native_restart import WorkerNativeRestartWriter
+            if type(restart_writer) is not WorkerNativeRestartWriter:
+                _fail("restart_writer_invalid")
         lookup = native_lifecycle_lookup(context=context, request_sha256=request.digest(),
                                          profile_sha256=profile_sha256)
         if lookup in self._originals:
@@ -333,6 +338,9 @@ class WorkerNativeLifecycleResolver:
                 original.binding_pin = _publish(original.worker_chain.fd, _PIN_NAME, raw, capture_identity=True)
                 original.binding_raw = raw
                 original.check_native()
+                if restart_writer is not None:
+                    restart_writer.persist(original)
+                    original.check_native()
             except BaseException:
                 original.close()
                 raise

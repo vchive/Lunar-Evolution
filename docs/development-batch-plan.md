@@ -1,4 +1,29 @@
-## Latest software successor
+## Final parallel continuation: develop first, regress once
+
+The final source adds compiler dependency capture/comparison, an explicitly
+selected in-image whole-module collector, local installed-account preflight and
+authenticated same-boot original native-context restart inspection. The latter
+is a read-only API with a separately retained trusted creator anchor; it must
+not upgrade the old diagnostic pin into authority or restore process handles.
+Default solver output, worker channel and native launch behavior remain fixed.
+
+Authors performed source review and AST checks before a single six-file focused
+selection. The initial377 nodes had30 failures in one new collector test helper;
+its synthetic closure digest was stale, correctly refused by the production
+parser. Only that helper changed and its72-node file passed once. The latest
+unique total is377 passing, not449. Original results and static failures remain
+retained; all2519 source files matched before/after each actual run.
+Do not rerun the previous 828-node batch. Finally freeze a clean commit and run
+its single original 600-second, zero-retry Linux mixed case with v3 diagnostics;
+full CI and merging still depend on that result.
+
+Actual isolated build/custody, trusted live-output sink, installed production
+bridge, account transition and abnormal guardian cleanup evidence remain distinct
+acceptance/development boundaries. A depfile or authenticated diagnostic cannot
+complete them. No WebAgent, model, remote/company evaluator or host-Python
+substitute for the isolated target is authorized by this batch.
+
+## Prior software successor
 
 The next source integrates the reserved class-static pure event-digest memo,
 explicit sparse whole-deadline stack profile, separately versioned expanded
