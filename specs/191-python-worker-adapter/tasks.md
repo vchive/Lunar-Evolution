@@ -1,5 +1,23 @@
 # Tasks
 
+## Fixed OpenEvolve source preparation (2026-10-27)
+
+- [x] Specify the seven-module source profile, original two grants, fixed
+  request/settings/result mapping and existing host broker boundary in
+  [openevolve-fixed-source-profile.md](openevolve-fixed-source-profile.md).
+- [x] Implement exact retained-archive validation and create-only source output;
+  generate the target broker subset from the pinned current Lunar source rather
+  than maintaining a separate unchecked client copy.
+- [x] Validate source preparation and adapter orchestration with one focused
+  fixture selection plus Ruff/compileall/diff checks and independent review.
+  Keep actual upstream imports/diff execution and runtime acceptance separate.
+- [ ] Accept the complete stdlib/native/build closure, controlled source custody
+  and immutable image in a supported isolation environment.
+- [ ] Accept sealed input consumption, actual project behavior, native execution
+  observation/export and the interruption/recovery matrix, then compose the
+  runtime-gated production CLI. The source-preparation report cannot grant any
+  of these permissions.
+
 ## Bounded Linux process accounting diagnostic (2026-10-26)
 
 - [x] Specify and implement the standalone single-PID numeric observer without

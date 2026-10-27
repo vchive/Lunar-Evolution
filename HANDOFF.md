@@ -1,5 +1,36 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 当前并行工作：2486 最终 CI 与独立 P1 源码准备
+
+- PR189 已正常推送精确 `2486a6dc08457b360fdd7bc5f0e6fdb14966e52f`。
+  [最终 CI40457518133](https://github.com/vchive/Lunar-Evolution/actions/runs/40457518133)
+  于 2026-10-27 05:49:42 UTC 启动，承担该 source 的三版 Linux 集成验证；
+  尚未有最终通过结论。该受测分支冻结，不因 P1 或状态文档取消矩阵。
+- 2486 的唯一 5090gpu mixed 在 600.020565 秒超时，rawrc=-15，无 JUnit 或
+  terminal module origins；完整 source 前后一致，独审只确认失败材料。
+  原失败不重跑、不放宽原 600 秒预算、零测试 retry。最终 CI 尚不能宣称修复此失败。
+- 单独 180 秒 Linux 栈采样诊断只保留前 85.77 秒的 167 次采样。已见 owner
+  证据/SQL/runtime-pin 链持续推进及 worker 等待 mailbox，未证明死锁或锁争用。
+  sampler 在 finally 使用预设 `sample_limit` 标签有报告缺陷，具体提前退出触发仍
+  未知；不能当作完整 180 秒采样或验收通过。原诊断未重跑，独审材料为主区 ignored
+  `release-closeout-20261025/own-stack-early-stop-static-review-8k3i5ob4/`。
+- P1 在独立 `codex/openevolve-fixed-profile` 分支继续实现七模块固定源码准备器、
+  原两份 input grant、一次现有 broker 请求和 create-only candidate wrapper。
+  broker 客户端从固定当前 source 生成，不改变受测 host implementation。
+  实施边界见 [固定源码规格](specs/191-python-worker-adapter/openevolve-fixed-source-profile.md)。
+  已完成该源码切片：一次158项focused全过；修正实际tar0664/0775模式后，只重验
+  受影响37项全过，两份JUnit并集160unique。真实归档CLI一次生成七模块、两许可证
+  及manifest成功，独审核对全部字节及17个broker片段；Ruff/compileall/diff通过。
+  manifest SHA为`03266224f20d99aaef794cb8c9d8688f9ba8c1d44faf8c46b207c3780d4a6b06`。
+  原证据在主区ignored `feature191-20261027/openevolve-fixed-source-h4y64e03/`。
+  此项属于可在无 KVM 条件下完成的源码工作；完整 build/runtime closure、accepted
+  custody/image、真实 solver/lifecycle/export 和生产 CLI 仍需另行验收。
+- 回归策略：一次对应 focused 加最终静态检查；不重复旧 67 文件联合，也不重跑
+  已失败 source 寻求偶然通过。CI 自然终态后执行已准备的精确 head collector 并独审，
+  门槛通过后按用户授权合 main。P2 后置，production/online 保持 false。
+
+下方为按原 source 保留的历史记录，当前状态以上段及最终收证为准。
+
 ## 最新验收：4e Linux mixed 仍超时，避免启动已知失败的完整 CI
 
 - 精确 `4e1847dda1bb0a1fc3d37037b23b6be2863a61fb` 的唯一 5090gpu mixed

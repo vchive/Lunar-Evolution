@@ -1,5 +1,22 @@
 ## 2026-10-27 当前状态与剩余优先级
 
+当前执行点（下方旧 source 记录保留历史结论）：
+
+- **P0**：PR189 精确 `2486a6dc` 已推送，最终三版 CI
+  [40457518133](https://github.com/vchive/Lunar-Evolution/actions/runs/40457518133)
+  已启动，尚未终态。受测 source 冻结；自然结束后只收证一次并独审，再按门槛决定合并。
+  同 source 的 5090gpu mixed 仍为 600.020565 秒超时，原失败不重跑、不改预算。
+- **P1 可继续开发**：独立分支实现
+  [固定 OpenEvolve 源码准备器](../specs/191-python-worker-adapter/openevolve-fixed-source-profile.md)，
+  固定归档、七模块、生成式现有 broker 客户端及原两份 grant。此项不改变 P0 受测树。
+  源码切片已完成：158项focused通过；最终只重验受影响37项通过，并集160unique。
+  真实归档CLI一次成功，10文件/17个broker片段经独审；静态检查通过。它不关闭下条
+  实际runtime/生产CLI验收。
+- **P1 待环境与实际验收**：完整静态 runtime/build closure、accepted custody/image、
+  真实 solver/lifecycle/export 和生产 CLI。源码准备或 stub fixture 不能关闭这些项。
+  5090gpu 的隔离权限限制保持，不启用 host-interpreter fallback。
+- **P2**：多机 ownership、外部 worker 来源认证继续后置。production/online 仍为 false。
+
 最新精确 `4e1847dd` 的唯一 5090gpu mixed 仍在原 600 秒预算超时
 （600.016232 秒，rawrc=-15，无 JUnit / 执行终态 origins）；2,682 entries /
 2,391 源文件前后一致。原失败不重跑，不为这份已知失败源码启动完整 CI。
