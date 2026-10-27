@@ -185,3 +185,24 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
   PR88 final source `5bb90c9` is bound to original run `38358940938`; see the
   retained historical audit for original archive failure/retry and the present
   extraction's extra cache-file qualification.
+
+## Command-output recipe v2 continuation
+
+- [x] Specify the explicit command-output wire and its acceptance boundary in
+  `command-output-build-execution.md`; retain the v1 schema, semantics and limits.
+- [x] Add complete preflight for command-output dependencies, earlier executable
+  declarations, undefined/forward references, output path overlap and v2 limits.
+- [x] Reuse the existing executor, input snapshots, deadline, logs and reap path;
+  grant generated executable outputs only after the complete output group and
+  all original/prior evidence pass observation and drift checks.
+- [x] Add an independent inert-helper test source that generates an executable
+  and nine tiny fixture headers within one stage, with failure, drift, control,
+  freshness and v1 compatibility cases. These are not actual frozen headers.
+- [x] Complete centralized focused tests, unchanged v1 compatibility, Ruff,
+  compileall and diff checks; record actual source-bound evidence and review
+  before merge. The twelve-file batch covers 366 distinct cases with all latest
+  outcomes passing after an affected-only correction to two synthetic inventory
+  test inputs; see Feature197 `validation.md`. AST alone is not the acceptance.
+- [ ] Complete final-source CI and independent review before merge. Real
+  configured CPython/freezer/toolchain/static-image and F02c/G1/G2 acceptance
+  remain separate open tasks; this continuation cannot close them.

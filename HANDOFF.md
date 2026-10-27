@@ -1,5 +1,35 @@
 # 当前交接（2026-10-27，PR186、PR187 已合入 main）
 
+## 当前批次：分块并行开发、冻结后集中回归
+
+- 按用户最新要求推进 P0–P2，执行策略见
+  [批量开发计划](docs/development-batch-plan.md)。下方“P2后置”保留旧阶段历史，
+  不再作为本批次限制。默认仍是单一权威 controller 的本地 CLI。
+- PR189 的精确 `2486a6dc` 最终 CI40457518133 已自然失败：30个执行job中29个
+  success，3.11/current-3的原 `three-child-mixed` 超过600秒
+  （600.1426136690002秒，伴随attempt_unknown）。三个只读汇总gate因依赖整个矩阵
+  的result而共同拒绝，不代表另有三个产品失败。该source不可合main；原失败不重跑。
+  唯一终态collector保留33 ZIP/30 provenance/34唯一原XML，经独审全部匹配；三个
+  focused ZIP确实仅有拒绝日志，没有成功summary。原collector rc1/CI=false/
+  all_evidence_checks_passed=false均保留，不把收证当验收。主区ignored
+  `release-closeout-20261025/pr189-run40457518133-focused-shape-terminal-ol_sycqc/review.json`
+  SHA为`de570d8ff171e05e8dc66e675c00e04558c0db8bc20d957ffad7a09c76c9bdd8`。
+- P1后继在独立 `codex/openevolve-fixed-profile` 上，OpenEvolve源码切片已提交
+  `d5da3411`；新增Shinka固定源码准备器、recipe-v2逐命令产物，以及Feature197
+  worker来源认证和durable assignment。本批集中检查覆盖366个不同case，原364通过/
+  2个新增synthetic测试构造失败，修正后仅96项受影响选择重验全过，最终366项全通过。
+  staged diff发现新asset多余EOF换行，AST等价修正/repin后只重验Shinka91项全过。
+  Ruff/compileall/staged diff通过；最终asset版真实Shinka归档CLI一次准备成功，
+  13文件manifest为`5a6e716142cf71d944adbc7e1622cb1a147f7ef9eaba556e9bb1f707680ecffa`，
+  前版准备树和原报告保留；仍未执行上游算法。
+- assignment复用原SQLite/owner lock/callback journal，全局episode namespace防止
+  换run/worker重派；真实HMAC来源通过后一次消费，unknown/中断保持gate。
+  不发起远程进程、不证明远程cleanup，也不发布native成功结果。
+- 完整CPython/Zig recipe、封闭runtime/image、真实solver/生命周期/生产CLI和跨机
+  实际验收仍开放。隔离权限阻塞按用户要求保留；production/online仍false。
+
+下段为本批次之前的快照，当前状态以上段及终态收证为准。
+
 ## 当前并行工作：2486 最终 CI 与独立 P1 源码准备
 
 - PR189 已正常推送精确 `2486a6dc08457b360fdd7bc5f0e6fdb14966e52f`。
