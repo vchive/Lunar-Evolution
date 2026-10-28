@@ -19,6 +19,19 @@ REPO = Path(__file__).resolve().parents[1]
 MANIFEST = REPO / "tools/ci-focused-groups.json"
 ROLES = tuple([f"current-{index}" for index in range(6)]
               + [f"heavy-{index}" for index in range(len(runner.HEAVY_CURRENT_NODES))])
+_FIXED_U_BOOTSTRAP_FILE = "tests/test_native_fixed_u_input_bootstrap.py"
+_FIXED_U_BOOTSTRAP_GROUP = "native-fixed-u-input-bootstrap"
+_FIXED_U_ROOT_FUNCTION = "test_actual_root_input_grants_bind_original_fd_acl_and_exact_combinations"
+_FIXED_U_ROOT_NODES = frozenset(
+    f"{_FIXED_U_BOOTSTRAP_FILE}::{_FIXED_U_ROOT_FUNCTION}[{change}-{kind}]"
+    for change in (
+        "exact", "missing", "missing-request", "mixed-files", "duplicate", "mixed", "no-marker",
+        "node-pin", "root-pin", "role", "fd", "replace", "hardlink", "directory-mode", "file-mode",
+        "default", "extra", "expired",
+    )
+    for kind in ("producer", "rsi")
+)
+_FIXED_U_ROOT_SKIP = "root-owned original input prerequisite; never elevate"
 
 
 class GateError(ValueError):
@@ -63,7 +76,7 @@ def _manifest(raw):
     _require(set(value) == {"schema", "groups"}
              and value["schema"] == "lunar-ci-focused-groups-v1", "Invalid group manifest")
     groups = value["groups"]
-    _require(type(groups) is list and len(groups) == 80, "Expected 80 focused groups")
+    _require(type(groups) is list and len(groups) == 83, "Expected 83 focused groups")
     identities = set()
     for group in groups:
         _require(type(group) is dict and set(group) == {
@@ -87,8 +100,12 @@ def _manifest(raw):
         _require(type(group["zero_skips"]) is bool and (
             (type(expected) is int and expected > 0)
             or (not group["zero_skips"] and expected is None)), "Invalid focused count rule")
-    _require(sum(group["zero_skips"] for group in groups) == 63,
-             "Expected 63 explicit count/zero-skip gates")
+        if identity == _FIXED_U_BOOTSTRAP_GROUP or _FIXED_U_BOOTSTRAP_FILE in files:
+            _require(identity == _FIXED_U_BOOTSTRAP_GROUP
+                     and files == [_FIXED_U_BOOTSTRAP_FILE] and expected == 87
+                     and group["zero_skips"] is False, "Invalid fixed-U bootstrap rule")
+    _require(sum(group["zero_skips"] for group in groups) == 65,
+             "Expected 65 explicit count/zero-skip gates")
     return groups
 
 
@@ -113,6 +130,23 @@ def _identity(provenance, summary, context, role):
              and summary.get("working_tree") is True and summary.get("offline") is True
              and type(summary.get("schema_version")) is int
              and summary["schema_version"] == 1, "Incorrect runner identity")
+
+
+def _fixed_u_bootstrap_skip_gate(group, nodes, skipped):
+    """Require ordinary C/ACL bodies and only finite nonroot prerequisite skips.
+
+    Root skips remain skips in the receipt. They establish neither execution of
+    those bodies nor installed whole-scope acceptance.
+    """
+    if group["id"] != _FIXED_U_BOOTSTRAP_GROUP:
+        return
+    roots = {node for node in nodes if node.partition("::")[2].partition("[")[0]
+             == _FIXED_U_ROOT_FUNCTION}
+    _require(roots == _FIXED_U_ROOT_NODES and len(nodes) - len(roots) == 51,
+             "Fixed-U bootstrap root/ordinary inventory differs")
+    _require(all(item["node"] in roots and item["message"] == _FIXED_U_ROOT_SKIP
+                 and item["type"] == "pytest.skip" for item in skipped),
+             "Fixed-U bootstrap ordinary or unrecognized skip refused")
 
 
 def _report(directory, role, context, full_nodes):
@@ -219,6 +253,7 @@ def aggregate(artifacts_dir, manifest_raw, context, *, upstream_result):
                 skipped.append({"node": node, "message": skip.get("message"),
                                 "type": skip.get("type"), "text": skip.text})
         _require(not group["zero_skips"] or not skipped, f"Focused skip refused: {group['id']}")
+        _fixed_u_bootstrap_skip_gate(group, nodes, skipped)
         results.append({"id": group["id"], "tests": len(nodes), "failures": 0, "errors": 0,
                         "skipped": skipped, "inventory_sha256": runner._inventory_sha256(nodes),
                         "expected_tests": group["expected_tests"], "zero_skips": group["zero_skips"]})

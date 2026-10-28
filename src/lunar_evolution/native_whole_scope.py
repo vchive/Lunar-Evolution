@@ -195,6 +195,8 @@ class NativeWholeScopeOwner:
         self._publication_pins = None
         self._preparation_key = None
         self._final_intent = None
+        self._fixed_u_input_owner = None
+        self._custody_owner = None
 
     def __copy__(self):
         _fail("owner_invalid")
@@ -462,6 +464,57 @@ class NativeWholeScopeOwner:
     def output_directory(self):
         return Path(self._profile["paths"][1]) / self.journal_id / "output"
 
+    def acquire_fixed_u_input_owner(self):
+        """Opt into distinct-user inputs once, before input/intent freeze.
+
+        This consumes this exact installed acquisition, not numeric credentials,
+        a detached profile description or a recovered attempt.
+        """
+        from .native_fixed_u_inputs import _acquire_fixed_u_input_owner
+
+        return _acquire_fixed_u_input_owner(self)
+
+    def acquire_custody_owner(self):
+        """Reserve private R storage beneath this original attempt, once.
+
+        This explicit selection grants only diagnostic persistence; it adds no
+        native deadline, cleanup authority or candidate filesystem grant.
+        """
+        from .native_whole_scope_custody import _acquire_whole_scope_custody
+
+        return _acquire_whole_scope_custody(self)
+
+    @property
+    def original_custody_owner(self):
+        if self._custody_owner is not None:
+            self._custody_owner._check(require_unexpired=False)
+        return self._custody_owner
+
+    @property
+    def original_fixed_u_input_owner(self):
+        from .native_fixed_u_inputs import checked_fixed_u_input_owner
+
+        if self._fixed_u_input_owner is None:
+            return None
+        owner = checked_fixed_u_input_owner(self._fixed_u_input_owner, require_unexpired=False)
+        if owner._scope is not self:
+            _fail("owner_invalid")
+        return owner
+
+    def _check_published_grants(self):
+        self._check_installation()
+        if self._published is None or self._publication_pins is None:
+            _fail("grants_unavailable")
+        for index, (fd, (identity, acl)) in enumerate(zip(self._published, self._publication_pins, strict=True)):
+            if _kernel_identity(fd) != identity or (acl is not None and os.getxattr(fd, "system.posix_acl_access") != acl):
+                _fail("original_changed")
+            parent, name = ((self._execution_fd, self.journal_id) if index == 0
+                            else (self._published[0], "work" if index == 1 else "output"))
+            named = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if (named.st_dev, named.st_ino, named.st_mode, named.st_uid, named.st_gid) != (
+                    identity[0], identity[1], identity[5], identity[3], identity[4]):
+                _fail("original_changed")
+
     def publish_original_grants(self, *, deadline_ns):
         """Create fixed native leaves before any intent/input identity freeze."""
         if self._published is not None or self._preparation_key is not None or self._channels_prepared:
@@ -512,15 +565,9 @@ class NativeWholeScopeOwner:
         self._final_intent = digest
         self._deadline = deadline_ns
         self._remaining()
-        for index, (fd, (identity, acl)) in enumerate(zip(self._published, self._publication_pins, strict=True)):
-            if _kernel_identity(fd) != identity or (acl is not None and os.getxattr(fd, "system.posix_acl_access") != acl):
-                _fail("original_changed")
-            parent, name = ((self._execution_fd, self.journal_id) if index == 0
-                            else (self._published[0], "work" if index == 1 else "output"))
-            named = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            if (named.st_dev, named.st_ino, named.st_mode, named.st_uid, named.st_gid) != (
-                    identity[0], identity[1], identity[5], identity[3], identity[4]):
-                _fail("original_changed")
+        self._check_published_grants()
+        if self._fixed_u_input_owner is not None:
+            self.original_fixed_u_input_owner.check()
         if ((working is not None and Path(working) != self.working_directory)
                 or (output is not None and Path(output) != self.output_directory)):
             _fail("grants_unavailable")
@@ -579,6 +626,7 @@ class NativeWholeScopeOwner:
         self._binding = self._core(launch=launch.launch_sha256, intent=launch.intent_sha256,
                                    target=intent.executable_sha256, deadline_ns=deadline_ns)
         self._remaining()
+        custody_fd = -1 if self._custody_owner is None else self._custody_owner._borrow_for_start()
         line = os.fstat(controller_lifeline_fd)
         if (not stat.S_ISFIFO(line.st_mode)
                 or fcntl.fcntl(controller_lifeline_fd, fcntl.F_GETFL) & os.O_ACCMODE != os.O_RDONLY):
@@ -591,9 +639,12 @@ class NativeWholeScopeOwner:
             "--delegation-fd", str(self._delegation_fd), "--bootstrap-pidfd", str(bootstrap_pidfd),
             "--controller-fd", str(self._controller_child.fileno()), "--enrollment-fd", str(self._enrollment_child.fileno()),
             "--lifecycle-fd", str(self._lifecycle_child.fileno()), "--controller-lifeline-fd", str(controller_lifeline_fd),
-            "--image-fd", str(self._image_fd), "--custody-dir-fd", "-1", "--deadline-monotonic-ns", str(deadline_ns)]
+            "--image-fd", str(self._image_fd), "--custody-dir-fd", str(custody_fd),
+            "--deadline-monotonic-ns", str(deadline_ns)]
         inherited = (self._profile_fd, self._delegation_fd, bootstrap_pidfd, self._controller_child.fileno(),
                      self._enrollment_child.fileno(), self._lifecycle_child.fileno(), controller_lifeline_fd, self._image_fd)
+        if custody_fd >= 0:
+            inherited += (custody_fd,)
         self._supervisor = subprocess.Popen(command, executable=command[0], pass_fds=inherited,
             close_fds=True, start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, cwd="/", env={"PATH": os.defpath, "LANG": "C"})
@@ -623,6 +674,8 @@ class NativeWholeScopeOwner:
         self._send(self._controller, 5, 1, fds=descriptors, publications=raw)
         self._receive(self._controller, 6, 2)
         self._original_publications = publications
+        if self._custody_owner is not None:
+            self._custody_owner._bind_registration(raw)
         self._registered = True
 
     def release_original(self):
@@ -630,6 +683,8 @@ class NativeWholeScopeOwner:
             _fail("owner_invalid")
         self._check_installation()
         self._original_publications._borrow_for_native_transfer()
+        if self._custody_owner is not None:
+            self._custody_owner._check_registration()
         # This operation grants only S's half of the two-owner release gate.
         # B still requires the unchanged original host token and EOF.
         self._released = True
@@ -646,6 +701,8 @@ class NativeWholeScopeOwner:
         self._check_installation()
         if self._supervisor.returncode != 0:
             _fail("completion_unknown")
+        if self._custody_owner is not None:
+            self._custody_owner._check_registration(terminal=True)
         self._finished = True
 
     def cleanup(self):
@@ -665,6 +722,16 @@ class NativeWholeScopeOwner:
             return
         self._closed = True
         failure = None
+        if self._fixed_u_input_owner is not None:
+            try:
+                self._fixed_u_input_owner.close()
+            except OSError as exc:
+                failure = failure or exc
+        if self._custody_owner is not None:
+            try:
+                self._custody_owner.close()
+            except OSError as exc:
+                failure = failure or exc
         for sock in self._sockets:
             try:
                 sock.close()

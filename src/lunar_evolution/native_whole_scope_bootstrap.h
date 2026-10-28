@@ -123,7 +123,81 @@ static int wq_b_drop_credentials(const wq_profile_t *profile) {
     return 0;
 }
 
-static int wq_b_profile_grants(const control_t *control, const wq_profile_t *profile) {
+/* Only the whole-scope entrypoint admits this exact distinct-account input
+ * layout. The ordinary bootstrap and its 0400/0500 inputs remain unchanged.
+ * The original controller binds schema/security facts into the manifest SHA;
+ * B independently checks the exact marker, finite grant set and real objects. */
+static int wq_b_input_kind(const control_t *control) {
+    int kind = 0;
+    for (size_t i = 0; i < control->argc; ++i) {
+        int candidate = !strcmp(control->argv[i], "--lunar-producer-input-v1") ? 1 :
+                        !strcmp(control->argv[i], "--lunar-rsi-input-v1") ? 2 : 0;
+        if (!candidate) continue;
+        if (kind || i + 2 != control->argc || !hex64(control->argv[i + 1])) return -1;
+        kind = candidate;
+    }
+    return kind;
+}
+
+typedef struct __attribute__((packed)) {
+    uint16_t tag, permissions;
+    uint32_t id;
+} wq_b_acl_entry_t;
+typedef struct __attribute__((packed)) {
+    uint32_t version;
+    wq_b_acl_entry_t entries[5];
+} wq_b_acl_t;
+
+static int wq_b_input_acl(int fd, uint32_t uid, uint16_t permission) {
+    wq_b_acl_t wanted = {2, {{1, permission, UINT_MAX}, {2, permission, uid},
+        {4, 0, UINT_MAX}, {16, permission, UINT_MAX}, {32, 0, UINT_MAX}}};
+    unsigned char raw[sizeof(wanted) + 1];
+    ssize_t size = fgetxattr(fd, "system.posix_acl_access", raw, sizeof(raw));
+    if (!uid || size != (ssize_t)sizeof(wanted) || memcmp(raw, &wanted, sizeof(wanted))) return -1;
+    size = fgetxattr(fd, "system.posix_acl_default", raw, sizeof(raw));
+    return size < 0 && errno == ENODATA ? 0 : -1;
+}
+
+static int wq_b_input_grant(const control_t *control, const grant_t *grant,
+                           const wq_profile_t *profile, uint64_t deadline) {
+    const grant_node_t *leaf = &control->nodes[grant->node];
+    wq_chain_t chain;
+    if (grant->role != 1 || wq_remaining(deadline) < 0 || wq_chain_open(leaf->path, &chain, 0)) return -1;
+    int result = -1;
+    if (chain.count < 4) goto done;
+    size_t file_index = chain.count - 1, dir_index = chain.count - 2;
+    wq_identity_t held;
+    struct stat file, directory;
+    /* wq_chain_open uses readable no-follow descriptors, including when the
+     * inherited original grant is O_PATH (which cannot supply fgetxattr).
+     * Every opened identity must match the original graph, never a new pin. */
+    uint32_t node = grant->node;
+    for (size_t i = chain.count; i > 0; --i) {
+        const wq_identity_t *pin = &chain.pins[i - 1];
+        if (node >= control->node_count || pin->device != control->nodes[node].device ||
+            pin->inode != control->nodes[node].inode ||
+            (i == 1 ? node != 0 : node == 0)) goto done;
+        if (i > 1) node = control->nodes[node].parent;
+    }
+    if (!wq_identity_equal(&chain.pins[chain.count - 4], &profile->execution_root) ||
+        wq_identity(grant->fd, &held, 0) || !wq_identity_equal(&held, &chain.pins[file_index]) ||
+        held.mount_id != profile->execution_root.mount_id ||
+        chain.pins[dir_index].mount_id != held.mount_id ||
+        fstat(chain.fds[file_index], &file) || fstat(chain.fds[dir_index], &directory) ||
+        !S_ISREG(file.st_mode) || !S_ISDIR(directory.st_mode) || file.st_uid || file.st_gid ||
+        directory.st_uid || directory.st_gid || file.st_nlink != 1 ||
+        (file.st_mode & 07777) != 0440 || (directory.st_mode & 07777) != 0550 ||
+        wq_b_input_acl(chain.fds[file_index], profile->candidate_uid, 4) ||
+        wq_b_input_acl(chain.fds[dir_index], profile->candidate_uid, 5) ||
+        wq_chain_check(&chain) || wq_remaining(deadline) < 0) goto done;
+    result = 0;
+done:
+    wq_chain_close(&chain);
+    return result;
+}
+
+static int wq_b_profile_grants(const control_t *control, const wq_profile_t *profile,
+                             uint64_t deadline) {
     size_t root_length = strlen(profile->execution_path);
     const char *working = control->cwd;
     if (strncmp(working, profile->execution_path, root_length) ||
@@ -136,7 +210,9 @@ static int wq_b_profile_grants(const control_t *control, const wq_profile_t *pro
     size_t prefix = strlen(working) - 4;
     if (prefix + 6 > MAX_PATH_BYTES) return -1;
     memcpy(output, working, prefix); memcpy(output + prefix, "output", 7);
-    unsigned int writes = 0;
+    int input_kind = wq_b_input_kind(control);
+    if (input_kind < 0) return -1;
+    unsigned int writes = 0, input_bits = 0;
     for (size_t i = 0; i < control->grant_count; ++i) {
         const grant_t *grant = &control->grants[i];
         const char *path = control->nodes[grant->node].path;
@@ -151,10 +227,24 @@ static int wq_b_profile_grants(const control_t *control, const wq_profile_t *pro
             int allowed = 0;
             for (size_t root = 0; root < profile->readonly_count; ++root)
                 if (path_under(path, profile->readonly_paths[root])) allowed = 1;
-            if (!allowed || info.st_uid || (info.st_mode & 0022)) return -1;
+            if (allowed) {
+                if (info.st_uid || (info.st_mode & 0022)) return -1;
+            } else {
+                const char *suffixes[3] = {".producer-input/config.json", ".rsi-input/request.json",
+                                            ".rsi-input/memory.json"};
+                int selected = -1;
+                for (size_t item = 0; item < 3; ++item)
+                    if (!strncmp(path, working, prefix) && !strcmp(path + prefix, suffixes[item]))
+                        selected = (int)item;
+                if (selected < 0 || (input_bits & (1u << selected)) ||
+                    (input_kind == 1 ? selected != 0 : input_kind != 2 || selected == 0) ||
+                    wq_b_input_grant(control, grant, profile, deadline)) return -1;
+                input_bits |= 1u << selected;
+            }
         }
     }
-    return writes == 2 ? 0 : -1;
+    unsigned int expected_inputs = input_kind == 1 ? 1u : input_kind == 2 ? 6u : 0u;
+    return writes == 2 && input_bits == expected_inputs && wq_remaining(deadline) >= 0 ? 0 : -1;
 }
 
 static int wq_b_keep(int *keep, size_t count) {
@@ -295,7 +385,7 @@ static int wq_bootstrap_main(int argc, char **argv) {
         memcmp(binding.launch_sha256, control.launch, 65) || memcmp(binding.intent_sha256, control.intent, 65) ||
         memcmp(binding.target_sha256, control.target_sha, 65) ||
         wq_load_profile(fds.profile, binding.profile_sha256, &profile, fds.deadline) ||
-        wq_profile_binding(&profile, &binding) || wq_b_profile_grants(&control, &profile)) return 78;
+        wq_profile_binding(&profile, &binding) || wq_b_profile_grants(&control, &profile, fds.deadline)) return 78;
     wq_identity_t observed_scope;
     char image_digest[65], target_digest[65];
     struct stat self, original_bootstrap, original_target;
@@ -355,7 +445,8 @@ static int wq_bootstrap_main(int argc, char **argv) {
         emit_frame(fds.frame, control.launch, control.intent, 1, "bootstrap_ready", NULL, 0, 0)) return 78;
     unsigned char gate[2];
     if (wq_b_read(&fds, fds.gate, gate, sizeof(gate), &received, 1) || received != 1 || gate[0] != '1' ||
-        close(fds.gate) || validate_grant_graph(&control, &guard) || wq_b_checkpoint(&fds)) return 78;
+        close(fds.gate) || validate_grant_graph(&control, &guard) ||
+        wq_b_profile_grants(&control, &profile, fds.deadline) || wq_b_checkpoint(&fds)) return 78;
     wq_message_init(&message, &binding, WQ_RELEASE, 3, 0);
     memcpy(&message.scope, &scope, sizeof(scope)); message.target_pid = (uint64_t)target;
     if (wq_b_send(&fds, fds.lifecycle, &message, NULL, 0) ||
@@ -368,6 +459,7 @@ static int wq_bootstrap_main(int argc, char **argv) {
     for (size_t i = 0; i < 3; ++i)
         if (!original_publications[i].inode || !original_publications[i].size ||
             original_publications[i].size > MAX_CONTROL || wq_digest(original_publications[i].sha256)) return 78;
+    if (wq_b_profile_grants(&control, &profile, fds.deadline) || wq_b_checkpoint(&fds)) return 78;
     unsigned char release = '1';
     if (write(release_pipe[1], &release, 1) != 1 || close(release_pipe[1])) return 78;
     int exec_error = 0;

@@ -1,7 +1,8 @@
 # P2 whole-workload quiescence: prerequisite and implementation tasks
 
-Status: precise development backlog; no new backend, native protocol or cleanup
-authority is implemented by this document. Continue the single-controller local
+Status: design and acceptance backlog, with WQ-02 through WQ-05 software now
+implemented and partially regression-tested as recorded below. This document
+itself grants no cleanup authority. Continue the single-controller local
 architecture. No service, remote scheduler, new evaluator or account provisioning
 is introduced.
 
@@ -22,7 +23,9 @@ receiver dies, reaping the receiver alone cannot establish retirement of the
 nested watcher. Python cleanup therefore conservatively retains unknown in this
 case.
 
-These facts leave two distinct software gaps:
+These facts defined two distinct software gaps in the former default backend;
+the explicit installed-profile implementation below addresses them in source,
+while actual deployment acceptance remains open:
 
 1. There is no original kernel-backed execution enclosure, established before
    target execution, whose complete membership cannot escape and whose empty
@@ -102,10 +105,12 @@ The original deadline includes a 250 ms cleanup reserve. A leader-done frame
 does not release this reserve while original-scope descendants remain alive.
 EOF, helper exit and failed/abnormal cleanup retain unknown. The first profile
 requires root A, a fixed nonzero U and preinstalled readonly-root ACLs; acquisition
-does not install privileges or alter shared parents. Existing frozen RSI inputs
-remain exact 0400/0500. Their distinct-account ACL contract is a separate open
-integration requirement: ACL mask changes must not be silently admitted by the
-generic validators. WQ-06 writable-view enclosure, original monitor completion,
+does not install privileges or alter shared parents. Default frozen RSI inputs
+remain exact 0400/0500. The explicit distinct-account
+[fixed-U ACL profile](fixed-u-input-acl.md) now has software integration through
+prepare, bind, validate, original grants and the whole-scope B entry. Its
+consolidated regression and installed-account acceptance remain pending; generic
+validators do not silently admit ACL mask changes. WQ-06 writable-view enclosure, original monitor completion,
 accepted build/input custody and production CLI remain open.
 
 ## Ordered software tasks
@@ -161,8 +166,17 @@ accepted build/input custody and production CLI remain open.
 WQ-02 through WQ-05 form the minimum complete software implementation: real
 pre-gate scope acquisition, an independently retained observer/retirement owner,
 an actual empty-state observation and its native consumer. Splitting out only a
-boolean, schema or final scan does not close a task. WQ-01 design has been reviewed; its native software is still unimplemented,
-not merely awaiting a server permission. Required delegation,
+boolean, schema or final scan does not close a task. WQ-01 design has been reviewed;
+WQ-02 through WQ-05 native software exists, and the first consolidated focused
+batch is recorded in HANDOFF.md. These checkboxes remain open for actual
+installed-profile acceptance, not because that software is wholly absent.
+WQ-06 still contains implementation work. WQ-07 now has a default-off original
+private-directory acquisition, actual S-to-R FD delivery, live registration and
+terminal record consumption, and bounded read-only prefix inspection; see
+[the custody slice](whole-scope-private-custody.md). It does not add R's creator
+file descriptions or a complete abnormal durable-ACK protocol. Those remain
+implementation/design gaps, separate from focused and installed acceptance.
+Required delegation,
 distinct-account deployment and actual Linux acceptance remain separate work.
 
 ## Required focused cases and preserved boundaries

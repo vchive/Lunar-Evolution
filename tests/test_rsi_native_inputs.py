@@ -775,11 +775,14 @@ def test_binding_inode_replaced_during_validation_is_refused_by_the_final_reread
 
     if replacement_stage == "after_binding_read":
         read_binding = inputs._read_bound_file
+        binding_reads = []
 
-        def interleaved_binding_read(current):
-            result = read_binding(current)
-            if current == path and not replacements:
-                replace_binding()
+        def interleaved_binding_read(current, **kwargs):
+            result = read_binding(current, **kwargs)
+            if current == path:
+                binding_reads.append(result)
+                if not replacements:
+                    replace_binding()
             return result
 
         monkeypatch.setattr(inputs, "_read_bound_file", interleaved_binding_read)
@@ -796,10 +799,15 @@ def test_binding_inode_replaced_during_validation_is_refused_by_the_final_reread
 
         monkeypatch.setattr(inputs, "_read_inputs", interleaved_input_read)
     _forbid_input_validation_mutations(monkeypatch)
-    with pytest.raises(inputs.NativeRSIInputError):
+    with pytest.raises(inputs.NativeRSIInputError) as refused:
         _validate(prepared)
     assert len(replacements) == 1
     assert _inventory(prepared.workspace) == replacements[0]
+    if replacement_stage == "after_binding_read":
+        assert refused.value.code == "rsi_native_inputs_binding_changed"
+        assert len(binding_reads) == 2
+        assert binding_reads[0][0] == binding_reads[1][0]
+        assert binding_reads[0][1]["inode"] != binding_reads[1][1]["inode"]
 
 
 def test_native_terminal_projection_refuses_input_drift_after_stream_observation(

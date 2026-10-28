@@ -139,13 +139,15 @@ static int checked_read(int fd, const wq_identity_t *pin, char *out, size_t capa
                         uint64_t deadline, int cgroup) {
     wq_identity_t now;
     if (wq_remaining(deadline) < 0 || wq_identity(fd, &now, cgroup) ||
-        !wq_identity_equal(&now, pin) || lseek(fd, 0, SEEK_SET) < 0)
+        !wq_identity_equal(&now, pin))
         return -1;
     size_t used = 0;
     for (;;) {
         if (wq_remaining(deadline) < 0)
             return -1;
-        ssize_t got = read(fd, out + used, capacity - used);
+        /* S and G inherit some of these original open file descriptions.
+         * Their exact reads must not race through a shared seek position. */
+        ssize_t got = pread(fd, out + used, capacity - used, (off_t)used);
         if (got < 0 && errno == EINTR)
             continue;
         if (got < 0)

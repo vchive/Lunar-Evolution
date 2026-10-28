@@ -1,7 +1,8 @@
 """Extract original grant proposals from already-validated native input snapshots.
 
-This pure helper grants no authority. The formal caller must retain its existing full
-input/launch validators; no current filesystem observation becomes an expected identity.
+Default extraction is pure and grants no authority. The explicit fixed-U input
+profile additionally consumes its live original owner. The formal caller retains
+its full launch validators; current observations never replace original pins.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from pathlib import Path
 
 from . import producer_launch_inputs as producer_inputs
 from . import rsi_native_inputs as rsi_inputs
+from .native_fixed_u_inputs import checked_fixed_u_input_owner
 from .producer_grant_anchors import (
     ProducerGrantExpectedBinding,
     ProducerGrantIdentity,
@@ -35,9 +37,16 @@ class NativeOriginalGrantInputs:
 
 def original_native_grant_inputs(
     inputs: producer_inputs.ProducerLaunchInputDescriptor | rsi_inputs.NativeRSIInputDescriptor | None,
+    *, fixed_u_owner=None,
 ) -> NativeOriginalGrantInputs:
-    """Propose exact original pins; never stat paths or create/bind/replay an attempt."""
+    """Propose original pins without creation, binding or replay authority.
+
+    The default remains pure. The explicit fixed-U branch additionally rechecks
+    its actual live input owner; a schema-v2 DTO cannot select that profile.
+    """
     if inputs is None:
+        if fixed_u_owner is not None:
+            raise NativeGrantInputError()
         return NativeOriginalGrantInputs((), (), ())
     if type(inputs) is producer_inputs.ProducerLaunchInputDescriptor:
         limit = producer_inputs.MAX_PRODUCER_LAUNCH_INPUT_BYTES
@@ -52,16 +61,24 @@ def original_native_grant_inputs(
     else:
         raise NativeGrantInputError()
     try:
+        if fixed_u_owner is not None:
+            fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner, require_unexpired=False)
+            fields = fields | {"input_security"}
+            fixed_u_owner.check_manifest(inputs.workspace, inputs.inputs_path, inputs.manifest_json,
+                                         require_unexpired=False)
         if type(inputs.workspace) is not type(Path()) or type(inputs.inputs_path) is not type(Path()):
             raise NativeGrantInputError()
         value = strict_json(inputs.manifest_json, limit)
         def canonical(item: object) -> bytes:
             return canonical_json(item, maximum=limit)
-        if (type(value) is not dict or set(value) != fields or value["schema_version"] != "1"
+        if (type(value) is not dict or set(value) != fields
+                or value["schema_version"] != ("1" if fixed_u_owner is None else "2")
                 or value["protocol"] != protocol or canonical(value) != inputs.manifest_json
                 or value["manifest_sha256"] != inputs.manifest_sha256
                 or hashlib.sha256(canonical({k: v for k, v in value.items() if k != "manifest_sha256"})).hexdigest()
                 != inputs.manifest_sha256):
+            raise NativeGrantInputError()
+        if fixed_u_owner is not None and value["input_security"] != fixed_u_owner.binding(require_unexpired=False):
             raise NativeGrantInputError()
         files = value["files"]
         if type(files) is not list or len(files) != len(names):
@@ -94,8 +111,10 @@ def original_native_grant_inputs(
             bindings.append(ProducerGrantExpectedBinding(str(path), identity))
         for proposal in (*requests, *bindings, *materials):
             proposal.validate()
+        if fixed_u_owner is not None:
+            fixed_u_owner.check_materials(tuple(materials), require_unexpired=False)
         return NativeOriginalGrantInputs(tuple(requests), tuple(bindings), tuple(materials))
-    except (ValueError, TypeError, KeyError, UnicodeError, OverflowError) as exc:
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, UnicodeError, OverflowError) as exc:
         if isinstance(exc, NativeGrantInputError):
             raise
         raise NativeGrantInputError() from exc

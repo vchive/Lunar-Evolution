@@ -2470,9 +2470,12 @@ class RSILearningController:
             # owners use the exact ledger and one bounded publication operation.
             projection_scope = (ledger._checkpoint_projection_scope()
                                 if type(ledger) is RSILedger else nullcontext())
-            from .rsi_brs_reserved_owner import _reserved_history_projection_scope
-
-            with projection_scope, _reserved_history_projection_scope(wave, handoff):
+            # Reserved wire reuse is optional and independently guarded by a
+            # complete live policy graph before and after each comparison.
+            # Avoid automatically adding those graph walks on this owner path.
+            # Keep the ledger's separate row projection and perform every wire
+            # comparison instead; all physical and final-history gates remain.
+            with projection_scope:
                 yield
         finally:
             if getattr(self._python_admission_brs_local, "full_gate_scope", None) is scope:

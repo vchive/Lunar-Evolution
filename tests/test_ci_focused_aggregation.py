@@ -38,8 +38,28 @@ def _json(path, value):
     path.write_text(json.dumps(value))
 
 
+def _fixed_u_root_nodes():
+    """Independently read the finite literal root parameter domain, without pytest."""
+    filename = "tests/test_native_fixed_u_input_bootstrap.py"
+    function = "test_actual_root_input_grants_bind_original_fd_acl_and_exact_combinations"
+    tree = ast.parse((_ROOT / filename).read_text())
+    node = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == function)
+    parameters = {}
+    for decorator in node.decorator_list:
+        if (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
+                and decorator.func.attr == "parametrize"):
+            name = ast.literal_eval(decorator.args[0])
+            parameters[name] = (ast.literal_eval(decorator.args[1]), {
+                keyword.arg: ast.literal_eval(keyword.value) for keyword in decorator.keywords})
+    assert parameters["kind"][0] == [1, 2]
+    kinds = parameters["kind"][1]["ids"]
+    assert kinds == ["producer", "rsi"]
+    return {f"{filename}::{function}[{change}-{kind}]"
+            for change in parameters["change"][0] for kind in kinds}
+
+
 @pytest.fixture
-def evidence(tmp_path):
+def evidence(tmp_path, request):
     context = {"commit": "a" * 40, "tree": "b" * 40, "parents": ["c" * 40, "d" * 40],
                "run_id": "123", "run_attempt": "1", "python_version": "3.13",
                "python": "3.13.12 (fixture)",
@@ -50,9 +70,20 @@ def evidence(tmp_path):
     groups = [{"id": f"group-{index}", "label": f"Original group {index}",
                "files": [f"tests/test_group_{index}.py"],
                "expected_tests": 1 if index < 62 or index >= 78 else None,
-               "zero_skips": index < 62 or index == 79}
-              for index in range(80)]
+               "zero_skips": index < 62 or index in {79, 80, 82}}
+              for index in range(83)]
+    fixed_u = getattr(request, "param", "")
+    if fixed_u:
+        groups[81].update(id="native-fixed-u-input-bootstrap",
+                          files=["tests/test_native_fixed_u_input_bootstrap.py"], expected_tests=87)
     nodes = [f"{group['files'][0]}::TestGroup::test_value[dict::with/slash]" for group in groups]
+    if fixed_u:
+        nodes.pop(81)
+        roots = sorted(_fixed_u_root_nodes())
+        if fixed_u == "root-inventory-drift":
+            roots[-1] = roots[-1].replace("[", "[unlisted-", 1)
+        nodes += roots + [f"tests/test_native_fixed_u_input_bootstrap.py::test_ordinary[{index}]"
+                          for index in range(51)]
     nodes += list(gate.runner.HEAVY_CURRENT_NODES)
     nodes.sort()
     root = tmp_path / "inputs"
@@ -137,10 +168,10 @@ def _role_for(evidence, group):
 def test_valid_original_reports_produce_only_derived_json_and_preserve_inputs(evidence, tmp_path):
     before = {path: path.read_bytes() for path in evidence["root"].rglob("*") if path.is_file()}
     result = _run(evidence)
-    assert result["status"] == "passed" and len(result["groups"]) == 80
+    assert result["status"] == "passed" and len(result["groups"]) == 83
     assert result["test_execution_performed"] is False
     assert len(result["inputs"]) == len(gate.ROLES) == 13
-    assert result["full_collected"] == 80 + len(gate.runner.HEAVY_CURRENT_NODES)
+    assert result["full_collected"] == 83 + len(gate.runner.HEAVY_CURRENT_NODES)
     assert all(group["tests"] == 1 for group in result["groups"])
     assert all(path.read_bytes() == raw for path, raw in before.items())
     output = tmp_path / "derived.json"
@@ -277,6 +308,65 @@ def test_invalid_expected_count_never_changes_skip_permission(evidence, group, e
         gate._manifest(json.dumps(manifest).encode())
 
 
+@pytest.mark.parametrize("evidence", ["fixed-u"], indirect=True)
+@pytest.mark.parametrize("mode,allowed", [
+    ("none", True), ("root", True), ("one-root", True),
+    ("ordinary", False), ("all", False), ("wrong-reason", False), ("wrong-type", False),
+])
+def test_fixed_u_bootstrap_requires_all_ordinary_bodies_and_only_finite_nonroot_skips(evidence, mode, allowed):
+    roots = sorted(_fixed_u_root_nodes())
+    role = _role_for(evidence, 81)
+    _, summary = _summary(evidence, role)
+    nodes = [node for node in summary["selected_nodes"]
+             if node.partition("::")[0] == "tests/test_native_fixed_u_input_bootstrap.py"]
+    ordinary = sorted(set(nodes) - set(roots))
+    selected = (set() if mode == "none" else set(roots[:1]) if mode == "one-root"
+                else set(ordinary[:1]) if mode == "ordinary" else set(nodes) if mode == "all"
+                else set(roots))
+    keys = {_key(node) for node in selected}
+    message = ("compiler or filesystem prerequisite unavailable" if mode == "wrong-reason"
+               else "root-owned original input prerequisite; never elevate")
+
+    def change(suite):
+        for case in suite:
+            if (case.get("classname"), case.get("name")) in keys:
+                ET.SubElement(case, "skipped", type="pytest.xfail" if mode == "wrong-type" else "pytest.skip",
+                              message=message)
+        suite.set("skipped", str(len(selected)))
+
+    _xml_change(evidence, role, change)
+    path, summary = _summary(evidence, role)
+    summary.update(skipped=len(selected), skipped_elements=len(selected))
+    _json(path, summary)
+    if allowed:
+        result = _run(evidence)
+        group = next(group for group in result["groups"] if group["id"] == "native-fixed-u-input-bootstrap")
+        assert group["tests"] == 87 and len(group["skipped"]) == len(selected)
+        assert len(ordinary) == 51 and len(roots) == 36
+    else:
+        with pytest.raises(gate.GateError, match="ordinary or unrecognized skip refused"):
+            _run(evidence)
+
+
+@pytest.mark.parametrize("evidence", ["root-inventory-drift"], indirect=True)
+def test_fixed_u_root_inventory_cannot_be_replaced_by_another_same_count_case(evidence):
+    with pytest.raises(gate.GateError, match="root/ordinary inventory differs"):
+        _run(evidence)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("id", "renamed"),
+    ("files", ["tests/test_other.py"]), ("expected_tests", 86), ("zero_skips", True),
+])
+def test_fixed_u_bootstrap_manifest_rule_cannot_change_its_count_or_skip_domain(evidence, field, value):
+    manifest = json.loads(evidence["manifest"])
+    manifest["groups"][81].update(id="native-fixed-u-input-bootstrap",
+                                  files=["tests/test_native_fixed_u_input_bootstrap.py"], expected_tests=87)
+    manifest["groups"][81][field] = value
+    with pytest.raises(gate.GateError, match="Invalid fixed-U bootstrap rule"):
+        gate._manifest(json.dumps(manifest).encode())
+
+
 @pytest.mark.parametrize("delta", [-1, 1])
 def test_exact_manifest_group_count_cannot_be_relaxed(evidence, delta):
     manifest = json.loads(evidence["manifest"])
@@ -285,7 +375,7 @@ def test_exact_manifest_group_count_cannot_be_relaxed(evidence, delta):
     else:
         extra = dict(manifest["groups"][-1], id="extra", files=["tests/test_extra.py"])
         manifest["groups"].append(extra)
-    with pytest.raises(gate.GateError, match="Expected 80 focused groups"):
+    with pytest.raises(gate.GateError, match="Expected 83 focused groups"):
         gate._manifest(json.dumps(manifest).encode())
 
 
@@ -318,16 +408,29 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
-    assert len(groups) == 80 and sum(group["zero_skips"] for group in groups) == 63
-    assert sum(group["expected_tests"] or 0 for group in groups) == 5837
+    assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
+    assert sum(group["expected_tests"] or 0 for group in groups) == 6006
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203
     assert "tests/test_rsi_flow_payload_scalar_validation.py" in ready["files"]
     native = next(group for group in groups if group["id"] == "native-original-whole-scope")
     idle = next(group for group in groups if group["id"] == "brs-idle-history-observation")
-    assert (native["expected_tests"], native["zero_skips"]) == (140, False)
-    assert (idle["expected_tests"], idle["zero_skips"]) == (24, True)
+    assert (native["expected_tests"], native["zero_skips"]) == (141, False)
+    assert (idle["expected_tests"], idle["zero_skips"]) == (27, True)
+    assert "tests/test_rsi_brs_owner_scope_cost.py" in idle["files"]
+    fixed = next(group for group in groups if group["id"] == "native-fixed-u-input-contracts")
+    assert (fixed["expected_tests"], fixed["zero_skips"]) == (42, True)
+    assert set(fixed["files"]) == {"tests/test_native_fixed_u_inputs.py",
+                                  "tests/test_native_fixed_u_attempt_inputs.py"}
+    bootstrap = next(group for group in groups if group["id"] == "native-fixed-u-input-bootstrap")
+    assert (bootstrap["expected_tests"], bootstrap["zero_skips"]) == (87, False)
+    assert bootstrap["files"] == ["tests/test_native_fixed_u_input_bootstrap.py"]
+    assert gate._FIXED_U_ROOT_NODES == _fixed_u_root_nodes()
+    assert len(gate._FIXED_U_ROOT_NODES) == 36
+    custody = next(group for group in groups if group["id"] == "native-whole-scope-custody")
+    assert (custody["expected_tests"], custody["zero_skips"]) == (36, True)
+    assert custody["files"] == ["tests/test_native_whole_scope_custody.py"]
     workflow = (_ROOT / ".github/workflows/test.yml").read_text()
     assert 'role: ["current-0"' in workflow and '"history"]' in workflow
     matrix = next(line.strip().partition("role: ")[2] for line in workflow.splitlines()

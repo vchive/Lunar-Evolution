@@ -1,3 +1,78 @@
+<!-- fixed-u-current-batch:start -->
+## 当前执行点：固定 U 输入/原 custody 合批已验证，待新 mixed 与 CI（2026-10-28）
+
+PR #190 仍为 draft，未合入 main。`73c5b631` 的唯一 Linux mixed 已在原
+600 秒预算超时：rc=-15、零 retry，无最终 JUnit 或 loaded-module origins；
+source before/after 与归档匹配。禁止重派该失败 HEAD。稀疏样本位于历史与策略
+检查链，不能据此认定 CPU 占比或保证下一改动已解决超时。
+
+本批 P0 不再在 controller full-gate owner scope 自动开启 reserved-history
+projection cache：该可选 cache 的前后完整 finite live graph 扫描会增加工作。
+保留 ledger row projection，改走已有完整 wire/C1/C2 比较路径，全部 shape/source/
+physical/final-history 门保留；显式 opt-in cache helper 继续存在。详见
+`specs/197-external-worker-coordination/owner-history-scope-cost.md`。
+
+P1 新增显式 `linux-fixed-u-input-acl-v1`，只由原 live whole-scope owner 创建，
+同一 owner 贯穿 prepare/bind/validate/grant/material 与 native attempt 消费。
+root:root 数据 0440、输入目录 0550，精确 named-U ACL；manifest 0400 无 ACL，
+不授 candidate。保留原 creator FD、全 metadata/mount/namespace/bytes/deadline，
+B 仅允许精确数据文件组合，初始及两次 release 边界重查。旧默认 0400/0500 不变。
+这不是 kernel-immutable custody、accepted CPython build 或生产准入。
+
+五个新测试文件共 168 节点（35+7+87+3+36）。首次 Linux 合批绑定 tree
+`87f0ca9d`，30 完整文件、16 workers、零 retry，1215 unique：1174 pass /
+4 fixture fail / 37 skip，产品 45.459845 秒，无超时；原件保留。四个失败分别为
+generator profiler 计数、两条新增 keyword 参数未透传的 race hook、未改到字节的
+hex fixture。只修注入/预期，不放宽产品拒绝门。后继 tree `2e60bd06`
+只补受影响九个完整文件：295/295 pass、零 skip、16.849097 秒；保留首次失败。
+加入共享 OFD 新用例后，最新去重域 1216：本机补验后 1180 pass / 36 root skip。
+不能把首次 1174 与补验 295 简单相加。两批原件均有 source before/after、16
+worker collection/执行节点、模块来源和 JUnit；本机补验只有相关 source pins，
+不能提升为同等级的 Linux 部署证据。
+Linux 唯一 Darwin-only skip 已在本机补验 1/1 pass，1.92 秒；其余 36 是实际
+root-owned 输入前提，仍未执行。普通本机回归不能替代 Linux/root/独立账户验收。
+
+P2 新增默认关闭的原 private custody owner：root0700 私有目录的原 FD 实际传入
+既有 S→R，registration/release/finish 消费原二进制记录；bounded readonly
+inspection 可读取正常 terminal 或异常 durable prefix，仍不提供丢失 ACK、
+cleanup/quiescence 或重建 live owner 的权限。R 的 creator file FD 不在现协议内，
+ACK 后 file pin 明确只是原目录下的观察，完整异常 durable ACK 仍需另行协议设计。
+
+首次 trusted-inert TCG 诊断在 host 720 秒上限内仍停于 cloud-init 配置，
+未出现机制 marker，三个 case 均未进入；不是 case 通过或 case 断言失败。
+后继 tiny-seed/只读 ISO 实际执行：QEMU 244.457738 秒正常关机，唯一 guest report
+在首 case 注册前记录 `native_trusted_attempt_frame_missing`、S exit78；后两 case
+未开始。原 110 秒 guest 与 720 秒 host 预算未耗尽；失败路径没有保留原 scope
+deadline，不能归因为 20 秒 scope 超时或某个 C 分支。未重派、未加预算。
+
+后继代码审查确认 S/G 通过 clone3 继承的部分原 cgroup 文件共享 open file
+description，原 `lseek/read` 可竞争偏移。`checked_read` 改用显式 offset 的
+`pread`，保留原 identity/deadline/长度/error 门；真实 dup/fork/EINTR/chunk
+交错 harness 已在上述补验中实际通过。5090 原 cgroup2 只读 probe 确认六类
+控制文件支持 pread；这不证明它是上述 TCG 失败原因。CI expected 总数 6006。
+TCG 机制诊断不提供 accepted isolation/build custody。
+
+仍有实际软件缺口：WQ-06 finite writer enclosure 与原 pycache monitor closure、
+WQ-07 完整异常持久化协议；完整生产 runtime/solver/CLI。CPython 配置、support
+生成、Podman 原执行链后端与独立静态 linker profile 已有软件，但完整配置审计、
+accepted input/build custody 与实际运行时验收未关闭。实际 root profile/独立账户/
+blocked storage 验收也未完成。
+不能把这些全归因于环境权限，也不能宣称 P0–P2 已全部完成。
+全仓 Ruff、compileall、staged/unstaged diff check 通过；CI 清单为 83 组、
+65 zero-skip、expected sum 6006，原 13-report/7-heavy 门保留。
+旧 73c5 CI 的 Python3.13 heavy-6 在首步 pip 安装 uv 时遇连接重置，未执行
+测试；不把它当产品测试失败，也不据此放宽 CI。
+
+原件位于主区 ignored `parallel-batch-20261027/`：
+`fixed-u-custody-consolidated-linux-v2-20261028/`、
+`fixed-u-custody-affected-linux-20261028/`、`fixed-u-darwin-only-20261028/`、
+`tcg-whole-scope-mechanism-iso-20261028/`。
+`production_admission=false`、`online_publication=false`；不运行模型、WebAgent、
+远程或公司 evaluator，不读取 `.env` 或活进程 argv/environment，benchmark 原区只读。
+
+以下保留前批历史与原失败证据。
+<!-- fixed-u-current-batch:end -->
+
 <!-- completion-fresh-batch:start -->
 ## 当前执行点：原生 whole-scope 软件已落地，集中回归后待 mixed / 部署验收（2026-10-28）
 

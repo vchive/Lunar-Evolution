@@ -50,6 +50,7 @@ from .native_fixed_live_sink import (
     NativeFixedLiveSinkCapture,
     NativeFixedLiveSinkError,
 )
+from .native_fixed_u_inputs import NativeFixedUInputError
 from .native_grant_inputs import NativeGrantInputError, original_native_grant_inputs
 from .native_guardian import NativeGuardianError, NativeGuardianOwner, start_native_guardian
 from .native_guardian_registration import (
@@ -495,7 +496,7 @@ def _compose_attempt_budget(
 def _native_launch_inputs(
     workspace: str | Path, *, intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
-    require_unexpired: bool,
+    require_unexpired: bool, fixed_u_owner=None,
 ) -> NativeRSIInputDescriptor | ProducerLaunchInputDescriptor | None:
     """Inspect optional input delivery without changing legacy launch bytes.
 
@@ -506,16 +507,17 @@ def _native_launch_inputs(
     if (NATIVE_RSI_INPUT_MARKER in intent.argv
             and PRODUCER_LAUNCH_INPUT_MARKER in intent.argv):
         raise NativeTrustedAttemptError("native_trusted_attempt_launch_inputs_conflict")
+    options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
     try:
         rsi = validate_native_rsi_launch_inputs(
             workspace, intent=intent, attestation=attestation, artifact=artifact,
-            require_unexpired=require_unexpired,
+            require_unexpired=require_unexpired, **options,
         )
         producer = validate_producer_launch_inputs(
             workspace, intent=intent, attestation=attestation, artifact=artifact,
-            require_unexpired=require_unexpired,
+            require_unexpired=require_unexpired, **options,
         )
-    except (NativeRSIInputError, ProducerLaunchInputError) as exc:
+    except (NativeRSIInputError, ProducerLaunchInputError, NativeFixedUInputError) as exc:
         raise NativeTrustedAttemptError(exc.code) from exc
     if rsi is not None and producer is not None:
         raise NativeTrustedAttemptError("native_trusted_attempt_launch_inputs_conflict")
@@ -526,11 +528,12 @@ def _revalidate_native_launch_inputs(
     expected: NativeRSIInputDescriptor | ProducerLaunchInputDescriptor | None,
     workspace: str | Path, *, intent: ProducerLaunchIntent,
     attestation: ProducerLaunchAttestation, artifact: NativeBootstrapArtifact,
-    require_unexpired: bool,
+    require_unexpired: bool, fixed_u_owner=None,
 ) -> None:
     if _native_launch_inputs(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
         require_unexpired=require_unexpired,
+        **({"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}),
     ) != expected:
         code = ("rsi_native_inputs_binding_changed" if isinstance(expected, NativeRSIInputDescriptor)
                 else "native_trusted_attempt_launch_inputs_binding_changed")
@@ -956,7 +959,10 @@ def _original_attempt_grants(inputs, *, batch: Path, working: Path, output: Path
             yield owner
         return
     try:
-        original = original_native_grant_inputs(inputs)
+        fixed_u_owner = (whole_scope.original_fixed_u_input_owner
+                         if type(whole_scope) is NativeWholeScopeOwner else None)
+        options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
+        original = original_native_grant_inputs(inputs, **options)
         requests = tuple(ProducerGrantRequest(path, "writable-directory")
                          for path in sorted({str(working), str(output)}))
         requests += (ProducerGrantRequest(str(working), "cwd"), *original.requests)
@@ -967,17 +973,18 @@ def _original_attempt_grants(inputs, *, batch: Path, working: Path, output: Path
             create_writable_directories=whole_scope is None,
             creation_root=str(batch) if whole_scope is None else None,
         ) as owner:
-            owner.validate_protected_materials(original.materials)
+            owner.validate_protected_materials(original.materials, **options)
             yield owner
-    except (ProducerGrantError, NativeGrantInputError, NativeWholeScopeError) as exc:
+    except (ProducerGrantError, NativeGrantInputError, NativeWholeScopeError, NativeFixedUInputError) as exc:
         raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_changed") from exc
 
 
-def _check_original_attempt_grants(owner, inputs) -> None:
+def _check_original_attempt_grants(owner, inputs, *, fixed_u_owner=None) -> None:
     if owner is not None:
+        options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
         try:
-            owner.validate_protected_materials(original_native_grant_inputs(inputs).materials)
-        except (ProducerGrantError, NativeGrantInputError) as exc:
+            owner.validate_protected_materials(original_native_grant_inputs(inputs, **options).materials, **options)
+        except (ProducerGrantError, NativeGrantInputError, NativeFixedUInputError) as exc:
             raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_changed") from exc
 
 
@@ -1117,14 +1124,17 @@ def run_native_trusted_attempt(
     if _observe_cancellation(cancelled):
         raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
     started_monotonic, deadline = _compose_attempt_budget(intent, monotonic, parent_deadline)
+    fixed_u_owner = None
     if whole_scope is not None:
         try:
             deadline = min(deadline, whole_scope.deadline_ns / 1_000_000_000)
-        except NativeWholeScopeError as exc:
+            fixed_u_owner = whole_scope.original_fixed_u_input_owner
+        except (NativeWholeScopeError, NativeFixedUInputError) as exc:
             raise NativeTrustedAttemptError("native_trusted_attempt_whole_scope_invalid") from exc
+    fixed_u_options = {"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}
     inputs = _native_launch_inputs(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
-        require_unexpired=True,
+        require_unexpired=True, **fixed_u_options,
     )
     if (live_modules_sink is not None
             and live_modules_sink.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE
@@ -1167,7 +1177,8 @@ def run_native_trusted_attempt(
         if installed.descriptor.platform_execution_mode != "linux-fd-bound":
             _safe_dir(working, create=True)
             _safe_dir(output, create=True)
-    except (NativeBootstrapError, ProducerBootstrapError, ProducerProcessError, NativeWholeScopeError) as exc:
+    except (NativeBootstrapError, ProducerBootstrapError, ProducerProcessError,
+            NativeWholeScopeError, NativeFixedUInputError) as exc:
         raise NativeTrustedAttemptError("native_trusted_attempt_preflight_invalid") from exc
 
     with _recovery_lock(batch) as lock_identity, _original_attempt_grants(
@@ -1226,9 +1237,9 @@ def run_native_trusted_attempt(
         try:
             _revalidate_native_launch_inputs(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                require_unexpired=True,
+                require_unexpired=True, **fixed_u_options,
             )
-            _check_original_attempt_grants(grant_owner, inputs)
+            _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
             _remaining(deadline, monotonic, cancelled)
             deadline_record, deadline_binding = _persist_deadline(
                 batch, launch, started=started_monotonic, deadline=deadline,
@@ -1332,7 +1343,7 @@ def run_native_trusted_attempt(
                 if sys.platform.startswith("linux"):
                     _validate_original_linux_executable_pair(pair)
                 if grant_owner is not None:
-                    _check_original_attempt_grants(grant_owner, inputs)
+                    _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                     encoder = (encode_native_bootstrap_control_v4 if completion_sink is not None else
                                encode_native_bootstrap_control_v3 if private_sink is not None
                                else encode_native_bootstrap_control_v2)
@@ -1376,11 +1387,11 @@ def run_native_trusted_attempt(
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
-                _check_original_attempt_grants(grant_owner, inputs)
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                 if grant_owner is not None:
                     _revalidate_native_launch_inputs(
                         inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                        require_unexpired=True,
+                        require_unexpired=True, **fixed_u_options,
                     )
                 if sys.platform.startswith("linux"):
                     _validate_original_linux_executable_pair(pair)
@@ -1529,13 +1540,13 @@ def run_native_trusted_attempt(
                     raise NativeTrustedAttemptError("native_trusted_attempt_cancelled")
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                    require_unexpired=True,
+                    require_unexpired=True, **fixed_u_options,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
                 if _current_recovery_lock_identity(batch) != lock_identity:
                     raise NativeTrustedAttemptError("native_trusted_attempt_registration_unknown")
-                _check_original_attempt_grants(grant_owner, inputs)
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                 _remaining(deadline, monotonic, cancelled)
                 if registered_observer is not None or pycache_scope is not None or whole_scope is not None:
                     def registered_context() -> NativeTrustedRegisteredContext:
@@ -1546,9 +1557,9 @@ def run_native_trusted_attempt(
                         check_deadline()
                         _revalidate_native_launch_inputs(
                             inputs, root, intent=intent, attestation=attestation,
-                            artifact=installed, require_unexpired=True,
+                            artifact=installed, require_unexpired=True, **fixed_u_options,
                         )
-                        _check_original_attempt_grants(grant_owner, inputs)
+                        _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                         load_native_bootstrap_artifact(
                             installed.path, descriptor=installed.descriptor,
                             allowlist_id=installed.allowlist_id,
@@ -1632,14 +1643,14 @@ def run_native_trusted_attempt(
                             raise NativeTrustedAttemptError(
                                 "native_trusted_attempt_pycache_diagnostic_arm_failed",
                             ) from exc
-                        _check_original_attempt_grants(grant_owner, inputs)
+                        _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                         _remaining(deadline, monotonic, cancelled)
                 if whole_scope is not None:
                     whole_scope.check_before_launch(
                         intent, installed, native_deadline_ns, working=working, output=output,
                     )
                     check_deadline()
-                    _check_original_attempt_grants(grant_owner, inputs)
+                    _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                     _remaining(deadline, monotonic, cancelled)
                     whole_scope.release_original()
                 os.write(gate_write, b"1")
@@ -1709,7 +1720,7 @@ def run_native_trusted_attempt(
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
                 TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError,
                 NativeGuardianRegistrationError, ProducerIsolationError,
-                NativeWholeScopeError, NativeOriginalPublicationError,
+                NativeWholeScopeError, NativeFixedUInputError, NativeOriginalPublicationError,
                 ProducerGrantError, ProducerProcessError, NativeFixedLiveSinkError, FixedProducerCompletionError,
                 OSError, subprocess.SubprocessError) as exc:
             if not claimed:
@@ -1852,9 +1863,9 @@ def run_native_trusted_attempt(
         try:
             _revalidate_native_launch_inputs(
                 inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                require_unexpired=False,
+                require_unexpired=False, **fixed_u_options,
             )
-            _check_original_attempt_grants(grant_owner, inputs)
+            _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
             if deadline_binding is not None:
                 check_deadline()
         except NativeTrustedAttemptError as exc:
@@ -1915,7 +1926,7 @@ def run_native_trusted_attempt(
                 # call the cancellation callback again after cleanup has been verified.
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                    require_unexpired=False,
+                    require_unexpired=False, **fixed_u_options,
                 )
                 _remaining(deadline, monotonic)
                 check_deadline()
@@ -1973,7 +1984,7 @@ def run_native_trusted_attempt(
                 )
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                    require_unexpired=False,
+                    require_unexpired=False, **fixed_u_options,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()
@@ -2058,7 +2069,7 @@ def run_native_trusted_attempt(
                 check_deadline()
                 if time.monotonic_ns() >= native_deadline_ns:
                     raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
-                _check_original_attempt_grants(grant_owner, inputs)
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                 paths = (("candidate.py", "result.json") if intent.producer_id == "openevolve"
                          else ("gen_0/main.py", "programs.sqlite"))
                 snapshots = []
@@ -2079,10 +2090,10 @@ def run_native_trusted_attempt(
                         deadline=deadline, monotonic=monotonic,
                     )
                     envelope_snapshot = ("producer-result.json", raw, tuple(sorted(info.items())))
-                _check_original_attempt_grants(grant_owner, inputs)
+                _check_original_attempt_grants(grant_owner, inputs, **fixed_u_options)
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
-                    require_unexpired=False,
+                    require_unexpired=False, **fixed_u_options,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()

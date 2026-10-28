@@ -816,7 +816,7 @@
         "tests/test_native_original_publication.py",
         "tests/test_native_original_publication_linux.py"
       ],
-      "expected_tests": 140,
+      "expected_tests": 141,
       "zero_skips": false
     },
     {
@@ -824,9 +824,38 @@
       "label": "Verify idle polling and contiguous complete owner history observations",
       "files": [
         "tests/test_rsi_brs_idle_checkpoint_head.py",
-        "tests/test_rsi_brs_owner_history_observation.py"
+        "tests/test_rsi_brs_owner_history_observation.py",
+        "tests/test_rsi_brs_owner_scope_cost.py"
       ],
-      "expected_tests": 24,
+      "expected_tests": 27,
+      "zero_skips": true
+    },
+    {
+      "id": "native-fixed-u-input-contracts",
+      "label": "Verify original fixed-U input custody and attempt wiring",
+      "files": [
+        "tests/test_native_fixed_u_inputs.py",
+        "tests/test_native_fixed_u_attempt_inputs.py"
+      ],
+      "expected_tests": 42,
+      "zero_skips": true
+    },
+    {
+      "id": "native-fixed-u-input-bootstrap",
+      "label": "Verify production C input helpers with finite root prerequisite skips",
+      "files": [
+        "tests/test_native_fixed_u_input_bootstrap.py"
+      ],
+      "expected_tests": 87,
+      "zero_skips": false
+    },
+    {
+      "id": "native-whole-scope-custody",
+      "label": "Verify original native custody consumer and read-only abnormal recovery",
+      "files": [
+        "tests/test_native_whole_scope_custody.py"
+      ],
+      "expected_tests": 36,
       "zero_skips": true
     }
   ]

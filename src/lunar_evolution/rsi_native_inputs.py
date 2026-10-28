@@ -21,6 +21,7 @@ from typing import Any, NoReturn
 from . import _benchmark_files as files
 from .candidate_evaluation_spec import canonical_json, strict_json
 from .native_bootstrap import NativeBootstrapArtifact, load_native_bootstrap_artifact
+from .native_fixed_u_inputs import checked_fixed_u_input_owner
 from .producer_launcher import (
     ProducerLaunchAttestation,
     ProducerLaunchIntent,
@@ -93,7 +94,7 @@ def _file_descriptor(path: Path, content: bytes) -> dict[str, Any]:
     }
 
 
-def _read_bound_file(path: Path) -> tuple[bytes, dict[str, Any]]:
+def _read_bound_file(path: Path, *, fixed_u_owner=None, require_unexpired: bool = False) -> tuple[bytes, dict[str, Any]]:
     """Tie bounded bytes and metadata to one held, no-follow file descriptor.
 
     The manifest and launch binding pin their own inode. Their identity must come
@@ -110,10 +111,12 @@ def _read_bound_file(path: Path) -> tuple[bytes, dict[str, Any]]:
             opened = os.fstat(descriptor)
             names = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
             if (not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1
-                    or stat.S_IMODE(opened.st_mode) != 0o400
+                    or (fixed_u_owner is None and stat.S_IMODE(opened.st_mode) != 0o400)
                     or opened.st_size > MAX_RSI_RECORD_BYTES
                     or any(getattr(before, key) != getattr(opened, key) for key in names)):
                 _fail("file_invalid")
+            if fixed_u_owner is not None:
+                fixed_u_owner.check_file_info(path, opened, require_unexpired=require_unexpired)
             chunks = []
             remaining = MAX_RSI_RECORD_BYTES + 1
             while remaining:
@@ -129,6 +132,8 @@ def _read_bound_file(path: Path) -> tuple[bytes, dict[str, Any]]:
                     or any(getattr(opened, key) != getattr(after, key) for key in names)
                     or any(getattr(after, key) != getattr(named, key) for key in names)):
                 _fail("input_changed")
+            if fixed_u_owner is not None:
+                fixed_u_owner.check_file_info(path, after, require_unexpired=require_unexpired)
             metadata = {
                 "name": path.name, "size": len(content), "sha256": _sha(content),
                 "device": opened.st_dev, "inode": opened.st_ino,
@@ -298,18 +303,25 @@ def _write_self_bound_file(
         os.close(descriptor)
 
 
-def _read_inputs(root: Path, batch: Path, *, require_unexpired: bool) -> NativeRSIInputDescriptor:
+def _read_inputs(root: Path, batch: Path, *, require_unexpired: bool, fixed_u_owner=None) -> NativeRSIInputDescriptor:
     path = batch / _INPUT_DIRECTORY
+    if fixed_u_owner is not None:
+        fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner, require_unexpired=require_unexpired)
+        fixed_u_owner.check_context(root, batch, _INPUT_DIRECTORY, require_unexpired=require_unexpired)
     with _held_directory(path) as descriptor:
-        if stat.S_IMODE(os.fstat(descriptor).st_mode) != 0o500:
+        if stat.S_IMODE(os.fstat(descriptor).st_mode) != (0o500 if fixed_u_owner is None else 0o550):
             _fail("input_directory_invalid")
         with os.scandir(descriptor) as entries:
             if {entry.name for entry in entries} != {"request.json", "memory.json", "manifest.json"}:
                 _fail("input_directory_changed")
-        manifest_bytes, manifest_file = _read_bound_file(path / "manifest.json")
+        manifest_bytes, manifest_file = _read_bound_file(
+            path / "manifest.json", fixed_u_owner=fixed_u_owner, require_unexpired=require_unexpired,
+        )
         manifest = strict_json(manifest_bytes, MAX_RSI_RECORD_BYTES)
-        if (not isinstance(manifest, dict) or set(manifest) != _MANIFEST_FIELDS
-                or manifest["schema_version"] != "1" or manifest["protocol"] != _INPUT_PROTOCOL
+        fields = _MANIFEST_FIELDS if fixed_u_owner is None else _MANIFEST_FIELDS | {"input_security"}
+        if (not isinstance(manifest, dict) or set(manifest) != fields
+                or manifest["schema_version"] != ("1" if fixed_u_owner is None else "2")
+                or manifest["protocol"] != _INPUT_PROTOCOL
                 or _canonical(manifest) != manifest_bytes
                 or manifest["manifest_sha256"] != _digest(manifest, "manifest_sha256")
                 or manifest["manifest_file_identity"] != {
@@ -318,6 +330,10 @@ def _read_inputs(root: Path, batch: Path, *, require_unexpired: bool) -> NativeR
                 or manifest["journal_id"] != batch.name or manifest["workspace_identity"] != _node(root)
                 or manifest["batch_identity"] != _node(batch) or manifest["inputs_identity"] != _node(path)):
             _fail("manifest_invalid")
+        if fixed_u_owner is not None:
+            fixed_u_owner.check_manifest(root, path, manifest_bytes, require_unexpired=require_unexpired)
+            if manifest["input_security"] != fixed_u_owner.binding(require_unexpired=require_unexpired):
+                _fail("manifest_invalid")
         if (not isinstance(manifest["files"], list) or len(manifest["files"]) != 2
                 or [item.get("name") if isinstance(item, dict) else None for item in manifest["files"]]
                 != ["request.json", "memory.json"]):
@@ -325,7 +341,9 @@ def _read_inputs(root: Path, batch: Path, *, require_unexpired: bool) -> NativeR
         materials = []
         for expected in manifest["files"]:
             current = path / expected["name"]
-            content, metadata = _read_bound_file(current)
+            content, metadata = _read_bound_file(
+                current, fixed_u_owner=fixed_u_owner, require_unexpired=require_unexpired,
+            )
             if metadata != expected:
                 _fail("input_changed")
             materials.append(content)
@@ -346,18 +364,38 @@ def _read_inputs(root: Path, batch: Path, *, require_unexpired: bool) -> NativeR
 
 def prepare_native_rsi_inputs(
     workspace: str | Path, *, journal_id: str, request: SolverRequest, memory: MemorySnapshot,
+    fixed_u_owner=None,
 ) -> NativeRSIInputDescriptor:
     """Copy complete canonical inputs create-only, before constructing the native intent.
 
     Append ``descriptor.argv_fragment`` to the original target argv before building its intent
     and attestation, then call ``bind_native_rsi_launch``. Partial staging remains diagnostic
     evidence and cannot be silently overwritten or automatically reused.
+    The fixed-U profile additionally requires its original live child owner;
+    omitting it preserves the exact v1 0400/0500 preparation contract.
     """
     try:
+        if fixed_u_owner is not None:
+            fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner)
         request_bytes, memory_bytes, _ = _copy_inputs(request, memory)
-        root, batch = _batch(workspace, journal_id, create=True)
+        root, batch = _batch(workspace, journal_id, create=fixed_u_owner is None)
         with _recovery_lock(batch):
             _not_started(batch)
+            if fixed_u_owner is not None:
+                def fixed_manifest(identities, manifest_identity, security):
+                    value = {
+                        "schema_version": "2", "protocol": _INPUT_PROTOCOL, "journal_id": journal_id,
+                        "episode_id": request.episode_id, "request_sha256": _sha(request_bytes),
+                        "memory_snapshot_sha256": _sha(memory_bytes), "workspace_identity": _node(root),
+                        "batch_identity": _node(batch), "inputs_identity": _node(batch / _INPUT_DIRECTORY),
+                        "files": identities, "manifest_file_identity": manifest_identity, "input_security": security,
+                    }
+                    value["manifest_sha256"] = _digest(value, "manifest_sha256")
+                    return _canonical(value)
+
+                fixed_u_owner.prepare(root, batch, _INPUT_DIRECTORY,
+                                      (("request.json", request_bytes), ("memory.json", memory_bytes)), fixed_manifest)
+                return _read_inputs(root, batch, require_unexpired=True, fixed_u_owner=fixed_u_owner)
             with _held_directory(batch) as parent:
                 os.mkdir(_INPUT_DIRECTORY, 0o700, dir_fd=parent)
                 created = os.stat(_INPUT_DIRECTORY, dir_fd=parent, follow_symlinks=False)
@@ -451,16 +489,19 @@ def _launch_payload(
 def bind_native_rsi_launch(
     workspace: str | Path, *, intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
     artifact: NativeBootstrapArtifact, inputs: NativeRSIInputDescriptor,
+    fixed_u_owner=None,
 ) -> NativeRSIInputDescriptor:
     """Bind original intent/attestation/bootstrap create-only before any lifecycle claim."""
     if (not isinstance(intent, ProducerLaunchIntent) or not isinstance(attestation, ProducerLaunchAttestation)
             or not isinstance(artifact, NativeBootstrapArtifact) or not isinstance(inputs, NativeRSIInputDescriptor)):
         _fail("input_invalid")
     try:
+        if fixed_u_owner is not None:
+            fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner)
         root, batch = _batch(workspace, intent.journal_id)
         with _recovery_lock(batch):
             _not_started(batch)
-            retained = _read_inputs(root, batch, require_unexpired=True)
+            retained = _read_inputs(root, batch, require_unexpired=True, fixed_u_owner=fixed_u_owner)
             if retained != inputs:
                 _fail("descriptor_changed")
             value = _launch_payload(intent, attestation, artifact, retained)
@@ -471,6 +512,7 @@ def bind_native_rsi_launch(
                 )
             validated = validate_native_rsi_launch_inputs(
                 root, intent=intent, attestation=attestation, artifact=artifact, require_unexpired=True,
+                **({"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}),
             )
             if validated is None or validated.launch_binding_sha256 != value["binding_sha256"]:
                 _fail("binding_changed")
@@ -485,17 +527,22 @@ def bind_native_rsi_launch(
 def validate_native_rsi_launch_inputs(
     workspace: str | Path, *, intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
     artifact: NativeBootstrapArtifact, require_unexpired: bool = False,
+    fixed_u_owner=None,
 ) -> NativeRSIInputDescriptor | None:
     """Read exact original inputs/binding without writing, locking or refreshing a deadline.
 
     Legacy intents without a marker or binding return ``None``. A marker or retained binding
     forbids downgrade. New dispatch/gate admission must pass ``require_unexpired=True``; historical
     inspection defaults to accepting an expired original deadline without authorizing another run.
+    Fixed-U diagnostics still require the original live owner and all original
+    pins; expiry never permits its reconstruction or another dispatch.
     """
     if (not isinstance(intent, ProducerLaunchIntent) or not isinstance(attestation, ProducerLaunchAttestation)
             or not isinstance(artifact, NativeBootstrapArtifact) or type(require_unexpired) is not bool):
         _fail("input_invalid")
     try:
+        if fixed_u_owner is not None:
+            fixed_u_owner = checked_fixed_u_input_owner(fixed_u_owner, require_unexpired=require_unexpired)
         marker = _marker(intent)
         root = files.absolute_path(workspace)
         batch = root / "evolution" / "producer-batches" / intent.journal_id
@@ -507,7 +554,7 @@ def validate_native_rsi_launch_inputs(
         if marker is None:
             _fail("marker_missing")
         root, batch = _batch(root, intent.journal_id)
-        retained = _read_inputs(root, batch, require_unexpired=require_unexpired)
+        retained = _read_inputs(root, batch, require_unexpired=require_unexpired, fixed_u_owner=fixed_u_owner)
         raw, binding_file = _read_bound_file(path)
         expected = _launch_payload(
             intent, attestation, artifact, retained,
@@ -519,7 +566,7 @@ def validate_native_rsi_launch_inputs(
             _fail("binding_changed")
         # Reopen all inputs after the launch/installation validation; no stale detached read
         # may be accepted when an input or its original directory changed during inspection.
-        if _read_inputs(root, batch, require_unexpired=require_unexpired) != retained:
+        if _read_inputs(root, batch, require_unexpired=require_unexpired, fixed_u_owner=fixed_u_owner) != retained:
             _fail("input_changed")
         if _read_bound_file(path) != (raw, binding_file):
             _fail("binding_changed")
