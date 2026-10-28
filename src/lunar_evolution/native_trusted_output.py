@@ -38,7 +38,7 @@ from .producer_handoff import (
     parse_producer_envelope,
 )
 from .producer_launcher import ProducerLaunchAttestation, ProducerLaunchIntent
-from .producer_process import ProducerProcessError, _read_envelope
+from .producer_process import ProducerEnvelopeEvidence, ProducerProcessError, _read_envelope
 
 
 class NativeTrustedOutputError(ValueError):
@@ -49,8 +49,27 @@ class NativeTrustedOutputError(ValueError):
         super().__init__(code)
 
 
+class _NativeTrustedOutputOriginal:
+    # Not a dataclass field or constructor argument: durable/recovered DTOs do
+    # not reconstruct this process-local acquisition or acquire its guarantee.
+    __slots__ = ("_original_envelope_acquisition",)
+
+
+class _NativeTrustedEnvelopeAcquisition:
+    __slots__ = ("_originals", "envelope", "evidence", "raw")
+
+    def __init__(self) -> None:
+        raise NativeTrustedOutputError("native_trusted_output_acquisition_private")
+
+    def __copy__(self):
+        raise NativeTrustedOutputError("native_trusted_output_acquisition_detached")
+
+    def __deepcopy__(self, memo):
+        raise NativeTrustedOutputError("native_trusted_output_acquisition_detached")
+
+
 @dataclass(frozen=True, slots=True)
-class NativeTrustedOutputPreparation:
+class NativeTrustedOutputPreparation(_NativeTrustedOutputOriginal):
     process_terminal_sha256: str
     output_capture_sha256: str | None
     envelope_bytes_sha256: str
@@ -70,6 +89,41 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
             raise NativeTrustedOutputError("native_trusted_output_envelope_invalid")
         result[key] = value
     return result
+
+
+def _native_output_envelope_pin(output: NativeTrustedOutputPreparation) -> tuple | None:
+    """Recheck bytes actually read and parsed by this original preparation call.
+
+    Legacy and detached DTOs carry no acquisition. This is an in-memory semantic
+    join, not fresh filesystem observation, runtime authentication or admission.
+    """
+    try:
+        if type(output) is not NativeTrustedOutputPreparation:
+            raise ValueError
+        acquired = getattr(output, "_original_envelope_acquisition", None)
+        if acquired is None:
+            return None
+        if type(acquired) is not _NativeTrustedEnvelopeAcquisition:
+            raise ValueError
+        raw, envelope, evidence, originals = acquired.raw, acquired.envelope, acquired.evidence, acquired._originals
+        if (type(originals) is not tuple or len(originals) != 5
+                or any(current is not original for current, original in zip(
+                    (acquired, output, raw, envelope, evidence), originals, strict=True))
+                or type(raw) is not bytes or not 0 < len(raw) <= MAX_PRODUCER_ENVELOPE_BYTES
+                or type(envelope) is not ProducerResultEnvelope or output.envelope is not envelope
+                or type(evidence) is not ProducerEnvelopeEvidence
+                or len(raw) != evidence.bytes
+                or hashlib.sha256(raw).hexdigest() != evidence.sha256
+                or output.envelope_bytes_sha256 != evidence.sha256
+                or parse_producer_envelope(json.loads(raw, object_pairs_hook=_unique_object)) != envelope):
+            raise ValueError
+        # Each original is retained strongly. Identity scalars distinguish a
+        # same-value replacement between the native callback's two checks.
+        return (acquired, id(acquired), raw, id(raw), envelope, id(envelope),
+                evidence, id(evidence), originals, id(originals))
+    except (ValueError, TypeError, AttributeError, KeyError, UnicodeError, RecursionError,
+            ProducerHandoffError):
+        raise NativeTrustedOutputError("native_trusted_output_acquisition_changed") from None
 
 
 def prepare_native_trusted_output(
@@ -203,7 +257,7 @@ def prepare_native_trusted_output(
             raise NativeTrustedOutputError("native_trusted_output_receipt_changed") from exc
         if current_receipt != execution_receipt:
             raise NativeTrustedOutputError("native_trusted_output_receipt_changed")
-    return NativeTrustedOutputPreparation(
+    result = NativeTrustedOutputPreparation(
         process_terminal_sha256=str(terminal["terminal_sha256"]),
         output_capture_sha256=(str(capture["capture_sha256"]) if capture is not None else None),
         envelope_bytes_sha256=evidence.sha256, envelope=envelope,
@@ -217,6 +271,15 @@ def prepare_native_trusted_output(
             else "producer_declaration_only"
         ),
     )
+    # Retain the already bounded original read and its exact parse result only
+    # after every current capture/receipt check succeeds. There is no API for a
+    # caller to attach claimed bytes, and asdict/recovery omit the inherited slot.
+    acquired = object.__new__(_NativeTrustedEnvelopeAcquisition)
+    acquired.raw, acquired.envelope, acquired.evidence = raw, envelope, evidence
+    acquired._originals = (acquired, result, raw, envelope, evidence)
+    object.__setattr__(result, "_original_envelope_acquisition", acquired)
+    _native_output_envelope_pin(result)
+    return result
 
 
 __all__ = [

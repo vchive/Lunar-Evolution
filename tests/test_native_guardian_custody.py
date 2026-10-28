@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -108,7 +109,8 @@ def _authority_false(report):
 
 
 @contextmanager
-def _attempt(binaries, tmp_path, *, budget=4.0, preexisting=False):
+def _attempt(binaries, tmp_path, *, budget=4.0, preexisting=False,
+             observation_deadline_ns=None):
     directory = tmp_path / "custody"
     directory.mkdir(mode=0o700)
     if preexisting:
@@ -163,11 +165,14 @@ def _attempt(binaries, tmp_path, *, budget=4.0, preexisting=False):
     finally:
         for fd in tuple(fds):
             close(fd)
-        if owner is not None:
-            owner.cleanup(timeout=0.5)
+        cleanup_remaining = (0.5 if observation_deadline_ns is None else
+                             max(0, (observation_deadline_ns - time.monotonic_ns()) / 1e9))
+        if owner is not None and cleanup_remaining > 0:
+            owner.cleanup(timeout=min(0.5, cleanup_remaining))
         if process.poll() is None:
             process.kill()  # original exact Popen, never a stored PID/PGID
-        process.wait(timeout=3)
+        process.wait(timeout=3 if observation_deadline_ns is None else
+                     max(0, (observation_deadline_ns - time.monotonic_ns()) / 1e9))
 
 
 def test_native_receiver_durable_registration_and_exact_d_exit_then_readonly_drift(binaries, tmp_path):
@@ -227,6 +232,66 @@ def test_original_deadline_does_not_allocate_a_post_expiry_event_budget(binaries
         _authority_false(report)
         # Killing/reaping only a receiver is not proof of nested guardian reap.
         assert value.owner.cleanup(timeout=0.1) is False
+
+
+def test_stalled_original_receiver_cannot_delay_guardian_execution_deadline(binaries, tmp_path):
+    # One outer observation/reap bound is fixed before launch. It never changes
+    # the receiver/guardian's original 0.8-second execution deadline or permits
+    # a new event publication after expiry. This does not block an fsync syscall.
+    observation_deadline_ns = time.monotonic_ns() + 20_000_000_000
+
+    def observation_remaining():
+        remaining = (observation_deadline_ns - time.monotonic_ns()) / 1e9
+        assert remaining > 0, "original fixture observation budget expired; retirement unknown"
+        return remaining
+
+    with _attempt(binaries, tmp_path, budget=0.8,
+                  observation_deadline_ns=observation_deadline_ns) as value:
+        receiver = value.owner._watcher
+        original = value.owner.reference
+        registration = value.directory / "guardian-registration-v1.json"
+        event = value.directory / "guardian-event-v1.json"
+        registration_pin = _identity(registration)
+        cleanup = None
+        try:
+            receiver.send_signal(signal.SIGSTOP)  # exact original Popen, never a saved PID
+            while True:
+                assert time.monotonic_ns() < value.native_deadline
+                assert receiver.poll() is None
+                stopped = os.waitid(os.P_PID, receiver.pid, os.WSTOPPED | os.WNOHANG | os.WNOWAIT)
+                if stopped is not None:
+                    assert (stopped.si_pid, stopped.si_code, stopped.si_status) == (
+                        receiver.pid, os.CLD_STOPPED, signal.SIGSTOP)
+                    break
+                time.sleep(min(0.01, observation_remaining()))
+            # The controller's lifeline writer remains live. Only the original
+            # guardian deadline, not parent EOF or receiver cleanup, stops work.
+            assert value.process.wait(timeout=observation_remaining()) == -signal.SIGKILL
+            assert time.monotonic_ns() >= value.native_deadline
+            assert receiver.poll() is None
+            assert event.read_bytes() == b""
+            assert _identity(registration) == registration_pin
+            report = inspect_native_guardian_custody(original, original_directory_chain=value.chain)
+            assert report["state"] == "registered"
+            assert report["deadline_monotonic_ns"] == value.native_deadline
+            _authority_false(report)
+        finally:
+            # Always resume first, even if stop observation/assertions failed.
+            # Native owner cleanup retains its expired execution bound; this
+            # outer budget only settles these exact already-owned children.
+            try:
+                receiver.send_signal(signal.SIGCONT)
+            finally:
+                try:
+                    cleanup = value.owner.cleanup(timeout=observation_remaining())
+                finally:
+                    receiver.wait(timeout=observation_remaining())
+        assert cleanup is False
+        assert _identity(registration) == registration_pin and event.read_bytes() == b""
+        report = inspect_native_guardian_custody(original, original_directory_chain=value.chain)
+        assert report["state"] == "registered"
+        assert report["deadline_monotonic_ns"] == value.native_deadline
+        _authority_false(report)
 
 
 _CONTROLLER = r'''

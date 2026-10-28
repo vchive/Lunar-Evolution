@@ -271,6 +271,7 @@ def _build_reserved_brs_policy():
         ("rsi_native_scheduler", "NativeRSISchedulerContext", (
             "__post_init__", "_assert_live_modules_sink", "_live_modules_sink_projection",
             "_python_handoff_suppliers")),
+        ("native_trusted_output", "_NativeTrustedEnvelopeAcquisition", ("__init__", "__copy__", "__deepcopy__")),
         ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", ("validate", "compare")),
         ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", ("__init__", "assert_current", "to_dict")),
         ("static_python_fixed_profile", "FixedPythonInstallation", ("to_dict",)),
@@ -302,13 +303,14 @@ def _build_reserved_brs_policy():
         ("rsi_store", ("_admission_checkpoint_helpers_current", "_admission_checkpoint_projection",
             "_checkpoint_projection_helpers_current", "_checkpoint_projection_constant", "_checkpoint_projection_key",
             "_retain_checkpoint_projection", "_build_checkpoint_projection_pins")),
+        ("native_trusted_output", ("_native_output_envelope_pin", "_unique_object")),
         ("native_fixed_live_sink", ("_pin_fixed_python_live_sink_request",)),
         ("static_python_fixed_profile", ("_reparse", "_parse_installation", "verify_fixed_python_image")),
         ("static_python_fixed_live_modules", (
             "_compose", "compare_fixed_python_bound_live_modules", "_compare_live_payload")),
         ("native_trusted_scheduler", ("_run_native_trusted_producer",
             "_prepare_native_trusted_python_producer", "run_native_trusted_producer",
-            "run_native_trusted_producer_outcome", "_prepublication_evidence", "_native_handoff_evidence")),
+            "run_native_trusted_producer_outcome", "_prepublication_evidence", "_native_handoff_evidence", "_native_output_envelope_pin")),
         ("rsi_python_episode_inputs", ("_resolve_python_rsi_episode_input_context",
             "resolve_reserved_python_rsi_episode_input_context", "resolve_python_rsi_episode_input_context")),
         ("rsi_producer_gateway", ("resolve_reserved_python_producer_episode_gateway",)),

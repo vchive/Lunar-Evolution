@@ -842,6 +842,7 @@ def _policy() -> dict[str, Any]:
         (native_trusted_scheduler.recover_native_trusted_execution_receipt,
          native_trusted_receipt.recover_native_trusted_execution_receipt),
         (native_trusted_scheduler.prepare_native_trusted_output, native_trusted_output.prepare_native_trusted_output),
+        (native_trusted_scheduler._native_output_envelope_pin, native_trusted_output._native_output_envelope_pin),
         (native_trusted_output.recover_native_trusted_execution_receipt,
          native_trusted_receipt.recover_native_trusted_execution_receipt),
         (native_trusted_output.recover_native_trusted_output_capture,
@@ -959,6 +960,14 @@ def _policy() -> dict[str, Any]:
         (rsi_store.RSILedger.read_only_observations.__wrapped__, rsi_store),
         (rsi_store.RSILedger._checkpoint_projection_scope, contextlib),
         (rsi_store.RSILedger._checkpoint_projection_scope.__wrapped__, rsi_store),
+        (reserved_owner._reserved_history_projection_scope, contextlib),
+        (reserved_owner._reserved_history_projection_scope.__wrapped__, reserved_owner),
+        *((getattr(reserved_owner, name), reserved_owner) for name in (
+            "_build_reserved_history_projection_guard", "_reserved_history_projection_guard",
+            "_reserved_history_projection_cache",
+            "_reserved_history_projection_key", "_retain_reserved_history_projection",
+            "_reserved_history_wire_checks", "_reserved_history_shape_observations",
+            "_clear_reserved_history_projection", "_compare_reserved_history_wires", "_observe_reserved_history")),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "_connect", "_checkpoint_python_references", "_checkpoint_digest", "_checkpoint_reference_rows_tx",
             "_checkpoint_projection_cache", "_controller_checkpoint_history_rows_tx",
@@ -1130,6 +1139,8 @@ def _policy() -> dict[str, Any]:
         (native_trusted_cleanup.recover_native_trusted_cleanup, native_trusted_cleanup),
         (native_trusted_capture.recover_native_trusted_output_capture, native_trusted_capture),
         (native_trusted_output.prepare_native_trusted_output, native_trusted_output),
+        (native_trusted_output._native_output_envelope_pin, native_trusted_output),
+        (native_trusted_output._unique_object, native_trusted_output),
         (producer_process._read_envelope, producer_process),
         (producer_handoff.parse_producer_envelope, producer_handoff),
         (producer_bundle_handoff.prepare_producer_bundle_manifest, producer_bundle_handoff),
@@ -1333,6 +1344,8 @@ def _policy() -> dict[str, Any]:
                     native_trusted_scheduler.recover_native_trusted_execution_receipt),
                 "native_output_binding": component_fingerprint(native_trusted_scheduler.prepare_native_trusted_output),
                 "output": component_fingerprint(native_trusted_output.prepare_native_trusted_output),
+                "output_envelope_acquisition": component_fingerprint(native_trusted_output._native_output_envelope_pin),
+                "output_envelope_unique_object": component_fingerprint(native_trusted_output._unique_object),
                 "output_receipt_binding": component_fingerprint(
                     native_trusted_output.recover_native_trusted_execution_receipt),
                 "output_capture_binding": component_fingerprint(

@@ -30,8 +30,12 @@ helpers. It does not retain a successful live-validation result.
 Every read still performs its SQL SELECT, checks each ordinal/parent/digest and
 reference monotonicity, and performs the original final admission-row SELECT,
 full row parse and complete reference/plan/journal binding. On a projection hit,
-the final matcher reparses the fresh body's references without cached DTO
-contexts. Every filesystem and ownership observation remains in place.
+the final matcher reparses the fresh body's reference once and shares only this
+call's newly parsed plan/journal context with the fresh retained row. The original
+helper graph, including the nested admission-anchor parser methods, is checked
+before and after that parse; drift uses the original general matcher. No record
+or reference context is cached between observations.
+Every filesystem and ownership observation remains in place.
 
 ## Lifetime and fallback
 

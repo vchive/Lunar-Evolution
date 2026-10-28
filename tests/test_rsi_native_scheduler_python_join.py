@@ -230,7 +230,7 @@ def test_native_supplier_is_explicitly_fingerprinted_with_its_evidence_helpers(t
     enabled = provider.rsi_fingerprint_config()
     assert enabled.pop("python_handoff_after_native_execution_sha256") == component_fingerprint(_native_supplier_a)
     assert set(enabled.pop("python_native_handoff_dependencies")) == {
-        "evidence", "preparation_evidence", "scheduler", "supplier_selection", "late_join",
+        "evidence", "preparation_evidence", "output_envelope_acquisition", "scheduler", "supplier_selection", "late_join",
     }
     provider.context = replace(context, python_handoff_after_native_execution=None)
     assert provider.rsi_fingerprint_config() == enabled
@@ -242,7 +242,8 @@ def test_native_supplier_is_explicitly_fingerprinted_with_its_evidence_helpers(t
         context.python_handoff_after_native_execution = _native_supplier_b
 
 
-@pytest.mark.parametrize("helper", ["_native_handoff_evidence", "_prepublication_evidence", "_run_native_trusted_producer"])
+@pytest.mark.parametrize("helper", ["_native_handoff_evidence", "_prepublication_evidence",
+                                    "_native_output_envelope_pin", "_run_native_trusted_producer"])
 def test_native_module_helper_rebinding_refuses_even_when_imported_alias_is_unchanged(tmp_path, monkeypatch, helper):
     provider = NativeRSISchedulerProvider(_native_context(tmp_path))
     provider.rsi_fingerprint_config()

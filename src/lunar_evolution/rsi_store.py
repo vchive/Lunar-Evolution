@@ -36,6 +36,7 @@ from .rsi_learning import (
 from .rsi_python_admission import (
     RSIPythonAdmissionError,
     RSIPythonAdmissionRecord,
+    _parse_rsi_python_admission_reference_context,
     _parse_rsi_python_admission_references_with_context,
     _ParsedRSIPythonAdmissionReference,
     parse_rsi_python_admission_record,
@@ -722,10 +723,19 @@ class RSILedger:
                 raise RSILearningError("rsi_python_admission_record_missing")
             try:
                 # Keep this SELECT and exact-text row parse fresh on every history
-                # read. Only the reference/plan/journal parse is reused from the
-                # just-validated history walk in this same transaction.
+                # read. Only freshly parsed reference/plan/journal context is
+                # shared inside this history transaction or final matcher call.
                 record = self._python_admission_row(row)
                 context = parsed_contexts.get(episode_id) if parsed_contexts is not None else None
+                if context is None:
+                    cache = self._checkpoint_projection_cache()
+                    if cache is not None:
+                        # A history projection retains no DTO context. Reparse this
+                        # fresh reference once, then bind it to the full row parsed
+                        # above. No context survives this final-reference call.
+                        fresh = _parse_rsi_python_admission_reference_context(reference)
+                        if self._checkpoint_projection_cache() is cache:
+                            context, reference = fresh, fresh.reference
                 if context is None:
                     validate_rsi_python_admission_reference_record(
                         reference, record, run_id=run_id, episode_id=episode_id,
@@ -3645,6 +3655,7 @@ def _build_checkpoint_projection_pins():
         candidate_evaluation_spec,
         producer_bundle_handoff,
         producer_bundle_publication,
+        python_producer_admission_anchor,
         python_producer_admission_handoff,
         rsi_gateway,
         rsi_native_plan,
@@ -3652,8 +3663,8 @@ def _build_checkpoint_projection_pins():
     )
 
     modules = (sys.modules[__name__], rsi_python_admission, rsi_native_plan,
-               rsi_gateway, producer_bundle_publication, python_producer_admission_handoff,
-               candidate_evaluation_spec, producer_bundle_handoff)
+               rsi_gateway, producer_bundle_publication, python_producer_admission_anchor,
+               python_producer_admission_handoff, candidate_evaluation_spec, producer_bundle_handoff)
     functions = []
     constants = []
     seen = set()

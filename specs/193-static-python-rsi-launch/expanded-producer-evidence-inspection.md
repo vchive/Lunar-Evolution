@@ -2,8 +2,9 @@
 
 Status: all 45 synthetic focused cases passed in the shared Linux regression
 of tree `7628e971` (758/759 for the full batch; an unrelated host mock failed).
-This is an
-explicit read-only inspection/export seam, not a completed expanded adapter,
+The successor original-envelope acquisition and 14 additional focused cases are
+implemented but pending consolidated validation. This remains an explicit
+read-only inspection/export seam, not a completed expanded adapter,
 admission gate, accepted runtime root or production CLI.
 
 `static_python_fixed_producer_evidence.py` consumes the original
@@ -28,12 +29,20 @@ request pin and a finite actual helper identity/code/default/capture fingerprint
 are rechecked. Every export recomputes the join; exported JSON is never accepted
 as a replacement for original objects or as execution authority.
 
-There is no original captured-envelope wire in this API. Equality of the supplied
-envelope-file digest across receipt/output does not prove that the supplied
-generic envelope DTO was parsed from those captured bytes. That semantic join
-therefore remains an explicit missing boundary, even when a local source snapshot
-matches the supplied envelope DTO. The report is supplied-original-object
-relationship inspection, not verification of native acquisition or an adapter.
+`prepare_native_trusted_output` now retains the already-read bounded original
+envelope bytes, its exact parse result and original output in a private process-
+local acquisition. The inherited slot is absent from constructor arguments,
+dataclass fields and durable JSON; detached DTO reconstruction does not recreate
+it. The pure envelope helper reparses those bytes and compares the original DTO,
+raw digest/count and receipt linkage. Native callback pins retain its exact
+objects and identities. Raw or semantic replacement is refused.
+
+Only an original preparation acquisition can set the report's
+`captured_envelope_semantic_join_verified=true` and remove the corresponding
+missing boundary. Ordinary caller-constructed or detached DTOs still export
+that boundary as missing, even when their supplied hashes match. This semantic
+join proves the bounded preparation read/parse relationship; it does not observe
+completed solver computation/pycache, accept a runtime or authorize publication.
 
 The bounded canonical report has the distinct protocol
 `lunar-fixed-python-producer-evidence-inspection-v1`, a self-digest, the original
@@ -49,11 +58,11 @@ no writes, runs no evaluator and cannot publish candidates. External scores are
 digest-bound provenance only. A matching source snapshot leaves the report
 incomplete.
 
-Five missing boundaries are exported explicitly:
+The following boundaries are exported as missing until independently supplied:
 
 - An original computation observation tied to this executing solver.
 - An original pycache-absence observation covering the required lifecycle.
-- An original captured-envelope wire and its verified semantic envelope join.
+- The original captured-envelope semantic join, when private preparation acquisition is absent.
 - Independently accepted build input custody for the complete configured build.
 - An accepted runtime authority root and its original lifecycle construction.
 
@@ -64,8 +73,10 @@ Adding a new completed-runtime successor requires actual collection and its
 source/image/lifecycle binding before changing adapter/export/admission policy.
 The legacy adapter, export, admission gate and native CLI refusal remain intact.
 
-The new focused tests use synthetic native records and an inert ELF description,
-plus ordinary local source snapshots. They cover original joins, all explicit
+The existing focused tests use synthetic native records and an inert ELF
+description, plus ordinary local source snapshots. New cases read actual local
+envelope files through the preparation boundary while retaining inert mocked
+process/receipt boundaries; they do not establish actual runtime acceptance. They cover original joins, all explicit
 missing/false fields, same-value replacements, native linkage drift, helper/class
 descriptor drift and material export drift. No actual CPython build, solver,
 model, remote evaluator or production runtime acceptance is implied.

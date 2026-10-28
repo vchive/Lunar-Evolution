@@ -48,6 +48,7 @@ from .native_trusted_failure import (
 from .native_trusted_output import (
     NativeTrustedOutputError,
     NativeTrustedOutputPreparation,
+    _native_output_envelope_pin,
     prepare_native_trusted_output,
 )
 from .native_trusted_receipt import (
@@ -186,7 +187,8 @@ def _native_handoff_evidence(
                                separators=(",", ":"), allow_nan=False).encode("utf-8")
     return (id(run), id(run.attempt), id(run.receipt), id(run.output), id(observed),
             run.deadline_scope, observation_fields, attempt_bytes,
-            _prepublication_evidence(run.receipt, run.output))
+            _prepublication_evidence(run.receipt, run.output),
+            _native_output_envelope_pin(run.output))
 
 
 def _prepublication_control_pin(control: SolveExecutionControl | None) -> tuple | None:

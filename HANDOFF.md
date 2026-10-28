@@ -1,5 +1,48 @@
 <!-- current-p0-p2-batch:start -->
-## 当前执行点（2026-10-28）：后继合批去重 759 项通过，待新 clean HEAD mixed
+## 当前执行点：P0–P2 软件合批已补验，等待新 HEAD mixed（2026-10-28）
+
+本批完成 P0 单次 fresh reference context 复用和单个 owner 操作内历史 wire 纯比较
+复用，P1 原 preparation envelope bytes/解析 DTO 绑定，以及 P2 原 receiver 暂停时
+独立 guardian deadline 测试。fresh SQL/JSON、完整 admission row parse/matcher、真实
+目录 inode 与历史材料两端观察仍逐次执行；detached DTO 不继承原读取证明。
+
+统一 Linux 27 文件：tree `43831e5314342b432a42c2e779ab684e4fb97b33`，766 unique，
+746 pass / 20 fail / 0 skip，产品运行 85.553500984 秒。18 项在测试夹具向 slotted
+owner 赋方法时失败；另外两项分别为替换共享文件读取 helper 触发原安全门，以及旧
+fingerprint 字段预期未更新。仅修三个测试文件，并增加新 helper alias 漂移参数；
+产品 src/tools 字节与 mode 未变。tree `95594bd03ce002348cdeb50f1afca70bf80b1c1b`
+受影响三文件 54/54 pass，7.880675622 秒（外层 9.222155750 秒），零 retry。
+最新去重为 767 项通过，不把原 746 与补验 54 相加；原 20 失败保留。
+Ruff、compileall、staged/unstaged diff check 全过。原归档、manifest、JUnit、16
+worker collection 与模块来源逐项收证；来源一致性不是 immutable bytecode custody。
+
+P2 同 UID 实际 SSH transport EOF 用例已执行一次并观察到预期机制：双端 reference
+fsync 后只断开原专用 local SSH，未发 G，远端原 controller 通过 EOF 进入既定 finally；
+watcher exit78、D=false，原 reference/request 与 custody 保持一致。原 20 秒预算不重置；
+execution/cleanup 仍 unknown，全部生产/隔离/whole-group authority=false。三固定 C
+源和显式 compiler 编译的 trusted-local 镜像已独审一致，不宣称 build authenticity。
+暂停测试和 EOF 均不代表实际 blocked fsync、网络黑洞或 controller SIGKILL 验收。
+
+上一提交 `a691f56ab366d2e15e3be755a03b819efb528e8d` 的唯一 mixed 在
+600.0163290952332 秒超时（rc=-15、零 retry），无 JUnit/主运行 loaded-origins。
+原失败与有效 v2 字节独审均保留，不重派该 HEAD。新 clean HEAD 的唯一 600 秒 mixed、
+随后完整 CI/main 尚待完成。合批通过不等于 P0 长链验收已通过。
+
+P1 仍缺原 computation/pycache 采集、accepted build custody/runtime 根四项；真实
+隔离 build/runtime、真实 solver/生产 CLI、独立账户部署、实际 blocked storage 仍未
+验收。5090gpu 普通 Linux 回归可用；macOS 可补普通平台检查，不能替代指定 Linux
+隔离/账户证据。`production_admission=false`、`online_publication=false`。
+不运行模型、WebAgent、远程或公司 evaluator。
+
+原件在主区 ignored `parallel-batch-20261027/`：
+`envelope-stall-history-union-wuce45hb`、`envelope-history-fixtures-affected-5sljtnj7`、
+`actual-ssh-disconnect-prepared-c4cjcjbe`、`final-mixed-a691f56a-prepared/execution/`。
+前者证据独审区分真实测试失败与通过的来源检查；mixed 首版 audit 的 prepared/actual
+launch 路径选择错误原样保留，由 v2 修正，不改变原执行失败结论。
+
+以下是前批记录，不能替代上述后继尚待完成的验收。
+
+## 前批记录（2026-10-28）：去重 759 项通过，随后 a691f56a mixed 超时
 
 | 优先级 | 已实现并有回归证据 | 仍未关闭 |
 | --- | --- | --- |

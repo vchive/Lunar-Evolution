@@ -16,6 +16,7 @@ from pathlib import Path
 from types import FunctionType
 
 from . import native_fixed_live_sink as sink
+from . import native_trusted_output as native_output
 from . import native_trusted_scheduler as native
 from . import openevolve_handoff as openevolve
 from . import producer_bundle_admission as admission
@@ -100,8 +101,13 @@ def _implementation_pin() -> tuple:
         _validated_wire, _capture_pin, _function_pin,
         compose_fixed_python_producer_evidence, read_fixed_python_producer_evidence_export,
         vars(FixedPythonProducerEvidence)["to_json"], vars(FixedPythonProducerEvidence)["to_dict"],
-        component_fingerprint, native._native_handoff_evidence,
-        native._prepublication_evidence, sink._pin_fixed_python_live_sink_request,
+        component_fingerprint, native._native_handoff_evidence, native._native_output_envelope_pin,
+        native._prepublication_evidence, native_output._native_output_envelope_pin,
+        native_output._unique_object, native_output.parse_producer_envelope,
+        native_output._NativeTrustedEnvelopeAcquisition.__init__,
+        native_output._NativeTrustedEnvelopeAcquisition.__copy__,
+        native_output._NativeTrustedEnvelopeAcquisition.__deepcopy__,
+        sink._pin_fixed_python_live_sink_request,
         sink._FixedPythonLiveSinkPin.assert_current,
         sink.FixedPythonLiveSinkRequest.validate, sink.FixedPythonLiveSinkRequest.compare,
         runtime.validate_fixed_python_runtime_observation_policy,
@@ -139,7 +145,8 @@ def _implementation_pin() -> tuple:
         runtime.live.FixedPythonBoundLiveModules, runtime.profile.FixedPythonInstallation,
         launcher.ProducerLaunchIntent, launcher.ProducerLaunchAttestation, ProducerMaterial, ProducerResultEnvelope,
         handoff.ProducerMaterial, handoff.ProducerResultEnvelope, HostRequestJournalIdentity, HostRequestSnapshot,
-        admission.ProducerBundleAdmissionPlan,
+        admission.ProducerBundleAdmissionPlan, native_output._NativeTrustedOutputOriginal,
+        native_output._NativeTrustedEnvelopeAcquisition, native_output.ProducerEnvelopeEvidence,
     )
     return ((dataclasses._HAS_DEFAULT_FACTORY, id(dataclasses._HAS_DEFAULT_FACTORY)),
             tuple((klass, id(klass)) for klass in classes), tuple(_function_pin(helper) for helper in helpers))
@@ -234,6 +241,9 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
             or receipt.envelope_evidence is None
             or output.envelope_bytes_sha256 != receipt.envelope_evidence.sha256):
         raise ValueError
+    acquired = native_output._native_output_envelope_pin(output)
+    if acquired is not None and receipt.envelope_evidence.bytes != len(acquired[2]):
+        raise ValueError
     plan = output.admission_plan.from_dict(output.admission_plan.to_dict())
     if any(getattr(plan, name) != getattr(intent, name) for name in (
         "contract_sha256", "evaluator_kind", "evaluator_fingerprint", "runner_fingerprint",
@@ -253,7 +263,10 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
         "broker_journal_identity": broker.journal_identity.to_dict(),
         "envelope_sha256": result.envelope_sha256,
         "envelope_bytes_sha256": output.envelope_bytes_sha256,
-        "admission_plan_sha256": plan.digest(), "missing_evidence": list(MISSING_EVIDENCE),
+        "admission_plan_sha256": plan.digest(),
+        "captured_envelope_semantic_join_verified": acquired is not None,
+        "missing_evidence": [name for name in MISSING_EVIDENCE
+                             if acquired is None or name != "original_captured_envelope_semantic_join"],
         "live_runtime_authenticated": False, "immutable_custody_verified": False,
         "production_admission": False, "online_publication": False,
     }
@@ -335,9 +348,10 @@ def compose_fixed_python_producer_evidence(
 ) -> FixedPythonProducerEvidence:
     """Inspect explicitly supplied original native objects without product I/O or process effects.
 
-    Same-value replacement after composition is drift. This pure boundary checks
-    supplied provenance relationships; it does not prove original acquisition,
-    accept a runtime, observe computation/pycache or admit a candidate.
+    Same-value replacement after composition is drift. The optional private
+    preparation acquisition joins its original bounded read to the parsed DTO;
+    supplied DTOs alone do not. This never accepts a runtime, observes completed
+    computation/pycache or admits a candidate.
     """
     try:
         implementation = _implementation_pin()

@@ -38,7 +38,7 @@ from .native_fixed_live_sink import (
     _pin_fixed_python_live_sink_request,
 )
 from .native_trusted_failure import NativeTrustedProducerFailure, recover_native_trusted_failure
-from .native_trusted_output import NativeTrustedOutputPreparation
+from .native_trusted_output import NativeTrustedOutputPreparation, _native_output_envelope_pin
 from .native_trusted_scheduler import (
     NativeTrustedProducerRecovery,
     NativeTrustedProducerRun,
@@ -1759,6 +1759,7 @@ class NativeRSISchedulerProvider:
             if any(getattr(_native_scheduler, name) is not original for name, original in (
                 ("_native_handoff_evidence", _native_handoff_evidence),
                 ("_prepublication_evidence", _prepublication_evidence),
+                ("_native_output_envelope_pin", _native_output_envelope_pin),
                 ("_run_native_trusted_producer", _run_native_trusted_producer),
             )):
                 _fail("python_native_handoff_policy_changed")
@@ -1766,6 +1767,7 @@ class NativeRSISchedulerProvider:
             projection["python_native_handoff_dependencies"] = {
                 "evidence": component_fingerprint(_native_handoff_evidence),
                 "preparation_evidence": component_fingerprint(_prepublication_evidence),
+                "output_envelope_acquisition": component_fingerprint(_native_output_envelope_pin),
                 "scheduler": component_fingerprint(_run_native_trusted_producer),
                 "supplier_selection": component_fingerprint(NativeRSISchedulerContext._python_handoff_suppliers),
                 "late_join": component_fingerprint(NativeRSISchedulerProvider._python_publication_join),

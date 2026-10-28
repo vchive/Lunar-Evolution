@@ -336,3 +336,63 @@ simultaneous watcher exits, exact `R`, deadline consumption, malformed ACKs,
 poll failures and preservation of the original failed owner. These additions
 have only static checks at preparation time; the two actual 20-second fault
 observations still require a fresh, explicitly dispatched unified batch.
+
+## Direct-owner receiver-stall surrogate (focused execution passed)
+
+The new focused custody case
+`test_stalled_original_receiver_cannot_delay_guardian_execution_deadline` reuses
+the existing real receiver/guardian images and inert native target. It sends
+SIGSTOP through only the exact original receiver `Popen`, observes that direct
+child's stopped status using `waitid(WSTOPPED|WNOWAIT)`, and keeps the controller's
+original lifeline writer open. The original independent guardian must stop the
+target at its unchanged 0.8-second native execution deadline while the receiver
+is paused. This covers receiver scheduling independence, not a real blocked
+filesystem syscall, storage latency guarantee or arbitrary target group proof.
+
+The test fixes a separate 20-second observation/teardown deadline before launch.
+That outer limit bounds stop observation and exact-child retirement only; it
+grants no execution, publication, event-write or native deadline renewal. Every
+observer/reap wait uses its remaining original outer limit. On every ordinary
+exception/assertion path, `finally` first attempts SIGCONT through the original
+receiver owner, then invokes original owner cleanup and reaps only that original
+receiver. Owner cleanup retains its original native deadline and false result.
+If the outer limit expires, retirement remains failed/unknown; no further wait
+budget is created and no complete-retirement claim is made.
+
+After native expiry, the registration remains unchanged, the event stays empty,
+and original-reference inspection remains `registered` with cleanup, storage
+completion, whole-group cleanup and all existing authority unknown/false. The
+resumed receiver may exit or be retired; no post-expiry event is manufactured.
+The existing normal and abnormal lifecycle protocols are unchanged.
+
+This actual-mechanism case passed in the six-node custody file of frozen tree
+`43831e5314342b432a42c2e779ab684e4fb97b33` during the concentrated Linux batch.
+That batch also retained twenty unrelated test failures; the original report is
+not promoted to a passing whole-batch result. The standalone tool still exposes only `controller-exit` and `receiver-kill`; it gains
+no restartable stall scenario. A controller forcibly killed while its receiver
+is SIGSTOPed can bypass Python `finally` and leave that receiver stopped. A
+generic command-line stall tool therefore needs an independently reviewed
+surviving original-owner retirement boundary before it can promise recovery.
+No SSH failure, independent account, production storage or whole-group acceptance
+is supplied by this test.
+
+## Actual same-UID SSH EOF observation
+
+A separate explicitly configured fixture ran once against the same frozen
+product source and three fixed trusted-local native images. Both ends retained
+and fsynced the original reference before the caller killed its original dedicated
+SSH client. No G was sent. Actual transport EOF reached the original controller's
+existing finally path; a fresh read-only inspection observed the original watcher
+exit78, D=false, unchanged custody and matching original reference/request pins.
+The caller and remote helper retained their original twenty-second deadlines.
+
+The observation is `ssh_transport_eof_fixture_observed`, with execution/cleanup
+unknown and every production, isolation, whole-group and build-authenticity
+claim false. It does not cover a transport blackhole, controller SIGKILL,
+independent accounts, blocked fsync or whole-group retirement. The source,
+compiler and image byte joins provide trusted-local preparation consistency,
+not an accepted isolated build/runtime root.
+
+Original compile, local transport and twelve remote custody records remain in
+ignored validation `parallel-batch-20261027/actual-ssh-disconnect-prepared-c4cjcjbe`;
+no benchmark source, model or remote evaluator was invoked.

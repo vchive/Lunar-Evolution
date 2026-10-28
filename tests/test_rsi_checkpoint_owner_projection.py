@@ -15,6 +15,7 @@ from test_rsi_python_admission_flow import _forged_checkpoint_append
 from lunar_evolution import rsi_brs_publication_lineage as lineage_policy
 from lunar_evolution import rsi_brs_reserved_policy as reserved_policy
 from lunar_evolution import rsi_store as store
+from lunar_evolution.python_producer_admission_anchor import PythonProducerAdmissionAttemptAnchor
 from lunar_evolution.rsi_identity import RSIIdentityError, component_fingerprint
 from lunar_evolution.rsi_learning import RSILearningError
 from lunar_evolution.rsi_native_plan import NativeRSIExecutionPlan
@@ -40,6 +41,8 @@ def _profile_read(value):
         "history": store.RSILedger._checkpoint_python_references_with_context.__code__,
         "row": store.RSILedger._python_admission_row.__code__,
         "match": store.validate_rsi_python_admission_reference_record.__code__,
+        "reference": store._parse_rsi_python_admission_reference_context.__code__,
+        "binding": store.RSILedger._validate_history_admission_reference.__code__,
     }
     counts = dict.fromkeys(codes, 0)
     previous = sys.getprofile()
@@ -68,7 +71,8 @@ def test_owner_projection_skips_only_pure_history_work_and_returns_fresh_json(re
         assert first == second == original
         assert initial["history"] == len(first) and hit["history"] == 0
         assert initial["row"] == hit["row"] == 1
-        assert hit["match"] == 1  # Fresh plan/journal and retained-row binding.
+        assert hit["reference"] == hit["binding"] == 1
+        assert initial["binding"] == 1 and initial["match"] == hit["match"] == 0
         second[-1][1]["python_admission_refs"].clear()
         assert ledger.controller_checkpoint_history(retained.binding.run_id) == original
         cache = ledger._checkpoint_projection_cache()
@@ -80,6 +84,42 @@ def test_owner_projection_skips_only_pure_history_work_and_returns_fresh_json(re
     assert ledger._checkpoint_projection_local.cache is None
     assert not cache["entries"] and cache["retained_units"] == 0
     assert _profile_read(retained)[1]["history"] == len(first)
+
+
+@pytest.mark.parametrize("edge", ["reference", "anchor"])
+def test_fresh_final_reference_context_falls_back_after_mid_parse_helper_drift(retained, monkeypatch, edge):
+    ledger = retained.ledger
+    function = store._parse_rsi_python_admission_reference_context
+    original_code = function.__code__
+    changed_function = (function if edge == "reference" else PythonProducerAdmissionAttemptAnchor.__post_init__)
+    changed_code = changed_function.__code__
+    general_code = store.validate_rsi_python_admission_reference_record.__code__
+    row_code = store.RSILedger._python_admission_row.__code__
+    calls = {"changed": False, "general": 0, "row": 0}
+
+    def profile(frame, event, _argument):
+        if event == "call":
+            if frame.f_code is general_code:
+                calls["general"] += 1
+            elif frame.f_code is row_code:
+                calls["row"] += 1
+        elif event == "return" and frame.f_code is original_code and not calls["changed"]:
+            calls["changed"] = True
+            monkeypatch.setattr(changed_function, "__code__", changed_code.replace(co_name="changed"))
+
+    with ledger._checkpoint_projection_scope():
+        original = ledger.controller_checkpoint_history(retained.binding.run_id)
+        previous = sys.getprofile()
+        sys.setprofile(profile)
+        try:
+            observed = ledger.controller_checkpoint_history(retained.binding.run_id)
+        finally:
+            sys.setprofile(previous)
+        assert observed == original
+        assert calls["changed"] and calls["general"] == 1
+        # The post-walk drift guard also reobserves this input on the old path.
+        assert calls["row"] == 2
+        assert ledger._checkpoint_projection_cache() is None
 
 
 def test_each_projection_walk_selects_all_four_columns_afresh(retained):

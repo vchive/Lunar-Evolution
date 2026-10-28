@@ -2462,7 +2462,9 @@ class RSILearningController:
             # owners use the exact ledger and one bounded publication operation.
             projection_scope = (ledger._checkpoint_projection_scope()
                                 if type(ledger) is RSILedger else nullcontext())
-            with projection_scope:
+            from .rsi_brs_reserved_owner import _reserved_history_projection_scope
+
+            with projection_scope, _reserved_history_projection_scope(wave, handoff):
                 yield
         finally:
             if getattr(self._python_admission_brs_local, "full_gate_scope", None) is scope:
