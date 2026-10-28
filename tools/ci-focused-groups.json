@@ -397,12 +397,13 @@
     },
     {
       "id": "rsi-python-brs-selected-service",
-      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "label": "Verify selected service and terminal ACK wait boundaries",
       "files": [
         "tests/test_rsi_python_brs_selected_service.py",
-        "tests/test_rsi_python_brs_selected_wait.py"
+        "tests/test_rsi_python_brs_selected_wait.py",
+        "tests/test_rsi_brs_terminal_exchange_wait.py"
       ],
-      "expected_tests": 43,
+      "expected_tests": 96,
       "zero_skips": true
     },
     {
@@ -471,14 +472,15 @@
     },
     {
       "id": "python-build-inputs",
-      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "label": "Verify pinned build inputs and implicit helper loader refusals",
       "files": [
         "tests/test_static_python_build_inputs.py",
         "tests/test_static_python_build_recipe.py",
         "tests/test_static_python_source_plan.py",
-        "tests/test_static_python_configure_plan.py"
+        "tests/test_static_python_configure_plan.py",
+        "tests/test_static_python_podman_helper_inputs.py"
       ],
-      "expected_tests": 100,
+      "expected_tests": 147,
       "zero_skips": true
     },
     {
@@ -826,6 +828,7 @@
         "tests/test_native_whole_scope_successor_bootstrap.py",
         "tests/test_native_whole_scope_successor_ownership.py",
         "tests/test_native_whole_scope_successor_resources.py",
+        "tests/test_native_whole_scope_stdio.py",
         "tests/test_external_worker_whole_scope_vault.py",
         "tests/test_external_worker_whole_scope_successor_vault.py",
         "tests/test_external_worker_whole_scope_successor_bridge.py",
@@ -833,7 +836,7 @@
         "tests/test_external_worker_native_vault.py",
         "tests/test_external_worker_guardian_vault.py"
       ],
-      "expected_tests": 483,
+      "expected_tests": 530,
       "zero_skips": false
     },
     {

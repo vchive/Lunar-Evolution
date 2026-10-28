@@ -261,12 +261,12 @@ def test_missing_additional_external_or_future_reported_inputs_refuse(vector, mu
 
 def elf_header(segment):
     """Structural gate vector only; not a runnable or accepted binary."""
-    raw = bytearray(120)
-    raw[:7] = b"\x7fELF\x02\x01\x01"
-    struct.pack_into("<H", raw, 18, 62)
-    struct.pack_into("<Q", raw, 32, 64)
-    struct.pack_into("<HH", raw, 54, 56, 1)
-    struct.pack_into("<I", raw, 64, segment)
+    raw = bytearray(192)
+    struct.pack_into("<16sHHIQQQIHHHHHH", raw, 0,
+                     b"\x7fELF\x02\x01\x01" + b"\0" * 9,
+                     2, 62, 1, 0x400080, 64, 0, 0, 64, 56, 1, 0, 0, 0)
+    struct.pack_into("<IIQQQQQQ", raw, 64, segment, 5, 0, 0x400000, 0,
+                     len(raw), len(raw), 4096)
     return bytes(raw)
 
 

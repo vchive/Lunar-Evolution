@@ -1,8 +1,9 @@
 # Driver input custody: next implementation prerequisites
 
-Status: design only. No tracer, runtime, execution entry point or receipt schema
-is added. No build, solver, model or evaluator was run. Existing consumer defaults
-and acceptance claims are unchanged.
+Status: overall custody design; helper-loader refusal implemented, pending
+regression. No tracer, runtime, execution entry point or receipt schema is added.
+No build, solver, model or evaluator was run. Existing consumer defaults and
+acceptance claims are unchanged.
 
 ## Why production composition cannot yet be connected
 
@@ -101,3 +102,36 @@ a read-only worker view.
 `production_admission` and `online_publication` remain false. No tasks or shared
 status document is changed by this design, and no mixed/CI/merge acceptance is
 claimed.
+
+## Implemented helper-loader refusal continuation (focused regression passed)
+
+The original Podman command path now checks every pinned executable file in its
+source/toolchain input view and every actual prior executable output before that
+command performs any daemon, image-import or container-create operation. The
+check also covers helpers absent from the command's explicit argv. Each command
+repeats the actual no-follow FD read, supported static x86_64 ELF header/program
+table checks, full original digest comparison and FD/name identity checks.
+Scripts, PT_INTERP/PT_DYNAMIC, unsupported loader layouts, changed bytes or
+changed original files refuse. The original deadline/cancellation checkpoints
+apply throughout; there is no cache, discovery approval, retry or extra budget.
+The default non-custody runner and recipe/report wire schemas are unchanged.
+
+This is a deliberately narrow all-helper refusal profile. The retained complete
+CPython tar source inventory preserves 116 executable source files, including
+`configure` and Python scripts; the concrete recipe preserves those roles.
+Passing that inventory to this custody profile therefore refuses before daemon
+operations. The ordinary default/configuration preparation paths are unchanged.
+Complete CPython source custody is not supported by this continuation. A future
+source-as-data permission projection or executable-only closure needs a separate
+reviewed contract; this gate neither strips modes nor skips executable sources.
+
+This closes only the previously unchecked implicit helper-loader route. It does
+not enumerate every data/config/resource read, approve generated cache products,
+establish immutable input custody or accept a build/runtime. All authority flags
+above remain false. Focused tests use actual bounded files and inert dispatch
+boundaries without running a compiler, helper, daemon, solver or model; their
+47-node helper suite passed in the 487-node affected Linux union at frozen tree
+`cf19f440383da3acaa128cc9db1cd1f88dedfe4f`, with zero failures/errors/skips,
+79.679989151 seconds and zero retries. Exact archive/Git tree, source before/after,
+worker execution, JUnit and loaded-module origins were independently checked.
+This result does not execute or accept a full CPython build or runtime.

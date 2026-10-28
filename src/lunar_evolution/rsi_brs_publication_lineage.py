@@ -1004,7 +1004,7 @@ def _policy() -> dict[str, Any]:
             "build_brs_terminal_observation", "validate_brs_terminal_history",
             "inspect_brs_worker_terminal_evidence", "open_brs_terminal_lifecycle")),
         *((getattr(terminal._PrimitiveExchange, name), terminal)
-          for name in ("__init__", "submit", "fail")),
+          for name in ("__init__", "submit", "_submit_waiting", "fail")),
         *((getattr(terminal._BRSWorkerTerminalEndpoint, name), terminal)
           for name in ("__init__", "_identity", "_wait_check", "receive_and_settle")),
         (terminal._BRSWorkerTerminalEndpoint.status.fget, terminal),
@@ -1189,7 +1189,15 @@ def _policy() -> dict[str, Any]:
             or journal_defaults["monotonic"] is not time.monotonic):
         _fail("native_reader_binding_drift")
     cached = getattr(_POLICY_OBSERVATION_LOCAL, "cache", None)
+    terminal_wait = terminal._PrimitiveExchange._submit_waiting
+    terminal_wait_code = terminal_wait.__code__
     if cached is not None and "policy" in cached:
+        wait_pin = cached.get("terminal_wait")
+        if (type(wait_pin) is not tuple or len(wait_pin) != 2
+                or wait_pin[0] is not terminal_wait or wait_pin[1] is not terminal_wait_code
+                or terminal_wait.__defaults__ is not None or terminal_wait.__kwdefaults__ is not None
+                or terminal_wait.__closure__ is not None):
+            _fail("terminal_wait_policy_drift")
         return cached["policy"]
 
     policy = {
@@ -1619,6 +1627,15 @@ def _policy() -> dict[str, Any]:
                  "private_native_dispatch", "reconcile_registration"):
         policy["dependencies"][name] = hashlib.sha256(canonical_json(policy["dependencies"][name])).hexdigest()
     if cached is not None:
+        # Establish this pin only with a completed cold policy, and retain it
+        # only for this operation. An in-place code change must not borrow the
+        # earlier pure graph through an unchanged function/global identity.
+        if (terminal._PrimitiveExchange._submit_waiting is not terminal_wait
+                or terminal_wait.__code__ is not terminal_wait_code
+                or terminal_wait.__defaults__ is not None or terminal_wait.__kwdefaults__ is not None
+                or terminal_wait.__closure__ is not None):
+            _fail("terminal_wait_policy_drift")
+        cached["terminal_wait"] = (terminal_wait, terminal_wait_code)
         cached["policy"] = policy
     return policy
 

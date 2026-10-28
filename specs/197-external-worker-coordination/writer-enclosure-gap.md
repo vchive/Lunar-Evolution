@@ -113,3 +113,33 @@ deadline expiry and abnormal native completion. Same-UID fixtures may test
 refusals and local mechanisms; they cannot replace actual installed exclusion
 and distinct-account acceptance. No model, remote evaluator or benchmark run is
 needed to establish this software/design boundary.
+
+## V4 inherited standard-stream refusal (focused regression passed)
+
+The explicit successor-v4 child now acquires its actual inherited descriptors
+0/1/2 after its first close phase and before credential drop. Descriptor 0 must
+be the Linux `/dev/null` character device (device 1:3), opened read-only or
+read/write as used by the current Python `Popen(stdin=DEVNULL)`. Descriptors 1/2
+must be distinct actual PIPEFS anonymous pipes opened write-only. O_PATH and
+O_ASYNC refuse. Each object must also differ from every actual retained target,
+error/ready/release/lifeline, broker, live/completion-sink and original grant
+descriptor in the child's finite keep set.
+
+Before ready, the same child rechecks the current object shapes, complete status
+flags, original device/inode/type/device-number observations and remaining keep
+roles. It neither replaces standard streams nor derives their source from a
+path, descriptor number or serialized declaration. The focused C harness uses
+real local descriptors without a root account, installed scope or candidate;
+46 actual Linux C harness cases and the source boundary node passed in the
+487-node affected union at frozen tree `cf19f440383da3acaa128cc9db1cd1f88dedfe4f`,
+with zero failures/errors/skips, 79.679989151 seconds and zero retries. The source
+boundary test checks both original v4 child call sites; exact source, worker
+execution, JUnit and module origins were independently checked. This is not an
+installed root/U scope acceptance.
+
+This closes only the v4 standard-stream refusal gap. It does not acquire the
+original pipe creator, exclusive U, all writable capabilities or finite-writer
+authority. Custody-v1/v2/v3 retain their existing bootstrap behavior; v3 currently
+shares the same bootstrap selection and has no separate way to select this gate.
+No new v3 flag or ABI is introduced. WQ-06, the installed accepting path and the
+monitor's `original_quiescence_unavailable` result remain unchanged.

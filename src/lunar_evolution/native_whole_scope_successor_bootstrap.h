@@ -5,6 +5,7 @@
 #define LUNAR_NATIVE_WHOLE_SCOPE_SUCCESSOR_BOOTSTRAP_H
 #include "native_whole_scope_successor_protocol.h"
 #include "native_whole_scope_successor_resources.h"
+#include <sys/sysmacros.h>
 
 typedef struct {
     int control, gate, frame, lifeline, enrollment, lifecycle, profile;
@@ -216,6 +217,52 @@ static int w4_b_inherit_sinks(const control_t *control) {
     return control->version == 4 ? handoff_cloexec(control->completion_fd, 0) : 0;
 }
 
+/* A narrow inherited-object gate, not pipe creator or finite-writer authority.
+ * The exact original child keeps this stack observation across credential and
+ * isolation setup. No names or caller-provided descriptor claims are accepted. */
+typedef struct {
+    struct stat objects[3];
+    int flags[3];
+} w4_b_stdio_t;
+
+static int w4_b_stdio_same(const struct stat *a, const struct stat *b) {
+    return a->st_dev == b->st_dev && a->st_ino == b->st_ino &&
+        a->st_rdev == b->st_rdev && (a->st_mode & S_IFMT) == (b->st_mode & S_IFMT);
+}
+
+static int w4_b_stdio_acquire(w4_b_stdio_t *out, const int *roles, size_t count) {
+    if (!out || !roles || !count || count > MAX_GRANTS + 10) return -1;
+    w4_b_stdio_t observed; memset(&observed, 0, sizeof(observed));
+    for (int fd = 0; fd < 3; ++fd) {
+        int flags = fcntl(fd, F_GETFL);
+        if (flags < 0 || (flags & (O_PATH | O_ASYNC))) return -1;
+        observed.flags[fd] = flags;
+        if (fd == 0) {
+            if (fstat(fd, &observed.objects[fd]) || !S_ISCHR(observed.objects[fd].st_mode) ||
+                major(observed.objects[fd].st_rdev) != 1 || minor(observed.objects[fd].st_rdev) != 3 ||
+                ((flags & O_ACCMODE) != O_RDONLY && (flags & O_ACCMODE) != O_RDWR)) return -1;
+        } else if (handoff_pipe(fd, O_WRONLY, &observed.objects[fd])) return -1;
+        for (int earlier = 0; earlier < fd; ++earlier)
+            if (w4_b_stdio_same(&observed.objects[fd], &observed.objects[earlier])) return -1;
+        for (size_t index = 0; index < count; ++index) {
+            struct stat role;
+            if (roles[index] <= 2 || fstat(roles[index], &role) ||
+                w4_b_stdio_same(&observed.objects[fd], &role)) return -1;
+        }
+    }
+    *out = observed;
+    return 0;
+}
+
+static int w4_b_stdio_check(const w4_b_stdio_t *original, const int *roles, size_t count) {
+    w4_b_stdio_t observed;
+    if (!original || w4_b_stdio_acquire(&observed, roles, count)) return -1;
+    for (size_t fd = 0; fd < 3; ++fd)
+        if (original->flags[fd] != observed.flags[fd] ||
+            !w4_b_stdio_same(&original->objects[fd], &observed.objects[fd])) return -1;
+    return 0;
+}
+
 /* Explicit v4 setup preserves the legacy credential, actual-U access, grant
  * isolation and original release checks. Its only sink handoff uses the fixed
  * original OFDs already counted by the inherited kernel resource limit. */
@@ -233,7 +280,9 @@ static _Noreturn void w4_b_child(const wq_bootstrap_fds_t *fds, control_t *contr
     if (control->version >= 3) keep[count++] = control->sink_fd;
     if (control->version == 4) keep[count++] = control->completion_fd;
     for (size_t i = 0; i < control->grant_count; ++i) keep[count++] = control->grants[i].fd;
-    if (wq_b_keep(keep, count) || wq_b_drop_credentials(profile)) child_start_failed(error_fd, EPERM, 78);
+    w4_b_stdio_t original_stdio;
+    if (wq_b_keep(keep, count) || w4_b_stdio_acquire(&original_stdio, keep, count) ||
+        wq_b_drop_credentials(profile)) child_start_failed(error_fd, EPERM, 78);
     /* Prove real U access on original grant objects, rather than an A-only
      * preflight. faccessat2 is required by this explicit Linux >=5.14 profile. */
     for (size_t i = 0; i < control->grant_count; ++i) {
@@ -256,7 +305,8 @@ static _Noreturn void w4_b_child(const wq_bootstrap_fds_t *fds, control_t *contr
     if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
     if (control->version >= 3) keep[count++] = control->sink_fd;
     if (control->version == 4) keep[count++] = control->completion_fd;
-    if (wq_b_keep(keep, count) || wq_b_checkpoint(fds)) child_start_failed(error_fd, ECANCELED, 78);
+    if (wq_b_keep(keep, count) || wq_b_checkpoint(fds) ||
+        w4_b_stdio_check(&original_stdio, keep, count)) child_start_failed(error_fd, ECANCELED, 78);
     unsigned char ready = 'R';
     if (write(ready_fd, &ready, 1) != 1 || close(ready_fd)) child_start_failed(error_fd, EPIPE, 78);
     unsigned char release[2]; size_t received = 0;

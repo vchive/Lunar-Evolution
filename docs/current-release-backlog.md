@@ -1,45 +1,67 @@
 <!-- mixed-performance-current:start -->
-## 当前执行点：Linux mixed 超时，先合批修复重复解析（2026-10-29）
+## 当前执行点：终态 ACK / helper loader / 原生标准流合批（2026-10-29）
 
 权威工作区为 `/Users/liminghan/.codex/worktrees/fixed-u-input-acl/lunar_agent`，
-分支 `codex/fixed-u-input-acl`，已推送 HEAD `09d234649ca5d301b01a8bc86c9c6417167ce70d`。
-PR #190 仍 draft、未合 main。该 HEAD 的唯一 Linux three-child-mixed 已执行并失败：
-原进程 600.031659438 秒、rc=-15，完整 runner 600.268776001 秒，600 秒预算、零重试。
-没有最终 JUnit、module origins 或 sampler completion；同 HEAD 不重派，也不转本机重跑。
-源码前后与原 archive 一致；独审确认的是失败原件一致性，不是 case 通过。
+分支 `codex/fixed-u-input-acl`。已推送 `672ce3519f381aafed5f0a5bcc76be61bf39781c`，
+PR #190 仍 draft、未合 main。本轮按要求先并行开发，修改冻结后集中回归。
 
-保留的 120 个 5 秒稀疏样本覆盖 0.000547–595.974320 秒。main 57 个样本经过
-reserved history，62 个经过 publication transaction；最后四个 main 样本已在
-finalization，仍进行历史/绑定校验。这些计数不能作为 CPU 占比、磁盘瓶颈结论或
-剩余用时估计。worker 的等待不能证明 owner 已完成。
+P0：现有 provider hot check 已贯通三段 terminal ACK 等待。每段入口和 ACK 后保留
+完整 cold check，未完成 poll 只检查原 liveness/control/cancellation/deadline；默认
+未给 wait_check 的行为保留。原 exchange/Condition 及 callback 真正开始边界均验证。
+新方法进入完整有限 policy graph，短期 scoped warm policy 还检查原 function/code /
+空 defaults/closure pin。SQL/JSON/history、物理观察和最终 provider gate 未移除。
 
-本轮先并行开发、独审，最后集中回归两个有明确重复计算依据的窄修复：
-一是同一个 owner operation 内完整新鲜 SQL/reference bytes 对应的纯解析投影；
-二是 binding parser 内刚完成严格解析、尚未逃逸的 runtime DTO 复用。
-每次 fresh SQL/JSON、完整 admission row parse/比较、controller lock、物理观察及
-末尾独立 fresh gate 保留。public DTO 的 mutation/refusal、digest/canonical 和 helper
-漂移拒绝/fallback 保留。修复的集中 focused 已通过；不能由此承诺 mixed 低于 600 秒。
+首轮冻结 tree `890d3c4790cf30bd6cccfeaf255894159f52b670`，17 完整文件加原
+published-rejected selector：569 unique，567 pass /2 fail /0 skip/error，pytest
+115.568332827 秒，未超时，零 retry。新增 ACK 53 和 policy 43 节点全部通过；
+3017 source entries 前后、archive/Git mode、285 module origins、16 worker collection /
+唯一执行与 JUnit 已独审。gw14/gw9 各 exit1、无 crash，其余14 worker exit0；
+`focused_profile_passed=false`，全部失败原件保留。
 
-本批冻结 tree `1093f1fdc02d92c05621e270fe63ccc86cc8a099`，一次 Linux affected
-union（32 完整文件 + 原 published-rejected 单 selector，内含两个 child）实际
-1,446/1,446 pass，零 fail/error/skip，pytest 297.395911978 秒、外层 299.079705417 秒，
-16 workers 全部 exit0、290 module origins 与 3,016 entries / 2,708 Git 文件匹配。
-新增 runtime 29、history 14 节点已执行；每次原 SQL/JSON/row/physical gate 保留。
-原 Ruff 首检两项风格问题在冻结前合并 if/with 修复；最终 Ruff、compileall、diff check
-通过。原件在 ignored `binding-history-pure-projection-union-linux-20261029/`。
-独立终态原件复核完成，确认唯一 collection/execution 与上述结果；最终只更新 Markdown，下一 clean committed HEAD 的唯一 mixed
-及完整 CI 仍待，不能视为已合并或全部 P0–P2 完成。CI 83 组，expected sum 6,741。
+两个具体原因已定位：native completion fixture 全 stat 比对把读取推进的 atime 当作
+变化，修正快照仅排除 atime，dev/inode/mode/nlink/uid/gid/size/mtime_ns/ctime_ns /
+bytes 仍严格比较。另一次是测试调度错误：现有 `tools/run_tests.py` 已规定每个 heavy
+BRS wave 使用独立 pytest 解释器，但首轮 union 将其与其他 native doubles 混跑，
+导致原 `_run_native_trusted_producer` 的 run_native_trusted_attempt alias 与之前
+fixture 首次建立的 process-wide policy 不符。仅 setup 的独立诊断已确认具体边；
+不改产品 policy、不 reset 原 run 的 guard。补验恢复原 heavy 隔离规则，普通受影响
+union 与这个原 selector 分开，原 three-child mixed 的 600 秒预算和零 retry 不变。
 
-原 native v4/worker vault 的 979 unique focused 域当前适用结果仍为 937 pass /
-42 root-prerequisite skip，不重复执行未受本轮影响的节点。完整 CI 尚未通过，不能合并。
-P1 accepted input/build/runtime authority 与生产 CLI、P2 WQ06 finite writer enclosure/
-原 monitor accepting join 仍有实际代码缺口；真实 installed root/U/ACL/cgroup、独立账户、
-hard disconnect/blocked storage 也未验收。不得将这些全部归为环境问题。
-`production_admission=false`、`online_publication=false`。不运行模型、WebAgent、
-远程/公司 evaluator 或真实 solver；不读密钥或活进程 argv/environment；原 benchmark 只读。
+最终冻结 tree `cf19f440383da3acaa128cc9db1cd1f88dedfe4f` 后按原隔离规则集中补验：
+12完整普通文件487/487pass，79.679989151秒，16worker全部exit0、320module origins；
+原 published-rejected selector 独立1/1pass，223.475495526秒，1worker exit0、
+285module origins。两者均零fail/error/skip、零retry，3019源码entries、同一archive/
+Git tree、2711Git blobs+modes、完整collection/唯一执行/JUnit与before/after已独审。
+helper47/47、v4stdio47/47、completion27/27、聚合器82/82；CI清单仍83组/
+65zero-skip，expected sum6888。先前569节点首败完整保留，不改记为通过。
 
-原件：主区 ignored `parallel-batch-20261027/native-v4-resource-vault-mixed-linux-20261028/`，
-含 `terminal-selected/` 和 `independent-terminal-audit.json`。以下记录均为历史批次。
+P1：Podman 每条命令在 daemon/image/create 前重读所有原 executable helper 与 prior
+output，校验有界 static x86_64 ELF、原 digest、原 FD/name 身份；新增47/47节点已通过本批回归。
+它不等于完整 driver closure / accepted build。完整 CPython tar 含116个 executable
+源码脚本，本有限 custody profile 会拒绝；普通 default/configure 路径不变，不偷偷
+strip 或跳过。source-as-data 权限投影和 accepted input/build/runtime authority /
+生产 CLI 仍开放。5090gpu 本轮只读 Podman installation/socket metadata preflight 已过，
+没有运行新容器或 build；不能称完整构建通过，也不能一概归因无 KVM。
+
+P2：仅显式 v4 的 B child 在降权前和 ready 前检查真实 stdin / stdout / stderr，
+要求原 /dev/null 输入与互异的 write-only anonymous pipe 输出，并拒绝 retained-role
+别名；新增47/47节点已通过本批回归。v1/v2/v3 与默认行为不变，不虚构 v3 独立入口。WQ06
+finite writer enclosure / 原 monitor accepting join 仍缺真实 live acquisition；
+installed root/U/ACL/cgroup、独立账户、
+hard disconnect/blocked storage 也未验收。原 native v4/vault 适用 focused 为
+937 pass /42 root-prerequisite skip；未受影响节点不重复运行。
+
+已消耗的 `672ce351` mixed 原进程600.016517692秒、rc=-15；runner600.266790694秒，
+外层602.588094042秒，120连续稀疏样本，无最终JUnit/origins/sampler completion。
+旧 `09d23464` 超时也保留；两 HEAD 均不重派、不转 Darwin。旧完整 CI40726287750
+已 terminal cancelled：42jobs cancelled、3个下游聚合job因缺失取消产物而failure；原件
+保留，不是通过。新提交唯一 mixed 和完整CI仍待。
+上一 history/runtime union1446/1446pass继续保留，不重复未受影响回归。
+
+`production_admission=false`、`online_publication=false`。不运行模型、WebAgent、远程/
+公司 evaluator 或真实 solver；不读密钥和活进程 argv/environment；原 benchmark 只读。
+原件位于主区 ignored `parallel-batch-20261027/` 下 terminal-ack-wait-union-linux-20261029
+及既有 binding-history-pure-projection-* 目录。以下记录是历史快照，不覆盖本节。
 <!-- mixed-performance-current:end -->
 
 <!-- configuration-successor-latest:start -->

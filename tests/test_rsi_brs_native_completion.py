@@ -363,6 +363,15 @@ def _read_rejection_components(value):
         value.evidence.plan, expected_pin=value.pin)
 
 
+def _published_file_snapshot(path):
+    info = path.stat()
+    # Reading original P may advance atime. All content/identity and modification
+    # metadata remain pinned, including nanosecond mtime and ctime.
+    identity = (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_uid,
+                info.st_gid, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+    return identity, path.read_bytes()
+
+
 def test_rejection_second_read_reconstructs_the_original_receipts_and_preserves_p(rejection_components):
     value = rejection_components
     path = value.batch / value.file_pin.name
@@ -465,7 +474,7 @@ def _genuine_reader(root, patch, *, outcome="all_rejected", rewrite_success_p=Fa
                     expected_provenance_sha256=original_digest,
                 )
                 assert evidence.provenance_sha256 == original_digest
-                value.success_file = path.stat(), path.read_bytes()
+                value.success_file = _published_file_snapshot(path)
                 pin = observed.pin
         except BaseException as exc:
             value.reader_error = exc
@@ -517,7 +526,7 @@ def _genuine_reader(root, patch, *, outcome="all_rejected", rewrite_success_p=Fa
                 )
                 assert evidence == value.observations[0][0]
                 path = value.provider.provenance_batch / "native-rsi.provenance.json"
-                assert (path.stat(), path.read_bytes()) == value.success_file
+                assert _published_file_snapshot(path) == value.success_file
         except BaseException as exc:
             value.reader_error = exc
             raise
@@ -591,7 +600,7 @@ def test_genuine_published_reader_retains_original_p_and_bundle_across_stage_two
         bundle = value.observations[0][0]
         assert dict(execution.result.solver_provenance)["native_provenance_sha256"] == bundle.provenance_sha256
         path = value.provider.provenance_batch / "native-rsi.provenance.json"
-        assert (path.stat(), path.read_bytes()) == value.success_file
+        assert _published_file_snapshot(path) == value.success_file
         assert value.provider._live_rejection is None
         assert value.ledger.get_episode(value.sibling_id) is None
         published = value.owner._state["producer_publication_lineage"]["batches"][0]

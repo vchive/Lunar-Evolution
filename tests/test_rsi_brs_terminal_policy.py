@@ -52,10 +52,47 @@ def _replacement(*_args, **_kwargs):
     (terminal.BRSOwnerTerminalLifecycle, "_transport_identity"),
     (terminal.BRSOwnerTerminalLifecycle, "_idle"),
     (terminal.BRSOwnerTerminalLifecycle, "_join_worker"),
+    (terminal._PrimitiveExchange, "_submit_waiting"),
 ])
 def test_terminal_runtime_method_replacement_invalidates_policy(monkeypatch, original_policy, target, name):
     monkeypatch.setattr(target, name, _replacement)
     _assert_drift(original_policy)
+
+
+@pytest.mark.parametrize("change", ["alias", "code"])
+def test_ack_wait_helper_drift_refuses_with_warm_scoped_policy(monkeypatch, original_policy, change):
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        with monkeypatch.context() as patch:
+            if change == "alias":
+                patch.setattr(terminal._PrimitiveExchange, "_submit_waiting", _replacement)
+            else:
+                patch.setattr(terminal._PrimitiveExchange._submit_waiting, "__code__", _replacement.__code__)
+            with pytest.raises(RSILearningError, match="drift"):
+                _policy()
+        assert _policy() == original_policy
+
+
+@pytest.mark.parametrize("attribute,value", [("__defaults__", (None,)), ("__kwdefaults__", {"check": None})])
+def test_ack_wait_function_defaults_cannot_borrow_a_warm_policy(monkeypatch, original_policy, attribute, value):
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        monkeypatch.setattr(terminal._PrimitiveExchange._submit_waiting, attribute, value)
+        with pytest.raises(RSILearningError, match="terminal_wait_policy_drift"):
+            _policy()
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_warm_policy_requires_its_completed_cold_wait_pin(original_policy, missing):
+    with publication._policy_observation_scope():
+        assert _policy() == original_policy
+        cached = publication._POLICY_OBSERVATION_LOCAL.cache
+        if missing:
+            del cached["terminal_wait"]
+        else:
+            cached["terminal_wait"] = object()
+        with pytest.raises(RSILearningError, match="terminal_wait_policy_drift"):
+            _policy()
 
 
 @pytest.mark.parametrize("name", ["BRSAdmissionAck", "BRSAdmissionChannel", "build_brs_admission_ready"])

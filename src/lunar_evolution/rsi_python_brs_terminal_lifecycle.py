@@ -425,7 +425,7 @@ class _PrimitiveExchange:
         self.admission_kind = None
         self.admission_state = "unused"
 
-    def submit(self, event: tuple, check) -> None:
+    def submit(self, event: tuple, check, *, wait_check=None) -> None:
         if (type(event) is not tuple or not event or type(event[0]) is not str
                 or event[0] not in STAGES[:3]):
             _fail("observation_drift")
@@ -443,6 +443,10 @@ class _PrimitiveExchange:
             _fail("observation_drift")
         if type(self.condition) is not threading.Condition or not callable(check):
             _fail("observation_drift")
+        if wait_check is not None:
+            if not callable(wait_check):
+                _fail("observation_drift")
+            return _PrimitiveExchange._submit_waiting(self, event, check, wait_check)
         with self.condition:
             if (type(self.events) is not list or type(self.acked) is not int
                     or not 0 <= self.acked <= len(self.events) <= 3 or type(self.failed) is not bool):
@@ -464,6 +468,64 @@ class _PrimitiveExchange:
                     self.condition.notify_all()
                     _fail("callback_unknown")
                 self.condition.wait(.05)
+
+    def _submit_waiting(self, event: tuple, check, wait_check) -> None:
+        """Keep cold stage/ACK gates while idle polls use live control checks."""
+        if type(self) is not _PrimitiveExchange:
+            _fail("observation_drift")
+        condition, events, deadline = self.condition, self.events, self.deadline
+
+        def scope():
+            if (type(self) is not _PrimitiveExchange or type(condition) is not threading.Condition
+                    or self.condition is not condition
+                    or self.events is not events or type(events) is not list
+                    or self.deadline is not deadline):
+                _fail("observation_drift")
+
+        # The callback may change transport handles. Recheck them before any
+        # Condition operation; no caller callback executes under this lock.
+        check()
+        scope()
+        with condition:
+            if (type(self.acked) is not int or not 0 <= self.acked <= len(events) <= 3
+                    or type(self.failed) is not bool):
+                _fail("observation_drift")
+            if self.failed or len(events) >= 3:
+                _fail("worker_unavailable")
+            events.append(event)
+            position = len(events)
+            condition.notify_all()
+
+        def ready():
+            scope()
+            if (type(self.acked) is not int or not 0 <= self.acked <= position
+                    or len(events) != position or events[position - 1] is not event
+                    or type(self.failed) is not bool):
+                _fail("observation_drift")
+            if self.failed:
+                _fail("callback_unknown")
+            return self.acked == position
+
+        while True:
+            with condition:
+                if ready():
+                    break
+                if deadline is not None and time.monotonic() >= deadline:
+                    self.failed = True
+                    condition.notify_all()
+                    _fail("callback_unknown")
+            wait_check()
+            scope()
+            with condition:
+                if not ready():
+                    condition.wait(.05)
+        # ACK is a transport fact, not permission to enter the callback or
+        # settle a completed callback. Each stage gets its own fresh cold gate.
+        check()
+        scope()
+        with condition:
+            if not ready():
+                _fail("observation_drift")
 
     def fail(self) -> None:
         with self.condition:
@@ -600,22 +662,42 @@ class _BRSWorkerTerminalEndpoint:
             _fail("worker_unavailable")
         self._status = "inflight"
         exchange = self._exchange
+        condition = exchange.condition if wait_check is not None else None
+
+        def transport():
+            _BRSWorkerTerminalEndpoint._identity(self)
+            if (self._exchange is not exchange or type(condition) is not threading.Condition
+                    or exchange.condition is not condition):
+                _fail("observation_drift")
+
         try:
+            if wait_check is not None:
+                transport()
             # Full source/manifest/fingerprint validation gates entry and every
             # post-response transition.  While the owner mailbox is waiting,
             # callers may supply a cheap liveness check so a long wait does not
             # repeatedly rescan immutable staging evidence.
             check()
+            if wait_check is not None:
+                transport()
             waiting = check if wait_check is None else wait_check
+
+            def hot():
+                waiting()
+                transport()
+
             response = BRSOwnerPublicationMailbox.request(
                 self._mailbox, request,
-                check=lambda: _BRSWorkerTerminalEndpoint._wait_check(self, waiting),
+                check=lambda: _BRSWorkerTerminalEndpoint._wait_check(
+                    self, waiting if wait_check is None else hot),
             )
             check()
+            if wait_check is not None:
+                transport()
             handoff = BRSSelectedChildHandoff(**json.loads(self._handoff_bytes))
             gate = deliver_brs_owner_result(response, request, handoff,
                                            expected_native_plan_sha256=self._plan_sha256)
-            with exchange.condition:
+            with (exchange.condition if wait_check is None else condition):
                 if gate.delivery.publication_status == "all_rejected":
                     if (type(exchange.admission_offer) is not bytes
                             or type(exchange.admission_kind) is not str or exchange.admission_kind != "rejection"
@@ -639,23 +721,48 @@ class _BRSWorkerTerminalEndpoint:
                        request.payload, request.request_sha256),
                       (response.run_id, response.episode_id, response.handoff_sha256,
                        response.request_sha256, response.payload, response.response_sha256))
-            self._exchange.submit(("delivery", *fields), check)
+            def submit(event):
+                if wait_check is None:
+                    # Preserve the two-argument compatibility seam and every
+                    # legacy check invocation when no hot waiter was supplied.
+                    self._exchange.submit(event, check)
+                    return
+
+                def cold():
+                    check()
+                    transport()
+
+                exchange.submit(event, cold, wait_check=hot)
+
+            submit(("delivery", *fields))
+
+            callback_entered = False
 
             def invoke(delivery):
-                self._exchange.submit(("callback_started",), check)
+                nonlocal callback_entered
+                submit(("callback_started",))
+                callback_entered = True
                 return callback(delivery)
 
             try:
                 value = gate.settle(invoke)
             except BaseException:
-                self._exchange.submit(("callback_finished", "unknown"), check)
+                if wait_check is None or callback_entered:
+                    submit(("callback_finished", "unknown"))
                 raise
-            self._exchange.submit(("callback_finished", "returned"), check)
+            submit(("callback_finished", "returned"))
             self._status = "settled"
             return value
         except BaseException:
             self._status = "unknown"
-            _PrimitiveExchange.fail(exchange)
+            if wait_check is None:
+                _PrimitiveExchange.fail(exchange)
+            elif type(condition) is threading.Condition:
+                # A failed caller check may have replaced the live transport.
+                # Wake only the original owner; never enter a foreign handle.
+                with condition:
+                    exchange.failed = True
+                    condition.notify_all()
             raise
 
 

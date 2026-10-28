@@ -215,25 +215,104 @@ def _read_bounded(root: Path, name: str, maximum: int, checkpoint: Callable[[], 
 
 
 def _static_executable(root: Path, record: dict, checkpoint: Callable[[], None]) -> None:
-    """Scratch execution cannot fall back to an ambient interpreter or loader."""
+    """Compare actual pinned helper bytes and refuse external loader inputs.
+
+    This is a finite ELF loader gate, not a complete driver-read observer or an
+    immutable acquisition. Every later input-image operation still does its own
+    original readback; a successful check grants no build/runtime authority.
+    """
+    checkpoint()
     fd = _open_beneath(root, record["path"])
     try:
+        before = os.fstat(fd)
+        identity = (before.st_dev, before.st_ino, before.st_mode, before.st_nlink,
+                    before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+        if (not stat.S_ISREG(before.st_mode) or record["executable"] is not True
+                or not before.st_mode & 0o111 or before.st_size != record["size"]
+                or not 64 <= before.st_size <= MAX_INPUT_BYTES):
+            _fail("custody_static_executable")
         checkpoint()
         header = os.read(fd, 64)
-        if (len(header) != 64 or header[:7] != b"\x7fELF\x02\x01\x01"
-                or struct.unpack_from("<H", header, 18)[0] != 62):
+        if len(header) != 64:
             _fail("custody_static_executable")
-        offset = struct.unpack_from("<Q", header, 32)[0]
-        entry, count = struct.unpack_from("<HH", header, 54)
-        if entry != 56 or not 0 < count <= 1024 or offset + entry * count > record["size"]:
+        (ident, kind, machine, version, entry_point, offset, _sections, flags,
+         header_size, entry, count, _section_size, _section_count, _section_names) = struct.unpack(
+            "<16sHHIQQQIHHHHHH", header)
+        if (ident[:7] != b"\x7fELF\x02\x01\x01" or ident[7] not in {0, 3}
+                or ident[8:] != b"\0" * 8 or kind != 2 or machine != 62 or version != 1
+                or flags != 0 or header_size != 64 or not entry_point
+                or entry != 56 or not 0 < count <= 1024 or offset < 64
+                or offset + entry * count > record["size"]):
             _fail("custody_static_executable")
+        entry_covered = False
         for index in range(count):
             checkpoint()
             row = os.pread(fd, entry, offset + index * entry)
-            if len(row) != entry or struct.unpack_from("<I", row)[0] in {2, 3}:
+            if len(row) != entry:
                 _fail("custody_static_executable")
+            segment, permissions, file_offset, address, _physical, size, memory_size, alignment = struct.unpack(
+                "<IIQQQQQQ", row)
+            if (segment in {2, 3} or file_offset + size > record["size"]
+                    or address + memory_size > 2**64 - 1
+                    or alignment not in {0, 1} and alignment & (alignment - 1)):
+                _fail("custody_static_executable")
+            if segment == 1:
+                if (size > memory_size or permissions & ~7
+                        or alignment > 1 and file_offset % alignment != address % alignment):
+                    _fail("custody_static_executable")
+                if permissions & 1 and address <= entry_point < address + size:
+                    entry_covered = True
+        if not entry_covered:
+            _fail("custody_static_executable")
+        # Header inspection alone must not approve different bytes with the
+        # same length. Hash the same original FD and recheck the original name.
+        digest, observed = hashlib.sha256(), 0
+        os.lseek(fd, 0, os.SEEK_SET)
+        while True:
+            checkpoint()
+            raw = os.read(fd, 65536)
+            checkpoint()
+            if not raw:
+                break
+            observed += len(raw)
+            if observed > record["size"]:
+                _fail("custody_input_pin")
+            digest.update(raw)
+        after = os.fstat(fd)
+        if (observed != record["size"] or digest.hexdigest() != record["sha256"]
+                or identity != (after.st_dev, after.st_ino, after.st_mode, after.st_nlink,
+                                after.st_size, after.st_mtime_ns, after.st_ctime_ns)):
+            _fail("custody_input_pin")
+        repeated = _open_beneath(root, record["path"])
+        try:
+            after = os.fstat(repeated)
+            if identity != (after.st_dev, after.st_ino, after.st_mode, after.st_nlink,
+                            after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                _fail("custody_input_pin")
+        finally:
+            os.close(repeated)
+        checkpoint()
     finally:
         os.close(fd)
+
+
+def _static_helper_inputs(inputs: dict[str, list[dict]], snapshots: dict[str, Path],
+                          prior: list[dict], work: Path, checkpoint: Callable[[], None]) -> None:
+    """Refuse implicit helper loaders before any command's daemon operation.
+
+    All executable files in the original finite input view matter, including
+    helpers absent from the command's explicit argv and earlier generated tools.
+    Nothing is cached across commands or learned from current filesystem bytes.
+    """
+    for role in ("source", "toolchain"):
+        for record in inputs[role]:
+            checkpoint()
+            if record["executable"]:
+                _static_executable(snapshots[role], record, checkpoint)
+    for record in prior:
+        checkpoint()
+        if record["executable"]:
+            _static_executable(work, record, checkpoint)
 
 
 class _PinnedReader(io.RawIOBase):
@@ -541,6 +620,7 @@ class PodmanCustody:
     def run(self, argv: list[str], *, inputs: dict[str, list[dict]], snapshots: dict[str, Path],
             prior: list[dict], outputs: list[dict], work: Path, environment: dict[str, str],
             logs: Path, evidence: dict[str, Any], stage: str, index: int) -> None:
+        _static_helper_inputs(inputs, snapshots, prior, work, self.checkpoint)
         root = self.root / (stage + "-" + str(index))
         root.mkdir()
         current = root / "current"
@@ -552,10 +632,10 @@ class PodmanCustody:
             _fail("custody_output_overlap")
         executed = [expand_custody_reference(arg, current=current_paths, prior=prior_paths) for arg in argv]
         origin_role, origin_path = argv[0][1:].split("/", 1)
-        executable_root = work if origin_role == "work" else snapshots[origin_role]
         executable = next(record for record in (prior if origin_role == "work" else inputs[origin_role])
                           if record["path"] == origin_path)
-        _static_executable(executable_root, executable, self.checkpoint)
+        if executable["executable"] is not True:
+            _fail("custody_static_executable")
         observation: dict[str, Any] = {
             "schema": "lunar-podman-build-command-observation-v1",
             "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,
