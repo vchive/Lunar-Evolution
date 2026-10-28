@@ -448,6 +448,15 @@ class HeldProducerGrantPlan:
         self._records = records
         self._closed = False
 
+    def __copy__(self):
+        _fail("owner_not_transferable")
+
+    def __deepcopy__(self, _memo):
+        _fail("owner_not_transferable")
+
+    def __reduce__(self):
+        _fail("owner_not_transferable")
+
     def _lineage(self, path: str) -> tuple[_Node, ...]:
         result = [self._nodes["/"]]
         current = ""

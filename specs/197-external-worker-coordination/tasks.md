@@ -79,3 +79,13 @@ account isolation, real solver acceptance or whole-group cleanup authority.
 - [ ] Resolve and implement an independently surviving durable guardian receiving boundary with reviewed ACK/deadline semantics, then execute abnormal-disconnect acceptance.
 
 See `installed-account-probe.md`. Mocked root facts and native negative smoke are not actual account acceptance.
+
+
+## Whole-workload cleanup prerequisite audit — 2026-10-28
+
+The current original leader/group stop and receiver exact-child wait do not
+prove all execution descendants have retired. The explicit software and actual
+deployment tasks are recorded in
+[whole-group-quiescence-tasks.md](whole-group-quiescence-tasks.md). WQ-01 through
+WQ-08 remain unchecked: this audit does not implement a new backend or close
+whole-group cleanup, original native pycache quiescence or production admission.

@@ -278,6 +278,45 @@ def test_reader_start_failure_releases_original_descriptors(tmp_path, monkeypatc
             os.fstat(descriptor)
 
 
+@linux_only
+@pytest.mark.parametrize("fault_kind", ("memory", "interrupt", "os", "attribute"))
+def test_acquisition_primary_survives_real_reader_close_failure(tmp_path, monkeypatch, fault_kind):
+    acquisition_error = {"memory": MemoryError("inert scan failure"), "interrupt": KeyboardInterrupt(),
+                         "os": OSError("inert scan failure"), "attribute": AttributeError("inert scan failure")}[fault_kind]
+    cleanup_error = OSError("inert reader close failure")
+    original_close = os.close
+    captures, original_fds, reader_fds = [], [], []
+
+    def fail_scan(self):
+        captures.append(self)
+        reader_fds.append(self._fd)
+        original_fds.extend((self._fd, *self._owned_directory_fds))
+        raise acquisition_error
+
+    def close(descriptor):
+        original_close(descriptor)
+        if reader_fds and descriptor == reader_fds[0]:
+            raise cleanup_error
+
+    monkeypatch.setattr(monitor.FinitePycacheMonitor, "_scan", fail_scan)
+    monkeypatch.setattr(monitor.os, "close", close)
+    expected_type = monitor.PycacheMonitorError if fault_kind in {"os", "attribute"} else type(acquisition_error)
+    with pytest.raises(expected_type) as caught:
+        _arm(tmp_path)
+    if fault_kind in {"os", "attribute"}:
+        assert str(caught.value) == "static_python_pycache_monitor_directory_or_inotify_unavailable"
+        assert caught.value.__context__ is acquisition_error
+    else:
+        assert caught.value is acquisition_error
+    assert acquisition_error.__notes__ == ["static_python_pycache_monitor_reader_cleanup_unknown"]
+    assert len(captures) == 1 and captures[0]._closed
+    assert captures[0]._owned_directory_fds == []
+    assert "reader_resource_cleanup_unknown" in captures[0]._failures
+    for descriptor in original_fds:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
 def test_overflow_watch_loss_and_event_limit_remain_diagnostic(monkeypatch):
     # Pure event-flow exercise on an inert object; no fake kernel capture claim.
     instance = object.__new__(monitor.FinitePycacheMonitor)
@@ -339,6 +378,85 @@ def test_original_deadline_bounds_each_directory_component_and_closes_partial_fd
     assert closed == [1001, 1002]
 
 
+@pytest.mark.parametrize("cleanup_fault", (False, True))
+def test_component_close_failure_preserves_reused_number_and_cleans_new_child(tmp_path, monkeypatch, cleanup_fault):
+    original_open, original_close = os.open, os.close
+    opened, replacements, injected = [], [], []
+    primary = OSError("inert retired component close fault")
+
+    def open_directory(*args, **options):
+        descriptor = original_open(*args, **options)
+        opened.append(descriptor)
+        return descriptor
+
+    def close(descriptor):
+        original_close(descriptor)
+        if descriptor == opened[0] and not injected:
+            injected.append(True)
+            replacement = original_open(os.devnull, os.O_RDONLY)
+            if replacement != descriptor:
+                os.dup2(replacement, descriptor)
+                original_close(replacement)
+            replacements.append(descriptor)
+            raise primary
+        if cleanup_fault and descriptor == opened[1]:
+            raise OSError("inert child cleanup fault")
+
+    monkeypatch.setattr(monitor.os, "open", open_directory)
+    monkeypatch.setattr(monitor.os, "close", close)
+    try:
+        with pytest.raises(OSError) as caught:
+            monitor._open_directory(str(tmp_path), time.monotonic_ns() + 10**10)
+        assert caught.value is primary
+        assert len(opened) == 2 and replacements == [opened[0]]
+        os.fstat(replacements[0])
+        with pytest.raises(OSError):
+            os.fstat(opened[1])
+        assert getattr(primary, "__notes__", []) == (
+            ["static_python_pycache_monitor_directory_cleanup_unknown"] if cleanup_fault else []
+        )
+    finally:
+        for descriptor in {*opened, *replacements}:
+            try:
+                original_close(descriptor)
+            except OSError:
+                pass
+
+
+@linux_only
+def test_identity_failure_and_uncertain_close_preserve_primary_before_reader_transfer(tmp_path, monkeypatch):
+    original_close = os.close
+    original_release = monitor.FinitePycacheMonitor._release
+    primary = MemoryError("inert pre-transfer identity fault")
+    directory_fds, captures = [], []
+
+    def fail_identity(descriptor, *_args):
+        directory_fds.append(descriptor)
+        raise primary
+
+    def close(descriptor):
+        original_close(descriptor)
+        if descriptor in directory_fds:
+            raise OSError("inert identity descriptor close uncertainty")
+
+    def retain_release(self):
+        captures.append(self)
+        return original_release(self)
+
+    monkeypatch.setattr(monitor, "_identity", fail_identity)
+    monkeypatch.setattr(monitor.os, "close", close)
+    monkeypatch.setattr(monitor.FinitePycacheMonitor, "_release", retain_release)
+    with pytest.raises(MemoryError) as caught:
+        _arm(tmp_path)
+    assert caught.value is primary
+    assert primary.__notes__ == ["static_python_pycache_monitor_directory_cleanup_unknown"]
+    assert len(captures) == 1 and captures[0]._closed and captures[0]._fd == -1
+    assert captures[0]._owned_directory_fds == []
+    for descriptor in directory_fds:
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+
+
 def test_expired_original_deadline_skips_scan_and_read_without_terminal_coverage(monkeypatch):
     instance = _deadline_instance()
     instance._directories = [(None, None, None)]
@@ -373,6 +491,62 @@ def test_reader_poll_timeout_uses_original_remaining_budget(monkeypatch):
     monkeypatch.setattr(monitor.select, "poll", Poll, raising=False)
     instance._reader()
     assert timeouts == [3]
+
+
+@pytest.mark.parametrize("resource", ("reader", "directory"))
+@pytest.mark.parametrize("close_effect", ("released_and_reused", "still_open"))
+def test_release_retires_real_fd_numbers_before_close_failure_and_continues(tmp_path, monkeypatch, resource, close_effect):
+    # Actual portable descriptors exercise resource retirement only. This is
+    # neither a kernel event acquisition nor evidence about original writers.
+    instance = _deadline_instance()
+    instance._thread = None
+    instance._closed = False
+    instance._fd = os.open(os.devnull, os.O_RDONLY)
+    instance._owned_directory_fds = [os.open(tmp_path, os.O_RDONLY) for _ in range(3)]
+    instance._directories = [(fd, None, object()) for fd in instance._owned_directory_fds]
+    identities = tuple(instance._directories)
+    original_fds = (instance._fd, *instance._owned_directory_fds)
+    fault_fd = instance._fd if resource == "reader" else instance._owned_directory_fds[-1]
+    original_close = os.close
+    fault = OSError("inert descriptor close fault")
+    calls, injected = [], []
+
+    def close(descriptor):
+        calls.append(descriptor)
+        if descriptor == fault_fd and not injected:
+            injected.append(True)
+            if close_effect == "released_and_reused":
+                original_close(descriptor)
+                replacement = os.open(os.devnull, os.O_RDONLY)
+                if replacement != descriptor:
+                    os.dup2(replacement, descriptor)
+                    original_close(replacement)
+            raise fault
+        return original_close(descriptor)
+
+    monkeypatch.setattr(monitor.os, "close", close)
+    try:
+        with pytest.raises(OSError) as caught:
+            instance._release()
+        assert caught.value is fault
+        assert instance._closed and instance._fd == -1 and instance._owned_directory_fds == []
+        assert tuple(instance._directories) == identities
+        assert instance._failures == ["reader_resource_cleanup_unknown"]
+        assert set(calls) == set(original_fds) and len(calls) == len(original_fds)
+        # A close failure leaves the old or a newly reused number live. Since
+        # this object's ownership retired first, a later release must not
+        # close either number as if it still belonged to the capture.
+        os.fstat(fault_fd)
+        instance._release()
+        os.fstat(fault_fd)
+        assert calls.count(fault_fd) == 1
+        for descriptor in set(original_fds) - {fault_fd}:
+            with pytest.raises(OSError):
+                os.fstat(descriptor)
+    finally:
+        # The injected uncertain close is intentionally not retried by the
+        # component. The test owns this known retained/replacement descriptor.
+        original_close(fault_fd)
 
 
 @linux_only

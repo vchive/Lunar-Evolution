@@ -303,3 +303,26 @@ and all driver/leaf exits and obtain independent evidence review. Full required
 33-job GitHub CI is a separate required gate. Root owns commit, push, PR, final
 acceptance and main integration. Foundation checkpoint commits may preserve
 reviewed work, but do not represent delivery of the complete serial behavior.
+
+
+## Adjacent historical rejection material accounting — 2026-10-28
+
+The private historical reader may count an already observed C1/C2 pair with one
+complete material-domain walk. It first retains the original C1 validation and
+full future-P reservation. The original C2 transition must still independently
+validate the complete bounded prefix, associations, rejection index, unchanged
+non-P fields and the actual P pin. Only then may the private kernel insert that
+P into the complete C1 path/inode domain and check its aggregate bound.
+
+Keep the standalone C1 and C2 APIs independent. Do not retain mutable tables or
+reuse a result between observations/operations. Preserve every original file
+read, before/after material observation, fresh SQL/reference matcher, final
+history comparison, callback, policy/fingerprint and original deadline. The
+reserved executable graph must pin the actual new helper and its dependencies.
+
+The focused matrix compares old independent totals/refusals against the joint
+reader for mixed prefixes, aliases, source tables, strict types, 128KiB C2 bounds,
+future-P reservation and the exact aggregate cap. Real call profiling must verify
+two complete material walks become one without replacing their parsers. Include
+helper/code/kwdefault drift refusal. This pure computation change is not evidence
+that the three-child mixed run now completes within its original 600 seconds.

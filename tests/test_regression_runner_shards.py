@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
 import json
@@ -135,8 +136,9 @@ def test_isolated_schedule_conserves_inventory_without_reassigning_ordinary_file
     nodes = tuple(sorted((*ordinary, *runner.HEAVY_CURRENT_NODES)))
     shards = [runner.partition_isolated_current_nodes(nodes, shard_index=index, shard_count=6)
               for index in range(6)]
-    heavy = [runner.partition_heavy_current_nodes(nodes, heavy_index=index) for index in range(3)]
-    assert runner.HEAVY_SHARD_ALGORITHM == "sha256-path-utf8-mod-six-explicit-heavy-v2"
+    heavy = [runner.partition_heavy_current_nodes(nodes, heavy_index=index)
+             for index in range(len(runner.HEAVY_CURRENT_NODES))]
+    assert runner.HEAVY_SHARD_ALGORITHM == "sha256-path-utf8-mod-six-drs-brs-heavy-v3"
     assert tuple(sorted(node for part in (*shards, *heavy) for node in part)) == nodes
     assert sum(map(len, (*shards, *heavy))) == len(nodes)
     for index, shard in enumerate(shards):
@@ -158,7 +160,7 @@ def test_explicit_heavy_inventory_drift_refuses_every_partition(drift, kind):
     changed = {
         "missing_file": (), "missing_node": heavy[:-1],
         "extra_node": (*heavy, f"{runner.HEAVY_CURRENT_FILE}::test_new"),
-        "renamed": (*heavy[:-1], heavy[-1].replace("V2-T3-RRR", "renamed")),
+        "renamed": (*heavy[:-1], heavy[-1].replace("]", "-renamed]")),
         "duplicate": (*heavy, heavy[0]),
     }[drift]
     nodes = (*_inventory(6), *changed)
@@ -169,7 +171,7 @@ def test_explicit_heavy_inventory_drift_refuses_every_partition(drift, kind):
             runner.partition_heavy_current_nodes(nodes, heavy_index=0)
 
 
-@pytest.mark.parametrize("heavy_index", [None, -1, 3, True, False, "0", 0.0])
+@pytest.mark.parametrize("heavy_index", [None, -1, len(runner.HEAVY_CURRENT_NODES), True, False, "0", 0.0])
 def test_invalid_heavy_index_refuses_before_any_effect(tmp_path, monkeypatch, heavy_index):
     for name in ("_fresh_reports", "_load_index", "_verify_imports", "_collect", "_pytest_phase"):
         monkeypatch.setattr(runner, name, _forbidden)
@@ -190,7 +192,7 @@ def test_invalid_isolated_schedule_refuses_before_any_effect(tmp_path, monkeypat
 @pytest.mark.parametrize("flags", [
     ["--suite", "current-heavy"],
     ["--suite", "current-heavy", "--heavy-index", "-1"],
-    ["--suite", "current-heavy", "--heavy-index", "3"],
+    ["--suite", "current-heavy", "--heavy-index", str(len(runner.HEAVY_CURRENT_NODES))],
     ["--suite", "current-heavy", "--heavy-index", "0", "--shard-index", "0"],
     ["--suite", "current-heavy", "--heavy-index", "0", "--shard-count", "6"],
     ["--suite", "current-heavy", "--heavy-index", "0", "--isolate-heavy"],
@@ -209,7 +211,7 @@ def test_heavy_cli_refuses_missing_or_mixed_flags_before_dispatch(tmp_path, monk
     assert error.value.code == 2
 
 
-@pytest.mark.parametrize("index", range(3))
+@pytest.mark.parametrize("index", range(len(runner.HEAVY_CURRENT_NODES)))
 def test_heavy_cli_dispatches_only_explicit_index(tmp_path, monkeypatch, index):
     calls = []
     monkeypatch.setattr(runner, "run_current_heavy", lambda *args, **kwargs: (
@@ -381,7 +383,7 @@ def _current_mocks(tmp_path, monkeypatch, *, collection_drift=None, xml_drift=No
         selected = tuple(node for node in nodes
                          if _assigned(node.split("::", 1)[0], shard_count) == shard_index
                          and (not isolate_heavy
-                              or node.partition("::")[0] != runner.HEAVY_CURRENT_FILE))
+                              or node.partition("::")[0] not in runner.HEAVY_CURRENT_FILES))
     files = tuple(sorted({node.split("::", 1)[0] for node in selected}))
     selections = selected if heavy_index is not None else files
     for relative in files:
@@ -492,7 +494,8 @@ def test_current_records_actual_source_shard_inventory_junit_and_visible_skips(
 
 
 @pytest.mark.parametrize("role,index", [*(('ordinary', index) for index in range(6)),
-                                        *(('heavy', index) for index in range(3))])
+                                        *(('heavy', index) for index in range(
+                                            len(runner.HEAVY_CURRENT_NODES)))])
 def test_isolated_roles_bind_full_inventory_selected_execution_and_junit(
     tmp_path, monkeypatch, capsys, role, index,
 ):
@@ -532,9 +535,9 @@ def test_isolated_roles_bind_full_inventory_selected_execution_and_junit(
     if heavy_index is None:
         assert (summary["shard_index"], summary["shard_count"]) == (index, 6)
         assert "heavy_index" not in summary
-        assert runner.HEAVY_CURRENT_FILE not in files
+        assert not set(runner.HEAVY_CURRENT_FILES).intersection(files)
     else:
-        assert (summary["heavy_index"], summary["heavy_count"]) == (index, 3)
+        assert (summary["heavy_index"], summary["heavy_count"]) == (index, len(runner.HEAVY_CURRENT_NODES))
         assert "shard_index" not in summary and "shard_count" not in summary
         assert selected == (runner.HEAVY_CURRENT_NODES[index],)
     assert calls[:2] == [("collect", ("tests",)), ("collect", selections)]
@@ -582,7 +585,7 @@ def test_isolated_full_inventory_drift_refuses_before_any_selected_execution(
     changed = {
         "missing_file": (), "missing_node": heavy[:-1],
         "extra_node": (*heavy, f"{runner.HEAVY_CURRENT_FILE}::test_new"),
-        "renamed": (*heavy[:-1], heavy[-1].replace("V2-T3-RRR", "renamed")),
+        "renamed": (*heavy[:-1], heavy[-1].replace("]", "-renamed]")),
     }[drift]
     calls = []
     monkeypatch.setattr(runner, "_verify_imports", lambda _: [])
@@ -693,10 +696,19 @@ def test_real_inert_heavy_node_selections_collect_and_execute_exactly_once(tmp_p
         "    assert tmp_path.is_dir()\n",
         encoding="utf-8",
     )
+    (tmp_path / runner.HEAVY_BRS_CURRENT_FILE).write_text(
+        "import pytest\n"
+        "@pytest.mark.parametrize('value', [1, 2, 3, 4], "
+        "ids=['rejected-rejected', 'published-published', 'published-rejected', 'three-child-mixed'])\n"
+        "def test_natural_reserved_children_complete_in_original_order(value, tmp_path):\n"
+        "    assert value in (1, 2, 3, 4)\n"
+        "    assert tmp_path.is_dir()\n",
+        encoding="utf-8",
+    )
     nodes = runner._collect(tmp_path, ("tests",))
-    assert nodes == runner.HEAVY_CURRENT_NODES
+    assert tuple(sorted(nodes)) == tuple(sorted(runner.HEAVY_CURRENT_NODES))
     executed = []
-    for index in range(3):
+    for index in range(len(runner.HEAVY_CURRENT_NODES)):
         selected = runner.partition_heavy_current_nodes(nodes, heavy_index=index)
         assert runner._collect(tmp_path, selected) == selected
         report = tmp_path / f"inert-heavy-{index}.xml"
@@ -708,6 +720,36 @@ def test_real_inert_heavy_node_selections_collect_and_execute_exactly_once(tmp_p
         executed.extend((case.get("classname"), case.get("name"))
                         for case in ET.parse(report).iter("testcase"))
     assert sorted(executed) == sorted(map(_key, nodes))
+
+
+def test_explicit_brs_roles_match_every_original_parameter_and_preserve_drs_role_ids():
+    source = ast.parse((_ROOT / runner.HEAVY_BRS_CURRENT_FILE).read_text())
+    function = next(item for item in source.body if isinstance(item, ast.FunctionDef)
+                    and item.name == "test_natural_reserved_children_complete_in_original_order")
+    decorator = next(item for item in function.decorator_list if isinstance(item, ast.Call)
+                     and isinstance(item.func, ast.Attribute) and item.func.attr == "parametrize")
+    parameters = tuple(ast.literal_eval(next(keyword.value for keyword in item.keywords
+                                            if keyword.arg == "id"))
+                       for item in decorator.args[1].elts)
+    original = tuple(f"{runner.HEAVY_BRS_CURRENT_FILE}::{function.name}[{identity}]"
+                     for identity in parameters)
+    assert original == runner.HEAVY_BRS_CURRENT_NODES
+    assert len(original) == 4
+    assert runner.HEAVY_CURRENT_NODES[:3] == runner.HEAVY_DRS_CURRENT_NODES
+    assert runner.HEAVY_CURRENT_NODES[3:] == original
+
+
+@pytest.mark.parametrize("filename", runner.HEAVY_CURRENT_FILES)
+def test_either_heavy_file_cannot_silently_lose_or_gain_nodes(filename):
+    heavy = runner.HEAVY_CURRENT_NODES
+    without_file = tuple(node for node in heavy if node.partition("::")[0] != filename)
+    with_extra = (*heavy, f"{filename}::test_new_case")
+    for changed in (without_file, with_extra):
+        nodes = (*_inventory(6), *changed)
+        with pytest.raises(runner.RegressionError):
+            runner.partition_isolated_current_nodes(nodes, shard_index=0, shard_count=6)
+        with pytest.raises(runner.RegressionError):
+            runner.partition_heavy_current_nodes(nodes, heavy_index=0)
 
 
 @pytest.mark.parametrize("damage", ["failure", "error", "unreported_skip", "wrong_skip_count"])

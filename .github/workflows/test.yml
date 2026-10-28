@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
-        role: ["current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "history"]
+        role: ["current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "heavy-3", "heavy-4", "heavy-5", "heavy-6", "history"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,9 +33,9 @@ jobs:
           uv sync --locked --no-python-downloads --extra dev --extra lint
           # Historical snapshots resolve offline by registry requirement. A
           # lockfile sync alone caches wheels without all resolver metadata.
-          mkdir -p .lunar-evolution/test-results
-          uv export --locked --no-hashes --no-emit-project --extra dev --extra lint --output-file .lunar-evolution/test-results/ci-locked-requirements.txt
-          uv pip compile --no-config --no-python-downloads --python .venv/bin/python .lunar-evolution/test-results/ci-locked-requirements.txt --output-file .lunar-evolution/test-results/ci-registry-metadata.txt
+          mkdir -p .lunar-evolution/ci-dependencies
+          uv export --locked --no-hashes --no-emit-project --extra dev --extra lint --output-file .lunar-evolution/ci-dependencies/ci-locked-requirements.txt
+          uv pip compile --no-config --no-python-downloads --python .venv/bin/python .lunar-evolution/ci-dependencies/ci-locked-requirements.txt --output-file .lunar-evolution/ci-dependencies/ci-registry-metadata.txt
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Record job source and import provenance
         env:
@@ -47,7 +47,7 @@ jobs:
           spec = importlib.util.spec_from_file_location("ci_runner", root / "tools/run_tests.py")
           runner = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(runner)
-          roles = {"current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "history"}
+          roles = {"current-0", "current-1", "current-2", "current-3", "current-4", "current-5", "heavy-0", "heavy-1", "heavy-2", "heavy-3", "heavy-4", "heavy-5", "heavy-6", "history"}
           role = os.environ["LUNAR_CI_TEST_ROLE"]
           if role not in roles:
               raise SystemExit("Invalid CI role")

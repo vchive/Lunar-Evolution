@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import importlib.util
@@ -60,7 +61,7 @@ def evidence(tmp_path):
         index = int(role.rsplit("-", 1)[1])
         heavy = role.startswith("heavy-")
         selected = ([gate.runner.HEAVY_CURRENT_NODES[index]] if heavy else [
-            node for node in nodes if node.partition("::")[0] != gate.runner.HEAVY_CURRENT_FILE
+            node for node in nodes if node.partition("::")[0] not in gate.runner.HEAVY_CURRENT_FILES
             and int(hashlib.sha256(node.partition("::")[0].encode()).hexdigest(), 16) % 6 == index])
         label = f"current-{'heavy' if heavy else 'shard'}-{index}"
         directory = root / f"test-results-python-3.13-{role}"
@@ -96,7 +97,7 @@ def evidence(tmp_path):
                        junit_sha256=_digest(raw), tests=len(selected), reported_testcases=len(selected),
                        failures=0, errors=0, skipped=0, failure_elements=0, error_elements=0,
                        skipped_elements=0, failed_testcases=[])
-        summary.update({"heavy_index": index, "heavy_count": 3} if heavy else {
+        summary.update({"heavy_index": index, "heavy_count": len(gate.runner.HEAVY_CURRENT_NODES)} if heavy else {
             "shard_index": index, "shard_count": 6})
         _json(directory / f"{label}.summary.json", summary)
         (directory / "pytest.log").write_text("Original fixture execution log\n")
@@ -137,7 +138,8 @@ def test_valid_original_reports_produce_only_derived_json_and_preserve_inputs(ev
     result = _run(evidence)
     assert result["status"] == "passed" and len(result["groups"]) == 78
     assert result["test_execution_performed"] is False
-    assert len(result["inputs"]) == 9 and result["full_collected"] == 81
+    assert len(result["inputs"]) == len(gate.ROLES)
+    assert result["full_collected"] == 78 + len(gate.runner.HEAVY_CURRENT_NODES)
     assert all(group["tests"] == 1 for group in result["groups"])
     assert all(path.read_bytes() == raw for path, raw in before.items())
     output = tmp_path / "derived.json"
@@ -157,7 +159,7 @@ def test_failed_upstream_refuses_before_reading_any_input(evidence, monkeypatch,
 
 
 @pytest.mark.parametrize("change", ["missing", "extra", "symlink"])
-def test_exact_nine_role_directories_are_required(evidence, change):
+def test_exact_ordinary_and_heavy_role_directories_are_required(evidence, change):
     directory = evidence["paths"]["current-0"]
     if change == "missing":
         directory.rename(directory.with_name("wrong-role"))
@@ -295,15 +297,40 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 78 and sum(group["zero_skips"] for group in groups) == 62
-    assert sum(group["expected_tests"] or 0 for group in groups) == 5662
+    assert sum(group["expected_tests"] or 0 for group in groups) == 5673
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203
     assert "tests/test_rsi_flow_payload_scalar_validation.py" in ready["files"]
     workflow = (_ROOT / ".github/workflows/test.yml").read_text()
     assert 'role: ["current-0"' in workflow and '"history"]' in workflow
+    matrix = next(line.strip().partition("role: ")[2] for line in workflow.splitlines()
+                  if line.strip().startswith("role: ["))
+    provenance = next(line.strip().partition("roles = ")[2] for line in workflow.splitlines()
+                      if line.strip().startswith("roles = {"))
+    expected_roles = {*gate.ROLES, "history"}
+    assert set(ast.literal_eval(matrix)) == ast.literal_eval(provenance) == expected_roles
+    assert gate.ROLES[-7:] == tuple(f"heavy-{index}" for index in range(7))
+    dependency_root = ".lunar-evolution/ci-dependencies/"
+    assert "mkdir -p .lunar-evolution/ci-dependencies" in workflow
+    assert "--output-file " + dependency_root + "ci-locked-requirements.txt" in workflow
+    assert "--python .venv/bin/python " + dependency_root + "ci-locked-requirements.txt" in workflow
+    assert "--output-file " + dependency_root + "ci-registry-metadata.txt" in workflow
+    assert ".lunar-evolution/test-results/ci-locked-requirements.txt" not in workflow
+    assert ".lunar-evolution/test-results/ci-registry-metadata.txt" not in workflow
     assert "needs: test" in workflow and "if: ${{ always() }}" in workflow
     assert "${{ needs.test.result }}" in workflow
     assert "python -m pytest" not in workflow
     assert "Annotate historical test failures" in workflow
     assert "--archive-retry .lunar-evolution/test-results/archived.retry1.xml" in workflow
+
+
+@pytest.mark.parametrize("field,value", [
+    ("heavy_count", 3), ("shard_algorithm", "sha256-path-utf8-mod-six-explicit-heavy-v2"),
+])
+def test_legacy_three_node_heavy_evidence_is_refused(evidence, field, value):
+    path, record = _summary(evidence, "heavy-3")
+    record[field] = value
+    _json(path, record)
+    with pytest.raises(gate.GateError):
+        _run(evidence)

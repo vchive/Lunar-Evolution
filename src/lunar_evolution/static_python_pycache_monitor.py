@@ -254,12 +254,18 @@ def _open_directory(path: str, deadline: int) -> int:
             _remaining_ns(deadline)
             following = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
                                 dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = following
+            previous, descriptor = descriptor, following
+            # Retire the old number before close: a failing close may already
+            # have released/reused it. The newly opened child is now the only
+            # descriptor this traversal must clean up on an exception.
+            os.close(previous)
         _remaining_ns(deadline)
         return descriptor
-    except BaseException:
-        os.close(descriptor)
+    except BaseException as exc:
+        try:
+            os.close(descriptor)
+        except BaseException:  # noqa: BLE001 - preserve traversal's first failure
+            exc.add_note("static_python_pycache_monitor_directory_cleanup_unknown")
         raise
 
 
@@ -298,6 +304,10 @@ class FinitePycacheMonitor:
         instance._deadline = deadline_monotonic_ns
         instance._fd = -1
         instance._directories = []
+        # Keep diagnostic identities after cleanup, independently of the FD
+        # numbers this object still owns. A close can release its number and
+        # nevertheless raise, so ownership must retire before the syscall.
+        instance._owned_directory_fds = []
         instance._watches = {}
         instance._events = []
         instance._failures = []
@@ -326,8 +336,12 @@ class FinitePycacheMonitor:
                     descriptor = _open_directory(path, deadline_monotonic_ns)
                     try:
                         identity = _identity(descriptor, root, relative)
-                    except BaseException:
-                        os.close(descriptor)
+                        instance._owned_directory_fds.append(descriptor)
+                    except BaseException as exc:
+                        try:
+                            os.close(descriptor)
+                        except BaseException:  # noqa: BLE001 - retain the original identity/allocation failure
+                            exc.add_note("static_python_pycache_monitor_directory_cleanup_unknown")
                         raise
                     instance._directories.append((descriptor, root, identity))
                     watch = add(instance._fd, f"/proc/self/fd/{descriptor}".encode("ascii"),
@@ -352,11 +366,17 @@ class FinitePycacheMonitor:
             if instance._failures:
                 _fail("initial_view_incomplete")
             return instance
-        except (OSError, AttributeError):
-            instance._release()
+        except (OSError, AttributeError) as exc:
+            try:
+                instance._release()
+            except BaseException:  # noqa: BLE001 - cleanup cannot replace acquisition's fixed error mapping
+                exc.add_note("static_python_pycache_monitor_reader_cleanup_unknown")
             _fail("directory_or_inotify_unavailable")
-        except BaseException:
-            instance._release()
+        except BaseException as exc:
+            try:
+                instance._release()
+            except BaseException:  # noqa: BLE001 - retain the original acquisition exception
+                exc.add_note("static_python_pycache_monitor_reader_cleanup_unknown")
             raise
 
     def _record_failure(self, reason: str) -> None:
@@ -514,21 +534,39 @@ class FinitePycacheMonitor:
             )
 
     def _release(self) -> None:
+        if self._closed:
+            return
         self._stop.set()
+        primary = None
         if self._thread is not None:
             # Resource cleanup only. This grace never renews the original
             # capture deadline or supplies validation/quiescence evidence.
-            self._thread.join(timeout=1)
-            if self._thread.is_alive():
-                self._record_failure("reader_join_incomplete")
+            try:
+                self._thread.join(timeout=1)
+                if self._thread.is_alive():
+                    self._record_failure("reader_join_incomplete")
+            except BaseException as exc:  # noqa: BLE001 - retire all FDs before reraising the first failure
+                primary = exc
         # Serialize closing against an original drain already in progress.
         with self._io_lock:
-            if self._fd >= 0:
-                os.close(self._fd)
-                self._fd = -1
-            for descriptor, _root, _identity in self._directories:
-                os.close(descriptor)
-        self._closed = True
+            descriptor, self._fd = self._fd, -1
+            if descriptor >= 0:
+                try:
+                    os.close(descriptor)
+                except BaseException as exc:  # noqa: BLE001 - retire the other owned FDs before reraising
+                    primary = primary if primary is not None else exc
+            while self._owned_directory_fds:
+                descriptor = self._owned_directory_fds.pop()
+                try:
+                    os.close(descriptor)
+                except BaseException as exc:  # noqa: BLE001 - never leave later FDs held after a close failure
+                    primary = primary if primary is not None else exc
+            # Closed means local ownership is retired, never that every close
+            # succeeded or that any original writer became quiescent.
+            self._closed = True
+        if primary is not None:
+            self._record_failure("reader_resource_cleanup_unknown")
+            raise primary
 
     def finish(self) -> PycacheMonitorDiagnostic:
         """Release only this capture; original writer quiescence is unavailable.

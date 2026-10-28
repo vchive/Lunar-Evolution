@@ -568,8 +568,7 @@ def _verify_reserved_rejected_materials(workspace, entry, *, ledger, roots, ordi
     from .producer_bundle_admission import parse_producer_bundle_admission_plan
     from .rsi_brs_lineage_prefix import BRSLineagePrefix
     from .rsi_brs_rejection_capacity import (
-        _retained_reserved_brs_c1_evidence_bytes,
-        _retained_reserved_brs_c2_evidence_bytes,
+        _retained_reserved_brs_c1_c2_evidence_bytes,
     )
     from .rsi_brs_rejection_owner import (
         _read_rejection_tables_at,
@@ -668,8 +667,8 @@ def _verify_reserved_rejected_materials(workspace, entry, *, ledger, roots, ordi
     observed = _verify_terminal_batch_rejection_evidence(workspace, batch, prepared, terminal=terminal)
     tables = _read_rejection_tables_at(workspace, entry)
     all_rejected, all_published = read_reserved_brs_material_tables(workspace, c1_wire)
-    actual = _retained_reserved_brs_c1_evidence_bytes(c1_state, c1_wire, all_rejected, all_published, **options)
-    _retained_reserved_brs_c2_evidence_bytes(c1_state, c2_wire, all_rejected, all_published, **options)
+    actual, _c2_actual = _retained_reserved_brs_c1_c2_evidence_bytes(
+        c1_state, c1_wire, c2_wire, all_rejected, all_published, **options)
     binding = RejectionLineageC1Binding(run_id=rejected.run_id, episode_id=entry["episode_id"],
         journal_id=entry["journal_id"], ordinal=ordinal, checkpoint_sha256=history[index][0],
         rejected_sha256=rejected.digest(), retained_bytes=actual,

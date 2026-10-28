@@ -55,6 +55,11 @@ from .native_guardian_registration import (
     NativeGuardianCustodyRequest,
     NativeGuardianRegistrationError,
 )
+from .native_pycache_diagnostic import (
+    NativePycacheDiagnosticError,
+    NativePycacheDiagnosticRequest,
+    original_native_pycache_diagnostic_scope,
+)
 from .native_trusted_capture import (
     NativeTrustedCaptureError,
     _stable_bytes,
@@ -140,6 +145,8 @@ from .static_python_producer_envelope_source import (
     FIXED_PRODUCER_ENVELOPE_PROFILE,
     validate_fixed_producer_envelope_argv,
 )
+from .static_python_pycache_grants import PycacheGrantBindingError
+from .static_python_pycache_monitor import PycacheMonitorError
 from .trusted_bootstrap_binding import (
     TrustedBootstrapBindingError,
     _original_linux_bootstrap_owner,
@@ -960,6 +967,15 @@ def _check_original_attempt_grants(owner, inputs) -> None:
             raise NativeTrustedAttemptError("native_trusted_attempt_grant_objects_changed") from exc
 
 
+@contextmanager
+def _original_pycache_scope(request, **options):
+    try:
+        with original_native_pycache_diagnostic_scope(request, **options) as scope:
+            yield scope
+    except (NativePycacheDiagnosticError, PycacheGrantBindingError, PycacheMonitorError) as exc:
+        raise NativeTrustedAttemptError("native_trusted_attempt_pycache_diagnostic_unknown") from exc
+
+
 def run_native_trusted_attempt(
     workspace: str | Path,
     *,
@@ -974,6 +990,7 @@ def run_native_trusted_attempt(
     registered_observer: Callable[[NativeTrustedRegisteredContext], None] | None = None,
     live_modules_sink: FixedPythonLiveSinkRequest | None = None,
     guardian_custody: NativeGuardianCustodyRequest | None = None,
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None = None,
 ) -> NativeTrustedAttemptObservation:
     """Run one locally isolated target under a durable pre-gate registration.
 
@@ -984,6 +1001,13 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_admission_invalid")
     if not isinstance(artifact, NativeBootstrapArtifact):
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
+    if pycache_diagnostic is not None:
+        try:
+            NativePycacheDiagnosticRequest.validate(pycache_diagnostic)
+            if artifact.descriptor.platform_execution_mode != "linux-fd-bound":
+                raise NativePycacheDiagnosticError("native_pycache_diagnostic_linux_required")
+        except (NativePycacheDiagnosticError, AttributeError, TypeError) as exc:
+            raise NativeTrustedAttemptError("native_trusted_attempt_pycache_diagnostic_invalid") from exc
     if live_modules_sink is not None:
         if (type(live_modules_sink) is not FixedPythonLiveSinkRequest
                 or artifact.descriptor.platform_execution_mode != "linux-fd-bound"):
@@ -1117,7 +1141,10 @@ def run_native_trusted_attempt(
     with _recovery_lock(batch) as lock_identity, _original_attempt_grants(
         inputs, batch=batch, working=working, output=output,
         enabled=installed.descriptor.platform_execution_mode == "linux-fd-bound",
-    ) as grant_owner:
+    ) as grant_owner, _original_pycache_scope(
+        pycache_diagnostic, held_grants=grant_owner, working=working, output=output,
+        deadline_ns=native_deadline_ns,
+    ) as pycache_scope:
         process: subprocess.Popen[bytes] | None = None
         guardian: NativeGuardianOwner | None = None
         guardian_finished = installed.descriptor.platform_execution_mode != "linux-fd-bound"
@@ -1396,7 +1423,8 @@ def run_native_trusted_attempt(
                     attestation=attestation, pair=pair, process=process, ready_frame=ready,
                     recovery_lock_identity=lock_identity, deadline=deadline, monotonic=monotonic,
                     expected_deadline_binding=deadline_binding,
-                    **({"retain_creation_identity": True} if registered_observer is not None else {}),
+                    **({"retain_creation_identity": True}
+                       if registered_observer is not None or pycache_scope is not None else {}),
                 )
                 registration = published.registration
                 handoff_sha256 = str(published.handoff["handoff_sha256"])
@@ -1453,7 +1481,7 @@ def run_native_trusted_attempt(
                     raise NativeTrustedAttemptError("native_trusted_attempt_registration_unknown")
                 _check_original_attempt_grants(grant_owner, inputs)
                 _remaining(deadline, monotonic, cancelled)
-                if registered_observer is not None:
+                if registered_observer is not None or pycache_scope is not None:
                     def registered_context() -> NativeTrustedRegisteredContext:
                         # Only the trusted original attempt supplies this seam. Check
                         # every original leg both before and after the observer;
@@ -1522,19 +1550,30 @@ def run_native_trusted_attempt(
                         if registered_context() != original_context:
                             raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
                     observer_context = replace(original_context)
-                    try:
-                        if registered_observer(observer_context) is not None:
-                            raise NativeTrustedAttemptError("native_trusted_attempt_registered_observer_failed")
-                    except Exception as exc:  # Fixed trusted observer boundary.
-                        raise NativeTrustedAttemptError(
-                            "native_trusted_attempt_registered_observer_failed",
-                        ) from exc
+                    if registered_observer is not None:
+                        try:
+                            if registered_observer(observer_context) is not None:
+                                raise NativeTrustedAttemptError("native_trusted_attempt_registered_observer_failed")
+                        except Exception as exc:  # Fixed trusted observer boundary.
+                            raise NativeTrustedAttemptError(
+                                "native_trusted_attempt_registered_observer_failed",
+                            ) from exc
                     if (observer_context != original_context
                             or registered_context() != original_context):
                         raise NativeTrustedAttemptError("native_trusted_attempt_registered_context_drift")
                     if guardian_custody is not None:
                         guardian_custody.check_registered(original_context, guardian)
                     _remaining(deadline, monotonic, cancelled)
+                    if pycache_scope is not None:
+                        try:
+                            pycache_scope.arm_before_target(registered_context)
+                        except (NativePycacheDiagnosticError, PycacheGrantBindingError,
+                                PycacheMonitorError) as exc:
+                            raise NativeTrustedAttemptError(
+                                "native_trusted_attempt_pycache_diagnostic_arm_failed",
+                            ) from exc
+                        _check_original_attempt_grants(grant_owner, inputs)
+                        _remaining(deadline, monotonic, cancelled)
                 os.write(gate_write, b"1")
                 os.close(gate_write)
                 fds.remove(gate_write)
@@ -1992,6 +2031,9 @@ def run_native_trusted_attempt(
                     object.__delattr__(result, "_original_completion_acquisition")
                 result = replace(result, reason=(exc.code if isinstance(exc, NativeTrustedAttemptError)
                                                 else "native_completion_original_chain_unknown"))
+        if (pycache_scope is not None
+                and result.reason == "native_trusted_attempt_request_and_output_unverified"):
+            pycache_scope.permit_diagnostic_delivery()
         return result
 
 

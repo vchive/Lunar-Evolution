@@ -414,7 +414,23 @@ to repair transport state. Ruff, compileall and both diff checks pass.
 Evidence is retained under the main workspace ignored validation root:
 `parallel-batch-20261027/envelope-rejection-combined-jdcv4ai_/` and
 `parallel-batch-20261027/envelope-provenance-fixtures-x4sjs6az/`. The earlier
-`b24440e9` mixed remains a 600-second timeout, zero retries. A new clean-head
-mixed and full CI are still pending. Native full-lifecycle pycache enclosure,
+`b24440e9` mixed remains a 600-second timeout, zero retries. The subsequent clean HEAD `02b078df` also timed out at 600.031817692 seconds,
+rc=-15 and zero retries. Its 24 originals and 30 artifact-consistency checks
+passed; missing JUnit/origins still mean case failure. The original dedicated
+SSH was closed only after an independent terminal observation; driver rc255 is
+retained and the original retrieval/classifier recorded failure. Python3.11
+history CI passed 2318 cases; full CI remains pending. Native full-lifecycle pycache enclosure,
 accepted isolated build/runtime roots and deployment acceptance remain open;
 production admission and online publication remain false.
+
+## Native pycache diagnostic concentrated follow-up — 2026-10-28
+
+The frozen `7e75786e` Linux four-file follow-up passes all 76 unique nodes in
+13.093669 seconds, with 16 workers and zero automatic retry. Independent
+original/source/collection/execution/JUnit audit passes 152/152 checks. It fixes
+the publication creation-pin retention defect exposed by the earlier batch;
+all earlier failures remain retained. Cross-platform affected-domain union
+passes 135/135 consistency checks for 1,407 latest unique passing nodes, not a
+single all-passing Linux invocation. See the current HANDOFF for exact lineage.
+Mixed, complete CI, original workload quiescence, writer enclosure, accepted
+build/runtime custody and production admission remain open.

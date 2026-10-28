@@ -1,49 +1,59 @@
 <!-- completion-fresh-batch:start -->
-## 当前执行点：结果交付软件集中回归完成，mixed/CI 与生产验收仍开放（2026-10-28）
+## 当前执行点：P0/P1 集中回归已核验，P2 原生后端继续开发（2026-10-28）
 
-PR #190 已推送 `b24440e90040e5b61f4867ce2845bb30a82a8577`，仍为 draft，未合入
-main。该 HEAD 的唯一 mixed 在固定 600 秒预算下超时：600.015734113 秒、rc=-15、
-零 retry。24 原件、源码前后与归档一致，终态独审 30/30 通过；没有最终 JUnit、
-loaded-module origins 或 completion，因此 case 失败。原件保留，不重派失败 HEAD。
+PR #190 仍为 draft，未合入 main。已推送基线 `02b078df` 的唯一 mixed 在原
+600 秒预算超时（600.031817692 秒、rc=-15、零 retry），无最终 JUnit/completion，
+原失败保留，不重派该 HEAD。SSH EOF 收尾异常与 CPU 长链超时分别记录，不能用传输
+问题解释计算超时。该基线完整 CI 尚未完成。
 
-前批 focused 的最新节点并集已独审为 1812 unique pass：首轮 1456、affected Linux
-355、Darwin 实际非 skip 节点 1；原 20 失败保留且有同 key 后继 pass。各结果绑定各自
-源码，不能说成同一 tree 全量重跑。该证据也不替代下述新代码回归。
+本批 P0 合并 C1/C2 的重复材料遍历，在 reserved graph 的 dict/list/tuple 原位置
+内联精确叶子比较，保留每 occurrence 的 live 观察、类型/值/身份和原深度/节点预算。
+CI 将 4 个 BRS 长波次拆为 heavy-3 至 6，与原 DRS heavy-0 至 2、6 个普通分片组成
+互斥全集；聚合器严格要求 13 份原件。两份 resolver 日志移出 test-results，避免与
+聚合器原四文件清单冲突，未放宽聚合门。
 
-本批软件已经实现并完成集中受影响回归：
+P1 将原 live held grants 绑定到实际 inotify 根；owner 拒绝复制/pickle。
+默认关闭的 direct native pycache 诊断在原 registration/grants 复检后、target gate
+前启动，在原 native/guardian 清理后、held grants 关闭前结束。修复逐 FD 退役/关闭、
+目录 FD 交接及首异常保留。集中回归发现单独启用该诊断时未保留 publication 原始
+creation pins；已修复真实 publisher 接线，正向测试核对原 publisher 返回身份和
+observer 收到身份完全一致，不从路径重建、不放宽原 context gate。
 
-- P0 删除 provenance 三处紧邻、无 hook/I/O 间隔的重复完整 `_fixed`；`_observe`
-  自身仍在所有回调后执行该门。保留 fresh SQL、raw/domain 材料两端、policy/control
-  与 readback 顺序。长链耗时仍需新 clean HEAD 唯一 mixed 实测，不能提前宣布达标。
-- P1 显式 default-off `fixed-producer-lifecycle-v2` 通过原 argv 绑定 run/fingerprint，
-  target 在两份 producer artifact 后独占写入、fsync/readback `producer-result.json`，
-  再提交私有通道记录。host 保留并核对原 envelope 字节、stat/inode/path、broker、
-  native inputs、原 deadline 与 helper identity。v1 源/pins/defaults 不变。新增实际 C
-  launcher 编译测试使用明确 inert Python C API stubs，不能充当隔离 CPython 验收。
-- CI 锁定安装保留；历史环境另预热精确锁版本的 registry metadata，解决 lock sync
-  仅缓存 wheel、历史 offline resolver 在收集前失败的问题。需后继 CI 实测。
+集中回归与受影响补验（每批一次，零自动 retry）：
 
-仍开放的工作不能写成全 P0–P2 完成：P0 600 秒 mixed；P1 完整 native pycache 写能力
-隔离/原 quiescence、真实隔离 build/runtime、accepted build custody/runtime 根与生产
-CLI；P2 独立账户、实际 blocked storage、whole-group cleanup。有限 inotify 诊断和同
-UID EOF/pause/guardian 测试不能替代这些原件。5090gpu 普通 Linux /tmp 可用；不支持的
-普通平台检查转本机，macOS 不能替代指定 Linux 隔离或独立账户验收。
+- Linux tree `1f8e3964`：1,399 unique，1,372 pass / 13 fail / 14 error；
+  原结果保留。12 fail 暴露上述真实 native 接线缺陷，其余 1 fail / 14 error 是归档
+  无 `.git` 的历史 worktree 测试环境不适用，转本机。
+- 本机 tree `16845af1`：135 unique，134 pass / 1 fail；唯一 nested pytest 临时
+  目录域错误用外部短临时目录补验 1/1 pass，产品源码未变；最新域仍为 135。
+- Linux tree `7e75786e`：四完整文件 76/76 pass，13.093669 秒，16 workers；
+  publisher 修复及其现有 native/guardian 链路全部通过。原件独审 152/152 通过。
 
-`production_admission=false`、`online_publication=false`。不运行模型、WebAgent、远程
-或公司 evaluator。原件在主区 ignored `parallel-batch-20261027/`：
-`completion-cross-tree-exact-union-vhbu3oun/`、`final-mixed-b24440e9-prepared/execution/`、
-`CI-b24440e9/`；本批原失败目录 `envelope-rejection-combined-jdcv4ai_/` 保留原失败结论。
-本批 tree `226ad5d51c802b700cb38bb037418dfd947f643a`：32 文件 1155 unique，
-1153 pass / 2 fail / 0 skip，137.440 秒、16 workers、零 retry；新增 v2 六文件 224 项
-全部实际通过。两失败分别是故障注入仍定位已删除的重复调用，以及 source drift 的
-异常类型预期过窄。只改这两份测试，tree `7e773acc96470868f9c72d1ae64a95df43018cc4`
-两文件 10/10 pass，53.120 秒。故障仍实际注入并验证原 C1、unknown 与 inode 拒绝。
-两归档产品 src/tools 字节相同；按 exact 节点选择最新结果为 1155 项通过，不能把
-1153+10 当新用例数，也不声称同一 tree 全量重跑。原两失败、原件/源码与16 worker
-收集/来源核验均保留。后继 34 项独审全过。原补验 SSH 未返回 stdout/EOF，经独立
-collector 正常 EOF、无 result writer 观测后，仅关闭已核实的本地专用 SSH，原 dispatch
-返回255；不把传输写成成功、不重派产品。补验目录 `envelope-provenance-fixtures-x4sjs6az/`。
-以下均为历史快照，不能覆盖当前失败/未完成边界。
+独立并集审计 135/135 检查通过：最新 1,407 个唯一节点均有适用通过记录；后继 76
+替换原 68 并新增 8（1,399 - 68 + 76），不累加重复用例。保留全部原 28 个 nonpass
+记录以及每批 source/tree/platform 来源。这不是一次 1,407 全绿 Linux invocation，
+也不是 mixed 三子任务或完整 CI 通过。Ruff、compileall、staged/unstaged diff check
+在后继归档上通过。
+
+P2 WQ-01 的 cgroup-v2 原 scope/S/G/R/B/T、原 FD 和原 deadline 设计已审阅。
+WQ-02 至 08 的真实 acquisition、pre-gate clone3、独立监督/回收和 native consumer
+仍在开发，不能把设计写成后端完成。首版限定显式固定 root-owned installed profile，
+已有管理员启动 A、固定非零 U；不新增 setuid 安装、不实际 provision/提权，普通用户
+缺权限时在 gate 前拒绝。固定安装根下 create-only attempt，不更改共享父链 ACL。
+
+仍开放：新 clean HEAD 唯一 600 秒 mixed、完整 CI/main；P1 writer enclosure/原
+quiescence、隔离 CPython 完整 build/runtime、accepted build/input custody 与生产
+CLI；P2 原生后端、独立账户/实际 blocked-storage 和 whole-group 部署验收。
+5090gpu 普通 Linux `/tmp` 可用；普通检查可转本机，macOS 不能替代 Linux 隔离和
+独立账户验收。`production_admission=false`、`online_publication=false`。
+不运行模型、WebAgent、远程或公司 evaluator。
+
+原件在主区 ignored `parallel-batch-20261027/`：
+`native-matcher-ci-final-20261028/`、`native-matcher-ci-macos-affected-20261028/`、
+`native-matcher-ci-macos-temp-followup-20261028/`、
+`native-pycache-registration-affected-20261028/`、
+`native-matcher-ci-latest-union-audit-20261028/audit-originals-v1/`。
+以下保留历史快照，不覆盖本节。
 <!-- completion-fresh-batch:end -->
 
 <!-- current-p0-p2-batch:start -->

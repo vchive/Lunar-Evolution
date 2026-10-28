@@ -148,17 +148,52 @@ def _build_reserved_brs_policy():
             # could otherwise make a lookup execute the inserted key's __eq__.
             expected_items = plain_dict((key[1], expected) for key, expected in entries)
             seen = 0
+            child_depth = depth + 1
             for key, item in value.items():
                 if kind(key) is not plain_str:
                     return False
                 remaining[0] -= 1
-                if depth + 1 > 48 or remaining[0] < 0:
+                if child_depth > 48 or remaining[0] < 0:
                     fail()
                 expected = expected_items.get(key, missing)
                 if expected is missing:
                     return False
-                if not matches_frozen(item, expected, depth + 1, remaining):
-                    return False
+                item_kind = kind(item)
+                if (item_kind is plain_dict or item_kind is proxy_type or item_kind is plain_list
+                        or item_kind is plain_tuple or item_kind is plain_set
+                        or item_kind is plain_frozenset or item_kind is field_type):
+                    if not matches_frozen(item, expected, child_depth, remaining):
+                        return False
+                else:
+                    # Observe and charge each scalar occurrence here. Avoid a
+                    # Python recursive call for a leaf; retain the same exact
+                    # types, finite-float refusal and opaque identity checks.
+                    remaining[0] -= 1
+                    if child_depth > 48 or remaining[0] < 0:
+                        fail()
+                    if item is None:
+                        if expected != ("none",):
+                            return False
+                    elif item_kind is plain_str:
+                        if expected[0] != "str" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bytes:
+                        if expected[0] != "bytes" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_int:
+                        if expected[0] != "int" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bool:
+                        if expected[0] != "bool" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_float:
+                        if not math.isfinite(item):
+                            fail()
+                        if expected[0] != "float" or item != expected[1]:
+                            return False
+                    elif (expected[0] != "opaque" or expected[1] != object_id(item_kind)
+                            or expected[2] != object_id(item)):
+                        return False
                 seen += 1
             return seen == length(entries)
         if scalar is plain_list or scalar is plain_tuple:
@@ -167,9 +202,41 @@ def _build_reserved_brs_policy():
             if (held[0] != "sequence" or held[1] != object_id(scalar)
                     or held[2] != object_id(value) or length(value) != length(held[3])):
                 return False
+            child_depth = depth + 1
             for item, expected in pairs(value, held[3], strict=True):
-                if not matches_frozen(item, expected, depth + 1, remaining):
-                    return False
+                item_kind = kind(item)
+                if (item_kind is plain_dict or item_kind is proxy_type or item_kind is plain_list
+                        or item_kind is plain_tuple or item_kind is plain_set
+                        or item_kind is plain_frozenset or item_kind is field_type):
+                    if not matches_frozen(item, expected, child_depth, remaining):
+                        return False
+                else:
+                    remaining[0] -= 1
+                    if child_depth > 48 or remaining[0] < 0:
+                        fail()
+                    if item is None:
+                        if expected != ("none",):
+                            return False
+                    elif item_kind is plain_str:
+                        if expected[0] != "str" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bytes:
+                        if expected[0] != "bytes" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_int:
+                        if expected[0] != "int" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_bool:
+                        if expected[0] != "bool" or item != expected[1]:
+                            return False
+                    elif item_kind is plain_float:
+                        if not math.isfinite(item):
+                            fail()
+                        if expected[0] != "float" or item != expected[1]:
+                            return False
+                    elif (expected[0] != "opaque" or expected[1] != object_id(item_kind)
+                            or expected[2] != object_id(item)):
+                        return False
             return True
         if scalar is field_type:
             if held[0] != "field" or held[1] != object_id(value):

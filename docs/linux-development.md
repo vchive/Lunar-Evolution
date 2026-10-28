@@ -45,15 +45,15 @@ git diff --check
 
 用改动实际覆盖的测试替换示例 focused test。运行 native fixture 前确认 Linux、C 编译器和所需内核功能可用；查看 skip、failure 和 error 的具体原因。
 
-## 六个普通 current 分片与三个独立重用例
+## 六个普通 current 分片与七个独立重用例
 
-当前 CI 使用 `tools/run_tests.py`，六个普通分片统一 `--shard-count 6 --isolate-heavy`，另以 `current-heavy` 独立执行三个明确登记的 mixed 用例。九个角色必须使用同一 Git 提交；普通分片与重用例的清单互斥，并集必须等于完整 collection。focused 和 history 仍分别运行，完整角色及 Python 版本以 [workflow](../.github/workflows/test.yml) 为准。
+当前 CI 使用 `tools/run_tests.py`，六个普通分片统一 `--shard-count 6 --isolate-heavy`，另以 `current-heavy` 独立执行三个 DRS mixed 用例和四个 BRS serial 用例。十三个角色必须使用同一 Git 提交；普通分片与重用例的清单互斥，并集必须等于完整 collection。focused 和 history 仍分别运行，完整角色及 Python 版本以 [workflow](../.github/workflows/test.yml) 为准。
 
-旧 `current --shard-count 6` 不带 `--isolate-heavy` 时仍完整运行六个 whole-file 分片；同文件的三个重用例会串行，可能超过 CI job 时限。已有旧版运行不要中途更换算法或补写 summary，新方案应另建目录和源码快照。
+旧 `current --shard-count 6` 不带 `--isolate-heavy` 时仍完整运行六个 whole-file 分片；同文件的重用例会串行，可能超过 CI job 时限。已有旧版运行不要中途更换算法或补写 summary，新方案应另建目录和源码快照。
 
 `current` 内的 runner 回归也会读取固定历史提交，因此 current 和 history 都需要先检查完整历史。浅 clone 在联网时先执行 `git fetch --unshallow origin`；也可以显式 fetch 下列固定对象。不要更改 runner 中的 pins 来绕过缺失历史。
 
-先在仓库根目录检查固定对象，再创建一轮全新的目录和九个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
+先在仓库根目录检查固定对象，再创建一轮全新的目录和十三个独立 checkout。已有目录不要复用；结果和运行状态保留在 checkout 外。
 
 ```bash
 set -euo pipefail
@@ -69,7 +69,7 @@ run_parent="$(dirname "$PWD")/lunar-local-runs"
 mkdir -p "$run_parent"
 run_root="$(mktemp -d "$run_parent/$(date -u +%Y%m%dT%H%M%SZ)-${revision:0:12}-XXXXXX")"
 printf '%s\n' "$revision" > "$run_root/revision.txt"
-for test_role in current-0 current-1 current-2 current-3 current-4 current-5 heavy-0 heavy-1 heavy-2; do
+for test_role in current-0 current-1 current-2 current-3 current-4 current-5 heavy-0 heavy-1 heavy-2 heavy-3 heavy-4 heavy-5 heavy-6; do
   shard_root="$run_root/$test_role"
   mkdir -p "$shard_root/home" "$shard_root/results"
   # binding 会重复记录绝对路径；使用短、独占的临时根，保持原字节上限。
@@ -83,14 +83,14 @@ done
 printf 'run_root=%s\n' "$run_root"
 ```
 
-为九个角色分别运行下面一段，将 `run_root` 设为上一步打印的绝对路径，`test_role` 分别设为 `current-0` 到 `current-5`、`heavy-0` 到 `heavy-2`。每个角色独占 checkout、`.venv`、`TMPDIR`、Lunar home 和 results；不要让多个测试进程共享 SQLite/WAL 或同一临时目录。CPU 和内存资源由运行者按机器负载分配，先保守运行再增加并发。已有 `tmux` 时可在会话内运行测试，断线后重新 attach；不需要安装常驻服务。
+为十三个角色分别运行下面一段，将 `run_root` 设为上一步打印的绝对路径，`test_role` 分别设为 `current-0` 到 `current-5`、`heavy-0` 到 `heavy-6`。每个角色独占 checkout、`.venv`、`TMPDIR`、Lunar home 和 results；不要让多个测试进程共享 SQLite/WAL 或同一临时目录。CPU 和内存资源由运行者按机器负载分配，先保守运行再增加并发。已有 `tmux` 时可在会话内运行测试，断线后重新 attach；不需要安装常驻服务。
 
 ```bash
 run_root='/absolute/path/to/this-run'
 test_role=current-0
 case "$test_role" in
   current-[0-5]) suite_args=(--suite current --shard-index "${test_role#current-}" --shard-count 6 --isolate-heavy) ;;
-  heavy-[0-2]) suite_args=(--suite current-heavy --heavy-index "${test_role#heavy-}") ;;
+  heavy-[0-6]) suite_args=(--suite current-heavy --heavy-index "${test_role#heavy-}") ;;
   *) echo 'invalid test role' >&2; exit 1 ;;
 esac
 shard_root="$run_root/$test_role"

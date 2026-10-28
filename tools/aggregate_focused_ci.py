@@ -18,7 +18,7 @@ _SPEC.loader.exec_module(runner)
 REPO = Path(__file__).resolve().parents[1]
 MANIFEST = REPO / "tools/ci-focused-groups.json"
 ROLES = tuple([f"current-{index}" for index in range(6)]
-              + [f"heavy-{index}" for index in range(3)])
+              + [f"heavy-{index}" for index in range(len(runner.HEAVY_CURRENT_NODES))])
 
 
 class GateError(ValueError):
@@ -143,7 +143,7 @@ def _report(directory, role, context, full_nodes):
         _require(summary.get("suite") == "current-heavy" and summary.get("selection_mode") == "node",
                  "Incorrect heavy selection mode")
         _count(summary, "heavy_index", index)
-        _count(summary, "heavy_count", 3)
+        _count(summary, "heavy_count", len(runner.HEAVY_CURRENT_NODES))
         expected = runner.partition_heavy_current_nodes(nodes, heavy_index=index)
     selected = _nodes(summary, "selected_nodes")
     _require(selected == expected and summary.get("selected_files") == sorted({
@@ -264,7 +264,7 @@ def main(argv=None):
             ET.ParseError) as exc:
         print(f"Focused gate refused: {exc}", file=sys.stderr)
         return 1
-    print(f"Validated {len(result['groups'])} focused groups from nine original execution reports")
+    print(f"Validated {len(result['groups'])} focused groups from {len(ROLES)} original execution reports")
     return 0
 
 

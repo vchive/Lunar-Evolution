@@ -37,14 +37,25 @@ REGISTRATION_COUNT = 24
 ARCHIVE_COLLECTION_SHA256 = "1f5259be4ab980b16b60dfef08e7c8842f3562ecc7e3974b002f863cbc249001"
 UV_VERSION = "0.11.8"
 SHARD_ALGORITHM = "sha256-path-utf8-mod-v1"
-HEAVY_SHARD_ALGORITHM = "sha256-path-utf8-mod-six-explicit-heavy-v2"
+HEAVY_SHARD_ALGORITHM = "sha256-path-utf8-mod-six-drs-brs-heavy-v3"
 HEAVY_CURRENT_FILE = "tests/test_rsi_multi_episode_rejection_flow.py"
-HEAVY_CURRENT_NODES = tuple(
+HEAVY_BRS_CURRENT_FILE = "tests/test_rsi_brs_reserved_serial_integration.py"
+HEAVY_CURRENT_FILES = (HEAVY_CURRENT_FILE, HEAVY_BRS_CURRENT_FILE)
+HEAVY_DRS_CURRENT_NODES = tuple(
     f"{HEAVY_CURRENT_FILE}::"
     "test_original_three_attempt_mixed_drs_and_terminal_readonly_replay"
     f"[{identity}]"
     for identity in ("V2-T1-RPP", "V2-T2-PRP", "V2-T3-RRR")
 )
+HEAVY_BRS_CURRENT_NODES = tuple(
+    f"{HEAVY_BRS_CURRENT_FILE}::"
+    "test_natural_reserved_children_complete_in_original_order"
+    f"[{identity}]"
+    for identity in ("rejected-rejected", "published-published", "published-rejected", "three-child-mixed")
+)
+# Preserve the original DRS role identities; each BRS wave gets its own fresh
+# pytest process instead of sharing one ordinary file shard with all four.
+HEAVY_CURRENT_NODES = (*HEAVY_DRS_CURRENT_NODES, *HEAVY_BRS_CURRENT_NODES)
 NATIVE_E2E_SELECTION = (
     "tests/test_automatic_detach_phase_c.py",
     "tests/test_conversational_automatic_bundle.py",
@@ -324,21 +335,21 @@ def _heavy_index(heavy_index):
 
 def _heavy_inventory(nodes):
     checked = _current_nodes(nodes)
-    actual = tuple(node for node in checked if node.partition("::")[0] == HEAVY_CURRENT_FILE)
-    if actual != HEAVY_CURRENT_NODES:
-        raise RegressionError("explicit heavy file changed its exact collection inventory")
+    actual = tuple(node for node in checked if node.partition("::")[0] in HEAVY_CURRENT_FILES)
+    if actual != tuple(sorted(HEAVY_CURRENT_NODES)):
+        raise RegressionError("explicit heavy files changed their exact collection inventory")
     return checked
 
 
 def partition_isolated_current_nodes(nodes, *, shard_index, shard_count):
-    """Keep six whole-file shards and reserve the three explicit heavy nodes."""
+    """Keep six whole-file shards and reserve every explicit DRS/BRS heavy node."""
     _shard_bounds(shard_index, shard_count)
     if shard_count != 6:
         raise RegressionError("isolated heavy schedule requires six ordinary shards")
     checked = _heavy_inventory(nodes)
     return tuple(node for node in partition_current_nodes(
         checked, shard_index=shard_index, shard_count=shard_count,
-    ) if node.partition("::")[0] != HEAVY_CURRENT_FILE)
+    ) if node.partition("::")[0] not in HEAVY_CURRENT_FILES)
 
 
 def partition_heavy_current_nodes(nodes, *, heavy_index):

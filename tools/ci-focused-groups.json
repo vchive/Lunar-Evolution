@@ -7,7 +7,7 @@
       "files": [
         "tests/test_regression_runner_shards.py"
       ],
-      "expected_tests": 204,
+      "expected_tests": 215,
       "zero_skips": true
     },
     {
