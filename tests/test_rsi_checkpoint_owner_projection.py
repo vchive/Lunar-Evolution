@@ -6,6 +6,7 @@ import sys
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 
 import pytest
 from test_rsi_admission_checkpoint_observation import _FreshCheckpointReads
@@ -71,7 +72,7 @@ def test_owner_projection_skips_only_pure_history_work_and_returns_fresh_json(re
         assert first == second == original
         assert initial["history"] == len(first) and hit["history"] == 0
         assert initial["row"] == hit["row"] == 1
-        assert hit["reference"] == hit["binding"] == 1
+        assert hit["reference"] == hit["binding"] == 0
         assert initial["binding"] == 1 and initial["match"] == hit["match"] == 0
         second[-1][1]["python_admission_refs"].clear()
         assert ledger.controller_checkpoint_history(retained.binding.run_id) == original
@@ -81,6 +82,9 @@ def test_owner_projection_skips_only_pure_history_work_and_returns_fresh_json(re
             assert type(projection) is store._CheckpointHistoryRowProjection
             assert type(projection.digest) is str and type(projection.references) is tuple
             assert all(type(name) is str and type(raw) is bytes for name, raw in projection.references)
+            assert projection.admissions is None or all(
+                type(name) is str and type(row) is tuple and len(row) == 7
+                and all(type(item) is str for item in row) for name, row in projection.admissions)
     assert ledger._checkpoint_projection_local.cache is None
     assert not cache["entries"] and cache["retained_units"] == 0
     assert _profile_read(retained)[1]["history"] == len(first)
@@ -109,6 +113,11 @@ def test_fresh_final_reference_context_falls_back_after_mid_parse_helper_drift(r
 
     with ledger._checkpoint_projection_scope():
         original = ledger.controller_checkpoint_history(retained.binding.run_id)
+        # Keep the warmed history projections but force the reference-only miss
+        # needed to observe an executable seam changing during that parser.
+        cache = ledger._checkpoint_projection_cache()
+        for key, (projection, _units) in tuple(cache["entries"].items()):
+            store._retain_checkpoint_projection(cache, key, replace(projection, admissions=None))
         previous = sys.getprofile()
         sys.setprofile(profile)
         try:

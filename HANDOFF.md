@@ -1,3 +1,47 @@
+<!-- mixed-performance-current:start -->
+## 当前执行点：Linux mixed 超时，先合批修复重复解析（2026-10-29）
+
+权威工作区为 `/Users/liminghan/.codex/worktrees/fixed-u-input-acl/lunar_agent`，
+分支 `codex/fixed-u-input-acl`，已推送 HEAD `09d234649ca5d301b01a8bc86c9c6417167ce70d`。
+PR #190 仍 draft、未合 main。该 HEAD 的唯一 Linux three-child-mixed 已执行并失败：
+原进程 600.031659438 秒、rc=-15，完整 runner 600.268776001 秒，600 秒预算、零重试。
+没有最终 JUnit、module origins 或 sampler completion；同 HEAD 不重派，也不转本机重跑。
+源码前后与原 archive 一致；独审确认的是失败原件一致性，不是 case 通过。
+
+保留的 120 个 5 秒稀疏样本覆盖 0.000547–595.974320 秒。main 57 个样本经过
+reserved history，62 个经过 publication transaction；最后四个 main 样本已在
+finalization，仍进行历史/绑定校验。这些计数不能作为 CPU 占比、磁盘瓶颈结论或
+剩余用时估计。worker 的等待不能证明 owner 已完成。
+
+本轮先并行开发、独审，最后集中回归两个有明确重复计算依据的窄修复：
+一是同一个 owner operation 内完整新鲜 SQL/reference bytes 对应的纯解析投影；
+二是 binding parser 内刚完成严格解析、尚未逃逸的 runtime DTO 复用。
+每次 fresh SQL/JSON、完整 admission row parse/比较、controller lock、物理观察及
+末尾独立 fresh gate 保留。public DTO 的 mutation/refusal、digest/canonical 和 helper
+漂移拒绝/fallback 保留。修复的集中 focused 已通过；不能由此承诺 mixed 低于 600 秒。
+
+本批冻结 tree `1093f1fdc02d92c05621e270fe63ccc86cc8a099`，一次 Linux affected
+union（32 完整文件 + 原 published-rejected 单 selector，内含两个 child）实际
+1,446/1,446 pass，零 fail/error/skip，pytest 297.395911978 秒、外层 299.079705417 秒，
+16 workers 全部 exit0、290 module origins 与 3,016 entries / 2,708 Git 文件匹配。
+新增 runtime 29、history 14 节点已执行；每次原 SQL/JSON/row/physical gate 保留。
+原 Ruff 首检两项风格问题在冻结前合并 if/with 修复；最终 Ruff、compileall、diff check
+通过。原件在 ignored `binding-history-pure-projection-union-linux-20261029/`。
+独立终态原件复核完成，确认唯一 collection/execution 与上述结果；最终只更新 Markdown，下一 clean committed HEAD 的唯一 mixed
+及完整 CI 仍待，不能视为已合并或全部 P0–P2 完成。CI 83 组，expected sum 6,741。
+
+原 native v4/worker vault 的 979 unique focused 域当前适用结果仍为 937 pass /
+42 root-prerequisite skip，不重复执行未受本轮影响的节点。完整 CI 尚未通过，不能合并。
+P1 accepted input/build/runtime authority 与生产 CLI、P2 WQ06 finite writer enclosure/
+原 monitor accepting join 仍有实际代码缺口；真实 installed root/U/ACL/cgroup、独立账户、
+hard disconnect/blocked storage 也未验收。不得将这些全部归为环境问题。
+`production_admission=false`、`online_publication=false`。不运行模型、WebAgent、
+远程/公司 evaluator 或真实 solver；不读密钥或活进程 argv/environment；原 benchmark 只读。
+
+原件：主区 ignored `parallel-batch-20261027/native-v4-resource-vault-mixed-linux-20261028/`，
+含 `terminal-selected/` 和 `independent-terminal-audit.json`。以下记录均为历史批次。
+<!-- mixed-performance-current:end -->
+
 <!-- strict-v4-fd-batch:start -->
 ## 当前开发点：v4资源门与独立worker vault合批已通过Linux回归（2026-10-28）
 

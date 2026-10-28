@@ -87,9 +87,11 @@
       "id": "rsi-history-reference-reuse",
       "label": "Verify single-history reference context reuse",
       "files": [
-        "tests/test_rsi_history_reference_reuse.py"
+        "tests/test_rsi_history_reference_reuse.py",
+        "tests/test_rsi_checkpoint_owner_projection.py",
+        "tests/test_rsi_history_reference_projection.py"
       ],
-      "expected_tests": 33,
+      "expected_tests": 80,
       "zero_skips": true
     },
     {
@@ -360,9 +362,10 @@
         "tests/test_python_producer_binding_fresh_tree.py",
         "tests/test_rsi_brs_publication_lineage_owner.py",
         "tests/test_rsi_publication_lineage_checkpoint_kernel.py",
-        "tests/test_rsi_brs_prewave_policy.py"
+        "tests/test_rsi_brs_prewave_policy.py",
+        "tests/test_python_producer_binding_fresh_runtime.py"
       ],
-      "expected_tests": 189,
+      "expected_tests": 218,
       "zero_skips": true
     },
     {

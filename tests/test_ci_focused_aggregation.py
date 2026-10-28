@@ -409,7 +409,7 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 6665
+    assert sum(group["expected_tests"] or 0 for group in groups) == 6741
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203

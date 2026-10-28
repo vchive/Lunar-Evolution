@@ -66,6 +66,7 @@ _RECORD_DIGEST_CACHE_MAX_ENTRIES = 128
 _RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
 _HISTORY_PROJECTION_CACHE_MAX_ENTRIES = 128
 _HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS = 32 * 1024 * 1024
+_HISTORY_PROJECTION_SQLITE_ROW = sqlite3.Row
 
 # Only these direct pure parser/digest methods can supply a reusable staging
 # identity result. A replaced method keeps the original per-checkpoint path.
@@ -148,6 +149,11 @@ class _CheckpointHistoryRowProjection:
 
     digest: str
     references: tuple[tuple[str, bytes], ...]
+    # Only a completed final-reference comparison supplies these exact retained
+    # SQL scalars. The enclosing projection key already binds the complete
+    # checkpoint text, so a hit can compare both original wires without keeping
+    # any parsed plan, journal, record, or caller-owned dictionary.
+    admissions: tuple[tuple[str, tuple[str, ...]], ...] | None = None
 
 
 def _checkpoint_projection_constant(value: Any, *, depth: int = 0) -> Any:
@@ -168,6 +174,7 @@ def _checkpoint_projection_constant(value: Any, *, depth: int = 0) -> Any:
 def _checkpoint_projection_helpers_current(ledger: object) -> bool:
     """An unknown or replaced pure seam keeps the complete original history path."""
     if (_CheckpointHistoryRowProjection is not _HISTORY_PROJECTION_TYPE
+            or sqlite3.Row is not _HISTORY_PROJECTION_SQLITE_ROW
             or not _admission_checkpoint_helpers_current(ledger)
             or _HISTORY_PROJECTION_FUNCTION_PINS is not _HISTORY_PROJECTION_ORIGINAL_FUNCTION_PINS
             or _HISTORY_PROJECTION_VALUE_PINS is not _HISTORY_PROJECTION_ORIGINAL_VALUE_PINS):
@@ -216,14 +223,18 @@ def _retain_checkpoint_projection(cache: dict[str, Any], key: tuple[Any, ...],
     # Full raw text is retained in the key. Four bytes per character plus
     # conservative entry/tuple overhead also cover strings and scalar values.
     units = (4096 + sum(4 * len(item) for item in key if type(item) is str)
-             + sum(256 + 4 * len(name) + len(raw) for name, raw in projection.references))
+             + sum(256 + 4 * len(name) + len(raw) for name, raw in projection.references)
+             + sum(512 + 4 * len(name) + sum(128 + 4 * len(item) for item in row)
+                   for name, row in (projection.admissions or ())))
     if (units > _HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS
             or _HISTORY_PROJECTION_CACHE_MAX_ENTRIES <= 0):
         return
     entries = cache["entries"]
     if key in entries:
-        entries.move_to_end(key)
-        return
+        # The final SQL comparison may now enrich an existing history-only
+        # projection. Replacing it must account for all retained row text.
+        _old_projection, old_units = entries.pop(key)
+        cache["retained_units"] -= old_units
     while entries and (len(entries) >= _HISTORY_PROJECTION_CACHE_MAX_ENTRIES
                        or cache["retained_units"] + units > _HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS):
         _old_key, (_old_projection, old_units) = entries.popitem(last=False)
@@ -713,7 +724,11 @@ class RSILedger:
         references: dict[str, dict[str, Any]],
         *,
         parsed_contexts: dict[str, _ParsedRSIPythonAdmissionReference] | None = None,
-    ) -> None:
+        validated_rows: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
+    ) -> tuple[tuple[str, tuple[str, ...]], ...] | None:
+        observed_rows: list[tuple[str, tuple[str, ...]]] = []
+        reusable = dict(validated_rows or ())
+        exact_rows = True
         for episode_id, reference in references.items():
             row = connection.execute(
                 "SELECT * FROM rsi_python_admissions WHERE run_id = ? AND episode_id = ? AND journal_id = ?",
@@ -723,19 +738,37 @@ class RSILedger:
                 raise RSILearningError("rsi_python_admission_record_missing")
             try:
                 # Keep this SELECT and exact-text row parse fresh on every history
-                # read. Only freshly parsed reference/plan/journal context is
-                # shared inside this history transaction or final matcher call.
+                # read, even when both complete persisted wires match a previous
+                # pure comparison in this owner operation.
                 record = self._python_admission_row(row)
+                raw_row = None
+                # SQLite rows are immutable snapshots. A mapping/backend seam
+                # can change its fields while parsing; keep its original full
+                # reference comparison instead of projecting that mutable input.
+                if type(row) is _HISTORY_PROJECTION_SQLITE_ROW:
+                    values = tuple(row[name] for name in (
+                        "run_id", "episode_id", "journal_id", "attempt_id",
+                        "payload", "record_sha256", "created_at"))
+                    if all(type(item) is str for item in values):
+                        raw_row = values
+                cache = self._checkpoint_projection_cache()
+                if raw_row is None:
+                    exact_rows = False
+                else:
+                    observed_rows.append((episode_id, raw_row))
+                    if cache is not None and reusable.get(episode_id) == raw_row:
+                        # The caller supplies these scalars only after the complete
+                        # fresh checkpoint text matched its immutable projection.
+                        # The record above is still fully parsed on every visit.
+                        continue
                 context = parsed_contexts.get(episode_id) if parsed_contexts is not None else None
-                if context is None:
-                    cache = self._checkpoint_projection_cache()
-                    if cache is not None:
-                        # A history projection retains no DTO context. Reparse this
-                        # fresh reference once, then bind it to the full row parsed
-                        # above. No context survives this final-reference call.
-                        fresh = _parse_rsi_python_admission_reference_context(reference)
-                        if self._checkpoint_projection_cache() is cache:
-                            context, reference = fresh, fresh.reference
+                if context is None and cache is not None:
+                    # A history projection retains no DTO context. Reparse this
+                    # fresh reference once, then bind it to the full row parsed
+                    # above. No context survives this final-reference call.
+                    fresh = _parse_rsi_python_admission_reference_context(reference)
+                    if self._checkpoint_projection_cache() is cache:
+                        context, reference = fresh, fresh.reference
                 if context is None:
                     validate_rsi_python_admission_reference_record(
                         reference, record, run_id=run_id, episode_id=episode_id,
@@ -746,6 +779,7 @@ class RSILedger:
                     )
             except (TypeError, ValueError) as exc:
                 raise RSILearningError("rsi_python_admission_reference_record_drift") from exc
+        return tuple(observed_rows) if exact_rows else None
 
     def _controller_checkpoint_history_tx(
         self, connection: sqlite3.Connection, run_id: str,
@@ -780,6 +814,8 @@ class RSILedger:
         reference_bytes: dict[str, bytes] = {}
         parsed_contexts: dict[str, _ParsedRSIPythonAdmissionReference] = {}
         history: list[tuple[str, dict[str, Any]]] = []
+        final_key = None
+        final_projection = None
         for ordinal, row in enumerate(rows):
             try:
                 payload = json.loads(row["payload"])
@@ -815,17 +851,26 @@ class RSILedger:
             if row["revision"] != ordinal or row["parent_sha256"] != parent or row["checkpoint_sha256"] != digest:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
             if cache is not None and key is not None and retained is None:
+                projection = _CheckpointHistoryRowProjection(digest, tuple(current_bytes.items()))
                 _retain_checkpoint_projection(
-                    cache, key, _CheckpointHistoryRowProjection(digest, tuple(current_bytes.items())),
+                    cache, key, projection,
                 )
+            final_key = key
+            final_projection = (projection if cache is not None and key is not None else None)
             references = current_refs
             reference_bytes = current_bytes
             parsed_contexts = current_contexts
             parent = digest
             history.append((digest, payload))
-        self._checkpoint_reference_rows_tx(
+        observed_rows = self._checkpoint_reference_rows_tx(
             connection, run_id, references, parsed_contexts=parsed_contexts or None,
+            validated_rows=final_projection.admissions if final_projection is not None else None,
         )
+        if (cache is not None and final_key is not None and final_projection is not None
+                and observed_rows is not None and self._checkpoint_projection_cache() is cache):
+            _retain_checkpoint_projection(cache, final_key, _CheckpointHistoryRowProjection(
+                final_projection.digest, final_projection.references, observed_rows,
+            ))
         return tuple(tuple(row[name] for name in (
             "revision", "parent_sha256", "payload", "checkpoint_sha256")) for row in rows), history
 
