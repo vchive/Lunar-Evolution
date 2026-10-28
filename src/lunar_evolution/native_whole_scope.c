@@ -42,6 +42,8 @@ typedef struct {
     wq_publication_t publication_pins[3];
     int guardian_retiring, receiver_retiring, bootstrap_finishing, controller_released;
     int cleanup_started;
+    int custody_v2, custody_registered, custody_terminal_sent;
+    uint32_t failure_reason;
 } supervisor_t;
 
 static int number(const char *text, uint64_t max, uint64_t *out) {
@@ -331,6 +333,19 @@ static int child_wait(child_t *child, uint64_t deadline, int expected_zero) {
 }
 static int supervisor_check(supervisor_t *s) {
     uint64_t now;
+    if (s->custody_v2 && !s->failure_reason) {
+        struct pollfd controller = {s->controller, POLLIN, 0};
+        int observed = poll(&controller, 1, 0);
+        if (wq_remaining(s->deadline) < 0 ||
+            (s->controller_released && !s->cleanup_started &&
+             (wq_now(&now) || now >= s->execution_cutoff)))
+            s->failure_reason = WQ_CUSTODY_DEADLINE;
+        else if (live(s->lifeline) ||
+                 (observed > 0 && controller.revents & (POLLHUP | POLLERR | POLLNVAL)))
+            s->failure_reason = WQ_CUSTODY_CONTROLLER_LOST;
+        else if (s->receiver.pidfd >= 0 && !s->receiver_retiring && exited(s->receiver.pidfd))
+            s->failure_reason = WQ_CUSTODY_RECEIVER_FAULT;
+    }
     if (wq_remaining(s->deadline) < 0 || live(s->lifeline) ||
         (s->controller_released && !s->cleanup_started &&
          (wq_now(&now) || now >= s->execution_cutoff)) ||
@@ -347,6 +362,15 @@ static int supervisor_check(supervisor_t *s) {
     if (wq_chain_check(&s->delegation_chain))
         return -1;
     return scope_check(&s->scope, 0);
+}
+static void custody_failure_fallback(supervisor_t *s) {
+    if (s->custody_v2 && !s->failure_reason) {
+        /* Preserve an actually observed original lifeline, deadline or R
+         * failure. A generic scope/chain/G/packet refusal cannot identify R. */
+        (void)supervisor_check(s);
+        if (!s->failure_reason)
+            s->failure_reason = WQ_CUSTODY_PROTOCOL;
+    }
 }
 static int transfer(supervisor_t *s, int socket, wq_message_t *message, int *rights, size_t count,
                     int sending) {
@@ -405,7 +429,8 @@ static int receive_simple(supervisor_t *s, int socket, uint32_t operation, uint3
 }
 /* Always close the possible late-clone route before killing even an empty
  * scope. Deadline expiry permits emergency actions only, never positive facts. */
-static void emergency_stop(scope_t *scope, int bootstrap, int guardian) {
+static uint32_t emergency_stop_observed(scope_t *scope, int bootstrap, int guardian) {
+    uint32_t facts = WQ_CUSTODY_STOP_ATTEMPTED;
     int ignored = (int)syscall(SYS_pidfd_send_signal, bootstrap, SIGKILL, NULL, 0);
     (void)ignored;
     int enrollment_closed = 0;
@@ -413,6 +438,7 @@ static void emergency_stop(scope_t *scope, int bootstrap, int guardian) {
         int observed = exited(bootstrap);
         if (observed == 1) {
             enrollment_closed = 1;
+            facts |= WQ_CUSTODY_BOOTSTRAP_EXIT;
             break;
         }
         if (observed < 0)
@@ -429,17 +455,21 @@ static void emergency_stop(scope_t *scope, int bootstrap, int guardian) {
      * the original recursive empty read. Failure callers retain unknown even
      * when this best-effort observation completes inside the original budget. */
     if (!enrollment_closed)
-        return;
+        return facts;
     for (;;) {
         int populated;
-        if (scope_check(scope, guardian) || scope_events(scope, guardian ? 6 : 4, &populated) ||
-            !populated)
-            return;
+        if (scope_check(scope, guardian) || scope_events(scope, guardian ? 6 : 4, &populated))
+            return facts;
+        if (!populated)
+            return facts | WQ_CUSTODY_SCOPE_EMPTY;
         struct pollfd p = {scope->files[guardian ? 6 : 4], POLLPRI | POLLERR, 0};
         int ms = wq_remaining(scope->deadline);
         if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
-            return;
+            return facts;
     }
+}
+static void emergency_stop(scope_t *scope, int bootstrap, int guardian) {
+    (void)emergency_stop_observed(scope, bootstrap, guardian);
 }
 static _Noreturn void guardian_main(scope_t scope, const wq_binding_t *binding, int bootstrap,
                                     int controller, int parent, int channel) {
@@ -496,34 +526,55 @@ static int private_directory(int fd, wq_identity_t *pin) {
     return wq_identity(fd, pin, 0) || !S_ISDIR(pin->mode) || pin->uid || pin->gid ||
            (pin->mode & 07777) != 0700;
 }
-static int store_record(int directory, int fd, const char *name, const wq_message_t *message,
-                        const wq_identity_t *parent, const wq_identity_t *original) {
+static int private_no_acl(int fd) {
+    const char *names[] = {"system.posix_acl_access", "system.posix_acl_default"};
+    for (size_t i = 0; i < 2; i++)
+        if (fgetxattr(fd, names[i], NULL, 0) >= 0 || errno != ENODATA)
+            return -1;
+    return 0;
+}
+static int store_record_bytes(int directory, int fd, const char *name, const void *record,
+                              size_t size, uint64_t deadline, const wq_identity_t *parent,
+                              const wq_identity_t *original, int private_acl) {
     wq_identity_t now;
-    struct stat named;
-    if (wq_remaining(message->binding.deadline_ns) < 0 || wq_identity(directory, &now, 0) ||
+    struct stat named, held;
+    if (wq_remaining(deadline) < 0 || wq_identity(directory, &now, 0) ||
         !wq_identity_equal(parent, &now) || wq_identity(fd, &now, 0) ||
         !wq_identity_equal(original, &now) ||
+        (private_acl && (private_no_acl(directory) || private_no_acl(fd))) ||
         fstatat(directory, name, &named, AT_SYMLINK_NOFOLLOW) ||
         (uint64_t)named.st_dev != original->device || named.st_ino != original->inode ||
-        named.st_nlink != 1 || named.st_size)
+        named.st_nlink != 1 || named.st_mode != original->mode ||
+        named.st_uid != original->uid || named.st_gid != original->gid || named.st_size)
         return -1;
     size_t offset = 0;
-    while (offset < sizeof(*message)) {
-        if (wq_remaining(message->binding.deadline_ns) < 0)
+    while (offset < size) {
+        if (wq_remaining(deadline) < 0)
             return -1;
-        ssize_t n = write(fd, (const char *)message + offset, sizeof(*message) - offset);
+        ssize_t n = write(fd, (const char *)record + offset, size - offset);
         if (n < 0 && errno == EINTR)
             continue;
         if (n <= 0)
             return -1;
         offset += (size_t)n;
     }
-    if (fsync(fd) || fsync(directory) || wq_remaining(message->binding.deadline_ns) < 0 ||
+    if (fsync(fd) || fsync(directory) || wq_remaining(deadline) < 0 ||
+        wq_identity(directory, &now, 0) || !wq_identity_equal(parent, &now) ||
         wq_identity(fd, &now, 0) || !wq_identity_equal(original, &now) ||
+        (private_acl && (private_no_acl(directory) || private_no_acl(fd))) ||
+        fstat(fd, &held) || held.st_size != (off_t)size || held.st_nlink != 1 ||
         fstatat(directory, name, &named, AT_SYMLINK_NOFOLLOW) ||
-        named.st_size != (off_t)sizeof(*message) || named.st_ino != original->inode)
+        named.st_size != (off_t)size || named.st_ino != original->inode ||
+        (uint64_t)named.st_dev != original->device || named.st_nlink != 1 ||
+        named.st_mode != original->mode || named.st_uid != original->uid ||
+        named.st_gid != original->gid)
         return -1;
     return 0;
+}
+static int store_record(int directory, int fd, const char *name, const wq_message_t *message,
+                        const wq_identity_t *parent, const wq_identity_t *original) {
+    return store_record_bytes(directory, fd, name, message, sizeof(*message),
+                              message->binding.deadline_ns, parent, original, 0);
 }
 static _Noreturn void receiver_main(int directory, int channel, const wq_binding_t *binding,
                                     const wq_identity_t *scope) {
@@ -592,6 +643,85 @@ static _Noreturn void receiver_main(int directory, int channel, const wq_binding
     }
     _exit(0);
 }
+/* Selected only by --supervisor-custody-v2. R has no execution, signal,
+ * lifeline or scope handle; blocking filesystem work cannot block G's stop. */
+static _Noreturn void receiver_v2_main(int directory, int channel, const wq_binding_t *binding,
+                                       const wq_identity_t *scope) {
+    int keep[] = {directory, channel};
+    if (close_except(keep, 2) || wq_socket(channel))
+        _exit(WQ_FAILURE);
+    wq_identity_t parent, pins[2];
+    int files[2];
+    const char *names[] = {"scope-registration-v2.bin", "scope-terminal-v2.bin"};
+    if (private_directory(directory, &parent) || private_no_acl(directory))
+        _exit(WQ_FAILURE);
+    for (int i = 0; i < 2; i++) {
+        files[i] = openat(directory, names[i], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (files[i] < 0 || wq_identity(files[i], &pins[i], 0) || pins[i].uid || pins[i].gid ||
+            (pins[i].mode & 07777) != 0600)
+            _exit(WQ_FAILURE);
+    }
+    wq_message_t registration;
+    for (;;) {
+        if (wq_remaining(binding->deadline_ns) < 0)
+            _exit(WQ_FAILURE);
+        if (!wq_receive(channel, &registration, NULL, 0, binding->deadline_ns))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+        struct pollfd p = {channel, POLLIN, 0};
+        int ms = wq_remaining(binding->deadline_ns);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            _exit(WQ_FAILURE);
+    }
+    if (wq_message_check(&registration, binding, WQ_STORE_REGISTER, 1, 0) ||
+        !wq_identity_equal(scope, &registration.scope) || !registration.target_pid ||
+        registration.target_pid > INT_MAX)
+        _exit(WQ_FAILURE);
+    for (size_t i = 0; i < 3; i++)
+        if (!registration.publications[i].inode || !registration.publications[i].size ||
+            wq_digest(registration.publications[i].sha256))
+            _exit(WQ_FAILURE);
+    if (store_record_bytes(directory, files[0], names[0], &registration, sizeof(registration),
+                           binding->deadline_ns, &parent, &pins[0], 1))
+        _exit(WQ_FAILURE);
+    wq_message_t ack;
+    wq_message_init(&ack, binding, WQ_STORE_ACK, 1, 0);
+    ack.scope = *scope;
+    ack.target_pid = registration.target_pid;
+    for (;;) {
+        if (!wq_send(channel, &ack, NULL, 0))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+    }
+    wq_custody_event_t event;
+    for (;;) {
+        if (wq_remaining(binding->deadline_ns) < 0)
+            _exit(WQ_FAILURE);
+        if (!wq_custody_receive(channel, &event, binding->deadline_ns))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+        struct pollfd p = {channel, POLLIN, 0};
+        int ms = wq_remaining(binding->deadline_ns);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            _exit(WQ_FAILURE);
+    }
+    if (wq_custody_event_check(&event, &registration) ||
+        store_record_bytes(directory, files[1], names[1], &event, sizeof(event),
+                           binding->deadline_ns, &parent, &pins[1], 1))
+        _exit(WQ_FAILURE);
+    ack = event.original;
+    ack.operation = WQ_CUSTODY_ACK;
+    for (;;) {
+        if (!wq_send(channel, &ack, NULL, 0))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+    }
+    _exit(0);
+}
 static int start_guardian(supervisor_t *s) {
     int channel[2], lifeline[2];
     if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, channel) ||
@@ -634,6 +764,8 @@ static int start_receiver(supervisor_t *s) {
     int cloned = child_clone(&s->receiver);
     if (!cloned) {
         close(channel[0]);
+        if (s->custody_v2)
+            receiver_v2_main(s->custody, channel[1], &s->binding, &s->scope.leaf_pin);
         receiver_main(s->custody, channel[1], &s->binding, &s->scope.leaf_pin);
     }
     if (cloned < 0) {
@@ -660,9 +792,96 @@ static int persist(supervisor_t *s, uint32_t operation, uint32_t sequence) {
     message.scope = s->scope.leaf_pin;
     message.target_pid = s->target_pid;
     memcpy(message.publications, s->publication_pins, sizeof(message.publications));
-    if (transfer(s, s->receiver.fd, &message, NULL, 0, 1))
+    if (transfer(s, s->receiver.fd, &message, NULL, 0, 1)) {
+        custody_failure_fallback(s);
         return -1;
-    return receive_simple(s, s->receiver.fd, WQ_STORE_ACK, sequence);
+    }
+    int result = receive_simple(s, s->receiver.fd, WQ_STORE_ACK, sequence);
+    if (result)
+        custody_failure_fallback(s);
+    if (!result && s->custody_v2 && operation == WQ_STORE_REGISTER)
+        s->custody_registered = 1;
+    return result;
+}
+static int persist_v2_terminal(supervisor_t *s, uint32_t reason, uint32_t facts) {
+    if (!s->custody_v2 || !s->custody_registered || s->custody_terminal_sent ||
+        s->receiver.pidfd < 0 || s->receiver.reaped || exited(s->receiver.pidfd))
+        return -1;
+    wq_custody_event_t event;
+    memset(&event, 0, sizeof(event));
+    wq_message_init(&event.original, &s->binding,
+                    reason ? WQ_CUSTODY_ABNORMAL : WQ_CUSTODY_NORMAL, 2, 0);
+    event.original.version = WQ_CUSTODY_VERSION;
+    event.original.scope = s->scope.leaf_pin;
+    event.original.target_pid = s->target_pid;
+    memcpy(event.original.publications, s->publication_pins, sizeof(s->publication_pins));
+    event.reason = reason;
+    event.facts = facts;
+    uint64_t observed;
+    if (wq_remaining(s->deadline) < 0 || wq_now(&observed))
+        return -1;
+    event.observed_monotonic_ns = observed;
+    wq_message_t registration = event.original;
+    registration.version = WQ_VERSION;
+    registration.operation = WQ_STORE_REGISTER;
+    registration.sequence = 1;
+    if (wq_custody_event_check(&event, &registration))
+        return -1;
+    /* Stop precedes this call on every abnormal path. Never use transfer():
+     * controller death is the recorded cause, not permission to renew it. */
+    for (;;) {
+        if (wq_remaining(s->deadline) < 0 || exited(s->receiver.pidfd))
+            return -1;
+        if (!reason && supervisor_check(s))
+            return -1;
+        if (!wq_custody_send(s->receiver.fd, &event))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            return -1;
+        struct pollfd p = {s->receiver.fd, POLLOUT, 0};
+        int ms = wq_remaining(s->deadline);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            return -1;
+    }
+    s->custody_terminal_sent = 1;
+    s->receiver_retiring = 1;
+    wq_message_t expected = event.original;
+    expected.operation = WQ_CUSTODY_ACK;
+    for (;;) {
+        wq_message_t ack;
+        if (wq_remaining(s->deadline) < 0)
+            return -1;
+        if (!reason && supervisor_check(s))
+            return -1;
+        if (!wq_receive(s->receiver.fd, &ack, NULL, 0, s->deadline)) {
+            if (memcmp(&ack, &expected, sizeof(ack)))
+                return -1;
+            s->receiver_retiring = 1;
+            return 0;
+        }
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            return -1;
+        struct pollfd p = {s->receiver.fd, POLLIN, 0};
+        int ms = wq_remaining(s->deadline);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            return -1;
+    }
+}
+static int finish_abnormal_custody(supervisor_t *s) {
+    /* Wake the original G before S's possibly failing scope observation or
+     * R's filesystem work. Do not kill G before its independent stop route. */
+    if (s->guardian_lifeline >= 0) {
+        close(s->guardian_lifeline);
+        s->guardian_lifeline = -1;
+    }
+    uint32_t facts = emergency_stop_observed(&s->scope, s->bootstrap, 0);
+    if (s->guardian.pidfd >= 0 && !s->guardian.reaped)
+        (void)child_wait(&s->guardian, s->deadline, 0);
+    if (s->guardian.reaped)
+        facts |= WQ_CUSTODY_GUARDIAN_REAPED;
+    /* Expiry, original-R loss or a missing ACK retains unknown. No alternate
+     * G/R, repaired context or fresh deadline is created by this attempt. */
+    return persist_v2_terminal(s, s->failure_reason, facts);
 }
 static int target_member(supervisor_t *s) {
     int fd = openat(s->scope.leaf, "cgroup.procs", O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
@@ -786,8 +1005,11 @@ static int run_supervisor(supervisor_t *s) {
         return -1;
     close(s->guardian.pidfd);
     s->guardian.pidfd = -1;
-    if (persist(s, WQ_STORE_EVENT, 2))
+    if (s->custody_v2 ? persist_v2_terminal(s, WQ_CUSTODY_OK, WQ_CUSTODY_NORMAL_FACTS)
+                      : persist(s, WQ_STORE_EVENT, 2)) {
+        custody_failure_fallback(s);
         return -1;
+    }
     if (s->receiver.pidfd >= 0) {
         if (child_wait(&s->receiver, s->deadline, 1))
             return -1;
@@ -1031,7 +1253,8 @@ int main(int argc, char **argv) {
             return 64;
         return publisher(fds[0], fds[1], fds[2], fds[3], deadline) ? WQ_FAILURE : 0;
     }
-    if (argc != 22 || strcmp(argv[1], "--supervisor-v1"))
+    if (argc != 22 || (strcmp(argv[1], "--supervisor-v1") &&
+                       strcmp(argv[1], "--supervisor-custody-v2")))
         return 64;
     const char *flags[10] = {
         "--profile-fd",     "--delegation-fd",        "--bootstrap-pidfd",        "--controller-fd",
@@ -1039,6 +1262,7 @@ int main(int argc, char **argv) {
         "--custody-dir-fd", "--deadline-monotonic-ns"};
     supervisor_t s;
     memset(&s, 0, sizeof(s));
+    s.custody_v2 = !strcmp(argv[1], "--supervisor-custody-v2");
     int *roles[9] = {&s.profile,   &s.delegation, &s.bootstrap, &s.controller, &s.enrollment,
                      &s.lifecycle, &s.lifeline,   &s.image,     &s.custody};
     s.target = -1;
@@ -1063,11 +1287,17 @@ int main(int argc, char **argv) {
             required[count++] = *roles[i];
     if (number(argv[21], UINT64_MAX, &s.deadline) || wq_fd_distinct(required, count) ||
         wq_socket(s.controller) || wq_socket(s.enrollment) || wq_socket(s.lifecycle) ||
-        pipe_reader(s.lifeline))
+        pipe_reader(s.lifeline) || (s.custody_v2 && s.custody < 0))
         return 64;
     int result = run_supervisor(&s);
     if (result) {
-        emergency_stop(&s.scope, s.bootstrap, 0);
+        if (s.custody_v2 && !s.failure_reason)
+            s.failure_reason = wq_remaining(s.deadline) < 0
+                                   ? WQ_CUSTODY_DEADLINE : WQ_CUSTODY_PROTOCOL;
+        if (s.custody_v2)
+            (void)finish_abnormal_custody(&s);
+        else
+            emergency_stop(&s.scope, s.bootstrap, 0);
         child_t *children[2] = {&s.guardian, &s.receiver};
         for (int i = 0; i < 2; i++)
             if (children[i]->pidfd >= 0 && !children[i]->reaped) {

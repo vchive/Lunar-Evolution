@@ -111,6 +111,46 @@ def _attempt(tmp_path: Path, *, timeout: int = 8, target_sleep: int = 0, target_
     return workspace, producer_root, intent, attestation, artifact, batch
 
 
+def _one_second_terminal_read_after_original_start(monkeypatch):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    read_frame = runner._read_attempt_frame
+    frames, terminal_waits = [], []
+
+    def read(fd, deadline, monotonic, cancelled):
+        if len(frames) == 2:
+            started = monotonic()
+            narrowed = min(deadline, started + 1.0)
+            try:
+                return read_frame(fd, narrowed, monotonic, cancelled)
+            finally:
+                terminal_waits.append((deadline, started, narrowed, monotonic()))
+        frame = read_frame(fd, deadline, monotonic, cancelled)
+        frames.append(frame)
+        return frame
+
+    # Keep the real absolute lifecycle deadline and native bootstrap unchanged.
+    # Only the terminal read is narrowed, after consuming both original frames.
+    # The former whole-lifecycle 1s fixture could expire before registration;
+    # this locates the execution fault and does not establish its performance.
+    monkeypatch.setattr(runner, "_read_attempt_frame", read)
+    return frames, terminal_waits
+
+
+def _assert_original_start_then_one_second_terminal_timeout(frames, terminal_waits, batch, intent):
+    import lunar_evolution.native_trusted_attempt as runner
+
+    assert [frame.kind for frame in frames] == ["bootstrap_ready", "target_started"]
+    assert len(terminal_waits) == 1
+    original, started, narrowed, finished = terminal_waits[0]
+    assert narrowed == started + 1.0 and narrowed < original
+    assert finished >= narrowed
+    persisted = json.loads((batch / "native-trusted-attempt-deadline.json").read_bytes())
+    assert original == persisted["deadline_monotonic"] - runner._CLEANUP_RESERVE_SECONDS
+    assert persisted["deadline_monotonic"] == persisted["started_monotonic"] + intent.wall_timeout_seconds
+    assert intent.wall_timeout_seconds == 8
+
+
 def _materialize_valid_capture(
     batch: Path, intent, terminal: dict[str, object], *, broker=None,
 ) -> dict[str, object]:
@@ -667,14 +707,16 @@ def test_changed_bootstrap_artifact_is_rejected_before_nonce_consumption(tmp_pat
 
 
 @pytest.mark.skipif(sys.platform not in {"darwin", "linux"}, reason="native bootstrap platform")
-def test_native_attempt_timeout_keeps_unknown_and_cleans_owned_group(tmp_path: Path):
+def test_native_attempt_timeout_keeps_unknown_and_cleans_owned_group(tmp_path: Path, monkeypatch):
     workspace, producer_root, intent, attestation, artifact, batch = _attempt(
-        tmp_path, timeout=1, target_sleep=3,
+        tmp_path, target_sleep=3,
     )
+    frames, terminal_waits = _one_second_terminal_read_after_original_start(monkeypatch)
     result = run_native_trusted_attempt(
         workspace, producer_root=producer_root, intent=intent,
         attestation=attestation, artifact=artifact,
     )
+    _assert_original_start_then_one_second_terminal_timeout(frames, terminal_waits, batch, intent)
     assert result.status == "recovery_required"
     assert result.reason == "native_trusted_attempt_wall_timeout"
     assert result.gate_released and result.target_started
@@ -761,8 +803,9 @@ def test_lifeline_stops_unverified_cleanup_group_before_explicit_recovery(tmp_pa
     import lunar_evolution.native_trusted_attempt as runner
 
     workspace, producer_root, intent, attestation, artifact, batch = _attempt(
-        tmp_path, timeout=1, target_sleep=10,
+        tmp_path, target_sleep=10,
     )
+    frames, terminal_waits = _one_second_terminal_read_after_original_start(monkeypatch)
 
     children = []
 
@@ -778,7 +821,9 @@ def test_lifeline_stops_unverified_cleanup_group_before_explicit_recovery(tmp_pa
         workspace, producer_root=producer_root, intent=intent,
         attestation=attestation, artifact=artifact,
     )
+    _assert_original_start_then_one_second_terminal_timeout(frames, terminal_waits, batch, intent)
     assert result.status == "recovery_required"
+    assert result.gate_released and result.target_started
     assert result.terminal_sha256 is None
     assert not (batch / "native-trusted-process-terminal.json").exists()
     # Returning from the attempt closes the lifeline even if live cleanup was

@@ -1,3 +1,47 @@
+<!-- custody-v2-current-batch:start -->
+## 当前执行点：v2 异常 custody/监控/P1 合批已完成本机补验（2026-10-28）
+
+权威工作区为 `/Users/liminghan/.codex/worktrees/fixed-u-input-acl/lunar_agent`，
+分支 `codex/fixed-u-input-acl`。已推送基线 `f4fe178a`，PR #190 仍 draft、未合 main。
+该基线唯一 Linux mixed 派发在上传阶段 300.009749 秒超时；远端原目录为空，
+driver/source/pytest 均未启动，分类 `NOT_EXECUTED_UPLOAD_TRANSPORT_FAILED`，
+不能称 case 超时或通过。已消耗的 Linux reservation 保留，不重派。
+
+用户授权本机 fallback 后，独立 Darwin inert mixed 实际完成：1/1 pass、零 skip、
+完整 validation 250.526687 秒，原 600 秒、零 retry。冻结源码 before/after、归档
+和 285 loaded-module origins 匹配，独审 24/24 一致性通过。它不替代 Linux/root/
+cgroup、真实 producer 或生产性能验收，也不提供历史超时的因果结论。原件位于
+主区 ignored `parallel-batch-20261027/darwin-mixed-f4fe178a-fallback-20261028/`，
+独审在 `darwin-mixed-f4fe178a-independent-audit-20261028/`。
+
+本轮先并行开发，再集中回归，已完成的代码包括：
+
+- P1：build-probe 的 runtime succeeded 必须 exit_code=0；失败状态仍允许进程
+  退出 0 但输出核验失败。解析/CLI 共新增 7 节点。
+- WQ-06：监控器创建后、原 reader 转交前的异常清理，保留原异常并释放实际线程/
+  FD；新增 4 个 portable fault 节点。不构成 finite writer enclosure 或 quiescence。
+- WQ-07：显式 private-custody-v2，默认 v1 不变。原 registration 925 字节，
+  terminal 941 字节、独立固定 reason/facts/原期限内时间；实际 R 持久化后才 ACK，
+  S 先 stop/原 G 回收再可选存储；历史检查不能重建 ACK 或 cleanup 权限。
+  S 死亡、丢 ACK、partial/blocked storage 或已过期仍 unknown。详见
+  `specs/197-external-worker-coordination/whole-scope-private-custody.md`。
+
+5090gpu 后继容量探针确认 `/tmp` 约 511 GB free 但可用 inode=0，真实创建/写入
+返回 errno28；Linux 新合批未上传或派发。按用户授权转为独立 Darwin 本机 profile，
+冻结 tree `e7d959d2`，19 个完整文件、16 workers、零 retry、单次 pytest：641 节点
+391 pass / 250 skip / 0 fail / 0 error，20.49 秒，未超时。源码 before/after 完整
+manifest、worker collection、242 个模块来源均匹配；独立审计为一致。证据在
+`parallel-batch-20261027/custody-v2-monitor-probe-affected-darwin-20261028-r2/`。
+250 个 skip 是 Linux/root 前提，不计为通过；Linux C/root/cgroup 机制、Ubuntu CI
+和实际指定环境验收仍需完成。
+
+未完成项仍包括 WQ-06 固定 U 独占与完整写能力契约、完整 WQ-07 S 死亡/creator-FD
+路线、accepted CPython build/input custody 和完整 runtime/solver/生产 CLI，以及
+实际 root/独立账户/blocked-storage 部署验收；不能声称 P0–P2 全部完成。
+`production_admission=false`、`online_publication=false`；不运行模型、WebAgent、
+远程或公司 evaluator；不读取 `.env` 或活进程 argv/environment；benchmark 原区只读。
+<!-- custody-v2-current-batch:end -->
+
 <!-- fixed-u-current-batch:start -->
 ## 当前执行点：固定 U 输入/原 custody 合批已验证，待新 mixed 与 CI（2026-10-28）
 

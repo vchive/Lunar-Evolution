@@ -1,6 +1,7 @@
 """The same live input acquisition reaches every native input/material check."""
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
 
 import pytest
@@ -8,6 +9,8 @@ import pytest
 from lunar_evolution import native_trusted_attempt as attempt
 from lunar_evolution import native_whole_scope as whole
 from lunar_evolution.native_fixed_u_inputs import NativeFixedUInputError
+
+LINUX = pytest.mark.skipif(sys.platform != "linux", reason="requires Linux fixed-U artifact")
 
 
 @pytest.mark.parametrize("with_owner", [False, True])
@@ -56,6 +59,7 @@ def test_lost_live_input_acquisition_refuses_before_second_protocol(monkeypatch)
     assert seen == [live]
 
 
+@LINUX
 def test_input_drift_at_whole_scope_preflight_is_classified_before_claim(tmp_path, monkeypatch):
     from test_native_trusted_attempt import _attempt
 

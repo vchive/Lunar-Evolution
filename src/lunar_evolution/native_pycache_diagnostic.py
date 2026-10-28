@@ -112,14 +112,26 @@ class _NativePycacheDiagnosticScope:
                           "unknown_write_capabilities": [], "roots": roots},
                          sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode("ascii")
         context = context_supplier()
-        capture = GrantBoundPycacheMonitor.arm_before_target(
-            held_grants=self._owner, reviewed_grants_bytes=raw,
-            expected_grants_sha256=hashlib.sha256(raw).hexdigest(),
-            deadline_monotonic_ns=self._deadline, diagnostic_profile=self._pin[1],
-        )
-        # Retain immediately: a failed post-arm check must still release the
-        # actual reader when the native attempt finishes its process cleanup.
-        self._original_reader = capture._original_capture
+        capture = None
+        try:
+            capture = GrantBoundPycacheMonitor.arm_before_target(
+                held_grants=self._owner, reviewed_grants_bytes=raw,
+                expected_grants_sha256=hashlib.sha256(raw).hexdigest(),
+                deadline_monotonic_ns=self._deadline, diagnostic_profile=self._pin[1],
+            )
+            # Retain immediately: a failed post-arm check must still release the
+            # actual reader when the native attempt finishes its process cleanup.
+            self._original_reader = capture._original_capture
+        except BaseException as exc:
+            # Before this transfer succeeds, scope exit has no original reader
+            # to retire. Candidate code is still gated; release only the actual
+            # acquisition and preserve an interrupted/allocation-failed transfer.
+            if capture is not None:
+                try:
+                    _ORIGINAL_READER_RELEASE(capture._original_capture)
+                except BaseException:  # noqa: BLE001 - keep the original acquisition/transfer failure
+                    exc.add_note("native_pycache_diagnostic_original_reader_cleanup_unknown")
+            raise
         self._capture = capture
         self._context_supplier, self._context = context_supplier, context
         self._check_request()

@@ -1,8 +1,9 @@
 """Private original-directory custody and read-only whole-scope diagnostics.
 
-The receiver's existing binary ABI is unchanged. A record can preserve a normal
-terminal or an abnormal durable prefix, but cannot reconstruct a live scope,
-prove a lost acknowledgement, or provide positive cleanup authority.
+The default receiver ABI is unchanged. The explicitly selected v2 custody
+profile also preserves finite abnormal facts while the original supervisor
+survives. Neither profile reconstructs a live scope, proves a lost
+acknowledgement, or provides positive cleanup authority from historical records.
 """
 from __future__ import annotations
 
@@ -16,8 +17,13 @@ from dataclasses import dataclass, field
 from .native_whole_scope import NativeWholeScopeError
 
 CUSTODY_PROFILE = "linux-whole-scope-private-custody-v1"
+CUSTODY_V2_PROFILE = "linux-whole-scope-private-custody-v2"
 _DIRECTORY = ".whole-scope-custody"
 _NAMES = ("scope-registration-v1.bin", "scope-terminal-v1.bin")
+_V2_DIRECTORY = ".whole-scope-custody-v2"
+_V2_NAMES = ("scope-registration-v2.bin", "scope-terminal-v2.bin")
+_EVENT_FACTS = struct.Struct("<IIQ")
+_REASONS = ("normal", "controller_lost", "deadline", "receiver_fault", "protocol")
 _TOKEN = object()
 _MAX_REFERENCE = 32768
 
@@ -33,6 +39,42 @@ def _fail(reason="unavailable"):
 
 def _json(value):
     return json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode("ascii")
+
+
+def _profile_shape(profile):
+    if type(profile) is not str:
+        _fail("profile_invalid")
+    if profile == CUSTODY_PROFILE:
+        return _DIRECTORY, _NAMES
+    if profile == CUSTODY_V2_PROFILE:
+        return _V2_DIRECTORY, _V2_NAMES
+    _fail("profile_invalid")
+
+
+def _terminal_observation(registration, raw, profile):
+    """Validate a record against its retained original context, never an ACK."""
+    from .native_whole_scope import _BINDING, _HEADER, _MESSAGE_SIZE
+
+    _profile_shape(profile)
+    if not raw:
+        return None
+    expected = bytearray(registration)
+    if profile == CUSTODY_PROFILE:
+        struct.pack_into("<II", expected, 8, 15, 2)
+        if raw != bytes(expected):
+            _fail("record_changed")
+        return {"reason": "normal", "facts": 0}
+    if len(raw) != _MESSAGE_SIZE + _EVENT_FACTS.size:
+        _fail("record_changed")
+    reason, facts, observed = _EVENT_FACTS.unpack_from(raw, _MESSAGE_SIZE)
+    deadline = _BINDING.unpack_from(registration, _HEADER.size)[0]
+    if (reason >= len(_REASONS) or facts & ~15 or not 0 < observed < deadline
+            or (reason == 0 and facts != 10) or (reason != 0 and not facts & 1)):
+        _fail("record_changed")
+    struct.pack_into("<III", expected, 4, 2, 19 if reason == 0 else 20, 2)
+    if raw[:_MESSAGE_SIZE] != bytes(expected):
+        _fail("record_changed")
+    return {"reason": _REASONS[reason], "facts": facts}
 
 
 def _no_acl(fd):
@@ -109,24 +151,28 @@ def _check_chain(path, descriptors, identities):
     _directory_identity(descriptors[-1])
 
 
-def _names(directory):
+def _names(directory, *, profile=CUSTODY_PROFILE):
+    _directory, allowed = _profile_shape(profile)
     names = []
     with os.scandir(directory) as entries:
         for entry in entries:
-            if len(names) == 2 or entry.name not in _NAMES:
+            if len(names) == 2 or entry.name not in allowed:
                 _fail("record_shape")
             names.append(entry.name)
     return tuple(sorted(names))
 
 
-def _read_records(directory):
-    """At most two 925-byte files; no inode from this read grants live ownership."""
+def _read_records(directory, *, profile=CUSTODY_PROFILE):
+    """Two fixed-size files; no inode from this read grants live ownership."""
     from .native_whole_scope import _MESSAGE_SIZE, _kernel_identity, _mount_id
 
     parent = _directory_identity(directory)
-    names = _names(directory)
+    _directory, allowed = _profile_shape(profile)
+    names = _names(directory, profile=profile)
     records = {}
     for name in names:
+        bound = _MESSAGE_SIZE + (_EVENT_FACTS.size if profile == CUSTODY_V2_PROFILE
+                                 and name == allowed[1] else 0)
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
                      dir_fd=directory)
         try:
@@ -134,11 +180,11 @@ def _read_records(directory):
             identity = _kernel_identity(fd)
             if (not stat.S_ISREG(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o600
                     or before.st_uid or before.st_gid or before.st_nlink != 1
-                    or before.st_size not in (0, _MESSAGE_SIZE)
+                    or before.st_size not in (0, bound)
                     or identity[0] != parent[0] or identity[2] != parent[2]):
                 _fail("record_invalid")
             _no_acl(fd)
-            raw = os.pread(fd, _MESSAGE_SIZE + 1, 0)
+            raw = os.pread(fd, bound + 1, 0)
             named = os.stat(name, dir_fd=directory, follow_symlinks=False)
             if (len(raw) != before.st_size or _file_pin(os.fstat(fd)) != _file_pin(before)
                     or _file_pin(named) != _file_pin(before)
@@ -149,9 +195,16 @@ def _read_records(directory):
             records[name] = (raw, identity, _file_pin(before))
         finally:
             os.close(fd)
-    if _names(directory) != names or _directory_identity(directory) != parent:
+    if _names(directory, profile=profile) != names or _directory_identity(directory) != parent:
         _fail("record_changed")
     return records
+
+
+def _records_for(directory, profile):
+    # Keep the default call boundary intact for existing v1 consumers/hooks.
+    if profile == CUSTODY_PROFILE:
+        return _read_records(directory)
+    return _read_records(directory, profile=profile)
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,10 +222,13 @@ class NativeWholeScopeCustodyReference:
 class NativeWholeScopeCustodyOwner:
     """One live child holding the original reserved private directory."""
 
-    def __init__(self, token, scope):
+    def __init__(self, token, scope, *, profile=CUSTODY_PROFILE):
         if token is not _TOKEN:
             _fail("owner_invalid")
+        directory, _names_for_profile = _profile_shape(profile)
         self._scope = scope
+        self._profile = profile
+        self._original_profile = profile
         self._closed = False
         self._directory = None
         self._chain = []
@@ -183,7 +239,11 @@ class NativeWholeScopeCustodyOwner:
         self._started = False
         self._deadline = scope.deadline_ns
         self._origin = (scope._profile_sha256, scope.journal_id, scope._publication_pins[0][0])
-        self._path = os.fspath(scope.working_directory.parent / _DIRECTORY)
+        self._path = os.fspath(scope.working_directory.parent / directory)
+
+    @property
+    def profile(self):
+        return self._profile
 
     def __copy__(self):
         _fail("owner_invalid")
@@ -199,7 +259,8 @@ class NativeWholeScopeCustodyOwner:
 
         scope = self._scope
         if (self._closed or type(scope) is not NativeWholeScopeOwner
-                or scope._custody_owner is not self or self._directory is None):
+                or scope._custody_owner is not self or self._directory is None
+                or self._profile != self._original_profile):
             _fail("owner_invalid")
         scope._check_published_grants()
         if require_unexpired:
@@ -213,16 +274,17 @@ class NativeWholeScopeCustodyOwner:
 
     def _acquire(self):
         scope = self._scope
+        directory, _names_for_profile = _profile_shape(self.profile)
         scope._check_published_grants()
         scope._remaining()
         # Only this new root-private child is created; original U grants stay
         # unchanged and never contain this directory or its files.
-        os.mkdir(_DIRECTORY, mode=0o700, dir_fd=scope._published[0])
-        self._directory = os.open(_DIRECTORY, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        os.mkdir(directory, mode=0o700, dir_fd=scope._published[0])
+        self._directory = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
                                   | os.O_CLOEXEC | os.O_NONBLOCK, dir_fd=scope._published[0])
         created = _directory_identity(self._directory)
         self._chain, self._identities = _open_chain(self._path)
-        if self._identities[-1] != created or _names(self._directory):
+        if self._identities[-1] != created or _names(self._directory, profile=self.profile):
             _fail("directory_changed")
         # The reserved directory and original owner remain failed after any
         # exception; they cannot be retried as a fresh custody attempt.
@@ -230,7 +292,7 @@ class NativeWholeScopeCustodyOwner:
 
     def _borrow_for_start(self):
         self._check()
-        if self._started or self._reference is not None or _names(self._directory):
+        if self._started or self._reference is not None or _names(self._directory, profile=self.profile):
             _fail("owner_invalid")
         self._started = True
         return self._directory
@@ -245,17 +307,18 @@ class NativeWholeScopeCustodyOwner:
         self._binding = (scope._binding, scope._scope, scope._target_pid)
         expected = (_HEADER.pack(0x3151574C, 1, 14, 1, 0, 0) + scope._binding + scope._scope
                     + struct.pack("<Q", scope._target_pid) + publication_bytes)
-        records = _read_records(self._directory)
-        if (set(records) != set(_NAMES) or records[_NAMES[0]][0] != expected
-                or records[_NAMES[1]][0] != b""):
+        _directory, names = _profile_shape(self.profile)
+        records = _records_for(self._directory, self.profile)
+        if (set(records) != set(names) or records[names[0]][0] != expected
+                or records[names[1]][0] != b""):
             _fail("registration_unknown")
         self._records = records
         reference = {
-            "profile": CUSTODY_PROFILE, "path": self._path,
+            "profile": self.profile, "path": self._path,
             "directory_chain": [list(pin) for pin in self._identities],
             "registration": expected.hex(),
-            "record_identities": [list(records[name][1]) for name in _NAMES],
-            "registration_observed_pin": list(records[_NAMES[0]][2]),
+            "record_identities": [list(records[name][1]) for name in names],
+            "registration_observed_pin": list(records[names[0]][2]),
         }
         self._check()
         self._reference = NativeWholeScopeCustodyReference(_json(reference))
@@ -264,17 +327,18 @@ class NativeWholeScopeCustodyOwner:
         self._check()
         if self._records is None:
             _fail("registration_unknown")
-        records = _read_records(self._directory)
-        if set(records) != set(_NAMES):
+        _directory, names = _profile_shape(self.profile)
+        records = _records_for(self._directory, self.profile)
+        if set(records) != set(names):
             _fail("record_changed")
-        for name in _NAMES:
+        for name in names:
             if records[name][1] != self._records[name][1]:
                 _fail("record_changed")
-        if records[_NAMES[0]] != self._records[_NAMES[0]]:
+        if records[names[0]] != self._records[names[0]]:
             _fail("record_changed")
-        expected = bytearray(self._records[_NAMES[0]][0])
-        struct.pack_into("<II", expected, 8, 15, 2)
-        if records[_NAMES[1]][0] != (bytes(expected) if terminal else b""):
+        observation = _terminal_observation(self._records[names[0]][0], records[names[1]][0], self.profile)
+        if (terminal and (observation is None or observation["reason"] != "normal")
+                or not terminal and observation is not None):
             _fail("terminal_unknown" if terminal else "record_changed")
         self._check()
 
@@ -303,13 +367,14 @@ class NativeWholeScopeCustodyOwner:
             raise first
 
 
-def _acquire_whole_scope_custody(scope):
+def _acquire_whole_scope_custody(scope, *, profile=CUSTODY_PROFILE):
     from .native_whole_scope import NativeWholeScopeOwner
 
+    _profile_shape(profile)
     if (type(scope) is not NativeWholeScopeOwner or scope._closed or scope._published is None
             or scope._channels_prepared or scope._final_intent is not None or scope._custody_owner is not None):
         _fail("owner_invalid")
-    owner = NativeWholeScopeCustodyOwner(_TOKEN, scope)
+    owner = NativeWholeScopeCustodyOwner(_TOKEN, scope, profile=profile)
     scope._custody_owner = owner
     owner._acquire()
     return owner
@@ -325,10 +390,11 @@ def _parse_reference(reference):
     if (type(value) is not dict or set(value) != {
             "profile", "path", "directory_chain", "registration", "record_identities",
             "registration_observed_pin"} or _json(value) != reference.canonical_bytes
-            or value["profile"] != CUSTODY_PROFILE or type(value["path"]) is not str):
+            or type(value["path"]) is not str):
         _fail("reference_invalid")
+    directory, _names_for_profile = _profile_shape(value["profile"])
     _text(os.fsencode(value["path"]) + b"\0")
-    if value["path"].split("/")[-1] != _DIRECTORY:
+    if value["path"].split("/")[-1] != directory:
         _fail("reference_invalid")
     chains = value["directory_chain"]
     identities = value["record_identities"]
@@ -378,43 +444,55 @@ def inspect_native_whole_scope_custody(reference):
     report = {
         "state": "unknown", "codes": ["native_whole_scope_custody_unknown"],
         "registration_record_observed": False, "terminal_record_observed": False,
+        "abnormal_record_observed": False, "recorded_reason": None,
+        "recorded_stop_attempted": False, "recorded_scope_empty": False,
+        "recorded_bootstrap_exit": False, "recorded_guardian_exact_reaped": False,
         "durable_acknowledgement_verified": False, "cleanup_status": "unknown",
         "native_success": False, "whole_group_cleanup_verified": False,
         "original_quiescence_observed": False, "production_admission": False,
         "publication_authority": False, "online_publication": False,
     }
+    unknown_observations = {key: report[key] for key in (
+        "state", "codes", "registration_record_observed", "terminal_record_observed",
+        "abnormal_record_observed", "recorded_reason", "recorded_stop_attempted",
+        "recorded_scope_empty", "recorded_bootstrap_exit", "recorded_guardian_exact_reaped",
+    )}
     descriptors = []
     try:
         value, expected = _parse_reference(reference)
+        profile = value["profile"]
+        _directory, names = _profile_shape(profile)
         baseline = reference.canonical_bytes
         descriptors, identities = _open_chain(value["path"])
         if [list(pin) for pin in identities] != value["directory_chain"]:
             _fail("directory_changed")
-        before = _read_records(descriptors[-1])
-        if set(before) != set(_NAMES):
+        before = _records_for(descriptors[-1], profile)
+        if set(before) != set(names):
             _fail("record_shape")
-        if ([list(before[name][1]) for name in _NAMES] != value["record_identities"]
-                or list(before[_NAMES[0]][2]) != value["registration_observed_pin"]
-                or before[_NAMES[0]][0] != expected):
+        if ([list(before[name][1]) for name in names] != value["record_identities"]
+                or list(before[names[0]][2]) != value["registration_observed_pin"]
+                or before[names[0]][0] != expected):
             _fail("record_changed")
-        terminal = bytearray(expected)
-        struct.pack_into("<II", terminal, 8, 15, 2)
-        if before[_NAMES[1]][0] not in (b"", bytes(terminal)):
-            _fail("record_changed")
+        observation = _terminal_observation(expected, before[names[1]][0], profile)
         _check_chain(value["path"], descriptors, identities)
-        if reference.canonical_bytes != baseline or _read_records(descriptors[-1]) != before:
+        if reference.canonical_bytes != baseline or _records_for(descriptors[-1], profile) != before:
             _fail("record_changed")
-        observed = bool(before[_NAMES[1]][0])
-        report.update(state="terminal_record_observed" if observed else "registration_prefix_observed",
-                      codes=[], registration_record_observed=True, terminal_record_observed=observed)
+        observed = observation is not None
+        abnormal = observed and observation["reason"] != "normal"
+        facts = observation["facts"] if observed else 0
+        report.update(state=("abnormal_record_observed" if abnormal else "terminal_record_observed")
+                      if observed else "registration_prefix_observed", codes=[],
+                      registration_record_observed=True, terminal_record_observed=observed,
+                      abnormal_record_observed=abnormal,
+                      recorded_reason=observation["reason"] if observed else None,
+                      recorded_stop_attempted=bool(facts & 1), recorded_scope_empty=bool(facts & 2),
+                      recorded_bootstrap_exit=bool(facts & 4), recorded_guardian_exact_reaped=bool(facts & 8))
     except Exception:  # noqa: BLE001 - malformed/partial private evidence always remains unknown.
-        report.update(state="unknown", codes=["native_whole_scope_custody_unknown"],
-                      registration_record_observed=False, terminal_record_observed=False)
+        report.update(unknown_observations)
     finally:
         for fd in reversed(descriptors):
             try:
                 os.close(fd)
             except OSError:
-                report.update(state="unknown", codes=["native_whole_scope_custody_unknown"],
-                              registration_record_observed=False, terminal_record_observed=False)
+                report.update(unknown_observations)
     return report

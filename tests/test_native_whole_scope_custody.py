@@ -49,7 +49,7 @@ def test_malformed_reference_is_bounded_and_returns_fixed_unknown(raw, monkeypat
 
 
 @pytest.fixture
-def original(tmp_path, monkeypatch):
+def original(tmp_path, monkeypatch, request):
     if sys.platform != "linux":
         pytest.skip("actual Linux statx/xattr mechanisms")
     # Project only root installation metadata at the fixture helper boundary.
@@ -90,9 +90,10 @@ def original(tmp_path, monkeypatch):
     owner._publication_pins = ((whole._kernel_identity(parent), None),)
     monkeypatch.setattr(owner, "_check_published_grants", lambda: None)
     monkeypatch.setattr(owner, "_check_installation", lambda: None)
-    child = owner.acquire_custody_owner()
+    profile = getattr(request, "param", custody.CUSTODY_PROFILE)
+    child = owner.acquire_custody_owner(profile=profile)
     try:
-        yield owner, child, attempt / custody._DIRECTORY
+        yield owner, child, attempt / custody._profile_shape(profile)[0]
     finally:
         child.close()
         owner.close()
@@ -109,7 +110,7 @@ def _register(owner, child, path):
                             for i in range(3))
     registration = (whole._HEADER.pack(0x3151574C, 1, 14, 1, 0, 0) + owner._binding
                     + owner._scope + struct.pack("<Q", owner._target_pid) + publications)
-    for name, raw in zip(custody._NAMES, (registration, b""), strict=True):
+    for name, raw in zip(custody._profile_shape(child.profile)[1], (registration, b""), strict=True):
         fd = os.open(path / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
         try:
             os.write(fd, raw)
@@ -310,3 +311,153 @@ def test_closed_original_retires_directory_fds_and_retained_reference_is_diagnos
     with pytest.raises(custody.NativeWholeScopeCustodyError, match="owner_invalid"):
         _ = child.reference
     assert custody.inspect_native_whole_scope_custody(reference)["cleanup_status"] == "unknown"
+
+
+def _v2_terminal(registration, *, reason=0, facts=10, observed=None):
+    raw = bytearray(registration)
+    struct.pack_into("<III", raw, 4, 2, 19 if reason == 0 else 20, 2)
+    return bytes(raw) + custody._EVENT_FACTS.pack(
+        reason, facts, time.monotonic_ns() if observed is None else observed,
+    )
+
+
+def _wire_registration():
+    binding = whole._BINDING.pack(
+        time.monotonic_ns() + 20_000_000_000,
+        *(bytes(str(i), "ascii") * 64 + b"\0" for i in range(1, 7)),
+        65534, 65534, 0, *([0] * 32),
+    )
+    publications = b"".join(whole._PUBLICATION.pack(71, 81 + i, 12, 15, 16, b"e" * 64 + b"\0")
+                            for i in range(3))
+    return (whole._HEADER.pack(0x3151574C, 1, 14, 1, 0, 0) + binding
+            + whole._IDENTITY.pack(31, 41, 51, 0, 0, stat.S_IFDIR | 0o700, 0)
+            + struct.pack("<Q", 123) + publications)
+
+
+@pytest.mark.parametrize("reason,facts", [(0, 10), (1, 1), (2, 3), (3, 5), (4, 15)])
+def test_v2_finite_reasons_keep_stop_empty_exit_and_reap_independent(reason, facts):
+    registration = _wire_registration()
+    event = _v2_terminal(registration, reason=reason, facts=facts)
+    assert len(event) == 941
+    assert custody._terminal_observation(registration, event, custody.CUSTODY_V2_PROFILE) == {
+        "reason": custody._REASONS[reason], "facts": facts,
+    }
+    # Neither the v2 event nor its context can be silently selected under v1.
+    with pytest.raises(custody.NativeWholeScopeCustodyError):
+        custody._terminal_observation(registration, event, custody.CUSTODY_PROFILE)
+
+
+@pytest.mark.parametrize("fault", [
+    "partial", "extra", "version", "operation", "sequence", "rights", "reserved",
+    "launch", "scope", "target", "publication", "reason", "unknown-fact",
+    "normal-with-stop", "normal-with-bootstrap-exit", "abnormal-without-stop",
+    "zero-time", "at-deadline", "after-deadline", "v1-normal",
+])
+def test_v2_refuses_invalid_context_facts_time_and_legacy_terminal(fault):
+    registration = _wire_registration()
+    event = bytearray(_v2_terminal(registration))
+    if fault == "partial":
+        event.pop()
+    elif fault == "extra":
+        event.append(0)
+    elif fault in {"version", "operation", "sequence", "rights", "reserved"}:
+        offset, value = {"version": (4, 1), "operation": (8, 20), "sequence": (12, 1),
+                         "rights": (16, 1), "reserved": (20, 1)}[fault]
+        struct.pack_into("<I", event, offset, value)
+    elif fault in {"launch", "scope", "target", "publication"}:
+        offset = {"launch": whole._HEADER.size + 8,
+                  "scope": whole._HEADER.size + whole._BINDING.size + 8,
+                  "target": whole._HEADER.size + whole._BINDING.size + whole._IDENTITY.size,
+                  "publication": whole._MESSAGE_SIZE - 65}[fault]
+        event[offset] ^= 1
+    elif fault == "reason":
+        struct.pack_into("<I", event, whole._MESSAGE_SIZE, 5)
+    elif fault in {"unknown-fact", "normal-with-stop", "normal-with-bootstrap-exit"}:
+        struct.pack_into("<I", event, whole._MESSAGE_SIZE + 4,
+                         {"unknown-fact": 26, "normal-with-stop": 11, "normal-with-bootstrap-exit": 14}[fault])
+    elif fault == "abnormal-without-stop":
+        event[:] = _v2_terminal(registration, reason=1, facts=2)
+    elif fault in {"zero-time", "at-deadline", "after-deadline"}:
+        deadline = whole._BINDING.unpack_from(registration, whole._HEADER.size)[0]
+        struct.pack_into("<Q", event, whole._MESSAGE_SIZE + 8,
+                         {"zero-time": 0, "at-deadline": deadline, "after-deadline": deadline + 1}[fault])
+    else:
+        event[:] = registration
+        struct.pack_into("<II", event, 8, 15, 2)
+    with pytest.raises(custody.NativeWholeScopeCustodyError, match="record_changed"):
+        custody._terminal_observation(registration, bytes(event), custody.CUSTODY_V2_PROFILE)
+
+
+@LINUX
+@pytest.mark.parametrize("original", [custody.CUSTODY_V2_PROFILE], indirect=True)
+@pytest.mark.parametrize("reason,facts", [(0, 10), (1, 1), (2, 3), (3, 5), (4, 15)])
+def test_v2_original_records_remain_diagnostic_and_never_recover_ack(original, reason, facts):
+    owner, child, path = original
+    assert child.profile == custody.CUSTODY_V2_PROFILE
+    registration = _register(owner, child, path)
+    reference = child.reference
+    child._check_registration()
+    prefix = custody.inspect_native_whole_scope_custody(reference)
+    assert prefix["state"] == "registration_prefix_observed"
+    assert prefix["recorded_reason"] is None
+    (path / custody._V2_NAMES[1]).write_bytes(_v2_terminal(registration, reason=reason, facts=facts))
+    if reason == 0:
+        child._check_registration(terminal=True)
+    else:
+        with pytest.raises(custody.NativeWholeScopeCustodyError, match="terminal_unknown"):
+            child._check_registration(terminal=True)
+    observed = custody.inspect_native_whole_scope_custody(reference)
+    assert observed["state"] == ("terminal_record_observed" if reason == 0 else "abnormal_record_observed")
+    assert observed["recorded_reason"] == custody._REASONS[reason]
+    assert observed["abnormal_record_observed"] is (reason != 0)
+    assert observed["recorded_stop_attempted"] is bool(facts & 1)
+    assert observed["recorded_scope_empty"] is bool(facts & 2)
+    assert observed["recorded_bootstrap_exit"] is bool(facts & 4)
+    assert observed["recorded_guardian_exact_reaped"] is bool(facts & 8)
+    assert observed["cleanup_status"] == "unknown"
+    assert not any(observed[key] for key in (
+        "durable_acknowledgement_verified", "native_success", "whole_group_cleanup_verified",
+        "original_quiescence_observed", "production_admission", "publication_authority", "online_publication",
+    ))
+    child.close()
+    assert custody.inspect_native_whole_scope_custody(reference) == observed
+
+
+@LINUX
+@pytest.mark.parametrize("original", [custody.CUSTODY_V2_PROFILE], indirect=True)
+@pytest.mark.parametrize("fault", ["partial", "replaced", "mode", "wrong-profile", "wrong-filename"])
+def test_v2_wrong_or_partial_original_records_remain_unknown(original, fault):
+    owner, child, path = original
+    registration = _register(owner, child, path)
+    reference = child.reference
+    terminal = path / custody._V2_NAMES[1]
+    terminal.write_bytes(_v2_terminal(registration, reason=1, facts=1))
+    if fault == "partial":
+        terminal.write_bytes(terminal.read_bytes()[:-1])
+    elif fault == "replaced":
+        # Keep the original inode alive so immediate inode reuse cannot mask substitution.
+        terminal.rename(path.parent / "retained-terminal")
+        terminal.write_bytes((path.parent / "retained-terminal").read_bytes())
+        terminal.chmod(0o600)
+    elif fault == "mode":
+        terminal.chmod(0o640)
+    elif fault == "wrong-profile":
+        value = json.loads(reference.canonical_bytes)
+        value["profile"] = custody.CUSTODY_PROFILE
+        reference = custody.NativeWholeScopeCustodyReference(custody._json(value))
+    else:
+        terminal.rename(path / custody._NAMES[1])
+    observed = custody.inspect_native_whole_scope_custody(reference)
+    assert observed["state"] == "unknown" and observed["recorded_reason"] is None
+    assert not any(observed[key] for key in (
+        "registration_record_observed", "terminal_record_observed", "abnormal_record_observed",
+        "recorded_stop_attempted", "recorded_scope_empty", "recorded_bootstrap_exit",
+        "recorded_guardian_exact_reaped", "durable_acknowledgement_verified",
+    ))
+
+
+@pytest.mark.parametrize("profile", [None, True, {}, "v2", "linux-whole-scope-private-custody-v3"])
+def test_unknown_custody_profile_refuses_before_any_directory_acquisition(profile, monkeypatch):
+    monkeypatch.setattr(custody.os, "mkdir", lambda *_a, **_kw: pytest.fail("no directory permitted"))
+    with pytest.raises(custody.NativeWholeScopeCustodyError, match="profile_invalid"):
+        custody._acquire_whole_scope_custody(object(), profile=profile)

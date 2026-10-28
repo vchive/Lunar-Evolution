@@ -474,7 +474,7 @@ class NativeWholeScopeOwner:
 
         return _acquire_fixed_u_input_owner(self)
 
-    def acquire_custody_owner(self):
+    def acquire_custody_owner(self, *, profile="linux-whole-scope-private-custody-v1"):
         """Reserve private R storage beneath this original attempt, once.
 
         This explicit selection grants only diagnostic persistence; it adds no
@@ -482,7 +482,7 @@ class NativeWholeScopeOwner:
         """
         from .native_whole_scope_custody import _acquire_whole_scope_custody
 
-        return _acquire_whole_scope_custody(self)
+        return _acquire_whole_scope_custody(self, profile=profile)
 
     @property
     def original_custody_owner(self):
@@ -635,7 +635,10 @@ class NativeWholeScopeOwner:
         # keeps its exclusive unreaped B relationship through pidfd delivery.
         self._bootstrap = process
         bootstrap_pidfd = self._own(os.pidfd_open(process.pid, 0))
-        command = [f"/proc/self/fd/{self._image_fd}", "--supervisor-v1", "--profile-fd", str(self._profile_fd),
+        mode = ("--supervisor-custody-v2" if self._custody_owner is not None
+                and self._custody_owner.profile == "linux-whole-scope-private-custody-v2"
+                else "--supervisor-v1")
+        command = [f"/proc/self/fd/{self._image_fd}", mode, "--profile-fd", str(self._profile_fd),
             "--delegation-fd", str(self._delegation_fd), "--bootstrap-pidfd", str(bootstrap_pidfd),
             "--controller-fd", str(self._controller_child.fileno()), "--enrollment-fd", str(self._enrollment_child.fileno()),
             "--lifecycle-fd", str(self._lifecycle_child.fileno()), "--controller-lifeline-fd", str(controller_lifeline_fd),

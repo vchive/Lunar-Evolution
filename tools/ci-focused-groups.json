@@ -810,13 +810,14 @@
       "label": "Verify installed scope ownership and original native descriptor transfer",
       "files": [
         "tests/test_native_whole_scope_owner.py",
+        "tests/test_native_whole_scope_bridge.py",
         "tests/test_native_whole_scope_bootstrap.py",
         "tests/test_native_whole_scope_build.py",
         "tests/test_native_whole_scope_components.py",
         "tests/test_native_original_publication.py",
         "tests/test_native_original_publication_linux.py"
       ],
-      "expected_tests": 141,
+      "expected_tests": 144,
       "zero_skips": false
     },
     {
@@ -853,9 +854,10 @@
       "id": "native-whole-scope-custody",
       "label": "Verify original native custody consumer and read-only abnormal recovery",
       "files": [
-        "tests/test_native_whole_scope_custody.py"
+        "tests/test_native_whole_scope_custody.py",
+        "tests/test_native_whole_scope_abnormal.py"
       ],
-      "expected_tests": 36,
+      "expected_tests": 96,
       "zero_skips": true
     }
   ]

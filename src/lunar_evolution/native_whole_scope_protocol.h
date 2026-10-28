@@ -279,4 +279,97 @@ static inline int wq_receive(int socket_fd, wq_message_t *message, int *rights, 
         rights[i] = acquired[i];
     return 0;
 }
+/* The optional storage-only v2 protocol does not change any v1 packet. Its
+ * explicit supervisor entry selects the larger terminal record, never B/T. */
+#define WQ_CUSTODY_VERSION 2u
+#define WQ_CUSTODY_NORMAL 19u
+#define WQ_CUSTODY_ABNORMAL 20u
+#define WQ_CUSTODY_ACK 21u
+enum wq_custody_reason {
+    WQ_CUSTODY_OK = 0,
+    WQ_CUSTODY_CONTROLLER_LOST = 1,
+    WQ_CUSTODY_DEADLINE = 2,
+    WQ_CUSTODY_RECEIVER_FAULT = 3,
+    WQ_CUSTODY_PROTOCOL = 4
+};
+#define WQ_CUSTODY_STOP_ATTEMPTED 1u
+#define WQ_CUSTODY_SCOPE_EMPTY 2u
+#define WQ_CUSTODY_BOOTSTRAP_EXIT 4u
+#define WQ_CUSTODY_GUARDIAN_REAPED 8u
+#define WQ_CUSTODY_NORMAL_FACTS (WQ_CUSTODY_SCOPE_EMPTY | WQ_CUSTODY_GUARDIAN_REAPED)
+typedef struct __attribute__((packed)) {
+    wq_message_t original;
+    uint32_t reason, facts;
+    uint64_t observed_monotonic_ns;
+} wq_custody_event_t;
+_Static_assert(sizeof(wq_custody_event_t) == 941, "custody v2 event ABI");
+
+static inline int wq_custody_event_check(const wq_custody_event_t *event,
+                                        const wq_message_t *registration) {
+    wq_message_t expected = *registration;
+    expected.version = WQ_CUSTODY_VERSION;
+    expected.operation = event->original.operation;
+    expected.sequence = 2;
+    return (expected.operation != WQ_CUSTODY_NORMAL &&
+            expected.operation != WQ_CUSTODY_ABNORMAL) ||
+           memcmp(&event->original, &expected, sizeof(expected)) ||
+           !event->observed_monotonic_ns ||
+           event->observed_monotonic_ns >= registration->binding.deadline_ns ||
+           (event->facts & ~15u) ||
+           (expected.operation == WQ_CUSTODY_NORMAL
+                ? event->reason != WQ_CUSTODY_OK || event->facts != WQ_CUSTODY_NORMAL_FACTS
+                : event->reason < WQ_CUSTODY_CONTROLLER_LOST ||
+                      event->reason > WQ_CUSTODY_PROTOCOL ||
+                      !(event->facts & WQ_CUSTODY_STOP_ATTEMPTED));
+}
+
+static inline int wq_custody_send(int fd, const wq_custody_event_t *event) {
+    if (wq_remaining(event->original.binding.deadline_ns) < 0)
+        return -1;
+    ssize_t size = send(fd, event, sizeof(*event), MSG_DONTWAIT | MSG_NOSIGNAL);
+    if (size < 0)
+        return -1;
+    if (size != (ssize_t)sizeof(*event)) {
+        errno = EPROTO;
+        return -1;
+    }
+    return wq_remaining(event->original.binding.deadline_ns) < 0 ? -1 : 0;
+}
+
+static inline int wq_custody_receive(int fd, wq_custody_event_t *event, uint64_t deadline) {
+    if (wq_remaining(deadline) < 0)
+        return -1;
+    unsigned char raw[sizeof(*event) + 1];
+    struct iovec vector = {raw, sizeof(raw)};
+    char ancillary[CMSG_SPACE(sizeof(int) * WQ_MAX_RIGHTS)];
+    struct msghdr header;
+    memset(&header, 0, sizeof(header));
+    memset(ancillary, 0, sizeof(ancillary));
+    header.msg_iov = &vector;
+    header.msg_iovlen = 1;
+    header.msg_control = ancillary;
+    header.msg_controllen = sizeof(ancillary);
+    ssize_t size = recvmsg(fd, &header, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
+    if (size < 0)
+        return -1;
+    int invalid = 0;
+    for (struct cmsghdr *control = CMSG_FIRSTHDR(&header); control;
+         control = CMSG_NXTHDR(&header, control)) {
+        invalid = 1;
+        if (control->cmsg_level == SOL_SOCKET && control->cmsg_type == SCM_RIGHTS &&
+            control->cmsg_len >= CMSG_LEN(0)) {
+            size_t count = (control->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+            int *rights = (int *)CMSG_DATA(control);
+            for (size_t i = 0; i < count; ++i)
+                close(rights[i]);
+        }
+    }
+    if (size != (ssize_t)sizeof(*event) || invalid ||
+        header.msg_flags & (MSG_TRUNC | MSG_CTRUNC) || wq_remaining(deadline) < 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    memcpy(event, raw, sizeof(*event));
+    return 0;
+}
 #endif

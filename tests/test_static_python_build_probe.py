@@ -138,6 +138,21 @@ def test_failed_runtime_requires_attempt_and_fixed_failure_label():
         _parse(payload)
 
 
+@pytest.mark.parametrize("exit_code", [-128, -1, 1, 255])
+def test_succeeded_runtime_rejects_nonzero_exit_code(exit_code: int):
+    payload = _vector(runtime="succeeded")
+    payload["runtime"]["exit_code"] = exit_code
+    with pytest.raises(probe.StaticPythonBuildProbeError, match="_runtime$"):
+        _parse(payload)
+
+
+@pytest.mark.parametrize("runtime", ["succeeded", "failed"])
+def test_zero_exit_code_preserves_reported_runtime_status(runtime: str):
+    payload = _vector(runtime=runtime)
+    payload["runtime"]["exit_code"] = 0
+    assert _parse(payload).runtime_status == runtime
+
+
 def test_duplicate_and_noncanonical_json_refuse_without_context():
     payload = _vector()
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()

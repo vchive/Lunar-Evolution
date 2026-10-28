@@ -1,8 +1,64 @@
 # Original whole-scope private receiver custody
 
-Status: default-off software implemented and consolidated software regression
-completed as recorded below. This is progress on the original WQ-07 consumer, not complete abnormal
-durable-event acceptance or deployed custody. The native binary ABI is unchanged.
+## Explicit v2 continuation (software contract, 2026-10-28)
+
+The separately selected `linux-whole-scope-private-custody-v2` keeps v1 as the
+default and uses `.whole-scope-custody-v2`, `scope-registration-v2.bin` and
+`scope-terminal-v2.bin`. Only the same original owner may select it before
+intent/channel creation. S runs with the explicit `--supervisor-custody-v2`
+mode; it does not negotiate a fallback. The original registration is unchanged:
+925 bytes, version 1, operation 14, sequence 1.
+
+The v2 terminal is exactly 941 bytes: the original 925-byte context with header
+version 2, operation 19 (normal) or 20 (abnormal), sequence 2, zero rights and
+reserved fields; followed by little-endian `uint32 reason`, `uint32 facts`,
+`uint64 observed_monotonic_ns`. Reason values are 0 normal, 1 controller lost,
+2 deadline, 3 receiver fault and 4 protocol fault. Facts are independent bits:
+0 stop attempted, 1 original scope empty observed, 2 original B exit observed,
+3 original G exact-child reaped. Normal requires exactly bits 1 and 3: B is
+still waiting for the final S completion and has not yet exited. Abnormal
+requires stop-attempted; other facts may only reflect actual original
+observations. No unknown bits are permitted. Observation time must be strictly
+positive and strictly before the original deadline; expiry cannot create a
+new persistence allowance or valid late event.
+
+R must compare the original context, shape and facts, create/write only its
+original fixed files, complete file/directory durability, then send a separate
+925-byte version-2/operation-21/sequence-2 ACK with the original context. An
+event never self-certifies this ACK. The original surviving S stops the scope
+before best-effort abnormal persistence. Storage and ACK loss cannot delay G's
+independent stop or renew the deadline. R fault or exhausted budget may leave
+only a registration prefix. S death remains unknown: the existing G/R topology
+does not supply a replacement original reaper or durable G-to-R event route.
+
+The live normal consumer still requires original native completion before
+checking the record. Read-only inspection may expose the fixed recorded reason
+and separate recorded facts, but all durable-ACK, cleanup, quiescence, admission
+and publication authorities remain false. Its reads observe file identities;
+they are not transferred R creator file descriptions. Full S-death custody,
+creator-FD delivery and actual blocked-storage/root-profile acceptance remain
+open. This slice is not the complete WQ-07 accepting protocol.
+
+Planned concentrated validation covers unchanged default framing, real v2
+receiver packets/files/ACK ordering, malformed/replayed/wrong-context packets,
+all fixed reasons and independent facts, missing/partial/late events, replaced
+files, lost ACK/receiver, and monitor pre-retention cleanup faults. No fixture
+claims installed root/U/cgroup acceptance.
+
+The Darwin fallback for this v2 slice has now executed once from frozen tree
+`e7d959d2a4e3d1b5526116d71ec1635d7f3153f6`: 19 complete test files, 16 workers,
+641 collected nodes, 391 passed, 250 skipped, and no failures or errors in 20.49
+seconds. Source before/after manifests, worker collections, and module origins all
+matched; the run used the selected CPython 3.13.12 environment with zero retries.
+The skipped cases require Linux/root primitives, so this is a Darwin software
+fallback only. It does not establish Linux acceptance, immutable custody, or
+production admission. Evidence and an independent consistency record are retained
+under `parallel-batch-20261027/custody-v2-monitor-probe-affected-darwin-20261028-r2/`.
+
+The following sections describe the v1 implementation and its previously
+completed consolidated software regression. V1 remains default-off, its native
+binary ABI is unchanged, and neither version supplies complete WQ-07 deployment
+acceptance.
 
 ## Selected original path
 
@@ -67,10 +123,10 @@ scope, signal, gate release, write, fsync, repair, retry or deadline. Public out
 contains fixed states/codes and booleans; it does not echo private paths, target
 identities, record bytes or arbitrary exception messages.
 
-## Abnormal boundary and remaining tasks
+## V1 abnormal boundary and remaining tasks
 
-The existing R receives registration and **normal** terminal only. The current C
-abnormal path stops independently and retires exact owned children; it does not
+The v1 R receives registration and **normal** terminal only. Its C abnormal
+path stops independently and retires exact owned children; it does not
 create a separately versioned durable abnormal event. A retained registration
 prefix can therefore be inspected after interruption, but cannot establish the
 abnormal trigger, stop result, complete emptiness, R ACK or exact retirement.
@@ -99,7 +155,7 @@ hard disconnect or production acceptance. macOS skips the Linux mechanism cases.
 The tests were executed in the consolidated runs recorded below; installation
 acceptance remains separate.
 
-## Consolidated execution and affected follow-up
+## Previous v1 consolidated execution and affected follow-up
 
 The frozen `87f0ca9d` Linux batch executed 1215 nodes once: 1174 passed, four
 fixture assertions failed, and 37 skipped in 45.459845 seconds. The first failures

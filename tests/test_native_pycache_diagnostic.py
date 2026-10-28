@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
+import threading
+import time
+from types import SimpleNamespace
 
 import pytest
 from _native_target_fixture import compile_native_target
@@ -16,6 +20,7 @@ from _native_target_fixture import compile_native_target
 from lunar_evolution import native_pycache_diagnostic as diagnostic
 from lunar_evolution import native_trusted_attempt as runner
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
+from lunar_evolution.producer_grant_anchors import ProducerGrantRequest, hold_producer_grants
 from lunar_evolution.producer_launcher import (
     build_producer_launch_attestation,
     build_producer_launch_intent,
@@ -53,6 +58,74 @@ def test_default_none_scope_does_not_acquire_grants_or_monitor():
         None, held_grants=None, working=None, output=None, deadline_ns=0,
     ) as scope:
         assert scope is None
+
+
+@pytest.mark.parametrize("failure_kind", ("memory", "interrupt"))
+@pytest.mark.parametrize("cleanup_fault", (False, True))
+def test_reader_transfer_failure_retires_original_resources_without_replacing_primary(
+    tmp_path, monkeypatch, failure_kind, cleanup_fault,
+):
+    # Portable real resources exercise acquisition transfer only, without an
+    # inotify acquisition, native writer, or enclosure/quiescence observation.
+    working, output = tmp_path / "work", tmp_path / "output"
+    working.mkdir()
+    output.mkdir()
+    reader = object.__new__(diagnostic.FinitePycacheMonitor)
+    reader._stop = threading.Event()
+    reader._data_lock, reader._io_lock = threading.Lock(), threading.Lock()
+    reader._failures, reader._closed = [], False
+    reader._fd = os.open(os.devnull, os.O_RDONLY)
+    reader._owned_directory_fds = [os.open(working, os.O_RDONLY)]
+    descriptors = (reader._fd, *reader._owned_directory_fds)
+    reader._thread = threading.Thread(target=reader._stop.wait, daemon=True)
+    reader._thread.start()
+    capture = SimpleNamespace(_original_capture=reader)
+    primary = MemoryError("inert reader transfer failure") if failure_kind == "memory" else KeyboardInterrupt()
+    acquisitions, closes, delivered = [], [], []
+    original_close = os.close
+
+    def arm(**_options):
+        acquisitions.append(capture)
+        return capture
+
+    def set_attribute(self, name, value):
+        if name == "_original_reader" and value is reader:
+            raise primary
+        object.__setattr__(self, name, value)
+
+    def close(descriptor):
+        original_close(descriptor)
+        if descriptor in descriptors and descriptor not in closes:
+            closes.append(descriptor)
+            if cleanup_fault and descriptor == descriptors[0]:
+                raise OSError("inert released-reader close uncertainty")
+
+    monkeypatch.setattr(GrantBoundPycacheMonitor, "arm_before_target", arm)
+    monkeypatch.setattr(diagnostic._NativePycacheDiagnosticScope, "__setattr__", set_attribute)
+    monkeypatch.setattr(os, "close", close)
+    requests = tuple(ProducerGrantRequest(str(path), "writable-directory") for path in (working, output))
+    try:
+        with hold_producer_grants(requests) as owner:
+            request = diagnostic.NativePycacheDiagnosticRequest(lambda *_args: delivered.append(True))
+            with pytest.raises(type(primary)) as caught, diagnostic.original_native_pycache_diagnostic_scope(
+                request, held_grants=owner, working=working, output=output,
+                deadline_ns=time.monotonic_ns() + 10**10,
+            ) as scope:
+                scope.arm_before_target(lambda: object())
+            assert caught.value is primary
+            assert acquisitions == [capture] and delivered == []
+            assert reader._closed and reader._fd == -1 and reader._owned_directory_fds == []
+            assert not reader._thread.is_alive()
+            assert sorted(closes) == sorted(descriptors)
+            assert getattr(primary, "__notes__", []) == (
+                ["native_pycache_diagnostic_original_reader_cleanup_unknown"] if cleanup_fault else []
+            )
+            for descriptor in descriptors:
+                with pytest.raises(OSError):
+                    os.fstat(descriptor)
+            owner.validate()
+    finally:
+        diagnostic._ORIGINAL_READER_RELEASE(reader)
 
 
 linux_only = pytest.mark.skipif(sys.platform != "linux", reason="actual native Linux diagnostics")

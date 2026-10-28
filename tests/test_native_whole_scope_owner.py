@@ -563,6 +563,7 @@ def test_release_is_one_shot_even_when_first_original_send_fails(monkeypatch):
         assert owner._finished is False
 
 
+@LINUX
 def test_early_completion_and_channel_closure_do_not_grant_quiescence(monkeypatch):
     with _internal_owner() as owner:
         _bound(owner)

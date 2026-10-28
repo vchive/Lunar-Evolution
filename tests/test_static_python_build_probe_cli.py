@@ -80,3 +80,16 @@ def test_inspect_build_probe_rejects_malformed_receipt_without_initializing_home
     assert main(["inspect-static-python-build-probe", str(receipt_path), "--json"]) == 2
     assert json.loads(capsys.readouterr().err) == {"error": "static_python_build_probe_schema"}
     assert not (tmp_path / ".lunar-evolution").exists()
+
+
+def test_inspect_build_probe_rejects_success_with_nonzero_exit_code(tmp_path, capsys):
+    receipt_path = tmp_path / "probe.json"
+    receipt = _receipt()
+    receipt["runtime"].update(status="succeeded", failure=None)
+    receipt_path.write_bytes(json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode())
+
+    assert main(["inspect-static-python-build-probe", str(receipt_path), "--json"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {"error": "static_python_build_probe_runtime"}
+    assert not (tmp_path / ".lunar-evolution").exists()

@@ -190,7 +190,7 @@ def _validate(payload: dict) -> None:
             _fail("runtime")
         if runtime["status"] == "failed":
             _label(runtime["failure"], "runtime")
-        elif runtime["failure"] is not None:
+        elif runtime["exit_code"] != 0 or runtime["failure"] is not None:
             _fail("runtime")
 
     claims = _object(payload["claims"], frozenset(_CLAIMS), "claims")
