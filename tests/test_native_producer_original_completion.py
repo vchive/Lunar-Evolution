@@ -39,9 +39,14 @@ from lunar_evolution.static_python_producer_completion import (
 )
 
 
-def _original(tmp_path, monkeypatch, *, input_solver="openevolve"):
+def _original(tmp_path, monkeypatch, *, input_solver="openevolve", envelope_profile=False, argv_fault=None):
     value = _fixture(tmp_path)
-    request, payload = _lifecycle_vector()
+    if envelope_profile:
+        from test_native_producer_envelope_profile import _envelope_vector
+
+        request, payload = _envelope_vector()
+    else:
+        request, payload = _lifecycle_vector()
     memory = MemorySnapshot("completion-memory", None, ())
     solver_request = SolverRequest.build(
         episode_id="completion-fixture", contract_sha256=value.intent.contract_sha256,
@@ -58,6 +63,21 @@ def _original(tmp_path, monkeypatch, *, input_solver="openevolve"):
     # through validate_native_rsi_launch_inputs while its grants remain held.
     inputs = replace(inputs, launch_binding_sha256="c" * 64)
     argv = (value.intent.argv[0], "--lunar-rsi-input-v1", inputs.manifest_sha256)
+    if envelope_profile:
+        from lunar_evolution.static_python_producer_envelope_source import (
+            fixed_producer_envelope_launch_argv,
+        )
+
+        argv = fixed_producer_envelope_launch_argv(
+            value.intent.argv[0], run_id=value.intent.run_id,
+            producer_fingerprint=value.intent.producer_fingerprint, manifest_sha256=inputs.manifest_sha256,
+        )
+        if argv_fault is not None:
+            changed = list(argv)
+            index, replacement = {"run-id": (2, "other-run"), "fingerprint": (3, "f" * 64),
+                                  "manifest": (5, "f" * 64), "marker": (1, "--foreign-envelope")}[argv_fault]
+            changed[index] = replacement
+            argv = tuple(changed)
     intent = replace(value.intent, argv=argv, argv_sha256=_sha(_raw(list(argv))), intent_sha256=None)
     intent = replace(intent, intent_sha256=intent.digest())
     value.intent = intent
@@ -104,6 +124,11 @@ def _original(tmp_path, monkeypatch, *, input_solver="openevolve"):
                       broker_observation=observed_broker, live_modules_observation=startup)
     value.run = replace(value.run, receipt=receipt, output=output, attempt=attempt)
     _original_output(value, tmp_path, monkeypatch)
+    envelope = None
+    if envelope_profile:
+        raw, info = native._stable_bytes(root / "producer-result.json", limit=128 * 1024,
+                                         deadline=None, monotonic=time.monotonic)
+        envelope = ("producer-result.json", raw, tuple(sorted(info.items())))
     common = {"protocol": COMPLETION_PROTOCOL, "profile": COMPLETION_PROFILE, "solver": "openevolve",
               "manifest_sha256": inputs.manifest_sha256, "target_pid": receipt.pid,
               "deadline_monotonic_ns": deadline_ns}
@@ -114,6 +139,15 @@ def _original(tmp_path, monkeypatch, *, input_solver="openevolve"):
                    "request_body": _material(broker_pin[2]), "reply": _material(broker_pin[4])},
         "artifacts": [{"path": path, **_material(raw)} for path, raw, _stat in snapshots],
     }]
+    if envelope_profile:
+        from lunar_evolution.static_python_producer_envelope_source import (
+            FIXED_PRODUCER_ENVELOPE_PROFILE,
+            FIXED_PRODUCER_ENVELOPE_PROTOCOL,
+        )
+
+        for record in records:
+            record.update(protocol=FIXED_PRODUCER_ENVELOPE_PROTOCOL, profile=FIXED_PRODUCER_ENVELOPE_PROFILE)
+        records[1]["envelope"] = {"path": envelope[0], **_material(envelope[1])}
     wire = b"".join(_raw(record) + b"\n" for record in records)
     read_fd, write_fd = os.pipe()
     capture = NativeFixedProducerCompletionCapture(read_fd, deadline=deadline_ns / 1e9).start()
@@ -127,7 +161,7 @@ def _original(tmp_path, monkeypatch, *, input_solver="openevolve"):
         native._NATIVE_COMPLETION_TOKEN, attempt, inputs=inputs, intent=intent,
         attestation=value.attestation, request=request, reader=capture,
         binding=FixedProducerCompletionBinding("openevolve", receipt.pid, inputs.manifest_sha256, deadline_ns),
-        artifacts=tuple(snapshots), image_identity=image_identity,
+        artifacts=tuple(snapshots), image_identity=image_identity, envelope=envelope,
     )
     return value, inputs, capture, root
 

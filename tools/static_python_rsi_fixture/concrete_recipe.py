@@ -29,6 +29,15 @@ from lunar_evolution.static_python_producer_completion_source import (
     FIXED_PRODUCER_LIFECYCLE_PROFILE,
     compose_fixed_producer_completion_main,
 )
+from lunar_evolution.static_python_producer_envelope_source import (
+    ENVELOPE_ENTRYPOINT_PINS,
+    ENVELOPE_LAUNCHER_PATH,
+    FIXED_PRODUCER_ENVELOPE_PROFILE,
+    compose_fixed_producer_envelope_main,
+)
+from lunar_evolution.static_python_producer_envelope_source import (
+    SOURCE_PINS as ENVELOPE_SOURCE_PINS,
+)
 from tools.static_python_fixture.profile import ALIASES, CORE_BUILTINS, STATIC_ADDITIONS
 from tools.static_python_fixture.tables import emit_static_python_tables
 from tools.static_python_rsi_fixture.build_driver import _preparation_wire
@@ -164,7 +173,7 @@ def _command(argv: list[str], output: str, *, executable: bool = False) -> dict:
 
 def _completion_sources(solver: str, facts: dict, sources: dict[str, bytes]) -> None:
     """Verify the explicitly selected successor without reading or executing source."""
-    if FIXED_LIVE_SINK_LAUNCHER_PATH in sources:
+    if FIXED_LIVE_SINK_LAUNCHER_PATH in sources or ENVELOPE_LAUNCHER_PATH in sources:
         _fail("completion_profile_mismatch")
     pins = {
         COMPLETION_LAUNCHER_PATH: (
@@ -218,6 +227,61 @@ def _completion_sources(solver: str, facts: dict, sources: dict[str, bytes]) -> 
         _fail("completion_source_drift")
 
 
+def _envelope_sources(solver: str, facts: dict, sources: dict[str, bytes]) -> None:
+    """Validate only v2 bytes; a v1 image cannot select v2 through metadata."""
+    if FIXED_LIVE_SINK_LAUNCHER_PATH in sources or COMPLETION_LAUNCHER_PATH in sources:
+        _fail("envelope_profile_mismatch")
+    pins = {
+        ENVELOPE_LAUNCHER_PATH: ENVELOPE_SOURCE_PINS[
+            "tools/static_python_rsi_fixture/assets/launcher_producer_envelope.c"
+        ],
+        "producer/" + solver + "/lunar_fixed.py": ENVELOPE_ENTRYPOINT_PINS[solver],
+    }
+    for path, (size, digest) in pins.items():
+        raw = sources.get(path)
+        if type(raw) is not bytes or len(raw) != size or _sha(raw) != digest:
+            _fail("envelope_source_drift")
+    try:
+        tasks = facts["frozen"]
+        for name, path in (("_lunar_static_main", "runtime/frozen_main.py"),
+                           (solver + ".lunar_fixed", "producer/" + solver + "/lunar_fixed.py")):
+            selected = [task for task in tasks if task["name"] == name]
+            if (len(selected) != 1 or selected[0]["source"] != path
+                    or selected[0]["generator_id"] != name or selected[0]["package"] is not False):
+                _fail("envelope_source_drift")
+        runtime_aliases = facts.get("runtime_module_aliases", [])
+        for alias in runtime_aliases:
+            name = alias["name"]
+            if alias != {"name": name, "source_module": _RUNTIME_ALIASES[name],
+                         "parent_module": name.rpartition(".")[0]}:
+                _fail("envelope_source_drift")
+        arguments = {
+            "frozen_names": tuple(sorted(task["name"] for task in tasks)),
+            "builtin_names": tuple(sorted(set(CORE_BUILTINS) | set(STATIC_ADDITIONS) | {
+                unit["module"] for unit in facts["native_units"] if unit["module"] != "sqlite-library"
+            })),
+            "aliases": tuple(sorted((*((target, name) for name, target in ALIASES),
+                                     *((item["name"], item["source_module"]) for item in runtime_aliases)))),
+            "frozen_packages": tuple(sorted(task["name"] for task in tasks if task["package"])),
+        }
+        main = sources["runtime/frozen_main.py"]
+        separator = f"\n_LUNAR_LIVE_RUNTIME_SHA256 = {FIXED_LIVE_RUNTIME_SOURCE_SHA256!r}\n\n".encode("ascii")
+        offset = FIXED_LIVE_COLLECTOR_SOURCE_BYTES + len(separator) + FIXED_LIVE_RUNTIME_SOURCE_BYTES
+        if type(main) is not bytes or not offset < len(main) <= 64 * 1024:
+            _fail("envelope_source_drift")
+        startup = compose_fixed_python_live_main(
+            solver, **arguments, collector_source=main[-offset:][:FIXED_LIVE_COLLECTOR_SOURCE_BYTES],
+            runtime_observation_source=main[-FIXED_LIVE_RUNTIME_SOURCE_BYTES:],
+        )
+        expected = compose_fixed_producer_envelope_main(
+            solver, startup_main_source=startup, **arguments, profile=FIXED_PRODUCER_ENVELOPE_PROFILE,
+        )
+        if main != expected:
+            _fail("envelope_source_drift")
+    except (KeyError, TypeError, ValueError):
+        _fail("envelope_source_drift")
+
+
 def prepare_cpython_build_recipe(
     preparation: RSIProfilePreparation, *, source_inventory_bytes: bytes,
     expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
@@ -235,7 +299,8 @@ def prepare_cpython_build_recipe(
     """
     if (producer_lifecycle_profile is not None
             and (type(producer_lifecycle_profile) is not str
-                 or producer_lifecycle_profile != FIXED_PRODUCER_LIFECYCLE_PROFILE
+                 or producer_lifecycle_profile not in {FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                                                       FIXED_PRODUCER_ENVELOPE_PROFILE}
                  or runtime_closure is None)):
         _fail("completion_profile_invalid")
     plan = _preparation_wire(preparation)["candidate_build_inputs"]
@@ -286,13 +351,21 @@ def prepare_cpython_build_recipe(
         tasks = facts["frozen"]
         native = facts["native_units"]
         completion_selected = producer_lifecycle_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE
+        envelope_selected = producer_lifecycle_profile == FIXED_PRODUCER_ENVELOPE_PROFILE
         if completion_selected:
             _completion_sources(solver, facts, sources)
+        elif envelope_selected:
+            _envelope_sources(solver, facts, sources)
         elif (COMPLETION_LAUNCHER_PATH in sources
               or (len(sources.get("producer/" + solver + "/lunar_fixed.py", b"")),
                   _sha(sources.get("producer/" + solver + "/lunar_fixed.py", b"")))
               == COMPLETION_ENTRYPOINT_PINS[solver]):
             _fail("completion_profile_required")
+        elif (ENVELOPE_LAUNCHER_PATH in sources
+              or (len(sources.get("producer/" + solver + "/lunar_fixed.py", b"")),
+                  _sha(sources.get("producer/" + solver + "/lunar_fixed.py", b"")))
+              == ENVELOPE_ENTRYPOINT_PINS[solver]):
+            _fail("envelope_profile_required")
         posix_units = [unit for unit in native if unit["module"] == "_posixsubprocess"]
         if posix_units:
             size, digest = _POSIXSUBPROCESS_INPUTS["Modules/_posixsubprocess.c"]
@@ -321,6 +394,9 @@ def prepare_cpython_build_recipe(
                     _fail("socket_input_pin_mismatch")
         for unit in units + target:
             if (unit["source"] == "tools/static_python_rsi_fixture/assets/launcher.c"
+                    and envelope_selected):
+                unit["source"] = ENVELOPE_LAUNCHER_PATH
+            elif (unit["source"] == "tools/static_python_rsi_fixture/assets/launcher.c"
                     and completion_selected):
                 unit["source"] = COMPLETION_LAUNCHER_PATH
             elif (unit["source"] == "tools/static_python_rsi_fixture/assets/launcher.c"

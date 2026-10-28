@@ -381,3 +381,40 @@ stock exclusions, unclosed/partial stages, plan detachment, immutable report
 evidence, NaN/inf/bool/string clock and interruption results, real-mode and
 environment refusal, and backend exception normalization. JUnit reports zero
 failures/errors/skips locally; this is not installation or runtime evidence.
+
+## Explicit generic-envelope delivery successor — 2026-10-28
+
+The default-off v2 software is described in `envelope-delivery.md`. Six new files
+ran 224 passing cases, including actual C launcher compilation with explicitly
+inert Python C API stubs. This is not a static CPython build or solver acceptance.
+
+The consolidated 32-file run on tree `226ad5d51c802b700cb38bb037418dfd947f643a`
+ran 1155 unique cases: 1153 passed, 2 failed, 0 skipped/errors; 137.440 seconds,
+16 workers, zero retries. Both failures are retained: the final inode fault test
+was targeting the removed outer duplicate instead of the remaining genuine
+`ACK -> _observe(expected) -> _fixed`; the source drift test expected
+`RSILearningError` instead of the actual rejecting `RSIFingerprintError`.
+
+Only those two test files changed in successor tree
+`7e773acc96470868f9c72d1ae64a95df43018cc4`. All 10 affected cases passed in
+53.120 seconds, zero retries, retaining actual fault injection and original C1/
+unknown/inode assertions. Product `src` and `tools` bytes are unchanged between
+the two archives. Selecting the latest outcome for each exact testcase identity
+yields 1155 passes; this is not 1163 new tests or a single-tree full rerun.
+
+Both original archives, manifests, JUnit, 16 worker collections and module
+origins were collected independently. The affected run's 34 verification checks
+and 26 original byte references pass. Its original dispatch SSH failed to return
+stdout/EOF; a separate collector reached normal EOF and verified all records.
+A fixed result-file holder observation found no writer. The original dedicated
+local SSH was identified by PID/parent/UID/cwd and terminated; dispatch rc255 is
+retained separately from the completed remote pytest result. No test was rerun
+to repair transport state. Ruff, compileall and both diff checks pass.
+
+Evidence is retained under the main workspace ignored validation root:
+`parallel-batch-20261027/envelope-rejection-combined-jdcv4ai_/` and
+`parallel-batch-20261027/envelope-provenance-fixtures-x4sjs6az/`. The earlier
+`b24440e9` mixed remains a 600-second timeout, zero retries. A new clean-head
+mixed and full CI are still pending. Native full-lifecycle pycache enclosure,
+accepted isolated build/runtime roots and deployment acceptance remain open;
+production admission and online publication remain false.

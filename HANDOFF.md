@@ -1,53 +1,49 @@
 <!-- completion-fresh-batch:start -->
-## 当前执行点：P0–P2 软件合批已补验，长链与生产接线仍开放（2026-10-28）
+## 当前执行点：结果交付软件集中回归完成，mixed/CI 与生产验收仍开放（2026-10-28）
 
-`11761700250457c06e7a2adc0d41d4082ffca261` 唯一 mixed 在原600秒预算下超时：
-600.031756874秒、rc=-15、零retry。原件和来源检查匹配不能代替缺失的JUnit与终态；
-不重派该HEAD。PR #190旧CI失败保留；未锁依赖使pytest9.1.1升级到9.2.0，改变5个
-历史参数ID并触发hostile bytes收集回调。本批改为uv.lock锁定安装，并为新增hostile
-参数指定ID，历史源码/2318节点/SHA不变。
+PR #190 已推送 `b24440e90040e5b61f4867ce2845bb30a82a8577`，仍为 draft，未合入
+main。该 HEAD 的唯一 mixed 在固定 600 秒预算下超时：600.015734113 秒、rc=-15、
+零 retry。24 原件、源码前后与归档一致，终态独审 30/30 通过；没有最终 JUnit、
+loaded-module origins 或 completion，因此 case 失败。原件保留，不重派失败 HEAD。
 
-本轮并行软件已集中回归：
+前批 focused 的最新节点并集已独审为 1812 unique pass：首轮 1456、affected Linux
+355、Darwin 实际非 skip 节点 1；原 20 失败保留且有同 key 后继 pass。各结果绑定各自
+源码，不能说成同一 tree 全量重跑。该证据也不替代下述新代码回归。
 
-- 首轮tree `8c0f2e59d1084b1e3730f586cc2a19607c013d8d`，53文件1809 unique：
-  1788 pass / 20 fail / 1 Darwin skip，228.130秒。18项夹具argv指纹/输入不一致，
-  1项Shinka合成图缺SQLite头输入；另1项重复JSON暴露实际异常未归一化。
-- 正规修复夹具，产品有限归一化OpenEvolve解析错误，补齐原native输入的solver与
-  contract/evaluator/environment/memory复核；不放宽门。后继tree
-  `565f138c0fa523209697add7025e66f1d9e0ab6f` 受影响12文件355/355 pass，
-  18.761秒、16 workers、零retry。27顶层原件、26引用、源码前后、collection与模块
-  来源独审通过；这不是所有首轮节点在后继tree重新执行。
-- 本机唯一Darwin节点一次实际pass，2.345秒，非skip，前后源码/index保持一致。
-  两轮Linux与Darwin按原节点去重汇总另存证据，不直接累加pass数。
-- 完整Ruff、compileall、staged/unstaged diff check通过。
+本批软件已经实现并完成集中受影响回归：
 
-P0交易层统一callback后的完整owner postgate；普通history SELECT从`3+3R`降为
-`2+2R`，常见callback whole-history链5次降至4次。最终完整重新SELECT、物理材料、
-拒绝材料两端fresh观察保留；不能由focused结果推断600秒mixed已达标。
+- P0 删除 provenance 三处紧邻、无 hook/I/O 间隔的重复完整 `_fixed`；`_observe`
+  自身仍在所有回调后执行该门。保留 fresh SQL、raw/domain 材料两端、policy/control
+  与 readback 顺序。长链耗时仍需新 clean HEAD 唯一 mixed 实测，不能提前宣布达标。
+- P1 显式 default-off `fixed-producer-lifecycle-v2` 通过原 argv 绑定 run/fingerprint，
+  target 在两份 producer artifact 后独占写入、fsync/readback `producer-result.json`，
+  再提交私有通道记录。host 保留并核对原 envelope 字节、stat/inode/path、broker、
+  native inputs、原 deadline 与 helper identity。v1 源/pins/defaults 不变。新增实际 C
+  launcher 编译测试使用明确 inert Python C API stubs，不能充当隔离 CPython 验收。
+- CI 锁定安装保留；历史环境另预热精确锁版本的 registry metadata，解决 lock sync
+  仅缓存 wheel、历史 offline resolver 在收集前失败的问题。需后继 CI 实测。
 
-P1默认关闭的`fixed-producer-lifecycle-v1`已实现FD197原attempt通道、并发有界
-读取、固定producer实际读入/broker/commit采集与原captured-envelope材料核对。
-FD198仍solver前关闭，两个通道共用原deadline。source与sealed inode分别绑定。
-但真实固定producer仍缺面向generic capture的`producer-result.json`交付：正向
-原件链测试明确使用inert seam，不能宣称实际solver闭环完成。该缺口需版本化原输入
-接线，禁止host凭摘要补造envelope。
+仍开放的工作不能写成全 P0–P2 完成：P0 600 秒 mixed；P1 完整 native pycache 写能力
+隔离/原 quiescence、真实隔离 build/runtime、accepted build custody/runtime 根与生产
+CLI；P2 独立账户、实际 blocked storage、whole-group cleanup。有限 inotify 诊断和同
+UID EOF/pause/guardian 测试不能替代这些原件。5090gpu 普通 Linux /tmp 可用；不支持的
+普通平台检查转本机，macOS 不能替代指定 Linux 隔离或独立账户验收。
 
-P1 pycache有限预建目录的Linux inotify诊断已测：瞬时cache、目录拓扑、watch丢失、
-overflow和deadline。原native写能力enclosure/quiescence未接，无accepted完成路径，
-不清`original_pycache_observation`。真实隔离build/runtime、accepted build custody/
-runtime根、生产CLI仍未验收。
-
-P2前批同UID SSH EOF、receiver暂停和独立guardian deadline实测证据保留；独立账户、
-blocked-storage和whole-group cleanup部署验收仍开放。
-5090gpu普通Linux和/tmp可用；本机补普通平台缺口，macOS不能代替指定Linux隔离/
-独立账户验收。`production_admission=false`、`online_publication=false`。
-不运行模型、WebAgent、远程或公司evaluator。后继clean HEAD唯一600秒/零retry mixed、
-完整CI/main仍待实际结果；本节不声明全部P0–P2完成或已合入main。
-
-证据在主区ignored `parallel-batch-20261027/`：
-`completion-fresh-gates-union-k13i71q0/`、`completion-original-affected-8pjd16yh/`、
-`darwin-denied-egress-original-p_cagj44/`、`final-mixed-11761700-prepared/execution/`、
-`CI190/diagnosis-and-fix.md`。以下历史记录不能覆盖本节失败/未完成边界。
+`production_admission=false`、`online_publication=false`。不运行模型、WebAgent、远程
+或公司 evaluator。原件在主区 ignored `parallel-batch-20261027/`：
+`completion-cross-tree-exact-union-vhbu3oun/`、`final-mixed-b24440e9-prepared/execution/`、
+`CI-b24440e9/`；本批原失败目录 `envelope-rejection-combined-jdcv4ai_/` 保留原失败结论。
+本批 tree `226ad5d51c802b700cb38bb037418dfd947f643a`：32 文件 1155 unique，
+1153 pass / 2 fail / 0 skip，137.440 秒、16 workers、零 retry；新增 v2 六文件 224 项
+全部实际通过。两失败分别是故障注入仍定位已删除的重复调用，以及 source drift 的
+异常类型预期过窄。只改这两份测试，tree `7e773acc96470868f9c72d1ae64a95df43018cc4`
+两文件 10/10 pass，53.120 秒。故障仍实际注入并验证原 C1、unknown 与 inode 拒绝。
+两归档产品 src/tools 字节相同；按 exact 节点选择最新结果为 1155 项通过，不能把
+1153+10 当新用例数，也不声称同一 tree 全量重跑。原两失败、原件/源码与16 worker
+收集/来源核验均保留。后继 34 项独审全过。原补验 SSH 未返回 stdout/EOF，经独立
+collector 正常 EOF、无 result writer 观测后，仅关闭已核实的本地专用 SSH，原 dispatch
+返回255；不把传输写成成功、不重派产品。补验目录 `envelope-provenance-fixtures-x4sjs6az/`。
+以下均为历史快照，不能覆盖当前失败/未完成边界。
 <!-- completion-fresh-batch:end -->
 
 <!-- current-p0-p2-batch:start -->

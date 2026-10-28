@@ -125,13 +125,18 @@ printf '%s\n' "${pipeline_status[1]}" > "$shard_root/results/log-exit-status.txt
 
 上面的历史对象检查也适用于单独运行 history。缺少对象时先补齐仓库，再创建新的结果目录运行；不能把缺少历史导致的 setup error 计为功能已通过。
 
-history 会用 uv 离线建立历史环境，因此预先用同一个 uv cache 安装当前 package/build 依赖，并缓存当前环境使用的同版 pytest。仅通过 pip 装过依赖不保证 uv cache 已预热，缺少缓存时 offline 安装会失败。以下在已建立的独立 history checkout 和 `.venv` 内运行；测试前不切换 `UV_CACHE_DIR`，也不要清理该 cache：
+history 会用 uv 离线建立历史环境，因此预先用同一个 uv cache 安装锁定的 package/build 依赖，并预热精确锁版本的 registry metadata。仅通过 pip 安装或 `uv sync --locked` 下载 wheel 不保证离线 resolver metadata 已缓存；缺少时，history 会在测试收集前拒绝建立环境。以下在已建立的独立 history checkout 和 `.venv` 内运行；测试前不切换 `UV_CACHE_DIR`，也不要清理该 cache：
 
 ```bash
-pytest_version="$(python -c 'import importlib.metadata; print(importlib.metadata.version("pytest"))')"
-uv pip install --no-config --reinstall-package pytest \
-  --python .venv/bin/python -e '.[dev,lint]' "pytest==$pytest_version"
+mkdir -p .lunar-evolution/test-results
+uv export --locked --no-hashes --no-emit-project --extra dev --extra lint \
+  --output-file .lunar-evolution/test-results/ci-locked-requirements.txt
+uv pip compile --no-config --no-python-downloads --python .venv/bin/python \
+  .lunar-evolution/test-results/ci-locked-requirements.txt \
+  --output-file .lunar-evolution/test-results/ci-registry-metadata.txt
 ```
+
+这一步只在线解析锁定版本并缓存 registry metadata，不重新安装或升级环境；历史执行本身仍使用原 `--offline` 安装流程。保留这两个清单及首次失败日志，再由完整 CI 验证实际缓存命中。
 
 需要 history 时使用另一独立 checkout、环境和结果目录，运行 `python tools/run_tests.py --suite history --junit-dir /absolute/path/to/results`，同样捕获日志和退出码。focused 角色需要逐项执行 workflow 的约束；仅运行一个 focused test 不等于完成该角色。
 

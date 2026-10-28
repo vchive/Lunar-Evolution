@@ -158,6 +158,7 @@ def _compare_live_payload(
     runtime_main_source: bytes, expected_installation_sha256: str,
     expected_observation_sha256: str, runtime_observation: bool = False,
     producer_lifecycle: bool = False,
+    producer_envelope: bool = False,
 ) -> tuple[profile.FixedPythonInstallation, dict, tuple[str, ...]]:
     installed = profile._reparse(installation, expected_installation_sha256)
     profile.verify_fixed_python_image(installed, image, expected_installation_sha256=expected_installation_sha256)
@@ -170,7 +171,8 @@ def _compare_live_payload(
                   "sha256": _sha(runtime_main_source)}:
         _fail("source")
     if (type(runtime_observation) is not bool or type(producer_lifecycle) is not bool
-            or producer_lifecycle and not runtime_observation):
+            or type(producer_envelope) is not bool or producer_lifecycle and producer_envelope
+            or (producer_lifecycle or producer_envelope) and not runtime_observation):
         _fail("profile")
     collector_offset = FIXED_LIVE_COLLECTOR_SOURCE_BYTES
     supplement = None
@@ -198,6 +200,20 @@ def _compare_live_payload(
             frozen_packages=tuple(sorted(record["name"] for record in installed.to_dict()["frozen_modules"]
                                          if record["package"])),
             profile=FIXED_PRODUCER_LIFECYCLE_PROFILE,
+        )
+    if producer_envelope:
+        from .static_python_producer_envelope_source import (
+            FIXED_PRODUCER_ENVELOPE_PROFILE,
+            compose_fixed_producer_envelope_main,
+        )
+
+        expected_main = compose_fixed_producer_envelope_main(
+            solver, startup_main_source=expected_main,
+            frozen_names=tuple(sorted(installed.frozen_names)), builtin_names=installed.builtin_names,
+            aliases=installed.aliases,
+            frozen_packages=tuple(sorted(record["name"] for record in installed.to_dict()["frozen_modules"]
+                                         if record["package"])),
+            profile=FIXED_PRODUCER_ENVELOPE_PROFILE,
         )
     if runtime_main_source != expected_main:
         _fail("source")
@@ -354,6 +370,7 @@ def compare_fixed_python_bound_live_modules(
     expected_image_device: int, expected_image_inode: int, expected_target_pid: int,
     expected_manifest_sha256: str, runtime_observation: bool = False,
     producer_lifecycle: bool = False,
+    producer_envelope: bool = False,
 ) -> FixedPythonBoundLiveModules:
     """Compare an original native sink against its original sealed target/argv.
 
@@ -373,6 +390,7 @@ def compare_fixed_python_bound_live_modules(
             expected_installation_sha256=expected_installation_sha256,
             expected_observation_sha256=observed_sha256, runtime_observation=runtime_observation,
             producer_lifecycle=producer_lifecycle,
+            producer_envelope=producer_envelope,
         )
         if (payload["image"]["device"] != expected_image_device
                 or payload["image"]["inode"] != expected_image_inode

@@ -31,6 +31,8 @@ from . import producer_launcher as launcher
 from . import shinka_handoff as shinka
 from . import static_python_fixed_runtime_observation as runtime
 from . import static_python_producer_completion as completion
+from . import static_python_producer_envelope_completion as envelope_completion
+from . import static_python_producer_envelope_source as envelope_source
 from .producer_handoff import ProducerMaterial, ProducerResultEnvelope
 from .producer_request_transport import HostRequestJournalIdentity, HostRequestSnapshot
 from .rsi_identity import component_fingerprint
@@ -124,9 +126,13 @@ def _implementation_pin() -> tuple:
         compose_fixed_python_producer_evidence, read_fixed_python_producer_evidence_export,
         vars(FixedPythonProducerEvidence)["to_json"], vars(FixedPythonProducerEvidence)["to_dict"],
         component_fingerprint, native._native_handoff_evidence, native._native_output_envelope_pin,
+        native._original_native_completion_pin,
         native._prepublication_evidence, native_output._native_output_envelope_pin,
         native_attempt._original_native_completion_pin,
         native_attempt._retain_original_native_completion,
+        native_attempt._compare_original_native_completion,
+        native_attempt.compare_fixed_producer_envelope_completion,
+        native_attempt.validate_fixed_producer_envelope_argv,
         native_attempt.original_native_grant_inputs,
         native_attempt._stable_bytes, native_capture._stable_bytes,
         native_capture._identity_value, native_capture._identity_digest,
@@ -134,6 +140,17 @@ def _implementation_pin() -> tuple:
         broker_module._original_broker_exchange_pin,
         completion._original_completion_reader_pin, completion.compare_fixed_producer_completion,
         completion._canonical, completion._material, completion._same_material, completion._unique_object,
+        completion._digest,
+        envelope_completion.compare_fixed_producer_envelope_completion,
+        envelope_completion._canonical, envelope_completion._same_material,
+        envelope_completion._unique_object, envelope_completion.compare_fixed_producer_completion,
+        envelope_source.fixed_producer_envelope_launch_argv,
+        envelope_source.validate_fixed_producer_envelope_argv,
+        envelope_source.compose_fixed_producer_envelope_main,
+        envelope_source._selection, envelope_source._pinned,
+        envelope_source.compose_fixed_producer_envelope_entrypoint,
+        envelope_source.compose_fixed_producer_envelope_sources,
+        sink.compose_fixed_producer_envelope_main,
         completion.NativeFixedProducerCompletionCapture.start,
         completion.NativeFixedProducerCompletionCapture._read,
         completion.NativeFixedProducerCompletionCapture._join,
@@ -146,6 +163,7 @@ def _implementation_pin() -> tuple:
         native_output._NativeTrustedEnvelopeAcquisition.__init__,
         native_output._NativeTrustedEnvelopeAcquisition.__copy__,
         native_output._NativeTrustedEnvelopeAcquisition.__deepcopy__,
+        native_output.ProducerEnvelopeEvidence.__init__, native_output.ProducerEnvelopeEvidence.to_dict,
         sink._pin_fixed_python_live_sink_request,
         sink._FixedPythonLiveSinkPin.assert_current,
         sink.FixedPythonLiveSinkRequest.validate, sink.FixedPythonLiveSinkRequest.compare,
@@ -188,6 +206,7 @@ def _implementation_pin() -> tuple:
         native_output._NativeTrustedEnvelopeAcquisition, native_output.ProducerEnvelopeEvidence,
         native_attempt._NativeTrustedCompletionAcquisition,
         completion.FixedProducerCompletionBinding, completion.FixedProducerCompletionComparison,
+        envelope_completion.FixedProducerCompletionComparison,
         completion.NativeFixedProducerCompletionCapture,
     )
     return ((dataclasses._HAS_DEFAULT_FACTORY, id(dataclasses._HAS_DEFAULT_FACTORY)), _sqlite_api_pin(),
@@ -213,7 +232,8 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
             or receipt.intent_sha256 != intent.intent_sha256
             or receipt.attestation_sha256 != attestation.attestation_sha256
             or receipt.pid != observed.target_pid
-            or (request.source_profile != FIXED_PRODUCER_LIFECYCLE_PROFILE
+            or (request.source_profile not in {FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                                               envelope_source.FIXED_PRODUCER_ENVELOPE_PROFILE}
                 and (intent.executable_device, intent.executable_inode) != (observed.image_device, observed.image_inode))
             or receipt.execution_snapshot_sha256 != intent.executable_sha256
             or receipt.execution_snapshot_size != intent.executable_size
@@ -316,7 +336,7 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
         "live_runtime_authenticated": False, "immutable_custody_verified": False,
         "production_admission": False, "online_publication": False,
     }
-    if request.source_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE:
+    if request.source_profile in {FIXED_PRODUCER_LIFECYCLE_PROFILE, envelope_source.FIXED_PRODUCER_ENVELOPE_PROFILE}:
         report["original_computation_observation_verified"] = computation is not None
         if computation is not None:
             report["completion_sha256"] = computation.completion_sha256
@@ -380,7 +400,8 @@ def _completion_join(run, intent, attestation, request, facts, envelope_pin):
     acquired = native_attempt._original_native_completion_pin(run.attempt)
     if acquired is None:
         return None
-    if request.source_profile != FIXED_PRODUCER_LIFECYCLE_PROFILE:
+    if request.source_profile not in {FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                                      envelope_source.FIXED_PRODUCER_ENVELOPE_PROFILE}:
         raise ValueError
     # These must be the same objects retained by the original live native call,
     # rather than equivalent descriptions supplied to this inspection later.
@@ -397,6 +418,14 @@ def _completion_join(run, intent, attestation, request, facts, envelope_pin):
             or binding.manifest_sha256 != inputs.manifest_sha256):
         raise ValueError
     _completion_artifact_freshness(acquired)
+    if request.source_profile == envelope_source.FIXED_PRODUCER_ENVELOPE_PROFILE:
+        if len(acquired) != 12:
+            raise ValueError
+        _path, original_bytes, original_stat = acquired[11]
+        captured_evidence = envelope_pin[6].to_dict()
+        if (envelope_pin[2] != original_bytes or captured_evidence.pop("relative_path") != intent.envelope_path
+                or captured_evidence != dict(original_stat)):
+            raise ValueError
     try:
         _completion_source_material(intent.producer_id, artifacts, run.output.envelope)
     except sqlite3.Error:
@@ -428,7 +457,8 @@ def _completion_artifact_freshness(acquired):
                 or (observed["device"], observed["inode"], observed["mtime_ns"], observed["ctime_ns"])
                 != (material.identity.device, material.identity.inode, material.mtime_ns, material.ctime_ns)):
             raise ValueError
-    for path, original, stat_info in artifacts:
+    snapshots = artifacts if len(acquired) == 11 else artifacts + (acquired[11],)
+    for path, original, stat_info in snapshots:
         current, observed = native_attempt._stable_bytes(
             (root / intent.output_directory).joinpath(*path.split("/")),
             limit=256 * 1024, deadline=None, monotonic=time.monotonic,
@@ -442,7 +472,8 @@ def _compare(run, intent, attestation, request, request_pin):
             or type(intent) is not launcher.ProducerLaunchIntent
             or type(attestation) is not launcher.ProducerLaunchAttestation
             or type(request) is not sink.FixedPythonLiveSinkRequest
-            or request.source_profile not in {FIXED_LIVE_RUNTIME_SINK_PROFILE, FIXED_PRODUCER_LIFECYCLE_PROFILE}):
+            or request.source_profile not in {FIXED_LIVE_RUNTIME_SINK_PROFILE, FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                                              envelope_source.FIXED_PRODUCER_ENVELOPE_PROFILE}):
         raise ValueError
     native_pin = native._native_handoff_evidence(run, request_pin)
     observed = run.attempt.live_modules_observation
@@ -452,6 +483,7 @@ def _compare(run, intent, attestation, request, request_pin):
         expected_installation_sha256=request.expected_installation_sha256,
         expected_observation_sha256=observed.observation_sha256,
         producer_lifecycle=request.source_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE,
+        producer_envelope=request.source_profile == envelope_source.FIXED_PRODUCER_ENVELOPE_PROFILE,
     )
     report = _join(run, intent, attestation, request, facts)
     report["evidence_sha256"] = _sha(report)

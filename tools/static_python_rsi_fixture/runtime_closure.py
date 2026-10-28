@@ -23,6 +23,10 @@ from lunar_evolution.static_python_producer_completion_source import (
     COMPLETION_LAUNCHER_PATH,
     FIXED_PRODUCER_LIFECYCLE_PROFILE,
 )
+from lunar_evolution.static_python_producer_envelope_source import (
+    ENVELOPE_LAUNCHER_PATH,
+    FIXED_PRODUCER_ENVELOPE_PROFILE,
+)
 from tools.static_python_fixture.profile import (
     ALIASES,
     CONFIG,
@@ -34,6 +38,10 @@ from tools.static_python_fixture.tables import _CORE_INITIALIZERS
 from tools.static_python_rsi_fixture.completion_source import (
     prepare_fixed_producer_completion_entrypoint,
     prepare_fixed_producer_completion_sources,
+)
+from tools.static_python_rsi_fixture.envelope_source import (
+    prepare_fixed_producer_envelope_entrypoint,
+    prepare_fixed_producer_envelope_sources,
 )
 from tools.static_python_rsi_fixture.live_module_source import (
     prepare_fixed_live_main,
@@ -746,6 +754,7 @@ def prepare_fixed_runtime_closure(
             and (type(live_modules_profile) is not str or live_modules_profile not in {
                 FIXED_LIVE_MODULES_PROFILE, FIXED_LIVE_PRIVATE_SINK_PROFILE, FIXED_LIVE_RUNTIME_SINK_PROFILE,
                 FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                FIXED_PRODUCER_ENVELOPE_PROFILE,
             })):
         _fail("live_module_profile_invalid")
     cpython = _pinned_sources(cpython_sources, expected_cpython_inventory_sha256)
@@ -753,6 +762,10 @@ def prepare_fixed_runtime_closure(
     if live_modules_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE:
         modules[solver + ".lunar_fixed"] = prepare_fixed_producer_completion_entrypoint(
             solver, modules[solver + ".lunar_fixed"], profile=FIXED_PRODUCER_LIFECYCLE_PROFILE,
+        )
+    elif live_modules_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+        modules[solver + ".lunar_fixed"] = prepare_fixed_producer_envelope_entrypoint(
+            solver, modules[solver + ".lunar_fixed"], profile=FIXED_PRODUCER_ENVELOPE_PROFILE,
         )
     paths = {}
     packages = set()
@@ -893,6 +906,14 @@ def prepare_fixed_runtime_closure(
                 _fail("completion_source_drift")
             launcher = completion.frozen_main_source
             generated[COMPLETION_LAUNCHER_PATH] = completion.launcher_source
+        elif live_modules_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+            envelope = prepare_fixed_producer_envelope_sources(
+                solver, **live_arguments, profile=FIXED_PRODUCER_ENVELOPE_PROFILE,
+            )
+            if envelope.producer_source != modules[solver + ".lunar_fixed"]:
+                _fail("envelope_source_drift")
+            launcher = envelope.frozen_main_source
+            generated[ENVELOPE_LAUNCHER_PATH] = envelope.launcher_source
         else:
             launcher = prepare_fixed_live_main(
                 solver, **live_arguments,

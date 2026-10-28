@@ -31,6 +31,11 @@ jobs:
           python -m pip install 'uv==0.11.8'
           python -m venv .venv
           uv sync --locked --no-python-downloads --extra dev --extra lint
+          # Historical snapshots resolve offline by registry requirement. A
+          # lockfile sync alone caches wheels without all resolver metadata.
+          mkdir -p .lunar-evolution/test-results
+          uv export --locked --no-hashes --no-emit-project --extra dev --extra lint --output-file .lunar-evolution/test-results/ci-locked-requirements.txt
+          uv pip compile --no-config --no-python-downloads --python .venv/bin/python .lunar-evolution/test-results/ci-locked-requirements.txt --output-file .lunar-evolution/test-results/ci-registry-metadata.txt
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Record job source and import provenance
         env:

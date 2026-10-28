@@ -40,20 +40,25 @@ def _drift(value, fault):
     return path.read_bytes(), path.stat().st_ino
 
 
-def _direct_final_fixed():
-    """Select the genuine ACK's final direct ledger observation, without replacing it."""
+def _final_ack_fixed():
+    """Select the genuine ACK's final observed fixed gate, without replacing it."""
     frame = inspect.currentframe()
     try:
-        # get_run <- _running <- _fixed: distinguish the later direct ACK call
-        # from _observe's earlier _fixed call. Never inspect arbitrary deep stacks.
+        # get_run <- _running <- _fixed <- _observe(expected) <- ACK. Earlier
+        # observations have no expected post-C2 state. Keep the real final gate.
         for _ in range(5):
             frame = frame.f_back
             if frame is None:
                 return False
             if frame.f_code is provenance._fixed.__code__:
+                expected = frame.f_locals.get("expected")
                 caller = frame.f_back
-                return (frame.f_locals.get("expected") is not None and caller is not None
-                        and caller.f_code is provenance.acknowledge_rejection_provenance.__code__)
+                ack = None if caller is None else caller.f_back
+                return (expected is not None and caller is not None and ack is not None
+                        and caller.f_code is provenance._observe.__code__
+                        and caller.f_locals.get("expected") is expected
+                        and ack.f_code is provenance.acknowledge_rejection_provenance.__code__
+                        and ack.f_locals.get("expected") is expected)
         return False
     finally:
         del frame
@@ -89,7 +94,7 @@ def test_post_c2_observation_p_drift_keeps_unknown_and_original_c1(
 
         def ledger_observed(run_id):
             result = get_run(run_id)
-            if durable and not injected and _direct_final_fixed():
+            if durable and not injected and _final_ack_fixed():
                 injected.append(_drift(value, fault))
             return result
 

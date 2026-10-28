@@ -111,6 +111,7 @@ def validate_fixed_python_runtime_observation_policy(
     image: bytes, runtime_main_source: bytes,
     expected_installation_sha256: str, expected_observation_sha256: str,
     producer_lifecycle: bool = False,
+    producer_envelope: bool = False,
 ) -> FixedPythonRuntimeFacts:
     """Recheck an original retained snapshot against original image/source and pins.
 
@@ -146,6 +147,7 @@ def validate_fixed_python_runtime_observation_policy(
             expected_image_device=observation.image_device, expected_image_inode=observation.image_inode,
             expected_target_pid=observation.target_pid, expected_manifest_sha256=observation.manifest_sha256,
             producer_lifecycle=producer_lifecycle,
+            producer_envelope=producer_envelope,
         )
         if result.live_modules_observation != observation:
             raise ValueError
@@ -161,6 +163,7 @@ def map_fixed_python_runtime_observation(
     runtime_main_source: bytes, expected_installation_sha256: str, expected_image_device: int,
     expected_image_inode: int, expected_target_pid: int, expected_manifest_sha256: str,
     producer_lifecycle: bool = False,
+    producer_envelope: bool = False,
 ) -> FixedPythonRuntimeFacts:
     """Compare expanded source/image/original owner and actual captured runtime facts."""
     try:
@@ -172,6 +175,7 @@ def map_fixed_python_runtime_observation(
             expected_image_device=expected_image_device, expected_image_inode=expected_image_inode,
             expected_target_pid=expected_target_pid, expected_manifest_sha256=expected_manifest_sha256,
             runtime_observation=True, producer_lifecycle=producer_lifecycle,
+            producer_envelope=producer_envelope,
         )
         installed = profile._reparse(installation, expected_installation_sha256)
         payload = profile._json(observed.canonical_bytes[:-1], live.MAX_FIXED_LIVE_MODULES_BYTES)

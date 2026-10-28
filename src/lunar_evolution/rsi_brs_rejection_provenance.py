@@ -218,6 +218,7 @@ def _postwrite_observe(self, expected: dict[str, Any]) -> None:
 
 
 def _observe(self, expected: dict[str, Any] | None = None) -> None:
+    """Close source/control callbacks with a fresh complete owner observation."""
     self._before_unlocked()
     held = _custody(self)
     _allowance(self)
@@ -446,7 +447,6 @@ def retain_rejection_provenance(self) -> None:
         self._rejection_provenance_evidence = _canonical(evidence.to_dict())
         _preflight(self, evidence, tables)
         _observe(self)
-        _fixed(self)
         _fresh(self)
         _policy_gate(self)
         held = _custody(self)
@@ -493,7 +493,6 @@ def acknowledge_rejection_provenance(self, evidence: NativeRSIRejectionEvidence,
         expected = lineage._publication_lineage_checkpoint_delta(self._rejection_c1_capture[1], wire)
         payload = self._controller._python_admission_flow_payload(expected)
         _observe(self)
-        _fixed(self)
         _fresh(self)
         _read_p(self)
         _policy_gate(self)
@@ -508,7 +507,6 @@ def acknowledge_rejection_provenance(self, evidence: NativeRSIRejectionEvidence,
             _control(self)
             _readback(self, head, expected, payload)
             _observe(self, expected)
-            _fixed(self, expected)
             _fresh(self)
             _read_p(self)
             _policy_gate(self)

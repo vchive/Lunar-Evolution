@@ -36,6 +36,14 @@ from .static_python_producer_completion_source import (
     FIXED_PRODUCER_LIFECYCLE_PROFILE,
     compose_fixed_producer_completion_main,
 )
+from .static_python_producer_envelope_source import (
+    ENVELOPE_ENTRYPOINT_PINS,
+    ENVELOPE_LAUNCHER_PATH,
+    FIXED_PRODUCER_ENVELOPE_LAUNCHER_SOURCE_BYTES,
+    FIXED_PRODUCER_ENVELOPE_LAUNCHER_SOURCE_SHA256,
+    FIXED_PRODUCER_ENVELOPE_PROFILE,
+    compose_fixed_producer_envelope_main,
+)
 
 
 class NativeFixedLiveSinkError(ValueError):
@@ -61,12 +69,17 @@ class FixedPythonLiveSinkRequest:
             if (type(self) is not FixedPythonLiveSinkRequest
                     or type(self.source_profile) is not str
                     or self.source_profile not in {FIXED_LIVE_PRIVATE_SINK_PROFILE, FIXED_LIVE_RUNTIME_SINK_PROFILE,
-                                                   FIXED_PRODUCER_LIFECYCLE_PROFILE}):
+                                                   FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                                                   FIXED_PRODUCER_ENVELOPE_PROFILE}):
                 raise ValueError
             installed = profile._reparse(self.installation, self.expected_installation_sha256)
             sources = json.loads(installed.closure_bytes)["sources"]
             lifecycle = self.source_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE
-            launcher = ({"path": COMPLETION_LAUNCHER_PATH,
+            envelope = self.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE
+            launcher = ({"path": ENVELOPE_LAUNCHER_PATH,
+                         "size": FIXED_PRODUCER_ENVELOPE_LAUNCHER_SOURCE_BYTES,
+                         "sha256": FIXED_PRODUCER_ENVELOPE_LAUNCHER_SOURCE_SHA256} if envelope else
+                        {"path": COMPLETION_LAUNCHER_PATH,
                          "size": FIXED_PRODUCER_COMPLETION_LAUNCHER_SOURCE_BYTES,
                          "sha256": FIXED_PRODUCER_COMPLETION_LAUNCHER_SOURCE_SHA256} if lifecycle else
                         {"path": FIXED_LIVE_SINK_LAUNCHER_PATH, "size": FIXED_LIVE_SINK_LAUNCHER_SOURCE_BYTES,
@@ -86,7 +99,7 @@ class FixedPythonLiveSinkRequest:
             if main != {"path": "runtime/frozen_main.py", "size": len(source),
                         "sha256": hashlib.sha256(source).hexdigest()}:
                 raise ValueError
-            runtime = self.source_profile == FIXED_LIVE_RUNTIME_SINK_PROFILE or lifecycle
+            runtime = self.source_profile == FIXED_LIVE_RUNTIME_SINK_PROFILE or lifecycle or envelope
             offset = FIXED_LIVE_COLLECTOR_SOURCE_BYTES
             supplement = None
             if runtime:
@@ -99,18 +112,20 @@ class FixedPythonLiveSinkRequest:
                 installed.aliases, tuple(sorted(record["name"] for record in records if record["package"])),
                 source[-offset:][:FIXED_LIVE_COLLECTOR_SOURCE_BYTES], supplement,
             )
-            if lifecycle:
-                size, digest = COMPLETION_ENTRYPOINT_PINS[solver]
+            if lifecycle or envelope:
+                pins = ENVELOPE_ENTRYPOINT_PINS if envelope else COMPLETION_ENTRYPOINT_PINS
+                size, digest = pins[solver]
                 producer = {"path": "producer/" + solver + "/lunar_fixed.py", "size": size, "sha256": digest}
                 selected = next(record["source"] for record in records if record["name"] == solver + ".lunar_fixed")
                 if selected != producer or producer not in sources:
                     raise ValueError
-                expected_main = compose_fixed_producer_completion_main(
+                composer = compose_fixed_producer_envelope_main if envelope else compose_fixed_producer_completion_main
+                expected_main = composer(
                     solver, startup_main_source=expected_main,
                     frozen_names=tuple(sorted(installed.frozen_names)), builtin_names=installed.builtin_names,
                     aliases=installed.aliases,
                     frozen_packages=tuple(sorted(record["name"] for record in records if record["package"])),
-                    profile=FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                    profile=self.source_profile,
                 )
             if source != expected_main:
                 raise ValueError
@@ -122,13 +137,15 @@ class FixedPythonLiveSinkRequest:
         try:
             if type(self) is not FixedPythonLiveSinkRequest or type(self.source_profile) is not str:
                 raise ValueError
-            if self.source_profile in {FIXED_LIVE_RUNTIME_SINK_PROFILE, FIXED_PRODUCER_LIFECYCLE_PROFILE}:
+            if self.source_profile in {FIXED_LIVE_RUNTIME_SINK_PROFILE, FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                                       FIXED_PRODUCER_ENVELOPE_PROFILE}:
                 return map_fixed_python_runtime_observation(
                     self.installation, raw, image=self.image, runtime_main_source=self.runtime_main_source,
                     expected_installation_sha256=self.expected_installation_sha256,
                     expected_image_device=image_device, expected_image_inode=image_inode,
                     expected_target_pid=target_pid, expected_manifest_sha256=manifest_sha256,
                     producer_lifecycle=self.source_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE,
+                    producer_envelope=self.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE,
                 ).live_modules_observation
             if self.source_profile != FIXED_LIVE_PRIVATE_SINK_PROFILE:
                 raise ValueError

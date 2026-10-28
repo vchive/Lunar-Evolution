@@ -135,6 +135,11 @@ from .static_python_producer_completion import (
     _original_completion_reader_pin,
     compare_fixed_producer_completion,
 )
+from .static_python_producer_envelope_completion import compare_fixed_producer_envelope_completion
+from .static_python_producer_envelope_source import (
+    FIXED_PRODUCER_ENVELOPE_PROFILE,
+    validate_fixed_producer_envelope_argv,
+)
 from .trusted_bootstrap_binding import (
     TrustedBootstrapBindingError,
     _original_linux_bootstrap_owner,
@@ -234,6 +239,7 @@ class _NativeTrustedCompletionAcquisition:
         "binding",
         "broker_pin",
         "comparison",
+        "envelope",
         "image_identity",
         "inputs",
         "intent",
@@ -288,13 +294,13 @@ def _original_native_completion_pin(attempt: NativeTrustedAttemptObservation) ->
             raise ValueError
         originals = (acquired, attempt, acquired.inputs, acquired.intent, acquired.attestation,
                      acquired.request, acquired.reader, acquired.binding, acquired.artifacts,
-                     acquired.comparison, acquired.broker_pin, acquired.image_identity)
+                     acquired.comparison, acquired.broker_pin, acquired.image_identity, acquired.envelope)
         if (type(acquired._originals) is not tuple or len(acquired._originals) != len(originals)
                 or any(current is not original for current, original in zip(originals, acquired._originals, strict=True))
                 or acquired.attempt is not attempt
                 or type(acquired.inputs) is not NativeRSIInputDescriptor
                 or type(acquired.request) is not FixedPythonLiveSinkRequest
-                or acquired.request.source_profile != COMPLETION_PROFILE
+                or acquired.request.source_profile not in {COMPLETION_PROFILE, FIXED_PRODUCER_ENVELOPE_PROFILE}
                 or type(acquired.binding) is not FixedProducerCompletionBinding
                 or attempt.reason != "native_trusted_attempt_request_and_output_unverified"
                 or attempt.gate_released is not True or attempt.target_started is not True
@@ -318,15 +324,13 @@ def _original_native_completion_pin(attempt: NativeTrustedAttemptObservation) ->
                 or binding.manifest_sha256 != observed.manifest_sha256
                 or binding.manifest_sha256 != inputs.manifest_sha256
                 or binding.solver != acquired.intent.producer_id
-                or acquired.intent.argv != (acquired.intent.argv[0], NATIVE_RSI_INPUT_MARKER, inputs.manifest_sha256)
                 or (observed.image_device, observed.image_inode)
                 != acquired.image_identity
                 or binding.deadline_monotonic_ns != broker_pin[8]):
             raise ValueError
-        comparison = compare_fixed_producer_completion(
-            raw, binding=binding, request_bytes=inputs.request_json, memory_bytes=inputs.memory_json,
-            request_body_bytes=broker_pin[2], reply_bytes=broker_pin[4],
-            artifacts=tuple((path, content) for path, content, _stat in acquired.artifacts),
+        comparison = _compare_original_native_completion(
+            raw, inputs=inputs, intent=acquired.intent, request=acquired.request,
+            binding=binding, broker_pin=broker_pin, artifacts=acquired.artifacts, envelope=acquired.envelope,
         )
         pin = (
             reader_pin, broker_pin,
@@ -338,13 +342,41 @@ def _original_native_completion_pin(attempt: NativeTrustedAttemptObservation) ->
             tuple((path, id(content), content, stat_info) for path, content, stat_info in acquired.artifacts),
             comparison,
         )
+        if acquired.envelope is not None:
+            path, content, stat_info = acquired.envelope
+            pin += ((path, id(content), content, stat_info),)
         if pin != acquired._pin or comparison != acquired.comparison:
             raise ValueError
-        return (acquired, id(acquired), inputs, acquired.intent, acquired.attestation,
+        result = (acquired, id(acquired), inputs, acquired.intent, acquired.attestation,
                 acquired.request, acquired.binding, acquired.artifacts, comparison, pin,
                 acquired.image_identity)
+        return result if acquired.envelope is None else result + (acquired.envelope,)
     except (ValueError, TypeError, AttributeError, KeyError, IndexError):
         raise NativeTrustedAttemptError("native_completion_acquisition_changed") from None
+
+
+def _compare_original_native_completion(raw, *, inputs, intent, request, binding, broker_pin, artifacts, envelope):
+    """Select the exact opt-in protocol and bind target-delivered launch fields."""
+    options = {
+        "binding": binding, "request_bytes": inputs.request_json, "memory_bytes": inputs.memory_json,
+        "request_body_bytes": broker_pin[2], "reply_bytes": broker_pin[4],
+        "artifacts": tuple((path, content) for path, content, _stat in artifacts),
+    }
+    if request.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+        validate_fixed_producer_envelope_argv(
+            intent.argv, run_id=intent.run_id, producer_fingerprint=intent.producer_fingerprint,
+            manifest_sha256=inputs.manifest_sha256,
+        )
+        if (intent.envelope_path != intent.output_directory + "/producer-result.json"
+                or type(envelope) is not tuple or len(envelope) != 3
+                or envelope[0] != "producer-result.json" or type(envelope[1]) is not bytes
+                or type(envelope[2]) is not tuple):
+            raise ValueError
+        return compare_fixed_producer_envelope_completion(raw, envelope_bytes=envelope[1], **options)
+    if (request.source_profile != COMPLETION_PROFILE or envelope is not None
+            or intent.argv != (intent.argv[0], NATIVE_RSI_INPUT_MARKER, inputs.manifest_sha256)):
+        raise ValueError
+    return compare_fixed_producer_completion(raw, **options)
 
 
 def _retain_original_native_completion(
@@ -352,6 +384,7 @@ def _retain_original_native_completion(
     intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
     request: FixedPythonLiveSinkRequest, reader: NativeFixedProducerCompletionCapture,
     binding: FixedProducerCompletionBinding, artifacts: tuple, image_identity: tuple[int, int],
+    envelope: tuple | None = None,
 ) -> None:
     """Called only by the live attempt after original grant/output observation.
 
@@ -363,11 +396,9 @@ def _retain_original_native_completion(
     broker_pin = _original_broker_exchange_pin(attempt.broker_observation)
     if broker_pin is None:
         raise NativeTrustedAttemptError("native_completion_broker_acquisition_missing")
-    comparison = compare_fixed_producer_completion(
-        attempt.producer_completion_bytes, binding=binding,
-        request_bytes=inputs.request_json, memory_bytes=inputs.memory_json,
-        request_body_bytes=broker_pin[2], reply_bytes=broker_pin[4],
-        artifacts=tuple((path, raw) for path, raw, _stat in artifacts),
+    comparison = _compare_original_native_completion(
+        attempt.producer_completion_bytes, inputs=inputs, intent=intent, request=request,
+        binding=binding, broker_pin=broker_pin, artifacts=artifacts, envelope=envelope,
     )
     acquired = object.__new__(_NativeTrustedCompletionAcquisition)
     (acquired.inputs, acquired.intent, acquired.attestation, acquired.request, acquired.reader,
@@ -376,8 +407,9 @@ def _retain_original_native_completion(
          inputs, intent, attestation, request, reader, binding, artifacts, attempt, comparison,
          broker_pin, image_identity,
      )
+    acquired.envelope = envelope
     acquired._originals = (acquired, attempt, inputs, intent, attestation, request, reader,
-                           binding, artifacts, comparison, broker_pin, image_identity)
+                           binding, artifacts, comparison, broker_pin, image_identity, envelope)
     acquired._pin = (
         _original_completion_reader_pin(reader, attempt.producer_completion_bytes), broker_pin,
         tuple((field.name, id(getattr(inputs, field.name)), getattr(inputs, field.name)) for field in fields(inputs)),
@@ -386,6 +418,9 @@ def _retain_original_native_completion(
               if field.name != "broker_observation"),
         tuple((path, id(content), content, stat_info) for path, content, stat_info in artifacts), comparison,
     )
+    if envelope is not None:
+        path, content, stat_info = envelope
+        acquired._pin += ((path, id(content), content, stat_info),)
     object.__setattr__(attempt, "_original_completion_acquisition", acquired)
     _original_native_completion_pin(attempt)
 
@@ -951,13 +986,22 @@ def run_native_trusted_attempt(
         raise NativeTrustedAttemptError("native_trusted_attempt_artifact_invalid")
     if live_modules_sink is not None:
         if (type(live_modules_sink) is not FixedPythonLiveSinkRequest
-                or artifact.descriptor.platform_execution_mode != "linux-fd-bound"
-                or len(intent.argv) != 3 or intent.argv[1] != NATIVE_RSI_INPUT_MARKER):
+                or artifact.descriptor.platform_execution_mode != "linux-fd-bound"):
             raise NativeTrustedAttemptError("native_fixed_live_sink_request_invalid")
         try:
+            if live_modules_sink.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+                validate_fixed_producer_envelope_argv(
+                    intent.argv, run_id=intent.run_id, producer_fingerprint=intent.producer_fingerprint,
+                    manifest_sha256=intent.argv[-1],
+                )
+                if (intent.envelope_path != intent.output_directory + "/producer-result.json"
+                        or live_modules_sink.installation.profile_version != f"fixed-{intent.producer_id}-v1"):
+                    raise ValueError
+            elif len(intent.argv) != 3 or intent.argv[1] != NATIVE_RSI_INPUT_MARKER:
+                raise ValueError
             live_modules_sink.validate(target_sha256=intent.executable_sha256)
-        except NativeFixedLiveSinkError as exc:
-            raise NativeTrustedAttemptError(exc.code) from exc
+        except (NativeFixedLiveSinkError, ValueError, IndexError, AttributeError) as exc:
+            raise NativeTrustedAttemptError("native_fixed_live_sink_request_invalid") from exc
     if (
         artifact.descriptor.platform_execution_mode == "linux-fd-bound"
         and artifact.descriptor.implementation_version not in {
@@ -1032,6 +1076,11 @@ def run_native_trusted_attempt(
         workspace, intent=intent, attestation=attestation, artifact=artifact,
         require_unexpired=True,
     )
+    if (live_modules_sink is not None
+            and live_modules_sink.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE
+            and (type(inputs) is not NativeRSIInputDescriptor
+                 or inputs.request.solver_id != intent.producer_id)):
+        raise NativeTrustedAttemptError("native_fixed_live_sink_request_invalid")
     if inputs is not None and inputs.deadline_unix is not None:
         # Sample monotonic before wall time, once, so setup cannot extend the original
         # absolute RSI deadline. Later admission checks may reject expiry but never remap it.
@@ -1170,7 +1219,7 @@ def run_native_trusted_attempt(
                     private_sink = NativeBootstrapPrivateSink(
                         sink_write, pipe_identity.st_dev, pipe_identity.st_ino, native_deadline_ns,
                     )
-                    if live_modules_sink.source_profile == COMPLETION_PROFILE:
+                    if live_modules_sink.source_profile in {COMPLETION_PROFILE, FIXED_PRODUCER_ENVELOPE_PROFILE}:
                         completion_read, completion_write = os.pipe()
                         fds.update((completion_read, completion_write))
                         sink_child_fds = (sink_write, completion_write)
@@ -1511,7 +1560,7 @@ def run_native_trusted_attempt(
                     live_modules_observation = live_modules_sink.compare(
                         raw_live_modules, image_device=sink_image_identity[0],
                         image_inode=sink_image_identity[1], target_pid=started.observed_pid,
-                        manifest_sha256=intent.argv[2],
+                        manifest_sha256=intent.argv[-1],
                     )
                     _remaining(deadline, monotonic, cancelled)
                 # Keep a small slice of the attempt budget available for the owner-checked
@@ -1881,7 +1930,8 @@ def run_native_trusted_attempt(
             producer_completion_partial_bytes=(completion_capture.partial_bytes
                                                if completion_capture is not None else None),
         )
-        if (live_modules_sink is not None and live_modules_sink.source_profile == COMPLETION_PROFILE
+        if (live_modules_sink is not None
+                and live_modules_sink.source_profile in {COMPLETION_PROFILE, FIXED_PRODUCER_ENVELOPE_PROFILE}
                 and reason == "native_trusted_attempt_request_and_output_unverified"
                 and producer_completion_bytes is not None and completion_capture is not None):
             try:
@@ -1903,6 +1953,15 @@ def run_native_trusted_attempt(
                         deadline=deadline, monotonic=monotonic,
                     )
                     snapshots.append((path, raw, tuple(sorted(info.items()))))
+                envelope_snapshot = None
+                if live_modules_sink.source_profile == FIXED_PRODUCER_ENVELOPE_PROFILE:
+                    if time.monotonic_ns() >= native_deadline_ns:
+                        raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                    raw, info = _stable_bytes(
+                        batch / intent.envelope_path, limit=min(intent.output_max_bytes, 128 * 1024),
+                        deadline=deadline, monotonic=monotonic,
+                    )
+                    envelope_snapshot = ("producer-result.json", raw, tuple(sorted(info.items())))
                 _check_original_attempt_grants(grant_owner, inputs)
                 _revalidate_native_launch_inputs(
                     inputs, root, intent=intent, attestation=attestation, artifact=installed,
@@ -1919,6 +1978,7 @@ def run_native_trusted_attempt(
                         intent.producer_id, live_modules_observation.target_pid,
                         inputs.manifest_sha256, native_deadline_ns,
                     ), artifacts=tuple(snapshots), image_identity=sink_image_identity,
+                    envelope=envelope_snapshot,
                 )
                 _remaining(deadline, monotonic, cancelled)
                 check_deadline()

@@ -286,3 +286,27 @@ custody/runtime roots or enable production admission/native CLI.
 - [ ] L08 Independently establish accepted build-input custody and runtime
   authority before any admission/CLI change. Preserve all-false authority
   claims and prohibit host-interpreter or detached-evidence fallbacks meanwhile.
+
+## Original generic-envelope delivery successor (2026-10-28)
+
+See `envelope-delivery.md`. This explicitly selected v2 fixes the v1 target's
+missing generic output file; it does not silently upgrade v1 images or acceptance.
+
+- [x] E01 Specify strict original intent argv, independent source/launcher pins,
+  canonical generic envelope and separately versioned completion records.
+- [x] E02 Implement actual target create-only artifact/envelope fsync/readback
+  and committed ordering; preserve one request, original deadline and old assets.
+- [x] E03 Connect explicit build/runtime selection, native original envelope
+  acquisition and captured bytes/stat/path join with implementation drift gates.
+- [x] E04 Add source/file/pipe, inert C API compilation, cross-version, build
+  selection and original host join tests without per-agent pytest campaigns.
+- [x] E05a Run consolidated affected regression, retain the original 1153/2 failures
+  and repair only the two faulty test adapters; affected successor 10/10 passes.
+  Latest exact union is 1155 passes across the two source trees, including 224 v2 cases.
+- [ ] E05b Validate subsequent CI metadata prewarming in all history roles.
+- [ ] E06 Acquire actual isolated CPython build/runtime and complete native
+  solver execution evidence. Source/inert fixtures alone do not complete L04/L07.
+
+P0's adjacent duplicate provenance gates are removed in the same software batch;
+new 600-second/zero-retry mixed remains required. P1 L06/L08 and P2 deployment
+obligations above are still open; no production admission/publication is enabled.
