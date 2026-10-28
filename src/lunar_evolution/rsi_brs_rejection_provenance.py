@@ -693,12 +693,14 @@ def _verify_reserved_rejected_materials(workspace, entry, *, ledger, roots, ordi
     return archive, state_bytes, evidence, terminal
 
 
-def verify_reserved_rejected_history(self, entry, *, ordinal, prefix, original_lineage_bytes):
+def verify_reserved_rejected_history(self, entry, *, ordinal, prefix, original_lineage_bytes, roots=None):
     """Validate immutable historical material without reusing old live source heads."""
     from .rsi_store import RSILedger
 
+    if roots is None:
+        roots = RSILedger.controller_checkpoint_history(self._ledger, self._run_id)
     archive, state, _evidence, _terminal = _verify_reserved_rejected_materials(self._workspace, entry,
-        ledger=self._ledger, roots=RSILedger.controller_checkpoint_history(self._ledger, self._run_id),
+        ledger=self._ledger, roots=roots,
         ordinal=ordinal, prefix=prefix, original_lineage_bytes=original_lineage_bytes)
     return archive, state
 

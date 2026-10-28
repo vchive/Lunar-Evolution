@@ -231,3 +231,58 @@ distributed scheduling remain outside this feature and are not acceptance tasks.
 - [ ] Independently prove complete driver inputs and immutable build-input custody; accept real isolated build/runtime and production CLI.
 
 See `actual-build-dependency-consumer.md` and the batch report. Byte readback does not close F02c.
+
+## Original fixed-producer lifecycle continuation (opt-in software slice)
+
+See `original-producer-lifecycle.md`. Existing expanded observations cover
+startup only. The explicitly selected `fixed-producer-lifecycle-v1` source and
+native v4 channel are implemented below; consolidated source-bound regression is recorded below; original
+native execution acceptance remains separate. They do not accept build
+custody/runtime roots or enable production admission/native CLI.
+
+- [x] L01 Fix a separately versioned, explicitly selected default-off completion
+  wire/profile with finite ordered records, bounds and refusal states. Preserve
+  startup FD 198 and its pre-solver close/EOF semantics without reuse.
+- [x] L02 Add an original-attempt private completion channel, concurrent bounded
+  host reading alongside broker/native progress, owned cancellation/cleanup and
+  the original absolute deadline; prohibit renewed budgets or implicit retries.
+- [x] L03 Implement target-side capture of actual fixed-producer request/memory, unique broker exchange
+  and computed/committed artifact facts at their original execution points.
+  Emit completion only after final wrapper/SQLite commit and required fsyncs;
+  preserve candidate generation versus candidate evaluation semantics. This is
+  pinned source implementation with local file/pipe fixtures; it is not yet an
+  accepted execution of either solver through the complete native chain.
+- [ ] L04 Retain the original channel acquisition and join it to the same native
+  run, PID/image/manifest, input grants, original broker transcript and privately
+  acquired captured envelope. Refuse copied/reconstructed evidence, drift,
+  missing/partial records and terminal/cleanup disagreement; keep unknown states.
+  Software is implemented with default-off broker original exchange retention,
+  a private native-attempt acquisition and original captured-envelope material
+  comparison. Source/sealed-image identities remain separate. Consolidated
+  tests passed in the 355-case affected successor after retaining the original
+  failures. Actual fixed-producer generic-envelope delivery and complete native
+  execution acceptance remain pending.
+- [ ] L05 If diagnostic pycache snapshots are added, label their coverage and
+  retain `original_pycache_observation` as missing. Do not promote flags,
+  `__cached__`, scans or API audit hooks into full-lifecycle absence.
+- [ ] L06 Specify and implement a complete strict write view with all original
+  writable roots/handles accounted for, finite precreated watched directories,
+  monitoring before target start and drain after original terminal/quiescence.
+  Fail closed on new/relocated directories, watch/root drift, unmonitored write
+  capabilities, overflow or incomplete events; bind the declared cache policy.
+  A finite Linux inotify diagnostic monitor is implemented. Original grant
+  authentication, native writer enclosure and original quiescence are not yet
+  connected; the monitor has no accepted completion path and keeps the missing
+  boundary. Do not mark this full-lifecycle task complete from diagnostic tests.
+- [ ] L07 Add focused original-chain, partial commit, provenance replacement,
+  protocol/deadline/concurrency, legacy compatibility and kernel coverage tests.
+  Run affected tests together with Ruff, compileall and diff checks; distinguish
+  mock evidence, supported-kernel acquisition and actual runtime acceptance.
+  Source file/pipe, pure wire, profile-binding, Linux inotify and native v4
+  tests executed in the concentrated 1809-case first run; 20 failures retained,
+  affected successor 355/355 passed, Darwin platform node separately passed.
+  Ruff, compileall and diff checks pass. Full native lifecycle acceptance remains
+  pending; fixture tests cannot close it.
+- [ ] L08 Independently establish accepted build-input custody and runtime
+  authority before any admission/CLI change. Preserve all-false authority
+  claims and prohibit host-interpreter or detached-evidence fallbacks meanwhile.

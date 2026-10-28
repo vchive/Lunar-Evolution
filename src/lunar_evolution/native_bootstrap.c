@@ -72,6 +72,7 @@ static void SHA_FINAL(unsigned char out[32],SHA_CTX *c){uint64_t bits=c->n*8;siz
 #define MAX_GRANT_NODES 256u
 #define MAX_GRANTS 81u
 #define FIXED_LIVE_SINK_FD 198
+#define FIXED_COMPLETION_SINK_FD 197
 
 typedef struct {
     uint32_t parent, kind, depth;
@@ -86,6 +87,8 @@ typedef struct {
     uint32_t version, node_count, grant_count, cwd_grant;
     int bootstrap_fd, sink_fd;
     uint64_t sink_device, sink_inode, sink_deadline_ns;
+    int completion_fd;
+    uint64_t completion_device, completion_inode, completion_deadline_ns;
     grant_node_t *nodes;
     grant_t *grants;
     int32_t target_fd;
@@ -284,7 +287,7 @@ static int parse_control_v2(const unsigned char *buf, size_t total, size_t *posi
 static int parse_control(const unsigned char *buf, size_t total, control_t *c) {
     if (total > MAX_CONTROL || total < 4 + 2 + 2 + 64 * 3 + 4 || memcmp(buf, MAGIC, 4) != 0) return -1;
     /* version and flags are two-byte values; version is encoded at offsets 4..5. */
-    if (buf[4] != 0 || (buf[5] != 1 && buf[5] != 2 && buf[5] != 3) || buf[6] != 0 || buf[7] != 0) return -1;
+    if (buf[4] != 0 || (buf[5] < 1 || buf[5] > 4) || buf[6] != 0 || buf[7] != 0) return -1;
     c->version = buf[5];
     size_t pos = 8;
     memcpy(c->launch, buf + pos, 64); c->launch[64] = 0; pos += 64;
@@ -327,15 +330,24 @@ static int parse_control(const unsigned char *buf, size_t total, control_t *c) {
         if (read_string(buf, total, &pos, &c->argv[i], MAX_ARG_BYTES) != 0 ||
             (c->version >= 2 && !utf8_valid(c->argv[i]))) return -1;
     }
-    if (c->version == 3) {
+    if (c->version >= 3) {
 #if defined(__linux__)
-        if (pos + 28 != total) return -1;
+        if (pos + (c->version == 4 ? 56u : 28u) != total) return -1;
         uint32_t fd = be32(buf + pos);
         if (fd <= 2 || fd > INT_MAX) return -1;
         c->sink_fd = (int)fd;
         c->sink_device = be64(buf + pos + 4); c->sink_inode = be64(buf + pos + 12);
         c->sink_deadline_ns = be64(buf + pos + 20); pos += 28;
         if (!c->sink_inode || !c->sink_deadline_ns) return -1;
+        if (c->version == 4) {
+            fd = be32(buf + pos);
+            if (fd <= 2 || fd > INT_MAX) return -1;
+            c->completion_fd = (int)fd;
+            c->completion_device = be64(buf + pos + 4); c->completion_inode = be64(buf + pos + 12);
+            c->completion_deadline_ns = be64(buf + pos + 20); pos += 28;
+            if (!c->completion_inode || !c->completion_deadline_ns ||
+                c->completion_deadline_ns != c->sink_deadline_ns) return -1;
+        }
 #else
         return -1;
 #endif
@@ -494,7 +506,7 @@ static int handoff_broker(const char *read_arg, const char *write_arg,
 
 static int validate_private_sink(const control_t *c, uint64_t deadline,
                                  const int *reserved, size_t count) {
-    if (c->version != 3) return 0;
+    if (c->version < 3) return 0;
     struct stat original;
     if (!deadline || c->sink_deadline_ns != deadline ||
         grant_protocol_pipe(c->sink_fd, O_WRONLY) || fstat(c->sink_fd, &original) ||
@@ -508,6 +520,23 @@ static int validate_private_sink(const control_t *c, uint64_t deadline,
     }
     for (uint32_t i = 0; i < c->grant_count; ++i)
         if (c->grants[i].fd == c->sink_fd || c->grants[i].fd == FIXED_LIVE_SINK_FD) return EINVAL;
+    if (c->version == 4) {
+        struct stat completion;
+        if (c->sink_fd == FIXED_COMPLETION_SINK_FD || c->completion_fd == FIXED_LIVE_SINK_FD ||
+            c->completion_fd == c->sink_fd || c->completion_deadline_ns != deadline ||
+            grant_protocol_pipe(c->completion_fd, O_WRONLY) || fstat(c->completion_fd, &completion) ||
+            (uint64_t)completion.st_dev != c->completion_device ||
+            (uint64_t)completion.st_ino != c->completion_inode ||
+            (original.st_dev == completion.st_dev && original.st_ino == completion.st_ino)) return EINVAL;
+        for (size_t i = 0; i < count; ++i) {
+            struct stat other;
+            if (reserved[i] == c->completion_fd || reserved[i] == FIXED_COMPLETION_SINK_FD) return EINVAL;
+            if (reserved[i] >= 0 && !fstat(reserved[i], &other) &&
+                completion.st_dev == other.st_dev && completion.st_ino == other.st_ino) return EINVAL;
+        }
+        for (uint32_t i = 0; i < c->grant_count; ++i)
+            if (c->grants[i].fd == c->completion_fd || c->grants[i].fd == FIXED_COMPLETION_SINK_FD) return EINVAL;
+    }
     return 0;
 }
 
@@ -520,12 +549,14 @@ static int handoff_cloexec(int fd, int enabled) {
 
 static int handoff_close_keep(int *keep, size_t count);
 
-static int handoff_close_extra_with_sink(int target_fd, int error_fd, int broker_r, int broker_w, int sink_fd) {
-    int keep[5]; size_t count = 0;
+static int handoff_close_extra_with_sinks(int target_fd, int error_fd, int broker_r, int broker_w,
+                                        int sink_fd, int completion_fd) {
+    int keep[6]; size_t count = 0;
     keep[count++] = error_fd;
     if (target_fd >= 0) keep[count++] = target_fd;
     if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
     if (sink_fd >= 0) keep[count++] = sink_fd;
+    if (completion_fd >= 0) keep[count++] = completion_fd;
     return handoff_close_keep(keep, count);
 }
 
@@ -572,10 +603,11 @@ static int grant_fds_disjoint(const control_t *c, const int *reserved, size_t co
 }
 
 static int grant_close_phase1(const control_t *c, int error_fd, int broker_r, int broker_w) {
-    int keep[MAX_GRANTS + 5]; size_t count = 0;
+    int keep[MAX_GRANTS + 6]; size_t count = 0;
     keep[count++] = error_fd; keep[count++] = c->target_fd;
     if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
-    if (c->version == 3) keep[count++] = c->sink_fd;
+    if (c->version >= 3) keep[count++] = c->sink_fd;
+    if (c->version == 4) keep[count++] = c->completion_fd;
     for (uint32_t i = 0; i < c->grant_count; ++i) keep[count++] = c->grants[i].fd;
     return handoff_close_keep(keep, count);
 }
@@ -1192,9 +1224,10 @@ int main(int argc, char **argv) {
         close(frame_fd);
         /* Only anonymous broker descriptors are forwarded; never the controller
            environment, endpoint, headers, secrets, or journal descriptors. */
-        char broker_read[80], broker_write[80], sink_deadline[80];
+        char broker_read[80], broker_write[80], sink_deadline[80], completion_deadline[80];
         (void)sink_deadline;
-        char *target_env[] = {"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL, NULL, NULL, NULL};
+        (void)completion_deadline;
+        char *target_env[] = {"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL, NULL, NULL, NULL, NULL};
         const char *rpc_read = getenv("LUNAR_PRODUCER_RESPONSE_FD");
         const char *rpc_write = getenv("LUNAR_PRODUCER_REQUEST_FD");
         if (rpc_read || rpc_write) {
@@ -1205,7 +1238,7 @@ int main(int argc, char **argv) {
             snprintf(broker_write, sizeof(broker_write), "LUNAR_PRODUCER_REQUEST_FD=%d", w);
             target_env[3] = broker_read; target_env[4] = broker_write;
         }
-        if (c.version == 3) {
+        if (c.version >= 3) {
 #if defined(__linux__)
             int original_sink = c.sink_fd;
             if (original_sink != FIXED_LIVE_SINK_FD && dup2(original_sink, FIXED_LIVE_SINK_FD) < 0)
@@ -1219,6 +1252,20 @@ int main(int argc, char **argv) {
                      (unsigned long long)c.sink_deadline_ns);
             /* Keep the array packed even when the request broker is absent. */
             target_env[broker_r >= 0 ? 5 : 3] = sink_deadline;
+            if (c.version == 4) {
+                int original_completion = c.completion_fd;
+                if (original_completion != FIXED_COMPLETION_SINK_FD &&
+                    dup2(original_completion, FIXED_COMPLETION_SINK_FD) < 0)
+                    child_start_failed(exec_pipe[1], errno, 73);
+                if (original_completion != FIXED_COMPLETION_SINK_FD) close(original_completion);
+                c.completion_fd = FIXED_COMPLETION_SINK_FD;
+                flags = fcntl(c.completion_fd, F_GETFL);
+                if (flags < 0 || fcntl(c.completion_fd, F_SETFL, flags | O_NONBLOCK) ||
+                    handoff_cloexec(c.completion_fd, 0)) child_start_failed(exec_pipe[1], errno, 73);
+                snprintf(completion_deadline, sizeof(completion_deadline), "LUNAR_FIXED_COMPLETION_DEADLINE_NS=%llu",
+                         (unsigned long long)c.completion_deadline_ns);
+                target_env[broker_r >= 0 ? 6 : 4] = completion_deadline;
+            }
 #else
             child_start_failed(exec_pipe[1], EINVAL, 73);
 #endif
@@ -1233,7 +1280,8 @@ int main(int argc, char **argv) {
             (broker_r >= 0 && (handoff_cloexec(broker_r, 0) || handoff_cloexec(broker_w, 0))))
             child_start_failed(exec_pipe[1], errno, 73);
         int handoff_error = c.version >= 2 ? grant_close_phase1(&c, exec_pipe[1], broker_r, broker_w) :
-            (c.version == 3 ? handoff_close_extra_with_sink(c.target_fd, exec_pipe[1], broker_r, broker_w, c.sink_fd) :
+            (c.version >= 3 ? handoff_close_extra_with_sinks(c.target_fd, exec_pipe[1], broker_r, broker_w,
+                                                         c.sink_fd, c.version == 4 ? c.completion_fd : -1) :
              handoff_close_extra(c.target_fd, exec_pipe[1], broker_r, broker_w));
         if (handoff_error) child_start_failed(exec_pipe[1], handoff_error, 73);
         if (c.version >= 2) {
@@ -1247,7 +1295,8 @@ int main(int argc, char **argv) {
             int isolation = lunar_apply_grant_isolation(original, c.grant_count);
             if (isolation) child_start_failed(exec_pipe[1], isolation, 74);
             close_original_grants(&c);
-            handoff_error = (c.version == 3 ? handoff_close_extra_with_sink(c.target_fd, exec_pipe[1], broker_r, broker_w, c.sink_fd) :
+            handoff_error = (c.version >= 3 ? handoff_close_extra_with_sinks(c.target_fd, exec_pipe[1], broker_r, broker_w,
+                                                                         c.sink_fd, c.version == 4 ? c.completion_fd : -1) :
              handoff_close_extra(c.target_fd, exec_pipe[1], broker_r, broker_w));
             if (handoff_error) child_start_failed(exec_pipe[1], handoff_error, 73);
             if (guard_deadline_expired(&guard)) child_start_failed(exec_pipe[1], ECANCELED, 74);
@@ -1275,7 +1324,8 @@ int main(int argc, char **argv) {
     }
 #if defined(__linux__)
     if (c.version >= 2) { close_original_grants(&c); close(c.bootstrap_fd); }
-    if (c.version == 3) close(c.sink_fd);
+    if (c.version >= 3) close(c.sink_fd);
+    if (c.version == 4) close(c.completion_fd);
 #endif
     close(target_fd);
     close(exec_pipe[1]);

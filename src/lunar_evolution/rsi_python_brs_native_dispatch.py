@@ -171,7 +171,9 @@ def _run_original_brs_native_publication(
             handoff = read_python_producer_admission_handoff_pinned(batch, expected_file_pin=original.handoff.file_pin)
             if handoff != original.handoff:
                 _fail("handoff_drift")
-            _fixed_original_brs_owner(owner)
+            # Every transaction evidence call site owns the full fresh owner
+            # postgate. Keeping another one here would repeat the whole history
+            # walk immediately before that gate, with no intervening hook.
 
         def prepared(journal: object) -> None:
             _fixed_original_brs_owner(owner)

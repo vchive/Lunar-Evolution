@@ -1,7 +1,8 @@
 """Explicit expanded startup/native evidence inspection, never runtime admission.
 
-The original native call can supply a startup snapshot, receipt and prepared
-output. It cannot currently supply an original computation or pycache observer.
+The default native call supplies startup, receipt and prepared output. An
+explicit lifecycle profile can additionally retain original computation facts;
+it still supplies no complete pycache observer or build/runtime authority.
 This separate protocol joins what exists and exports those missing boundaries;
 it never converts startup facts to the legacy completed-runtime observation.
 """
@@ -11,23 +12,30 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import sqlite3
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import FunctionType
 
 from . import native_fixed_live_sink as sink
+from . import native_trusted_attempt as native_attempt
+from . import native_trusted_capture as native_capture
 from . import native_trusted_output as native_output
 from . import native_trusted_scheduler as native
 from . import openevolve_handoff as openevolve
+from . import producer_broker_ipc as broker_module
 from . import producer_bundle_admission as admission
 from . import producer_handoff as handoff
 from . import producer_launcher as launcher
 from . import shinka_handoff as shinka
 from . import static_python_fixed_runtime_observation as runtime
+from . import static_python_producer_completion as completion
 from .producer_handoff import ProducerMaterial, ProducerResultEnvelope
 from .producer_request_transport import HostRequestJournalIdentity, HostRequestSnapshot
 from .rsi_identity import component_fingerprint
 from .static_python_fixed_live_modules import FIXED_LIVE_RUNTIME_SINK_PROFILE
+from .static_python_producer_completion_source import FIXED_PRODUCER_LIFECYCLE_PROFILE
 
 PROTOCOL = "lunar-fixed-python-producer-evidence-inspection-v1"
 MAX_EVIDENCE_BYTES = 8 * 1024 * 1024
@@ -36,6 +44,18 @@ MISSING_EVIDENCE = (
     "original_captured_envelope_semantic_join",
     "accepted_build_input_custody", "accepted_runtime_authority_root",
 )
+_SQLITE_ORIGINAL_API = (
+    sqlite3, sqlite3.Connection, sqlite3.connect, getattr(sqlite3.Connection, "deserialize", None),
+    sqlite3.Connection.execute, sqlite3.Connection.set_progress_handler, sqlite3.Connection.close,
+)
+
+
+def _sqlite_api_pin() -> tuple:
+    current = (sqlite3, sqlite3.Connection, sqlite3.connect, getattr(sqlite3.Connection, "deserialize", None),
+               sqlite3.Connection.execute, sqlite3.Connection.set_progress_handler, sqlite3.Connection.close)
+    if any(observed is not original for observed, original in zip(current, _SQLITE_ORIGINAL_API, strict=True)):
+        raise ValueError
+    return tuple((value, id(value)) for value in current)
 
 
 class FixedPythonProducerEvidenceError(ValueError):
@@ -97,12 +117,31 @@ def _implementation_pin() -> tuple:
     # Re-resolve actual dependencies, not just imported aliases. Retain the
     # callable and its code strongly as well as their fingerprint and identities.
     helpers = (
-        _canonical, _sha, _join, _compare, _source_result, _implementation_pin, _original_objects,
+        _canonical, _sha, _join, _compare, _source_result, _completion_join,
+        _completion_source_material, _completion_artifact_freshness, _sqlite_api_pin,
+        _implementation_pin, _original_objects,
         _validated_wire, _capture_pin, _function_pin,
         compose_fixed_python_producer_evidence, read_fixed_python_producer_evidence_export,
         vars(FixedPythonProducerEvidence)["to_json"], vars(FixedPythonProducerEvidence)["to_dict"],
         component_fingerprint, native._native_handoff_evidence, native._native_output_envelope_pin,
         native._prepublication_evidence, native_output._native_output_envelope_pin,
+        native_attempt._original_native_completion_pin,
+        native_attempt._retain_original_native_completion,
+        native_attempt.original_native_grant_inputs,
+        native_attempt._stable_bytes, native_capture._stable_bytes,
+        native_capture._identity_value, native_capture._identity_digest,
+        native_capture._held_directory, native_capture._check_deadline,
+        broker_module._original_broker_exchange_pin,
+        completion._original_completion_reader_pin, completion.compare_fixed_producer_completion,
+        completion._canonical, completion._material, completion._same_material, completion._unique_object,
+        completion.NativeFixedProducerCompletionCapture.start,
+        completion.NativeFixedProducerCompletionCapture._read,
+        completion.NativeFixedProducerCompletionCapture._join,
+        completion.NativeFixedProducerCompletionCapture.cancel,
+        completion.NativeFixedProducerCompletionCapture.finish,
+        native_attempt._NativeTrustedCompletionAcquisition.__init__,
+        native_attempt._NativeTrustedCompletionAcquisition.__copy__,
+        native_attempt._NativeTrustedCompletionAcquisition.__deepcopy__,
         native_output._unique_object, native_output.parse_producer_envelope,
         native_output._NativeTrustedEnvelopeAcquisition.__init__,
         native_output._NativeTrustedEnvelopeAcquisition.__copy__,
@@ -147,8 +186,11 @@ def _implementation_pin() -> tuple:
         handoff.ProducerMaterial, handoff.ProducerResultEnvelope, HostRequestJournalIdentity, HostRequestSnapshot,
         admission.ProducerBundleAdmissionPlan, native_output._NativeTrustedOutputOriginal,
         native_output._NativeTrustedEnvelopeAcquisition, native_output.ProducerEnvelopeEvidence,
+        native_attempt._NativeTrustedCompletionAcquisition,
+        completion.FixedProducerCompletionBinding, completion.FixedProducerCompletionComparison,
+        completion.NativeFixedProducerCompletionCapture,
     )
-    return ((dataclasses._HAS_DEFAULT_FACTORY, id(dataclasses._HAS_DEFAULT_FACTORY)),
+    return ((dataclasses._HAS_DEFAULT_FACTORY, id(dataclasses._HAS_DEFAULT_FACTORY)), _sqlite_api_pin(),
             tuple((klass, id(klass)) for klass in classes), tuple(_function_pin(helper) for helper in helpers))
 
 
@@ -171,7 +213,8 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
             or receipt.intent_sha256 != intent.intent_sha256
             or receipt.attestation_sha256 != attestation.attestation_sha256
             or receipt.pid != observed.target_pid
-            or (intent.executable_device, intent.executable_inode) != (observed.image_device, observed.image_inode)
+            or (request.source_profile != FIXED_PRODUCER_LIFECYCLE_PROFILE
+                and (intent.executable_device, intent.executable_inode) != (observed.image_device, observed.image_inode))
             or receipt.execution_snapshot_sha256 != intent.executable_sha256
             or receipt.execution_snapshot_size != intent.executable_size
             or receipt.executable_identity != _sha({
@@ -197,7 +240,7 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
             or type(broker.journal_identity) is not HostRequestJournalIdentity
             or type(broker.snapshot) is not HostRequestSnapshot
             or type(broker.journal_path) is not type(Path())
-            or broker.complete is not True or broker.reason != "completed"
+            or broker.complete is not True or broker.reason not in {"complete", "completed"}
             or broker.snapshot.active_count != 0 or not broker.snapshot.within_broker_limits
             or broker.snapshot.admitted_count != receipt.request_count
             or broker.snapshot.request_timeout_seconds != intent.request_timeout_seconds
@@ -250,7 +293,11 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
         "dependency_sha256", "environment_sha256",
     )):
         raise ValueError
-    return {
+    computation = _completion_join(run, intent, attestation, request, facts, acquired)
+    missing = [name for name in MISSING_EVIDENCE
+               if not ((acquired is not None and name == "original_captured_envelope_semantic_join")
+                       or (computation is not None and name == "original_computation_observation"))]
+    report = {
         "schema_version": "1", "protocol": PROTOCOL, "status": "incomplete",
         **identity, "producer_id": intent.producer_id,
         "intent_sha256": intent.intent_sha256, "attestation_sha256": attestation.attestation_sha256,
@@ -265,11 +312,129 @@ def _join(run: native.NativeTrustedProducerRun, intent: launcher.ProducerLaunchI
         "envelope_bytes_sha256": output.envelope_bytes_sha256,
         "admission_plan_sha256": plan.digest(),
         "captured_envelope_semantic_join_verified": acquired is not None,
-        "missing_evidence": [name for name in MISSING_EVIDENCE
-                             if acquired is None or name != "original_captured_envelope_semantic_join"],
+        "missing_evidence": missing,
         "live_runtime_authenticated": False, "immutable_custody_verified": False,
         "production_admission": False, "online_publication": False,
     }
+    if request.source_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE:
+        report["original_computation_observation_verified"] = computation is not None
+        if computation is not None:
+            report["completion_sha256"] = computation.completion_sha256
+    return report
+
+
+def _completion_source_material(solver: str, artifacts: tuple, original: ProducerResultEnvelope) -> ProducerMaterial:
+    """Compare committed fixed-source semantics from the original retained bytes.
+
+    SQLite is inspected in memory, never imported as Python or evaluated. Only
+    this profile's single unevaluated proposal representation is admitted here.
+    """
+    (path, source, _source_stat), (_commit_path, committed, _commit_stat) = artifacts
+    if len(original.materials) != 1:
+        raise ValueError
+    if solver == "openevolve":
+        try:
+            payload = openevolve._parse_result(committed)
+        except openevolve.OpenEvolveHandoffError:
+            # Keep malformed original artifacts inside this boundary's finite
+            # refusal; producer-format exceptions never bypass the join gate.
+            raise ValueError from None
+        if payload != {"candidate_path": "candidate.py"} or path != "candidate.py":
+            raise ValueError
+        material = ProducerMaterial(
+            kind="candidate_source", path=path, size=len(source), sha256=hashlib.sha256(source).hexdigest(),
+            lineage=original.materials[0].lineage,
+            external_evidence={"present": False, "score_present": False, "payload_sha256": None},
+        )
+    else:
+        if path != "gen_0/main.py" or not 0 < len(committed) <= 256 * 1024:
+            raise ValueError
+        connection = sqlite3.connect(":memory:")
+        try:
+            connection.deserialize(committed)
+            connection.execute("PRAGMA query_only = ON")
+            connection.execute("PRAGMA trusted_schema = OFF")
+            connection.set_progress_handler(lambda: 1, 100000)
+            tables = tuple(connection.execute("SELECT name,type FROM sqlite_master ORDER BY name"))
+            if tables != (("programs", "table"), ("sqlite_autoindex_programs_1", "index")):
+                raise ValueError
+            rows = tuple(connection.execute(
+                "SELECT id,code,language,parent_id,generation,combined_score,correct FROM programs LIMIT 2"
+            ))
+            if (len(rows) != 1 or rows[0] != ("proposal", source.decode("utf-8"), "python", None, 0, None, 0)):
+                raise ValueError
+        except (sqlite3.Error, AttributeError, UnicodeError):
+            raise ValueError from None
+        finally:
+            connection.close()
+        material = ProducerMaterial(
+            kind="candidate_source", path=path, size=len(source), sha256=hashlib.sha256(source).hexdigest(),
+            lineage=(), external_evidence={"correct": False, "generation": 0, "program_id": "proposal"},
+        )
+    if _canonical(material.to_dict()) != _canonical(original.materials[0].to_dict()):
+        raise ValueError
+    return material
+
+
+def _completion_join(run, intent, attestation, request, facts, envelope_pin):
+    acquired = native_attempt._original_native_completion_pin(run.attempt)
+    if acquired is None:
+        return None
+    if request.source_profile != FIXED_PRODUCER_LIFECYCLE_PROFILE:
+        raise ValueError
+    # These must be the same objects retained by the original live native call,
+    # rather than equivalent descriptions supplied to this inspection later.
+    if (acquired[3] is not intent or acquired[4] is not attestation or acquired[5] is not request
+            or acquired[10] != (facts.live_modules_observation.image_device,
+                                facts.live_modules_observation.image_inode)):
+        raise ValueError
+    if envelope_pin is None:
+        return None
+    inputs, binding, artifacts, compared = acquired[2], acquired[6], acquired[7], acquired[8]
+    if (binding.target_pid != run.receipt.pid
+            or inputs.request.contract_sha256 != intent.contract_sha256
+            or binding.deadline_monotonic_ns != run.attempt.broker_observation.journal_identity.wall_deadline_ns
+            or binding.manifest_sha256 != inputs.manifest_sha256):
+        raise ValueError
+    _completion_artifact_freshness(acquired)
+    try:
+        _completion_source_material(intent.producer_id, artifacts, run.output.envelope)
+    except sqlite3.Error:
+        raise ValueError from None
+    return compared
+
+
+def _completion_artifact_freshness(acquired):
+    """Recheck original output paths against the native-owned byte/stat snapshot.
+
+    This is a bounded historical inspection; no producer allowance is renewed.
+    The new profile opts into these reads, while legacy startup inspection stays
+    pure. A caller-selected semantically equivalent copy cannot repair drift.
+    """
+    inputs, intent, artifacts = acquired[2], acquired[3], acquired[7]
+    root = inputs.workspace / "evolution" / "producer-batches" / intent.journal_id
+    if inputs.inputs_path != root / ".rsi-input":
+        raise ValueError
+    grants = native_attempt.original_native_grant_inputs(inputs)
+    for binding in grants.expected_bindings:
+        observed = Path(binding.path).stat(follow_symlinks=False)
+        if (observed.st_dev, observed.st_ino) != (binding.identity.device, binding.identity.inode):
+            raise ValueError
+    for material in grants.materials:
+        current, observed = native_attempt._stable_bytes(
+            Path(material.path), limit=256 * 1024, deadline=None, monotonic=time.monotonic,
+        )
+        if (current != material.content
+                or (observed["device"], observed["inode"], observed["mtime_ns"], observed["ctime_ns"])
+                != (material.identity.device, material.identity.inode, material.mtime_ns, material.ctime_ns)):
+            raise ValueError
+    for path, original, stat_info in artifacts:
+        current, observed = native_attempt._stable_bytes(
+            (root / intent.output_directory).joinpath(*path.split("/")),
+            limit=256 * 1024, deadline=None, monotonic=time.monotonic,
+        )
+        if current != original or tuple(sorted(observed.items())) != stat_info:
+            raise ValueError
 
 
 def _compare(run, intent, attestation, request, request_pin):
@@ -277,7 +442,7 @@ def _compare(run, intent, attestation, request, request_pin):
             or type(intent) is not launcher.ProducerLaunchIntent
             or type(attestation) is not launcher.ProducerLaunchAttestation
             or type(request) is not sink.FixedPythonLiveSinkRequest
-            or request.source_profile != FIXED_LIVE_RUNTIME_SINK_PROFILE):
+            or request.source_profile not in {FIXED_LIVE_RUNTIME_SINK_PROFILE, FIXED_PRODUCER_LIFECYCLE_PROFILE}):
         raise ValueError
     native_pin = native._native_handoff_evidence(run, request_pin)
     observed = run.attempt.live_modules_observation
@@ -286,6 +451,7 @@ def _compare(run, intent, attestation, request, request_pin):
         runtime_main_source=request.runtime_main_source,
         expected_installation_sha256=request.expected_installation_sha256,
         expected_observation_sha256=observed.observation_sha256,
+        producer_lifecycle=request.source_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE,
     )
     report = _join(run, intent, attestation, request, facts)
     report["evidence_sha256"] = _sha(report)
@@ -337,7 +503,7 @@ def _validated_wire(value: FixedPythonProducerEvidence) -> bytes:
         if _implementation_pin() != value._implementation:
             raise ValueError
         return wire
-    except (ValueError, TypeError, AttributeError, KeyError, IndexError, UnicodeError,
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, UnicodeError, OSError,
             OverflowError, RecursionError):
         raise FixedPythonProducerEvidenceError() from None
 
@@ -346,12 +512,14 @@ def compose_fixed_python_producer_evidence(
     run: native.NativeTrustedProducerRun, *, intent: launcher.ProducerLaunchIntent,
     attestation: launcher.ProducerLaunchAttestation, request: sink.FixedPythonLiveSinkRequest,
 ) -> FixedPythonProducerEvidence:
-    """Inspect explicitly supplied original native objects without product I/O or process effects.
+    """Inspect original native objects; never launch, evaluate or publish.
 
     Same-value replacement after composition is drift. The optional private
     preparation acquisition joins its original bounded read to the parsed DTO;
-    supplied DTOs alone do not. This never accepts a runtime, observes completed
-    computation/pycache or admits a candidate.
+    supplied DTOs alone do not. The explicit lifecycle profile also rechecks
+    original artifact files and may join privately acquired computation facts.
+    No profile accepts a runtime, supplies complete pycache coverage or admits
+    a candidate.
     """
     try:
         implementation = _implementation_pin()
@@ -366,7 +534,7 @@ def compose_fixed_python_producer_evidence(
         object.__setattr__(result, "_originals", (result, *_original_objects(run, intent, attestation, request, facts, wire)))
         _validated_wire(result)
         return result
-    except (ValueError, TypeError, AttributeError, KeyError, IndexError, UnicodeError,
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError, UnicodeError, OSError,
             OverflowError, RecursionError):
         raise FixedPythonProducerEvidenceError() from None
 

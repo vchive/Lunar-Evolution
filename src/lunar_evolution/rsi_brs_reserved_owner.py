@@ -179,17 +179,20 @@ def _retain_reserved_history_projection(cache, key, units):
     cache["retained_units"] += units
 
 
-def _original(ledger, original_checkpoint):
-    if (type(ledger) is not RSILedger or type(original_checkpoint) is not tuple
+def _original_checkpoint(original_checkpoint):
+    """Parse the retained original without observing or granting live authority."""
+    if (type(original_checkpoint) is not tuple
             or len(original_checkpoint) != 2 or type(original_checkpoint[0]) is not str
             or type(original_checkpoint[1]) is not bytes or len(original_checkpoint[1]) > 128 * 1024):
         _fail("original_invalid")
     original = strict_json(original_checkpoint[1], maximum=128 * 1024)
     if type(original) is not dict or canonical_json(original, maximum=128 * 1024) != original_checkpoint[1]:
         _fail("original_invalid")
-    run_id = original.get("run_id")
-    with ledger.read_only_observations():
-        history = RSILedger.controller_checkpoint_history(ledger, run_id)
+    return original
+
+
+def _original_history(original_checkpoint, original, history):
+    """Compare a complete freshly selected history supplied by the current reader."""
     if (sum((head, canonical_json(body, maximum=128 * 1024)) == original_checkpoint
             for head, body in history) != 1
             or original.get("mode") != "brs" or original.get("status") != "running"
@@ -201,11 +204,21 @@ def _original(ledger, original_checkpoint):
             or not 1 <= len(original["plan"]["practices"]) <= 8
             or original.get("executions") != {} or original.get(_FIELD) is not None):
         _fail("original_invalid")
+    run_id = original.get("run_id")
     episodes = tuple(f"{run_id}-practice-{original['plan']['wave']}-{ordinal}"
                      for ordinal in range(len(original["plan"]["practices"])))
     if type(original.get("intents")) is not dict or set(original["intents"]) != set(episodes):
         _fail("original_invalid")
     return original, episodes, history
+
+
+def _original(ledger, original_checkpoint):
+    if type(ledger) is not RSILedger:
+        _fail("original_invalid")
+    original = _original_checkpoint(original_checkpoint)
+    with ledger.read_only_observations():
+        history = RSILedger.controller_checkpoint_history(ledger, original.get("run_id"))
+    return _original_history(original_checkpoint, original, history)
 
 
 def _descriptor(workspace, entry, kind):
@@ -293,6 +306,14 @@ def read_reserved_brs_finalization_prefix(ledger, workspace, *, original_checkpo
 def _observe_reserved_brs_prefix(ledger, workspace, *, original_checkpoint, expected_checkpoint_sha256,
                                  finalization=False):
     original, episodes, history = _original(ledger, original_checkpoint)
+    return _observe_reserved_brs_prefix_history(ledger, workspace,
+        original_checkpoint=original_checkpoint, expected_checkpoint_sha256=expected_checkpoint_sha256,
+        original=original, episodes=episodes, history=history, finalization=finalization)
+
+
+def _observe_reserved_brs_prefix_history(ledger, workspace, *, original_checkpoint, expected_checkpoint_sha256,
+                                        original, episodes, history, finalization=False):
+    """Use this observation's explicit fresh roots; never retain them across calls."""
     workspace = recovery._workspace(workspace)
     observation = read_reserved_brs_completion_ledger(ledger, run_id=original["run_id"], episode_ids=episodes,
         expected_checkpoint_sha256=expected_checkpoint_sha256)
@@ -446,6 +467,14 @@ def reserved_prefix_observe(owner):
 
 
 def _retained_observation_head(owner):
+    wave = getattr(owner, "_wave", None)
+    if wave is None or getattr(wave, "owner_thread", None) != get_ident():
+        return owner._head
+    history = owner._ledger.controller_checkpoint_history(owner._run_id)
+    return _retained_observation_head_from_history(owner, history)
+
+
+def _retained_observation_head_from_history(owner, history):
     """Return the durable head allowed during the owner's one CAS transition.
 
     ``pin_python_admission_record`` appends the reference map before the live
@@ -461,7 +490,6 @@ def _retained_observation_head(owner):
         return expected
     if getattr(wave, "owner_thread", None) != get_ident():
         return expected
-    history = owner._ledger.controller_checkpoint_history(owner._run_id)
     try:
         owner_pair = (owner._head, json.loads(owner._payload))
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -655,9 +683,18 @@ def _observe_reserved_history(owner, state=None):
             _fail("history_observation_head_drift")
         expected_head = history[-1][0]
     else:
-        expected_head = _retained_observation_head(owner)
-    observed, batches = read_reserved_brs_prefix(owner._ledger, owner._workspace,
-        original_checkpoint=owner._reserved_original_checkpoint, expected_checkpoint_sha256=expected_head)
+        expected_head = _retained_observation_head_from_history(owner, history)
+    # No callback or filesystem observer separates the initial SELECT and these
+    # pure input checks. Supply that complete fresh history explicitly instead
+    # of selecting it again in the retained-head and original-prefix helpers.
+    # Public/worker prefix readers still make their own independent observation.
+    RSILedger._assert_controller_lock(owner._ledger, owner._run_id)
+    original = _original_checkpoint(owner._reserved_original_checkpoint)
+    original, episodes, history = _original_history(owner._reserved_original_checkpoint, original, history)
+    observed, batches = _observe_reserved_brs_prefix_history(owner._ledger, owner._workspace,
+        original_checkpoint=owner._reserved_original_checkpoint, expected_checkpoint_sha256=expected_head,
+        original=original, episodes=episodes, history=history)
+    RSILedger._assert_controller_lock(owner._ledger, owner._run_id)
     if observed != owner._reserved_prefix:
         _fail("prefix_observation_drift")
     domain = strict_json(observed.domain_bytes, maximum=112 * 1024)
@@ -680,7 +717,11 @@ def _observe_reserved_history(owner, state=None):
                                   if type(body.get(_FIELD)) is dict and body[_FIELD]["batches"] == original_entries)
                 prior = canonical_json(prior_wire, maximum=128 * 1024)
             verify_reserved_rejected_history(owner, entry, ordinal=ordinal,
-                prefix=prefixes[ordinal], original_lineage_bytes=prior)
+                prefix=prefixes[ordinal], original_lineage_bytes=prior, roots=history)
+    # Equality includes every older row, not just the tail/head. Physical
+    # observations cannot turn a same-head historical mutation into success.
+    if owner._ledger.controller_checkpoint_history(owner._run_id) != history:
+        _fail("history_observation_changed")
 
 
 def reserved_validate_entry_shape(owner, entry):

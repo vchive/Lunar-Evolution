@@ -19,6 +19,10 @@ from lunar_evolution.static_python_fixed_live_modules import (
     FIXED_LIVE_RUNTIME_SINK_PROFILE,
     FIXED_LIVE_SINK_LAUNCHER_PATH,
 )
+from lunar_evolution.static_python_producer_completion_source import (
+    COMPLETION_LAUNCHER_PATH,
+    FIXED_PRODUCER_LIFECYCLE_PROFILE,
+)
 from tools.static_python_fixture.profile import (
     ALIASES,
     CONFIG,
@@ -27,6 +31,10 @@ from tools.static_python_fixture.profile import (
     STATIC_ADDITIONS,
 )
 from tools.static_python_fixture.tables import _CORE_INITIALIZERS
+from tools.static_python_rsi_fixture.completion_source import (
+    prepare_fixed_producer_completion_entrypoint,
+    prepare_fixed_producer_completion_sources,
+)
 from tools.static_python_rsi_fixture.live_module_source import (
     prepare_fixed_live_main,
     prepare_fixed_live_sink_launcher,
@@ -737,10 +745,15 @@ def prepare_fixed_runtime_closure(
     if (live_modules_profile is not None
             and (type(live_modules_profile) is not str or live_modules_profile not in {
                 FIXED_LIVE_MODULES_PROFILE, FIXED_LIVE_PRIVATE_SINK_PROFILE, FIXED_LIVE_RUNTIME_SINK_PROFILE,
+                FIXED_PRODUCER_LIFECYCLE_PROFILE,
             })):
         _fail("live_module_profile_invalid")
     cpython = _pinned_sources(cpython_sources, expected_cpython_inventory_sha256)
     modules = _producer(solver, producer_files, producer_manifest)
+    if live_modules_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE:
+        modules[solver + ".lunar_fixed"] = prepare_fixed_producer_completion_entrypoint(
+            solver, modules[solver + ".lunar_fixed"], profile=FIXED_PRODUCER_LIFECYCLE_PROFILE,
+        )
     paths = {}
     packages = set()
     for path, raw in cpython.items():
@@ -867,12 +880,24 @@ def prepare_fixed_runtime_closure(
         live_aliases = tuple(sorted((
             *aliases.items(), *((name, _RUNTIME_ALIASES[name]) for name in runtime_aliases),
         )))
-        launcher = prepare_fixed_live_main(
-            solver, frozen_names=tuple(sorted(aliases.get(name, name) for name in selected)),
-            builtin_names=tuple(sorted(builtin)), aliases=live_aliases,
-            frozen_packages=tuple(sorted(aliases.get(name, name) for name in selected if name in packages)),
-            **({"runtime_observation": True} if live_modules_profile == FIXED_LIVE_RUNTIME_SINK_PROFILE else {}),
-        )
+        live_arguments = {
+            "frozen_names": tuple(sorted(aliases.get(name, name) for name in selected)),
+            "builtin_names": tuple(sorted(builtin)), "aliases": live_aliases,
+            "frozen_packages": tuple(sorted(aliases.get(name, name) for name in selected if name in packages)),
+        }
+        if live_modules_profile == FIXED_PRODUCER_LIFECYCLE_PROFILE:
+            completion = prepare_fixed_producer_completion_sources(
+                solver, **live_arguments, profile=FIXED_PRODUCER_LIFECYCLE_PROFILE,
+            )
+            if completion.producer_source != modules[solver + ".lunar_fixed"]:
+                _fail("completion_source_drift")
+            launcher = completion.frozen_main_source
+            generated[COMPLETION_LAUNCHER_PATH] = completion.launcher_source
+        else:
+            launcher = prepare_fixed_live_main(
+                solver, **live_arguments,
+                **({"runtime_observation": True} if live_modules_profile == FIXED_LIVE_RUNTIME_SINK_PROFILE else {}),
+            )
         generated["runtime/frozen_main.py"] = launcher
         selected["_lunar_static_main"] = ("runtime/frozen_main.py", launcher)
         if live_modules_profile in {FIXED_LIVE_PRIVATE_SINK_PROFILE, FIXED_LIVE_RUNTIME_SINK_PROFILE}:

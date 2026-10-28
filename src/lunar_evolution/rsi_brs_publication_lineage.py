@@ -967,7 +967,9 @@ def _policy() -> dict[str, Any]:
             "_reserved_history_projection_cache",
             "_reserved_history_projection_key", "_retain_reserved_history_projection",
             "_reserved_history_wire_checks", "_reserved_history_shape_observations",
-            "_clear_reserved_history_projection", "_compare_reserved_history_wires", "_observe_reserved_history")),
+            "_clear_reserved_history_projection", "_compare_reserved_history_wires", "_observe_reserved_history",
+            "_original_checkpoint", "_original_history", "_observe_reserved_brs_prefix_history",
+            "_retained_observation_head_from_history")),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "_connect", "_checkpoint_python_references", "_checkpoint_digest", "_checkpoint_reference_rows_tx",
             "_checkpoint_projection_cache", "_controller_checkpoint_history_rows_tx",
@@ -1157,7 +1159,8 @@ def _policy() -> dict[str, Any]:
             "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
             "_call_original_brs_owner", "_run_original_brs_native_publication", "_rejection_committed")),
         *((getattr(transaction, name), transaction) for name in (
-            "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+            "_validate_native_lineage_scope", "_native_lineage_call", "_observe_native_producer_evidence",
+            "derive_population_state_after",
             "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
             "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
             "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")),
@@ -1373,7 +1376,8 @@ def _policy() -> dict[str, Any]:
                     "_fail", "_original_control", "_fixed_original_brs_owner", "_original_brs_numeric_tail",
                     "_call_original_brs_owner", "_run_original_brs_native_publication", "_rejection_committed")},
                 "transaction": {name: component_fingerprint(getattr(transaction, name)) for name in (
-                    "_validate_native_lineage_scope", "_native_lineage_call", "derive_population_state_after",
+                    "_validate_native_lineage_scope", "_native_lineage_call", "_observe_native_producer_evidence",
+                    "derive_population_state_after",
                     "_derive_population_state_after", "_run_bound_native_producer_bundle_publication_transaction",
                     "_run_native_producer_bundle_publication_transaction", "_verify_native_execution_receipt_link",
                     "_verify_python_handoff_link", "_verify_python_admission_attempt_anchor", "_admission_attempt_anchor")},

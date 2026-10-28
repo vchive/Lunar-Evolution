@@ -13,23 +13,32 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from types import FunctionType
 
 from .controller_http_transport import ControllerHttpRequest, ControllerHttpTransport
-from .controller_request_broker import ControllerOwnedRequestBroker, ControllerRequestBrokerError
+from .controller_request_broker import (
+    BrokerRequestResult,
+    ControllerOwnedRequestBroker,
+    ControllerRequestBrokerError,
+)
 from .http_transport import (
     MAX_REQUEST_BYTES,
     MAX_RESULT_BYTES,
+    TransportResponse,
     _validate_fixed_destination_endpoint,
 )
 from .producer_launcher import ProducerLaunchIntent
 from .producer_request_transport import (
+    HostRequestEvent,
     HostRequestJournal,
     HostRequestJournalIdentity,
     HostRequestLedger,
     HostRequestSnapshot,
     ProducerRequestTransportError,
+    RequestAdmission,
     read_host_request_journal,
 )
+from .rsi_identity import component_fingerprint
 
 _MAX_FRAME_BYTES = MAX_REQUEST_BYTES * 4 // 3 + 4096
 _MAX_RESPONSE_FRAME_BYTES = MAX_RESULT_BYTES * 4 // 3 + 4096
@@ -56,8 +65,26 @@ class ProducerBrokerConfig:
         ControllerHttpRequest(self.endpoint, self.headers, b"")
 
 
+class _ProducerBrokerOriginal:
+    # Deliberately absent from constructor, asdict and durable recovery.
+    __slots__ = ("_original_exchange_acquisition",)
+
+
+class _ProducerBrokerExchangeAcquisition:
+    __slots__ = ("body", "deadline_ns", "facts", "implementation", "originals", "reply", "result")
+
+    def __init__(self) -> None:
+        raise ProducerBrokerIpcError("producer_broker_exchange_private")
+
+    def __copy__(self):
+        raise ProducerBrokerIpcError("producer_broker_exchange_detached")
+
+    def __deepcopy__(self, memo):
+        raise ProducerBrokerIpcError("producer_broker_exchange_detached")
+
+
 @dataclass(frozen=True, slots=True)
-class ProducerBrokerObservation:
+class ProducerBrokerObservation(_ProducerBrokerOriginal):
     snapshot: HostRequestSnapshot
     journal_path: Path
     journal_identity: HostRequestJournalIdentity
@@ -66,6 +93,130 @@ class ProducerBrokerObservation:
     complete: bool
     reason: str
     journal_file_identity: tuple[int, int] | None = None
+
+
+def _broker_exchange_implementation_pin() -> tuple:
+    helpers = (
+        serve_producer_broker, _original_broker_exchange_pin, _broker_exchange_facts,
+        _broker_exchange_implementation_pin, _encode, _decode, _body, _read_line,
+        _write_line, _check_stop, _unique, _invalid,
+        ControllerOwnedRequestBroker.execute, ControllerHttpTransport.start,
+        HostRequestLedger.admit, HostRequestLedger.finish, HostRequestLedger.snapshot,
+        HostRequestJournalIdentity.to_dict, ProducerBrokerObservation.__init__,
+        _ProducerBrokerExchangeAcquisition.__init__, _ProducerBrokerExchangeAcquisition.__copy__,
+        _ProducerBrokerExchangeAcquisition.__deepcopy__, read_host_request_journal, component_fingerprint,
+    )
+    if any(type(helper) is not FunctionType for helper in helpers):
+        raise ProducerBrokerIpcError("producer_broker_exchange_changed")
+    return (
+        (ProducerBrokerObservation, _ProducerBrokerOriginal, _ProducerBrokerExchangeAcquisition,
+         BrokerRequestResult, TransportResponse, HostRequestEvent, RequestAdmission,
+         HostRequestSnapshot, HostRequestJournalIdentity, ControllerHttpRequest,
+         ControllerOwnedRequestBroker, ControllerHttpTransport),
+        (MAX_REQUEST_BYTES, MAX_RESULT_BYTES, _MAX_FRAME_BYTES, _MAX_RESPONSE_FRAME_BYTES),
+        tuple((helper, helper.__code__, helper.__defaults__,
+               tuple(sorted((helper.__kwdefaults__ or {}).items())),
+               component_fingerprint(helper, config={})) for helper in helpers),
+    )
+
+
+def _broker_exchange_facts(observation, result, body, reply, deadline_ns) -> tuple:
+    if (type(observation) is not ProducerBrokerObservation
+            or type(result) is not BrokerRequestResult
+            or type(result.admission) is not RequestAdmission
+            or type(result.event) is not HostRequestEvent
+            or type(result.response) is not TransportResponse
+            or type(body) is not bytes or len(body) > MAX_REQUEST_BYTES
+            or type(reply) is not bytes or len(reply) > MAX_RESULT_BYTES
+            or result.response.body is not reply
+            or type(result.response.status) is not int or result.response.status != 200
+            or result.cancellation_requested is not False
+            or result.cancellation_acknowledged is not False
+            or result.host_timeout_enforced is not False
+            or type(deadline_ns) is not int or not 0 < deadline_ns < 2**63
+            or type(observation.snapshot) is not HostRequestSnapshot
+            or type(observation.journal_identity) is not HostRequestJournalIdentity
+            or type(observation.journal_path) is not type(Path())
+            or observation.complete is not True or observation.reason != "complete"):
+        raise ProducerBrokerIpcError("producer_broker_exchange_changed")
+    snapshot, identity, admission, event = (
+        observation.snapshot, observation.journal_identity, result.admission, result.event,
+    )
+    if (type(snapshot.events) is not tuple or len(snapshot.events) != 1
+            or snapshot.events[0] is not event
+            or type(snapshot.admitted_count) is not int or snapshot.admitted_count != 1
+            or type(snapshot.active_count) is not int or snapshot.active_count != 0
+            or type(snapshot.request_timeout_seconds) is not int
+            or type(snapshot.max_requests) is not int
+            or type(snapshot.coverage) is not str or type(snapshot.clock_source) is not str
+            or snapshot.coverage != "brokered_requests_only"
+            or snapshot.clock_source != "controller_monotonic"
+            or type(identity.max_requests) is not int or identity.max_requests < 1
+            or type(identity.request_timeout_seconds) is not int
+            or not 1 <= identity.request_timeout_seconds <= 86_400
+            or snapshot.max_requests != identity.max_requests
+            or snapshot.request_timeout_seconds != identity.request_timeout_seconds
+            or type(identity.wall_deadline_ns) is not int
+            or identity.wall_deadline_ns != deadline_ns
+            or type(event.sequence) is not int or event.sequence != 1
+            or type(event.request_id) is not str or event.request_id != "req-1"
+            or type(event.status) is not str or event.status != "completed"
+            or type(event.duration_ms) is not int or event.duration_ms < 0
+            or type(admission.sequence) is not int or admission.sequence != event.sequence
+            or admission.request_id is not event.request_id
+            or type(admission.started_ns) is not int or type(admission.deadline_ns) is not int
+            or not 0 < admission.started_ns < admission.deadline_ns <= deadline_ns
+            or type(observation.journal_sha256) is not str
+            or len(observation.journal_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in observation.journal_sha256)
+            or type(observation.journal_bytes) is not int or observation.journal_bytes <= 0
+            or type(observation.journal_file_identity) is not tuple
+            or len(observation.journal_file_identity) != 2
+            or any(type(value) is not int or value < 0 for value in observation.journal_file_identity)):
+        raise ProducerBrokerIpcError("producer_broker_exchange_changed")
+    if (any(type(value) is not str or _REQUEST_ID.fullmatch(value) is None for value in (
+            identity.launch_id, identity.journal_id, identity.run_id, identity.parent_task_id, identity.task_id))
+            or type(identity.intent_sha256) is not str or len(identity.intent_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in identity.intent_sha256)):
+        raise ProducerBrokerIpcError("producer_broker_exchange_changed")
+    return (
+        tuple(identity.to_dict().items()), observation.journal_path,
+        observation.journal_sha256, observation.journal_bytes, observation.journal_file_identity,
+        snapshot.request_timeout_seconds, snapshot.max_requests,
+        event.sequence, event.request_id, event.status, event.duration_ms,
+        admission.started_ns, admission.deadline_ns, result.response.status,
+    )
+
+
+def _original_broker_exchange_pin(observation: ProducerBrokerObservation) -> tuple | None:
+    """Recheck the sole original delivered exchange; recovered/public DTOs have none.
+
+    Positions 2 and 4 are the actual body/reply bytes, followed at positions 6–8
+    by request ID, HTTP status and the original absolute monotonic deadline.
+    This process-local pin never writes provider material to a journal or export.
+    """
+    try:
+        if type(observation) is not ProducerBrokerObservation:
+            raise ValueError
+        acquired = getattr(observation, "_original_exchange_acquisition", None)
+        if acquired is None:
+            return None
+        if type(acquired) is not _ProducerBrokerExchangeAcquisition:
+            raise ValueError
+        result, body, reply, originals = acquired.result, acquired.body, acquired.reply, acquired.originals
+        current = (acquired, observation, body, reply, result, result.admission, result.event,
+                   result.response, observation.snapshot, observation.snapshot.events,
+                   observation.journal_identity, observation.journal_path)
+        if (type(originals) is not tuple or len(originals) != len(current)
+                or any(value is not original for value, original in zip(current, originals, strict=True))
+                or _broker_exchange_implementation_pin() != acquired.implementation
+                or _broker_exchange_facts(observation, result, body, reply, acquired.deadline_ns) != acquired.facts):
+            raise ValueError
+        return (acquired, id(acquired), body, id(body), reply, id(reply),
+                result.event.request_id, result.response.status, acquired.deadline_ns,
+                originals, acquired.facts, acquired.implementation)
+    except (ValueError, TypeError, AttributeError, KeyError, RecursionError, OverflowError):
+        raise ProducerBrokerIpcError("producer_broker_exchange_changed") from None
 
 
 def _encode(value: dict[str, object], *, limit: int) -> bytes:
@@ -205,6 +356,7 @@ def serve_producer_broker(
     journal_dir: Path, config: ProducerBrokerConfig, deadline_ns: int,
     ready: threading.Event | None = None,
     stop: threading.Event | None = None,
+    retain_original_exchange: bool = False,
 ) -> ProducerBrokerObservation:
     """Serve one isolated target through a controller-owned, fixed-endpoint broker.
 
@@ -213,6 +365,11 @@ def serve_producer_broker(
     """
     if type(intent) is not ProducerLaunchIntent or type(config) is not ProducerBrokerConfig:
         raise ProducerBrokerIpcError("producer_broker_input_invalid")
+    if type(retain_original_exchange) is not bool:
+        raise ProducerBrokerIpcError("producer_broker_input_invalid")
+    implementation = _broker_exchange_implementation_pin() if retain_original_exchange else None
+    original_exchange = None
+    delivered_count = 0
     try:
         _validate_fixed_destination_endpoint(config.endpoint)
     except ValueError as exc:
@@ -267,6 +424,13 @@ def serve_producer_broker(
                     "body_base64": base64.b64encode(response.body).decode("ascii") if response is not None else None,
                 }, limit=_MAX_RESPONSE_FRAME_BYTES)
                 _write_line(response_fd, data, deadline_ns, stop=stop)
+                if retain_original_exchange:
+                    # These are the exact decoded body and response consumed by
+                    # this execute call. A partial/failed pipe write retains none.
+                    delivered_count += 1
+                    original_exchange = ((body, result.response.body, result)
+                                         if delivered_count == 1 and type(result.response) is TransportResponse
+                                         else None)
                 if result.event.status == "timed_out":
                     reason = (
                         "request_timed_out" if result.host_timeout_enforced
@@ -288,7 +452,7 @@ def serve_producer_broker(
     )
     if recovered.snapshot != snapshot or (reason == "complete" and recovered.uncertain_request_ids):
         raise ProducerBrokerIpcError("producer_broker_journal_recovery_mismatch")
-    return ProducerBrokerObservation(
+    observation = ProducerBrokerObservation(
         snapshot=snapshot,
         journal_path=journal_path,
         journal_identity=identity,
@@ -298,6 +462,26 @@ def serve_producer_broker(
         reason=reason,
         journal_file_identity=recovered.journal_file_identity,
     )
+    if (retain_original_exchange and observation.complete and original_exchange is not None
+            and delivered_count == 1 and snapshot.admitted_count == 1):
+        body, reply, result = original_exchange
+        if (result.event.request_id == "req-1" and result.event.status == "completed"
+                and type(result.response.status) is int and result.response.status == 200):
+            if (time.monotonic_ns() >= deadline_ns
+                    or _broker_exchange_implementation_pin() != implementation):
+                raise ProducerBrokerIpcError("producer_broker_exchange_changed")
+            acquired = object.__new__(_ProducerBrokerExchangeAcquisition)
+            acquired.body, acquired.reply, acquired.result = body, reply, result
+            acquired.deadline_ns, acquired.implementation = deadline_ns, implementation
+            acquired.facts = _broker_exchange_facts(observation, result, body, reply, deadline_ns)
+            acquired.originals = (
+                acquired, observation, body, reply, result, result.admission, result.event,
+                result.response, observation.snapshot, observation.snapshot.events,
+                observation.journal_identity, observation.journal_path,
+            )
+            object.__setattr__(observation, "_original_exchange_acquisition", acquired)
+            _original_broker_exchange_pin(observation)
+    return observation
 
 
 def recover_producer_broker_observation(

@@ -12,7 +12,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from .http_transport import _validate_fixed_destination_endpoint
@@ -28,11 +28,13 @@ from .native_bootstrap import (
     LINUX_KEYRING_CONTROL_IMPLEMENTATION,
     LINUX_POSIX_MQ_CONTROL_IMPLEMENTATION,
     NativeBootstrapArtifact,
+    NativeBootstrapCompletionSink,
     NativeBootstrapError,
     NativeBootstrapPrivateSink,
     encode_native_bootstrap_control,
     encode_native_bootstrap_control_v2,
     encode_native_bootstrap_control_v3,
+    encode_native_bootstrap_control_v4,
     load_native_bootstrap_artifact,
     native_bootstrap_command,
 )
@@ -53,7 +55,11 @@ from .native_guardian_registration import (
     NativeGuardianCustodyRequest,
     NativeGuardianRegistrationError,
 )
-from .native_trusted_capture import NativeTrustedCaptureError, capture_native_trusted_output
+from .native_trusted_capture import (
+    NativeTrustedCaptureError,
+    _stable_bytes,
+    capture_native_trusted_output,
+)
 from .native_trusted_cleanup import (
     NativeTrustedCleanupError,
     persist_native_trusted_cleanup,
@@ -84,6 +90,7 @@ from .producer_bootstrap import (
 from .producer_broker_ipc import (
     ProducerBrokerConfig,
     ProducerBrokerObservation,
+    _original_broker_exchange_pin,
     serve_producer_broker,
 )
 from .producer_bundle_deadline import _boot_id as _producer_boot_id
@@ -120,6 +127,14 @@ from .rsi_native_inputs import (
     validate_native_rsi_launch_inputs,
 )
 from .static_python_fixed_live_modules import FixedPythonBoundLiveModules
+from .static_python_producer_completion import (
+    COMPLETION_PROFILE,
+    FixedProducerCompletionBinding,
+    FixedProducerCompletionError,
+    NativeFixedProducerCompletionCapture,
+    _original_completion_reader_pin,
+    compare_fixed_producer_completion,
+)
 from .trusted_bootstrap_binding import (
     TrustedBootstrapBindingError,
     _original_linux_bootstrap_owner,
@@ -202,8 +217,42 @@ class NativeTrustedRegisteredContext:
     publication_eligible: bool = False
 
 
+class _NativeTrustedAttemptOriginal:
+    __slots__ = ("_original_completion_acquisition",)
+
+
+_NATIVE_COMPLETION_TOKEN = object()
+
+
+class _NativeTrustedCompletionAcquisition:
+    __slots__ = (
+        "_originals",
+        "_pin",
+        "artifacts",
+        "attempt",
+        "attestation",
+        "binding",
+        "broker_pin",
+        "comparison",
+        "image_identity",
+        "inputs",
+        "intent",
+        "reader",
+        "request",
+    )
+
+    def __init__(self) -> None:
+        raise NativeTrustedAttemptError("native_completion_acquisition_private")
+
+    def __copy__(self):
+        raise NativeTrustedAttemptError("native_completion_acquisition_detached")
+
+    def __deepcopy__(self, memo):
+        raise NativeTrustedAttemptError("native_completion_acquisition_detached")
+
+
 @dataclass(frozen=True, slots=True)
-class NativeTrustedAttemptObservation:
+class NativeTrustedAttemptObservation(_NativeTrustedAttemptOriginal):
     launch_id: str
     journal_id: str
     status: str
@@ -219,6 +268,126 @@ class NativeTrustedAttemptObservation:
     stream_observation: NativeTrustedStreamObservation | None = None
     broker_observation: ProducerBrokerObservation | None = None
     live_modules_observation: FixedPythonBoundLiveModules | None = None
+    producer_completion_bytes: bytes | None = None
+    producer_completion_partial_bytes: bytes | None = None
+
+
+def _original_native_completion_pin(attempt: NativeTrustedAttemptObservation) -> tuple | None:
+    """Revalidate one private original attempt's computation acquisition.
+
+    Public DTO constructors, byte fields, copies and durable recovery carry no
+    acquisition. This pin remains separate from runtime/build acceptance.
+    """
+    try:
+        if type(attempt) is not NativeTrustedAttemptObservation:
+            raise ValueError
+        acquired = getattr(attempt, "_original_completion_acquisition", None)
+        if acquired is None:
+            return None
+        if type(acquired) is not _NativeTrustedCompletionAcquisition:
+            raise ValueError
+        originals = (acquired, attempt, acquired.inputs, acquired.intent, acquired.attestation,
+                     acquired.request, acquired.reader, acquired.binding, acquired.artifacts,
+                     acquired.comparison, acquired.broker_pin, acquired.image_identity)
+        if (type(acquired._originals) is not tuple or len(acquired._originals) != len(originals)
+                or any(current is not original for current, original in zip(originals, acquired._originals, strict=True))
+                or acquired.attempt is not attempt
+                or type(acquired.inputs) is not NativeRSIInputDescriptor
+                or type(acquired.request) is not FixedPythonLiveSinkRequest
+                or acquired.request.source_profile != COMPLETION_PROFILE
+                or type(acquired.binding) is not FixedProducerCompletionBinding
+                or attempt.reason != "native_trusted_attempt_request_and_output_unverified"
+                or attempt.gate_released is not True or attempt.target_started is not True
+                or attempt.exit_code != 0 or attempt.cleanup_status not in {"cleaned", "already_exited"}
+                or attempt.output_capture_sha256 is None or attempt.terminal_sha256 is None
+                or attempt.live_modules_observation is None):
+            raise ValueError
+        raw = attempt.producer_completion_bytes
+        reader_pin = _original_completion_reader_pin(acquired.reader, raw)
+        broker_pin = _original_broker_exchange_pin(attempt.broker_observation)
+        if broker_pin is None or broker_pin != acquired.broker_pin:
+            raise ValueError
+        binding, inputs, observed = acquired.binding, acquired.inputs, attempt.live_modules_observation
+        solver_request = inputs.request
+        if (solver_request.solver_id != binding.solver
+                or solver_request.contract_sha256 != acquired.intent.contract_sha256
+                or solver_request.evaluator_sha256 != acquired.intent.evaluator_fingerprint
+                or solver_request.environment_sha256 != acquired.intent.environment_sha256
+                or solver_request.memory_snapshot_sha256 != inputs.memory_snapshot_sha256
+                or binding.target_pid != observed.target_pid
+                or binding.manifest_sha256 != observed.manifest_sha256
+                or binding.manifest_sha256 != inputs.manifest_sha256
+                or binding.solver != acquired.intent.producer_id
+                or acquired.intent.argv != (acquired.intent.argv[0], NATIVE_RSI_INPUT_MARKER, inputs.manifest_sha256)
+                or (observed.image_device, observed.image_inode)
+                != acquired.image_identity
+                or binding.deadline_monotonic_ns != broker_pin[8]):
+            raise ValueError
+        comparison = compare_fixed_producer_completion(
+            raw, binding=binding, request_bytes=inputs.request_json, memory_bytes=inputs.memory_json,
+            request_body_bytes=broker_pin[2], reply_bytes=broker_pin[4],
+            artifacts=tuple((path, content) for path, content, _stat in acquired.artifacts),
+        )
+        pin = (
+            reader_pin, broker_pin,
+            tuple((field.name, id(getattr(inputs, field.name)), getattr(inputs, field.name)) for field in fields(inputs)),
+            acquired.intent.digest(), acquired.attestation.digest(),
+            acquired.image_identity,
+            tuple((field.name, id(getattr(attempt, field.name)), getattr(attempt, field.name)) for field in fields(attempt)
+                  if field.name != "broker_observation"),
+            tuple((path, id(content), content, stat_info) for path, content, stat_info in acquired.artifacts),
+            comparison,
+        )
+        if pin != acquired._pin or comparison != acquired.comparison:
+            raise ValueError
+        return (acquired, id(acquired), inputs, acquired.intent, acquired.attestation,
+                acquired.request, acquired.binding, acquired.artifacts, comparison, pin,
+                acquired.image_identity)
+    except (ValueError, TypeError, AttributeError, KeyError, IndexError):
+        raise NativeTrustedAttemptError("native_completion_acquisition_changed") from None
+
+
+def _retain_original_native_completion(
+    token: object, attempt: NativeTrustedAttemptObservation, *, inputs: NativeRSIInputDescriptor,
+    intent: ProducerLaunchIntent, attestation: ProducerLaunchAttestation,
+    request: FixedPythonLiveSinkRequest, reader: NativeFixedProducerCompletionCapture,
+    binding: FixedProducerCompletionBinding, artifacts: tuple, image_identity: tuple[int, int],
+) -> None:
+    """Called only by the live attempt after original grant/output observation.
+
+    There is no constructor argument or durable wire for this acquisition.
+    The caller owns the grants, native terminal, original deadline and snapshots.
+    """
+    if token is not _NATIVE_COMPLETION_TOKEN:
+        raise NativeTrustedAttemptError("native_completion_acquisition_private")
+    broker_pin = _original_broker_exchange_pin(attempt.broker_observation)
+    if broker_pin is None:
+        raise NativeTrustedAttemptError("native_completion_broker_acquisition_missing")
+    comparison = compare_fixed_producer_completion(
+        attempt.producer_completion_bytes, binding=binding,
+        request_bytes=inputs.request_json, memory_bytes=inputs.memory_json,
+        request_body_bytes=broker_pin[2], reply_bytes=broker_pin[4],
+        artifacts=tuple((path, raw) for path, raw, _stat in artifacts),
+    )
+    acquired = object.__new__(_NativeTrustedCompletionAcquisition)
+    (acquired.inputs, acquired.intent, acquired.attestation, acquired.request, acquired.reader,
+     acquired.binding, acquired.artifacts, acquired.attempt, acquired.comparison,
+     acquired.broker_pin, acquired.image_identity) = (
+         inputs, intent, attestation, request, reader, binding, artifacts, attempt, comparison,
+         broker_pin, image_identity,
+     )
+    acquired._originals = (acquired, attempt, inputs, intent, attestation, request, reader,
+                           binding, artifacts, comparison, broker_pin, image_identity)
+    acquired._pin = (
+        _original_completion_reader_pin(reader, attempt.producer_completion_bytes), broker_pin,
+        tuple((field.name, id(getattr(inputs, field.name)), getattr(inputs, field.name)) for field in fields(inputs)),
+        intent.digest(), attestation.digest(), image_identity,
+        tuple((field.name, id(getattr(attempt, field.name)), getattr(attempt, field.name)) for field in fields(attempt)
+              if field.name != "broker_observation"),
+        tuple((path, id(content), content, stat_info) for path, content, stat_info in artifacts), comparison,
+    )
+    object.__setattr__(attempt, "_original_completion_acquisition", acquired)
+    _original_native_completion_pin(attempt)
 
 
 def _terminal_receipt(
@@ -921,6 +1090,8 @@ def run_native_trusted_attempt(
         stream_capture_failed = False
         live_sink_capture: NativeFixedLiveSinkCapture | None = None
         live_modules_observation: FixedPythonBoundLiveModules | None = None
+        completion_capture: NativeFixedProducerCompletionCapture | None = None
+        producer_completion_bytes: bytes | None = None
         handoff_sha256: str | None = None
         claimed = False
         cancellation_requested = False
@@ -987,6 +1158,7 @@ def run_native_trusted_attempt(
                 broker_child_fds: tuple[int, int] = ()
                 sink_child_fds: tuple[int, ...] = ()
                 private_sink: NativeBootstrapPrivateSink | None = None
+                completion_sink: NativeBootstrapCompletionSink | None = None
                 sink_image_identity: tuple[int, int] | None = None
                 if live_modules_sink is not None:
                     sink_read, sink_write = os.pipe()
@@ -998,6 +1170,15 @@ def run_native_trusted_attempt(
                     private_sink = NativeBootstrapPrivateSink(
                         sink_write, pipe_identity.st_dev, pipe_identity.st_ino, native_deadline_ns,
                     )
+                    if live_modules_sink.source_profile == COMPLETION_PROFILE:
+                        completion_read, completion_write = os.pipe()
+                        fds.update((completion_read, completion_write))
+                        sink_child_fds = (sink_write, completion_write)
+                        completion_identity = os.fstat(completion_write)
+                        completion_sink = NativeBootstrapCompletionSink(
+                            completion_write, completion_identity.st_dev,
+                            completion_identity.st_ino, native_deadline_ns,
+                        )
                 broker_env = {"PATH": os.defpath, "LANG": "C"}
                 if broker_config is not None:
                     request_read, request_write = os.pipe()
@@ -1012,12 +1193,15 @@ def run_native_trusted_attempt(
 
                     def serve() -> None:
                         try:
+                            completion_options = ({"retain_original_exchange": True}
+                                                  if completion_sink is not None else {})
                             broker_state["observation"] = serve_producer_broker(
                                 request_read, response_write, intent=intent,
                                 journal_dir=batch / ".host-request-journal",
                                 config=broker_config, deadline_ns=broker_deadline_ns,
                                 ready=broker_ready,
                                 stop=broker_stop,
+                                **completion_options,
                             )
                         except Exception:  # noqa: BLE001 - fixed-code thread boundary
                             broker_state["error"] = "native_trusted_attempt_broker_unknown"
@@ -1033,9 +1217,12 @@ def run_native_trusted_attempt(
                     _validate_original_linux_executable_pair(pair)
                 if grant_owner is not None:
                     _check_original_attempt_grants(grant_owner, inputs)
-                    encoder = (encode_native_bootstrap_control_v3 if private_sink is not None
+                    encoder = (encode_native_bootstrap_control_v4 if completion_sink is not None else
+                               encode_native_bootstrap_control_v3 if private_sink is not None
                                else encode_native_bootstrap_control_v2)
                     sink_kwargs = {"private_sink": private_sink} if private_sink is not None else {}
+                    if completion_sink is not None:
+                        sink_kwargs["completion_sink"] = completion_sink
                     control = encoder(
                         launch, target_path=pair.target.executable,
                         target_argv=(pair.target.executable, *intent.argv[1:]),
@@ -1093,6 +1280,15 @@ def run_native_trusted_attempt(
                         cancelled=lambda: _observe_cancellation(cancelled),
                     ).start()
                     fds.remove(sink_read)
+                if completion_sink is not None:
+                    os.close(completion_write)
+                    fds.remove(completion_write)
+                    # The kernel deadline was composed once from the original
+                    # allowance. Round conservatively when crossing ns -> float.
+                    completion_capture = NativeFixedProducerCompletionCapture(
+                        completion_read, deadline=math.nextafter(native_deadline_ns / 1e9, -math.inf),
+                    ).start()
+                    fds.remove(completion_read)
                 check_deadline()
                 if grant_owner is not None:
                     try:
@@ -1342,6 +1538,10 @@ def run_native_trusted_attempt(
                         break
                     except subprocess.TimeoutExpired:
                         continue
+                if completion_capture is not None:
+                    producer_completion_bytes = completion_capture.finish()
+                    _remaining(deadline, monotonic, cancelled)
+                    check_deadline()
                 if guardian is not None:
                     guardian.finish()
                     guardian_finished = True
@@ -1349,7 +1549,7 @@ def run_native_trusted_attempt(
         except (NativeTrustedAttemptError, ProducerBootstrapError, TrustedBootstrapRegistrationError,
                 TrustedBootstrapBindingError, NativeBootstrapError, NativeGuardianError,
                 NativeGuardianRegistrationError, ProducerIsolationError,
-                ProducerGrantError, ProducerProcessError, NativeFixedLiveSinkError,
+                ProducerGrantError, ProducerProcessError, NativeFixedLiveSinkError, FixedProducerCompletionError,
                 OSError, subprocess.SubprocessError) as exc:
             if not claimed:
                 if isinstance(exc, NativeTrustedAttemptError) and exc.code in {
@@ -1438,6 +1638,12 @@ def run_native_trusted_attempt(
                 try:
                     live_sink_capture.finish()
                 except NativeFixedLiveSinkError as exc:
+                    if reason == "native_trusted_attempt_terminal_receipt_missing":
+                        reason = exc.code
+            if completion_capture is not None and producer_completion_bytes is None:
+                try:
+                    completion_capture.cancel()
+                except FixedProducerCompletionError as exc:
                     if reason == "native_trusted_attempt_terminal_receipt_missing":
                         reason = exc.code
             if broker_thread is not None:
@@ -1657,7 +1863,7 @@ def run_native_trusted_attempt(
                 check_deadline()
             except NativeTrustedAttemptError as exc:
                 reason = exc.code
-        return NativeTrustedAttemptObservation(
+        result = NativeTrustedAttemptObservation(
             launch_id=launch.launch_id, journal_id=launch.journal_id,
             status="recovery_required", reason=reason,
             registration_sha256=(str(registration["registration_sha256"]) if registration else None),
@@ -1671,7 +1877,62 @@ def run_native_trusted_attempt(
                 broker_observation, ProducerBrokerObservation,
             ) else None),
             live_modules_observation=live_modules_observation,
+            producer_completion_bytes=producer_completion_bytes,
+            producer_completion_partial_bytes=(completion_capture.partial_bytes
+                                               if completion_capture is not None else None),
         )
+        if (live_modules_sink is not None and live_modules_sink.source_profile == COMPLETION_PROFILE
+                and reason == "native_trusted_attempt_request_and_output_unverified"
+                and producer_completion_bytes is not None and completion_capture is not None):
+            try:
+                if type(inputs) is not NativeRSIInputDescriptor or sink_image_identity is None:
+                    raise NativeTrustedAttemptError("native_completion_original_inputs_missing")
+                _remaining(deadline, monotonic, cancelled)
+                check_deadline()
+                if time.monotonic_ns() >= native_deadline_ns:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                _check_original_attempt_grants(grant_owner, inputs)
+                paths = (("candidate.py", "result.json") if intent.producer_id == "openevolve"
+                         else ("gen_0/main.py", "programs.sqlite"))
+                snapshots = []
+                for path in paths:
+                    if time.monotonic_ns() >= native_deadline_ns:
+                        raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                    raw, info = _stable_bytes(
+                        output.joinpath(*path.split("/")), limit=min(intent.output_max_bytes, 256 * 1024),
+                        deadline=deadline, monotonic=monotonic,
+                    )
+                    snapshots.append((path, raw, tuple(sorted(info.items()))))
+                _check_original_attempt_grants(grant_owner, inputs)
+                _revalidate_native_launch_inputs(
+                    inputs, root, intent=intent, attestation=attestation, artifact=installed,
+                    require_unexpired=False,
+                )
+                _remaining(deadline, monotonic, cancelled)
+                check_deadline()
+                if time.monotonic_ns() >= native_deadline_ns:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+                _retain_original_native_completion(
+                    _NATIVE_COMPLETION_TOKEN, result, inputs=inputs, intent=intent, attestation=attestation,
+                    request=live_modules_sink, reader=completion_capture,
+                    binding=FixedProducerCompletionBinding(
+                        intent.producer_id, live_modules_observation.target_pid,
+                        inputs.manifest_sha256, native_deadline_ns,
+                    ), artifacts=tuple(snapshots), image_identity=sink_image_identity,
+                )
+                _remaining(deadline, monotonic, cancelled)
+                check_deadline()
+                if time.monotonic_ns() >= native_deadline_ns:
+                    raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
+            except (NativeTrustedAttemptError, FixedProducerCompletionError, NativeTrustedCaptureError,
+                    ProducerGrantError, OSError, AttributeError, TypeError, ValueError) as exc:
+                # A copied/detached replacement never repairs the original run.
+                # Preserve diagnostics; this run simply has no acquisition.
+                if hasattr(result, "_original_completion_acquisition"):
+                    object.__delattr__(result, "_original_completion_acquisition")
+                result = replace(result, reason=(exc.code if isinstance(exc, NativeTrustedAttemptError)
+                                                else "native_completion_original_chain_unknown"))
+        return result
 
 
 def _verify_terminal_record(

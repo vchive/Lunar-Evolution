@@ -43,10 +43,11 @@ python -m pip install -e .
 lunar-evolution --help
 ```
 
-开发时安装测试和 lint 工具：
+开发回归使用 `uv.lock` 中的依赖，保持测试参数 ID 和历史用例清单可重复：
 
 ```bash
-python -m pip install -e '.[dev,lint]'
+python -m pip install 'uv==0.11.8'
+uv sync --locked --no-python-downloads --extra dev --extra lint
 ```
 
 ## 运行普通任务

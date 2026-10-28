@@ -38,6 +38,7 @@ from .native_fixed_live_sink import (
 from .native_trusted_attempt import (
     NativeTrustedAttemptError,
     NativeTrustedAttemptObservation,
+    _original_native_completion_pin,
     run_native_trusted_attempt,
 )
 from .native_trusted_failure import (
@@ -77,6 +78,7 @@ from .static_python_fixed_live_modules import (
     MAX_FIXED_LIVE_MODULES_BYTES,
     FixedPythonBoundLiveModules,
 )
+from .static_python_producer_completion import MAX_COMPLETION_BYTES
 
 
 class NativeTrustedSchedulerError(ValueError):
@@ -177,18 +179,45 @@ def _native_handoff_evidence(
         type(broker) is not ProducerBrokerObservation or type(broker.journal_path) is not type(Path())
     ):
         raise ValueError("original native broker observation required")
+    # Completion material remains an opaque diagnostic at this boundary. Keep
+    # each original immutable bytes object alive and pin its identity; exporting
+    # only its bounded size/digest cannot turn a reconstructed wire into the
+    # original channel acquisition. The overflow reader retains at most one
+    # sentinel byte beyond the wire limit, and an empty partial read is valid.
+    completion_fields = []
+    for name, minimum, maximum in (
+        ("producer_completion_bytes", 1, MAX_COMPLETION_BYTES),
+        ("producer_completion_partial_bytes", 0, MAX_COMPLETION_BYTES + 1),
+    ):
+        value = getattr(run.attempt, name)
+        if value is None:
+            continue
+        if type(value) is not bytes or not minimum <= len(value) <= maximum:
+            raise ValueError("original native completion material required")
+        completion_fields.append((name, id(value), value))
     attempt_wire = asdict(run.attempt)
     del attempt_wire["live_modules_observation"]
+    for name in ("producer_completion_bytes", "producer_completion_partial_bytes"):
+        if attempt_wire[name] is None:
+            del attempt_wire[name]
+    for name, _identity, value in completion_fields:
+        attempt_wire[name] = {"size": len(value), "sha256": hashlib.sha256(value).hexdigest()}
     if broker is not None:
         # This exact host-owned field is a Path in a real attempt. Preserve its
         # value explicitly; no generic default=str may hide foreign evidence.
         attempt_wire["broker_observation"]["journal_path"] = str(broker.journal_path)
     attempt_bytes = json.dumps(attempt_wire, ensure_ascii=False, sort_keys=True,
                                separators=(",", ":"), allow_nan=False).encode("utf-8")
-    return (id(run), id(run.attempt), id(run.receipt), id(run.output), id(observed),
-            run.deadline_scope, observation_fields, attempt_bytes,
-            _prepublication_evidence(run.receipt, run.output),
-            _native_output_envelope_pin(run.output))
+    pinned = (id(run), id(run.attempt), id(run.receipt), id(run.output), id(observed),
+              run.deadline_scope, observation_fields, attempt_bytes,
+              _prepublication_evidence(run.receipt, run.output),
+              _native_output_envelope_pin(run.output))
+    # Preserve the pre-completion evidence shape when both optional fields are
+    # absent. With material present, equality also checks original byte identity.
+    acquisition = _original_native_completion_pin(run.attempt)
+    if acquisition is not None:
+        return (*pinned, tuple(completion_fields), acquisition)
+    return pinned + (tuple(completion_fields),) if completion_fields else pinned
 
 
 def _prepublication_control_pin(control: SolveExecutionControl | None) -> tuple | None:

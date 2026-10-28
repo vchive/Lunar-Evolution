@@ -21,7 +21,7 @@ export PATH="$HOME/.local/bin:$PATH"
 uv --version
 python3.12 --version
 uv venv --no-config --no-python-downloads --python python3.12 .venv
-uv pip install --no-config --python .venv/bin/python -e '.[dev,lint]'
+uv sync --locked --no-config --no-python-downloads --extra dev --extra lint
 export PATH="$PWD/.venv/bin:$HOME/.local/bin:$PATH"
 export PYTHONPATH="$PWD/src"
 
@@ -30,6 +30,9 @@ lunar-evolution --help
 ```
 
 每个 worktree 都重新建立自己的 `.venv`；不要复用另一 checkout 的 editable install 或 console launcher。`PYTHONPATH` 指向本 worktree 的 `src`，`lunar-evolution` 和 `python` 都从本 worktree 的 `.venv/bin` 启动。不要把虚拟环境加入 Git。
+
+回归依赖必须来自 `uv.lock`。未锁定安装可能升级 pytest，改变参数化用例 ID，
+导致历史清单核验或 hostile-object 收集失败。不要为适配依赖漂移而改历史源或清单 SHA。
 
 修改后运行对应 focused tests，以及静态检查：
 
@@ -74,9 +77,8 @@ for test_role in current-0 current-1 current-2 current-3 current-4 current-5 hea
   git worktree add --detach "$shard_root/checkout" "$revision"
   uv venv --no-config --no-python-downloads --python python3.12 \
     "$shard_root/checkout/.venv"
-  uv pip install --no-config \
-    --python "$shard_root/checkout/.venv/bin/python" \
-    -e "$shard_root/checkout[dev,lint]"
+  uv sync --locked --no-config --no-python-downloads \
+    --project "$shard_root/checkout" --extra dev --extra lint
 done
 printf 'run_root=%s\n' "$run_root"
 ```

@@ -317,7 +317,8 @@ def test_pin_types_refuse_before_hash_parse_or_f01_delegation(monkeypatch, pin, 
 
 
 @pytest.mark.parametrize("bad", [None, True, "secret", bytearray(b"{}"),
-                                 _HostileBytes(b"caller secret"), b"", b" " * (384 * 1024 + 1)])
+                                 pytest.param(_HostileBytes(b"caller secret"), id="hostile-bytes"),
+                                 b"", b" " * (384 * 1024 + 1)])
 def test_installation_wire_type_and_bounds_precede_parsing(monkeypatch, bad):
     payload, _, pins = _vector()
     raw = _encode(payload)
@@ -539,7 +540,8 @@ def test_malformed_closure_errors_are_context_free(raw):
 
 
 @pytest.mark.parametrize("bad", [None, True, "caller-secret", bytearray(b"{}"),
-                                 _HostileBytes(b"secret"), b"", b" " * (512 * 1024 + 1)])
+                                 pytest.param(_HostileBytes(b"secret"), id="hostile-bytes"),
+                                 b"", b" " * (512 * 1024 + 1)])
 def test_closure_wire_preflight_refuses_before_any_parser_or_hash(monkeypatch, bad):
     payload, _, pins = _vector()
     pins["expected_contract_sha256"] = hashlib.sha256(_encode(payload)).hexdigest()

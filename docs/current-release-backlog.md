@@ -1,5 +1,57 @@
+<!-- completion-fresh-batch:start -->
+## 当前执行点：P0–P2 软件合批已补验，长链与生产接线仍开放（2026-10-28）
+
+`11761700250457c06e7a2adc0d41d4082ffca261` 唯一 mixed 在原600秒预算下超时：
+600.031756874秒、rc=-15、零retry。原件和来源检查匹配不能代替缺失的JUnit与终态；
+不重派该HEAD。PR #190旧CI失败保留；未锁依赖使pytest9.1.1升级到9.2.0，改变5个
+历史参数ID并触发hostile bytes收集回调。本批改为uv.lock锁定安装，并为新增hostile
+参数指定ID，历史源码/2318节点/SHA不变。
+
+本轮并行软件已集中回归：
+
+- 首轮tree `8c0f2e59d1084b1e3730f586cc2a19607c013d8d`，53文件1809 unique：
+  1788 pass / 20 fail / 1 Darwin skip，228.130秒。18项夹具argv指纹/输入不一致，
+  1项Shinka合成图缺SQLite头输入；另1项重复JSON暴露实际异常未归一化。
+- 正规修复夹具，产品有限归一化OpenEvolve解析错误，补齐原native输入的solver与
+  contract/evaluator/environment/memory复核；不放宽门。后继tree
+  `565f138c0fa523209697add7025e66f1d9e0ab6f` 受影响12文件355/355 pass，
+  18.761秒、16 workers、零retry。27顶层原件、26引用、源码前后、collection与模块
+  来源独审通过；这不是所有首轮节点在后继tree重新执行。
+- 本机唯一Darwin节点一次实际pass，2.345秒，非skip，前后源码/index保持一致。
+  两轮Linux与Darwin按原节点去重汇总另存证据，不直接累加pass数。
+- 完整Ruff、compileall、staged/unstaged diff check通过。
+
+P0交易层统一callback后的完整owner postgate；普通history SELECT从`3+3R`降为
+`2+2R`，常见callback whole-history链5次降至4次。最终完整重新SELECT、物理材料、
+拒绝材料两端fresh观察保留；不能由focused结果推断600秒mixed已达标。
+
+P1默认关闭的`fixed-producer-lifecycle-v1`已实现FD197原attempt通道、并发有界
+读取、固定producer实际读入/broker/commit采集与原captured-envelope材料核对。
+FD198仍solver前关闭，两个通道共用原deadline。source与sealed inode分别绑定。
+但真实固定producer仍缺面向generic capture的`producer-result.json`交付：正向
+原件链测试明确使用inert seam，不能宣称实际solver闭环完成。该缺口需版本化原输入
+接线，禁止host凭摘要补造envelope。
+
+P1 pycache有限预建目录的Linux inotify诊断已测：瞬时cache、目录拓扑、watch丢失、
+overflow和deadline。原native写能力enclosure/quiescence未接，无accepted完成路径，
+不清`original_pycache_observation`。真实隔离build/runtime、accepted build custody/
+runtime根、生产CLI仍未验收。
+
+P2前批同UID SSH EOF、receiver暂停和独立guardian deadline实测证据保留；独立账户、
+blocked-storage和whole-group cleanup部署验收仍开放。
+5090gpu普通Linux和/tmp可用；本机补普通平台缺口，macOS不能代替指定Linux隔离/
+独立账户验收。`production_admission=false`、`online_publication=false`。
+不运行模型、WebAgent、远程或公司evaluator。后继clean HEAD唯一600秒/零retry mixed、
+完整CI/main仍待实际结果；本节不声明全部P0–P2完成或已合入main。
+
+证据在主区ignored `parallel-batch-20261027/`：
+`completion-fresh-gates-union-k13i71q0/`、`completion-original-affected-8pjd16yh/`、
+`darwin-denied-egress-original-p_cagj44/`、`final-mixed-11761700-prepared/execution/`、
+`CI190/diagnosis-and-fix.md`。以下历史记录不能覆盖本节失败/未完成边界。
+<!-- completion-fresh-batch:end -->
+
 <!-- current-p0-p2-batch:start -->
-## 当前执行点：P0–P2 软件合批已补验，等待新 HEAD mixed（2026-10-28）
+## 前批记录：P0–P2 软件合批补验后待 mixed 的历史快照（2026-10-28）
 
 本批完成 P0 单次 fresh reference context 复用和单个 owner 操作内历史 wire 纯比较
 复用，P1 原 preparation envelope bytes/解析 DTO 绑定，以及 P2 原 receiver 暂停时

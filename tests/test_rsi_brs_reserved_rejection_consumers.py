@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import itertools
+import sys
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -330,6 +331,24 @@ def test_reserved_rejection_reader_is_readonly_and_compares_the_entire_original_
         # It constructs neither a reserved owner nor a dispatch/selection grant.
         assert provenance.verify_reserved_rejected_publication(value.workspace, publication, binding, roots,
             ledger=value.ledger, ordinal=0, prefix=prefix, original_lineage_bytes=None) == value.terminal.digest()
+        # The enclosing owner may supply its own freshly selected complete
+        # roots. Both independent reads inside the real material reader remain;
+        # only the wrapper's redundant third SELECT is removed.
+        reads, previous = [], sys.getprofile()
+
+        def observe(frame, event, _argument):
+            if event == "call" and frame.f_code is type(value.ledger).controller_checkpoint_history.__code__:
+                reads.append(frame.f_locals["run_id"])
+
+        try:
+            sys.setprofile(observe)
+            archive_bytes, state_bytes = provenance.verify_reserved_rejected_history(value.owner,
+                wire["batches"][0], ordinal=0, prefix=prefix, original_lineage_bytes=None, roots=roots)
+        finally:
+            sys.setprofile(previous)
+        assert reads == [value.binding.run_id, value.binding.run_id]
+        assert archive_bytes == (value.batch / "lineage/archive-before.snapshot").read_bytes()
+        assert state_bytes == (value.batch / "lineage/state-before.snapshot").read_bytes()
         c1_fixture.owner_fixture._unchanged(value, before)
         changed = deepcopy(publication)
         changed["lineage"]["foreign_metadata"] = "must-not-be-ignored"
