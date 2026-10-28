@@ -17,24 +17,32 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.static_python_rsi_fixture.command_input_graph import validate_dependency_command_graph
+from tools.static_python_rsi_fixture.command_input_graph import (
+    validate_dependency_command_graph,
+    validate_dependency_command_graph_v4,
+)
 from tools.static_python_rsi_fixture.dependency_capture import (
     CompilerDependencyError,
     compare_compiler_dependencies,
+    compare_compiler_dependencies_v4,
 )
 from tools.static_python_rsi_fixture.execution_backend import (
+    INPUT_PROJECTION_V4,
     MAX_INPUT_FILE_BYTES,
     BuildExecutionError,
     BuildExecutionReport,
     _finite,
     _open_beneath,
     run_pinned_build_v3,
+    run_pinned_build_v4,
 )
 from tools.static_python_rsi_fixture.installation_profile import RSIProfilePreparation
 from tools.static_python_rsi_fixture.link_dependency_capture import (
     LinkDependencyError,
     compare_linker_dependencies,
+    compare_linker_dependencies_v4,
     validate_dependency_capture_plan,
+    validate_dependency_capture_plan_v4,
 )
 from tools.static_python_rsi_fixture.runtime_closure import canonical
 from tools.static_python_rsi_fixture.standalone_linker import verify_standalone_linker_input
@@ -118,7 +126,11 @@ def _read_pin(root: Path, record: dict, checkpoint: Callable[[], None], *, retai
 
 
 def _report_outputs(report: BuildExecutionReport, recipe: dict,
-                    custody_backend: str | None = None) -> tuple[bytes, list[dict]]:
+                    custody_backend: str | None = None, *, version4: bool = False,
+                    workspace: Path | None = None, checkpoint: Callable[[], None] | None = None,
+                    ) -> tuple[bytes, list[dict]]:
+    if version4 and (custody_backend != "podman-snapshots-source-data-v2" or workspace is None):
+        raise BuildDependencyError("custody_backend")
     if (type(report) is not BuildExecutionReport or report.status != "complete"
             or report.reason is not None or report.completed_stages != ("configure", "freeze", "compile", "link")
             or report.recipe_sha256 != hashlib.sha256(canonical(recipe)).hexdigest()
@@ -130,6 +142,7 @@ def _report_outputs(report: BuildExecutionReport, recipe: dict,
     if len(stages) != len(recipe["stages"]):
         raise BuildDependencyError("execution_report")
     records = []
+    prior = []
     for stage, planned in zip(stages, recipe["stages"], strict=True):
         if (stage.get("stage") != planned["stage"] or stage.get("status") != "complete"
                 or len(stage.get("commands", [])) != len(planned["commands"])):
@@ -140,7 +153,16 @@ def _report_outputs(report: BuildExecutionReport, recipe: dict,
                     or command.get("returncode") != 0 or command.get("direct_child_reaped") is not True
                     or len(command.get("outputs", [])) != len(expected["outputs"])):
                 raise BuildDependencyError("execution_report")
-            if custody_backend is not None:
+            if version4:
+                from tools.static_python_rsi_fixture.podman_custody import (
+                    validate_custody_observation_v2,
+                )
+                validate_custody_observation_v2(
+                    command, expected, planned["stage"], index, report.recipe_sha256,
+                    recipe["environment"], inputs=recipe["inputs"], prior=prior,
+                    workspace=workspace.absolute(), checkpoint=checkpoint,
+                )
+            elif custody_backend is not None:
                 from tools.static_python_rsi_fixture.podman_custody import (
                     validate_custody_observation,
                 )
@@ -157,17 +179,23 @@ def _report_outputs(report: BuildExecutionReport, recipe: dict,
                         or any(char not in "0123456789abcdef" for char in record["sha256"])):
                     raise BuildDependencyError("execution_report")
                 group.append(record)
+                prior.append(record)
         if group != stage.get("outputs"):
             raise BuildDependencyError("execution_report")
         records.extend(group)
-    raw = canonical({
-        "schema": "lunar-static-python-build-execution-report-v3",
+    payload = {
+        "schema": ("lunar-static-python-build-execution-report-v4" if version4
+                   else "lunar-static-python-build-execution-report-v3"),
         "recipe_sha256": report.recipe_sha256, "completed_stages": list(report.completed_stages),
         "stage_evidence": stages, "status": report.status, "reason": report.reason,
         "configured_closure_verified": False, "installation_accepted": False,
         "runtime_execution_performed": False, "production_admission": False,
-    })
-    return raw, sorted(records, key=lambda row: row["path"])
+    }
+    if version4:
+        payload.update(input_projection=INPUT_PROJECTION_V4,
+                       immutable_custody_verified=False, driver_inputs_verified=False,
+                       implicit_link_inputs_verified=False, online_publication=False)
+    return canonical(payload), sorted(records, key=lambda row: row["path"])
 
 
 def _write_once(root: Path, name: str, raw: bytes, checkpoint: Callable[[], None]) -> str:
@@ -199,7 +227,7 @@ def _write_once(root: Path, name: str, raw: bytes, checkpoint: Callable[[], None
     return hashlib.sha256(raw).hexdigest()
 
 
-def run_dependency_checked_build(
+def _run_dependency_checked_build(
     preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
     manifest_bytes: bytes, expected_manifest_sha256: str,
     source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
@@ -208,6 +236,7 @@ def run_dependency_checked_build(
     custody_backend: str | None = None,
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    version4: bool = False,
 ) -> DependencyCheckedBuild:
     """Execute once and consume actual outputs under the original absolute budget.
 
@@ -217,14 +246,19 @@ def run_dependency_checked_build(
     output inventory, callback-produced receipt, current digest as authority,
     retry, default CLI fallback or extra execution budget is accepted.
     """
-    recipe, compiler_paths, linker_paths = validate_dependency_capture_plan(
+    if version4 and (type(custody_backend) is not str
+                     or custody_backend != "podman-snapshots-source-data-v2"):
+        raise BuildDependencyError("custody_backend")
+    validate_plan = (validate_dependency_capture_plan_v4 if version4
+                     else validate_dependency_capture_plan)
+    recipe, compiler_paths, linker_paths = validate_plan(
         recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
     )
-    validate_dependency_command_graph(recipe)
-    if custody_backend is not None and (type(custody_backend) is not str
+    (validate_dependency_command_graph_v4 if version4 else validate_dependency_command_graph)(recipe)
+    if not version4 and custody_backend is not None and (type(custody_backend) is not str
             or custody_backend not in {"podman", "podman-snapshots-v1"}):
         raise BuildDependencyError("custody_backend")
     if (not _finite(deadline) or deadline <= 0
@@ -255,14 +289,17 @@ def run_dependency_checked_build(
                 standalone_profile_bytes, expected_profile_sha256=expected_standalone_profile_sha256,
                 toolchain_root=toolchain_root, checkpoint=checkpoint,
             )
-        report = run_pinned_build_v3(
+        runner = run_pinned_build_v4 if version4 else run_pinned_build_v3
+        report = runner(
             preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
             deadline=deadline, interrupted=interrupted, monotonic=monotonic,
             **({} if custody_backend is None else {"custody_backend": custody_backend}),
         )
         checkpoint()
-        report_bytes, outputs = _report_outputs(report, recipe, custody_backend)
+        report_bytes, outputs = _report_outputs(
+            report, recipe, custody_backend, version4=version4, workspace=workspace, checkpoint=checkpoint,
+        )
         workspace = workspace.absolute()
         report_pin = {"path": "report.json", "size": len(report_bytes),
                       "sha256": hashlib.sha256(report_bytes).hexdigest(), "executable": False}
@@ -296,12 +333,17 @@ def run_dependency_checked_build(
             )
             roots = {"source_root": GUEST_SOURCE_ROOT, "toolchain_root": GUEST_TOOLCHAIN_ROOT,
                      "work_root": GUEST_PRIOR_ROOT, "current_output_root": GUEST_CURRENT_ROOT}
-        compiler = compare_compiler_dependencies(
+        compare_compiler = compare_compiler_dependencies_v4 if version4 else compare_compiler_dependencies
+        compiler = compare_compiler(
             recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             output_inventory_bytes=inventory, expected_output_inventory_sha256=inventory_sha,
             dependency_artifacts={path: retained[path] for path in compiler_paths}, **roots,
+            **({"manifest_bytes": manifest_bytes, "expected_manifest_sha256": expected_manifest_sha256,
+                "standalone_profile_bytes": standalone_profile_bytes,
+                "expected_standalone_profile_sha256": expected_standalone_profile_sha256} if version4 else {}),
         )
-        linker = compare_linker_dependencies(
+        compare_linker = compare_linker_dependencies_v4 if version4 else compare_linker_dependencies
+        linker = compare_linker(
             recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
             standalone_profile_bytes=standalone_profile_bytes,
@@ -320,7 +362,10 @@ def run_dependency_checked_build(
         linker_sha = _write_once(workspace, "linker-dependency-comparison.json",
                                  linker.canonical_bytes, checkpoint)
         evidence = canonical({
-            "schema": "lunar-actual-build-dependency-consumer-v1", "status": "compared",
+            "schema": ("lunar-actual-build-dependency-consumer-v2" if version4
+                       else "lunar-actual-build-dependency-consumer-v1"), "status": "compared",
+            **({"input_projection": INPUT_PROJECTION_V4,
+                "inputs_sha256": hashlib.sha256(canonical(recipe["inputs"])).hexdigest()} if version4 else {}),
             "recipe_sha256": expected_recipe_sha256, "manifest_sha256": expected_manifest_sha256,
             "execution_report_sha256": report_pin["sha256"],
             "output_inventory_sha256": inventory_sha,
@@ -343,3 +388,51 @@ def run_dependency_checked_build(
     except Exception:  # noqa: BLE001 - retain original workspace without raw paths in refusal
         failure = "readback_or_evidence_failure"
     raise BuildDependencyError(failure, execution_report=report) from None
+
+
+def run_dependency_checked_build(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> DependencyCheckedBuild:
+    """Consume the unchanged v3 runner, capture plan and persisted evidence."""
+    return _run_dependency_checked_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace, deadline=deadline,
+        interrupted=interrupted, monotonic=monotonic, custody_backend=custody_backend,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+    )
+
+
+def run_dependency_checked_build_v4(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str = "podman-snapshots-source-data-v2",
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> DependencyCheckedBuild:
+    """Consume v4 actual source-data view evidence under the original budget.
+
+    Only the explicit source-data Podman snapshot backend is accepted. This uses
+    the original runner and consumer lifecycle and adds no retry or fallback.
+    Detached observations, depfiles and readbacks grant no build/runtime authority.
+    """
+    return _run_dependency_checked_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace, deadline=deadline,
+        interrupted=interrupted, monotonic=monotonic, custody_backend=custody_backend,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        version4=True,
+    )

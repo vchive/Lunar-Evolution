@@ -33,6 +33,9 @@ from tools.static_python_rsi_fixture.installation_profile import RSIProfilePrepa
 RECIPE_SCHEMA = "lunar-static-python-pinned-execution-recipe-v1"
 RECIPE_V2_SCHEMA = "lunar-static-python-pinned-execution-recipe-v2"
 RECIPE_V3_SCHEMA = "lunar-static-python-pinned-execution-recipe-v3"
+RECIPE_V4_SCHEMA = "lunar-static-python-pinned-execution-recipe-v4"
+INPUT_PROJECTION_V4 = "source-data-static-tools-v1"
+INPUT_PROJECTION = INPUT_PROJECTION_V4
 MAX_V3_RECIPE_BYTES = 8 * 1024 * 1024
 MAX_V3_INPUT_RECORDS = 32768
 MAX_RECIPE_BYTES = 1024 * 1024
@@ -217,9 +220,13 @@ def _v2_stages(value: object, known: dict[str, set[str]], executable: set[str],
         _fail("command_budget_exceeded")
 
 
-def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False) -> dict[str, Any]:
+def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False,
+            version4: bool = False) -> dict[str, Any]:
+    if version3 and version4:
+        _fail("recipe_shape_invalid")
+    extended = version3 or version4
     _pin(expected_sha256)
-    if (type(raw) is not bytes or not 0 < len(raw) <= (MAX_V3_RECIPE_BYTES if version3 else MAX_RECIPE_BYTES)
+    if (type(raw) is not bytes or not 0 < len(raw) <= (MAX_V3_RECIPE_BYTES if extended else MAX_RECIPE_BYTES)
             or hashlib.sha256(raw).hexdigest() != expected_sha256):
         _fail("recipe_pin_mismatch")
     try:
@@ -233,11 +240,14 @@ def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False) -> dict
     if canonical != raw:
         _fail("recipe_noncanonical")
     if (type(value) is not dict
-            or set(value) != {"schema", "preparation_sha256", "inputs", "environment", "stages"}
+            or set(value) != ({"schema", "preparation_sha256", "inputs", "environment", "stages"}
+                              | ({"input_projection"} if version4 else set()))
             or type(value["schema"]) is not str
-            or value["schema"] not in ({RECIPE_V3_SCHEMA} if version3 else {RECIPE_SCHEMA, RECIPE_V2_SCHEMA})):
+            or value["schema"] not in ({RECIPE_V4_SCHEMA} if version4 else
+                                      {RECIPE_V3_SCHEMA} if version3 else {RECIPE_SCHEMA, RECIPE_V2_SCHEMA})
+            or version4 and value["input_projection"] != INPUT_PROJECTION_V4):
         _fail("recipe_shape_invalid")
-    command_outputs = value["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA}
+    command_outputs = value["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA, RECIPE_V4_SCHEMA}
     _pin(value["preparation_sha256"])
     inputs = value["inputs"]
     if type(inputs) is not dict or set(inputs) != {"source", "toolchain"}:
@@ -247,7 +257,7 @@ def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False) -> dict
     total = 0
     for role in ("source", "toolchain"):
         records = inputs[role]
-        if type(records) is not list or not 0 < len(records) <= (MAX_V3_INPUT_RECORDS if version3 else 16384):
+        if type(records) is not list or not 0 < len(records) <= (MAX_V3_INPUT_RECORDS if extended else 16384):
             _fail("input_inventory_invalid")
         known[role] = set()
         for record in records:
@@ -263,7 +273,7 @@ def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False) -> dict
                 _fail("input_duplicate")
             known[role].add(path)
             total += record["size"]
-            if record["executable"]:
+            if record["executable"] and not (version4 and role == "source"):
                 executable.add("@" + role + "/" + path)
         if [item["path"] for item in records] != sorted(known[role]):
             _fail("input_order_invalid")
@@ -276,7 +286,7 @@ def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False) -> dict
         _fail("environment_invalid")
     for item in env.values():
         if item.startswith("@"):
-            if version3 and _directory_reference(item, known, set()):
+            if extended and _directory_reference(item, known, set()):
                 continue
             parts = item[1:].split("/", 1)
             if len(parts) != 2 or parts[0] not in {"source", "toolchain", "work"}:
@@ -288,7 +298,7 @@ def _recipe(raw: bytes, expected_sha256: str, *, version3: bool = False) -> dict
             if role != "work" and path not in known[role]:
                 _fail("reference_not_pinned")
     if command_outputs:
-        _v2_stages(value["stages"], known, executable, version3=version3)
+        _v2_stages(value["stages"], known, executable, version3=extended)
         return value
     stages = value["stages"]
     if type(stages) is not list or len(stages) != 4:
@@ -549,6 +559,7 @@ def _run_pinned_build(
     interrupted: Callable[[], bool] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     version3: bool = False,
+    version4: bool = False,
     custody_backend: str | None = None,
 ) -> BuildExecutionReport:
     """Execute pinned tools with no ambient environment or installation promotion.
@@ -565,22 +576,29 @@ def _run_pinned_build(
         preparation_invalid = True
     if preparation_invalid:
         _fail("preparation_invalid")
-    recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=version3)
-    command_outputs = recipe["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA}
+    recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=version3, version4=version4)
+    extended = version3 or version4
+    command_outputs = recipe["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA, RECIPE_V4_SCHEMA}
     custody_prefix = None
+    if version4 and custody_backend != "podman-snapshots-source-data-v2":
+        _fail("custody_backend")
     if custody_backend is not None:
-        if type(custody_backend) is not str or custody_backend not in {"podman", "podman-snapshots-v1"} or not version3:
+        if (type(custody_backend) is not str
+                or custody_backend not in ({"podman-snapshots-source-data-v2"} if version4 else
+                                           {"podman", "podman-snapshots-v1"})
+                or not extended):
             _fail("custody_backend")
         from tools.static_python_rsi_fixture.command_input_graph import (
             validate_dependency_command_graph,
+            validate_dependency_command_graph_v4,
         )
         from tools.static_python_rsi_fixture.podman_custody import (
             preflight_podman_custody,
             validate_custody_image_budget,
             validate_snapshot_budget,
         )
-        validate_dependency_command_graph(recipe)
-        if custody_backend == "podman-snapshots-v1":
+        (validate_dependency_command_graph_v4 if version4 else validate_dependency_command_graph)(recipe)
+        if custody_backend in {"podman-snapshots-v1", "podman-snapshots-source-data-v2"}:
             validate_snapshot_budget(recipe)
         else:
             validate_custody_image_budget(recipe)
@@ -679,12 +697,12 @@ def _run_pinned_build(
             if not arg.startswith("@"):
                 return arg
             role, relative = arg[1:].split("/", 1)
-            return str(locations[role.removesuffix("-dir") if version3 else role] / relative)
+            return str(locations[role.removesuffix("-dir") if extended else role] / relative)
 
         environment = {key: expand(value) for key, value in recipe["environment"].items()}
         environment.update({"PATH": str(snapshots["toolchain"] / "bin"),
                             "HOME": str(work / ".home"), "TMPDIR": str(work)})
-        if version3:
+        if extended:
             # Zig can create only attempt-local caches; never use ambient caches.
             environment.update({"ZIG_GLOBAL_CACHE_DIR": str(work / ".zig-global-cache"),
                                 "ZIG_LOCAL_CACHE_DIR": str(work / ".zig-local-cache"),
@@ -693,14 +711,18 @@ def _run_pinned_build(
         if custody_prefix is not None:
             from tools.static_python_rsi_fixture.podman_custody import PodmanCustody
             operation = "custody.prepare"
+            custody_options = {"snapshot_mounts": custody_backend in {
+                "podman-snapshots-v1", "podman-snapshots-source-data-v2"}}
+            if version4:
+                custody_options["source_data"] = True
             custody = PodmanCustody(destination=destination, prefix=custody_prefix,
                                      recipe_sha256=expected_recipe_sha256, checkpoint=checkpoint,
-                                     snapshot_mounts=custody_backend == "podman-snapshots-v1")
+                                     **custody_options)
         retained_outputs: list[dict[str, Any]] = []
         observed_executables = {
             "@" + role + "/" + record["path"]
             for role, records in recipe["inputs"].items()
-            for record in records if record["executable"]
+            for record in records if record["executable"] and not (version4 and role == "source")
         }
 
         def verify_inputs() -> None:
@@ -803,7 +825,8 @@ def _run_pinned_build(
     except Exception:  # noqa: BLE001 - preserve partial workspace without leaking paths
         reason = "attempt_io_failure"
     payload = {
-        "schema": "lunar-static-python-build-execution-report-v3" if version3 else
+        "schema": "lunar-static-python-build-execution-report-v4" if version4 else
+                  "lunar-static-python-build-execution-report-v3" if version3 else
                   "lunar-static-python-build-execution-report-v2" if command_outputs else
                   "lunar-static-python-build-execution-report-v1",
         "recipe_sha256": expected_recipe_sha256, "completed_stages": completed,
@@ -811,6 +834,10 @@ def _run_pinned_build(
         "reason": reason, "configured_closure_verified": False, "installation_accepted": False,
         "runtime_execution_performed": False, "production_admission": False,
     }
+    if version4:
+        payload.update(input_projection=INPUT_PROJECTION_V4,
+                       immutable_custody_verified=False, driver_inputs_verified=False,
+                       implicit_link_inputs_verified=False, online_publication=False)
     if failure_detail is not None:
         payload["failure_detail"] = dict(failure_detail)
     report = BuildExecutionReport(
@@ -867,7 +894,32 @@ def run_pinned_build_v3(
     )
 
 
+def run_pinned_build_v4(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str = "podman-snapshots-source-data-v2",
+) -> BuildExecutionReport:
+    """Explicit source-as-data view within the original single-attempt lifecycle."""
+    return _run_pinned_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
+        deadline=deadline, interrupted=interrupted, monotonic=monotonic, version4=True,
+        custody_backend=custody_backend,
+    )
+
+
 __all__ = [
-    "RECIPE_SCHEMA", "RECIPE_V2_SCHEMA", "RECIPE_V3_SCHEMA", "BuildExecutionError",
-    "BuildExecutionReport", "run_pinned_build", "run_pinned_build_v3",
+    "INPUT_PROJECTION",
+    "INPUT_PROJECTION_V4",
+    "RECIPE_SCHEMA",
+    "RECIPE_V2_SCHEMA",
+    "RECIPE_V3_SCHEMA",
+    "RECIPE_V4_SCHEMA",
+    "BuildExecutionError",
+    "BuildExecutionReport",
+    "run_pinned_build",
+    "run_pinned_build_v3",
+    "run_pinned_build_v4",
 ]

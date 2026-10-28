@@ -1,3 +1,18 @@
+## Current P0–P2 execution status — 2026-10-29
+
+This section takes precedence over historical snapshots below.
+
+| Priority | Completed evidence | Still required |
+|---|---|---|
+| P0 | Original 1810f2df Linux mixed 1/1 pass, 582.500550332 seconds under the original 600s/zero-retry budget; independent terminal audit complete | Full CI40741561210 is running; PR190 remains unmerged. Never rerun this consumed HEAD. |
+| P1 | Explicit source-data v4 implementation and 120 new software cases complete; current affected 649 unique cases have passing results across the retained original and two-file affected executions | Actual inert rootless import failed rc125 due /var/tmp archive quota before container creation; vfs MergedDir support unproven. Full CPython/implicit inputs/accepted build/runtime/production CLI remain open. |
+| P2 | Prior v4 resource, standard-stream and worker-vault software results retained | Original exclusive fixed-U/finite writable-object acquisition and same original owner-to-accepting-monitor join are still missing; installed root/account/ACL/cgroup/disconnect/blocked-storage acceptance remains open. |
+
+No model, WebAgent, remote/company evaluator or real solver was run. Source-data
+v4 software checks do not establish actual installation. No old containers were
+deleted and no daemon was restarted. `production_admission=false`,
+`online_publication=false`. Exact current source and raw evidence are in HANDOFF.
+
 <!-- mixed-performance-current:start -->
 ## 当前执行点：终态 ACK / helper loader / 原生标准流合批（2026-10-29）
 

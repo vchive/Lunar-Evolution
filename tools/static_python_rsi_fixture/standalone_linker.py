@@ -218,3 +218,37 @@ def prepare_cpython_standalone_link_recipe(
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
     )
     return ConcreteBuildRecipe(raw, base.sources, manifest)
+
+
+def prepare_cpython_standalone_link_recipe_v4(
+    preparation: RSIProfilePreparation, *, standalone_profile_bytes: bytes,
+    expected_standalone_profile_sha256: str,
+    source_inventory_bytes: bytes, expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
+    configuration_header: bytes, expected_configuration_sha256: str,
+    runtime_closure: FixedRuntimeClosure | None = None,
+    producer_lifecycle_profile: str | None = None,
+    configuration_outputs: tuple[tuple[str, bytes], ...] | None = None,
+    review_manifest_bytes: bytes | None = None,
+    expected_review_manifest_sha256: str | None = None,
+) -> ConcreteBuildRecipe:
+    """Explicit source-data successor with the original standalone-link profile."""
+    from tools.static_python_rsi_fixture.link_dependency_capture import (
+        _data_source_capture_successor,
+    )
+
+    base = prepare_cpython_standalone_link_recipe(
+        preparation, standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        source_inventory_bytes=source_inventory_bytes,
+        expected_source_inventory_sha256=expected_source_inventory_sha256,
+        zig_manifest_bytes=zig_manifest_bytes, configuration_header=configuration_header,
+        expected_configuration_sha256=expected_configuration_sha256, runtime_closure=runtime_closure,
+        producer_lifecycle_profile=producer_lifecycle_profile,
+        configuration_outputs=configuration_outputs, review_manifest_bytes=review_manifest_bytes,
+        expected_review_manifest_sha256=expected_review_manifest_sha256,
+    )
+    return _data_source_capture_successor(
+        base, original_source_inventory_sha256=expected_source_inventory_sha256,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+    )

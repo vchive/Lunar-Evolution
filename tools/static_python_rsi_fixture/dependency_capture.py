@@ -214,11 +214,12 @@ class CompilerDependencyComparison:
         return json.loads(self.canonical_bytes)
 
 
-def compare_compiler_dependencies(
-    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+def _compare_compiler_dependencies(
+    recipe: dict, *, expected_recipe_sha256: str,
     output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
     dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
     current_output_root: str | None = None,
+    comparison_binding: dict | None = None,
 ) -> CompilerDependencyComparison:
     """Compare retained compiler bytes against independently pinned inventories.
 
@@ -226,7 +227,6 @@ def compare_compiler_dependencies(
     are comparison inputs, not evidence of acquisition or an accepted build.
     No current path is opened or inferred from ambient state.
     """
-    recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=True)
     outputs = _inventory(output_inventory_bytes, expected_output_inventory_sha256)
     roots = _roots(source_root, toolchain_root, work_root)
     target_root = _current_output_root(current_output_root, roots)
@@ -300,5 +300,58 @@ def compare_compiler_dependencies(
         "immutable_custody_verified": False, "implicit_link_inputs_verified": False,
         "configured_closure_verified": False, "installation_accepted": False,
         "production_admission": False,
+        **(comparison_binding or {}),
     })
     return CompilerDependencyComparison(raw)
+
+
+def compare_compiler_dependencies(
+    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+    output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
+    dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
+) -> CompilerDependencyComparison:
+    """Compare only the original v3 retained compiler evidence."""
+    recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=True)
+    return _compare_compiler_dependencies(
+        recipe, expected_recipe_sha256=expected_recipe_sha256,
+        output_inventory_bytes=output_inventory_bytes,
+        expected_output_inventory_sha256=expected_output_inventory_sha256,
+        dependency_artifacts=dependency_artifacts, source_root=source_root,
+        toolchain_root=toolchain_root, work_root=work_root, current_output_root=current_output_root,
+    )
+
+
+def compare_compiler_dependencies_v4(
+    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
+    dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> CompilerDependencyComparison:
+    """Compare v4 source bytes through the same prior-output comparator."""
+    from tools.static_python_rsi_fixture.link_dependency_capture import (
+        _FALSE_CLAIMS,
+        validate_dependency_capture_plan_v4,
+    )
+
+    recipe, _, _ = validate_dependency_capture_plan_v4(
+        recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+    )
+    return _compare_compiler_dependencies(
+        recipe, expected_recipe_sha256=expected_recipe_sha256,
+        output_inventory_bytes=output_inventory_bytes,
+        expected_output_inventory_sha256=expected_output_inventory_sha256,
+        dependency_artifacts=dependency_artifacts, source_root=source_root,
+        toolchain_root=toolchain_root, work_root=work_root, current_output_root=current_output_root,
+        comparison_binding={**_FALSE_CLAIMS,
+                            "schema": "lunar-cpython-compiler-dependency-comparison-v2",
+                            "manifest_sha256": expected_manifest_sha256,
+                            "input_projection": recipe["input_projection"],
+                            "inputs_sha256": _sha(canonical(recipe["inputs"]))},
+    )

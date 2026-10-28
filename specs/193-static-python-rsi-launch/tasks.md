@@ -8,6 +8,21 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Source-data execution view v4 continuation — 2026-10-29
+
+- [x] Specify explicit v4 schema/backend, source-data permission projection and
+  original deadline/runner/consumer reuse in `source-data-execution-view-v4.md`.
+- [x] Preserve original source pins/xbit and legacy behavior; bind complete final
+  inputs/capture plans, real OCI mount view and original workspace identities.
+- [x] Complete independent static review and source-bound affected software
+  regression: 649 current applicable unique passing cases, 120 new; initial four
+  test-fixture/assertion failures and the affected 147/147 pass remain separate.
+- [ ] Accept actual rootless source-data view: the sole actual smoke failed at
+  image import rc125 due `/var/tmp` temporary archive quota, before container
+  creation. vfs root metadata support is also unproven; no fallback was used.
+- [ ] Complete full configured CPython/freezer/link/implicit inputs and accepted
+  installation/runtime/producer CLI. The source-data mechanism does not close it.
+
 ## Stage 1 — reviewed source preparation
 
 - [x] T01 Record independent size/SHA256 pins for all six old templates, the old

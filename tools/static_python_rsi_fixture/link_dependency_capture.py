@@ -11,7 +11,11 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from tools.static_python_rsi_fixture.concrete_recipe import ConcreteBuildRecipe, _inventory
+from tools.static_python_rsi_fixture.concrete_recipe import (
+    ConcreteBuildRecipe,
+    _inventory,
+    _source_data_successor,
+)
 from tools.static_python_rsi_fixture.dependency_capture import (
     MAX_DEPENDENCIES,
     MAX_DEPFILE_BYTES,
@@ -35,6 +39,7 @@ from tools.static_python_rsi_fixture.standalone_linker import (
 )
 
 _SCHEMA = "lunar-cpython-compiler-linker-dependency-recipe-v1"
+DATA_SOURCE_CAPTURE_SCHEMA = "lunar-cpython-data-source-dependency-recipe-v1"
 _FALSE_CLAIMS = {
     "build_performed": False, "immutable_custody_verified": False,
     "implicit_link_inputs_verified": False, "driver_inputs_verified": False,
@@ -314,22 +319,15 @@ class LinkerDependencyComparison:
         return json.loads(self.canonical_bytes)
 
 
-def compare_linker_dependencies(
-    recipe_bytes: bytes, *, expected_recipe_sha256: str,
-    manifest_bytes: bytes, expected_manifest_sha256: str,
+def _compare_linker_dependencies(
+    recipe: dict, depfiles: tuple[str, ...], *, expected_recipe_sha256: str,
+    expected_manifest_sha256: str,
     output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
     dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
     current_output_root: str | None = None,
-    standalone_profile_bytes: bytes | None = None,
-    expected_standalone_profile_sha256: str | None = None,
+    comparison_binding: dict | None = None,
 ) -> LinkerDependencyComparison:
     """Compare retained linker reports; unresolved driver/cache inputs refuse."""
-    recipe, _, depfiles = validate_dependency_capture_plan(
-        recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
-        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
-        standalone_profile_bytes=standalone_profile_bytes,
-        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
-    )
     outputs = _inventory(output_inventory_bytes, expected_output_inventory_sha256)
     roots = _roots(source_root, toolchain_root, work_root)
     target_root = _current_output_root(current_output_root, roots)
@@ -391,5 +389,204 @@ def compare_linker_dependencies(
                      "manifest_sha256": expected_manifest_sha256,
                      "output_inventory_sha256": expected_output_inventory_sha256,
                      "links": compared, "evidence_scope": "retained-linker-byte-comparison",
-                     **_FALSE_CLAIMS})
+                     **_FALSE_CLAIMS, **(comparison_binding or {})})
     return LinkerDependencyComparison(raw)
+
+
+def _data_source_capture_successor(
+    base: ConcreteBuildRecipe, *, original_source_inventory_sha256: str,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> ConcreteBuildRecipe:
+    """Bind a freshly emitted complete legacy capture to the explicit new view.
+
+    Original inventory/base-manifest digests are generation-stage provenance
+    assertions under the caller's independent manifest pin. The consumer cannot
+    reconstruct the pre-overlay inventory or independently reacquire its origin.
+    """
+    raw, recipe = _source_data_successor(base)
+    compilations, links = _capture_plan(recipe, instrumented=True)
+    modes = [("standalone" if _standalone_link(command) is not None else
+              "explicit" if _explicit_support_link(command) else "implicit")
+             for stage in recipe["stages"] for command in stage["commands"]
+             if _link(command) is not None]
+    if len(set(modes)) != 1:
+        _fail("capture_modes")
+    manifest = canonical({
+        "schema": DATA_SOURCE_CAPTURE_SCHEMA, "recipe_sha256": _sha(raw),
+        "base_recipe_sha256": base.sha256, "base_manifest_sha256": _sha(base.manifest_bytes),
+        "original_source_inventory_sha256": original_source_inventory_sha256,
+        "source_inventory_sha256": _sha(canonical(recipe["inputs"]["source"])),
+        "toolchain_inventory_sha256": _sha(canonical(recipe["inputs"]["toolchain"])),
+        "inputs_sha256": _sha(canonical(recipe["inputs"])),
+        "input_projection": recipe["input_projection"], "link_mode": modes[0],
+        **({"standalone_profile_sha256": expected_standalone_profile_sha256}
+           if modes[0] == "standalone" else {}),
+        "compilations": compilations, "links": links, **_FALSE_CLAIMS,
+    })
+    validate_dependency_capture_plan_v4(
+        raw, expected_recipe_sha256=_sha(raw), manifest_bytes=manifest,
+        expected_manifest_sha256=_sha(manifest), standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+    )
+    return ConcreteBuildRecipe(raw, base.sources, manifest)
+
+
+def prepare_cpython_link_dependency_recipe_v4(
+    preparation: RSIProfilePreparation, *, source_inventory_bytes: bytes,
+    expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
+    configuration_header: bytes, expected_configuration_sha256: str,
+    runtime_closure: FixedRuntimeClosure | None = None,
+    producer_lifecycle_profile: str | None = None,
+    configuration_outputs: tuple[tuple[str, bytes], ...] | None = None,
+    review_manifest_bytes: bytes | None = None,
+    expected_review_manifest_sha256: str | None = None,
+) -> ConcreteBuildRecipe:
+    """Emit a new v4 recipe with the original complete compiler/linker plan."""
+    base = prepare_cpython_link_dependency_recipe(
+        preparation, source_inventory_bytes=source_inventory_bytes,
+        expected_source_inventory_sha256=expected_source_inventory_sha256,
+        zig_manifest_bytes=zig_manifest_bytes, configuration_header=configuration_header,
+        expected_configuration_sha256=expected_configuration_sha256, runtime_closure=runtime_closure,
+        producer_lifecycle_profile=producer_lifecycle_profile,
+        configuration_outputs=configuration_outputs, review_manifest_bytes=review_manifest_bytes,
+        expected_review_manifest_sha256=expected_review_manifest_sha256,
+    )
+    return _data_source_capture_successor(
+        base, original_source_inventory_sha256=expected_source_inventory_sha256,
+    )
+
+
+def validate_dependency_capture_plan_v4(
+    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> tuple[dict, tuple[str, ...], tuple[str, ...]]:
+    """Bind every v4 input and finite capture, never accept a legacy schema.
+
+    Final source/toolchain/combined inventories and the complete prior v3 recipe
+    are reconstructed and compared. Original source inventory/base-manifest
+    digests remain pinned emitter provenance assertions, not independently
+    revalidated original-source or custody authority.
+    """
+    from tools.static_python_rsi_fixture.command_input_graph import (
+        validate_dependency_command_graph_v4,
+    )
+    from tools.static_python_rsi_fixture.execution_backend import (
+        INPUT_PROJECTION_V4,
+        RECIPE_V3_SCHEMA,
+    )
+
+    recipe = _recipe(recipe_bytes, expected_recipe_sha256, version4=True)
+    validate_dependency_command_graph_v4(recipe)
+    compilations, links = _capture_plan(recipe, instrumented=True)
+    if (type(manifest_bytes) is not bytes or not 0 < len(manifest_bytes) <= 1024 * 1024
+            or type(expected_manifest_sha256) is not str
+            or _sha(manifest_bytes) != expected_manifest_sha256):
+        _fail("manifest_pin")
+    invalid = False
+    try:
+        manifest = json.loads(manifest_bytes)
+        modes = [("standalone" if _standalone_link(command) is not None else
+                  "explicit" if _explicit_support_link(command) else "implicit")
+                 for stage in recipe["stages"] for command in stage["commands"]
+                 if _link(command) is not None]
+        standalone = modes == ["standalone", "standalone"]
+        expected_keys = {
+            "schema", "recipe_sha256", "base_recipe_sha256", "base_manifest_sha256",
+            "original_source_inventory_sha256", "source_inventory_sha256",
+            "toolchain_inventory_sha256", "inputs_sha256", "input_projection", "link_mode",
+            "compilations", "links", *_FALSE_CLAIMS,
+            *({"standalone_profile_sha256"} if standalone else set()),
+        }
+        original = {key: value for key, value in recipe.items() if key != "input_projection"}
+        original["schema"] = RECIPE_V3_SCHEMA
+        digest_keys = ("base_recipe_sha256", "base_manifest_sha256", "original_source_inventory_sha256",
+                       "source_inventory_sha256", "toolchain_inventory_sha256", "inputs_sha256",
+                       *(("standalone_profile_sha256",) if standalone else ()))
+        invalid = (type(manifest) is not dict or set(manifest) != expected_keys
+                   or canonical(manifest) != manifest_bytes
+                   or manifest["schema"] != DATA_SOURCE_CAPTURE_SCHEMA
+                   or manifest["input_projection"] != INPUT_PROJECTION_V4
+                   or modes != [manifest["link_mode"], manifest["link_mode"]]
+                   or manifest["recipe_sha256"] != expected_recipe_sha256
+                   or manifest["base_recipe_sha256"] != _sha(canonical(original))
+                   or manifest["source_inventory_sha256"] != _sha(canonical(recipe["inputs"]["source"]))
+                   or manifest["toolchain_inventory_sha256"] != _sha(canonical(recipe["inputs"]["toolchain"]))
+                   or manifest["inputs_sha256"] != _sha(canonical(recipe["inputs"]))
+                   or canonical(manifest["compilations"]) != canonical(compilations)
+                   or canonical(manifest["links"]) != canonical(links)
+                   or any(manifest[key] is not value for key, value in _FALSE_CLAIMS.items())
+                   or any(type(manifest[key]) is not str or len(manifest[key]) != 64
+                          or any(c not in "0123456789abcdef" for c in manifest[key])
+                          for key in digest_keys))
+        if not invalid and standalone:
+            if manifest["standalone_profile_sha256"] != expected_standalone_profile_sha256:
+                invalid = True
+            else:
+                validate_standalone_recipe_profile(
+                    recipe, profile_bytes=standalone_profile_bytes,
+                    expected_profile_sha256=expected_standalone_profile_sha256,
+                )
+        elif standalone_profile_bytes is not None or expected_standalone_profile_sha256 is not None:
+            invalid = True
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        invalid = True
+    if invalid:
+        _fail("manifest")
+    return (recipe, tuple(row["depfile"] for row in compilations),
+            tuple(row["depfile"] for row in links))
+
+
+def compare_linker_dependencies(
+    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
+    dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> LinkerDependencyComparison:
+    """Compare only the original v3 retained linker evidence."""
+    recipe, _, depfiles = validate_dependency_capture_plan(
+        recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+    )
+    return _compare_linker_dependencies(
+        recipe, depfiles, expected_recipe_sha256=expected_recipe_sha256,
+        expected_manifest_sha256=expected_manifest_sha256, output_inventory_bytes=output_inventory_bytes,
+        expected_output_inventory_sha256=expected_output_inventory_sha256,
+        dependency_artifacts=dependency_artifacts, source_root=source_root,
+        toolchain_root=toolchain_root, work_root=work_root, current_output_root=current_output_root,
+    )
+
+
+def compare_linker_dependencies_v4(
+    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
+    dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> LinkerDependencyComparison:
+    """Use the original complete-prior-output comparator for the v4 view."""
+    recipe, _, depfiles = validate_dependency_capture_plan_v4(
+        recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+    )
+    return _compare_linker_dependencies(
+        recipe, depfiles, expected_recipe_sha256=expected_recipe_sha256,
+        expected_manifest_sha256=expected_manifest_sha256, output_inventory_bytes=output_inventory_bytes,
+        expected_output_inventory_sha256=expected_output_inventory_sha256,
+        dependency_artifacts=dependency_artifacts, source_root=source_root,
+        toolchain_root=toolchain_root, work_root=work_root, current_output_root=current_output_root,
+        comparison_binding={"schema": "lunar-cpython-linker-dependency-comparison-v2",
+                            "input_projection": recipe["input_projection"],
+                            "inputs_sha256": _sha(canonical(recipe["inputs"]))},
+    )

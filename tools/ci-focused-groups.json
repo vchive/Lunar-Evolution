@@ -145,15 +145,18 @@
     },
     {
       "id": "python-rsi-launch-source",
-      "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
+      "label": "Verify pinned RSI recipe generation, source-data execution views and dependency consumption",
       "files": [
         "tests/test_static_python_rsi_launch.py",
         "tests/test_static_python_rsi_source_plan.py",
         "tests/test_static_python_dependency_profile_selection.py",
         "tests/test_static_python_configuration_generation.py",
-        "tests/test_static_python_configuration_review.py"
+        "tests/test_static_python_configuration_review.py",
+        "tests/test_static_python_source_data_backend.py",
+        "tests/test_static_python_source_data_graph.py",
+        "tests/test_static_python_source_data_consumer.py"
       ],
-      "expected_tests": 232,
+      "expected_tests": 352,
       "zero_skips": true
     },
     {

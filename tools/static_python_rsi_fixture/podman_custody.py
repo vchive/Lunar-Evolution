@@ -26,9 +26,11 @@ from pathlib import Path
 from typing import Any
 
 from tools.static_python_rsi_fixture.execution_backend import (
+    INPUT_PROJECTION_V4,
     MAX_INPUT_BYTES,
     MAX_LOG_BYTES,
     MAX_OUTPUT_BYTES,
+    BuildExecutionError,
     _command,
     _fail,
     _observe,
@@ -48,6 +50,7 @@ _MAX_OCI_BYTES = 1024 * 1024
 MAX_CUMULATIVE_IMAGE_BYTES = 8 * 1024**3
 MAX_CUSTODY_COMMANDS = 32
 SNAPSHOT_BACKEND = "podman-snapshots-v1"
+SOURCE_DATA_BACKEND = "podman-snapshots-source-data-v2"
 MAX_SNAPSHOT_COMMANDS = 512
 _PASSWD = b"root:x:0:0:root:/tmp/home:/nonexistent\n"
 _GROUP = b"root:x:0:\n"
@@ -156,7 +159,7 @@ def _prior_snapshot(work: Path, root: Path, prior: list[dict],
             _fail("custody_prior_pin")
 
 
-def _readonly_volumes(roots: dict[str, Path]) -> list[str]:
+def _readonly_volumes(roots: dict[str, Path], *, source_data: bool = False) -> list[str]:
     if set(roots) != set(_GUEST):
         _fail("custody_snapshot_roots")
     result = []
@@ -166,7 +169,8 @@ def _readonly_volumes(roots: dict[str, Path]) -> list[str]:
                 or any(char in str(path) for char in ":\n\r\x00")):
             _fail("custody_snapshot_roots")
         # The generated freezer and Zig must execute; all three inputs are RO.
-        result.append("--volume=" + str(path) + ":" + guest + ":ro,exec,nosuid,nodev")
+        mode = "noexec" if source_data and role == "source" else "exec"
+        result.append("--volume=" + str(path) + ":" + guest + ":ro," + mode + ",nosuid,nodev")
     return result
 
 
@@ -297,14 +301,15 @@ def _static_executable(root: Path, record: dict, checkpoint: Callable[[], None])
 
 
 def _static_helper_inputs(inputs: dict[str, list[dict]], snapshots: dict[str, Path],
-                          prior: list[dict], work: Path, checkpoint: Callable[[], None]) -> None:
+                          prior: list[dict], work: Path, checkpoint: Callable[[], None],
+                          *, source_data: bool = False) -> None:
     """Refuse implicit helper loaders before any command's daemon operation.
 
     All executable files in the original finite input view matter, including
     helpers absent from the command's explicit argv and earlier generated tools.
     Nothing is cached across commands or learned from current filesystem bytes.
     """
-    for role in ("source", "toolchain"):
+    for role in (("toolchain",) if source_data else ("source", "toolchain")):
         for record in inputs[role]:
             checkpoint()
             if record["executable"]:
@@ -416,17 +421,104 @@ def _scan_outputs(root: Path, outputs: list[dict], checkpoint: Callable[[], None
         _fail("custody_output_group")
 
 
+def _directory_identity(path: Path, checkpoint: Callable[[], None]) -> dict:
+    """Observe a real directory through original no-follow component handles."""
+    if (not path.is_absolute() or path.absolute() != path or ".." in path.parts
+            or any(char in str(path) for char in ":\n\r\0")):
+        _fail("custody_execution_view")
+    descriptor = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        for part in path.parts[1:]:
+            checkpoint()
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                            dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        info = os.fstat(descriptor)
+        return {"device": info.st_dev, "inode": info.st_ino, "mode": info.st_mode,
+                "uid": info.st_uid, "gid": info.st_gid}
+    finally:
+        os.close(descriptor)
+
+
+def _overlapping_paths(paths: list[Path]) -> bool:
+    return any(left == right or left in right.parents or right in left.parents
+               for index, left in enumerate(paths) for right in paths[index + 1:])
+
+
+def _source_data_mount_roots(readonly: dict[str, Path] | None, current: Path,
+                             checkpoint: Callable[[], None]) -> dict:
+    if type(readonly) is not dict or set(readonly) != set(_GUEST):
+        _fail("custody_execution_view")
+    roots = {**readonly, "current_output": current}
+    if _overlapping_paths(list(roots.values())):
+        _fail("custody_execution_view")
+    result = {role: {"source": str(path), "identity": _directory_identity(path, checkpoint)}
+              for role, path in roots.items()}
+    identities = [(row["identity"]["device"], row["identity"]["inode"]) for row in result.values()]
+    if len(set(identities)) != len(identities):
+        _fail("custody_execution_view")
+    return result
+
+
+def _source_data_execution_view(spec: dict, selected: dict, readonly: dict[str, Path] | None,
+                                current: Path, expected: dict | None,
+                                checkpoint: Callable[[], None]) -> dict:
+    """Bind the initialized original OCI graph and actual host mount objects.
+
+    This is a pre-start observation of the trusted custodian's concrete view,
+    not an exec-event monitor or an authority token for another attempt.
+    """
+    observed = _source_data_mount_roots(readonly, current, checkpoint)
+    if expected is None or observed != expected:
+        _fail("custody_execution_view")
+    root_path = selected.get("rootfs")
+    if type(root_path) is not str or spec.get("root", {}).get("path") != root_path:
+        _fail("custody_execution_view")
+    root = Path(root_path)
+    root_identity = _directory_identity(root, checkpoint)
+    if (_overlapping_paths([root, *(Path(row["source"]) for row in observed.values())])
+            or (root_identity["device"], root_identity["inode"]) in {
+                (row["identity"]["device"], row["identity"]["inode"]) for row in observed.values()}):
+        _fail("custody_execution_view")
+    destinations = {**_GUEST, "current_output": GUEST_CURRENT_ROOT}
+    rows = []
+    for role, destination in destinations.items():
+        matches = [mount for mount in spec["mounts"] if mount.get("destination") == destination]
+        if len(matches) != 1:
+            _fail("custody_execution_view")
+        mount = matches[0]
+        options = mount.get("options")
+        if (mount.get("source") != observed[role]["source"] or mount.get("type") != "bind"
+                or type(options) is not list or any(type(item) is not str for item in options)):
+            _fail("custody_execution_view")
+        required = {"nosuid", "nodev", "rw" if role == "current_output" else "ro"}
+        noexec = role in {"source", "current_output"}
+        if (not required <= set(options) or ("noexec" in options) is not noexec
+                or ("exec" in options and noexec)):
+            _fail("custody_execution_view")
+        rows.append({"role": role, "destination": destination, **observed[role],
+                     "type": "bind", "options": sorted(options)})
+    return {"schema": "lunar-podman-source-data-execution-view-v1",
+            "input_projection": INPUT_PROJECTION_V4,
+            "root": {"path": root_path, "identity": root_identity, "readonly": True},
+            "mounts": rows}
+
+
 class PodmanCustody:
     """Owned by one original runner attempt; never a public build executor."""
 
     def __init__(self, *, destination: Path, prefix: list[str], recipe_sha256: str,
-                 checkpoint: Callable[[], None], snapshot_mounts: bool = False):
+                 checkpoint: Callable[[], None], snapshot_mounts: bool = False,
+                 source_data: bool = False):
         self.destination, self.prefix = destination, prefix
         self.recipe_sha256, self.checkpoint = recipe_sha256, checkpoint
         self.image_bytes = 0
         if type(snapshot_mounts) is not bool:
             _fail("custody_snapshot_mode")
-        self.snapshot_mounts = snapshot_mounts
+        if type(source_data) is not bool or source_data and not snapshot_mounts:
+            _fail("custody_snapshot_mode")
+        self.snapshot_mounts, self.source_data = snapshot_mounts, source_data
         self.base_image: tuple[str, Path, dict] | None = None
         self.root = destination / "custody"
         self.root.mkdir()
@@ -456,10 +548,13 @@ class PodmanCustody:
 
     def _runtime_policy(self, container: str, image: str, executed: list[str],
                         environment: dict[str, str], current: Path, root: Path,
-                        operations: list[dict], readonly: dict[str, Path] | None = None) -> dict:
+                        operations: list[dict], readonly: dict[str, Path] | None = None,
+                        *, expected_view: dict | None = None) -> dict:
         template = ('{"image":{{json .Image}},"oci":{{json .OCIConfigPath}},'
                     '"resolver":{{json .ResolvConfPath}},"hostname":{{json .HostnamePath}},'
                     '"hosts":{{json .HostsPath}}}')
+        if self.source_data:
+            template = template[:-1] + ',"rootfs":{{json .GraphDriver.Data.MergedDir}}}'
         selected = json.loads(self._control(
             ["inspect", "--type", "container", "--format", template, container],
             "runtime-selection", root, operations,
@@ -476,6 +571,11 @@ class PodmanCustody:
         raw = _read_bounded(path.parent, path.name, _MAX_OCI_BYTES, self.checkpoint)
         spec = json.loads(raw)
         process = spec["process"]
+        execution_view = None
+        if self.source_data:
+            execution_view = _source_data_execution_view(
+                spec, selected, readonly, current, expected_view, self.checkpoint,
+            )
         caps = process.get("capabilities", {})
         namespaces = spec["linux"]["namespaces"]
         if (spec["root"].get("readonly") is not True or process.get("noNewPrivileges") is not True
@@ -524,7 +624,9 @@ class PodmanCustody:
             seen.add(target)
             if target in protected:
                 if (source != protected[target] or kind != "bind"
-                        or not {"ro", "nosuid", "nodev"} <= options or "noexec" in options):
+                        or not {"ro", "nosuid", "nodev"} <= options
+                        or ("noexec" not in options if self.source_data and target == GUEST_SOURCE_ROOT
+                            else "noexec" in options)):
                     _fail("custody_runtime_snapshot")
             elif target == GUEST_CURRENT_ROOT:
                 if (source != str(current) or kind != "bind"
@@ -568,10 +670,14 @@ class PodmanCustody:
                 _fail("custody_runtime_mount")
         if not {GUEST_CURRENT_ROOT, "/tmp", "/etc/resolv.conf", "/dev/shm", *protected} <= seen:
             _fail("custody_runtime_mount")
-        return {"oci_sha256": _pin(raw), "root_readonly": True, "capabilities_zero": True,
+        result = {"oci_sha256": _pin(raw), "root_readonly": True, "capabilities_zero": True,
                 "no_new_privileges": True, "private_namespaces": True,
                 "fixed_seccomp_verified": True, "runtime_metadata": metadata,
                 "readonly_snapshots": protected}
+        if execution_view is not None:
+            result.update(execution_view=execution_view,
+                          execution_view_sha256=_pin(_json(execution_view)))
+        return result
 
     def _prepare_image(self, *, root: Path, inputs: dict[str, list[dict]],
                        snapshots: dict[str, Path], prior: list[dict], work: Path,
@@ -584,7 +690,7 @@ class PodmanCustody:
             _prior_snapshot(work, root / "prior", prior, self.checkpoint)
             self.image_bytes += size
             readonly = {**snapshots, "work": root / "prior"}
-            _readonly_volumes(readonly)
+            _readonly_volumes(readonly, source_data=self.source_data)
         if self.snapshot_mounts and self.base_image is not None:
             image, archive, pin = self.base_image
             if _observe(archive.parent, archive.name, _MAX_IMAGE_BYTES, checkpoint=self.checkpoint) != pin:
@@ -614,13 +720,19 @@ class PodmanCustody:
                 observation["base_image_reused"] = False
         observation["cumulative_image_bytes"] = self.image_bytes
         observation["image_id"] = image
-        observation["input_layout"] = SNAPSHOT_BACKEND if self.snapshot_mounts else "copied-image-v1"
+        observation["input_layout"] = (SOURCE_DATA_BACKEND if self.source_data else
+                                       SNAPSHOT_BACKEND if self.snapshot_mounts else "copied-image-v1")
         return image, readonly
 
     def run(self, argv: list[str], *, inputs: dict[str, list[dict]], snapshots: dict[str, Path],
             prior: list[dict], outputs: list[dict], work: Path, environment: dict[str, str],
             logs: Path, evidence: dict[str, Any], stage: str, index: int) -> None:
-        _static_helper_inputs(inputs, snapshots, prior, work, self.checkpoint)
+        if self.source_data:
+            if not argv or not argv[0].startswith(("@toolchain/", "@work/")):
+                _fail("custody_source_execution")
+            _static_helper_inputs(inputs, snapshots, prior, work, self.checkpoint, source_data=True)
+        else:
+            _static_helper_inputs(inputs, snapshots, prior, work, self.checkpoint)
         root = self.root / (stage + "-" + str(index))
         root.mkdir()
         current = root / "current"
@@ -647,6 +759,17 @@ class PodmanCustody:
             "installation_accepted": False, "production_admission": False,
             "aggregate_output_hard_quota_verified": False, "operations": [],
         }
+        if self.source_data:
+            observation.update(
+                schema="lunar-podman-build-command-observation-v2",
+                input_projection=INPUT_PROJECTION_V4,
+                input_inventories_sha256=_pin(_json(inputs)),
+                source_inventory_sha256=_pin(_json(inputs["source"])),
+                toolchain_inventory_sha256=_pin(_json(inputs["toolchain"])),
+                prior_inventory_sha256=_pin(_json(prior)),
+                configured_closure_verified=False, implicit_link_inputs_verified=False,
+                online_publication=False,
+            )
         evidence.update(status="partial", returncode=None, direct_child_reaped=False,
                         descendant_cleanup_verified=False, custody=observation)
         operations = observation["operations"]
@@ -654,6 +777,8 @@ class PodmanCustody:
         try:
             image, readonly = self._prepare_image(root=root, inputs=inputs, snapshots=snapshots,
                 prior=prior, work=work, observation=observation, operations=operations)
+            expected_view = (_source_data_mount_roots(readonly, current, self.checkpoint)
+                             if self.source_data else None)
             target = str(current)
             if any(char in target for char in ":\n\r\x00"):
                 _fail("custody_mount_path")
@@ -685,7 +810,7 @@ class PodmanCustody:
                       "--volume=" + target + ":" + GUEST_CURRENT_ROOT + ":rw,noexec,nosuid,nodev",
                       "--entrypoint=" + executed[0]]
             if readonly is not None:
-                create.extend(_readonly_volumes(readonly))
+                create.extend(_readonly_volumes(readonly, source_data=self.source_data))
             create.extend("--env=" + key + "=" + value for key, value in sorted(guest_environment.items()))
             observation["container_creation_unknown"] = True
             container = self._control(create + ["sha256:" + image, *executed[1:]],
@@ -696,9 +821,10 @@ class PodmanCustody:
             observation["container_id"] = container
             observation["container_creation_unknown"] = False
             self._control(["init", container], "init", root, operations)
+            runtime_options = {"expected_view": expected_view} if self.source_data else {}
             observation["runtime_policy"] = self._runtime_policy(
                 container, image, executed, guest_environment, current, root, operations,
-                readonly,
+                readonly, **runtime_options,
             )
             if _read_bounded(root, "seccomp.json", _MAX_OCI_BYTES, self.checkpoint) != _json(_SECCOMP):
                 _fail("custody_runtime_seccomp")
@@ -805,3 +931,93 @@ def validate_custody_observation(command: dict, planned: dict, stage: str, index
                 invalid = any(type(path) is not str or not Path(path).is_absolute() for path in mounts.values())
     if invalid:
         raise ValueError("podman_custody_original_observation")
+
+
+def _execution_view_shape(value: object, readonly: object) -> bool:
+    if (type(value) is not dict or set(value) != {"schema", "input_projection", "root", "mounts"}
+            or value["schema"] != "lunar-podman-source-data-execution-view-v1"
+            or value["input_projection"] != INPUT_PROJECTION_V4
+            or type(value["root"]) is not dict
+            or set(value["root"]) != {"path", "identity", "readonly"}
+            or value["root"]["readonly"] is not True
+            or type(value["mounts"]) is not list or len(value["mounts"]) != 4
+            or type(readonly) is not dict or set(readonly) != set(_GUEST.values())):
+        return False
+    expected = {**_GUEST, "current_output": GUEST_CURRENT_ROOT}
+    paths, identities = [], []
+    root = value["root"]
+    rows = [{"source": root["path"], "identity": root["identity"]}, *value["mounts"]]
+    for row in rows:
+        if type(row) is not dict:
+            return False
+        path, identity = row.get("source"), row.get("identity")
+        if (type(path) is not str or not Path(path).is_absolute() or ".." in Path(path).parts
+                or any(char in path for char in ":\n\r\0")
+                or type(identity) is not dict or set(identity) != {"device", "inode", "mode", "uid", "gid"}
+                or any(type(number) is not int or number < 0 for number in identity.values())
+                or not stat.S_ISDIR(identity["mode"])):
+            return False
+        paths.append(Path(path))
+        identities.append((identity["device"], identity["inode"]))
+    if _overlapping_paths(paths) or len(set(identities)) != len(identities):
+        return False
+    for row, (role, destination) in zip(value["mounts"], expected.items(), strict=True):
+        if (set(row) != {"role", "destination", "source", "identity", "type", "options"}
+                or row["role"] != role or row["destination"] != destination or row["type"] != "bind"
+                or type(row["options"]) is not list
+                or any(type(option) is not str for option in row["options"])):
+            return False
+        options = row["options"]
+        keys = [option.split("=", 1)[0] for option in options]
+        required = {"nosuid", "nodev", "rw" if role == "current_output" else "ro"}
+        noexec = role in {"source", "current_output"}
+        if (options != sorted(options) or len(keys) != len(set(keys))
+                or not required <= set(options) or ("noexec" in options) is not noexec
+                or any({left, right} <= set(options) for left, right in (
+                    ("ro", "rw"), ("exec", "noexec"), ("suid", "nosuid"), ("dev", "nodev")))
+                or role != "current_output" and readonly[destination] != row["source"]):
+            return False
+    return True
+
+
+def validate_custody_observation_v2(command: dict, planned: dict, stage: str, index: int,
+                                    recipe_sha256: str, environment: dict[str, str], *,
+                                    inputs: dict[str, list[dict]], prior: list[dict], workspace: Path,
+                                    checkpoint: Callable[[], None] | None = None) -> None:
+    """Compare detached v4 observations to the same recipe and completed groups."""
+    value = command.get("custody")
+    if (type(value) is not dict
+            or value.get("schema") != "lunar-podman-build-command-observation-v2"
+            or value.get("input_projection") != INPUT_PROJECTION_V4
+            or value.get("input_layout") != SOURCE_DATA_BACKEND
+            or value.get("input_inventories_sha256") != _pin(_json(inputs))
+            or value.get("source_inventory_sha256") != _pin(_json(inputs["source"]))
+            or value.get("toolchain_inventory_sha256") != _pin(_json(inputs["toolchain"]))
+            or value.get("prior_inventory_sha256") != _pin(_json(prior))
+            or not planned["argv"][0].startswith(("@toolchain/", "@work/"))
+            or any(value.get(key) is not False for key in (
+                "configured_closure_verified", "implicit_link_inputs_verified", "online_publication"))):
+        raise ValueError("podman_custody_original_observation_v2")
+    policy = value.get("runtime_policy")
+    if (type(policy) is not dict
+            or not _execution_view_shape(policy.get("execution_view"), policy.get("readonly_snapshots"))
+            or policy.get("execution_view_sha256") != _pin(_json(policy["execution_view"]))):
+        raise ValueError("podman_custody_original_observation_v2")
+    command_root = workspace.absolute() / "custody" / (stage + "-" + str(index))
+    expected_roots = {"source": workspace.absolute() / "source",
+                      "toolchain": workspace.absolute() / "toolchain", "work": command_root / "prior"}
+    try:
+        fresh = _source_data_mount_roots(expected_roots, command_root / "current",
+                                         checkpoint if checkpoint is not None else lambda: None)
+    except (OSError, BuildExecutionError):
+        raise ValueError("podman_custody_original_observation_v2") from None
+    for row in policy["execution_view"]["mounts"]:
+        if (row["source"] != fresh[row["role"]]["source"]
+                or row["identity"] != fresh[row["role"]]["identity"]):
+            raise ValueError("podman_custody_original_observation_v2")
+    # Reuse the original unchanged command/state/resource checks only after the
+    # distinct version and actual source-data execution-view checks have passed.
+    compatible = {**command, "custody": {**value,
+        "schema": "lunar-podman-build-command-observation-v1", "input_layout": SNAPSHOT_BACKEND}}
+    validate_custody_observation(compatible, planned, stage, index, recipe_sha256,
+                                 environment, SNAPSHOT_BACKEND)

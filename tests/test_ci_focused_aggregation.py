@@ -409,7 +409,7 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 6888
+    assert sum(group["expected_tests"] or 0 for group in groups) == 7008
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203
@@ -449,7 +449,10 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
                                "tests/test_native_whole_scope_creator_custody.py",
                                "tests/test_native_whole_scope_creator_transport.py"]
     recipe = next(group for group in groups if group["id"] == "python-rsi-launch-source")
-    assert (recipe["expected_tests"], recipe["zero_skips"]) == (232, True)
+    assert (recipe["expected_tests"], recipe["zero_skips"]) == (352, True)
+    assert {"tests/test_static_python_source_data_backend.py",
+            "tests/test_static_python_source_data_graph.py",
+            "tests/test_static_python_source_data_consumer.py"}.issubset(recipe["files"])
     assert "tests/test_static_python_dependency_profile_selection.py" in recipe["files"]
     assert {"tests/test_static_python_configuration_generation.py",
             "tests/test_static_python_configuration_review.py"}.issubset(recipe["files"])

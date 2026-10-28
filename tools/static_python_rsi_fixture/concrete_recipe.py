@@ -576,3 +576,57 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
                           "installation_accepted": False, "runtime_execution_performed": False,
                           "production_admission": False})
     return ConcreteBuildRecipe(recipe, tuple(sorted(sources.items())), manifest)
+
+
+def _source_data_successor(base: ConcreteBuildRecipe) -> tuple[bytes, dict]:
+    """Version only a freshly generated recipe; public legacy parsers stay strict."""
+    from tools.static_python_rsi_fixture.execution_backend import (
+        INPUT_PROJECTION_V4,
+        RECIPE_V4_SCHEMA,
+    )
+
+    recipe = _recipe(base.recipe_bytes, base.sha256, version3=True)
+    recipe["schema"] = RECIPE_V4_SCHEMA
+    recipe["input_projection"] = INPUT_PROJECTION_V4
+    raw = canonical(recipe)
+    _recipe(raw, _sha(raw), version4=True)
+    return raw, recipe
+
+
+def prepare_cpython_build_recipe_v4(
+    preparation: RSIProfilePreparation, *, source_inventory_bytes: bytes,
+    expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
+    configuration_header: bytes, expected_configuration_sha256: str,
+    runtime_closure: FixedRuntimeClosure | None = None,
+    producer_lifecycle_profile: str | None = None,
+    configuration_outputs: tuple[tuple[str, bytes], ...] | None = None,
+    review_manifest_bytes: bytes | None = None,
+    expected_review_manifest_sha256: str | None = None,
+) -> ConcreteBuildRecipe:
+    """Explicit data-source successor, retaining every generated input pin/xbit.
+
+    Original configured-source overlays retain the generator's existing contract;
+    the complete original source inventory remains separately pinned in the
+    manifest. No caller-supplied old recipe is accepted by this emitter.
+    """
+    base = prepare_cpython_build_recipe(
+        preparation, source_inventory_bytes=source_inventory_bytes,
+        expected_source_inventory_sha256=expected_source_inventory_sha256,
+        zig_manifest_bytes=zig_manifest_bytes, configuration_header=configuration_header,
+        expected_configuration_sha256=expected_configuration_sha256, runtime_closure=runtime_closure,
+        producer_lifecycle_profile=producer_lifecycle_profile,
+        configuration_outputs=configuration_outputs, review_manifest_bytes=review_manifest_bytes,
+        expected_review_manifest_sha256=expected_review_manifest_sha256,
+    )
+    raw, recipe = _source_data_successor(base)
+    facts = json.loads(base.manifest_bytes)
+    original_source_pin = facts.pop("source_inventory_sha256")
+    facts.update(schema="lunar-cpython-zig-data-source-concrete-build-recipe-v1",
+                 recipe_sha256=_sha(raw), base_recipe_sha256=base.sha256,
+                 base_manifest_sha256=_sha(base.manifest_bytes),
+                 input_projection=recipe["input_projection"],
+                 original_source_inventory_sha256=original_source_pin,
+                 source_inventory_sha256=_sha(canonical(recipe["inputs"]["source"])),
+                 toolchain_inventory_sha256=_sha(canonical(recipe["inputs"]["toolchain"])),
+                 inputs_sha256=_sha(canonical(recipe["inputs"])))
+    return ConcreteBuildRecipe(raw, base.sources, canonical(facts))

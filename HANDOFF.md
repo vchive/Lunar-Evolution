@@ -1,3 +1,45 @@
+<!-- source-data-view-v4-current:start -->
+## 当前执行点：source-data v4 软件回归完成，真实构建仍未验收（2026-10-29）
+
+新开发区 `/Users/liminghan/.codex/worktrees/source-data-execution-view/lunar_agent`，
+分支 `codex/source-data-execution-view`，基线 `1810f2dfcce55b00d4817add6366fc58a4632495`。
+原 PR #190 frozen worktree 保持不改：该 HEAD 唯一原 Linux 三child mixed 已1/1pass，
+原进程582.500550332秒、runner582.739631010秒，原600秒/零retry；285 origins /
+117 sampler samples 与原source/archive/tree/JUnit已独审。此HEAD已消耗，不重跑、
+不转Darwin；完整CI40741561210仍运行，未合main。原首败和旧取消CI原样保留。
+
+本切片完成显式v4 recipe/runner/consumer/capture：原source records/bytes/digest/xbit
+保留，只在新profile作为数据；真实OCI必须source ro,noexec；所有toolchain/已完成
+prior executable逐command重验static ELF。consumer将挂载证据绑定原workspace四角色
+路径，并fresh nofollow重验目录identity；不接受协调改mount+readonly+hash后自洽的
+替代观察。复用原循环/绝对deadline/cancel/output整组晋升；旧v1/v2/v3/default保持。
+既有明确生成的source overlays不改，manifest分别绑定生成前provenance和最终完整
+recipe inputs；前者不是consumer独立重验的原source权威。
+
+冻结tree a601579692cf26f66bad587dd486574bea21f723：18完整文件649 unique，645pass /
+4fail /0error/skip，9.133003400秒，零retry。四fail均test接线：清单总数旧断言、
+三个新runner fixture缺linker depfile输出。仅改两test文件后tree
+ a743ea7d74697653f0b289b17e1738e52493d685，2完整受影响文件147/147pass，
+4.084723906秒，16worker均exit0、254module origins。两批archive/3023source entries/
+2715Git blobs+mode/worker collection/唯一execution/JUnit已独审；产品bytes/modes完全
+不变。当前逐节点去重649项已有通过结果、新增120项通过；不是同一最终tree全量重跑，
+原4fail保留。CI83组/65zero-skip，expected sum7008；Ruff/compileall/diff-check通过。
+
+真实rootless inert smoke按一次600秒原预算实际派发；cc静态工具成功，2.045555122秒
+后首command import rc125：`/var/tmp/libpod-images-import.tar…: disk quota exceeded`。
+没有container create/start或实际OCI view验收；v4 partial report、原输入/源码及失败
+完整保留，不把fixture当实跑。只读service metadata为vfs、running0/stopped17，现有
+stopped容器GraphDriver.Data=null；尚无MergedDir可用证据。host /var/tmp free空间不
+证明daemon命名空间/配额。没有清理旧容器、重启service、换旧backend或重新派发。
+原件在主区ignored `parallel-batch-20261027/source-data-view{,-affected}-linux-20261029/`。
+
+完整CPython/driver隐式闭包/accepted runtime/生产CLI仍开放；P2原fixed-U独占、finite
+writer acquisition和原owner→monitor接受join，以及真实root/账户/ACL/cgroup/
+hard disconnect/blocked storage验收也仍未完成。以下旧“mixed待验”描述不覆盖本节。
+不运行模型/WebAgent/远程或公司evaluator/真实solver，不读.env/密钥/live argv/env，
+benchmark原区只读。`production_admission=false`、`online_publication=false`。
+<!-- source-data-view-v4-current:end -->
+
 <!-- mixed-performance-current:start -->
 ## 当前执行点：终态 ACK / helper loader / 原生标准流合批（2026-10-29）
 

@@ -1,5 +1,26 @@
 # Feature 193 validation
 
+## Source-data execution view v4 — 2026-10-29
+
+The explicit v4 API and capture/consumer path have completed affected software
+regression. See `source-data-execution-view-v4.md` for exact frozen trees, counts
+and original failure preservation: first 649 unique /645 pass /4 test-fixture
+failures, followed only by the two affected complete files /147 pass. All 649
+current applicable unique cases, including 120 new, now have passing results;
+product bytes/modes did not change between those trees. Both raw executions and
+archive/source/worker/JUnit/module-origin audits remain retained, not summed as
+796 different cases. Ruff, compileall and diff checks pass.
+
+The separate actual rootless inert smoke failed: first image import rc125 due
+`/var/tmp/libpod-images-import.tar…: disk quota exceeded`, at 2.045555122 seconds
+of its original 600-second budget. Static fixture-tool compilation passed, but no
+container create/start or actual OCI execution-view acceptance occurred. Existing
+service uses vfs and an observed stopped container has GraphDriver.Data=null;
+MergedDir support is not established. No daemon restart, old-container deletion,
+backend fallback or retry occurred. All acceptance/admission flags remain false.
+Evidence is retained under ignored main-workspace
+`parallel-batch-20261027/source-data-view{,-affected}-linux-20261029/`.
+
 ## Current integration status — 2026-10-12 (updated)
 
 PR54–57, PR59, PR60, PR64–67 are represented in `origin/main` through merge `31ab43c`. The retained CI is provider-free and does not establish real CPython/toolchain acquisition, sealed startup, producer lifecycle, evaluator access or production admission. The independent artifact/source/tree audit for PR54, PR55, PR56, PR57 and PR59 is now retained in [`f03-f05-raw-source-tree-audit-20261021.md`](f03-f05-raw-source-tree-audit-20261021.md). The PR54 raw job-log download still remains unavailable; the audit uses the retained immutable Git objects, API metadata and complete non-expired artifact archives instead.

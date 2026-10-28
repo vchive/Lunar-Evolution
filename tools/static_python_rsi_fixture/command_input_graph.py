@@ -47,8 +47,11 @@ def _outputs(command: dict, expected: list[tuple[str, bool]]) -> None:
         _fail("outputs")
 
 
-def _prior(reference: str, available: dict[str, bool], *, executable: bool = False) -> None:
-    if reference not in available or available[reference] is not executable:
+def _prior(reference: str, available: dict[str, bool], *, executable: bool = False,
+           source_data: bool = False) -> None:
+    if (reference not in available
+            or (not (source_data and not executable and reference.startswith("@source/"))
+                and available[reference] is not executable)):
         _fail("prior_input")
 
 
@@ -61,7 +64,7 @@ def _directory(reference: str, available: dict[str, bool]) -> None:
         _fail("prior_input")
 
 
-def _compile(command: dict, available: dict[str, bool]) -> None:
+def _compile(command: dict, available: dict[str, bool], *, source_data: bool = False) -> None:
     argv = command["argv"]
     if argv[:2] != ["@toolchain/zig", "cc"] or argv.count("-c") != 1 or argv.count("-o") != 1:
         _fail("compile")
@@ -70,7 +73,7 @@ def _compile(command: dict, available: dict[str, bool]) -> None:
     source, target = argv[argv.index("-c") + 1], argv[argv.index("-o") + 1]
     if not source.startswith("@source/") or not target.startswith("@work/") or not target.endswith(".o"):
         _fail("compile")
-    _prior(source, available)
+    _prior(source, available, source_data=source_data)
     depfile = "@work/dependencies/" + target.removeprefix("@work/") + ".d"
     if argv[-5:] != ["-MD", "-MF", depfile, "-MQ", target]:
         _fail("compile_capture")
@@ -116,7 +119,7 @@ def _archive(command: dict, available: dict[str, bool]) -> None:
     _outputs(command, [(argv[3], False)])
 
 
-def _freezer(command: dict, available: dict[str, bool]) -> None:
+def _freezer(command: dict, available: dict[str, bool], *, source_data: bool = False) -> None:
     argv = command["argv"]
     if len(argv) != 4 or _GENERATOR.fullmatch(argv[1]) is None or not argv[2].startswith("@source/"):
         _fail("freezer")
@@ -124,14 +127,14 @@ def _freezer(command: dict, available: dict[str, bool]) -> None:
     if argv[3] != target:
         _fail("freezer")
     _prior(argv[0], available, executable=True)
-    _prior(argv[2], available)
+    _prior(argv[2], available, source_data=source_data)
     _outputs(command, [(target, False)])
 
 
-def validate_dependency_command_graph(recipe: dict) -> None:
+def _validate_dependency_command_graph(recipe: dict, *, source_data: bool) -> None:
     """Refuse every unaccounted command/input before the original runner starts.
 
-    ``recipe`` is the freshly parsed v3 recipe from capture-plan validation. All
+    ``recipe`` is freshly parsed by its explicit capture-plan validator. All
     generated inputs must be outputs of an earlier command, with the required
     executable role; no same-command declaration grants itself an input. This
     finite graph is an explicit-input contract, not a consumed-input observer.
@@ -145,12 +148,14 @@ def validate_dependency_command_graph(recipe: dict) -> None:
     for stage in recipe["stages"]:
         for command in stage["commands"]:
             argv = command["argv"]
+            if source_data and argv[0].startswith("@source/"):
+                _fail("source_execution")
             _prior(argv[0], available, executable=True)
             if argv[:2] == ["@toolchain/zig", "cc"]:
                 if "-c" in argv:
                     if stage["stage"] not in {"configure", "freeze", "compile"}:
                         _fail("stage")
-                    _compile(command, available)
+                    _compile(command, available, source_data=source_data)
                 else:
                     link = _link(command)
                     if link is None or stage["stage"] not in {"freeze", "link"}:
@@ -180,10 +185,32 @@ def validate_dependency_command_graph(recipe: dict) -> None:
             elif argv[0] == "@work/bin/lunar-freeze-module":
                 if stage["stage"] != "freeze":
                     _fail("stage")
-                _freezer(command, available)
+                _freezer(command, available, source_data=source_data)
             else:
                 _fail("command")
             available.update(("@work/" + item["path"], item["executable"])
                              for item in command["outputs"])
     if archives != 1:
         _fail("archive_set")
+
+
+def validate_dependency_command_graph(recipe: dict) -> None:
+    """Validate only the original v3 finite command graph."""
+    from tools.static_python_rsi_fixture.execution_backend import RECIPE_V3_SCHEMA
+
+    if recipe.get("schema") != RECIPE_V3_SCHEMA or "input_projection" in recipe:
+        _fail("recipe_profile")
+    _validate_dependency_command_graph(recipe, source_data=False)
+
+
+def validate_dependency_command_graph_v4(recipe: dict) -> None:
+    """Source execute bits remain observations, never executable tool authority."""
+    from tools.static_python_rsi_fixture.execution_backend import (
+        INPUT_PROJECTION_V4,
+        RECIPE_V4_SCHEMA,
+    )
+
+    if (recipe.get("schema") != RECIPE_V4_SCHEMA
+            or recipe.get("input_projection") != INPUT_PROJECTION_V4):
+        _fail("recipe_profile")
+    _validate_dependency_command_graph(recipe, source_data=True)
