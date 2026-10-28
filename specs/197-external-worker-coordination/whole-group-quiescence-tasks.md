@@ -89,7 +89,7 @@ delivery must be reviewed before modifying bootstrap framing, the installed
 receiver or the target FD allowlist. Existing native profiles and defaults remain
 unchanged until that review and implementation exist.
 
-## 2026-10-28 implementation batch, before consolidated regression
+## 2026-10-28 implementation batch and Linux mechanism regression
 
 The explicit installed-profile implementation now has source for original
 Python ownership, the native create-only grant publisher, pre-exec clone3 target
@@ -97,8 +97,9 @@ enrollment, supervisor S, independent guardian G, storage-only receiver R and
 original publication-FD transfer. `native_trusted_attempt(..., whole_scope=...)`
 is default-off and consumes the same acquisition at registration, both release
 gates and completion. This is implementation progress on WQ-02 through WQ-05;
-the unchecked tasks below still require consolidated regression and actual
-installed-profile acceptance. No source review, harness, default-profile test or
+the unchecked tasks below still require actual installed-profile acceptance.
+The concentrated software-mechanism results below do not establish deployment
+acceptance. No source review, harness, default-profile test or
 TCG prerequisite probe closes a root-profile deployment task.
 
 The original deadline includes a 250 ms cleanup reserve. A leader-done frame
@@ -109,7 +110,7 @@ does not install privileges or alter shared parents. Default frozen RSI inputs
 remain exact 0400/0500. The explicit distinct-account
 [fixed-U ACL profile](fixed-u-input-acl.md) now has software integration through
 prepare, bind, validate, original grants and the whole-scope B entry. Its
-consolidated regression and installed-account acceptance remain pending; generic
+installed-account acceptance remains pending; generic
 validators do not silently admit ACL mask changes. WQ-06 writable-view enclosure, original monitor completion,
 accepted build/input custody and production CLI remain open.
 
@@ -173,11 +174,35 @@ installed-profile acceptance, not because that software is wholly absent.
 WQ-06 still contains implementation work. WQ-07 now has a default-off original
 private-directory acquisition, actual S-to-R FD delivery, live registration and
 terminal record consumption, and bounded read-only prefix inspection; see
-[the custody slice](whole-scope-private-custody.md). It does not add R's creator
-file descriptions or a complete abnormal durable-ACK protocol. Those remain
-implementation/design gaps, separate from focused and installed acceptance.
+[the custody slice](whole-scope-private-custody.md). That original v1 profile
+does not transfer R's creator file descriptions or add the later abnormal
+terminal protocol. The explicit v2 profile adds S-surviving abnormal records;
+the following v3 continuation adds actual creator descriptions.
+The parent-reviewed [creator-FD v3 continuation](whole-scope-creator-fd-v3.md)
+is now software-implemented: explicit operations 22–27, real original
+R → S → C creator-description delivery, strict one-shot adoption and matching
+941-byte terminal ACK. Its 34 actual C transport/adoption cases and 73 Python
+creator-custody cases passed in the concentrated Linux batch below. This closes
+the v3 software/mechanism slice; WQ-07 and actual deployment acceptance remain
+open. V1/v2 remain unchanged. S-death G → R delivery,
+terminal-source arbitration, independent reference retention and lost original
+reaping remain separate unfinished work; no transferred pidfd or stored event
+supplies those facts.
 Required delegation,
 distinct-account deployment and actual Linux acceptance remain separate work.
+
+The frozen 30-file Linux tmpfs run is recorded at
+`BASE/next-union-tmpfs-linux-20261028` (source-tree marker `e93c99f5`). Its first
+1048-node batch finished in 48.535873 seconds: 1005 passed, 42 skipped for root
+prerequisites, and one CI JSON count assertion failed. All 34 C creator, 73
+Python creator-custody and 34 recipe cases passed. Product/source before/after
+snapshots and 259 original dependency origins matched. The CI count-only
+correction and follow-up are tracked in `HANDOFF.md`; the first batch is not
+reported as aggregate green. The C harness uses actual SCM_RIGHTS, files,
+ACL/fsync calls, fork/pidfd and exact-child waits with root uid/gid metadata
+projection; local Python fixtures use the same UID. These are software
+mechanism results, with WQ-07 S-death custody and installed-profile/root-account
+acceptance still unfinished.
 
 ## Required focused cases and preserved boundaries
 

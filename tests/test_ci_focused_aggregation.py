@@ -409,14 +409,14 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 6069
+    assert sum(group["expected_tests"] or 0 for group in groups) == 6211
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203
     assert "tests/test_rsi_flow_payload_scalar_validation.py" in ready["files"]
     native = next(group for group in groups if group["id"] == "native-original-whole-scope")
     idle = next(group for group in groups if group["id"] == "brs-idle-history-observation")
-    assert (native["expected_tests"], native["zero_skips"]) == (144, False)
+    assert (native["expected_tests"], native["zero_skips"]) == (145, False)
     assert (idle["expected_tests"], idle["zero_skips"]) == (27, True)
     assert "tests/test_rsi_brs_owner_scope_cost.py" in idle["files"]
     fixed = next(group for group in groups if group["id"] == "native-fixed-u-input-contracts")
@@ -429,9 +429,14 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
     assert gate._FIXED_U_ROOT_NODES == _fixed_u_root_nodes()
     assert len(gate._FIXED_U_ROOT_NODES) == 36
     custody = next(group for group in groups if group["id"] == "native-whole-scope-custody")
-    assert (custody["expected_tests"], custody["zero_skips"]) == (96, True)
+    assert (custody["expected_tests"], custody["zero_skips"]) == (203, True)
     assert custody["files"] == ["tests/test_native_whole_scope_custody.py",
-                               "tests/test_native_whole_scope_abnormal.py"]
+                               "tests/test_native_whole_scope_abnormal.py",
+                               "tests/test_native_whole_scope_creator_custody.py",
+                               "tests/test_native_whole_scope_creator_transport.py"]
+    recipe = next(group for group in groups if group["id"] == "python-rsi-launch-source")
+    assert (recipe["expected_tests"], recipe["zero_skips"]) == (116, True)
+    assert "tests/test_static_python_dependency_profile_selection.py" in recipe["files"]
     workflow = (_ROOT / ".github/workflows/test.yml").read_text()
     assert 'role: ["current-0"' in workflow and '"history"]' in workflow
     matrix = next(line.strip().partition("role: ")[2] for line in workflow.splitlines()

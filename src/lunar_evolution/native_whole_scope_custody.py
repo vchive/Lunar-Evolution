@@ -1,9 +1,9 @@
 """Private original-directory custody and read-only whole-scope diagnostics.
 
-The default receiver ABI is unchanged. The explicitly selected v2 custody
-profile also preserves finite abnormal facts while the original supervisor
-survives. Neither profile reconstructs a live scope, proves a lost
-acknowledgement, or provides positive cleanup authority from historical records.
+The default receiver ABI is unchanged. Explicit v2 custody preserves finite
+abnormal facts while the original supervisor survives; v3 also retains the
+actual creator-delivered descriptions. No profile reconstructs a live scope,
+proves a lost acknowledgement, or grants cleanup from historical records.
 """
 from __future__ import annotations
 
@@ -14,14 +14,17 @@ import stat
 import struct
 from dataclasses import dataclass, field
 
-from .native_whole_scope import NativeWholeScopeError
+from .native_whole_scope import NativeWholeScopeError, fcntl
 
 CUSTODY_PROFILE = "linux-whole-scope-private-custody-v1"
 CUSTODY_V2_PROFILE = "linux-whole-scope-private-custody-v2"
+CUSTODY_V3_PROFILE = "linux-whole-scope-private-custody-v3"
 _DIRECTORY = ".whole-scope-custody"
 _NAMES = ("scope-registration-v1.bin", "scope-terminal-v1.bin")
 _V2_DIRECTORY = ".whole-scope-custody-v2"
 _V2_NAMES = ("scope-registration-v2.bin", "scope-terminal-v2.bin")
+_V3_DIRECTORY = ".whole-scope-custody-v3"
+_V3_NAMES = ("scope-registration-v3.bin", "scope-terminal-v3.bin")
 _EVENT_FACTS = struct.Struct("<IIQ")
 _REASONS = ("normal", "controller_lost", "deadline", "receiver_fault", "protocol")
 _TOKEN = object()
@@ -48,6 +51,8 @@ def _profile_shape(profile):
         return _DIRECTORY, _NAMES
     if profile == CUSTODY_V2_PROFILE:
         return _V2_DIRECTORY, _V2_NAMES
+    if profile == CUSTODY_V3_PROFILE:
+        return _V3_DIRECTORY, _V3_NAMES
     _fail("profile_invalid")
 
 
@@ -71,7 +76,9 @@ def _terminal_observation(registration, raw, profile):
     if (reason >= len(_REASONS) or facts & ~15 or not 0 < observed < deadline
             or (reason == 0 and facts != 10) or (reason != 0 and not facts & 1)):
         _fail("record_changed")
-    struct.pack_into("<III", expected, 4, 2, 19 if reason == 0 else 20, 2)
+    version, operation = ((3, 25 if reason == 0 else 26) if profile == CUSTODY_V3_PROFILE
+                          else (2, 19 if reason == 0 else 20))
+    struct.pack_into("<III", expected, 4, version, operation, 2)
     if raw[:_MESSAGE_SIZE] != bytes(expected):
         _fail("record_changed")
     return {"reason": _REASONS[reason], "facts": facts}
@@ -171,7 +178,7 @@ def _read_records(directory, *, profile=CUSTODY_PROFILE):
     names = _names(directory, profile=profile)
     records = {}
     for name in names:
-        bound = _MESSAGE_SIZE + (_EVENT_FACTS.size if profile == CUSTODY_V2_PROFILE
+        bound = _MESSAGE_SIZE + (_EVENT_FACTS.size if profile in (CUSTODY_V2_PROFILE, CUSTODY_V3_PROFILE)
                                  and name == allowed[1] else 0)
         fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
                      dir_fd=directory)
@@ -207,13 +214,77 @@ def _records_for(directory, profile):
     return _read_records(directory, profile=profile)
 
 
+def _read_creator_records(directory, creators, *, reserved=()):
+    """Read only the delivered original descriptions, without reopening names."""
+    from .native_whole_scope import _MESSAGE_SIZE, _kernel_identity, _mount_id
+
+    parent = _directory_identity(directory)
+    if (type(creators) is not tuple or len(creators) != 2
+            or any(type(fd) is not int or fd <= 2 for fd in creators)
+            or len(set(creators)) != 2 or _names(directory, profile=CUSTODY_V3_PROFILE) != _V3_NAMES):
+        _fail("creators_invalid")
+    excluded = set()
+    for fd in reserved:
+        info = os.fstat(fd)
+        excluded.add((info.st_dev, info.st_ino))
+    records, seen, original_flags = {}, set(), []
+    for index, (name, fd) in enumerate(zip(_V3_NAMES, creators, strict=True)):
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        # Linux exposes its implicit O_LARGEFILE bit even on a 64-bit Python
+        # whose O_LARGEFILE constant is zero. No other mutable status is allowed.
+        allowed = os.O_RDWR | os.O_NOFOLLOW | getattr(os, "O_LARGEFILE", 0) | 0o100000
+        if (flags & os.O_ACCMODE != os.O_RDWR or flags & ~allowed
+                or fcntl.fcntl(fd, fcntl.F_GETFD) != fcntl.FD_CLOEXEC):
+            _fail("creators_invalid")
+        before = os.fstat(fd)
+        identity = _kernel_identity(fd)
+        bound = _MESSAGE_SIZE + (index * _EVENT_FACTS.size)
+        if (not stat.S_ISREG(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_uid or before.st_gid or before.st_nlink != 1
+                or before.st_size not in (0, bound)
+                or identity[0] != parent[0] or identity[2] != parent[2]
+                or identity[:2] in seen or identity[:2] in excluded):
+            _fail("creators_invalid")
+        seen.add(identity[:2])
+        _no_acl(fd)
+        raw = os.pread(fd, bound + 1, 0)
+        named = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if (len(raw) != before.st_size or _file_pin(os.fstat(fd)) != _file_pin(before)
+                or _file_pin(named) != _file_pin(before) or _kernel_identity(fd) != identity
+                or _mount_id(directory, os.fsencode(name)) != identity[2]
+                or fcntl.fcntl(fd, fcntl.F_GETFL) != flags
+                or fcntl.fcntl(fd, fcntl.F_GETFD) != fcntl.FD_CLOEXEC):
+            _fail("record_changed")
+        _no_acl(fd)
+        records[name] = (raw, identity, _file_pin(before))
+        original_flags.append(flags)
+    # The second read may overlap a change to the first description. Recheck
+    # the complete pair against its original observations before returning it.
+    for (name, fd), flags in zip(zip(_V3_NAMES, creators, strict=True), original_flags, strict=True):
+        _raw, identity, pin = records[name]
+        if (_file_pin(os.fstat(fd)) != pin
+                or _file_pin(os.stat(name, dir_fd=directory, follow_symlinks=False)) != pin
+                or _kernel_identity(fd) != identity
+                or _mount_id(directory, os.fsencode(name)) != identity[2]
+                or fcntl.fcntl(fd, fcntl.F_GETFL) != flags
+                or fcntl.fcntl(fd, fcntl.F_GETFD) != fcntl.FD_CLOEXEC):
+            _fail("record_changed")
+        _no_acl(fd)
+    if (_names(directory, profile=CUSTODY_V3_PROFILE) != _V3_NAMES
+            or _directory_identity(directory) != parent):
+        _fail("record_changed")
+    return records
+
+
 @dataclass(frozen=True, slots=True)
 class NativeWholeScopeCustodyReference:
     """Trusted caller-retained diagnostic baseline; never a scope capability.
 
     The installation must independently retain these private original bytes.
     Current records cannot manufacture this reference or authenticate its origin.
-    File pins are observations after original ACK, not R's creator descriptions.
+    V1/v2 file pins are observations after original ACK. V3 derives its pins
+    from the actual creator-delivered descriptions; serialization never retains
+    those live descriptions or authenticates independent reference retention.
     """
 
     canonical_bytes: bytes = field(repr=False)
@@ -235,6 +306,8 @@ class NativeWholeScopeCustodyOwner:
         self._identities = ()
         self._reference = None
         self._records = None
+        self._creators = ()
+        self._creator_delivery_started = False
         self._binding = None
         self._started = False
         self._deadline = scope.deadline_ns
@@ -271,6 +344,8 @@ class NativeWholeScopeCustodyOwner:
         _check_chain(self._path, self._chain, self._identities)
         if self._binding is not None and self._binding != (scope._binding, scope._scope, scope._target_pid):
             _fail("original_changed")
+        if require_unexpired and self.profile == CUSTODY_V3_PROFILE:
+            scope._remaining()
 
     def _acquire(self):
         scope = self._scope
@@ -305,10 +380,11 @@ class NativeWholeScopeCustodyOwner:
             _fail("owner_invalid")
         scope = self._scope
         self._binding = (scope._binding, scope._scope, scope._target_pid)
-        expected = (_HEADER.pack(0x3151574C, 1, 14, 1, 0, 0) + scope._binding + scope._scope
+        version, operation = (3, 22) if self.profile == CUSTODY_V3_PROFILE else (1, 14)
+        expected = (_HEADER.pack(0x3151574C, version, operation, 1, 0, 0) + scope._binding + scope._scope
                     + struct.pack("<Q", scope._target_pid) + publication_bytes)
         _directory, names = _profile_shape(self.profile)
-        records = _records_for(self._directory, self.profile)
+        records = self._read_original_records()
         if (set(records) != set(names) or records[names[0]][0] != expected
                 or records[names[1]][0] != b""):
             _fail("registration_unknown")
@@ -322,19 +398,96 @@ class NativeWholeScopeCustodyOwner:
         }
         self._check()
         self._reference = NativeWholeScopeCustodyReference(_json(reference))
+        if self.profile == CUSTODY_V3_PROFILE:
+            scope._remaining()
+
+    def _read_original_records(self):
+        if self.profile != CUSTODY_V3_PROFILE:
+            return _records_for(self._directory, self.profile)
+        if not self._creator_delivery_started:
+            _fail("creators_invalid")
+        scope = self._scope
+        reserved = [*scope._fds, *self._chain, self._directory]
+        for fd in (0, 1, 2):
+            try:
+                os.fstat(fd)
+            except OSError as exc:
+                if exc.errno != errno.EBADF:
+                    raise
+            else:
+                reserved.append(fd)
+        reserved.extend(sock.fileno() for sock in scope._sockets if sock.fileno() >= 0)
+        if scope._published is not None:
+            reserved.extend(scope._published)
+        publications = getattr(scope, "_original_publications", None)
+        if publications is not None:
+            descriptors, _pins = publications._borrow_for_native_transfer()
+            reserved.extend(descriptors)
+        inputs = scope._fixed_u_input_owner
+        if inputs is not None:
+            if inputs._directory is not None:
+                reserved.append(inputs._directory)
+            reserved.extend(record["fd"] for record in inputs._records.values())
+        return _read_creator_records(self._directory, self._creators, reserved=reserved)
+
+    def _adopt_creator_descriptions(self, token, scope, descriptors, publication_bytes):
+        """Retain same-OFD duplicates from the original private receiver.
+
+        The socket receiver owns the incoming numeric FDs through this call.
+        This child owns only its duplicates, so even a call-entry interruption
+        leaves the receiver able to retire every incoming FD without ambiguity.
+        """
+        from .native_whole_scope import _TOKEN as scope_token
+
+        owned = []
+        try:
+            if (token is not scope_token or scope is not self._scope
+                    or self.profile != CUSTODY_V3_PROFILE or self._creator_delivery_started):
+                _fail("owner_invalid")
+            self._creator_delivery_started = True
+            if (type(descriptors) is not tuple or len(descriptors) != 2
+                    or any(type(fd) is not int or fd <= 2 for fd in descriptors)
+                    or len(set(descriptors)) != 2):
+                _fail("creators_invalid")
+            for fd in descriptors:
+                duplicate = -1
+                try:
+                    duplicate = os.dup(fd)
+                    owned.append(duplicate)
+                    duplicate = -1
+                finally:
+                    if duplicate >= 0:
+                        os.close(duplicate)
+            self._creators = tuple(owned)
+            self._bind_registration(publication_bytes)
+        except BaseException:
+            if owned:
+                self._reference = self._records = None
+                self._creators = ()
+            # Preserve the primary validation/interrupt error while retiring
+            # every child-owned duplicate, including partial adoption.
+            for fd in owned:
+                try:
+                    os.close(fd)
+                except OSError:
+                    continue
+            raise
 
     def _check_registration(self, *, terminal=False):
         self._check()
         if self._records is None:
             _fail("registration_unknown")
         _directory, names = _profile_shape(self.profile)
-        records = _records_for(self._directory, self.profile)
+        records = self._read_original_records()
         if set(records) != set(names):
             _fail("record_changed")
         for name in names:
             if records[name][1] != self._records[name][1]:
                 _fail("record_changed")
         if records[names[0]] != self._records[names[0]]:
+            _fail("record_changed")
+        if (self.profile == CUSTODY_V3_PROFILE and not terminal
+                and records[names[1]] != self._records[names[1]]):
             _fail("record_changed")
         observation = _terminal_observation(self._records[names[0]][0], records[names[1]][0], self.profile)
         if (terminal and (observation is None or observation["reason"] != "normal")
@@ -354,6 +507,8 @@ class NativeWholeScopeCustodyOwner:
             return
         self._closed = True
         descriptors, self._chain = self._chain, []
+        descriptors.extend(self._creators)
+        self._creators = ()
         if self._directory is not None:
             descriptors.append(self._directory)
             self._directory = None
@@ -409,7 +564,9 @@ def _parse_reference(reference):
     if type(value["registration"]) is not str or len(value["registration"]) != 2 * _MESSAGE_SIZE:
         _fail("reference_invalid")
     raw = bytes.fromhex(value["registration"])
-    if raw.hex() != value["registration"] or _HEADER.unpack_from(raw) != (0x3151574C, 1, 14, 1, 0, 0):
+    version, operation = (3, 22) if value["profile"] == CUSTODY_V3_PROFILE else (1, 14)
+    if (raw.hex() != value["registration"]
+            or _HEADER.unpack_from(raw) != (0x3151574C, version, operation, 1, 0, 0)):
         _fail("reference_invalid")
     binding = _BINDING.unpack_from(raw, _HEADER.size)
     groups = binding[10:]

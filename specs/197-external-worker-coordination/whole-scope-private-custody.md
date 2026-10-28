@@ -34,10 +34,13 @@ does not supply a replacement original reaper or durable G-to-R event route.
 The live normal consumer still requires original native completion before
 checking the record. Read-only inspection may expose the fixed recorded reason
 and separate recorded facts, but all durable-ACK, cleanup, quiescence, admission
-and publication authorities remain false. Its reads observe file identities;
-they are not transferred R creator file descriptions. Full S-death custody,
-creator-FD delivery and actual blocked-storage/root-profile acceptance remain
-open. This slice is not the complete WQ-07 accepting protocol.
+and publication authorities remain false. V1/v2 reads observe file identities;
+they are not transferred R creator file descriptions. The explicit
+[v3 continuation](whole-scope-creator-fd-v3.md) now implements actual R → S → C
+creator-FD delivery, with all 34 C transport/adoption mechanism cases passing
+in the concentrated Linux batch. Full S-death custody and actual
+blocked-storage/root-profile acceptance remain open. Neither the v2 slice nor
+the passing v3 software mechanism completes WQ-07 acceptance.
 
 Planned concentrated validation covers unchanged default framing, real v2
 receiver packets/files/ACK ordering, malformed/replayed/wrong-context packets,
@@ -108,8 +111,11 @@ bounds or by O_NONBLOCK.
 The original live child exposes `NativeWholeScopeCustodyReference` only after
 the registration ACK and matching record observations. Its private canonical
 bytes record the original directory chain, expected registration, and observed
-file identities. Those file pins are **ACK-bound read observations**, not R's
-actual creator descriptions: the current ABI does not transfer creator FDs.
+file identities. Those v1/v2 file pins are **ACK-bound read observations**, not
+R's actual creator descriptions: the v1/v2 ABIs do not transfer creator FDs.
+The explicit [v3 software contract](whole-scope-creator-fd-v3.md) implements
+creator-description delivery and has passed its 34 C mechanism cases; full
+WQ-07 and installed-profile acceptance remain separate work.
 The trusted installation must independently retain the reference before relying
 on recovery; the implementation does not authenticate a caller-made reference or
 automatically persist one inside the receiver store.

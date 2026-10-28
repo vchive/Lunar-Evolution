@@ -384,6 +384,18 @@ failures/errors/skips locally; this is not installation or runtime evidence.
 
 ## Explicit generic-envelope delivery successor — 2026-10-28
 
+The dependency recipe continuation now forwards an explicitly selected original
+producer profile through compiler, compiler/linker, standalone and explicit
+support generation. `test_static_python_dependency_profile_selection.py` adds
+default/None byte identity, complete real v1/v2 generator graphs for both
+solvers, base digest and original source-drift refusal checks. Its local actual
+consumer tests first invoke the real concrete v2 source gate, then explicitly
+project the selected launcher/producer/main bytes into a tiny inert graph.
+Original recipe wrappers, support preparation, trusted-tool runner, actual
+depfiles, persisted report and consumer readback remain real in that test;
+the fixture does not compile the full CPython graph or execute a solver. These
+new cases await the shared concentrated regression; no pass is claimed here.
+
 The default-off v2 software is described in `envelope-delivery.md`. Six new files
 ran 224 passing cases, including actual C launcher compilation with explicitly
 inert Python C API stubs. This is not a static CPython build or solver acceptance.
@@ -434,3 +446,25 @@ passes 135/135 consistency checks for 1,407 latest unique passing nodes, not a
 single all-passing Linux invocation. See the current HANDOFF for exact lineage.
 Mixed, complete CI, original workload quiescence, writer enclosure, accepted
 build/runtime custody and production admission remain open.
+
+
+## Successor recipe profile selection — 2026-10-28
+
+The explicit profile now reaches compiler dependency, linker dependency,
+standalone linker and explicit support recipes without changing omitted/None
+bytes. The 30-complete-file Linux concentrated run at tree `e93c99f5` executed
+1,048 unique nodes once with 16 workers: 1,005 passed, one CI manifest-count
+assertion failed and 42 root-prerequisite nodes skipped; elapsed 48.535873 seconds.
+All 34 new recipe-selection nodes passed, including two explicitly tiny inert
+process compositions. No complete CPython build or real solver campaign ran.
+The manifest-count correction is a separate affected-file successor; recipe
+and product source remain identical. The first failure is retained.
+
+Originals live under the main workspace ignored validation root
+`parallel-batch-20261027/next-union-tmpfs-linux-20261028/`. An independent audit
+verified archive/Git blobs, before/after inventory, all 16 worker collections,
+unique execution/JUnit correspondence and 259 loaded-module origins. Its
+7,949 consistency checks confirm the retained outcomes, including the failure
+and skipped prerequisites; they are not additional product tests or deployment
+acceptance. Full CI, accepted input/build custody, complete runtime/solver
+integration and production admission remain open.

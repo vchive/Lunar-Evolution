@@ -372,4 +372,44 @@ static inline int wq_custody_receive(int fd, wq_custody_event_t *event, uint64_t
     memcpy(event, raw, sizeof(*event));
     return 0;
 }
+/* Explicit creator-description custody. Existing v1/v2 validators and packet
+ * shapes remain unchanged. Both creator ACK hops carry the original context. */
+#define WQ_CREATOR_VERSION 3u
+#define WQ_V3_STORE_REGISTER 22u
+#define WQ_V3_REGISTER_CREATORS 23u
+#define WQ_V3_CONTROLLER_CREATORS 24u
+#define WQ_V3_STORE_NORMAL 25u
+#define WQ_V3_STORE_ABNORMAL 26u
+#define WQ_V3_TERMINAL_ACK 27u
+
+static inline int wq_v3_message_check(const wq_message_t *message, const wq_binding_t *binding,
+                                     uint32_t operation, uint32_t sequence, uint32_t count) {
+    return message->magic != WQ_MAGIC || message->version != WQ_CREATOR_VERSION ||
+           message->reserved || message->operation != operation || message->sequence != sequence ||
+           message->fd_count != count || memcmp(&message->binding, binding, sizeof(*binding)) ||
+           wq_binding_valid(&message->binding);
+}
+static inline int wq_v3_event_check(const wq_custody_event_t *event,
+                                   const wq_message_t *registration) {
+    wq_message_t expected = *registration;
+    expected.operation = event->original.operation;
+    expected.sequence = 2;
+    return wq_v3_message_check(registration, &registration->binding, WQ_V3_STORE_REGISTER, 1, 0) ||
+           (expected.operation != WQ_V3_STORE_NORMAL && expected.operation != WQ_V3_STORE_ABNORMAL) ||
+           memcmp(&event->original, &expected, sizeof(expected)) ||
+           !event->observed_monotonic_ns ||
+           event->observed_monotonic_ns >= registration->binding.deadline_ns ||
+           (event->facts & ~15u) ||
+           (expected.operation == WQ_V3_STORE_NORMAL
+                ? event->reason != WQ_CUSTODY_OK || event->facts != WQ_CUSTODY_NORMAL_FACTS
+                : event->reason < WQ_CUSTODY_CONTROLLER_LOST ||
+                      event->reason > WQ_CUSTODY_PROTOCOL ||
+                      !(event->facts & WQ_CUSTODY_STOP_ATTEMPTED));
+}
+static inline int wq_v3_terminal_ack_check(const wq_custody_event_t *ack,
+                                          const wq_custody_event_t *event) {
+    wq_custody_event_t expected = *event;
+    expected.original.operation = WQ_V3_TERMINAL_ACK;
+    return memcmp(ack, &expected, sizeof(expected));
+}
 #endif

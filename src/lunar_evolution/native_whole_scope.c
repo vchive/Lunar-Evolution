@@ -42,7 +42,10 @@ typedef struct {
     wq_publication_t publication_pins[3];
     int guardian_retiring, receiver_retiring, bootstrap_finishing, controller_released;
     int cleanup_started;
-    int custody_v2, custody_registered, custody_terminal_sent;
+    int custody_v2, custody_v3, custody_registered, custody_terminal_sent;
+    int custody_creators[2];
+    wq_identity_t custody_parent, custody_record_pins[2];
+    struct stat custody_registration, custody_empty_terminal;
     uint32_t failure_reason;
 } supervisor_t;
 
@@ -333,7 +336,7 @@ static int child_wait(child_t *child, uint64_t deadline, int expected_zero) {
 }
 static int supervisor_check(supervisor_t *s) {
     uint64_t now;
-    if (s->custody_v2 && !s->failure_reason) {
+    if ((s->custody_v2 || s->custody_v3) && !s->failure_reason) {
         struct pollfd controller = {s->controller, POLLIN, 0};
         int observed = poll(&controller, 1, 0);
         if (wq_remaining(s->deadline) < 0 ||
@@ -364,7 +367,7 @@ static int supervisor_check(supervisor_t *s) {
     return scope_check(&s->scope, 0);
 }
 static void custody_failure_fallback(supervisor_t *s) {
-    if (s->custody_v2 && !s->failure_reason) {
+    if ((s->custody_v2 || s->custody_v3) && !s->failure_reason) {
         /* Preserve an actually observed original lifeline, deadline or R
          * failure. A generic scope/chain/G/packet refusal cannot identify R. */
         (void)supervisor_check(s);
@@ -576,6 +579,129 @@ static int store_record(int directory, int fd, const char *name, const wq_messag
     return store_record_bytes(directory, fd, name, message, sizeof(*message),
                               message->binding.deadline_ns, parent, original, 0);
 }
+static const char *v3_record_names[2] = {"scope-registration-v3.bin", "scope-terminal-v3.bin"};
+static int v3_fixed_names(int directory, const wq_identity_t *parent, uint64_t deadline) {
+    if (wq_remaining(deadline) < 0)
+        return -1;
+    int scan = openat(directory, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    wq_identity_t current;
+    if (scan < 0)
+        return -1;
+    if (wq_identity(scan, &current, 0) || !wq_identity_equal(parent, &current)) {
+        close(scan);
+        return -1;
+    }
+    DIR *entries = fdopendir(scan);
+    if (!entries) {
+        close(scan);
+        return -1;
+    }
+    unsigned int seen = 0;
+    int result = -1;
+    for (size_t i = 0; i < 5; i++) {
+        if (wq_remaining(deadline) < 0)
+            break;
+        errno = 0;
+        struct dirent *entry = readdir(entries);
+        if (!entry) {
+            if (!errno && seen == 3)
+                result = 0;
+            break;
+        }
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+            continue;
+        unsigned int bit = !strcmp(entry->d_name, v3_record_names[0]) ? 1u :
+                           !strcmp(entry->d_name, v3_record_names[1]) ? 2u : 0u;
+        if (!bit || (seen & bit))
+            break;
+        seen |= bit;
+    }
+    if (closedir(entries) || wq_remaining(deadline) < 0)
+        return -1;
+    return result;
+}
+static int v3_record_identity(int directory, int fd, const char *name,
+                              const wq_identity_t *parent, const wq_identity_t *pin,
+                              off_t size, uint64_t deadline) {
+    wq_identity_t current;
+    struct stat held, named;
+    if (wq_remaining(deadline) < 0)
+        return -1;
+    int flags = fcntl(fd, F_GETFL), descriptor_flags = fcntl(fd, F_GETFD);
+    /* Linux may expose the kernel O_LARGEFILE bit even when libc's x86-64
+     * O_LARGEFILE constant is zero. No caller changes shared OFD flags/offset. */
+    int allowed = O_ACCMODE | O_NOFOLLOW | O_LARGEFILE | 0100000;
+    return wq_remaining(deadline) < 0 || private_directory(directory, &current) ||
+           !wq_identity_equal(parent, &current) || private_no_acl(directory) ||
+           fd <= 2 || flags < 0 || (flags & O_ACCMODE) != O_RDWR || (flags & ~allowed) ||
+           descriptor_flags < 0 || !(descriptor_flags & FD_CLOEXEC) ||
+           wq_identity(fd, &current, 0) || !wq_identity_equal(pin, &current) ||
+           !S_ISREG(current.mode) || current.uid || current.gid ||
+           (current.mode & 07777) != 0600 || current.device != parent->device ||
+           current.mount_id != parent->mount_id || private_no_acl(fd) ||
+           fstat(fd, &held) || held.st_nlink != 1 || held.st_size != size ||
+           fstatat(directory, name, &named, AT_SYMLINK_NOFOLLOW) ||
+           (uint64_t)named.st_dev != pin->device || named.st_ino != pin->inode ||
+           named.st_mode != pin->mode || named.st_uid != pin->uid || named.st_gid != pin->gid ||
+           named.st_nlink != 1 || named.st_size != size || wq_remaining(deadline) < 0;
+}
+/* The empty terminal has no permitted mutation before R's one terminal write.
+ * Retain its actual first observation, not a new zero-length observation after
+ * a write/truncate pair. atime is deliberately excluded: bounded pread may
+ * update it without changing a record. */
+static int v3_stat_equal(const struct stat *left, const struct stat *right) {
+    return left->st_dev == right->st_dev && left->st_ino == right->st_ino &&
+           left->st_mode == right->st_mode && left->st_uid == right->st_uid &&
+           left->st_gid == right->st_gid && left->st_nlink == right->st_nlink &&
+           left->st_size == right->st_size &&
+           left->st_mtim.tv_sec == right->st_mtim.tv_sec &&
+           left->st_mtim.tv_nsec == right->st_mtim.tv_nsec &&
+           left->st_ctim.tv_sec == right->st_ctim.tv_sec &&
+           left->st_ctim.tv_nsec == right->st_ctim.tv_nsec;
+}
+static int v3_stat_pin_check(int directory, int fd, const char *name,
+                              const struct stat *original, uint64_t deadline) {
+    struct stat held, named;
+    return wq_remaining(deadline) < 0 || fstat(fd, &held) ||
+           !v3_stat_equal(original, &held) ||
+           fstatat(directory, name, &named, AT_SYMLINK_NOFOLLOW) ||
+           !v3_stat_equal(original, &named) || wq_remaining(deadline) < 0;
+}
+static int v3_empty_terminal_check(int directory, int fd, const struct stat *original,
+                                   uint64_t deadline) {
+    return original->st_size ||
+           v3_stat_pin_check(directory, fd, v3_record_names[1], original, deadline);
+}
+static int v3_creators_check(int directory, const int files[2], const wq_identity_t *parent,
+                              const wq_identity_t pins[2], const wq_message_t *registration,
+                              const wq_custody_event_t *terminal, uint64_t deadline) {
+    off_t sizes[] = {registration ? (off_t)sizeof(*registration) : 0,
+                     terminal ? (off_t)sizeof(*terminal) : 0};
+    struct stat before[2], held, named;
+    if (wq_fd_distinct(files, 2) || v3_fixed_names(directory, parent, deadline))
+        return -1;
+    for (size_t i = 0; i < 2; i++)
+        if (v3_record_identity(directory, files[i], v3_record_names[i], parent, &pins[i],
+                               sizes[i], deadline) || fstat(files[i], &before[i]))
+            return -1;
+    char raw[sizeof(wq_custody_event_t) + 1];
+    if (registration &&
+        (checked_read(files[0], &pins[0], raw, sizeof(*registration) + 1, deadline, 0) !=
+             (int)sizeof(*registration) || memcmp(raw, registration, sizeof(*registration))))
+        return -1;
+    if (terminal &&
+        (checked_read(files[1], &pins[1], raw, sizeof(*terminal) + 1, deadline, 0) !=
+             (int)sizeof(*terminal) || memcmp(raw, terminal, sizeof(*terminal))))
+        return -1;
+    for (size_t i = 0; i < 2; i++)
+        if (v3_record_identity(directory, files[i], v3_record_names[i], parent, &pins[i],
+                               sizes[i], deadline) || fstat(files[i], &held) ||
+            !v3_stat_equal(&before[i], &held) ||
+            fstatat(directory, v3_record_names[i], &named, AT_SYMLINK_NOFOLLOW) ||
+            !v3_stat_equal(&before[i], &named))
+            return -1;
+    return v3_fixed_names(directory, parent, deadline);
+}
 static _Noreturn void receiver_main(int directory, int channel, const wq_binding_t *binding,
                                     const wq_identity_t *scope) {
     int keep[] = {directory, channel};
@@ -722,6 +848,136 @@ static _Noreturn void receiver_v2_main(int directory, int channel, const wq_bind
     }
     _exit(0);
 }
+static _Noreturn void receiver_v3_main(int directory, int channel, const wq_binding_t *binding,
+                                       const wq_identity_t *scope) {
+    int keep[] = {directory, channel};
+    if (wq_remaining(binding->deadline_ns) < 0 || close_except(keep, 2) || wq_socket(channel))
+        _exit(WQ_FAILURE);
+    wq_identity_t parent, pins[2];
+    struct stat original_registration, empty_terminal;
+    int files[2] = {-1, -1};
+    if (private_directory(directory, &parent) || private_no_acl(directory))
+        _exit(WQ_FAILURE);
+    for (size_t i = 0; i < 2; i++) {
+        if (wq_remaining(binding->deadline_ns) < 0)
+            _exit(WQ_FAILURE);
+        files[i] = openat(directory, v3_record_names[i],
+                          O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+        if (files[i] >= 0 && files[i] <= 2) {
+            /* close_except intentionally removed stdio. Retain that exact
+             * creator OFD above stdio without reopening its name. */
+            int original = files[i];
+            files[i] = fcntl(original, F_DUPFD_CLOEXEC, 3);
+            close(original);
+        }
+        if (files[i] < 0 || wq_identity(files[i], &pins[i], 0))
+            _exit(WQ_FAILURE);
+    }
+    if (fstat(files[1], &empty_terminal) ||
+        v3_creators_check(directory, files, &parent, pins, NULL, NULL, binding->deadline_ns) ||
+        v3_empty_terminal_check(directory, files[1], &empty_terminal, binding->deadline_ns))
+        _exit(WQ_FAILURE);
+    wq_message_t registration;
+    for (;;) {
+        if (wq_remaining(binding->deadline_ns) < 0)
+            _exit(WQ_FAILURE);
+        if (!wq_receive(channel, &registration, NULL, 0, binding->deadline_ns))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+        struct pollfd p = {channel, POLLIN, 0};
+        int ms = wq_remaining(binding->deadline_ns);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            _exit(WQ_FAILURE);
+    }
+    if (wq_v3_message_check(&registration, binding, WQ_V3_STORE_REGISTER, 1, 0) ||
+        !wq_identity_equal(scope, &registration.scope) || !registration.target_pid ||
+        registration.target_pid > INT_MAX)
+        _exit(WQ_FAILURE);
+    for (size_t i = 0; i < 3; i++)
+        if (!registration.publications[i].inode || !registration.publications[i].size ||
+            wq_digest(registration.publications[i].sha256))
+            _exit(WQ_FAILURE);
+    if (store_record_bytes(directory, files[0], v3_record_names[0], &registration,
+                           sizeof(registration), binding->deadline_ns, &parent, &pins[0], 1) ||
+        fstat(files[0], &original_registration) ||
+        fsync(files[1]) || fsync(directory) ||
+        v3_creators_check(directory, files, &parent, pins, &registration, NULL,
+                           binding->deadline_ns) ||
+        v3_stat_pin_check(directory, files[0], v3_record_names[0], &original_registration,
+                            binding->deadline_ns) ||
+        v3_empty_terminal_check(directory, files[1], &empty_terminal, binding->deadline_ns))
+        _exit(WQ_FAILURE);
+    wq_message_t creators = registration;
+    creators.operation = WQ_V3_REGISTER_CREATORS;
+    creators.fd_count = 2;
+    for (;;) {
+        if (wq_remaining(binding->deadline_ns) < 0 ||
+            v3_stat_pin_check(directory, files[0], v3_record_names[0], &original_registration,
+                                binding->deadline_ns) ||
+            v3_empty_terminal_check(directory, files[1], &empty_terminal,
+                                      binding->deadline_ns))
+            _exit(WQ_FAILURE);
+        if (!wq_send(channel, &creators, files, 2)) {
+            if (v3_stat_pin_check(directory, files[0], v3_record_names[0], &original_registration,
+                                    binding->deadline_ns))
+                _exit(WQ_FAILURE);
+            break;
+        }
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+        struct pollfd p = {channel, POLLOUT, 0};
+        int ms = wq_remaining(binding->deadline_ns);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            _exit(WQ_FAILURE);
+    }
+    wq_custody_event_t event;
+    for (;;) {
+        if (wq_remaining(binding->deadline_ns) < 0)
+            _exit(WQ_FAILURE);
+        if (!wq_custody_receive(channel, &event, binding->deadline_ns))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+        struct pollfd p = {channel, POLLIN, 0};
+        int ms = wq_remaining(binding->deadline_ns);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            _exit(WQ_FAILURE);
+    }
+    if (wq_v3_event_check(&event, &registration) ||
+        v3_stat_pin_check(directory, files[0], v3_record_names[0], &original_registration,
+                            binding->deadline_ns) ||
+        v3_creators_check(directory, files, &parent, pins, &registration, NULL,
+                           binding->deadline_ns) ||
+        v3_empty_terminal_check(directory, files[1], &empty_terminal, binding->deadline_ns) ||
+        store_record_bytes(directory, files[1], v3_record_names[1], &event, sizeof(event),
+                           binding->deadline_ns, &parent, &pins[1], 1) ||
+        v3_creators_check(directory, files, &parent, pins, &registration, &event,
+                           binding->deadline_ns) ||
+        v3_stat_pin_check(directory, files[0], v3_record_names[0], &original_registration,
+                            binding->deadline_ns))
+        _exit(WQ_FAILURE);
+    wq_custody_event_t ack = event;
+    ack.original.operation = WQ_V3_TERMINAL_ACK;
+    for (;;) {
+        if (v3_stat_pin_check(directory, files[0], v3_record_names[0], &original_registration,
+                                binding->deadline_ns))
+            _exit(WQ_FAILURE);
+        if (!wq_custody_send(channel, &ack)) {
+            if (v3_stat_pin_check(directory, files[0], v3_record_names[0], &original_registration,
+                                    binding->deadline_ns))
+                _exit(WQ_FAILURE);
+            break;
+        }
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            _exit(WQ_FAILURE);
+        struct pollfd p = {channel, POLLOUT, 0};
+        int ms = wq_remaining(binding->deadline_ns);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            _exit(WQ_FAILURE);
+    }
+    _exit(0);
+}
 static int start_guardian(supervisor_t *s) {
     int channel[2], lifeline[2];
     if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, channel) ||
@@ -758,12 +1014,19 @@ static int start_receiver(supervisor_t *s) {
     wq_identity_t pin;
     if (private_directory(s->custody, &pin))
         return -1;
+    if (s->custody_v3) {
+        if (private_no_acl(s->custody))
+            return -1;
+        s->custody_parent = pin;
+    }
     int channel[2];
     if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0, channel))
         return -1;
     int cloned = child_clone(&s->receiver);
     if (!cloned) {
         close(channel[0]);
+        if (s->custody_v3)
+            receiver_v3_main(s->custody, channel[1], &s->binding, &s->scope.leaf_pin);
         if (s->custody_v2)
             receiver_v2_main(s->custody, channel[1], &s->binding, &s->scope.leaf_pin);
         receiver_main(s->custody, channel[1], &s->binding, &s->scope.leaf_pin);
@@ -801,6 +1064,160 @@ static int persist(supervisor_t *s, uint32_t operation, uint32_t sequence) {
         custody_failure_fallback(s);
     if (!result && s->custody_v2 && operation == WQ_STORE_REGISTER)
         s->custody_registered = 1;
+    return result;
+}
+static void close_custody_creators(supervisor_t *s) {
+    for (size_t i = 0; i < 2; i++) {
+        int fd = s->custody_creators[i];
+        s->custody_creators[i] = -1;
+        if (fd >= 0)
+            close(fd);
+    }
+}
+static void v3_registration(supervisor_t *s, wq_message_t *message) {
+    wq_message_init(message, &s->binding, WQ_V3_STORE_REGISTER, 1, 0);
+    message->version = WQ_CREATOR_VERSION;
+    message->scope = s->scope.leaf_pin;
+    message->target_pid = s->target_pid;
+    memcpy(message->publications, s->publication_pins, sizeof(message->publications));
+}
+static int v3_creator_role(const int creators[2], int role) {
+    if (role < 0)
+        return 0;
+    struct stat original;
+    if (fstat(role, &original))
+        return role <= 2 && errno == EBADF ? 0 : -1;
+    for (size_t i = 0; i < 2; i++) {
+        struct stat incoming;
+        if (creators[i] == role || fstat(creators[i], &incoming) ||
+            (incoming.st_dev == original.st_dev && incoming.st_ino == original.st_ino &&
+             (incoming.st_mode & S_IFMT) == (original.st_mode & S_IFMT)))
+            return -1;
+    }
+    return 0;
+}
+static int v3_creator_roles(supervisor_t *s) {
+    int roles[] = {s->profile, s->delegation, s->bootstrap, s->controller, s->enrollment,
+                   s->lifecycle, s->lifeline, s->image, s->custody, s->target,
+                   s->publications[0], s->publications[1], s->publications[2], s->scope.leaf,
+                   s->guardian.fd, s->guardian.pidfd, s->receiver.fd, s->receiver.pidfd,
+                   s->guardian_lifeline, 0, 1, 2};
+    if (wq_fd_distinct(s->custody_creators, 2))
+        return -1;
+    for (size_t i = 0; i < sizeof(roles) / sizeof(roles[0]); i++)
+        if (v3_creator_role(s->custody_creators, roles[i]))
+            return -1;
+    for (size_t i = 0; i < 8; i++)
+        if (v3_creator_role(s->custody_creators, s->scope.files[i]))
+            return -1;
+    for (size_t i = 0; i < s->delegation_chain.count; i++)
+        if (v3_creator_role(s->custody_creators, s->delegation_chain.fds[i]))
+            return -1;
+    return 0;
+}
+/* This consumes only actual received rights, never a public/recovered owner.
+ * Adoption precedes every context/identity check and failure retires both. */
+static int adopt_v3_creators(supervisor_t *s, const wq_message_t *registration,
+                              const wq_message_t *ack, int incoming[2]) {
+    if (s->custody_creators[0] >= 0 || s->custody_creators[1] >= 0) {
+        for (size_t i = 0; i < 2; i++) {
+            if (incoming[i] >= 0)
+                close(incoming[i]);
+            incoming[i] = -1;
+        }
+        return -1;
+    }
+    for (size_t i = 0; i < 2; i++) {
+        s->custody_creators[i] = incoming[i];
+        incoming[i] = -1;
+    }
+    wq_message_t expected = *registration;
+    expected.operation = WQ_V3_REGISTER_CREATORS;
+    expected.fd_count = 2;
+    int invalid = memcmp(ack, &expected, sizeof(expected)) || v3_creator_roles(s);
+    for (size_t i = 0; !invalid && i < 2; i++)
+        invalid = wq_identity(s->custody_creators[i], &s->custody_record_pins[i], 0);
+    if (!invalid)
+        invalid = fstat(s->custody_creators[0], &s->custody_registration) ||
+                  fstat(s->custody_creators[1], &s->custody_empty_terminal);
+    if (!invalid)
+        invalid = v3_creators_check(s->custody, s->custody_creators, &s->custody_parent,
+                                    s->custody_record_pins, registration, NULL, s->deadline) ||
+                  v3_stat_pin_check(s->custody, s->custody_creators[0], v3_record_names[0],
+                                      &s->custody_registration, s->deadline) ||
+                  v3_empty_terminal_check(s->custody, s->custody_creators[1],
+                                            &s->custody_empty_terminal, s->deadline);
+    if (invalid) {
+        close_custody_creators(s);
+        return -1;
+    }
+    s->custody_registered = 1;
+    return 0;
+}
+static int receive_v3_creators(supervisor_t *s, const wq_message_t *registration) {
+    if (s->custody_creators[0] >= 0 || s->custody_creators[1] >= 0)
+        return -1;
+    for (;;) {
+        if (supervisor_check(s))
+            return -1;
+        wq_message_t ack;
+        int incoming[2] = {-1, -1};
+        if (!wq_receive(s->receiver.fd, &ack, incoming, 2, s->deadline)) {
+            if (adopt_v3_creators(s, registration, &ack, incoming))
+                return -1;
+            if (supervisor_check(s)) {
+                close_custody_creators(s);
+                return -1;
+            }
+            return 0;
+        }
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            return -1;
+        struct pollfd p = {s->receiver.fd, POLLIN, 0};
+        int ms = wq_remaining(s->deadline);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            return -1;
+    }
+}
+static int persist_v3_registration(supervisor_t *s) {
+    if (!s->custody_v3 || s->custody_registered)
+        return -1;
+    wq_message_t registration;
+    v3_registration(s, &registration);
+    if (transfer(s, s->receiver.fd, &registration, NULL, 0, 1) ||
+        receive_v3_creators(s, &registration)) {
+        custody_failure_fallback(s);
+        return -1;
+    }
+    return 0;
+}
+static int prepare_v3_controller_creators(supervisor_t *s, wq_message_t *message) {
+    v3_registration(s, message);
+    if (!s->custody_v3 || !s->custody_registered || v3_creator_roles(s) ||
+        v3_creators_check(s->custody, s->custody_creators, &s->custody_parent,
+                           s->custody_record_pins, message, NULL, s->deadline) ||
+        v3_stat_pin_check(s->custody, s->custody_creators[0], v3_record_names[0],
+                            &s->custody_registration, s->deadline) ||
+        v3_empty_terminal_check(s->custody, s->custody_creators[1],
+                                  &s->custody_empty_terminal, s->deadline))
+        return -1;
+    message->operation = WQ_V3_CONTROLLER_CREATORS;
+    message->sequence = 2;
+    message->fd_count = 2;
+    return 0;
+}
+static int forward_v3_creators(supervisor_t *s) {
+    wq_message_t message;
+    if (prepare_v3_controller_creators(s, &message)) {
+        close_custody_creators(s);
+        return -1;
+    }
+    int result = transfer(s, s->controller, &message, s->custody_creators, 2, 1);
+    if (!result)
+        result = prepare_v3_controller_creators(s, &message);
+    /* A successful send owns queued kernel duplicates, not C's receipt. The
+     * unchanged release gate remains necessary after C's actual adoption. */
+    close_custody_creators(s);
     return result;
 }
 static int persist_v2_terminal(supervisor_t *s, uint32_t reason, uint32_t facts) {
@@ -867,6 +1284,54 @@ static int persist_v2_terminal(supervisor_t *s, uint32_t reason, uint32_t facts)
             return -1;
     }
 }
+static int persist_v3_terminal(supervisor_t *s, uint32_t reason, uint32_t facts) {
+    if (!s->custody_v3 || !s->custody_registered || s->custody_terminal_sent ||
+        s->receiver.pidfd < 0 || s->receiver.reaped || exited(s->receiver.pidfd))
+        return -1;
+    wq_message_t registration;
+    v3_registration(s, &registration);
+    wq_custody_event_t event;
+    memset(&event, 0, sizeof(event));
+    event.original = registration;
+    event.original.operation = reason ? WQ_V3_STORE_ABNORMAL : WQ_V3_STORE_NORMAL;
+    event.original.sequence = 2;
+    event.reason = reason;
+    event.facts = facts;
+    uint64_t now;
+    if (wq_remaining(s->deadline) < 0 || wq_now(&now))
+        return -1;
+    event.observed_monotonic_ns = now;
+    if (wq_v3_event_check(&event, &registration))
+        return -1;
+    for (;;) {
+        if (wq_remaining(s->deadline) < 0 || exited(s->receiver.pidfd) ||
+            (!reason && supervisor_check(s)))
+            return -1;
+        if (!wq_custody_send(s->receiver.fd, &event))
+            break;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            return -1;
+        struct pollfd p = {s->receiver.fd, POLLOUT, 0};
+        int ms = wq_remaining(s->deadline);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            return -1;
+    }
+    s->custody_terminal_sent = 1;
+    s->receiver_retiring = 1;
+    for (;;) {
+        if (wq_remaining(s->deadline) < 0 || (!reason && supervisor_check(s)))
+            return -1;
+        wq_custody_event_t ack;
+        if (!wq_custody_receive(s->receiver.fd, &ack, s->deadline))
+            return wq_v3_terminal_ack_check(&ack, &event) ? -1 : 0;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+            return -1;
+        struct pollfd p = {s->receiver.fd, POLLIN, 0};
+        int ms = wq_remaining(s->deadline);
+        if (ms < 0 || (poll(&p, 1, ms) < 0 && errno != EINTR))
+            return -1;
+    }
+}
 static int finish_abnormal_custody(supervisor_t *s) {
     /* Wake the original G before S's possibly failing scope observation or
      * R's filesystem work. Do not kill G before its independent stop route. */
@@ -881,7 +1346,8 @@ static int finish_abnormal_custody(supervisor_t *s) {
         facts |= WQ_CUSTODY_GUARDIAN_REAPED;
     /* Expiry, original-R loss or a missing ACK retains unknown. No alternate
      * G/R, repaired context or fresh deadline is created by this attempt. */
-    return persist_v2_terminal(s, s->failure_reason, facts);
+    return s->custody_v3 ? persist_v3_terminal(s, s->failure_reason, facts)
+                         : persist_v2_terminal(s, s->failure_reason, facts);
 }
 static int target_member(supervisor_t *s) {
     int fd = openat(s->scope.leaf, "cgroup.procs", O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK);
@@ -976,8 +1442,10 @@ static int run_supervisor(supervisor_t *s) {
     if (wq_fd_distinct(publication_roles, sizeof(publication_roles) / sizeof(publication_roles[0])))
         return -1;
     memcpy(s->publication_pins, registration.publications, sizeof(s->publication_pins));
-    if (publication_check(s) || persist(s, WQ_STORE_REGISTER, 1) ||
-        send_simple(s, s->controller, WQ_REGISTER_ACK, 2) ||
+    if (publication_check(s) ||
+        (s->custody_v3 ? persist_v3_registration(s) : persist(s, WQ_STORE_REGISTER, 1)) ||
+        (s->custody_v3 ? forward_v3_creators(s)
+                       : send_simple(s, s->controller, WQ_REGISTER_ACK, 2)) ||
         receive_simple(s, s->controller, WQ_RELEASE, 3) || publication_check(s) ||
         target_member(s) || receive_simple(s, s->lifecycle, WQ_RELEASE, 3) ||
         publication_check(s) || target_member(s) ||
@@ -1005,8 +1473,9 @@ static int run_supervisor(supervisor_t *s) {
         return -1;
     close(s->guardian.pidfd);
     s->guardian.pidfd = -1;
-    if (s->custody_v2 ? persist_v2_terminal(s, WQ_CUSTODY_OK, WQ_CUSTODY_NORMAL_FACTS)
-                      : persist(s, WQ_STORE_EVENT, 2)) {
+    if (s->custody_v3 ? persist_v3_terminal(s, WQ_CUSTODY_OK, WQ_CUSTODY_NORMAL_FACTS)
+         : s->custody_v2 ? persist_v2_terminal(s, WQ_CUSTODY_OK, WQ_CUSTODY_NORMAL_FACTS)
+                         : persist(s, WQ_STORE_EVENT, 2)) {
         custody_failure_fallback(s);
         return -1;
     }
@@ -1254,7 +1723,8 @@ int main(int argc, char **argv) {
         return publisher(fds[0], fds[1], fds[2], fds[3], deadline) ? WQ_FAILURE : 0;
     }
     if (argc != 22 || (strcmp(argv[1], "--supervisor-v1") &&
-                       strcmp(argv[1], "--supervisor-custody-v2")))
+                       strcmp(argv[1], "--supervisor-custody-v2") &&
+                       strcmp(argv[1], "--supervisor-custody-v3")))
         return 64;
     const char *flags[10] = {
         "--profile-fd",     "--delegation-fd",        "--bootstrap-pidfd",        "--controller-fd",
@@ -1263,6 +1733,8 @@ int main(int argc, char **argv) {
     supervisor_t s;
     memset(&s, 0, sizeof(s));
     s.custody_v2 = !strcmp(argv[1], "--supervisor-custody-v2");
+    s.custody_v3 = !strcmp(argv[1], "--supervisor-custody-v3");
+    s.custody_creators[0] = s.custody_creators[1] = -1;
     int *roles[9] = {&s.profile,   &s.delegation, &s.bootstrap, &s.controller, &s.enrollment,
                      &s.lifecycle, &s.lifeline,   &s.image,     &s.custody};
     s.target = -1;
@@ -1287,14 +1759,14 @@ int main(int argc, char **argv) {
             required[count++] = *roles[i];
     if (number(argv[21], UINT64_MAX, &s.deadline) || wq_fd_distinct(required, count) ||
         wq_socket(s.controller) || wq_socket(s.enrollment) || wq_socket(s.lifecycle) ||
-        pipe_reader(s.lifeline) || (s.custody_v2 && s.custody < 0))
+        pipe_reader(s.lifeline) || ((s.custody_v2 || s.custody_v3) && s.custody < 0))
         return 64;
     int result = run_supervisor(&s);
     if (result) {
-        if (s.custody_v2 && !s.failure_reason)
+        if ((s.custody_v2 || s.custody_v3) && !s.failure_reason)
             s.failure_reason = wq_remaining(s.deadline) < 0
                                    ? WQ_CUSTODY_DEADLINE : WQ_CUSTODY_PROTOCOL;
-        if (s.custody_v2)
+        if (s.custody_v2 || s.custody_v3)
             (void)finish_abnormal_custody(&s);
         else
             emergency_stop(&s.scope, s.bootstrap, 0);
@@ -1307,5 +1779,7 @@ int main(int argc, char **argv) {
                 child_wait(children[i], s.deadline, 0);
             }
     }
+    if (s.custody_v3)
+        close_custody_creators(&s);
     return result ? WQ_FAILURE : 0;
 }

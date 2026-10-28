@@ -456,7 +456,7 @@ def test_v2_wrong_or_partial_original_records_remain_unknown(original, fault):
     ))
 
 
-@pytest.mark.parametrize("profile", [None, True, {}, "v2", "linux-whole-scope-private-custody-v3"])
+@pytest.mark.parametrize("profile", [None, True, {}, "v2", "linux-whole-scope-private-custody-v4"])
 def test_unknown_custody_profile_refuses_before_any_directory_acquisition(profile, monkeypatch):
     monkeypatch.setattr(custody.os, "mkdir", lambda *_a, **_kw: pytest.fail("no directory permitted"))
     with pytest.raises(custody.NativeWholeScopeCustodyError, match="profile_invalid"):

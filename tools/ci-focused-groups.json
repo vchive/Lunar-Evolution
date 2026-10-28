@@ -146,9 +146,10 @@
       "label": "Verify native lifeline, producer inputs, trusted adapters and recovery",
       "files": [
         "tests/test_static_python_rsi_launch.py",
-        "tests/test_static_python_rsi_source_plan.py"
+        "tests/test_static_python_rsi_source_plan.py",
+        "tests/test_static_python_dependency_profile_selection.py"
       ],
-      "expected_tests": 82,
+      "expected_tests": 116,
       "zero_skips": true
     },
     {
@@ -817,7 +818,7 @@
         "tests/test_native_original_publication.py",
         "tests/test_native_original_publication_linux.py"
       ],
-      "expected_tests": 144,
+      "expected_tests": 145,
       "zero_skips": false
     },
     {
@@ -855,9 +856,11 @@
       "label": "Verify original native custody consumer and read-only abnormal recovery",
       "files": [
         "tests/test_native_whole_scope_custody.py",
-        "tests/test_native_whole_scope_abnormal.py"
+        "tests/test_native_whole_scope_abnormal.py",
+        "tests/test_native_whole_scope_creator_custody.py",
+        "tests/test_native_whole_scope_creator_transport.py"
       ],
-      "expected_tests": 96,
+      "expected_tests": 203,
       "zero_skips": true
     }
   ]

@@ -1,3 +1,59 @@
+<!-- creator-v3-current-batch:start -->
+## 当前执行点：P1 recipe / P2 creator-FD v3 已集中验证，mixed 与部署门仍开放（2026-10-28）
+
+权威工作区为 `/Users/liminghan/.codex/worktrees/fixed-u-input-acl/lunar_agent`，
+分支 `codex/fixed-u-input-acl`，本批基于已推送的 `52bc0db1`。PR #190 仍 draft，
+未合 main；以下是软件与原件验证状态，不代表 P0–P2 整体发布完成。
+
+本轮先并行开发、最终审查，再集中回归：
+
+- P1：四条 dependency / linker / standalone / Zig-support recipe API 显式透传
+  `producer_lifecycle_profile`；省略与 None 保持原字节，原 source/closure 拒绝门
+  不变。新增 34 节点全部通过，其中两个实际进程用例明确只执行 tiny inert graph，
+  没有完整 CPython 构建或真实 solver campaign。
+- P2：显式默认关闭 custody v3，R 的实际 creator OFD 经真实 SCM_RIGHTS 两跳
+  R→S→C；Python 原 receiver 始终持有 incoming FD 到 finally，child 只保留同
+  OFD 的 dup。严格固定 wire/context/原期限、完整文件 pin/flags/ACL/名字与
+  reserved-role 检查；覆盖双文件读取窗口、写后截断、部分接管及中断清理。
+  新 Python 73/73、C transport 34/34 机制节点实际通过。v1/v2/default 不升级。
+  原 S/G/R 父子关系不变，S-death 仍 unknown，不构成完整 WQ-07。
+
+5090gpu `/tmp` 可用 inode 为零；新探针验证 `/dev/shm` 的实际创建/写入/fsync，
+本轮使用新 tmpfs 目录，不删除旧证据。第一次 30 完整文件、16 workers、零 retry，
+冻结 tree `e93c99f5`，1,048 unique：1,005 pass / 1 fail / 42 skip，外层产品
+48.535873 秒，未超时。唯一失败是本批 CI 清单数量改到错误组；原失败保留，产品
+源码未再修改。新 142 节点（含 bridge 新参数）实际通过。42 skip 精确为 6 个
+root-owned publication + 36 个 root-owned input 前提，不算已通过部署验收。
+完整 archive/Git blobs、before/after、16 worker collection/唯一执行/JUnit、259
+module origins 经独审 7,949 一致性检查；失败 worker 的 exit1 原样保留。
+
+修正仅两处 CI 数量字段，tree `9b6776f7`，只补一个完整聚合器文件：82/82 pass，
+零 skip、2.371154 秒。16 worker 均 exit0，source before/after 一致。通用 runner
+仍记录 `focused_profile_passed=false`：该文件只通过 importlib 加载 tools，没有
+导入 `lunar_evolution`，原 plugin 因而记录 0 个产品 module origins。保留该收证
+限制，不伪造 origin 或将整个 profile 改为 pass，也不重跑已通过的纯工具测试。
+去重后当前适用域为 1,048：1,006 pass / 42 prerequisite skip；不能把初次 1,005
+与补验 82 简单相加。CI 保持 83 组 / 65 zero-skip、expected sum 6,211。
+
+证据均在主区 ignored `parallel-batch-20261027/`：
+`next-union-tmpfs-linux-20261028/`（含初次独审 child-r2）与
+`creator-recipe-ci-affected-linux-20261028/`。完整来源一致性不是 immutable
+bytecode/build custody，当前软件 fixture 不能替代 root/U/cgroup 与独立账户验收。
+
+P0：旧 f4fe Linux mixed 上传失败，pytest 未执行；同 HEAD 的独立 Darwin inert
+mixed 已 1/1 pass、250.526687 秒、600 秒预算、零 retry。旧失败 HEAD 不重派。
+本批 clean 新 HEAD 的唯一 Linux mixed 及完整 CI 尚待执行/完成。
+
+仍有实际软件缺口：WQ-06 finite writer enclosure 和原 monitor accepting join、
+完整 WQ-07 S-death 独立回收/来源仲裁、独立 pre-gate reference retention 与 worker
+组合、accepted CPython input/build custody、完整配置 closure/static runtime、真实
+OpenEvolve/Shinka runtime 与生产 RSI CLI。实际 root/独立账户/blocked-storage 部署
+验收也未关闭。这些不能全归为环境问题，也不能声称所有 P0–P2 已开发或验收完成。
+`production_admission=false`、`online_publication=false`。不运行模型、WebAgent、
+远程/公司 evaluator 或真实 solver campaign；不读取 `.env`、密钥或活进程 argv/
+environment；benchmark 原区只读。
+<!-- creator-v3-current-batch:end -->
+
 <!-- custody-v2-current-batch:start -->
 ## 当前执行点：v2 异常 custody/监控/P1 合批已完成本机补验（2026-10-28）
 

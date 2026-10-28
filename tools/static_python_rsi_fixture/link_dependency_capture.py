@@ -162,6 +162,7 @@ def prepare_cpython_link_dependency_recipe(
     expected_source_inventory_sha256: str, zig_manifest_bytes: bytes,
     configuration_header: bytes, expected_configuration_sha256: str,
     runtime_closure: FixedRuntimeClosure | None = None,
+    producer_lifecycle_profile: str | None = None,
 ) -> ConcreteBuildRecipe:
     """Explicit opt-in successor; default concrete/compiler recipes stay unchanged."""
     base = prepare_cpython_dependency_recipe(
@@ -170,6 +171,8 @@ def prepare_cpython_link_dependency_recipe(
         zig_manifest_bytes=zig_manifest_bytes, configuration_header=configuration_header,
         expected_configuration_sha256=expected_configuration_sha256,
         runtime_closure=runtime_closure,
+        **({"producer_lifecycle_profile": producer_lifecycle_profile}
+           if producer_lifecycle_profile is not None else {}),
     )
     recipe = _recipe(base.recipe_bytes, base.sha256, version3=True)
     _, links = _capture_plan(recipe, instrumented=False)

@@ -444,6 +444,62 @@ class NativeWholeScopeOwner:
             if active is None and failure is not None:
                 raise failure
 
+    def _receive_custody_creators(self, publication_bytes):
+        """Receive v3 only; inventory all delivered rights before refusing."""
+        from .native_whole_scope_custody import CUSTODY_V3_PROFILE, NativeWholeScopeCustodyOwner
+
+        child = self._custody_owner
+        if (type(child) is not NativeWholeScopeCustodyOwner or child._scope is not self
+                or child.profile != CUSTODY_V3_PROFILE):
+            _fail("owner_invalid")
+        while True:
+            self._remaining()
+            try:
+                raw, ancillary, flags, _ = self._controller.recvmsg(
+                    _MESSAGE_SIZE + 1, socket.CMSG_SPACE(4 * array.array("i").itemsize),
+                    socket.MSG_CMSG_CLOEXEC,
+                )
+                break
+            except BlockingIOError:
+                self._wait(self._controller, select.POLLIN)
+        acquired = []
+        try:
+            invalid, rights_headers = False, 0
+            width = array.array("i").itemsize
+            for level, kind, values in ancillary:
+                if level != socket.SOL_SOCKET or kind != socket.SCM_RIGHTS:
+                    invalid = True
+                    continue
+                rights_headers += 1
+                usable = len(values) - len(values) % width
+                rights = array.array("i")
+                rights.frombytes(values[:usable])
+                acquired.extend(rights)
+                if usable != len(values):
+                    invalid = True
+            expected = (_HEADER.pack(0x3151574C, 3, 24, 2, 2, 0) + self._binding + self._scope
+                        + struct.pack("<Q", self._target_pid) + publication_bytes)
+            if (invalid or rights_headers != 1 or len(ancillary) != 1 or len(acquired) != 2
+                    or flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC) or raw != expected):
+                _fail("protocol_invalid")
+            self._remaining()
+            descriptors = tuple(acquired)
+            # The receiver retains these numeric FDs until finally. The child
+            # retains same-OFD dup copies, with no ambiguous handoff window.
+            NativeWholeScopeCustodyOwner._adopt_creator_descriptions(
+                child, _TOKEN, self, descriptors, publication_bytes,
+            )
+        finally:
+            active = sys.exception()
+            failure = None
+            for fd in acquired:
+                try:
+                    os.close(fd)
+                except OSError as exc:
+                    failure = failure or exc
+            if active is None and failure is not None:
+                raise failure
+
     @property
     def journal_id(self):
         if self._preparation_key is None:
@@ -635,9 +691,10 @@ class NativeWholeScopeOwner:
         # keeps its exclusive unreaped B relationship through pidfd delivery.
         self._bootstrap = process
         bootstrap_pidfd = self._own(os.pidfd_open(process.pid, 0))
-        mode = ("--supervisor-custody-v2" if self._custody_owner is not None
-                and self._custody_owner.profile == "linux-whole-scope-private-custody-v2"
-                else "--supervisor-v1")
+        selected_custody = None if self._custody_owner is None else self._custody_owner.profile
+        mode = {"linux-whole-scope-private-custody-v2": "--supervisor-custody-v2",
+                "linux-whole-scope-private-custody-v3": "--supervisor-custody-v3"}.get(
+                    selected_custody, "--supervisor-v1")
         command = [f"/proc/self/fd/{self._image_fd}", mode, "--profile-fd", str(self._profile_fd),
             "--delegation-fd", str(self._delegation_fd), "--bootstrap-pidfd", str(bootstrap_pidfd),
             "--controller-fd", str(self._controller_child.fileno()), "--enrollment-fd", str(self._enrollment_child.fileno()),
@@ -675,11 +732,23 @@ class NativeWholeScopeOwner:
         raw = b"".join(_PUBLICATION.pack(device, inode, size, mtime, ctime, _digest(digest))
                        for digest, size, device, inode, mtime, ctime in pins)
         self._send(self._controller, 5, 1, fds=descriptors, publications=raw)
-        self._receive(self._controller, 6, 2)
-        self._original_publications = publications
-        if self._custody_owner is not None:
-            self._custody_owner._bind_registration(raw)
+        if (self._custody_owner is not None
+                and self._custody_owner.profile == "linux-whole-scope-private-custody-v3"):
+            self._original_publications = publications
+            self._receive_custody_creators(raw)
+        else:
+            self._receive(self._controller, 6, 2)
+            self._original_publications = publications
+            if self._custody_owner is not None:
+                self._custody_owner._bind_registration(raw)
         self._registered = True
+        if (self._custody_owner is not None
+                and self._custody_owner.profile == "linux-whole-scope-private-custody-v3"):
+            try:
+                self._remaining()
+            except BaseException:
+                self._registered = False
+                raise
 
     def release_original(self):
         if not self._registered or self._released:

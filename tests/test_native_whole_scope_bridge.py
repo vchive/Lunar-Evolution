@@ -1,4 +1,4 @@
-"""Explicit v2 mode/FD forwarding, without starting an installed supervisor."""
+"""Explicit custody mode/FD forwarding, without starting an installed supervisor."""
 from __future__ import annotations
 
 import os
@@ -17,6 +17,7 @@ from lunar_evolution.producer_launcher import ProducerLaunchIntent
     ("linux-whole-scope-private-custody-v1", None),
     ("linux-whole-scope-private-custody-v1", "linux-whole-scope-private-custody-v1"),
     ("linux-whole-scope-private-custody-v2", "linux-whole-scope-private-custody-v2"),
+    ("linux-whole-scope-private-custody-v3", "linux-whole-scope-private-custody-v3"),
 ], indirect=["original"])
 def test_original_start_forwards_explicit_mode_and_only_original_custody_fd(original, selected, monkeypatch):
     owner, custody, _path = original
@@ -57,8 +58,10 @@ def test_original_start_forwards_explicit_mode_and_only_original_custody_fd(orig
     owner.start_original(process=process, launch=launch, intent=intent,
                          controller_lifeline_fd=reader, deadline_ns=owner.deadline_ns)
     command, kwargs = observations[0]
-    assert command[1] == ("--supervisor-custody-v2" if selected and selected.endswith("v2")
-                          else "--supervisor-v1")
+    expected_mode = ({"linux-whole-scope-private-custody-v2": "--supervisor-custody-v2",
+                      "linux-whole-scope-private-custody-v3": "--supervisor-custody-v3"}
+                     .get(selected, "--supervisor-v1"))
+    assert command[1] == expected_mode
     assert command[command.index("--custody-dir-fd") + 1] == str(custody_fd if selected else -1)
     assert (custody_fd in kwargs["pass_fds"]) == bool(selected)
     assert kwargs["close_fds"] is True

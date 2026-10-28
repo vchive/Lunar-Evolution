@@ -298,6 +298,16 @@ missing generic output file; it does not silently upgrade v1 images or acceptanc
   and committed ordering; preserve one request, original deadline and old assets.
 - [x] E03 Connect explicit build/runtime selection, native original envelope
   acquisition and captured bytes/stat/path join with implementation drift gates.
+- [x] E03a Forward explicit v1/v2 profile selection through all four dependency,
+  standalone-linker and explicit-support recipe APIs to the original concrete
+  gate; preserve default/None bytes and existing manifest schemas and authority.
+- [x] E03b Concentrated regression of default/None identity, full real generator
+  graphs for both profiles/solvers, original source refusal gates and explicitly
+  tiny inert v2 source-to-original-consumer process/readback composition. This
+  fixture projection is not full CPython or solver build/runtime acceptance.
+  All 34 selection nodes passed in the 30-file Linux batch at tree `e93c99f5`;
+  its sole CI-count failure is retained and repaired separately without changing
+  recipe/product source. See the latest validation entry.
 - [x] E04 Add source/file/pipe, inert C API compilation, cross-version, build
   selection and original host join tests without per-agent pytest campaigns.
 - [x] E05a Run consolidated affected regression, retain the original 1153/2 failures

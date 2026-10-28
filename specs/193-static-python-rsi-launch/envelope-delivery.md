@@ -126,6 +126,16 @@ builder/validator in its implementation pin, alongside existing source/runtime
 identity checks. Recipe/runtime integration is a separate explicit branch,
 never metadata-only reauthentication of an existing image.
 
+Compiler-dependency, compiler/linker-dependency, standalone-linker and explicit
+Zig-support recipe APIs accept the same optional `producer_lifecycle_profile`
+and forward a supplied value unchanged to the original concrete recipe gate.
+They cannot infer or upgrade a profile from source bytes, a bundle or an image.
+Omitted and explicit `None` preserve the original lower-level call shape and
+recipe/source/manifest bytes. Their existing base recipe and manifest digests
+bind the selected source composition; no successor manifest authority field or
+consumer fallback is added. The original dependency consumer still validates
+the actual generated command graph and capture plan under its original budget.
+
 Focused target tests use actual local input/output files and a real pipe while
 substituting inert upstream diff helpers and broker responses. They cover both
 solvers, canonical material summaries, a run ID distinct from episode ID,
