@@ -804,6 +804,30 @@
       ],
       "expected_tests": 91,
       "zero_skips": true
+    },
+    {
+      "id": "native-original-whole-scope",
+      "label": "Verify installed scope ownership and original native descriptor transfer",
+      "files": [
+        "tests/test_native_whole_scope_owner.py",
+        "tests/test_native_whole_scope_bootstrap.py",
+        "tests/test_native_whole_scope_build.py",
+        "tests/test_native_whole_scope_components.py",
+        "tests/test_native_original_publication.py",
+        "tests/test_native_original_publication_linux.py"
+      ],
+      "expected_tests": 140,
+      "zero_skips": false
+    },
+    {
+      "id": "brs-idle-history-observation",
+      "label": "Verify idle polling and contiguous complete owner history observations",
+      "files": [
+        "tests/test_rsi_brs_idle_checkpoint_head.py",
+        "tests/test_rsi_brs_owner_history_observation.py"
+      ],
+      "expected_tests": 24,
+      "zero_skips": true
     }
   ]
 }

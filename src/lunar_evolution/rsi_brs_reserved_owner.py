@@ -664,19 +664,27 @@ def _compare_reserved_history_wires(owner, history, prefixes, state):
         raise
 
 
-def reserved_history(owner, state=None):
+def reserved_history(owner, state=None, *, match_active_owner=False):
     """Check real mixed history without changing the DRS or genesis contracts."""
     try:
-        return _observe_reserved_history(owner, state)
+        return _observe_reserved_history(owner, state, match_active_owner=match_active_owner)
     except BaseException:
         _clear_reserved_history_projection()
         raise
 
 
-def _observe_reserved_history(owner, state=None):
+def _observe_reserved_history(owner, state=None, *, match_active_owner=False):
+    if type(match_active_owner) is not bool or match_active_owner and state is not None:
+        _fail("history_observation_scope_invalid")
     reserved_prefix_identity(owner)
     expected_head = owner._head
     history = owner._ledger.controller_checkpoint_history(owner._run_id)
+    if match_active_owner:
+        # This complete fresh read is adjacent to the owner check: no callback,
+        # write or filesystem observer intervenes. Share only this observation
+        # with the wave matcher, then retain the independent final history read.
+        owner._controller._python_admission_match_brs_owner_checkpoint(
+            owner._wave, history[-1] if history else None)
     if state is not None:
         if (not history or history[-1][1] != state
                 or history[-1][0] != owner._head and (len(history) < 2 or history[-2][0] != owner._head)):

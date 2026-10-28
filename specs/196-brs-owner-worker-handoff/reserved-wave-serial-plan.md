@@ -326,3 +326,34 @@ future-P reservation and the exact aggregate cap. Real call profiling must verif
 two complete material walks become one without replacing their parsers. Include
 helper/code/kwdefault drift refusal. This pure computation change is not evidence
 that the three-child mixed run now completes within its original 600 seconds.
+# Idle checkpoint polling follow-up — 2026-10-28
+
+The `2fde3537` mixed fixture still exhausted its original 600-second allowance.
+Of 120 sparse stack samples, the worker waited in the publication mailbox in
+87; main-thread samples included complete checkpoint/reference walks while it
+serviced that worker. These are stack locations, not CPU percentages.
+
+Only the owner-thread `hot=True` wait uses a new private fresh-tail reader. It
+requires the original controller lock, rereads the exact latest SQL row, decodes
+fresh JSON, verifies its digest and compares the original head and wave payload.
+It does not acknowledge an event or validate historical completeness. A changed
+middle row can wait until the next full gate for detection. Every pending event,
+ACK, release, settlement and final join retains the complete existing history,
+reference-row and physical evidence checks. Default owner reads and worker reads
+remain complete. There is no retained validation result or new execution budget.
+
+Concentrated regression must include tail/payload/parent drift, loss of the live
+lock, fresh returned JSON, and an unchanged tail with a corrupt middle row: the
+idle observation may pass, but the next original full gate must refuse before
+any acknowledgement. Existing idle-event/final-join tests remain required.
+
+
+The reserved owner check and success-fixed gate also share their own immediately
+adjacent complete history read with the wave-head matcher. Only those two gates
+select the explicit `match_active_owner=True` internal path, after a pure
+thread/lease/wave assertion and before physical observations. Non-reserved paths
+keep their original independent active-owner read. Ordinary history/readback
+paths keep the default false flag: a persisted successor may legally precede
+wave adoption while `checkpoint_transition` is active. The final independent
+complete history read after physical evidence remains mandatory. No detached
+checkpoint or cached validation result authorizes any event.

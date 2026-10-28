@@ -1,58 +1,56 @@
 <!-- completion-fresh-batch:start -->
-## 当前执行点：P0/P1 集中回归已核验，P2 原生后端继续开发（2026-10-28）
+## 当前执行点：原生 whole-scope 软件已落地，集中回归后待 mixed / 部署验收（2026-10-28）
 
-PR #190 仍为 draft，未合入 main。已推送基线 `02b078df` 的唯一 mixed 在原
-600 秒预算超时（600.031817692 秒、rc=-15、零 retry），无最终 JUnit/completion，
-原失败保留，不重派该 HEAD。SSH EOF 收尾异常与 CPU 长链超时分别记录，不能用传输
-问题解释计算超时。该基线完整 CI 尚未完成。
+PR #190 仍为 draft，未合入 main。`2fde3537` 的唯一 mixed 在原 600 秒预算超时
+（600.031545651 秒、rc=-15、零 retry），没有最终 JUnit/origins，禁止重派该 HEAD。
+原件独审 91/91 一致性通过仅证实原失败，不等于 case 通过。
 
-本批 P0 合并 C1/C2 的重复材料遍历，在 reserved graph 的 dict/list/tuple 原位置
-内联精确叶子比较，保留每 occurrence 的 live 观察、类型/值/身份和原深度/节点预算。
-CI 将 4 个 BRS 长波次拆为 heavy-3 至 6，与原 DRS heavy-0 至 2、6 个普通分片组成
-互斥全集；聚合器严格要求 13 份原件。两份 resolver 日志移出 test-results，避免与
-聚合器原四文件清单冲突，未放宽聚合门。
+本批 P0 改动只消除连续观察中的重复工作：owner hot idle poll 读取 fresh SQL tail，
+保留原 controller lock、fresh JSON/digest/head/payload；idle 不授权事件。pending event、
+ACK、release、settlement、final join 仍走完整历史门。reserved owner 的两条 active
+检查复用其紧邻的完整历史读，物理检查后的独立完整重读保留。显式 active-match flag
+只用于这两条路径，普通 readback 保留合法 CAS successor 尚未 adopt 的过渡。
 
-P1 将原 live held grants 绑定到实际 inotify 根；owner 拒绝复制/pickle。
-默认关闭的 direct native pycache 诊断在原 registration/grants 复检后、target gate
-前启动，在原 native/guardian 清理后、held grants 关闭前结束。修复逐 FD 退役/关闭、
-目录 FD 交接及首异常保留。集中回归发现单独启用该诊断时未保留 publication 原始
-creation pins；已修复真实 publisher 接线，正向测试核对原 publisher 返回身份和
-observer 收到身份完全一致，不从路径重建、不放宽原 context gate。
+P2 首版软件包含固定 root-owned installed profile acquisition、create-only native
+publisher、原 publication creator FD 保留与 SCM_RIGHTS 传递、pre-exec clone3
+INTO_CGROUP/PIDFD、固定非零 U 的 credentials/caps drop、S/G/R 原监督/回收链及
+`native_trusted_attempt(..., whole_scope=...)` 显式默认关闭接线。原 deadline 内预留
+250 ms 清理；leader-done 不代表后代为空，EOF/异常退出/不完整清理仍 unknown。
+bootstrap source manifest 覆盖实际 C 和四个 transitive headers。普通路径和原门不放宽。
 
-集中回归与受影响补验（每批一次，零自动 retry）：
+集中回归只执行一次，随后只补受影响域：
 
-- Linux tree `1f8e3964`：1,399 unique，1,372 pass / 13 fail / 14 error；
-  原结果保留。12 fail 暴露上述真实 native 接线缺陷，其余 1 fail / 14 error 是归档
-  无 `.git` 的历史 worktree 测试环境不适用，转本机。
-- 本机 tree `16845af1`：135 unique，134 pass / 1 fail；唯一 nested pytest 临时
-  目录域错误用外部短临时目录补验 1/1 pass，产品源码未变；最新域仍为 135。
-- Linux tree `7e75786e`：四完整文件 76/76 pass，13.093669 秒，16 workers；
-  publisher 修复及其现有 native/guardian 链路全部通过。原件独审 152/152 通过。
+- Linux tree `c3d7699a`，35 完整文件、16 workers、零 retry，1252 unique：
+  1238 pass / 1 fixture fail / 13 skip，外层 49.914321 秒。真实 C 编译与 native
+  packet/FD harness 已执行。原件独审 161/161 一致性通过。
+- 后继 tree `fbded879` 只修 descriptor fixture 的 digest 重算并添加 CI 分组；产品
+  src 字节与前批相同。Linux 单构建文件 3/3 pass，原件 152/152 一致性通过。
+- 本机补原 7 项 Darwin-only 节点：7/7 pass。原件保留 launch/tree/selection/JUnit；
+  没有 Linux 批同等级的 before/after module-origin 收证，不提升为部署证据。
+- 最新适用域仍为 1252：1246 pass / 6 root prerequisite skip。原失败和 skip 原件
+  保留，不把补验节点重复累加。6 项仅 publication-pin root 正例，未执行。
+- CI 清单同步 80 组、63 zero-skip 组、expected 5837，原 13 份完整报告门保留；
+  聚合器单文件一次 70/70 pass。Ruff、compileall、diff check 通过。
 
-独立并集审计 135/135 检查通过：最新 1,407 个唯一节点均有适用通过记录；后继 76
-替换原 68 并新增 8（1,399 - 68 + 76），不累加重复用例。保留全部原 28 个 nonpass
-记录以及每批 source/tree/platform 来源。这不是一次 1,407 全绿 Linux invocation，
-也不是 mixed 三子任务或完整 CI 通过。Ruff、compileall、staged/unstaged diff check
-在后继归档上通过。
+TCG 原内核前提探针 18 项机制通过、保留物独审 12/12。TCG 不能作为 accepted
+isolation/G1 build custody；只可进行有限 trusted inert 机制诊断。完整 installed
+root profile→publisher→B/S/G/R→scope/dropU→empty/原 wait 链尚待真实执行验收。
 
-P2 WQ-01 的 cgroup-v2 原 scope/S/G/R/B/T、原 FD 和原 deadline 设计已审阅。
-WQ-02 至 08 的真实 acquisition、pre-gate clone3、独立监督/回收和 native consumer
-仍在开发，不能把设计写成后端完成。首版限定显式固定 root-owned installed profile，
-已有管理员启动 A、固定非零 U；不新增 setuid 安装、不实际 provision/提权，普通用户
-缺权限时在 gate 前拒绝。固定安装根下 create-only attempt，不更改共享父链 ACL。
-
-仍开放：新 clean HEAD 唯一 600 秒 mixed、完整 CI/main；P1 writer enclosure/原
-quiescence、隔离 CPython 完整 build/runtime、accepted build/input custody 与生产
-CLI；P2 原生后端、独立账户/实际 blocked-storage 和 whole-group 部署验收。
-5090gpu 普通 Linux `/tmp` 可用；普通检查可转本机，macOS 不能替代 Linux 隔离和
-独立账户验收。`production_admission=false`、`online_publication=false`。
-不运行模型、WebAgent、远程或公司 evaluator。
+仍未关闭：新 clean HEAD 唯一 600 秒 mixed、完整 CI/main；WQ-06 原 pycache
+quiescence / finite writer enclosure；固定 U 读取 RSI frozen inputs 的显式 ACL
+契约（现 0400/0500 默认门继续拒绝）；accepted CPython build/input custody、完整
+runtime/solver 与生产 CLI、实际 blocked-storage / 独立账户部署验收。这些包含尚未
+实现的接线，不能全部归因于服务器权限，也不能把本批软件进展写成 P0–P2 全部完成。
+`production_admission=false`、`online_publication=false`。
+不运行模型、WebAgent、远程或公司 evaluator；原 benchmark 仓库保持只读。
 
 原件在主区 ignored `parallel-batch-20261027/`：
-`native-matcher-ci-final-20261028/`、`native-matcher-ci-macos-affected-20261028/`、
-`native-matcher-ci-macos-temp-followup-20261028/`、
-`native-pycache-registration-affected-20261028/`、
-`native-matcher-ci-latest-union-audit-20261028/audit-originals-v1/`。
+`final-mixed-2fde3537-prepared/`、`mixed-2fde-independent-review-20261028/`、
+`native-whole-scope-idle-consolidated-20261028/`、
+`native-whole-scope-idle-independent-20261028/`、
+`native-whole-scope-build-affected-20261028/`、
+`native-whole-scope-darwin-affected-20261028/`、
+`ci-whole-scope-focused-groups-20261028/`。
 以下保留历史快照，不覆盖本节。
 <!-- completion-fresh-batch:end -->
 

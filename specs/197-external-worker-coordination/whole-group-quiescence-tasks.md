@@ -86,6 +86,28 @@ delivery must be reviewed before modifying bootstrap framing, the installed
 receiver or the target FD allowlist. Existing native profiles and defaults remain
 unchanged until that review and implementation exist.
 
+## 2026-10-28 implementation batch, before consolidated regression
+
+The explicit installed-profile implementation now has source for original
+Python ownership, the native create-only grant publisher, pre-exec clone3 target
+enrollment, supervisor S, independent guardian G, storage-only receiver R and
+original publication-FD transfer. `native_trusted_attempt(..., whole_scope=...)`
+is default-off and consumes the same acquisition at registration, both release
+gates and completion. This is implementation progress on WQ-02 through WQ-05;
+the unchecked tasks below still require consolidated regression and actual
+installed-profile acceptance. No source review, harness, default-profile test or
+TCG prerequisite probe closes a root-profile deployment task.
+
+The original deadline includes a 250 ms cleanup reserve. A leader-done frame
+does not release this reserve while original-scope descendants remain alive.
+EOF, helper exit and failed/abnormal cleanup retain unknown. The first profile
+requires root A, a fixed nonzero U and preinstalled readonly-root ACLs; acquisition
+does not install privileges or alter shared parents. Existing frozen RSI inputs
+remain exact 0400/0500. Their distinct-account ACL contract is a separate open
+integration requirement: ACL mask changes must not be silently admitted by the
+generic validators. WQ-06 writable-view enclosure, original monitor completion,
+accepted build/input custody and production CLI remain open.
+
 ## Ordered software tasks
 
 - [x] **WQ-01 — Freeze one backend and original ownership graph (design only).** Specify the

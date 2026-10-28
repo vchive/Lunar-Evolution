@@ -321,6 +321,7 @@ def _build_reserved_brs_policy():
         ("rsi_controller", "RSILearningController", (
             "_python_admission_assert_reserved_brs_child", "_drive_reserved_brs_native_serial",
             "_python_admission_active_brs_owner", "_python_admission_bind_selected_brs_handoff",
+            "_python_admission_match_brs_owner_checkpoint",
             "_python_admission_brs_full_gate_scope",
             "_stage_producer_episode", "_commit_flow", "_resume_reserved_brs_native_serial",
             "_memory_item", "_decision_from_dict", "_deserialize_execution", "_flow_result",
@@ -346,6 +347,7 @@ def _build_reserved_brs_policy():
             "_validate_python_producer_staging_history_tx", "resolve_python_producer_checkpoint",
             "_python_admission_state_tx", "_controller_checkpoint_history_tx",
             "_controller_checkpoint_history_rows_tx", "_checkpoint_projection_cache", "_checkpoint_projection_scope",
+            "_controller_checkpoint_idle_head",
             "_controller_checkpoint_history_observation_tx", "append_brs_terminal_observation",
             "_append_controller_checkpoint_tx", "_append_transfer_checkpoint_tx", "_checkpoint_digest",
             "_create", "transition")),

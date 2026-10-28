@@ -1942,10 +1942,18 @@ class RSILearningController:
         if self._python_admission_flow_payload(wave.state) != wave.payload:
             raise RSILearningError("rsi_python_brs_admission_stale")
 
-    def _python_admission_active_brs_owner(self, wave: _PythonAdmissionBRSWave):
+    def _python_admission_active_brs_owner(self, wave: _PythonAdmissionBRSWave, *, idle_poll: bool = False):
+        if type(idle_poll) is not bool:
+            raise RSILearningError("rsi_python_brs_admission_identity_invalid")
         self._python_admission_assert_brs_wave(wave, owner=True)
         with wave.ledger.read_only_observations():
-            checkpoint = wave.ledger.controller_checkpoint(wave.run_id)
+            checkpoint = (wave.ledger._controller_checkpoint_idle_head(wave.run_id) if idle_poll
+                          else wave.ledger.controller_checkpoint(wave.run_id))
+        return self._python_admission_match_brs_owner_checkpoint(wave, checkpoint)
+
+    def _python_admission_match_brs_owner_checkpoint(self, wave: _PythonAdmissionBRSWave, checkpoint):
+        """Match an internal fresh observation; this helper does not read or authorize history."""
+        self._python_admission_assert_brs_wave(wave, owner=True)
         if (checkpoint is None or checkpoint[0] != wave.checkpoint_sha256
                 or self._python_admission_flow_payload(checkpoint[1]) != wave.payload):
             raise RSILearningError("rsi_python_brs_admission_stale")

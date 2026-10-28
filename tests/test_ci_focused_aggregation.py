@@ -49,8 +49,9 @@ def evidence(tmp_path):
                            for name in ("__init__.py", "evaluator_bundle.py")]}
     groups = [{"id": f"group-{index}", "label": f"Original group {index}",
                "files": [f"tests/test_group_{index}.py"],
-               "expected_tests": 1 if index < 62 else None, "zero_skips": index < 62}
-              for index in range(78)]
+               "expected_tests": 1 if index < 62 or index >= 78 else None,
+               "zero_skips": index < 62 or index == 79}
+              for index in range(80)]
     nodes = [f"{group['files'][0]}::TestGroup::test_value[dict::with/slash]" for group in groups]
     nodes += list(gate.runner.HEAVY_CURRENT_NODES)
     nodes.sort()
@@ -136,10 +137,10 @@ def _role_for(evidence, group):
 def test_valid_original_reports_produce_only_derived_json_and_preserve_inputs(evidence, tmp_path):
     before = {path: path.read_bytes() for path in evidence["root"].rglob("*") if path.is_file()}
     result = _run(evidence)
-    assert result["status"] == "passed" and len(result["groups"]) == 78
+    assert result["status"] == "passed" and len(result["groups"]) == 80
     assert result["test_execution_performed"] is False
-    assert len(result["inputs"]) == len(gate.ROLES)
-    assert result["full_collected"] == 78 + len(gate.runner.HEAVY_CURRENT_NODES)
+    assert len(result["inputs"]) == len(gate.ROLES) == 13
+    assert result["full_collected"] == 80 + len(gate.runner.HEAVY_CURRENT_NODES)
     assert all(group["tests"] == 1 for group in result["groups"])
     assert all(path.read_bytes() == raw for path, raw in before.items())
     output = tmp_path / "derived.json"
@@ -239,7 +240,7 @@ def test_original_xml_nodes_elements_and_counters_are_independently_checked(evid
         _run(evidence)
 
 
-@pytest.mark.parametrize("group,allowed", [(0, False), (77, True)])
+@pytest.mark.parametrize("group,allowed", [(0, False), (77, True), (78, True), (79, False)])
 def test_explicit_zero_skip_gate_and_original_allowed_skip_semantics(evidence, group, allowed):
     role = _role_for(evidence, group)
     classname = evidence["groups"][group]["files"][0][:-3].replace("/", ".") + ".TestGroup"
@@ -259,12 +260,33 @@ def test_explicit_zero_skip_gate_and_original_allowed_skip_semantics(evidence, g
             _run(evidence)
 
 
-def test_count_gate_cannot_be_satisfied_by_another_group(evidence):
+@pytest.mark.parametrize("group", [0, 78, 79])
+def test_count_gate_cannot_be_satisfied_by_another_group(evidence, group):
     manifest = json.loads(evidence["manifest"])
-    manifest["groups"][0]["expected_tests"] = 2
+    manifest["groups"][group]["expected_tests"] = 2
     evidence["manifest"] = json.dumps(manifest).encode()
     with pytest.raises(gate.GateError, match="Focused count differs"):
         _run(evidence)
+
+
+@pytest.mark.parametrize("group,expected", [(0, None), (78, 0), (78, True), (79, -1)])
+def test_invalid_expected_count_never_changes_skip_permission(evidence, group, expected):
+    manifest = json.loads(evidence["manifest"])
+    manifest["groups"][group]["expected_tests"] = expected
+    with pytest.raises(gate.GateError, match="Invalid focused count rule"):
+        gate._manifest(json.dumps(manifest).encode())
+
+
+@pytest.mark.parametrize("delta", [-1, 1])
+def test_exact_manifest_group_count_cannot_be_relaxed(evidence, delta):
+    manifest = json.loads(evidence["manifest"])
+    if delta < 0:
+        manifest["groups"].pop()
+    else:
+        extra = dict(manifest["groups"][-1], id="extra", files=["tests/test_extra.py"])
+        manifest["groups"].append(extra)
+    with pytest.raises(gate.GateError, match="Expected 80 focused groups"):
+        gate._manifest(json.dumps(manifest).encode())
 
 
 @pytest.mark.parametrize("placement", ["suite", "nested", "duplicate"])
@@ -296,12 +318,16 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
-    assert len(groups) == 78 and sum(group["zero_skips"] for group in groups) == 62
-    assert sum(group["expected_tests"] or 0 for group in groups) == 5673
+    assert len(groups) == 80 and sum(group["zero_skips"] for group in groups) == 63
+    assert sum(group["expected_tests"] or 0 for group in groups) == 5837
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203
     assert "tests/test_rsi_flow_payload_scalar_validation.py" in ready["files"]
+    native = next(group for group in groups if group["id"] == "native-original-whole-scope")
+    idle = next(group for group in groups if group["id"] == "brs-idle-history-observation")
+    assert (native["expected_tests"], native["zero_skips"]) == (140, False)
+    assert (idle["expected_tests"], idle["zero_skips"]) == (24, True)
     workflow = (_ROOT / ".github/workflows/test.yml").read_text()
     assert 'role: ["current-0"' in workflow and '"history"]' in workflow
     matrix = next(line.strip().partition("role: ")[2] for line in workflow.splitlines()

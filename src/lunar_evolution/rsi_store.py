@@ -1254,6 +1254,40 @@ class RSILedger:
         history = self.controller_checkpoint_history(run_id)
         return history[-1] if history else None
 
+    def _controller_checkpoint_idle_head(self, run_id: str) -> tuple[str, dict[str, Any]] | None:
+        """Observe a fresh tail for owner idle polling; never validate history.
+
+        This private projection grants no event ACK or admission. Every pending
+        event and the final worker join still use controller_checkpoint's full
+        chain, reference-row and physical evidence gates. A changed middle row
+        may remain undetected until that next full gate; no authority is granted
+        while the owner waits. Only immutable digest computation may be reused.
+        """
+        self._assert_controller_lock(run_id)
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
+                "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        self._assert_controller_lock(run_id)
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["payload"])
+            if type(payload) is not dict:
+                raise ValueError
+            digest = self._checkpoint_digest_cached(
+                run_id, row["revision"], row["parent_sha256"], payload,
+                persisted_payload=row["payload"],
+            )
+            if row["checkpoint_sha256"] != digest:
+                raise ValueError
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RSILearningError("rsi_controller_checkpoint_corrupt") from exc
+        self._assert_controller_lock(run_id)
+        return digest, payload
+
     def controller_brs_reconcile_obligations(self, run_id: str) -> dict[str, Any]:
         """Read the exact BRS owner obligations from the latest checkpoint.
 

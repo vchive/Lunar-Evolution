@@ -981,6 +981,7 @@ def _policy() -> dict[str, Any]:
         (rsi_controller.RSILearningController._python_admission_brs_full_gate_scope.__wrapped__, rsi_controller),
         (rsi_controller.RSILearningController._python_admission_flow_payload, rsi_controller),
         (rsi_controller.RSILearningController._python_admission_assert_brs_wave, rsi_controller),
+        (rsi_controller.RSILearningController._python_admission_match_brs_owner_checkpoint, rsi_controller),
         (rsi_controller._record_digest, rsi_controller),
         (rsi_controller.RSILearningController._run_fingerprint, rsi_controller),
         *((getattr(rsi_fingerprint, name), rsi_fingerprint) for name in (
@@ -2130,8 +2131,12 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
             self._success_cap_unchanged(allowance)
         with self._ledger.read_only_observations():
             self._running()
-            self._controller._python_admission_active_brs_owner(self._wave)
-            self._history()
+            if self._reserved_prefix is None:
+                self._controller._python_admission_active_brs_owner(self._wave)
+                self._history()
+            else:
+                self._controller._python_admission_assert_brs_wave(self._wave, owner=True)
+                reserved_owner.reserved_history(self, match_active_owner=True)
         return self._state
 
     def _strategy_identity(self) -> None:
@@ -3029,8 +3034,12 @@ class _BRSLineageCheckpointOwner(lineage._LineageEvidenceReader):
         self._success_allowance()
         with self._ledger.read_only_observations():
             self._running()
-            self._controller._python_admission_active_brs_owner(self._wave)
-            self._history()
+            if self._reserved_prefix is None:
+                self._controller._python_admission_active_brs_owner(self._wave)
+                self._history()
+            else:
+                self._controller._python_admission_assert_brs_wave(self._wave, owner=True)
+                reserved_owner.reserved_history(self, match_active_owner=True)
         self._before_channel()
         return self._state
 

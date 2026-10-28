@@ -1038,7 +1038,14 @@ static void finish_independent_guardian(const controller_guard_t *guard, int fin
 }
 #endif
 
+#if defined(__linux__) && defined(__x86_64__)
+#include "native_whole_scope_bootstrap.h"
+#endif
+
 int main(int argc, char **argv) {
+#if defined(__linux__) && defined(__x86_64__)
+    if (argc > 1 && !strcmp(argv[1], "--whole-scope-v1")) return wq_bootstrap_main(argc, argv);
+#endif
 #if defined(__linux__)
     if (argc > 1 && !strcmp(argv[1], "--group-pidfd")) return independent_watch_main(argc, argv);
 #endif

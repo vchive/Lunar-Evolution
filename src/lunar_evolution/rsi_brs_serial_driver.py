@@ -429,7 +429,7 @@ def assert_reserved_brs_child(controller, wave, scope, handoff, *, before_claim=
     _BRSNativePreparationExchange._fixed(scope.exchange)
     if hot:
         if threading.get_ident() == scope.owner_thread:
-            controller._python_admission_active_brs_owner(wave)
+            controller._python_admission_active_brs_owner(wave, idle_poll=True)
         else:
             controller._python_admission_active_brs_worker(wave.run_id, scope.request.episode_id)
     else:

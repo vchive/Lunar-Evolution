@@ -235,12 +235,18 @@ def _observe_opened(
 
 def persist_native_deadline_binding(
     batch: str | Path, *, record: Mapping[str, object],
+    retain_creation_owner: object | None = None,
 ) -> dict[str, object]:
     """Publish once and pin the original writer descriptor throughout durability checks.
 
     A published final name is retained after any later uncertainty. No replacement
     deadline or claim can be synthesized by retrying this create-only operation.
     """
+    creation_slot = None
+    if retain_creation_owner is not None:
+        from .native_original_publication import _validate_publication_slot
+
+        creation_slot = _validate_publication_slot(retain_creation_owner, expected_role="deadline")
     raw = _record_bytes(record)
     directory = _directory(batch)
     descriptor = -1
@@ -278,6 +284,10 @@ def persist_native_deadline_binding(
                 observed, _record = _observe_opened(
                     parent, descriptor, before=before, binding=None, expected_raw=raw,
                 )
+                if creation_slot is not None:
+                    creation_slot._capture_created(
+                        descriptor=descriptor, parent=parent, name=DEADLINE_NAME, raw=raw,
+                    )
             finally:
                 if created:
                     try:

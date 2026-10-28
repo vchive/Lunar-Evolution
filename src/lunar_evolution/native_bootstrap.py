@@ -28,6 +28,13 @@ except ImportError:
     fcntl = None
 
 _SOURCE = Path(__file__).with_name("native_bootstrap.c")
+_SOURCE_NAMES = (
+    "native_bootstrap.c",
+    "native_producer_isolation.h",
+    "native_whole_scope_bootstrap.h",
+    "native_whole_scope_platform.h",
+    "native_whole_scope_protocol.h",
+)
 _MAX_BYTES = 8 * 1024 * 1024
 _MAX_PATH_BYTES = 4096
 _MAX_ARGC = 64
@@ -189,6 +196,25 @@ def native_bootstrap_source_path() -> Path:
     return _SOURCE
 
 
+def native_bootstrap_source_paths() -> tuple[Path, ...]:
+    """Return the complete finite source set used by this bootstrap build."""
+    return tuple(_SOURCE.with_name(name) for name in _SOURCE_NAMES)
+
+
+def _source_pin() -> str:
+    digest = hashlib.sha256()
+    try:
+        for path in native_bootstrap_source_paths():
+            raw = path.read_bytes()
+            digest.update(len(path.name).to_bytes(4, "big"))
+            digest.update(path.name.encode("ascii"))
+            digest.update(len(raw).to_bytes(8, "big"))
+            digest.update(raw)
+    except OSError as exc:
+        raise NativeBootstrapError("native_bootstrap_source_missing") from exc
+    return digest.hexdigest()
+
+
 def _platform_mode() -> str:
     if sys_platform := platform.system().lower():
         if sys_platform == "darwin":
@@ -221,7 +247,7 @@ def build_native_bootstrap_artifact(
     source = _SOURCE
     if not source.is_file():
         _fail("native_bootstrap_source_missing")
-    source_sha = _sha256(source)
+    source_sha = _source_pin()
     root = Path(output_dir).expanduser().absolute()
     try:
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -248,6 +274,8 @@ def build_native_bootstrap_artifact(
         raise NativeBootstrapError("native_bootstrap_build_timeout") from exc
     except (OSError, subprocess.CalledProcessError) as exc:
         raise NativeBootstrapError("native_bootstrap_build_failed") from exc
+    if _source_pin() != source_sha:
+        _fail("native_bootstrap_source_changed")
     try:
         output.chmod(0o700)
     except OSError as exc:
@@ -618,6 +646,27 @@ def native_bootstrap_command(
     return command
 
 
+def native_whole_scope_bootstrap_command(
+    executable: str | Path, *, control_fd: int, gate_fd: int, frame_fd: int,
+    controller_lifeline_fd: int, scope_enrollment_fd: int, scope_lifecycle_fd: int,
+    profile_fd: int, deadline_monotonic_ns: int,
+) -> tuple[str, ...]:
+    """Select the explicit pre-gate clone3 ABI; never upgrade the legacy flags."""
+    descriptors = (control_fd, gate_fd, frame_fd, controller_lifeline_fd,
+                   scope_enrollment_fd, scope_lifecycle_fd, profile_fd)
+    if (any(type(fd) is not int or not 2 < fd <= 0x7fffffff for fd in descriptors)
+            or len(set(descriptors)) != len(descriptors)
+            or type(deadline_monotonic_ns) is not int or not 0 < deadline_monotonic_ns < 2**64
+            or not isinstance(executable, (str, Path))):
+        _fail("native_bootstrap_whole_scope_command_invalid")
+    arguments = ("--control-fd", "--gate-fd", "--frame-fd", "--controller-lifeline-fd",
+                 "--scope-enrollment-fd", "--scope-lifecycle-fd", "--profile-fd")
+    command = (str(executable), "--whole-scope-v1")
+    for name, descriptor in zip(arguments, descriptors, strict=True):
+        command += (name, str(descriptor))
+    return command + ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
+
+
 __all__ = [
     "FIXED_PRODUCER_COMPLETION_SINK_FD",
     "LINUX_CHILD_SUPERVISION",
@@ -641,4 +690,6 @@ __all__ = [
     "load_native_bootstrap_artifact",
     "native_bootstrap_command",
     "native_bootstrap_source_path",
+    "native_bootstrap_source_paths",
+    "native_whole_scope_bootstrap_command",
 ]

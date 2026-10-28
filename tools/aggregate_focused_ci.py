@@ -63,7 +63,7 @@ def _manifest(raw):
     _require(set(value) == {"schema", "groups"}
              and value["schema"] == "lunar-ci-focused-groups-v1", "Invalid group manifest")
     groups = value["groups"]
-    _require(type(groups) is list and len(groups) == 78, "Expected 78 focused groups")
+    _require(type(groups) is list and len(groups) == 80, "Expected 80 focused groups")
     identities = set()
     for group in groups:
         _require(type(group) is dict and set(group) == {
@@ -82,11 +82,13 @@ def _manifest(raw):
                      and not path.is_absolute() and ".." not in path.parts and "\\" not in name,
                      "Invalid focused file path")
         expected = group["expected_tests"]
+        # Exact collection counts and platform skip permission are independent.
+        # A counted platform group still requires every original testcase.
         _require(type(group["zero_skips"]) is bool and (
-            (group["zero_skips"] and type(expected) is int and expected > 0)
+            (type(expected) is int and expected > 0)
             or (not group["zero_skips"] and expected is None)), "Invalid focused count rule")
-    _require(sum(group["zero_skips"] for group in groups) == 62,
-             "Expected 62 explicit count/zero-skip gates")
+    _require(sum(group["zero_skips"] for group in groups) == 63,
+             "Expected 63 explicit count/zero-skip gates")
     return groups
 
 
