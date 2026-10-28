@@ -1,3 +1,52 @@
+# Native v4 resources and independent worker vault — 2026-10-28
+
+All authors and independent source review froze before the single Linux union.
+Tree `1afed922464d30cab4e1701363f7f1bed70b4250` ran 28 complete affected files
+on `5090gpu`, 16 workers, zero retries and the original 1,200-second focused
+limit. It completed in **59.839877636 seconds: 936 passed / 43 skipped /
+0 failures / 0 errors, 979 unique nodes**. All workers exited zero. Its 3,013
+source entries and 2,705 file blobs/modes match the exact Git archive and both
+runtime inventories; 249 loaded product module origins match. Original XML
+SHA256 is `9aa87e02b9c7714ba083c7288b00472b1f4a11c1e284cf8506e0bd3543f93ca2`.
+The 43 skips retain 42 root prerequisites and one Darwin-only node; the latter
+passed once locally on the identical frozen source in 2.806196208 seconds, keeping
+the original 120-second limit and zero retries. Current applicable coverage is
+937 passes / 42 root-prerequisite skips over the same 979 unique nodes; the
+original Linux report remains 936/43. Darwin XML SHA256 is
+`2cfb79e554561f93362c9eea17cd91eccbd1ce910f42574e6b162ce73c9a2c15`.
+Its retained evidence is `native-v4-resource-darwin-bootstrap-20261028/`. Independent terminal audit confirms the exact unique-node outcomes, all worker exits, original time limit and source/module pins.
+
+The new mechanism files contribute 23 native resource, 55 v4 vault and 30 v4
+bridge nodes. The old native bootstrap inventory gains one additional header
+parameter. The manifest remains 83 groups / 65 zero-skip groups, expected sum
+6,665 and native-original-whole-scope count 483. Final Ruff, compileall and both
+diff checks pass. An original optimized compilation failure due to function-local
+Linux UAPI includes and a fixture missing `stdlib.h` remain separately retained;
+only their affected actual builds were supplemented, without relaxing warnings.
+
+Evidence is retained under the primary workspace's ignored
+`parallel-batch-20261027/native-v4-resource-union-linux-20261028/`, including
+source/archive, byte-only delta preparation, unique dispatch, raw terminal,
+worker collection/execution and independent reviews. The preparation copied
+only a verified old source and applied exact changed bytes; it left that old
+source untouched. Compile-only evidence remains in the separate
+`native-v4-resource-optimized-build-20261028/` directory and remote harness
+build directories. Compilation is not target execution or immutable build custody.
+
+The native cap covers explicit P/B/Q and inherited S/G/R/T descriptors, including
+197/198 and temporary kernel allocations; it does not cap Python C's unrelated
+host table. Vault tests use real original publication/creator OFDs and an inert
+portable native gate, with root metadata projected narrowly. Bridge tests
+intercept the runner. Fresh-process history covers the prefix; normal/abnormal
+commit inspection is exercised in-process. None establishes an installed full
+v4 graph, independent-account access, real cgroup/namespace deployment, original
+ACK/waits from historical inspection or WQ-06 writer enclosure/monitor closure.
+All production/publication authority remains false. This is an affected software
+regression, not a full-repository or production acceptance statement. The new
+commit's unique 600-second mixed and full CI remain pending.
+
+The sections below retain the previous batches' original boundaries and results.
+
 # Local batch validation — 2026-10-27
 
 ## Whole-scope worker vault and explicit v4 continuation — 2026-10-28

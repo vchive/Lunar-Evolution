@@ -1,3 +1,45 @@
+<!-- strict-v4-fd-batch:start -->
+## 当前开发点：v4资源门与独立worker vault合批已通过Linux回归（2026-10-28）
+
+权威工作区仍为下述fixed-u worktree，已推送基线为`b8e772877c142e918a7339a974df2261c79bd08d`。
+PR #190仍draft、未合main。该旧HEAD的唯一Darwin inert mixed已1/1通过、完整
+258.902870秒，600秒/零重试；Linux纯字节准备上传90.010312秒失败、pytest未派发，
+原件和独审保留，同HEAD不重派。该基线CI run40709660939上次仍运行/排队，不能称通过。
+
+本轮按用户要求先并行开发与独审、最后一次集中回归：
+
+- native v4在原P/B/Q入口关闭未列出的继承FD、保留实际OFD并低位化，固定sink
+  197/198计入总96FD；hard/soft RLIMIT与继承seccomp拒绝后续limit写入，临时
+  profile path、SCM rights、clone/open/dup都受同一内核表限制。默认/旧版本不变。
+  Python宿主C无关host FD不受process-global96限制，该更广要求仍开放。
+- 新独立v4 worker vault：显式trusted `whole_scope_custody_profile`选择，默认v3；
+  独立协议/HMAC域/文件名/读取器，保留observer→native anchor→sidecar→fresh checks
+  →原gate顺序。固定原session/child/reference对象，拒绝同字节替换。历史读取不恢复
+  ACK、wait、执行、cleanup或生产权限。原v3 vault/native runner未修改。
+- 严格optimized编译预检保留bootstrap include-order首败和新测试harness首败；
+  修复全局Linux UAPI include和fixture stdlib include后，受影响实际编译通过。
+  没有放宽编译选项，没有将compile-only当作case通过。
+
+冻结tree`1afed922464d30cab4e1701363f7f1bed70b4250`在5090gpu通过唯一28完整文件
+union：979 unique =936 pass/43 skip/0 fail/error，pytest59.839877636秒，16workers
+全部exit0、249module origins匹配；3013source entries/2705Git blobs+modes、源码
+前后与archive独审匹配。新增23resource+55v4vault+30v4bridge节点随同批执行，
+三个新文件逐节点独审确认全部通过，terminal审计已完成。43skip包含42root前提和1Darwin平台节点。后者已在本机唯一1/1通过、2.806196秒，
+原120秒/零重试；同冻结树当前适用979unique为937pass/42root skip，保持Linux
+原43skip报告不变，不相加重复节点、不重复运行已执行节点。CI83组/65zero-skip，expected sum6665。
+最终Ruff、compileall和两diff检查通过。证据位于主区ignored
+`parallel-batch-20261027/native-v4-resource-union-linux-20261028/`。
+
+本批独审与原Darwin补验已完成。最终仅更新Markdown记录，产品/测试/tools字节与
+冻结树相同；待新提交唯一600秒mixed和完整CI完成。
+WQ06 finite writer enclosure/原monitor accepting join、真实独立审阅和accepted
+input/build custody、完整static CPython/runtime/solver/生产CLI与实际root/U/cgroup/
+独立账户/hard-disconnect/blocked-storage验收仍未完成。不能统称环境问题或宣称
+全部P0–P2已完成。production_admission=false、online_publication=false；不运行模型、
+WebAgent、远程/公司evaluator或真实solver，不读取密钥或活进程argv/environment，
+benchmark原区只读。以下均为历史批次记录，不能覆盖本节当前状态。
+<!-- strict-v4-fd-batch:end -->
+
 <!-- configuration-successor-current-batch:start -->
 ## 当前开发批：外部配置审阅、worker 原凭据保留与独立 v4 生命周期（2026-10-28）
 

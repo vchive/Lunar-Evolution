@@ -822,12 +822,15 @@
         "tests/test_native_whole_scope_successor.py",
         "tests/test_native_whole_scope_successor_bootstrap.py",
         "tests/test_native_whole_scope_successor_ownership.py",
+        "tests/test_native_whole_scope_successor_resources.py",
         "tests/test_external_worker_whole_scope_vault.py",
+        "tests/test_external_worker_whole_scope_successor_vault.py",
+        "tests/test_external_worker_whole_scope_successor_bridge.py",
         "tests/test_external_worker_whole_scope_bridge.py",
         "tests/test_external_worker_native_vault.py",
         "tests/test_external_worker_guardian_vault.py"
       ],
-      "expected_tests": 374,
+      "expected_tests": 483,
       "zero_skips": false
     },
     {

@@ -1,7 +1,8 @@
 # Whole-scope successor custody v4: original parent, arbitration and retirement
 
-Status: **software implementation authored; focused mechanism regression passed;
-installed acceptance and strict total-FD budgeting remain open** (2026-10-28).
+Status: **software implementation authored; prior mechanism regression passed;
+strict native total-FD follow-on authored, awaiting its consolidated regression;
+installed acceptance remains open** (2026-10-28).
 See [validation.md](validation.md) for retained failed runs, the final 43-node
 ownership supplement and the limits of the current software evidence.
 This is the selected continuation for the S-death part
@@ -469,6 +470,9 @@ Q's live retained baseline survives C/S loss until its own finite retirement;
 durable external baseline retention is a separately authenticated acquisition,
 not a reference R can self-certify by writing it next to its records. Existing
 v3 reference-vault work does not automatically select or authenticate v4.
+The explicit software composition is specified separately in
+[v4 worker reference vault composition](whole-scope-successor-worker-vault.md);
+it preserves the independent original baseline and the legacy v3 refusal.
 
 Read-only inspection can compare that independently retained baseline with
 registration/prefix/terminal bytes and report their recorded source, reason,
@@ -593,6 +597,64 @@ including temporary send/receive slots. This is a separate v4 bound, not an
 increase to the old helper's allowlist. Exhaustion closes actual acquisitions
 and refuses; a numeric bound does not replace the per-role allowlist.
 
+### Strict native total-FD follow-on contract
+
+The resource follow-on applies that bound to each selected native
+publisher P, bootstrap B, coordinator Q and their S/G/R/T descendants, counting
+all open descriptors, including open standard streams and every temporary
+path-chain, directory scan, clone pidfd, duplicate and received right. It does
+not impose a process-global limit on the embedding Python C process. C retains
+its separately finite original scope inventory; unrelated application FDs in C
+remain outside that inventory. The earlier phrase "process-role inventory"
+must not be presented as evidence that Python C's entire host FD table is
+bounded at 96. An all-process-global interpretation including C remains an
+explicit open requirement, not something this native mechanism establishes.
+
+P/Q enter a v4-only resource helper before their first protocol receive, profile
+walk or other FD acquisition. B must first read, parse and close its existing
+control pipe and parse the inherited broker numbers to identify every original
+input; that prefix may inspect existing descriptions but acquires none. B then
+enters the same helper before SCM_RIGHTS, profile/grant walks, private pipes or
+clone3. Inputs are actual mutable FD fields, never names used to reacquire an
+object. The helper validates unique valid input numbers greater than two,
+counts actually open stdio, and closes all other inherited descriptions using
+close_range without opening a directory. The bound starts at this closed
+finite native entry inventory; it makes no retroactive claim about an embedding
+launcher's unrelated descriptors before close-all-except.
+
+The helper preserves each original OFD while moving ordinary retained inputs
+into the low range starting at three. B's existing candidate sink ABI remains
+FD198 and, when selected, FD197: those exact original sink OFDs are bound before
+lowering the numeric limit. A fixed target occupied by another retained source,
+including a swap cycle, refuses rather than silently overwriting an OFD. Every
+normalization duplicate requires a spare actual slot: an inventory of 96 that
+requires relocation refuses before duplicating; an unlisted close may free that
+spare. The helper never temporarily holds a 97th descriptor.
+
+After binding fixed high sinks, the helper sets both soft and hard
+RLIMIT_NOFILE to `96 - fixed_high_sink_count`, then installs a narrow inherited
+native x86-64 seccomp filter that refuses setrlimit and any prlimit64 operation
+with a non-null new-limit pointer. Query-only prlimit64 remains available;
+foreign architectures and x32 syscall numbers refuse. PR_SET_NO_NEW_PRIVS is
+set to install this filter. The filter intersects the existing target isolation
+filter and survives fork/clone/exec. A trusted external administrator changing
+a process limit is outside this local helper boundary. All remaining retained
+inputs are normalized below the low limit. Every subsequent kernel allocation
+then fits in that finite low range; the only high descriptors are the zero,
+one or two explicitly counted sinks. B's v4-only child clears those fixed
+descriptors' CLOEXEC at handoff without a later high-number dup2. Legacy B/T
+branches and their sink handoff remain unchanged.
+
+Failure is terminal for the selected helper attempt, including inability to
+install the limit/filter or EMFILE during profile/tree validation, received
+rights, channel setup or duplication. There is no limit restoration, broader
+fallback, reduced validation, new deadline or retry. Partial received rights
+and actually opened path/scan descriptions retain their existing unconditional
+cleanup. Kernel refusal of a deep valid tree is a conservative resource refusal,
+not acceptance with a skipped check. This contract requires focused real-kernel
+mechanism coverage and later supported installed execution; a syntax build or
+same-UID harness does not supply installed WQ-07 acceptance.
+
 `source` is 1 S, 2 G or 3 Q. Source facts are bit 0 stop attempted, bit 1
 original scope empty, bit 2 original B exit observed and bit 3 original T exit
 observed; all other bits refuse. S normal facts are exactly **10** (empty and
@@ -710,13 +772,17 @@ allowlist. S/G/R close the standard roles too; actual incoming low descriptor
 numbers and R's low creator acquisitions move with `F_DUPFD_CLOEXEC`, preserving
 the acquired open file description rather than reopening an object by name.
 
-The current Q inventory enforces the 96-entry bound on retained role
-descriptors. The temporary original profile-path chain opened during profile
-revalidation is separately bounded by the shared path walker, but is not yet
-charged to that 96-entry inventory. Thus the stricter total-process 96 actual
-descriptor requirement above is still open; the role check does not establish
-it. R separately retains its original INIT scope identity and refuses a changed
-scope in REGISTER before creating either custody record.
+The retained-role Q inventory remains a separate allowlist check. The v4
+resource follow-on now closes unlisted native entry FDs, normalizes the original
+OFDs, and installs the total kernel cap plus inherited resource-limit lock before
+Q/P acquisition. This charges temporary profile-path chains, recursive publisher
+directory scans, received rights and clone outputs to the same actual native
+96-FD bound; it does not rely on counting retained roles after acquisition.
+B's coordinated v4-only entry follows the fixed-high-sink contract above. That
+follow-on is authored pending consolidated kernel-mechanism regression; neither
+this source statement nor a mechanism pass establishes Python C's process-global
+FD bound or installed execution. R separately retains its original INIT scope
+identity and refuses a changed scope in REGISTER before creating either record.
 
 Q and S may mark genuine empty normal completion observed before cutoff as
 normal draining within the original D. G retains its independent cutoff check

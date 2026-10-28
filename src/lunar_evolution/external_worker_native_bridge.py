@@ -27,6 +27,9 @@ from .external_worker_native_vault import (
     retain_installed_native_anchor,
 )
 from .external_worker_origin import WorkerOriginContext, WorkerOriginKey
+from .external_worker_whole_scope_successor_vault import (
+    retain_installed_whole_scope_successor_reference,
+)
 from .external_worker_whole_scope_vault import retain_installed_whole_scope_reference
 from .external_worker_wrapper import WorkerWrapperConfig, validate_worker_request, worker_json
 from .native_bootstrap import NativeBootstrapArtifact
@@ -34,6 +37,9 @@ from .native_guardian_registration import NativeGuardianCustodyRequest
 from .native_trusted_attempt import run_native_trusted_attempt
 from .native_whole_scope import NativeWholeScopeOwner
 from .native_whole_scope_custody import CUSTODY_V3_PROFILE
+from .native_whole_scope_successor import PROFILE_NAME as SUCCESSOR_CUSTODY_PROFILE
+from .native_whole_scope_successor import _SuccessorSession
+from .native_whole_scope_successor_custody import NativeWholeScopeSuccessorCustodyOwner
 from .producer_bootstrap import build_trusted_bootstrap_launch
 from .producer_launcher import (
     ProducerLaunchAttestation,
@@ -95,7 +101,8 @@ class WorkerInstalledNativeBridge:
                  key: WorkerOriginKey, profile_sha256: str,
                  guardian_custody: NativeGuardianCustodyRequest | None = None,
                  whole_scope: NativeWholeScopeOwner | None = None,
-                 whole_scope_profile_sha256: str | None = None) -> None:
+                 whole_scope_profile_sha256: str | None = None,
+                 whole_scope_custody_profile: str = CUSTODY_V3_PROFILE) -> None:
         types = (("context", WorkerOriginContext), ("request", SolverRequest),
                  ("mapping", WorkerNativeTaskMapping), ("intent", ProducerLaunchIntent),
                  ("attestation", ProducerLaunchAttestation), ("artifact", NativeBootstrapArtifact))
@@ -106,6 +113,9 @@ class WorkerInstalledNativeBridge:
                 or (guardian_custody is not None
                     and type(guardian_custody) is not NativeGuardianCustodyRequest)
                 or (whole_scope is None) != (whole_scope_profile_sha256 is None)
+                or type(whole_scope_custody_profile) is not str
+                or whole_scope_custody_profile not in {CUSTODY_V3_PROFILE, SUCCESSOR_CUSTODY_PROFILE}
+                or (whole_scope is None and whole_scope_custody_profile != CUSTODY_V3_PROFILE)
                 or (whole_scope is not None and (type(whole_scope) is not NativeWholeScopeOwner
                                                 or guardian_custody is not None))):
             raise WorkerNativeBridgeError("worker_native_bridge_originals_required")
@@ -117,6 +127,7 @@ class WorkerInstalledNativeBridge:
         self._guardian_custody = guardian_custody
         self._whole_scope = whole_scope
         self._whole_scope_profile = whole_scope_profile_sha256
+        self._whole_scope_custody_profile = whole_scope_custody_profile
         self._whole_scope_origin = None
         self._baseline = launch.snapshot()
         self._installation_baseline = installation.canonical_bytes
@@ -166,10 +177,22 @@ class WorkerInstalledNativeBridge:
             scope._check_published_grants()
             scope._remaining()
             child = scope.original_custody_owner
-            if child is None or child.profile != CUSTODY_V3_PROFILE:
+            selected = self._whole_scope_custody_profile
+            session = scope._successor_session
+            if selected == CUSTODY_V3_PROFILE:
+                if child is None or child.profile != CUSTODY_V3_PROFILE or session is not None:
+                    raise ValueError
+            elif selected == SUCCESSOR_CUSTODY_PROFILE:
+                if (type(child) is not NativeWholeScopeSuccessorCustodyOwner
+                        or child.profile != SUCCESSOR_CUSTODY_PROFILE
+                        or type(session) is not _SuccessorSession or session.owner is not scope
+                        or child._scope is not scope or child._session is not session):
+                    raise ValueError
+                session.check()
+            else:
                 raise ValueError
             child._check()
-            origin = (scope, child, profile, scope.journal_id, child._path)
+            origin = (scope, child, session, selected, profile, scope.journal_id, child._path)
             if self._whole_scope_origin is None:
                 self._whole_scope_origin = (origin, scope.deadline_ns)
             elif (origin != self._whole_scope_origin[0]
@@ -250,7 +273,10 @@ class WorkerInstalledNativeBridge:
                         ),
                     )
                 if self._whole_scope is not None:
-                    retain_installed_whole_scope_reference(
+                    retainer = (retain_installed_whole_scope_successor_reference
+                                if self._whole_scope_custody_profile == SUCCESSOR_CUSTODY_PROFILE
+                                else retain_installed_whole_scope_reference)
+                    retainer(
                         self._installation, self._whole_scope, writer.anchor, lookup,
                         native_context=context, key=self._key, expected_context=launch.context,
                         expected_mapping=launch.mapping, expected_profile_sha256=self._profile,

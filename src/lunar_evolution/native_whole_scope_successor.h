@@ -3,6 +3,8 @@
 #ifndef LUNAR_NATIVE_WHOLE_SCOPE_SUCCESSOR_H
 #define LUNAR_NATIVE_WHOLE_SCOPE_SUCCESSOR_H
 #include "native_whole_scope_successor_protocol.h"
+#include "native_whole_scope_successor_resources.h"
+_Static_assert(W4_FD_LIMIT == W4_RESOURCE_FD_LIMIT, "v4 resource/role FD bound");
 
 typedef int (*w4_checkpoint_t)(void *);
 static int w4_again(void) { return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR; }
@@ -866,12 +868,14 @@ static int w4_coordinator_main(int argc, char **argv) {
         getpgrp() != getpid() || getsid(0) != getpid() ||
         q.deadline <= W4_RESERVE_NS || wq_now(&now) || now >= q.deadline - W4_RESERVE_NS) return 64;
     q.cutoff = q.deadline - W4_RESERVE_NS;
-    if (w4_keep_from(required, 8, 3)) return W4_FAILURE;
+    if (w4_resource_enter(fields, 8, NULL, 0)) return W4_FAILURE;
     int result = w4_q_run(&q);
     if (result) w4_q_abnormal(&q);
     return result ? W4_FAILURE : 0;
 }
 static int w4_publisher(int profile_fd, int execution, int controller, int image, uint64_t deadline) {
+    int *fields[4] = {&profile_fd, &execution, &controller, &image};
+    if (w4_resource_enter(fields, 4, NULL, 0)) return -1;
     wq_message_t request;
     for (;;) {
         if (wq_remaining(deadline) < 0)

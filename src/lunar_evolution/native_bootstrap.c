@@ -26,6 +26,9 @@
 #include <sys/prctl.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
+/* The isolation helper's Linux UAPI includes occur in its function scope.
+ * V4 also needs those types globally; include its header before that helper. */
+#include "native_whole_scope_successor_resources.h"
 #endif
 #include "native_producer_isolation.h"
 

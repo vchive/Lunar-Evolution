@@ -15,9 +15,9 @@ vault，以及独立默认关闭v4 C→B→T/C→Q→S/G/R和原wait/creator/完
 
 | 优先级 | 本批已实现并验证的软件 | 尚未关闭 |
 | --- | --- | --- |
-| P0 | 旧d7935edd唯一Darwin inert mixed1/1通过244.435秒，600秒/零retry | 新提交唯一mixed、完整CI/main；不重复旧HEAD |
+| P0 | 已推送b8e77287的唯一Darwin inert mixed1/1通过258.903秒，600秒/零retry；Linux准备上传90秒失败，未执行pytest | 完整CI/main及Linux/root部署验收；不重派旧HEAD |
 | P1 | 八输出完整pin、有限配置语义、实际recipe graph外部review绑定和四API转交；116节点通过 | 真实外部审阅、accepted input/build custody、完整CPython静态runtime/solver/生产CLI |
-| P2 | v3原reference同步pre-gate vault；独立v4 Q实际拥有并wait S/G/R，C实际wait B/Q，原R creator与完整ACK/terminal验证 | v4严格总96FD含临时pathchain、v4 worker vault组合、WQ06写能力封闭/原monitor join、真实root/U/cgroup/独立账户/blocked-storage部署验收 |
+| P2 | v3原reference同步pre-gate vault；独立v4 Q实际拥有并wait S/G/R，C实际wait B/Q，原R creator与完整ACK/terminal验证 | v4 native总96FD及独立worker vault软件已完成，28文件Linux回归936pass/43skip，原Darwin节点补验1/1通过（同979unique现937pass/42root skip）；本批新提交mixed/CI、WQ06写能力封闭/原monitor join、真实root/U/cgroup/独立账户/blocked-storage部署验收 |
 
 软件缺口和环境前提分开保留。`production_admission=false`、
 `online_publication=false`；不运行模型/WebAgent/远程或公司evaluator/真实solver，

@@ -122,7 +122,7 @@ profile; v1/v2/v3 operations, consumers and unknown outcomes are not upgraded.
 - [x] Author actual Linux pidfd/SCM_RIGHTS/OFD/file-I/O harnesses and Python refusal/history fixtures, with explicit root-metadata and inert-fork projection boundaries.
 - [x] Complete the affected software-mechanism supplement: the final ownership file passes all 43 nodes; preserve earlier union/build/runtime failures separately.
 - [x] Record final Ruff, compileall, staged/unstaged diff checks and independent latest-node reconciliation for the complete frozen batch.
-- [ ] Charge temporary profile-revalidation path descriptors to a strict total-process FD budget. The current 96-entry retained-role inventory does not establish the stricter total 96-descriptor contract.
+- [x] Validate the authored native v4 total-96-FD boundary, including temporary profile-revalidation paths, received rights and clone/open/dup acquisitions. The Python host C's unrelated descriptors remain outside this native-role boundary; its retained-role inventory is not a process-global host cap.
 - [ ] Qualify the complete graph under the actual installed root profile, distinct account, original cgroup/namespace controls and hard-disconnect/S-death/blocked-storage scenarios.
 - [ ] Close WQ-06's original writer enclosure/accepting-monitor contract and the remaining WQ-07/WQ-08 installed acceptance separately.
 
@@ -130,3 +130,24 @@ The original union and affected runs have terminal results recorded in
 [validation.md](validation.md); the final ownership supplement has 43 passes,
 zero failures/errors/skips on `5090gpu`. Authored code, fixtures and historical record inspection do not
 close installation, whole-group cleanup, native success or production admission.
+
+## Native v4 resource follow-on — authored, concentrated validation pending
+
+- [x] Specify the native-role boundary and preserve the independent default-off v4 selection.
+- [x] Author actual inherited-descriptor reduction, same-OFD relocation, fixed 197/198 sinks and an inherited kernel limit with native limit-write refusal.
+- [x] Connect original B, Q and publisher entry before their new descriptor acquisitions; preserve legacy child paths and original deadline/credential/isolation gates.
+- [x] Author 23 Linux mechanism nodes covering actual table capacity, fixed sinks, SCM_RIGHTS truncation, temporary paths and destructive refusal.
+- [x] Preserve the initial optimized bootstrap compilation failure; correct global Linux UAPI include order and pass the affected optimized compilation supplement without executing an ELF.
+- [x] Execute the frozen affected Linux union, inspect original failures/skips and independently verify its source and terminal artifacts.
+- [ ] Complete the new commit's applicable mixed and full CI gates before considering main integration.
+
+## Independent v4 worker vault follow-on — development batch
+
+See [explicit v4 worker composition](whole-scope-successor-worker-vault.md).
+
+- [x] Specify the separate v4 protocol/domain/name and trusted explicit bridge selection before coding.
+- [x] Complete independent original-session/creator-backed v4 retention, native-anchor ordering and final fresh checks; preserve the v3/default path.
+- [x] Complete read-only authenticated restart inspection without recovering execution, ACK, wait or cleanup authority.
+- [x] Freeze 85 independently authored gate, drift, storage-fault, cross-version and historical-inspection fixtures for the same concentrated affected union as the native resource follow-on.
+- [x] Execute that frozen union and independently inspect its retained original results.
+- [ ] Verify actual installed root/distinct-account/disconnect behavior separately; mechanism fixtures do not close it.

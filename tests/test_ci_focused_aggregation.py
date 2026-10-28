@@ -409,7 +409,7 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 6556
+    assert sum(group["expected_tests"] or 0 for group in groups) == 6665
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     ready = next(group for group in groups if group["id"] == "rsi-ready-capsule-scalars")
     assert ready["expected_tests"] == 203
@@ -418,12 +418,15 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
     assert {"tests/test_native_whole_scope_successor.py",
             "tests/test_native_whole_scope_successor_bootstrap.py",
             "tests/test_native_whole_scope_successor_ownership.py",
+            "tests/test_native_whole_scope_successor_resources.py",
             "tests/test_external_worker_whole_scope_vault.py",
+            "tests/test_external_worker_whole_scope_successor_vault.py",
+            "tests/test_external_worker_whole_scope_successor_bridge.py",
             "tests/test_external_worker_whole_scope_bridge.py",
             "tests/test_external_worker_native_vault.py",
             "tests/test_external_worker_guardian_vault.py"}.issubset(native["files"])
     idle = next(group for group in groups if group["id"] == "brs-idle-history-observation")
-    assert (native["expected_tests"], native["zero_skips"]) == (374, False)
+    assert (native["expected_tests"], native["zero_skips"]) == (483, False)
     assert (idle["expected_tests"], idle["zero_skips"]) == (27, True)
     assert "tests/test_rsi_brs_owner_scope_cost.py" in idle["files"]
     fixed = next(group for group in groups if group["id"] == "native-fixed-u-input-contracts")

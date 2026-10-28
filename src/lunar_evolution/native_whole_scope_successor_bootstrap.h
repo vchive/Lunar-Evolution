@@ -4,6 +4,7 @@
 #ifndef LUNAR_NATIVE_WHOLE_SCOPE_SUCCESSOR_BOOTSTRAP_H
 #define LUNAR_NATIVE_WHOLE_SCOPE_SUCCESSOR_BOOTSTRAP_H
 #include "native_whole_scope_successor_protocol.h"
+#include "native_whole_scope_successor_resources.h"
 
 typedef struct {
     int control, gate, frame, lifeline, enrollment, lifecycle, profile;
@@ -171,6 +172,123 @@ static int w4_b_close_unlisted(const w4_bootstrap_fds_t *f, const control_t *con
     return syscall(SYS_close_range, first, UINT_MAX, 0) || w4_b_checkpoint(f) ? -1 : 0;
 }
 
+/* The control prefix only reads existing descriptions. Identify every original
+ * input before the shared helper closes unlisted inheritance and locks all
+ * later acquisitions, including received rights and transient validation FDs.
+ * Broker environment numbers must not be used again after relocation. */
+static int w4_b_resources(w4_bootstrap_fds_t *f, control_t *control,
+                           int *broker_r, int *broker_w) {
+    int reserved[] = {f->gate, f->frame, f->lifeline, f->enrollment,
+        f->lifecycle, f->profile, control->target_fd, control->bootstrap_fd};
+    size_t reserved_count = sizeof(reserved) / sizeof(reserved[0]);
+    if (wq_fd_distinct(reserved, reserved_count) ||
+        grant_fds_disjoint(control, reserved, reserved_count) ||
+        handoff_broker(getenv("LUNAR_PRODUCER_RESPONSE_FD"), getenv("LUNAR_PRODUCER_REQUEST_FD"),
+                       reserved, reserved_count, broker_r, broker_w)) return -1;
+    int broker[] = {*broker_r, *broker_w};
+    if (grant_fds_disjoint(control, broker, 2) ||
+        validate_private_sink(control, f->deadline, reserved, reserved_count) ||
+        validate_private_sink(control, f->deadline, broker, 2)) return -1;
+    int *slots[W4_FD_LIMIT]; size_t count = 0;
+    slots[count++] = &f->gate; slots[count++] = &f->frame;
+    slots[count++] = &f->lifeline; slots[count++] = &f->enrollment;
+    slots[count++] = &f->lifecycle; slots[count++] = &f->profile;
+    slots[count++] = &control->target_fd; slots[count++] = &control->bootstrap_fd;
+    if (*broker_r >= 0) { slots[count++] = broker_r; slots[count++] = broker_w; }
+    for (size_t i = 0; i < control->grant_count; ++i) {
+        if (count == W4_FD_LIMIT) return -1;
+        slots[count++] = &control->grants[i].fd;
+    }
+    w4_resource_fixed_t fixed[2]; size_t fixed_count = 0;
+    if (control->version >= 3)
+        fixed[fixed_count++] = (w4_resource_fixed_t){&control->sink_fd, FIXED_LIVE_SINK_FD};
+    if (control->version == 4)
+        fixed[fixed_count++] = (w4_resource_fixed_t){&control->completion_fd, FIXED_COMPLETION_SINK_FD};
+    return w4_resource_enter(slots, count, fixed, fixed_count);
+}
+
+/* Fixed sinks already name original OFDs; v4 changes only CLOEXEC without
+ * duplicate acquisition. Do not call this from the legacy child path. */
+static int w4_b_inherit_sinks(const control_t *control) {
+    if ((control->version >= 3 && control->sink_fd != FIXED_LIVE_SINK_FD) ||
+        (control->version == 4 && control->completion_fd != FIXED_COMPLETION_SINK_FD)) return -1;
+    if (control->version >= 3 && handoff_cloexec(control->sink_fd, 0)) return -1;
+    return control->version == 4 ? handoff_cloexec(control->completion_fd, 0) : 0;
+}
+
+/* Explicit v4 setup preserves the legacy credential, actual-U access, grant
+ * isolation and original release checks. Its only sink handoff uses the fixed
+ * original OFDs already counted by the inherited kernel resource limit. */
+static _Noreturn void w4_b_child(const wq_bootstrap_fds_t *fds, control_t *control,
+                                const wq_profile_t *profile, int target_fd,
+                                int error_fd, int ready_fd, int release_fd,
+                                int scope_fd, int broker_r, int broker_w) {
+    if (close(scope_fd) || wq_b_checkpoint(fds) ||
+        dup2(target_fd, control->target_fd) < 0 || handoff_cloexec(control->target_fd, 0))
+        child_start_failed(error_fd, ECANCELED, 78);
+    int keep[MAX_GRANTS + 10]; size_t count = 0;
+    keep[count++] = control->target_fd; keep[count++] = error_fd;
+    keep[count++] = ready_fd; keep[count++] = release_fd; keep[count++] = fds->lifeline;
+    if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
+    if (control->version >= 3) keep[count++] = control->sink_fd;
+    if (control->version == 4) keep[count++] = control->completion_fd;
+    for (size_t i = 0; i < control->grant_count; ++i) keep[count++] = control->grants[i].fd;
+    if (wq_b_keep(keep, count) || wq_b_drop_credentials(profile)) child_start_failed(error_fd, EPERM, 78);
+    /* Prove real U access on original grant objects, rather than an A-only
+     * preflight. faccessat2 is required by this explicit Linux >=5.14 profile. */
+    for (size_t i = 0; i < control->grant_count; ++i) {
+        int mode = control->grants[i].role == 1 ? R_OK : R_OK | X_OK;
+        if (control->grants[i].role & 4) mode |= W_OK;
+        if (syscall(SYS_faccessat2, control->grants[i].fd, "", mode, AT_EMPTY_PATH | AT_EACCESS))
+            child_start_failed(error_fd, EACCES, 78);
+    }
+    if (syscall(SYS_faccessat2, control->target_fd, "", X_OK, AT_EMPTY_PATH | AT_EACCESS) ||
+        fchdir(control->grants[control->cwd_grant].fd)) child_start_failed(error_fd, EACCES, 78);
+    lunar_grant_fd_t original[MAX_GRANTS];
+    for (size_t i = 0; i < control->grant_count; ++i) {
+        original[i].fd = control->grants[i].fd; original[i].role = control->grants[i].role;
+    }
+    if (lunar_apply_grant_isolation(original, control->grant_count)) child_start_failed(error_fd, EPERM, 78);
+    close_original_grants(control);
+    count = 0;
+    keep[count++] = control->target_fd; keep[count++] = error_fd;
+    keep[count++] = ready_fd; keep[count++] = release_fd; keep[count++] = fds->lifeline;
+    if (broker_r >= 0) { keep[count++] = broker_r; keep[count++] = broker_w; }
+    if (control->version >= 3) keep[count++] = control->sink_fd;
+    if (control->version == 4) keep[count++] = control->completion_fd;
+    if (wq_b_keep(keep, count) || wq_b_checkpoint(fds)) child_start_failed(error_fd, ECANCELED, 78);
+    unsigned char ready = 'R';
+    if (write(ready_fd, &ready, 1) != 1 || close(ready_fd)) child_start_failed(error_fd, EPIPE, 78);
+    unsigned char release[2]; size_t received = 0;
+    if (wq_b_read(fds, release_fd, release, sizeof(release), &received, 1) ||
+        received != 1 || release[0] != '1' || wq_b_checkpoint(fds) ||
+        close(release_fd) || close(fds->lifeline)) child_start_failed(error_fd, ECANCELED, 78);
+    char broker_read[80], broker_write[80], sink_deadline[80], completion_deadline[80];
+    char *environment[8] = {"PATH=/usr/bin:/bin", "LANG=C", "LUNAR_BOOTSTRAP_RELEASED=1", NULL};
+    size_t env_count = 3;
+    if (broker_r >= 0) {
+        if (handoff_cloexec(broker_r, 0) || handoff_cloexec(broker_w, 0)) child_start_failed(error_fd, EINVAL, 78);
+        snprintf(broker_read, sizeof(broker_read), "LUNAR_PRODUCER_RESPONSE_FD=%d", broker_r);
+        snprintf(broker_write, sizeof(broker_write), "LUNAR_PRODUCER_REQUEST_FD=%d", broker_w);
+        environment[env_count++] = broker_read; environment[env_count++] = broker_write;
+    }
+    if (w4_b_inherit_sinks(control)) child_start_failed(error_fd, EINVAL, 78);
+    if (control->version >= 3) {
+        snprintf(sink_deadline, sizeof(sink_deadline), "LUNAR_FIXED_LIVE_DEADLINE_NS=%llu",
+                 (unsigned long long)control->sink_deadline_ns);
+        environment[env_count++] = sink_deadline;
+    }
+    if (control->version == 4) {
+        snprintf(completion_deadline, sizeof(completion_deadline), "LUNAR_FIXED_COMPLETION_DEADLINE_NS=%llu",
+                 (unsigned long long)control->completion_deadline_ns);
+        environment[env_count++] = completion_deadline;
+    }
+    environment[env_count] = NULL;
+    if (wq_remaining(fds->deadline) < 0) child_start_failed(error_fd, ECANCELED, 78);
+    fexecve(control->target_fd, control->argv, environment);
+    child_start_failed(error_fd, errno, 78);
+}
+
 static int w4_bootstrap_main(int argc, char **argv) {
     if (argc != 18) return 64;
     const char *names[8] = {"--control-fd", "--gate-fd", "--frame-fd", "--controller-lifeline-fd",
@@ -204,7 +322,10 @@ static int w4_bootstrap_main(int argc, char **argv) {
     control_t control; memset(&control, 0, sizeof(control));
     if (w4_b_read(&fds, fds.control, raw, sizeof(raw), &received, 1) ||
         parse_control(raw, received, &control) || control.version < 2) return 66;
-    close(fds.control);
+    if (close(fds.control)) return 66;
+    fds.control = -1;
+    int broker_r = -1, broker_w = -1;
+    if (w4_b_resources(&fds, &control, &broker_r, &broker_w) || w4_b_checkpoint(&fds)) return 78;
     wq_message_t message;
     int initial_rights[2] = {-1, -1};
     if (w4_b_receive(&fds, fds.enrollment, &message, initial_rights, 2)) return 78;
@@ -242,9 +363,6 @@ static int w4_bootstrap_main(int argc, char **argv) {
         memcmp(target_digest, binding.target_sha256, 65) ||
         grant_fds_disjoint(&control, reserved, 10) || validate_grant_graph(&control, &guard) ||
         validate_private_sink(&control, fds.deadline, reserved, 10)) return 78;
-    int broker_r = -1, broker_w = -1;
-    if (handoff_broker(getenv("LUNAR_PRODUCER_RESPONSE_FD"), getenv("LUNAR_PRODUCER_REQUEST_FD"),
-        reserved, 10, &broker_r, &broker_w)) return 78;
     int error_pipe[2], ready_pipe[2], release_pipe[2];
     if (pipe2(error_pipe, O_CLOEXEC | O_NONBLOCK) || pipe2(ready_pipe, O_CLOEXEC | O_NONBLOCK) ||
         pipe2(release_pipe, O_CLOEXEC | O_NONBLOCK)) return 78;
@@ -270,7 +388,7 @@ static int w4_bootstrap_main(int argc, char **argv) {
          * T's own final exec check uses the unchanged execution cutoff. */
         wq_bootstrap_fds_t child_fds = {fds.control, fds.gate, fds.frame, fds.lifeline,
             fds.enrollment, fds.lifecycle, fds.profile, fds.deadline - W4_RESERVE_NS};
-        wq_b_child(&child_fds, &control, &profile, target_fd, error_pipe[1],
+        w4_b_child(&child_fds, &control, &profile, target_fd, error_pipe[1],
                    ready_pipe[1], release_pipe[0], scope_fd, broker_r, broker_w);
     }
     close(error_pipe[1]); close(ready_pipe[1]); close(release_pipe[0]); close(target_fd);
