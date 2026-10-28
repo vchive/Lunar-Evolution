@@ -34,6 +34,8 @@ _SOURCE_NAMES = (
     "native_whole_scope_bootstrap.h",
     "native_whole_scope_platform.h",
     "native_whole_scope_protocol.h",
+    "native_whole_scope_successor_protocol.h",
+    "native_whole_scope_successor_bootstrap.h",
 )
 _MAX_BYTES = 8 * 1024 * 1024
 _MAX_PATH_BYTES = 4096
@@ -667,6 +669,27 @@ def native_whole_scope_bootstrap_command(
     return command + ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
 
 
+def native_whole_scope_successor_bootstrap_command(
+    executable: str | Path, *, control_fd: int, gate_fd: int, frame_fd: int,
+    controller_lifeline_fd: int, scope_enrollment_fd: int, scope_lifecycle_fd: int,
+    profile_fd: int, deadline_monotonic_ns: int,
+) -> tuple[str, ...]:
+    """Explicit independent v4 B mode; the default ABI remains unchanged."""
+    descriptors = (control_fd, gate_fd, frame_fd, controller_lifeline_fd,
+                   scope_enrollment_fd, scope_lifecycle_fd, profile_fd)
+    if (any(type(fd) is not int or not 2 < fd <= 0x7fffffff for fd in descriptors)
+            or len(set(descriptors)) != len(descriptors)
+            or type(deadline_monotonic_ns) is not int or not 0 < deadline_monotonic_ns < 2**64
+            or not isinstance(executable, (str, Path))):
+        _fail("native_bootstrap_whole_scope_successor_command_invalid")
+    names = ("--control-fd", "--gate-fd", "--frame-fd", "--controller-lifeline-fd",
+             "--scope-enrollment-fd", "--scope-lifecycle-fd", "--profile-fd")
+    command = (str(executable), "--whole-scope-successor-v4")
+    for name, descriptor in zip(names, descriptors, strict=True):
+        command += (name, str(descriptor))
+    return command + ("--deadline-monotonic-ns", str(deadline_monotonic_ns))
+
+
 __all__ = [
     "FIXED_PRODUCER_COMPLETION_SINK_FD",
     "LINUX_CHILD_SUPERVISION",
@@ -692,4 +715,5 @@ __all__ = [
     "native_bootstrap_source_path",
     "native_bootstrap_source_paths",
     "native_whole_scope_bootstrap_command",
+    "native_whole_scope_successor_bootstrap_command",
 ]

@@ -44,12 +44,13 @@ def test_invalid_whole_scope_arguments_never_produce_a_legacy_command(key, value
         bootstrap.native_whole_scope_bootstrap_command("/installed/bootstrap", **options)
 
 
-@pytest.mark.parametrize("changed", range(5))
+@pytest.mark.parametrize("changed", range(7))
 def test_source_manifest_binds_every_bootstrap_and_transitive_header(tmp_path, monkeypatch, changed):
     original_paths = bootstrap.native_bootstrap_source_paths()
     assert {path.name for path in original_paths} == {
         "native_bootstrap.c", "native_producer_isolation.h", "native_whole_scope_bootstrap.h",
         "native_whole_scope_platform.h", "native_whole_scope_protocol.h",
+        "native_whole_scope_successor_protocol.h", "native_whole_scope_successor_bootstrap.h",
     }
     paths = tuple(tmp_path / path.name for path in original_paths)
     for path in paths:

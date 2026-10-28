@@ -1,5 +1,59 @@
+<!-- configuration-successor-current-batch:start -->
+## 当前开发批：外部配置审阅、worker 原凭据保留与独立 v4 生命周期（2026-10-28）
+
+基线 `d7935edd`，工作区与分支同下。按用户要求先并行开发、末尾集中回归；
+本节记录软件范围和真实集中回归结果；软件机制通过不等于部署通过。
+
+- P1：保留八份真实 configure 输出，外部 canonical review manifest 与独立 SHA
+  绑定 source/Zig/profile、header、Make、Setup/config.c 和原 concrete stage graph。
+  缺少真实八输出及外部审阅资料时仍拒绝，不宣称已构建完整 CPython。
+- 独立 worker vault：只接受实际 live v3 scope，原 creator-backed reference、
+  三份原 publication OFD、native deadline/intent/assignment/profile 全部绑定，
+  同步持久化后才走原 gate。历史 inspector 不恢复执行、ACK、cleanup 权限。
+- 显式默认关闭的 v4：独立 profile/ABI，C→B→T 和 C→Q→S/G/R；Q 是 S/G/R
+  的实际直接父进程并消费原 wait，C 仍消费原 B/Q wait。原件来自 R creator OFD，
+  完整 source proposal/commit/ACK/result 单独严格验证。v1/v2/v3 与默认不升级；
+  本批 v3 worker vault 不自动接受 v4。机制 fixture 不代替 installed root/cgroup
+  完整链路或独立账户验收。总96个实际FD（含临时path-chain）的严格
+  上限仍未实现，当前只有retained-role inventory检查。
+
+
+集中回归已执行，随后只补受影响域（均16 workers、零自动重试）：
+
+- 首轮 tree `1d996092`，40完整文件、1407 unique：1240 pass / 6 fail /
+  118 error / 43 skip，63.412017秒。失败保留，主要是旧源码清单、新C夹具
+  编译/管道同步和bridge异常预期；不以源码收证通过替代测试通过。
+- 11文件受影响补验 tree `d2adc116`，345节点：294 pass / 14 C setup error /
+  37 skip，19.903830秒。新receiver scope-substitution节点使累计unique变为1408。
+- ownership后续 `edcdaa3e` 43节点：29 pass / 14 setup error，8.333710秒；
+  actual GCC `-O2`发现两处夹具read返回值未检查，保留原严格编译选项修复。
+- ownership `3996479a`：31 pass / 12 fail，21.965113秒；实际运行暴露夹具未按
+  installed caller设置lifeline nonblock及receiver-lost路由错误，保留原失败。
+- 最后只修上述fixture，tree `ce612c7d` ownership 43/43 pass，零skip，
+  7.930960秒，16 worker exit0、247 loaded-module origins匹配。
+- 原Linux跳过的1项Darwin bootstrap在本机实际1/1 pass、2.738091秒，
+  source前后及233个module origins匹配；不替代Linux/root账户验收。
+- 最新逐节点去重为1408：1366 pass / 42 root-prerequisite skip，零剩余
+  fail/error。这是不同冻结树的累计适用结果，不是单一最终树的全量重跑。
+  全部原失败及worker非零退出原样保留；source manifest/blob/mode、collection、
+  唯一执行/JUnit和origins独审分层记录，不将consistency checks计作产品测试。
+
+实际101 review +15 generation、v3 worker43+bridge18、v4 codec57+
+bootstrap23+ownership43节点全部通过。CI清单83组/65 zero-skip组，expected sum6556；
+Ruff、compileall及cached/working diff check在提交前执行。证据位于主区ignored
+`parallel-batch-20261027/`下configuration-vault-successor-union/affected、
+successor-ownership-final/checked-reads/nonblocking-linux-20261028及
+successor-darwin-bootstrap-20261028。新提交唯一mixed及完整CI仍待，PR #190
+仍draft、未合main；不要重派已经消耗的旧HEAD。
+
+WQ-06 finite writer enclosure、原 monitor accepting join、accepted input/build
+custody、真实完整 static runtime/solver/生产 CLI 与实际部署验收仍开放。
+`production_admission=false`、`online_publication=false`；不运行模型、WebAgent、
+远程/公司 evaluator 或真实 solver campaign，不读密钥和活进程 argv/environment。
+<!-- configuration-successor-current-batch:end -->
+
 <!-- creator-v3-current-batch:start -->
-## 当前执行点：P1 recipe / P2 creator-FD v3 已集中验证，mixed 与部署门仍开放（2026-10-28）
+## 当前执行点：P1 recipe / P2 creator-FD v3 与 Darwin mixed 已验证，CI 与部署门仍开放（2026-10-28）
 
 权威工作区为 `/Users/liminghan/.codex/worktrees/fixed-u-input-acl/lunar_agent`，
 分支 `codex/fixed-u-input-acl`，本批基于已推送的 `52bc0db1`。PR #190 仍 draft，
@@ -42,7 +96,14 @@ bytecode/build custody，当前软件 fixture 不能替代 root/U/cgroup 与独�
 
 P0：旧 f4fe Linux mixed 上传失败，pytest 未执行；同 HEAD 的独立 Darwin inert
 mixed 已 1/1 pass、250.526687 秒、600 秒预算、零 retry。旧失败 HEAD 不重派。
-本批 clean 新 HEAD 的唯一 Linux mixed 及完整 CI 尚待执行/完成。
+`d7935edd` 的 Linux mixed 未派发：当时 `/tmp` 无可用 inode；不伪称 case
+超时。该 HEAD 唯一 Darwin fallback mixed 已实际 1/1 pass、零 skip/fail/error，
+完整 validation 244.435278 秒（pytest process 244.126765 秒）、600 秒、零 retry。
+2,991 source entries、2,683 Git blobs/modes、before/after 与285 module origins
+匹配；独立静态审计2,705项、terminal审计3,090项均一致。原件位于
+`parallel-batch-20261027/darwin-mixed-d7935edd-fallback-20261028/`。
+同 HEAD 不重派；此结果不代替 Linux/root/account 部署验收。GitHub 完整 CI
+仍运行/排队中，不能视为通过。
 
 仍有实际软件缺口：WQ-06 finite writer enclosure 和原 monitor accepting join、
 完整 WQ-07 S-death 独立回收/来源仲裁、独立 pre-gate reference retention 与 worker

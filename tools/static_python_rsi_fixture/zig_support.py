@@ -380,6 +380,9 @@ def prepare_cpython_explicit_support_recipe(
     configuration_header: bytes, expected_configuration_sha256: str,
     runtime_closure: FixedRuntimeClosure | None = None,
     producer_lifecycle_profile: str | None = None,
+    configuration_outputs: tuple[tuple[str, bytes], ...] | None = None,
+    review_manifest_bytes: bytes | None = None,
+    expected_review_manifest_sha256: str | None = None,
 ) -> ExplicitSupportBuildRecipe:
     """Use observed prior bootstrap artifacts in both real subsequent links.
 
@@ -394,6 +397,10 @@ def prepare_cpython_explicit_support_recipe(
         expected_configuration_sha256=expected_configuration_sha256, runtime_closure=runtime_closure,
         **({"producer_lifecycle_profile": producer_lifecycle_profile}
            if producer_lifecycle_profile is not None else {}),
+        **({"configuration_outputs": configuration_outputs} if configuration_outputs is not None else {}),
+        **({"review_manifest_bytes": review_manifest_bytes} if review_manifest_bytes is not None else {}),
+        **({"expected_review_manifest_sha256": expected_review_manifest_sha256}
+           if expected_review_manifest_sha256 is not None else {}),
     )
     wire = _recipe(base.recipe_bytes, base.sha256, version3=True)
     _bundle(support_bundle, preparation.sha256, wire["inputs"]["toolchain"])

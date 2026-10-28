@@ -468,3 +468,29 @@ unique execution/JUnit correspondence and 259 loaded-module origins. Its
 and skipped prerequisites; they are not additional product tests or deployment
 acceptance. Full CI, accepted input/build custody, complete runtime/solver
 integration and production admission remain open.
+
+
+## Eight-output configuration review software — 2026-10-28
+
+The frozen concentrated Linux union at tree
+`1d996092e37968a844fa81e5d8227430d5ef639e` includes all 101 independent-review
+and 15 configuration-generation nodes, all passing. The full 40-file union
+executed 1,407 unique nodes once with 16 workers and zero retries: 1,240 pass,
+6 fail, 118 error and 43 prerequisite/platform skips, in 63.412017 seconds.
+Those failures are retained; this is not an all-green full union. The failed
+native C harness/old source inventories and worker error adapter are outside
+the configuration-review test files, and receive separate affected supplements.
+
+The binder retains the actual eight original outputs and exact external review
+manifest as recipe inputs. Independent expected-pin equality does not establish
+that an independent human reviewed the real configuration. Tests use synthetic
+finite profiles and original concrete graphs; no full CPython build, accepted
+immutable build custody, static runtime or real solver campaign is claimed.
+Legacy omitted/None paths and all-or-none forwarding through four successor
+recipe APIs are covered. The first union's archive/source before-after,
+worker collection and unique execution/JUnit/module-origin correspondence were
+independently audited (4,451 consistency checks). Evidence lives under the main
+workspace ignored `parallel-batch-20261027/configuration-vault-successor-union-linux-20261028/`.
+Later affected native-fixture supplements do not re-execute these passed review
+nodes. Final-source CI, accepted configuration/build/runtime roots and production
+admission remain separate gates.

@@ -1704,10 +1704,15 @@ done:
     close(attempt);
     return result;
 }
+#include "native_whole_scope_successor.h"
+
 int main(int argc, char **argv) {
     if (wq_root_identity() || signals_ready())
         return 64;
-    if (argc == 12 && !strcmp(argv[1], "--publish-v1")) {
+    if (argc > 1 && !strcmp(argv[1], "--successor-coordinator-v4"))
+        return w4_coordinator_main(argc, argv);
+    if (argc == 12 && (!strcmp(argv[1], "--publish-v1") ||
+                       !strcmp(argv[1], "--publish-successor-v4"))) {
         const char *flags[5] = {"--profile-fd", "--execution-root-fd", "--controller-fd",
                                 "--image-fd", "--deadline-monotonic-ns"};
         int fds[4];
@@ -1720,7 +1725,10 @@ int main(int argc, char **argv) {
                 return 64;
         if (number(argv[11], UINT64_MAX, &deadline) || wq_fd_distinct(fds, 4) || wq_socket(fds[2]))
             return 64;
-        return publisher(fds[0], fds[1], fds[2], fds[3], deadline) ? WQ_FAILURE : 0;
+        int result = !strcmp(argv[1], "--publish-successor-v4")
+            ? w4_publisher(fds[0], fds[1], fds[2], fds[3], deadline)
+            : publisher(fds[0], fds[1], fds[2], fds[3], deadline);
+        return result ? WQ_FAILURE : 0;
     }
     if (argc != 22 || (strcmp(argv[1], "--supervisor-v1") &&
                        strcmp(argv[1], "--supervisor-custody-v2") &&

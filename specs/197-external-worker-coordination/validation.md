@@ -1,5 +1,116 @@
 # Local batch validation — 2026-10-27
 
+## Whole-scope worker vault and explicit v4 continuation — 2026-10-28
+
+The authored software now includes the separate
+[v3 installed-worker reference vault](whole-scope-worker-vault.md) and the
+[explicit successor-custody v4 graph](whole-scope-successor-custody.md).
+[The task list](tasks.md) distinguishes completed software authoring from
+[whole-group acceptance](whole-group-quiescence-tasks.md). The v3 worker sidecar
+still requires the same original v3 scope; the separately selected v4 owner,
+wire grammar, records and inspection are not an automatic worker-vault upgrade.
+
+The v3 software covers pre-gate original-anchor retention, independent authenticated
+sidecar publication, original registration/empty-terminal and three-publication
+OFD matching, final original packet/completion/key/installation checks, storage
+failure refusal and fixed-lookup read-only restart inspection. The v4 software
+covers separate C/Python codecs, Q's original S/G/R ownership, Q-only decisions,
+R-only persistence, independent source routes, full terminal ACK, actual original
+wait consumption and separate creator-backed historical inspection. A persisted
+terminal remains distinct from ACK consumption, original exact waits or live
+completion.
+
+The coordinated frozen-source selections ran on Linux `5090gpu` with
+16 xdist workers. Actual terminal records received so far are:
+
+| Selection | Passed | Failed | Setup errors | Skipped | Status |
+| --- | ---: | ---: | ---: | ---: | --- |
+| First 40-file union | 1,240 | 6 | 118 | 43 | Failed; original report retained |
+| Directly affected 11-file supplement | 294 | 0 | 14 | 37 | Failed; remaining errors in the ownership C fixture build |
+| Ownership-only 43-node supplement | 29 | 0 | 14 | 0 | Failed; actual optimized compilation rejected unchecked fixture reads |
+| Ownership checked-read supplement | 31 | 12 | 0 | 0 | Failed; fixture lifeline readers blocked and one fault case was misrouted |
+| Ownership nonblocking supplement (`ce612c7d`) | 43 | 0 | 0 | 0 | Passed in 7.930960045 seconds |
+
+The first union exposed a signed-pointer C build warning, an outdated exact
+bootstrap header inventory, a bridge test missing the expected storage-refusal
+exception, and a B harness lifeline test whose child had not yet closed inherited
+writers. The affected supplement retained only the ownership fixture build
+errors: GCC rejected misleading indentation under the unchanged `-Werror`
+flags. The next ownership supplement exposed unchecked `read` results during
+actual `-O2` compilation. Its preceding `-fsyntax-only` diagnostic had passed;
+that diagnostic was not a successful actual build or test run. These are
+separate retained outcomes, not retries hidden inside a passing aggregate.
+
+The ownership fixture now has explicit R/G READY barriers before fault injection
+and an original-invocation process-group cleanup guard so assertion/timeout paths
+cannot leave inert children holding captured pipes. The optimized-build read
+checks have been corrected without relaxing compiler warnings. The following
+actual run exposed blocking fixture lifeline readers, rather than product
+deadline exhaustion: `live()` requires the original nonblocking-reader setup.
+The draining and R harnesses now reproduce that setup, and `receiver-lost`
+routes to its fault case instead of the receiver protocol entry. The final
+43-node file passes without a product change or increased timeout. Final repository Ruff, compileall and both diff checks pass. The independent
+latest-node reconciliation verifies **1,366 passed / 42 root-prerequisite
+skips / 1,408 unique nodes**, including the actual Darwin platform supplement.
+The six invocations contain 1,882 attempts over different frozen trees; this
+is not a full final-tree rerun or a full-repository/deployment conclusion.
+The final supplement independently passes 4,061 artifact-consistency checks,
+which are not additional product tests. All earlier failed-artifact hashes were
+rechecked and preserved. Overlapping nodes must be combined by exact node identity and
+latest outcome, never by adding the invocation totals.
+
+The retained evidence directories are beneath the primary workspace
+ignored validation root
+`.lunar-evolution/validation/parallel-batch-20261027/`:
+
+- `configuration-vault-successor-union-linux-20261028/terminal-selected/`
+  retains the 1,407-node `focused.xml`, SHA256
+  `820542b19634405142c3e77b82b52669f06e5dabf3923eb5b2a66526309cd401`.
+- `configuration-vault-successor-affected-linux-20261028/terminal-selected/`
+  retains the 345-node `focused.xml`, SHA256
+  `307a61fbacf51aede5d058e70e06513faca00ebcfddd98af656bc9713f377949`.
+- `successor-ownership-final-linux-20261028/terminal-selected/`
+  retains the failed 43-node `focused.xml`, SHA256
+  `a26253baba0b3dac99924733e5befea6971a53bee5b873a57af94e329857b3b4`.
+- `successor-ownership-checked-reads-linux-20261028/terminal-selected/`
+  retains the 31-pass/12-failure `focused.xml`, SHA256
+  `e4a3f0dfb98cd7179bfeaba048c1fa66a0c0386b9c26850339b1c94d8980cf06`.
+- `successor-ownership-nonblocking-linux-20261028/terminal-selected/`
+  retains the 43-pass `focused.xml`, SHA256
+  `8a4ed713fc773f370ba309749cf1e7a4a4886ce97d56ccdb565ce9342112dea0`.
+
+Each includes its original result, source manifest/before/after observations,
+selection, module-origin observations and stdout. The reports state unchanged
+source; the source/module observations do not establish immutable consumed
+bytecode custody or production admission. All failed reports remain retained
+alongside the final passing ownership result.
+
+### Mechanism evidence and remaining acceptance boundaries
+
+Python fixtures project root metadata/ancestor installation and supply synthetic
+v4 context/terminal bytes for consumer checks. The Linux harness uses actual
+pidfds, consuming `waitid`, SCM_RIGHTS delivery, shared OFDs, file creation,
+`pread`, writes and fsync. Its inert direct-parent children are created by a
+fixture `fork` acquisition shim; this is not a production fallback for the
+required clone3 graph. The actual R helper executes its create/write/fsync/
+creator/ACK path, with root uid/gid observations explicitly projected. Bridge
+interceptions check software ordering, not deployed cgroup stopping. No candidate,
+upstream solver, model, remote evaluator or company evaluation service is run
+by this continuation.
+
+These observations do not establish an installed root/account transition,
+the original cgroup-v2 enclosure, distinct namespaces/credentials, real network
+partition handling, independent S-death cleanup, an accepting pycache monitor
+or production/native publication. As recorded in the v4 companion document,
+the current Q inventory bounds retained role descriptors at 96; temporary
+profile-path revalidation descriptors are separately bounded but not charged
+to that inventory. A strict total-process maximum of 96 actual descriptors
+therefore remains an implementation gap, even if every current fixture passes.
+Full-graph installed acceptance and WQ-06/WQ-07/WQ-08 closure remain separate.
+
+The historical sections below retain their original source boundaries and
+results; they do not supersede the current continuation above.
+
 ## Actual fixed inert cross-host acceptance
 
 The clean `df81a46c` source passed a real `5090gpu` SSH acceptance with one

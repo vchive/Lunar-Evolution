@@ -147,9 +147,11 @@
       "files": [
         "tests/test_static_python_rsi_launch.py",
         "tests/test_static_python_rsi_source_plan.py",
-        "tests/test_static_python_dependency_profile_selection.py"
+        "tests/test_static_python_dependency_profile_selection.py",
+        "tests/test_static_python_configuration_generation.py",
+        "tests/test_static_python_configuration_review.py"
       ],
-      "expected_tests": 116,
+      "expected_tests": 232,
       "zero_skips": true
     },
     {
@@ -816,9 +818,16 @@
         "tests/test_native_whole_scope_build.py",
         "tests/test_native_whole_scope_components.py",
         "tests/test_native_original_publication.py",
-        "tests/test_native_original_publication_linux.py"
+        "tests/test_native_original_publication_linux.py",
+        "tests/test_native_whole_scope_successor.py",
+        "tests/test_native_whole_scope_successor_bootstrap.py",
+        "tests/test_native_whole_scope_successor_ownership.py",
+        "tests/test_external_worker_whole_scope_vault.py",
+        "tests/test_external_worker_whole_scope_bridge.py",
+        "tests/test_external_worker_native_vault.py",
+        "tests/test_external_worker_guardian_vault.py"
       ],
-      "expected_tests": 145,
+      "expected_tests": 374,
       "zero_skips": false
     },
     {

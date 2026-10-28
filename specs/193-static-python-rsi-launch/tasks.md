@@ -320,3 +320,26 @@ missing generic output file; it does not silently upgrade v1 images or acceptanc
 P0's adjacent duplicate provenance gates are removed in the same software batch;
 new 600-second/zero-retry mixed remains required. P1 L06/L08 and P2 deployment
 obligations above are still open; no production admission/publication is enabled.
+
+
+## Independent eight-output configuration review (2026-10-28)
+
+See `configuration-review.md`. This is an explicit software binding gate,
+not an approval of the previously retained real configure observation.
+
+- [x] Preserve all eight original configure output byte strings with compatible
+  legacy header-only construction and omitted/None recipe behavior.
+- [x] Require all-or-none original outputs, canonical external review manifest
+  and independently supplied expected manifest SHA256 through every recipe API.
+- [x] Bind bounded header/Make/Setup/config.c semantics, actual compile/link
+  roles, archive reachability and a non-circular original concrete-stage pin.
+- [x] Reject missing/re-signed unsupported semantics and stage/source/toolchain
+  drift; retain original outputs and external manifest as actual recipe inputs.
+- [x] Execute all 101 review and 15 configuration-generation nodes in the
+  concentrated Linux union; all pass. Other files' initial failures remain
+  recorded in validation and are corrected only through affected supplements.
+- [ ] Obtain independently reviewed real eight-output configuration/profile
+  approval. Fixture manifests and their synthetic expected pins do not supply it.
+- [ ] Establish accepted immutable build-input custody, actual complete static
+  CPython build/runtime and real solver/production CLI acceptance. F02c/L08
+  remain binding; admission and online publication remain false.

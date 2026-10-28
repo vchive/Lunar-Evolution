@@ -87,5 +87,46 @@ The current original leader/group stop and receiver exact-child wait do not
 prove all execution descendants have retired. The explicit software and actual
 deployment tasks are recorded in
 [whole-group-quiescence-tasks.md](whole-group-quiescence-tasks.md). WQ-01 through
-WQ-08 remain unchecked: this audit does not implement a new backend or close
+WQ-08 were not closed by this audit: it did not implement a new backend or close
 whole-group cleanup, original native pycache quiescence or production admission.
+The companion task file now records WQ-01's reviewed design and subsequent
+software progress separately from the installed acceptance tasks below.
+
+## Original v3 worker reference vault — authored 2026-10-28
+
+See [whole-scope worker vault](whole-scope-worker-vault.md) and
+[creator-FD v3](whole-scope-creator-fd-v3.md).
+
+- [x] Add explicit installed-bridge selection of the same live v3 scope and its independent profile digest, mutually exclusive with guardian custody.
+- [x] Retain the unchanged native anchor first, then a separate authenticated create-only whole-scope sidecar before returning to the original native gate.
+- [x] Match the complete original native context, all three publication descriptions, original registration/empty-terminal creator pins, separate installation profiles, key and assignment baseline.
+- [x] Recheck the original native packet/completion bytes and installation/key/context after sidecar durability; preserve partial failures and propagate refusal without repair or replay.
+- [x] Add fixed-lookup read-only restart inspection with original native anchor and independent reference checks; keep execution/cleanup/ACK/production authority false.
+- [x] Author vault and bridge fixtures for ordering, original-OFD/profile/context drift, storage faults, fresh-process inspection and refusal without gate release.
+
+This sidecar composition is v3-specific. It does not silently accept a v4
+reference, change the existing worker channel or supply S-death retirement.
+
+## Explicit successor custody v4 — authored 2026-10-28
+
+See [successor custody design and ABI](whole-scope-successor-custody.md), especially
+its initial native implementation boundaries. This is an independent, default-off
+profile; v1/v2/v3 operations, consumers and unknown outcomes are not upgraded.
+
+- [x] Author separate C/Python v4 codecs, installed profile/entry modes, fixed record names and one-shot original-owner selection.
+- [x] Author the Q-owned S/G/R process graph, independent S/G stop observations, Q-only decision and R-only durable writer with a full byte-exact source/commit/ACK chain.
+- [x] Preserve original B/Q wait ownership in C and S/G/R wait ownership in Q; reject ECHILD and distinguish pidfd exit, consuming exact wait, storage ACK and historical records.
+- [x] Bind the original B dual gate to original C/Q lifelines, S/G/R observations, creator adoption, immutable registration and the same original cutoff/deadline.
+- [x] Retain actual R-to-Q-to-C creator descriptions through a separate v4 custody owner/reference and strict read-only historical consumer.
+- [x] Refuse R INIT-to-REGISTER scope substitution before creating records; retain source-route and byte-exact proposal checks separately.
+- [x] Author actual Linux pidfd/SCM_RIGHTS/OFD/file-I/O harnesses and Python refusal/history fixtures, with explicit root-metadata and inert-fork projection boundaries.
+- [x] Complete the affected software-mechanism supplement: the final ownership file passes all 43 nodes; preserve earlier union/build/runtime failures separately.
+- [x] Record final Ruff, compileall, staged/unstaged diff checks and independent latest-node reconciliation for the complete frozen batch.
+- [ ] Charge temporary profile-revalidation path descriptors to a strict total-process FD budget. The current 96-entry retained-role inventory does not establish the stricter total 96-descriptor contract.
+- [ ] Qualify the complete graph under the actual installed root profile, distinct account, original cgroup/namespace controls and hard-disconnect/S-death/blocked-storage scenarios.
+- [ ] Close WQ-06's original writer enclosure/accepting-monitor contract and the remaining WQ-07/WQ-08 installed acceptance separately.
+
+The original union and affected runs have terminal results recorded in
+[validation.md](validation.md); the final ownership supplement has 43 passes,
+zero failures/errors/skips on `5090gpu`. Authored code, fixtures and historical record inspection do not
+close installation, whole-group cleanup, native success or production admission.

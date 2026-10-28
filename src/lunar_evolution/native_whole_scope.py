@@ -197,6 +197,7 @@ class NativeWholeScopeOwner:
         self._final_intent = None
         self._fixed_u_input_owner = None
         self._custody_owner = None
+        self._successor_session = None
 
     def __copy__(self):
         _fail("owner_invalid")
@@ -536,6 +537,14 @@ class NativeWholeScopeOwner:
         This explicit selection grants only diagnostic persistence; it adds no
         native deadline, cleanup authority or candidate filesystem grant.
         """
+        if self._successor_session is not None:
+            from .native_whole_scope_successor import PROFILE_NAME as successor_profile
+            from .native_whole_scope_successor_custody import _acquire_successor_custody
+
+            self._successor_session.check()
+            if profile != successor_profile:
+                _fail("custody_profile_invalid")
+            return _acquire_successor_custody(self)
         from .native_whole_scope_custody import _acquire_whole_scope_custody
 
         return _acquire_whole_scope_custody(self, profile=profile)
@@ -573,6 +582,8 @@ class NativeWholeScopeOwner:
 
     def publish_original_grants(self, *, deadline_ns):
         """Create fixed native leaves before any intent/input identity freeze."""
+        if self._successor_session is not None:
+            return self._successor_session.publish(deadline_ns)
         if self._published is not None or self._preparation_key is not None or self._channels_prepared:
             _fail("grants_unavailable")
         self._check_installation()
@@ -645,6 +656,13 @@ class NativeWholeScopeOwner:
     def prepare_channels(self):
         if self._closed or self._channels_prepared or self._published is None:
             _fail("owner_invalid")
+        if self._successor_session is not None:
+            from .native_whole_scope_successor_custody import NativeWholeScopeSuccessorCustodyOwner
+
+            self._successor_session.check()
+            if type(self._custody_owner) is not NativeWholeScopeSuccessorCustodyOwner:
+                _fail("custody_owner_invalid")
+            self._custody_owner._check()
         self._channels_prepared = True
         self._controller, self._controller_child = self._socket_pair()
         self._enrollment, self._enrollment_child = self._socket_pair()
@@ -667,6 +685,9 @@ class NativeWholeScopeOwner:
         return (self.profile_fd, self.enrollment_fd, self.lifecycle_fd)
 
     def start_original(self, *, process, launch, intent, controller_lifeline_fd, deadline_ns, bootstrap=None):
+        if self._successor_session is not None:
+            return self._successor_session.start(process=process, launch=launch, intent=intent,
+                controller_lifeline_fd=controller_lifeline_fd, deadline_ns=deadline_ns, bootstrap=bootstrap)
         from .producer_bootstrap import TrustedBootstrapLaunch
         from .producer_launcher import ProducerLaunchIntent
 
@@ -714,6 +735,8 @@ class NativeWholeScopeOwner:
         self._send(self._controller, 1, 0, bound=False)
 
     def wait_enrolled(self):
+        if self._successor_session is not None:
+            return self._successor_session.wait_enrolled()
         if self._scope is not None or self._supervisor is None:
             _fail("owner_invalid")
         self._scope, self._target_pid, _ = self._receive(self._controller, 4, 1, initial=True)
@@ -721,6 +744,8 @@ class NativeWholeScopeOwner:
             _fail("protocol_invalid")
 
     def bind_original_registration(self, publications, context=None):
+        if self._successor_session is not None:
+            return self._successor_session.bind_registration(publications, context)
         from .native_original_publication import NativeOriginalPublications
 
         if type(publications) is not NativeOriginalPublications or self._registered:
@@ -751,6 +776,8 @@ class NativeWholeScopeOwner:
                 raise
 
     def release_original(self):
+        if self._successor_session is not None:
+            return self._successor_session.release()
         if not self._registered or self._released:
             _fail("owner_invalid")
         self._check_installation()
@@ -762,7 +789,15 @@ class NativeWholeScopeOwner:
         self._released = True
         self._send(self._controller, 7, 3)
 
+    def wait_original_bootstrap(self, *, timeout):
+        """Selected v4 only: consume B's original wait within this poll slice."""
+        if self._successor_session is None:
+            _fail("original_wait_unavailable")
+        return self._successor_session.wait_original_bootstrap(timeout=timeout)
+
     def finish(self):
+        if self._successor_session is not None:
+            return self._successor_session.finish()
         if self._finished:
             return
         if not self._released or self._supervisor is None or self._bootstrap.returncode is None:
@@ -779,6 +814,8 @@ class NativeWholeScopeOwner:
 
     def cleanup(self):
         """Close the private C channel; only the original S/G stop path acts."""
+        if self._successor_session is not None:
+            return self._successor_session.cleanup()
         if self._supervisor is None:
             return False
         self._controller.close()
@@ -831,11 +868,20 @@ class NativeWholeScopeOwner:
 
 
 @contextmanager
-def hold_fixed_whole_scope_installation(*, expected_profile_sha256, bootstrap, supervisor):
+def hold_fixed_whole_scope_installation(*, expected_profile_sha256, bootstrap, supervisor,
+                                       lifecycle_profile=None):
     """Acquire a fixed root-owned installation; never provision or fall back."""
     owner = NativeWholeScopeOwner(_TOKEN)
     try:
-        owner._acquire(expected_profile_sha256, bootstrap, supervisor)
+        if lifecycle_profile is None:
+            owner._acquire(expected_profile_sha256, bootstrap, supervisor)
+        else:
+            from .native_whole_scope_successor import PROFILE_NAME as successor_profile
+            from .native_whole_scope_successor import _acquire
+
+            if lifecycle_profile != successor_profile:
+                _fail("profile_invalid")
+            _acquire(owner, expected_profile_sha256, bootstrap, supervisor)
         yield owner
     finally:
         active = sys.exception()

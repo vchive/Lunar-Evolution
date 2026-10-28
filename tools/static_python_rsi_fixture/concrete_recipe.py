@@ -41,6 +41,9 @@ from lunar_evolution.static_python_producer_envelope_source import (
 from tools.static_python_fixture.profile import ALIASES, CORE_BUILTINS, STATIC_ADDITIONS
 from tools.static_python_fixture.tables import emit_static_python_tables
 from tools.static_python_rsi_fixture.build_driver import _preparation_wire
+from tools.static_python_rsi_fixture.configuration_review import (
+    bind_reviewed_cpython_configuration,
+)
 from tools.static_python_rsi_fixture.execution_backend import RECIPE_V3_SCHEMA, _recipe
 from tools.static_python_rsi_fixture.installation_profile import RSIProfilePreparation
 from tools.static_python_rsi_fixture.runtime_closure import (
@@ -288,6 +291,9 @@ def prepare_cpython_build_recipe(
     configuration_header: bytes, expected_configuration_sha256: str,
     runtime_closure: FixedRuntimeClosure | None = None,
     producer_lifecycle_profile: str | None = None,
+    configuration_outputs: tuple[tuple[str, bytes], ...] | None = None,
+    review_manifest_bytes: bytes | None = None,
+    expected_review_manifest_sha256: str | None = None,
 ) -> ConcreteBuildRecipe:
     """Emit executable commands; caller stages returned sources in a fresh root.
 
@@ -297,6 +303,10 @@ def prepare_cpython_build_recipe(
     the original preparation as a base binding; new solver tables/main are an
     explicit source-profile version and cannot pass legacy runtime DTO gates.
     """
+    review_selected = (configuration_outputs is not None, review_manifest_bytes is not None,
+                       expected_review_manifest_sha256 is not None)
+    if any(review_selected) and not all(review_selected):
+        _fail("configuration_review_incomplete")
     if (producer_lifecycle_profile is not None
             and (type(producer_lifecycle_profile) is not str
                  or producer_lifecycle_profile not in {FIXED_PRODUCER_LIFECYCLE_PROFILE,
@@ -511,14 +521,39 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
                   *("@work/objects/" + u["object"] for u in target), "@work/" + library,
                   "-lm", "-lpthread", "-lc"], executable, executable=True),
     ]
+    stages = [{"stage": name, "commands": commands} for name, commands in (
+        ("configure", configure_commands), ("freeze", freeze_commands),
+        ("compile", compile_commands), ("link", link_commands))]
+    review_metadata = {}
+    if all(review_selected):
+        compile_roles = {"@source/configuration/probe.c": "configuration"}
+        for group, role in ((units, "core"), (native, "builtin"),
+                            (freezer, "freezer"), (target, "target")):
+            for unit in group:
+                compile_roles["@source/" + unit["source"]] = (
+                    "builtin" if unit.get("compile_role") == "builtin" or "module" in unit else role
+                )
+        binding = bind_reviewed_cpython_configuration(
+            configuration_outputs=configuration_outputs,
+            review_manifest_bytes=review_manifest_bytes,
+            expected_review_manifest_sha256=expected_review_manifest_sha256,
+            source_inventory_sha256=expected_source_inventory_sha256,
+            zig_manifest_sha256=_sha(zig_manifest_bytes), configuration_header=configuration_header,
+            stages=stages, compile_roles=compile_roles,
+        )
+        for path, raw in binding.sources:
+            if path in sources or path in inventory:
+                _fail("configuration_review_overlap")
+            sources[path] = raw
+            inventory[path] = _record(path, raw)
+        review_metadata = {"configuration_review_manifest_sha256": binding.manifest_sha256,
+                           "reviewed_concrete_stages_sha256": binding.concrete_stages_sha256}
     recipe = canonical({"schema": RECIPE_V3_SCHEMA, "preparation_sha256": preparation.sha256,
                         "inputs": {"source": sorted(inventory.values(), key=lambda r: r["path"]),
                                    "toolchain": zig},
                         "environment": {"LANG": "C", "LC_ALL": "C", "TZ": "UTC",
                                         "SOURCE_DATE_EPOCH": "0"},
-                        "stages": [{"stage": name, "commands": commands} for name, commands in (
-                            ("configure", configure_commands), ("freeze", freeze_commands),
-                            ("compile", compile_commands), ("link", link_commands))]})
+                        "stages": stages})
     # Reuse the execution mechanism's complete prospective dependency validator.
     _recipe(recipe, _sha(recipe), version3=True)
     manifest = canonical({"schema": "lunar-cpython-zig-concrete-build-recipe-v1", "solver": solver,
@@ -528,7 +563,10 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
                           "zig_manifest_sha256": ZIG_MANIFEST_SHA256, "runtime_closure_sha256": closure_sha,
                           **({"producer_lifecycle_profile": producer_lifecycle_profile}
                              if producer_lifecycle_profile is not None else {}),
-                          "configuration_route": "independently-pinned-config-header-and-compiled-probe",
+                          "configuration_route": ("independent-eight-output-review-and-compiled-probe"
+                                                  if review_metadata else
+                                                  "independently-pinned-config-header-and-compiled-probe"),
+                          **review_metadata,
                           "autoconf_executed": False, "host_python_used": False,
                           "toolchain_files": len(zig), "freezer_jobs": len(tasks),
                           "core_objects": len(units), "native_objects": len(native),

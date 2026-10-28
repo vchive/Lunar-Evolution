@@ -27,10 +27,13 @@ from .external_worker_native_vault import (
     retain_installed_native_anchor,
 )
 from .external_worker_origin import WorkerOriginContext, WorkerOriginKey
+from .external_worker_whole_scope_vault import retain_installed_whole_scope_reference
 from .external_worker_wrapper import WorkerWrapperConfig, validate_worker_request, worker_json
 from .native_bootstrap import NativeBootstrapArtifact
 from .native_guardian_registration import NativeGuardianCustodyRequest
 from .native_trusted_attempt import run_native_trusted_attempt
+from .native_whole_scope import NativeWholeScopeOwner
+from .native_whole_scope_custody import CUSTODY_V3_PROFILE
 from .producer_bootstrap import build_trusted_bootstrap_launch
 from .producer_launcher import (
     ProducerLaunchAttestation,
@@ -90,7 +93,9 @@ class WorkerInstalledNativeBridge:
 
     def __init__(self, launch: InstalledWorkerNativeLaunch, *, installation: InstalledWorkerNativeVault,
                  key: WorkerOriginKey, profile_sha256: str,
-                 guardian_custody: NativeGuardianCustodyRequest | None = None) -> None:
+                 guardian_custody: NativeGuardianCustodyRequest | None = None,
+                 whole_scope: NativeWholeScopeOwner | None = None,
+                 whole_scope_profile_sha256: str | None = None) -> None:
         types = (("context", WorkerOriginContext), ("request", SolverRequest),
                  ("mapping", WorkerNativeTaskMapping), ("intent", ProducerLaunchIntent),
                  ("attestation", ProducerLaunchAttestation), ("artifact", NativeBootstrapArtifact))
@@ -99,7 +104,10 @@ class WorkerInstalledNativeBridge:
                 or type(installation) is not InstalledWorkerNativeVault or type(key) is not WorkerOriginKey
                 or not all(isinstance(path, Path) for path in (launch.workspace, launch.producer_root))
                 or (guardian_custody is not None
-                    and type(guardian_custody) is not NativeGuardianCustodyRequest)):
+                    and type(guardian_custody) is not NativeGuardianCustodyRequest)
+                or (whole_scope is None) != (whole_scope_profile_sha256 is None)
+                or (whole_scope is not None and (type(whole_scope) is not NativeWholeScopeOwner
+                                                or guardian_custody is not None))):
             raise WorkerNativeBridgeError("worker_native_bridge_originals_required")
         verify_producer_launch_attestation(launch.intent, launch.attestation)
         self._launch = launch
@@ -107,6 +115,9 @@ class WorkerInstalledNativeBridge:
         self._key = key
         self._profile = profile_sha256
         self._guardian_custody = guardian_custody
+        self._whole_scope = whole_scope
+        self._whole_scope_profile = whole_scope_profile_sha256
+        self._whole_scope_origin = None
         self._baseline = launch.snapshot()
         self._installation_baseline = installation.canonical_bytes
         self._attempted = False
@@ -135,6 +146,44 @@ class WorkerInstalledNativeBridge:
                 self._installation, key=self._key, profile_sha256=self._profile,
                 private_roots=(directory,),
             )
+        if self._whole_scope is not None:
+            self._check_whole_scope()
+
+    def _check_whole_scope(self) -> None:
+        """Bind an installed original; never acquire privileges or a new scope."""
+        try:
+            scope, launch = self._whole_scope, self._launch
+            profile = self._whole_scope_profile
+            if (type(scope) is not NativeWholeScopeOwner or scope._closed or scope._released or scope._finished
+                    or type(profile) is not str or len(profile) != 64
+                    or any(c not in "0123456789abcdef" for c in profile)
+                    or scope._profile_sha256 != profile
+                    or launch.artifact.descriptor.platform_execution_mode != "linux-fd-bound"
+                    or launch.artifact.artifact_sha256 != scope._profile["bootstrap_sha256"]
+                    or launch.intent.journal_id != scope.journal_id
+                    or (scope._final_intent is not None and scope._final_intent != launch.intent.digest())):
+                raise ValueError
+            scope._check_published_grants()
+            scope._remaining()
+            child = scope.original_custody_owner
+            if child is None or child.profile != CUSTODY_V3_PROFILE:
+                raise ValueError
+            child._check()
+            origin = (scope, child, profile, scope.journal_id, child._path)
+            if self._whole_scope_origin is None:
+                self._whole_scope_origin = (origin, scope.deadline_ns)
+            elif (origin != self._whole_scope_origin[0]
+                  or scope.deadline_ns > self._whole_scope_origin[1]):
+                raise ValueError
+            # The native runner may only shorten this original upper bound.
+            # The retainer later pins the precise admitted nanosecond deadline.
+            check_installed_vault_separation(
+                self._installation, key=self._key, profile_sha256=self._profile,
+                private_roots=tuple(Path(path) for path in (*scope._profile["paths"], child._path)),
+            )
+            scope._remaining()
+        except Exception:  # noqa: BLE001 - fixed refusal at the trusted scope boundary.
+            raise WorkerNativeBridgeError("worker_native_bridge_whole_scope_refused") from None
 
     def check_wrapper(self, config: WorkerWrapperConfig) -> None:
         self._check()
@@ -200,6 +249,14 @@ class WorkerInstalledNativeBridge:
                             control, value, "installed_worker_guardian_custody",
                         ),
                     )
+                if self._whole_scope is not None:
+                    retain_installed_whole_scope_reference(
+                        self._installation, self._whole_scope, writer.anchor, lookup,
+                        native_context=context, key=self._key, expected_context=launch.context,
+                        expected_mapping=launch.mapping, expected_profile_sha256=self._profile,
+                        expected_whole_scope_profile_sha256=self._whole_scope_profile,
+                        check=lambda: _check_deadline(control, value, "installed_worker_whole_scope_custody"),
+                    )
                 self._check()
                 _check_deadline(control, value, "installed_worker_native_after_custody")
 
@@ -211,6 +268,7 @@ class WorkerInstalledNativeBridge:
                 registered_observer=durable_registered,
                 **({"guardian_custody": self._guardian_custody}
                    if self._guardian_custody is not None else {}),
+                **({"whole_scope": self._whole_scope} if self._whole_scope is not None else {}),
             )
         finally:
             resolver.close()

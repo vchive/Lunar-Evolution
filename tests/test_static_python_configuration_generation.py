@@ -74,6 +74,7 @@ def test_actual_inert_configure_process_and_original_output_readback(configure_c
     result = generation.run_cpython_configuration(**configure_case)
     assert result.configuration_header == b"inert-pyconfig.h\n"
     assert result.makefile == b"inert-Makefile\n"
+    assert result.output_bytes == tuple((name, ("inert-" + name + "\n").encode()) for name in generation.OUTPUTS)
     observation = json.loads(result.observation_bytes)
     root = configure_case["workspace"]
     assert observation["status"] == "observed" and observation["reason"] is None

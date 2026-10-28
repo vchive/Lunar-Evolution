@@ -527,6 +527,7 @@ def _acquire_whole_scope_custody(scope, *, profile=CUSTODY_PROFILE):
 
     _profile_shape(profile)
     if (type(scope) is not NativeWholeScopeOwner or scope._closed or scope._published is None
+            or scope._successor_session is not None
             or scope._channels_prepared or scope._final_intent is not None or scope._custody_owner is not None):
         _fail("owner_invalid")
     owner = NativeWholeScopeCustodyOwner(_TOKEN, scope, profile=profile)

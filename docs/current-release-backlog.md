@@ -1,3 +1,29 @@
+<!-- configuration-successor-latest:start -->
+## 当前执行点：配置审阅、v3 worker vault与独立v4软件已集中回归（2026-10-28）
+
+权威工作区与证据以 `HANDOFF.md` 最上方批次为准。PR #190仍draft、未合main。
+本批完成八份原configure输出与外部独立review pin绑定、仅v3的原worker reference
+vault，以及独立默认关闭v4 C→B→T/C→Q→S/G/R和原wait/creator/完整ACK链。
+默认/v1/v2/v3不会自动升级；worker v3 vault明确拒绝v4。
+
+40文件首次集中Linux回归1407 unique：1240 pass/6fail/118error/43skip；
+随后只补失败影响域，保留全部原失败。新增receiver scope drift节点后累计1408，
+最后ownership43/43实跑通过，Darwin原平台skip1/1实际通过。按唯一节点最新结果
+1366 pass/42 root前提skip，不相加重复节点、不声称同一最终树全量重跑。
+完整source前后、Git blob/mode、worker collection/唯一执行/JUnit与module origins
+按各冻结树独审；这些来源检查不等于immutable build custody或部署验收。
+
+| 优先级 | 本批已实现并验证的软件 | 尚未关闭 |
+| --- | --- | --- |
+| P0 | 旧d7935edd唯一Darwin inert mixed1/1通过244.435秒，600秒/零retry | 新提交唯一mixed、完整CI/main；不重复旧HEAD |
+| P1 | 八输出完整pin、有限配置语义、实际recipe graph外部review绑定和四API转交；116节点通过 | 真实外部审阅、accepted input/build custody、完整CPython静态runtime/solver/生产CLI |
+| P2 | v3原reference同步pre-gate vault；独立v4 Q实际拥有并wait S/G/R，C实际wait B/Q，原R creator与完整ACK/terminal验证 | v4严格总96FD含临时pathchain、v4 worker vault组合、WQ06写能力封闭/原monitor join、真实root/U/cgroup/独立账户/blocked-storage部署验收 |
+
+软件缺口和环境前提分开保留。`production_admission=false`、
+`online_publication=false`；不运行模型/WebAgent/远程或公司evaluator/真实solver，
+不读密钥、活进程argv/environment；原benchmark只读。以下均为历史快照。
+<!-- configuration-successor-latest:end -->
+
 <!-- completion-fresh-batch:start -->
 ## 当前执行点：原生 whole-scope 软件已落地，集中回归后待 mixed / 部署验收（2026-10-28）
 

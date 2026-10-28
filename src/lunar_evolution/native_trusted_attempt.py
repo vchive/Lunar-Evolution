@@ -38,6 +38,7 @@ from .native_bootstrap import (
     load_native_bootstrap_artifact,
     native_bootstrap_command,
     native_whole_scope_bootstrap_command,
+    native_whole_scope_successor_bootstrap_command,
 )
 from .native_deadline_binding import (
     NativeDeadlineBindingError,
@@ -1378,7 +1379,10 @@ def run_native_trusted_attempt(
                     grant_object_binding=LINUX_GRANT_OBJECT_BINDING if grant_owner is not None else None,
                     guardian_finish_fd=guardian_finish_write if grant_owner is not None and whole_scope is None else None,
                     guardian_ack_fd=guardian_ack_read if grant_owner is not None and whole_scope is None else None,
-                ) if whole_scope is None else native_whole_scope_bootstrap_command(
+                ) if whole_scope is None else (
+                    native_whole_scope_successor_bootstrap_command
+                    if whole_scope._successor_session is not None else native_whole_scope_bootstrap_command
+                )(
                     pair.bootstrap.executable, control_fd=control_read, gate_fd=gate_read,
                     frame_fd=frame_write, controller_lifeline_fd=lifeline_read,
                     scope_enrollment_fd=whole_scope.enrollment_fd,
@@ -1699,9 +1703,12 @@ def run_native_trusted_attempt(
                     if remaining <= _CLEANUP_RESERVE_SECONDS:
                         raise NativeTrustedAttemptError("native_trusted_attempt_wall_timeout")
                     try:
-                        exit_code = process.wait(
-                            timeout=min(0.05, remaining)
-                        )
+                        if whole_scope is not None and whole_scope._successor_session is not None:
+                            exit_code = whole_scope.wait_original_bootstrap(timeout=min(0.05, remaining))
+                        else:
+                            exit_code = process.wait(
+                                timeout=min(0.05, remaining)
+                            )
                         break
                     except subprocess.TimeoutExpired:
                         continue

@@ -408,6 +408,7 @@ def native_input_helper(tmp_path_factory):
     assert {path.name for path in paths} == {
         "native_bootstrap.c", "native_producer_isolation.h", "native_whole_scope_bootstrap.h",
         "native_whole_scope_platform.h", "native_whole_scope_protocol.h",
+        "native_whole_scope_successor_protocol.h", "native_whole_scope_successor_bootstrap.h",
     }
     directory = tmp_path_factory.mktemp("fixed-u-input-native")
     source = directory / "input.c"

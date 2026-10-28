@@ -28,6 +28,8 @@ _SOURCE_NAMES = (
     "native_whole_scope.c",
     "native_whole_scope_protocol.h",
     "native_whole_scope_platform.h",
+    "native_whole_scope_successor_protocol.h",
+    "native_whole_scope_successor.h",
 )
 
 

@@ -68,6 +68,7 @@ class GeneratedConfiguration:
     configured_closure_verified: bool = False
     production_admission: bool = False
     online_publication: bool = False
+    output_bytes: tuple[tuple[str, bytes], ...] = ()
 
 
 def _fail(reason: str) -> None:
@@ -196,6 +197,7 @@ def run_cpython_configuration(
                 "target_execution_observation": "not-observed", **_FALSE}
     reason = None
     header = makefile = b""
+    output_bytes: tuple[tuple[str, bytes], ...] = ()
     try:
         _write_once(workspace / "source-inventory.json", source_inventory_bytes)
         _write_once(workspace / "helper-inventory.json", helper_inventory_bytes)
@@ -259,8 +261,9 @@ def run_cpython_configuration(
                 _fail("output_readback")
             evidence["outputs"].append(record)
         retained = {row["path"]: row for row in evidence["outputs"]}
-        header = _read_pin(output_root, retained["pyconfig.h"], checkpoint, retain=True)
-        makefile = _read_pin(output_root, retained["Makefile"], checkpoint, retain=True)
+        output_bytes = tuple((name, _read_pin(output_root, retained[name], checkpoint, retain=True))
+                             for name in OUTPUTS)
+        header, makefile = dict(output_bytes)["pyconfig.h"], dict(output_bytes)["Makefile"]
         verify_inputs()
         checkpoint()
         evidence["status"] = "observed"
@@ -283,4 +286,4 @@ def run_cpython_configuration(
         _fail("observation_write")
     if reason is not None:
         _fail(reason)
-    return GeneratedConfiguration(header, makefile, raw)
+    return GeneratedConfiguration(header, makefile, raw, output_bytes=output_bytes)
