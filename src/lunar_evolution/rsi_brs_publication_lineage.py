@@ -100,7 +100,9 @@ _ORIGINAL_PROVENANCE_CODES = tuple(
                            "reserved_brs_policy_projection")),
         (runtime_tree, ("_canonical", "_bounded_exact_json_snapshot", "_json_fast_encoder_current")),
         (admission_store, ("_staging_identity_helpers_current", "_admission_checkpoint_helpers_current",
-                           "_admission_checkpoint_projection")),
+                           "_admission_checkpoint_projection", "_checkpoint_projection_helpers_current",
+                           "_checkpoint_projection_constant", "_checkpoint_projection_key",
+                           "_retain_checkpoint_projection", "_build_checkpoint_projection_pins")),
     ) for name in names
 )
 _ORIGINAL_RUNTIME_TREE_JSON_LIMITS = tuple((name, getattr(runtime_tree, name)) for name in (
@@ -112,7 +114,12 @@ _ORIGINAL_ADMISSION_CHECKPOINT_ALIASES = tuple(
         "_ADMISSION_CHECKPOINT_METHOD_PINS", "_ADMISSION_CHECKPOINT_PROJECTION",
         "_ADMISSION_CHECKPOINT_PROJECTION_CODE", "_ADMISSION_CHECKPOINT_FUNCTION_PINS",
         "_ADMISSION_CHECKPOINT_SHA256", "_ADMISSION_CHECKPOINT_ENCODER_TYPE",
-        "_ADMISSION_CHECKPOINT_ENCODER_MODULE", "_ADMISSION_CHECKPOINT_ENCODER_PINS"))
+        "_ADMISSION_CHECKPOINT_ENCODER_MODULE", "_ADMISSION_CHECKPOINT_ENCODER_PINS",
+        "_CheckpointHistoryRowProjection", "_HISTORY_PROJECTION_TYPE", "_HISTORY_PROJECTION_GUARD",
+        "_HISTORY_PROJECTION_GUARD_CODE",
+        "_HISTORY_PROJECTION_FUNCTION_PINS", "_HISTORY_PROJECTION_VALUE_PINS",
+        "_HISTORY_PROJECTION_ORIGINAL_FUNCTION_PINS", "_HISTORY_PROJECTION_ORIGINAL_VALUE_PINS",
+        "_HISTORY_PROJECTION_CACHE_MAX_ENTRIES", "_HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS"))
 _ORIGINAL_READY_POLICY_CLOSURE = (
     ready_policy.rejection_ready_capture_policy.__closure__,
     tuple(cell.cell_contents for cell in ready_policy.rejection_ready_capture_policy.__closure__),
@@ -944,14 +951,23 @@ def _policy() -> dict[str, Any]:
         (rsi_store._staging_identity_helpers_current, rsi_store),
         (rsi_store._admission_checkpoint_helpers_current, rsi_store),
         (rsi_store._admission_checkpoint_projection, rsi_store),
+        *((getattr(rsi_store, name), rsi_store) for name in (
+            "_checkpoint_projection_helpers_current", "_checkpoint_projection_constant",
+            "_checkpoint_projection_key", "_retain_checkpoint_projection", "_build_checkpoint_projection_pins")),
+        (rsi_store._CheckpointHistoryRowProjection.__init__, rsi_store),
         (rsi_store.RSILedger.read_only_observations, contextlib),
         (rsi_store.RSILedger.read_only_observations.__wrapped__, rsi_store),
+        (rsi_store.RSILedger._checkpoint_projection_scope, contextlib),
+        (rsi_store.RSILedger._checkpoint_projection_scope.__wrapped__, rsi_store),
         *((getattr(rsi_store.RSILedger, name), rsi_store) for name in (
             "_connect", "_checkpoint_python_references", "_checkpoint_digest", "_checkpoint_reference_rows_tx",
+            "_checkpoint_projection_cache", "_controller_checkpoint_history_rows_tx",
             "_python_admission_row", "controller_lock_held", "_assert_controller_lock",
             "_validate_python_producer_staging_history_tx")),
         (rsi_controller.RSILearningController._python_admission_brs_observations, contextlib),
         (rsi_controller.RSILearningController._python_admission_brs_observations.__wrapped__, rsi_controller),
+        (rsi_controller.RSILearningController._python_admission_brs_full_gate_scope, contextlib),
+        (rsi_controller.RSILearningController._python_admission_brs_full_gate_scope.__wrapped__, rsi_controller),
         (rsi_controller.RSILearningController._python_admission_flow_payload, rsi_controller),
         (rsi_controller.RSILearningController._python_admission_assert_brs_wave, rsi_controller),
         (rsi_controller._record_digest, rsi_controller),
@@ -1210,7 +1226,13 @@ def _policy() -> dict[str, Any]:
                                              ("rejection", producer_bundle_rejection),
                                              ("receipts", producer_bundle_receipts))},
                 "native_intent": component_fingerprint(producer_bundle_staging.verify_native_publication_intent),
-                "final_readers": {name: [component_fingerprint(function, config={} if module is contextlib else None)
+                # Frozen dataclass initialization captures builtins.object, not
+                # immutable JSON configuration. The finite reserved graph above
+                # independently pins its code, defaults and original closure.
+                "final_readers": {name: [component_fingerprint(function, config={} if (
+                                            module is contextlib
+                                            or function is rsi_store._CheckpointHistoryRowProjection.__init__
+                                        ) else None)
                                          for function, module in entries if module is canonical]
                                   for name, canonical in (("ledger", rsi_store), ("controller", rsi_controller),
                                                           ("contextmanager", contextlib))},

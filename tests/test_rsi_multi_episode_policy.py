@@ -29,7 +29,7 @@ def _fixture(tmp_path, monkeypatch):
     if len(str(candidate)) > 96:
         parent = next(
             str(path)
-            for path in (Path("/private/tmp"), Path("/var/tmp"), Path("/tmp"))
+            for path in (Path("/private/tmp"), Path("/tmp"), Path("/var/tmp"))
             if path.is_dir() and not path.is_symlink()
         )
         candidate = Path(tempfile.mkdtemp(prefix="lce-mep-policy-", dir=parent))

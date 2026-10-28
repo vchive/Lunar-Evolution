@@ -2457,7 +2457,13 @@ class RSILearningController:
         scope = (wave, handoff, {})
         self._python_admission_brs_local.full_gate_scope = scope
         try:
-            yield
+            ledger = getattr(self, "ledger", None)
+            # Keep minimal compatibility fixtures on their original path; real
+            # owners use the exact ledger and one bounded publication operation.
+            projection_scope = (ledger._checkpoint_projection_scope()
+                                if type(ledger) is RSILedger else nullcontext())
+            with projection_scope:
+                yield
         finally:
             if getattr(self._python_admission_brs_local, "full_gate_scope", None) is scope:
                 self._python_admission_brs_local.full_gate_scope = None

@@ -25,6 +25,14 @@ from tools.static_python_rsi_fixture.dependency_capture import (
 from tools.static_python_rsi_fixture.execution_backend import _recipe
 from tools.static_python_rsi_fixture.installation_profile import RSIProfilePreparation
 from tools.static_python_rsi_fixture.runtime_closure import FixedRuntimeClosure, canonical
+from tools.static_python_rsi_fixture.standalone_linker import (
+    RECIPE_SCHEMA as STANDALONE_RECIPE_SCHEMA,
+)
+from tools.static_python_rsi_fixture.standalone_linker import (
+    StandaloneLinkerError,
+    _standalone_link,
+    validate_standalone_recipe_profile,
+)
 
 _SCHEMA = "lunar-cpython-compiler-linker-dependency-recipe-v1"
 _FALSE_CLAIMS = {
@@ -55,6 +63,16 @@ def _explicit_support_link(command: dict) -> bool:
 
 def _link(command: dict) -> tuple[str, list[str]] | None:
     argv = command["argv"]
+    standalone = None
+    malformed = False
+    try:
+        standalone = _standalone_link(command)
+    except StandaloneLinkerError:
+        malformed = True
+    if malformed:
+        _fail("standalone_shape")
+    if standalone is not None:
+        return standalone
     if argv[:2] != ["@toolchain/zig", "cc"] or "-c" in argv:
         return None
     prefix = ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-static", "-o"]
@@ -113,13 +131,18 @@ def _capture_plan(recipe: dict, *, instrumented: bool) -> tuple[list[dict], list
                 continue
             target, inputs = link
             depfile = "link-dependencies/" + target.removeprefix("@work/") + ".d"
-            suffix = ["-Xlinker", "--dependency-file", "-Xlinker", "@work/" + depfile]
+            standalone = _standalone_link(command) is not None
+            suffix = (["--dependency-file", "@work/" + depfile] if standalone else
+                      ["-Xlinker", "--dependency-file", "-Xlinker", "@work/" + depfile])
             expected = {"path": depfile, "max_size": MAX_DEPFILE_BYTES, "executable": False}
             if instrumented:
-                if command["argv"][-4:] != suffix or expected not in command["outputs"]:
+                if command["argv"][-len(suffix):] != suffix or expected not in command["outputs"]:
                     _fail("link_capture_missing")
-                tail = [] if _explicit_support_link(command) else command["argv"][command["argv"].index("-lm") + 3:-4]
+                tail = ([] if standalone or _explicit_support_link(command) else
+                        command["argv"][command["argv"].index("-lm") + 3:-4])
             else:
+                if standalone:
+                    _fail("standalone_requires_capture")
                 tail = [] if _explicit_support_link(command) else command["argv"][command["argv"].index("-lm") + 3:]
             if tail:
                 _fail("link_shape")
@@ -169,6 +192,8 @@ def prepare_cpython_link_dependency_recipe(
 def validate_dependency_capture_plan(
     recipe_bytes: bytes, *, expected_recipe_sha256: str,
     manifest_bytes: bytes, expected_manifest_sha256: str,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
 ) -> tuple[dict, tuple[str, ...], tuple[str, ...]]:
     """Bind the exact capture commands and declared outputs before dispatch."""
     recipe = _recipe(recipe_bytes, expected_recipe_sha256, version3=True)
@@ -182,16 +207,22 @@ def validate_dependency_capture_plan(
         manifest = json.loads(manifest_bytes)
         explicit_schema = "lunar-cpython-explicit-support-link-recipe-v1"
         explicit = type(manifest) is dict and manifest.get("schema") == explicit_schema
+        standalone = type(manifest) is dict and manifest.get("schema") == STANDALONE_RECIPE_SCHEMA
         expected_keys = {"schema", "recipe_sha256", "base_recipe_sha256", "base_manifest_sha256",
                          "compilations", "links", *_FALSE_CLAIMS}
         if explicit:
             expected_keys.add("support_bundle_sha256")
-        actual_modes = [_explicit_support_link(command) for stage in recipe["stages"]
+        if standalone:
+            expected_keys.add("standalone_profile_sha256")
+        actual_modes = [("standalone" if _standalone_link(command) is not None else
+                         "explicit" if _explicit_support_link(command) else "implicit")
+                        for stage in recipe["stages"]
                         for command in stage["commands"] if _link(command) is not None]
+        expected_mode = "standalone" if standalone else "explicit" if explicit else "implicit"
         invalid = (type(manifest) is not dict or set(manifest) != expected_keys
                    or canonical(manifest) != manifest_bytes
-                   or manifest["schema"] not in {_SCHEMA, explicit_schema}
-                   or actual_modes != [explicit, explicit]
+                   or manifest["schema"] not in {_SCHEMA, explicit_schema, STANDALONE_RECIPE_SCHEMA}
+                   or actual_modes != [expected_mode, expected_mode]
                    or manifest["recipe_sha256"] != expected_recipe_sha256
                    or canonical(manifest["compilations"]) != canonical(compilations)
                    or canonical(manifest["links"]) != canonical(links)
@@ -199,8 +230,19 @@ def validate_dependency_capture_plan(
                    or any(type(manifest[key]) is not str or len(manifest[key]) != 64
                           or any(c not in "0123456789abcdef" for c in manifest[key])
                           for key in ("base_recipe_sha256", "base_manifest_sha256",
-                                      *(["support_bundle_sha256"] if explicit else []))))
-    except (ValueError, TypeError, UnicodeError, RecursionError):
+                                      *(["support_bundle_sha256"] if explicit else []),
+                                      *(["standalone_profile_sha256"] if standalone else []))))
+        if not invalid and standalone:
+            if manifest["standalone_profile_sha256"] != expected_standalone_profile_sha256:
+                invalid = True
+            else:
+                validate_standalone_recipe_profile(
+                    recipe, profile_bytes=standalone_profile_bytes,
+                    expected_profile_sha256=expected_standalone_profile_sha256,
+                )
+        elif standalone_profile_bytes is not None or expected_standalone_profile_sha256 is not None:
+            invalid = True
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
         invalid = True
     if invalid:
         _fail("manifest")
@@ -268,11 +310,15 @@ def compare_linker_dependencies(
     output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
     dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
     current_output_root: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
 ) -> LinkerDependencyComparison:
     """Compare retained linker reports; unresolved driver/cache inputs refuse."""
     recipe, _, depfiles = validate_dependency_capture_plan(
         recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
     )
     outputs = _inventory(output_inventory_bytes, expected_output_inventory_sha256)
     roots = _roots(source_root, toolchain_root, work_root)
@@ -316,7 +362,8 @@ def compare_linker_dependencies(
                     refs.append("@" + role + "/" + relative)
                 if not set(explicit).issubset(refs):
                     _fail("explicit_input_missing")
-                if _explicit_support_link(command) and set(explicit) != set(refs):
+                if ((_explicit_support_link(command) or _standalone_link(command) is not None)
+                        and set(explicit) != set(refs)):
                     _fail("explicit_support_input_set")
                 compared.append({"stage": stage["stage"], "command_index": index,
                                  "target": target, "depfile_sha256": _sha(raw),

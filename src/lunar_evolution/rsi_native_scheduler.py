@@ -20,6 +20,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+from . import native_trusted_scheduler as _native_scheduler
 from ._candidate_workspace_io import DirectoryChain
 from .algorithm import AlgorithmProblemContract, EvaluationReport
 from .automatic_solve_lifecycle import (
@@ -41,6 +42,9 @@ from .native_trusted_output import NativeTrustedOutputPreparation
 from .native_trusted_scheduler import (
     NativeTrustedProducerRecovery,
     NativeTrustedProducerRun,
+    _native_handoff_evidence,
+    _prepublication_evidence,
+    _run_native_trusted_producer,
     recover_native_trusted_producer,
     run_native_trusted_producer,
     run_native_trusted_producer_outcome,
@@ -186,13 +190,13 @@ class NativeRSISchedulerContext:
         [ProducerExecutionReceipt, NativeTrustedOutputPreparation], PythonProducerAdmissionHandoffSidecar,
     ] | None = None
     live_modules_sink: FixedPythonLiveSinkRequest | None = None
+    python_handoff_after_native_execution: Callable[
+        [NativeTrustedProducerRun], PythonProducerAdmissionHandoffSidecar,
+    ] | None = None
     _live_modules_sink_pin: _FixedPythonLiveSinkPin | None = dataclass_field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        if self.python_handoff_after_execution is not None and (
-            not callable(self.python_handoff_after_execution) or self.strategy is None
-        ):
-            _fail("python_handoff_supplier_invalid")
+        NativeRSISchedulerContext._python_handoff_suppliers(self)
         if not isinstance(self.intent, ProducerLaunchIntent):
             _fail("intent_invalid")
         if not isinstance(self.attestation, ProducerLaunchAttestation):
@@ -239,6 +243,18 @@ class NativeRSISchedulerContext:
             except NativeFixedLiveSinkError as exc:
                 raise NativeRSISchedulerProviderError("rsi_native_scheduler_live_modules_sink_invalid") from exc
             object.__setattr__(self, "_live_modules_sink_pin", pin)
+
+    def _python_handoff_suppliers(self) -> tuple:
+        legacy = getattr(self, "python_handoff_after_execution", None)
+        native = getattr(self, "python_handoff_after_native_execution", None)
+        if legacy is not None and native is not None:
+            _fail("python_handoff_supplier_conflict")
+        if any(value is not None and (not callable(value) or self.strategy is None)
+               for value in (legacy, native)):
+            _fail("python_handoff_supplier_invalid")
+        if native is not None and self.live_modules_sink is None:
+            _fail("python_native_sink_required")
+        return legacy, native
 
     def _assert_live_modules_sink(self) -> FixedPythonLiveSinkRequest | None:
         pin = self._live_modules_sink_pin
@@ -950,8 +966,8 @@ class NativeRSISchedulerProvider:
         stay scoped to this single dispatch; no restart or legacy adoption occurs.
         """
         self._refuse_brs_worker_publication()
-        supplier = getattr(self.context, "python_handoff_after_execution", None)
-        if supplier is None:
+        supplier, native_supplier = NativeRSISchedulerContext._python_handoff_suppliers(self.context)
+        if supplier is None and native_supplier is None:
             return {}
         controller = self._python_admission_controller
         if controller is None:
@@ -984,6 +1000,9 @@ class NativeRSISchedulerProvider:
         observer_called = False
 
         def revalidate(stage: str) -> None:
+            current_suppliers = NativeRSISchedulerContext._python_handoff_suppliers(self.context)
+            if current_suppliers[0] is not supplier or current_suppliers[1] is not native_supplier:
+                _fail("python_handoff_supplier_changed")
             if self._python_admission_controller is not controller:
                 _fail("python_admission_controller_changed")
             if stage == "rsi_native_python_scheduler_return" and admitted is None:
@@ -1001,19 +1020,24 @@ class NativeRSISchedulerProvider:
                 if admitted is not None:
                     admitted.revalidate(stage)
 
-        def obtain_handoff(receipt, output):
+        def obtain_handoff(receipt, output, native_run=None):
             nonlocal supplied, output_plan, supplier_called
             if supplier_called:
                 _fail("python_handoff_supplier_replayed")
             supplier_called = True
             revalidate("rsi_native_python_handoff")
-            value = supplier(receipt, output)
+            value = (supplier(receipt, output) if native_supplier is None else native_supplier(native_run))
             if type(value) is not PythonProducerAdmissionHandoffSidecar:
                 _fail("python_handoff_supplier_invalid")
             supplied = value
             output_plan = output.admission_plan
             revalidate("rsi_native_after_python_handoff")
             return value
+
+        def obtain_native_handoff(run):
+            if type(run) is not NativeTrustedProducerRun:
+                _fail("python_native_run_invalid")
+            return obtain_handoff(run.receipt, run.output, run)
 
         def pin_prepared(journal: ProducerBundlePublicationJournal) -> None:
             nonlocal admitted, observer_called
@@ -1045,10 +1069,13 @@ class NativeRSISchedulerProvider:
                 revalidate("rsi_native_after_python_pin")
 
         hooks = {
-            "python_handoff_after_execution": obtain_handoff,
             "prepared_observer": pin_prepared,
             "evidence_revalidator": revalidate,
         }
+        if native_supplier is None:
+            hooks["python_handoff_after_execution"] = obtain_handoff
+        else:
+            hooks["python_handoff_after_native_execution"] = obtain_native_handoff
         if lineage_owner is not None:
             hooks["producer_multi_episode_publication"] = True
             hooks["lineage_owner"] = lineage_owner
@@ -1683,6 +1710,7 @@ class NativeRSISchedulerProvider:
         cannot silently switch publication or request destinations.
         """
         context = self.context
+        supplier, native_supplier = NativeRSISchedulerContext._python_handoff_suppliers(context)
         sink_projection = NativeRSISchedulerContext._live_modules_sink_projection(context)
         strategy_fingerprint = _strategy_fingerprint(context.strategy)
         try:
@@ -1723,10 +1751,25 @@ class NativeRSISchedulerProvider:
         if context.failure_ledger is not None:
             self.assert_failure_ledger(context.failure_ledger)
             projection["failure_ledger"] = dict(self._failure_ledger_identity)
-        if context.python_handoff_after_execution is not None:
+        if supplier is not None:
             projection["python_handoff_after_execution_sha256"] = component_fingerprint(
-                context.python_handoff_after_execution,
+                supplier,
             )
+        if native_supplier is not None:
+            if any(getattr(_native_scheduler, name) is not original for name, original in (
+                ("_native_handoff_evidence", _native_handoff_evidence),
+                ("_prepublication_evidence", _prepublication_evidence),
+                ("_run_native_trusted_producer", _run_native_trusted_producer),
+            )):
+                _fail("python_native_handoff_policy_changed")
+            projection["python_handoff_after_native_execution_sha256"] = component_fingerprint(native_supplier)
+            projection["python_native_handoff_dependencies"] = {
+                "evidence": component_fingerprint(_native_handoff_evidence),
+                "preparation_evidence": component_fingerprint(_prepublication_evidence),
+                "scheduler": component_fingerprint(_run_native_trusted_producer),
+                "supplier_selection": component_fingerprint(NativeRSISchedulerContext._python_handoff_suppliers),
+                "late_join": component_fingerprint(NativeRSISchedulerProvider._python_publication_join),
+            }
         return projection
 
     def __call__(
@@ -1756,7 +1799,8 @@ class NativeRSISchedulerProvider:
             if (type(controller) is not RSILearningController
                     or controller.producer_multi_episode_publication is not True
                     or controller.producer_child_execution is not True
-                    or context.python_handoff_after_execution is None
+                    or not any(value is not None for value in
+                               NativeRSISchedulerContext._python_handoff_suppliers(context))
                     or controller.ledger is not context.failure_ledger):
                 _fail("rejection_configuration_invalid")
             self.assert_rejection_ledger(context.failure_ledger)

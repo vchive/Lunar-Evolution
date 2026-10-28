@@ -106,7 +106,7 @@ def _bounded_fixture_root(candidate: Path) -> Path:
         return candidate
     parent = next(
         str(path)
-        for path in (Path("/private/tmp"), Path("/var/tmp"), Path("/tmp"))
+        for path in (Path("/private/tmp"), Path("/tmp"), Path("/var/tmp"))
         if path.is_dir() and not path.is_symlink()
     )
     return Path(tempfile.mkdtemp(prefix="lce-mep-", dir=parent))

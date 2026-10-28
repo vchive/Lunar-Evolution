@@ -1,50 +1,59 @@
 <!-- current-p0-p2-batch:start -->
-## 当前执行点（2026-10-28）：真实配置与 Podman 已实跑，集中修复后验收
+## 当前执行点（2026-10-28）：后继合批去重 759 项通过，待新 clean HEAD mixed
 
-| 优先级 | 当前实现与实证 | 尚未关闭 |
+| 优先级 | 已实现并有回归证据 | 仍未关闭 |
 | --- | --- | --- |
-| P0 | checkpoint 操作内投影、reserved matcher 和 ordered prefix 单次 walk 已实现；tree `0f400305` 集中回归中的 P0 用例通过 | 新 clean source 原 600 秒、零 retry mixed，随后完整 CI/main；此前超时保留 |
-| P1 | scheduler live sink、expanded runtime 事实比较、原 consumer 的 Podman snapshot 与配置生成入口已实现；7 命令 Podman 和真实 CPython configure 实跑通过 | 固定 Zig 0.16 的 actual-link-input 捕获不兼容；完整静态构建、配置/链接闭包、accepted runtime/solver 生命周期与生产 CLI 仍开放 |
-| P2 | installed guardian sidecar、原始 reference 独立保管及只读恢复已实现；既有 154 项 Linux 回归通过 | 实际独立账号/vault、硬断线、blocked-storage 与 whole-group cleanup 部署验收 |
+| P0 | owner 操作内有界 checkpoint history 纯投影；fresh SQL/JSON、最终 admission row/ref matcher、文件观察保留；constructor 指纹修复后的四文件 165 节点通过 | 新 clean HEAD 唯一 600 秒、零 retry mixed；通过后完整 CI/main。旧超时保留 |
+| P1 | build 主错误/持久化错误分离、显式 pinned standalone linker；原 native observation → handoff 接线已测，相关新旧接线在第三轮通过 | expanded facts 所供原对象关系 inspection/export 的 45 项已通过；真实 computation/pycache 采集、accepted build/runtime 根、生产 adapter/admission/CLI 仍缺，不能据 DTO 或 fixture 宣称完成 |
+| P2 | 同 UID controller-exit/receiver-kill 工具；原 reference 保管/只读恢复；后继补 exact watcher 提前退出观察、cleanup 前原状态诊断 | 两个实际故障用例和 fault 文件 69 项已通过；旧 host watcher mock 修正后单文件 9 项补验通过；独立账户/vault、SSH 硬断线、blocked-storage、whole-group cleanup 部署验收仍缺 |
 
-5090gpu 的 `/home` 达到账号硬配额：该环境下的集中回归缺终态，Zig
-结果未知，configure 尚未进入命令；所有原件保留。后继独立 `/tmp` storage profile
-先核不同 device、容量和写入/fsync/readback，不覆盖原失败。
+四轮结果各自绑定源码，不累计重复用例：
 
-`/tmp` 的 46 文件集中回归完整结束：1837 unique nodes，1836 pass / 1 fail，
-803.272609 秒、零 retry。2899 条源码清单前后一致，291 模块来源、16 worker /
-collection / exit 和全部原件均核验。唯一失败是 prior-output symlink 的底层
-`ELOOP` 未转换为构建层错误；现已修正，并补 missing/parent 替换和原始 ENOSPC
-保留覆盖。真实 configure 输出静态对照另发现 mimalloc include 路径及三个固定
-编译 flags 缺失，已补 recipe 与有限命令白名单。上述修正已完成 11 个 affected 文件的集中回归：441 pass、0 fail/error/skip，
-11.682524180 秒、零 retry；27 原件、16 worker/collection/exit、238 模块来源和
-2593 源文件前后指纹均独立核验。未重复未变的昂贵 P0 用例；完整 CI 仍独立运行
-全部要求的测试。结果在 `tools-compat-final-focused-2veg1o8x/remote-records/`。
+- tree `b335456a`：1035 unique，1022 pass / 13 fail，928.645 秒；11 个 constructor
+  fingerprint 失败和 2 个 sleep symlink 失败均保留。
+- tree `85a3c4ac`：206 unique，204 pass / 2 fail，103.872 秒；P0 四文件 165 节点全过，
+  两个 P2 因 uutils 原镜像 nlink=116 被 sealed gate 拒绝。
+- tree `7fca9111`：620 unique，618 pass / 2 fail，53.716 秒；P1 新 observation handoff、
+  RSI join、gateway/BRS 接线通过。两个实际 P2 用例各在原 20 秒预算内 controller
+  超时，未得到有效 registration/reference。27 原件、26 refs、源码前后、16 个 worker
+  collections 及 284 模块来源均核验匹配；测试失败不写成 focused 通过。
+- tree `7628e971`：759 unique，758 pass / 1 fail，30.369 秒；新 P1 inspection 45 项、
+  P2 fault 69 项（含原两条实际故障）、owner projection 31 项全过。唯一失败为旧 host
+  watcher mock 不匹配新的 original Popen gate；不放宽产品门，修 fixture 后只补该文件。
+  27 原件、26 refs、16 collections/JUnit/284 模块及源码匹配，失败 worker 无 crash。
 
-真实 configure 在 900 秒预算内 75.302 秒完成，44 原件、8 输出和读回匹配；
-2591 产品/4837 CPython 文件前后一致，241 实际模块来源匹配。真实 `pyconfig.h`
-SHA256 `c300e7c60168ea35f2761aa4b1876bd0d9f306f1236297dc5a6e767126d862f3`。
-Podman snapshot case 7 命令通过，base import 一次，210 原件匹配；它是 inert smoke，
-不是完整 CPython 或 solver 验收。
+后继 tree `e8d91db2` 只改上述 mock 的 5 行及六份文档；src/tools 产品字节与第四轮
+相同。单文件 9 项补验通过，外层 5.501 秒，零 retry；最新去重仍为 759 项全过，
+不相加成 768，也不声称全部源文件重新执行。原 758/1 结果保留。
 
-真实 Zig seed 三次编译通过，但带 linker depfile 参数的链接 SIGSEGV；独立最小
-控制矩阵中不带该参数链接成功，三种替代拼写仍崩溃，trace/reproduce 被明确拒绝。
-没有生成或执行 seed；不删除捕获、不用 verbose 输出伪造 depfile、不自动 fallback。
-需要独立 pinned compiler/linker capture profile，不能再把固定 driver 记为“待重试”。
+第三轮之后，单次 finite sealed-target 诊断（无 pytest/guardian）确认 uutils 的
+sleep 在约 0.0426 秒返回 1，明确拒绝 `/memfd:lunar-producer-executable (deleted)`
+与 applet 名称不符。controller 持有 ACK writer 隐藏早退，导致原启动等待耗尽预算。
+后继保持 sealed/strict R 与原绝对 deadline，不关闭 uutils 安全检查、不提高预算求绿；
+改用显式 trusted-local 固定 nanosleep fixture，不声称 source→ELF build authenticity。
 
-原件在主区 ignored `parallel-batch-20261027/`，主要目录：
-`p0-p2-tmpfs-focused-wcjs05hi`、`real-configure-tmpfs-once-5mqc1pnw`、
-`final-podman-snapshots-once-7a6ahzip`、`final-real-zig-tmp-profile-once-qz0n9xfh`。
-已有认证、ownership、installed bridge/vault/guardian 不再列为整块未开发。
+最后一次 clean HEAD `a8a70031` mixed 在 600.017935763 秒超时，rc=-15、零 retry；
+无 JUnit/terminal module origins，24 原件和源码匹配。400–596 秒 40 个 main 样本中
+reserved_history 27、store history observation 9，是栈位置计数，不是 CPU 占比。
+新投影覆盖其中部分纯计算；不能由 focused 通过推断新 mixed 达标，不重派失败 HEAD。
 
-`b3040b4c` 的唯一 mixed 在 setup 阶段因 `/var/tmp` 的 `EDQUOT` 失败，
-尚未进入 P0 执行链路，非超时；源码前后匹配、244 模块来源匹配，原错误保留。
-fixture 的固定短路径优先级改为 macOS `/private/tmp`、Linux `/tmp`，再 `/var/tmp`，
-从而使用已核验的独立 tmpfs，不改生产路径、断言、预算或重试门。
+实际 case 保留：CPython configure 75.302 秒/900 秒预算通过（44 原件、8 输出）；
+Podman 7 命令/4 阶段 inert smoke 5.41 秒通过（210 原件）。它们不代表完整 build/solver。
+Zig 0.16 三次 compile 成功，但带 depfile link SIGSEGV；替代拼写亦崩，停止旧 driver
+追加尝试。显式 standalone linker 接线通过不代表实际静态 LLD/CPython 构建验收。
 
-当前未合 main，production_admission=false、online_publication=false。无模型、
-WebAgent、远程或公司 evaluator；普通平台回归允许本机补齐，本机结果不能替代
-指定 Linux 隔离验收。以下为此前各批历史，不覆盖本节当前结论。
+5090gpu 的 home/var-tmp quota 已满，独立 tmpfs `/tmp` 已核容量和写入/fsync/readback，
+普通 Linux 测试继续可用。无 sudo/KVM、userns/bwrap 失败仍阻塞指定隔离验收；本机
+普通测试可补平台缺口，macOS ARM 不能替代 Linux x86 隔离/独立账户证据。
+不运行模型、WebAgent、远程或公司 evaluator；`production_admission=false`、
+`online_publication=false`。当前尚未合入 main。
+
+原件保留在主区 ignored `.lunar-evolution/validation/parallel-batch-20261027/`：
+`joined-runtime-focused-template-_1l2in7j`、`joined-runtime-affected-rogbsp0f`、
+`guardian-image-affected-b453dz6g`、`guardian-ready-evidence-union-96l_vob7`、
+`guardian-host-ownership-affected-ebf8zous`、
+`sealed-uutils-target-diagnostic-9asm3zx1` 及
+`final-mixed-a8a70031-prepared`。以下均为历史快照，不覆盖本节。
 <!-- current-p0-p2-batch:end -->
 
 # P0–P2 integration, 2026-10-28

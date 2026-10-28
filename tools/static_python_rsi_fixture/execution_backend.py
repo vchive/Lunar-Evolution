@@ -18,7 +18,7 @@ import stat
 import subprocess
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -52,9 +52,12 @@ _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 class BuildExecutionError(RuntimeError):
     """Fixed refusal carrying retained, detached attempt evidence when available."""
 
-    def __init__(self, code: str, *, report: BuildExecutionReport | None = None) -> None:
+    def __init__(self, code: str, *, report: BuildExecutionReport | None = None,
+                 failure_detail: Mapping[str, Any] | None = None) -> None:
         self.code = "static_python_build_execution_" + code
         self.report = report
+        self.failure_detail = (report.failure_detail if report is not None else
+                               _freeze(dict(failure_detail)) if failure_detail is not None else None)
         super().__init__(self.code)
 
 
@@ -71,6 +74,8 @@ class BuildExecutionReport:
     installation_accepted: bool = False
     runtime_execution_performed: bool = False
     production_admission: bool = False
+    failure_detail: Mapping[str, Any] | None = None
+    persistence_error: Mapping[str, Any] | None = None
 
 
 def _canonical(value: Any) -> bytes:
@@ -86,8 +91,15 @@ def _freeze(value: Any) -> Any:
     return value
 
 
-def _fail(code: str) -> None:
-    raise BuildExecutionError(code)
+def _fail(code: str, *, failure_detail: Mapping[str, Any] | None = None) -> None:
+    raise BuildExecutionError(code, failure_detail=failure_detail)
+
+
+def _io_detail(error: OSError, *, operation: str, stage: str | None = None,
+               command_index: int | None = None) -> dict[str, Any]:
+    """Retain bounded causes without arbitrary exception messages or paths."""
+    return {"stage": stage, "command_index": command_index, "operation": operation,
+            "errno": error.errno if type(error.errno) is int else None}
 
 
 def _path(value: object) -> str:
@@ -438,21 +450,25 @@ def _kill_and_reap(process: subprocess.Popen[bytes]) -> None:
 
 
 def _command(argv: list[str], *, work: Path, environment: dict[str, str], logs: Path,
-             checkpoint: Callable[[], None], evidence: dict[str, Any]) -> None:
+             checkpoint: Callable[[], None], evidence: dict[str, Any],
+             stage: str | None = None, command_index: int | None = None) -> None:
     process = None
     failure = None
     sizes = {"stdout": 0, "stderr": 0}
     digests = {key: hashlib.sha256() for key in sizes}
     evidence.update({"status": "partial", "returncode": None, "direct_child_reaped": False})
+    operation = "command.logs.open"
     try:
         with (logs / "stdout.log").open("xb") as stdout_log, \
                 (logs / "stderr.log").open("xb") as stderr_log, selectors.DefaultSelector() as selector:
             checkpoint()
+            operation = "command.spawn"
             process = subprocess.Popen(
                 argv, cwd=work, env=environment, stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False,
                 start_new_session=True, close_fds=True,
             )
+            operation = "command.pipes.prepare"
             for stream, name, output in (
                 (process.stdout, "stdout", stdout_log), (process.stderr, "stderr", stderr_log),
             ):
@@ -461,30 +477,42 @@ def _command(argv: list[str], *, work: Path, environment: dict[str, str], logs: 
                 selector.register(stream, selectors.EVENT_READ, (name, output))
             while selector.get_map() or process.poll() is None:
                 checkpoint()
+                operation = "command.pipes.select"
                 for key, _ in selector.select(timeout=0.02):
+                    operation = "command.log.read"
                     block = os.read(key.fd, 65536)
                     if not block:
                         selector.unregister(key.fileobj)
                         continue
                     name, output = key.data
                     permitted = min(len(block), MAX_LOG_BYTES - sum(sizes.values()))
+                    operation = "command.log.write"
                     output.write(block[:permitted])
                     sizes[name] += permitted
                     digests[name].update(block[:permitted])
                     if permitted < len(block):
                         _fail("log_budget_exceeded")
+            operation = "command.wait"
             evidence["returncode"] = process.wait(timeout=5)
             checkpoint()
             if evidence["returncode"] != 0:
                 _fail("command_failed")
             evidence["status"] = "complete"
             for output in (stdout_log, stderr_log):
+                operation = "command.log.flush"
                 output.flush()
+                operation = "command.log.fsync"
                 os.fsync(output.fileno())
+            operation = "command.resources.close"
     except BuildExecutionError as exc:
         failure = exc.code.removeprefix("static_python_build_execution_")
     except KeyboardInterrupt:
         failure = "interrupted"
+    except OSError as exc:
+        failure = "command_io_failure"
+        evidence["failure_detail"] = _io_detail(
+            exc, operation=operation, stage=stage, command_index=command_index,
+        )
     except Exception:  # noqa: BLE001 - arbitrary tool/path details remain out of errors
         failure = "command_io_failure"
     finally:
@@ -506,7 +534,7 @@ def _command(argv: list[str], *, work: Path, environment: dict[str, str], logs: 
     if failure is not None:
         evidence["status"] = "partial"
         evidence["reason"] = failure
-        _fail(failure)
+        _fail(failure, failure_detail=evidence.get("failure_detail"))
 
 
 def _run_pinned_build(
@@ -596,32 +624,52 @@ def _run_pinned_build(
             _fail("deadline_expired")
 
     checkpoint()
+    workspace_reason = None
+    failure_detail = None
     try:
         destination.mkdir()
-    except OSError:
-        _fail("workspace_not_fresh")
+    except OSError as exc:
+        workspace_reason = "workspace_not_fresh" if isinstance(exc, FileExistsError) else "workspace_io_failure"
+        failure_detail = _io_detail(exc, operation="workspace.mkdir")
+    if workspace_reason is not None:
+        # No successful create-only claim: do not persist into this path.
+        report = BuildExecutionReport(
+            recipe_sha256=expected_recipe_sha256, completed_stages=(), stage_evidence=(),
+            status="partial", reason=workspace_reason, failure_detail=_freeze(failure_detail),
+        )
+        raise BuildExecutionError(workspace_reason, report=report) from None
     reason = None
+    active_stage = None
+    active_command = None
+    operation = "recipe.write"
     try:
         _write_once(destination / "recipe.json", recipe_bytes)
+        operation = "attempt.write"
         _write_once(destination / "attempt.json", _canonical({
             "schema": "lunar-static-python-build-attempt-v1", "recipe_sha256": expected_recipe_sha256,
             "status": "started", "production_admission": False,
         }))
         snapshots = {role: destination / role for role in roots}
         work = destination / "work"
+        operation = "work.mkdir"
         work.mkdir()
+        operation = "home.mkdir"
         (work / ".home").mkdir()
         for role, records in recipe["inputs"].items():
+            operation = "snapshot.mkdir"
             snapshots[role].mkdir()
             for record in records:
                 checkpoint()
                 target = snapshots[role] / record["path"]
+                operation = "snapshot.copy"
                 observed = _observe(roots[role], record["path"], MAX_INPUT_FILE_BYTES,
                                     destination=target, executable=record["executable"],
                                     checkpoint=checkpoint)
                 if observed != record:
                     _fail("input_pin_mismatch")
+                operation = "snapshot.chmod"
                 target.chmod(0o555 if record["executable"] else 0o444)
+                operation = "snapshot.verify"
                 if _observe(snapshots[role], record["path"], MAX_INPUT_FILE_BYTES,
                             checkpoint=checkpoint) != record:
                     _fail("snapshot_pin_mismatch")
@@ -644,6 +692,7 @@ def _run_pinned_build(
         custody = None
         if custody_prefix is not None:
             from tools.static_python_rsi_fixture.podman_custody import PodmanCustody
+            operation = "custody.prepare"
             custody = PodmanCustody(destination=destination, prefix=custody_prefix,
                                      recipe_sha256=expected_recipe_sha256, checkpoint=checkpoint,
                                      snapshot_mounts=custody_backend == "podman-snapshots-v1")
@@ -670,23 +719,32 @@ def _run_pinned_build(
                     _fail("output_drift")
 
         for stage in recipe["stages"]:
+            active_stage = stage["stage"]
+            active_command = None
+            operation = "inputs.verify"
             verify_inputs()
             evidence = {"stage": stage["stage"], "status": "partial", "commands": [], "outputs": []}
             stages.append(evidence)
             for index, command in enumerate(stage["commands"]):
+                active_command = index
                 argv = command["argv"] if command_outputs else command
+                operation = "inputs.verify"
                 verify_inputs()
                 if command_outputs:
                     if argv[0] not in observed_executables:
                         _fail("executable_not_observed")
+                    operation = "outputs.prepare"
                     _prepare_v2_outputs(work, command["outputs"], checkpoint)
                 log_dir = destination / "logs" / stage["stage"] / str(index)
+                operation = "logs.mkdir"
                 log_dir.mkdir(parents=True)
                 command_evidence: dict[str, Any] = {"index": index}
                 evidence["commands"].append(command_evidence)
+                operation = "command.execute"
                 if custody is None:
                     _command([expand(arg) for arg in argv], work=work, environment=environment,
-                             logs=log_dir, checkpoint=checkpoint, evidence=command_evidence)
+                             logs=log_dir, checkpoint=checkpoint, evidence=command_evidence,
+                             stage=active_stage, command_index=index)
                 else:
                     custody.run(argv, inputs=recipe["inputs"], snapshots=snapshots, prior=retained_outputs,
                                 outputs=command["outputs"], work=work, environment=recipe["environment"],
@@ -695,11 +753,13 @@ def _run_pinned_build(
                     # A zero process status is insufficient to grant generated tools.
                     command_evidence["status"] = "partial"
                     command_evidence["outputs"] = []
+                operation = "inputs.verify"
                 verify_inputs()
                 if command_outputs:
                     produced = command_evidence["outputs"]
                     for output in command["outputs"]:
                         checkpoint()
+                        operation = "outputs.observe"
                         produced.append(_observe(
                             work, output["path"], output["max_size"],
                             executable=output["executable"], checkpoint=checkpoint,
@@ -707,27 +767,39 @@ def _run_pinned_build(
                     retained_outputs.extend(produced)
                     # Verify the entire group, all previous outputs and original
                     # inputs again before a later command may consume any tool.
+                    operation = "inputs.verify"
                     verify_inputs()
                     evidence["outputs"].extend(produced)
                     observed_executables.update(
                         "@work/" + output["path"] for output in produced if output["executable"]
                     )
                     command_evidence["status"] = "complete"
+            active_command = None
             if not command_outputs:
                 for output in stage["outputs"]:
                     checkpoint()
+                    operation = "outputs.observe"
                     observed = _observe(work, output["path"], output["max_size"],
                                         executable=output["executable"], checkpoint=checkpoint)
                     evidence["outputs"].append(observed)
                     retained_outputs.append(observed)
+            operation = "inputs.verify"
             verify_inputs()
             evidence["status"] = "complete"
             completed.append(stage["stage"])
         checkpoint()
     except BuildExecutionError as exc:
         reason = exc.code.removeprefix("static_python_build_execution_")
+        if exc.failure_detail is not None:
+            failure_detail = {**exc.failure_detail, "stage": active_stage,
+                              "command_index": active_command}
     except KeyboardInterrupt:
         reason = "interrupted"
+    except OSError as exc:
+        reason = "attempt_io_failure"
+        failure_detail = _io_detail(
+            exc, operation=operation, stage=active_stage, command_index=active_command,
+        )
     except Exception:  # noqa: BLE001 - preserve partial workspace without leaking paths
         reason = "attempt_io_failure"
     payload = {
@@ -739,18 +811,22 @@ def _run_pinned_build(
         "reason": reason, "configured_closure_verified": False, "installation_accepted": False,
         "runtime_execution_performed": False, "production_admission": False,
     }
+    if failure_detail is not None:
+        payload["failure_detail"] = dict(failure_detail)
     report = BuildExecutionReport(
         recipe_sha256=expected_recipe_sha256, completed_stages=tuple(completed),
         stage_evidence=tuple(_freeze(item) for item in stages), status=payload["status"], reason=reason,
+        failure_detail=_freeze(dict(failure_detail)) if failure_detail is not None else None,
     )
+    persistence_error = None
     try:
         _write_once(destination / "report.json", _canonical(payload))
-    except OSError:
-        reason = "report_write_failed"
-        report = BuildExecutionReport(
-            recipe_sha256=expected_recipe_sha256, completed_stages=tuple(completed),
-            stage_evidence=tuple(_freeze(item) for item in stages), status="partial", reason=reason,
-        )
+    except OSError as exc:
+        persistence_error = _io_detail(exc, operation="report.write")
+    if persistence_error is not None:
+        reason = reason or "report_write_failed"
+        report = replace(report, status="partial", reason=reason,
+                         persistence_error=_freeze(persistence_error))
     if reason is not None:
         raise BuildExecutionError(reason, report=report) from None
     return report

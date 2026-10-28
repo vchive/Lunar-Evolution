@@ -10,6 +10,7 @@ import errno
 import fcntl
 import json
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -25,12 +26,161 @@ from test_native_fd_handoff import _sealed
 from test_native_grant_objects import _TARGET, _graph, _wire
 from test_native_trusted_controller_death import _frame, _state
 
+import lunar_evolution.native_guardian as guardian
 from lunar_evolution.native_bootstrap import (
     build_native_bootstrap_artifact,
     native_bootstrap_source_path,
 )
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="actual Linux original pidfd guardian")
+
+
+class _ReadyWatcher:
+    """An inert exact-type stand-in; readiness must never signal or wait on it."""
+
+    def __init__(self, statuses=(), *, pid=101):
+        self.statuses = list(statuses)
+        self.pid = pid
+        self.returncode = None
+
+    def poll(self):
+        value = self.statuses.pop(0) if self.statuses else None
+        if isinstance(value, BaseException):
+            raise value
+        self.returncode = value
+        return value
+
+
+def _readiness_unit(monkeypatch, *, statuses=(), steps=(), payload=b"R"):
+    clock, polls, reads = [0.0], [], []
+    pending = list(steps)
+    watcher = _ReadyWatcher(statuses)
+
+    class Poll:
+        def register(self, fd, mask):
+            assert (fd, mask) == (8, select.POLLIN)
+
+        def poll(self, timeout):
+            polls.append(timeout)
+            assert pending, "readiness allocated an unexpected extra wait"
+            elapsed, events = pending.pop(0)
+            clock[0] += elapsed
+            return events
+
+    def read(fd, size):
+        reads.append((fd, size))
+        return payload
+
+    monkeypatch.setattr(guardian, "_POPEN_TYPE", _ReadyWatcher)
+    monkeypatch.setattr(guardian.select, "poll", Poll)
+    monkeypatch.setattr(guardian.os, "read", read)
+    return SimpleNamespace(watcher=watcher, clock=lambda: clock[0], polls=polls, reads=reads)
+
+
+@pytest.mark.parametrize("when", ["before-poll", "after-empty-poll", "with-r", "after-r"])
+def test_readiness_refuses_original_watcher_exit_even_with_ack_writer_held(monkeypatch, when):
+    statuses, steps = {
+        "before-poll": ([79], []),
+        "after-empty-poll": ([None, 79], [(.05, [])]),
+        "with-r": ([None, 64], [(.01, [(8, select.POLLIN)])]),
+        "after-r": ([None, None, 0], [(.01, [(8, select.POLLIN)])]),
+    }[when]
+    value = _readiness_unit(monkeypatch, statuses=statuses, steps=steps)
+    with pytest.raises(guardian.NativeGuardianError, match="native_guardian_ready_invalid"):
+        guardian._wait_ready(8, 1.0, value.clock, watcher=value.watcher)
+    assert value.clock() < 1.0
+    assert value.reads == ([(8, 2)] if when == "after-r" else [])
+    assert all(0 < timeout <= 50 for timeout in value.polls)
+
+
+def test_readiness_empty_waits_keep_original_deadline_and_exact_r(monkeypatch):
+    value = _readiness_unit(monkeypatch, steps=[(.05, []), (.02, [(8, select.POLLIN)])])
+    guardian._wait_ready(8, 1.0, value.clock, watcher=value.watcher)
+    assert value.polls == [50, 50]
+    assert value.reads == [(8, 2)]
+    assert value.watcher.returncode is None
+
+
+def test_readiness_watcher_observation_never_renews_expired_deadline(monkeypatch):
+    value = _readiness_unit(monkeypatch, steps=[(.05, []), (.02, [])])
+    with pytest.raises(guardian.NativeGuardianError, match="native_guardian_ready_invalid"):
+        guardian._wait_ready(8, .06, value.clock, watcher=value.watcher)
+    assert value.polls == [50, 10]
+    assert value.reads == []
+
+
+@pytest.mark.parametrize("events", [
+    [(8, select.POLLHUP)], [(8, select.POLLIN | select.POLLHUP)],
+    [(8, select.POLLERR)], [(8, select.POLLNVAL)], [(9, select.POLLIN)],
+    [(8, select.POLLIN), (8, select.POLLIN)],
+])
+def test_watcher_observation_does_not_relax_ack_event_validation(monkeypatch, events):
+    value = _readiness_unit(monkeypatch, steps=[(.01, events)])
+    with pytest.raises(guardian.NativeGuardianError, match="native_guardian_ready_invalid"):
+        guardian._wait_ready(8, 1.0, value.clock, watcher=value.watcher)
+    assert value.reads == []
+
+
+@pytest.mark.parametrize("payload", [b"", b"F", b"RX"])
+def test_watcher_observation_does_not_relax_exact_r(monkeypatch, payload):
+    value = _readiness_unit(monkeypatch, steps=[(.01, [(8, select.POLLIN)])], payload=payload)
+    with pytest.raises(guardian.NativeGuardianError, match="native_guardian_ready_invalid"):
+        guardian._wait_ready(8, 1.0, value.clock, watcher=value.watcher)
+    assert value.reads == [(8, 2)]
+
+
+@pytest.mark.parametrize("failure", [OSError("inert poll failure"), subprocess.SubprocessError("inert poll failure")])
+def test_original_watcher_poll_error_is_fixed_readiness_refusal(monkeypatch, failure):
+    value = _readiness_unit(monkeypatch, statuses=[failure])
+    with pytest.raises(guardian.NativeGuardianError, match="native_guardian_ready_invalid") as caught:
+        guardian._wait_ready(8, 1.0, value.clock, watcher=value.watcher)
+    assert caught.value.__cause__ is failure
+    assert value.polls == [] and value.reads == []
+
+
+def test_readiness_rejects_foreign_watcher_before_poll(monkeypatch):
+    value = _readiness_unit(monkeypatch)
+    with pytest.raises(guardian.NativeGuardianError, match="native_guardian_ready_invalid"):
+        guardian._wait_ready(8, 1.0, value.clock, watcher=object())
+    assert value.polls == [] and value.reads == []
+
+
+def test_direct_start_observes_exact_watcher_and_preserves_failed_owner(monkeypatch):
+    process, watcher = _ReadyWatcher(pid=101), _ReadyWatcher(pid=102)
+    calls, closed = [], []
+    failure = guardian.NativeGuardianError("native_guardian_ready_invalid")
+
+    def clock():
+        return .25
+
+    def wait(fd, deadline, monotonic, *, watcher):
+        calls.append((fd, deadline, monotonic, watcher))
+        raise failure
+
+    monkeypatch.setattr(guardian.sys, "platform", "linux")
+    monkeypatch.setattr(guardian, "_POPEN_TYPE", _ReadyWatcher)
+    monkeypatch.setattr(guardian.subprocess, "Popen", lambda *_args, **_kwargs: watcher)
+    monkeypatch.setattr(guardian.os, "pidfd_open", lambda *_args: 7, raising=False)
+    monkeypatch.setattr(guardian.signal, "pidfd_send_signal", lambda *_args: pytest.fail("startup signaled"),
+                        raising=False)
+    monkeypatch.setattr(guardian.os, "getpgid", lambda _pid: process.pid)
+    monkeypatch.setattr(guardian.os, "getsid", lambda _pid: process.pid)
+    monkeypatch.setattr(guardian.os, "fstat", lambda _fd: None)
+    monkeypatch.setattr(guardian.os, "close", closed.append)
+    monkeypatch.setattr(guardian, "_pipe", lambda *_args: None)
+    monkeypatch.setattr(guardian, "_wait_ready", wait)
+    with pytest.raises(guardian.NativeGuardianError) as caught:
+        guardian.start_native_guardian(
+            process=process, executable="/proc/self/fd/8", bootstrap_fd=8,
+            lifeline_fd=3, finish_fd=4, ack_fd=5, ack_read_fd=6,
+            deadline=1.0, deadline_ns=1_000_000_000, monotonic=clock,
+        )
+    assert caught.value is failure
+    assert calls == [(6, 1.0, clock, watcher)]
+    assert caught.value.guardian_owner._watcher is watcher
+    assert caught.value.guardian_owner._bootstrap is process
+    assert caught.value.guardian_owner._group_fd == 7
+    assert closed == []
 
 _TREE = r'''
 #define _GNU_SOURCE

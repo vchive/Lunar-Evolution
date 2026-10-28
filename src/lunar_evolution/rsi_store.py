@@ -12,6 +12,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import stat
 import sys
@@ -62,6 +63,8 @@ _CHECKPOINT_DIGEST_CACHE_MAX_ENTRIES = 128
 _CHECKPOINT_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
 _RECORD_DIGEST_CACHE_MAX_ENTRIES = 128
 _RECORD_DIGEST_CACHE_MAX_RETAINED_UNITS = 16 * 1024 * 1024
+_HISTORY_PROJECTION_CACHE_MAX_ENTRIES = 128
+_HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS = 32 * 1024 * 1024
 
 # Only these direct pure parser/digest methods can supply a reusable staging
 # identity result. A replaced method keeps the original per-checkpoint path.
@@ -136,6 +139,96 @@ def _admission_checkpoint_helpers_current(ledger: object) -> bool:
             return False
     return all(getattr(json.encoder, name, None) is original
                for name, original in _ADMISSION_CHECKPOINT_ENCODER_PINS)
+
+
+@dataclass(frozen=True, slots=True)
+class _CheckpointHistoryRowProjection:
+    """Pure immutable row calculations, with no payload, DTO or live authority."""
+
+    digest: str
+    references: tuple[tuple[str, bytes], ...]
+
+
+def _checkpoint_projection_constant(value: Any, *, depth: int = 0) -> Any:
+    """Small exact constant snapshots for the skipped pure parser graph."""
+    kind = type(value)
+    if value is None or kind in (str, int, float, bool, bytes):
+        return kind, value
+    if depth > 8 or kind not in (dict, list, tuple, set, frozenset) or len(value) > 4096:
+        raise ValueError("not a bounded pure constant")
+    if kind is dict:
+        return kind, frozenset((_checkpoint_projection_constant(key, depth=depth + 1),
+                                _checkpoint_projection_constant(item, depth=depth + 1))
+                               for key, item in value.items())
+    items = (_checkpoint_projection_constant(item, depth=depth + 1) for item in value)
+    return kind, frozenset(items) if kind in (set, frozenset) else tuple(items)
+
+
+def _checkpoint_projection_helpers_current(ledger: object) -> bool:
+    """An unknown or replaced pure seam keeps the complete original history path."""
+    if (_CheckpointHistoryRowProjection is not _HISTORY_PROJECTION_TYPE
+            or not _admission_checkpoint_helpers_current(ledger)
+            or _HISTORY_PROJECTION_FUNCTION_PINS is not _HISTORY_PROJECTION_ORIGINAL_FUNCTION_PINS
+            or _HISTORY_PROJECTION_VALUE_PINS is not _HISTORY_PROJECTION_ORIGINAL_VALUE_PINS):
+        return False
+    for owner, name, descriptor, function, code, defaults, kwdefaults, kwitems, closure, captures in (
+            _HISTORY_PROJECTION_FUNCTION_PINS):
+        if (vars(owner).get(name) is not descriptor or function.__code__ is not code
+                or function.__defaults__ is not defaults or function.__kwdefaults__ is not kwdefaults
+                or function.__closure__ is not closure
+                or any(cell.cell_contents is not original for cell, original in zip(closure or (), captures, strict=True))
+                or (kwdefaults is not None and (
+                    len(kwdefaults) != len(kwitems)
+                    or any(key not in kwdefaults or kwdefaults[key] is not item for key, item in kwitems)))):
+            return False
+    for owner, name, original, snapshot in _HISTORY_PROJECTION_VALUE_PINS:
+        value = vars(owner).get(name)
+        if value is not original:
+            return False
+        if snapshot is None:  # Immutable regex and DTO aliases are identity pins.
+            continue
+        try:
+            if _checkpoint_projection_constant(value) != snapshot:
+                return False
+        except (TypeError, ValueError, RecursionError):
+            return False
+    return True
+
+
+def _checkpoint_projection_key(run_id: str, row: object) -> tuple[Any, ...] | None:
+    if type(run_id) is not str or type(row) not in (sqlite3.Row, dict):
+        return None
+    try:
+        values = tuple(row[name] for name in (  # type: ignore[index]
+            "revision", "parent_sha256", "payload", "checkpoint_sha256"))
+    except (KeyError, IndexError, TypeError):
+        return None
+    revision, parent, raw, digest = values
+    if (type(revision) is not int or (parent is not None and type(parent) is not str)
+            or type(raw) is not str or type(digest) is not str):
+        return None
+    return run_id, *values
+
+
+def _retain_checkpoint_projection(cache: dict[str, Any], key: tuple[Any, ...],
+                                  projection: _CheckpointHistoryRowProjection) -> None:
+    # Full raw text is retained in the key. Four bytes per character plus
+    # conservative entry/tuple overhead also cover strings and scalar values.
+    units = (4096 + sum(4 * len(item) for item in key if type(item) is str)
+             + sum(256 + 4 * len(name) + len(raw) for name, raw in projection.references))
+    if (units > _HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS
+            or _HISTORY_PROJECTION_CACHE_MAX_ENTRIES <= 0):
+        return
+    entries = cache["entries"]
+    if key in entries:
+        entries.move_to_end(key)
+        return
+    while entries and (len(entries) >= _HISTORY_PROJECTION_CACHE_MAX_ENTRIES
+                       or cache["retained_units"] + units > _HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS):
+        _old_key, (_old_projection, old_units) = entries.popitem(last=False)
+        cache["retained_units"] -= old_units
+    entries[key] = projection, units
+    cache["retained_units"] += units
 
 
 _RUN_TRANSITIONS: dict[str, frozenset[str]] = {
@@ -280,7 +373,34 @@ class RSILedger:
         self._record_digest_cache_retained_units = 0
         self._record_digest_cache_lock = threading.Lock()
         self._observation_scope = threading.local()
+        self._checkpoint_projection_local = threading.local()
         self.initialize()
+
+    @contextmanager
+    def _checkpoint_projection_scope(self):
+        """Share only pure row work within one owner operation and calling thread."""
+        local = self._checkpoint_projection_local
+        previous = getattr(local, "cache", None)
+        if previous is not None:
+            yield
+            return
+        cache = {"entries": OrderedDict(), "retained_units": 0}
+        local.cache = cache
+        try:
+            yield
+        finally:
+            cache["entries"].clear()
+            cache["retained_units"] = 0
+            local.cache = None
+
+    def _checkpoint_projection_cache(self) -> dict[str, Any] | None:
+        local = getattr(self, "_checkpoint_projection_local", None)
+        cache = getattr(local, "cache", None)
+        if (cache is None or _checkpoint_projection_helpers_current is not _HISTORY_PROJECTION_GUARD
+                or _checkpoint_projection_helpers_current.__code__ is not _HISTORY_PROJECTION_GUARD_CODE
+                or not _checkpoint_projection_helpers_current(self)):
+            return None
+        return cache
 
     @contextmanager
     def read_only_observations(self):
@@ -630,8 +750,24 @@ class RSILedger:
             "SELECT revision, parent_sha256, payload, checkpoint_sha256 "
             "FROM rsi_controller_journal WHERE run_id = ? ORDER BY revision", (run_id,),
         ).fetchall()
+        cache = self._checkpoint_projection_cache()
+        result = self._controller_checkpoint_history_rows_tx(connection, run_id, rows, cache=cache)
+        if cache is not None and (
+                _checkpoint_projection_helpers_current is not _HISTORY_PROJECTION_GUARD
+                or _checkpoint_projection_helpers_current.__code__ is not _HISTORY_PROJECTION_GUARD_CODE
+                or not _checkpoint_projection_helpers_current(self)):
+            # A changed executable seam cannot grant authority to earlier pure
+            # projections. Reobserve the same fresh SQL inputs on the old path.
+            result = self._controller_checkpoint_history_rows_tx(connection, run_id, rows, cache=None)
+        return result
+
+    def _controller_checkpoint_history_rows_tx(
+        self, connection: sqlite3.Connection, run_id: str, rows: list[Any],
+        *, cache: dict[str, Any] | None,
+    ) -> tuple[tuple[tuple[Any, ...], ...], list[tuple[str, dict[str, Any]]]]:
         parent: str | None = None
         references: dict[str, dict[str, Any]] = {}
+        reference_bytes: dict[str, bytes] = {}
         parsed_contexts: dict[str, _ParsedRSIPythonAdmissionReference] = {}
         history: list[tuple[str, dict[str, Any]]] = []
         for ordinal, row in enumerate(rows):
@@ -641,25 +777,44 @@ class RSILedger:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt") from exc
             if type(payload) is not dict:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
-            current_refs, current_contexts = self._checkpoint_python_references_with_context(
-                payload, retain_context=True, reuse_contexts=parsed_contexts,
-            )
-            # Both contexts carry complete bytes from fresh shape/size-checked
-            # admission canonicalization in this walk; do not encode them again.
-            if any(key not in current_refs or current_contexts[key].canonical_bytes
-                   != parsed_contexts[key].canonical_bytes for key in references):
+            key = _checkpoint_projection_key(run_id, row) if cache is not None else None
+            retained = cache["entries"].get(key) if cache is not None and key is not None else None
+            if retained is None:
+                current_refs, current_contexts = self._checkpoint_python_references_with_context(
+                    payload, retain_context=True, reuse_contexts=parsed_contexts,
+                )
+                current_bytes = {name: context.canonical_bytes for name, context in current_contexts.items()}
+            else:
+                projection, _units = retained
+                # Always return a new C-decoded body and take its references.
+                # The private projection contains only immutable scalar bytes;
+                # neither payload dictionaries nor parsed DTOs are shared.
+                current_refs = payload.get("python_admission_refs", {})
+                current_contexts = {}
+                current_bytes = dict(projection.references)
+                digest = projection.digest
+                cache["entries"].move_to_end(key)
+            # These are still fresh per-walk chain/monotonicity observations.
+            if any(name not in current_bytes or current_bytes[name] != raw
+                   for name, raw in reference_bytes.items()):
                 raise RSILearningError("rsi_python_admission_reference_history_drift")
-            digest = self._checkpoint_digest_cached(
-                run_id, ordinal, parent, payload, persisted_payload=row["payload"],
-            )
+            if retained is None:
+                digest = self._checkpoint_digest_cached(
+                    run_id, ordinal, parent, payload, persisted_payload=row["payload"],
+                )
             if row["revision"] != ordinal or row["parent_sha256"] != parent or row["checkpoint_sha256"] != digest:
                 raise RSILearningError("rsi_controller_checkpoint_corrupt")
+            if cache is not None and key is not None and retained is None:
+                _retain_checkpoint_projection(
+                    cache, key, _CheckpointHistoryRowProjection(digest, tuple(current_bytes.items())),
+                )
             references = current_refs
+            reference_bytes = current_bytes
             parsed_contexts = current_contexts
             parent = digest
             history.append((digest, payload))
         self._checkpoint_reference_rows_tx(
-            connection, run_id, references, parsed_contexts=parsed_contexts,
+            connection, run_id, references, parsed_contexts=parsed_contexts or None,
         )
         return tuple(tuple(row[name] for name in (
             "revision", "parent_sha256", "payload", "checkpoint_sha256")) for row in rows), history
@@ -3461,6 +3616,7 @@ _ADMISSION_CHECKPOINT_METHOD_PINS = tuple(
     (name, function, function.__code__, function.__defaults__, function.__kwdefaults__,
      tuple((function.__kwdefaults__ or {}).items()))
     for name in ("_controller_checkpoint_history_tx", "_controller_checkpoint_history_observation_tx",
+                 "_controller_checkpoint_history_rows_tx", "_checkpoint_projection_cache",
                  "_checkpoint_digest_cached", "_checkpoint_digest")
     for descriptor in (vars(RSILedger)[name],)
     for function in (descriptor.__func__ if type(descriptor) is staticmethod else descriptor,)
@@ -3481,6 +3637,67 @@ _ADMISSION_CHECKPOINT_FUNCTION_PINS = tuple(
 _ADMISSION_CHECKPOINT_ENCODER_PINS = tuple(
     (name, getattr(json.encoder, name)) for name in (
         "c_make_encoder", "encode_basestring", "encode_basestring_ascii"))
+
+
+def _build_checkpoint_projection_pins():
+    """Capture original pure parser functions and small schema constants once."""
+    from . import (
+        candidate_evaluation_spec,
+        producer_bundle_handoff,
+        producer_bundle_publication,
+        python_producer_admission_handoff,
+        rsi_gateway,
+        rsi_native_plan,
+        rsi_python_admission,
+    )
+
+    modules = (sys.modules[__name__], rsi_python_admission, rsi_native_plan,
+               rsi_gateway, producer_bundle_publication, python_producer_admission_handoff,
+               candidate_evaluation_spec, producer_bundle_handoff)
+    functions = []
+    constants = []
+    seen = set()
+
+    def capture(owner, name, descriptor):
+        function = descriptor.__func__ if type(descriptor) in (staticmethod, classmethod) else descriptor
+        if not hasattr(function, "__code__") or (id(owner), name) in seen:
+            return
+        seen.add((id(owner), name))
+        functions.append((owner, name, descriptor, function, function.__code__,
+                          function.__defaults__, function.__kwdefaults__,
+                          tuple((function.__kwdefaults__ or {}).items()), function.__closure__,
+                          tuple(cell.cell_contents for cell in (function.__closure__ or ()))))
+        wrapped = getattr(function, "__wrapped__", None)
+        if wrapped is not None:
+            capture(function, "__wrapped__", wrapped)
+
+    for module in modules:
+        for name, value in tuple(vars(module).items()):
+            capture(module, name, value)
+            if type(value) is type and value.__module__ == module.__name__:
+                for member, descriptor in tuple(vars(value).items()):
+                    capture(value, member, descriptor)
+            if type(value) in (type, re.Pattern):
+                constants.append((module, name, value, None))
+                continue
+            if (name.startswith("__") or name in {
+                    "_HISTORY_PROJECTION_CACHE_MAX_ENTRIES", "_HISTORY_PROJECTION_CACHE_MAX_RETAINED_UNITS"}
+                    or not name.startswith(("_", "MAX_"))):
+                continue
+            try:
+                snapshot = _checkpoint_projection_constant(value)
+            except (TypeError, ValueError, RecursionError):
+                continue
+            constants.append((module, name, value, snapshot))
+    return tuple(functions), tuple(constants)
+
+
+_HISTORY_PROJECTION_TYPE = _CheckpointHistoryRowProjection
+_HISTORY_PROJECTION_GUARD = _checkpoint_projection_helpers_current
+_HISTORY_PROJECTION_GUARD_CODE = _HISTORY_PROJECTION_GUARD.__code__
+_HISTORY_PROJECTION_FUNCTION_PINS, _HISTORY_PROJECTION_VALUE_PINS = _build_checkpoint_projection_pins()
+_HISTORY_PROJECTION_ORIGINAL_FUNCTION_PINS = _HISTORY_PROJECTION_FUNCTION_PINS
+_HISTORY_PROJECTION_ORIGINAL_VALUE_PINS = _HISTORY_PROJECTION_VALUE_PINS
 
 
 __all__ = [

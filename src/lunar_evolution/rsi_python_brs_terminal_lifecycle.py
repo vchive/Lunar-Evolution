@@ -14,6 +14,7 @@ import re
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import nullcontext
 
 from .candidate_evaluation_spec import canonical_json
 from .rsi_brs_mailbox_evidence import (
@@ -1004,8 +1005,12 @@ class BRSOwnerTerminalLifecycle:
             # bounded join loop; the scope is discarded before resume or any
             # later lifecycle operation.
             from .rsi_brs_publication_lineage import _policy_observation_scope
+            from .rsi_store import RSILedger
 
-            with _policy_observation_scope():
+            ledger = getattr(self._owner, "_ledger", None)
+            projection_scope = (ledger._checkpoint_projection_scope()
+                                if type(ledger) is RSILedger else nullcontext())
+            with _policy_observation_scope(), projection_scope:
                 self._join_worker(check, hot_check=hot_check)
             while self._drain():
                 pass

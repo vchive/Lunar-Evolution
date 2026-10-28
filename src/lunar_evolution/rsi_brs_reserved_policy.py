@@ -186,6 +186,9 @@ def _build_reserved_brs_policy():
         if kind(function) is not function_type or object_id(function) in queued:
             return
         queued.add(object_id(function))
+        # A contextmanager wrapper keeps the original generator in both its
+        # closure and __wrapped__. Pin its executable body, not just that alias.
+        pack_function(getattr(function, "__wrapped__", None))
         mappings = (function.__dict__, function.__annotations__, function.__kwdefaults__)
         if some(mapping is not None and kind(mapping) is not plain_dict for mapping in mappings):
             fail()
@@ -251,6 +254,7 @@ def _build_reserved_brs_policy():
         ("rsi_controller", "RSILearningController", (
             "_python_admission_assert_reserved_brs_child", "_drive_reserved_brs_native_serial",
             "_python_admission_active_brs_owner", "_python_admission_bind_selected_brs_handoff",
+            "_python_admission_brs_full_gate_scope",
             "_stage_producer_episode", "_commit_flow", "_resume_reserved_brs_native_serial",
             "_memory_item", "_decision_from_dict", "_deserialize_execution", "_flow_result",
             "_serialize_execution")),
@@ -263,18 +267,21 @@ def _build_reserved_brs_policy():
         ("rsi_native_scheduler", "NativeRSISchedulerProvider", (
             "__call__", "recover_live_rejection", "assert_rejection_ledger", "_inputs",
             "rsi_fingerprint_config", "_failure_claim", "validate_preclaim", "_native_rejection_snapshot",
-            "provenance_batch")),
+            "provenance_batch", "_python_publication_join")),
         ("rsi_native_scheduler", "NativeRSISchedulerContext", (
-            "__post_init__", "_assert_live_modules_sink", "_live_modules_sink_projection")),
+            "__post_init__", "_assert_live_modules_sink", "_live_modules_sink_projection",
+            "_python_handoff_suppliers")),
         ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", ("validate", "compare")),
         ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", ("__init__", "assert_current", "to_dict")),
         ("static_python_fixed_profile", "FixedPythonInstallation", ("to_dict",)),
         ("rsi_store", "RSILedger", ("_select_python_producer_checkpoint_tx",
             "_validate_python_producer_staging_history_tx", "resolve_python_producer_checkpoint",
             "_python_admission_state_tx", "_controller_checkpoint_history_tx",
+            "_controller_checkpoint_history_rows_tx", "_checkpoint_projection_cache", "_checkpoint_projection_scope",
             "_controller_checkpoint_history_observation_tx", "append_brs_terminal_observation",
             "_append_controller_checkpoint_tx", "_append_transfer_checkpoint_tx", "_checkpoint_digest",
             "_create", "transition")),
+        ("rsi_store", "_CheckpointHistoryRowProjection", ("__init__",)),
     )
     external_members = []
     for module_name, class_name, names in external:
@@ -292,14 +299,16 @@ def _build_reserved_brs_policy():
             external_members.append((declaration, name, function))
     for module_name, names in (
         ("rsi_controller", ("_record_digest",)),
-        ("rsi_store", ("_admission_checkpoint_helpers_current", "_admission_checkpoint_projection")),
+        ("rsi_store", ("_admission_checkpoint_helpers_current", "_admission_checkpoint_projection",
+            "_checkpoint_projection_helpers_current", "_checkpoint_projection_constant", "_checkpoint_projection_key",
+            "_retain_checkpoint_projection", "_build_checkpoint_projection_pins")),
         ("native_fixed_live_sink", ("_pin_fixed_python_live_sink_request",)),
         ("static_python_fixed_profile", ("_reparse", "_parse_installation", "verify_fixed_python_image")),
         ("static_python_fixed_live_modules", (
             "_compose", "compare_fixed_python_bound_live_modules", "_compare_live_payload")),
         ("native_trusted_scheduler", ("_run_native_trusted_producer",
             "_prepare_native_trusted_python_producer", "run_native_trusted_producer",
-            "run_native_trusted_producer_outcome")),
+            "run_native_trusted_producer_outcome", "_prepublication_evidence", "_native_handoff_evidence")),
         ("rsi_python_episode_inputs", ("_resolve_python_rsi_episode_input_context",
             "resolve_reserved_python_rsi_episode_input_context", "resolve_python_rsi_episode_input_context")),
         ("rsi_producer_gateway", ("resolve_reserved_python_producer_episode_gateway",)),

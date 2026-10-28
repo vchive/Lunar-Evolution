@@ -12,6 +12,7 @@ import re
 
 from tools.static_python_rsi_fixture.dependency_capture import MAX_DEPFILE_BYTES
 from tools.static_python_rsi_fixture.link_dependency_capture import _link
+from tools.static_python_rsi_fixture.standalone_linker import LINKER_PATH
 
 _ENVIRONMENT = {"LANG": "C", "LC_ALL": "C", "TZ": "UTC", "SOURCE_DATE_EPOCH": "0"}
 # Only options emitted by the reviewed concrete/fixed-runtime recipe generators.
@@ -165,6 +166,17 @@ def validate_dependency_command_graph(recipe: dict) -> None:
                     _fail("stage")
                 _archive(command, available)
                 archives += 1
+            elif argv[0] == "@toolchain/" + LINKER_PATH:
+                link = _link(command)
+                if link is None or stage["stage"] not in {"freeze", "link"}:
+                    _fail("link")
+                target, references = link
+                for reference in references:
+                    _prior(reference, available)
+                depfile = "@work/link-dependencies/" + target.removeprefix("@work/") + ".d"
+                _outputs(command, [(target, True), (depfile, False)])
+                if command["outputs"][1]["max_size"] != MAX_DEPFILE_BYTES:
+                    _fail("link_capture")
             elif argv[0] == "@work/bin/lunar-freeze-module":
                 if stage["stage"] != "freeze":
                     _fail("stage")

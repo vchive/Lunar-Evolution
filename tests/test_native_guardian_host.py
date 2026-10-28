@@ -189,9 +189,14 @@ def test_owner_finish_requires_bootstrap_exit_and_watcher_zero(monkeypatch):
 def test_start_consumes_exact_ready_byte_and_returns_live_owner(monkeypatch):
     process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"])
 
-    class Watcher:
+    class Watcher(subprocess.Popen):
+        # Represent the exact owned Popen type without launching another child.
+        _child_created = False
         pid = 902
         returncode = None
+
+        def __init__(self):
+            pass
 
         def poll(self):
             return self.returncode

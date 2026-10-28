@@ -156,7 +156,8 @@ class _BRSNativeProviderBinding:
                 or self._controller.producer_known_rejection is not True
                 or self._controller.producer_multi_episode_publication is not True
                 or self._controller.producer_child_execution is not True
-                or self._context.python_handoff_after_execution is None
+                or not any(value is not None for value in
+                           NativeRSISchedulerContext._python_handoff_suppliers(self._context))
                 or type(self._state) is not str or self._state == "unknown"):
             _fail("binding_invalid")
         if (_material(self._child, self._handoff) != self._material or _bytes(plan) != self._material[2]
@@ -332,6 +333,8 @@ class _BRSNativeProviderBinding:
                 evaluator_fingerprint=context.evaluator_fingerprint, runner_fingerprint=context.runner_fingerprint,
                 dependency_sha256=context.dependency_sha256, environment_sha256=context.environment_sha256,
                 python_handoff_after_execution=context.python_handoff_after_execution,
+                **({"python_handoff_after_native_execution": context.python_handoff_after_native_execution}
+                   if getattr(context, "python_handoff_after_native_execution", None) is not None else {}),
                 evidence_revalidator=prepublication_check, execution_control=context.execution_control,
                 cancelled=context.cancelled, parent_deadline=self._child.deadline,
                 **({"live_modules_sink": NativeRSISchedulerContext._assert_live_modules_sink(context)}

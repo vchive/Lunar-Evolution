@@ -13,8 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 from _native_target_fixture import compile_native_target
-from test_native_independent_guardian import _TREE, _inactive, _read
+from test_native_independent_guardian import _TREE, _inactive, _read, _ReadyWatcher
 
+import lunar_evolution.native_guardian_custody as custody
 from lunar_evolution._candidate_workspace_io import DirectoryChain
 from lunar_evolution.linux_executable_binding import sealed_linux_executable
 from lunar_evolution.native_bootstrap import build_native_bootstrap_artifact
@@ -31,6 +32,52 @@ pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="actual Linux na
 _CONTEXT = "a" * 64
 _LAUNCH = "b" * 64
 _PROFILE = "c" * 64
+
+
+def test_custody_start_observes_exact_receiver_and_preserves_failed_owner(monkeypatch):
+    process, watcher = _ReadyWatcher(pid=101), _ReadyWatcher(pid=102)
+    receiver = SimpleNamespace(fd=8, executable="/proc/self/fd/8", sha256="d" * 64)
+    bootstrap = SimpleNamespace(fd=9, sha256="e" * 64)
+    chain = SimpleNamespace(fd=10)
+    calls, closed = [], []
+
+    def clock():
+        return .25
+
+    def wait(fd, deadline, monotonic, *, watcher):
+        calls.append((fd, deadline, monotonic, watcher))
+        raise NativeGuardianError("native_guardian_ready_invalid")
+
+    def info(fd):
+        return SimpleNamespace(st_dev=38, st_ino={3: 31, 4: 41, 5: 51, 6: 51}[fd])
+
+    monkeypatch.setattr(custody.sys, "platform", "linux")
+    monkeypatch.setattr(custody, "_POPEN", _ReadyWatcher)
+    monkeypatch.setattr(custody.subprocess, "Popen", lambda *_args, **_kwargs: watcher)
+    monkeypatch.setattr(custody.os, "pidfd_open", lambda *_args: 7, raising=False)
+    monkeypatch.setattr(custody.os, "getpgid", lambda _pid: process.pid)
+    monkeypatch.setattr(custody.os, "getsid", lambda _pid: process.pid)
+    monkeypatch.setattr(custody.os, "fstat", info)
+    monkeypatch.setattr(custody.os, "close", closed.append)
+    monkeypatch.setattr(custody, "_elf", lambda _binding: None)
+    monkeypatch.setattr(custody, "_pipe", lambda *_args: None)
+    monkeypatch.setattr(custody, "_private_chain", lambda _chain: [[38, 10, 0o40700, 2110, 2100]])
+    monkeypatch.setattr(custody, "_wait_ready", wait)
+    monkeypatch.setattr(custody, "inspect_native_guardian_custody",
+                        lambda *_args, **_kwargs: pytest.fail("failed readiness reached registration read"))
+    with pytest.raises(NativeGuardianError, match="native_guardian_custody_start_invalid") as caught:
+        start_durable_native_guardian(
+            process=process, receiver=receiver, bootstrap=bootstrap,
+            lifeline_fd=3, finish_fd=4, ack_fd=5, ack_read_fd=6,
+            original_directory_chain=chain, original_context_sha256=_CONTEXT,
+            original_launch_sha256=_LAUNCH, original_profile_sha256=_PROFILE,
+            deadline=1.0, deadline_ns=1_000_000_000, monotonic=clock,
+        )
+    assert calls == [(6, 1.0, clock, watcher)]
+    assert caught.value.guardian_owner._watcher is watcher
+    assert caught.value.guardian_owner._bootstrap is process
+    assert caught.value.guardian_owner._group_fd == 7
+    assert closed == []
 
 
 @pytest.fixture(scope="module")

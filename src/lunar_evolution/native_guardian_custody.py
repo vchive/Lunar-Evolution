@@ -213,7 +213,7 @@ def start_durable_native_guardian(
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
         owner = DurableNativeGuardianOwner(process, watcher, group_fd, deadline, monotonic, reference)
-        _wait_ready(ack_read_fd, deadline, monotonic)
+        _wait_ready(ack_read_fd, deadline, monotonic, watcher=watcher)
         if (watcher.poll() is not None or process.poll() is not None
                 or _private_chain(original_directory_chain) != pins):
             raise ValueError("guardian_custody_ready_invalid")

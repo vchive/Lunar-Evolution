@@ -37,6 +37,7 @@ from tools.static_python_rsi_fixture.link_dependency_capture import (
     validate_dependency_capture_plan,
 )
 from tools.static_python_rsi_fixture.runtime_closure import canonical
+from tools.static_python_rsi_fixture.standalone_linker import verify_standalone_linker_input
 
 
 class BuildDependencyError(RuntimeError):
@@ -205,6 +206,8 @@ def run_dependency_checked_build(
     interrupted: Callable[[], bool] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     custody_backend: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
 ) -> DependencyCheckedBuild:
     """Execute once and consume actual outputs under the original absolute budget.
 
@@ -217,6 +220,8 @@ def run_dependency_checked_build(
     recipe, compiler_paths, linker_paths = validate_dependency_capture_plan(
         recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
     )
     validate_dependency_command_graph(recipe)
     if custody_backend is not None and (type(custody_backend) is not str
@@ -245,6 +250,11 @@ def run_dependency_checked_build(
     report = None
     failure = None
     try:
+        if standalone_profile_bytes is not None:
+            verify_standalone_linker_input(
+                standalone_profile_bytes, expected_profile_sha256=expected_standalone_profile_sha256,
+                toolchain_root=toolchain_root, checkpoint=checkpoint,
+            )
         report = run_pinned_build_v3(
             preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
@@ -294,6 +304,8 @@ def run_dependency_checked_build(
         linker = compare_linker_dependencies(
             recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+            standalone_profile_bytes=standalone_profile_bytes,
+            expected_standalone_profile_sha256=expected_standalone_profile_sha256,
             output_inventory_bytes=inventory, expected_output_inventory_sha256=inventory_sha,
             dependency_artifacts={path: retained[path] for path in linker_paths}, **roots,
         )

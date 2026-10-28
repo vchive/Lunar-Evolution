@@ -93,7 +93,7 @@ def tmp_path():
     # symlink on macOS because process-boundary readers reject symlink parents.
     parent = next(
         str(candidate)
-        for candidate in (Path("/private/tmp"), Path("/var/tmp"), Path("/tmp"))
+        for candidate in (Path("/private/tmp"), Path("/tmp"), Path("/var/tmp"))
         if candidate.is_dir() and not candidate.is_symlink()
     )
     with tempfile.TemporaryDirectory(prefix="lce-", dir=parent) as directory:
