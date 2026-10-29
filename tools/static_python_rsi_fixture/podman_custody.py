@@ -52,6 +52,8 @@ MAX_CUSTODY_COMMANDS = 32
 SNAPSHOT_BACKEND = "podman-snapshots-v1"
 SOURCE_DATA_BACKEND = "podman-snapshots-source-data-v2"
 SOURCE_DATA_VFS_BACKEND = "podman-snapshots-source-data-vfs-v1"
+SOURCE_DATA_VFS_RETAINED_BACKEND = "podman-snapshots-source-data-vfs-retained-v1"
+VFS_RETENTION_PROFILE = "podman-vfs-raw-snapshots-v1"
 MAX_SNAPSHOT_COMMANDS = 512
 _PASSWD = b"root:x:0:0:root:/tmp/home:/nonexistent\n"
 _GROUP = b"root:x:0:\n"
@@ -520,7 +522,8 @@ class PodmanCustody:
 
     def __init__(self, *, destination: Path, prefix: list[str], recipe_sha256: str,
                  checkpoint: Callable[[], None], snapshot_mounts: bool = False,
-                 source_data: bool = False, vfs_roots: bool = False):
+                 source_data: bool = False, vfs_roots: bool = False,
+                 vfs_retained: bool = False):
         self.destination, self.prefix = destination, prefix
         self.recipe_sha256, self.checkpoint = recipe_sha256, checkpoint
         self.image_bytes = 0
@@ -530,11 +533,18 @@ class PodmanCustody:
             _fail("custody_snapshot_mode")
         if type(vfs_roots) is not bool or vfs_roots and not (source_data and snapshot_mounts):
             _fail("custody_vfs_mode")
+        if type(vfs_retained) is not bool or vfs_retained and not vfs_roots:
+            _fail("custody_vfs_retention_mode")
         self.snapshot_mounts, self.source_data = snapshot_mounts, source_data
-        self.vfs_roots = vfs_roots
+        self.vfs_roots, self.vfs_retained = vfs_roots, vfs_retained
         self.base_image: tuple[str, Path, dict] | None = None
         self.root = destination / "custody"
-        self.root.mkdir()
+        self.root.mkdir(mode=0o700) if vfs_retained else self.root.mkdir()
+        self.snapshot_store = None
+        if vfs_retained:
+            from tools.static_python_rsi_fixture.podman_vfs_snapshots import VfsSnapshotStore
+
+            self.snapshot_store = VfsSnapshotStore(destination, checkpoint)
         self.environment = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C",
                             "HOME": str(destination / "work" / ".home")}
 
@@ -585,7 +595,8 @@ class PodmanCustody:
 
     def _vfs_selection(self, container: str, image: str, root: Path,
                        operations: list[dict], expected_view: dict | None,
-                       readonly: dict[str, Path] | None, current: Path) -> tuple[dict, bytes, dict, dict]:
+                       readonly: dict[str, Path] | None, current: Path,
+                       *, snapshots=None) -> tuple[dict, bytes, dict, dict]:
         from tools.static_python_rsi_fixture import podman_vfs_root as vfs
 
         if type(expected_view) is not dict:
@@ -596,17 +607,23 @@ class PodmanCustody:
             info_raw = self._control(["info", "--format", (
                 '{"driver":{{json .Store.GraphDriverName}},"graph_root":{{json .Store.GraphRoot}},'
                 '"run_root":{{json .Store.RunRoot}}}')], "vfs-store-selection", root, operations)
+            if snapshots is not None:
+                snapshots.record("info", "selection", info_raw)
             template = ('{"container_id":{{json .ID}},"image":{{json .Image}},'
                         '"oci":{{json .OCIConfigPath}},"resolver":{{json .ResolvConfPath}},'
                         '"hostname":{{json .HostnamePath}},"hosts":{{json .HostsPath}}}')
-            selected = vfs.decode(self._control(
+            selected_raw = self._control(
                 ["inspect", "--type", "container", "--format", template, container],
-                "runtime-selection", root, operations))
+                "runtime-selection", root, operations)
+            if snapshots is not None:
+                snapshots.record("inspect", "selection", selected_raw)
+            selected = vfs.decode(selected_raw)
             if type(selected) is not dict or set(selected) != {
                 "container_id", "image", "oci", "resolver", "hostname", "hosts"}:
                 _fail("custody_vfs_metadata")
+            snapshot_options = {"snapshots": snapshots} if snapshots is not None else {}
             raw, proof = vfs.acquire(service, info_raw, selected, container, image,
-                                      expected_view, self.checkpoint)
+                                      expected_view, self.checkpoint, **snapshot_options)
             selected["rootfs"] = proof["root"]["path"]
             view = _source_data_execution_view(vfs.decode(raw), selected, readonly, current,
                                                 expected_view, self.checkpoint)
@@ -619,7 +636,8 @@ class PodmanCustody:
                 _fail("custody_vfs_namespace_view")
             protected = [Path(proof["graph_root"]), Path(proof["run_root"]),
                          *(Path(row["source"]) for row in view["mounts"])]
-            if vfs.check_mount_tables(service, protected, self.checkpoint) != proof["mount_tables"]:
+            final_options = {"snapshots": snapshots, "phase": "final-view"} if snapshots is not None else {}
+            if vfs.check_mount_tables(service, protected, self.checkpoint, **final_options) != proof["mount_tables"]:
                 _fail("custody_vfs_namespace_mount_drift")
             if self._service_pid("vfs-service-after", root, operations) != pid:
                 _fail("custody_vfs_service_drift")
@@ -631,7 +649,7 @@ class PodmanCustody:
     def _runtime_policy(self, container: str, image: str, executed: list[str],
                         environment: dict[str, str], current: Path, root: Path,
                         operations: list[dict], readonly: dict[str, Path] | None = None,
-                        *, expected_view: dict | None = None) -> dict:
+                        *, expected_view: dict | None = None, snapshots=None) -> dict:
         template = ('{"image":{{json .Image}},"oci":{{json .OCIConfigPath}},'
                     '"resolver":{{json .ResolvConfPath}},"hostname":{{json .HostnamePath}},'
                     '"hosts":{{json .HostsPath}}}')
@@ -640,8 +658,9 @@ class PodmanCustody:
         vfs_proof = None
         execution_view = None
         if self.vfs_roots:
+            snapshot_options = {"snapshots": snapshots} if snapshots is not None else {}
             selected, raw, vfs_proof, execution_view = self._vfs_selection(
-                container, image, root, operations, expected_view, readonly, current)
+                container, image, root, operations, expected_view, readonly, current, **snapshot_options)
         else:
             selected = json.loads(self._control(
                 ["inspect", "--type", "container", "--format", template, container],
@@ -812,7 +831,8 @@ class PodmanCustody:
                 observation["base_image_reused"] = False
         observation["cumulative_image_bytes"] = self.image_bytes
         observation["image_id"] = image
-        observation["input_layout"] = (SOURCE_DATA_VFS_BACKEND if self.vfs_roots else
+        observation["input_layout"] = (SOURCE_DATA_VFS_RETAINED_BACKEND if self.vfs_retained else
+                                       SOURCE_DATA_VFS_BACKEND if self.vfs_roots else
                                        SOURCE_DATA_BACKEND if self.source_data else
                                        SNAPSHOT_BACKEND if self.snapshot_mounts else "copied-image-v1")
         return image, readonly
@@ -827,7 +847,7 @@ class PodmanCustody:
         else:
             _static_helper_inputs(inputs, snapshots, prior, work, self.checkpoint)
         root = self.root / (stage + "-" + str(index))
-        root.mkdir()
+        root.mkdir(mode=0o700) if self.vfs_retained else root.mkdir()
         current = root / "current"
         current.mkdir()
         _prepare_v2_outputs(current, outputs, self.checkpoint)
@@ -866,11 +886,15 @@ class PodmanCustody:
             if self.vfs_roots:
                 observation.update(schema="lunar-podman-build-command-observation-v3",
                                    root_acquisition_profile="podman-vfs-root-v1")
+            if self.vfs_retained:
+                observation.update(schema="lunar-podman-build-command-observation-v4",
+                                   snapshot_retention_profile=VFS_RETENTION_PROFILE)
         evidence.update(status="partial", returncode=None, direct_child_reaped=False,
                         descendant_cleanup_verified=False, custody=observation)
         operations = observation["operations"]
         container = None
         try:
+            capture = self.snapshot_store.command(stage, index) if self.vfs_retained else None
             image, readonly = self._prepare_image(root=root, inputs=inputs, snapshots=snapshots,
                 prior=prior, work=work, observation=observation, operations=operations)
             expected_view = (_source_data_mount_roots(readonly, current, self.checkpoint)
@@ -918,12 +942,20 @@ class PodmanCustody:
             observation["container_creation_unknown"] = False
             self._control(["init", container], "init", root, operations)
             runtime_options = {"expected_view": expected_view} if self.source_data else {}
+            if capture is not None:
+                runtime_options["snapshots"] = capture
             observation["runtime_policy"] = self._runtime_policy(
                 container, image, executed, guest_environment, current, root, operations,
                 readonly, **runtime_options,
             )
             if _read_bounded(root, "seccomp.json", _MAX_OCI_BYTES, self.checkpoint) != _json(_SECCOMP):
                 _fail("custody_runtime_seccomp")
+            if capture is not None:
+                observation["vfs_snapshots"] = capture.complete({
+                    "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,
+                    "container_id": container, "image_id": image,
+                    "root_acquisition_sha256": observation["runtime_policy"]["root_acquisition_sha256"],
+                })
             attach: dict[str, Any] = {}
             operations.append({"operation": "start-attach", "evidence": attach})
             _command(self.prefix + ["start", "--attach", container], work=root,
@@ -1152,4 +1184,129 @@ def validate_custody_observation_v3(command: dict, planned: dict, stage: str, in
     compatible = {**command, "custody": {**value,
         "schema": "lunar-podman-build-command-observation-v2", "input_layout": SOURCE_DATA_BACKEND}}
     validate_custody_observation_v2(compatible, planned, stage, index, recipe_sha256, environment,
+        inputs=inputs, prior=prior, workspace=workspace, checkpoint=checkpoint)
+
+
+def _retained_runtime_spec(spec: dict, value: dict, workspace: Path, stage: str, index: int) -> None:
+    """Replay policy from original OCI bytes without querying the live service."""
+    try:
+        policy, process = value["runtime_policy"], spec["process"]
+        view = policy["execution_view"]
+        if (spec["root"].get("readonly") is not True
+                or spec["root"].get("path") != view["root"]["path"]
+                or process.get("noNewPrivileges") is not True
+                or type(process.get("capabilities")) is not dict
+                or any(process["capabilities"].values())
+                or process["args"] != value["executed_argv"]
+                or process["cwd"] != GUEST_CURRENT_ROOT
+                or sorted(process["env"]) != sorted(
+                    key + "=" + item for key, item in value["executed_environment"].items())):
+            raise ValueError
+        namespaces = spec["linux"]["namespaces"]
+        if (type(namespaces) is not list or any(type(row) is not dict for row in namespaces)
+                or len({row["type"] for row in namespaces}) != len(namespaces)
+                or any(not any(row.get("type") == kind and not row.get("path") for row in namespaces)
+                       for kind in ("pid", "network", "ipc", "uts", "mount"))):
+            raise ValueError
+        seccomp = spec["linux"]["seccomp"]
+        if any(seccomp.get(key) != _SECCOMP[key] for key in ("defaultAction", "architectures", "syscalls")):
+            raise ValueError
+        resources = spec["linux"]["resources"]
+        cpu = resources["cpu"]
+        bounds = [(resources["memory"]["limit"], 2 * 1024**3), (resources["pids"]["limit"], 256),
+                  (cpu["period"], 2**63 - 1), (cpu["quota"], 2 * cpu["period"])]
+        if any(type(number) is not int or not 0 < number <= bound for number, bound in bounds):
+            raise ValueError
+        limits = process["rlimits"]
+        if (type(limits) is not list or any(type(row) is not dict for row in limits)
+                or len({row["type"] for row in limits}) != len(limits)
+                or any(not any(row.get("type") == kind and row.get("soft") == bound
+                               and row.get("hard") == bound for row in limits)
+                       for kind, bound in (("RLIMIT_CORE", 0), ("RLIMIT_FSIZE", MAX_OUTPUT_BYTES)))):
+            raise ValueError
+        mount_rows = spec["mounts"]
+        if type(mount_rows) is not list or any(type(row) is not dict for row in mount_rows):
+            raise ValueError
+        expected_view = {row["destination"]: row for row in view["mounts"]}
+        ancillary = {row["destination"]: row for row in policy["root_acquisition"]["ancillary_mounts"]}
+        kernel = {"/proc": "proc", "/dev": "tmpfs", "/sys": "sysfs", "/dev/pts": "devpts",
+                  "/dev/mqueue": "mqueue", "/sys/fs/cgroup": "cgroup"}
+        command_root = workspace / "custody" / (stage + "-" + str(index))
+        seen = set()
+        for mount in mount_rows:
+            target, source, kind = mount["destination"], mount["source"], mount["type"]
+            options = mount["options"]
+            if (type(target) is not str or type(source) is not str or type(options) is not list
+                    or any(type(option) is not str for option in options) or target in seen):
+                raise ValueError
+            keys = [option.split("=", 1)[0] for option in options]
+            options_set = set(options)
+            if (len(keys) != len(set(keys)) or any({left, right} <= options_set for left, right in (
+                    ("ro", "rw"), ("exec", "noexec"), ("suid", "nosuid"), ("dev", "nodev")))):
+                raise ValueError
+            seen.add(target)
+            if target in expected_view:
+                row = expected_view[target]
+                if source != row["source"] or kind != row["type"] or sorted(options) != row["options"]:
+                    raise ValueError
+            elif target == "/tmp":
+                if kind != "tmpfs" or not {"rw", "noexec", "nosuid", "nodev", "size=268435456"} <= options_set:
+                    raise ValueError
+            elif target == "/dev/shm":
+                if kind != "tmpfs" or not {"ro", "noexec", "nosuid", "nodev", "size=65536"} <= options_set:
+                    raise ValueError
+            elif target in ancillary:
+                row = ancillary[target]
+                if (source != row["source"] or kind != "bind"
+                        or not {"ro", "noexec", "nosuid", "nodev"} <= options_set):
+                    raise ValueError
+                if target == "/etc/resolv.conf":
+                    if source != str(command_root / "fixed-resolv.conf") or row["size"] != 0:
+                        raise ValueError
+                elif target in {"/etc/passwd", "/etc/group", "/run/.containerenv"}:
+                    if value["container_id"] not in Path(source).parts or "userdata" not in Path(source).parts:
+                        raise ValueError
+                    if target in {"/etc/passwd", "/etc/group"}:
+                        data = _PASSWD if target == "/etc/passwd" else _GROUP
+                        if row["size"] != len(data) or row["sha256"] != _pin(data):
+                            raise ValueError
+                else:
+                    raise ValueError
+            elif target in kernel:
+                if (((kind != kernel[target] or not {"nosuid", "noexec"} <= options_set)
+                     and (target != "/dev" or kind != "tmpfs" or not {"nosuid", "ro"} <= options_set))
+                        or target in {"/dev", "/sys", "/sys/fs/cgroup"} and "ro" not in options_set):
+                    raise ValueError
+            else:
+                raise ValueError
+        if not {*expected_view, *ancillary, "/tmp", "/dev/shm", "/etc/resolv.conf"} <= seen:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, AttributeError):
+        raise ValueError("podman_custody_retained_runtime_spec") from None
+
+
+def validate_custody_observation_v4(command: dict, planned: dict, stage: str, index: int,
+                                    recipe_sha256: str, environment: dict, *, inputs: dict,
+                                    prior: list[dict], workspace: Path,
+                                    checkpoint: Callable[[], None] | None = None) -> None:
+    """Replay retained original bytes, then preserve every detached v3 check."""
+    from tools.static_python_rsi_fixture.podman_vfs_snapshots import verify_snapshots
+
+    value = command.get("custody")
+    if (type(value) is not dict or value.get("schema") != "lunar-podman-build-command-observation-v4"
+            or value.get("input_layout") != SOURCE_DATA_VFS_RETAINED_BACKEND
+            or value.get("snapshot_retention_profile") != VFS_RETENTION_PROFILE):
+        raise ValueError("podman_custody_original_observation_v4")
+    policy = value.get("runtime_policy")
+    if type(policy) is not dict or type(policy.get("root_acquisition")) is not dict:
+        raise ValueError("podman_custody_original_observation_v4")
+    binding = {"recipe_sha256": recipe_sha256, "stage": stage, "index": index,
+               "container_id": value.get("container_id"), "image_id": value.get("image_id"),
+               "root_acquisition_sha256": policy.get("root_acquisition_sha256")}
+    spec = verify_snapshots(workspace, value.get("vfs_snapshots"), binding, policy["root_acquisition"],
+                            value.get("operations"), checkpoint or (lambda: None))
+    _retained_runtime_spec(spec, value, workspace, stage, index)
+    compatible = {**command, "custody": {**value,
+        "schema": "lunar-podman-build-command-observation-v3", "input_layout": SOURCE_DATA_VFS_BACKEND}}
+    validate_custody_observation_v3(compatible, planned, stage, index, recipe_sha256, environment,
         inputs=inputs, prior=prior, workspace=workspace, checkpoint=checkpoint)

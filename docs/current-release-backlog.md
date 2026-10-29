@@ -1,4 +1,39 @@
-## Current P0–P2 execution status — 2026-10-29
+## Current P0–P2 execution status — retained VFS successor, 2026-10-29
+
+This section supersedes the historical status below. Development is on
+`codex/vfs-snapshot-retention`, based on 91187d8. No open PR met the complete CI
+merge gate in the read-only audit; none was merged. PR190–193 keep their original
+HEADs and evidence. Sampled six-hour cancellations occurred in regression steps
+after successful dependency installation; the exact blocked case remains unknown.
+
+| Priority | Current result | Remaining |
+|---|---|---|
+| P0 | Merge eligibility audited; original mixed passes and CI diagnostics retained. | Complete applicable CI/source audit and main integration. No failed/cancelled/queued result is a passing gate. |
+| P1 | Explicit retained VFS APIs, report-v6/observation-v4/consumer-v4; original raw store/OCI/mountinfo/ancillary evidence replay. One actual six-command inert Linux run passed. | Full implicit compiler/config/resource/cache closure, CPython/freezer/static ELF, sealed runtime, installation and production CLI acceptance. |
+| P2 | Existing resource/worker-vault/standard-stream software results retained. | Exclusive fixed-U/finite writer acquisition, original accepting-monitor join and actual root/account/ACL/cgroup/disconnect/blocked-storage acceptance. The 42 prerequisite skips remain unaccepted. |
+
+Frozen 1ea11ecd: 936 unique cases across 25 complete files, 933 pass/3 assertion
+failures, no error/skip, 24.192139 seconds. Only two test expectations omitted the
+existing error-code prefix. Frozen 69d13f21 changes those assertions alone;
+product bytes/modes are identical. The one affected file then passed 21/21 in
+1.486206 seconds. Current applicable passing coverage is 936 unique, including
+159 new cases; original failures remain retained. This is not 957 distinct cases
+or one final-tree complete CI run. The manifest has 83 groups/65 zero-skip groups,
+expected sum 7299. Ruff, compileall and diff checks pass.
+
+The new-source actual inert run passed six original commands under one 600-second
+absolute budget, zero retries, receipt elapsed 7.987877 seconds. All 2731 source
+files remained unchanged. This time original raw snapshots are retained locally
+and tied to fixed private command manifests; detached checks reparse them and
+preserve the existing observation/workspace gates. The 512 MiB cumulative write
+ledger is enforced by the trusted original store, not independently proven as a
+whole-attempt filesystem quota by the consumer. Raw metadata is not published.
+This remains a finite static-C mechanism, not complete CPython/solver/runtime or
+installed authority. See [retention SDD](../specs/193-static-python-rsi-launch/vfs-snapshot-retention.md).
+Evidence: primary ignored `validation/merge-and-snapshots-20261029/`.
+`production_admission=false`, `online_publication=false`.
+
+## Historical status before retained VFS — 2026-10-29
 
 This section takes precedence over historical snapshots below. Current development
 continues from 13d8a7d on `codex/source-data-vfs-root`; PR190–192 remain

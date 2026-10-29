@@ -1,3 +1,49 @@
+<!-- retained-vfs-current:start -->
+## 当前执行点：VFS 原始快照留存和重放已实跑，合入仍受完整 CI 阻塞（2026-10-29）
+
+工作区 `/Users/liminghan/.codex/worktrees/source-data-execution-view/lunar_agent`，
+分支 `codex/vfs-snapshot-retention`，基线 `91187d8bb00d1b12afba0b04e4d8970a3555bec4`。
+本节覆盖下方旧执行点；不修改 PR190–193 原 HEAD。只读核对21个open PR，没有
+完整CI全绿的可合项，未绕门合main。08:55Z快照190=3success/36cancelled/3running，
+191=1success/4cancelled/17running/20queued，192/193各42queued；后续以fresh API为准。
+抽查原job steps已确认checkout/setup/install/provenance成功，六小时取消发生在测试
+阶段；具体用例仍未知。原1810/d39 mixed已消耗，仍不重派/转Darwin。
+
+新增显式 `run_pinned_build_v4_vfs_retained` 与 consumer counterpart，唯一backend
+`podman-snapshots-source-data-vfs-retained-v1`；recipe-v4不变，report-v6 /
+observation-v4 / consumer-v4；原API/default/旧proof-v1不变。内部store在原读取FD
+通过稳定性/name检查后立即留存buffer和同FD身份：info/inspect、store前后、OCI、
+双侧三阶段mountinfo与ancillary双方。0700目录/0600原件/create-only CAS、固定目录
+inode、file/name复核，失败保留partial，不start、不增预算。每command最多24事件、
+manifest64KiB，原trusted store累计写入512MiB（不是detached全attempt配额证明）。
+消费端重放原raw图和全部OCI策略，随后保留原v3/v2 workspace/output检查。原始
+store/OCI可能含本机其他容器元数据/runner构造的guest env，只在ignored私有原件中
+保留，不上传GitHub。SDD `specs/193-static-python-rsi-launch/vfs-snapshot-retention.md`。
+
+合批首frozen tree `1ea11ecd4985a245ebea569371e2fff645be48c2`，25完整文件Linux串行
+936unique=933pass/3fail/0error/skip，24.192139秒，2731source files不变。3fail均新增
+custody测试漏写既有错误码前缀。只改两test断言，frozen tree
+`69d13f21bb2cc8e89724f7fc8bfc318bc68bf6cf`，唯一变化为该test，全部产品bytes/modes
+不变；只补验该完整文件21/21pass，1.486206秒。当前936去重节点有通过结果，含
+159新增；不是957distinct或同一最终tree的完整CI，原3fail保留。CI manifest仍
+83组/65zero-skip，expected sum7299。开发期修复前113项无XML的检查不充当最终验收。
+
+新frozen source独立一次实际Linux retained inert smoke：6commands通过，原600秒
+绝对预算/零retry，receipt7.987877秒，wrapper8.248112秒，2731source前后不变。
+原raw store/OCI/六次mountinfo/ancillary正文这次实际留存，原失败receipt不覆盖。
+它仍只验证有限静态C工具和report链路，不是完整CPython/solver/安装/生产CLI。
+本轮原件与软件/真实独审在主区ignored
+`validation/merge-and-snapshots-20261029/`；独审完成情况以其中JSON为准。
+
+下一步P0：完整CI和main集成，diagnostics尚不等于未知卡点已修。P1：完整隐式
+compiler/config/resource/cache闭包、CPython/freezer/static ELF、sealed startup和
+生产per-episode CLI。P2：exclusive fixed-U/finite writer acquisition、同一原owner
+到accepting-monitor join及实际root/account/ACL/cgroup/disconnect/blocked-storage
+验收；42root前提skip继续不记通过。quota障碍已解除，不继续描述账号满配额。
+不运行模型/WebAgent/远程或公司evaluator/真实solver，不读.env/密钥/live argv/env，
+benchmark原区只读；`production_admission=false`、`online_publication=false`。
+<!-- retained-vfs-current:end -->
+
 <!-- source-data-vfs-current:start -->
 ## 当前执行点：显式 VFS 构建视图已实跑，完整运行时仍开放（2026-10-29）
 

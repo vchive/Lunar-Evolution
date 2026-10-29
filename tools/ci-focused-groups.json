@@ -159,9 +159,14 @@
         "tests/test_static_python_podman_vfs_root.py",
         "tests/test_static_python_source_data_vfs_custody.py",
         "tests/test_static_python_source_data_vfs_backend.py",
-        "tests/test_static_python_source_data_vfs_consumer.py"
+        "tests/test_static_python_source_data_vfs_consumer.py",
+        "tests/test_static_python_vfs_snapshots.py",
+        "tests/test_static_python_retained_runtime_spec.py",
+        "tests/test_static_python_source_data_vfs_retained_backend.py",
+        "tests/test_static_python_source_data_vfs_retained_consumer.py",
+        "tests/test_static_python_source_data_vfs_retained_custody.py"
       ],
-      "expected_tests": 468,
+      "expected_tests": 627,
       "zero_skips": true
     },
     {

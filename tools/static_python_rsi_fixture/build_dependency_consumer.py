@@ -36,6 +36,7 @@ from tools.static_python_rsi_fixture.execution_backend import (
     run_pinned_build_v3,
     run_pinned_build_v4,
     run_pinned_build_v4_vfs,
+    run_pinned_build_v4_vfs_retained,
 )
 from tools.static_python_rsi_fixture.installation_profile import RSIProfilePreparation
 from tools.static_python_rsi_fixture.link_dependency_capture import (
@@ -130,10 +131,13 @@ def _report_outputs(report: BuildExecutionReport, recipe: dict,
                     custody_backend: str | None = None, *, version4: bool = False,
                     workspace: Path | None = None, checkpoint: Callable[[], None] | None = None,
                     vfs_roots: bool = False,
+                    vfs_retained: bool = False,
                     ) -> tuple[bytes, list[dict]]:
-    source_data_backend = ("podman-snapshots-source-data-vfs-v1" if vfs_roots
+    source_data_backend = ("podman-snapshots-source-data-vfs-retained-v1" if vfs_retained else
+                           "podman-snapshots-source-data-vfs-v1" if vfs_roots
                            else "podman-snapshots-source-data-v2")
-    if type(vfs_roots) is not bool or vfs_roots and not version4:
+    if (type(vfs_roots) is not bool or vfs_roots and not version4
+            or type(vfs_retained) is not bool or vfs_retained and not (version4 and vfs_roots)):
         raise BuildDependencyError("custody_backend")
     if version4 and (custody_backend != source_data_backend or workspace is None):
         raise BuildDependencyError("custody_backend")
@@ -163,8 +167,10 @@ def _report_outputs(report: BuildExecutionReport, recipe: dict,
                 from tools.static_python_rsi_fixture.podman_custody import (
                     validate_custody_observation_v2,
                     validate_custody_observation_v3,
+                    validate_custody_observation_v4,
                 )
-                validate_observation = (validate_custody_observation_v3 if vfs_roots
+                validate_observation = (validate_custody_observation_v4 if vfs_retained else
+                                        validate_custody_observation_v3 if vfs_roots
                                         else validate_custody_observation_v2)
                 validate_observation(
                     command, expected, planned["stage"], index, report.recipe_sha256,
@@ -193,7 +199,8 @@ def _report_outputs(report: BuildExecutionReport, recipe: dict,
             raise BuildDependencyError("execution_report")
         records.extend(group)
     payload = {
-        "schema": ("lunar-static-python-build-execution-report-v5" if vfs_roots else
+        "schema": ("lunar-static-python-build-execution-report-v6" if vfs_retained else
+                   "lunar-static-python-build-execution-report-v5" if vfs_roots else
                    "lunar-static-python-build-execution-report-v4" if version4
                    else "lunar-static-python-build-execution-report-v3"),
         "recipe_sha256": report.recipe_sha256, "completed_stages": list(report.completed_stages),
@@ -250,6 +257,7 @@ def _run_dependency_checked_build(
     expected_standalone_profile_sha256: str | None = None,
     version4: bool = False,
     vfs_roots: bool = False,
+    vfs_retained: bool = False,
 ) -> DependencyCheckedBuild:
     """Execute once and consume actual outputs under the original absolute budget.
 
@@ -259,9 +267,11 @@ def _run_dependency_checked_build(
     output inventory, callback-produced receipt, current digest as authority,
     retry, default CLI fallback or extra execution budget is accepted.
     """
-    source_data_backend = ("podman-snapshots-source-data-vfs-v1" if vfs_roots
+    source_data_backend = ("podman-snapshots-source-data-vfs-retained-v1" if vfs_retained else
+                           "podman-snapshots-source-data-vfs-v1" if vfs_roots
                            else "podman-snapshots-source-data-v2")
-    if type(vfs_roots) is not bool or vfs_roots and not version4:
+    if (type(vfs_roots) is not bool or vfs_roots and not version4
+            or type(vfs_retained) is not bool or vfs_retained and not (version4 and vfs_roots)):
         raise BuildDependencyError("custody_backend")
     if version4 and (type(custody_backend) is not str or custody_backend != source_data_backend):
         raise BuildDependencyError("custody_backend")
@@ -305,7 +315,8 @@ def _run_dependency_checked_build(
                 standalone_profile_bytes, expected_profile_sha256=expected_standalone_profile_sha256,
                 toolchain_root=toolchain_root, checkpoint=checkpoint,
             )
-        runner = (run_pinned_build_v4_vfs if vfs_roots else
+        runner = (run_pinned_build_v4_vfs_retained if vfs_retained else
+                  run_pinned_build_v4_vfs if vfs_roots else
                   run_pinned_build_v4 if version4 else run_pinned_build_v3)
         report = runner(
             preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
@@ -316,7 +327,7 @@ def _run_dependency_checked_build(
         checkpoint()
         report_bytes, outputs = _report_outputs(
             report, recipe, custody_backend, version4=version4, workspace=workspace, checkpoint=checkpoint,
-            vfs_roots=vfs_roots,
+            vfs_roots=vfs_roots, vfs_retained=vfs_retained,
         )
         workspace = workspace.absolute()
         report_pin = {"path": "report.json", "size": len(report_bytes),
@@ -380,7 +391,8 @@ def _run_dependency_checked_build(
         linker_sha = _write_once(workspace, "linker-dependency-comparison.json",
                                  linker.canonical_bytes, checkpoint)
         evidence = canonical({
-            "schema": ("lunar-actual-build-dependency-consumer-v3" if vfs_roots else
+            "schema": ("lunar-actual-build-dependency-consumer-v4" if vfs_retained else
+                       "lunar-actual-build-dependency-consumer-v3" if vfs_roots else
                        "lunar-actual-build-dependency-consumer-v2" if version4
                        else "lunar-actual-build-dependency-consumer-v1"), "status": "compared",
             **({"custody_backend": source_data_backend} if vfs_roots else {}),
@@ -481,4 +493,30 @@ def run_dependency_checked_build_v4_vfs(
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
         version4=True, vfs_roots=True,
+    )
+
+
+def run_dependency_checked_build_v4_vfs_retained(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str = "podman-snapshots-source-data-vfs-retained-v1",
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+) -> DependencyCheckedBuild:
+    """Consume original retained VFS snapshots and the exact persisted report.
+
+    Existing profile reports are refused. Snapshot readback, compiler depfiles
+    and linker comparisons share the original deadline and confer no authority.
+    """
+    return _run_dependency_checked_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace, deadline=deadline,
+        interrupted=interrupted, monotonic=monotonic, custody_backend=custody_backend,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        version4=True, vfs_roots=True, vfs_retained=True,
     )

@@ -88,7 +88,8 @@ def directory_at(root_fd: int, path: Path, checkpoint: Callable[[], None]) -> di
         os.close(descriptor)
 
 
-def read_at(root_fd: int, path: Path, maximum: int, checkpoint: Callable[[], None]) -> bytes:
+def read_at(root_fd: int, path: Path, maximum: int, checkpoint: Callable[[], None],
+            *, snapshots=None, role=None, phase=None) -> bytes:
     descriptor = _open_at(root_fd, path, checkpoint=checkpoint)
     try:
         before = os.fstat(descriptor)
@@ -116,7 +117,11 @@ def read_at(root_fd: int, path: Path, maximum: int, checkpoint: Callable[[], Non
                 _fail("custody_vfs_drift")
         finally:
             os.close(reopened)
-        return b"".join(chunks)
+        raw = b"".join(chunks)
+        if snapshots is not None:
+            snapshots.record(role, phase, raw, {**identity(before), "size": before.st_size,
+                                               "mtime_ns": before.st_mtime_ns, "ctime_ns": before.st_ctime_ns})
+        return raw
     finally:
         os.close(descriptor)
 
@@ -199,10 +204,10 @@ def _socket_owner(pid: int, socket: Path, checkpoint: Callable[[], None]) -> dic
     return {"path": str(socket), "identity": identity(info), "kernel_inode": matching[0]}
 
 
-def mount_table(pid: int | None, checkpoint: Callable[[], None]) -> tuple[str, list[Path]]:
-    """Read only bounded kernel mount topology, without exposing its path rows."""
-    checkpoint()
-    raw = _proc_bytes(f"/proc/{pid if pid is not None else 'self'}/mountinfo")
+def parse_mount_table(raw: bytes, checkpoint: Callable[[], None]) -> list[Path]:
+    """Parse one bounded original kernel table without querying a live process."""
+    if type(raw) is not bytes or len(raw) > 1024**2:
+        _fail("custody_vfs_mountinfo")
     rows = raw.splitlines()
     if not rows or len(rows) > MAX_RECORDS:
         _fail("custody_vfs_mountinfo")
@@ -222,15 +227,27 @@ def mount_table(pid: int | None, checkpoint: Callable[[], None]) -> tuple[str, l
         except (ValueError, UnicodeError, BuildExecutionError):
             _fail("custody_vfs_mountinfo")
         paths.append(path)
-    return _digest(raw), paths
+    return paths
+
+
+def mount_table(pid: int | None, checkpoint: Callable[[], None], *, snapshots=None,
+                role: str = "service", phase: str = "acquire-before") -> tuple[str, list[Path]]:
+    """Read only bounded kernel mount topology, without exposing its path rows."""
+    checkpoint()
+    raw = _proc_bytes(f"/proc/{pid if pid is not None else 'self'}/mountinfo")
+    if snapshots is not None:
+        snapshots.record("mountinfo-" + role, phase, raw)
+    return _digest(raw), parse_mount_table(raw, checkpoint)
 
 
 def check_mount_tables(service: ServiceRoot, protected: list[Path],
-                       checkpoint: Callable[[], None]) -> dict:
+                       checkpoint: Callable[[], None], *, snapshots=None,
+                       phase: str = "acquire-before") -> dict:
     """The supported profile refuses subordinate mounts in either namespace."""
     result = {}
     for role, pid in (("service", service.pid), ("client", None)):
-        digest, mounts = mount_table(pid, checkpoint)
+        options = {"snapshots": snapshots, "role": role, "phase": phase} if snapshots is not None else {}
+        digest, mounts = mount_table(pid, checkpoint, **options)
         for mount in mounts:
             checkpoint()
             if any(mount == path or path in mount.parents for path in protected):
@@ -310,7 +327,8 @@ def _records(raw: bytes) -> list[dict]:
 
 
 def acquire(service: ServiceRoot, info_raw: bytes, selected: dict, container: str,
-            image: str, expected_mounts: dict, checkpoint: Callable[[], None]) -> tuple[bytes, dict]:
+            image: str, expected_mounts: dict, checkpoint: Callable[[], None],
+            *, snapshots=None) -> tuple[bytes, dict]:
     """Join fresh independent service metadata to one actual initialized OCI root."""
     info = decode(info_raw)
     if (type(info) is not dict or set(info) != {"driver", "graph_root", "run_root"}
@@ -323,14 +341,19 @@ def acquire(service: ServiceRoot, info_raw: bytes, selected: dict, container: st
     if graph == run or graph in run.parents or run in graph.parents:
         _fail("custody_vfs_path")
     protected = [graph, run, *(absolute(row["source"]) for row in expected_mounts.values())]
-    mount_tables = check_mount_tables(service, protected, checkpoint)
+    capture = {"snapshots": snapshots} if snapshots is not None else {}
+    mount_tables = check_mount_tables(service, protected, checkpoint, **capture)
     directory_at(service.root_fd, run, checkpoint)
     container_path, layer_path = graph / "vfs-containers/containers.json", graph / "vfs-layers/layers.json"
     container_identity = file_identity_at(service.root_fd, container_path, checkpoint)
     layer_identity = file_identity_at(service.root_fd, layer_path, checkpoint)
-    containers_raw = read_at(service.root_fd, container_path,
-                             MAX_METADATA_BYTES, checkpoint)
-    layers_raw = read_at(service.root_fd, graph / "vfs-layers/layers.json", MAX_METADATA_BYTES, checkpoint)
+    def captured(role, phase):
+        return {"snapshots": snapshots, "role": role, "phase": phase} if snapshots is not None else {}
+
+    containers_raw = read_at(service.root_fd, container_path, MAX_METADATA_BYTES, checkpoint,
+                             **captured("containers", "before"))
+    layers_raw = read_at(service.root_fd, layer_path, MAX_METADATA_BYTES, checkpoint,
+                         **captured("layers", "before"))
     containers, layers = _records(containers_raw), _records(layers_raw)
     matches = [row for row in containers if row["id"] == container]
     if len(matches) != 1:
@@ -360,7 +383,7 @@ def acquire(service: ServiceRoot, info_raw: bytes, selected: dict, container: st
     if oci != graph / "vfs-containers" / container / "userdata/config.json":
         _fail("custody_vfs_metadata")
     oci_identity = file_identity_at(service.root_fd, oci, checkpoint)
-    oci_raw = read_at(service.root_fd, oci, 1024**2, checkpoint)
+    oci_raw = read_at(service.root_fd, oci, 1024**2, checkpoint, **captured("oci", "acquire"))
     spec = decode(oci_raw)
     if (type(spec) is not dict or type(spec.get("root")) is not dict
             or spec["root"].get("path") != str(root)):
@@ -380,10 +403,14 @@ def acquire(service: ServiceRoot, info_raw: bytes, selected: dict, container: st
             source = absolute(rows[0].get("source"))
             ceiling = 1 if destination == "/etc/resolv.conf" else 16384
             actual_identity = file_identity_at(service.root_fd, source, checkpoint)
-            if actual_identity != file_identity_at(host, source, checkpoint):
+            host_identity = file_identity_at(host, source, checkpoint)
+            if actual_identity != host_identity:
                 _fail("custody_vfs_namespace_view")
-            actual_bytes = read_at(service.root_fd, source, ceiling, checkpoint)
-            if actual_bytes != read_at(host, source, ceiling, checkpoint):
+            role = "ancillary-" + {"/etc/resolv.conf": "resolver", "/etc/passwd": "passwd",
+                                    "/etc/group": "group", "/run/.containerenv": "containerenv"}[destination]
+            actual_bytes = read_at(service.root_fd, source, ceiling, checkpoint, **captured(role, "service"))
+            host_bytes = read_at(host, source, ceiling, checkpoint, **captured(role, "host"))
+            if actual_bytes != host_bytes:
                 _fail("custody_vfs_namespace_view")
             if actual_identity != file_identity_at(service.root_fd, source, checkpoint):
                 _fail("custody_vfs_drift")
@@ -392,15 +419,20 @@ def acquire(service: ServiceRoot, info_raw: bytes, selected: dict, container: st
     finally:
         os.close(host)
     # Re-read original metadata names; a consistent replacement is still drift.
-    if (read_at(service.root_fd, graph / "vfs-containers/containers.json", MAX_METADATA_BYTES,
-                checkpoint) != containers_raw
-            or read_at(service.root_fd, graph / "vfs-layers/layers.json", MAX_METADATA_BYTES,
-                       checkpoint) != layers_raw
+    containers_after = read_at(service.root_fd, container_path, MAX_METADATA_BYTES, checkpoint,
+                               **captured("containers", "after"))
+    # Keep the original short-circuit: a changed first body does not permit extra reads.
+    if containers_after != containers_raw:
+        _fail("custody_vfs_drift")
+    layers_after = read_at(service.root_fd, layer_path, MAX_METADATA_BYTES, checkpoint,
+                           **captured("layers", "after"))
+    if (layers_after != layers_raw
             or file_identity_at(service.root_fd, container_path, checkpoint) != container_identity
             or file_identity_at(service.root_fd, layer_path, checkpoint) != layer_identity
             or file_identity_at(service.root_fd, oci, checkpoint) != oci_identity):
         _fail("custody_vfs_drift")
-    if check_mount_tables(service, protected, checkpoint) != mount_tables:
+    after_options = {"snapshots": snapshots, "phase": "acquire-after"} if snapshots is not None else {}
+    if check_mount_tables(service, protected, checkpoint, **after_options) != mount_tables:
         _fail("custody_vfs_namespace_mount_drift")
     service.verify()
     proof = {"schema": SCHEMA, "backend": BACKEND, "container_id": container,
