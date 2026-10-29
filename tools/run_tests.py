@@ -14,9 +14,11 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path, PurePosixPath
 
 from _pytest.junitxml import bin_xml_escape, mangle_test_address
@@ -69,6 +71,60 @@ ARCHIVE_RETRY_NODE = (
     "tests/test_measurement139_observation.py::"
     "test_preparation_ceiling_does_not_leak_between_threads"
 )
+_DIAGNOSTICS = ContextVar("regression_diagnostics", default=None)
+_DIAGNOSTIC_OBSERVATION = ContextVar("regression_diagnostic_observation", default=None)
+_DIAGNOSTIC_ATTEMPT = ContextVar("regression_diagnostic_attempt", default=1)
+
+
+@contextmanager
+def _diagnostics(enabled, *, suite, role):
+    """Scope explicitly selected diagnostics to this invocation, including failures."""
+    token = _DIAGNOSTICS.set((suite, role) if enabled else None)
+    observation_token = _DIAGNOSTIC_OBSERVATION.set(None)
+    attempt_token = _DIAGNOSTIC_ATTEMPT.set(1)
+    try:
+        yield
+    finally:
+        _DIAGNOSTIC_ATTEMPT.reset(attempt_token)
+        _DIAGNOSTIC_OBSERVATION.reset(observation_token)
+        _DIAGNOSTICS.reset(token)
+
+
+@contextmanager
+def _diagnostic_phase(phase, **counts):
+    context = _DIAGNOSTICS.get()
+    if context is None:
+        yield None
+        return
+    suite, role = context
+    common = {"schema": "lunar-ci-stage-diagnostic-v1", "suite": suite, "role": role,
+              "phase": phase, **counts}
+    print("lunar-ci-diagnostic " + json.dumps({**common, "event": "start"}, sort_keys=True),
+          flush=True)
+    started = time.monotonic()
+    observation = {"exit_code": None}
+    token = _DIAGNOSTIC_OBSERVATION.set(observation)
+    error_type = None
+    try:
+        yield observation
+    except BaseException as exc:
+        error_type = type(exc).__name__
+        raise
+    finally:
+        _DIAGNOSTIC_OBSERVATION.reset(token)
+        print("lunar-ci-diagnostic " + json.dumps({
+            **common, **observation, "event": "end", "error_type": error_type,
+            "elapsed_seconds": time.monotonic() - started,
+        }, sort_keys=True), flush=True)
+
+
+@contextmanager
+def _diagnostic_attempt(number):
+    token = _DIAGNOSTIC_ATTEMPT.set(number)
+    try:
+        yield
+    finally:
+        _DIAGNOSTIC_ATTEMPT.reset(token)
 
 
 class RegressionError(RuntimeError):
@@ -79,6 +135,9 @@ def _capture(command, root, *, environment=None):
     result = subprocess.run(
         command, cwd=root, env=environment, text=True, capture_output=True, check=False,
     )
+    observation = _DIAGNOSTIC_OBSERVATION.get()
+    if observation is not None:
+        observation["exit_code"] = result.returncode
     if result.returncode:
         raise RegressionError(f"command failed ({result.returncode}): {' '.join(map(str, command[:3]))}\n"
                               + result.stdout + result.stderr)
@@ -231,13 +290,18 @@ def _verify_imports(root, *, python=sys.executable, package="lunar_evolution"):
 
 
 def _collect(root, selections, *, python=sys.executable):
-    output = _capture(
-        [str(python), "-m", "pytest", "-o", "addopts=", "--collect-only", "-q", "--color=no", *selections],
-        root, environment=_environment(root),
-    )
-    nodes = tuple(line for line in output.splitlines() if line.startswith("tests/") and "::" in line)
-    if not nodes or len(set(nodes)) != len(nodes):
-        raise RegressionError("pytest collection was empty or contained duplicate node IDs")
+    selections = tuple(selections)
+    with _diagnostic_phase("collection", selection_count=len(selections)) as observation:
+        output = _capture(
+            [str(python), "-m", "pytest", "-o", "addopts=", "--collect-only", "-q", "--color=no", *selections],
+            root, environment=_environment(root),
+        )
+        nodes = tuple(line for line in output.splitlines()
+                      if line.startswith("tests/") and "::" in line)
+        if observation is not None:
+            observation["collected_count"] = len(nodes)
+        if not nodes or len(set(nodes)) != len(nodes):
+            raise RegressionError("pytest collection was empty or contained duplicate node IDs")
     return nodes
 
 
@@ -414,13 +478,20 @@ def _pytest_attempt(root, selections, report, *, expected_count, frozen=False, p
                     expected_nodes=None):
     if report.exists():
         report.unlink()
-    command = [str(python), "-m", "pytest", "-o", "addopts=", "-q", "--color=no",
+    verbosity = "-v" if _DIAGNOSTICS.get() is not None else "-q"
+    command = [str(python), "-m", "pytest", "-o", "addopts=", verbosity, "--color=no",
                f"--junitxml={report}", *selections]
-    result = subprocess.run(command, cwd=root, env=_environment(root), check=False)
-    summary = _junit_summary(
-        report, pytest_exit_code=result.returncode, expected_count=expected_count, frozen=frozen,
-        **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
-    )
+    with _diagnostic_phase("pytest", expected_count=expected_count,
+                           attempt=_DIAGNOSTIC_ATTEMPT.get()) as observation:
+        result = subprocess.run(command, cwd=root, env=_environment(root), check=False)
+        if observation is not None:
+            observation["exit_code"] = result.returncode
+        summary = _junit_summary(
+            report, pytest_exit_code=result.returncode, expected_count=expected_count, frozen=frozen,
+            **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
+        )
+        if observation is not None:
+            observation["validation_exit_code"] = summary["exit_code"]
     print(json.dumps(summary, sort_keys=True), flush=True)
     return summary
 
@@ -448,10 +519,11 @@ def _pytest_phase(root, selections, report, *, expected_count, frozen=False, pyt
     if historical_retry:
         # Do not leave a previous invocation's successful retry beside a new failed attempt.
         retry_report.unlink(missing_ok=True)
-    first = _pytest_attempt(
-        root, selections, report, expected_count=expected_count, frozen=frozen, python=python,
-        **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
-    )
+    with _diagnostic_attempt(1):
+        first = _pytest_attempt(
+            root, selections, report, expected_count=expected_count, frozen=frozen, python=python,
+            **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
+        )
     if not historical_retry or not _known_archive_failure(
         first, expected_count=expected_count, frozen=frozen,
     ):
@@ -462,10 +534,11 @@ def _pytest_phase(root, selections, report, *, expected_count, frozen=False, pyt
         "phase": "historical_archive", "retry": 1,
         "retry_reason": ARCHIVE_RETRY_NODE, "first_attempt": first,
     }, sort_keys=True), flush=True)
-    second = _pytest_attempt(
-        root, selections, retry_report, expected_count=expected_count, frozen=frozen, python=python,
-        **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
-    )
+    with _diagnostic_attempt(2):
+        second = _pytest_attempt(
+            root, selections, retry_report, expected_count=expected_count, frozen=frozen, python=python,
+            **({"expected_nodes": expected_nodes} if expected_nodes is not None else {}),
+        )
     result = {
         **second, "retry_reason": ARCHIVE_RETRY_NODE, "attempts": [first, second],
     }
@@ -709,6 +782,8 @@ def main(argv=None):
     parser.add_argument("--shard-count", type=int)
     parser.add_argument("--isolate-heavy", action="store_true")
     parser.add_argument("--heavy-index", type=int)
+    parser.add_argument("--diagnostics", action="store_true",
+                        help="Flush phase events and show original pytest node progress")
     arguments = parser.parse_args(argv)
     if arguments.suite == "current":
         try:
@@ -728,6 +803,14 @@ def main(argv=None):
             parser.error(str(exc))
     elif arguments.heavy_index is not None:
         parser.error("heavy index is only valid for the current-heavy suite")
+    role = (f"current-{arguments.shard_index}" if arguments.suite == "current"
+            and arguments.shard_index is not None else
+            f"heavy-{arguments.heavy_index}" if arguments.suite == "current-heavy" else arguments.suite)
+    with _diagnostics(arguments.diagnostics, suite=arguments.suite, role=role):
+        return _dispatch(arguments)
+
+
+def _dispatch(arguments):
     try:
         if arguments.suite == "current":
             options = {"isolate_heavy": True} if arguments.isolate_heavy else {}

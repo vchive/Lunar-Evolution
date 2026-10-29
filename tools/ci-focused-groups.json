@@ -3,11 +3,12 @@
   "groups": [
     {
       "id": "regression-shards",
-      "label": "Verify deterministic current shards and historical runner compatibility",
+      "label": "Verify deterministic shards, historical runner compatibility and opt-in CI progress",
       "files": [
-        "tests/test_regression_runner_shards.py"
+        "tests/test_regression_runner_shards.py",
+        "tests/test_ci_stage_diagnostics.py"
       ],
-      "expected_tests": 215,
+      "expected_tests": 231,
       "zero_skips": true
     },
     {

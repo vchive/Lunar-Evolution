@@ -1,17 +1,30 @@
 ## Current P0–P2 execution status — 2026-10-29
 
-This section takes precedence over historical snapshots below.
+This section takes precedence over historical snapshots below. Current development
+continues from d39f0bc on `codex/ci-stage-diagnostics`; neither PR190 nor PR191 is
+merged into main.
 
 | Priority | Completed evidence | Still required |
 |---|---|---|
-| P0 | Original 1810f2df Linux mixed 1/1 pass, 582.500550332 seconds under the original 600s/zero-retry budget; independent terminal audit complete | Full CI40741561210 is running; PR190 remains unmerged. Never rerun this consumed HEAD. |
-| P1 | Explicit source-data v4 implementation and 120 new software cases complete; current affected 649 unique cases have passing results across the retained original and two-file affected executions | Actual inert rootless import failed rc125 due /var/tmp archive quota before container creation; vfs MergedDir support unproven. Full CPython/implicit inputs/accepted build/runtime/production CLI remain open. |
-| P2 | Prior v4 resource, standard-stream and worker-vault software results retained | Original exclusive fixed-U/finite writable-object acquisition and same original owner-to-accepting-monitor join are still missing; installed root/account/ACL/cgroup/disconnect/blocked-storage acceptance remains open. |
+| P0 | Original 1810 and d39 Linux mixed each passed its one 600-second/zero-retry run; both consumed HEADs remain closed. CI progress diagnostics are implemented as an explicit observational option. | Original full CI jobs include confirmed six-hour platform cancellations; exact blocked node/cause is unknown because terminal logs were unavailable. Complete applicable CI and source/report audits before main integration. Diagnostics do not fix an unobserved stall. |
+| P1 | Source-data v4 software checks retained; authorized cleanup removed 628 old env/cache directories and 42 archived role checkouts. Account quota usage fell from 34696M to 31044M, with 504 retained result files checked unchanged. | Account quota no longer blocks this attempt's preparation, but the original smoke remains failed. Actual source-data OCI view and VFS root acquisition are unaccepted; full configured implicit inputs, CPython/freezer/link/ELF, sealed runtime and production CLI remain open. |
+| P2 | Prior v4 resource, standard-stream and worker-vault software results retained. | Original exclusive fixed-U/finite writable-object acquisition, same original owner-to-accepting-monitor join, and installed root/account/ACL/cgroup/disconnect/blocked-storage acceptance remain open. |
 
-No model, WebAgent, remote/company evaluator or real solver was run. Source-data
-v4 software checks do not establish actual installation. No old containers were
-deleted and no daemon was restarted. `production_admission=false`,
-`online_publication=false`. Exact current source and raw evidence are in HANDOFF.
+The diagnostic slice has 362 current applicable unique cases with passing
+results, including 16 new cases: first 358 pass/4 harness failures, followed by
+only the 4 affected inert subprocess cases passing with an external temporary
+root and unchanged implementation. Original failures remain retained; this is
+not 366 distinct cases or a complete final-tree CI run. The focused manifest
+remains 83 groups/65 zero-skip groups, with expected sum 7024.
+
+See [development storage](development-storage.md) for new-work layout and cleanup
+boundaries. Cleanup preserves source/result/archive pins, logs, failure history,
+current environments and tools; directory size sums can double-count hard links.
+The old failed build and all 42 root-prerequisite skips remain unaccepted.
+
+No model, WebAgent, remote/company evaluator or real solver was run. No old
+containers were deleted and no backend fallback was introduced.
+`production_admission=false`, `online_publication=false`.
 
 <!-- mixed-performance-current:start -->
 ## 当前执行点：终态 ACK / helper loader / 原生标准流合批（2026-10-29）

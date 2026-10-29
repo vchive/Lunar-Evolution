@@ -9,6 +9,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONUNBUFFERED: "1"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -75,7 +78,7 @@ jobs:
           LUNAR_CI_TEST_ROLE: ${{ matrix.role }}
         run: |
           set -o pipefail
-          python tools/run_tests.py --suite current --shard-index "${LUNAR_CI_TEST_ROLE#current-}" --shard-count 6 --isolate-heavy --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
+          python tools/run_tests.py --diagnostics --suite current --shard-index "${LUNAR_CI_TEST_ROLE#current-}" --shard-count 6 --isolate-heavy --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
       - name: Run explicit heavy regression node
         if: ${{ startsWith(matrix.role, 'heavy-') }}
         shell: bash
@@ -83,13 +86,13 @@ jobs:
           LUNAR_CI_TEST_ROLE: ${{ matrix.role }}
         run: |
           set -o pipefail
-          python tools/run_tests.py --suite current-heavy --heavy-index "${LUNAR_CI_TEST_ROLE#heavy-}" --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
+          python tools/run_tests.py --diagnostics --suite current-heavy --heavy-index "${LUNAR_CI_TEST_ROLE#heavy-}" --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
       - name: Run historical regressions
         if: ${{ matrix.role == 'history' }}
         shell: bash
         run: |
           set -o pipefail
-          python tools/run_tests.py --suite history --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
+          python tools/run_tests.py --diagnostics --suite history --junit-dir .lunar-evolution/test-results 2>&1 | tee .lunar-evolution/test-results/pytest.log
       - name: Annotate current shard failures
         if: ${{ always() && startsWith(matrix.role, 'current-') }}
         env:

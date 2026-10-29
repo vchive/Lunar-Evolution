@@ -1,3 +1,48 @@
+<!-- storage-cleanup-ci-diagnostics-current:start -->
+## 当前执行点：开发存储已清理，CI 阶段诊断切片（2026-10-29）
+
+工作区仍为 `/Users/liminghan/.codex/worktrees/source-data-execution-view/lunar_agent`，
+开发分支 `codex/ci-stage-diagnostics`，基线 `d39f0bcc22e21a74b8aadf38423e6a7633881d10`。
+PR190/191 保持各自原 HEAD；尚未合 main。d39 唯一原 Linux mixed 已完成1/1pass：
+原进程580.784993251秒、runner580.998606224秒、派发582.902151250秒，600秒/
+零retry；3023 source entries/2715 files、285 origins、116 sampler samples 与完整
+stop/join 独审通过。d39 与1810均已消耗，不重派或转Darwin。结果已更新PR191。
+
+用户明确授权清理旧开发材料。实际删除628个旧env/cache目录、42个已归档且无
+新改动的role checkout，保留当前 regression venv、工具链、base、原结果/日志/
+配置/归档与失败历史。账号quota由34696M降至31044M，约释放3.57GiB；42路径
+已消失，504个保留原结果文件逐项SHA与本地归档一致。不能用硬链接目录du求和
+替代实际quota减少量。清理原件在主区ignored `validation/storage-cleanup-20261029/`。
+已解除本次账号硬配额障碍；旧smoke首败继续保留，不自动重跑或改记通过。
+新工作存储约定见 `docs/development-storage.md`，不移动既有证据路径。
+
+CI 原check annotations明确报告部分current/heavy jobs达到GitHub六小时执行上限；
+六次terminal job原logs请求返回BlobNotFound，具体用例/CPU/根因仍未知。最近
+原run40741561210为36cancelled/3history-success/3running；40749327592为4cancelled/
+1history-success/17running/20queued，均不能算完整CI通过。本切片只增加显式
+`--diagnostics`阶段开始/结束、raw与JUnit验证退出区分、逐用例输出及unbuffered CI；
+默认行为、选择/顺序、七个heavy独立进程、原历史唯一retry/JUnit与预算不变。
+它是后续定位工具，不宣称已经修复未知卡点或恢复缺失旧日志。
+
+本轮针对性回归首次362 unique：358pass/4fail；四fail来自验证harness把basetemp
+放在repo下，inert子pytest向上发现pyproject改变root/classname。仅把这四节点的
+harness改为外部/tmp后4/4pass，产品/tools/tests/manifest字节完全不变。当前逐节点
+去重362项已有通过结果，含16新增；不是366distinct或完整CI/最终树全量重跑，原
+失败保留。CI组数仍83/65zero-skip，expected sum7024；原混合验收未重复执行。
+针对性原件在ignored `storage-cleanup-20261029/ci-diagnostics-regression/`。
+
+P1真实构建/运行时仍未验收：只读现有VFS记录可关联17容器与28layer，但当前
+service namespace与initialized OCI root对应仍未知；不从OCI root或猜测路径自动
+回退，不修改原v4 MergedDir门禁。完整隐式输入闭包、CPython/freezer/static-link/
+ELF、sealed runtime与生产per-episode CLI仍开放。P2原exclusive fixed-U/finite
+writer acquisition、原accepting-monitor join和实际root/account/ACL/cgroup/
+disconnect/blocked-storage验收仍未关闭，42root前提skip不记通过。
+
+不运行模型/WebAgent/远程或公司evaluator/真实solver，不读.env/密钥/live argv/env，
+benchmark原区只读。`production_admission=false`、`online_publication=false`。
+以下记录保留为历史，不覆盖本节当前状态。
+<!-- storage-cleanup-ci-diagnostics-current:end -->
+
 <!-- source-data-view-v4-current:start -->
 ## 当前执行点：source-data v4 软件回归完成，真实构建仍未验收（2026-10-29）
 
