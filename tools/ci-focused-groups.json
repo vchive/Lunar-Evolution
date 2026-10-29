@@ -8,7 +8,7 @@
         "tests/test_regression_runner_shards.py",
         "tests/test_ci_stage_diagnostics.py"
       ],
-      "expected_tests": 231,
+      "expected_tests": 232,
       "zero_skips": true
     },
     {

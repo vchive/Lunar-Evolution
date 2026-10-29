@@ -1,4 +1,37 @@
-## Current P0–P2 execution status — retained VFS successor, 2026-10-29
+## Current P0–P2 execution status — consolidated main integration, 2026-10-29
+
+All 22 open PRs were audited. #123–137 are already integrated via the exact-tree
+#138 squash and have been closed; the #129/#134 side patches were independently
+checked. #188–194 are fully inherited by `codex/pr-triage-ci-watchdog` and will
+be replaced with one cumulative main-targeted PR after its exact ancestry check.
+Branches and original failure evidence stay intact. See the
+[per-PR decisions](pull-request-triage-20261029.md). No original PR currently has
+a complete passing CI gate; closure of a superseded PR is not a main merge.
+
+P0: finish the cumulative PR's complete CI/source review and main integration.
+Original CI includes six-hour platform cancellation and a separate hosted-runner
+communication failure. The exact blocked node is unknown where logs returned
+404. The new diagnostics-only five-minute built-in pytest stack observer keeps
+original selection, exit/JUnit gates, budgets and retries. It observes stalls,
+without terminating tests or claiming the old failure is fixed.
+
+Frozen 7ec53994 software regression: 393 unique across five complete files on
+Darwin, 378 pass/1 failure/14 errors/0 skip, 23.174844 seconds. The 15 old history
+tests need Git metadata absent from the tar snapshot. Without changing product
+or tests, those exact 15 passed in the proper Git workspace in 5.880922 seconds;
+2733 source bytes/modes stayed unchanged. Current applicable passing coverage is
+393 unique, not 408 distinct cases, final-head complete CI or Linux acceptance.
+Both earlier preparation failures occurred before any test dispatch and remain
+recorded. The single new real stack-dump check passed. Focused groups remain
+83/65 zero-skip with expected sum 7300. Ruff/compileall/diff checks pass.
+
+P1/P2 remain as below: no full configured CPython/runtime/installation/production
+CLI acceptance, exclusive fixed-U/finite writer acquisition or installed-account
+acceptance is claimed. Previous 936-case retained VFS evidence and the six-command
+Linux inert run remain valid; this successor does not change that code or repeat
+the mechanism run. Production admission and online publication stay false.
+
+## Historical retained VFS successor status — 2026-10-29
 
 This section supersedes the historical status below. Development is on
 `codex/vfs-snapshot-retention`, based on 91187d8. No open PR met the complete CI

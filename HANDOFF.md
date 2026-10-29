@@ -1,3 +1,46 @@
+<!-- pr-triage-current:start -->
+## 当前执行点：全部 PR 已审计，改为一条 main 集成线（2026-10-29）
+
+工作区 `/Users/liminghan/.codex/worktrees/source-data-execution-view/lunar_agent`，分支
+`codex/pr-triage-ci-watchdog`，父 `90b6d89059e0de4940e948ba3237f8abd1e17f97`。
+本节覆盖旧“190–194逐层合入”建议。22open全审结果：123–137已由merged138纳入
+main，已关闭15项而未重合并；129/134旁支也逐patch/blob/原8行diagnostics证明。
+原138 head355c与squash af1cc tree完全同 `fa22f871fdf31fc5316035e6b43499cc99d8f93f`，
+squash为main祖先。188/189为190祖先，190→191→192→193→194直接线性，全部完整
+保留在本分支；创建综合main PR并复核后替代关闭这7项，保留原branches/HEAD/CI，
+不是声明它们已进main。逐项处置见 `docs/pull-request-triage-20261029.md`。
+
+原CI没有完整全绿，不能直接merge。抽查checkout/install/provenance已成功但
+regression步骤含六小时平台取消，191另有明确hosted runner communication loss；
+原log下载404，不能从步骤名推断具体node已启动（每role先全量collect）。已保全22run
+metadata/jobs、原annotations及全部当时可下载的5份history原artifact。综合PR承接
+全部提交后可取消旧190–194重复active workflows以释放队列，原失败/取消保持原义。
+不重派已消耗1810/d39 mixed、不改旧head，综合PR仍须自己的完整CI/source gates。
+
+继续开发仅补diagnostics下pytest built-in `faulthandler_timeout=300`，五分钟输出
+Python线程栈，不kill/retry/延长预算/改选集、顺序或JUnit门。默认argv不变；不dump
+locals/live argv/env。覆盖test setup/call/teardown，不保证collection、native child、
+解释器退出或runner失联诊断。SDD `specs/193-static-python-rsi-launch/ci-stall-stacks.md`。
+
+冻结tree `7ec5399403b2c9a2ad543a8f12df2714e89b3933`，2733source files。5090上传
+90秒超时，pytest未派发；本机首次working-tree harness在inventory阶段遇ignored
+files，也未派发。改用同archive解包后实际Darwin5文件393项：378pass/1fail/14error /
+0skip，23.174844秒；15项均旧历史测试需要Git metadata，tar无.git。产品不改，只
+把这15原节点放回正确Git工作区补验：15/15pass，5.880922秒，源码前后不变。当前
+393去重节点有通过结果，不是408distinct/单次全绿CI/新的Linux验收；原失败保留。
+新增真实stack观察用例通过，原observer17项全过。CI仍83组/65zero-skip，sum7300。
+393的sys.modules原件仅6项，动态loader未注册的product模块不虚构runtime origins；
+完整source/Git/archive与原loader AST及15补验显式module记录分别核对。Ruff/
+compileall/diff检查通过；证据在主区ignored `validation/pr-triage-20261029/`。
+
+下面retained VFS的936逐项通过和6命令Linux实跑/原件独审继续有效；本轮没有改该
+代码或重跑业务case。后续P0是综合PR完整CI和main集成，具体stall根因仍待原栈。
+P1完整隐式闭包/CPython/freezer/static ELF/sealed startup/生产CLI，P2真实账户/
+root/cgroup、exclusive fixed-U/finite writer和原accepting-monitor join仍开放。
+不运行模型/WebAgent/远程或公司evaluator/真实solver，不读.env/密钥/live argv/env，
+benchmark只读；`production_admission=false`、`online_publication=false`。
+<!-- pr-triage-current:end -->
+
 <!-- retained-vfs-current:start -->
 ## 当前执行点：VFS 原始快照留存和重放已实跑，合入仍受完整 CI 阻塞（2026-10-29）
 
