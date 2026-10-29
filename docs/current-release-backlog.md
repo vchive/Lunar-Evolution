@@ -1,3 +1,31 @@
+## Current P0 follow-up — bounded CI console, 2026-10-29
+
+The sole open PR is #195, still awaiting complete CI and main integration.
+Fresh UI observations show Python 3.11 current-1/heavy-5 completing both
+collections, then no visible version/pytest-start marker after about thirty
+minutes. This is not proof of the exact blocked call. One local collection of
+the old source completed with 26,371 nodes; its full-node JSON is 23,643,038
+bytes and its longest node is 9,450,814 bytes. No test body ran in that diagnostic.
+
+Diagnostics now prints compact inventory metadata while retaining complete
+sidecars. A binary streaming logger preserves complete create-only pytest.log
+and bounds each console line's payload to 4096 bytes plus a separate hash/count
+marker. Node identities, selection, default runner output, JUnit, four-file
+aggregation, deadlines and retries remain unchanged; pipefail retains failures.
+
+Frozen tree 1e82a1fb: six complete affected files, 423/423 pass, zero error/skip,
+29.350027 seconds on Darwin, one batch/zero retry; all 2736 tracked source bytes
+and modes unchanged. Thirty new cases are included. Manifest: 83 groups/65
+zero-skip, expected sum 7330. Replaying existing collection bytes as data retained
+all 23,440,837 bytes exactly, with console lines at most 4096 bytes. Ruff,
+compileall and diff checks pass. This is not complete CI or Linux acceptance.
+
+P0 remains the new complete CI/source gate and main integration. P1/P2 actual
+build/runtime/installation and original-account acceptance remain open as below.
+No consumed mixed HEAD, model, remote/company evaluator or solver is replayed.
+Production admission and online publication remain false. See
+[console SDD](../specs/193-static-python-rsi-launch/ci-bounded-console.md).
+
 ## Current P0–P2 execution status — consolidated main integration, 2026-10-29
 
 All 22 open PRs were audited. #123–137 are already integrated via the exact-tree

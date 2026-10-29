@@ -1,3 +1,37 @@
+<!-- bounded-console-current:start -->
+## 当前执行点：巨型 CI 控制台输出已修复，等待新 CI（2026-10-29）
+
+继续使用 `/Users/liminghan/.codex/worktrees/source-data-execution-view/lunar_agent`，
+分支 `codex/pr-triage-ci-watchdog`；综合 PR195 是唯一 open PR，尚未合 main。
+本节覆盖下方旧执行点。旧 run40890176648 的 fresh API/可见 UI 记录保留在主区
+ignored `validation/ci-followup-20261029/`。Python3.11 current-1/heavy-5 的两轮
+collection 已完成，约30分钟后仍无下个 version/pytest marker；UI 是观察转录，
+不是可下载原日志。Git identity/序列化/输出/runner 故障仍不能唯一归因。
+
+一次旧源 diagnostic-only 本机 collection 实际26371项，含wrapper14.404222秒，
+未执行测试。full_nodes JSON 单独23643038B，最大node9450814B，21项超过64KiB。
+本轮不改参数/身份/选集/JUnit：仅diagnostics初末console省略两份节点数组，完整
+summary不变；新增checkout-identity阶段。workflow以有限二进制logger替代tee，
+create-only原pytest.log完整保留，每物理LF行console最多4096B前缀及独立长度/SHA
+标记，CR不重置，原raw不decode/reencode。每chunk先flush原件；I/O失败及原runner
+退出由pipefail保留。四文件aggregate门、预算/retry和默认runner不变。
+
+冻结tree `1e82a1fb2c60399d3f07efec728a059a294d76ac`，2736 Git files/modes，
+正确Git工作区六完整文件合批423/423pass，29.350027秒，0fail/error/skip、零retry，
+源码前后不变。含30新增节点；manifest仍83组/65zero-skip，expected sum7330。
+旧collection日志仅作为数据重放：23440837B原件逐字节相同，console3388286B，
+最大行4096B、46个长行标记逐项SHA匹配，没有再次执行测试。全src/tests/tools
+Ruff、compileall、diff检查通过。SDD `specs/193-static-python-rsi-launch/ci-bounded-console.md`。
+本次为Darwin CI软件回归，不替代Linux业务/完整CI，也不重派原1810/d39 mixed。
+
+下一步P0仍是PR195新源完整CI/source gate后合main；不要宣称原六小时卡点已确定
+修复。P1隐式compiler/config/resource/cache闭包及CPython/freezer/static ELF/
+sealed runtime/生产CLI未完成；P2原exclusive fixed-U/finite writer、accepting-monitor
+join和root/account/ACL/cgroup/disconnect/blocked-storage仍开放，42root前提skip
+不算通过。无模型/WebAgent/远程或公司evaluator/真实solver，不读.env/密钥/live
+argv/env、benchmark只读；`production_admission=false`、`online_publication=false`。
+<!-- bounded-console-current:end -->
+
 <!-- pr-triage-current:start -->
 ## 当前执行点：全部 PR 已审计，改为一条 main 集成线（2026-10-29）
 

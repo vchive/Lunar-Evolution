@@ -239,6 +239,9 @@ def test_workflow_enables_unbuffered_diagnostics_without_changing_roles():
     assert 'PYTHONUNBUFFERED: "1"' in workflow
     commands = [line for line in workflow.splitlines() if "python tools/run_tests.py " in line]
     assert len(commands) == 3 and all(" --diagnostics " in line for line in commands)
+    assert all("| python tools/ci_console.py --log .lunar-evolution/test-results/pytest.log"
+               in line for line in commands)
+    assert workflow.count("set -o pipefail") == 4
     assert [line.split("--suite ", 1)[1].split()[0] for line in commands] == [
         "current", "current-heavy", "history"]
 
@@ -281,3 +284,166 @@ def test_real_stall_observer_dumps_stack_without_changing_exit_or_junit(monkeypa
         start, end = _events(captured.out)
         assert start["attempt"] == end["attempt"] == 1
         assert end["exit_code"] == end["validation_exit_code"] == 0
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_large_inventory_console_projection_preserves_full_sidecar_and_artifact_set(
+    tmp_path, monkeypatch, capsys, enabled,
+):
+    # Exercise the initial record and the terminal sidecar through the actual
+    # heavy-role runner, without executing any product or mixed acceptance body.
+    nodes = tuple(sorted((
+        *runner.HEAVY_CURRENT_NODES,
+        *(f"tests/test_inert.py::test_inert_{index:05d}" for index in range(26364)),
+    )))
+    assert len(nodes) == 26371
+    selected = (runner.HEAVY_CURRENT_NODES[6],)
+    filename = selected[0].partition("::")[0]
+    source = tmp_path / filename
+    source.parent.mkdir()
+    source.write_text("# Inert runner fixture; no test body is dispatched.\n", encoding="utf-8")
+    origins = [str(tmp_path / "src/lunar_evolution/__init__.py"),
+               str(tmp_path / "src/lunar_evolution/evaluator_bundle.py")]
+    monkeypatch.setattr(runner, "_load_index", lambda _root: {
+        "test_files": [], "support_files": [],
+    })
+    monkeypatch.setattr(runner, "_verify_imports", lambda _root: origins)
+    monkeypatch.setattr(runner, "_git", lambda _root, _operation, ref:
+                        "a" * 40 if ref == "HEAD" else "b" * 40)
+    collections = []
+
+    def collect(root, selections):
+        assert root == tmp_path
+        collections.append(tuple(selections))
+        if len(collections) == 1:
+            assert tuple(selections) == ("tests",)
+            return nodes
+        assert tuple(selections) == selected
+        return selected
+
+    monkeypatch.setattr(runner, "_collect", collect)
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "job-provenance.json").write_text("{}\n", encoding="utf-8")
+    (reports / "pytest.log").write_text("", encoding="utf-8")
+    report = reports / "current-heavy-6.xml"
+    executions = []
+
+    def execute(command, **kwargs):
+        assert command[-1] == selected[0] and kwargs["cwd"] == tmp_path
+        executions.append(command)
+        document = ET.Element("testsuites")
+        suite = ET.SubElement(document, "testsuite", tests="1", failures="0", errors="0", skipped="0")
+        classname, name = runner._junit_case_key(selected[0])
+        ET.SubElement(suite, "testcase", classname=classname, name=name)
+        report.write_bytes(ET.tostring(document))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(runner.subprocess, "run", execute)
+    with runner._diagnostics(enabled, suite="current-heavy", role="heavy-6"):
+        assert runner.run_current_heavy(tmp_path, reports, heavy_index=6) == 0
+    output = capsys.readouterr().out
+    records = [json.loads(line) for line in output.splitlines() if not line.startswith(PREFIX)]
+    assert len(records) == 3 and len(executions) == 1
+    initial, _pytest_result, final = records
+    summary_path = reports / "current-heavy-6.summary.json"
+    retained = json.loads(summary_path.read_bytes())
+    assert retained["full_nodes"] == list(nodes) and retained["selected_nodes"] == list(selected)
+    assert retained["full_collected"] == 26371 and retained["collected"] == 1
+    assert retained["full_inventory_sha256"] == runner._inventory_sha256(nodes)
+    assert retained["selected_inventory_sha256"] == runner._inventory_sha256(selected)
+    assert retained["exit_code"] == retained["pytest_exit_code"] == 0
+    assert retained["exact_case_keys"] is True
+    assert {path.name for path in reports.iterdir()} == {
+        "job-provenance.json", "pytest.log", "current-heavy-6.xml", "current-heavy-6.summary.json",
+    }
+    omitted = {"full_nodes", "selected_nodes"} if enabled else set()
+    assert set(final) == set(retained) - omitted
+    assert final == {key: value for key, value in retained.items() if key not in omitted}
+    for key in ("full_collected", "collected", "full_inventory_sha256", "selected_inventory_sha256",
+                "commit", "tree", "imports", "heavy_nodes", "selected_files", "selection_mode"):
+        assert initial[key] == retained[key]
+    if enabled:
+        assert all(key not in initial for key in omitted)
+        assert max(len(line) for line in output.splitlines()) < 8192
+    else:
+        assert initial["full_nodes"] == list(nodes) and initial["selected_nodes"] == list(selected)
+        assert summary_path.read_text(encoding="utf-8") == json.dumps(final, sort_keys=True) + "\n"
+        assert not _events(output)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_checkout_identity_phase_keeps_git_commands_and_returned_identity(
+    tmp_path, monkeypatch, capsys, enabled,
+):
+    calls = []
+
+    def git(root, *arguments):
+        assert root == tmp_path
+        if not calls:
+            events = _events(capsys.readouterr().out)
+            assert len(events) == int(enabled)
+            if enabled:
+                assert events[0]["phase"] == "checkout-identity" and events[0]["event"] == "start"
+        calls.append(arguments)
+        return "a" * 40 if arguments[-1] == "HEAD" else "b" * 40
+
+    monkeypatch.setattr(runner, "_git", git)
+    origins = ["fixture-package", "fixture-evaluator"]
+    with runner._diagnostics(enabled, suite="current-heavy", role="heavy-6"):
+        result = runner._checkout_identity(tmp_path, origins)
+    assert calls == [("rev-parse", "HEAD"), ("rev-parse", "HEAD^{tree}")]
+    assert result == {"commit": "a" * 40, "tree": "b" * 40, "working_tree": True,
+                      "imports": origins, "python": sys.executable,
+                      "python_version": f"{sys.version_info.major}.{sys.version_info.minor}"}
+    events = _events(capsys.readouterr().out)
+    assert len(events) == int(enabled)
+    if enabled:
+        assert events[0]["phase"] == "checkout-identity" and events[0]["event"] == "end"
+        assert events[0]["exit_code"] == 0 and events[0]["error_type"] is None
+
+
+@pytest.mark.parametrize("failure,exit_code,error_type", [
+    ("first", 3, "RegressionError"), ("second", 7, "RegressionError"),
+    ("second-spawn", None, "OSError"),
+])
+def test_checkout_identity_phase_preserves_failed_or_unknown_git_exit(
+    tmp_path, monkeypatch, capsys, failure, exit_code, error_type,
+):
+    calls = []
+
+    def execute(command, **_kwargs):
+        calls.append(command)
+        if failure == "second-spawn" and len(calls) == 2:
+            raise OSError("inert second command spawn failure")
+        failed = (failure == "first" and len(calls) == 1
+                  or failure == "second" and len(calls) == 2)
+        return SimpleNamespace(returncode=exit_code if failed else 0,
+                               stdout="fixture-identity", stderr="inert Git failure" if failed else "")
+
+    monkeypatch.setattr(runner.subprocess, "run", execute)
+    with (runner._diagnostics(True, suite="current", role="current-0"),
+          pytest.raises((runner.RegressionError, OSError))):
+        runner._checkout_identity(tmp_path, [])
+    start, end = _events(capsys.readouterr().out)
+    assert start["phase"] == end["phase"] == "checkout-identity"
+    assert end["exit_code"] == exit_code and end["error_type"] == error_type
+    assert len(calls) == (1 if failure == "first" else 2)
+    assert runner._DIAGNOSTIC_OBSERVATION.get() is None
+
+
+def test_diagnostic_summary_exclusive_creation_does_not_replace_original_or_print_partial(
+    tmp_path, capsys,
+):
+    report = tmp_path / "original.summary.json"
+    original = {"full_nodes": [NODE], "selected_nodes": [NODE], "full_collected": 1,
+                "collected": 1, "full_inventory_sha256": runner._inventory_sha256((NODE,))}
+    expected = json.dumps(original, sort_keys=True) + "\n"
+    with runner._diagnostics(True, suite="current", role="current-0"):
+        runner._write_summary(report, original)
+        capsys.readouterr()
+        with pytest.raises(FileExistsError):
+            runner._write_summary(report, {"full_nodes": [], "collected": 0})
+    assert report.read_text(encoding="utf-8") == expected
+    assert capsys.readouterr().out == ""
+    assert list(tmp_path.iterdir()) == [report]

@@ -574,19 +574,34 @@ def run_native_e2e(repo, junit_dir):
 
 
 def _checkout_identity(repo, origins):
-    return {
-        "commit": _git(repo, "rev-parse", "HEAD"),
-        "tree": _git(repo, "rev-parse", "HEAD^{tree}"),
-        "working_tree": True, "imports": origins, "python": sys.executable,
-        "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
-    }
+    with _diagnostic_phase("checkout-identity") as observation:
+        commit = _git(repo, "rev-parse", "HEAD")
+        if observation is not None:
+            # A later spawn failure must not inherit the first command's exit.
+            observation["exit_code"] = None
+        tree = _git(repo, "rev-parse", "HEAD^{tree}")
+        if observation is not None:
+            observation["exit_code"] = 0
+        return {
+            "commit": commit, "tree": tree,
+            "working_tree": True, "imports": origins, "python": sys.executable,
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+        }
+
+
+def _console_json(record, *, rendered=None):
+    """Keep complete inventories in sidecars without repeating them in CI logs."""
+    if _DIAGNOSTICS.get() is None:
+        return json.dumps(record, sort_keys=True) if rendered is None else rendered
+    return json.dumps({key: value for key, value in record.items()
+                       if key not in {"full_nodes", "selected_nodes"}}, sort_keys=True)
 
 
 def _write_summary(path, result):
     rendered = json.dumps(result, sort_keys=True)
     with path.open("x", encoding="utf-8") as stream:
         stream.write(rendered + "\n")
-    print(rendered, flush=True)
+    print(_console_json(result, rendered=rendered), flush=True)
 
 
 def _fresh_reports(junit_dir, names):
@@ -659,7 +674,7 @@ def _run_current_selection(repo, junit_dir, *, shard_index=None, shard_count=Non
         version.update(heavy_nodes=HEAVY_CURRENT_NODES,
                        heavy_inventory_sha256=_inventory_sha256(HEAVY_CURRENT_NODES),
                        selection_mode="files" if heavy_index is None else "node")
-    print(json.dumps(version, sort_keys=True), flush=True)
+    print(_console_json(version), flush=True)
     phase = _pytest_phase(
         repo, selections, report, expected_count=len(selected), expected_nodes=selected,
     )

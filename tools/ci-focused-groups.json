@@ -6,9 +6,10 @@
       "label": "Verify deterministic shards, historical runner compatibility and opt-in CI progress",
       "files": [
         "tests/test_regression_runner_shards.py",
-        "tests/test_ci_stage_diagnostics.py"
+        "tests/test_ci_stage_diagnostics.py",
+        "tests/test_ci_console.py"
       ],
-      "expected_tests": 232,
+      "expected_tests": 262,
       "zero_skips": true
     },
     {
