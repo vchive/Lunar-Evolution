@@ -1,3 +1,17 @@
+## Current P0 follow-up — raw log visibility before display, 2026-10-30
+
+A verified small-chunk buffering window allowed console output before raw-file
+visibility. Move the existing raw flush before all per-chunk console writes;
+retain original bytes, artifact/JUnit gates, selection, budgets and retries.
+This is not fsync durability or a diagnosis of any old CI failure. Frozen
+9f5dc673: complete console/aggregate files 105/105 passed, verified verbose,
+zero failure/error/skip, 1.625887 seconds on Darwin, all 2,738 files unchanged.
+One new real-buffer/independent-FD test; raw flush failure now requires no display.
+The regression group collected 263 nodes with zero test bodies; manifest remains
+83 groups / 65 zero-skip, expected sum 7331. Prior 315/45/67 domains are retained
+without rerunning. PR195 still requires final-source complete CI before main;
+P1/P2 build/runtime/installed acceptance remains open as below.
+
 ## Current P0 follow-up — withdraw automatic native timer, 2026-10-29
 
 The bounded-console successor now genuinely reaches pytest. Original Python

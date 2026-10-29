@@ -39,6 +39,13 @@ re-encoded; a console prefix may end inside a UTF-8 character. The truncation
 marker appears only on console. Use finite reads and rolling hashes, never a
 whole-line buffer. Normal short output is preserved exactly.
 
+For each finite input chunk, complete its raw-log writes and flush the retained
+Python buffer before writing any console bytes for that chunk. If the raw flush
+fails, refuse display of that chunk. This ordering makes the raw bytes visible
+through an independent file descriptor before display; it does not perform
+`fsync` or establish crash durability. The ordering correction does not identify
+the cause of any historical CI failure.
+
 Keep `set -o pipefail`. Input, raw-file and console failures must return nonzero;
 the logger does not turn runner failure into success or manage child processes.
 Each role keeps its original four artifact files. The aggregate still reads the
@@ -52,7 +59,9 @@ Validate opt-in versus default output, complete unchanged sidecar data and
 create-only refusal. Exercise byte chunk boundaries, exact limits, CR, EOF,
 Unicode bytes, multiple lines and I/O failures. One natural inert pipeline must
 prove large output is fully drained and retained while console lines stay
-bounded. Replay the already-collected diagnostic log as data to verify its
+bounded. Use a real buffered raw file and an independent read descriptor to
+verify flush-before-display visibility, and require no chunk display when its
+raw flush fails. Replay the already-collected diagnostic log as data to verify its
 actual oversized IDs without executing tests again. Run affected runner,
 diagnostics, streaming-tool and aggregate tests together in the existing Git
 workspace, plus Ruff, compileall and diff checks. Do not replay consumed mixed
@@ -75,3 +84,19 @@ matched its original full-line length and digest. No tests were re-executed by
 this replay. Evidence is in primary ignored `validation/ci-followup-20261029/`.
 Original unsuccessful/unknown CI stays preserved; only fresh CI can establish
 whether the hosted-runner stall has cleared.
+
+
+## Flush-order successor verification — 2026-10-30
+
+Frozen `9f5dc6735c73ab4dcfc25993a98a403920d46403`: both complete console and
+aggregate test files passed 105/105 under verified effective verbose reporting,
+zero failure/error/skip, 1.625887 seconds on Darwin, one dispatch and zero retry.
+All 2,738 tracked bytes/modes remained unchanged. The 263-node regression group
+was collected only, with zero test body dispatches; its count includes the one
+new buffered-file visibility test. Manifest remains 83 groups / 65 zero-skip,
+expected sum 7331. Existing failure propagation coverage additionally requires
+empty console output when the original raw flush fails.
+
+Earlier 315/45/67 focused domains are retained without repetition. This is not
+a single complete final-tree CI pass. The same cumulative PR must pass fresh
+complete CI/source gates; original unsuccessful runs remain preserved.

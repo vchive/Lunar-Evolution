@@ -64,6 +64,7 @@ def copy_stream(source: BinaryIO, console: BinaryIO, retained: BinaryIO) -> None
         if not chunk:
             break
         _write_all(retained, chunk)
+        retained.flush()
         fragments = chunk.split(b"\n")
         for index, fragment in enumerate(fragments):
             room = max(0, _CONSOLE_LINE_BYTES - line_bytes)
@@ -76,7 +77,6 @@ def copy_stream(source: BinaryIO, console: BinaryIO, retained: BinaryIO) -> None
                 truncated = True
             if index < len(fragments) - 1:
                 finish_line(terminated=True)
-        retained.flush()
         console.flush()
     if line_bytes:
         finish_line(terminated=False)

@@ -1,3 +1,26 @@
+<!-- raw-flush-current:start -->
+## 当前执行点：CI 日志先刷新原件，再显示（2026-10-30）
+
+继续同一工作区/分支/PR195。已推ba734987，原7failure全部保留；新run40906660984
+的首实际artifact核对merge662e5fd0/tree58e7e95a与main/head父关系通过，完整CI尚未
+完成。后续静审发现独立logging缺陷：原小chunk进入BufferedWriter后console即可
+显示，而raw尚未flush。3bytes DATA实验已准确转录；不将它归因成旧CI根因。
+
+只移动同一retained.flush到每chunk原write之后、任何console写之前；不fsync、不
+宣称crash durability，原4artifact/sidecar/JUnit/选集/预算/retry门不变。新增真实
+BufferedWriter+独立FD可见性测试，强化raw flush失败则该chunk console为空。冻结
+9f5dc6735c73ab4dcfc25993a98a403920d46403，两完整console/aggregate文件105/105pass，
+有效verbose、1.625887秒Darwin、2738source bytes/modes前后同、零fail/error/skip/
+retry。原regression-shards仅collection263且0test body，manifest83/65zero-skip，
+expected sum7331；不把collection当执行。原315/45/67域结果保留，不重复补跑。
+
+独审与raw-flush-order-focused证据在主区ignored validation/ci-followup-20261029/。
+本小后继继续PR195，须自己的完整CI/source门才可合main。P1实际build/runtime/CLI、
+P2真实账户/ownership验收仍开放，42root prerequisite skip不算通过。既有无模型/
+WebAgent/远程evaluator/真实solver/密钥/live argv-env/原benchmark写入限制有效，
+production_admission=false、online_publication=false。
+<!-- raw-flush-current:end -->
+
 <!-- observer-withdrawal-current:start -->
 ## 当前执行点：撤回原生定时栈观察，保留完整 CI 门（2026-10-29）
 

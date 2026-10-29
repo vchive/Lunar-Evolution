@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import io
+import os
 import shlex
 import stat
 import subprocess
@@ -112,6 +113,24 @@ def test_raw_short_writes_are_completed_without_losing_bytes():
     assert displayed.getvalue() == retained.getvalue() == raw
 
 
+def test_raw_chunk_is_flushed_before_first_console_write(tmp_path):
+    logfile = tmp_path / "raw.log"
+    observed_raw = []
+    with logfile.open("xb") as retained, logfile.open("rb", buffering=0) as independent:
+        assert isinstance(retained, io.BufferedWriter)
+
+        class ObservingConsole(io.BytesIO):
+            def write(self, raw):
+                observed_raw.append(os.pread(independent.fileno(), 4, 0))
+                assert observed_raw[-1] == b"abc"
+                return super().write(raw)
+
+        displayed = ObservingConsole()
+        console.copy_stream(io.BytesIO(b"abc"), displayed, retained)
+    assert observed_raw == [b"abc"]
+    assert displayed.getvalue() == logfile.read_bytes() == b"abc"
+
+
 @pytest.mark.parametrize("failure", ["input", "retained", "console", "flush", "retained-flush"])
 def test_stream_io_errors_fail_without_claiming_completion(failure):
     class FailingInput:
@@ -135,6 +154,8 @@ def test_stream_io_errors_fail_without_claiming_completion(failure):
         console.copy_stream(source, displayed, retained)
     if failure in {"console", "flush", "retained-flush"}:
         assert retained.getvalue() == b"original\n"
+    if failure == "retained-flush":
+        assert displayed.getvalue() == b""
 
 
 def test_main_fails_on_input_error_and_retains_partial_create_only_log(tmp_path, monkeypatch):

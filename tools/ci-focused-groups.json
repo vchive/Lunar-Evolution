@@ -9,7 +9,7 @@
         "tests/test_ci_stage_diagnostics.py",
         "tests/test_ci_console.py"
       ],
-      "expected_tests": 262,
+      "expected_tests": 263,
       "zero_skips": true
     },
     {
