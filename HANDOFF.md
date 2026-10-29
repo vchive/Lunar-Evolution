@@ -1,3 +1,54 @@
+<!-- source-data-vfs-current:start -->
+## 当前执行点：显式 VFS 构建视图已实跑，完整运行时仍开放（2026-10-29）
+
+继续使用 `/Users/liminghan/.codex/worktrees/source-data-execution-view/lunar_agent`，
+分支 `codex/source-data-vfs-root`，基线 `13d8a7d5756e202cd08504a2ef159eb275bad797`。
+PR190/191/192 保留各自原 HEAD/CI；本切片尚未合 main。以下旧执行点为历史，
+不覆盖本节。原1810/d39 mixed均已消耗，不重派或转Darwin。
+
+新增显式 `run_pinned_build_v4_vfs` / `run_dependency_checked_build_v4_vfs`，只接受
+`podman-snapshots-source-data-vfs-v1`，复用 recipe-v4 与原循环/绝对预算/取消/
+整组输出晋升。report-v5、observation-v3、consumer-v3 绑定新 backend；旧 v4
+仍要求 MergedDir，不自动回退。原服务 PID/start/pidfd/socket/挂载命名空间与
+held service-root 关联 container→layer→VFS 目录及实际 OCI root。双侧 nofollow
+身份、有限 mountinfo/内部挂载拒绝、resolver/account 数据字节与身份均在启动前
+复核；detached consumer 检查原报告和工作区，不能重新取得执行权。
+
+首轮 frozen tree `54ce88e53a215ad1f9801719af33f387ae1f4956`：20完整文件，
+775 unique，767pass/8fail/0error/skip，13.002223秒，含114新增全部通过。
+6个旧configure用例的复制shell实际returncode=-9/空输出，两个旧deadline案在
+并行批次分别提前到期/cleanup_unknown；不猜测 signal9 根因。同源2724文件
+移至5090gpu，只串行补验这8项：8/8pass，7.100710秒，零retry，原8fail保留。
+
+该 frozen source 首次 VFS inert smoke 的 import/create/init 均成功，服务获取
+门禁随后拒绝，未 start；原容器停止/退出已确认。后续不同 PID 的只读同代码复现
+定位 `_proc_bytes` 把合法短读误判超限：首读4070B，完整150986B/38chunks，
+仍低于1MiB；不声称重建了原 PID 的 proc 内容。仅修复有界 EOF 累计读取、增加
+两个实际文件短读用例，并更新 manifest/count test。新 frozen tree
+`80c3f930dece0464e768290553d67a2610ef6dd8` 只补验两受影响文件142/142pass，
+1.931005秒，零fail/error/skip。当前逐项去重777项已有通过结果，含116新增；
+这不是单次最终全绿CI。两批2724 Git blobs/modes/archive/
+source-before-after及XML已独审；CI仍83组/65zero-skip，expected sum7140。
+
+修复后的新 frozen source 独立一次 VFS inert smoke 已通过：一次600秒绝对预算、
+零retry、6条原命令，约10秒，2724源码记录前后不变；原失败 receipt 不覆盖。
+该次receipt耗时9.424226秒。原store/OCI/mountinfo快照正文未单独保存，仅保留
+pins/身份及原info/inspect控制日志；独审可核对产物与交叉绑定，不能重放未留存快照。
+它只验证有限静态C工具、source-data OCI视图与依赖报告链路，不是CPython构建、
+solver输出、安装准入或生产CLI验收。原始记录在主区 ignored
+`validation/vfs-root-20261029/{affected,affected-linux8,affected-proc-short-read,actual-smoke,actual-smoke-proc-short-read}`。
+SDD见 `specs/193-static-python-rsi-launch/source-data-vfs-root.md`。
+
+完整CI仍开放：旧current/heavy有已确认的六小时上限取消，原logs接口404，
+具体卡点仍未知；诊断切片不代表修复卡点。完整隐式compiler/config/resource/
+cache closure、CPython/freezer/static ELF、sealed startup和生产per-episode CLI
+仍为P1。P2 exclusive fixed-U/finite writer acquisition、原accepting-monitor join
+及实际root/account/ACL/cgroup/disconnect/blocked-storage验收仍未完成；42root
+前提skip不是通过。fixture/rootless视图不取得installed root/account authority。
+不读.env/密钥/live argv/env，不改benchmark原区，不运行模型/WebAgent/远程或公司
+评测/真实solver。`production_admission=false`、`online_publication=false`。
+<!-- source-data-vfs-current:end -->
+
 <!-- storage-cleanup-ci-diagnostics-current:start -->
 ## 当前执行点：开发存储已清理，CI 阶段诊断切片（2026-10-29）
 

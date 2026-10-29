@@ -155,9 +155,13 @@
         "tests/test_static_python_configuration_review.py",
         "tests/test_static_python_source_data_backend.py",
         "tests/test_static_python_source_data_graph.py",
-        "tests/test_static_python_source_data_consumer.py"
+        "tests/test_static_python_source_data_consumer.py",
+        "tests/test_static_python_podman_vfs_root.py",
+        "tests/test_static_python_source_data_vfs_custody.py",
+        "tests/test_static_python_source_data_vfs_backend.py",
+        "tests/test_static_python_source_data_vfs_consumer.py"
       ],
-      "expected_tests": 352,
+      "expected_tests": 468,
       "zero_skips": true
     },
     {

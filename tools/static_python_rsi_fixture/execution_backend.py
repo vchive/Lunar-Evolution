@@ -561,6 +561,7 @@ def _run_pinned_build(
     version3: bool = False,
     version4: bool = False,
     custody_backend: str | None = None,
+    vfs_roots: bool = False,
 ) -> BuildExecutionReport:
     """Execute pinned tools with no ambient environment or installation promotion.
 
@@ -580,11 +581,15 @@ def _run_pinned_build(
     extended = version3 or version4
     command_outputs = recipe["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA, RECIPE_V4_SCHEMA}
     custody_prefix = None
-    if version4 and custody_backend != "podman-snapshots-source-data-v2":
+    source_data_backend = ("podman-snapshots-source-data-vfs-v1" if vfs_roots
+                           else "podman-snapshots-source-data-v2")
+    if type(vfs_roots) is not bool or vfs_roots and not version4:
+        _fail("custody_backend")
+    if version4 and custody_backend != source_data_backend:
         _fail("custody_backend")
     if custody_backend is not None:
         if (type(custody_backend) is not str
-                or custody_backend not in ({"podman-snapshots-source-data-v2"} if version4 else
+                or custody_backend not in ({source_data_backend} if version4 else
                                            {"podman", "podman-snapshots-v1"})
                 or not extended):
             _fail("custody_backend")
@@ -598,7 +603,7 @@ def _run_pinned_build(
             validate_snapshot_budget,
         )
         (validate_dependency_command_graph_v4 if version4 else validate_dependency_command_graph)(recipe)
-        if custody_backend in {"podman-snapshots-v1", "podman-snapshots-source-data-v2"}:
+        if custody_backend in {"podman-snapshots-v1", source_data_backend}:
             validate_snapshot_budget(recipe)
         else:
             validate_custody_image_budget(recipe)
@@ -712,9 +717,11 @@ def _run_pinned_build(
             from tools.static_python_rsi_fixture.podman_custody import PodmanCustody
             operation = "custody.prepare"
             custody_options = {"snapshot_mounts": custody_backend in {
-                "podman-snapshots-v1", "podman-snapshots-source-data-v2"}}
+                "podman-snapshots-v1", source_data_backend}}
             if version4:
                 custody_options["source_data"] = True
+            if vfs_roots:
+                custody_options["vfs_roots"] = True
             custody = PodmanCustody(destination=destination, prefix=custody_prefix,
                                      recipe_sha256=expected_recipe_sha256, checkpoint=checkpoint,
                                      **custody_options)
@@ -825,7 +832,8 @@ def _run_pinned_build(
     except Exception:  # noqa: BLE001 - preserve partial workspace without leaking paths
         reason = "attempt_io_failure"
     payload = {
-        "schema": "lunar-static-python-build-execution-report-v4" if version4 else
+        "schema": "lunar-static-python-build-execution-report-v5" if vfs_roots else
+                  "lunar-static-python-build-execution-report-v4" if version4 else
                   "lunar-static-python-build-execution-report-v3" if version3 else
                   "lunar-static-python-build-execution-report-v2" if command_outputs else
                   "lunar-static-python-build-execution-report-v1",
@@ -838,6 +846,8 @@ def _run_pinned_build(
         payload.update(input_projection=INPUT_PROJECTION_V4,
                        immutable_custody_verified=False, driver_inputs_verified=False,
                        implicit_link_inputs_verified=False, online_publication=False)
+    if vfs_roots:
+        payload["custody_backend"] = source_data_backend
     if failure_detail is not None:
         payload["failure_detail"] = dict(failure_detail)
     report = BuildExecutionReport(
@@ -910,6 +920,22 @@ def run_pinned_build_v4(
     )
 
 
+def run_pinned_build_v4_vfs(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str = "podman-snapshots-source-data-vfs-v1",
+) -> BuildExecutionReport:
+    """Explicit VFS acquisition, preserving recipe-v4 and the original budget."""
+    return _run_pinned_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
+        deadline=deadline, interrupted=interrupted, monotonic=monotonic, version4=True,
+        custody_backend=custody_backend, vfs_roots=True,
+    )
+
+
 __all__ = [
     "INPUT_PROJECTION",
     "INPUT_PROJECTION_V4",
@@ -922,4 +948,5 @@ __all__ = [
     "run_pinned_build",
     "run_pinned_build_v3",
     "run_pinned_build_v4",
+    "run_pinned_build_v4_vfs",
 ]

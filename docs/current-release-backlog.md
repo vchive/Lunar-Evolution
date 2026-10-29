@@ -1,13 +1,13 @@
 ## Current P0–P2 execution status — 2026-10-29
 
 This section takes precedence over historical snapshots below. Current development
-continues from d39f0bc on `codex/ci-stage-diagnostics`; neither PR190 nor PR191 is
-merged into main.
+continues from 13d8a7d on `codex/source-data-vfs-root`; PR190–192 remain
+unmerged. The current explicit VFS slice is described below.
 
 | Priority | Completed evidence | Still required |
 |---|---|---|
 | P0 | Original 1810 and d39 Linux mixed each passed its one 600-second/zero-retry run; both consumed HEADs remain closed. CI progress diagnostics are implemented as an explicit observational option. | Original full CI jobs include confirmed six-hour platform cancellations; exact blocked node/cause is unknown because terminal logs were unavailable. Complete applicable CI and source/report audits before main integration. Diagnostics do not fix an unobserved stall. |
-| P1 | Source-data v4 software checks retained; authorized cleanup removed 628 old env/cache directories and 42 archived role checkouts. Account quota usage fell from 34696M to 31044M, with 504 retained result files checked unchanged. | Account quota no longer blocks this attempt's preparation, but the original smoke remains failed. Actual source-data OCI view and VFS root acquisition are unaccepted; full configured implicit inputs, CPython/freezer/link/ELF, sealed runtime and production CLI remain open. |
+| P1 | Explicit VFS root acquisition and source-data report/consumer route implemented; the new frozen source passed one finite six-command inert Linux smoke. Quota cleanup and earlier evidence remain retained. | This is a pre-start trusted-host mechanism observation. Full configured implicit inputs, CPython/freezer/link/ELF, sealed runtime, installation acceptance and production CLI remain open. Original failed smokes are retained. |
 | P2 | Prior v4 resource, standard-stream and worker-vault software results retained. | Original exclusive fixed-U/finite writable-object acquisition, same original owner-to-accepting-monitor join, and installed root/account/ACL/cgroup/disconnect/blocked-storage acceptance remain open. |
 
 The diagnostic slice has 362 current applicable unique cases with passing
@@ -15,7 +15,26 @@ results, including 16 new cases: first 358 pass/4 harness failures, followed by
 only the 4 affected inert subprocess cases passing with an external temporary
 root and unchanged implementation. Original failures remain retained; this is
 not 366 distinct cases or a complete final-tree CI run. The focused manifest
-remains 83 groups/65 zero-skip groups, with expected sum 7024.
+remains 83 groups/65 zero-skip groups, with expected sum 7024 for that earlier diagnostic slice.
+
+The explicit VFS slice reuses recipe-v4 and the original lifecycle, with separate
+backend/APIs and report-v5/observation-v3/consumer-v3. It never weakens the old
+MergedDir gate. Its first frozen software batch was 775 unique: 767 pass/8 old
+failures. Only those 8 passed on the same frozen source in serial Linux. A new
+bounded procfs short-read correction then passed 142 affected cases, adding two
+new nodes. Current applicable unique cases with passing results: 777, including
+116 new; original failures remain retained. This is not one final-tree full CI
+run. The manifest stays 83 groups/65 zero-skip groups, now expected sum 7140.
+
+The original VFS smoke passed import/create/init but refused service acquisition.
+A fresh different-PID read-only reproduction found legal procfs short reads were
+misclassified as overflow. After that bounded-reader fix, a new frozen source
+passed its one 600-second/zero-retry finite inert smoke (six commands, about ten
+seconds). No original failed smoke or consumed mixed HEAD was replayed.
+The successful receipt elapsed 9.424226 seconds. Store/OCI/mountinfo snapshot
+bodies were not separately retained; their pins and identities are recorded.
+Independent artifact/source/cross-pin checks cannot replay those raw snapshots.
+See [VFS SDD](../specs/193-static-python-rsi-launch/source-data-vfs-root.md).
 
 See [development storage](development-storage.md) for new-work layout and cleanup
 boundaries. Cleanup preserves source/result/archive pins, logs, failure history,
