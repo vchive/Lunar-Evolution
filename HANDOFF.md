@@ -1,3 +1,54 @@
+<!-- observer-withdrawal-current:start -->
+## 当前执行点：撤回原生定时栈观察，保留完整 CI 门（2026-10-29）
+
+继续同一工作区/分支/PR195，本节覆盖下方历史执行点。已推3fab9318后，run
+40898688099 确已越过原collection输出区间并进入真实pytest；原heavy4-3.11成功
+四文件artifact已独审，full26401/merge2f828355/tree631422ce和main/head父关系一致。
+原heavy6-3.11在300秒输出完整栈后自然372.96秒通过。另heavy0/heavy2-3.11及heavy6-3.12
+约302–303秒发生SIGSEGV(-11)，未生成JUnit；不叫预算超时/断言失败。原日志/summary/
+ZIP与平台SHA均保留，partial栈不能解释成完整产品调用链。
+
+仅撤回--diagnostics新增的faulthandler_timeout override，不加采样线程、不改任何
+产品代码/预算/重试/选集/JUnit门；阶段/verbose/compact console/完整sidecar与raw
+logger继续保留。CPython原生watchdog无GIL读frame支持竞争假设，尚未确定崩溃
+根因。额外确定兼容点：原native admission要求Python单线程且/proc/self/task只有
+原pid，native watchdog也会改变task census。原生定时观察不应强加给这些测试。
+
+5090独立两秒JSON inert首次SSH255/partial dump，后续off/watchdog/GIL三对照均0，
+不是确定复现或产品case；原首败保留。冻结tree94546700622f115e73bc2f2facfadeea39df6a47，
+2737 tracked bytes/modes，三完整runner文件315/315pass，27.781622秒，零fail/error/
+skip/retry；首harness手算313错误在collection_finish拒绝，未派发test body，仅更正
+外部harness315后执行，不改产品/测试。manifest83/65/sum7330不变，改名一个诊断
+node。全src/tests/tools Ruff/compileall/diff通过；旧423批和315域不重复累加。
+
+原current1-3.12另有真实JUnit3646=3639pass/1fail/6skip/0error；单fail为mailbox
+fixture未持有WAL基线连接，absent→empty而DB bytes不变。仅fixture显式mode=ro
+连接先SELECT sqlite_master并持有至inspect后，保留完整DB/WAL bytes和禁写SQL
+断言，新增dev/inode相等；不改产品，不用immutable/pool/absent归一化。新冻结
+tree1409840eb516d8c10eaa7457a362470496f3ef1e，两完整mailbox/lifetime文件45/45pass，
+1.136577秒Darwin、2737source前后不变、零fail/error/skip/retry。315runner和45
+fixture域不重叠；它们在不同冻结tree验证，不冒充单次最终完整CI。四原失败和6skip
+继续保留，后继完整CI/source门仍必需。
+
+后续原current3-3.12亦SIGSEGV/partial300s dump，整shard1633.518秒，不冒充单test
+耗时。原current1-3.11同WAL失败；原current2-3.11则为pytest verbose call-report先于
+fixture teardown读环境，测试globaldeny使report/errorformat/JUnit失败，非SIGSEGV。
+仅将其全部denial+parser+断言包入monkeypatch.context，test返回前恢复。冻结
+2d1dcf7cf046e063745052ef36ec8c77ec5f473f完整startup文件有效-v67/67pass，0.789859秒
+Darwin、2738source前后相同、零fail/error/skip/retry。当前七原failure均有原件：
+4native-dump相关SIGSEGV、2WAL、1reporter instrumentation；三个disjoint focused
+域分别315/45/67通过，各自冻结tree，不合计成一次最终CI。详细provider-free-test-scope.md。
+初67pass harness的-v被默认-q抵消，不算verbose证明；其结果保留。仅外部harness
+清空addopts并断言effectiveverbose=1后补验同67，source/test不变，不记134unique。
+
+SDD ci-observer-withdrawal.md。证据主区ignored validation/ci-followup-20261029/。
+现run尚有正常运行分片，原成功/失败/取消保持原义；后继完整CI/source门仍待。
+PR195未合main。P1完整CPython/runtime/生产CLI、P2原fixed-U/finite writer/monitor
+join及真实root/account/cgroup等验收仍开放，42skip不记通过。继续原无模型/远程
+评测/solver/密钥/live argv-env/benchmark写入限制，production_admission=false、
+online_publication=false。
+<!-- observer-withdrawal-current:end -->
+
 <!-- bounded-console-current:start -->
 ## 当前执行点：巨型 CI 控制台输出已修复，等待新 CI（2026-10-29）
 

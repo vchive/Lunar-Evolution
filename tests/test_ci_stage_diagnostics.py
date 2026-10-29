@@ -115,10 +115,8 @@ def test_pytest_changes_only_observers_and_retains_original_junit_fields(
     with runner._diagnostics(enabled, suite="current-heavy", role="heavy-6"):
         result = runner._pytest_attempt(tmp_path, (NODE,), report, expected_count=1,
                                         expected_nodes=(NODE,))
-    assert runner._DIAGNOSTIC_TEST_STACK_SECONDS == 300
-    observer = ["-o", "faulthandler_timeout=300"] if enabled else []
     assert calls[0][0] == [sys.executable, "-m", "pytest", "-o", "addopts=",
-        "-v" if enabled else "-q", "--color=no", *observer, f"--junitxml={report}", NODE]
+        "-v" if enabled else "-q", "--color=no", f"--junitxml={report}", NODE]
     assert set(calls[0][1]) == {"cwd", "env", "check"}
     assert result["exit_code"] == result["pytest_exit_code"] == 0
     assert result["exact_case_keys"] is True and result["tests"] == 1
@@ -246,11 +244,11 @@ def test_workflow_enables_unbuffered_diagnostics_without_changing_roles():
         "current", "current-heavy", "history"]
 
 
-def test_real_stall_observer_dumps_stack_without_changing_exit_or_junit(monkeypatch, capfd):
+def test_real_diagnostics_do_not_arm_native_dump_timer_or_change_exit_or_junit(monkeypatch, capfd):
     # Keep this single natural subprocess outside the product checkout even when
     # the outer regression uses an in-repository basetemp. The private pytest.ini
     # also fixes its root and collection identity independently of ancestor config.
-    with tempfile.TemporaryDirectory(prefix="lunar-ci-stack-") as directory:
+    with tempfile.TemporaryDirectory(prefix="lunar-ci-no-timer-") as directory:
         root = Path(directory).resolve()
         assert not root.is_relative_to(ROOT)
         (root / "pytest.ini").write_text("[pytest]\ntestpaths = tests\n", encoding="utf-8")
@@ -258,22 +256,28 @@ def test_real_stall_observer_dumps_stack_without_changing_exit_or_junit(monkeypa
         tests.mkdir()
         script = tests / "test_inert.py"
         script.write_text(
+            "import faulthandler\n"
             "import time\n\n"
-            "def test_inert():\n"
+            "def forbidden_timer(*args, **kwargs):\n"
+            "    raise AssertionError('automatic_native_dump_timer_was_armed')\n\n"
+            "faulthandler.dump_traceback_later = forbidden_timer\n\n"
+            "def test_inert(pytestconfig):\n"
+            "    assert float(pytestconfig.getini('faulthandler_timeout')) == 0.0\n"
+            "    assert pytestconfig.getini('faulthandler_exit_on_timeout') is False\n"
+            "    assert faulthandler.dump_traceback_later is forbidden_timer\n"
             "    private_value = 'stack-local-value-must-not-be-dumped'\n"
             "    time.sleep(0.2)\n"
             "    assert private_value\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr(runner, "_DIAGNOSTIC_TEST_STACK_SECONDS", 0.05)
         monkeypatch.setenv("LUNAR_STACK_TEST_SECRET", "stack-env-value-must-not-be-dumped")
         report = root / "original.xml"
         with runner._diagnostics(True, suite="current-heavy", role="heavy-6"):
             result = runner._pytest_attempt(root, (NODE,), report, expected_count=1,
                                             expected_nodes=(NODE,))
         captured = capfd.readouterr()
-        assert "Timeout (" in captured.err
-        assert str(script) in captured.err and "in test_inert" in captured.err
+        assert "Timeout (" not in captured.err
+        assert "automatic_native_dump_timer_was_armed" not in captured.out + captured.err
         for private in ("stack-local-value-must-not-be-dumped", "stack-env-value-must-not-be-dumped",
                         "LUNAR_STACK_TEST_SECRET"):
             assert private not in captured.out + captured.err

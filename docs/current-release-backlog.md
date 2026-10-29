@@ -1,3 +1,52 @@
+## Current P0 follow-up — withdraw automatic native timer, 2026-10-29
+
+The bounded-console successor now genuinely reaches pytest. Original Python
+3.11 heavy-4 passed with independently verified full artifacts; Python 3.11
+heavy-6 naturally passed in 372.96 seconds after a five-minute stack dump.
+Python 3.11 heavy-0/heavy-2 and Python 3.12 heavy-6 instead crashed with SIGSEGV around
+302–303 seconds and no JUnit. These original failures remain unaccepted. Their
+partial stacks do not establish an exact product or interpreter root cause.
+
+Withdraw only the newly added automatic native timer. Keep all stage/progress
+and compact console observations, complete raw log/summary, default invocation,
+selection, retry/budget and aggregate/JUnit gates. Do not introduce background
+threads: original native admission requires both Python and Linux single-task
+state. This withdrawal reduces diagnostic risk; fresh complete CI must pass.
+
+Frozen 94546700: three affected runner files, 315/315 pass, zero error/skip,
+27.781622 seconds on Darwin, source bytes/modes unchanged for all 2737 files.
+A first external harness count313 was wrong and refused collection315 before
+any test body; that original error stays retained. Correcting only the harness
+produced the passing batch. No repeated unique counts are added to the prior
+423-case batch. Manifest remains 83/65 zero-skip, expected sum7330. Ruff,
+compileall and diff checks pass. See
+[timer withdrawal SDD](../specs/193-static-python-rsi-launch/ci-observer-withdrawal.md).
+
+A separate original current-1 Python 3.12 JUnit retained 3,639 passed, one
+mailbox fixture failure and six skips. Explicit caller-owned mode=ro baseline
+lifetime now stabilizes SQLite WAL bookkeeping before inspection; full DB/WAL
+byte comparisons, SQL-write refusal and new inode checks remain. Product/store
+code is unchanged. Frozen 1409840e: both complete mailbox/lifetime files passed
+45/45, zero error/skip, 1.136577 seconds on Darwin, 2,737 source files unchanged,
+one dispatch/zero retry. These 45 cases are disjoint from the earlier 315 but
+were verified on a later frozen tree, not a complete final-head CI.
+
+Later original failures are retained too: current-1 Python 3.11 has the same
+WAL assertion; current-3 Python 3.12 SIGSEGV followed a partial timed dump
+(1,633.518 seconds for the whole shard); current-2 Python 3.11 hit global parser
+test denials during verbose reporting before fixture teardown, then could not
+write JUnit. That test now owns its original denial matrix in a local context.
+Frozen 2d1dcf7c: all 67 startup-closure cases passed with verified effective verbose
+reporting, exact JUnit, zero failure/error/skip, 0.789859 seconds on Darwin, 2,738 tracked
+files unchanged. The three disjoint focused domains (315/45/67) passed on their
+own frozen trees; seven original CI failures remain failures. The first 67-case
+ordinary-progress pass remains retained: its -v was offset by default -q. Only
+the external harness addopts was corrected; the two runs count 67 unique cases.
+
+P0 complete successor CI/main integration, P1 actual build/runtime/production
+CLI and P2 original-account/ownership acceptance remain open. Production
+admission and online publication remain false; no business campaign is replayed.
+
 ## Current P0 follow-up — bounded CI console, 2026-10-29
 
 The sole open PR is #195, still awaiting complete CI and main integration.

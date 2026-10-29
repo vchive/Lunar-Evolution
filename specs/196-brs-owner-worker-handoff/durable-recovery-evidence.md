@@ -99,3 +99,22 @@ existing native all-rejected refusal. Freeze one final source, run focused tests
 Ruff, compileall and diff checks, and validate the same distinct cases on macOS
 and 5090gpu Linux with collection/JUnit/source/import/exit evidence. Complete CI
 and main merges remain separate gates.
+
+## SQLite baseline lifetime clarification — 2026-10-29
+
+The original Python 3.12 current-1 CI assertion observed an absent WAL becoming
+an empty WAL during inspection, while the database bytes were unchanged. That
+failure remains preserved. SQLite `mode=ro` forbids database creation and SQL
+writes, but may create WAL/shared-memory bookkeeping for an existing WAL-mode
+database. It must still observe committed live WAL rows; `immutable=1` is not a
+valid replacement.
+
+The zero-write fixture now explicitly holds a caller-owned `mode=ro` connection,
+reads the original schema, then captures the exact database/WAL bytes and inode
+identities. It keeps that connection open through inspection and both comparisons,
+and closes it deterministically afterward. The original SQL-write and ledger
+initialization refusals and exact byte comparisons remain; no absent/empty WAL
+normalization, connection pool, product PRAGMA change or inspection authority is
+introduced. This separates SQLite baseline setup from the operation under test,
+without depending on older connections remaining alive until garbage collection.
+The correction still requires focused regression; it is not a passing CI result.

@@ -74,7 +74,6 @@ ARCHIVE_RETRY_NODE = (
 _DIAGNOSTICS = ContextVar("regression_diagnostics", default=None)
 _DIAGNOSTIC_OBSERVATION = ContextVar("regression_diagnostic_observation", default=None)
 _DIAGNOSTIC_ATTEMPT = ContextVar("regression_diagnostic_attempt", default=1)
-_DIAGNOSTIC_TEST_STACK_SECONDS = 300
 
 
 @contextmanager
@@ -482,9 +481,6 @@ def _pytest_attempt(root, selections, report, *, expected_count, frozen=False, p
     diagnostics = _DIAGNOSTICS.get() is not None
     verbosity = "-v" if diagnostics else "-q"
     command = [str(python), "-m", "pytest", "-o", "addopts=", verbosity, "--color=no"]
-    if diagnostics:
-        # Pytest's built-in observer dumps stacks without ending or retrying a test.
-        command.extend(["-o", f"faulthandler_timeout={_DIAGNOSTIC_TEST_STACK_SECONDS}"])
     command.extend([f"--junitxml={report}", *selections])
     with _diagnostic_phase("pytest", expected_count=expected_count,
                            attempt=_DIAGNOSTIC_ATTEMPT.get()) as observation:
