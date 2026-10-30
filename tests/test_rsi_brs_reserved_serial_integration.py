@@ -1,7 +1,7 @@
 """Natural private serial children over explicit inert process observations.
 
-No producer, candidate, evaluator, model, network or subprocess is executed.
-Only those process boundaries are doubled. The actual gateway claims/results,
+Only a controlled Python fixture interpreter is started. No producer, candidate,
+evaluator, model or network operation is executed; those boundaries are doubled. The actual gateway claims/results,
 native preparation, original owner, publication, worker ACK, settlement and
 retirement are composed by the private serial driver.
 """
@@ -61,6 +61,11 @@ from lunar_evolution.rsi_producer_gateway import (
 from lunar_evolution.rsi_python_scheduler_inputs import PythonRSISchedulerInputContext
 
 HEX = "a" * 64
+_SERIAL_FLOW_SECONDS = 600
+# The host limit also covers imports, synthetic fixture preparation and final
+# source/read-only checks outside the original flow deadline. This is a finite
+# allowance, not a measured overhead or an extension of any production budget.
+_SERIAL_HARNESS_ALLOWANCE_SECONDS = 300
 
 
 def _forbidden(*_args, **_kwargs):
@@ -248,7 +253,7 @@ def _setup(root, patch, outcomes):
     original_receipt_reader = native_trusted_receipt.recover_native_trusted_execution_receipt
     value, _unused_controller, supplier, _unused_observation = child_fixture._successful_fixture(root, patch)
     observation = _SerialNativeObservation(outcomes)
-    control = SolveExecutionControl(600)
+    control = SolveExecutionControl(_SERIAL_FLOW_SECONDS)
     value.native = replace(value.native, execution_control=control, python_handoff_after_execution=observation)
     value.context = PythonRSISchedulerInputContext(value.native, value.sidecar, value.proof)
     value.config = PythonProducerRSIExecutionConfig(value.request.solver_id, value.ledger, value.context)
@@ -417,7 +422,8 @@ print(json.dumps({"outcomes": list(outcomes), "status": "completed"}, sort_keys=
         [sys.executable, "-I", "-B", "-c", script, str(source), str(tests), str(tmp_path),
          json.dumps(outcomes), json.dumps(expected, sort_keys=True)],
         cwd=tmp_path, env={"PATH": os.defpath, "LC_ALL": "C"},
-        capture_output=True, text=True, timeout=600, check=False,
+        capture_output=True, text=True,
+        timeout=_SERIAL_FLOW_SECONDS + _SERIAL_HARNESS_ALLOWANCE_SECONDS, check=False,
     )
     assert completed.returncode == 0, (completed.stdout + completed.stderr)[-16_000:]
     assert json.loads(completed.stdout) == {"outcomes": list(outcomes), "status": "completed"}

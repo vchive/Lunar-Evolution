@@ -83,7 +83,14 @@ resume assertions, each in its own fresh interpreter with source pins and
 explicit inert effects/network guards. The reserved graph holds process-lifetime
 function identities: warming it in an earlier test and then replacing attempt or
 receipt aliases must refuse. The fixture never clears or refreshes a production
-latch or capture. These affected-domain changes await the parent's final batch.
+latch or capture. All663 nodes in17 complete files passed on01d740f0.
+
+The outer synthetic interpreter limit covers imports, fixture preparation and
+final read-only/source checks as well as the original internal600-second flow.
+After CI3.12 hit the original outer600 limit, only the host bound is separated
+into600+300 finite setup/readback allowance. Internal control, production and
+build budgets remain unchanged, with no retry or fallback. The original failure
+is retained; no phase telemetry identifies a unique cost or guarantees900 passes.
 
 The Python plan-factory `_read_native` and its projection, episode stager, first
 fixed root loader and expanded admission composer remain outside this change.

@@ -1,5 +1,5 @@
 <!-- delegated-review-current:start -->
-## 当前执行点：原完整构建终止，新依赖比较与 scope 接线待集中回归（2026-10-30）
+## 软件冻结记录：依赖比较、scope 与安装候选描述（2026-10-31）
 
 本节覆盖下方历史状态。用户明确授权独立 agent 审查，并允许规范接受委派审查。
 独立 reviewer `/root/ci_runner_review` 已核完八份配置原件、完整输入和两套精确图
@@ -42,8 +42,22 @@ profile、journal及严格整数 deadline 上界，不重建owner，不启生产
 并行完成 retained outputs→expanded installation 候选描述：原报告/历史pins、两轮
 FD读回、实际image mode、原CPython和augmented inventory分开绑定；复用现parser/
 ELF inspector，仅返回候选字节，无新receipt/accepted root/执行器/CLI。84测试已收集，
-独立静态审查无blocker，尚待执行。三线代码完成后合批回归新增和失败影响域，再走
-本后继自己的完整CI/source门；旧4失败不改写，不重复整轮2575来替代精确修复验证。
+独立静态审查无blocker。最终 `01d740f0` 的17完整文件/663节点已全部通过，
+935.958814秒含wrapper，零fail/error/skip/retry，source bytes/Git执行位前后相同；
+覆盖全部221新增节点。旧2575批4失败原样保留，没有把两批相加声称一次全量通过。
+
+PR199 run41110175003 attempt1原完整CI出现3.12 heavy6 outer fixture 600s超时；
+同一three-child-mixed在3.11为429.816s通过、3.13为582.108s通过。内部原flow的
+SolveExecutionControl(600)晚于fixture准备才启动，外层600从新解释器启动即计时，
+还包含收尾只读复验；原失败没有唯一性能瓶颈结论。后继仅把外层测试上限明确为
+600flow+300有限准备/复验额度，不改变内部600、生产或构建预算，无retry/fallback。
+另为oversized raw参数加固定短ID，避免每个节点名复制16MiB字节；测试数量不变。
+只回归这两处测试修改的影响域，后继须自己的完整CI/source门；不取消或改写旧CI。
+
+新profile对原202 compiler/2 linker原件的纯比较已通过，12种alias均受pin约束，
+旧失败未升级。正式fresh OpenEvolve单3000s/零retry已另起，用01d740f0软件及相同
+批准输入/原图；实际构建结果与后继最终CI以独立原件和PR199为准，本段记录冻结时
+事实，不提前宣告发布通过。CIcollector与完整构建原件保留在下述ignored根目录。
 原件与审查在主区 ignored `validation/native-support-export-20261030/`。
 
 后续先完成新软件回归、fresh完整构建/原始 custody、sealed startup/live owner，再接首个 scheduler

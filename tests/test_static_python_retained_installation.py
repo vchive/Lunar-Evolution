@@ -279,7 +279,12 @@ def test_invalid_pin_refuses_before_filesystem_callback(history, monkeypatch, va
 
 
 @pytest.mark.parametrize("field", ["recipe_bytes", "runtime_closure"])
-@pytest.mark.parametrize("value", [b"", bytearray(b"not exact bytes"), "not bytes", b"x" * (16 * 1024 * 1024 + 1)])
+@pytest.mark.parametrize("value", [
+    pytest.param(b"", id="empty-bytes"),
+    pytest.param(bytearray(b"not exact bytes"), id="bytearray"),
+    pytest.param("not bytes", id="text"),
+    pytest.param(b"x" * (16 * 1024 * 1024 + 1), id="oversized-bytes"),
+])
 def test_raw_bounds_precede_callbacks(history, field, value):
     def forbidden():
         pytest.fail("raw preflight must precede callbacks")

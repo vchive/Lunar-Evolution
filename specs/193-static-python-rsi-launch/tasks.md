@@ -38,8 +38,14 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] Implement retained-output expanded installation candidate description,
   keeping original history/source pins, real FD mode and false authority claims;
   independently review its three files and collect84 nodes without execution.
-- [ ] Freeze corrections and the candidate slice before one combined focused
-  follow-up; retain original failures and verify complete affected test files.
+- [x] Freeze01d740f0 corrections/candidate and run17 complete affected files:
+  663pass/0fail/error/skip/retry, all221 new nodes, source bytes/Git modes equal.
+- [x] Retain original CI41110175003 attempt1's3.12 heavy6 outer600s timeout;
+  distinguish the later original control600 from fixture import/setup/cleanup.
+- [x] Give only the synthetic interpreter's host bound a finite300s allowance;
+  keep control/production/build budgets unchanged and add short oversized IDs.
+- [ ] Validate those test-only changes once, then complete successor CI/source
+  acceptance without canceling or relabeling the original failed CI.
 - [ ] Complete new-source CI and fresh configured builds; do not relabel the
   old refused attempt or replace custody/runtime acceptance with comparisons.
 

@@ -34,8 +34,24 @@ original historical pins, two rounds of FD readback, actual image mode and
 distinct CPython/augmented inventory bindings. Its84 tests are collected and
 independent static review passed, but tests have not yet executed. It returns
 only candidate bytes through the existing parser/ELF checks; no accepted root,
-receipt, executor or CLI is introduced. Freeze all corrections before one focused
-follow-up covering complete affected files and the original four failures.
+receipt, executor or CLI is introduced. On final01d740f0 all663 cases in17
+complete affected files pass in935.958814s including the wrapper, zero retry/
+failure/error/skip, source bytes/Git modes unchanged. All221 new nodes pass;
+the original2575 batch's four failures remain separate.
+
+PR199 original CI run41110175003 attempt1 has a real3.12 heavy6 failure:
+outer synthetic Python timeout600s, while the same case passed3.11/3.13 in
+429.816/582.108s. This does not identify a unique performance bottleneck.
+The internal SolveExecutionControl(600) begins after fixture preparation;
+the outer limit includes imports/setup and post-flow checks too. Only the test
+host bound becomes600+300 finite setup/readback allowance; production/control/
+build budgets stay unchanged, no retry/fallback. Oversized raw parameters also
+get short explicit IDs, preventing16MiB node names without changing test count.
+The successor must pass its own affected regression and full CI/source gate;
+original CI is not canceled or relabeled. Fresh OpenEvolve execution uses the
+actual01 software, same approved inputs/graph, original3000s and zero retry.
+This is the software-freeze observation; final CI/build status is in PR199 and
+the independent original evidence, not predicted here.
 
 Remaining P0: validate the new frozen software and its own CI/source gate.
 Remaining P1: fresh configured CPython/freezer/ELF paths and original
