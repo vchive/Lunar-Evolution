@@ -158,6 +158,7 @@
         "tests/test_static_python_native_support_export.py",
         "tests/test_static_python_cpython_review_preview.py",
         "tests/test_static_python_source_directory_dependencies.py",
+        "tests/test_static_python_retained_installation.py",
         "tests/test_static_python_configuration_generation.py",
         "tests/test_static_python_configuration_review.py",
         "tests/test_static_python_configuration_review_v2.py",
@@ -174,7 +175,7 @@
         "tests/test_static_python_source_data_vfs_retained_consumer.py",
         "tests/test_static_python_source_data_vfs_retained_custody.py"
       ],
-      "expected_tests": 1010,
+      "expected_tests": 1094,
       "zero_skips": true
     },
     {

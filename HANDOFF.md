@@ -33,8 +33,17 @@ OpenEvolve 完整构建已在 5090gpu 的 fresh `/dev/shm` 子目录终止，单
 遍历目录均可由原 source inventory 证明。新增显式 source-directory comparison/
 consumer 入口，旧 v3/v4 默认不变，不接受通用路径归一化或调用者映射。
 另已贯穿 scheduler/BRS 的原 whole-scope 与 pycache diagnostic 引用，绑定原owner、
-profile、journal及 deadline 上界，不重建owner，不启生产CLI。两线独立静态审查无
-剩余 blocker，新增126节点，代码冻结后一次集中完整影响域回归；目前未记为通过。
+profile、journal及严格整数 deadline 上界，不重建owner，不启生产CLI。
+冻结 `43375a24` 的66完整文件/2575节点 Linux 集中回归为2571pass/4fail，
+新增126全部pass，无skip；source bytes/Git执行位前后相同。四个旧serial fixture
+在预热策略图后替换已捕获native别名，触发原drift门；按已有capacity-pair规范改为
+各自fresh interpreter，保留原graph/latch，并补齐新scope的有限策略图边和11测试。
+
+并行完成 retained outputs→expanded installation 候选描述：原报告/历史pins、两轮
+FD读回、实际image mode、原CPython和augmented inventory分开绑定；复用现parser/
+ELF inspector，仅返回候选字节，无新receipt/accepted root/执行器/CLI。84测试已收集，
+独立静态审查无blocker，尚待执行。三线代码完成后合批回归新增和失败影响域，再走
+本后继自己的完整CI/source门；旧4失败不改写，不重复整轮2575来替代精确修复验证。
 原件与审查在主区 ignored `validation/native-support-export-20261030/`。
 
 后续先完成新软件回归、fresh完整构建/原始 custody、sealed startup/live owner，再接首个 scheduler

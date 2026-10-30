@@ -17,7 +17,8 @@ context, ordinary success/outcome scheduler wrappers and reserved Python
 preparation wrapper to the same single native attempt. Defaults stay None;
 existing positional context arguments and unselected kwargs/projection stay
 unchanged. The existing BRS call forwards those exact objects without changing
-its claims, exchange, control bytes or policy graph.
+its claims, exchange or control bytes. The reserved exact policy graph adds only
+the new scope methods, pin/helpers and diagnostic validator; drift still refuses.
 
 ## Contract
 
@@ -32,7 +33,11 @@ its claims, exchange, control bytes or policy graph.
   not repin replacements. A finite configuration projection binds the original
   installation/journal/deadline upper bound and diagnostic observer/layout.
   It is not authority; live checks require the retained original scope.
-- The native runner may shorten its original deadline. Extension refuses;
+- The original and current deadline must be exact integers with
+  `0 < deadline_ns < 2**64`, matching the installed scope binding. NaN,
+  infinities, floats, booleans, nonpositive and overflowing values refuse at
+  initial pin and each historical/fresh check before the expiry callback.
+  The native runner may shorten its original deadline. Extension refuses;
   fingerprinting retains the original upper bound, without hashing mutable
   lifecycle state. Fingerprinting never calls `check_before_launch` and does
   not mutate the scope or allocate a budget.
@@ -61,14 +66,24 @@ existing late same-attempt handoff. No startup-only selector or fake request.
 ## Files and verification
 
 Product files: `native_trusted_scheduler.py`, `rsi_native_scheduler.py`,
-`rsi_brs_native_provider.py`. Independent focused tests cover opt-in/default
+`rsi_brs_native_provider.py`, plus the exact reserved-policy dependency declarations. Independent focused tests cover opt-in/default
 routing, all native wrappers, original object identity, context copy/revalidation
 and drift, invalid scope refusal before launch, deadline shortening/extension,
 failed/unknown outcomes retaining the caller's scope and reserved BRS routing.
-The new test file has 45 expected parametrized nodes, not yet collected or run.
+The new test file has 77 parametrized nodes. All passed in the first combined
+Linux2575-node batch; four older serial-integration nodes failed and remain
+recorded separately. That batch is not considered a successful release gate.
 They use explicitly synthetic owners/effects, never imply actual root installation
 or static CPython acceptance. The parent runs these with the combined focused
 suite, Ruff, compileall and diff check after code freeze.
+
+The reserved policy suite adds 11 scope code/alias drift nodes. The natural
+serial integration retains four terminal-order variants and completed read-only
+resume assertions, each in its own fresh interpreter with source pins and
+explicit inert effects/network guards. The reserved graph holds process-lifetime
+function identities: warming it in an earlier test and then replacing attempt or
+receipt aliases must refuse. The fixture never clears or refreshes a production
+latch or capture. These affected-domain changes await the parent's final batch.
 
 The Python plan-factory `_read_native` and its projection, episode stager, first
 fixed root loader and expanded admission composer remain outside this change.

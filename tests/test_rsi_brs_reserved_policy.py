@@ -87,6 +87,14 @@ def test_same_function_identity_cannot_hide_code_change(monkeypatch):
     ("rsi_native_scheduler", "NativeRSISchedulerContext", "__post_init__"),
     ("rsi_native_scheduler", "NativeRSISchedulerContext", "_assert_live_modules_sink"),
     ("rsi_native_scheduler", "NativeRSISchedulerContext", "_live_modules_sink_projection"),
+    ("rsi_native_scheduler", "NativeRSISchedulerContext", "_native_scope_options"),
+    ("rsi_native_scheduler", "NativeRSISchedulerContext", "_native_scope_projection"),
+    ("native_trusted_scheduler", "_NativeSchedulerScopePin", "__init__"),
+    ("native_trusted_scheduler", "_NativeSchedulerScopePin", "options"),
+    ("native_pycache_diagnostic", "NativePycacheDiagnosticRequest", "validate"),
+    ("native_trusted_scheduler", None, "_pin_native_scheduler_scope"),
+    ("native_trusted_scheduler", None, "_native_scope_profile_snapshot"),
+    ("native_trusted_scheduler", None, "_native_scope_deadline"),
     ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", "validate"),
     ("native_fixed_live_sink", "FixedPythonLiveSinkRequest", "compare"),
     ("native_fixed_live_sink", "_FixedPythonLiveSinkPin", "__init__"),
@@ -113,6 +121,15 @@ def test_live_sink_scheduler_code_drift_is_rejected(module_name, owner_name, nam
     owner = module if owner_name is None else getattr(module, owner_name)
     function = getattr(owner, name)
     monkeypatch.setattr(function, "__code__", function.__code__.replace(co_name="foreign"))
+    _refuses()
+
+
+@pytest.mark.parametrize("name", [
+    "_pin_native_scheduler_scope", "_native_scope_profile_snapshot", "_native_scope_deadline",
+])
+def test_original_scope_helper_alias_drift_is_rejected_without_execution(name, monkeypatch):
+    module = importlib.import_module("lunar_evolution.native_trusted_scheduler")
+    monkeypatch.setattr(module, name, _forbidden)
     _refuses()
 
 

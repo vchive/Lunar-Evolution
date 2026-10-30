@@ -31,8 +31,15 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] Pass the original installed whole-scope/pycache objects through scheduler,
   success/outcome and BRS prepublication with identity/profile/deadline pins.
 - [x] Independently review both slices and collect126 new boundary nodes.
-- [ ] Freeze all code and run one combined complete affected-file regression;
-  retain source bytes/Git-mode identity, Ruff, compileall and diff results.
+- [x] Freeze43375a24 and run66 complete affected files:2571pass/4fail, no skip,
+  all126 new nodes pass; source bytes/Git modes equal, Ruff/compileall/diff pass.
+- [x] Preserve the failed batch and implement exact scope policy edges,11 drift
+  tests and fresh-interpreter isolation for the four original serial fixtures.
+- [x] Implement retained-output expanded installation candidate description,
+  keeping original history/source pins, real FD mode and false authority claims;
+  independently review its three files and collect84 nodes without execution.
+- [ ] Freeze corrections and the candidate slice before one combined focused
+  follow-up; retain original failures and verify complete affected test files.
 - [ ] Complete new-source CI and fresh configured builds; do not relabel the
   old refused attempt or replace custody/runtime acceptance with comparisons.
 

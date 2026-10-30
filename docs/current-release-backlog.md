@@ -22,8 +22,20 @@ Both software slices are now implemented: an explicit fixed source-directory
 dependency profile for the 12 observed CPython spellings, and original whole-scope/
 pycache objects passed through the scheduler and BRS boundary. Legacy dependency
 APIs/default bytes remain unchanged; neither slice supplies runtime authority.
-Independent static review has no remaining blocker. All code is to freeze before
-one combined affected-file regression; 126 new nodes are collected, not yet passed.
+On freeze43375a24, the combined66-file Linux run terminated2571pass/4fail,
+zero skip; all126 added nodes passed and source bytes/Git-mode projections were
+unchanged. The four serial fixture failures remain failures. They replace pinned
+native aliases after a process-lifetime graph is warm; the existing capacity-pair
+fresh-interpreter pattern now isolates them without refreshing production gates.
+The new finite scope edges and11 drift cases complete the reserved policy graph.
+
+The parallel retained-output installation-description slice is also implemented:
+original historical pins, two rounds of FD readback, actual image mode and
+distinct CPython/augmented inventory bindings. Its84 tests are collected and
+independent static review passed, but tests have not yet executed. It returns
+only candidate bytes through the existing parser/ELF checks; no accepted root,
+receipt, executor or CLI is introduced. Freeze all corrections before one focused
+follow-up covering complete affected files and the original four failures.
 
 Remaining P0: validate the new frozen software and its own CI/source gate.
 Remaining P1: fresh configured CPython/freezer/ELF paths and original
