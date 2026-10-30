@@ -1,3 +1,51 @@
+## Current P0/P1 — real support export and direct consumption, 2026-10-30
+
+The separate `codex/zig-support-export` successor starts at PR196 head13eaad40;
+PR196 stays frozen pending its complete CI/source gate. The new Feature193
+[contract](../specs/193-static-python-rsi-launch/zig-support-candidate-export.md)
+implements the original three-source trusted-local generation, bounded no-follow
+inventories of both caches, finite create-only exports with complete cache identity,
+independent profile/bundle pins and explicit mappings, fresh support staging and
+a separate original-runner direct-link capture. Multiple CRT candidates remain
+distinct. Legacy support contracts and failed/unknown attempts remain unchanged.
+
+All software was completed before one Linux3.12 batch: eight complete files,
+260/260 passed, 41 new, no errors/skips/retries, 6.268463s including the wrapper.
+Frozen tree88664bd0 has2750source files with identical before/after bytes/modes.
+The first external harness refused a mistaken quiet-level assertion before any
+test body; only that external assertion changed. Ruff/compileall/diff passed.
+The existing source group is721, retaining83groups/65zero-skip, total7460.
+
+Real generation completed in47.601920s under its120s deadline, zero retries:
+three compiles and one link returned0; six candidates/14,157,612B were exported
+with two distinct CRTs and four archives. No crti/crtn was invented. The actual
+seed passed the static ELF gate and was never executed. A separate declaration
+pinned five prior exported products to explicit roles before fresh direct dispatch.
+That attempt completed in33.617588s under its own original120s deadline, zero
+retries: actual depfile exactly matches three objects/five support inputs and
+the actual4,471,536B ELF is static and unexecuted. Original Zig and the previous
+attempt snapshots were not staged into or modified.42+38finite originals are
+retained locally with tar/file pins; excluded large trees are not immutable
+custody evidence. An initial script import refusal dispatched no Zig commands.
+
+Remaining work, in dependency order:
+
+1. **P0 integration:** complete PR196's own CI/source audit and merge it; finish
+   the successor's complete CI/source gate before its merge.
+2. **P1 build/runtime:** isolated same-command native export/custody; independently
+   reviewed configuration and complete CPython/freezer/static ELF; sealed startup
+   joined to the original owner/lifecycle and bounded request/memory/result path;
+   terminal/broker/material/budget/recovery joins; actual producer/production RSI
+   CLI and copied local-case acceptance. Trusted-local support evidence does not
+   establish these gates.
+3. **P2 environment/ownership:** original exclusive fixed-U/finite writable-object
+   acquisition and accepting-monitor join; actual root/account/ACL/cgroup,
+   disconnect and blocked-storage acceptance. The42prerequisite skips remain skips.
+
+Evidence is in primary ignored `validation/zig-support-export-20261030/`.
+Production admission and online publication stay false. No model, WebAgent,
+remote/company evaluator or solver campaign was run; benchmark sources stay read-only.
+
 ## Current P0/P1 — final CI and explicit direct LLD, 2026-10-30
 
 P0 completed: PR195 head3b807a6d merged into main as9f23f592 at

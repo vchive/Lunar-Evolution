@@ -1,3 +1,47 @@
+<!-- zig-support-export-current:start -->
+## 当前执行点：真实支持文件生成、导出与直接链接已贯通（2026-10-30）
+
+独立后继工作区 `/Users/liminghan/.codex/worktrees/zig-support-export/lunar_agent`，
+分支 `codex/zig-support-export`，父为 PR196 head13eaad40。PR196 保持冻结，完整
+CI/source gate 尚在进行；本后继不借用它的验收结果，也未声明已合 main。
+
+沿用 Feature193，SDD `zig-support-candidate-export.md`。新增 trusted-local 原三
+seed源码生成/两cache有界no-follow库存/有限候选原字节导出；保留多个crt1身份，
+不按basename自动选权威。独立profile/bundle/显式完整路径mapping后，create-only
+staging，再用原runner做独立direct-LLD seed验收；真实report/所有原及snapshot
+inputs/outputs FD readback、static ELF及实际depfile exact target/set全部保留。
+旧五文件support、旧失败/unknown、PR196默认/standalone门均未修改，无fallback。
+
+代码freeze88664bd0，2750files：5090gpu Python3.12八完整文件260/260pass，41新增，
+6.268463秒含wrapper、零fail/error/skip/retry，source bytes/modes前后相同。首外部
+harness误将-q的verbose判为0，在collection_finish拒绝，0test body；仅外部脚本
+改为-1后执行同source，原记录保留。完整Ruff/compileall/diff通过。CI原83组/
+65zero-skip不变，RSI source680→721，expected sum7419→7460。
+
+真实新generation：固定完整Zig19546files/357913169B，原120秒绝对budget，
+47.601920秒完成3compile+1link均rc0，导出6候选/14157612B，含2个不同crt1和
+4archive，无crti/crtn。bundle ecd8af6d；seed4480016B静态ELF未执行。首外部脚本
+遗漏src导入路径，import即拒绝、0Zig dispatch；更正仅外部脚本后才开始本attempt。
+42有限原件已保全，完整cache库存原件在内；原toolchain及cache大树未打包，不能
+将collection当immutable custody。
+
+另一次fresh capture：先固定独立声明profile4b39c327及具体mapping（从前一观察
+导出产物声明后继输入，不是来源认证），复制新private toolchain，不改原Zig或前一
+attempt快照。120秒原budget/retry0，33.617588秒，原3compile/direct link均rc0；
+实际1484B depfile精确8输入=3对象+5支持文件，4471536B static ELF不执行。
+38有限原件已保全，capture evidence5d528f45。以上均对应原freeze产品bytes；
+后续仅文档更新。证据主区ignored `validation/zig-support-export-20261030/`。
+
+下一步 P0：PR196完整CI/source门后合main，本后继自己的完整CI后再合。P1：
+隔离同command native exporter与真实custody、完整配置输入/CPython/freezer/ELF、
+sealed startup及原owner/native lifecycle/request-memory→bounded-result、terminal/
+broker/material/budget/recovery join、实际producer/生产RSI CLI与本地case验收。
+P2：原exclusive fixed-U/finite writer/accepting-monitor join及真实root/account/
+ACL/cgroup/disconnect/blocked-storage验收，42root前提skip仍不算通过。
+无模型/WebAgent/远程或公司evaluator/真实solver、密钥/live argv-env/原benchmark写入；
+production_admission=false、online_publication=false。
+<!-- zig-support-export-current:end -->
+
 <!-- zig-lld-direct-current:start -->
 ## 当前执行点：PR195 已合 main；P1 直接 LLD 接线已验证（2026-10-30）
 
