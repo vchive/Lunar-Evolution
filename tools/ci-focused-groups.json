@@ -157,6 +157,7 @@
         "tests/test_static_python_zig_support_selection.py",
         "tests/test_static_python_configuration_generation.py",
         "tests/test_static_python_configuration_review.py",
+        "tests/test_static_python_configuration_review_v2.py",
         "tests/test_static_python_source_data_backend.py",
         "tests/test_static_python_source_data_graph.py",
         "tests/test_static_python_source_data_consumer.py",
@@ -170,7 +171,7 @@
         "tests/test_static_python_source_data_vfs_retained_consumer.py",
         "tests/test_static_python_source_data_vfs_retained_custody.py"
       ],
-      "expected_tests": 721,
+      "expected_tests": 849,
       "zero_skips": true
     },
     {

@@ -41,9 +41,10 @@ from lunar_evolution.static_python_producer_envelope_source import (
 from tools.static_python_fixture.profile import ALIASES, CORE_BUILTINS, STATIC_ADDITIONS
 from tools.static_python_fixture.tables import emit_static_python_tables
 from tools.static_python_rsi_fixture.build_driver import _preparation_wire
-from tools.static_python_rsi_fixture.configuration_review import (
-    bind_reviewed_cpython_configuration,
+from tools.static_python_rsi_fixture.configuration_review_v2 import (
+    bind_selected_cpython_configuration as bind_reviewed_cpython_configuration,
 )
+from tools.static_python_rsi_fixture.configuration_review_v2 import selects_v2_review
 from tools.static_python_rsi_fixture.execution_backend import RECIPE_V3_SCHEMA, _recipe
 from tools.static_python_rsi_fixture.installation_profile import RSIProfilePreparation
 from tools.static_python_rsi_fixture.runtime_closure import (
@@ -307,6 +308,10 @@ def prepare_cpython_build_recipe(
                        expected_review_manifest_sha256 is not None)
     if any(review_selected) and not all(review_selected):
         _fail("configuration_review_incomplete")
+    v2_review_selected = all(review_selected) and selects_v2_review(
+        review_manifest_bytes=review_manifest_bytes,
+        expected_review_manifest_sha256=expected_review_manifest_sha256,
+    )
     if (producer_lifecycle_profile is not None
             and (type(producer_lifecycle_profile) is not str
                  or producer_lifecycle_profile not in {FIXED_PRODUCER_LIFECYCLE_PROFILE,
@@ -480,6 +485,8 @@ void *lunar_sqlite_serialization_probe(void) { return (void *)&sqlite3_serialize
                 "-DPy_BUILD_CORE", "-I", "@source-dir/configuration",
                 "-I", "@source-dir/Include", "-I", "@source-dir/Include/internal",
                 "-I", "@source-dir/Include/internal/mimalloc"]
+    if v2_review_selected:
+        compiler += ["-I", "@source-dir/Objects", "-I", "@source-dir/Python"]
     if native:
         compiler += ["-I", "@source-dir/Modules/_hacl/include", "-I", "@source-dir/Modules/_hacl"]
     if solver == "shinka":

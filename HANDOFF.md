@@ -1,3 +1,45 @@
+<!-- configuration-review-v2-current:start -->
+## 当前执行点：PR196 已合 main；PR197 配置适配合批通过 focused（2026-10-30）
+
+本节覆盖下方历史执行点。PR196 head13eaad40 已经45/45完整CI与独立原件/source门，
+合main为87ab0709；tree65a71bcf与被验synthetic一致，父严格原main9f23f592/head13ea。
+合并账本在主区ignored validation/zig-support-export-20261030/ci-pr196/。
+
+当前工作区 `/Users/liminghan/.codex/worktrees/configuration-review-v2/lunar_agent`，
+本地分支 `codex/configuration-review-v2`，父d83645f9。fast-forward更新同一
+`codex/zig-support-export`/PR197，base已改main，不新建PR。原head d836的run41010546156
+因合批开发取消；11已成功、31取消、3focused拒绝保持原义，不称完整通过。
+
+Feature193显式v2 binder/dispatcher保留v1文件/独立pins/默认recipe。原八输出逐字节
+绑定，header guard注释、two-root absence、disabled discovery分别记录；15个真实未
+赋值引用独立记录精确parent/expression且不伪造变量；仅显式v2在真实compile vectors
+增加Objects/Python两include。warning/LINKFORSHARED/musl libdl/stock替换、fixed pipe/
+runtime native均受精确source/object/role及实际links约束，Modules/config.o须覆盖。
+
+真实原件独立pure观察通过：190变量/15refs/2absentroots、699header directives、
+49discovery rows；163Make对象=161base+2stock替换，无缺失/多余。首_make_assignment
+拒绝及提议诊断均保留；没有制造approved manifest/pin或把观察当真实build acceptance。
+
+最终软件freeze268d44f8/2753files，30完整文件1223unique=Linux3.12的1163+Darwin3.13的
+60全部pass，128新增，零fail/error/skip/retry；分别35.752073秒/1.231840秒含wrapper。
+两host source bytes及Git执行位projection前后相同，不宣称完整POSIX权限保持。
+首批8c8708d2/1184因漏设TMPDIR导致423pass/5ENOSPCfail/756setup errors，原件保留；
+v2没有执行test body，另本地wrapper误用只读status变量在原执行后失败。仅修外部
+临时目录配置，固定/tmp socket的完整60case按用户授权本机补验；未改旧测试放宽。
+完整Ruff/compileall/diff通过；83groups/65zero-skip不变，source849、expected sum7588。
+证据在主区ignored validation/configuration-v2-20261030/。此后仅文档结果更新；PR197
+最终source自身完整CI/source gate仍必需，focused通过不等于已经合main。
+
+真正还缺软件：同容器native static support exporter接线；原writer enclosure/quiescence
+到accepting monitor；accepted runtime/per-episode loader到RSI gateway/controller/生产CLI。
+另缺完整configured CPython/freezer/ELF/custody、sealed startup与原owner/lifecycle/
+request-memory/result/terminal/broker/budget/recovery、真实producer/CLI/复制本地case验收。
+P2真实root/account/ACL/cgroup/ownership等环境验收有前提阻塞，42skip不记通过。
+现有runner/build graph/owner/recovery已存在，不重复设计新runner或远程微服务。
+无模型/WebAgent/远程或公司evaluator/solver campaign、密钥/live argv-env/benchmark写入；
+production_admission=false、online_publication=false。
+<!-- configuration-review-v2-current:end -->
+
 <!-- zig-support-export-current:start -->
 ## 当前执行点：真实支持文件生成、导出与直接链接已贯通（2026-10-30）
 

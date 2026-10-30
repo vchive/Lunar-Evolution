@@ -1,50 +1,61 @@
-## Current P0/P1 — real support export and direct consumption, 2026-10-30
+## Current remaining work — configuration review continuation, 2026-10-30
 
-The separate `codex/zig-support-export` successor starts at PR196 head13eaad40;
-PR196 stays frozen pending its complete CI/source gate. The new Feature193
-[contract](../specs/193-static-python-rsi-launch/zig-support-candidate-export.md)
-implements the original three-source trusted-local generation, bounded no-follow
-inventories of both caches, finite create-only exports with complete cache identity,
-independent profile/bundle pins and explicit mappings, fresh support staging and
-a separate original-runner direct-link capture. Multiple CRT candidates remain
-distinct. Legacy support contracts and failed/unknown attempts remain unchanged.
+PR196 is merged as87ab0709:45/45 CI gates and independent artifact/source/JUnit
+checks passed. Its merge tree65a71bcf equals the tested synthetic tree, with
+exact original base/head parents. The existing PR197 now targets main and will
+combine support generation/export/direct capture with the explicit configuration
+v2 continuation. Its earlier run41010546156 was cancelled during development;
+11successful execution jobs,31cancelled execution jobs and3refused focused gates
+retain those outcomes. They do not establish final-source acceptance.
 
-All software was completed before one Linux3.12 batch: eight complete files,
-260/260 passed, 41 new, no errors/skips/retries, 6.268463s including the wrapper.
-Frozen tree88664bd0 has2750source files with identical before/after bytes/modes.
-The first external harness refused a mistaken quiet-level assertion before any
-test body; only that external assertion changed. Ruff/compileall/diff passed.
-The existing source group is721, retaining83groups/65zero-skip, total7460.
+The separately selected v2 review is implemented without changing the v1 file,
+review pins or omitted-review recipe. It binds eight originals, finite syntax
+and semantic adaptations, actual stages, stock replacements and only exact fixed
+pipe/runtime additions. All code/tests were completed before final freeze268d44f8.30complete files
+passed1223/1223unique cases: Linux3.12 had1163 in35.752073s, Darwin3.13 had60
+in1.231840s.128new; no failures/errors/skips/retries.2753source bytes and Git
+executable-mode projections matched before/after on both hosts; this does not
+assert full POSIX permissions. Ruff/compileall/diff passed. Existing83groups/
+65zero-skip remain, source group849, expected total7588.
 
-Real generation completed in47.601920s under its120s deadline, zero retries:
-three compiles and one link returned0; six candidates/14,157,612B were exported
-with two distinct CRTs and four archives. No crti/crtn was invented. The actual
-seed passed the static ELF gate and was never executed. A separate declaration
-pinned five prior exported products to explicit roles before fresh direct dispatch.
-That attempt completed in33.617588s under its own original120s deadline, zero
-retries: actual depfile exactly matches three objects/five support inputs and
-the actual4,471,536B ELF is static and unexecuted. Original Zig and the previous
-attempt snapshots were not staged into or modified.42+38finite originals are
-retained locally with tar/file pins; excluded large trees are not immutable
-custody evidence. An initial script import refusal dispatched no Zig commands.
+The initial1184case execution retained423pass/5ENOSPCfailure/756setup errors:
+the external harness omitted TMPDIR, and literal/tmp socket fixtures also met
+inode exhaustion. A local wrapper's readonly shell variable failed only after
+the original execution. All originals remain. The final batch explicitly used
+Linux tmpfs and the complete60case socket/VFS file on the authorized local host;
+no old test or product rule was weakened. Real-original pure parsing also exposed
+15missing-reference and two actual include-root requirements; those were fixed
+before final freeze. Final pure observation passes without approving real inputs.
 
-Remaining work, in dependency order:
+Outstanding work distinguishes missing implementation from missing acceptance:
 
-1. **P0 integration:** complete PR196's own CI/source audit and merge it; finish
-   the successor's complete CI/source gate before its merge.
-2. **P1 build/runtime:** isolated same-command native export/custody; independently
-   reviewed configuration and complete CPython/freezer/static ELF; sealed startup
-   joined to the original owner/lifecycle and bounded request/memory/result path;
-   terminal/broker/material/budget/recovery joins; actual producer/production RSI
-   CLI and copied local-case acceptance. Trusted-local support evidence does not
-   establish these gates.
-3. **P2 environment/ownership:** original exclusive fixed-U/finite writable-object
-   acquisition and accepting-monitor join; actual root/account/ACL/cgroup,
-   disconnect and blocked-storage acceptance. The42prerequisite skips remain skips.
+1. **P0 integration:** complete final PR197 CI/source gate, then merge the
+   verified source. The affected regression is complete. Do not reuse PR196's results
+   or the cancelled PR197 run as validation of this continuation.
+2. **P1 missing implementation:** same-container native static support exporter
+   and its finite recipe/consumer integration; original writer enclosure and
+   drained quiescence into the accepting monitor; accepted per-episode runtime
+   loader composed with the existing RSI gateway/controller and production CLI.
+   The monitor's false authority flags and native-producer guard cannot simply
+   be changed to true or removed.
+3. **P1 acceptance inputs/evidence:** independently reviewed real configuration,
+   full CPython/freezer/static ELF and immutable input custody; sealed startup,
+   original owner/lifecycle, request/memory-to-bounded-result and original
+   terminal/broker/material/budget/recovery joins; actual producer, RSI CLI and
+   copied local-case acceptance. Existing runners, build graphs and parsers do
+   not replace this execution evidence and should not be reimplemented.
+4. **P2 environment acceptance:** original exclusive fixed-U and finite writer
+   acquisition, accepting-monitor join, actual root/account/ACL/cgroup,
+   disconnect and blocked-storage conditions.42prerequisite skips remain skips.
 
-Evidence is in primary ignored `validation/zig-support-export-20261030/`.
-Production admission and online publication stay false. No model, WebAgent,
-remote/company evaluator or solver campaign was run; benchmark sources stay read-only.
+The current local release scope does not require a remote evaluator, multi-host
+service deployment or model-weight training. Original benchmark sources stay
+read-only; no model, WebAgent, remote/company evaluator or solver campaign is run.
+Production admission and online publication remain false. Current contracts:
+[configuration v2](../specs/193-static-python-rsi-launch/configuration-review-v2.md)
+and [support export](../specs/193-static-python-rsi-launch/zig-support-candidate-export.md).
+Evidence lives under primary ignored `validation/configuration-v2-20261030/`
+and `validation/zig-support-export-20261030/`.
 
 ## Current P0/P1 — final CI and explicit direct LLD, 2026-10-30
 
