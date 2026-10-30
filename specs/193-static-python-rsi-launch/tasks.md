@@ -19,8 +19,22 @@ Completing source preparation does not complete installation/runtime acceptance;
   retain build/custody/runtime/producer acceptance as separate requirements.
 - [ ] Execute the full configured CPython/freezer/static-ELF path using the
   existing finite capture/direct-link generators and original runner/consumer.
+  Original PR198 attempt: all298 commands rc0, but compiler comparison refused
+  source-directory spelling after1823.003882s; retain failure, not a timeout.
 - [ ] Complete original custody, sealed startup/live-owner acceptance and the
   first scheduler-context loader before enabling the production RSI CLI.
+
+## Fixed source directories and original scheduler scope — 2026-10-30
+
+- [x] Specify and implement an explicit finite source-directory comparison and
+  consumer, preserving legacy v3/v4 defaults and original failed build evidence.
+- [x] Pass the original installed whole-scope/pycache objects through scheduler,
+  success/outcome and BRS prepublication with identity/profile/deadline pins.
+- [x] Independently review both slices and collect94 new boundary nodes.
+- [ ] Freeze all code and run one combined complete affected-file regression;
+  retain source bytes/Git-mode identity, Ruff, compileall and diff results.
+- [ ] Complete new-source CI and fresh configured builds; do not relabel the
+  old refused attempt or replace custody/runtime acceptance with comparisons.
 
 ## Complete configuration review preview — 2026-10-30
 
@@ -36,7 +50,8 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] Finish all code before final affected regression: freeze01112fd5,
   1492/1492 unique in37 complete Linux files,112new,0fail/error/skip/retry;
   full Ruff/compileall/diff and source/Git-mode checks passed.
-- [ ] Complete final-source CI/source gate and verified main integration.
+- [x] Complete final-source CI/source gate and verified main integration:
+  PR198 run41023801886,45/45 and34/34 independent checks; main70ed04a2/tree099074e7.
 - [ ] Review and approve actual full inputs/graphs, then complete configured
   build/runtime/producer/CLI acceptance. Preview does not supply approval.
 
@@ -53,7 +68,8 @@ Completing source preparation does not complete installation/runtime acceptance;
   Retain the earlier 495-case source and its real cache-parent refusal separately.
 - [x] Observe the final source's single real rootless run: 103.894995 seconds,
   original 120-second budget, zero retry, 6 candidates / 13,968,568 bytes.
-- [ ] Complete this successor's final-source full CI/source gate and integration.
+- [x] Complete this successor's final-source full CI/source gate and integration
+  with PR198, keeping its exact head2c6e74be and original CI provenance.
 - [ ] Complete independent real configuration review, full configured build,
   original custody/runtime ownership and production producer/CLI acceptance.
 
@@ -73,7 +89,8 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] Complete128new boundary cases and the final1223case affected mixed-host
   batch (Linux1163/Darwin60), zero failure/error/skip/retry; Ruff/compileall/diff
   passed. Retain the first ENOSPC batch and exact source/Git-mode identities.
-- [ ] Update PR197 with this continuation and complete its final CI/source gate.
+- [x] Update PR197 with this continuation and complete its final CI/source gate:
+  run41016664645,45/45; independently audited and merged as cbb397a9.
 - [ ] Complete independent whole-file review of actual configuration inputs,
   full configured build, custody, sealed runtime and producer/CLI acceptance.
 
@@ -91,7 +108,8 @@ Completing source preparation does not complete installation/runtime acceptance;
   original120s budget, four commands rc0, seed ELF not executed.
 - [x] Observe one separate fixed-profile direct capture:33.617588s, exact target
   and3objects/5support inputs, static ELF unexecuted, original120s budget.
-- [ ] Complete this successor's own complete CI/source gate and integration.
+- [x] Complete this successor's own complete CI/source gate and integration
+  with the final PR197 source and verified main merge cbb397a9.
 - [ ] Complete isolated same-command export/custody, configured CPython and
   original runtime/owner/producer/CLI acceptance; local support evidence is narrower.
 

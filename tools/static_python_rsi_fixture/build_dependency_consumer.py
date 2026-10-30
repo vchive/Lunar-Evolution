@@ -22,9 +22,11 @@ from tools.static_python_rsi_fixture.command_input_graph import (
     validate_dependency_command_graph_v4,
 )
 from tools.static_python_rsi_fixture.dependency_capture import (
+    SOURCE_DIRECTORY_PROFILE,
     CompilerDependencyError,
     compare_compiler_dependencies,
     compare_compiler_dependencies_v4,
+    compare_compiler_dependencies_v4_source_directories,
 )
 from tools.static_python_rsi_fixture.execution_backend import (
     INPUT_PROJECTION_V4,
@@ -261,6 +263,7 @@ def _run_dependency_checked_build(
     version4: bool = False,
     vfs_roots: bool = False,
     vfs_retained: bool = False,
+    source_directories: bool = False,
 ) -> DependencyCheckedBuild:
     """Execute once and consume actual outputs under the original absolute budget.
 
@@ -273,6 +276,9 @@ def _run_dependency_checked_build(
     source_data_backend = ("podman-snapshots-source-data-vfs-retained-v1" if vfs_retained else
                            "podman-snapshots-source-data-vfs-v1" if vfs_roots
                            else "podman-snapshots-source-data-v2")
+    if (type(source_directories) is not bool
+            or source_directories and not (version4 and vfs_roots and vfs_retained)):
+        raise BuildDependencyError("dependency_path_profile")
     if (type(vfs_roots) is not bool or vfs_roots and not version4
             or type(vfs_retained) is not bool or vfs_retained and not (version4 and vfs_roots)):
         raise BuildDependencyError("custody_backend")
@@ -374,7 +380,8 @@ def _run_dependency_checked_build(
             )
             roots = {"source_root": GUEST_SOURCE_ROOT, "toolchain_root": GUEST_TOOLCHAIN_ROOT,
                      "work_root": GUEST_PRIOR_ROOT, "current_output_root": GUEST_CURRENT_ROOT}
-        compare_compiler = compare_compiler_dependencies_v4 if version4 else compare_compiler_dependencies
+        compare_compiler = (compare_compiler_dependencies_v4_source_directories if source_directories else
+                            compare_compiler_dependencies_v4 if version4 else compare_compiler_dependencies)
         compiler = compare_compiler(
             recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
             output_inventory_bytes=inventory, expected_output_inventory_sha256=inventory_sha,
@@ -407,11 +414,13 @@ def _run_dependency_checked_build(
         linker_sha = _write_once(workspace, "linker-dependency-comparison.json",
                                  linker.canonical_bytes, checkpoint)
         evidence = canonical({
-            "schema": ("lunar-actual-build-dependency-consumer-v4" if vfs_retained else
+            "schema": ("lunar-actual-build-dependency-consumer-v5" if source_directories else
+                       "lunar-actual-build-dependency-consumer-v4" if vfs_retained else
                        "lunar-actual-build-dependency-consumer-v3" if vfs_roots else
                        "lunar-actual-build-dependency-consumer-v2" if version4
                        else "lunar-actual-build-dependency-consumer-v1"), "status": "compared",
             **({"custody_backend": source_data_backend} if vfs_roots else {}),
+            **({"dependency_path_profile": SOURCE_DIRECTORY_PROFILE} if source_directories else {}),
             **({"input_projection": INPUT_PROJECTION_V4,
                 "inputs_sha256": hashlib.sha256(canonical(recipe["inputs"])).hexdigest()} if version4 else {}),
             "recipe_sha256": expected_recipe_sha256, "manifest_sha256": expected_manifest_sha256,
@@ -547,4 +556,35 @@ def run_dependency_checked_build_v4_vfs_retained(
         zig_lld_profile_bytes=zig_lld_profile_bytes,
         expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
         version4=True, vfs_roots=True, vfs_retained=True,
+    )
+
+
+def run_dependency_checked_build_v4_vfs_retained_source_directories(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str = "podman-snapshots-source-data-vfs-retained-v1",
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
+) -> DependencyCheckedBuild:
+    """Select finite source-directory comparisons on the original retained run.
+
+    The original runner, report, readback, controls and linker gate are unchanged.
+    Only this explicit entry point selects source-inventory-directories-v1; no
+    old failed report is promoted and no retry or extra deadline is introduced.
+    """
+    return _run_dependency_checked_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace, deadline=deadline,
+        interrupted=interrupted, monotonic=monotonic, custody_backend=custody_backend,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
+        version4=True, vfs_roots=True, vfs_retained=True, source_directories=True,
     )

@@ -1,3 +1,38 @@
+## Current closeout — verified integration and delegated review, 2026-10-30
+
+This entry supersedes the older execution states below. PR197 and PR198 have
+both completed their own final-source CI and independent original/source checks,
+and are merged into main. PR198 is merge `70ed04a2`, exact tree `099074e7` with
+parents `cbb397a9` / `2c6e74be`; all 45 gates passed and all 34 independent checks
+passed. Each Python version has 26,602 actual passes and the same 134 original
+skip keys. All 112 added nodes passed; no skipped prerequisite became acceptance.
+
+The user explicitly authorized delegated independent configuration review.
+Both complete real packets and original 298/318-command graphs now have narrow
+independent approval and unchanged approved manifests. Exact pins and receipt
+scope are in [the review record](../specs/193-static-python-rsi-launch/delegated-configuration-review-20261030.md).
+Hash/binder equality alone remains insufficient. The original OpenEvolve full
+build on verified PR198 software terminated after 1823.003882 remote monotonic
+seconds, inside its original 3,000-second budget, with zero automatic retry.
+All 298 commands returned zero, including the real freezer and final link, but
+the original compiler consumer refused `compiler_dependency_dependency_path`.
+The failed attempt and its original report remain failed; this was not a timeout.
+
+Both software slices are now implemented: an explicit fixed source-directory
+dependency profile for the 12 observed CPython spellings, and original whole-scope/
+pycache objects passed through the scheduler and BRS boundary. Legacy dependency
+APIs/default bytes remain unchanged; neither slice supplies runtime authority.
+Independent static review has no remaining blocker. All code is to freeze before
+one combined affected-file regression; 94 new nodes are collected, not yet passed.
+
+Remaining P0: validate the new frozen software and its own CI/source gate.
+Remaining P1: fresh configured CPython/freezer/ELF paths and original
+custody, sealed startup and live-owner evidence, then the first scheduler-context
+loader, production RSI CLI and copied local cases. Original fixed-U/external
+writer acquisition and P2 account/root/ACL/cgroup prerequisites remain open.
+Production admission and online publication remain false. Evidence is under
+primary ignored `validation/native-support-export-20261030/`.
+
 ## Final software batch — complete review preview and native export, 2026-10-30
 
 The explicit v2 preview now exposes the actual generator's complete overlays,

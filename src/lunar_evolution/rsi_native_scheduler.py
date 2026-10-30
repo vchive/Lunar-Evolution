@@ -37,18 +37,24 @@ from .native_fixed_live_sink import (
     _FixedPythonLiveSinkPin,
     _pin_fixed_python_live_sink_request,
 )
+from .native_pycache_diagnostic import NativePycacheDiagnosticRequest
 from .native_trusted_failure import NativeTrustedProducerFailure, recover_native_trusted_failure
 from .native_trusted_output import NativeTrustedOutputPreparation, _native_output_envelope_pin
 from .native_trusted_scheduler import (
     NativeTrustedProducerRecovery,
     NativeTrustedProducerRun,
+    NativeTrustedSchedulerError,
     _native_handoff_evidence,
+    _native_scope_profile_snapshot,
+    _NativeSchedulerScopePin,
+    _pin_native_scheduler_scope,
     _prepublication_evidence,
     _run_native_trusted_producer,
     recover_native_trusted_producer,
     run_native_trusted_producer,
     run_native_trusted_producer_outcome,
 )
+from .native_whole_scope import NativeWholeScopeOwner
 from .official_evaluator_evidence import OfficialEvaluationReceipt, OfficialEvaluatorProfile
 from .producer_broker_ipc import ProducerBrokerConfig
 from .producer_bundle_handoff import BundleGroup
@@ -164,9 +170,9 @@ def _strategy_fingerprint(strategy: object) -> str:
 class NativeRSISchedulerContext:
     """All caller-owned launch dependencies for one native RSI request.
 
-    The context is immutable and contains no execution state.  It can therefore be captured by a
-    plan factory and reused for a replay check, while the provider still validates the retained
-    launch files and all plan identities before consuming an attestation.
+    Optional installed scope and diagnostic objects are borrowed originals. The
+    context never creates, closes or reconstructs them. The provider validates
+    retained launch files and plan identities before consuming an attestation.
     """
 
     workspace: str | Path
@@ -193,7 +199,10 @@ class NativeRSISchedulerContext:
     python_handoff_after_native_execution: Callable[
         [NativeTrustedProducerRun], PythonProducerAdmissionHandoffSidecar,
     ] | None = None
+    whole_scope: NativeWholeScopeOwner | None = None
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None = None
     _live_modules_sink_pin: _FixedPythonLiveSinkPin | None = dataclass_field(init=False, repr=False, compare=False)
+    _native_scope_pin: _NativeSchedulerScopePin | None = dataclass_field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         NativeRSISchedulerContext._python_handoff_suppliers(self)
@@ -232,6 +241,17 @@ class NativeRSISchedulerContext:
             _fail("cancellation_invalid")
         if self.failure_ledger is not None and not isinstance(self.failure_ledger, RSILedger):
             _fail("failure_ledger_invalid")
+        if hasattr(self, "_native_scope_pin"):
+            NativeRSISchedulerContext._native_scope_options(self)
+        else:
+            try:
+                scope_pin = _pin_native_scheduler_scope(
+                    self.whole_scope, self.pycache_diagnostic,
+                    intent=self.intent, artifact=self.artifact,
+                )
+            except NativeTrustedSchedulerError as exc:
+                raise NativeRSISchedulerProviderError("rsi_native_scheduler_native_scope_invalid") from exc
+            object.__setattr__(self, "_native_scope_pin", scope_pin)
         # A repeated validation must never refresh the original request pin.
         if hasattr(self, "_live_modules_sink_pin"):
             NativeRSISchedulerContext._assert_live_modules_sink(self)
@@ -257,6 +277,7 @@ class NativeRSISchedulerContext:
         return legacy, native
 
     def _assert_live_modules_sink(self) -> FixedPythonLiveSinkRequest | None:
+        NativeRSISchedulerContext._native_scope_options(self)
         pin = self._live_modules_sink_pin
         if pin is None:
             if self.live_modules_sink is not None:
@@ -269,6 +290,48 @@ class NativeRSISchedulerContext:
             except (NativeFixedLiveSinkError, AttributeError, TypeError, ValueError) as exc:
                 raise NativeRSISchedulerProviderError("rsi_native_scheduler_live_modules_sink_changed") from exc
         return self.live_modules_sink
+
+    def _native_scope_options(self, *, require_unexpired=False) -> dict[str, Any]:
+        """Borrow the exact original selections; never refresh their pins."""
+        pin = getattr(self, "_native_scope_pin", None)
+        scope = getattr(self, "whole_scope", None)
+        diagnostic = getattr(self, "pycache_diagnostic", None)
+        try:
+            if pin is None:
+                if scope is not None or diagnostic is not None:
+                    raise ValueError
+                return {}
+            if (type(pin) is not _NativeSchedulerScopePin or pin.whole_scope is not scope
+                    or pin.pycache_diagnostic is not diagnostic):
+                raise ValueError
+            return pin.options(self.intent, self.artifact, require_unexpired=require_unexpired)
+        except (NativeTrustedSchedulerError, ValueError, AttributeError, TypeError) as exc:
+            raise NativeRSISchedulerProviderError("rsi_native_scheduler_native_scope_changed") from exc
+
+    def _native_scope_projection(self) -> dict[str, Any] | None:
+        if not NativeRSISchedulerContext._native_scope_options(self):
+            return None
+        pin = self._native_scope_pin
+        projection = {"protocol": "lunar-native-rsi-original-scope-input-v1"}
+        if pin.whole_scope is not None:
+            profile, _raw, journal, deadline = pin.scope_fields
+            projection["whole_scope"] = {
+                "profile_sha256": profile, "journal_id": journal,
+                "original_deadline_upper_bound_ns": deadline,
+            }
+        if pin.pycache_diagnostic is not None:
+            observer, profile, working, output = pin.diagnostic_fields
+            projection["pycache_diagnostic"] = {
+                "observer_sha256": component_fingerprint(observer), "profile": profile,
+                "working_directories": list(working), "output_directories": list(output),
+            }
+        projection["code_dependencies"] = {
+            "pin": component_fingerprint(_NativeSchedulerScopePin),
+            "pin_scope": component_fingerprint(_pin_native_scheduler_scope),
+            "profile_snapshot": component_fingerprint(_native_scope_profile_snapshot),
+            "context_options": component_fingerprint(NativeRSISchedulerContext._native_scope_options),
+        }
+        return projection
 
     def _live_modules_sink_projection(self) -> dict[str, Any] | None:
         if NativeRSISchedulerContext._assert_live_modules_sink(self) is None:
@@ -1171,9 +1234,15 @@ class NativeRSISchedulerProvider:
         context = self.context
         NativeRSISchedulerContext._assert_live_modules_sink(context)
         try:
+            scope_options = NativeRSISchedulerContext._native_scope_options(
+                context, require_unexpired=require_unexpired,
+            )
+            scope = scope_options.get("whole_scope")
+            fixed_u_owner = None if scope is None else context._native_scope_pin.scope_children[0]
             inputs = validate_native_rsi_launch_inputs(
                 context.workspace, intent=context.intent, attestation=context.attestation,
                 artifact=context.artifact, require_unexpired=require_unexpired,
+                **({"fixed_u_owner": fixed_u_owner} if fixed_u_owner is not None else {}),
             )
         except Exception as exc:
             raise NativeRSISchedulerProviderError("rsi_native_scheduler_launch_invalid") from exc
@@ -1712,6 +1781,7 @@ class NativeRSISchedulerProvider:
         context = self.context
         supplier, native_supplier = NativeRSISchedulerContext._python_handoff_suppliers(context)
         sink_projection = NativeRSISchedulerContext._live_modules_sink_projection(context)
+        scope_projection = NativeRSISchedulerContext._native_scope_projection(context)
         strategy_fingerprint = _strategy_fingerprint(context.strategy)
         try:
             broker_headers_sha256 = hashlib.sha256(
@@ -1748,6 +1818,8 @@ class NativeRSISchedulerProvider:
         }
         if sink_projection is not None:
             projection["live_modules_sink"] = sink_projection
+        if scope_projection is not None:
+            projection["native_scope"] = scope_projection
         if context.failure_ledger is not None:
             self.assert_failure_ledger(context.failure_ledger)
             projection["failure_ledger"] = dict(self._failure_ledger_identity)
@@ -1848,6 +1920,7 @@ class NativeRSISchedulerProvider:
                 cancelled=context.cancelled,
                 **({"live_modules_sink": NativeRSISchedulerContext._assert_live_modules_sink(context)}
                    if getattr(context, "live_modules_sink", None) is not None else {}),
+                **NativeRSISchedulerContext._native_scope_options(context, require_unexpired=True),
                 **python_join,
             )
         except NativeRSISchedulerProviderError:

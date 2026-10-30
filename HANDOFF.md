@@ -1,3 +1,49 @@
+<!-- delegated-review-current:start -->
+## 当前执行点：原完整构建终止，新依赖比较与 scope 接线待集中回归（2026-10-30）
+
+本节覆盖下方历史状态。用户明确授权独立 agent 审查，并允许规范接受委派审查。
+独立 reviewer `/root/ci_runner_review` 已核完八份配置原件、完整输入和两套精确图
+（OpenEvolve 298 / Shinka 318 commands），批准范围仅配置绑定与原始阶段图。
+精确 pins、独立性和 receipt 见 Feature193
+`delegated-configuration-review-20261030.md`；没有把 hash/binder/test 通过当作批准。
+委派条款与记录已提交 `8b9b9416`，并 push `codex/cpython-delegated-build`。
+当前开发工作区 `/Users/liminghan/.codex/worktrees/configuration-review-v2/lunar_agent`；
+PR198 的 `codex/native-support-export` / head `2c6e74be` 保持冻结。
+
+PR197 已通过 45/45 与完整独立原件/source 核验，合 main 为 `cbb397a9`，tree
+`0db3311e`；主区 evidence `validation/configuration-v2-20261030/ci-pr197/root-merge-ledger.json`。
+PR198 原 run `41023801886` 已 45/45 成功，34/34 独审检查通过；三版每版
+26,602 pass / 134 原 skip，旧 skip keys 完全一致，112 新用例无 skip。已合 main 为
+`70ed04a2330cf259f28041fd0b725fdbf4f5b757`，tree `099074e7` 与受测树完全相同，
+parents 精确为 `cbb397a9` / `2c6e74be`。最终独审 SHA `b5a61748…` 与 root merge
+账本在主区 `validation/native-support-export-20261030/ci-pr198/`。未改写原 CI provenance。
+
+Linux staging 按逻辑 inventory 重建，解决 macOS `Tools/` / `tools/` 目录别名；
+4,944 review files、2,760 product files 和 authority 已完成 size/SHA/xbit 读回。
+实际软件来源仍为 PR198 `2c6e74be` / tree `099074e7`，不是后来的文档提交。
+OpenEvolve 完整构建已在 5090gpu 的 fresh `/dev/shm` 子目录终止，单次原始 3000s
+总预算、零自动重试；沿用原 v4/VFS-retained runner/consumer 与有限 capture/direct-LLD
+变换、旧 profile `4b39c327` / bundle `ecd8af6d`，不把旧支持文件改称新 native 来源。
+298 条原始命令（configure1/freeze291/compile4/link2）全部 rc0，实际 freezer 已执行、
+最终目标已链接；原 compiler consumer 随后以 `compiler_dependency_dependency_path`
+拒绝。远端 monotonic 用时1823.003882秒，未耗尽3000秒，不是超时。
+原 report、外层失败和原件保持原义；不能据命令成功称完整构建已验收。
+
+已定位18个引用、12种固定 CPython source `../` include 拼写；canonical 文件和每个
+遍历目录均可由原 source inventory 证明。新增显式 source-directory comparison/
+consumer 入口，旧 v3/v4 默认不变，不接受通用路径归一化或调用者映射。
+另已贯穿 scheduler/BRS 的原 whole-scope 与 pycache diagnostic 引用，绑定原owner、
+profile、journal及 deadline 上界，不重建owner，不启生产CLI。两线独立静态审查无
+剩余 blocker，新增94节点，代码冻结后一次集中完整影响域回归；目前未记为通过。
+原件与审查在主区 ignored `validation/native-support-export-20261030/`。
+
+后续先完成新软件回归、fresh完整构建/原始 custody、sealed startup/live owner，再接首个 scheduler
+context loader、生产 RSI CLI 与本地复制 case；固定 U 独占、外部 writer acquisition 和
+root/account/ACL/cgroup 环境前提仍缺，不能把原 skip 或 target 退出当验收。
+不跑模型/WebAgent/远程或公司 evaluator/真实 solver campaign，不读密钥或无关 live
+argv/env，不改原 benchmark；`production_admission=false`、`online_publication=false`。
+<!-- delegated-review-current:end -->
+
 <!-- build-review-preview-current:start -->
 ## 当前执行点：完整配置图预览与导出合批完成（2026-10-30）
 

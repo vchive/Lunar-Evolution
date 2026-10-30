@@ -339,6 +339,7 @@ class _BRSNativeProviderBinding:
                 cancelled=context.cancelled, parent_deadline=self._child.deadline,
                 **({"live_modules_sink": NativeRSISchedulerContext._assert_live_modules_sink(context)}
                    if context.live_modules_sink is not None else {}),
+                **NativeRSISchedulerContext._native_scope_options(context, require_unexpired=True),
             )
             check()
             endpoint = _BRSNativePreparationExchange.offer_and_wait(
