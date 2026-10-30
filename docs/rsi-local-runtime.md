@@ -17,8 +17,8 @@
 继续接通相邻准备成功的单个 child。它要求原 `PythonProducerRSISolverGateway`、同一
 ledger、sidecar 和 stager；原 run 及全部历史版本固定此配置，恢复时不能增删。默认值仍为
 `False`，CLI native 选择仍拒绝。该配置的单 child 本地 fixture 闭环、中断恢复和最终来源
-CI 已验收并合入 main；连续 DRS/恢复已集中到 PR103 最终候选，真实 runtime 和多 episode DRS/BRS
-尚未验收，`production_admission=false`。规格见
+CI 已验收并合入 main；逐 episode stager、child context resolver、gateway 和恢复接线已存在。
+真实 runtime 下的多 episode DRS/BRS 尚未验收，`production_admission=false`。规格见
 [`child-execution-flow.md`](../specs/191-python-worker-adapter/child-execution-flow.md)。
 
 Feature196 的私有 selected BRS service 和 owner checkpoint settlement 不授予 worker
@@ -26,8 +26,8 @@ Feature196 的私有 selected BRS service 和 owner checkpoint settlement 不授
 固定返回 `rsi_python_publication_brs_worker_publication_forbidden`；同一 BRS invocation
 调用 generic/DRS 发布入口或 native scheduler 也会前置拒绝。prepared ready/ACK 仅证明
 原 admission pin，不能当作 publication token。DRS 和只读 resume 保持原语义。
-完整 BRS owner 发布、serial successor 和真实 producer/CLI 仍待接线，当前不要将该
-拒绝理解成 native BRS 已可用。下一步边界见
+reserved BRS owner 发布和 serial successor 的软件接线已存在，worker 直接发布仍禁止。
+真实 producer/runtime、生产 CLI 和环境验收仍未完成，不能据软件接线称 native BRS 已可用。边界见
 [`owner-publication-bridge.md`](../specs/196-brs-owner-worker-handoff/owner-publication-bridge.md)。
 
 ## 1. 选择治理入口
@@ -414,8 +414,10 @@ gateway.bind_python_admission_controller(original_controller)
 
 接口只处理 context 绑定的单个 episode。它不准备下一次 launch，不启动未配置的开源
 project，也不把外部 score 当成官方评测。重复请求和未知状态继续使用原 native 恢复规则；
-不能把同一个 context 直接复用于 DRS/BRS 的多个 episode。完整生产 CLI 还需要逐 episode
-的 context/launch 接线和实际 sealed runtime 验收，`production_admission=false`。
+不能把同一个 context 直接复用于 DRS/BRS 的多个 episode。逐 episode stager、child context
+resolver、gateway 和恢复接线已存在；生产 CLI 仍缺从 accepted static image 和原始 live
+runtime owner 构造首个 `PythonRSISchedulerInputContext` 的固定 loader，并须完成实际 runtime
+验收，`production_admission=false`。
 
 `rsi run` 和 `rsi resume` 的 `--solver-execution fixture` 保留原本地行为。显式指定
 `--solver-execution native-producer` 时，当前版本在创建 ledger 或读取合同前返回
@@ -451,7 +453,7 @@ project，也不把外部 score 当成官方评测。重复请求和未知状态
 读取已有 ready 或 started 不会再创建 continuation。已保存 native result 的中断可完成
 原 episode 的 settlement/verifier；只有 publication 而缺 result 时保持 unknown。终态
 resume 复验历史记忆和原 child 证据，只读恢复，不重跑、不重新准备或增加预算 reservation。
-不同 child ID 和新 approved memory 的多 episode DRS、BRS、实际 runtime 与 project
+真实 runtime 下不同 child ID 和新 approved memory 的多 episode DRS、BRS，以及实际 project
 profile 仍需各自验收。
 `production_admission=false`。规格见
 [`per-episode-producer-launch.md`](../specs/191-python-worker-adapter/per-episode-producer-launch.md)
