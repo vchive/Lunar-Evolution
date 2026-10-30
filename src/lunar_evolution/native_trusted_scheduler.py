@@ -35,6 +35,7 @@ from .native_fixed_live_sink import (
     _FixedPythonLiveSinkPin,
     _pin_fixed_python_live_sink_request,
 )
+from .native_pycache_diagnostic import NativePycacheDiagnosticRequest
 from .native_trusted_attempt import (
     NativeTrustedAttemptError,
     NativeTrustedAttemptObservation,
@@ -57,6 +58,7 @@ from .native_trusted_receipt import (
     persist_native_trusted_execution_receipt,
     recover_native_trusted_execution_receipt,
 )
+from .native_whole_scope import NativeWholeScopeOwner
 from .producer_broker_ipc import ProducerBrokerConfig, ProducerBrokerObservation
 from .producer_bundle_handoff import BundleGroup
 from .producer_bundle_publication import ProducerBundlePublicationJournal
@@ -87,6 +89,118 @@ class NativeTrustedSchedulerError(ValueError):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__(code)
+
+
+def _native_scope_deadline(deadline):
+    """Keep the original whole-scope unsigned 64-bit nanosecond boundary."""
+    if type(deadline) is not int or not 0 < deadline < 2**64:
+        raise ValueError
+    return deadline
+
+
+def _native_scope_profile_snapshot(profile):
+    """Freeze finite already-parsed values, without granting profile acceptance."""
+    remaining = [4096]
+
+    def snapshot(value, depth=0):
+        remaining[0] -= 1
+        if remaining[0] < 0 or depth > 6:
+            raise ValueError
+        if type(value) is int and value.bit_length() <= 64:
+            return (int, value)
+        if type(value) is str and len(value) <= 4096:
+            return (str, value)
+        if type(value) is tuple and len(value) <= 64:
+            return (tuple, tuple(snapshot(item, depth + 1) for item in value))
+        raise ValueError
+
+    if (type(profile) is not dict or not 0 < len(profile) <= 16
+            or any(type(key) is not str or len(key) > 64 for key in profile)):
+        raise ValueError
+    return tuple((key, snapshot(profile[key])) for key in sorted(profile))
+
+
+@dataclass(frozen=True, slots=True)
+class _NativeSchedulerScopePin:
+    """Retain supplied originals, without acquiring or serializing authority."""
+
+    whole_scope: NativeWholeScopeOwner | None
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None
+    scope_fields: tuple | None
+    diagnostic_fields: tuple | None
+    scope_children: tuple | None
+    scope_profile: tuple | None
+
+    def options(self, intent, artifact, *, require_unexpired=False) -> dict[str, Any]:
+        try:
+            scope = self.whole_scope
+            diagnostic = self.pycache_diagnostic
+            if scope is not None:
+                if type(scope) is not NativeWholeScopeOwner or artifact.descriptor.platform_execution_mode != "linux-fd-bound":
+                    raise ValueError
+                scope._check_published_grants()
+                profile, raw, journal, deadline = self.scope_fields
+                current_deadline = _native_scope_deadline(scope.deadline_ns)
+                original_deadline = _native_scope_deadline(deadline)
+                if (scope._closed or scope._profile_sha256 != profile or scope._profile_raw is not raw
+                        or hashlib.sha256(raw).hexdigest() != profile or scope.journal_id != journal
+                        or intent.journal_id != journal or current_deadline > original_deadline
+                        or scope._profile["bootstrap_sha256"] != artifact.artifact_sha256
+                        or _native_scope_profile_snapshot(scope._profile) != self.scope_profile
+                        or scope._final_intent not in (None, intent.digest())):
+                    raise ValueError
+                if any(current is not original for current, original in zip(
+                    (scope.original_fixed_u_input_owner, scope.original_custody_owner,
+                     scope._successor_session), self.scope_children, strict=True,
+                )):
+                    raise ValueError
+                if require_unexpired:
+                    if scope._released or scope._finished:
+                        raise ValueError
+                    scope._remaining()
+            if diagnostic is not None:
+                NativePycacheDiagnosticRequest.validate(diagnostic)
+                if (artifact.descriptor.platform_execution_mode != "linux-fd-bound"
+                        or any(value is not original for value, original in zip(
+                            (diagnostic.observer, diagnostic.diagnostic_profile,
+                             diagnostic.working_directories, diagnostic.output_directories),
+                            self.diagnostic_fields, strict=True,
+                        ))):
+                    raise ValueError
+            return {**({"whole_scope": scope} if scope is not None else {}),
+                    **({"pycache_diagnostic": diagnostic} if diagnostic is not None else {})}
+        except Exception:  # noqa: BLE001 - original installed boundary has fixed refusal only.
+            raise NativeTrustedSchedulerError("native_trusted_scheduler_scope_invalid") from None
+
+
+def _pin_native_scheduler_scope(whole_scope, pycache_diagnostic, *, intent, artifact):
+    if whole_scope is None and pycache_diagnostic is None:
+        return None
+    try:
+        if whole_scope is not None and type(whole_scope) is not NativeWholeScopeOwner:
+            raise ValueError
+        if pycache_diagnostic is not None:
+            NativePycacheDiagnosticRequest.validate(pycache_diagnostic)
+        pin = _NativeSchedulerScopePin(
+            whole_scope, pycache_diagnostic,
+            None if whole_scope is None else (
+                whole_scope._profile_sha256, whole_scope._profile_raw,
+                whole_scope.journal_id, _native_scope_deadline(whole_scope.deadline_ns),
+            ),
+            None if pycache_diagnostic is None else (
+                pycache_diagnostic.observer, pycache_diagnostic.diagnostic_profile,
+                pycache_diagnostic.working_directories, pycache_diagnostic.output_directories,
+            ),
+            None if whole_scope is None else (
+                whole_scope.original_fixed_u_input_owner, whole_scope.original_custody_owner,
+                whole_scope._successor_session,
+            ),
+            None if whole_scope is None else _native_scope_profile_snapshot(whole_scope._profile),
+        )
+        pin.options(intent, artifact)
+        return pin
+    except Exception:  # noqa: BLE001 - never derive a replacement owner from supplied data.
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_scope_invalid") from None
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,6 +504,8 @@ def _run_native_trusted_producer(
     lineage_owner: Any | None = None,
     _python_prepublication: bool = False,
     live_modules_sink: FixedPythonLiveSinkRequest | None = None,
+    whole_scope: NativeWholeScopeOwner | None = None,
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure | _NativeTrustedPythonProducerPreparation:
     """Run one pinned native producer through the formal local boundaries.
 
@@ -412,6 +528,9 @@ def _run_native_trusted_producer(
         raise NativeTrustedSchedulerError("native_trusted_scheduler_groups_invalid")
     if cancelled is not None and not callable(cancelled):
         raise NativeTrustedSchedulerError("native_trusted_scheduler_cancellation_invalid")
+    scope_pin = _pin_native_scheduler_scope(
+        whole_scope, pycache_diagnostic, intent=intent, artifact=artifact,
+    )
     if python_handoff_after_execution is not None and python_handoff_after_native_execution is not None:
         raise NativeTrustedSchedulerError("native_trusted_scheduler_python_handoff_supplier_conflict")
     supplier = (python_handoff_after_execution if python_handoff_after_native_execution is None
@@ -467,6 +586,14 @@ def _run_native_trusted_producer(
             raw_checkpoint(stage)
             unchanged()
 
+    if scope_pin is not None:
+        scope_checkpoint = checkpoint
+
+        def checkpoint(stage: str) -> None:
+            scope_pin.options(intent, artifact)
+            scope_checkpoint(stage)
+            scope_pin.options(intent, artifact)
+
     root = _workspace_root(workspace)
     if lineage_owner is not None:
         lineage_owner.validate_launch(workspace=root, intent=intent)
@@ -476,6 +603,8 @@ def _run_native_trusted_producer(
 
     checkpoint("native_producer_attempt")
     caller_limited = control is not None and control.deadline <= control._now() + intent.wall_timeout_seconds
+    if whole_scope is not None and control is not None and control._clock is not time.monotonic:
+        raise NativeTrustedSchedulerError("native_trusted_scheduler_scope_invalid")
     try:
         attempt = run_native_trusted_attempt(
             root,
@@ -488,6 +617,7 @@ def _run_native_trusted_producer(
             parent_deadline=control.deadline if control is not None else None,
             monotonic=control._clock if control is not None else time.monotonic,
             **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
+            **({} if scope_pin is None else scope_pin.options(intent, artifact, require_unexpired=True)),
         )
     except NativeTrustedAttemptError as exc:
         if exc.code == "native_trusted_attempt_cancelled":
@@ -501,9 +631,12 @@ def _run_native_trusted_producer(
         # particular, a sticky active cancellation cannot authorize another production
         # stage, but need not discard a verified process-only cancellation terminal.
         try:
-            return build_native_trusted_failure(
+            failure = build_native_trusted_failure(
                 root, intent=intent, attestation=attestation, artifact=artifact, attempt=attempt,
             )
+            if scope_pin is not None:
+                scope_pin.options(intent, artifact)
+            return failure
         except NativeTrustedFailureError as exc:
             raise NativeTrustedSchedulerError("native_trusted_scheduler_failure_unverified") from exc
     checkpoint("native_producer_after_attempt")
@@ -640,6 +773,8 @@ def _run_native_trusted_producer(
                             and (attempt.live_modules_observation is not original_live_observation
                                  or _native_handoff_evidence(prepared_run, native_sink_pin) != native_evidence))):
                     raise ValueError("original preparation evidence changed")
+                if scope_pin is not None:
+                    scope_pin.options(intent, artifact)
                 return _NativeTrustedPythonProducerPreparation(
                     run=prepared_run,
                     handoff=reread,
@@ -686,6 +821,8 @@ def _run_native_trusted_producer(
                 "native_trusted_scheduler_publication_failed"
             ) from exc
         status = publication.publication_status
+    if scope_pin is not None:
+        scope_pin.options(intent, artifact)
     return NativeTrustedProducerRun(
         attempt=attempt,
         receipt=receipt,
@@ -712,6 +849,8 @@ def _prepare_native_trusted_python_producer(
     execution_control: SolveExecutionControl | None = None, cancelled: Callable[[], bool] | None = None,
     parent_deadline: float | None = None,
     live_modules_sink: FixedPythonLiveSinkRequest | None = None,
+    whole_scope: NativeWholeScopeOwner | None = None,
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None = None,
 ) -> _NativeTrustedPythonProducerPreparation:
     """Stop after original receipt/output/handoff; never evaluate or publish.
 
@@ -730,6 +869,8 @@ def _prepare_native_trusted_python_producer(
         python_handoff_after_native_execution=python_handoff_after_native_execution,
         evidence_revalidator=evidence_revalidator, _python_prepublication=True,
         **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
+        **({"whole_scope": whole_scope} if whole_scope is not None else {}),
+        **({"pycache_diagnostic": pycache_diagnostic} if pycache_diagnostic is not None else {}),
     )
 
 
@@ -752,6 +893,8 @@ def run_native_trusted_producer(
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
     live_modules_sink: FixedPythonLiveSinkRequest | None = None,
+    whole_scope: NativeWholeScopeOwner | None = None,
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None = None,
 ) -> NativeTrustedProducerRun:
     """Run the historical success-only receipt/output/publication entry point once."""
     return _run_native_trusted_producer(
@@ -767,6 +910,8 @@ def run_native_trusted_producer(
         producer_multi_episode_publication=producer_multi_episode_publication,
         lineage_owner=lineage_owner,
         **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
+        **({"whole_scope": whole_scope} if whole_scope is not None else {}),
+        **({"pycache_diagnostic": pycache_diagnostic} if pycache_diagnostic is not None else {}),
     )
 
 
@@ -789,6 +934,8 @@ def run_native_trusted_producer_outcome(
     producer_multi_episode_publication: bool = False,
     lineage_owner: Any | None = None,
     live_modules_sink: FixedPythonLiveSinkRequest | None = None,
+    whole_scope: NativeWholeScopeOwner | None = None,
+    pycache_diagnostic: NativePycacheDiagnosticRequest | None = None,
 ) -> NativeTrustedProducerRun | NativeTrustedProducerFailure:
     """Run once, returning verified process failure or the unchanged success result.
 
@@ -808,6 +955,8 @@ def run_native_trusted_producer_outcome(
         producer_multi_episode_publication=producer_multi_episode_publication,
         lineage_owner=lineage_owner,
         **({"live_modules_sink": live_modules_sink} if live_modules_sink is not None else {}),
+        **({"whole_scope": whole_scope} if whole_scope is not None else {}),
+        **({"pycache_diagnostic": pycache_diagnostic} if pycache_diagnostic is not None else {}),
     )
 
 

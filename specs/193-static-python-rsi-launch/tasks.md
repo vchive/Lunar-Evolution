@@ -8,6 +8,49 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Delegated actual configuration review — 2026-10-30
+
+- [x] Record the user's explicit delegation and permit independent agent review
+  under the original exact-file/graph/pin requirements.
+- [x] Independently inspect both complete real packets and retain narrow approval
+  receipts and unchanged approved manifest copies. See
+  `delegated-configuration-review-20261030.md` for exact pins and scope.
+- [x] Preserve complete original command graphs and runtime-closure input pins;
+  retain build/custody/runtime/producer acceptance as separate requirements.
+- [ ] Execute the full configured CPython/freezer/static-ELF path using the
+  existing finite capture/direct-link generators and original runner/consumer.
+  Original PR198 attempt: all298 commands rc0, but compiler comparison refused
+  source-directory spelling after1823.003882s; retain failure, not a timeout.
+- [ ] Complete original custody, sealed startup/live-owner acceptance and the
+  first scheduler-context loader before enabling the production RSI CLI.
+
+## Fixed source directories and original scheduler scope — 2026-10-30
+
+- [x] Specify and implement an explicit finite source-directory comparison and
+  consumer, preserving legacy v3/v4 defaults and original failed build evidence.
+- [x] Pass the original installed whole-scope/pycache objects through scheduler,
+  success/outcome and BRS prepublication with identity/profile/deadline pins.
+- [x] Independently review both slices and collect126 new boundary nodes.
+- [x] Freeze43375a24 and run66 complete affected files:2571pass/4fail, no skip,
+  all126 new nodes pass; source bytes/Git modes equal, Ruff/compileall/diff pass.
+- [x] Preserve the failed batch and implement exact scope policy edges,11 drift
+  tests and fresh-interpreter isolation for the four original serial fixtures.
+- [x] Implement retained-output expanded installation candidate description,
+  keeping original history/source pins, real FD mode and false authority claims;
+  independently review its three files and collect84 nodes without execution.
+- [x] Freeze01d740f0 corrections/candidate and run17 complete affected files:
+  663pass/0fail/error/skip/retry, all221 new nodes, source bytes/Git modes equal.
+- [x] Retain original CI41110175003 attempt1's3.12 heavy6 outer600s timeout;
+  distinguish the later original control600 from fixture import/setup/cleanup.
+- [x] Give only the synthetic interpreter's host bound a finite300s allowance;
+  keep control/production/build budgets unchanged and add short oversized IDs.
+- [x] Validate43fbe4ad test-only changes once:9pass,0fail/error/skip/retry,
+  source bytes/modes equal;427src/tools identical to01, independent audit passed.
+- [ ] Complete successor CI/source acceptance without canceling or relabeling
+  the original failed CI.
+- [ ] Complete new-source CI and fresh configured builds; do not relabel the
+  old refused attempt or replace custody/runtime acceptance with comparisons.
+
 ## Complete configuration review preview — 2026-10-30
 
 - [x] Share the original generation path and expose an explicit v2 pure preview,
@@ -22,7 +65,8 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] Finish all code before final affected regression: freeze01112fd5,
   1492/1492 unique in37 complete Linux files,112new,0fail/error/skip/retry;
   full Ruff/compileall/diff and source/Git-mode checks passed.
-- [ ] Complete final-source CI/source gate and verified main integration.
+- [x] Complete final-source CI/source gate and verified main integration:
+  PR198 run41023801886,45/45 and34/34 independent checks; main70ed04a2/tree099074e7.
 - [ ] Review and approve actual full inputs/graphs, then complete configured
   build/runtime/producer/CLI acceptance. Preview does not supply approval.
 
@@ -39,7 +83,8 @@ Completing source preparation does not complete installation/runtime acceptance;
   Retain the earlier 495-case source and its real cache-parent refusal separately.
 - [x] Observe the final source's single real rootless run: 103.894995 seconds,
   original 120-second budget, zero retry, 6 candidates / 13,968,568 bytes.
-- [ ] Complete this successor's final-source full CI/source gate and integration.
+- [x] Complete this successor's final-source full CI/source gate and integration
+  with PR198, keeping its exact head2c6e74be and original CI provenance.
 - [ ] Complete independent real configuration review, full configured build,
   original custody/runtime ownership and production producer/CLI acceptance.
 
@@ -59,7 +104,8 @@ Completing source preparation does not complete installation/runtime acceptance;
 - [x] Complete128new boundary cases and the final1223case affected mixed-host
   batch (Linux1163/Darwin60), zero failure/error/skip/retry; Ruff/compileall/diff
   passed. Retain the first ENOSPC batch and exact source/Git-mode identities.
-- [ ] Update PR197 with this continuation and complete its final CI/source gate.
+- [x] Update PR197 with this continuation and complete its final CI/source gate:
+  run41016664645,45/45; independently audited and merged as cbb397a9.
 - [ ] Complete independent whole-file review of actual configuration inputs,
   full configured build, custody, sealed runtime and producer/CLI acceptance.
 
@@ -77,7 +123,8 @@ Completing source preparation does not complete installation/runtime acceptance;
   original120s budget, four commands rc0, seed ELF not executed.
 - [x] Observe one separate fixed-profile direct capture:33.617588s, exact target
   and3objects/5support inputs, static ELF unexecuted, original120s budget.
-- [ ] Complete this successor's own complete CI/source gate and integration.
+- [x] Complete this successor's own complete CI/source gate and integration
+  with the final PR197 source and verified main merge cbb397a9.
 - [ ] Complete isolated same-command export/custody, configured CPython and
   original runtime/owner/producer/CLI acceptance; local support evidence is narrower.
 
@@ -426,8 +473,11 @@ not an approval of the previously retained real configure observation.
 - [x] Execute all 101 review and 15 configuration-generation nodes in the
   concentrated Linux union; all pass. Other files' initial failures remain
   recorded in validation and are corrected only through affected supplements.
-- [ ] Obtain independently reviewed real eight-output configuration/profile
-  approval. Fixture manifests and their synthetic expected pins do not supply it.
+- [x] Obtain independently reviewed real eight-output configuration/profile
+  approval. The user explicitly authorized delegated independent review; both
+  original packets and exact stage graphs are approved in
+  `delegated-configuration-review-20261030.md`. Fixture manifests and synthetic
+  pins did not supply this approval, and it grants no build/runtime authority.
 - [ ] Establish accepted immutable build-input custody, actual complete static
   CPython build/runtime and real solver/production CLI acceptance. F02c/L08
   remain binding; admission and online publication remain false.

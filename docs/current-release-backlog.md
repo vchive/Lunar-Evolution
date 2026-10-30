@@ -1,3 +1,84 @@
+## Current closeout — verified integration and delegated review, 2026-10-30
+
+This entry supersedes the older execution states below. PR197 and PR198 have
+both completed their own final-source CI and independent original/source checks,
+and are merged into main. PR198 is merge `70ed04a2`, exact tree `099074e7` with
+parents `cbb397a9` / `2c6e74be`; all 45 gates passed and all 34 independent checks
+passed. Each Python version has 26,602 actual passes and the same 134 original
+skip keys. All 112 added nodes passed; no skipped prerequisite became acceptance.
+
+The user explicitly authorized delegated independent configuration review.
+Both complete real packets and original 298/318-command graphs now have narrow
+independent approval and unchanged approved manifests. Exact pins and receipt
+scope are in [the review record](../specs/193-static-python-rsi-launch/delegated-configuration-review-20261030.md).
+Hash/binder equality alone remains insufficient. The original OpenEvolve full
+build on verified PR198 software terminated after 1823.003882 remote monotonic
+seconds, inside its original 3,000-second budget, with zero automatic retry.
+All 298 commands returned zero, including the real freezer and final link, but
+the original compiler consumer refused `compiler_dependency_dependency_path`.
+The failed attempt and its original report remain failed; this was not a timeout.
+
+Both software slices are now implemented: an explicit fixed source-directory
+dependency profile for the 12 observed CPython spellings, and original whole-scope/
+pycache objects passed through the scheduler and BRS boundary. Legacy dependency
+APIs/default bytes remain unchanged; neither slice supplies runtime authority.
+On freeze43375a24, the combined66-file Linux run terminated2571pass/4fail,
+zero skip; all126 added nodes passed and source bytes/Git-mode projections were
+unchanged. The four serial fixture failures remain failures. They replace pinned
+native aliases after a process-lifetime graph is warm; the existing capacity-pair
+fresh-interpreter pattern now isolates them without refreshing production gates.
+The new finite scope edges and11 drift cases complete the reserved policy graph.
+
+The parallel retained-output installation-description slice is also implemented:
+original historical pins, two rounds of FD readback, actual image mode and
+distinct CPython/augmented inventory bindings. Its84 tests and independent
+static review passed in the final batch recorded below. It returns
+only candidate bytes through the existing parser/ELF checks; no accepted root,
+receipt, executor or CLI is introduced. On final01d740f0 all663 cases in17
+complete affected files pass in935.958814s including the wrapper, zero retry/
+failure/error/skip, source bytes/Git modes unchanged. All221 new nodes pass;
+the original2575 batch's four failures remain separate.
+
+PR199 original CI run41110175003 attempt1 has a real3.12 heavy6 failure:
+outer synthetic Python timeout600s, while the same case passed3.11/3.13 in
+429.816/582.108s. This does not identify a unique performance bottleneck.
+The internal SolveExecutionControl(600) begins after fixture preparation;
+the outer limit includes imports/setup and post-flow checks too. Only the test
+host bound becomes600+300 finite setup/readback allowance; production/control/
+build budgets stay unchanged, no retry/fallback. Oversized raw parameters also
+get short explicit IDs, preventing16MiB node names without changing test count.
+The43fbe4ad nine-node affected run passed in379.4026s with zero failure/error/
+skip/retry; source bytes/modes matched before/after, and all427 src/tools files
+are identical to01. Independent terminal audit passed. The successor still
+requires its own full CI/source gate; original CI is not canceled or relabeled.
+Fresh OpenEvolve execution used the actual01 software, same approved inputs/
+graph, original3000s and zero retry:298 commands,202compiler/2linker comparisons
+completed in1882.047849remote seconds. All13,545 archive files and original
+VFS/control/report chains matched independent review. A separately reviewed
+300s/zero-retry candidate readback completed in21.313828s against the original
+workspace;93frozen/33native and complete canonical candidate bytes matched
+independent reconstruction. It supplies candidate comparison pins, not an
+accepted runtime. Shinka's318 commands all returned0, but its original consumer
+failed in2143.932569s (not timeout): one original terminal tag was stopped,
+accepted by the runner but refused by the validator. All14,441 archive members,
+VFS/control and original four-tree inputFD checks passed. The old failure remains
+failed. A shared finite exited/stopped predicate now fixes that disagreement,
+retaining wait/reaped/profile gates and refusing malformed terminal scalars;
+All73 additions passed in the826-case/19-file concentrated Linux batch on0de18312,
+9.241618s including the harness, zero failures/errors/skips/retries, source bytes/
+Git executable bits and285import origins verified. Final-source CI still applies.
+See [actual build observations](../specs/193-static-python-rsi-launch/full-build-observation-20261031.md).
+Final CI/source status remains in PR199 and its independent original evidence.
+
+Remaining P0: validate the new frozen software and its own CI/source gate.
+Remaining P1: corrected-source Shinka consumer/readback observations and original
+immutable custody/complete-driver-input implementation and evidence for both
+solvers, sealed startup and live-owner evidence, then the first scheduler-context
+loader, production RSI CLI and copied local cases. Original fixed-U/external
+writer acquisition and P2 account/root/ACL/cgroup prerequisites remain open.
+Production admission and online publication remain false. Evidence is under
+primary ignored `validation/native-support-export-20261030/`.
+
 ## Final software batch — complete review preview and native export, 2026-10-30
 
 The explicit v2 preview now exposes the actual generator's complete overlays,

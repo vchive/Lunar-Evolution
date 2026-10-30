@@ -1,7 +1,7 @@
 """Natural private serial children over explicit inert process observations.
 
-No producer, candidate, evaluator, model, network or subprocess is executed.
-Only those process boundaries are doubled. The actual gateway claims/results,
+Only a controlled Python fixture interpreter is started. No producer, candidate,
+evaluator, model or network operation is executed; those boundaries are doubled. The actual gateway claims/results,
 native preparation, original owner, publication, worker ACK, settlement and
 retirement are composed by the private serial driver.
 """
@@ -9,6 +9,8 @@ retirement are composed by the private serial driver.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import socket
 import subprocess
 import sys
@@ -59,14 +61,18 @@ from lunar_evolution.rsi_producer_gateway import (
 from lunar_evolution.rsi_python_scheduler_inputs import PythonRSISchedulerInputContext
 
 HEX = "a" * 64
+_SERIAL_FLOW_SECONDS = 600
+# The host limit also covers imports, synthetic fixture preparation and final
+# source/read-only checks outside the original flow deadline. This is a finite
+# allowance, not a measured overhead or an extension of any production budget.
+_SERIAL_HARNESS_ALLOWANCE_SECONDS = 300
 
 
 def _forbidden(*_args, **_kwargs):
     pytest.fail("serial integration fixture attempted external execution")
 
 
-@pytest.fixture(autouse=True)
-def inert_only(monkeypatch):
+def _install_inert_guards(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", _forbidden)
     monkeypatch.setattr(subprocess, "run", _forbidden)
     monkeypatch.setattr(socket.socket, "connect", _forbidden)
@@ -247,7 +253,7 @@ def _setup(root, patch, outcomes):
     original_receipt_reader = native_trusted_receipt.recover_native_trusted_execution_receipt
     value, _unused_controller, supplier, _unused_observation = child_fixture._successful_fixture(root, patch)
     observation = _SerialNativeObservation(outcomes)
-    control = SolveExecutionControl(600)
+    control = SolveExecutionControl(_SERIAL_FLOW_SECONDS)
     value.native = replace(value.native, execution_control=control, python_handoff_after_execution=observation)
     value.context = PythonRSISchedulerInputContext(value.native, value.sidecar, value.proof)
     value.config = PythonProducerRSIExecutionConfig(value.request.solver_id, value.ledger, value.context)
@@ -309,17 +315,7 @@ def _setup(root, patch, outcomes):
     return value
 
 
-@pytest.mark.parametrize("outcomes", [
-    # Keep both terminal classes adjacent to exercise rejection retention and
-    # published-head carry-forward independently of the runner implementation.
-    pytest.param(("rejected", "rejected"), id="rejected-rejected"),
-    pytest.param(("published", "published"), id="published-published"),
-    pytest.param(("published", "rejected"), id="published-rejected"),
-    # A three-child wave proves the serial driver does not accidentally stop
-    # after the first C1/C2 pair and that the retained prefix remains ordered.
-    pytest.param(("rejected", "published", "rejected"), id="three-child-mixed"),
-])
-def test_natural_reserved_children_complete_in_original_order(tmp_path, monkeypatch, outcomes):
+def _exercise_natural_case(tmp_path, monkeypatch, outcomes):
     value = _setup(tmp_path, monkeypatch, outcomes)
     initial = deepcopy(value.state)
     root_gateway, root_sidecar = value.controller.gateway, value.controller.producer_sidecar
@@ -354,3 +350,82 @@ def test_natural_reserved_children_complete_in_original_order(tmp_path, monkeypa
     assert tuple(item.journal_id for item in value.observation.attempts) == attempts
     assert tuple(item.handoff.handoff_sha256 for item in value.observation.handoffs) == handoffs
     assert len(value.supplier.observations) == supplier_observations
+
+
+@pytest.mark.parametrize("outcomes", [
+    # Keep both terminal classes adjacent to exercise rejection retention and
+    # published-head carry-forward independently of the runner implementation.
+    pytest.param(("rejected", "rejected"), id="rejected-rejected"),
+    pytest.param(("published", "published"), id="published-published"),
+    pytest.param(("published", "rejected"), id="published-rejected"),
+    # A three-child wave proves the serial driver does not accidentally stop
+    # after the first C1/C2 pair and that the retained prefix remains ordered.
+    pytest.param(("rejected", "published", "rejected"), id="three-child-mixed"),
+])
+def test_natural_reserved_children_complete_in_original_order(tmp_path, outcomes):
+    # The exact reserved graph is a process-lifetime capture, including the
+    # explicitly inert attempt/receipt aliases. Each case needs its own original
+    # capture; never reset a warm graph, original closure, latch or outer capture.
+    source = Path(__file__).resolve().parents[1] / "src"
+    tests = Path(__file__).resolve().parent
+    expected = {path.relative_to(source).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(source.rglob("*.py"))}
+    graph = sys.modules.get("lunar_evolution.rsi_brs_reserved_policy")
+    owner = sys.modules.get("lunar_evolution.rsi_brs_publication_lineage")
+    held_project = getattr(graph, "_PROJECT", None)
+    held_capture = getattr(owner, "_ORIGINAL_RESERVED_PROJECT_CAPTURE", None)
+    script = r'''
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).resolve(strict=True)
+tests = Path(sys.argv[2]).resolve(strict=True)
+work = Path(sys.argv[3]).resolve(strict=True)
+outcomes = tuple(json.loads(sys.argv[4]))
+expected = json.loads(sys.argv[5])
+assert outcomes in {
+    ("rejected", "rejected"), ("published", "published"),
+    ("published", "rejected"), ("rejected", "published", "rejected"),
+}
+sys.path[:0] = [str(source), str(tests)]
+
+def no_execution(event, args):
+    if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "os.fork", "socket.connect"}:
+        raise AssertionError("inert serial child attempted execution or network: " + event)
+
+sys.addaudithook(no_execution)
+
+import pytest
+import test_rsi_brs_reserved_serial_integration as fixture
+
+def check_sources():
+    count = 0
+    for name, module in tuple(sys.modules.items()):
+        if name != "lunar_evolution" and not name.startswith("lunar_evolution."):
+            continue
+        path = Path(module.__file__).resolve(strict=True)
+        relative = path.relative_to(source).as_posix()
+        assert relative in expected and hashlib.sha256(path.read_bytes()).hexdigest() == expected[relative]
+        count += 1
+    assert count > 0
+
+check_sources()
+with pytest.MonkeyPatch.context() as patch:
+    fixture._install_inert_guards(patch)
+    fixture._exercise_natural_case(work, patch, outcomes)
+check_sources()
+print(json.dumps({"outcomes": list(outcomes), "status": "completed"}, sort_keys=True))
+'''
+    completed = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", script, str(source), str(tests), str(tmp_path),
+         json.dumps(outcomes), json.dumps(expected, sort_keys=True)],
+        cwd=tmp_path, env={"PATH": os.defpath, "LC_ALL": "C"},
+        capture_output=True, text=True,
+        timeout=_SERIAL_FLOW_SECONDS + _SERIAL_HARNESS_ALLOWANCE_SECONDS, check=False,
+    )
+    assert completed.returncode == 0, (completed.stdout + completed.stderr)[-16_000:]
+    assert json.loads(completed.stdout) == {"outcomes": list(outcomes), "status": "completed"}
+    assert getattr(graph, "_PROJECT", None) is held_project
+    assert getattr(owner, "_ORIGINAL_RESERVED_PROJECT_CAPTURE", None) is held_capture

@@ -409,7 +409,7 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 7700
+    assert sum(group["expected_tests"] or 0 for group in groups) == 7983
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     for identity, expected in (("rsi-python-scheduler-inputs", 97), ("independent-guardian", 101)):
         group = next(group for group in groups if group["id"] == identity)
@@ -446,18 +446,21 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
     assert gate._FIXED_U_ROOT_NODES == _fixed_u_root_nodes()
     assert len(gate._FIXED_U_ROOT_NODES) == 36
     custody = next(group for group in groups if group["id"] == "native-whole-scope-custody")
-    assert (custody["expected_tests"], custody["zero_skips"]) == (203, True)
+    assert (custody["expected_tests"], custody["zero_skips"]) == (280, True)
     assert custody["files"] == ["tests/test_native_whole_scope_custody.py",
                                "tests/test_native_whole_scope_abnormal.py",
                                "tests/test_native_whole_scope_creator_custody.py",
-                               "tests/test_native_whole_scope_creator_transport.py"]
+                               "tests/test_native_whole_scope_creator_transport.py",
+                               "tests/test_rsi_native_scope_scheduler.py"]
     recipe = next(group for group in groups if group["id"] == "python-rsi-launch-source")
-    assert (recipe["expected_tests"], recipe["zero_skips"]) == (961, True)
+    assert (recipe["expected_tests"], recipe["zero_skips"]) == (1167, True)
     assert "tests/test_static_python_zig_lld_capture.py" in recipe["files"]
     assert {"tests/test_static_python_zig_support_candidates.py",
             "tests/test_static_python_zig_support_selection.py",
             "tests/test_static_python_native_support_export.py",
-            "tests/test_static_python_cpython_review_preview.py"}.issubset(recipe["files"])
+            "tests/test_static_python_cpython_review_preview.py",
+            "tests/test_static_python_source_directory_dependencies.py",
+            "tests/test_static_python_retained_installation.py"}.issubset(recipe["files"])
     assert {"tests/test_static_python_source_data_backend.py",
             "tests/test_static_python_source_data_graph.py",
             "tests/test_static_python_source_data_consumer.py"}.issubset(recipe["files"])

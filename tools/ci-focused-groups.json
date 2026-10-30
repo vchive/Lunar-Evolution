@@ -157,6 +157,8 @@
         "tests/test_static_python_zig_support_selection.py",
         "tests/test_static_python_native_support_export.py",
         "tests/test_static_python_cpython_review_preview.py",
+        "tests/test_static_python_source_directory_dependencies.py",
+        "tests/test_static_python_retained_installation.py",
         "tests/test_static_python_configuration_generation.py",
         "tests/test_static_python_configuration_review.py",
         "tests/test_static_python_configuration_review_v2.py",
@@ -173,7 +175,7 @@
         "tests/test_static_python_source_data_vfs_retained_consumer.py",
         "tests/test_static_python_source_data_vfs_retained_custody.py"
       ],
-      "expected_tests": 961,
+      "expected_tests": 1167,
       "zero_skips": true
     },
     {
@@ -896,9 +898,10 @@
         "tests/test_native_whole_scope_custody.py",
         "tests/test_native_whole_scope_abnormal.py",
         "tests/test_native_whole_scope_creator_custody.py",
-        "tests/test_native_whole_scope_creator_transport.py"
+        "tests/test_native_whole_scope_creator_transport.py",
+        "tests/test_rsi_native_scope_scheduler.py"
       ],
-      "expected_tests": 203,
+      "expected_tests": 280,
       "zero_skips": true
     }
   ]

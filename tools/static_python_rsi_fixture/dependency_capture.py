@@ -25,6 +25,24 @@ from tools.static_python_rsi_fixture.runtime_closure import FixedRuntimeClosure,
 
 MAX_DEPFILE_BYTES = 2 * 1024 * 1024
 MAX_DEPENDENCIES = 16384
+SOURCE_DIRECTORY_PROFILE = "source-inventory-directories-v1"
+
+# Exact CPython source-owned spellings observed in the original full build.
+# This table is not a general path normalizer or a caller-supplied alias map.
+_SOURCE_DIRECTORY_ALIASES = (
+    ("Parser/lexer/../tokenizer/helpers.h", "Parser/tokenizer/helpers.h"),
+    ("Parser/lexer/../tokenizer/../lexer/state.h", "Parser/lexer/state.h"),
+    ("Parser/tokenizer/../lexer/state.h", "Parser/lexer/state.h"),
+    ("Parser/tokenizer/../lexer/lexer.h", "Parser/lexer/lexer.h"),
+    ("Parser/tokenizer/../lexer/buffer.h", "Parser/lexer/buffer.h"),
+    ("Python/../Parser/lexer/state.h", "Parser/lexer/state.h"),
+    ("Python/../Parser/lexer/lexer.h", "Parser/lexer/lexer.h"),
+    ("Python/../Parser/tokenizer/tokenizer.h", "Parser/tokenizer/tokenizer.h"),
+    ("Python/../Parser/pegen.h", "Parser/pegen.h"),
+    ("Modules/_hacl/internal/../Hacl_Hash_SHA2.h", "Modules/_hacl/Hacl_Hash_SHA2.h"),
+    ("Modules/_hacl/internal/../python_hacl_namespaces.h", "Modules/_hacl/python_hacl_namespaces.h"),
+    ("Modules/_hacl/internal/../Hacl_Streaming_Types.h", "Modules/_hacl/Hacl_Streaming_Types.h"),
+)
 
 
 class CompilerDependencyError(ValueError):
@@ -220,6 +238,7 @@ def _compare_compiler_dependencies(
     dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
     current_output_root: str | None = None,
     comparison_binding: dict | None = None,
+    source_directories: bool = False,
 ) -> CompilerDependencyComparison:
     """Compare retained compiler bytes against independently pinned inventories.
 
@@ -227,6 +246,8 @@ def _compare_compiler_dependencies(
     are comparison inputs, not evidence of acquisition or an accepted build.
     No current path is opened or inferred from ambient state.
     """
+    if type(source_directories) is not bool:
+        _fail("dependency_path_profile")
     outputs = _inventory(output_inventory_bytes, expected_output_inventory_sha256)
     roots = _roots(source_root, toolchain_root, work_root)
     target_root = _current_output_root(current_output_root, roots)
@@ -241,10 +262,48 @@ def _compare_compiler_dependencies(
     available["work"] = {}
     seen = set()
     compiled = []
+    aliases = {}
+    fixed_aliases = dict(_SOURCE_DIRECTORY_ALIASES) if source_directories else {}
+    source_directories_set = {
+        "/".join(parts[:index])
+        for path in available["source"]
+        for parts in (path.split("/"),)
+        for index in range(1, len(parts))
+    } if source_directories else set()
+
+    def source_alias(relative: str, member: str) -> str:
+        stack = []
+        traversed = []
+        parts = relative.split("/")
+        for token in parts[:-1]:
+            if token == "..":
+                if not stack:
+                    _fail("dependency_path")
+                stack.pop()
+            else:
+                stack.append(token)
+            directory = "/".join(stack)
+            if directory and (directory not in source_directories_set or directory in available["source"]):
+                _fail("dependency_path")
+            traversed.append("@source/" + directory if directory else "@source")
+        canonical_member = "/".join([*stack, parts[-1]])
+        if canonical_member != member or member in source_directories_set:
+            _fail("dependency_path")
+        if member not in available["source"]:
+            _fail("dependency_unpinned")
+        reference = "@source/" + member
+        aliases[relative] = {"reference": "@source/" + relative,
+                             "canonical_reference": reference, "directories": traversed}
+        return reference
 
     def reference(path: str) -> str:
         if not path.startswith("/"):
             path = roots["work"] + "/" + path
+        if source_directories and path.startswith(roots["source"] + "/"):
+            relative = path[len(roots["source"]) + 1:]
+            member = fixed_aliases.get(relative)
+            if member is not None:
+                return source_alias(relative, member)
         if (str(PurePosixPath(path)) != path
                 or any(part in {"", ".", ".."} for part in path.split("/")[1:])):
             _fail("dependency_path")
@@ -301,6 +360,8 @@ def _compare_compiler_dependencies(
         "configured_closure_verified": False, "installation_accepted": False,
         "production_admission": False,
         **(comparison_binding or {}),
+        **({"source_directory_aliases": [aliases[key] for key in sorted(aliases)]}
+           if source_directories else {}),
     })
     return CompilerDependencyComparison(raw)
 
@@ -334,6 +395,32 @@ def compare_compiler_dependencies_v4(
     expected_zig_lld_profile_sha256: str | None = None,
 ) -> CompilerDependencyComparison:
     """Compare v4 source bytes through the same prior-output comparator."""
+    return _compare_compiler_dependencies_v4(
+        recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        output_inventory_bytes=output_inventory_bytes,
+        expected_output_inventory_sha256=expected_output_inventory_sha256,
+        dependency_artifacts=dependency_artifacts, source_root=source_root,
+        toolchain_root=toolchain_root, work_root=work_root, current_output_root=current_output_root,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
+    )
+
+
+def _compare_compiler_dependencies_v4(
+    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
+    dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
+    source_directories: bool = False,
+) -> CompilerDependencyComparison:
     from tools.static_python_rsi_fixture.link_dependency_capture import (
         _FALSE_CLAIMS,
         validate_dependency_capture_plan_v4,
@@ -353,9 +440,44 @@ def compare_compiler_dependencies_v4(
         expected_output_inventory_sha256=expected_output_inventory_sha256,
         dependency_artifacts=dependency_artifacts, source_root=source_root,
         toolchain_root=toolchain_root, work_root=work_root, current_output_root=current_output_root,
+        source_directories=source_directories,
         comparison_binding={**_FALSE_CLAIMS,
-                            "schema": "lunar-cpython-compiler-dependency-comparison-v2",
+                            "schema": ("lunar-cpython-compiler-dependency-comparison-v3" if source_directories
+                                       else "lunar-cpython-compiler-dependency-comparison-v2"),
                             "manifest_sha256": expected_manifest_sha256,
                             "input_projection": recipe["input_projection"],
-                            "inputs_sha256": _sha(canonical(recipe["inputs"]))},
+                            "inputs_sha256": _sha(canonical(recipe["inputs"])),
+                            **({"dependency_path_profile": SOURCE_DIRECTORY_PROFILE}
+                               if source_directories else {})},
+    )
+
+
+def compare_compiler_dependencies_v4_source_directories(
+    recipe_bytes: bytes, *, expected_recipe_sha256: str,
+    manifest_bytes: bytes, expected_manifest_sha256: str,
+    output_inventory_bytes: bytes, expected_output_inventory_sha256: str,
+    dependency_artifacts: dict[str, bytes], source_root: str, toolchain_root: str, work_root: str,
+    current_output_root: str | None = None,
+    standalone_profile_bytes: bytes | None = None,
+    expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
+) -> CompilerDependencyComparison:
+    """Compare only the finite source aliases through original inventory pins.
+
+    No filesystem, inferred inputs, arbitrary normalization or acceptance is
+    added. Original v4 and legacy entry points remain strict.
+    """
+    return _compare_compiler_dependencies_v4(
+        recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
+        output_inventory_bytes=output_inventory_bytes,
+        expected_output_inventory_sha256=expected_output_inventory_sha256,
+        dependency_artifacts=dependency_artifacts, source_root=source_root,
+        toolchain_root=toolchain_root, work_root=work_root, current_output_root=current_output_root,
+        standalone_profile_bytes=standalone_profile_bytes,
+        expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
+        source_directories=True,
     )

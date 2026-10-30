@@ -87,8 +87,10 @@ check all eight originals, input pins, metadata collisions, malformed key
 objects, rejection by the execution recipe parser and the unchanged independent
 review gate. No binder interception creates a positive review.
 
-Actual OpenEvolve/Shinka previews can now supply a complete human review
-packet. Independent review approval, complete driver input closure, a full
+Actual OpenEvolve/Shinka previews can now supply a complete independent review
+packet. Review may be performed by a person or a user-delegated independent agent
+under `configuration-review.md`; preview generation itself grants no approval.
+Independent review approval, complete driver input closure, a full
 CPython build, installed runtime acceptance and solver cases remain subsequent
 work and are not established by generating a preview.
 

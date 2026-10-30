@@ -1,3 +1,93 @@
+<!-- delegated-review-current:start -->
+## 软件冻结记录：依赖比较、scope 与安装候选描述（2026-10-31）
+
+本节覆盖下方历史状态。用户明确授权独立 agent 审查，并允许规范接受委派审查。
+独立 reviewer `/root/ci_runner_review` 已核完八份配置原件、完整输入和两套精确图
+（OpenEvolve 298 / Shinka 318 commands），批准范围仅配置绑定与原始阶段图。
+精确 pins、独立性和 receipt 见 Feature193
+`delegated-configuration-review-20261030.md`；没有把 hash/binder/test 通过当作批准。
+委派条款与记录已提交 `8b9b9416`，并 push `codex/cpython-delegated-build`。
+当前开发工作区 `/Users/liminghan/.codex/worktrees/configuration-review-v2/lunar_agent`；
+PR198 的 `codex/native-support-export` / head `2c6e74be` 保持冻结。
+
+PR197 已通过 45/45 与完整独立原件/source 核验，合 main 为 `cbb397a9`，tree
+`0db3311e`；主区 evidence `validation/configuration-v2-20261030/ci-pr197/root-merge-ledger.json`。
+PR198 原 run `41023801886` 已 45/45 成功，34/34 独审检查通过；三版每版
+26,602 pass / 134 原 skip，旧 skip keys 完全一致，112 新用例无 skip。已合 main 为
+`70ed04a2330cf259f28041fd0b725fdbf4f5b757`，tree `099074e7` 与受测树完全相同，
+parents 精确为 `cbb397a9` / `2c6e74be`。最终独审 SHA `b5a61748…` 与 root merge
+账本在主区 `validation/native-support-export-20261030/ci-pr198/`。未改写原 CI provenance。
+
+Linux staging 按逻辑 inventory 重建，解决 macOS `Tools/` / `tools/` 目录别名；
+4,944 review files、2,760 product files 和 authority 已完成 size/SHA/xbit 读回。
+实际软件来源仍为 PR198 `2c6e74be` / tree `099074e7`，不是后来的文档提交。
+OpenEvolve 完整构建已在 5090gpu 的 fresh `/dev/shm` 子目录终止，单次原始 3000s
+总预算、零自动重试；沿用原 v4/VFS-retained runner/consumer 与有限 capture/direct-LLD
+变换、旧 profile `4b39c327` / bundle `ecd8af6d`，不把旧支持文件改称新 native 来源。
+298 条原始命令（configure1/freeze291/compile4/link2）全部 rc0，实际 freezer 已执行、
+最终目标已链接；原 compiler consumer 随后以 `compiler_dependency_dependency_path`
+拒绝。远端 monotonic 用时1823.003882秒，未耗尽3000秒，不是超时。
+原 report、外层失败和原件保持原义；不能据命令成功称完整构建已验收。
+
+已定位18个引用、12种固定 CPython source `../` include 拼写；canonical 文件和每个
+遍历目录均可由原 source inventory 证明。新增显式 source-directory comparison/
+consumer 入口，旧 v3/v4 默认不变，不接受通用路径归一化或调用者映射。
+另已贯穿 scheduler/BRS 的原 whole-scope 与 pycache diagnostic 引用，绑定原owner、
+profile、journal及严格整数 deadline 上界，不重建owner，不启生产CLI。
+冻结 `43375a24` 的66完整文件/2575节点 Linux 集中回归为2571pass/4fail，
+新增126全部pass，无skip；source bytes/Git执行位前后相同。四个旧serial fixture
+在预热策略图后替换已捕获native别名，触发原drift门；按已有capacity-pair规范改为
+各自fresh interpreter，保留原graph/latch，并补齐新scope的有限策略图边和11测试。
+
+并行完成 retained outputs→expanded installation 候选描述：原报告/历史pins、两轮
+FD读回、实际image mode、原CPython和augmented inventory分开绑定；复用现parser/
+ELF inspector，仅返回候选字节，无新receipt/accepted root/执行器/CLI。84测试已收集，
+独立静态审查无blocker。最终 `01d740f0` 的17完整文件/663节点已全部通过，
+935.958814秒含wrapper，零fail/error/skip/retry，source bytes/Git执行位前后相同；
+覆盖全部221新增节点。旧2575批4失败原样保留，没有把两批相加声称一次全量通过。
+
+PR199 run41110175003 attempt1原完整CI出现3.12 heavy6 outer fixture 600s超时；
+同一three-child-mixed在3.11为429.816s通过、3.13为582.108s通过。内部原flow的
+SolveExecutionControl(600)晚于fixture准备才启动，外层600从新解释器启动即计时，
+还包含收尾只读复验；原失败没有唯一性能瓶颈结论。后继仅把外层测试上限明确为
+600flow+300有限准备/复验额度，不改变内部600、生产或构建预算，无retry/fallback。
+另为oversized raw参数加固定短ID，避免每个节点名复制16MiB字节；测试数量不变。
+仅这两处测试修改的9节点影响域已在 `43fbe4ad` 通过，379.4026秒含wrapper，
+零fail/error/skip/retry，2768源码文件前后相同；427个src/tools文件与01完全一致，
+已独审。后继仍须自己的完整CI/source门；不取消或改写旧CI。
+
+新profile对原202 compiler/2 linker原件的纯比较已通过，12种alias均受pin约束，
+旧失败未升级。正式fresh OpenEvolve用01d740f0软件及相同批准输入/原图，在原
+3000s/零retry下完成298命令、202 compiler/2 linker比较；远端1882.047849秒。
+13,545归档原件、VFS/control与完整report已独审一致。另一次300s/零retry只读原
+workspace candidate观察21.313828秒成功，93 frozen/33 native和完整规范字节独审一致，
+候选pin46e4e4be…/46,427B；这不是accepted root。Shinka318命令全部rc0，但后置
+consumer在2143.932569秒（非超时）拒绝：原freeze233为stopped，runner接受而validator
+只接受exited。14,441原件/VFS/四输入树FD核验通过，原失败保留。已统一有限终态判定
+及严格整数PID/ExitCode，保留wait/reaped和全部原profile门；freeze0de18312的19完整
+文件826节点全部pass（含73新增），9.241618秒含harness，0fail/error/skip/retry；
+2770源码前后字节/Git执行位与285import origins均核一致，Ruff/compileall/diff通过。
+原83groups/65zero-skip保持，source1167/sum7983；最终完整CI仍须自己的source门。
+新干净0de product对Shinka原证据只读phase诊断20.712070秒通过：原report/VFS、四
+输入树和532outputs均核一致；不写原workspace/receipt，不把旧failed转成功。测试
+product含pytest cache曾被严格source集合preflight拒绝，未导入产品；后用原archive
+重建独立干净build-product（2770files/308dirs），原测试树和拒绝原件均保留。
+原CI41110175003自然终态41success/4failure（heavy6+三focused拒绝），45原ZIP已独审
+封口；三版各26957原inventory/134原skipkeys完整，v2closure f4d4680d…。
+原prestart probe v3单次120s内0.814724秒成功，init原PID/root/ns→同helper→原pidfd
+终态已独审（receipt e97bdfc6…），只证明该有限获取可行。后继owner-lifetime规格/实现
+在独立 `subject-session-diagnostics` worktree / `codex/vfs-execution-lifetime`，不混PR199。
+详见 `full-build-observation-20261031.md`；后继最终CI/source门仍以PR199为准，
+不提前宣告发布通过。CIcollector与完整构建原件保留在下述ignored根目录。
+原件与审查在主区 ignored `validation/native-support-export-20261030/`。
+
+后续先完成新软件回归、fresh完整构建/原始 custody、sealed startup/live owner，再接首个 scheduler
+context loader、生产 RSI CLI 与本地复制 case；固定 U 独占、外部 writer acquisition 和
+root/account/ACL/cgroup 环境前提仍缺，不能把原 skip 或 target 退出当验收。
+不跑模型/WebAgent/远程或公司 evaluator/真实 solver campaign，不读密钥或无关 live
+argv/env，不改原 benchmark；`production_admission=false`、`online_publication=false`。
+<!-- delegated-review-current:end -->
+
 <!-- build-review-preview-current:start -->
 ## 当前执行点：完整配置图预览与导出合批完成（2026-10-30）
 

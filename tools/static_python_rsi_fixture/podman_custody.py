@@ -77,6 +77,21 @@ _SECCOMP = {
 }
 
 
+def _successful_terminal_state(state: object) -> bool:
+    """Match either observed zero-exit tag, without claiming namespace cleanup."""
+    if type(state) is not dict:
+        return False
+    error = state.get("Error")
+    return (
+        type(state.get("Status")) is str and state["Status"] in {"exited", "stopped"}
+        and state.get("Running") is False
+        and type(state.get("Pid")) is int and state["Pid"] == 0
+        and type(state.get("ExitCode")) is int and state["ExitCode"] == 0
+        and state.get("OOMKilled") is False
+        and (error is None or type(error) is str and error == "")
+    )
+
+
 def _guest_build_environment(environment: dict[str, str]) -> dict[str, str]:
     """Executor-owned paths are fixed to this command's pinned guest image."""
     result = dict(environment)
@@ -965,8 +980,7 @@ class PodmanCustody:
             wait = self._control(["wait", "--condition=exited", container], "wait", root, operations)
             state = self._state(container, "state", root, operations)
             observation["original_container_state"] = state
-            if (wait.strip() != b"0" or state["Running"] is not False or state["Pid"] != 0
-                    or state["ExitCode"] != 0 or state["OOMKilled"] is not False):
+            if wait.strip() != b"0" or not _successful_terminal_state(state):
                 _fail("custody_original_exit")
             observation["original_container_exit_confirmed"] = True
             _scan_outputs(current, outputs, self.checkpoint)
@@ -1045,8 +1059,7 @@ def validate_custody_observation(command: dict, planned: dict, stage: str, index
         state = value.get("original_container_state", {})
         policy = value.get("runtime_policy", {})
         invalid = (
-            state.get("Status") != "exited" or state.get("Running") is not False or state.get("Pid") != 0
-            or state.get("ExitCode") != 0 or state.get("OOMKilled") is not False or bool(state.get("Error"))
+            not _successful_terminal_state(state)
             or any(policy.get(key) is not True for key in (
                 "root_readonly", "capabilities_zero", "no_new_privileges", "private_namespaces",
                 "fixed_seccomp_verified"))
