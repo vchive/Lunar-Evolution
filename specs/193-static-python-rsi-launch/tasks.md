@@ -8,6 +8,44 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Explicit real-configuration review v2 — 2026-10-30
+
+- [x] Specify a separately selected v2 schema/profile, retaining v1 bytes,
+  independent pins and eight original outputs; no failure-based fallback.
+- [x] Implement exact header-comment, two-variable absence and disabled-only
+  discovery relations without running Make or changing original files.
+- [x] Bind finite warning/link/libdl relations, stock replacements and the
+  fixed pipe/runtime additions to actual compile and link semantics.
+- [x] Independently inspect final product relations before combined regression.
+- [x] Observe the actual originals after syntax fixes; retain the first missing-
+  reference refusal. Implement15finite absent-reference edges and actual v2-only
+  Objects/Python include vectors; independently verify final pure parsing and
+  baseline graph semantics without manufacturing review approval.
+- [x] Complete128new boundary cases and the final1223case affected mixed-host
+  batch (Linux1163/Darwin60), zero failure/error/skip/retry; Ruff/compileall/diff
+  passed. Retain the first ENOSPC batch and exact source/Git-mode identities.
+- [ ] Update PR197 with this continuation and complete its final CI/source gate.
+- [ ] Complete independent whole-file review of actual configuration inputs,
+  full configured build, custody, sealed runtime and producer/CLI acceptance.
+
+## Trusted-local support export and direct capture — 2026-10-30
+
+- [x] Specify a separate candidate-generation/export contract without changing
+  the legacy five-file contract or original failed/unknown attempts.
+- [x] Implement bounded two-cache no-follow inventory, create-only finite export,
+  strict independent bundle validation and preservation of ambiguous CRT identity.
+- [x] Implement independent direct-profile pin and explicit role/path mapping,
+  fresh staging and a separate original-runner actual-depfile/static-ELF gate.
+- [x] Complete software before one combined Linux batch:260/260,41new,0skip;
+  source unchanged, Ruff/compileall/diff passed. See `zig-support-candidate-export.md`.
+- [x] Observe one real full-seed candidate generation/export:47.601920s,6candidates,
+  original120s budget, four commands rc0, seed ELF not executed.
+- [x] Observe one separate fixed-profile direct capture:33.617588s, exact target
+  and3objects/5support inputs, static ELF unexecuted, original120s budget.
+- [ ] Complete this successor's own complete CI/source gate and integration.
+- [ ] Complete isolated same-command export/custody, configured CPython and
+  original runtime/owner/producer/CLI acceptance; local support evidence is narrower.
+
 ## Source-data execution view v4 continuation — 2026-10-29
 
 - [x] Specify explicit v4 schema/backend, source-data permission projection and

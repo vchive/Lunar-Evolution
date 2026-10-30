@@ -409,7 +409,7 @@ def test_focused_file_missing_from_full_inventory_refuses(evidence):
 def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution():
     groups = gate._manifest(gate.MANIFEST.read_bytes())
     assert len(groups) == 83 and sum(group["zero_skips"] for group in groups) == 65
-    assert sum(group["expected_tests"] or 0 for group in groups) == 7419
+    assert sum(group["expected_tests"] or 0 for group in groups) == 7588
     assert all((_ROOT / filename).is_file() for group in groups for filename in group["files"])
     for identity, expected in (("rsi-python-scheduler-inputs", 97), ("independent-guardian", 101)):
         group = next(group for group in groups if group["id"] == identity)
@@ -452,8 +452,10 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
                                "tests/test_native_whole_scope_creator_custody.py",
                                "tests/test_native_whole_scope_creator_transport.py"]
     recipe = next(group for group in groups if group["id"] == "python-rsi-launch-source")
-    assert (recipe["expected_tests"], recipe["zero_skips"]) == (680, True)
+    assert (recipe["expected_tests"], recipe["zero_skips"]) == (849, True)
     assert "tests/test_static_python_zig_lld_capture.py" in recipe["files"]
+    assert {"tests/test_static_python_zig_support_candidates.py",
+            "tests/test_static_python_zig_support_selection.py"}.issubset(recipe["files"])
     assert {"tests/test_static_python_source_data_backend.py",
             "tests/test_static_python_source_data_graph.py",
             "tests/test_static_python_source_data_consumer.py"}.issubset(recipe["files"])
@@ -468,7 +470,8 @@ def test_real_manifest_and_workflow_preserve_coverage_without_pytest_reexecution
             "tests/test_static_python_source_data_vfs_retained_custody.py"}.issubset(recipe["files"])
     assert "tests/test_static_python_dependency_profile_selection.py" in recipe["files"]
     assert {"tests/test_static_python_configuration_generation.py",
-            "tests/test_static_python_configuration_review.py"}.issubset(recipe["files"])
+            "tests/test_static_python_configuration_review.py",
+            "tests/test_static_python_configuration_review_v2.py"}.issubset(recipe["files"])
     workflow = (_ROOT / ".github/workflows/test.yml").read_text()
     assert 'role: ["current-0"' in workflow and '"history"]' in workflow
     matrix = next(line.strip().partition("role: ")[2] for line in workflow.splitlines()

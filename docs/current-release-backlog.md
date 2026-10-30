@@ -1,3 +1,62 @@
+## Current remaining work — configuration review continuation, 2026-10-30
+
+PR196 is merged as87ab0709:45/45 CI gates and independent artifact/source/JUnit
+checks passed. Its merge tree65a71bcf equals the tested synthetic tree, with
+exact original base/head parents. The existing PR197 now targets main and will
+combine support generation/export/direct capture with the explicit configuration
+v2 continuation. Its earlier run41010546156 was cancelled during development;
+11successful execution jobs,31cancelled execution jobs and3refused focused gates
+retain those outcomes. They do not establish final-source acceptance.
+
+The separately selected v2 review is implemented without changing the v1 file,
+review pins or omitted-review recipe. It binds eight originals, finite syntax
+and semantic adaptations, actual stages, stock replacements and only exact fixed
+pipe/runtime additions. All code/tests were completed before final freeze268d44f8.30complete files
+passed1223/1223unique cases: Linux3.12 had1163 in35.752073s, Darwin3.13 had60
+in1.231840s.128new; no failures/errors/skips/retries.2753source bytes and Git
+executable-mode projections matched before/after on both hosts; this does not
+assert full POSIX permissions. Ruff/compileall/diff passed. Existing83groups/
+65zero-skip remain, source group849, expected total7588.
+
+The initial1184case execution retained423pass/5ENOSPCfailure/756setup errors:
+the external harness omitted TMPDIR, and literal/tmp socket fixtures also met
+inode exhaustion. A local wrapper's readonly shell variable failed only after
+the original execution. All originals remain. The final batch explicitly used
+Linux tmpfs and the complete60case socket/VFS file on the authorized local host;
+no old test or product rule was weakened. Real-original pure parsing also exposed
+15missing-reference and two actual include-root requirements; those were fixed
+before final freeze. Final pure observation passes without approving real inputs.
+
+Outstanding work distinguishes missing implementation from missing acceptance:
+
+1. **P0 integration:** complete final PR197 CI/source gate, then merge the
+   verified source. The affected regression is complete. Do not reuse PR196's results
+   or the cancelled PR197 run as validation of this continuation.
+2. **P1 missing implementation:** same-container native static support exporter
+   and its finite recipe/consumer integration; original writer enclosure and
+   drained quiescence into the accepting monitor; accepted per-episode runtime
+   loader composed with the existing RSI gateway/controller and production CLI.
+   The monitor's false authority flags and native-producer guard cannot simply
+   be changed to true or removed.
+3. **P1 acceptance inputs/evidence:** independently reviewed real configuration,
+   full CPython/freezer/static ELF and immutable input custody; sealed startup,
+   original owner/lifecycle, request/memory-to-bounded-result and original
+   terminal/broker/material/budget/recovery joins; actual producer, RSI CLI and
+   copied local-case acceptance. Existing runners, build graphs and parsers do
+   not replace this execution evidence and should not be reimplemented.
+4. **P2 environment acceptance:** original exclusive fixed-U and finite writer
+   acquisition, accepting-monitor join, actual root/account/ACL/cgroup,
+   disconnect and blocked-storage conditions.42prerequisite skips remain skips.
+
+The current local release scope does not require a remote evaluator, multi-host
+service deployment or model-weight training. Original benchmark sources stay
+read-only; no model, WebAgent, remote/company evaluator or solver campaign is run.
+Production admission and online publication remain false. Current contracts:
+[configuration v2](../specs/193-static-python-rsi-launch/configuration-review-v2.md)
+and [support export](../specs/193-static-python-rsi-launch/zig-support-candidate-export.md).
+Evidence lives under primary ignored `validation/configuration-v2-20261030/`
+and `validation/zig-support-export-20261030/`.
+
 ## Current P0/P1 — final CI and explicit direct LLD, 2026-10-30
 
 P0 completed: PR195 head3b807a6d merged into main as9f23f592 at
