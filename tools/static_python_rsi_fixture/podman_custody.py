@@ -53,6 +53,7 @@ SNAPSHOT_BACKEND = "podman-snapshots-v1"
 SOURCE_DATA_BACKEND = "podman-snapshots-source-data-v2"
 SOURCE_DATA_VFS_BACKEND = "podman-snapshots-source-data-vfs-v1"
 SOURCE_DATA_VFS_RETAINED_BACKEND = "podman-snapshots-source-data-vfs-retained-v1"
+SOURCE_DATA_VFS_LIFETIME_BACKEND = "podman-snapshots-source-data-vfs-lifetime-v1"
 VFS_RETENTION_PROFILE = "podman-vfs-raw-snapshots-v1"
 MAX_SNAPSHOT_COMMANDS = 512
 _PASSWD = b"root:x:0:0:root:/tmp/home:/nonexistent\n"
@@ -538,7 +539,7 @@ class PodmanCustody:
     def __init__(self, *, destination: Path, prefix: list[str], recipe_sha256: str,
                  checkpoint: Callable[[], None], snapshot_mounts: bool = False,
                  source_data: bool = False, vfs_roots: bool = False,
-                 vfs_retained: bool = False):
+                 vfs_retained: bool = False, vfs_lifetime: bool = False):
         self.destination, self.prefix = destination, prefix
         self.recipe_sha256, self.checkpoint = recipe_sha256, checkpoint
         self.image_bytes = 0
@@ -550,8 +551,11 @@ class PodmanCustody:
             _fail("custody_vfs_mode")
         if type(vfs_retained) is not bool or vfs_retained and not vfs_roots:
             _fail("custody_vfs_retention_mode")
+        if type(vfs_lifetime) is not bool or vfs_lifetime and not vfs_retained:
+            _fail("custody_vfs_lifetime_mode")
         self.snapshot_mounts, self.source_data = snapshot_mounts, source_data
         self.vfs_roots, self.vfs_retained = vfs_roots, vfs_retained
+        self.vfs_lifetime = vfs_lifetime
         self.base_image: tuple[str, Path, dict] | None = None
         self.root = destination / "custody"
         self.root.mkdir(mode=0o700) if vfs_retained else self.root.mkdir()
@@ -611,13 +615,16 @@ class PodmanCustody:
     def _vfs_selection(self, container: str, image: str, root: Path,
                        operations: list[dict], expected_view: dict | None,
                        readonly: dict[str, Path] | None, current: Path,
-                       *, snapshots=None) -> tuple[dict, bytes, dict, dict]:
+                       *, snapshots=None, _lifetime_services=None) -> tuple[dict, bytes, dict, dict]:
         from tools.static_python_rsi_fixture import podman_vfs_root as vfs
 
         if type(expected_view) is not dict:
             _fail("custody_vfs_namespace_view")
+        if _lifetime_services is not None and (type(_lifetime_services) is not list or _lifetime_services):
+            _fail("custody_vfs_lifetime_owner")
         pid = self._service_pid("vfs-service-before", root, operations)
-        service = vfs.ServiceRoot(pid, self.checkpoint)
+        service = (vfs.ServiceRoot(pid, self.checkpoint, _release_all=True)
+                   if _lifetime_services is not None else vfs.ServiceRoot(pid, self.checkpoint))
         try:
             info_raw = self._control(["info", "--format", (
                 '{"driver":{{json .Store.GraphDriverName}},"graph_root":{{json .Store.GraphRoot}},'
@@ -657,14 +664,28 @@ class PodmanCustody:
             if self._service_pid("vfs-service-after", root, operations) != pid:
                 _fail("custody_vfs_service_drift")
             service.verify()
+            if _lifetime_services is not None:
+                _lifetime_services.append(service)
             return selected, raw, proof, view
         finally:
-            service.close()
+            if _lifetime_services is None or not _lifetime_services:
+                if _lifetime_services is None:
+                    service.close()
+                else:
+                    from tools.static_python_rsi_fixture.podman_vfs_lifetime import _close_service
+
+                    primary = sys.exc_info()[1]
+                    try:
+                        _close_service(service)
+                    except BaseException:  # noqa: BLE001 - preserve selector failure and unknown release
+                        if primary is None:
+                            _fail("custody_vfs_lifetime_close_unknown")
+                        primary.add_note("podman_vfs_lifetime_close_unknown")
 
     def _runtime_policy(self, container: str, image: str, executed: list[str],
                         environment: dict[str, str], current: Path, root: Path,
                         operations: list[dict], readonly: dict[str, Path] | None = None,
-                        *, expected_view: dict | None = None, snapshots=None) -> dict:
+                        *, expected_view: dict | None = None, snapshots=None, _lifetime_services=None) -> dict:
         template = ('{"image":{{json .Image}},"oci":{{json .OCIConfigPath}},'
                     '"resolver":{{json .ResolvConfPath}},"hostname":{{json .HostnamePath}},'
                     '"hosts":{{json .HostsPath}}}')
@@ -674,6 +695,8 @@ class PodmanCustody:
         execution_view = None
         if self.vfs_roots:
             snapshot_options = {"snapshots": snapshots} if snapshots is not None else {}
+            if self.vfs_lifetime:
+                snapshot_options["_lifetime_services"] = _lifetime_services
             selected, raw, vfs_proof, execution_view = self._vfs_selection(
                 container, image, root, operations, expected_view, readonly, current, **snapshot_options)
         else:
@@ -846,7 +869,8 @@ class PodmanCustody:
                 observation["base_image_reused"] = False
         observation["cumulative_image_bytes"] = self.image_bytes
         observation["image_id"] = image
-        observation["input_layout"] = (SOURCE_DATA_VFS_RETAINED_BACKEND if self.vfs_retained else
+        observation["input_layout"] = (SOURCE_DATA_VFS_LIFETIME_BACKEND if self.vfs_lifetime else
+                                       SOURCE_DATA_VFS_RETAINED_BACKEND if self.vfs_retained else
                                        SOURCE_DATA_VFS_BACKEND if self.vfs_roots else
                                        SOURCE_DATA_BACKEND if self.source_data else
                                        SNAPSHOT_BACKEND if self.snapshot_mounts else "copied-image-v1")
@@ -904,10 +928,14 @@ class PodmanCustody:
             if self.vfs_retained:
                 observation.update(schema="lunar-podman-build-command-observation-v4",
                                    snapshot_retention_profile=VFS_RETENTION_PROFILE)
+            if self.vfs_lifetime:
+                observation.update(schema="lunar-podman-build-command-observation-v5",
+                                   lifetime_profile="lunar-podman-vfs-execution-lifetime-v1")
         evidence.update(status="partial", returncode=None, direct_child_reaped=False,
                         descendant_cleanup_verified=False, custody=observation)
         operations = observation["operations"]
         container = None
+        lifetime, lifetime_services = None, []
         try:
             capture = self.snapshot_store.command(stage, index) if self.vfs_retained else None
             image, readonly = self._prepare_image(root=root, inputs=inputs, snapshots=snapshots,
@@ -959,18 +987,36 @@ class PodmanCustody:
             runtime_options = {"expected_view": expected_view} if self.source_data else {}
             if capture is not None:
                 runtime_options["snapshots"] = capture
+            if self.vfs_lifetime:
+                runtime_options["_lifetime_services"] = lifetime_services
             observation["runtime_policy"] = self._runtime_policy(
                 container, image, executed, guest_environment, current, root, operations,
                 readonly, **runtime_options,
             )
             if _read_bounded(root, "seccomp.json", _MAX_OCI_BYTES, self.checkpoint) != _json(_SECCOMP):
                 _fail("custody_runtime_seccomp")
+            if self.vfs_lifetime:
+                from tools.static_python_rsi_fixture.podman_vfs_lifetime import (
+                    _VfsExecutionLifetime,
+                )
+
+                if len(lifetime_services) != 1:
+                    _fail("custody_vfs_lifetime_owner")
+                initial = self._control(["inspect", "--type", "container", "--format",
+                                         '{{json .State}}', container], "lifetime-initial-state", root, operations)
+                lifetime = _VfsExecutionLifetime(
+                    lifetime_services[0], initial, observation["runtime_policy"]["root_acquisition"],
+                    observation["runtime_policy"]["execution_view"],
+                    self.snapshot_store._lifetime(stage, index), self.checkpoint,
+                )
             if capture is not None:
                 observation["vfs_snapshots"] = capture.complete({
                     "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,
                     "container_id": container, "image_id": image,
                     "root_acquisition_sha256": observation["runtime_policy"]["root_acquisition_sha256"],
                 })
+            if lifetime is not None:
+                lifetime.before_start()
             attach: dict[str, Any] = {}
             operations.append({"operation": "start-attach", "evidence": attach})
             _command(self.prefix + ["start", "--attach", container], work=root,
@@ -978,11 +1024,20 @@ class PodmanCustody:
             evidence.update({key: attach[key] for key in ("returncode", "direct_child_reaped", "logs")})
             evidence["direct_child_role"] = "original-podman-attach-client"
             wait = self._control(["wait", "--condition=exited", container], "wait", root, operations)
-            state = self._state(container, "state", root, operations)
+            if lifetime is None:
+                state = self._state(container, "state", root, operations)
+            else:
+                terminal_raw = self._control(["inspect", "--type", "container", "--format",
+                                              '{{json .State}}', container], "state", root, operations)
+                state_value = json.loads(terminal_raw)
+                state = {key: state_value.get(key) for key in ("Status", "Running", "Pid", "ExitCode", "OOMKilled", "Error")}
             observation["original_container_state"] = state
             if wait.strip() != b"0" or not _successful_terminal_state(state):
                 _fail("custody_original_exit")
             observation["original_container_exit_confirmed"] = True
+            if lifetime is not None:
+                lifetime.observe_original_exit(attach, wait, terminal_raw)
+                lifetime.before_readback()
             _scan_outputs(current, outputs, self.checkpoint)
             copied = []
             for output in outputs:
@@ -995,9 +1050,18 @@ class PodmanCustody:
                     _fail("custody_output_readback")
                 copied.append(observed)
             observation["readback_outputs"] = copied
+            if lifetime is not None:
+                observation["vfs_lifetime"] = lifetime.finish_readback(copied, {
+                    "recipe_sha256": self.recipe_sha256, "stage": stage, "index": index,
+                    "container_id": container, "image_id": image,
+                    "root_acquisition_sha256": observation["runtime_policy"]["root_acquisition_sha256"],
+                    "vfs_snapshots": observation["vfs_snapshots"],
+                })
             evidence["status"] = "complete"
         except BaseException as error:
             observation["first_failure"] = getattr(error, "code", type(error).__name__)
+            if "podman_vfs_lifetime_close_unknown" in getattr(error, "__notes__", ()):
+                observation["lifetime_close_unknown"] = True
             # No replacement attempt and no extra cleanup deadline. If the
             # original budget is exhausted, this may correctly remain unknown.
             if container is not None and observation["original_container_exit_confirmed"] is not True:
@@ -1011,6 +1075,23 @@ class PodmanCustody:
                 except BaseException:  # noqa: BLE001 - retain the original failure, never retry cleanup
                     observation["original_container_cleanup_unknown"] = True
             raise
+        finally:
+            primary = sys.exc_info()[1]
+            try:
+                if lifetime is not None:
+                    lifetime.close()
+                elif lifetime_services:
+                    from tools.static_python_rsi_fixture.podman_vfs_lifetime import _close_service
+
+                    for service in lifetime_services:
+                        _close_service(service)
+            except BaseException:  # noqa: BLE001 - preserve first failure and unknown handle release
+                observation["lifetime_close_unknown"] = True
+                evidence["status"] = "partial"
+                if primary is None:
+                    observation["first_failure"] = "custody_vfs_lifetime_close_unknown"
+                    _fail("custody_vfs_lifetime_close_unknown")
+                primary.add_note("podman_vfs_lifetime_close_unknown")
 
 
 def _json(value: object) -> bytes:
@@ -1323,3 +1404,28 @@ def validate_custody_observation_v4(command: dict, planned: dict, stage: str, in
         "schema": "lunar-podman-build-command-observation-v3", "input_layout": SOURCE_DATA_VFS_BACKEND}}
     validate_custody_observation_v3(compatible, planned, stage, index, recipe_sha256, environment,
         inputs=inputs, prior=prior, workspace=workspace, checkpoint=checkpoint)
+
+
+def validate_custody_observation_v5(command: dict, planned: dict, stage: str, index: int,
+                                    recipe_sha256: str, environment: dict, *, inputs: dict,
+                                    prior: list[dict], workspace: Path,
+                                    checkpoint: Callable[[], None] | None = None) -> None:
+    """Consume only original retained bytes plus the five lifetime observations."""
+    from tools.static_python_rsi_fixture.podman_vfs_lifetime import SCHEMA, verify_lifetime
+
+    value = command.get("custody")
+    if (type(value) is not dict or value.get("schema") != "lunar-podman-build-command-observation-v5"
+            or value.get("input_layout") != SOURCE_DATA_VFS_LIFETIME_BACKEND
+            or value.get("lifetime_profile") != SCHEMA or value.get("lifetime_close_unknown", False) is not False):
+        raise ValueError("podman_custody_original_observation_v5")
+    compatible = {**command, "custody": {**value,
+        "schema": "lunar-podman-build-command-observation-v4", "input_layout": SOURCE_DATA_VFS_RETAINED_BACKEND}}
+    validate_custody_observation_v4(compatible, planned, stage, index, recipe_sha256, environment,
+        inputs=inputs, prior=prior, workspace=workspace, checkpoint=checkpoint)
+    policy = value["runtime_policy"]
+    binding = {"recipe_sha256": recipe_sha256, "stage": stage, "index": index,
+               "container_id": value["container_id"], "image_id": value["image_id"],
+               "root_acquisition_sha256": policy["root_acquisition_sha256"]}
+    verify_lifetime(workspace, value.get("vfs_lifetime"), binding, policy["root_acquisition"],
+                    policy["execution_view"], value["vfs_snapshots"], value["operations"],
+                    command["outputs"], checkpoint or (lambda: None))

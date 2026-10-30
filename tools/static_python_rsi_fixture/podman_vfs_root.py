@@ -259,8 +259,8 @@ def check_mount_tables(service: ServiceRoot, protected: list[Path],
 class ServiceRoot:
     """Held original service process/root/namespace, not a reusable authority token."""
 
-    def __init__(self, pid: int, checkpoint: Callable[[], None]):
-        if type(pid) is not int or not 0 < pid < 2**31:
+    def __init__(self, pid: int, checkpoint: Callable[[], None], *, _release_all: bool = False):
+        if type(_release_all) is not bool or type(pid) is not int or not 0 < pid < 2**31:
             _fail("custody_vfs_service")
         self.checkpoint, self.pid = checkpoint, pid
         self.descriptors: list[int] = []
@@ -285,8 +285,14 @@ class ServiceRoot:
                           "client_mount_namespace": client_namespace,
                           "socket": _socket_owner(pid, self.socket, checkpoint)}
             self.verify()
-        except BaseException:
-            self.close()
+        except BaseException as error:
+            if _release_all:
+                try:
+                    self._close_all()
+                except BaseException:  # noqa: BLE001 - preserve original acquisition and unknown release
+                    error.add_note("podman_vfs_lifetime_close_unknown")
+            else:
+                self.close()
             raise
 
     def verify(self) -> None:
@@ -314,6 +320,19 @@ class ServiceRoot:
         for descriptor in reversed(self.descriptors):
             os.close(descriptor)
         self.descriptors.clear()
+
+    def _close_all(self) -> None:
+        """Opt-in lifetime acquisition cleanup; legacy close remains unchanged."""
+        descriptors = list(self.descriptors)
+        self.descriptors.clear()
+        failure = None
+        for descriptor in reversed(descriptors):
+            try:
+                os.close(descriptor)
+            except OSError as error:
+                failure = error
+        if failure is not None:
+            raise failure
 
 
 def _records(raw: bytes) -> list[dict]:

@@ -173,9 +173,12 @@
         "tests/test_static_python_retained_runtime_spec.py",
         "tests/test_static_python_source_data_vfs_retained_backend.py",
         "tests/test_static_python_source_data_vfs_retained_consumer.py",
-        "tests/test_static_python_source_data_vfs_retained_custody.py"
+        "tests/test_static_python_source_data_vfs_retained_custody.py",
+        "tests/test_static_python_rsi_vfs_lifetime.py",
+        "tests/test_static_python_rsi_vfs_lifetime_entrypoints.py",
+        "tests/test_static_python_lifetime_installation.py"
       ],
-      "expected_tests": 1167,
+      "expected_tests": 1323,
       "zero_skips": true
     },
     {

@@ -564,6 +564,7 @@ def _run_pinned_build(
     command_profile: str | None = None,
     vfs_roots: bool = False,
     vfs_retained: bool = False,
+    vfs_lifetime: bool = False,
 ) -> BuildExecutionReport:
     """Execute pinned tools with no ambient environment or installation promotion.
 
@@ -583,11 +584,13 @@ def _run_pinned_build(
     extended = version3 or version4
     command_outputs = recipe["schema"] in {RECIPE_V2_SCHEMA, RECIPE_V3_SCHEMA, RECIPE_V4_SCHEMA}
     custody_prefix = None
-    source_data_backend = ("podman-snapshots-source-data-vfs-retained-v1" if vfs_retained else
+    source_data_backend = ("podman-snapshots-source-data-vfs-lifetime-v1" if vfs_lifetime else
+                           "podman-snapshots-source-data-vfs-retained-v1" if vfs_retained else
                            "podman-snapshots-source-data-vfs-v1" if vfs_roots
                            else "podman-snapshots-source-data-v2")
     if (type(vfs_roots) is not bool or vfs_roots and not version4
-            or type(vfs_retained) is not bool or vfs_retained and not (version4 and vfs_roots)):
+            or type(vfs_retained) is not bool or vfs_retained and not (version4 and vfs_roots)
+            or type(vfs_lifetime) is not bool or vfs_lifetime and not (version4 and vfs_roots and vfs_retained)):
         _fail("custody_backend")
     if version4 and custody_backend != source_data_backend:
         _fail("custody_backend")
@@ -738,6 +741,8 @@ def _run_pinned_build(
                 custody_options["vfs_roots"] = True
             if vfs_retained:
                 custody_options["vfs_retained"] = True
+            if vfs_lifetime:
+                custody_options["vfs_lifetime"] = True
             custody = PodmanCustody(destination=destination, prefix=custody_prefix,
                                      recipe_sha256=expected_recipe_sha256, checkpoint=checkpoint,
                                      **custody_options)
@@ -848,7 +853,8 @@ def _run_pinned_build(
     except Exception:  # noqa: BLE001 - preserve partial workspace without leaking paths
         reason = "attempt_io_failure"
     payload = {
-        "schema": "lunar-static-python-build-execution-report-v6" if vfs_retained else
+        "schema": "lunar-static-python-build-execution-report-v7" if vfs_lifetime else
+                  "lunar-static-python-build-execution-report-v6" if vfs_retained else
                   "lunar-static-python-build-execution-report-v5" if vfs_roots else
                   "lunar-static-python-build-execution-report-v4" if version4 else
                   "lunar-static-python-build-execution-report-v3" if version3 else
@@ -976,6 +982,26 @@ def run_pinned_build_v4_vfs_retained(
     )
 
 
+def run_pinned_build_v4_vfs_lifetime(
+    preparation: RSIProfilePreparation, *, recipe_bytes: bytes, expected_recipe_sha256: str,
+    source_root: Path, toolchain_root: Path, workspace: Path, deadline: float,
+    interrupted: Callable[[], bool] | None = None,
+    monotonic: Callable[[], float] = time.monotonic,
+    custody_backend: str = "podman-snapshots-source-data-vfs-lifetime-v1",
+) -> BuildExecutionReport:
+    """Select original VFS handles through execution and output readback.
+
+    The original command loop, absolute budget and recipe-v4 contracts apply.
+    Finite lifetime observations confer no immutable-input or runtime authority.
+    """
+    return _run_pinned_build(
+        preparation, recipe_bytes=recipe_bytes, expected_recipe_sha256=expected_recipe_sha256,
+        source_root=source_root, toolchain_root=toolchain_root, workspace=workspace,
+        deadline=deadline, interrupted=interrupted, monotonic=monotonic, version4=True,
+        custody_backend=custody_backend, vfs_roots=True, vfs_retained=True, vfs_lifetime=True,
+    )
+
+
 __all__ = [
     "INPUT_PROJECTION",
     "INPUT_PROJECTION_V4",
@@ -989,5 +1015,6 @@ __all__ = [
     "run_pinned_build_v3",
     "run_pinned_build_v4",
     "run_pinned_build_v4_vfs",
+    "run_pinned_build_v4_vfs_lifetime",
     "run_pinned_build_v4_vfs_retained",
 ]
