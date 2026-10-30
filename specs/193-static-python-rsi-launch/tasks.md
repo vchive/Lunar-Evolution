@@ -8,6 +8,24 @@ See `../../docs/current-release-backlog.md` for the current integration ledger.
 Completing source preparation does not complete installation/runtime acceptance;
 `production_admission=false`.
 
+## Complete configuration review preview — 2026-10-30
+
+- [x] Share the original generation path and expose an explicit v2 pure preview,
+  preserving default/v1/v2 bytes, original review selection and error order.
+- [x] Return a distinct non-executable DTO with actual overlays, source/toolchain
+  pins, compile roles, freezer tasks, full commands/outputs and false authority.
+- [x] Cover old independent goldens, independent v2 binder equivalence, runtime
+  overlays, all originals/pins/types, callback-free key handling and refusal by
+  the execution parser: 29 new cases, no binder interception.
+- [x] Prepare complete true OpenEvolve/Shinka graphs and original review inputs
+  without approval, toolchain invocation or execution.
+- [x] Finish all code before final affected regression: freeze01112fd5,
+  1492/1492 unique in37 complete Linux files,112new,0fail/error/skip/retry;
+  full Ruff/compileall/diff and source/Git-mode checks passed.
+- [ ] Complete final-source CI/source gate and verified main integration.
+- [ ] Review and approve actual full inputs/graphs, then complete configured
+  build/runtime/producer/CLI acceptance. Preview does not supply approval.
+
 ## Same-container native support export — 2026-10-30
 
 - [x] Specify source-owned static helper, finite wire and an explicit exact

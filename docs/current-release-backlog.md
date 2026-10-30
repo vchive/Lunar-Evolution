@@ -1,3 +1,32 @@
+## Final software batch — complete review preview and native export, 2026-10-30
+
+The explicit v2 preview now exposes the actual generator's complete overlays,
+roles, freezer tasks, command outputs and stage graph before review approval.
+It is a separate non-executable DTO/schema, with no approval pin. Preparation
+retains its public signature, default/v1/v2 bytes and independent binder gate.
+Two real current solver previews and complete original review inputs are ready;
+they remain unapproved review materials, not build/runtime acceptance.
+
+Final software freeze `01112fd5` passed all 1,492 unique cases in 37 complete
+Linux files, in 44.113545 seconds including the wrapper, zero failures/errors/
+skips/retries. There are 112 new cases: native export83 and preview29. Source
+bytes and Git executable-bit projections matched before and after. Full Ruff,
+compileall and diff checks passed. Existing 83 groups / 65 zero-skip remain;
+source group961 and expected sum7700. The earlier 496 cases are included, not
+added again. Native real-run evidence belongs to `5ea6210d`; native source bytes
+and directly used concrete helper ASTs are unchanged in the combined source.
+
+P0 remains each successor's final-source CI/source gate and verified integration.
+P1 remains independent review of the actual full inputs/graph, full configured
+CPython/freezer/ELF/custody and sealed startup/owner acceptance, then the fixed
+first scheduler-context loader and actual producer/RSI CLI/copied-case acceptance.
+The per-episode stager/resolvers/gateway/recovery already exist. Original fixed-U
+exclusivity and complete external writer acquisition remain missing installation
+prerequisites; target-tree cleanup cannot establish them. P2 root/account/ACL/
+cgroup acceptance still needs its original environment. Production admission
+and online publication remain false. Evidence and the concrete review packet
+are in primary ignored `validation/native-support-export-20261030/`.
+
 ## Current continuation — same-container native support export, 2026-10-30
 
 The fixed native helper and consumer now use the original snapshot runner to
