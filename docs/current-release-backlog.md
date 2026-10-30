@@ -1,24 +1,31 @@
 ## Current closeout — original worker input view, 2026-10-31
 
 This entry supersedes the older in-progress observations below. The original
-Shinka lifetime build on02347d68 completed318commands and212compiler/2linker
-comparisons in2828.000364s under the original3000s allowance, zero retry;
+Shinka lifetime build on 02347d68 completed 318 commands and 212 compiler/2 linker
+comparisons in 2828.000364s under the original 3000s allowance, zero retry;
 22,397 original files were independently audited. Its first separate candidate
 observation failed because two audit comparison pins included a trailing LF.
 The failed observation remains failed. A narrow correction and a fresh exact
-candidate plan are separate from the successful full build.
+candidate plan are separate from the successful full build. The independently
+reviewed v2 observation subsequently passed in 29.768905s / 300s, zero retry; its
+53,556-byte candidate was independently reconstructed byte for byte, including
+103 frozen/43 native and all false claims. Receipt e768b0d6… preserves the prior
+failure and explicitly excludes unrecorded module-origin/per-file snapshots.
 
 The explicit worker-input-view successor verifies original source/toolchain/work
 inventories through the original initialized worker's held FDs before start,
 with report-v8/observation-v6/dependency-v7/lifetime-v2 and unchanged old defaults.
-All67 additions passed in the retained1750-node batch; its stale CI count caused
-one original failure. The count-only successor passed its complete82-node file,
-with identical product bytes. These are separate batches. Onacafb640, the exact
-six-command inert run passed in14.251950s,600s/zero retry. Independent review
-matched486files,108lifetime/102VFS raw records,61controls/122logrefs/22outputs and
-all three role summaries; source2780 records matched before/after. The explicit
+All 67 additions passed in the retained 1750-node batch; its stale CI count caused
+one original failure. The count-only successor passed its complete 82-node file,
+with identical product bytes. These are separate batches. On acafb640, the exact
+six-command inert run passed in 14.251950s, 600s/zero retry. Independent review
+matched 486 files, 108 lifetime/102 VFS raw records, 61 controls/122 logrefs/22 outputs and
+all three role summaries; source 2780 records matched before/after. The explicit
 candidate reader reuses that strict history, without installation authority;
-its focused regression and final-source CI/main integration remain required.
+its 4-file concentrated 211-node regression passed on 40a4fc23, including 21 new
+nodes, 0 failure/error/skip/retry. Independent audit verified 2781 source records,
+13 originals, all node keys and import origins; Ruff/compileall/diff passed.
+Final-source CI/main integration remains required.
 
 P0 is final-source CI, independent original/source review and verified main
 integration for PR200 and this successor. P1 remains original immutable input

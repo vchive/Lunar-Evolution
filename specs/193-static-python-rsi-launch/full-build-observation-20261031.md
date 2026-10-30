@@ -114,6 +114,22 @@ derived expectations; it does not change the original review, build evidence or
 failed candidate result. Any corrected observation needs its own exact review
 and distinct output path.
 
+The corrected v2 plan and its unchanged-source invocation were then independently
+reviewed. A new read-only observation against the same retained full workspace
+completed in 29.768905353 seconds within its own original 300-second budget,
+zero retry; transport returned zero and was reaped in 30.630708084 seconds.
+Its 53,556-byte candidate, SHA256
+`f70fc4566a1116eb29b422775691c40b42f9402ba78e3a6f1915d7a18e3f2238`,
+matched independent reconstruction of every canonical field, including 103
+frozen modules, 43 native units, image/configuration and all nine false claims.
+The two original observation files were collected without product execution;
+final independent receipt SHA256
+`e768b0d6f1f92a5622c3d7ffe3be8286c0ef4591ffd4ad3f32334a34ccad666c`.
+The harness reports its 2,777-file source validation equal before and after;
+it did not persist new per-file snapshots or module-origin observations, so
+this result does not claim those unrecorded independent observations. The old
+v1 failure, original full receipt and narrow correction remain unchanged.
+
 The full original tar is 516,997,120 bytes, SHA256
 `8a40e482809267806fcc4f0cd87cb46a7cda64725384a3884ddf583c311af701`.
 Its complete bytes remain in the remote original tar and local lossless

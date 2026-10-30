@@ -15,13 +15,19 @@ work FD 在 before-start 核完整成员、文件内容/大小/执行位、nofol
 原失败保留。acafb640 仅修总数，完整82节点文件通过，src/tools逐字节不变。两批不相加
 声称一次全过。acaf 同源六命令有限实跑14.251950秒通过，原600秒/零retry，SSH rc0/reaped。
 独审全486原件、108 lifetime raw、102 VFS raw、61 controls/122 logrefs/22 outputpins，
-源码2780文件前后及Git执行位相等，receipt fc3162e8…；新 candidate reader另待集中回归。
-该显式读取入口复用原v8/dep7/obs6/lifetime2验证和两轮FD读回，只返回已有未接受候选。
+源码2780文件前后及Git执行位相等，receipt fc3162e8…。新 candidate reader已在40a4fc23
+完成4完整文件211节点集中回归（retained84/lifetime24/new21/aggregation82），全pass、
+零fail/error/skip/retry；2781源码前后/Gitblob/执行位及13原件独审通过（7869bbd3…）。
+Ruff/compileall/diff通过，83groups/65zero-skip/source1462/sum8278。此前短HEAD输入在
+preflight拒绝，未建remote或导入/收集/执行测试，原记录保留。该显式读取入口复用原
+v8/dep7/obs6/lifetime2验证和两轮FD读回，只返回已有未接受候选。
 
 完整Shinka lifetime构建已经成功：02347d68/source，318命令、212compiler/2linker比较，
 2828.000364秒/原3000秒/零retry；2777源码前后相等，22,397原件独审通过（35ceb2df…）。
 随后第一次候选观察确实rc1/independent_mapping_pin失败；已定位审计两个展开清单hash
-多算末尾LF，非产品缺陷。原失败和原receipt保留，create-only窄纠错与新精确计划另审；
+多算末尾LF，非产品缺陷。原失败和原receipt保留，窄纠错及v2精确计划另经独审，原workspace只读
+观察29.768905秒/300秒成功，完整53556B候选f70fc456…规范字节重建一致（e768b0d6…）。
+只报告原harness的源码前后2777验证true，没有新增未记录的module origins/逐项快照。
 不能把原失败升级。完整原tar保留远端，本机使用经独审流式核同字节的lossless .tar.gz，
 不整包解压。详见 full-build-observation-20261031.md 与ignored原始证据。
 

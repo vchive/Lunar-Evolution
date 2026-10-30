@@ -116,3 +116,24 @@ strict successor wiring. Collect software regression once after the batch.
 No model, solver, WebAgent or remote evaluator is involved. Product execution
 requires a separately reviewed exact finite plan; existing attempts retain
 their original source, budget, failures and evidence.
+
+## Observed software and finite execution
+
+The original39-file batch on34b03828 retained1749passes and one stale CI-count
+assertion failure; all67 worker-view additions passed. The count-only successor
+acafb640 passed the entire82-node aggregation file with identical src/tools.
+These remain separate batches. The exact six-command inert plan onacafb640 then
+passed in14.251949810s within the original600s allowance, zero retry. Independent
+review matched486files,61controls/122logrefs,108lifetime+102VFS raw records,
+22current/promoted outputs and each original worker's complete three-role input
+summary. All2780source records matched before/after; receipt SHA256
+`fc3162e84ca4b505718040fe7a53e6fadddf36ca696486b83fb208c400ea371a`.
+
+The candidate reader's frozen40a4fc23 four-file regression passed211unique nodes,
+including all21new nodes, zero failure/error/skip/retry. Independent review
+matched all2781source records to Git blobs/SHA/size/executable bits,13originals,
+collection/execution/JUnit order and module origins; receipt SHA256
+`7869bbd3193aa0154d3a75b976fc91acb74110576fefe41183cbeda2dfb22f7e`.
+Ruff, compileall and diff checks passed. The focused manifest retains83groups,
+65zero-skip gates, source1462 and expected sum8278. These are metadata counts,
+not an additional full-suite execution. Final-source CI remains separate.

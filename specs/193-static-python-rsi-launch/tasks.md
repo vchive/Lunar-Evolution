@@ -22,8 +22,9 @@ retain their historical scope and do not undo these narrower completions.
   all22,397 archived files and preserve the complete originals losslessly.
 - [x] Preserve the failed first candidate observation and identify the audit's
   two trailing-newline comparison-pin defects without modifying product bytes.
-- [ ] Independently review and observe the corrected candidate mapping under
-  a separate exact plan; the original failed observation must remain failed.
+- [x] Independently review and observe the corrected candidate mapping under
+  a separate exact plan: 29.768905s / 300s, zero retry, full 53,556-byte candidate
+  reconstructed identically (e768b0d6…). The original failed observation stays failed.
 - [x] Implement explicit worker-input-view v1 on the original held role FDs,
   bounded inventory equality and report-v8/observation-v6/dependency-v7/lifetime-v2.
 - [x] Retain the original1750-node batch as1749pass/1stale-count failure;
@@ -31,8 +32,10 @@ retain their historical scope and do not undo these narrower completions.
   separately, with unchanged src/tools; never sum these as one passing batch.
 - [x] Independently review and execute one six-command worker-view inert plan:
   remote14.251950s, original600s, zero retry, original SSH child reaped/rc0.
-- [ ] Complete independent worker-view original-record review and the explicit
-  installation candidate reader's focused regression.
+- [x] Complete independent worker-view original-record review (fc3162e8…) and
+  the explicit installation candidate reader's frozen40a4fc23 focused regression:
+  211pass in4completefiles including21new,0fail/error/skip/retry, source2781
+  and all13originals independently verified (7869bbd3…); Ruff/compileall/diff pass.
 - [ ] Complete each successor's final-source CI/source gate and main merge.
 - [ ] Complete configured driver input closure, original immutable consumption,
   protected output transitions and complete original descendant drainage.
