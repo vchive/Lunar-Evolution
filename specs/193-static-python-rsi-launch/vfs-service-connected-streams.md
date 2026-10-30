@@ -1,7 +1,11 @@
 # Finite original service listener with accepted stream connections
 
-Status: specified for the explicitly selected VFS lifetime backend. The original
-six-command inert attempt remains failed and partial. Its freeze-0 raw records
+Status: implemented for the explicitly selected VFS lifetime backend and covered
+by 51 new cases in the frozen `02347d68` 37-file/1,683-case passing regression.
+A fresh six-command inert observation passed in 17.175096 seconds, without retry;
+its original records passed independent review. This does not accept a runtime
+or a complete CPython build. The older six-command attempt remains failed and
+partial. Its freeze-0 raw records
 end at `acquire-after`, locating the refusal at the original `service.verify()`
 inside VFS acquisition. Those records do not retain the particular stat or
 `net/unix` body that caused the refusal, so its exact historical branch is unknown.

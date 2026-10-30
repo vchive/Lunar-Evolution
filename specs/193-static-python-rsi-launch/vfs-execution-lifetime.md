@@ -1,15 +1,19 @@
 # Feature 193 successor: original VFS execution lifetime observation
 
-Status: implemented on `codex/vfs-execution-lifetime`, based on
-`0de18312ad22e1419cbb2fad1e0972c8457dea78`. Frozen `6b95e260` passed all 1,632
-cases in 36 complete affected files on Linux/Python 3.12, with no failure,
-error, skip or retry and unchanged source bytes/Git executable bits. Its actual
-inert runner/consumer attempt failed after configure0 completed: freeze0 refused
-inside original service verification before start. That failure is preserved;
-the exact historical branch within service verification is unknown. The new
-opt-in socket profile in [vfs-service-connected-streams.md](vfs-service-connected-streams.md)
-addresses a separately reproduced parser defect; it still requires its own
-concentrated regression and fresh actual observation. The independently
+Status: implemented on `codex/vfs-execution-lifetime`. Frozen `02347d68` passed
+all 1,683 cases in 37 complete affected files on Linux/Python 3.12, with no
+failure, error, skip or retry and unchanged source bytes/Git executable bits.
+The independently reviewed fresh six-command inert runner/consumer attempt
+passed in 17.175096 seconds under its original 600-second budget, without retry.
+Its 486 original files bind all six five-phase histories, 108 lifetime raw and
+102 original VFS raw records; all authority claims remain false. Review receipt:
+`12865705e086d40d92b23a212144efd98510dd55fa5c69a545a5df0942b51743`.
+The older `6b95e260` actual attempt remains failed after configure0: freeze0
+refused inside original service verification before start, with its precise
+historical branch unknown. The opt-in profile in
+[vfs-service-connected-streams.md](vfs-service-connected-streams.md) addresses a
+separately reproduced parser defect, without rewriting that failed history.
+The independently
 reviewed inert pre-start probe v3 established initialized PID/root/namespace
 acquisition on 5090gpu: one 120-second budget, zero retries, remote duration
 0.814724 seconds and 62 original files matched. Its review receipt is
