@@ -152,6 +152,7 @@
         "tests/test_static_python_rsi_launch.py",
         "tests/test_static_python_rsi_source_plan.py",
         "tests/test_static_python_dependency_profile_selection.py",
+        "tests/test_static_python_zig_lld_capture.py",
         "tests/test_static_python_configuration_generation.py",
         "tests/test_static_python_configuration_review.py",
         "tests/test_static_python_source_data_backend.py",
@@ -167,7 +168,7 @@
         "tests/test_static_python_source_data_vfs_retained_consumer.py",
         "tests/test_static_python_source_data_vfs_retained_custody.py"
       ],
-      "expected_tests": 627,
+      "expected_tests": 680,
       "zero_skips": true
     },
     {

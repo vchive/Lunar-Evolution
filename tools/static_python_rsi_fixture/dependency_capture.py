@@ -330,6 +330,8 @@ def compare_compiler_dependencies_v4(
     current_output_root: str | None = None,
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
 ) -> CompilerDependencyComparison:
     """Compare v4 source bytes through the same prior-output comparator."""
     from tools.static_python_rsi_fixture.link_dependency_capture import (
@@ -342,6 +344,8 @@ def compare_compiler_dependencies_v4(
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
     )
     return _compare_compiler_dependencies(
         recipe, expected_recipe_sha256=expected_recipe_sha256,

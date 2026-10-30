@@ -1,3 +1,44 @@
+<!-- zig-lld-direct-current:start -->
+## 当前执行点：PR195 已合 main；P1 直接 LLD 接线已验证（2026-10-30）
+
+PR195 head3b807a6d 已于2026-10-30T03:45:32Z合main，merge9f23f592，tree36444084
+与被验synthetic935c1cb4完全一致，父严格为原main0bff6b92和3b807a6d。run40991182505
+完整42执行+3focused全部通过；45原始artifact/source/ZIP及所有分片/JUnit/聚合门已
+独立核验。三版每版26402=26268pass/134skip，原37失败key均明确pass；history每版
+2294+24全pass、零skip/retry。原失败/skip保持原义，不将134skip称运行时验收。
+
+P1并行工作区 `/Users/liminghan/.codex/worktrees/zig-lld-direct-capture/lunar_agent`，
+分支 `codex/zig-lld-direct-capture`，已rebase到main9f23f592，独立后继软件树不变。
+SDD `specs/193-static-python-rsi-launch/zig-lld-direct-capture.md`：新增独立
+固定`zig ld.lld` v4 profile/generator/consumer接线，复用原Zig row；旧默认、standalone、
+五文件support和原deadline/report/depfile/FD readback门不变，无fallback。
+
+单次真实object-only入口诊断：固定Zig完整19546文件/357913169bytes前后相同，
+120秒原budget/retry0，compile/link均rc0，整体1.742772秒；真实1880B静态ELF与
+164Bdepfile已独立检查，生成物未执行。它只证明直接入口捕获，不完成support/CPython。
+
+软件freeze7c4bb0a，Linux3.12十六完整文件629=626pass/3新fixture fail，18.565264秒，
+零error/skip/retry。仅新测试补lib资源和显式可写漂移fixture后，b6665f52原产品bytes/
+modes完全相同；仅补该完整53case文件，53pass/0fail/error/skip，2.801458秒。当前
+适用去重629均有通过结果，不是682unique或单次最终tree全跑。2745source前后不变、
+22原件remote/local SHA、collection/JUnit、287/395及268/347 origins/refs已核验。
+新53加入原RSI source组680；manifest83组/65zero-skip不变，expected sum7419。
+两current archive测试只加有限显示ids，完整参数与body AST不变，原最大945万/324万
+字符节点变为131/135字符；不重写旧inventory/失败证据。Ruff/compileall/diff通过。
+
+首次`/tmp`解压因inode耗尽失败、0test body，保留失败记录和原archive，只清理本轮
+可重建partial extraction；同一source改用`/dev/shm`明确storage profile后执行。
+完整本地证据在主区ignored `validation/zig-lld-direct-20261030/`。本独立后继仍须自己
+PR/完整CI后才能合main，不能用PR195的CI替代。下一步支持文件来源方案见该证据目录
+`support-next-step-research.json`：今日旧cache候选有4archive/2不同crt1，无crti/crtn；
+旧collector排除了cache，今日只读观察不能追认旧run。须新显式生成/有限原字节导出，
+独立profile选定后用真实direct depfile验收；Podman每command新tmpfs，不能事后cp。
+P1真实support来源、完整configured/implicit/cache/CPython/freezer/ELF/sealed runtime、
+solver/production CLI与P2真实账户/ownership验收仍开放；42root前提skip不算通过。
+无模型/WebAgent/远程或公司evaluator/真实solver、密钥/live argv-env/原benchmark写入，
+production_admission=false、online_publication=false。
+<!-- zig-lld-direct-current:end -->
+
 <!-- final-integration-compatibility-current:start -->
 ## 当前执行点：剩余 CI 兼容问题已修复并在 Linux 合批验证（2026-10-30）
 

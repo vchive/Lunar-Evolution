@@ -37,6 +37,11 @@ from tools.static_python_rsi_fixture.standalone_linker import (
     _standalone_link,
     validate_standalone_recipe_profile,
 )
+from tools.static_python_rsi_fixture.zig_lld_linker import (
+    ZigLLDLinkerError,
+    _zig_lld_link,
+    validate_zig_lld_recipe_profile,
+)
 
 _SCHEMA = "lunar-cpython-compiler-linker-dependency-recipe-v1"
 DATA_SOURCE_CAPTURE_SCHEMA = "lunar-cpython-data-source-dependency-recipe-v1"
@@ -68,16 +73,18 @@ def _explicit_support_link(command: dict) -> bool:
 
 def _link(command: dict) -> tuple[str, list[str]] | None:
     argv = command["argv"]
-    standalone = None
-    malformed = False
     try:
-        standalone = _standalone_link(command)
+        direct = _standalone_link(command)
     except StandaloneLinkerError:
-        malformed = True
-    if malformed:
         _fail("standalone_shape")
-    if standalone is not None:
-        return standalone
+    if direct is not None:
+        return direct
+    try:
+        direct = _zig_lld_link(command)
+    except ZigLLDLinkerError:
+        _fail("zig_lld_shape")
+    if direct is not None:
+        return direct
     if argv[:2] != ["@toolchain/zig", "cc"] or "-c" in argv:
         return None
     prefix = ["@toolchain/zig", "cc", "-target", "x86_64-linux-musl", "-static", "-o"]
@@ -117,6 +124,14 @@ def _link(command: dict) -> tuple[str, list[str]] | None:
     return target, inputs
 
 
+def _link_mode(command: dict) -> str:
+    if _standalone_link(command) is not None:
+        return "standalone"
+    if _zig_lld_link(command) is not None:
+        return "zig-lld"
+    return "explicit" if _explicit_support_link(command) else "implicit"
+
+
 def _capture_plan(recipe: dict, *, instrumented: bool) -> tuple[list[dict], list[dict]]:
     compilations, links = [], []
     for stage in recipe["stages"]:
@@ -136,17 +151,17 @@ def _capture_plan(recipe: dict, *, instrumented: bool) -> tuple[list[dict], list
                 continue
             target, inputs = link
             depfile = "link-dependencies/" + target.removeprefix("@work/") + ".d"
-            standalone = _standalone_link(command) is not None
-            suffix = (["--dependency-file", "@work/" + depfile] if standalone else
+            direct = _link_mode(command) in {"standalone", "zig-lld"}
+            suffix = (["--dependency-file", "@work/" + depfile] if direct else
                       ["-Xlinker", "--dependency-file", "-Xlinker", "@work/" + depfile])
             expected = {"path": depfile, "max_size": MAX_DEPFILE_BYTES, "executable": False}
             if instrumented:
                 if command["argv"][-len(suffix):] != suffix or expected not in command["outputs"]:
                     _fail("link_capture_missing")
-                tail = ([] if standalone or _explicit_support_link(command) else
+                tail = ([] if direct or _explicit_support_link(command) else
                         command["argv"][command["argv"].index("-lm") + 3:-4])
             else:
-                if standalone:
+                if direct:
                     _fail("standalone_requires_capture")
                 tail = [] if _explicit_support_link(command) else command["argv"][command["argv"].index("-lm") + 3:]
             if tail:
@@ -229,8 +244,7 @@ def validate_dependency_capture_plan(
             expected_keys.add("support_bundle_sha256")
         if standalone:
             expected_keys.add("standalone_profile_sha256")
-        actual_modes = [("standalone" if _standalone_link(command) is not None else
-                         "explicit" if _explicit_support_link(command) else "implicit")
+        actual_modes = [_link_mode(command)
                         for stage in recipe["stages"]
                         for command in stage["commands"] if _link(command) is not None]
         expected_mode = "standalone" if standalone else "explicit" if explicit else "implicit"
@@ -370,7 +384,7 @@ def _compare_linker_dependencies(
                     refs.append("@" + role + "/" + relative)
                 if not set(explicit).issubset(refs):
                     _fail("explicit_input_missing")
-                if ((_explicit_support_link(command) or _standalone_link(command) is not None)
+                if (_link_mode(command) in {"explicit", "standalone", "zig-lld"}
                         and set(explicit) != set(refs)):
                     _fail("explicit_support_input_set")
                 compared.append({"stage": stage["stage"], "command_index": index,
@@ -397,6 +411,8 @@ def _data_source_capture_successor(
     base: ConcreteBuildRecipe, *, original_source_inventory_sha256: str,
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
 ) -> ConcreteBuildRecipe:
     """Bind a freshly emitted complete legacy capture to the explicit new view.
 
@@ -406,8 +422,7 @@ def _data_source_capture_successor(
     """
     raw, recipe = _source_data_successor(base)
     compilations, links = _capture_plan(recipe, instrumented=True)
-    modes = [("standalone" if _standalone_link(command) is not None else
-              "explicit" if _explicit_support_link(command) else "implicit")
+    modes = [_link_mode(command)
              for stage in recipe["stages"] for command in stage["commands"]
              if _link(command) is not None]
     if len(set(modes)) != 1:
@@ -422,12 +437,16 @@ def _data_source_capture_successor(
         "input_projection": recipe["input_projection"], "link_mode": modes[0],
         **({"standalone_profile_sha256": expected_standalone_profile_sha256}
            if modes[0] == "standalone" else {}),
+        **({"zig_lld_profile_sha256": expected_zig_lld_profile_sha256}
+           if modes[0] == "zig-lld" else {}),
         "compilations": compilations, "links": links, **_FALSE_CLAIMS,
     })
     validate_dependency_capture_plan_v4(
         raw, expected_recipe_sha256=_sha(raw), manifest_bytes=manifest,
         expected_manifest_sha256=_sha(manifest), standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
     )
     return ConcreteBuildRecipe(raw, base.sources, manifest)
 
@@ -462,6 +481,8 @@ def validate_dependency_capture_plan_v4(
     manifest_bytes: bytes, expected_manifest_sha256: str,
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
 ) -> tuple[dict, tuple[str, ...], tuple[str, ...]]:
     """Bind every v4 input and finite capture, never accept a legacy schema.
 
@@ -488,23 +509,25 @@ def validate_dependency_capture_plan_v4(
     invalid = False
     try:
         manifest = json.loads(manifest_bytes)
-        modes = [("standalone" if _standalone_link(command) is not None else
-                  "explicit" if _explicit_support_link(command) else "implicit")
+        modes = [_link_mode(command)
                  for stage in recipe["stages"] for command in stage["commands"]
                  if _link(command) is not None]
         standalone = modes == ["standalone", "standalone"]
+        zig_lld = modes == ["zig-lld", "zig-lld"]
         expected_keys = {
             "schema", "recipe_sha256", "base_recipe_sha256", "base_manifest_sha256",
             "original_source_inventory_sha256", "source_inventory_sha256",
             "toolchain_inventory_sha256", "inputs_sha256", "input_projection", "link_mode",
             "compilations", "links", *_FALSE_CLAIMS,
             *({"standalone_profile_sha256"} if standalone else set()),
+            *({"zig_lld_profile_sha256"} if zig_lld else set()),
         }
         original = {key: value for key, value in recipe.items() if key != "input_projection"}
         original["schema"] = RECIPE_V3_SCHEMA
         digest_keys = ("base_recipe_sha256", "base_manifest_sha256", "original_source_inventory_sha256",
                        "source_inventory_sha256", "toolchain_inventory_sha256", "inputs_sha256",
-                       *(("standalone_profile_sha256",) if standalone else ()))
+                       *(("standalone_profile_sha256",) if standalone else ()),
+                       *(("zig_lld_profile_sha256",) if zig_lld else ()))
         invalid = (type(manifest) is not dict or set(manifest) != expected_keys
                    or canonical(manifest) != manifest_bytes
                    or manifest["schema"] != DATA_SOURCE_CAPTURE_SCHEMA
@@ -530,6 +553,16 @@ def validate_dependency_capture_plan_v4(
                     expected_profile_sha256=expected_standalone_profile_sha256,
                 )
         elif standalone_profile_bytes is not None or expected_standalone_profile_sha256 is not None:
+            invalid = True
+        if not invalid and zig_lld:
+            if manifest["zig_lld_profile_sha256"] != expected_zig_lld_profile_sha256:
+                invalid = True
+            else:
+                validate_zig_lld_recipe_profile(
+                    recipe, profile_bytes=zig_lld_profile_bytes,
+                    expected_profile_sha256=expected_zig_lld_profile_sha256,
+                )
+        elif zig_lld_profile_bytes is not None or expected_zig_lld_profile_sha256 is not None:
             invalid = True
     except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
         invalid = True
@@ -572,6 +605,8 @@ def compare_linker_dependencies_v4(
     current_output_root: str | None = None,
     standalone_profile_bytes: bytes | None = None,
     expected_standalone_profile_sha256: str | None = None,
+    zig_lld_profile_bytes: bytes | None = None,
+    expected_zig_lld_profile_sha256: str | None = None,
 ) -> LinkerDependencyComparison:
     """Use the original complete-prior-output comparator for the v4 view."""
     recipe, _, depfiles = validate_dependency_capture_plan_v4(
@@ -579,6 +614,8 @@ def compare_linker_dependencies_v4(
         manifest_bytes=manifest_bytes, expected_manifest_sha256=expected_manifest_sha256,
         standalone_profile_bytes=standalone_profile_bytes,
         expected_standalone_profile_sha256=expected_standalone_profile_sha256,
+        zig_lld_profile_bytes=zig_lld_profile_bytes,
+        expected_zig_lld_profile_sha256=expected_zig_lld_profile_sha256,
     )
     return _compare_linker_dependencies(
         recipe, depfiles, expected_recipe_sha256=expected_recipe_sha256,

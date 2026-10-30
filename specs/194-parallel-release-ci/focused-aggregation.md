@@ -109,3 +109,14 @@ The combined Linux focused batch on tree28f7164b passed all complete aggregation
 file cases among409 collected (408pass, one unrelated Darwin-only skip), with
 original exact JUnit and source unchanged. Fresh complete CI and derived
 receipts remain required; failed original reports are never rewritten to pass.
+
+## Explicit Zig direct-LLD successor gate — 2026-10-30
+
+The separate opt-in v4 linker profile adds the complete 53-case
+`test_static_python_zig_lld_capture.py` file to the existing
+`python-rsi-launch-source` group. That group becomes 680; the manifest retains
+83 groups and 65 zero-skip groups, with expected sum7419. Initial focused
+collection confirms 53 unique nodes and executes zero test bodies. The
+consolidated successor software regression and its own final-source CI must
+provide execution evidence; collection alone does not. Existing groups, skip
+policy, budgets, selection and raw/JUnit/source gates stay unchanged.
