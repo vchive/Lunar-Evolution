@@ -118,6 +118,26 @@ def test_context_selection_projection_and_copies_preserve_originals(tmp_path, mo
         assert copied._native_scope_projection() == context._native_scope_projection()
 
 
+@pytest.mark.parametrize(("helper", "dependency"), (
+    ("_native_scope_deadline", "deadline_guard"),
+    ("_native_scope_profile_snapshot", "profile_snapshot"),
+))
+def test_scope_helper_code_changes_provider_fingerprint(tmp_path, monkeypatch, helper, dependency):
+    context, _scope_owner, _diagnostic = _selected(_native_context(tmp_path), monkeypatch)
+    monkeypatch.setattr(scheduler, "_strategy_fingerprint", lambda *_args: "a" * 64)
+    provider = NativeRSISchedulerProvider(context)
+    before = provider.rsi_fingerprint_config()
+
+    def changed_helper(*_args):
+        return None
+
+    monkeypatch.setattr(scheduler, helper, changed_helper)
+    after = provider.rsi_fingerprint_config()
+    assert before != after
+    assert (before["native_scope"]["code_dependencies"][dependency]
+            != after["native_scope"]["code_dependencies"][dependency])
+
+
 @pytest.mark.parametrize("field", ("whole_scope", "pycache_diagnostic"))
 @pytest.mark.parametrize("foreign", (object(), {}))
 def test_context_refuses_foreign_scope_config_before_any_attempt(tmp_path, monkeypatch, field, foreign):
@@ -177,6 +197,41 @@ def test_original_scope_mutation_refuses_before_native_input_read(tmp_path, monk
     with pytest.raises(NativeRSISchedulerProviderError, match="native_scope_changed"):
         NativeRSISchedulerProvider(context)._inputs(require_unexpired=True)
     assert reads == []
+
+
+@pytest.mark.parametrize("deadline", (
+    pytest.param(float("nan"), id="nan"),
+    pytest.param(float("inf"), id="positive-infinity"),
+    pytest.param(float("-inf"), id="negative-infinity"),
+    pytest.param(True, id="true"),
+    pytest.param(False, id="false"),
+    pytest.param(1.0, id="finite-float"),
+    pytest.param(0, id="zero"),
+    pytest.param(-1, id="negative"),
+    pytest.param(2**64, id="unsigned-64-overflow"),
+    pytest.param(2**80, id="oversized-integer"),
+))
+@pytest.mark.parametrize("phase", ("initial", "historical", "fresh"))
+def test_scope_deadline_requires_bounded_exact_int_before_fresh_gate(
+    tmp_path, monkeypatch, deadline, phase,
+):
+    context = _linux_context(_native_context(tmp_path))
+    scope = _scope(context, monkeypatch)
+    pin = None if phase == "initial" else native._pin_native_scheduler_scope(
+        scope, None, intent=context.intent, artifact=context.artifact,
+    )
+    scope._deadline = deadline
+    remaining = []
+    monkeypatch.setattr(whole.NativeWholeScopeOwner, "_remaining",
+                        lambda *_args: remaining.append(True))
+    with pytest.raises(native.NativeTrustedSchedulerError, match="scope_invalid"):
+        if phase == "initial":
+            native._pin_native_scheduler_scope(
+                scope, None, intent=context.intent, artifact=context.artifact,
+            )
+        else:
+            pin.options(context.intent, context.artifact, require_unexpired=phase == "fresh")
+    assert remaining == []
 
 
 def test_shortened_deadline_and_terminal_state_preserve_fingerprint_without_relaunch(tmp_path, monkeypatch):

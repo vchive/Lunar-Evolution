@@ -23,7 +23,7 @@ dependency profile for the 12 observed CPython spellings, and original whole-sco
 pycache objects passed through the scheduler and BRS boundary. Legacy dependency
 APIs/default bytes remain unchanged; neither slice supplies runtime authority.
 Independent static review has no remaining blocker. All code is to freeze before
-one combined affected-file regression; 94 new nodes are collected, not yet passed.
+one combined affected-file regression; 126 new nodes are collected, not yet passed.
 
 Remaining P0: validate the new frozen software and its own CI/source gate.
 Remaining P1: fresh configured CPython/freezer/ELF paths and original

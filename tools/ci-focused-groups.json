@@ -900,7 +900,7 @@
         "tests/test_native_whole_scope_creator_transport.py",
         "tests/test_rsi_native_scope_scheduler.py"
       ],
-      "expected_tests": 248,
+      "expected_tests": 280,
       "zero_skips": true
     }
   ]

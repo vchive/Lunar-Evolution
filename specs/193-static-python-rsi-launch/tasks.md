@@ -30,7 +30,7 @@ Completing source preparation does not complete installation/runtime acceptance;
   consumer, preserving legacy v3/v4 defaults and original failed build evidence.
 - [x] Pass the original installed whole-scope/pycache objects through scheduler,
   success/outcome and BRS prepublication with identity/profile/deadline pins.
-- [x] Independently review both slices and collect94 new boundary nodes.
+- [x] Independently review both slices and collect126 new boundary nodes.
 - [ ] Freeze all code and run one combined complete affected-file regression;
   retain source bytes/Git-mode identity, Ruff, compileall and diff results.
 - [ ] Complete new-source CI and fresh configured builds; do not relabel the

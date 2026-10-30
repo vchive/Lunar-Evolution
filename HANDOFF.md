@@ -34,7 +34,7 @@ OpenEvolve 完整构建已在 5090gpu 的 fresh `/dev/shm` 子目录终止，单
 consumer 入口，旧 v3/v4 默认不变，不接受通用路径归一化或调用者映射。
 另已贯穿 scheduler/BRS 的原 whole-scope 与 pycache diagnostic 引用，绑定原owner、
 profile、journal及 deadline 上界，不重建owner，不启生产CLI。两线独立静态审查无
-剩余 blocker，新增94节点，代码冻结后一次集中完整影响域回归；目前未记为通过。
+剩余 blocker，新增126节点，代码冻结后一次集中完整影响域回归；目前未记为通过。
 原件与审查在主区 ignored `validation/native-support-export-20261030/`。
 
 后续先完成新软件回归、fresh完整构建/原始 custody、sealed startup/live owner，再接首个 scheduler

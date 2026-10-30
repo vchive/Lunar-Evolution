@@ -91,6 +91,13 @@ class NativeTrustedSchedulerError(ValueError):
         super().__init__(code)
 
 
+def _native_scope_deadline(deadline):
+    """Keep the original whole-scope unsigned 64-bit nanosecond boundary."""
+    if type(deadline) is not int or not 0 < deadline < 2**64:
+        raise ValueError
+    return deadline
+
+
 def _native_scope_profile_snapshot(profile):
     """Freeze finite already-parsed values, without granting profile acceptance."""
     remaining = [4096]
@@ -133,9 +140,11 @@ class _NativeSchedulerScopePin:
                     raise ValueError
                 scope._check_published_grants()
                 profile, raw, journal, deadline = self.scope_fields
+                current_deadline = _native_scope_deadline(scope.deadline_ns)
+                original_deadline = _native_scope_deadline(deadline)
                 if (scope._closed or scope._profile_sha256 != profile or scope._profile_raw is not raw
                         or hashlib.sha256(raw).hexdigest() != profile or scope.journal_id != journal
-                        or intent.journal_id != journal or scope.deadline_ns > deadline
+                        or intent.journal_id != journal or current_deadline > original_deadline
                         or scope._profile["bootstrap_sha256"] != artifact.artifact_sha256
                         or _native_scope_profile_snapshot(scope._profile) != self.scope_profile
                         or scope._final_intent not in (None, intent.digest())):
@@ -176,7 +185,7 @@ def _pin_native_scheduler_scope(whole_scope, pycache_diagnostic, *, intent, arti
             whole_scope, pycache_diagnostic,
             None if whole_scope is None else (
                 whole_scope._profile_sha256, whole_scope._profile_raw,
-                whole_scope.journal_id, whole_scope.deadline_ns,
+                whole_scope.journal_id, _native_scope_deadline(whole_scope.deadline_ns),
             ),
             None if pycache_diagnostic is None else (
                 pycache_diagnostic.observer, pycache_diagnostic.diagnostic_profile,

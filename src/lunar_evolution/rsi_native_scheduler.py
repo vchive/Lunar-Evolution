@@ -45,6 +45,7 @@ from .native_trusted_scheduler import (
     NativeTrustedProducerRun,
     NativeTrustedSchedulerError,
     _native_handoff_evidence,
+    _native_scope_deadline,
     _native_scope_profile_snapshot,
     _NativeSchedulerScopePin,
     _pin_native_scheduler_scope,
@@ -328,6 +329,7 @@ class NativeRSISchedulerContext:
         projection["code_dependencies"] = {
             "pin": component_fingerprint(_NativeSchedulerScopePin),
             "pin_scope": component_fingerprint(_pin_native_scheduler_scope),
+            "deadline_guard": component_fingerprint(_native_scope_deadline),
             "profile_snapshot": component_fingerprint(_native_scope_profile_snapshot),
             "context_options": component_fingerprint(NativeRSISchedulerContext._native_scope_options),
         }
