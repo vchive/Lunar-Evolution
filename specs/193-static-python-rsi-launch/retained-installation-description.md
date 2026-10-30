@@ -1,6 +1,10 @@
 # Retained build to expanded installation candidate
 
-Status: implementation prepared; concentrated regression is pending.
+Status: implemented. The final `01d740f0` concentrated Linux regression passed
+all 663 cases across 17 complete files, including all 84 candidate-description
+cases, with no failures, errors, skips or retries and unchanged source bytes/Git
+execution bits. Real retained-workspace readback and independent approval of its
+candidate pins remain separate from fixture regression and runtime acceptance.
 
 This slice removes manual transcription of the generated frozen headers and
 native objects into the existing expanded installation description. It creates

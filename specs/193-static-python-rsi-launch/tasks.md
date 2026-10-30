@@ -473,8 +473,11 @@ not an approval of the previously retained real configure observation.
 - [x] Execute all 101 review and 15 configuration-generation nodes in the
   concentrated Linux union; all pass. Other files' initial failures remain
   recorded in validation and are corrected only through affected supplements.
-- [ ] Obtain independently reviewed real eight-output configuration/profile
-  approval. Fixture manifests and their synthetic expected pins do not supply it.
+- [x] Obtain independently reviewed real eight-output configuration/profile
+  approval. The user explicitly authorized delegated independent review; both
+  original packets and exact stage graphs are approved in
+  `delegated-configuration-review-20261030.md`. Fixture manifests and synthetic
+  pins did not supply this approval, and it grants no build/runtime authority.
 - [ ] Establish accepted immutable build-input custody, actual complete static
   CPython build/runtime and real solver/production CLI acceptance. F02c/L08
   remain binding; admission and online publication remain false.

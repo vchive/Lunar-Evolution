@@ -79,7 +79,7 @@ def vector(original_vector, monkeypatch):
     return original_vector, capture
 
 
-def lifecycle(vector, monkeypatch):
+def lifecycle(vector, monkeypatch, *, terminal_state=None, wait_reply=b"0\n"):
     base, capture = vector
     original, data, events = base
     subject, _root, _current, _argv, environment, spec, readonly, _expected, _selected = original
@@ -107,10 +107,11 @@ def lifecycle(vector, monkeypatch):
             if args[0] == "create":
                 return (CID + "\n").encode()
             if args[0] == "wait":
-                return b"0\n"
+                return wait_reply
             if args[0] == "inspect":
-                return canonical({"Status": "exited", "Running": False, "Pid": 0,
-                                  "ExitCode": 0, "OOMKilled": False, "Error": ""})
+                return canonical(terminal_state if terminal_state is not None else {
+                    "Status": "exited", "Running": False, "Pid": 0,
+                    "ExitCode": 0, "OOMKilled": False, "Error": ""})
             return b""
         return original_control(args, name, root, operations)
 
@@ -146,8 +147,12 @@ def lifecycle(vector, monkeypatch):
     return run, evidence, work, stage_root, spec
 
 
-def test_retained_lifecycle_completes_original_snapshots_before_start_and_promotes_after_exit(vector, monkeypatch):
-    run, evidence, work, _root, _spec = lifecycle(vector, monkeypatch)
+@pytest.mark.parametrize("status", ["exited", "stopped"])
+def test_retained_lifecycle_completes_original_snapshots_before_start_and_promotes_after_exit(
+        vector, monkeypatch, status):
+    terminal = {"Status": status, "Running": False, "Pid": 0,
+                "ExitCode": 0, "OOMKilled": False, "Error": ""}
+    run, evidence, work, _root, _spec = lifecycle(vector, monkeypatch, terminal_state=terminal)
     run()
     base, capture = vector
     original, _data, events = base
@@ -167,9 +172,86 @@ def test_retained_lifecycle_completes_original_snapshots_before_start_and_promot
     assert observation["snapshot_retention_profile"] == custody.VFS_RETENTION_PROFILE
     assert observation["vfs_snapshots"]["path"] == "custody/compile-0/vfs-raw/manifest.json"
     assert observation["original_container_exit_confirmed"] and evidence["status"] == "complete"
+    assert observation["original_container_state"] == terminal
     assert all(observation[key] is False for key in (
         "installation_accepted", "production_admission", "online_publication",
         "immutable_custody_verified", "driver_inputs_verified", "configured_closure_verified"))
+
+
+_MISSING = object()
+_INVALID_TERMINALS = [
+    pytest.param("Status", status, id="status-" + status)
+    for status in ("created", "initialized", "running", "paused", "unknown")
+] + [
+    pytest.param("Status", False, id="status-bool"),
+    pytest.param("Status", [], id="status-list"),
+    pytest.param("Running", True, id="running"),
+    pytest.param("Running", 0, id="running-int-zero"),
+    pytest.param("Pid", 123, id="live-pid"),
+    pytest.param("Pid", False, id="pid-bool"),
+    pytest.param("Pid", 0.0, id="pid-float-zero"),
+    pytest.param("Pid", "0", id="pid-string-zero"),
+    pytest.param("ExitCode", 1, id="nonzero-exit"),
+    pytest.param("ExitCode", False, id="exit-bool"),
+    pytest.param("ExitCode", 0.0, id="exit-float-zero"),
+    pytest.param("ExitCode", "0", id="exit-string-zero"),
+    pytest.param("OOMKilled", True, id="oom-killed"),
+    pytest.param("OOMKilled", 0, id="oom-int-zero"),
+    pytest.param("Error", "runtime failure", id="runtime-error"),
+    pytest.param("Error", False, id="error-bool"),
+    pytest.param("Error", 0, id="error-int-zero"),
+    pytest.param("Error", [], id="error-list"),
+    pytest.param("Status", _MISSING, id="missing-status"),
+    pytest.param("Pid", _MISSING, id="missing-pid"),
+    pytest.param("ExitCode", _MISSING, id="missing-exit"),
+]
+
+
+def changed_terminal(field, value):
+    terminal = {"Status": "stopped", "Running": False, "Pid": 0,
+                "ExitCode": 0, "OOMKilled": False, "Error": ""}
+    if value is _MISSING:
+        terminal.pop(field)
+    else:
+        terminal[field] = copy.deepcopy(value)
+    return terminal
+
+
+@pytest.mark.parametrize("field,value", _INVALID_TERMINALS)
+def test_retained_runner_never_promotes_output_from_inconsistent_original_terminal(
+        vector, monkeypatch, field, value):
+    run, evidence, work, _root, _spec = lifecycle(
+        vector, monkeypatch, terminal_state=changed_terminal(field, value))
+    with pytest.raises(BuildExecutionError, match="custody_original_exit"):
+        run()
+    assert evidence["status"] == "partial"
+    assert "readback_outputs" not in evidence["custody"]
+    assert not (work / "result.o").exists()
+    assert evidence["custody"]["production_admission"] is False
+    assert evidence["descendant_cleanup_verified"] is False
+
+
+@pytest.mark.parametrize("wait_reply", [b"1\n", b"-1\n", b"00\n", b""])
+def test_retained_runner_requires_original_zero_wait_before_output_promotion(vector, monkeypatch, wait_reply):
+    run, evidence, work, _root, _spec = lifecycle(vector, monkeypatch, wait_reply=wait_reply)
+    with pytest.raises(BuildExecutionError, match="custody_original_exit"):
+        run()
+    assert evidence["status"] == "partial"
+    assert "readback_outputs" not in evidence["custody"]
+    assert not (work / "result.o").exists()
+
+
+@pytest.mark.parametrize("status", ["exited", "stopped"])
+@pytest.mark.parametrize("error", [None, _MISSING], ids=["nullable-error", "omitted-error"])
+def test_retained_runner_preserves_nullable_runtime_error_field(vector, monkeypatch, status, error):
+    terminal = changed_terminal("Error", error)
+    terminal["Status"] = status
+    run, evidence, work, _root, _spec = lifecycle(vector, monkeypatch, terminal_state=terminal)
+    run()
+    assert evidence["status"] == "complete"
+    assert (work / "result.o").read_bytes() == b"original completed output"
+    assert evidence["custody"]["original_container_state"]["Error"] is None
+    assert evidence["custody"]["immutable_custody_verified"] is False
 
 
 def test_retained_selection_records_original_info_and_inspect_buffers_without_requery(vector, monkeypatch):
@@ -353,6 +435,47 @@ def test_retained_validator_verifies_original_bytes_then_runtime_replay_then_ori
     value = retained_observation(vector)
     events = verifier_boundaries(monkeypatch, value)
     validate_retained(value)
+    assert events == ["verify", "replay", "v3"]
+
+
+@pytest.mark.parametrize("status", ["exited", "stopped"])
+@pytest.mark.parametrize("error", ["", None, _MISSING], ids=["empty-error", "nullable-error", "omitted-error"])
+def test_retained_validator_accepts_zero_exit_terminal_tags_through_original_base_gate(
+        vector, monkeypatch, status, error):
+    value = retained_observation(vector)
+    command = value[0]
+    terminal = changed_terminal("Error", error)
+    terminal["Status"] = status
+    command["custody"]["original_container_state"] = terminal
+    events = verifier_boundaries(monkeypatch, value)
+    validate_retained(value)
+    assert events == ["verify", "replay", "v3"]
+    assert command["custody"]["original_container_state"] == terminal
+    assert command["descendant_cleanup_verified"] is False
+    assert all(command["custody"][key] is False for key in (
+        "configured_closure_verified", "implicit_link_inputs_verified", "online_publication",
+        "complete_namespace_disappearance_verified", "immutable_custody_verified", "driver_inputs_verified",
+        "installation_accepted", "production_admission", "aggregate_output_hard_quota_verified"))
+
+
+@pytest.mark.parametrize("field,value", _INVALID_TERMINALS)
+def test_retained_validator_refuses_inconsistent_terminal_at_original_base_gate(
+        vector, monkeypatch, field, value):
+    observation = retained_observation(vector)
+    observation[0]["custody"]["original_container_state"] = changed_terminal(field, value)
+    events = verifier_boundaries(monkeypatch, observation)
+    with pytest.raises(ValueError, match="^podman_custody_original_observation$"):
+        validate_retained(observation)
+    assert events == ["verify", "replay", "v3"]
+
+
+@pytest.mark.parametrize("terminal", [None, []], ids=["null-state", "list-state"])
+def test_retained_validator_requires_terminal_state_object_at_original_base_gate(vector, monkeypatch, terminal):
+    value = retained_observation(vector)
+    value[0]["custody"]["original_container_state"] = terminal
+    events = verifier_boundaries(monkeypatch, value)
+    with pytest.raises(ValueError, match="^podman_custody_original_observation$"):
+        validate_retained(value)
     assert events == ["verify", "replay", "v3"]
 
 

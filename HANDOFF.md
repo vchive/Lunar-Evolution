@@ -57,9 +57,18 @@ SolveExecutionControl(600)晚于fixture准备才启动，外层600从新解释�
 已独审。后继仍须自己的完整CI/source门；不取消或改写旧CI。
 
 新profile对原202 compiler/2 linker原件的纯比较已通过，12种alias均受pin约束，
-旧失败未升级。正式fresh OpenEvolve单3000s/零retry已另起，用01d740f0软件及相同
-批准输入/原图；实际构建结果与后继最终CI以独立原件和PR199为准，本段记录冻结时
-事实，不提前宣告发布通过。CIcollector与完整构建原件保留在下述ignored根目录。
+旧失败未升级。正式fresh OpenEvolve用01d740f0软件及相同批准输入/原图，在原
+3000s/零retry下完成298命令、202 compiler/2 linker比较；远端1882.047849秒。
+13,545归档原件、VFS/control与完整report已独审一致。另一次300s/零retry只读原
+workspace candidate观察21.313828秒成功，93 frozen/33 native和完整规范字节独审一致，
+候选pin46e4e4be…/46,427B；这不是accepted root。Shinka318命令全部rc0，但后置
+consumer在2143.932569秒（非超时）拒绝：原freeze233为stopped，runner接受而validator
+只接受exited。14,441原件/VFS/四输入树FD核验通过，原失败保留。已统一有限终态判定
+及严格整数PID/ExitCode，保留wait/reaped和全部原profile门；新增73 focused待集中执行。
+原CI41110175003自然终态41success/4failure（heavy6+三focused拒绝），45原ZIP已独审
+封口；三版各26957原inventory/134原skipkeys完整，v2closure f4d4680d…。
+详见 `full-build-observation-20261031.md`；后继最终CI/source门仍以PR199为准，
+不提前宣告发布通过。CIcollector与完整构建原件保留在下述ignored根目录。
 原件与审查在主区 ignored `validation/native-support-export-20261030/`。
 
 后续先完成新软件回归、fresh完整构建/原始 custody、sealed startup/live owner，再接首个 scheduler

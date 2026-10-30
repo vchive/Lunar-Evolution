@@ -7,6 +7,7 @@ the runner and observation validator here establishes no runtime authority.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -123,6 +124,34 @@ def test_retained_consumer_does_not_substitute_v2_observation_validation(transpo
     with pytest.raises(consumer.BuildDependencyError, match="readback_or_evidence_failure") as failure:
         consumer.run_dependency_checked_build_v4_vfs_retained(object(), **kwargs)
     assert controls["calls"] == 1 and failure.value.execution_report.status == "complete"
+    assert not (kwargs["workspace"] / "dependency-report.json").exists()
+
+
+@pytest.mark.parametrize("reaped", [False, 1, None, "missing"], ids=["false", "integer-one", "null", "missing"])
+def test_retained_consumer_requires_exact_direct_child_reaped_before_observation_validation(
+        transport, monkeypatch, reaped):
+    kwargs, _wire, controls, observed = transport
+    original_runner = consumer.run_pinned_build_v4_vfs_retained
+    reports = []
+
+    def runner(*args, **options):
+        report = original_runner(*args, **options)
+        stages = consumer._plain(report.stage_evidence)
+        command = stages[0]["commands"][0]
+        if reaped == "missing":
+            del command["direct_child_reaped"]
+        else:
+            command["direct_child_reaped"] = reaped
+        changed = replace(report, stage_evidence=tuple(stages))
+        reports.append(changed)
+        return changed
+
+    monkeypatch.setattr(consumer, "run_pinned_build_v4_vfs_retained", runner)
+    with pytest.raises(consumer.BuildDependencyError, match="^build_dependency_execution_report$") as failure:
+        consumer.run_dependency_checked_build_v4_vfs_retained(object(), **kwargs)
+    assert controls["calls"] == 1 and not observed
+    assert failure.value.execution_report is reports[0]
+    assert (kwargs["workspace"] / "report.json").is_file()
     assert not (kwargs["workspace"] / "dependency-report.json").exists()
 
 

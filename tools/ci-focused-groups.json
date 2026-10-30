@@ -175,7 +175,7 @@
         "tests/test_static_python_source_data_vfs_retained_consumer.py",
         "tests/test_static_python_source_data_vfs_retained_custody.py"
       ],
-      "expected_tests": 1094,
+      "expected_tests": 1167,
       "zero_skips": true
     },
     {

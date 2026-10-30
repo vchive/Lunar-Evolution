@@ -31,8 +31,8 @@ The new finite scope edges and11 drift cases complete the reserved policy graph.
 
 The parallel retained-output installation-description slice is also implemented:
 original historical pins, two rounds of FD readback, actual image mode and
-distinct CPython/augmented inventory bindings. Its84 tests are collected and
-independent static review passed, but tests have not yet executed. It returns
+distinct CPython/augmented inventory bindings. Its84 tests and independent
+static review passed in the final batch recorded below. It returns
 only candidate bytes through the existing parser/ELF checks; no accepted root,
 receipt, executor or CLI is introduced. On final01d740f0 all663 cases in17
 complete affected files pass in935.958814s including the wrapper, zero retry/
@@ -51,14 +51,27 @@ The43fbe4ad nine-node affected run passed in379.4026s with zero failure/error/
 skip/retry; source bytes/modes matched before/after, and all427 src/tools files
 are identical to01. Independent terminal audit passed. The successor still
 requires its own full CI/source gate; original CI is not canceled or relabeled.
-Fresh OpenEvolve execution uses the
-actual01 software, same approved inputs/graph, original3000s and zero retry.
-This is the software-freeze observation; final CI/build status is in PR199 and
-the independent original evidence, not predicted here.
+Fresh OpenEvolve execution used the actual01 software, same approved inputs/
+graph, original3000s and zero retry:298 commands,202compiler/2linker comparisons
+completed in1882.047849remote seconds. All13,545 archive files and original
+VFS/control/report chains matched independent review. A separately reviewed
+300s/zero-retry candidate readback completed in21.313828s against the original
+workspace;93frozen/33native and complete canonical candidate bytes matched
+independent reconstruction. It supplies candidate comparison pins, not an
+accepted runtime. Shinka's318 commands all returned0, but its original consumer
+failed in2143.932569s (not timeout): one original terminal tag was stopped,
+accepted by the runner but refused by the validator. All14,441 archive members,
+VFS/control and original four-tree inputFD checks passed. The old failure remains
+failed. A shared finite exited/stopped predicate now fixes that disagreement,
+retaining wait/reaped/profile gates and refusing malformed terminal scalars;
+73added focused cases await the final concentrated run and independent review.
+See [actual build observations](../specs/193-static-python-rsi-launch/full-build-observation-20261031.md).
+Final CI/source status remains in PR199 and its independent original evidence.
 
 Remaining P0: validate the new frozen software and its own CI/source gate.
-Remaining P1: fresh configured CPython/freezer/ELF paths and original
-custody, sealed startup and live-owner evidence, then the first scheduler-context
+Remaining P1: corrected-source Shinka consumer/readback observations and original
+immutable custody/complete-driver-input implementation and evidence for both
+solvers, sealed startup and live-owner evidence, then the first scheduler-context
 loader, production RSI CLI and copied local cases. Original fixed-U/external
 writer acquisition and P2 account/root/ACL/cgroup prerequisites remain open.
 Production admission and online publication remain false. Evidence is under
